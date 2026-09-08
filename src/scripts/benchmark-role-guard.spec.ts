@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 /**
  * PRD-C079 — "Benchmark under the application role with tenant context and RLS, never only
@@ -18,7 +19,10 @@ import { join } from "node:path";
  * child node process — which is also the only way that proves the shipped scripts can import it.
  */
 const SCRIPTS_DIR = __dirname;
-const GUARD = join(SCRIPTS_DIR, "benchmark-role-guard.mjs");
+// A `file://` URL, not the path: an absolute Windows path is not a legal ESM
+// specifier, so every case below died in the child with ERR_UNSUPPORTED_ESM_URL_SCHEME
+// ("Received protocol 'd:'") before a single guard was reached.
+const GUARD = pathToFileURL(join(SCRIPTS_DIR, "benchmark-role-guard.mjs")).href;
 
 function callGuard(body: string): unknown {
   const program = `import * as g from ${JSON.stringify(GUARD)};\nprocess.stdout.write(JSON.stringify(${body}));`;

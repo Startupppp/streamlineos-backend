@@ -108,6 +108,10 @@ describe("dashboard project id resolution is bounded", () => {
             return Promise.resolve([]);
           }),
         },
+        // The activity read resolves the caller's membership alongside the project
+        // ids in one `Promise.all`, so the scope filter can compare membership ids
+        // rather than user ids.
+        organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 7 }) },
       },
       select: () => ({
         from: () => ({

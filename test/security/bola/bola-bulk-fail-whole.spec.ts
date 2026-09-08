@@ -1,4 +1,6 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
 import { NotificationsLifecycleService } from "src/modules/notifications/notifications-lifecycle.service";
 import { RecruitmentCandidateOpsService } from "src/modules/hr/recruitment/recruitment-candidate-ops.service";
 import { SurveyParticipantService } from "src/modules/surveys/survey-participant.service";
@@ -273,15 +275,16 @@ describe("BOLA probe — timesheet bulk approvals refuse a mixed-tenant period l
     principal: { kind: "human-session", membershipId: 1, isOrgOwner: false },
   };
 
-  const build = (ownedRows: unknown[]) => {
-    const { db, rec } = makeDb([ownedRows, ownedRows]);
+  const build = (ownedRows: unknown[], rest: unknown[][] = []) => {
+    const { db, rec } = makeDb([ownedRows, ...rest]);
     const approvals = {
       approveSinglePeriod: jest.fn().mockResolvedValue(undefined),
       assertCanActOnPeriod: jest.fn().mockResolvedValue(undefined),
+      activeDelegationsToActor: jest.fn().mockResolvedValue(new Set<number>()),
     } as unknown as ApprovalsService;
     const bulk = new ApprovalsBulkService(
       db,
-      { record: jest.fn() } as unknown as TimesheetsAuditService,
+      { record: jest.fn(), recordMany: jest.fn() } as unknown as TimesheetsAuditService,
       approvals,
       { resolveMany: jest.fn().mockResolvedValue([]) } as unknown as RateResolverService,
     );
@@ -311,12 +314,40 @@ describe("BOLA probe — timesheet bulk approvals refuse a mixed-tenant period l
     expect(rec.updateWhere.length).toBe(0);
   });
 
-  it("SAME-TENANT: a wholly owned list still approves every period", async () => {
-    const { bulk, approvals } = build([{ id: OWNED_ID }, { id: 12 }]);
+  /**
+   * REWRITTEN 2026-09-08 against the set-based `bulkApprove`. The N+1 pass replaced the
+   * per-period `approveSinglePeriod` loop with one `inArray` UPDATE per table, so
+   * `toHaveBeenCalledTimes(2)` was asserting a call the service no longer makes — and the
+   * stub had no `activeDelegationsToActor`, so the control died on a TypeError while the
+   * cross-tenant halves above kept passing by throwing earlier. Both replacements are
+   * STRONGER than what they replace: the batched writes are rendered through `PgDialect`
+   * and read for the tenant predicate, because a batched UPDATE that dropped `org_id`
+   * would satisfy any count-based assertion.
+   */
+  it("SAME-TENANT: a wholly owned list still approves every period, tenant-scoped", async () => {
+    const periods = [
+      { id: OWNED_ID, userMembershipId: 5, currentApproverMembershipId: 1 },
+      { id: 12, userMembershipId: 6, currentApproverMembershipId: 1 },
+    ];
+    const { bulk, rec } = build([{ id: OWNED_ID }, { id: 12 }], [
+      periods,
+      [{ id: 1, orgId: ORG_ATTACKER, userId: "u1", role: "MEMBER", isOwner: false, status: "ACTIVE" }],
+      [{ id: "person-1" }],
+      [],
+      [],
+    ]);
     await expect(bulk.bulkApprove(actor, { periodIds: [OWNED_ID, 12] })).resolves.toEqual({
       approved: 2,
       skipped: 0,
     });
-    expect(approvals.approveSinglePeriod).toHaveBeenCalledTimes(2);
+
+    const dialect = new PgDialect();
+    const writes = rec.updateWhere.map((where) => dialect.sqlToQuery(where as SQL));
+    expect(writes.length).toBe(2);
+    for (const write of writes) {
+      expect(write.params).toContain(ORG_ATTACKER);
+      expect(write.sql).toContain("org_id");
+      expect(write.params).toEqual(expect.arrayContaining([OWNED_ID, 12]));
+    }
   });
 });

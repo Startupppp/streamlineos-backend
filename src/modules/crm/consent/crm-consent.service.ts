@@ -2,17 +2,18 @@ import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nest
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import {
-  contacts,
   crmContactChannelConsent,
   crmContactConsentEvents,
   crmSuppressionHashes,
 } from "../../../db/schema";
 import { businessParties, contactPartyMap } from "../../../db/schema/party";
 import { PARTY_OF_CONTACT } from "../crm-party-reads";
+import { isLegacyResolved, resolveLegacyParty } from "../../party/party-legacy-seam";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { AuditService } from "../../../common/audit/audit.service";
+import { logger } from "../../../common/logger/logger.service";
 
 /** Salted-free SHA-256 of the normalised address — never store the address. */
 function hashAddress(normalisedAddress: string): string {
@@ -223,12 +224,17 @@ export class CrmConsentService {
     await runInTenantTransaction(
       this.db,
       async (tx) => {
-        const [contact] = await tx
-          .select({ id: contacts.id })
-          .from(contacts)
-          .where(and(eq(contacts.id, input.contactId), eq(contacts.orgId, orgId), isNull(contacts.deletedAt)))
-          .limit(1);
-        if (!contact) throw new NotFoundException("Contact not found");
+        // Through the seam, not `contacts`: `contact_party_map` is org-scoped on
+        // both sides, and the party's `deleted_at` IS the contact's — the only two
+        // writers of `contacts.deleted_at` derive it from this column in the same
+        // statement (`party-legacy-writer.ts:399`, `party-legacy-contacts.ts:260`).
+        // A miss is 404, never 403: a 403 on another org's id is an existence oracle.
+        const contact = await resolveLegacyParty(tx, orgId, {
+          kind: "CONTACT",
+          legacyId: input.contactId,
+        });
+        if (!isLegacyResolved(contact) || contact.party.deletedAt)
+          throw new NotFoundException("Contact not found");
 
         const [existing] = await tx
           .select({ status: crmContactChannelConsent.status })
@@ -302,6 +308,49 @@ export class CrmConsentService {
       },
       { orgId },
     );
+  }
+
+  /**
+   * The anonymous unsubscribe path, and the ONLY caller allowed to absorb
+   * `record`'s 404.
+   *
+   * `record` answers 404 for a contact that is absent, soft-deleted or outside
+   * the org — correct for the authenticated endpoints, an existence oracle on a
+   * `@Public()` one, where the status code is the whole answer. So the miss is
+   * absorbed here and reported to the caller as an ordinary opt-out. It is not
+   * lost: it is logged with the signed payload, which is everything needed to
+   * investigate, since the token binds org, contact and channel.
+   *
+   * Only the existence case is absorbed. Anything else — a database fault, a
+   * denied RLS predicate, an audit failure — still propagates, because
+   * answering "unsubscribed" for a write that never landed is the one failure
+   * mode this endpoint must never have.
+   */
+  async recordUnsubscribe(input: {
+    orgId: string;
+    contactId: number;
+    channel: ConsentChannel;
+  }): Promise<void> {
+    try {
+      await this.record(input.orgId, {
+        contactId: input.contactId,
+        channel: input.channel,
+        status: "OPTED_OUT",
+        source: "UNSUBSCRIBE_LINK",
+        legalBasis: "CONSENT",
+        recordedByUserId: null,
+      });
+    } catch (error) {
+      if (!(error instanceof NotFoundException)) throw error;
+      logger.warn("crm.consent.unsubscribe.unresolved", {
+        orgId: input.orgId,
+        contactId: input.contactId,
+        channel: input.channel,
+        outcome: "answered 200 without recording",
+        reason:
+          "signed token names a contact that is absent, soft-deleted, or not in the signed org",
+      });
+    }
   }
 
   async listForContact(orgId: string, contactId: number) {

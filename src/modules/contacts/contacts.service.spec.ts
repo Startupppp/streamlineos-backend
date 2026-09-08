@@ -118,18 +118,22 @@ describe("ContactsService bulk import", () => {
       .fn()
       .mockResolvedValueOnce(Array.from({ length: 500 }, (_, index) => makeRow(index + 1)))
       .mockResolvedValueOnce([makeRow(501)]);
-    const query = {
-      from: jest.fn(),
-      // The export reads `business_parties` through `contact_party_map`.
-      innerJoin: jest.fn(),
-      where: jest.fn(),
-      orderBy: jest.fn(),
-      limit,
-    };
-    query.from.mockReturnValue(query);
-    query.innerJoin.mockReturnValue(query);
-    query.where.mockReturnValue(query);
-    query.orderBy.mockReturnValue(query);
+    function makeQuery(resolveLimit: jest.Mock) {
+      const query = {
+        from: jest.fn(),
+        // The export reads `business_parties` through `contact_party_map`.
+        innerJoin: jest.fn(),
+        where: jest.fn(),
+        orderBy: jest.fn(),
+        limit: resolveLimit,
+      };
+      query.from.mockReturnValue(query);
+      query.innerJoin.mockReturnValue(query);
+      query.where.mockReturnValue(query);
+      query.orderBy.mockReturnValue(query);
+      return query;
+    }
+    const query = makeQuery(limit);
     /*
      * Each page now runs in its own tenant transaction, because the export handler is
      * `@NoTenantTransaction()` — the generator outlives the request, so holding one
@@ -137,8 +141,15 @@ describe("ContactsService bulk import", () => {
      * client's socket. `db.transaction` is the per-page borrow.
      */
     const tx = { select: jest.fn().mockReturnValue(query), execute: jest.fn().mockResolvedValue([]) };
+    /*
+     * Opening a tenant transaction also refreshes the relocation-target list off the
+     * OUTER handle (`withTenant` → `refreshRelocationTargets(db, …)`). Sharing one chain
+     * between `db` and `tx` let that read consume the export's first page, so the export
+     * saw the last page first and stopped after one transaction. The two reads get
+     * separate chains, and `limit` therefore counts only the export's pages.
+     */
     const db = {
-      select: jest.fn().mockReturnValue(query),
+      select: jest.fn().mockReturnValue(makeQuery(jest.fn().mockResolvedValue([]))),
       execute: jest.fn().mockResolvedValue([]),
       transaction: jest.fn().mockImplementation((run: (t: unknown) => unknown) => run(tx)),
     };

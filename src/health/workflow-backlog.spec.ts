@@ -36,12 +36,14 @@ function makeMockDb(orgIds: string[], rows: OrgRow[]): { db: Db; queries: SQL[] 
   interface SelectChain {
     from: () => SelectChain;
     where: () => SelectChain;
-    orderBy: () => Promise<{ id: string }[]>;
+    orderBy: () => SelectChain;
+    limit: () => Promise<{ id: string }[]>;
   }
   const chain: SelectChain = {
     from: () => chain,
     where: () => chain,
-    orderBy: () => Promise.resolve(orgIds.map((id) => ({ id }))),
+    orderBy: () => chain,
+    limit: () => Promise.resolve(orgIds.map((id) => ({ id }))),
   };
 
   const execute = (query: SQL): Promise<unknown[]> => {

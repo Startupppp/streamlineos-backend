@@ -126,12 +126,16 @@ describe("PRD E2E scenarios 1–12 (contract journey)", () => {
         }),
       }),
     };
+    // `forEachOrg` enumerates organizations in keyset pages, so the chain ends at
+    // `.limit(ORG_ENUM_PAGE)`; a page shorter than the page size stops the loop.
+    const enumeration = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([{ id: "o" }]),
+    };
     const db = {
-      select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockResolvedValue([{ id: "o" }]),
-      }),
+      select: jest.fn().mockReturnValue(enumeration),
       transaction: jest.fn().mockImplementation((fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
     };
     const worker = new PayrollJobsWorkerService(

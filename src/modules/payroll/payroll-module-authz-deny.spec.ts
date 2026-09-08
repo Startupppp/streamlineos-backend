@@ -51,7 +51,7 @@ async function buildApp(): Promise<INestApplication> {
     providers: [
       { provide: AccountingMappingsService, useValue: { list: jest.fn(), create: jest.fn(), update: jest.fn(), remove: jest.fn() } },
       { provide: PayrollEntitiesService, useValue: { list: jest.fn(), listCountryPacks: jest.fn(), getEntity: jest.fn(), getEntityContext: jest.fn(), create: jest.fn() } },
-      { provide: PayrollJobsService, useValue: { list: jest.fn(), listFailed: jest.fn(), listForResource: jest.fn(), get: jest.fn(), enqueue: jest.fn(), retry: jest.fn() } },
+      { provide: PayrollJobsService, useValue: { listFailed: jest.fn(), listForResource: jest.fn(), get: jest.fn(), enqueue: jest.fn(), retry: jest.fn() } },
       { provide: PayrollJobsWorkerService, useValue: { flush: jest.fn() } },
       { provide: AccessService, useValue: denyAll },
       Reflector,

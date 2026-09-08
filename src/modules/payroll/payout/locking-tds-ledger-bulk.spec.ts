@@ -114,21 +114,53 @@ function ledgerInserts(inserts: CapturedInsert[]) {
   return inserts.filter((i) => i.table === "payroll_tds_ytd_ledger");
 }
 
-function employee(subject: { userId?: string; workerId?: string }, gross: string, tds: number) {
+/**
+ * `toCalculationSnapshot` validates the stored jsonb against the whole
+ * `CalculationSnapshot` shape and returns null on any mismatch, so a partial double
+ * silently made every row's TDS zero. The snapshot is built in full, with the TDS
+ * amount as the MoneyString the engine writes.
+ */
+function snapshot(gross: string, tds: string) {
+  return {
+    policyVersionId: null,
+    computedAt: "2026-08-31T00:00:00.000Z",
+    currency: "INR",
+    scheduledDays: "31",
+    paidDays: "31",
+    lopDays: "0",
+    overtimeHours: "0",
+    lines: [
+      {
+        code: "TDS",
+        name: "Income tax",
+        category: "TAX" as const,
+        amount: tds,
+        calcMethod: "MANUAL" as const,
+        taxable: false,
+        sortOrder: 1,
+        explain: { method: "MANUAL" as const, inputs: {}, steps: [] },
+      },
+    ],
+    totals: { gross, deductions: tds, employerContributions: "0.00", net: gross },
+    variance: null,
+  };
+}
+
+function employee(subject: { userId?: string; workerId?: string }, gross: string, tds: string) {
   return {
     userId: subject.userId ?? null,
     workerId: subject.workerId ?? null,
     gross,
-    calculationSnapshot: { lines: [{ code: "TDS", amount: tds, category: "TAX" }] },
+    calculationSnapshot: snapshot(gross, tds),
   };
 }
 
 describe("LockingService TDS YTD ledger write", () => {
   it("writes every user subject in ONE statement, not one round trip per run employee", async () => {
     const { service, tx, inserts } = build([
-      employee({ userId: "u1" }, "100", 10),
-      employee({ userId: "u2" }, "200", 20),
-      employee({ userId: "u3" }, "300", 30),
+      employee({ userId: "u1" }, "100", "10.00"),
+      employee({ userId: "u2" }, "200", "20.00"),
+      employee({ userId: "u3" }, "300", "30.00"),
     ]);
 
     await commit(service, tx);
@@ -139,7 +171,7 @@ describe("LockingService TDS YTD ledger write", () => {
   });
 
   it("infers the PARTIAL user arbiter with a matching targetWhere, or Postgres raises 42P10", async () => {
-    const { service, tx, inserts } = build([employee({ userId: "u1" }, "100", 10)]);
+    const { service, tx, inserts } = build([employee({ userId: "u1" }, "100", "10.00")]);
 
     await commit(service, tx);
 
@@ -150,8 +182,8 @@ describe("LockingService TDS YTD ledger write", () => {
 
   it("infers the PARTIAL worker arbiter on its own separate statement", async () => {
     const { service, tx, inserts } = build([
-      employee({ userId: "u1" }, "100", 10),
-      employee({ workerId: "w1" }, "500", 50),
+      employee({ userId: "u1" }, "100", "10.00"),
+      employee({ workerId: "w1" }, "500", "50.00"),
     ]);
 
     await commit(service, tx);
@@ -165,8 +197,8 @@ describe("LockingService TDS YTD ledger write", () => {
 
   it("collapses a repeated subject to the last row, because DO UPDATE cannot hit a row twice", async () => {
     const { service, tx, inserts } = build([
-      employee({ userId: "u1" }, "100", 10),
-      employee({ userId: "u1" }, "999", 99),
+      employee({ userId: "u1" }, "100", "10.00"),
+      employee({ userId: "u1" }, "999", "99.00"),
     ]);
 
     await commit(service, tx);
@@ -177,7 +209,7 @@ describe("LockingService TDS YTD ledger write", () => {
   });
 
   it("skips a run employee that carries neither subject", async () => {
-    const { service, tx, inserts } = build([employee({}, "100", 10)]);
+    const { service, tx, inserts } = build([employee({}, "100", "10.00")]);
 
     await commit(service, tx);
 

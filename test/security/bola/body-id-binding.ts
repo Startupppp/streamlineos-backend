@@ -564,7 +564,14 @@ function traceSymbol(
       where: at,
       writeTable: writeTable ?? undefined,
     };
-  if (occurrences.length > 0) return { verdict: "unresolved", evidence: "", where: at };
+  /**
+   * The carrier is spread into a write literal, so the field lands in the row
+   * whether or not it is also named somewhere else in the method. This is asked
+   * BEFORE the `unresolved` fallback on purpose: it used to sit after it, so one
+   * unrelated mention outside the literal — `groupId: input.groupId ?? field.groupId`
+   * in a validation object — downgraded a real `...input` write to `unresolved`
+   * and the ratchet stopped counting it. Measured on `PATCH /sign/fields/{fieldId}`.
+   */
   const spread = spreadIntoWrite(body, symbol);
   if (spread)
     return {
@@ -573,6 +580,7 @@ function traceSymbol(
       where: at,
       writeTable: spread,
     };
+  if (occurrences.length > 0) return { verdict: "unresolved", evidence: "", where: at };
   return { verdict: "never-read", evidence: "", where: at };
 }
 

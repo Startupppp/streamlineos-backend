@@ -84,6 +84,11 @@ export const DIRECT_EMAIL_CALLER_INVENTORY: DirectEmailCallerInventoryEntry[] =
       "uses the automation email adapter for workflow-supplied recipients",
     ),
     EXEMPT(
+      "modules/hr/directory/employee-bulk-onboarding.service.ts",
+      DeliveryClass.WORKFLOW_EXTERNAL,
+      "bulk form of the credential-bearing welcome workflow; same recipients and semantics",
+    ),
+    EXEMPT(
       "modules/hr/directory/employee-onboarding.service.ts",
       DeliveryClass.WORKFLOW_EXTERNAL,
       "credential-bearing welcome and magic-link workflow",

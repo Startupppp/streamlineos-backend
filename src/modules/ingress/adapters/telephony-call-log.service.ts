@@ -18,11 +18,8 @@ import {
   NO_SKIPS,
   sweepNote,
   type SkipTally,
-  type TelephonySweepRefusal,
   type TelephonySweepResult,
 } from "./telephony-sweep-result";
-
-export type { TelephonySweepRefusal, TelephonySweepResult };
 
 /**
  * A carrier's call log feeding the CRM.

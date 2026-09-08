@@ -64,6 +64,25 @@ function buildPlanResult(overrides: Partial<{ key: string }> = {}) {
   };
 }
 
+/**
+ * `upload` runs the permission check, the quota check and the quarantine insert
+ * inside `runInTenantTransaction`, so the double has to be able to open one.
+ * The callback is invoked rather than stubbed — a bare `jest.fn()` here would
+ * silently void every assertion that depends on the work inside it.
+ */
+function tenantTransactionSupport(query: Record<string, unknown>) {
+  const tx = { query, execute: jest.fn().mockResolvedValue([]) };
+  const relocationTargets = {
+    from: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockResolvedValue([]),
+  };
+  return {
+    select: jest.fn().mockReturnValue(relocationTargets),
+    transaction: jest.fn(async (run: (tx: unknown) => Promise<unknown>) => run(tx)),
+  };
+}
+
 function buildDb(records: {
   documents?: { orgId: string };
   onboardingDocuments?: { orgId: string };
@@ -73,17 +92,16 @@ function buildDb(records: {
   payslipPublications?: { orgId: string };
   candidateDocumentsVault?: { orgId: string };
 } = {}) {
-  return {
-    query: {
-      documents: { findFirst: jest.fn().mockResolvedValue(records.documents ?? null) },
-      onboardingDocuments: { findFirst: jest.fn().mockResolvedValue(records.onboardingDocuments ?? null) },
-      expenses: { findFirst: jest.fn().mockResolvedValue(records.expenses ?? null) },
-      reimbursements: { findFirst: jest.fn().mockResolvedValue(records.reimbursements ?? null) },
-      handbookVersions: { findFirst: jest.fn().mockResolvedValue(records.handbookVersions ?? null) },
-      payslipPublications: { findFirst: jest.fn().mockResolvedValue(records.payslipPublications ?? null) },
-      candidateDocumentsVault: { findFirst: jest.fn().mockResolvedValue(records.candidateDocumentsVault ?? null) },
-    },
+  const query = {
+    documents: { findFirst: jest.fn().mockResolvedValue(records.documents ?? null) },
+    onboardingDocuments: { findFirst: jest.fn().mockResolvedValue(records.onboardingDocuments ?? null) },
+    expenses: { findFirst: jest.fn().mockResolvedValue(records.expenses ?? null) },
+    reimbursements: { findFirst: jest.fn().mockResolvedValue(records.reimbursements ?? null) },
+    handbookVersions: { findFirst: jest.fn().mockResolvedValue(records.handbookVersions ?? null) },
+    payslipPublications: { findFirst: jest.fn().mockResolvedValue(records.payslipPublications ?? null) },
+    candidateDocumentsVault: { findFirst: jest.fn().mockResolvedValue(records.candidateDocumentsVault ?? null) },
   };
+  return { query, ...tenantTransactionSupport(query) };
 }
 
 function buildController(overrides: {

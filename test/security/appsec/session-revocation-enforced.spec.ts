@@ -360,7 +360,7 @@ describe("Every revocation entry point writes the tombstone the guard reads", ()
         const content = readFileSync(file, "utf8");
         return content.includes(".update(userSessions)") && /isRevoked:\s*true/.test(content);
       })
-      .map((file) => relative(BACKEND_ROOT, file))
+      .map((file) => relative(BACKEND_ROOT, file).replace(/\\/g, "/"))
       .sort();
   }
 

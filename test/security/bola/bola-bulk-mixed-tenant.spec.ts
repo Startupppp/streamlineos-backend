@@ -70,11 +70,19 @@ const REPAIRED_FAIL_WHOLE: readonly string[] = [
  * caller from an already tenant-scoped query, so a mixed-tenant list cannot
  * reach them. Named so they are not mistaken for open defects, and so a real
  * one is not hidden behind the same excuse silently.
+ *
+ * EMPTIED 2026-09-08, and the excuse was retired rather than repriced.
+ * `DataQualityResolutionService.claim` and `.reopen` were the only two entries;
+ * both were extracted into free functions in `data-quality-finding-claim.ts`, and
+ * the caller-side reasoning that excused them became an explicit guard:
+ * `DataQualityResolutionService.resolve` now calls `assertFindingsInOrg`, which
+ * selects the requested ids under `organizationId`, compares the row count and
+ * throws `NotFoundException` for the WHOLE request — 404, never 403 — before the
+ * status filter is applied, so a foreign id is no longer indistinguishable from
+ * a skip. Neither name appears in the scan's inventory any more. An entry may
+ * only return here with the same kind of evidence.
  */
-const GUARDED_BY_CALLER: readonly string[] = [
-  "DataQualityResolutionService.claim",
-  "DataQualityResolutionService.reopen",
-];
+const GUARDED_BY_CALLER: readonly string[] = [];
 
 const source = (rel: string): string => readFileSync(join(BACKEND_ROOT, rel), "utf8");
 

@@ -30,11 +30,25 @@ function makeUser(userId: string): CurrentUserContext {
   };
 }
 
+/**
+ * `CacheFiller` writes a filled entry with a compare-and-set Lua script rather than
+ * a plain `SET`, and releases the fill lease with a second one. A fake that treated
+ * every `eval` as the release script deleted the entry it was being asked to store,
+ * so nothing was ever cached and every read was a miss. Both scripts are modelled
+ * here, told apart by their key count, and `get` reproduces Upstash's JSON decode.
+ */
 class FakeRedis {
   readonly store = new Map<string, unknown>();
 
   get<T>(key: string): Promise<T | null> {
-    return Promise.resolve((this.store.get(key) as T | undefined) ?? null);
+    const raw = this.store.get(key);
+    if (raw === undefined) return Promise.resolve(null);
+    if (typeof raw !== "string") return Promise.resolve(raw as T);
+    try {
+      return Promise.resolve(JSON.parse(raw) as T);
+    } catch {
+      return Promise.resolve(raw as T);
+    }
   }
 
   set(key: string, value: unknown, options?: { nx?: boolean }): Promise<string | null> {
@@ -49,8 +63,16 @@ class FakeRedis {
     return Promise.resolve(next);
   }
 
-  eval(_script: string, keys: string[], _args: string[]): Promise<number> {
-    for (const key of keys) this.store.delete(key);
+  eval(_script: string, keys: string[], args: string[]): Promise<number> {
+    const [leaseKey, valueKey] = keys;
+    const [token, serialized] = args;
+    if (leaseKey === undefined) return Promise.resolve(0);
+    if (this.store.get(leaseKey) !== token) return Promise.resolve(0);
+    if (valueKey === undefined) {
+      this.store.delete(leaseKey);
+      return Promise.resolve(1);
+    }
+    this.store.set(valueKey, serialized);
     return Promise.resolve(1);
   }
 

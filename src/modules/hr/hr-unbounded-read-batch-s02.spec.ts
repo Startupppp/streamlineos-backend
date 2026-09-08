@@ -54,7 +54,10 @@ describe("S02 HR collection read caps", () => {
     ["core/hr-custom-fields.service.ts", "customFieldDefinitions.displayOrder"],
     ["core/hr-sensitive-record-compat.ts", "sourceOrdinal"],
     ["directory/employee-analytics.service.ts", "inArray(users.id, directReportIds)"],
-    ["directory/employee-bulk-onboarding.service.ts", "orgUnits.kind"],
+    // The department scan moved out of `employee-bulk-onboarding.service.ts` when the
+    // bulk writer was split; a path-keyed gate stops covering a file that moved, so the
+    // entry follows the query rather than the old filename.
+    ["directory/bulk-onboarding/bulk-onboarding-departments.ts", "orgUnits.kind"],
     ["directory/employee-mutations.service.ts", "targetUserId)))"],
     ["directory/employee-skills-page-query.ts", ".limit(Math.max(1, employeeUserIds.length"],
     ["directory/employees.service.ts", "projectMembers.orgId"],
@@ -68,7 +71,7 @@ describe("S02 HR collection read caps", () => {
     expect(start).toBeGreaterThanOrEqual(0);
     const window = source.slice(Math.max(0, start - 180), start + 1000);
     const boundedLiteral =
-      /limit\s*:\s*(100|500|1000)|\.limit\((?:100|200|500|1000|Math\.max\(1, employeeUserIds\.(?:size|length) \* MAX_SKILLS_PER_EMPLOYEE\))\)/;
+      /limit\s*:\s*(100|500|1000)|\.limit\((?:100|200|500|1000|directReportIds\.length|Math\.max\(1, employeeUserIds\.(?:size|length) \* MAX_SKILLS_PER_EMPLOYEE\))\)/;
     if (boundedLiteral.test(window)) return;
 
     // A keyset drain reads every row a truncating cap would have dropped, so it is the
@@ -76,6 +79,19 @@ describe("S02 HR collection read caps", () => {
     // query, and the page count is what stops the loop.
     expect(window).toMatch(/\.limit\(HR_SCAN_PAGE\)/);
     expect(source).toMatch(/HR_SCAN_MAX_PAGES/);
+  });
+
+  // `.limit(directReportIds.length)` bounds a read only as far as that list is bounded,
+  // so the cap that makes it a bound is asserted where it is actually written.
+  it("caps the direct-report id list the manager scorecard sizes its read from", () => {
+    const source = readFileSync(
+      resolve(sourceRoot, "../directory/employment-facts.service.ts"),
+      "utf8",
+    );
+    expect(source).toMatch(
+      /async getDirectReportUserIds[\s\S]{0,2000}\.limit\(DIRECT_REPORT_ID_CAP\)/,
+    );
+    expect(source).toMatch(/DIRECT_REPORT_ID_CAP\s*=\s*\d+/);
   });
 
   it("continues attendance history with tenant-scoped id batches", () => {

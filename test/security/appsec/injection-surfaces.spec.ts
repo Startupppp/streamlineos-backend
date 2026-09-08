@@ -261,10 +261,10 @@ describe("SQL injection — every value reaches Postgres as a bind parameter", (
         "src/modules/build/core/build-due-sweep.service.ts",
         "src/modules/build/core/projects-reports.service.ts",
         "src/modules/inventory/stock-engine/warehouse-scope.service.ts",
-        "src/modules/notifications/notification-retention.service.ts",
         "src/modules/rbac/permission-catalog-sync.service.ts",
         "src/modules/record-layouts/record-layouts.service.ts",
         "src/modules/storage/storage-key-catalog.ts",
+        "src/modules/workflows/engine/execution-advance.ts",
         "src/scripts/backfill-financial-actors.ts",
       ].sort(),
     );

@@ -462,11 +462,48 @@ process.stdout.write(JSON.stringify(r));`;
     expect(r.findings.filter((f) => f.metric === "downstreamCalls" && f.fired).length).toBe(0);
   });
 
-  it("requestDbCalls regression fires (exact count ratchet)", () => {
-    const base = baseManifest();
-    const fresh = baseManifest({ requestDbCalls: 5 });
+  /**
+   * A quiet replicate study for the DB-call count: three replicates that never moved.
+   *
+   * `requestDbCalls` is a NOISE_COUNT_METRIC, not an exact ratchet — the count includes
+   * authentication, permission resolution and module entitlement reads whose cache state
+   * varies between captures, so an exact ratchet fired on every rerun. Arming it therefore
+   * takes a measured envelope; with a zero swing the band is zero and any increase fires,
+   * which is the same bite the exact ratchet had, now earned rather than assumed.
+   */
+  const quietDbCallEnvelope = {
+    n: 3, min: 3, max: 3, mean: 3, p50: 3, p95: 3, p99: 3,
+    sd: 0, cv: 0, maxAbsSwing: 0, maxRelSwing: 0,
+  };
+
+  it("requestDbCalls regression fires against a measured noise band", () => {
+    const noise = { "GET /x@reference": { requestDbCalls: quietDbCallEnvelope } };
+    const base = baseManifest({}, noise);
+    const fresh = baseManifest({ requestDbCalls: 5 }, noise);
     const r = evalRequests(base, fresh) as { findings: Array<{ metric: string; fired: boolean }> };
     expect(r.findings.some((f) => f.metric === "requestDbCalls" && f.fired)).toBe(true);
+  });
+
+  it("requestDbCalls increase WITHOUT a replicate envelope is advisory (DISARMED), not a failure", () => {
+    const base = baseManifest();
+    const fresh = baseManifest({ requestDbCalls: 5 });
+    const r = evalRequests(base, fresh) as {
+      findings: Array<{ fired: boolean }>;
+      advisories: Array<{ metric: string; detail: string }>;
+    };
+    expect(r.findings.filter((f) => f.fired).length).toBe(0);
+    const adv = r.advisories.find((a) => a.metric === "requestDbCalls");
+    expect(adv).toBeDefined();
+    expect(adv?.detail).toContain("DISARMED");
+  });
+
+  it("requestDbCalls stays silent while the increase is inside the measured band", () => {
+    const band = { ...quietDbCallEnvelope, min: 2, max: 5, maxAbsSwing: 3, maxRelSwing: 1 };
+    const noise = { "GET /x@reference": { requestDbCalls: band } };
+    const base = baseManifest({}, noise);
+    const fresh = baseManifest({ requestDbCalls: 5 }, noise);
+    const r = evalRequests(base, fresh) as { findings: Array<{ metric: string; fired: boolean }> };
+    expect(r.findings.filter((f) => f.metric === "requestDbCalls" && f.fired).length).toBe(0);
   });
 
   it("responseBytes increase with a replicate envelope fires when over the noise band", () => {
@@ -499,11 +536,20 @@ process.stdout.write(JSON.stringify(r));`;
 
   it("HTTP latency WITH a quiet envelope fires when corroborated by DB calls", () => {
     const envelope = { n: 3, min: 9, max: 11, mean: 10, p50: 10, p95: 11, p99: 11, sd: 1, cv: 0.1, maxAbsSwing: 2, maxRelSwing: 0.22 };
-    const noise = { "GET /x@reference": { latencyMs: { p95: envelope } } };
+    const noise = {
+      "GET /x@reference": {
+        latencyMs: { p95: envelope },
+        // Corroboration now has to be earned: `requestDbCalls` only fires against a
+        // measured band, so without this envelope it degrades to an advisory and the
+        // latency finding it is meant to corroborate never arms.
+        requestDbCalls: quietDbCallEnvelope,
+      },
+    };
     const base = baseManifest({}, noise);
     const fresh = baseManifest({ requestDbCalls: 5, latencyMs: { p50: 5, p95: 50, p99: 60 } }, noise);
     const r = evalRequests(base, fresh) as { findings: Array<{ metric: string; fired: boolean }> };
     expect(r.findings.some((f) => f.metric === "requestDbCalls" && f.fired)).toBe(true);
+    expect(r.findings.some((f) => f.metric === "p95" && f.fired)).toBe(true);
   });
 
   it("HTTP latency increase WITHOUT a replicate envelope is advisory (DISARMED), not a failure", () => {

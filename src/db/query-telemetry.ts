@@ -142,7 +142,12 @@ export class QueryTelemetryTracker {
   private wrap<T extends object>(target: T, settle: Settle): T {
     const proxy: T = new Proxy(target, {
       get: (raw, prop) => {
-        if (isThenable(raw) && (prop === "then" || prop === "catch" || prop === "finally")) {
+        if (prop === "then" || prop === "catch" || prop === "finally") {
+          // Asserted, not branched on. Narrowing this to `isThenable(raw) && …` made a
+          // broken pending query fall through to `Reflect.get(raw, "then") === undefined`,
+          // so `await` resolved to the raw object as though the statement had succeeded —
+          // while `noteStatementStart` stayed unbalanced and the span was never ended.
+          if (!isThenable(raw)) throw new TypeError("pending.then is not a function");
           const settling = (
             onOk?: (value: unknown) => unknown,
             onErr?: (reason: unknown) => unknown,

@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 /**
  * PRD-C073 — "Implement existence/authorization probes with tenant-correlated indexed
@@ -26,14 +27,17 @@ const REWRITTEN = [
   "modules/payroll/runs/exceptions.service.ts",
   "modules/hr/governance/positions/positions-taxonomy.service.ts",
   "modules/organization/core/org-membership-access-revocation.ts",
-  "modules/hr/onboarding/flow/hr-checklist-reconciliation.service.ts",
+  // The HR probe kept its bounded shape but moved: the reconciliation service now
+  // delegates to `computeHrSignals`, which is where all 21 `select({ one: sql`1` })
+  // … .limit(1)` reads live. Following the seam rather than dropping the entry.
+  "modules/hr/onboarding/flow/hr-checklist-signals.ts",
 ];
 
 function scanRepo(): { inScope: string[]; deferred: string[] } {
   const program = `
     import { readdirSync, statSync, readFileSync } from "node:fs";
     import { join } from "node:path";
-    import { scanCountExistenceProbes, OUT_OF_RELEASE_SCOPE } from ${JSON.stringify(join(SCRIPTS_DIR, "count-existence-probes.mjs"))};
+    import { scanCountExistenceProbes, OUT_OF_RELEASE_SCOPE } from ${JSON.stringify(pathToFileURL(join(SCRIPTS_DIR, "count-existence-probes.mjs")).href)};
     const ROOT = ${JSON.stringify(SRC_ROOT)};
     const files = [];
     (function walk(d) {

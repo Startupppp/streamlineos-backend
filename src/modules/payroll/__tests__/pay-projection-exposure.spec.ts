@@ -5,6 +5,7 @@ import { SalaryProfilesRepository } from "../runs/salary-profiles.repository";
 import { FnfService } from "../hr-payroll/fnf.service";
 import { SalaryStructureTemplatesService } from "../hr-payroll/salary-structure-templates.service";
 import { EssService } from "../insights/ess.service";
+import { salaryTemplateRowSchema } from "../hr-payroll/dto/hr-payroll-response.schemas";
 
 const SERVICES_DIR = join(__dirname, "..");
 const BARE_SELECT_RE = /\.select\s*\(\s*\)/;
@@ -205,7 +206,7 @@ describe("pay-projection-exposure", () => {
       expect(selectKeys).toEqual(["approvedBy", "notes", "status"]);
     });
 
-    it("SalaryStructureTemplatesService.list projects allowlist without updatedAt", async () => {
+    it("SalaryStructureTemplatesService.list projects exactly its published wire contract", async () => {
       const row = {
         id: 1,
         orgId: "org-1",
@@ -222,6 +223,7 @@ describe("pay-projection-exposure", () => {
         effectiveTo: null,
         isActive: true,
         createdAt: new Date(),
+        updatedAt: new Date(),
       };
       const chain = makeChain([row]);
       const db = { select: jest.fn().mockReturnValue(chain) };
@@ -229,29 +231,19 @@ describe("pay-projection-exposure", () => {
 
       const result = await service.list("org-1");
 
-      const TEMPLATE_KEYS = [
-        "basicSalary",
-        "createdAt",
-        "effectiveFrom",
-        "effectiveTo",
-        "hraPercent",
-        "id",
-        "isActive",
-        "medicalAllowance",
-        "name",
-        "orgId",
-        "otherAllowances",
-        "pfDeductionPercent",
-        "professionalTax",
-        "specialAllowance",
-        "travelAllowance",
-      ];
+      // The allowlist is the route's declared response schema, not a second list that
+      // can drift from it: `@ResponseSchema(salaryTemplateListSchema)` publishes these
+      // keys, so a projection narrower than this strips a declared field and a
+      // projection wider than it ships an undeclared one.
+      const TEMPLATE_KEYS = Object.keys(salaryTemplateRowSchema.shape).sort();
+      expect(TEMPLATE_KEYS).toContain("updatedAt");
       expect(Object.keys(db.select.mock.calls[0][0] as object).sort()).toEqual(
         TEMPLATE_KEYS,
       );
       const first = result.data[0] ?? {};
       expect(Object.keys(first).sort()).toEqual(TEMPLATE_KEYS);
-      expect(first).not.toHaveProperty("updatedAt");
+      // Nothing outside the declared row reaches the caller.
+      expect(first).not.toHaveProperty("deletedAt");
     });
 
     it("EssService.getOwnFnf projects allowlist without orgId/userId/approvedBy", async () => {

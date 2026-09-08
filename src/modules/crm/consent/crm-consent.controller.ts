@@ -112,18 +112,13 @@ export class CrmPublicConsentController {
   ) {
     const payload = verifyUnsubscribeToken(body.token);
 
-    // Always the same response, valid token or not. Distinguishing them would
-    // turn this endpoint into an oracle for whether a contact exists.
-    if (payload) {
-      await this.consent.record(payload.orgId, {
-        contactId: payload.contactId,
-        channel: payload.channel,
-        status: "OPTED_OUT",
-        source: "UNSUBSCRIBE_LINK",
-        legalBasis: "CONSENT",
-        recordedByUserId: null,
-      });
-    }
+    // Always the same response: valid token or not, live contact or not.
+    // Distinguishing them would turn this endpoint into an oracle for whether a
+    // contact exists. `recordUnsubscribe` is what holds the second half of that
+    // — it absorbs `record`'s existence 404 and logs it, while still letting a
+    // real write failure surface, so a 200 here always means "recorded, or
+    // nothing to record". Never call `record` directly from a public handler.
+    if (payload) await this.consent.recordUnsubscribe(payload);
 
     return { success: true };
   }

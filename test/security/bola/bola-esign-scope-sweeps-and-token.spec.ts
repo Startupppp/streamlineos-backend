@@ -21,6 +21,7 @@
 
 import { ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { signEnvelopes, signRecipients } from "../../../src/db/schema";
 import { matchesPredicate } from "../../../src/test/sql-predicate";
 import type { Db } from "../../../src/db/drizzle.module";
@@ -208,6 +209,13 @@ describe("E2 · the admin sweeps carry a tenant predicate of their own", () => {
     candidateWhere: () => SQL | undefined;
     /** Every `where` handed to an `update()` builder, in call order. */
     updateWheres: SQL[];
+    /**
+     * Every raw statement handed to `db.execute`. The signing-token rotation became one
+     * `UPDATE … FROM (VALUES …)` through `bulkUpdateFromValues` in the N+1 pass, so its
+     * tenant predicate is inside the statement text rather than in a `where()` argument
+     * and has to be read there.
+     */
+    executed: SQL[];
     sendReminder: jest.Mock;
     listForEnvelope: jest.Mock;
   }
@@ -233,6 +241,7 @@ describe("E2 · the admin sweeps carry a tenant predicate of their own", () => {
   function makeSweeps(candidates: (typeof ownEnvelopeRow)[]): SweepHarness {
     let captured: SQL | undefined;
     const updateWheres: SQL[] = [];
+    const executed: SQL[] = [];
     const envelopeFindMany = jest.fn((args: { where?: SQL }) => {
       captured = args.where;
       return Promise.resolve(candidates);
@@ -251,6 +260,10 @@ describe("E2 · the admin sweeps carry a tenant predicate of their own", () => {
         organizationMembers: { findFirst: jest.fn().mockResolvedValue(undefined) },
       },
       update,
+      execute: (statement: SQL) => {
+        executed.push(statement);
+        return Promise.resolve([{ key: 1 }]);
+      },
     } as unknown as Db;
 
     const listForEnvelope = jest.fn().mockResolvedValue([
@@ -272,7 +285,7 @@ describe("E2 · the admin sweeps carry a tenant predicate of their own", () => {
       { listForEnvelope } as never,
       { emitEnvelopeEvent: jest.fn() } as never,
     );
-    return { service, candidateWhere: () => captured, updateWheres, sendReminder, listForEnvelope };
+    return { service, candidateWhere: () => captured, updateWheres, executed, sendReminder, listForEnvelope };
   }
 
   const envelopeColumns = (orgId: string, expiresAt: Date) =>
@@ -309,13 +322,34 @@ describe("E2 · the admin sweeps carry a tenant predicate of their own", () => {
     expect(matchesPredicate(h.updateWheres[1], { sign_envelopes: [envelopeColumns(OTHER_ORG, past)] })).toBe(false);
   });
 
+  /**
+   * REWRITTEN 2026-09-08. The rotation used to be one `update(signRecipients).set().where()`
+   * per recipient and the predicate arrived as a `where()` argument `matchesPredicate` could
+   * evaluate. The N+1 pass replaced it with a single `UPDATE … FROM (VALUES …)` built by
+   * `bulkUpdateFromValues`, which reaches the driver through `db.execute`, so the harness had
+   * no `execute` and the whole sweep died on a TypeError — the tenant question stopped being
+   * asked rather than being answered wrongly. The batched statement is rendered here and read
+   * for the predicate directly: it must carry `sign_recipients.org_id` bound to the caller's
+   * organisation and the envelope's own id, and no other organisation may appear in its
+   * parameters.
+   */
   it("runReminderSweep binds the signing-token rotation to the envelope's own organisation", async () => {
     const h = makeSweeps([ownEnvelopeRow]);
     await h.service.runReminderSweep(CALLER_ORG);
     expect(h.sendReminder).toHaveBeenCalledTimes(1);
-    const rotation = h.updateWheres[0];
-    expect(matchesPredicate(rotation, { sign_recipients: [recipientColumns(CALLER_ORG)] })).toBe(true);
-    expect(matchesPredicate(rotation, { sign_recipients: [recipientColumns(OTHER_ORG)] })).toBe(false);
+
+    const rendered = h.executed.map((statement) => new PgDialect().sqlToQuery(statement));
+    expect(rendered).toHaveLength(1);
+    const rotation = rendered[0];
+    expect(rotation?.sql).toContain(`"sign_recipients"."org_id" = `);
+    expect(rotation?.sql).toContain(`"sign_recipients"."envelope_id" = `);
+    expect(rotation?.params).toContain(CALLER_ORG);
+    expect(rotation?.params).toContain(OWN_ENVELOPE_ID);
+    expect(rotation?.params).not.toContain(OTHER_ORG);
+
+    const reminderCount = h.updateWheres[0];
+    expect(matchesPredicate(reminderCount, { sign_envelopes: [envelopeColumns(CALLER_ORG, future)] })).toBe(true);
+    expect(matchesPredicate(reminderCount, { sign_envelopes: [envelopeColumns(OTHER_ORG, future)] })).toBe(false);
   });
 
   it("both sweeps take orgId as a required argument, so an all-organisations run is unrepresentable", () => {

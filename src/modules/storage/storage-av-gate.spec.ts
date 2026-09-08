@@ -7,14 +7,27 @@ import type { AvScanner } from "../../common/security/av-scan";
 import { MediaTransformRunner } from "./media-transform.runner";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
-import type { TenantTx } from "../../common/tenant/with-tenant";
 
-jest.mock("../../common/tenant/run-in-tenant-transaction", () => ({
-  runInTenantTransaction: (
-    _db: unknown,
-    fn: (tx: TenantTx) => Promise<unknown>,
-  ) => fn({} as TenantTx),
-}));
+/**
+ * The upload path opens tenant transactions — one for the permission and quota
+ * checks, one for the quarantine insert, and one on the transform runner to
+ * release the row. The double opens them for real rather than stubbing the
+ * helper, so a call site that stops opening one is visible here. The callback is
+ * invoked: a bare `jest.fn()` would void every assertion inside it.
+ */
+function buildTenantDb() {
+  const tx = { query: {}, execute: jest.fn().mockResolvedValue([]) };
+  const relocationTargets = {
+    from: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockResolvedValue([]),
+  };
+  return {
+    query: {},
+    select: jest.fn().mockReturnValue(relocationTargets),
+    transaction: jest.fn(async (run: (tx: unknown) => Promise<unknown>) => run(tx)),
+  };
+}
 
 const JPEG_MAGIC = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0, 0, 0, 0, 0]);
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0, 0, 0, 0, 0]);
@@ -80,7 +93,7 @@ describe("StorageController — malware scan gate", () => {
     softDelete: jest.Mock;
   };
   let transforms: MediaTransformRunner;
-  let mockDb: { query: Record<string, unknown> };
+  let mockDb: ReturnType<typeof buildTenantDb>;
 
   beforeEach(() => {
     jest.resetAllMocks();
@@ -106,7 +119,7 @@ describe("StorageController — malware scan gate", () => {
       softDelete: jest.fn(),
     };
     transforms = new MediaTransformRunner();
-    mockDb = { query: {} };
+    mockDb = buildTenantDb();
 
     controller = new StorageController(
       mockDb as never,

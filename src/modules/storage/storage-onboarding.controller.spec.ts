@@ -9,15 +9,14 @@ import type { AvScanner } from "../../common/security/av-scan";
 import { MediaTransformRunner } from "./media-transform.runner";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
-import * as tenantContext from "../../common/tenant/tenant-context";
 
-jest.mock("../../common/tenant/tenant-context", () => ({
-  registerAfterCommit: jest.fn().mockReturnValue(false),
-}));
-
-const mockRegisterAfterCommit = tenantContext.registerAfterCommit as jest.MockedFunction<
-  typeof tenantContext.registerAfterCommit
->;
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
 
 function makeUser(orgId = "org-1"): CurrentUserContext {
   return {
@@ -52,6 +51,7 @@ function buildTxMock(onboardingStepResult: object | null = null) {
   return {
     insert: jest.fn().mockReturnValue(insertBuilder),
     update: jest.fn().mockReturnValue(updateBuilder),
+    execute: jest.fn().mockResolvedValue([]),
     query: {
       onboardingSteps: {
         findFirst: jest.fn().mockResolvedValue(onboardingStepResult),
@@ -60,19 +60,43 @@ function buildTxMock(onboardingStepResult: object | null = null) {
   };
 }
 
-describe("OnboardingDocumentsController.upload — connection decoupling", () => {
+/**
+ * `withTenant` reads the active relocation targets off the pool handle before it
+ * opens the transaction, so the double answers that read with an empty set
+ * rather than throwing inside a detached promise.
+ */
+function buildRelocationSelect() {
+  const targets = {
+    from: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockResolvedValue([]),
+  };
+  return jest.fn().mockReturnValue(targets);
+}
+
+/**
+ * The blob upload used to be deferred with `registerAfterCommit`; it is now
+ * handed to `MediaTransformRunner`, which bounds concurrency and compensates a
+ * failure. The guarantees the hook provided are unchanged and are what is
+ * asserted here — the row is written first, the caller never waits on the
+ * object write, and a failed write deletes the object it half-produced. They
+ * are observed through the collaborators rather than through the mechanism, so
+ * the next replacement does not silently pass.
+ */
+describe("OnboardingDocumentsController.upload — the object write leaves the request thread", () => {
   const callOrder: string[] = [];
+  let codec: { promise: Promise<void>; resolve: () => void };
 
   let mockStorage: jest.Mocked<Pick<StorageService, "isConfigured" | "planUpload" | "compressToKey" | "deleteFileIfPresent">>;
   let mockAvScanner: jest.Mocked<Pick<AvScanner, "scan">>;
-  let mockDb: { transaction: jest.Mock };
+  let mockDb: { transaction: jest.Mock; select: jest.Mock };
   let transforms: MediaTransformRunner;
   let controller: OnboardingDocumentsController;
 
   beforeEach(() => {
     callOrder.length = 0;
-    mockRegisterAfterCommit.mockClear();
-    mockRegisterAfterCommit.mockReturnValue(false);
+    codec = deferred();
+    codec.resolve();
 
     mockStorage = {
       isConfigured: jest.fn().mockReturnValue(true),
@@ -81,6 +105,7 @@ describe("OnboardingDocumentsController.upload — connection decoupling", () =>
         plannedMimeType: "application/pdf",
       }),
       compressToKey: jest.fn().mockImplementation(async () => {
+        await codec.promise;
         callOrder.push("upload");
         return { size: 10, mimeType: "application/pdf", sha256: "aa" };
       }),
@@ -94,6 +119,7 @@ describe("OnboardingDocumentsController.upload — connection decoupling", () =>
     transforms = new MediaTransformRunner();
     const tx = buildTxMock();
     mockDb = {
+      select: buildRelocationSelect(),
       transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
         const result = await fn(tx);
         callOrder.push("db-committed");
@@ -109,42 +135,39 @@ describe("OnboardingDocumentsController.upload — connection decoupling", () =>
     );
   });
 
-  it("commits the database row before the upload is attempted when no ambient tenant context exists", async () => {
-    mockRegisterAfterCommit.mockReturnValue(false);
-
+  it("commits the database row before the object is written", async () => {
     await controller.upload(makeFile(), "ID_PROOF", makeUser());
     await transforms.drain();
 
+    expect(mockDb.transaction).toHaveBeenCalledTimes(1);
     expect(callOrder).toEqual(["db-committed", "upload"]);
   });
 
-  it("defers the upload to after the transaction when an ambient context is present", async () => {
-    let capturedHook: (() => Promise<unknown>) | null = null;
-    mockRegisterAfterCommit.mockImplementation((hook) => {
-      capturedHook = hook;
-      return true;
-    });
-
-    const result = await controller.upload(makeFile(), "ID_PROOF", makeUser());
-
-    expect(callOrder).toEqual(["db-committed"]);
-    expect(capturedHook).not.toBeNull();
-    expect(mockStorage.compressToKey).not.toHaveBeenCalled();
-
-    await capturedHook!();
-    await transforms.drain();
-
-    expect(callOrder).toEqual(["db-committed", "upload"]);
-    expect(result.url).toBe("onboarding/uuid-id-doc.pdf");
-  });
-
-  it("returns the pre-generated tenant-private key immediately without waiting for the upload", async () => {
-    mockRegisterAfterCommit.mockReturnValue(true);
+  it("returns the pre-generated tenant-private key without waiting for the object write", async () => {
+    codec = deferred();
 
     const result = await controller.upload(makeFile(), "ID_PROOF", makeUser());
 
     expect(result).toEqual({ url: "onboarding/uuid-id-doc.pdf" });
-    expect(mockStorage.compressToKey).not.toHaveBeenCalled();
+    expect(callOrder).toEqual(["db-committed"]);
+
+    codec.resolve();
+    await transforms.drain();
+
+    expect(callOrder).toEqual(["db-committed", "upload"]);
+  });
+
+  it("deletes the object when the write fails, so a half-written blob never outlives the attempt", async () => {
+    mockStorage.compressToKey.mockRejectedValue(new Error("sharp died"));
+
+    const result = await controller.upload(makeFile(), "ID_PROOF", makeUser());
+    await transforms.drain();
+
+    expect(result).toEqual({ url: "onboarding/uuid-id-doc.pdf" });
+    expect(mockStorage.deleteFileIfPresent).toHaveBeenCalledWith(
+      "org-1",
+      "onboarding/uuid-id-doc.pdf",
+    );
   });
 
   it("rejects when storage is not configured", async () => {
@@ -180,14 +203,11 @@ describe("OnboardingDocumentsController.upload — connection decoupling", () =>
 describe("OnboardingDocumentsController.upload — AV scan gate", () => {
   let mockStorage: jest.Mocked<Pick<StorageService, "isConfigured" | "planUpload" | "compressToKey" | "deleteFileIfPresent">>;
   let mockAvScanner: jest.Mocked<Pick<AvScanner, "scan">>;
-  let mockDb: { transaction: jest.Mock };
+  let mockDb: { transaction: jest.Mock; select: jest.Mock };
   let transforms: MediaTransformRunner;
   let controller: OnboardingDocumentsController;
 
   beforeEach(() => {
-    mockRegisterAfterCommit.mockClear();
-    mockRegisterAfterCommit.mockReturnValue(false);
-
     mockStorage = {
       isConfigured: jest.fn().mockReturnValue(true),
       planUpload: jest.fn().mockResolvedValue({
@@ -203,6 +223,7 @@ describe("OnboardingDocumentsController.upload — AV scan gate", () => {
     transforms = new MediaTransformRunner();
     const tx = buildTxMock();
     mockDb = {
+      select: buildRelocationSelect(),
       transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
     };
 

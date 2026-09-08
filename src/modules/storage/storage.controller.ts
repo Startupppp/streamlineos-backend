@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   Get,
   Inject,
+  Logger,
   NotFoundException,
   PayloadTooLargeException,
   Post,
@@ -26,7 +27,7 @@ import { AuthorizedInService } from "../../common/auth/authorized-in-service.dec
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AuditService } from "../../common/audit/audit.service";
 import { MultipartAction } from "../../common/openapi/zod-operation-contracts";
-import { runInNewTenantTransaction } from "../../common/tenant";
+import { runInNewTenantTransaction, runOutsideTenantContext } from "../../common/tenant";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -101,6 +102,8 @@ const GENERIC_SENSITIVE_UPLOAD_PERMISSIONS: Readonly<
 @Controller("storage")
 @UseGuards(JwtAuthGuard)
 export class StorageController {
+  private readonly logger = new Logger(StorageController.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly storage: StorageService,
@@ -200,13 +203,22 @@ export class StorageController {
         name: "storage.upload.compress",
         orgId,
         run: () =>
-          this.publishUpload({ orgId, userId, quarantineId, key, body, originalName, originalMimeType }),
-        compensate: () => this.retractUpload(orgId, quarantineId, key),
+          runOutsideTenantContext(() =>
+            this.publishUpload({ orgId, userId, quarantineId, key, body, originalName, originalMimeType }),
+          ),
+        compensate: () =>
+          runOutsideTenantContext(() => this.retractUpload(orgId, quarantineId, key)),
       });
       if (!accepted)
-        void runInNewTenantTransaction(this.db, orgId, () =>
+        await runOutsideTenantContext(() =>
           this.retractUpload(orgId, quarantineId, key),
-        );
+        ).catch((error: unknown) => {
+          this.logger.error("Upload retraction failed after a refused transform", {
+            orgId,
+            quarantineId,
+            reason: error instanceof Error ? error.message : String(error),
+          });
+        });
     };
 
     await enqueue();
@@ -227,6 +239,15 @@ export class StorageController {
    * reachable until the row that gates it says clean, and the measured size and
    * type replace the planned ones so the quota is accounted on the bytes that
    * were stored rather than the bytes that arrived.
+   *
+   * The release opens its OWN tenant transaction and the object write stays
+   * outside it. This runs on the transform runner, after the request that
+   * submitted it has committed and returned, so the ambient handle is dead and
+   * `file_quarantine_records` carries an RLS policy that fails closed without
+   * the GUC — a release written on the request's context never lands, leaving a
+   * scanned, stored object blocked forever. Holding the transaction across
+   * `compressToKey` would be the opposite mistake: a pooled connection pinned
+   * for the length of an object-store outage.
    */
   private async publishUpload(job: {
     orgId: string;
@@ -245,11 +266,13 @@ export class StorageController {
       job.originalMimeType,
     );
 
-    await this.quarantine.recordMeasuredObject(job.quarantineId, {
-      fileSizeBytes: stored.size,
-      mimeType: stored.mimeType,
+    await runInNewTenantTransaction(this.db, job.orgId, async () => {
+      await this.quarantine.recordMeasuredObject(job.quarantineId, {
+        fileSizeBytes: stored.size,
+        mimeType: stored.mimeType,
+      });
+      await this.quarantine.markClean(job.quarantineId);
     });
-    await this.quarantine.markClean(job.quarantineId);
 
     this.audit.log({
       action: "file.upload",
@@ -262,16 +285,22 @@ export class StorageController {
   /**
    * The object goes first. `isKeyBlocked` ignores a soft-deleted row, so
    * dropping the row before the bytes are gone would publish exactly the
-   * half-written file this path exists to retract.
+   * half-written file this path exists to retract. Each row write opens its own
+   * tenant transaction for the same reason `publishUpload` does, and the two
+   * stay separate so the object delete never runs inside one.
    */
   private async retractUpload(
     orgId: string,
     quarantineId: string,
     key: string,
   ): Promise<void> {
-    await this.quarantine.markError(quarantineId);
+    await runInNewTenantTransaction(this.db, orgId, () =>
+      this.quarantine.markError(quarantineId),
+    );
     await this.storage.deleteFileIfPresent(orgId, key).catch(() => false);
-    await this.quarantine.softDelete(quarantineId);
+    await runInNewTenantTransaction(this.db, orgId, () =>
+      this.quarantine.softDelete(quarantineId),
+    );
   }
 
   @Get("download")

@@ -406,7 +406,7 @@ describe("Magic link — a one-time credential, stored only as a hash", () => {
       "utf8",
     );
     expect(service).toMatch(/const tokenHash = hashToken\(/);
-    expect(service).toMatch(/tokenHash,\n/);
+    expect(service).toMatch(/tokenHash,\r?\n/);
     expect(service).not.toMatch(/values\(\{[^}]*\btoken:\s*(?:rawToken|token)\b/);
   });
 });

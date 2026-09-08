@@ -150,6 +150,36 @@ function makeFile(): Express.Multer.File {
   } as unknown as Express.Multer.File;
 }
 
+/**
+ * `upload` runs its permission, quota and quarantine work inside
+ * `runInTenantTransaction`, so the double has to be able to open one. The
+ * callback is invoked rather than stubbed — a bare `jest.fn()` here would
+ * silently void every assertion that depends on the work inside it.
+ */
+function buildTenantDb() {
+  const state = { open: 0, opened: 0 };
+  const tx = { query: {}, execute: jest.fn().mockResolvedValue([]) };
+  const relocationTargets = {
+    from: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockResolvedValue([]),
+  };
+  return {
+    state,
+    query: {},
+    select: jest.fn().mockReturnValue(relocationTargets),
+    transaction: jest.fn(async (run: (tx: unknown) => Promise<unknown>) => {
+      state.open++;
+      state.opened++;
+      try {
+        return await run(tx);
+      } finally {
+        state.open--;
+      }
+    }),
+  };
+}
+
 function buildUploadController(
   runner: MediaTransformRunner,
   storageOverrides: Record<string, unknown> = {},
@@ -157,6 +187,7 @@ function buildUploadController(
   controller: StorageController;
   storage: Record<string, jest.Mock>;
   quarantine: Record<string, jest.Mock>;
+  db: ReturnType<typeof buildTenantDb>;
 } {
   const storage = {
     isConfigured: jest.fn().mockReturnValue(true),
@@ -183,8 +214,9 @@ function buildUploadController(
     getTotalUsageBytesForUser: jest.fn().mockResolvedValue(0),
   } as unknown as Record<string, jest.Mock>;
 
+  const db = buildTenantDb();
   const controller = new StorageController(
-    { query: {} } as never,
+    db as never,
     storage as unknown as StorageService,
     { log: jest.fn() } as unknown as AuditService,
     { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService,
@@ -193,7 +225,7 @@ function buildUploadController(
     runner,
   );
 
-  return { controller, storage, quarantine };
+  return { controller, storage, quarantine, db };
 }
 
 describe("POST /storage/upload — no transform runs on the request thread", () => {
@@ -265,6 +297,41 @@ describe("POST /storage/upload — no transform runs on the request thread", () 
     expect(order).toEqual(["object-deleted", "row-soft-deleted"]);
     expect(quarantine.markClean).not.toHaveBeenCalled();
     expect(storage.deleteFileIfPresent).toHaveBeenCalledWith("org-1", "org-1/uploads/uuid-photo.webp");
+  });
+
+  /**
+   * The transform is submitted from inside the request's tenant transaction, so
+   * the job inherits an AsyncLocalStorage context whose handle is already
+   * committed by the time the codec returns. `file_quarantine_records` is
+   * RLS-guarded and fails closed without the GUC, so a release written on that
+   * dead handle never lands and the stored, scanned object stays blocked
+   * forever. The release must therefore open its own transaction, after the
+   * request's have closed — and the object write must stay outside it.
+   */
+  it("releases the quarantine row in a tenant transaction of its own, opened after the request's", async () => {
+    const runner = new MediaTransformRunner();
+    const { controller, db, quarantine, storage } = buildUploadController(runner);
+    let openAtRelease = -1;
+    let openedAtRelease = 0;
+    let openAtObjectWrite = -1;
+    storage.compressToKey.mockImplementation(async () => {
+      openAtObjectWrite = db.state.open;
+      return { size: 7, mimeType: "image/webp", sha256: "stored" };
+    });
+    quarantine.markClean.mockImplementation(async () => {
+      openAtRelease = db.state.open;
+      openedAtRelease = db.state.opened;
+    });
+
+    await controller.upload(makeFile(), "uploads", makeUser());
+    const openedAtResponse = db.state.opened;
+    expect(db.state.open).toBe(0);
+
+    await runner.drain();
+
+    expect(openAtRelease).toBe(1);
+    expect(openedAtRelease).toBeGreaterThan(openedAtResponse);
+    expect(openAtObjectWrite).toBe(0);
   });
 
   it("refuses the upload with 503 when the runner is saturated, before scanning or writing a row", async () => {

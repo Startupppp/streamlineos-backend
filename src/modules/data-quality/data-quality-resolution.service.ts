@@ -1,36 +1,28 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
-import { dataQualityFindings, dataQualityResolutions } from "../../db/schema";
 import type { ReversibilityClass } from "../../db/schema/crm/autonomous-decisions";
 import { PartyMergeService } from "../party/party-merge.service";
 import { DataQualityQueueService } from "./data-quality-queue.service";
 import { DataQualityHealthService } from "./dataset-health.service";
-import { refuseIfContradicted } from "./merge-guard";
-import { withSavepoint } from "./savepoint";
 import { strictestReversibility } from "./finding-vocabulary";
 import { planResolutionReversal } from "./resolution-reversal";
 import {
-  MAX_BULK,
-  type ResolveFindingsInput,
-  type ReverseResolutionInput,
-} from "./dto/data-quality.schemas";
-
-/** Enough failures for a person to see the pattern; not a second copy of the queue. */
-const MAX_RECORDED_FAILURES = 50;
-
-interface ClaimedFinding {
-  findingId: string;
-  proposedAction: string;
-  partyId: string;
-  relatedPartyId: string | null;
-}
-
-interface ExecutionFailure {
-  findingId: string;
-  error: string;
-}
+  MAX_RECORDED_FAILURES,
+  claimReversal,
+  loadDecision,
+  openDecision,
+  recordDecisionOutcome,
+  recordReversedCount,
+} from "./data-quality-decision-record";
+import {
+  assertFindingsInOrg,
+  claimFindings,
+  listClosedForResolution,
+  reopenFindings,
+} from "./data-quality-finding-claim";
+import { applyAll, type ExecutionFailure } from "./data-quality-remediation";
+import { type ResolveFindingsInput, type ReverseResolutionInput } from "./dto/data-quality.schemas";
 
 /**
  * Deciding about many findings at once, and taking that decision back.
@@ -57,19 +49,16 @@ export class DataQualityResolutionService {
     private readonly health: DataQualityHealthService,
   ) {}
 
-  // ── One decision ──────────────────────────────────────────────────────────
-
   /**
    * Resolve a selection of findings as a single decision.
    *
-   * The claim is a conditional set-based update: `status = 'open'` sits in its
-   * predicate, so two people deciding about overlapping selections at the same
-   * instant each take the rows the other has not, and neither fails. A read-then-
-   * write would let both believe they had all four hundred.
+   * The claim is a conditional set-based update, so two people deciding about
+   * overlapping selections at the same instant each take the rows the other has
+   * not, and neither fails.
    */
   async resolve(organizationId: string, userId: string, input: ResolveFindingsInput) {
     if (input.selection.kind === "ids")
-      await this.assertFindingsInOrg(organizationId, input.selection.findingIds);
+      await assertFindingsInOrg(this.db, organizationId, input.selection.findingIds);
     const candidates = await this.queue.selectCandidates(organizationId, input.selection, "open");
 
     /**
@@ -102,52 +91,37 @@ export class DataQualityResolutionService {
         ? "instant"
         : strictestReversibility(candidates.map((row) => row.reversibility));
 
-    const [resolution] = await this.db
-      .insert(dataQualityResolutions)
-      .values({
-        organizationId,
-        action: input.action,
-        selectionKind: input.selection.kind,
-        groupKey: input.selection.kind === "group" ? input.selection.groupKey : null,
-        reversibility,
-        reason: input.reason ?? null,
-        attemptedCount: candidates.length,
-        // Filled in once the executors have run; the row has to exist first
-        // because every claimed finding carries a foreign key to it.
-        resolvedCount: 0,
-        decidedByUserId: userId,
-      })
-      .returning({ resolutionId: dataQualityResolutions.resolutionId });
+    const resolutionId = await openDecision(this.db, {
+      organizationId,
+      action: input.action,
+      selectionKind: input.selection.kind,
+      groupKey: input.selection.kind === "group" ? input.selection.groupKey : null,
+      reversibility,
+      reason: input.reason ?? null,
+      attemptedCount: candidates.length,
+      decidedByUserId: userId,
+    });
 
-    if (!resolution) throw new ConflictException("The decision could not be recorded");
-
-    const claimed = await this.claim(
+    const claimed = await claimFindings(this.db, {
       organizationId,
       userId,
-      resolution.resolutionId,
-      candidates.map((row) => row.findingId),
-      input.action === "dismiss" ? "dismissed" : "resolved",
-    );
+      resolutionId,
+      findingIds: candidates.map((row) => row.findingId),
+      status: input.action === "dismiss" ? "dismissed" : "resolved",
+    });
 
+    const remediation = { db: this.db, merges: this.merges, logger: this.logger };
     const failures =
-      input.action === "apply" ? await this.applyAll(organizationId, userId, claimed) : [];
+      input.action === "apply" ? await applyAll(remediation, organizationId, userId, claimed) : [];
 
     const failedIds = new Set(failures.map((failure) => failure.findingId));
     const resolvedCount = claimed.length - failedIds.size;
 
-    await this.db
-      .update(dataQualityResolutions)
-      .set({
-        resolvedCount,
-        failedCount: failedIds.size,
-        failures: failures.length > 0 ? failures.slice(0, MAX_RECORDED_FAILURES) : null,
-      })
-      .where(
-        and(
-          eq(dataQualityResolutions.organizationId, organizationId),
-          eq(dataQualityResolutions.resolutionId, resolution.resolutionId),
-        ),
-      );
+    await recordDecisionOutcome(this.db, organizationId, resolutionId, {
+      resolvedCount,
+      failedCount: failedIds.size,
+      failures: failures.length > 0 ? failures.slice(0, MAX_RECORDED_FAILURES) : null,
+    });
 
     /**
      * The dataset-health number, re-read now that the queue is shorter.
@@ -160,7 +134,7 @@ export class DataQualityResolutionService {
     await this.health.captureQuietly(organizationId);
 
     return {
-      resolutionId: resolution.resolutionId,
+      resolutionId,
       action: input.action,
       reversibility,
       attemptedCount: candidates.length,
@@ -178,187 +152,6 @@ export class DataQualityResolutionService {
     };
   }
 
-  /** One statement, whatever the size of the selection. */
-  /** Membership is checked before the status filter, so a foreign id is not a skip. */
-  private async assertFindingsInOrg(organizationId: string, findingIds: readonly string[]) {
-    const requestedIds = [...new Set(findingIds)];
-    const owned = await this.db
-      .select({ findingId: dataQualityFindings.findingId })
-      .from(dataQualityFindings)
-      .where(
-        and(
-          eq(dataQualityFindings.organizationId, organizationId),
-          inArray(dataQualityFindings.findingId, requestedIds),
-        ),
-      )
-      .limit(requestedIds.length);
-    if (owned.length !== requestedIds.length)
-      throw new NotFoundException("No open findings matched this selection");
-  }
-
-  private async claim(
-    organizationId: string,
-    userId: string,
-    resolutionId: string,
-    findingIds: string[],
-    status: "resolved" | "dismissed",
-  ): Promise<ClaimedFinding[]> {
-    if (findingIds.length === 0) return [];
-
-    return this.db
-      .update(dataQualityFindings)
-      .set({
-        status,
-        resolvedAt: new Date(),
-        resolvedByUserId: userId,
-        resolutionId,
-        lastError: null,
-      })
-      .where(
-        and(
-          eq(dataQualityFindings.organizationId, organizationId),
-          eq(dataQualityFindings.status, "open"),
-          inArray(dataQualityFindings.findingId, findingIds),
-        ),
-      )
-      .returning({
-        findingId: dataQualityFindings.findingId,
-        proposedAction: dataQualityFindings.proposedAction,
-        partyId: dataQualityFindings.partyId,
-        relatedPartyId: dataQualityFindings.relatedPartyId,
-      });
-  }
-
-  // ── Executors ─────────────────────────────────────────────────────────────
-
-  /**
-   * Perform what each claimed finding proposed.
-   *
-   * `none` is the common case and costs nothing: most findings exist so a person
-   * looks at a record, and there is no safe automatic remedy to run. Only
-   * `merge-parties` executes, and merging is irreducibly pairwise — there is no
-   * set-based statement that merges four hundred pairs — so it is the one thing
-   * here that iterates, and every iteration is isolated.
-   */
-  private async applyAll(
-    organizationId: string,
-    userId: string,
-    claimed: readonly ClaimedFinding[],
-  ): Promise<ExecutionFailure[]> {
-    const failures: ExecutionFailure[] = [];
-    const undoTokens: Record<string, Record<string, unknown>> = {};
-
-    for (const finding of claimed) {
-      if (finding.proposedAction === "none") continue;
-
-      try {
-        undoTokens[finding.findingId] = await withSavepoint(() =>
-          this.execute(organizationId, userId, finding),
-        );
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        failures.push({ findingId: finding.findingId, error: message });
-        this.logger.warn(`finding ${finding.findingId} could not be applied: ${message}`);
-        await this.reopenFailed(organizationId, finding.findingId, message);
-      }
-    }
-
-    await this.recordUndoTokens(organizationId, undoTokens);
-
-    return failures;
-  }
-
-  /**
-   * The tokens of a whole batch, in one statement.
-   *
-   * Every merge leaves a different token, which is what used to make this one
-   * UPDATE per applied finding. The map rides as a single jsonb bind parameter
-   * and each row picks its own entry out of it by key, so four hundred merges
-   * record four hundred tokens in one round trip.
-   */
-  private async recordUndoTokens(
-    organizationId: string,
-    undoTokens: Record<string, Record<string, unknown>>,
-  ): Promise<void> {
-    const findingIds = Object.keys(undoTokens);
-    if (findingIds.length === 0) return;
-
-    await this.db
-      .update(dataQualityFindings)
-      .set({
-        undoToken: sql`${JSON.stringify(undoTokens)}::jsonb -> ${dataQualityFindings.findingId}`,
-      })
-      .where(
-        and(
-          eq(dataQualityFindings.organizationId, organizationId),
-          inArray(dataQualityFindings.findingId, findingIds),
-        ),
-      );
-  }
-
-  private async execute(
-    organizationId: string,
-    userId: string,
-    finding: ClaimedFinding,
-  ): Promise<Record<string, unknown>> {
-    if (finding.proposedAction !== "merge-parties")
-      throw new Error(`No executor for ${finding.proposedAction}`);
-
-    if (!finding.relatedPartyId)
-      throw new Error("A merge needs two parties and this finding names one");
-
-    await refuseIfContradicted(this.db, organizationId, finding.partyId, finding.relatedPartyId);
-
-    const outcome = await this.merges.merge(organizationId, {
-      leftPartyId: finding.partyId,
-      rightPartyId: finding.relatedPartyId,
-      // A human confirmed this one, which is what separates it from the merges
-      // the detector was confident enough to make on its own.
-      decidedBy: "USER",
-      userId,
-    });
-
-    /**
-     * Captured now, not reconstructed later. `party_merges` holds both rows
-     * verbatim, and this is the pointer an undo replays — deriving it afterwards
-     * from the surviving record cannot tell a field the merge filled from one a
-     * person edited since.
-     */
-    return {
-      partyMergeId: outcome.partyMergeId,
-      survivorPartyId: outcome.survivorPartyId,
-      mergedPartyId: outcome.mergedPartyId,
-    };
-  }
-
-  /**
-   * Put one failed item back in the queue, carrying why.
-   *
-   * The other items in the decision stay resolved. That asymmetry is the point
-   * of the savepoint: a bulk decision is not all-or-nothing, because insisting
-   * it were would mean one unmergeable pair discarding three hundred and
-   * ninety-nine successful merges.
-   */
-  private async reopenFailed(organizationId: string, findingId: string, message: string) {
-    await this.db
-      .update(dataQualityFindings)
-      .set({
-        status: "open",
-        resolvedAt: null,
-        resolvedByUserId: null,
-        lastError: message.slice(0, 500),
-        attemptCount: sql`${dataQualityFindings.attemptCount} + 1`,
-      })
-      .where(
-        and(
-          eq(dataQualityFindings.organizationId, organizationId),
-          eq(dataQualityFindings.findingId, findingId),
-        ),
-      );
-  }
-
-  // ── Taking it back ────────────────────────────────────────────────────────
-
   /**
    * Undo one decision, if its reversibility class allows it.
    *
@@ -372,17 +165,7 @@ export class DataQualityResolutionService {
     resolutionId: string,
     input: ReverseResolutionInput,
   ) {
-    const [resolution] = await this.db
-      .select()
-      .from(dataQualityResolutions)
-      .where(
-        and(
-          eq(dataQualityResolutions.organizationId, organizationId),
-          eq(dataQualityResolutions.resolutionId, resolutionId),
-        ),
-      )
-      .limit(1);
-
+    const resolution = await loadDecision(this.db, organizationId, resolutionId);
     if (!resolution) throw new NotFoundException("Decision not found");
 
     const plan = planResolutionReversal(
@@ -398,46 +181,17 @@ export class DataQualityResolutionService {
 
     if (!plan.ok) throw new ConflictException(plan.explanation);
 
-    /**
-     * Claim the reversal before performing it. `reversed_at IS NULL` in the
-     * predicate is what makes two people clicking undo at once safe: the second
-     * update matches no row and this throws, rather than both proceeding and the
-     * four hundred merges being reverted twice.
-     */
-    const claimed = await this.db
-      .update(dataQualityResolutions)
-      .set({
-        reversedAt: new Date(),
-        reversedByUserId: userId,
-        reversedReason: input.reason ?? null,
-      })
-      .where(
-        and(
-          eq(dataQualityResolutions.organizationId, organizationId),
-          eq(dataQualityResolutions.resolutionId, resolutionId),
-          isNull(dataQualityResolutions.reversedAt),
-        ),
-      )
-      .returning({ resolutionId: dataQualityResolutions.resolutionId });
-
-    if (claimed.length === 0)
+    const claimed = await claimReversal(
+      this.db,
+      organizationId,
+      resolutionId,
+      userId,
+      input.reason ?? null,
+    );
+    if (!claimed)
       throw new ConflictException("This decision was reversed by someone else a moment ago.");
 
-    const closed = await this.db
-      .select({
-        findingId: dataQualityFindings.findingId,
-        undoToken: dataQualityFindings.undoToken,
-      })
-      .from(dataQualityFindings)
-      .where(
-        and(
-          eq(dataQualityFindings.organizationId, organizationId),
-          eq(dataQualityFindings.resolutionId, resolutionId),
-          sql`${dataQualityFindings.status} <> 'open'`,
-        ),
-      )
-      .orderBy(asc(dataQualityFindings.findingId))
-      .limit(MAX_BULK);
+    const closed = await listClosedForResolution(this.db, organizationId, resolutionId);
 
     const reopenable: string[] = [];
     const failures: ExecutionFailure[] = [];
@@ -465,17 +219,9 @@ export class DataQualityResolutionService {
      * restored when it was not — and the next sweep would then file a second
      * finding for a problem that is still fixed.
      */
-    const reopened = await this.reopen(organizationId, reopenable);
+    const reopened = await reopenFindings(this.db, organizationId, reopenable);
 
-    await this.db
-      .update(dataQualityResolutions)
-      .set({ reversedCount: reopened })
-      .where(
-        and(
-          eq(dataQualityResolutions.organizationId, organizationId),
-          eq(dataQualityResolutions.resolutionId, resolutionId),
-        ),
-      );
+    await recordReversedCount(this.db, organizationId, resolutionId, reopened);
 
     // An undo puts findings back in the queue, so the number goes back up. A
     // trend that only ever recorded improvements would be a graph of decisions
@@ -489,34 +235,5 @@ export class DataQualityResolutionService {
       failedCount: failures.length,
       failures: failures.slice(0, MAX_RECORDED_FAILURES),
     };
-  }
-
-  /**
-   * One statement, again.
-   *
-   * `resolutionId` is deliberately left in place: a reopened finding still
-   * points at the last decision taken about it, which is how "what did that
-   * reversal actually cover" stays answerable afterwards.
-   */
-  private async reopen(organizationId: string, findingIds: string[]): Promise<number> {
-    if (findingIds.length === 0) return 0;
-
-    const rows = await this.db
-      .update(dataQualityFindings)
-      .set({
-        status: "open",
-        resolvedAt: null,
-        resolvedByUserId: null,
-        undoToken: null,
-      })
-      .where(
-        and(
-          eq(dataQualityFindings.organizationId, organizationId),
-          inArray(dataQualityFindings.findingId, findingIds),
-        ),
-      )
-      .returning({ findingId: dataQualityFindings.findingId });
-
-    return rows.length;
   }
 }

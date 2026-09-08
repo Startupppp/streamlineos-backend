@@ -40,9 +40,14 @@ const ORG = "org-1";
 // The attachment read gained an ORDER BY, so a double that resolves at .where() breaks on
 // the query's shape rather than on its behaviour. This chain is thenable AND chainable.
 function attachmentDb(rows: Array<{ fileKey: string }>) {
-  const chain = {
-    orderBy: jest.fn(() => chain),
-    limit: jest.fn(() => chain),
+  interface AttachmentChain {
+    orderBy: jest.Mock<AttachmentChain, []>;
+    limit: jest.Mock<AttachmentChain, [number]>;
+    then: <R>(resolve: (value: Array<{ fileKey: string }>) => R) => Promise<R>;
+  }
+  const chain: AttachmentChain = {
+    orderBy: jest.fn((): AttachmentChain => chain),
+    limit: jest.fn((_pageSize: number): AttachmentChain => chain),
     then: <R,>(resolve: (value: Array<{ fileKey: string }>) => R) =>
       Promise.resolve(rows).then(resolve),
   };

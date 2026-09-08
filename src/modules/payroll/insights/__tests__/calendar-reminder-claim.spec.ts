@@ -28,12 +28,16 @@ function createFakeDb(options: FakeDbOptions) {
         }),
       }),
     })),
+    // `forEachOrg` enumerates organizations in keyset pages, so the chain ends at
+    // `.limit(ORG_ENUM_PAGE)`; an empty first page ends the sweep after one select.
     select: jest.fn().mockImplementation(() => {
       selectCalls.push(1);
       return {
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
-            orderBy: jest.fn().mockResolvedValue([]),
+            orderBy: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue([]),
+            }),
           }),
         }),
       };
@@ -95,10 +99,14 @@ describe("PayrollCalendarReminderScheduler markFinished error handling", () => {
           }),
         }),
       })),
+      // The sweep fails where it awaits — the last link in the enumeration chain.
+      // Rejecting one link earlier left an unhandled rejection that killed the worker.
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
-            orderBy: jest.fn().mockRejectedValue(runError),
+            orderBy: jest.fn().mockReturnValue({
+              limit: jest.fn().mockRejectedValue(runError),
+            }),
           }),
         }),
       }),

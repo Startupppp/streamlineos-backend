@@ -47,7 +47,7 @@ function createHarness(permissionEntries: Array<[string, DataScope]> = []) {
   const leaves = { calendar: methodMock() };
   const wfh = { pending: methodMock() };
   const probation = { listDueForReview: methodMock() };
-  const exit = { list: methodMock() };
+  const exit = { hubDigest: methodMock() };
   const documents = { stats: methodMock() };
   const holidays = { listByYear: methodMock() };
   const attendance = { teamStatus: methodMock() };
@@ -112,7 +112,7 @@ describe("HrHubService", () => {
     expect(harness.leaves.calendar).not.toHaveBeenCalled();
     expect(harness.wfh.pending).not.toHaveBeenCalled();
     expect(harness.probation.listDueForReview).not.toHaveBeenCalled();
-    expect(harness.exit.list).not.toHaveBeenCalled();
+    expect(harness.exit.hubDigest).not.toHaveBeenCalled();
     expect(harness.documents.stats).not.toHaveBeenCalled();
     expect(harness.holidays.listByYear).not.toHaveBeenCalled();
     expect(harness.attendance.teamStatus).not.toHaveBeenCalled();
@@ -174,12 +174,11 @@ describe("HrHubService", () => {
     expect(harness.attendance.teamStatus).toHaveBeenCalledWith(USER, {
       limit: 1,
     });
-    expect(harness.exit.list).toHaveBeenCalledWith(
-      "org-1",
-      "user-1",
-      true,
-      { page: 1, limit: 5 },
-    );
+    // The hub asks the exit module for one digest instead of a list plus a count,
+    // so the page size moved inside `hubDigest`. The tenant, the actor and the
+    // admin standing the section is read under are still the hub's to pass.
+    expect(harness.exit.hubDigest).toHaveBeenCalledTimes(1);
+    expect(harness.exit.hubDigest).toHaveBeenCalledWith("org-1", "user-1", true);
     expect(harness.opsInbox.getOpsInbox).toHaveBeenCalledWith(
       "org-1",
       "user-1",
