@@ -26,6 +26,21 @@ the queue reopened on that one clause. Five tickets, GitHub #56–#60.
 seeded spec broke. (53/566 against the previous pass's 52/562 — the extra suite is
 `idempotent-create-replay`.) Frontend: 31 `hooks/api` suites / 363 tests EXIT=0.
 
+### The RF run found what no ratchet could
+
+Two ratchets pinned the RF surface structurally and both were green. Neither could
+see that the screen was unusable: the queue asked the API for a cycle-count status
+that does not exist, got a 400, and showed "Could not load your tasks" over two
+sources that had returned 200. A route-reachability check cannot find that, and a
+type check could not either — the request filter was `string` while the response
+field was the union. It took loading the page on a 375px viewport.
+
+The other half is the same lesson as `0488` and the `CONVERGING` exemption: a
+fixture that lied. `/inventory/picking/waves` first 500'd with `42703 — column
+pl.assigned_to does not exist`, which is a scratch database built before the
+wave-claim migration, not a defect. Re-run against `inv_t02_probe` it is 200.
+Chasing that as a bug would have cost a day.
+
 ### T27 closed the reading T26 would not fake
 
 T26 read the method each controller names and found 31 of 48 refusing. It refused to call the
@@ -45,7 +60,7 @@ specs by name and `inventory-idempotency-coverage` was not among them. It is now
 |---|---|
 | **CI (#53)** | **Account billing.** Verified today: CI now fires on every push (the T20 fix works) and every run dies in 3-5s on *"recent account payments have failed or your spending limit needs to be increased"*. All seven jobs are configured and queued. Nothing in the repo can fix it. |
 | **Neon (#46)** | **Still in use.** Six live `streamlineos-api` connections today, so nothing was applied. The decision is unchanged and human: 316 of 630 entries pending *by hash against objects that already exist* — drift, not missing schema. |
-| **RF (#45)** | **The recorded reason was wrong.** It was closed as "no automated sign-in can exist — passwordless". Sign-in was never the obstacle: NextAuth is `strategy: "jwt"`, and a session cookie was minted with the library's own `encode` and round-tripped through its `decode` against the on-disk secret. What blocks it is environmental — the `:3000` dev server belongs to another session and rejects the cookie (a secret this session cannot read), and Next 16 refuses a second dev server in that directory unless PID 50018 is killed, which was not done. **Free the frontend directory and the run is minutes, not credentials.** |
+| **RF (#45)** | **DONE — the run happened, and found two real defects.** The frontend directory was freed on the user's instruction and the run took minutes, as predicted. `/inventory/rf` reached signed in at `innerWidth: 375`. **(1)** The queue asked for cycle counts with `status=IN_PROGRESS` — an `InspectionStatus`, not a cycle-count one — so the API answered 400, and one failing source was enough to render "Could not load your tasks" over picks and putaways that had **both returned 200**. An operator at a rack saw no work. It type-checked because the filter's `status` was a bare `string` while every response field used the union; tightening it caught two more loose call sites. **(2)** The onboarding checklist covered the RF header — measured, "Getting Started" at y 52-272 over a heading at y 68-88. Both fixed in `be7c9c161`. **Ergonomics pass, read from the DOM:** autofocused "Scan the item" box, `LINE 1 OF 1`, `tables: 0`, decimal quantity keypad, full-width Confirm, `scrollWidth: 375`. |
 | Live q-commerce, a real WES | Secret-blocked by design. Unchanged. |
 
 ### The thing worth carrying forward
