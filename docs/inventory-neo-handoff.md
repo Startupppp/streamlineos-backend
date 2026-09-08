@@ -20,6 +20,12 @@ the queue reopened on that one clause. Five tickets, GitHub #56–#60.
 
 **Fenced routes in inventory: 13 → 78.** Backend `tsc --noEmit` EXIT=0.
 
+**The whole `test/inventory` seeded suite: 53 suites / 566 tests / EXIT=0**, against
+`inv_t02_probe`. That is the regression check that mattered: `@Idempotent` makes the header
+*required*, so 65 inventory routes now answer a keyless caller with 400, and not one existing
+seeded spec broke. (53/566 against the previous pass's 52/562 — the extra suite is
+`idempotent-create-replay`.) Frontend: 31 `hooks/api` suites / 363 tests EXIT=0.
+
 ### What still needs a human — unchanged
 
 RF on a device (#45, no credentials), the Neon reconcile-or-rebaseline decision (#46), CI
