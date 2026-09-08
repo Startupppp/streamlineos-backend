@@ -20,7 +20,7 @@ the queue reopened on that one clause. Five tickets, GitHub #56–#60.
 
 **Fenced routes in inventory: 13 → 78.** Backend `tsc --noEmit` EXIT=0.
 
-**Re-verified at the final HEAD (`ff3607353`): 53 suites / 566 tests / EXIT=0**, after the
+**Re-verified: 53 suites / 566 tests / EXIT=0**, after the
 seven T27 fences and the T28 DELETE readings — plus backend 6 suites / 33 tests, frontend
 34 suites / 373 tests, and `tsc --noEmit` clean on both sides. **All 85 inventory fence
 command names are distinct** (85 fences, 85 names); a sweep of the whole backend for
@@ -58,8 +58,11 @@ fenced". The instructive one is `customer-returns::inspectLine`, which genuinely
 because its `DRAFT` precondition is on the *return* and inspecting a *line* does not change
 the return's status — the guard is not one its own first run invalidates.
 
-**The gate holding all 85 fences was the one CI did not run.** `Inventory ratchets` ran seven
-specs by name and `inventory-idempotency-coverage` was not among them. It is now the eighth.
+**The gate holding all 85 fences is the one CI does not run.** `Inventory ratchets` runs seven
+specs by name and `inventory-idempotency-coverage` is not among them, so the check enforcing
+every claim T23-T28 make executes only when somebody runs it locally. A one-line addition to
+that job fixes it, and it was deliberately **not** made here: `.github/workflows/ci.yml` is
+not an inventory file and this pass is scoped to inventory. It needs its own change.
 
 ### What still needs a human — re-verified 2026-09-08
 
@@ -67,7 +70,7 @@ specs by name and `inventory-idempotency-coverage` was not among them. It is now
 |---|---|
 | **CI (#53)** | **Account billing.** Verified today: CI now fires on every push (the T20 fix works) and every run dies in 3-5s on *"recent account payments have failed or your spending limit needs to be increased"*. All seven jobs are configured and queued. Nothing in the repo can fix it. |
 | **Neon (#46)** | **Still in use.** Six live `streamlineos-api` connections today, so nothing was applied. The decision is unchanged and human: 316 of 630 entries pending *by hash against objects that already exist* — drift, not missing schema. |
-| **RF (#45)** | **DONE — the run happened, and found two real defects.** The frontend directory was freed on the user's instruction and the run took minutes, as predicted. `/inventory/rf` reached signed in at `innerWidth: 375`. **(1)** The queue asked for cycle counts with `status=IN_PROGRESS` — an `InspectionStatus`, not a cycle-count one — so the API answered 400, and one failing source was enough to render "Could not load your tasks" over picks and putaways that had **both returned 200**. An operator at a rack saw no work. It type-checked because the filter's `status` was a bare `string` while every response field used the union; tightening it caught two more loose call sites. **(2)** The onboarding checklist covered the RF header — measured, "Getting Started" at y 52-272 over a heading at y 68-88. Both fixed in `be7c9c161`. **Ergonomics pass, read from the DOM:** autofocused "Scan the item" box, `LINE 1 OF 1`, `tables: 0`, decimal quantity keypad, full-width Confirm, `scrollWidth: 375`. |
+| **RF (#45)** | **DONE — the run happened, and found two real defects.** The frontend directory was freed on the user's instruction and the run took minutes, as predicted. `/inventory/rf` reached signed in at `innerWidth: 375`. **(1)** The queue asked for cycle counts with `status=IN_PROGRESS` — an `InspectionStatus`, not a cycle-count one — so the API answered 400, and one failing source was enough to render "Could not load your tasks" over picks and putaways that had **both returned 200**. An operator at a rack saw no work. It type-checked because the filter's `status` was a bare `string` while every response field used the union; tightening it caught two more loose call sites. **(2)** The onboarding checklist covered the RF header — measured, "Getting Started" at y 52-272 over a heading at y 68-88. **(1) is fixed** in the inventory hooks. **(2) is NOT fixed and is still open**: the overlay is rendered by `components/layout/dashboard-shell.tsx` for every route, so suppressing it means changing shared layout code, which this pass is not scoped to. The defect is real and measured; the fix belongs to whoever owns the shell. **Ergonomics pass, read from the DOM:** autofocused "Scan the item" box, `LINE 1 OF 1`, `tables: 0`, decimal quantity keypad, full-width Confirm, `scrollWidth: 375`. |
 | Live q-commerce, a real WES | Secret-blocked by design. Unchanged. |
 
 ### The thing worth carrying forward
