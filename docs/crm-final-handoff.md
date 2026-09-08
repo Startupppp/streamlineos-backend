@@ -1,7 +1,7 @@
 # CRM Final Handoff
 
 **Date:** 2026-09-08
-**Backend branch:** `crm/phase-2-3-consolidated` (PR #12) — `c4ba8f8d8`
+**Backend branch:** `crm/phase-2-3-consolidated` (PR #12) — `778cd29cd`
 **Frontend branch:** `crm/phase-4-5-frontend` (PR #31) — `fecfe90fe`
 
 This handoff records what is implemented and **what was actually executed to
@@ -19,7 +19,7 @@ fast-forward. That branch is an ancestor and should not be committed to again.
 | X2 Commissions UI | Complete before this pass | CRM commission plan/accrual routes/hooks/components, backed by `src/modules/commission/`. |
 | X3 Renewals / health UI | Complete | `/crm/renewals` and `/crm/health` with lifecycle hooks, navigation, and loading/error/empty/denied states. |
 | X4 MCP token/settings UI | Complete, with a corrected security claim | `/crm/settings/mcp` and token management ship. See **X4 correction** below — the isolation property is real but holds for a different reason than the ticket states, and a genuine defect was found and fixed behind it. |
-| X5 Golden path e2e | **Run, and green** | 6/6, under RLS, on a cold-built database. See **Verification**. |
+| X5 Golden path e2e | **Run, and green** | 6/6, under RLS, on a cold-built database, and it now proves US8 end to end — cancelling stops the class, and a person lifts the stop through the real endpoint. See **Verification**. |
 | X6 Signup + first value | Complete | Public `/signup`, passwordless workspace creation, country-derived region placement, activation checklist mounted at `frontend/app/(authenticated)/crm/page.tsx:179`. `seedDemoDataset` runs inside `provisionWorkspace` (`src/modules/auth/auth.service.ts:200`). |
 | X7 Leftover identity modules | **Reclassified — see below** | The schema-level collapse is done and `legacy-identity-collapse.spec.ts` proves it. The modules themselves must stay. |
 | X8 Honest handoff | This document | |
@@ -216,28 +216,30 @@ errors before and after this pass.
   commercial guardrails should be tighter than "the deal moved, we have a
   number, nobody has quoted yet", that is the paragraph to revisit.
 
-## The headline: nothing schedules the loops
+## The headline: the loops did not run, and three of them now do
 
-Phase 4's first goal is that the loops run with no human step. They do not run at
-all unless somebody posts to a route.
+Phase 4's first goal is that the loops run with no human step. When this pass
+started, none of the autonomy loops ran at all unless somebody posted to a route.
 
-There is no scheduler in this repository — no `@nestjs/schedule`, no `@Cron`, no
-`ScheduleModule` anywhere in `src/`. The codebase says so itself at
-`src/modules/lifecycle/lifecycle-triggers.service.ts:61`: *"NOTHING SCHEDULES
-THIS… a renewal opens a conversation when a person or a job posts to that route,
-and not before."* That comment is honest and it is load-bearing.
+There is still no scheduler in this repository — no `@nestjs/schedule`, no
+`@Cron`, no `ScheduleModule` anywhere in `src/`, and none was invented. What the
+repository already had is a cron surface: 47 endpoints behind `assertCronSecret`
+that the deployment's own scheduler drives, used by billing, HR, notifications,
+support and Build. The CRM autonomy loops simply were not on it. (Two CRM things
+already were: `crm-sequences-flush` and `crm-tasks-overdue-flush`, both for
+*task* sequences, neither touching autonomy.)
 
-The one CRM thing on a cron path is `CronCrmTasksService.flushOverdueTasks`
-(task reminders), reached via `cron-build.controller.ts`. No cron controller
-mentions lifecycle, outbound, repair, forecast or relationship sweeps.
+Three seams were closed this pass:
 
-So today: the durable workflow advances when `POST /cron/workflow-tick` is
-driven, and every other autonomous loop — renewals, churn risk, silence
-detection, field repair — waits for a human or an external job. The golden path
-passes because the spec drives the tick itself. **This is the single largest gap
-between what the CRM claims and what it does**, and it is infrastructure, not a
-CRM feature: whatever runs on a timer should call these services rather than
-grow its own copy.
+| Was | Now |
+|---|---|
+| `LifecycleTriggersService.sweep` — the only autonomous caller of `composeAndHold` — was invoked by nothing, so a renewal opened a conversation when somebody remembered to POST | `POST /cron/crm-lifecycle-triggers-sweep`, walking every organisation under a 600-second lease. Verified by running it: 200, 6 organisations, `failed: 0`, as the non-owner role. Two concurrent calls, one ran and one skipped. |
+| `SequenceReplyExitService.onInboundReply` was written, its module registered, and called by nothing — the PRD calls sending after a reply the single most damaging behaviour | Called from `AutonomyService.processActivity`, after the delivery gate so a bounce cannot end a sequence, and before the eligibility gate so that "thanks" still ends one |
+| `crm_outbound_class_stops` was read at send time and written by nothing, so US8's "a stopped message stops its class for that party" was a read with no writer | `cancelHold` writes it, and `GET/POST /crm/autonomy/class-stops[/:id/release]` gives it the person-shaped exit its schema always claimed |
+
+Still unscheduled: outbound, repair, forecast and relationship sweeps. The
+pattern for each is now established and cheap — a service that calls the existing
+one under `forEachOrg`, plus an endpoint and a lease.
 
 ## Phase 4 was never ticketed either
 
