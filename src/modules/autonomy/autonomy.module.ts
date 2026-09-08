@@ -15,6 +15,7 @@ import { QuotesModule } from "../quotes/quotes.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { WorkflowModule } from "../../common/workflow/workflow.module";
 import { DataQualityModule } from "../data-quality/data-quality.module";
+import { SequenceReplyExitModule } from "./sequences/sequence-reply-exit.module";
 import { AutonomyReviewController } from "./autonomy-review.controller";
 import { OutboundController } from "./outbound.controller";
 
@@ -47,6 +48,7 @@ import { OutboundController } from "./outbound.controller";
     NotificationsModule,
     WorkflowModule,
     DataQualityModule,
+    SequenceReplyExitModule,
   ],
   controllers: [AutonomyReviewController, OutboundController],
   providers: [

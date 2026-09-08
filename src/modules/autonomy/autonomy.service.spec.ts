@@ -13,6 +13,7 @@ import { AutonomyService } from "./autonomy.service";
 import { AutonomyActionsService } from "./autonomy-actions.service";
 import type { AutonomyHoldService } from "./autonomy-hold.service";
 import type { AutonomyScoringService } from "./autonomy-scoring.service";
+import type { SequenceReplyExitService } from "./sequences/sequence-reply-exit.service";
 import type { Extraction } from "./extraction.schemas";
 
 /**
@@ -27,6 +28,7 @@ import type { Extraction } from "./extraction.schemas";
 
 const ORG = "org-1";
 const ACTIVITY = "activity-1";
+const PARTY = "party-1";
 
 const extraction = (over: Partial<Extraction> = {}): Extraction => ({
   nextStep: { description: "Send the revised pricing", dueDate: null, owner: "us" },
@@ -46,6 +48,12 @@ interface ActivityFixture {
   subject: string | null;
   body: string | null;
   dealId: string | null;
+  /**
+   * Whose message this is. `loadActivity` selects it and the reply-exit seam is
+   * keyed on it, so a fixture without one cannot tell a sequence stopped for the
+   * right customer from one stopped for nobody.
+   */
+  partyId: string | null;
   fromAddress: string | null;
 }
 
@@ -158,7 +166,16 @@ const makeQuoteLeg = (autoQuoteEnabled = false) => {
       autoQuoteEnabled,
     }),
   } as unknown as AutonomyScoringService;
-  return { holds, scoring, generateAndHoldQuote };
+  /**
+   * The reply-exit seam. Returns zeroes: a fixture with no sequence aimed at it
+   * has nothing to exit, which is the ordinary case for every test here except
+   * the two that assert this is called at all.
+   */
+  const onInboundReply = jest
+    .fn()
+    .mockResolvedValue({ exited: 0, cancelledHolds: 0 });
+  const replyExit = { onInboundReply } as unknown as SequenceReplyExitService;
+  return { holds, scoring, generateAndHoldQuote, replyExit, onInboundReply };
 };
 
 function makeService(
@@ -170,8 +187,8 @@ function makeService(
     invokeStructuredWithUsage: jest.fn().mockResolvedValue(result),
   } as unknown as AiGatewayService;
 
-  const { holds, scoring } = makeQuoteLeg();
-  return new AutonomyService(db, gateway, makeActions(db, updateDeal), holds, scoring);
+  const { holds, scoring, replyExit } = makeQuoteLeg();
+  return new AutonomyService(db, gateway, makeActions(db, updateDeal), holds, scoring, replyExit);
 }
 
 /** The same service, with the quote leg reachable and its hold call observable. */
@@ -184,13 +201,14 @@ function makeServiceForQuotes(
   const gateway = {
     invokeStructuredWithUsage: jest.fn().mockResolvedValue(result),
   } as unknown as AiGatewayService;
-  const { holds, scoring, generateAndHoldQuote } = makeQuoteLeg(autoQuoteEnabled);
+  const { holds, scoring, generateAndHoldQuote, replyExit } = makeQuoteLeg(autoQuoteEnabled);
   const service = new AutonomyService(
     db,
     gateway,
     makeActions(db, updateDeal),
     holds,
     scoring,
+    replyExit,
   );
   return { service, generateAndHoldQuote };
 }
@@ -213,8 +231,8 @@ const ok = (data: Extraction) => ({ ok: true, data, aiUsage: { model: "fast-1" }
 function makeServiceCapturingPrompt(db: Db, result: unknown, updateDeal = jest.fn()) {
   const invoke = jest.fn().mockResolvedValue(result);
   const gateway = { invokeStructuredWithUsage: invoke } as unknown as AiGatewayService;
-  const { holds, scoring } = makeQuoteLeg();
-  const service = new AutonomyService(db, gateway, makeActions(db, updateDeal), holds, scoring);
+  const { holds, scoring, replyExit } = makeQuoteLeg();
+  const service = new AutonomyService(db, gateway, makeActions(db, updateDeal), holds, scoring, replyExit);
 
   const conversationSent = (): string => {
     const call = invoke.mock.calls[0]?.[0] as { prompt: { user: string } } | undefined;
@@ -236,6 +254,7 @@ const REPLY: ActivityFixture = {
   subject: "Re: Q3 pricing",
   body: "That looks good, please send the proposal over and we will sign this week.",
   dealId: "7",
+  partyId: PARTY,
   fromAddress: "priya@example.com",
 };
 
@@ -771,5 +790,65 @@ describe("AutonomyService drafts a quote when a deal moves", () => {
     const failed = decisionsOfKind(rec, "quote.sent")[0];
     expect(failed).toMatchObject({ outcome: "failed" });
     expect(String(failed?.summary)).toContain("quote numbering is exhausted");
+  });
+});
+
+/**
+ * The reply that ends the sequence.
+ *
+ * `SequenceReplyExitService.onInboundReply` was written, its module registered,
+ * and called by nothing — `grep -rn "onInboundReply" src` outside its own
+ * directory returned only an import. The PRD calls continuing to send after
+ * somebody replies the single most damaging behaviour in the product, so these
+ * two tests are the ones that keep the seam attached.
+ */
+describe("AutonomyService ends sequences when a customer replies", () => {
+  /** A stand-in with the reply-exit mock exposed, which `makeService` hides. */
+  function makeServiceForReplyExit(db: Db, result: unknown, activityFixture = REPLY) {
+    const gateway = {
+      invokeStructuredWithUsage: jest.fn().mockResolvedValue(result),
+    } as unknown as AiGatewayService;
+    const { holds, scoring, replyExit, onInboundReply } = makeQuoteLeg();
+    const service = new AutonomyService(
+      db,
+      gateway,
+      makeActions(db, jest.fn()),
+      holds,
+      scoring,
+      replyExit,
+    );
+    return { service, onInboundReply, activityFixture };
+  }
+
+  it("stops the sequences aimed at a party the moment their reply is filed", async () => {
+    const rec: Recorder = { decisions: [], createdTasks: [] };
+    const db = makeDb(rec, REPLY, [DEAL, DEAL], ["QUALIFIED", "PROPOSAL"]);
+    const { service, onInboundReply } = makeServiceForReplyExit(db, ok(extraction()));
+
+    await service.processActivity(ORG, ACTIVITY);
+
+    // The party id, not just "it was called": this is what decides whose
+    // sequences stop, and passing undefined would stop nobody's.
+    expect(onInboundReply).toHaveBeenCalledWith(ORG, PARTY, { activityId: ACTIVITY });
+  });
+
+  /**
+   * The inverse mistake, and the reason this sits after the delivery gate rather
+   * than in the ingress workflow: the automation stopping because a robot
+   * answered is as wrong as sending over a person.
+   */
+  it("does not end a sequence when the message was a bounce, not a person", async () => {
+    const rec: Recorder = { decisions: [], createdTasks: [] };
+    const bounce: ActivityFixture = {
+      ...REPLY,
+      fromAddress: "mailer-daemon@example.com",
+      subject: "Undeliverable: your message",
+    };
+    const db = makeDb(rec, bounce, [DEAL, DEAL], ["QUALIFIED", "PROPOSAL"]);
+    const { service, onInboundReply } = makeServiceForReplyExit(db, ok(extraction()));
+
+    await service.processActivity(ORG, ACTIVITY);
+
+    expect(onInboundReply).not.toHaveBeenCalled();
   });
 });

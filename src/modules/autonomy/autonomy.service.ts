@@ -8,6 +8,7 @@ import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 import { AutonomyActionsService } from "./autonomy-actions.service";
 import { AutonomyHoldService } from "./autonomy-hold.service";
 import { AutonomyScoringService } from "./autonomy-scoring.service";
+import { SequenceReplyExitService } from "./sequences/sequence-reply-exit.service";
 import { classifyDelivery } from "./deterministic";
 import { decisionDealId,
   buildDecision,
@@ -53,6 +54,7 @@ export class AutonomyService {
     private readonly actions: AutonomyActionsService,
     private readonly holds: AutonomyHoldService,
     private readonly scoring: AutonomyScoringService,
+    private readonly replyExit: SequenceReplyExitService,
   ) {}
 
   /**
@@ -110,6 +112,30 @@ export class AutonomyService {
       );
       return;
     }
+
+    /**
+     * They replied, so stop every sequence aimed at them — before anything else.
+     *
+     * Placed here for two reasons, and both are about where the boundaries sit.
+     *
+     * After the delivery gate, because a bounce or an out-of-office must not end
+     * a sequence: the automation stopping because a robot answered is the same
+     * mistake as sending over a person, inverted.
+     *
+     * Before the eligibility gate, because "thanks" is a reply. `judgeEligibility`
+     * refuses to spend a provider call on a message with nothing in it, and it is
+     * right to — but a customer writing two words has still written in, and the
+     * message already drafted and counting down in its hold window has to be
+     * cancelled whether or not there is anything here worth extracting. Putting
+     * this after that gate would exit sequences only for customers who said
+     * something substantial.
+     *
+     * It never throws; the service guarantees that and this relies on it. A
+     * failure to tidy up a sequence must not dead-letter the delivery of a
+     * customer's message, and it is self-correcting — the next wake reaches
+     * `resolveCadence`, which checks the reply first.
+     */
+    await this.replyExit.onInboundReply(organizationId, activity.partyId, { activityId });
 
     /**
      * The message, read with the messages around it.
