@@ -24,6 +24,16 @@ import { isPositive } from "../stock-engine/decimal";
 import { runIdempotent } from "../stock-engine/idempotency";
 import { RecallSimulationService, type RecallImpact } from "./recall-simulation.service";
 
+/**
+ * What the quarantine leg did to one recall line, stored on the line.
+ *
+ * `OPEN` is not in this union on purpose. It is the column default and means
+ * "no outcome was recorded" — every line of every recall raised before INV-33.
+ * The UI renders it as pending rather than as success, because a recall that
+ * cannot say what it held is exactly the one nobody should trust.
+ */
+export type RecallLineOutcome = "QUARANTINED" | "NOTHING_TO_QUARANTINE" | "NOT_QUARANTINABLE";
+
 /** What the idempotent unit of `create` produces, and replays. */
 interface ExecutedRecall {
   recall: { id: number; recallNumber: string };
@@ -312,6 +322,44 @@ export class RecallsService {
             }
           }
 
+          // INV-33. What the quarantine actually did to each line, recorded on
+          // the line rather than left to be inferred.
+          //
+          // `inv_recall_lines.status` has existed since the table did, defaulted
+          // to OPEN and was never written by anything and never read by anything.
+          // The information it should hold is computed a few lines above and was
+          // being dropped on the floor: `create` returns `findOne`, which knows
+          // the lines and the affected shipments and nothing at all about whether
+          // a single unit was held.
+          //
+          // That matters because a recall can commit having quarantined nothing,
+          // and the screen said OPEN either way:
+          //  - a line naming a lot with no stock on hand — the lot is RECALLED so
+          //    the allocator refuses it, but there is nothing on a shelf to hold;
+          //  - a line naming only a serial or only a variant — `recalledLotIds` is
+          //    empty, so the lot flip never runs either. Nothing is blocked at all
+          //    and the goods stay sellable. That is the silent failure.
+          const quarantinedLotIds = new Set(quarantine.map((grain) => grain.lotId));
+          const byOutcome = new Map<RecallLineOutcome, number[]>();
+          for (const line of lines) {
+            const outcome: RecallLineOutcome =
+              line.lotId === null || line.lotId === undefined
+                ? "NOT_QUARANTINABLE"
+                : quarantinedLotIds.has(line.lotId)
+                  ? "QUARANTINED"
+                  : "NOTHING_TO_QUARANTINE";
+            const bucket = byOutcome.get(outcome);
+            if (bucket) bucket.push(line.id);
+            else byOutcome.set(outcome, [line.id]);
+          }
+          for (const [outcome, lineIds] of byOutcome) {
+            await tx
+              .update(invRecallLines)
+              .set({ status: outcome })
+              .where(and(eq(invRecallLines.orgId, orgId), inArray(invRecallLines.id, lineIds)));
+          }
+          const unheldLineCount = lines.length - (byOutcome.get("QUARANTINED")?.length ?? 0);
+
           await this.audit.insert(tx, {
             orgId, actorUserId: userId, action: "recall.created",
             resourceType: "recall", resourceId: String(recall.id),
@@ -341,6 +389,9 @@ export class RecallsService {
               title: input.title,
               lotCount: lines.length,
               quarantinedGrains: quarantine.length,
+              // A subscriber can alarm on this without re-reading the lines. A
+              // recall whose every line is unheld held nothing anywhere.
+              unheldLineCount,
               openedByUserId: userId,
             },
             occurredAt: new Date(),
