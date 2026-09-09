@@ -440,6 +440,10 @@ describe("[seeded-e2e] INV-17 — recall, quarantine, release, and a recall that
           reason: "Inspection",
         }),
       );
+      // `create` finishes with a `findFirst`, so its type is `Row | undefined`.
+      // Narrowed rather than asserted away: a hold service that returns nothing
+      // for a hold it just wrote is a failure worth reading, not a `!`.
+      if (!created) throw new Error("the hold service returned no row for the hold it just created");
       inspectionHoldId = created.id;
 
       const grains = await grainsOf(scene.blockedLot);
@@ -531,10 +535,10 @@ describe("[seeded-e2e] INV-17 — recall, quarantine, release, and a recall that
                 {
                   productVariantId: scene.variantId,
                   locationId: scene.binA,
-                  quantityChange: "-10.0000",
+                  quantityChange: -10,
                 },
               ],
-            } as Parameters<InvStockAdjustmentsService["createAdjustment"]>[2],
+            },
             `rl-writeoff-${tag}`,
           ),
         ),
