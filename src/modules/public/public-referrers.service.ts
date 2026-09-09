@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   GoneException,
   Inject,
@@ -22,10 +23,18 @@ import { withPublicToken } from "../../common/tenant/with-public-token";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { randomBytes } from "node:crypto";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
+import { PaymentRequiredException } from "../../common/http/api-exceptions";
+import { logger } from "../../common/logger/logger.service";
 import type {
   ExternalReferralSubmitInput,
   ExternalReferrerRegisterInput,
 } from "./dto/public.schemas";
+
+function isQuotaExceededError(error: unknown): error is PaymentRequiredException {
+  if (!(error instanceof PaymentRequiredException)) return false;
+  const body = error.getResponse();
+  return typeof body === "object" && body !== null && "code" in body && body.code === "QUOTA_EXCEEDED";
+}
 
 @Injectable()
 export class PublicReferrersService {
@@ -169,7 +178,18 @@ export class PublicReferrersService {
         if (existingCandidate) {
           candidateId = existingCandidate.id;
         } else {
-          await this.planLimits.assertWithinLimit(referrer.orgId, "hrCandidates", 1, tx);
+          try {
+            await this.planLimits.assertWithinLimit(referrer.orgId, "hrCandidates", 1, tx);
+          } catch (error) {
+            if (!isQuotaExceededError(error)) throw error;
+            logger.warn("[public-referrers] referral submission refused: candidate quota exceeded", {
+              orgId: referrer.orgId,
+              referrerId: referrer.id,
+            });
+            throw new BadRequestException(
+              "This referral link is not accepting new referrals at this time.",
+            );
+          }
           const [created] = await tx
             .insert(candidates)
             .values({

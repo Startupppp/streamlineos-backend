@@ -76,7 +76,7 @@
  */
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SELF_TEST = process.argv.includes("--self-test");
@@ -292,6 +292,97 @@ export function enclosingFunctionName(stripped, bodyStart) {
   return m ? m[1] : null;
 }
 
+// -- cross-file ordering resolution -------------------------------------------
+
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+const CALL_SKIP = new Set([
+  "if", "for", "while", "switch", "catch", "return", "throw", "new",
+  "typeof", "instanceof", "await", "async", "function", "class",
+]);
+
+function calledNamesInWindow(win) {
+  const names = [];
+  const re = /\b([A-Za-z_$][A-Za-z0-9_$]{2,})\s*\(/g;
+  let m;
+  while ((m = re.exec(win)) !== null)
+    if (!CALL_SKIP.has(m[1])) names.push(m[1]);
+  return [...new Set(names)];
+}
+
+function findFunctionBodyInFile(stripped, name) {
+  const pat = new RegExp(
+    `(?:export\\s+)?(?:default\\s+)?(?:async\\s+)?function\\s+${escapeRegex(name)}\\s*\\(`,
+    "g",
+  );
+  const m = pat.exec(stripped);
+  if (!m) return null;
+  const open = stripped.indexOf("{", m.index + m[0].length);
+  if (open < 0) return null;
+  return balanced(stripped, open);
+}
+
+function importedFrom(original, name) {
+  const re = /import\s*(?:type\s*)?\{([^}]+)\}\s*from\s*["']([^"']+)["']/g;
+  let m;
+  while ((m = re.exec(original)) !== null) {
+    const parts = m[1].split(",").map((s) => s.trim().split(/\s+as\s+/)[0].trim());
+    if (parts.includes(name)) return m[2];
+  }
+  return null;
+}
+
+function resolvedHelperHasInsert(stripped, original, name, filePath) {
+  const sameFileBody = findFunctionBodyInFile(stripped, name);
+  if (sameFileBody !== null && /\.insert\s*\(/.test(sameFileBody)) return true;
+  const specifier = importedFrom(original, name);
+  if (!specifier || !specifier.startsWith(".")) return false;
+  const abs = join(dirname(join(BACKEND_ROOT, filePath)), specifier) + ".ts";
+  let src;
+  try { src = readFileSync(abs, "utf8"); } catch { return false; }
+  const helperStripped = stripCommentsAndStrings(src);
+  const body = findFunctionBodyInFile(helperStripped, name);
+  return body !== null && /\.insert\s*\(/.test(body);
+}
+
+function tryResolveViaHelper(stripped, original, site, filePath) {
+  if (!site.body) return null;
+  const afterText = stripped.slice(site.callEnd, site.body.end);
+  const beforeText = stripped.slice(site.body.start, site.callOffset);
+  for (const name of calledNamesInWindow(afterText)) {
+    if (resolvedHelperHasInsert(stripped, original, name, filePath))
+      return { verdict: "DIRECT", why: `helper ${name} called after assert contains .insert(` };
+  }
+  for (const name of calledNamesInWindow(beforeText)) {
+    if (resolvedHelperHasInsert(stripped, original, name, filePath))
+      return { verdict: "ORDER-VIOLATION", why: `helper ${name} called before assert contains .insert(` };
+  }
+  return null;
+}
+
+function tryResolveViaCallers(stripped, site, functionName) {
+  if (!functionName || !site.body) return null;
+  const braceRanges = allBraceRanges(stripped);
+  const callPat = new RegExp(`\\.${escapeRegex(functionName)}\\s*\\(`, "g");
+  let m;
+  while ((m = callPat.exec(stripped)) !== null) {
+    const callPos = m.index;
+    if (callPos >= site.body.start && callPos <= site.body.end) continue;
+    const callerBody = enclosingFunctionBody(braceRanges, stripped, callPos);
+    if (!callerBody) continue;
+    const callEnd = callPos + m[0].length;
+    const before = stripped.slice(callerBody.start, callPos);
+    const after = stripped.slice(callEnd, callerBody.end);
+    if (/\.insert\s*\(/.test(before))
+      return { verdict: "ORDER-VIOLATION", why: `caller inserts before calling ${functionName}` };
+    if (/\.insert\s*\(/.test(after))
+      return { verdict: "DIRECT", why: `caller inserts after calling ${functionName}` };
+  }
+  return null;
+}
+
 // -- call-site discovery -------------------------------------------------------
 
 const ASSERT_CALL_RE = /\.assertWithinLimit\s*\(/g;
@@ -500,9 +591,19 @@ function scan() {
 
     if (hasAssert) {
       for (const site of findAssertCalls(stripped, source, rel)) {
-        const order = classifyOrder(stripped, site);
-        const lock = classifyMembersLock(source, site);
         const name = site.body ? enclosingFunctionName(stripped, site.body.start) : null;
+        let order = classifyOrder(stripped, site);
+        if (order.verdict === "DELEGATED" && site.body) {
+          if (site.key === MEMBERS_KEY) {
+            const via = tryResolveViaCallers(stripped, site, name);
+            if (via) order = via;
+          }
+          if (order.verdict === "DELEGATED") {
+            const via = tryResolveViaHelper(stripped, source, site, rel);
+            if (via) order = via;
+          }
+        }
+        const lock = classifyMembersLock(source, site);
         sites.push({ ...site, order, lock, enclosingFunction: name });
       }
     }
@@ -765,6 +866,77 @@ class Svc {
   const conditionalFindings = findUncoveredTableInserts(strippedConditional, conditionalAssertFixture, "fixture.ts", [{ table: "candidates", key: "hrCandidates" }]);
   assert("a conditional assert (in an if-block) before the insert in the SAME function body satisfies coverage", conditionalFindings.length === 0);
 
+  const patternADirectFixture = `
+class Svc {
+  private async reserveSeat(tx, orgId) {
+    await tx.execute(lockMembersQuota(orgId));
+    await this.planLimits.assertWithinLimit(orgId, "members", 1, tx);
+  }
+  async createMember(tx, orgId) {
+    await this.reserveSeat(tx, orgId);
+    const [row] = await tx.insert(organizationMembers).values({}).returning();
+    return row;
+  }
+}
+`;
+  const strippedPatA = stripCommentsAndStrings(patternADirectFixture);
+  const patASites = findAssertCalls(strippedPatA, patternADirectFixture, "fixture.ts");
+  const patAName = patASites[0]?.body ? enclosingFunctionName(strippedPatA, patASites[0].body.start) : null;
+  assert("Pattern A: base classifier sees DELEGATED for assert-in-helper when no insert in helper body", classifyOrder(strippedPatA, patASites[0]).verdict === "DELEGATED");
+  assert("Pattern A: caller inserts after helper call → tryResolveViaCallers returns DIRECT", tryResolveViaCallers(strippedPatA, patASites[0], patAName)?.verdict === "DIRECT");
+
+  const patternAViolationFixture = `
+class Svc {
+  private async reserveSeat(tx, orgId) {
+    await tx.execute(lockMembersQuota(orgId));
+    await this.planLimits.assertWithinLimit(orgId, "members", 1, tx);
+  }
+  async createMember(tx, orgId) {
+    const [row] = await tx.insert(organizationMembers).values({}).returning();
+    await this.reserveSeat(tx, orgId);
+    return row;
+  }
+}
+`;
+  const strippedPatAV = stripCommentsAndStrings(patternAViolationFixture);
+  const patAVSites = findAssertCalls(strippedPatAV, patternAViolationFixture, "fixture.ts");
+  const patAVName = patAVSites[0]?.body ? enclosingFunctionName(strippedPatAV, patAVSites[0].body.start) : null;
+  assert("Pattern A: caller inserts BEFORE helper call → tryResolveViaCallers returns ORDER-VIOLATION", tryResolveViaCallers(strippedPatAV, patAVSites[0], patAVName)?.verdict === "ORDER-VIOLATION");
+
+  const patternBDirectFixture = `
+async function insertRecord(tx, orgId, data) {
+  const [row] = await tx.insert(tickets).values({ orgId }).returning();
+  return row;
+}
+class Svc {
+  async create(orgId, input) {
+    await this.planLimits.assertWithinLimit(orgId, "supportTickets");
+    return insertRecord(this.db, orgId, input);
+  }
+}
+`;
+  const strippedPatB = stripCommentsAndStrings(patternBDirectFixture);
+  const patBSites = findAssertCalls(strippedPatB, patternBDirectFixture, "fixture.ts");
+  assert("Pattern B: base classifier sees DELEGATED when insert is in a same-file helper", classifyOrder(strippedPatB, patBSites[0]).verdict === "DELEGATED");
+  assert("Pattern B: same-file helper with .insert called after assert → tryResolveViaHelper returns DIRECT", tryResolveViaHelper(strippedPatB, patternBDirectFixture, patBSites[0], "fixture.ts")?.verdict === "DIRECT");
+
+  const patternBViolationFixture = `
+async function insertRecord(tx, orgId, data) {
+  const [row] = await tx.insert(tickets).values({ orgId }).returning();
+  return row;
+}
+class Svc {
+  async create(orgId, input) {
+    const result = await insertRecord(this.db, orgId, input);
+    await this.planLimits.assertWithinLimit(orgId, "supportTickets");
+    return result;
+  }
+}
+`;
+  const strippedPatBV = stripCommentsAndStrings(patternBViolationFixture);
+  const patBVSites = findAssertCalls(strippedPatBV, patternBViolationFixture, "fixture.ts");
+  assert("Pattern B: same-file helper with .insert called BEFORE assert → tryResolveViaHelper returns ORDER-VIOLATION", tryResolveViaHelper(strippedPatBV, patternBViolationFixture, patBVSites[0], "fixture.ts")?.verdict === "ORDER-VIOLATION");
+
   // -- the real repository, so a parser/regex change that empties the scan fails here --
   const real = scan();
   assert(`the real constants file parses at least ${MIN_KEYS} keys (found ${real.keys.length})`, real.keys.length >= MIN_KEYS);
@@ -793,6 +965,19 @@ class Svc {
   assert(
     "at least some real call sites resolve to DIRECT ordering — proof the classifier isn't vacuously DELEGATED on everything",
     directReal > 0,
+  );
+
+  const IN_SCOPE_SUFFIXES = [
+    "hr/directory/employee-onboarding.service.ts",
+    "organization/core/invitation-acceptance.service.ts",
+    "support/core/support-tickets.service.ts",
+  ];
+  const stillDelegated = real.sites.filter(
+    (s) => s.order.verdict === "DELEGATED" && IN_SCOPE_SUFFIXES.some((suf) => s.file.replace(/\\/g, "/").endsWith(suf)),
+  );
+  assert(
+    `the three in-scope DELEGATED sites (employee-onboarding, invitation-acceptance, support-tickets) are now DIRECT — ${stillDelegated.length} still DELEGATED`,
+    stillDelegated.length === 0,
   );
 
   assert(

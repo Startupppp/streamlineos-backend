@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
-import { idCursorPageSchema, successSchema } from "../../../../common/openapi/response-envelopes";
+import { cursorPageSchema, successSchema } from "../../../../common/openapi/response-envelopes";
+import { enterpriseQuoteStatusEnum } from "../../../../db/schema/common/enums";
 
 export const affiliateRowSchema = z.object({
   id: z.number().int(),
@@ -100,7 +101,7 @@ const enterpriseQuoteBaseSchema = z.object({
   pricePerSeatInPaise: z.number().int(),
   contractTermMonths: z.number().int(),
   contractTerms: z.string().nullable(),
-  status: z.string(),
+  status: z.enum(enterpriseQuoteStatusEnum.enumValues),
   approverId: z.string().nullable(),
   approvalNotes: z.string().nullable(),
   approvedAt: nullableWireDate(),
@@ -117,7 +118,22 @@ const enterpriseQuoteBaseSchema = z.object({
   updatedAt: wireDate(),
 });
 
-export const enterpriseQuoteListResponseSchema = idCursorPageSchema(enterpriseQuoteBaseSchema);
+const enterpriseQuoteListItemSchema = z.object({
+  id: z.number().int(),
+  quoteRef: z.string(),
+  subject: z.string(),
+  planTier: z.string(),
+  negotiatedSeats: z.number().int(),
+  pricePerSeatInPaise: z.number().int(),
+  contractTermMonths: z.number().int(),
+  status: z.enum(enterpriseQuoteStatusEnum.enumValues),
+  validUntil: z.string(),
+  createdAt: wireDate(),
+  dealName: z.string().nullable(),
+  clientName: z.string().nullable(),
+});
+
+export const enterpriseQuoteListResponseSchema = cursorPageSchema(enterpriseQuoteListItemSchema);
 
 export const enterpriseQuoteCreateResponseSchema = z.object({
   id: z.number().int(),

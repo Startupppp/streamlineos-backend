@@ -1,4 +1,4 @@
-import { Inject, Injectable, InternalServerErrorException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, InternalServerErrorException } from "@nestjs/common";
 import { and, desc, eq, ilike } from "drizzle-orm";
 import {
   candidateApplications,
@@ -10,7 +10,15 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
+import { PaymentRequiredException } from "../../common/http/api-exceptions";
+import { logger } from "../../common/logger/logger.service";
 import type { ApplyInput } from "./dto/careers.schemas";
+
+function isQuotaExceededError(error: unknown): error is PaymentRequiredException {
+  if (!(error instanceof PaymentRequiredException)) return false;
+  const body = error.getResponse();
+  return typeof body === "object" && body !== null && "code" in body && body.code === "QUOTA_EXCEEDED";
+}
 
 export type ApplyJobNotFound = { error: "job_not_found" };
 
@@ -79,7 +87,18 @@ export class CareersService {
       if (existingCandidate) {
         candidateId = existingCandidate.id;
       } else {
-        await this.planLimits.assertWithinLimit(job.orgId, "hrCandidates", 1, tx);
+        try {
+          await this.planLimits.assertWithinLimit(job.orgId, "hrCandidates", 1, tx);
+        } catch (error) {
+          if (!isQuotaExceededError(error)) throw error;
+          logger.warn("[careers] application refused: candidate quota exceeded", {
+            orgId: job.orgId,
+            jobPostingId,
+          });
+          throw new BadRequestException(
+            "This job posting is not accepting applications at this time.",
+          );
+        }
         const [created] = await tx
           .insert(candidates)
           .values({

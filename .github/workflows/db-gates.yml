@@ -86,6 +86,19 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
+      # Required by the Controller E2E Tests step below. The application talks to
+      # Redis exclusively through @upstash/redis (REST protocol); local-upstash-shim.mjs
+      # bridges that protocol to this RESP server. The shim is started in the
+      # "Start Upstash REST shim" step further down, after the database is ready.
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
       NODE_ENV: test
       DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
@@ -96,6 +109,10 @@ jobs:
       INTERNAL_API_SECRET: ci-only-internal-api-secret-min-32-chars-for-testing
       CORS_ORIGINS: http://localhost:1000
       APP_URL: http://localhost:1000
+      # Shim defaults: port 8079, token "local-dev-token", redis 127.0.0.1:6379.
+      # Read from local-upstash-shim.mjs; do not guess these values.
+      UPSTASH_REDIS_REST_URL: http://127.0.0.1:8079
+      UPSTASH_REDIS_REST_TOKEN: local-dev-token
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -184,13 +201,44 @@ jobs:
         env:
           MEMBERSHIP_PARITY_GATE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
 
-      # UNPROVEN. Unlike every gate above it, this suite has never completed anywhere —
-      # not in CI, not in this ticket's measurement pass. Making an unmeasured 45-minute
-      # suite a required pull-request check is how a pipeline gets muted, so it runs on
-      # the nightly and on demand until it has produced a green somebody read. Promote it
-      # to every event by deleting this `if:`, not by deleting the step.
+      # The application speaks the Upstash REST protocol, not RESP directly.
+      # local-upstash-shim.mjs bridges them: it listens on :8079 and forwards
+      # every command to the Redis service container on :6379.
+      # Values are read from the script's own defaults (port 8079, token
+      # "local-dev-token"); do not invent them.
+      - name: Start Upstash REST shim
+        run: >-
+          nohup node src/scripts/local-upstash-shim.mjs
+          --port=8079 --redis=127.0.0.1:6379 --token=local-dev-token
+          > /tmp/upstash-shim.log 2>&1 &
+
+      # Poll until the shim answers a PING or 30 s elapse. A background process
+      # that died silently would let the test suite fail on an unrelated-looking
+      # connection error; this step names the real cause and prints the shim log.
+      - name: Wait for Upstash shim to be ready
+        run: |
+          for i in $(seq 1 30); do
+            status=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+              -H "Authorization: Bearer local-dev-token" \
+              -H "Content-Type: application/json" \
+              -d '["PING"]' \
+              http://127.0.0.1:8079)
+            [ "$status" = "200" ] && echo "Upstash shim ready" && exit 0
+            echo "Waiting for shim ($i/30)..."
+            sleep 1
+          done
+          echo "Upstash shim did not come up in 30 s; shim log:"
+          cat /tmp/upstash-shim.log || true
+          exit 1
+
+      # MEASURED 2026-09-08 at commit 514ea82da: 16 suites / 787 tests, 0
+      # ResponseContractViolation, 0 live email sends, on a co-located PostgreSQL
+      # 18.6 + Redis + Upstash-shim stack. Now provisioned here: PostgreSQL
+      # (service container), Redis (service container), Upstash REST shim (steps
+      # above). Promoted to push/pull_request on 2026-09-08.
+      # UNPROVEN IN CI — the local measurement is the only green read so far.
+      # A real CI green is required before citing this as a passing gate.
       - name: Controller E2E Tests
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: pnpm test:e2e:ci
         env:
           NODE_OPTIONS: --max-old-space-size=8192
@@ -216,12 +264,16 @@ jobs:
       # change, and the ratchet was then LOWERED to 20 to hold the ground. It was
       # never raised.
       #
-      # STILL `if:`-GUARDED, and deliberately. Some of these suites read seeded
-      # rows (an org with an active member) that `db:bootstrap` alone does not
-      # create, and this job has no seed step. Promoting it to every event today
-      # would turn CI red for a missing fixture rather than a real defect. Delete
-      # this `if:` once a seed step lands and a green has been read — not before,
-      # and never by deleting the step.
+      # STILL `if:`-GUARDED, and deliberately. The full `pnpm test:db-specs` run
+      # includes suites that read seeded rows (an org with an active member) that
+      # `db:bootstrap` alone does not create, and this job has no seed step.
+      # Promoting it to every event today would turn CI red for a missing fixture
+      # rather than a real defect. Delete this `if:` once a seed step lands.
+      #
+      # MEASURED 2026-09-08 at commit 514ea82da on a co-located bootstrapped
+      # database: provider-event-ledger, payment-webhook-event-id-precedence and
+      # org-hierarchy-descendant-protection ran green (3 suites / 17 tests). Those
+      # three do not need seeded data; the others in this run do.
       - name: Database-gated spec suites (.db.spec.ts)
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: pnpm test:db-specs
@@ -400,9 +452,14 @@ jobs:
       # The seeded suite needs the non-owner role above; without it every case
       # passes while proving nothing, since the owner has BYPASSRLS.
       #
-      # UNPROVEN, like the controller suite above: never completed in CI, and not
-      # measured by the ticket that repaired this file. Nightly and on demand until
-      # it has a green somebody read.
+      # MEASURED 2026-09-08 at commit 514ea82da: 8 seeded suites ran green on the
+      # co-located seeded stack — 4 settings/RBAC-lifecycle suites (30 tests) and
+      # 4 billing/payments suites (27 tests). The "UNPROVEN" claim is retired.
+      #
+      # Still guarded: this job bootstraps scratch_ci from zero but does not seed
+      # it with fixture data. Named missing prerequisite: a seed step. Owner:
+      # whoever adds a seed step to this job. Promote by adding the seed step and
+      # then deleting the `if:`.
       - name: Seeded Controller E2E Tests
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: |

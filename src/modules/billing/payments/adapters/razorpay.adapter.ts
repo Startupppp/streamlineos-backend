@@ -1,7 +1,7 @@
-import { Injectable, BadGatewayException, OnModuleInit } from "@nestjs/common";
+import { Injectable, BadGatewayException, OnModuleInit, Optional } from "@nestjs/common";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import { outboundRequest, OutboundRequestError } from "../../../../common/http/outbound-request";
+import { outboundRequest, OutboundRequestError, type OutboundRequestInit } from "../../../../common/http/outbound-request";
 import { callProvider, type FailureClass } from "../../../../common/outbound/call-provider";
 import { ProviderCircuitBreaker } from "../../../../common/outbound/provider-circuit-breaker";
 import { PaymentProviderAdapterRegistry, type PaymentCredentialWarning, type PaymentProviderAdapter, type PaymentProviderRuntime, type PaymentWebhookNormalization } from "../payment-provider-adapter.interface";
@@ -11,6 +11,16 @@ import {
   rawPaymentEntitySchema,
   tenantCredentialFieldsSchema,
 } from "../dto/webhook.schemas";
+export type RazorpayTransport = (url: string, init: OutboundRequestInit) => Promise<Response>;
+
+interface RazorpayAdapterOptions {
+  readonly transport?: RazorpayTransport;
+  readonly breaker?: ProviderCircuitBreaker;
+  readonly orderTimeoutMs?: number;
+  readonly baseDelayMs?: number;
+  readonly maxDelayMs?: number;
+}
+
 interface TenantRazorpayCredentials {
   readonly keyId: string | null;
   readonly secret: string | null;
@@ -66,9 +76,22 @@ const razorpayBreaker = new ProviderCircuitBreaker();
 export class RazorpayAdapter implements PaymentProviderAdapter, OnModuleInit {
   readonly providerKey = "razorpay";
 
+  private readonly _transport: RazorpayTransport;
+  private readonly _breaker: ProviderCircuitBreaker;
+  private readonly _orderTimeoutMs: number;
+  private readonly _baseDelayMs: number;
+  private readonly _maxDelayMs: number;
+
   constructor(
     private readonly registry: PaymentProviderAdapterRegistry,
-  ) {}
+    @Optional() opts?: RazorpayAdapterOptions,
+  ) {
+    this._transport = opts?.transport ?? outboundRequest;
+    this._breaker = opts?.breaker ?? razorpayBreaker;
+    this._orderTimeoutMs = opts?.orderTimeoutMs ?? 10_000;
+    this._baseDelayMs = opts?.baseDelayMs ?? 200;
+    this._maxDelayMs = opts?.maxDelayMs ?? 5_000;
+  }
 
   onModuleInit(): void {
     this.registry.register(this);
@@ -120,16 +143,16 @@ export class RazorpayAdapter implements PaymentProviderAdapter, OnModuleInit {
     const result = await callProvider(
       {
         provider: "razorpay-orders",
-        timeoutMs: 10_000,
+        timeoutMs: this._orderTimeoutMs,
         maxAttempts: 3,
-        baseDelayMs: 200,
-        maxDelayMs: 5_000,
+        baseDelayMs: this._baseDelayMs,
+        maxDelayMs: this._maxDelayMs,
         classify: classifyRazorpayError,
       },
       async () => {
-        const response = await outboundRequest("https://api.razorpay.com/v1/orders", {
+        const response = await this._transport("https://api.razorpay.com/v1/orders", {
           provider: "razorpay-tenant",
-          timeoutMs: 10_000,
+          timeoutMs: this._orderTimeoutMs,
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -152,7 +175,7 @@ export class RazorpayAdapter implements PaymentProviderAdapter, OnModuleInit {
         const data: unknown = await response.json();
         return razorpayOrderResponseSchema.parse(data);
       },
-      razorpayBreaker,
+      this._breaker,
     );
 
     if (!result.ok) {

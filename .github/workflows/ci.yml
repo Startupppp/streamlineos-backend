@@ -1131,11 +1131,21 @@ jobs:
           DIRECT_DATABASE_URL: ${{ secrets.CI_DIRECT_DATABASE_URL }}
 
       # Self-contained in-scope fixtures plus the harness self-test. The separate
-      # perf capture and opt-in BOLA/replay artifact drills are not counted here.
+      # perf capture and opt-in BOLA replay-artifact drill are not counted here.
+      #
+      # test/security/bola/*.seeded-e2e-spec.ts wired 2026-09-08: these two files
+      # (bola-live-cross-tenant and t15-own-tenant-500) were referenced by no
+      # workflow. bola-live-cross-tenant is the live cross-tenant 404 sweep and
+      # runs unconditionally given a seeded database and APP_DATABASE_URL, both of
+      # which this job provides. t15-own-tenant-500 is an opt-in diagnostic (needs
+      # T15_REPLAY=1 and a plan artifact); without that env var the suite is
+      # CONDITIONAL-skipped per check:test-suppressions's own classification and
+      # no registry entry is required. Schedule/dispatch only — the job gate above.
       - name: Seeded isolation suite
         run: |
           pnpm test:e2e:seeded "${SEEDED_DATABASE_NAME}" \
             test/{accounting,billing,build,calendar,chat,db,home,hr,kb,mail,notifications,payments,payroll,settings,support,workflows}/*.seeded-e2e-spec.ts \
+            test/security/bola/*.seeded-e2e-spec.ts \
             test/security/gdpr-export-cross-module-privacy.seeded-e2e-spec.ts \
             test/helpers/__tests__/seeded-e2e-app.spec.ts
         env:

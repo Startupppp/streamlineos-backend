@@ -17,6 +17,20 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function onceAborted(signal: AbortSignal | undefined): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal === undefined) return;
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+    signal.addEventListener("abort", () => resolve(), { once: true });
+  });
+}
+
+let notifyHandlerEntered: (() => void) | undefined;
+let notifyObserved: (() => void) | undefined;
+
 @Controller("probe")
 @UseInterceptors(AiRequestAbortInterceptor)
 class ProbeController {
@@ -24,12 +38,14 @@ class ProbeController {
   async buffered(@Body() _body: unknown): Promise<{ ok: true }> {
     const signal = getAiRequestAbortSignal();
     const abortedAtStart = signal?.aborted === true;
-    await sleep(150);
+    notifyHandlerEntered?.();
+    await Promise.race([sleep(150), onceAborted(signal)]);
     observed.push({
       present: signal !== undefined,
       abortedAtStart,
       abortedAtEnd: signal?.aborted === true,
     });
+    notifyObserved?.();
     return { ok: true };
   }
 
@@ -74,6 +90,8 @@ describe("AiRequestAbortInterceptor against a real HTTP server", () => {
 
   beforeEach(() => {
     observed.length = 0;
+    notifyHandlerEntered = undefined;
+    notifyObserved = undefined;
   });
 
   it("establishes a signal that a healthy buffered request never aborts", async () => {
@@ -89,6 +107,13 @@ describe("AiRequestAbortInterceptor against a real HTTP server", () => {
 
   it("aborts the in-flight signal when a real client hangs up mid-request", async () => {
     const controller = new AbortController();
+    const entered = new Promise<void>((resolve) => {
+      notifyHandlerEntered = resolve;
+    });
+    const finished = new Promise<void>((resolve) => {
+      notifyObserved = resolve;
+    });
+
     const pending = fetch(`${baseUrl}/probe/buffered`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -96,10 +121,10 @@ describe("AiRequestAbortInterceptor against a real HTTP server", () => {
       signal: controller.signal,
     }).catch(() => undefined);
 
-    await sleep(40);
+    await entered;
     controller.abort();
     await pending;
-    await sleep(250);
+    await finished;
 
     expect(observed).toHaveLength(1);
     expect(observed[0]?.present).toBe(true);
