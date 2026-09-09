@@ -54,6 +54,30 @@ async function createOrg(client: Client, orgId: string): Promise<DbSpecOrg> {
       INSERT INTO organization_members (id, user_id, org_id, role, is_owner, status)
       VALUES (${membershipId}, ${userId}, ${orgId}, 'OWNER', true, 'ACTIVE')
       ON CONFLICT (id) DO NOTHING`;
+    /**
+     * Placement, without which this organisation is unreachable to every sweep.
+     *
+     * `forEachOrg` asks the region registry where an organisation lives, and an
+     * unplaced one raises "has no region. It must be placed before its data can
+     * be reached." The sweep catches that per organisation and carries on, so
+     * nothing breaks — it simply logs two failures on every run of every
+     * background worker, forever, in any database this fixture has touched.
+     *
+     * That noise is not free. It cost an afternoon: an outbox event that would
+     * not publish was blamed on these two rows, and the real cause was a cron
+     * lease held by a suite running beside it. A fixture that leaves a
+     * permanent error in the logs teaches people to read past errors.
+     */
+    await tx`
+      INSERT INTO organization_placement (
+        organization_id, region, cell_id, database_shard,
+        object_storage_region, search_cluster, write_fence_token, lease_expires_at
+      )
+      VALUES (
+        ${orgId}, 'primary', 'legacy-1', 'primary',
+        'primary', 'primary', gen_random_uuid()::text, now() + interval '100 years'
+      )
+      ON CONFLICT (organization_id) DO NOTHING`;
   });
   return { orgId, userId, membershipId };
 }
