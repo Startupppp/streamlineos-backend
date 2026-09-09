@@ -1,6 +1,7 @@
 import { INestApplication } from "@nestjs/common";
 import { configureBuildDatabaseAccess } from "test/build/configure-build-database-access";
-import { timesheetPageSchema } from "./dto/timesheets-response.schemas";
+import { timesheetEntrySchema, timesheetPageSchema } from "./dto/timesheets-response.schemas";
+import { z } from "zod";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { signToken } from "../../../../test/helpers/sign-token";
@@ -18,6 +19,8 @@ import type { DataScope } from "../../access/access.types";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
 import { describeWithDb, RBAC_E2E_DATABASE_URL } from "test/helpers/db-describe";
+
+const scopePageSchema = timesheetPageSchema.extend({ items: z.array(timesheetEntrySchema.pick({ id: true })) });
 
 describeWithDb(
   "Timesheets scope enforcement (e2e, requires RBAC_E2E_DATABASE_URL)",
@@ -136,7 +139,7 @@ describeWithDb(
         .set("Authorization", `Bearer ${token}`);
 
       expect(res.status).toBe(200);
-      const ids = timesheetPageSchema.parse(res.body).items.map((e) => e.id);
+      const ids = scopePageSchema.parse(res.body).items.map((e) => e.id);
       expect(ids).toEqual(expect.arrayContaining([entryIds.admin, entryIds.member]));
     });
 
@@ -159,7 +162,7 @@ describeWithDb(
         .set("Authorization", `Bearer ${token}`);
 
       expect(res.status).toBe(200);
-      const returned = timesheetPageSchema.parse(res.body).items;
+      const returned = scopePageSchema.parse(res.body).items;
       expect(returned.length).toBeGreaterThan(0);
       expect(returned.map((e) => e.id)).toEqual([entryIds.member]);
       expect(returned.map((e) => e.id)).not.toContain(entryIds.admin);
@@ -182,7 +185,7 @@ describeWithDb(
         .set("Authorization", `Bearer ${token}`);
 
       expect(res.status).toBe(200);
-      expect(timesheetPageSchema.parse(res.body).items).toEqual([]);
+      expect(scopePageSchema.parse(res.body).items).toEqual([]);
     });
 
     it("403 before any scope is resolved when the caller holds no timesheets permission", async () => {
@@ -218,7 +221,7 @@ describeWithDb(
         .set("Authorization", `Bearer ${token}`);
 
       expect(res.status).toBe(200);
-      const ids = timesheetPageSchema.parse(res.body).items.map((e) => e.id);
+      const ids = scopePageSchema.parse(res.body).items.map((e) => e.id);
       expect(ids).toEqual(expect.arrayContaining([entryIds.admin, entryIds.member]));
     });
   },
