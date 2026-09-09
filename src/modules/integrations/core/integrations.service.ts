@@ -6,7 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, isNull, ne, inArray, or } from "drizzle-orm";
+import { and, desc, eq, ne, inArray } from "drizzle-orm";
 import {
   mailMessageMetadata,
   mailSyncCheckpoints,
@@ -20,16 +20,12 @@ import { APP_CONFIG } from "../../../config/config.module";
 import type { AppConfig } from "../../../config/env.validation";
 import { ComposioGateway } from "./composio.gateway";
 import { connectionOwnerPredicate } from "./connection-owner.predicate";
-
-const CONNECTION_COLUMNS = {
-  id: userIntegrationConnections.id,
-  status: userIntegrationConnections.status,
-  toolkit: userIntegrationConnections.toolkit,
-  isPrimary: userIntegrationConnections.isPrimary,
-  createdAt: userIntegrationConnections.createdAt,
-  accountEmail: userIntegrationConnections.accountEmail,
-  accountLabel: userIntegrationConnections.accountLabel,
-} as const;
+import { CONNECTION_COLUMNS } from "./connection-columns";
+import {
+  defaultReturnPath,
+  toIntegrationToolkit,
+  type ConnectionReturnPath,
+} from "./connection-toolkit";
 
 const OWNED_CONNECTION_COLUMNS = {
   id: userIntegrationConnections.id,
@@ -75,9 +71,8 @@ export class IntegrationsService {
       .limit(50);
   }
 
-  async initiate(userId: string, toolkit: IntegrationToolkit, returnPath?: "/calendar" | "/mail") {
-    const defaultPath = toolkit === "gmail" ? "/mail" : "/calendar";
-    const resolvedPath = returnPath ?? defaultPath;
+  async initiate(userId: string, toolkit: IntegrationToolkit, returnPath?: ConnectionReturnPath) {
+    const resolvedPath = returnPath ?? defaultReturnPath(toolkit);
     const callbackUrl = `${this.config.APP_URL}${resolvedPath}`;
     return this.gateway.initiateConnection(userId, toolkit, callbackUrl);
   }
@@ -97,7 +92,7 @@ export class IntegrationsService {
         "Connection is not active yet. Complete the authorization and try again.",
       );
     }
-    const toolkit = this.toToolkit(account.toolkitSlug);
+    const toolkit = toIntegrationToolkit(account.toolkitSlug);
     const email =
       (await this.gateway.getAccountEmail(userId, account.id, toolkit)) ??
       account.email;
@@ -314,11 +309,6 @@ export class IntegrationsService {
       if (!row) throw new NotFoundException("Connection not found");
       return row;
     });
-  }
-
-  private toToolkit(slug: string | null): IntegrationToolkit {
-    if (slug === "googlecalendar" || slug === "outlook" || slug === "gmail") return slug;
-    throw new BadRequestException(`Unsupported toolkit: ${slug ?? "unknown"}`);
   }
 
   async ownedConnection(orgId: string, userId: string, connectionId: number, membershipId?: number | null) {

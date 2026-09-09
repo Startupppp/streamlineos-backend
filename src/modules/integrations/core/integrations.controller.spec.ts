@@ -11,6 +11,10 @@ describe("IntegrationsController RBAC metadata", () => {
     ["finalize", "integrations:connections:manage"],
     ["disconnect", "integrations:connections:manage"],
     ["setPrimary", "integrations:connections:manage"],
+    ["listOrgConnections", "integrations:connections:manage"],
+    ["initiateOrgConnection", "integrations:connections:manage"],
+    ["finalizeOrgConnection", "integrations:connections:manage"],
+    ["disconnectOrgConnection", "integrations:connections:manage"],
   ];
 
   it.each(expectations)("%s requires %s", (method, permission) => {

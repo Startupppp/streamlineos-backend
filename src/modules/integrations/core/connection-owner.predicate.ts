@@ -24,13 +24,20 @@ export function connectionOwnerPredicate(
   userId: string,
   membershipId: number | null | undefined,
 ): SQL | undefined {
+  const personallyScoped = eq(userIntegrationConnections.scope, "user");
   if (membershipId != null)
-    return or(
-      eq(userIntegrationConnections.membershipId, membershipId),
-      and(
-        isNull(userIntegrationConnections.membershipId),
-        eq(userIntegrationConnections.userId, userId),
+    return and(
+      personallyScoped,
+      or(
+        eq(userIntegrationConnections.membershipId, membershipId),
+        and(
+          isNull(userIntegrationConnections.membershipId),
+          eq(userIntegrationConnections.userId, userId),
+        ),
       ),
     );
-  return eq(userIntegrationConnections.userId, userId);
+  return and(
+    personallyScoped,
+    eq(userIntegrationConnections.userId, userId),
+  );
 }
