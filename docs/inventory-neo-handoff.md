@@ -946,3 +946,60 @@ The sidebar digest in `sidebar-nav-inventory.test.ts` was updated three times
 during this programme, each with a note saying which routes were added and why
 they carry the keys they do. That file is the record of every navigation change;
 keep writing the note.
+
+---
+
+# Production readiness against INVENTORY_MISSING §13
+
+Assessed 2026-09-09. Every line is either evidence with a command behind it or a
+statement that the thing is not done. Nothing here is marked ready because it
+looks ready in the source.
+
+## The environment this was measured in
+
+Everything below ran against a **local Postgres built cold from this branch's
+own journal** — `streamline_inv`, 634/634 `REACHED_HEAD`, zero failures — with
+`APP_DATABASE_URL` pointed at `streamline_app` (`rolbypassrls = false`).
+
+That mattered more than it sounds. The database the previous session's specs ran
+against was built from a different branch's journal: `inventory-schema-parity`
+reported **35 tables and 171 columns** of difference, and nine `.db.spec` suites
+failed there for that reason alone. Against a faithful database all sixteen pass,
+117/117. A suite run against the wrong schema is not evidence either way.
+
+| §13 line | State | Evidence |
+|---|---|---|
+| All stock mutations use the canonical apply service | **Ready** | `pnpm check:stock-writers` — 6 writer sites; the ledger has exactly one. Four exceptions carry the buckets they write and why; one (`reservation.service`) is named open against INV-40. Exit 1 on a planted straggler, 2 when the scan cannot see the kernel. |
+| Batch behaviour matches single | **Ready** | `batch-single-equivalence.seeded-e2e-spec` — two tenants, same commands through both doors, identical levels, ledger, cost layers and outbox counts, and replay applies nothing twice. 7/7. |
+| Recall/quality-hold execution atomic or recoverable | **Ready, by the atomic branch** | `quality-recalls.service.create` puts the document, lines, lot flip, holds, quarantine movements, audit row and outbox event inside one `db.transaction` wrapped in `runIdempotent`. `PENDING_QUARANTINE`/`QUARANTINE_FAILED` therefore cannot occur, which makes INV-33's UI **not applicable** rather than missing. |
+| Handling units and ownership preserved across stock-affecting flows | **Not ready — one hole closed, no gate** | INV-40 found and fixed a real one: the reservation path used a five-column key against a six-column natural key, so a consigned row could be committed against and a release decremented every ownership variant. There is now a spec for that path and **no ratchet covering the others**. |
+| Accounting-enabled tenants cannot bypass period controls | **Partly** | `negative-stock-and-period.seeded-e2e-spec` proves the negative-stock policy in both directions with its specific error codes. The period half asserts which state the database is in rather than skipping, so it cannot report a guard it never reached. The wider INV-07 contract — required vs optional, missing mapping — is **not done**. |
+| Compliance, carrier, channel adapters real | **Not done** | Stubs. INV-25/26/27, and the pack forbids presenting a stub as production compliance. |
+| API contracts generated or contract-tested | **Partly** | The cross-repo drift guards work again — they were reading the wrong backend checkout entirely (see below). OpenAPI generation is still absent. |
+| Seeded e2e covers golden workflows, retries, concurrency | **Ready** | ~54 seeded suites including `golden-path`, `neo-golden-path`, `order-to-ship`, `stock-concurrency`, `idempotent-replay`, `recall-simulate-execute`, `fefo-expiry`, `lot-genealogy`. |
+| Frontend Playwright covers operator workflows | **Not done — blocked** | There is no Playwright in this repository: no config, no dependency, no specs. INV-20/21 are unstarted, and the pack's own fallback is to write the block down rather than claim it. |
+| Live DB schema, constraints, indexes and RLS verified | **Ready locally, not in CI** | `inventory-rls.db.spec` runs as the application role and asserts `rolbypassrls = false` first, so it cannot pass vacuously against the owner. Wiring it into CI is INV-23/24 and still blocked on the account billing item in the earlier handoff. |
+| Critical idempotency keys stable across retry and reload | **Ready** | `idempotency-key-coverage` and `use-idempotent-mutation` 10/10; 20 inventory hooks use `useIdempotentMutation`. The backend gate had been reporting three of these as unfenced — see below. |
+
+## Two checks that were reporting the wrong answer
+
+Both were found by running them, not by reading them, and both failed in the
+direction that costs the most: **confidently, with a specific wrong answer**.
+
+1. **`check:idempotent-commands` could only see one of two fences.** It reported
+   three inventory handlers as unfenced. All three take an `@IdempotencyKey()`
+   and hand it to a service that claims the fence itself, and one carries a
+   docstring promising that a replay creates nothing. The gate now understands
+   both mechanisms, and still requires the key to be *used* rather than merely
+   accepted — a handler that takes it and passes a constant is still reported.
+
+2. **The frontend's cross-repo drift guard was reading a different branch's
+   backend.** `backendRoot()` resolved `inv-wt-frontend` to
+   `streamlineos-backend`, some two hundred migrations behind, and
+   `catalog-sync` duly called twenty-two live inventory permission keys
+   phantoms. Acting on that output would have deleted twenty-two working
+   permissions. A worktree pairing is tried first now; the whole frontend suite
+   goes 223/223, 2139 tests.
+
+A guard that cries wolf is a guard people learn to run with `|| true`, so both
+count as making the checks real rather than as making them pass.
