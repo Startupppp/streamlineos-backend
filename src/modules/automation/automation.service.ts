@@ -20,6 +20,8 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
+import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { logSideEffectFailure } from "../../common/logger/side-effect";
 import { NotificationsService } from "../notifications/notifications.service";
 import { AutomationEmailService } from "./automation-email.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
@@ -290,6 +292,30 @@ export class AutomationService {
       actionResults.push(await this.executeAction(orgId, action, payload));
     }
     return { matched: true, actionResults };
+  }
+
+  /**
+   * For callers that fire this and do not wait for it.
+   *
+   * `runAutomationsForEvent` reads `this.db`, which routes through the ambient
+   * tenant transaction — correct for the callers that `await` it inside their
+   * own, wrong for the ones that do not. A `void`-ed call from an outbox
+   * consumer or a cron sweep runs after that transaction has committed, and
+   * every query it makes is then issued against a closed handle: it does not
+   * throw, it hangs, and the `try/catch` inside never sees anything to log. An
+   * enabled automation rule simply never ran, and nothing anywhere said so.
+   *
+   * A detached run therefore gets a transaction of its own, and its failures
+   * get somewhere to be seen.
+   */
+  runAutomationsForEventDetached(
+    orgId: string,
+    triggerEvent: AutomationTrigger,
+    payload: EventPayload,
+  ): void {
+    void runInNewTenantTransaction(this.db, orgId, () =>
+      this.runAutomationsForEvent(orgId, triggerEvent, payload),
+    ).catch(logSideEffectFailure("automation dispatch", { orgId, triggerEvent }));
   }
 
   async runAutomationsForEvent(

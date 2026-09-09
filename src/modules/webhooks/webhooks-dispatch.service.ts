@@ -9,6 +9,7 @@ import {
   runInNewTenantTransaction,
   runInTenantTransaction,
 } from "../../common/tenant/run-in-tenant-transaction";
+import { runOutsideTenantContext } from "../../common/tenant/tenant-context";
 import { logSideEffectFailure } from "../../common/logger/side-effect";
 import {
   decryptSecret,
@@ -48,7 +49,24 @@ export class WebhooksDispatchService {
    * nothing at all.
    */
   dispatch(orgId: string, eventName: string, payload: Record<string, unknown>): void {
-    void this.run(orgId, eventName, payload).catch(
+    /**
+     * `runOutsideTenantContext` because this work outlives the transaction that
+     * started it, and the tenant context does not.
+     *
+     * The context is async-local, so the continuation inherits whatever
+     * transaction was open at the call — which, by the time it runs, has
+     * committed and closed. `record` below asks for `runInTenantTransaction`,
+     * that helper reuses the ambient it finds, and the insert is then issued
+     * against a dead handle: it does not fail, it never settles. A promise that
+     * neither resolves nor rejects logs nothing, so a dispatch called from an
+     * outbox consumer or a cron sweep silently wrote no delivery row at all.
+     *
+     * Detaching first means `record` finds no ambient and opens its own, which
+     * is what a detached side effect needed all along. `retryLog` does not come
+     * through here: it calls `deliver` from inside a live request transaction,
+     * and reusing that one is correct.
+     */
+    void runOutsideTenantContext(() => this.run(orgId, eventName, payload)).catch(
       logSideEffectFailure("webhook dispatch", { orgId, eventName }),
     );
   }
@@ -77,9 +95,20 @@ export class WebhooksDispatchService {
     });
     if (active.length === 0) return;
 
-    await Promise.allSettled(
+    /**
+     * `allSettled` so one endpoint's failure does not cancel the others — but
+     * the results are read, not discarded. Dropping them here reintroduced
+     * exactly the fail-and-forget this class was written to end, one level
+     * down: a delivery whose own log row could not be written vanished without
+     * a trace.
+     */
+    const settled = await Promise.allSettled(
       active.map((endpoint) => this.deliver(endpoint, orgId, eventName, payload)),
     );
+    for (const result of settled) {
+      if (result.status === "rejected")
+        logSideEffectFailure("webhook delivery", { orgId, eventName })(result.reason);
+    }
   }
 
   private async deliver(

@@ -44,7 +44,7 @@ export class SignIntegrationsService {
     const payload = this.basePayload(envelope, extra);
 
     this.webhooks.dispatch(envelope.orgId, eventName, payload);
-    void this.automation.runAutomationsForEvent(envelope.orgId, eventName as AutomationTrigger, payload);
+    this.automation.runAutomationsForEventDetached(envelope.orgId, eventName as AutomationTrigger, payload);
     void this.notifications.create({
       orgId: envelope.orgId,
       userId: envelope.senderUserId,
@@ -64,7 +64,7 @@ export class SignIntegrationsService {
     const payload = this.basePayload(envelope, { recipientId: recipient.id, recipientName: recipient.name, recipientEmail: recipient.email });
 
     this.webhooks.dispatch(envelope.orgId, eventName, payload);
-    void this.automation.runAutomationsForEvent(envelope.orgId, eventName as AutomationTrigger, payload);
+    this.automation.runAutomationsForEventDetached(envelope.orgId, eventName as AutomationTrigger, payload);
   }
 
   emitBulkSendCompleted(orgId: string, senderUserId: string, jobId: number, stats: { totalCount: number; successCount: number; failedCount: number }): void {
@@ -72,7 +72,7 @@ export class SignIntegrationsService {
     const payload: Record<string, unknown> = { jobId, senderUserId, ...stats };
 
     this.webhooks.dispatch(orgId, eventName, payload);
-    void this.automation.runAutomationsForEvent(orgId, eventName as AutomationTrigger, payload);
+    this.automation.runAutomationsForEventDetached(orgId, eventName as AutomationTrigger, payload);
     void this.notifications.create({
       orgId,
       userId: senderUserId,
