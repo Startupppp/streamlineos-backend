@@ -20,6 +20,33 @@ import type { RequestActorContext } from "../../common/audit/actor-context";
 import { forEachOrg } from "../../common/tenant/for-each-org";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 
+/**
+ * Which of an envelope's recipients a reminder would go to.
+ *
+ * Shared by the sweep and its preview for the same reason the interval rule is:
+ * the count a dry run reports has to be the count the real run produces, and
+ * two copies of a filter are how those quietly diverge. A recipient with no
+ * email or no issued token is skipped rather than failed — there is nothing to
+ * remind them at.
+ */
+export function remindableRecipients<
+  T extends {
+    recipientType: string;
+    status: string;
+    email: string | null;
+    signingTokenHash: string | null;
+  },
+>(recipients: T[]): Array<T & { email: string; signingTokenHash: string }> {
+  return recipients.filter(
+    (r): r is T & { email: string; signingTokenHash: string } =>
+      isSigningType(r.recipientType) &&
+      (r.status === "invited" || r.status === "viewed" || r.status === "authenticated") &&
+      r.email !== null &&
+      r.email !== "" &&
+      r.signingTokenHash !== null,
+  );
+}
+
 @Injectable()
 export class SignEnvelopeSweepsService {
   constructor(
@@ -59,16 +86,7 @@ export class SignEnvelopeSweepsService {
     const senderNameStr = await this.senderName(envelope.senderUserId);
     let remindedCount = 0;
 
-    for (const r of recipientRows) {
-      if (!isSigningType(r.recipientType)) continue;
-      if (
-        r.status !== "invited" &&
-        r.status !== "viewed" &&
-        r.status !== "authenticated"
-      )
-        continue;
-      if (!r.email || !r.signingTokenHash) continue;
-
+    for (const r of remindableRecipients(recipientRows)) {
       const rawToken = this.tokens.generateSigningToken();
       await this.db
         .update(signRecipients)
@@ -134,8 +152,15 @@ export class SignEnvelopeSweepsService {
     return { remindedCount };
   }
 
-  async runReminderSweep(): Promise<number> {
-    const now = new Date();
+  /**
+   * The envelopes a reminder sweep would act on, right now.
+   *
+   * Split out so the dry run and the real run cannot disagree. A preview that
+   * reimplements the interval arithmetic is worth nothing in staging — the
+   * whole point of asking is to be told what the sweep will actually do, and a
+   * second copy of the rule is exactly how the answer drifts from the act.
+   */
+  private async reminderDueEnvelopes(now: Date) {
     const candidates = await this.db.query.signEnvelopes.findMany({
       where: and(
         inArray(signEnvelopes.status, [
@@ -147,25 +172,21 @@ export class SignEnvelopeSweepsService {
       ),
     });
 
-    let sentCount = 0;
-    for (const envelope of candidates) {
-      if (envelope.reminderSentCount >= envelope.reminderMaxCount) continue;
+    return candidates.filter((envelope) => {
+      if (envelope.reminderSentCount >= envelope.reminderMaxCount) return false;
       const baseline = envelope.lastReminderAt ?? envelope.sentAt;
-      if (!baseline) continue;
+      if (!baseline) return false;
       const intervalDays =
         envelope.reminderSentCount === 0
           ? envelope.reminderFirstAfterDays
           : envelope.reminderRepeatDays;
-      if (addDays(baseline, intervalDays).getTime() > now.getTime()) continue;
-
-      sentCount += await this.remindEnvelopeRecipients(envelope, "system");
-    }
-    return sentCount;
+      return addDays(baseline, intervalDays).getTime() <= now.getTime();
+    });
   }
 
-  async runExpirationSweep(): Promise<number> {
-    const now = new Date();
-    const expiring = await this.db.query.signEnvelopes.findMany({
+  /** The envelopes an expiration sweep would act on, right now. */
+  private async expiringEnvelopes(now: Date) {
+    return this.db.query.signEnvelopes.findMany({
       where: and(
         inArray(signEnvelopes.status, [
           "sent",
@@ -175,6 +196,20 @@ export class SignEnvelopeSweepsService {
         lte(signEnvelopes.expiresAt, now),
       ),
     });
+  }
+
+  async runReminderSweep(): Promise<number> {
+    const now = new Date();
+    let sentCount = 0;
+    for (const envelope of await this.reminderDueEnvelopes(now)) {
+      sentCount += await this.remindEnvelopeRecipients(envelope, "system");
+    }
+    return sentCount;
+  }
+
+  async runExpirationSweep(): Promise<number> {
+    const now = new Date();
+    const expiring = await this.expiringEnvelopes(now);
 
     for (const envelope of expiring) {
       await this.db
@@ -223,12 +258,28 @@ export class SignEnvelopeSweepsService {
    * `forEachOrg` supplies the context per organisation, which also keeps one
    * tenant's failure from stopping the rest.
    */
-  async runSweepAllOrgs(sweep: "reminder" | "expiration"): Promise<SweepAllResult> {
+  async runSweepAllOrgs(
+    sweep: "reminder" | "expiration",
+    options: { dryRun?: boolean } = {},
+  ): Promise<SweepAllResult> {
+    const dryRun = options.dryRun === true;
     const failures: Array<{ orgId: string; message: string }> = [];
     let affected = 0;
 
     const outcome = await forEachOrg(this.db, `sign-${sweep}-sweep`, async (_tx, orgId) => {
       try {
+        if (dryRun) {
+          const preview = await this.previewSweep(sweep);
+          affected += preview.affected;
+          /**
+           * Deliberately no `recordRun`. A dry run did not run the sweep, and
+           * saying otherwise would let a staging rehearsal reset the staleness
+           * clock that SIGN-P1-02 reads — the alert for "this sweep has not
+           * fired" would then be silenced by the very thing that proves it has
+           * not fired.
+           */
+          return;
+        }
         const count =
           sweep === "reminder" ? await this.runReminderSweep() : await this.runExpirationSweep();
         affected += count;
@@ -257,10 +308,61 @@ export class SignEnvelopeSweepsService {
 
     return {
       sweep,
+      dryRun,
       organizations: outcome.organizations,
       succeeded: outcome.succeeded,
       failed: outcome.failed,
       affected,
+    };
+  }
+
+  /**
+   * What the sweep would do to the organisation in the current tenant scope,
+   * touching nothing.
+   *
+   * Both branches go through the same selection the real sweep uses, so this
+   * answers "what will happen" rather than "what a second implementation
+   * thinks will happen". `entries` is capped; the totals above it are not, so
+   * a large preview is still numerically true.
+   */
+  async previewSweep(sweep: "reminder" | "expiration"): Promise<SweepPreview> {
+    const now = new Date();
+    const entries: SweepPreviewEntry[] = [];
+    let envelopes = 0;
+    let affected = 0;
+
+    if (sweep === "reminder") {
+      for (const envelope of await this.reminderDueEnvelopes(now)) {
+        const recipients = remindableRecipients(
+          await this.recipients.listForEnvelope(envelope.orgId, envelope.id),
+        ).length;
+        /**
+         * A due envelope whose recipients have all signed or declined sends
+         * nothing, and the real sweep counts nothing for it. Listing it here
+         * would over-promise.
+         */
+        if (recipients === 0) continue;
+        envelopes += 1;
+        affected += recipients;
+        if (entries.length < SWEEP_PREVIEW_LIMIT)
+          entries.push({ envelopeId: envelope.id, title: envelope.title, affected: recipients });
+      }
+    } else {
+      for (const envelope of await this.expiringEnvelopes(now)) {
+        envelopes += 1;
+        affected += 1;
+        if (entries.length < SWEEP_PREVIEW_LIMIT)
+          entries.push({ envelopeId: envelope.id, title: envelope.title, affected: 1 });
+      }
+    }
+
+    return {
+      sweep,
+      envelopes,
+      affected,
+      entries,
+      /** The totals above are exact; only the listing is capped. */
+      truncated: envelopes > entries.length,
     };
   }
 
@@ -310,8 +412,25 @@ export class SignEnvelopeSweepsService {
   }
 }
 
+const SWEEP_PREVIEW_LIMIT = 100;
+
+export interface SweepPreviewEntry {
+  envelopeId: number;
+  title: string;
+  affected: number;
+}
+
+export interface SweepPreview {
+  sweep: "reminder" | "expiration";
+  envelopes: number;
+  affected: number;
+  entries: SweepPreviewEntry[];
+  truncated: boolean;
+}
+
 export interface SweepAllResult {
   sweep: "reminder" | "expiration";
+  dryRun: boolean;
   organizations: number;
   succeeded: number;
   failed: number;

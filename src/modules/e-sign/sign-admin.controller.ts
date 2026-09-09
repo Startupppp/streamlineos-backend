@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../common/rbac/module.guard";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
@@ -90,6 +90,21 @@ export class SignAdminController {
   @RequirePermission("sign:admin:manage")
   async sweepStatus(@CurrentUser() u: CurrentUserContext) {
     return { sweeps: await this.sweeps.lastRuns(u.orgId) };
+  }
+
+  /**
+   * What the next sweep would do to this organisation, without doing it.
+   *
+   * Runs the same selection the sweep runs, so an operator asking "what happens
+   * if I turn this on" gets the sweep's own answer rather than a second
+   * implementation's. Nothing is written and no mail is queued, which also
+   * means calling this does not reset the staleness clock `sweep-status` reads.
+   */
+  @Get("sweep-preview")
+  @RequirePermission("sign:admin:manage")
+  async sweepPreview(@Query("sweep") sweep?: string) {
+    const which = sweep === "expiration" ? "expiration" : "reminder";
+    return this.sweeps.previewSweep(which);
   }
 
   @Post("run-reminder-sweep")

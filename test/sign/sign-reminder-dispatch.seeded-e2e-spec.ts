@@ -6,6 +6,7 @@ import {
   orgModules,
   signEnvelopes,
   signRecipients,
+  signSweepRuns,
 } from "src/db/schema";
 import {
   SEEDED_HARNESS,
@@ -64,6 +65,9 @@ describe(`${SEEDED_HARNESS} a reminder reaches the signer with a link that works
   /** Sent today. The same sweep must leave it alone. */
   let freshEnvelopeId = 0;
   let freshEmail = "";
+
+  /** What the dry run said would happen, to be held against what did. */
+  let predictedAffected = -1;
 
   const seedEnvelope = async (opts: {
     title: string;
@@ -129,6 +133,7 @@ describe(`${SEEDED_HARNESS} a reminder reaches the signer with a link that works
   afterAll(async () => {
     if (fixture) {
       await seeded.seedDb.delete(emailOutbox).where(eq(emailOutbox.organizationId, fixture.orgId));
+      await seeded.seedDb.delete(signSweepRuns).where(eq(signSweepRuns.orgId, fixture.orgId));
       await seeded.seedDb.delete(signRecipients).where(eq(signRecipients.orgId, fixture.orgId));
       await seeded.seedDb.delete(signEnvelopes).where(eq(signEnvelopes.orgId, fixture.orgId));
       await fixture.teardown();
@@ -136,9 +141,9 @@ describe(`${SEEDED_HARNESS} a reminder reaches the signer with a link that works
     await seeded?.close();
   }, 60_000);
 
-  const runReminderSweep = async () => {
+  const runReminderSweep = async (query = "") => {
     const res = await request(seeded.app.getHttpServer())
-      .post("/cron/sign-reminder-sweep")
+      .post(`/cron/sign-reminder-sweep${query}`)
       .set("Authorization", `Bearer ${CRON_SECRET}`)
       .send({});
     expect(res.status).toBe(200);
@@ -155,13 +160,62 @@ describe(`${SEEDED_HARNESS} a reminder reaches the signer with a link that works
   const session = (token: string) =>
     request(seeded.app.getHttpServer()).get(`/public/sign/${token}/session`);
 
+  it("SIGN-P1-01: a dry run predicts the work and performs none of it", async () => {
+    /**
+     * First, before any live sweep — so "no mail was queued" cannot be
+     * satisfied by there having been nothing to send yet.
+     */
+    const body = await runReminderSweep("?dryRun=true");
+
+    expect(body.dryRun).toBe(true);
+    expect(body.message).toContain("dry run, nothing sent");
+
+    /**
+     * The count is org-wide across every tenant in the database, so it is not
+     * asserted as a literal — the next test holds the live sweep to this exact
+     * number instead. Predicting what the run will do is the only property
+     * that makes a dry run worth having, and it is a stronger claim than any
+     * constant would be.
+     */
+    expect(body.affected).toBeGreaterThanOrEqual(1);
+    predictedAffected = body.affected;
+
+    expect(await remindersFor(dueEmail)).toHaveLength(0);
+
+    const [due] = await seeded.seedDb
+      .select({ count: signEnvelopes.reminderSentCount, lastAt: signEnvelopes.lastReminderAt })
+      .from(signEnvelopes)
+      .where(eq(signEnvelopes.id, dueEnvelopeId));
+    expect(due?.count).toBe(0);
+    expect(due?.lastAt).toBeNull();
+
+    /** The token is not rotated either: the signer's existing link still works. */
+    const stillValid = await session(originalToken);
+    expect(stillValid.status).toBe(200);
+
+    /**
+     * And no run is recorded. A rehearsal that stamped the clock would silence
+     * the "this sweep has not fired" alert with the very act that proves it has
+     * not fired.
+     */
+    const runs = await seeded.seedDb
+      .select({ sweep: signSweepRuns.sweep })
+      .from(signSweepRuns)
+      .where(eq(signSweepRuns.orgId, fixture.orgId));
+    expect(runs).toHaveLength(0);
+  }, 120_000);
+
   it("sends nothing before the interval has elapsed", async () => {
     /**
      * Run first, against both envelopes, so the negative is not merely "the
      * sweep has not been called yet". The fresh envelope is inside its
      * three-day window; the due one is past it.
      */
-    await runReminderSweep();
+    const body = await runReminderSweep();
+
+    expect(body.dryRun).toBe(false);
+    /** SIGN-P1-01: the rehearsal was accurate. */
+    expect(body.affected).toBe(predictedAffected);
 
     expect(await remindersFor(freshEmail)).toHaveLength(0);
 
