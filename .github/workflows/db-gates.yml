@@ -243,6 +243,15 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=8192
 
+      - name: Five-area billing replay and hierarchy protection (real Postgres)
+        run: >-
+          pnpm test:db-specs --runTestsByPath
+          src/modules/billing/core/provider-event-ledger.db.spec.ts
+          src/modules/billing/payments/payment-webhook-event-id-precedence.db.spec.ts
+          src/modules/organization/hierarchy/org-hierarchy-descendant-protection.db.spec.ts
+        env:
+          ALLOW_DESTRUCTIVE_DB_TESTS: "1"
+
       # ── The `.db.spec.ts` class ──────────────────────────────────────────────
       #
       # 56 spec files need a live Postgres. They used to carry a runtime env gate
@@ -273,7 +282,8 @@ jobs:
       # MEASURED 2026-09-08 at commit 514ea82da on a co-located bootstrapped
       # database: provider-event-ledger, payment-webhook-event-id-precedence and
       # org-hierarchy-descendant-protection ran green (3 suites / 17 tests). Those
-      # three do not need seeded data; the others in this run do.
+      # three now create their own tenant fixtures and run on every event above.
+      # Other suites in the full run still require a seed step.
       - name: Database-gated spec suites (.db.spec.ts)
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: pnpm test:db-specs

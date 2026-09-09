@@ -144,7 +144,8 @@ export class RazorpayAdapter implements PaymentProviderAdapter, OnModuleInit {
       {
         provider: "razorpay-orders",
         timeoutMs: this._orderTimeoutMs,
-        maxAttempts: 3,
+        // An order may commit before an error response; the provider does not promise safe replay.
+        maxAttempts: 1,
         baseDelayMs: this._baseDelayMs,
         maxDelayMs: this._maxDelayMs,
         classify: classifyRazorpayError,

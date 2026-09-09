@@ -1,6 +1,7 @@
 {
   "moduleFileExtensions": ["js", "json", "ts", "mjs", "cjs"],
   "rootDir": ".",
+  "roots": ["<rootDir>/src", "<rootDir>/test"],
   "testEnvironment": "node",
   "testTimeout": 120000,
   "workerIdleMemoryLimit": "1GB",

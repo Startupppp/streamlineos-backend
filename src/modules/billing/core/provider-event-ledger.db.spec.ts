@@ -7,14 +7,13 @@ import { randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "../../../db/schema";
-import { organizations } from "../../../db/schema";
+import { requireApprovedDatabaseUrl } from "../../../test/db-spec-guard";
 import { ProviderEventLedger } from "./provider-event-ledger";
 
-const DB_URL = process.env.LEDGER_PROBE_DATABASE_URL ?? process.env.DATABASE_URL;
-if (!DB_URL)
-  throw new Error(
-    "provider-event-ledger.db.spec requires LEDGER_PROBE_DATABASE_URL or DATABASE_URL",
-  );
+const DB_URL = requireApprovedDatabaseUrl({
+  spec: "provider-event-ledger.db.spec.ts",
+  vars: ["LEDGER_PROBE_DATABASE_URL", "DATABASE_URL"],
+});
 
 const PROBE = `ledger-probe-${randomUUID().slice(0, 8)}`;
 const EVENT = { eventType: "payment.captured", rawBody: '{"event":"payment.captured"}' };
@@ -23,8 +22,9 @@ describe("ProviderEventLedger.claim() — real Postgres conflict semantics", () 
   let client: postgres.Sql;
   let db: ReturnType<typeof drizzle<typeof schema>>;
   let ledger: ProviderEventLedger;
-  let orgIdA: string;
-  let orgIdB: string;
+  const orgIdA = `${PROBE}-a`;
+  const orgIdB = `${PROBE}-b`;
+  const userId = `${PROBE}-owner`;
   let baselineTables: number;
   let baselineMigrations: number;
 
@@ -32,11 +32,20 @@ describe("ProviderEventLedger.claim() — real Postgres conflict semantics", () 
     client = postgres(DB_URL, { max: 4, prepare: false, onnotice: () => undefined });
     db = drizzle(client, { schema });
     ledger = new ProviderEventLedger(db);
-    const rows = await db.select({ id: organizations.id }).from(organizations).limit(2);
-    if (rows.length < 2)
-      throw new Error("provider-event-ledger.db.spec needs at least 2 organisation rows in the scratch database");
-    orgIdA = rows[0]!.id;
-    orgIdB = rows[1]!.id;
+    await client.begin(async (tx) => {
+      await tx`SET CONSTRAINTS ALL DEFERRED`;
+      await tx`INSERT INTO users (id, email) VALUES (${userId}, ${`${userId}@test.invalid`})`;
+      for (const orgId of [orgIdA, orgIdB]) {
+        await tx`
+          INSERT INTO organizations (id, name, slug, owner_membership_id)
+          VALUES (${orgId}, ${"Ledger probe"}, ${orgId}, 0)`;
+        const [membership] = await tx<Array<{ id: number }>>`
+          INSERT INTO organization_members (org_id, user_id, role, status, is_owner)
+          VALUES (${orgId}, ${userId}, 'OWNER', 'ACTIVE', true) RETURNING id`;
+        if (!membership) throw new Error("Ledger probe owner membership was not created");
+        await tx`UPDATE organizations SET owner_membership_id = ${membership.id} WHERE id = ${orgId}`;
+      }
+    });
     const [tables] = await client<Array<{ n: number }>>`
       SELECT count(*)::int AS n FROM pg_tables WHERE schemaname = 'public'`;
     const [migrations] = await client<Array<{ n: number }>>`
@@ -46,7 +55,17 @@ describe("ProviderEventLedger.claim() — real Postgres conflict semantics", () 
   });
 
   afterAll(async () => {
-    if (client) await client.end({ timeout: 5 });
+    if (!client) return;
+    try {
+      await client.begin(async (tx) => {
+        await tx`SET CONSTRAINTS ALL DEFERRED`;
+        await tx`DELETE FROM provider_webhook_events WHERE org_id IN (${orgIdA}, ${orgIdB})`;
+        await tx`DELETE FROM organizations WHERE id IN (${orgIdA}, ${orgIdB})`;
+        await tx`DELETE FROM users WHERE id = ${userId}`;
+      });
+    } finally {
+      await client.end({ timeout: 5 });
+    }
   });
 
   it("first claim of a fresh (org, provider, eventId) returns RECORDED", async () => {

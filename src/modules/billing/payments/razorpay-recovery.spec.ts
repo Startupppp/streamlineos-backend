@@ -13,15 +13,8 @@ import { ProviderCircuitBreaker } from "../../../common/outbound/provider-circui
  * option) and drive the adapter against a local http.createServer whose
  * responses are scripted per case.
  *
- * Part 2 finding — Razorpay idempotency
- *   Razorpay's Orders API does NOT support a dedicated Idempotency-Key header.
- *   Source: https://razorpay.com/docs/api/orders/create — the page states:
- *   "receipt is treated as an idempotency key, so a second create call with
- *   the same value is rejected."  No HTTP header mechanism is documented.
- *   The compensating property is proven in the "receipt stability" case below:
- *   the adapter passes the caller-supplied receipt unchanged on every attempt,
- *   so if a duplicate order were ever created (e.g. two concurrent callers),
- *   both orders carry the same receipt and are reconcilable.
+ * Receipts support reconciliation; they do not prove idempotent replay.
+ * Ambiguous order creation failures must not be retried automatically.
  */
 
 interface QueuedResponse {
@@ -64,14 +57,16 @@ class FakeServer {
       fetch(`${serverUrl}/v1/orders`, {
         method: init.method,
         headers: init.headers,
-        body: init.body as BodyInit,
+        body: typeof init.body === "string" ? init.body : undefined,
       });
   }
 
   listen(): Promise<void> {
     return new Promise((resolve) => {
       this.server.listen(0, "127.0.0.1", () => {
-        this._port = (this.server.address() as { port: number }).port;
+        const address = this.server.address();
+        if (!address || typeof address === "string") throw new Error("Missing test server port");
+        this._port = address.port;
         resolve();
       });
     });
@@ -79,8 +74,7 @@ class FakeServer {
 
   close(): Promise<void> {
     return new Promise((resolve, reject) => {
-      const s = this.server as http.Server & { closeAllConnections?: () => void };
-      s.closeAllConnections?.();
+      this.server.closeAllConnections();
       this.server.close((err) => (err ? reject(err) : resolve()));
     });
   }
@@ -97,7 +91,7 @@ const ORDER_200 = { id: "order_recovered123", amount: 10000, currency: "INR" };
 const ERR_500 = { status: 500, body: { error: { description: "transient error" } } };
 const ERR_422 = { status: 422, body: { error: { description: "bad request" } } };
 
-describe("RazorpayAdapter — retry and recovery", () => {
+describe("RazorpayAdapter — failure and recovery without automatic order replay", () => {
   let server: FakeServer;
 
   beforeAll(async () => {
@@ -113,7 +107,7 @@ describe("RazorpayAdapter — retry and recovery", () => {
     server.reset();
   });
 
-  function makeRuntime(timeoutMs = 500) {
+  function makeRuntime(timeoutMs = 2000) {
     const registry = new PaymentProviderAdapterRegistry();
     return new RazorpayAdapter(registry, {
       transport: server.makeTransport(),
@@ -124,22 +118,26 @@ describe("RazorpayAdapter — retry and recovery", () => {
     }).configure(CREDS);
   }
 
-  it("a 5xx is retried and a subsequent 200 recovers — returns the parsed order", async () => {
+  it("a 5xx fails once and a later independent order succeeds after recovery", async () => {
     server.enqueue(ERR_500, { status: 200, body: ORDER_200 });
-    const result = await makeRuntime().createOrder({ amount: "10000", currency: "INR", receipt: "rec-recovery" });
+    const runtime = makeRuntime();
+    await expect(runtime.createOrder({ amount: "10000", currency: "INR", receipt: "rec-failed" }))
+      .rejects.toBeInstanceOf(BadGatewayException);
+    expect(server.requestCount).toBe(1);
+    const result = await runtime.createOrder({ amount: "10000", currency: "INR", receipt: "rec-recovery" });
     expect(result.providerOrderId).toBe("order_recovered123");
     expect(server.requestCount).toBe(2);
   });
 
-  it("the retry budget is bounded at exactly 3 attempts — server counts prove it, not elapsed time", async () => {
+  it("an ambiguous 5xx is not replayed", async () => {
     server.enqueue(ERR_500, ERR_500, ERR_500);
     await expect(
       makeRuntime().createOrder({ amount: "10000", currency: "INR", receipt: "rec-budget" }),
     ).rejects.toBeInstanceOf(BadGatewayException);
-    expect(server.requestCount).toBe(3);
+    expect(server.requestCount).toBe(1);
   });
 
-  it("a 4xx is terminal — exactly one attempt, the 3-attempt budget is never consumed", async () => {
+  it("a 4xx is terminal after exactly one attempt", async () => {
     server.enqueue(ERR_422);
     await expect(
       makeRuntime().createOrder({ amount: "10000", currency: "INR", receipt: "rec-terminal" }),
@@ -147,7 +145,7 @@ describe("RazorpayAdapter — retry and recovery", () => {
     expect(server.requestCount).toBe(1);
   });
 
-  it("a timeout is classified as retryable and exhausting the budget surfaces as BadGatewayException", async () => {
+  it("a timeout surfaces as BadGatewayException without replaying the in-flight order", async () => {
     let calls = 0;
     const delayingTransport: RazorpayTransport = async () => {
       calls++;
@@ -166,16 +164,15 @@ describe("RazorpayAdapter — retry and recovery", () => {
     await expect(
       runtime.createOrder({ amount: "10000", currency: "INR", receipt: "rec-timeout" }),
     ).rejects.toBeInstanceOf(BadGatewayException);
-    expect(calls).toBe(3);
+    expect(calls).toBe(1);
   });
 
-  it("Part 2 — the caller-supplied receipt is sent unchanged on every retry (stable across retries)", async () => {
-    server.enqueue(ERR_500, ERR_500, { status: 200, body: ORDER_200 });
+  it("the caller-supplied receipt is preserved for reconciliation", async () => {
+    server.enqueue({ status: 200, body: ORDER_200 });
     await makeRuntime().createOrder({ amount: "10000", currency: "INR", receipt: "stable-receipt-abc" });
-    expect(server.requestCount).toBe(3);
+    expect(server.requestCount).toBe(1);
     for (const bodyStr of server.requestBodies) {
-      const body = JSON.parse(bodyStr) as Record<string, unknown>;
-      expect(body["receipt"]).toBe("stable-receipt-abc");
+      expect(JSON.parse(bodyStr)).toMatchObject({ receipt: "stable-receipt-abc" });
     }
   });
 });

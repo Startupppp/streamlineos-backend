@@ -17,18 +17,14 @@
  *   1. A wrong key secret is surfaced as the repo's own BadGatewayException, not as a
  *      provider error object and not as a 500.
  *   2. An invalid order payload maps the same way.
- *   3. A 4xx is TERMINAL: `classifyRazorpayError` returns "terminal" for
- *      RazorpayClientError, so `callProvider` stops after one attempt instead of
- *      spending its 3-attempt budget. Measured as elapsed wall-clock well under the
- *      3 x 10s ceiling a retry loop would cost.
+ *   3. A real provider 4xx maps to BadGatewayException after exactly one transport
+ *      attempt. Attempts and response status are observed directly.
  *
  * WHAT IT DOES NOT PROVE, deliberately
- *   Recovery from a 5xx. Razorpay's sandbox cannot be made to return one on demand, and
- *   a POST /v1/orders retried without an idempotency mechanism can leave a duplicate
- *   ORDER (not a duplicate charge -- an order is an intent). The `receipt` is computed
- *   by the caller before the call, so retries reuse it and duplicates stay reconcilable.
- *   Closing that properly needs a verified answer about Razorpay's idempotency support,
- *   not an invented header, so it is named here rather than asserted anywhere.
+ *   Recovery from a 5xx. Razorpay's sandbox cannot be made to return one on demand.
+ *   Order creation now makes one attempt because an ambiguous failure may already
+ *   have created an order. Controlled transport tests prove this failure behavior;
+ *   they do not establish live provider idempotency or reconciliation.
  *
  *   pnpm verify:razorpay-sandbox
  *   pnpm verify:razorpay-sandbox:self-test
@@ -40,10 +36,11 @@ import { BadGatewayException } from "@nestjs/common";
 
 import { RazorpayAdapter } from "../modules/billing/payments/adapters/razorpay.adapter";
 import { PaymentProviderAdapterRegistry } from "../modules/billing/payments/payment-provider-adapter.interface";
+import { outboundRequest } from "../common/http/outbound-request";
+import type { RazorpayTransport } from "../modules/billing/payments/adapters/razorpay.adapter";
 
 const SELF_TEST = process.argv.includes("--self-test");
 const TEST_PREFIX = "rzp_test_";
-const RETRY_CEILING_MS = 15_000;
 
 export type KeyVerdict =
   | { readonly ok: true; readonly keyId: string }
@@ -60,13 +57,9 @@ export function checkKey(keyId: string): KeyVerdict {
   return { ok: true, keyId };
 }
 
-export function isTerminalElapsed(elapsedMs: number): boolean {
-  return elapsedMs < RETRY_CEILING_MS;
-}
-
-function runtimeFor(keyId: string, secret: string, webhookSecret: string) {
+function runtimeFor(keyId: string, secret: string, webhookSecret: string, transport?: RazorpayTransport) {
   const registry = new PaymentProviderAdapterRegistry();
-  return new RazorpayAdapter(registry).configure({ keyId, secret, webhookSecret });
+  return new RazorpayAdapter(registry, { transport }).configure({ keyId, secret, webhookSecret });
 }
 
 interface Probe {
@@ -86,6 +79,30 @@ async function expectBadGateway(name: string, call: () => Promise<unknown>): Pro
   throw new Error(`${name}: the call SUCCEEDED; it was supposed to fail`);
 }
 
+async function expectProvider4xx(
+  name: string,
+  call: (transport: RazorpayTransport) => Promise<unknown>,
+  expectedStatus?: number,
+): Promise<void> {
+  let attempts = 0;
+  const responseStatuses: number[] = [];
+  const transport: RazorpayTransport = async (url, init) => {
+    attempts += 1;
+    const response = await outboundRequest(url, init);
+    responseStatuses.push(response.status);
+    return response;
+  };
+  await expectBadGateway(name, () => call(transport));
+  if (responseStatuses.length === 0)
+    throw new Error(`${name}: fetch failed to yield a provider HTTP response; mapping is unproved`);
+  const status = responseStatuses[0];
+  if (attempts !== 1 || responseStatuses.length !== 1 || status < 400 || status >= 500 || (expectedStatus !== undefined && status !== expectedStatus))
+    throw new Error(
+      `${name}: expected one attempt and provider HTTP ${expectedStatus ?? "4xx"}; observed ${String(attempts)} attempt(s), statuses ${JSON.stringify(responseStatuses)}`,
+    );
+  console.log(`               (attempts ${String(attempts)}, HTTP ${String(status)})`);
+}
+
 function selfTest(): void {
   const live = checkKey("rzp_live_abc123");
   const checks: [string, unknown, unknown][] = [
@@ -94,8 +111,6 @@ function selfTest(): void {
     ["the refusal names the prefix it saw", live.ok ? false : live.because.includes("rzp_live_"), true],
     ["a test key is accepted", checkKey("rzp_test_abc123").ok, true],
     ["a near-miss prefix is refused", checkKey("rzp_tes_abc123").ok, false],
-    ["one fast attempt reads as terminal", isTerminalElapsed(400), true],
-    ["a full retry budget does not", isTerminalElapsed(31_000), false],
   ];
   let failed = 0;
   for (const [name, actual, expected] of checks) {
@@ -133,8 +148,8 @@ async function main(): Promise<void> {
     {
       name: "a wrong key secret maps to BadGatewayException",
       run: () =>
-        expectBadGateway("wrong key secret", () =>
-          runtimeFor(keyId, "wrong-secret-intentionally-bad", webhookSecret).createOrder({
+        expectProvider4xx("wrong key secret", (transport) =>
+          runtimeFor(keyId, "wrong-secret-intentionally-bad", webhookSecret, transport).createOrder({
             amount: "100",
             currency: "INR",
             receipt: "probe-auth-fail",
@@ -144,32 +159,25 @@ async function main(): Promise<void> {
     {
       name: "an invalid order payload maps to BadGatewayException",
       run: () =>
-        expectBadGateway("invalid payload", () =>
-          runtimeFor(keyId, secret, webhookSecret).createOrder({
+        expectProvider4xx("invalid payload", (transport) =>
+          runtimeFor(keyId, secret, webhookSecret, transport).createOrder({
             amount: "-1",
             currency: "FAKE_CCY",
             receipt: "probe-bad-payload",
           }),
+          400,
         ),
     },
     {
-      name: "a 4xx is terminal — one attempt, not the 3-attempt retry budget",
-      run: async () => {
-        const started = Date.now();
-        await expectBadGateway("terminal 4xx", () =>
-          runtimeFor(keyId, "wrong-secret-no-retry-proof", webhookSecret).createOrder({
+      name: "a provider 4xx maps to BadGatewayException after exactly one observed attempt",
+      run: () =>
+        expectProvider4xx("terminal 4xx", (transport) =>
+          runtimeFor(keyId, "wrong-secret-no-retry-proof", webhookSecret, transport).createOrder({
             amount: "100",
             currency: "INR",
             receipt: "probe-retry-check",
           }),
-        );
-        const elapsed = Date.now() - started;
-        if (!isTerminalElapsed(elapsed))
-          throw new Error(
-            `terminal 4xx: took ${String(elapsed)}ms, at or over the ${String(RETRY_CEILING_MS)}ms ceiling — it retried`,
-          );
-        console.log(`               (elapsed ${String(elapsed)}ms)`);
-      },
+        ),
     },
   ];
 

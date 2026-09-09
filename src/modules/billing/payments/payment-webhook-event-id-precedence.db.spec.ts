@@ -31,32 +31,33 @@
  *     pnpm test:db-specs --testNamePattern="webhook event id precedence — real arbiter"
  */
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { organizations, paymentProviders, paymentWebhookEvents } from "../../../db/schema";
+import { paymentProviders, paymentWebhookEvents } from "../../../db/schema";
+import { requireApprovedDatabaseUrl } from "../../../test/db-spec-guard";
 import { resolveProviderEventId } from "./payment-webhook-receiver.service";
 import { headResolveProviderEventId, SIGNED_BODY } from "./payment-webhook-event-id-precedence-fixtures";
 
-const DB_URL = process.env.BILLING_PROBE_DATABASE_URL ?? process.env.DATABASE_URL;
-if (!DB_URL)
-  throw new Error(
-    "payment-webhook-event-id-precedence.db.spec requires BILLING_PROBE_DATABASE_URL or DATABASE_URL",
-  );
+const DB_URL = requireApprovedDatabaseUrl({
+  spec: "payment-webhook-event-id-precedence.db.spec.ts",
+  vars: ["BILLING_PROBE_DATABASE_URL", "DATABASE_URL"],
+});
 
-class Rollback extends Error {}
+class Rollback extends Error {
+  constructor(readonly count: number) {
+    super("Rollback webhook probe fixtures");
+  }
+}
 
 describe("webhook event id precedence — real arbiter", () => {
   let client: postgres.Sql;
   let db: ReturnType<typeof drizzle>;
-  let orgId: string;
+  const orgId = `webhook-probe-${randomUUID().slice(0, 8)}`;
 
   beforeAll(async () => {
     client = postgres(DB_URL, { max: 1, prepare: false, onnotice: () => undefined });
     db = drizzle(client);
-    const [row] = await db.select({ id: organizations.id }).from(organizations).limit(1);
-    if (!row) throw new Error("payment-webhook-event-id-precedence.db.spec needs a database with at least one organizations row");
-    orgId = row.id;
   });
 
   afterAll(async () => {
@@ -81,6 +82,18 @@ describe("webhook event id precedence — real arbiter", () => {
   ): Promise<number> {
     return db
       .transaction(async (tx) => {
+        await tx.execute(sql`SET CONSTRAINTS ALL DEFERRED`);
+        const userId = `${orgId}-owner`;
+        await tx.execute(sql`INSERT INTO users (id, email) VALUES (${userId}, ${`${userId}@test.invalid`})`);
+        await tx.execute(sql`
+          INSERT INTO organizations (id, name, slug, owner_membership_id)
+          VALUES (${orgId}, ${"Webhook probe"}, ${orgId}, 0)`);
+        const memberships = await tx.execute(sql`
+          INSERT INTO organization_members (org_id, user_id, role, status, is_owner)
+          VALUES (${orgId}, ${userId}, 'OWNER', 'ACTIVE', true) RETURNING id`);
+        const membership = memberships[0];
+        if (!membership) throw new Error("Webhook probe owner membership was not created");
+        await tx.execute(sql`UPDATE organizations SET owner_membership_id = ${Number(membership.id)} WHERE id = ${orgId}`);
         const [provider] = await tx
           .insert(paymentProviders)
           .values({
@@ -128,11 +141,11 @@ describe("webhook event id precedence — real arbiter", () => {
               eq(paymentWebhookEvents.providerId, provider.id),
             ),
           );
-        throw Object.assign(new Rollback(), { count: rows.length });
+        throw new Rollback(rows.length);
       })
       .then(() => -1)
       .catch((error: unknown) => {
-        if (error instanceof Rollback) return (error as Rollback & { count: number }).count;
+        if (error instanceof Rollback) return error.count;
         throw error;
       });
   }
@@ -147,7 +160,10 @@ describe("webhook event id precedence — real arbiter", () => {
 
   it("leaves nothing behind", async () => {
     const [row] = await client<Array<{ n: number }>>`
-      SELECT count(*)::int AS n FROM payment_providers WHERE provider_key LIKE 'p0probe-%'`;
+      SELECT count(*)::int AS n FROM payment_providers WHERE org_id = ${orgId}`;
     expect(row?.n).toBe(0);
+    const [tenant] = await client<Array<{ n: number }>>`
+      SELECT count(*)::int AS n FROM organizations WHERE id = ${orgId}`;
+    expect(tenant?.n).toBe(0);
   });
 });

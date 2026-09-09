@@ -169,7 +169,7 @@ describe("RazorpayAdapter", () => {
   });
 });
 
-describe("RazorpayAdapter — createOrder error classification (retry behavior)", () => {
+describe("RazorpayAdapter — createOrder single-attempt failure behavior", () => {
   const registry = new PaymentProviderAdapterRegistry();
   let fetchMock: jest.Mock;
 
@@ -194,25 +194,25 @@ describe("RazorpayAdapter — createOrder error classification (retry behavior)"
     await resetAdapter.configure({ keyId: "rzp_test_reset", secret: "reset_secret" }).createOrder(orderParams());
   });
 
-  it("classifies a connection error as retryable — retries to maxAttempts before surfacing a 502", async () => {
+  it("surfaces a connection error as 502 without repeating the order", async () => {
     fetchMock.mockRejectedValue(new TypeError("fetch failed"));
     const adapter = new RazorpayAdapter(registry);
     const runtime = adapter.configure({ keyId: "rzp_test_x", secret: "secret" });
 
     await expect(runtime.createOrder(orderParams())).rejects.toThrow(BadGatewayException);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("classifies a provider timeout as retryable — retries to maxAttempts before surfacing a 502", async () => {
+  it("surfaces a provider timeout as 502 without repeating the order", async () => {
     fetchMock.mockRejectedValue(new DOMException("The operation timed out", "TimeoutError"));
     const adapter = new RazorpayAdapter(registry);
     const runtime = adapter.configure({ keyId: "rzp_test_x", secret: "secret" });
 
     await expect(runtime.createOrder(orderParams())).rejects.toThrow(BadGatewayException);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("classifies a 5xx provider response as retryable — retries and succeeds once the provider recovers", async () => {
+  it("surfaces a 5xx without consuming a subsequent successful response", async () => {
     const serverError = { ok: false, status: 500, json: async () => ({ error: { description: "Internal error" } }) };
     fetchMock
       .mockResolvedValueOnce(serverError)
@@ -221,10 +221,8 @@ describe("RazorpayAdapter — createOrder error classification (retry behavior)"
     const adapter = new RazorpayAdapter(registry);
     const runtime = adapter.configure({ keyId: "rzp_test_x", secret: "secret" });
 
-    const result = await runtime.createOrder(orderParams());
-
-    expect(result.providerOrderId).toBe("order_recovered");
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await expect(runtime.createOrder(orderParams())).rejects.toThrow(BadGatewayException);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("classifies a 4xx provider rejection as terminal — never retries a client-side rejection", async () => {
@@ -237,12 +235,12 @@ describe("RazorpayAdapter — createOrder error classification (retry behavior)"
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("falls back to retryable for an unrecognized error, such as a malformed success payload", async () => {
+  it("surfaces a malformed success payload without creating another order", async () => {
     fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
     const adapter = new RazorpayAdapter(registry);
     const runtime = adapter.configure({ keyId: "rzp_test_x", secret: "secret" });
 
     await expect(runtime.createOrder(orderParams())).rejects.toThrow(BadGatewayException);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
