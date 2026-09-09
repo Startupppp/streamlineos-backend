@@ -19,7 +19,6 @@ function snapshot(overrides: Partial<RelationshipSnapshot> = {}): RelationshipSn
     dealState: "open",
     awaitingUs: false,
     nextStepDueAt: null,
-    meetingRequested: false,
     hasReachableAddress: true,
     ...overrides,
   };
@@ -87,12 +86,28 @@ describe("judgeOutbound", () => {
     ).toEqual({ act: false, reason: "the-ball-is-ours" });
   });
 
-  it("asks for the meeting they asked for", () => {
-    expect(judgeOutbound(snapshot({ meetingRequested: true }))).toEqual({
-      act: true,
-      outboundClass: "meeting_request",
-      reason: "meeting-requested",
-    });
+  it("never decides to ask for a meeting on its own", () => {
+    /**
+     * CRM-P1-08. This used to assert the opposite, by handing `judgeOutbound` a
+     * snapshot with `meetingRequested: true` — a value the only real snapshot
+     * builder hardcoded false and the compose API had no way to supply. The
+     * test proved a branch nothing could reach, which is the shape of a green
+     * gate over dead code.
+     *
+     * The branch is gone. `meeting_request` stays in the class vocabulary
+     * because a human uses it to say "stop asking them for a meeting", and
+     * because a wired version would return there — so this asserts the honest
+     * state instead: no input to the judge produces it.
+     */
+    const decisions = [
+      snapshot({ nextStepDueAt: daysAgo(2) }),
+      snapshot({ lastInboundAt: daysAgo(30), lastOutboundAt: daysAgo(30) }),
+      snapshot({ dealState: "open", lastOutboundAt: daysAgo(60) }),
+    ].map((s) => judgeOutbound(s));
+
+    for (const decision of decisions) {
+      if (decision.act) expect(decision.outboundClass).not.toBe("meeting_request");
+    }
   });
 
   it("follows up on a next step that came and went", () => {

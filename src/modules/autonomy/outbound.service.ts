@@ -852,14 +852,6 @@ export class OutboundService {
        */
       awaitingUs: !relationship?.awaitingReplySince,
       nextStepDueAt: deal?.followUpDate ?? null,
-      /**
-       * False, and honestly so. "They asked to meet and nothing is booked" is a
-       * fact about the conversation that nothing in the CRM records as a field;
-       * inferring it from the deal's next step would put a meeting request in
-       * front of somebody who never asked for one, which is worse than the
-       * follow-up they get instead.
-       */
-      meetingRequested: false,
       hasReachableAddress: Boolean(recipient),
     };
 

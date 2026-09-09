@@ -29,8 +29,6 @@ export interface RelationshipSnapshot {
   /** Whether the outstanding next step is ours rather than theirs. */
   readonly awaitingUs: boolean;
   readonly nextStepDueAt: Date | null;
-  /** They asked to meet and nothing is booked. */
-  readonly meetingRequested: boolean;
   readonly hasReachableAddress: boolean;
 }
 
@@ -47,7 +45,6 @@ export type OutboundVerdict =
       readonly act: true;
       readonly outboundClass: OutboundClass;
       readonly reason:
-        | "meeting-requested"
         | "next-step-overdue"
         | "silence-on-an-open-deal"
         | "long-silence";
@@ -130,8 +127,33 @@ export function judgeOutbound(snapshot: RelationshipSnapshot): OutboundVerdict {
   )
     return { act: false, reason: "too-soon-since-our-last" };
 
-  if (snapshot.meetingRequested)
-    return { act: true, outboundClass: "meeting_request", reason: "meeting-requested" };
+  /**
+   * CRM-P1-08. There used to be a branch here returning `meeting_request` when
+   * `snapshot.meetingRequested` was true. Nothing could ever set it true.
+   *
+   * The fact it needed is "they asked to meet AND nothing is booked", and only
+   * the second half is answerable from what the CRM stores — no field anywhere
+   * records that somebody asked. The only snapshot builder,
+   * `OutboundService.loadComposeContext`, therefore hardcoded false, and the
+   * compose API takes a party and a deal rather than a snapshot, so no caller
+   * could supply one either. The branch was unreachable in every path, while a
+   * unit test constructing the snapshot directly kept proving it worked.
+   *
+   * Removed rather than left as a reminder, because a branch that cannot run is
+   * indistinguishable from one that has not fired yet, and the class it
+   * produced would have been stoppable, reportable and cap-counted for a
+   * message nobody could send.
+   *
+   * `meeting_request` stays in OUTBOUND_CLASSES: it is the vocabulary a human
+   * uses to say "stop asking them for a meeting", it is a stored value on
+   * existing rows, and it is where a wired version would return to. Nothing
+   * produces it automatically today, and that is now true by inspection rather
+   * than by a constant somebody has to notice.
+   *
+   * Inferring it from the deal's next step is not the fix. That would put a
+   * meeting request in front of somebody who never asked for one, which is
+   * worse than the follow-up they get instead.
+   */
 
   if (
     snapshot.nextStepDueAt &&
