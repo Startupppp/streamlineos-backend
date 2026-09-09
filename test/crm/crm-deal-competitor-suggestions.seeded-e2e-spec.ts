@@ -82,6 +82,28 @@ describe(`${SEEDED_HARNESS} a noticed competitor is a question, never an answer`
 
   const api = () => request(seeded.app.getHttpServer());
 
+  /**
+   * Accepting is `@Idempotent("crm.deals.competitor_suggestion_accept")`, which
+   * makes `Idempotency-Key` a required header: without one the interceptor
+   * answers 400 before the handler is entered. Every acceptance below went out
+   * bare, so the one case expecting a 400 got its 400 for the wrong reason
+   * entirely — a missing header rather than the changed-suggestion refusal it
+   * names — and the three expecting the deal to change never reached the
+   * handler at all.
+   *
+   * A fresh key per call, deliberately. A repeated key with the same body
+   * replays the stored response and a repeated key with a different body is
+   * 422, so sharing one would hide exactly the product rule the "refuses to
+   * decide the same suggestion twice" case exists to prove: that the second
+   * acceptance is refused by the suggestion's own state, not by the fence in
+   * front of it.
+   */
+  const accept = (token: string) =>
+    api()
+      .post(`/deals/${dealId}/competitor-suggestions/${suggestionId}/accept`)
+      .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", randomUUID());
+
   const competitorsOnTheDeal = async (token: string) => {
     const response = await api()
       .get(`/deals/${dealId}/competitors`)
@@ -223,9 +245,7 @@ describe(`${SEEDED_HARNESS} a noticed competitor is a question, never an answer`
   }, 120_000);
 
   it("refuses an acceptance that echoes a different name, and changes nothing", async () => {
-    const response = await api()
-      .post(`/deals/${dealId}/competitor-suggestions/${suggestionId}/accept`)
-      .set("Authorization", `Bearer ${repToken}`)
+    const response = await accept(repToken)
       .send({ confirmedCompetitorKey: "salesforce" })
       .expect(400);
 
@@ -250,9 +270,7 @@ describe(`${SEEDED_HARNESS} a noticed competitor is a question, never an answer`
       .set("Authorization", `Bearer ${readerToken}`)
       .expect(403);
 
-    await api()
-      .post(`/deals/${dealId}/competitor-suggestions/${suggestionId}/accept`)
-      .set("Authorization", `Bearer ${readerToken}`)
+    await accept(readerToken)
       .send({ confirmedCompetitorKey: COMPETITOR_KEY })
       .expect(403);
 
@@ -267,9 +285,7 @@ describe(`${SEEDED_HARNESS} a noticed competitor is a question, never an answer`
   }, 120_000);
 
   it("writes the competitor exactly once a person confirms the name", async () => {
-    const response = await api()
-      .post(`/deals/${dealId}/competitor-suggestions/${suggestionId}/accept`)
-      .set("Authorization", `Bearer ${repToken}`)
+    const response = await accept(repToken)
       .send({ confirmedCompetitorKey: COMPETITOR_KEY, notes: "Incumbent, renews in March." })
       .expect(200);
 
@@ -300,9 +316,7 @@ describe(`${SEEDED_HARNESS} a noticed competitor is a question, never an answer`
   }, 120_000);
 
   it("refuses to decide the same suggestion twice", async () => {
-    await api()
-      .post(`/deals/${dealId}/competitor-suggestions/${suggestionId}/accept`)
-      .set("Authorization", `Bearer ${repToken}`)
+    await accept(repToken)
       .send({ confirmedCompetitorKey: COMPETITOR_KEY })
       .expect(409);
 
