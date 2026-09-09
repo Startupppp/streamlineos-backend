@@ -1,4 +1,6 @@
-import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, UseGuards, Req } from "@nestjs/common";
+import type { Request } from "express";
+import { readRequestScope } from "../organization/core/read-request-scope";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
@@ -33,8 +35,8 @@ export class SurveysController {
 
   @Get()
   @RequirePermission("surveys:view")
-  list(@Query(new ZodValidationPipe(listSurveysSchema)) query: ListSurveysInput, @CurrentUser() u: CurrentUserContext) {
-    return this.forms.list(u.orgId, query);
+  list(@Query(new ZodValidationPipe(listSurveysSchema)) query: ListSurveysInput, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    return this.forms.list(u.orgId, u.userId, query, readRequestScope(req));
   }
 
   @Post()
@@ -46,8 +48,8 @@ export class SurveysController {
 
   @Get(":surveyId")
   @RequirePermission("surveys:view")
-  get(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.forms.get(u.orgId, surveyId);
+  get(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    return this.forms.get(u.orgId, u.userId, surveyId, readRequestScope(req));
   }
 
   @Patch(":surveyId")
@@ -55,39 +57,39 @@ export class SurveysController {
   patch(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body(new ZodValidationPipe(patchSurveySchema)) body: PatchSurveyInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() u: CurrentUserContext, @Req() req: Request
   ) {
-    return this.forms.patch(u.orgId, surveyId, body);
+    return this.forms.patch(u.orgId, u.userId, surveyId, body, readRequestScope(req));
   }
 
   @Post(":surveyId/publish")
   @Idempotent("surveys.survey.publish")
   @RequirePermission("surveys:publish")
-  publish(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.forms.publish(u.orgId, surveyId);
+  publish(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    return this.forms.publish(u.orgId, u.userId, surveyId, readRequestScope(req));
   }
 
   @Post(":surveyId/pause")
   @RequirePermission("surveys:publish")
-  pause(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.forms.pause(u.orgId, surveyId);
+  pause(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    return this.forms.pause(u.orgId, u.userId, surveyId, readRequestScope(req));
   }
 
   @Post(":surveyId/close")
   @RequirePermission("surveys:publish")
-  close(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.forms.close(u.orgId, surveyId);
+  close(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    return this.forms.close(u.orgId, u.userId, surveyId, readRequestScope(req));
   }
 
   @Post(":surveyId/archive")
   @RequirePermission("surveys:delete")
-  archive(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.forms.archive(u.orgId, surveyId);
+  archive(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    return this.forms.archive(u.orgId, u.userId, surveyId, readRequestScope(req));
   }
 
   @Post(":surveyId/duplicate")
   @RequirePermission("surveys:create")
-  duplicate(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.forms.duplicate(u.orgId, surveyId, u.userId);
+  duplicate(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    return this.forms.duplicate(u.orgId, surveyId, u.userId, readRequestScope(req));
   }
 }
