@@ -1,5 +1,6 @@
 import { PgDialect } from "drizzle-orm/pg-core";
-import type { SQL } from "drizzle-orm";
+import { eq, sql, type SQL } from "drizzle-orm";
+import { kbSources } from "../../../db/schema";
 import {
   KbStuckSourceReaperService,
   KB_SOURCE_REAP_BATCH,
@@ -82,6 +83,85 @@ describe("reapOrgStuckSources — the predicate", () => {
   it("counts only the rows it actually updated", async () => {
     const { tx } = makeTx([{ id: 1 }, { id: 2 }, { id: 3 }]);
     expect(await reapOrgStuckSources(tx, ORG, new Date())).toBe(3);
+  });
+});
+
+describe("reapOrgStuckSources — cross-tenant isolation", () => {
+  const SWEEPING = "org-sweeping";
+  const BYSTANDER = "org-bystander";
+
+  function tenantSlot(cond: SQL): { text: string; params: unknown[]; bound: unknown } {
+    const { sql: text, params } = dialect.sqlToQuery(cond);
+    const slot = /"kb_sources"\."org_id"\s*=\s*\$(\d+)/i.exec(text);
+    if (slot === null) throw new Error("the reaper UPDATE bound no kb_sources.org_id equality");
+    return { text, params, bound: params[Number(slot[1]) - 1] };
+  }
+
+  it("binds the org it is sweeping, so another tenant's stuck rows are unreachable", async () => {
+    const { tx, captured } = makeTx([]);
+    await reapOrgStuckSources(tx, SWEEPING, new Date("2026-09-01T00:00:00.000Z"));
+
+    const { params, bound } = tenantSlot(captured[0]!);
+    expect(bound).toBe(SWEEPING);
+    expect(params).not.toContain(BYSTANDER);
+  });
+
+  it("rebinds per tenant — the same statement run for a second org carries that org, not the first", async () => {
+    const first = makeTx([]);
+    await reapOrgStuckSources(first.tx, SWEEPING, new Date());
+    const second = makeTx([]);
+    await reapOrgStuckSources(second.tx, BYSTANDER, new Date());
+
+    expect(tenantSlot(first.captured[0]!).bound).toBe(SWEEPING);
+    expect(tenantSlot(second.captured[0]!).bound).toBe(BYSTANDER);
+  });
+
+  it("carries the tenant equality inside the id subquery the UPDATE narrows on", async () => {
+    const { tx, captured } = makeTx([]);
+    await reapOrgStuckSources(tx, SWEEPING, new Date());
+
+    const { text } = tenantSlot(captured[0]!);
+    const subquery = text.slice(text.indexOf("select"));
+    expect(subquery).toMatch(/"kb_sources"\."org_id"\s*=\s*\$\d+/i);
+    expect(text).not.toMatch(/where\s+true/i);
+  });
+
+  it("BITE: the slot check rejects a predicate that dropped the tenant equality", () => {
+    const orgless = dialect.sqlToQuery(
+      sql`${kbSources.id} in (select ${kbSources.id} from ${kbSources} where ${eq(
+        kbSources.status,
+        "processing",
+      )})`,
+    );
+    expect(/"kb_sources"\."org_id"\s*=\s*\$\d+/i.test(orgless.sql)).toBe(false);
+  });
+});
+
+describe("KbStuckSourceReaperService.reap — cross-tenant isolation", () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it("gives each tenant its own bound org id across one sweep", async () => {
+    const perOrg = new Map<string, SQL[]>();
+    mockedForEachOrg.mockImplementation(async (_db, _sweep, fn) => {
+      for (const orgId of ["org-sweep-a", "org-sweep-b"]) {
+        const { tx, captured } = makeTx([{ id: 1 }]);
+        await fn(tx, orgId);
+        perOrg.set(orgId, captured);
+      }
+      return { organizations: 2, succeeded: 2, failed: 0 };
+    });
+
+    const service = new KbStuckSourceReaperService({} as unknown as Db, makeLease() as never);
+    await service.reap();
+
+    for (const [orgId, captured] of perOrg) {
+      const { sql: text, params } = dialect.sqlToQuery(captured[0]!);
+      const slot = /"kb_sources"\."org_id"\s*=\s*\$(\d+)/i.exec(text);
+      expect(params[Number(slot?.[1]) - 1]).toBe(orgId);
+      expect(params).not.toContain(orgId === "org-sweep-a" ? "org-sweep-b" : "org-sweep-a");
+    }
   });
 });
 
