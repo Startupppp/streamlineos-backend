@@ -11,6 +11,8 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { runOutsideTenantContext } from "../../common/tenant/tenant-context";
+import { runOutsidePoolBorrow } from "../../db/pool-telemetry";
 import { AblyService } from "../realtime/ably.service";
 import { WebPushService } from "../realtime/web-push.service";
 import { AuditService } from "../../common/audit/audit.service";
@@ -202,10 +204,31 @@ export class ChatHuddlesService {
 
     for (const member of channelMembers) {
       if (member.userId !== userId) {
-        void this.webPush.sendToUser(orgId, member.userId, {
-          category: "CHAT",
-          url: `/chat?channel=${channelId}&joinHuddle=1`,
-        }).catch((error: unknown) => {
+        /**
+         * Detached for the same reason `NotificationsService.pushToDevice` is.
+         *
+         * This outlives the request, and the tenant context does not: the
+         * interceptor's transaction commits the moment the handler returns,
+         * while the async-local context holding it stays inherited here. The
+         * subscription lookup only wins that race by microtask ordering, and
+         * the 404/410 reap loses it outright — it runs after the network
+         * sends, against a handle that closed long before. That delete does
+         * not fail, it never settles, so `sendToUser` never settles either
+         * and the `.catch` below never runs. Expired endpoints were never
+         * reaped, every later huddle retried them, and any real delivery
+         * failure in the same batch was swallowed with them, because the hang
+         * lands before the `AggregateError` is thrown.
+         *
+         * Detaching gives the lookup and the reap a scope of their own from
+         * the `orgId` passed here, and makes the first one deterministic
+         * rather than merely lucky.
+         */
+        void runOutsidePoolBorrow(() => runOutsideTenantContext(() =>
+          this.webPush.sendToUser(orgId, member.userId, {
+            category: "CHAT",
+            url: `/chat?channel=${channelId}&joinHuddle=1`,
+          }),
+        )).catch((error: unknown) => {
           this.logger.warn("web-push: failed to send huddle start notification", {
             orgId,
             channelId,
