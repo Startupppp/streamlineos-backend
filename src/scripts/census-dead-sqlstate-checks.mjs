@@ -68,8 +68,18 @@ for (const file of walk(ROOT)) {
   for (const b of blocks(src)) {
     if (!SQLSTATES.test(b.body)) continue;
     examined++;
-    if (/\bcause\b/.test(b.body)) continue;
-    if (/isUniqueViolation|isForeignKeyViolation|isCheckViolation|isExclusionViolation|postgresErrorCode|getPostgresErrorCode|getPostgresErrorDetails/.test(b.body))
+    /*
+     * Everything BELOW the head line. Testing the whole body made this census
+     * miss exactly what it exists to find: a locally-declared
+     * `function isUniqueViolation(...)` contains its own name, so the
+     * "already uses the shared helper" test matched the declaration and skipped
+     * it. Two live dead checks in `quality/` were reported as clean, and the
+     * first version of this script printed a module list with `inventory`
+     * absent — which I published. Read the body, not the signature.
+     */
+    const inner = b.body.split("\n").slice(1).join("\n");
+    if (/\bcause\b/.test(inner)) continue;
+    if (/isUniqueViolation|isForeignKeyViolation|isCheckViolation|isExclusionViolation|postgresErrorCode|getPostgresErrorCode|getPostgresErrorDetails/.test(inner))
       continue;
     dead.push({ file, ...b });
   }
