@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { invStockReservations, invStockLevels } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -48,21 +48,53 @@ interface CommittedKey {
 }
 
 /**
- * Releases committed on the SAME natural key the reservation incremented.
- * Matching on (org, variant, location) alone decremented every lot row at that
- * location, and GREATEST(0, ...) silently absorbed the over-subtraction — so
- * reserved stock read as available and could be sold twice.
+ * The grain a reservation is against, as one predicate both halves share.
+ *
+ * It is exported and shared because the asymmetry WAS the bug. The increment
+ * found its row with one predicate and the release matched with another, and
+ * the two drifted apart twice: first on `lot_id`, where releasing decremented
+ * every lot at the location, and then on `ownership`, where it decremented the
+ * consigned row standing at the same bin as the owned one. `GREATEST(0, ...)`
+ * absorbed the over-subtraction both times, so reserved stock read as available
+ * and could be promised twice, silently.
+ *
+ * `ownership = 'OWNED'` is a gate rather than a term, which is the kind this
+ * module keeps forgetting — `availableQty` and `availableQtySql` both carry the
+ * same one, with the same note: consigned stock is on hand and is not ours, and
+ * forgetting it offers a supplier's goods for sale. `stock-projection.service`
+ * added it (NEO-11); this path did not.
+ *
+ * @param alias the table's alias at the call site, or "" when it has none.
  */
+export function committedGrainPredicate(
+  orgId: string,
+  grain: {
+    productVariantId: number;
+    locationId: number;
+    lotId: number | null;
+    serialId: number | null;
+    handlingUnitId: number | null;
+  },
+  alias = "",
+): SQL {
+  const col = (name: string) => sql.raw(alias ? `${alias}.${name}` : name);
+  return sql`
+    ${col("org_id")} = ${orgId}
+      AND ${col("product_variant_id")} = ${grain.productVariantId}
+      AND ${col("location_id")} = ${grain.locationId}
+      AND (${col("lot_id")} IS NOT DISTINCT FROM ${grain.lotId})
+      AND (${col("serial_id")} IS NOT DISTINCT FROM ${grain.serialId})
+      AND (${col("handling_unit_id")} IS NOT DISTINCT FROM ${grain.handlingUnitId})
+      AND ${col("ownership")} = 'OWNED'
+  `;
+}
+
+/** Releases committed on the SAME grain the reservation incremented. */
 async function releaseCommitted(tx: Tx, orgId: string, key: CommittedKey): Promise<void> {
   await tx.execute(sql`
     UPDATE inv_stock_levels
     SET committed = GREATEST(0, committed - ${key.reservedQty}::numeric)
-    WHERE org_id = ${orgId}
-      AND product_variant_id = ${key.productVariantId}
-      AND location_id = ${key.locationId}
-      AND (lot_id IS NOT DISTINCT FROM ${key.lotId})
-      AND (serial_id IS NOT DISTINCT FROM ${key.serialId})
-      AND (handling_unit_id IS NOT DISTINCT FROM ${key.handlingUnitId})
+    WHERE ${committedGrainPredicate(orgId, key)}
   `);
 }
 
@@ -103,18 +135,31 @@ export class ReservationService {
     const [level] = await tx.execute<{
       id: number; on_hand: string; committed: string; blocked_qty: string;
       quality_hold_qty: string; outgoing_qty: string; is_sellable: boolean | null;
+      /**
+       * Selected so `availableQty`'s consignment gate can fire here at all. It
+       * treats `undefined` as "this caller has not been taught about
+       * consignment" and falls through to the arithmetic — so omitting the
+       * column did not merely skip a check, it made a consigned row compute as
+       * if it were ours. The predicate above already excludes those rows; this
+       * is the second line, because the file's own comment calls the
+       * availability check the last one.
+       */
+      ownership: "OWNED" | "VENDOR" | "CUSTOMER" | null;
       warehouse_id: number;
     }>(sql`
       SELECT sl.id, sl.on_hand, sl.committed, sl.blocked_qty,
-             sl.quality_hold_qty, sl.outgoing_qty, loc.is_sellable, loc.warehouse_id
+             sl.quality_hold_qty, sl.outgoing_qty, sl.ownership,
+             loc.is_sellable, loc.warehouse_id
       FROM inv_stock_levels sl
       JOIN inv_locations loc
         ON loc.org_id = sl.org_id AND loc.id = sl.location_id
-      WHERE sl.org_id = ${orgId} AND sl.product_variant_id = ${input.productVariantId}
-        AND sl.location_id = ${input.locationId}
-        AND (sl.lot_id IS NOT DISTINCT FROM ${input.lotId ?? null})
-        AND (sl.serial_id IS NOT DISTINCT FROM ${input.serialId ?? null})
-        AND (sl.handling_unit_id IS NOT DISTINCT FROM ${input.handlingUnitId ?? null})
+      WHERE ${committedGrainPredicate(orgId, {
+        productVariantId: input.productVariantId,
+        locationId: input.locationId,
+        lotId: input.lotId ?? null,
+        serialId: input.serialId ?? null,
+        handlingUnitId: input.handlingUnitId ?? null,
+      }, "sl")}
       FOR UPDATE OF sl
     `);
 
