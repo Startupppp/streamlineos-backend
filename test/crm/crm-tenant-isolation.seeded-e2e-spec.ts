@@ -175,6 +175,22 @@ const TENANT_TABLES = [
   "crm_report_runs",
   "crm_sending_domains",
   "crm_whatsapp_channels",
+
+  /**
+   * Phase 2 and 3, and the reason the guard below is worth its own case.
+   *
+   * Five tables reached the database with RLS written and nothing proving it
+   * fails closed: competitor suggestions, the MCP agent-access decision, saved
+   * segments, and the two halves of a report schedule — the recipient list
+   * included, which is a list of customer email addresses. None of them was an
+   * assertion that failed. Each was an assertion nobody had made, which is the
+   * failure this list reads as green.
+   */
+  "crm_deal_competitor_suggestions",
+  "crm_mcp_settings",
+  "crm_report_schedule_recipients",
+  "crm_report_schedules",
+  "crm_segments",
 ] as const;
 
 /**
