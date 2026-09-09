@@ -3,6 +3,7 @@ import request from "supertest";
 import { eq } from "drizzle-orm";
 import { orgModules } from "src/db/schema";
 import { businessParties, leadPartyMap } from "src/db/schema/party";
+import { crmLeadTouchpoints } from "src/db/schema/crm/attribution";
 import {
   SEEDED_HARNESS,
   createSeededE2eApp,
@@ -123,6 +124,19 @@ describe(`${SEEDED_HARNESS} the lead qualification routes nothing calls`, () => 
   afterAll(async () => {
     for (const org of [fixture, neighbour]) {
       if (!org) continue;
+      /**
+       * The attribution touchpoint every lead creation writes.
+       *
+       * `crm_lead_touchpoints.lead_party_id` references `business_parties` with
+       * NO ACTION, and `POST /leads` records a `first_touch` row against the
+       * new party — so the party delete two statements below is refused, the
+       * hook throws, and jest reports "Test suite failed to run" over ten cases
+       * that had all passed. Cascading from the organisation would have taken
+       * it, but that happens after the parties are gone, which is too late.
+       */
+      await seeded.seedDb
+        .delete(crmLeadTouchpoints)
+        .where(eq(crmLeadTouchpoints.orgId, org.orgId));
       /** No FK on `lead_party_map.organization_id`, so the org delete will not take it. */
       await seeded.seedDb
         .delete(leadPartyMap)
