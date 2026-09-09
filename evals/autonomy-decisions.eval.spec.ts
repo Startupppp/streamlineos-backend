@@ -11,6 +11,7 @@ import {
 } from "../src/modules/autonomy/outbound-eligibility";
 import { riskBand, riskScore } from "../src/modules/lifecycle/lifecycle-risk";
 import { mayRepair, type RepairPermission } from "../src/modules/autonomy/repair-classes";
+import type { SwitchDecision } from "../src/modules/autonomy/kill-switch";
 
 /**
  * CRM-P2-11. A regression gate on the three CRM decisions nobody is asked about.
@@ -154,11 +155,11 @@ describe("the risk band, gated on false calm", () => {
 });
 
 describe("the repair policy, gated on every refusal carrying a reason", () => {
-  const allowed = { allowed: true as const, reason: null, source: "default" as const };
-  const stopped = {
-    allowed: false as const,
-    reason: "kill-switch" as const,
-    source: "org" as const,
+  const allowed: SwitchDecision = { allowed: true, decidedBy: "default", reason: null };
+  const stopped: SwitchDecision = {
+    allowed: false,
+    decidedBy: "org-all",
+    reason: "An operator switched autonomy off for this organisation.",
   };
 
   const cases: readonly {
