@@ -2,6 +2,10 @@ import { and, eq } from "drizzle-orm";
 import request from "supertest";
 import { chatAttachments, chatMessages } from "src/db/schema";
 import { createChatWorld, type ChatWorld } from "test/chat/chat-seeded-world";
+import { FileQuarantineService } from "src/modules/storage/file-quarantine.service";
+import { runInNewTenantTransaction } from "src/common/tenant/run-in-tenant-transaction";
+import { DRIZZLE } from "src/db/drizzle.constants";
+import type { Db } from "src/db/drizzle.module";
 
 interface ChannelFilePage {
   readonly files?: readonly { readonly id: number }[];
@@ -218,5 +222,57 @@ describe("[seeded-e2e] Chat attachments", () => {
 
     expect(response.status).not.toBe(200);
     expect([404, 503]).toContain(response.status);
+  });
+
+  describe("QUARANTINE — chat signed-URL path refuses a key recorded in the quarantine table", () => {
+    let quarantinedAttachmentId = 0;
+    let quarantinedFileKey = "";
+    let quarantineRecordId = "";
+
+    beforeAll(async () => {
+      const sent = await sendWithAttachment(
+        world.privateChannelId,
+        world.tokenFor("channelMember"),
+        "quarantine-test.txt",
+      );
+      quarantinedAttachmentId = sent.attachmentId;
+      quarantinedFileKey = sent.fileKey;
+
+      const appDb = world.seeded.app.get<Db>(DRIZZLE);
+      const quarantine = world.seeded.app.get(FileQuarantineService);
+
+      quarantineRecordId = await runInNewTenantTransaction(appDb, world.home.orgId, () =>
+        quarantine.begin({
+          orgId: world.home.orgId,
+          storageKey: quarantinedFileKey,
+          filename: "quarantine-test.txt",
+          mimeType: "text/plain",
+          fileSizeBytes: 1024,
+          sha256: "cafebabe".repeat(8),
+          uploadedBy: world.userIdFor("channelMember"),
+        }),
+      );
+    }, 60_000);
+
+    afterAll(async () => {
+      if (quarantineRecordId) {
+        const appDb = world.seeded.app.get<Db>(DRIZZLE);
+        const quarantine = world.seeded.app.get(FileQuarantineService);
+        await runInNewTenantTransaction(appDb, world.home.orgId, () =>
+          quarantine.softDelete(quarantineRecordId),
+        );
+      }
+    }, 60_000);
+
+    it("DENY — a channel member is refused 404 for an attachment whose key is pending_scan in quarantine", async () => {
+      expect(quarantinedAttachmentId).toBeGreaterThan(0);
+
+      const response = await request(world.server)
+        .get(signedUrlPath(world.privateChannelId, quarantinedAttachmentId))
+        .set("Authorization", auth(world.tokenFor("channelMember")));
+
+      expect(response.status).toBe(404);
+      expect(response.body).toMatchObject({ message: "File not found" });
+    });
   });
 });

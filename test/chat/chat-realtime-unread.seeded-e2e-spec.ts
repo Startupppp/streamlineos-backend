@@ -12,6 +12,9 @@ interface PollPage {
   readonly hasMore: boolean;
 }
 
+// idCursorSchema maps any non-positive cursor to undefined, so a full replay uses `since`, never cursor=0.
+const EPOCH = new Date(0).toISOString();
+
 describe("[seeded-e2e] Chat realtime unread counters and cursor replay", () => {
   let world: ChatWorld;
   const sentinel: SentMessage = { id: 0, channelPosition: 0 };
@@ -69,6 +72,15 @@ describe("[seeded-e2e] Chat realtime unread counters and cursor replay", () => {
     expect(msgB.channelPosition).toBeLessThan(msgC.channelPosition);
   });
 
+  it("CONTRACT — cursor=0 is treated as absent, not as position zero, so it alone is refused 400", async () => {
+    const response = await request(world.server)
+      .get(`/chat/channels/${String(world.publicChannelId)}/messages/poll`)
+      .query({ cursor: 0 })
+      .set("Authorization", auth("channelMember"));
+
+    expect(response.status).toBe(400);
+  });
+
   it("DENY — polling without since or cursor is refused with 400", async () => {
     const response = await request(world.server)
       .get(`/chat/channels/${String(world.publicChannelId)}/messages/poll`)
@@ -77,8 +89,8 @@ describe("[seeded-e2e] Chat realtime unread counters and cursor replay", () => {
     expect(response.status).toBe(400);
   });
 
-  it("REPLAY — poll from cursor=0 returns all three messages in position order with their exact ids", async () => {
-    const page = await poll(world.publicChannelId, { cursor: 0 });
+  it("REPLAY — a full replay from since=epoch returns all three messages in position order with their exact ids", async () => {
+    const page = await poll(world.publicChannelId, { since: EPOCH });
 
     const ids = page.messages.map((m) => m.id);
     expect(ids).toContain(msgA.id);
@@ -96,8 +108,8 @@ describe("[seeded-e2e] Chat realtime unread counters and cursor replay", () => {
   });
 
   it("DEDUP — a second poll from the same cursor returns the same set, not duplicates", async () => {
-    const page1 = await poll(world.publicChannelId, { cursor: 0 });
-    const page2 = await poll(world.publicChannelId, { cursor: 0 });
+    const page1 = await poll(world.publicChannelId, { since: EPOCH });
+    const page2 = await poll(world.publicChannelId, { since: EPOCH });
 
     const ids1 = page1.messages.map((m) => m.id);
     const ids2 = page2.messages.map((m) => m.id);
@@ -148,7 +160,7 @@ describe("[seeded-e2e] Chat realtime unread counters and cursor replay", () => {
   });
 
   it("NO STALE TIMESTAMP BUG — cursor replay returns all messages regardless of their created_at order", async () => {
-    const page = await poll(world.publicChannelId, { cursor: 0 });
+    const page = await poll(world.publicChannelId, { since: EPOCH });
     const returned = page.messages.map((m) => m.channelPosition);
 
     expect(returned).toEqual([...returned].sort((a, b) => a - b));
@@ -180,7 +192,7 @@ describe("[seeded-e2e] Chat realtime unread counters and cursor replay", () => {
     const privatePage = await (async () => {
       const response = await request(world.server)
         .get(`/chat/channels/${String(world.privateChannelId)}/messages/poll`)
-        .query({ cursor: 0 })
+        .query({ since: EPOCH })
         .set("Authorization", auth("channelMember"));
       expect(response.status).toBe(200);
       const body: PollPage = response.body;

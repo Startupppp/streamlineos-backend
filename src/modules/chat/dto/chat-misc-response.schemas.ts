@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../common/openapi/wire-types";
-import { chatMessageSchema, chatAttachmentSchema } from "./chat-messages-response.schemas";
+import {
+  chatMessageSchema,
+  chatAttachmentSchema,
+} from "./chat-messages-response.schemas";
 
 const chatOkSchema = z.object({ ok: z.literal(true) });
 
@@ -11,7 +14,11 @@ const chatHuddleParticipantSchema = z.object({
   leftAt: nullableWireDate(),
   userId: z.string().nullable(),
   user: z
-    .object({ id: z.string(), name: z.string().nullable(), image: z.string().nullable() })
+    .object({
+      id: z.string(),
+      name: z.string().nullable(),
+      image: z.string().nullable(),
+    })
     .nullable(),
 });
 
@@ -24,7 +31,9 @@ export const huddleWireSchema = z.object({
   startedAt: nullableWireDate(),
   endedAt: nullableWireDate(),
   startedBy: z.string().nullable(),
-  startedByUser: z.object({ id: z.string(), name: z.string().nullable() }).nullable(),
+  startedByUser: z
+    .object({ id: z.string(), name: z.string().nullable() })
+    .nullable(),
   participants: z.array(chatHuddleParticipantSchema),
 });
 
@@ -63,7 +72,9 @@ export const chatPinItemSchema = z.object({
   pinnedByMembershipId: z.number().int().nullable(),
   pinnedAt: wireDate(),
   pinnedBy: z.string().nullable(),
-  pinnedByUser: z.object({ id: z.string(), name: z.string().nullable() }).nullable(),
+  pinnedByUser: z
+    .object({ id: z.string(), name: z.string().nullable() })
+    .nullable(),
   message: pinnedMessageSchema,
 });
 
@@ -90,7 +101,12 @@ export const chatSavedListResponseSchema = z.object({
   nextCursor: z.number().int().optional(),
 });
 
-export const chatInviteLinkTokenSchema = z.object({ token: z.string() });
+export const chatInviteLinkTokenSchema = z.object({
+  token: z.string(),
+  expiresAt: nullableWireDate(),
+  maxUses: z.number().int().nullable(),
+  useCount: z.number().int(),
+});
 
 export const chatInviteLinkJoinSchema = z.object({
   ok: z.literal(true),
@@ -181,7 +197,11 @@ const presenceMessageSchema = z.object({
     .object({
       id: z.number().int(),
       user: z
-        .object({ id: z.string(), name: z.string().nullable(), image: z.string().nullable() })
+        .object({
+          id: z.string(),
+          name: z.string().nullable(),
+          image: z.string().nullable(),
+        })
         .nullable(),
     })
     .nullable(),
@@ -205,10 +225,18 @@ const searchMessageItemSchema = z.object({
   createdAt: wireDate(),
   updatedAt: wireDate(),
   senderId: z.string().nullable(),
-  sender: z.object({ id: z.string(), name: z.string().nullable(), image: z.string().nullable() }).nullable(),
+  sender: z
+    .object({
+      id: z.string(),
+      name: z.string().nullable(),
+      image: z.string().nullable(),
+    })
+    .nullable(),
   reactions: z.record(z.string(), z.array(z.string())),
   attachments: z.array(chatAttachmentSchema),
-  channel: z.object({ id: z.number().int(), name: z.string(), type: z.string() }).nullable(),
+  channel: z
+    .object({ id: z.number().int(), name: z.string(), type: z.string() })
+    .nullable(),
 });
 
 export const chatSearchMessagesResponseSchema = z.object({

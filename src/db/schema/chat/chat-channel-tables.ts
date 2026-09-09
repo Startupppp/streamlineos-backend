@@ -105,10 +105,16 @@ export const chatChannelInviteLinks = pgTable(
     createdByMembershipId: integer("created_by_membership_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     revokedAt: timestamp("revoked_at"),
+    expiresAt: timestamp("expires_at"),
+    maxUses: integer("max_uses"),
+    useCount: integer("use_count").notNull().default(0),
   },
   (table) => [
     uniqueIndex("uniq_chat_invite_link_token").on(table.token),
     uniqueIndex("uniq_chat_invite_link_token_hash").on(table.tokenHash),
+    uniqueIndex("uniq_chat_invite_active_link_channel")
+      .on(table.orgId, table.channelId)
+      .where(sql`revoked_at IS NULL`),
     index("idx_chat_invite_links_channel").on(table.channelId, table.revokedAt),
     unique("uniq_chat_channel_invite_links_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.channelId], foreignColumns: [chatChannels.orgId, chatChannels.id], name: "fk_chat_invite_links_org_channel" }),

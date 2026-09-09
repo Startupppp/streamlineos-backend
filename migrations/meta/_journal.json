@@ -4943,6 +4943,13 @@
       "when": 1803000010157,
       "tag": "1079_build_velocity_cursor_index",
       "breakpoints": true
+    },
+    {
+      "idx": 839,
+      "version": "7",
+      "when": 1803000010158,
+      "tag": "1080_chat_invite_link_expiry",
+      "breakpoints": true
     }
   ]
 }
