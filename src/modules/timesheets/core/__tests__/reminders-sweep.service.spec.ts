@@ -20,8 +20,14 @@ interface StubQuery {
 }
 
 /**
- * Answers `select().from().where().limit()` and `select().from().where()` in
- * the order the service asks: settings first, then periods.
+ * Answers the two chains the service builds, in the order it asks: the settings
+ * read (`select().from().where().limit()`) and then the paged period read
+ * (`select().from().where().orderBy().limit()`).
+ *
+ * The period read is a keyset loop since TS-34, so it asks again until a page
+ * comes back short. Each supplied response is one page; the queue running dry
+ * yields an empty page, which ends the loop — so a single-page fixture behaves
+ * exactly as it did before paging existed.
  */
 function stubDb(...responses: StubQuery[]): Db {
   const queue = [...responses];
@@ -33,8 +39,10 @@ function stubDb(...responses: StubQuery[]): Db {
         const where = () => {
           const promise = Promise.resolve(rows) as Promise<unknown[]> & {
             limit: () => Promise<unknown[]>;
+            orderBy: () => { limit: () => Promise<unknown[]> };
           };
           promise.limit = async () => rows;
+          promise.orderBy = () => ({ limit: async () => rows });
           return promise;
         };
         return { where };
@@ -94,7 +102,12 @@ describe("TimesheetRemindersSweepService.remindOrg", () => {
 
     const result = await sweep.remindOrg("org-1", "2026-04-03");
 
-    expect(result).toEqual({ malformed: false, periodsConsidered: 0, remindersSent: 0 });
+    expect(result).toEqual({
+      malformed: false,
+      periodsConsidered: 0,
+      remindersSent: 0,
+      truncated: false,
+    });
     expect(sent).toHaveLength(0);
   });
 
@@ -112,7 +125,12 @@ describe("TimesheetRemindersSweepService.remindOrg", () => {
 
     const result = await sweep.remindOrg("org-1", "2026-04-03");
 
-    expect(result).toEqual({ malformed: true, periodsConsidered: 0, remindersSent: 0 });
+    expect(result).toEqual({
+      malformed: true,
+      periodsConsidered: 0,
+      remindersSent: 0,
+      truncated: false,
+    });
     expect(sent).toHaveLength(0);
   });
 

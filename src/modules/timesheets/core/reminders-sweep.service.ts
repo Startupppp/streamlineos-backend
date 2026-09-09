@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq, isNull, lte } from "drizzle-orm";
+import { and, asc, eq, gt, isNull, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { timesheetPeriods, timesheetSettings } from "../../../db/schema";
@@ -31,7 +31,32 @@ export interface ReminderSweepResult {
   orgsMalformed: number;
   periodsConsidered: number;
   remindersSent: number;
+  /**
+   * TS-34. Organisations that hit the per-org page ceiling, so the operator
+   * knows the sweep stopped early rather than finished. Silence here would be
+   * indistinguishable from "everybody was reminded".
+   */
+  orgsTruncated: number;
 }
+
+/**
+ * TS-34. How many unsubmitted periods are read per round trip, and how many
+ * rounds one organisation may take.
+ *
+ * The query was previously unbounded: one `SELECT` for every open period whose
+ * window had closed, across every organisation, materialised in memory. That is
+ * fine at a hundred rows and is a background job pulling an organisation-sized
+ * result set into the heap at a hundred thousand — the exact shape of
+ * unbounded worker scan the ticket names.
+ *
+ * Keyset on `id` rather than `OFFSET`: the sweep does not modify the rows it
+ * pages over, but an entry saved mid-sweep can change a period's eligibility,
+ * and an offset would then skip a page. The ceiling is generous enough that
+ * reaching it means something is wrong, and it is counted rather than logged
+ * and forgotten.
+ */
+const REMINDER_PAGE_SIZE = 500;
+const REMINDER_MAX_PAGES = 40;
 
 /**
  * Sends the reminders `timesheet_settings.reminder_rules` has been promising.
@@ -69,6 +94,7 @@ export class TimesheetRemindersSweepService {
       orgsMalformed: 0,
       periodsConsidered: 0,
       remindersSent: 0,
+      orgsTruncated: 0,
     };
 
     await forEachOrg(this.db, "timesheets-reminders", async (_tx, orgId) => {
@@ -78,6 +104,7 @@ export class TimesheetRemindersSweepService {
       if (org.malformed) result.orgsMalformed++;
       result.periodsConsidered += org.periodsConsidered;
       result.remindersSent += org.remindersSent;
+      if (org.truncated) result.orgsTruncated++;
     });
 
     return result;
@@ -87,7 +114,12 @@ export class TimesheetRemindersSweepService {
   async remindOrg(
     orgId: string,
     today: string,
-  ): Promise<{ malformed: boolean; periodsConsidered: number; remindersSent: number } | null> {
+  ): Promise<{
+    malformed: boolean;
+    periodsConsidered: number;
+    remindersSent: number;
+    truncated: boolean;
+  } | null> {
     const [settings] = await this.db
       .select({
         reminderRules: timesheetSettings.reminderRules,
@@ -105,34 +137,75 @@ export class TimesheetRemindersSweepService {
           `Re-save the timesheet settings to fix.`,
       );
     }
-    if (!rules.enabled) return { malformed, periodsConsidered: 0, remindersSent: 0 };
+    if (!rules.enabled) {
+      return { malformed, periodsConsidered: 0, remindersSent: 0, truncated: false };
+    }
+
+    let remindersSent = 0;
+    let periodsConsidered = 0;
+    let truncated = false;
+    let afterId = 0;
 
     /**
      * Only periods whose window has closed and which nobody has submitted.
      * `submittedAt IS NULL` rather than a status check: a period can be OPEN
      * and already submitted in flows that reopen it, and reminding someone
      * about a timesheet they have already sent is worse than not reminding.
+     *
+     * Read a page at a time (TS-34) rather than all at once. The predicate is
+     * unchanged; only the shape of the read is.
      */
-    const periods = await this.db
-      .select({
-        id: timesheetPeriods.id,
-        userId: timesheetPeriods.userId,
-        periodStart: timesheetPeriods.periodStart,
-        periodEnd: timesheetPeriods.periodEnd,
-      })
-      .from(timesheetPeriods)
-      .where(
-        and(
-          eq(timesheetPeriods.orgId, orgId),
-          eq(timesheetPeriods.status, "OPEN"),
-          isNull(timesheetPeriods.submittedAt),
-          lte(timesheetPeriods.periodEnd, today),
-        ),
-      );
+    for (let page = 0; page < REMINDER_MAX_PAGES; page++) {
+      const periods = await this.db
+        .select({
+          id: timesheetPeriods.id,
+          userId: timesheetPeriods.userId,
+          periodStart: timesheetPeriods.periodStart,
+          periodEnd: timesheetPeriods.periodEnd,
+        })
+        .from(timesheetPeriods)
+        .where(
+          and(
+            eq(timesheetPeriods.orgId, orgId),
+            eq(timesheetPeriods.status, "OPEN"),
+            isNull(timesheetPeriods.submittedAt),
+            lte(timesheetPeriods.periodEnd, today),
+            gt(timesheetPeriods.id, afterId),
+          ),
+        )
+        .orderBy(asc(timesheetPeriods.id))
+        .limit(REMINDER_PAGE_SIZE);
 
+      if (periods.length === 0) break;
+      periodsConsidered += periods.length;
+      afterId = periods[periods.length - 1]!.id;
+
+      remindersSent += await this.remindPage(orgId, periods, settings.submissionGraceDays, rules, today);
+
+      if (periods.length < REMINDER_PAGE_SIZE) break;
+      if (page === REMINDER_MAX_PAGES - 1) {
+        truncated = true;
+        this.logger.warn(
+          `org ${orgId} still had unsubmitted periods after ${REMINDER_MAX_PAGES * REMINDER_PAGE_SIZE}; ` +
+            `stopping this pass. The rest will be picked up on the next run.`,
+        );
+      }
+    }
+
+    return { malformed, periodsConsidered, remindersSent, truncated };
+  }
+
+  /** One page of periods, reminded. Returns how many notifications it emitted. */
+  private async remindPage(
+    orgId: string,
+    periods: Array<{ id: number; userId: string; periodStart: string; periodEnd: string }>,
+    graceDays: number | null,
+    rules: ReturnType<typeof resolveReminderRules>["rules"],
+    today: string,
+  ): Promise<number> {
     let remindersSent = 0;
     for (const period of periods) {
-      const due = dueDateFor(period.periodEnd, settings.submissionGraceDays);
+      const due = dueDateFor(period.periodEnd, graceDays);
       const kind = reminderDue(rules, due, today);
       if (!kind) continue;
 
@@ -161,6 +234,6 @@ export class TimesheetRemindersSweepService {
       remindersSent++;
     }
 
-    return { malformed, periodsConsidered: periods.length, remindersSent };
+    return remindersSent;
   }
 }
