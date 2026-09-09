@@ -78,6 +78,22 @@ export class ShipmentsService {
   }
 
   async create(orgId: string, userId: string, input: CreateShipmentInput) {
+    /*
+     * A shipment ships OUT of a warehouse, so the same rule as a transfer's
+     * source: only out of a building you hold. `warehouseId` came straight off
+     * the request body and was written unchecked, and nothing downstream catches
+     * it — creating a shipment posts no movements, so the stock engine's
+     * `assertLocationsInScope` never runs on this path.
+     *
+     * Only asserted when one is given: the column is nullable and a shipment
+     * with no warehouse yet is a legitimate draft, not an attempt at somebody
+     * else's building. 404 rather than 403, so naming a warehouse you cannot see
+     * does not confirm it exists.
+     */
+    if (input.warehouseId != null) {
+      await this.warehouseScope.assertWarehouseVisible(orgId, userId, input.warehouseId);
+    }
+
     const shipmentNumber = await this.numSeq.next(orgId, "SHIPMENT");
     const shipment = await this.db.transaction(async (tx) => {
       const [row] = await tx.insert(invShipments).values({

@@ -240,6 +240,26 @@ export class InvStockReservationsService {
     input: CreateReservationInput,
     idempotencyKey: string,
   ) {
+    /*
+     * A reservation holds stock AT a location, so the caller has to hold the
+     * building it is in. `input.locationId` came straight off the request body
+     * and nothing on this path checked it: `assertLotChoiceAllowed` answers a
+     * lot-selection policy question, and neither `ReservationService` nor the
+     * engine's `assertLocationsInScope` sees this — reserving posts no
+     * movements.
+     *
+     * Reserving somebody else's stock is quieter than moving it and worse in one
+     * respect: it makes that quantity unavailable to the people who do hold the
+     * building, and nothing in their view says who took it.
+     *
+     * FIRST, before the variant lookup below. A caller who may not see the
+     * location should not cause a query on its behalf, and should not be able
+     * to learn from a refusal's shape whether the variant is orderable. 404
+     * rather than 403, so naming a location you cannot see does not confirm it
+     * exists.
+     */
+    await this.warehouseScope.assertLocationVisible(orgId, userId, input.locationId);
+
     // A4. A reservation raised by hand is new demand and takes the demand gate.
     // Reservations created *for an existing document* go through
     // `createReservationInTx` and are deliberately not gated — discontinuing a

@@ -16,13 +16,21 @@ import { InvStockTransfersService } from "../inv-stock-transfers.service";
  * no honest reading.
  */
 
-const INPUT = {
+type TransferInput = {
+  fromLocationId: number;
+  toLocationId: number;
+  lines: { productVariantId: number; quantity: string }[];
+};
+
+const INPUT: TransferInput = {
   fromLocationId: 100,
   toLocationId: 200,
   lines: [{ productVariantId: 11, quantity: "5" }],
-} as never;
+};
 
-function serviceWith(assertLocationVisible: jest.Mock): InvStockTransfersService {
+type VisibilityMock = jest.Mock<Promise<void>, [string, string, number | null | undefined]>;
+
+function serviceWith(assertLocationVisible: VisibilityMock): InvStockTransfersService {
   const stub = {} as never;
   const db = {
     transaction: jest.fn(async () => {
@@ -48,26 +56,30 @@ describe("drafting a stock transfer", () => {
      * the rows and then refused would still have written them, and a plain
      * "rejects" assertion could not tell the two apart.
      */
-    const assertLocationVisible = jest.fn(async () => {
-      throw new NotFoundException("Not found");
-    });
+    const assertLocationVisible: VisibilityMock = jest.fn(
+      async (_orgId: string, _userId: string, _locationId: number | null | undefined) => {
+        throw new NotFoundException("Not found");
+      },
+    );
     const service = serviceWith(assertLocationVisible);
 
     await expect(
-      service.createTransfer("org-1", "keeper-1", INPUT, "key-1"),
+      service.createTransfer("org-1", "keeper-1", INPUT as never, "key-1"),
     ).rejects.toBeInstanceOf(NotFoundException);
 
     expect(assertLocationVisible).toHaveBeenCalledWith("org-1", "keeper-1", 100);
   });
 
   it("asks about the source and not the destination", async () => {
-    const assertLocationVisible = jest.fn(async () => {
-      throw new NotFoundException("Not found");
-    });
+    const assertLocationVisible: VisibilityMock = jest.fn(
+      async (_orgId: string, _userId: string, _locationId: number | null | undefined) => {
+        throw new NotFoundException("Not found");
+      },
+    );
     const service = serviceWith(assertLocationVisible);
 
     await expect(
-      service.createTransfer("org-1", "keeper-1", INPUT, "key-1"),
+      service.createTransfer("org-1", "keeper-1", INPUT as never, "key-1"),
     ).rejects.toBeInstanceOf(NotFoundException);
 
     // Exactly one question, about `fromLocationId`. If a later change starts
@@ -78,11 +90,18 @@ describe("drafting a stock transfer", () => {
   });
 
   it("still refuses a transfer whose two ends are the same, before asking anything", async () => {
-    const assertLocationVisible = jest.fn(async () => {});
+    const assertLocationVisible: VisibilityMock = jest.fn(
+      async (_orgId: string, _userId: string, _locationId: number | null | undefined) => {},
+    );
     const service = serviceWith(assertLocationVisible);
 
     await expect(
-      service.createTransfer("org-1", "keeper-1", { ...INPUT, toLocationId: 100 } as never, "key-1"),
+      service.createTransfer(
+        "org-1",
+        "keeper-1",
+        { ...INPUT, toLocationId: INPUT.fromLocationId } as never,
+        "key-1",
+      ),
     ).rejects.toThrow(/must be different/);
     expect(assertLocationVisible).not.toHaveBeenCalled();
   });
