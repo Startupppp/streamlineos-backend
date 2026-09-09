@@ -2605,6 +2605,69 @@
       "when": 1787940968254,
       "tag": "0654_calendar_exception_tenant_fk",
       "breakpoints": true
+    },
+    {
+      "idx": 372,
+      "version": "7",
+      "when": 1787941028254,
+      "tag": "0656_composite_tenant_fk_prerequisite_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 373,
+      "version": "7",
+      "when": 1787941088254,
+      "tag": "0657_build_composite_tenant_fks_part1",
+      "breakpoints": true
+    },
+    {
+      "idx": 374,
+      "version": "7",
+      "when": 1787941148254,
+      "tag": "0658_build_composite_tenant_fks_part2",
+      "breakpoints": true
+    },
+    {
+      "idx": 375,
+      "version": "7",
+      "when": 1787941208254,
+      "tag": "0659_hr_composite_tenant_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 376,
+      "version": "7",
+      "when": 1787941268254,
+      "tag": "0660_payroll_composite_tenant_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 377,
+      "version": "7",
+      "when": 1787941328254,
+      "tag": "0661_survey_kb_composite_tenant_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 378,
+      "version": "7",
+      "when": 1787941388254,
+      "tag": "0662_crm_sign_composite_tenant_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 379,
+      "version": "7",
+      "when": 1787941448254,
+      "tag": "0663_collab_recruit_composite_tenant_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 380,
+      "version": "7",
+      "when": 1787941508254,
+      "tag": "0664_platform_composite_tenant_fks",
+      "breakpoints": true
     }
   ]
 }
