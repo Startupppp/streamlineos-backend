@@ -43,6 +43,7 @@ const PARTY: PartyRow = {
   website: "https://lovelace.test",
   email: "ada@lovelace.test",
   phone: "+44 20 7946 0000",
+  timezone: "Europe/London",
   status: "active",
   customFields: { tier: "gold" },
   notes: "Met at the Analytical Engine demo.",

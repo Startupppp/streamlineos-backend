@@ -40,6 +40,7 @@ const PARTY: PartyRow = {
   website: null,
   email: null,
   phone: null,
+  timezone: null,
   status: "active",
   customFields: null,
   notes: null,

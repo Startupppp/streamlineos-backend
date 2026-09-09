@@ -53,6 +53,7 @@ const PARTY: PartyRow = {
   website: "https://engines.test",
   email: null,
   phone: null,
+  timezone: null,
   status: "active",
   customFields: null,
   notes: null,

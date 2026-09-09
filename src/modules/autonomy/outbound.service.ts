@@ -446,11 +446,12 @@ export class OutboundService {
    * is to be given the values that are true at the instant of the send rather
    * than the ones that were true when the draft was written.
    *
-   * `partyTimezone` is null today and honestly so: nothing in `business_parties`
-   * or `party_contacts` records one, so `resolveTimezone` falls through to the
-   * tenant's zone and reports `tenant` as the source. That is the correct
-   * behaviour rather than a stub — the alternative, guessing from an address,
-   * would produce a confident wrong answer and a message at four in the morning.
+   * `partyTimezone` is the party's own zone where somebody recorded one
+   * (CRM-P1-09 added `business_parties.timezone`), and null otherwise. Null is
+   * not a stub: `resolveTimezone` falls through to the tenant's zone and
+   * reports `tenant` as the source, which stays deliberate. The alternative for
+   * an unknown zone — guessing from an address — would produce a confident
+   * wrong answer and a message at four in the morning.
    */
   async sendTimeFacts(
     organizationId: string,
@@ -537,6 +538,22 @@ export class OutboundService {
       .where(eq(organizations.id, organizationId))
       .limit(1);
 
+    /**
+     * CRM-P1-09. Read here rather than carried on the draft, like every other
+     * fact in this function: somebody may correct a customer's zone during the
+     * hold window, and the send should honour the correction.
+     */
+    const [party] = await this.db
+      .select({ timezone: businessParties.timezone })
+      .from(businessParties)
+      .where(
+        and(
+          eq(businessParties.organizationId, organizationId),
+          eq(businessParties.partyId, message.partyId),
+        ),
+      )
+      .limit(1);
+
     return {
       now,
       outboundClass: message.outboundClass,
@@ -545,7 +562,7 @@ export class OutboundService {
       suppressed: await this.isSuppressed(organizationId, message.recipientEmail),
       classStopped: Boolean(stop),
       recentSendsToParty: sends.flatMap((row) => (row.sentAt ? [row.sentAt] : [])),
-      partyTimezone: null,
+      partyTimezone: party?.timezone ?? null,
       tenantTimezone: org?.timezone ?? FALLBACK_TIMEZONE,
       repliedAt: relationship?.lastInboundAt ?? null,
       draftedAt: message.draftedAt,

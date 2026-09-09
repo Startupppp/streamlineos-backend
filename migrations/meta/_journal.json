@@ -2948,6 +2948,13 @@
       "when": 1787941268254,
       "tag": "0660_sign_bulk_row_attempts",
       "breakpoints": true
+    },
+    {
+      "idx": 421,
+      "version": "7",
+      "when": 1787941328254,
+      "tag": "0661_business_parties_timezone",
+      "breakpoints": true
     }
   ]
 }

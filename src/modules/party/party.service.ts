@@ -292,6 +292,12 @@ export class PartyService {
     if (input.website !== undefined) patch.website = input.website ?? null;
     if (input.notes !== undefined) patch.notes = input.notes ?? null;
     if (input.status !== undefined) patch.status = input.status;
+    /**
+     * CRM-P1-09. Null clears it back to "unknown", which is a real answer —
+     * send-time working hours then fall through to the tenant's zone rather
+     * than keeping a value somebody has decided is wrong.
+     */
+    if (input.timezone !== undefined) patch.timezone = input.timezone ?? null;
     if (input.partyKind !== undefined) patch.partyKind = input.partyKind ?? null;
     // Reaches `contacts.organization_id` through the writer, which translates it
     // back into a `crm_organizations` id: see `party-legacy-employer.ts`.

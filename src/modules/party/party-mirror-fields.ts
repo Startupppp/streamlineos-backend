@@ -163,6 +163,9 @@ export const PARTY_FIELD_MIRROR: Record<keyof PartyRow, PartyFieldMirror> = {
       absorb: (l) => ({ customFields: l.customData }),
     },
   },
+  timezone: noLegacyColumn(
+    "CRM-P1-09 added it to the Party after the legacy shapes were frozen, and no legacy table ever had a zone. It is read at send time from the Party row, so there is nothing for a mirror to carry.",
+  ),
   notes: {
     LEAD: { derive: (p) => ({ notes: p.notes }), absorb: (l) => ({ notes: l.notes }) },
     CLIENT: { derive: (p) => ({ notes: p.notes }), absorb: (l) => ({ notes: l.notes }) },

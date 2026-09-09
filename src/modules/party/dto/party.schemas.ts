@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
+import { isKnownTimeZone } from "../../autonomy/working-hours";
 
 const partyTypeValues = ["CUSTOMER", "VENDOR", "PARTNER", "BOTH"] as const;
 
@@ -36,6 +37,21 @@ export const createPartySchema = z.object({
   notes: z.string().optional(),
 });
 
+/**
+ * An IANA zone the runtime recognises, or null to say "unknown".
+ *
+ * Checked against the runtime's own tzdata rather than a hardcoded list, which
+ * would rot: zones are added and renamed without a release of this code. Null
+ * is a legitimate value and is not the same as omitting the field — one clears
+ * a wrong zone, the other leaves it alone.
+ */
+const ianaTimezone = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  .refine(isKnownTimeZone, "Not a time zone this server recognises");
+
 export const updatePartySchema = z.object({
   name: z.string().min(1).max(255).optional(),
   partyType: z.enum(partyTypeValues).optional(),
@@ -49,6 +65,7 @@ export const updatePartySchema = z.object({
   website: z.string().url().nullish(),
   notes: z.string().nullish(),
   status: z.string().max(50).optional(),
+  timezone: ianaTimezone.nullish(),
 });
 
 export const createContactSchema = z.object({
