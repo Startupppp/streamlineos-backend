@@ -1,5 +1,5 @@
 import { Inject, Injectable, BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import {
   invVendorReturns, invVendorReturnLines, invSerialNumbers, invStockLevels,
   invVendors, invPurchaseOrders, invGrns,
@@ -8,7 +8,10 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
-import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
+import {
+  WarehouseScopeService,
+  type ResolvedWarehouseScope,
+} from "../stock-engine/warehouse-scope.service";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { runIdempotent, revivedId } from "../stock-engine/idempotency";
@@ -37,6 +40,48 @@ export class VendorReturnsService {
     private readonly warehouseScope: WarehouseScopeService,
   ) {}
 
+  /**
+   * Which vendor returns this caller may see — the list's rule, now the only
+   * copy of it.
+   *
+   * Attributable through the receipt it is sending back, and through nothing
+   * else. The GRN names a LOCATION rather than a warehouse, so this goes through
+   * `scope.location`, which is a different predicate from the customer half's
+   * `scope.warehouse` — matching each aggregate rather than a house default.
+   *
+   * The NULL rule: a NULL `grn_id` makes `NULL IN (…)` NULL, so a vendor return
+   * raised against no receipt is **excluded** from a scoped caller's view. Not
+   * the ASN rule, where an unattributed row stays visible to everyone — there a
+   * null warehouse means "not known yet", here it means the return is anchored
+   * to no receipt and so to no warehouse.
+   */
+  private returnInScope(orgId: string, scope: ResolvedWarehouseScope): SQL {
+    return scope.anyOf(
+      sql`${invVendorReturns.grnId} IN (SELECT id FROM inv_grns WHERE org_id = ${orgId} AND ${scope.location(sql.raw("location_id"))})`,
+    );
+  }
+
+  /**
+   * The gate for the mutations that lock the row themselves.
+   *
+   * `approve` and `post` open with a `SELECT … FOR UPDATE` in raw SQL; they ask
+   * this first rather than threading a scope predicate through a statement whose
+   * job is locking. 404 on a miss, never 403 (§4).
+   */
+  private async assertReturnVisible(orgId: string, userId: string, returnId: number) {
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+    const [visible] = await this.db
+      .select({ id: invVendorReturns.id })
+      .from(invVendorReturns)
+      .where(and(
+        eq(invVendorReturns.id, returnId),
+        eq(invVendorReturns.orgId, orgId),
+        this.returnInScope(orgId, scope),
+      ))
+      .limit(1);
+    if (!visible) throw new NotFoundException("Vendor return not found");
+  }
+
   async list(orgId: string, userId: string, filters: ListReturnsInput) {
     const { status, page, limit } = filters;
     const offset = (page - 1) * limit;
@@ -44,12 +89,9 @@ export class VendorReturnsService {
     const hash = `${scope.key}:${status ?? ""}:${limit}:${offset}`;
 
     return this.cache.cachedVersioned(CACHE_KEYS.invVendorReturnsNamespace(orgId), hash, async () => {
-      // Attributable through the receipt it is sending back.
       const conditions = [
         eq(invVendorReturns.orgId, orgId),
-        scope.anyOf(
-          sql`${invVendorReturns.grnId} IN (SELECT id FROM inv_grns WHERE org_id = ${orgId} AND ${scope.location(sql.raw("location_id"))})`,
-        ),
+        this.returnInScope(orgId, scope),
       ];
       if (status) conditions.push(eq(invVendorReturns.status, status));
       const where = and(...conditions);
@@ -78,9 +120,36 @@ export class VendorReturnsService {
     }, CACHE_TTL.SHORT);
   }
 
-  async get(orgId: string, returnId: number) {
+  /**
+   * One vendor return, read by id — and, until now, by anyone in the org.
+   *
+   * `list` beside it resolves the caller's warehouses; this took no `userId`,
+   * because the controller never passed one, so it answered on `org_id` and the
+   * return id, and handed back the vendor, the approver and every line.
+   */
+  async get(orgId: string, userId: string, returnId: number) {
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+    return this.loadVendorReturn(orgId, returnId, this.returnInScope(orgId, scope));
+  }
+
+  /**
+   * The same read without the warehouse gate, for the paths entitled to it:
+   * `create`, which hands back the return it just wrote and would otherwise 404
+   * an operator against their own new record, and the tails of `approve`, `post`
+   * and `cancel`, each of which has already run the gate. Named and private so a
+   * future route cannot be pointed at the ungated read by accident.
+   */
+  private loadVendorReturnUnscoped(orgId: string, returnId: number) {
+    return this.loadVendorReturn(orgId, returnId, undefined);
+  }
+
+  private async loadVendorReturn(orgId: string, returnId: number, inScope: SQL | undefined) {
     const ret = await this.db.query.invVendorReturns.findFirst({
-      where: and(eq(invVendorReturns.id, returnId), eq(invVendorReturns.orgId, orgId)),
+      where: and(
+        eq(invVendorReturns.id, returnId),
+        eq(invVendorReturns.orgId, orgId),
+        inScope,
+      ),
       with: {
         creator: { columns: { id: true, name: true } },
         approver: { columns: { id: true, name: true } },
@@ -162,7 +231,7 @@ export class VendorReturnsService {
     );
 
     await this.cache.invalidateNamespace(CACHE_KEYS.invVendorReturnsNamespace(orgId));
-    return this.get(orgId, ret.id);
+    return this.loadVendorReturnUnscoped(orgId, ret.id);
   }
 
   /**
@@ -179,6 +248,7 @@ export class VendorReturnsService {
     userId: string,
     input: ApproveReturnInput,
   ) {
+    await this.assertReturnVisible(orgId, userId, returnId);
     await this.db.transaction(async (tx) => {
       const [locked] = await tx.execute<{ status: string; grn_id: number | null }>(sql`
         SELECT status, grn_id FROM inv_vendor_returns
@@ -227,7 +297,7 @@ export class VendorReturnsService {
     });
 
     await this.cache.invalidateNamespace(CACHE_KEYS.invVendorReturnsNamespace(orgId));
-    return this.get(orgId, returnId);
+    return this.loadVendorReturnUnscoped(orgId, returnId);
   }
 
   /**
@@ -243,6 +313,7 @@ export class VendorReturnsService {
     idempotencyKey: string,
     data: PostVendorReturnInput,
   ) {
+    await this.assertReturnVisible(orgId, userId, returnId);
     const posted = await this.db.transaction((tx) =>
       runIdempotent(
         tx,
@@ -264,7 +335,7 @@ export class VendorReturnsService {
       this.cache.invalidateNamespace(CACHE_KEYS.invVendorReturnsNamespace(orgId)),
       this.cache.del(CACHE_KEYS.invVendorReturnDetail(orgId, returnId)),
     ]);
-    return this.get(orgId, posted);
+    return this.loadVendorReturnUnscoped(orgId, posted);
   }
 
   private async postInTx(
@@ -415,10 +486,23 @@ export class VendorReturnsService {
     throw new BadRequestException(`Cannot determine location for variant ${line.productVariantId} in vendor return`);
   }
 
-  /** B9. Cancellable from DRAFT and from APPROVED — an approval is reversible until it posts. */
-  async cancel(orgId: string, returnId: number) {
+  /**
+   * B9. Cancellable from DRAFT and from APPROVED — an approval is reversible
+   * until it posts.
+   *
+   * The customer half's twin, and it took no caller identity either: the
+   * controller had `@CurrentUser()` and passed only `orgId`, so any return in
+   * the organisation could be cancelled by id from outside the warehouse that
+   * raised it. It reads under the list's own predicate now.
+   */
+  async cancel(orgId: string, userId: string, returnId: number) {
+    const scope = await this.warehouseScope.forUser(orgId, userId);
     const ret = await this.db.query.invVendorReturns.findFirst({
-      where: and(eq(invVendorReturns.id, returnId), eq(invVendorReturns.orgId, orgId)),
+      where: and(
+        eq(invVendorReturns.id, returnId),
+        eq(invVendorReturns.orgId, orgId),
+        this.returnInScope(orgId, scope),
+      ),
     });
     if (!ret) throw new NotFoundException("Vendor return not found");
     if (ret.status !== "DRAFT" && ret.status !== "APPROVED")
@@ -433,6 +517,6 @@ export class VendorReturnsService {
       ));
 
     await this.cache.invalidateNamespace(CACHE_KEYS.invVendorReturnsNamespace(orgId));
-    return this.get(orgId, returnId);
+    return this.loadVendorReturnUnscoped(orgId, returnId);
   }
 }
