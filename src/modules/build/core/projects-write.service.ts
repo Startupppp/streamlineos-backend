@@ -23,7 +23,6 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -37,7 +36,6 @@ import { ProjectsQueryService } from "./projects-query.service";
 export class ProjectsWriteService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly cache: CacheService,
     private readonly audit: AuditService,
     private readonly access: AccessService,
     private readonly projectsQuery: ProjectsQueryService,
@@ -237,8 +235,6 @@ export class ProjectsWriteService {
       metadata: { changedFields: Object.keys(body) },
     });
 
-    await this.cache.invalidateNamespace(`projects:list:${orgId}`);
-
     return this.projectsQuery.getProject(u, projectId);
   }
 
@@ -315,8 +311,6 @@ export class ProjectsWriteService {
       metadata: { name: project.name },
     });
 
-    await this.cache.invalidateNamespace(`projects:list:${orgId}`);
-
     return { success: true };
   }
 
@@ -370,8 +364,6 @@ export class ProjectsWriteService {
       targetType: "project",
       metadata: { projectId, managedProductId: input.managedProductId },
     });
-
-    await this.cache.invalidateNamespace(`projects:list:${orgId}`);
 
     return updated;
   }

@@ -722,6 +722,11 @@
       "note": "Reads automation rules for a specific project + trigger event; automation rules per project are a small config set (typically <20)",
       "justification": "per-project automation rule config; bounded by number of automation rules per project (<20 in practice); small config set 2026-09-01"
     },
+    "/build/core/build-ticket-mutation-policy.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "readMutationTickets:25 selects inArray(tickets.id, ids) FOR UPDATE over a caller-supplied id list, then throws NotFoundException unless rows.length === ids.length. It is an exact-id read, not a scan; the row count is ids.length by construction.",
+      "justification": "Three call paths, each bounded before the read. build-ticket-bulk-mutation.ts:13-14 deduplicates through a Set and rejects outside 1..100 with BadRequestException, so <=100. projects-tickets-rank-utils.ts:33 builds [ticketId, beforeTicketId?, afterTicketId?], so <=3. projects-tickets-query.service.ts:50 authorizeMutation has exactly one caller, projects-tickets-update.service.ts:234, which passes the single-element [ticketId]. The 100 cap is load-bearing rather than cosmetic: the select takes FOR UPDATE row locks inside the mutation transaction, so an uncapped list would escalate lock footprint as well as row count. Pinned by build-ticket-mutation-bounds.spec.ts 2026-09-09"
+    },
     "/build/core/build-ticket-status-changed-consumer.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Contains only count/sum/groupBy aggregates for status-change analytics; no row-returning unbounded scan",
@@ -2181,6 +2186,11 @@
       "verdict": "FALSE-POSITIVE",
       "note": "2 aggregate references; AI ask queries produce scalar summaries or use vector-scoped ANN limits",
       "justification": "flagged selects are count() aggregates for session/conversation limits; ANN vector reads use .limit(cap); no row-returning unbounded scan 2026-09-01"
+    },
+    "/kb/retrieval/kb-citation-visibility.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "The three selects (:85 articles, :94 pages, :115 sources) are re-verification reads keyed by inArray(id, ids) over a citation id list the caller already holds. There is no scan: the row count can never exceed ids.length, and every producer of that list is capped.",
+      "justification": "Four call paths, all bounded by a named constant. Live ask (kb-ask.service.ts:290-292 resolveCitations) reads MAX_CONTEXT_ARTICLES=6 articles/pages plus retrieveTopSources(user, question, 4), so <=6 and <=4 ids. Replay (kb-ask.service.ts:310-316 assertReplayCitations) re-checks a STORED citation list, which that same generation path wrote under the same caps. Research brief (kb-research-brief.service.ts:171 via partitionVisible) re-checks a stored brief whose citations were produced by kb-research-brief.graph.ts:124-126: (PLAN_MAX_QUESTIONS=5)+1 queries x retrieveTopArticles(...,5) and x retrieveTopSources(...,3), deduplicated through articleMap/sourceMap, so <=30 articles/pages and <=18 sources. The ceiling is the writer's cap, not the reader's, which is why it is BOUNDED rather than a limit clause on the select. Pinned by kb-citation-visibility-bounds.spec.ts 2026-09-09"
     },
     "/kb/retrieval/kb-indexing.service.ts": {
       "verdict": "FALSE-POSITIVE",

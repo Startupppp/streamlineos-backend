@@ -46,7 +46,6 @@ export const CACHE_KEYS = {
   crmOrganizationsListNamespace: (orgId: string) =>
     namespace(`crm:organizations:list:${orgId}`),
 
-  projectsList: (orgId: string) => `projects:list:${orgId}`,
   projectLabels: (orgId: string) => `projects:labels:${orgId}`,
   orgMembers: (orgId: string) => `org:members:${orgId}`,
   customStates: (orgId: string, projectId: number) =>

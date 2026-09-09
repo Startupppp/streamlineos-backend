@@ -64,7 +64,6 @@ describe("ProjectsWriteService.updateProject — member removal reassignment", (
 
     const service = new ProjectsWriteService(
       db,
-      { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never,
       { log: jest.fn() } as never,
       { resolveUserPermissions: jest.fn() } as never,
       { getProject: jest.fn().mockResolvedValue({ id: 5 }) } as never,

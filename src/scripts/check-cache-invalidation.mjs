@@ -218,7 +218,6 @@ const KEY_TO_NAMESPACE_PREFIX = {
   contactsListNamespace: "crm:contacts:list:",
   crmOrganizationDetailNamespace: "crm:organizations:detail:",
   crmOrganizationsListNamespace: "crm:organizations:list:",
-  projectsList: "projects:list:",
   projectLabels: "projects:labels:",
   orgMembers: "org:members:",
   orgMembersListNamespace: "org:members:list:",

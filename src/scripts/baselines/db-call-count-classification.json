@@ -79,9 +79,17 @@
       "verdict": "N+1-FIXED",
       "note": "N+1 removed: the reorder is one UPDATE ... FROM (VALUES (id, order), ...) via common/db/bulk-update.ts. Executed against a real database (build.project_statuses, schema-qualified, reserved-word column) and asserted at one statement in projects-custom-states-bulk-reorder.spec.ts"
     },
-    "/build/core/projects-tickets-rank-utils.ts": {
+    "/build/core/build-ticket-batch-workflow.ts": {
       "verdict": "FALSE-POSITIVE",
-      "note": "First seen 2026-09-03. `rows.map((r, i) => sql`WHEN ... THEN ...`)` builds CASE branches joined into ONE `tx.update(tickets).set({ rank: sql`(CASE ... END)` })`. Zero round trips inside the loop â€” this is the bulk rank rewrite, not an N+1."
+      "note": "First seen 2026-09-09. The detector matches `for (const row of changed) await assertTransitionAllowed(db, ...)` at :20-23 because the callee takes a `db` handle, but that call issues ZERO statements on this path. `validateBatchTransition` reads the workflow ONCE at :13 via `fetchTransitionsAndStatuses`, then builds `prefetched` at :19 carrying `{ ...workflow, ticketFields: new Map(rows.map(row => [row.id, row])), wipAlreadyChecked: true }` and passes it as the last argument. `assertTransitionAllowed` (projects-tickets-workflow-utils.ts:93) destructures `prefetched ?? await fetchTransitionsAndStatuses(...)`, so the workflow read is skipped, and its only other query — `readTicketRequiredFields` at :120 — is reached at :163 only when `prefetched?.ticketFields?.get(context.ticketId)` misses. The Map is keyed by every row `readMutationTickets` returned, and `changed` is a subset of those rows, so it never misses. The one remaining round trip is the capacity reservation at :18, which is hoisted ABOVE the loop and runs once for the whole batch. Statement count is therefore independent of batch size; pinned by build-ticket-mutation-bounds.spec.ts, which asserts one read for a 100-ticket batch."
+    },
+    "/build/core/build-ticket-capacity.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "First seen 2026-09-09. The detector matches `for (const row of rows)` at :45, but `rows` was already materialised by the single `tx.execute` at :28 and the loop body only throws ConflictException on a missing status or a breached WIP limit — there is no database call inside it. The whole check is one statement: a `WITH incoming(status, amount) AS (VALUES ...)` CTE that left-joins `build.project_statuses` and `build.tickets` and aggregates per status, so N incoming statuses cost one round trip, not N. `lockProjectTicketMutation` at :13 is a separate single advisory-lock statement taken once before it."
+    },
+    "/build/core/projects-tickets-rank-utils.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "First seen 2026-09-03, reclassified FALSE-POSITIVE -> N+1-FIXED on 2026-09-09 because the detector no longer matches this file and a still-detected verdict would read as stale. The substance is unchanged and still true: `rows.map((r, i) => sql`WHEN ... THEN ...`)` builds CASE branches joined into ONE `tx.update(tickets).set({ rank: sql`(CASE ... END)` })`, and `rebalanceProjectRanks` (:13-24) is a single `UPDATE ... FROM (SELECT row_number() OVER (...))`. Zero round trips inside any loop — this is the bulk rank rewrite, not an N+1."
     },
     "/build/core/projects-tickets-transfer.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -556,8 +564,8 @@
       "note": "purgeExpired uses for(;;) chunked batch delete â€” SELECT batch IDs + DELETE batch; not per-row N+1"
     },
     "/kb/wiki/kb-spaces.service.ts": {
-      "verdict": "N+1-FIXED",
-      "note": "First seen 2026-09-03 by the braceless scanner, and it was real: deleting a space emitted ONE outbox row per article and per page via `for (const { contentType, id } of [...articles.map(...), ...pages.map(...)]) await OutboxWriter.emit(tx, {...})`, i.e. one INSERT per piece of content in the space. Now a single `OutboxWriter.emitMany(tx, events)`."
+      "verdict": "BATCHED",
+      "note": "First seen 2026-09-03 by the braceless scanner, and it was real: deleting a space emitted ONE outbox row per article and per page via `for (const { contentType, id } of [...articles.map(...), ...pages.map(...)]) await OutboxWriter.emit(tx, {...})`, i.e. one INSERT per piece of content in the space. Reclassified N+1-FIXED -> BATCHED on 2026-09-09, which is a verdict correction and NOT a code regression. The per-row emit is gone, but the replacement is not a single statement either: `emitContentDeletes` (:256-287) is a deliberate keyset loop — `for (;;)` reading SPACE_CONTENT_BATCH_SIZE rows ordered by id, then one `OutboxWriter.emitMany` per batch, resuming from the last id. It stays inside the space's own transaction because the events must commit with the soft delete, and it must not read tens of thousands of pages into one array. Statements are 2 per batch, i.e. O(pages / SPACE_CONTENT_BATCH_SIZE), never O(pages). N+1-FIXED asserts the detector no longer matches; a keyset batch is SUPPOSED to keep matching it, exactly as the /access/access-grant-drains.ts and /accounting/recurring-journals entries record. This is the shape the PRD requires of growing work, so it stays visible rather than exempt."
     },
     "/leads/lead-triggers.ts": {
       "verdict": "N+1-FIXED",

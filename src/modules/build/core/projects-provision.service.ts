@@ -5,7 +5,6 @@ import { resolveOrganizationActorsByUserIds } from "../../../common/organization
 import { DEFAULT_PROJECT_STATUSES } from "./lib/default-statuses";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
@@ -24,7 +23,6 @@ function generateProjectKey(name: string): string {
 export class ProjectsProvisionService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly cache: CacheService,
     private readonly audit: AuditService,
     private readonly planLimits: PlanLimitsService,
     private readonly dispatch: NotificationDispatchService,
@@ -123,8 +121,6 @@ export class ProjectsProvisionService {
       targetType: "project",
       metadata: { name: input.name, key: projectKey, managerMembershipId: manager.membershipId },
     });
-
-    await this.cache.invalidateNamespace(`projects:list:${orgId}`);
 
     return project;
   }

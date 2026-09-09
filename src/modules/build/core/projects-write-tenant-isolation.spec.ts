@@ -13,15 +13,13 @@ describe("ProjectsWriteService — cross-tenant isolation", () => {
       },
     } as unknown as Db;
   }
-
-  const cache = { cachedVersioned: jest.fn(), invalidateNamespace: jest.fn() } as never;
   const audit = { log: jest.fn() } as never;
   const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])) } as never;
   const projectsQuery = {} as never;
 
   it("throws NotFoundException when deleting a project from a different org (cross-tenant isolation)", async () => {
     const db = makeDb(null);
-    const svc = new ProjectsWriteService(db, cache, audit, access, projectsQuery);
+    const svc = new ProjectsWriteService(db, audit, access, projectsQuery);
     const u = { orgId: ATTACKER_ORG, userId: "u1", isOrgOwner: true } as never;
     await expect(svc.deleteProject(u, 99)).rejects.toThrow(NotFoundException);
   });
@@ -34,7 +32,7 @@ describe("ProjectsWriteService — cross-tenant isolation", () => {
       delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
     }));
     const db = { query: { projects: { findFirst: jest.fn().mockResolvedValue(project) } }, transaction: txFn } as unknown as Db;
-    const svc = new ProjectsWriteService(db, cache, audit, access, projectsQuery);
+    const svc = new ProjectsWriteService(db, audit, access, projectsQuery);
     const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true } as never;
     await expect(svc.deleteProject(u, 10)).resolves.not.toThrow();
   });
