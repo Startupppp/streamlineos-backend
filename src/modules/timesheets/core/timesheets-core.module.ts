@@ -16,6 +16,7 @@ import { BillingService } from "./billing.service";
 import { BillingController } from "./billing.controller";
 import { ReportsService } from "./reports.service";
 import { ReportsController } from "./reports.controller";
+import { TimesheetCalendarController } from "./calendar.controller";
 import { SettingsService } from "./settings.service";
 import { SettingsController } from "./settings.controller";
 import { RatesService } from "./rates.service";
@@ -44,6 +45,7 @@ import { TimesheetRemindersSweepService } from "./reminders-sweep.service";
     ApprovalsController,
     BillingController,
     ReportsController,
+    TimesheetCalendarController,
     SettingsController,
     RatesController,
     BudgetsController,
