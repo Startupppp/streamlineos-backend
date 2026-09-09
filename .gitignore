@@ -28,3 +28,6 @@ backups/
 .tmp-*
 
 dist-local/
+
+# Agent scratch probes: local-only, may hold credentials in the process env. Never commit.
+.scratch-billing-verify/
