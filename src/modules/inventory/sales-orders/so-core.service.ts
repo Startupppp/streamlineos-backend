@@ -216,6 +216,28 @@ export class SoCoreService {
   }
 
   async createSo(orgId: string, userId: string, data: CreateSoInput) {
+    /*
+     * A sales order ships OUT of a warehouse, so the rule is a transfer's source
+     * rule: only out of a building you hold. `data.warehouseId` came straight off
+     * the request body and was written unchecked, and nothing downstream catches
+     * it — creating an order posts no movements, so the stock engine's
+     * `assertLocationsInScope` never runs on this path, and `listSos` then hides
+     * the row from the very person who raised it while it stands as demand on
+     * somebody else's shelves.
+     *
+     * Only asserted when one is given: `inv_sales_orders.warehouse_id` is
+     * nullable and an order with no warehouse yet is a legitimate draft, not an
+     * attempt at somebody else's building. 404 rather than 403, so naming a
+     * warehouse you cannot see does not confirm it exists.
+     *
+     * First, ahead of `numSeq.next`: a refused order should not burn an order
+     * number, and a caller who may not see the warehouse should not move the
+     * organisation's SO sequence on.
+     */
+    if (data.warehouseId != null) {
+      await this.warehouseScope.assertWarehouseVisible(orgId, userId, data.warehouseId);
+    }
+
     const soNumber = await this.numSeq.next(orgId, "SO");
     const { subtotal, taxAmount, total } = computeSoTotals(data.lines);
 
@@ -259,7 +281,27 @@ export class SoCoreService {
     return so;
   }
 
-  async updateSo(orgId: string, soId: number, data: UpdateSoInput) {
+  async updateSo(orgId: string, soId: number, userId: string, data: UpdateSoInput) {
+    /*
+     * The same gate `createSo` now carries, on the other way in. Editing a draft
+     * was a way to move an order into a building the caller holds nothing in,
+     * which `createSo` refuses — and the write here is an `UPDATE ... SET
+     * warehouse_id` with no movements behind it, so nothing downstream looks.
+     *
+     * This method took no `userId` at all until now: the controller had one and
+     * never passed it, which is why the hole could not have been closed here
+     * without threading it through.
+     *
+     * `undefined` means "leave the warehouse alone" and is not asked about; the
+     * column is nullable and only a value the caller actually supplied is theirs
+     * to justify. First, ahead of the order lookup, so a caller naming a
+     * warehouse they cannot see causes no query about the order and cannot read
+     * the refusal's shape to learn whether it exists or is still a draft.
+     */
+    if (data.warehouseId != null) {
+      await this.warehouseScope.assertWarehouseVisible(orgId, userId, data.warehouseId);
+    }
+
     const so = await this.db.query.invSalesOrders.findFirst({
       where: and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)),
     });

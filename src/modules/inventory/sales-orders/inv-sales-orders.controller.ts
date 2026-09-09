@@ -91,7 +91,7 @@ export class InvSalesOrdersController {
     @Body() body: UpdateSoInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.soCore.updateSo(u.orgId, soId, body);
+    return this.soCore.updateSo(u.orgId, soId, u.userId, body);
   }
 
   @Post(":soId/confirm")
