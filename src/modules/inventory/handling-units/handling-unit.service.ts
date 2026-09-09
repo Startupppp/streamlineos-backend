@@ -27,6 +27,13 @@ export interface HandlingUnitContentRow {
   lotId: number | null;
   serialId: number | null;
   handlingUnitId: number;
+  /**
+   * INV-18 - whose stock this is. Part of `inv_stock_levels`' natural key, and
+   * the component this read used to drop: a pallet holding a supplier's cartons
+   * looked identical to one holding our own, and `move` then posted both as
+   * `OWNED`.
+   */
+  ownership: "OWNED" | "VENDOR" | "CUSTOMER";
   onHand: string;
 }
 
@@ -185,6 +192,16 @@ export class HandlingUnitService {
       const subtree = await this.subtreeIds(tx, orgId, handlingUnitId);
       const contents = await this.contentsOf(tx, orgId, subtree);
 
+      // INV-18. `ownership` is part of `inv_stock_levels`' natural key and was
+      // absent from both legs, so every movement defaulted to `OWNED`. A pallet
+      // carrying a supplier's cartons was therefore moved by decrementing an
+      // `OWNED` row that did not hold them — refused outright where negative
+      // stock is forbidden, and where it is allowed, silently converting a
+      // consignment into our own stock at the destination while leaving the
+      // vendor's units behind in the old bin. Worse, a pallet holding both an
+      // owned and a consigned grain of one variant produced two movements that
+      // `levelKey` could no longer tell apart, so both landed on the owned row
+      // and it was decremented twice.
       const movements = contents.flatMap((row) => [
         {
           transactionType: "TRANSFER_OUT",
@@ -193,6 +210,7 @@ export class HandlingUnitService {
           lotId: row.lotId ?? undefined,
           serialId: row.serialId ?? undefined,
           handlingUnitId: row.handlingUnitId,
+          ownership: row.ownership,
           quantityDelta: `-${row.onHand}`,
         },
         {
@@ -202,6 +220,7 @@ export class HandlingUnitService {
           lotId: row.lotId ?? undefined,
           serialId: row.serialId ?? undefined,
           handlingUnitId: row.handlingUnitId,
+          ownership: row.ownership,
           quantityDelta: row.onHand,
           // The units leave one bin at exactly what they cost in it. Estimating
           // instead is wrong under FIFO the moment an issue crosses a layer.
@@ -426,8 +445,9 @@ export class HandlingUnitService {
     const rows = await executor.execute<{
       product_variant_id: number; lot_id: number | null; serial_id: number | null;
       handling_unit_id: number; location_id: number; on_hand: string;
+      ownership: "OWNED" | "VENDOR" | "CUSTOMER";
     }>(sql`
-      SELECT product_variant_id, lot_id, serial_id, handling_unit_id, location_id, on_hand
+      SELECT product_variant_id, lot_id, serial_id, handling_unit_id, location_id, on_hand, ownership
       FROM inv_stock_levels
       WHERE org_id = ${orgId}
         AND handling_unit_id IN (${sql.join(handlingUnitIds.map((id) => sql`${id}`), sql`, `)})
@@ -439,6 +459,7 @@ export class HandlingUnitService {
       lotId: r.lot_id === null ? null : Number(r.lot_id),
       serialId: r.serial_id === null ? null : Number(r.serial_id),
       handlingUnitId: Number(r.handling_unit_id),
+      ownership: r.ownership,
       currentLocationId: Number(r.location_id),
       onHand: String(r.on_hand),
     }));
