@@ -30,6 +30,16 @@ export interface RelationshipSnapshot {
   readonly awaitingUs: boolean;
   readonly nextStepDueAt: Date | null;
   readonly hasReachableAddress: boolean;
+  /**
+   * How long this customer normally takes to reply, in seconds, when it has
+   * been observed often enough to mean anything.
+   *
+   * Null is the ordinary case and not a defect: a relationship with one message
+   * in it has no cadence, and `relationship_states.reply_p50_seconds` stays
+   * null until there is one. A null falls back to the fixed thresholds below,
+   * which is what every relationship used to get.
+   */
+  readonly replyP50Seconds?: number | null;
 }
 
 export type OutboundRefusal =
@@ -75,6 +85,77 @@ export const NUDGE_AFTER_DAYS = 10;
 
 /** Silence, before it will check in on a relationship with nothing open. */
 const CHECK_IN_AFTER_DAYS = 45;
+
+/**
+ * Silence is relative to how this person normally answers.
+ *
+ * Ten days is a reasonable default and a poor universal rule. Somebody who
+ * replies within two hours has plainly gone quiet long before day ten, and by
+ * then the deal has cooled; somebody whose normal turnaround is three weeks has
+ * not gone quiet at day ten at all, and a nudge there is nagging a customer who
+ * is behaving exactly as they always do. The product already measures the
+ * difference — `relationship_states.reply_p50_seconds` has been computed and
+ * stored since relationships shipped — and nothing read it.
+ *
+ * Three of their own reply times, because one is their normal rhythm and two is
+ * a slow week. Three is the first multiple that is hard to explain as anything
+ * but silence.
+ */
+const SILENCE_CADENCE_MULTIPLE = 3;
+
+/**
+ * How far the observed cadence may move the threshold, as a fraction of it.
+ *
+ * The band is what keeps this an adjustment rather than a second policy. A
+ * customer who replies in ten minutes must not have the system chasing them the
+ * same afternoon — the floor holds at three days for a nudge, which is still
+ * inside `OUTBOUND_SPACING_DAYS` and so cannot produce a second message anyway.
+ * A customer who replies in three months must not push an open deal out to a
+ * year of silence; twenty days is the longest an open deal goes unattended
+ * whatever the history says.
+ */
+const SILENCE_MIN_FRACTION = 0.3;
+const SILENCE_MAX_FRACTION = 2;
+
+/**
+ * The earliest any relationship can become due, and therefore the cutoff a
+ * candidate sweep must use.
+ *
+ * Exported for the same reason `NUDGE_AFTER_DAYS` is, and it replaces it in
+ * that role: once the threshold moves per relationship, a sweep still cutting
+ * at ten days would never surface the fast-replying relationships this whole
+ * mechanism exists to serve, and the feature would be inert while looking
+ * finished. Widening the cutoff costs database reads and not provider calls —
+ * `composeAndHold` runs `judgeOutbound` before it spends anything, so a
+ * candidate that is not yet due is refused for free.
+ */
+export const EARLIEST_SILENCE_DAYS = NUDGE_AFTER_DAYS * SILENCE_MIN_FRACTION;
+
+/**
+ * The silence threshold for one relationship, in days.
+ *
+ * Exported so the sweep and the tests can state the same number this function
+ * judges by, and pure so the band above can be argued with directly.
+ */
+export function silenceThresholdDays(
+  defaultDays: number,
+  replyP50Seconds: number | null | undefined,
+): number {
+  if (replyP50Seconds === null || replyP50Seconds === undefined) return defaultDays;
+  /**
+   * A non-positive or non-finite median is a broken measurement, not a customer
+   * who replies instantly. Falling back is the only safe reading: treating zero
+   * as "replies at once" would set the threshold to the floor for every
+   * relationship whose statistics have not been computed properly yet.
+   */
+  if (!Number.isFinite(replyP50Seconds) || replyP50Seconds <= 0) return defaultDays;
+
+  const observedDays = (replyP50Seconds / 86_400) * SILENCE_CADENCE_MULTIPLE;
+  return Math.min(
+    Math.max(observedDays, defaultDays * SILENCE_MIN_FRACTION),
+    defaultDays * SILENCE_MAX_FRACTION,
+  );
+}
 
 /**
  * How late a next step has to be before chasing it is not pedantic.
@@ -172,10 +253,16 @@ export function judgeOutbound(snapshot: RelationshipSnapshot): OutboundVerdict {
     ? daysBetween(snapshot.lastOutboundAt, snapshot.now)
     : Number.POSITIVE_INFINITY;
 
-  if (snapshot.dealState === "open" && quietDays >= NUDGE_AFTER_DAYS)
+  if (
+    snapshot.dealState === "open" &&
+    quietDays >= silenceThresholdDays(NUDGE_AFTER_DAYS, snapshot.replyP50Seconds)
+  )
     return { act: true, outboundClass: "nudge", reason: "silence-on-an-open-deal" };
 
-  if (snapshot.dealState === "none" && quietDays >= CHECK_IN_AFTER_DAYS)
+  if (
+    snapshot.dealState === "none" &&
+    quietDays >= silenceThresholdDays(CHECK_IN_AFTER_DAYS, snapshot.replyP50Seconds)
+  )
     return { act: true, outboundClass: "check_in", reason: "long-silence" };
 
   return { act: false, reason: "nothing-to-say" };

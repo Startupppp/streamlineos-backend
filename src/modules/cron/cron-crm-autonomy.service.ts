@@ -5,7 +5,7 @@ import { forEachOrg } from "../../common/tenant";
 import { RelationshipStateService } from "../relationships/relationship-state.service";
 import { OutboundService } from "../autonomy/outbound.service";
 import { AutonomyRepairService } from "../autonomy/autonomy-repair.service";
-import { NUDGE_AFTER_DAYS } from "../autonomy/outbound-eligibility";
+import { EARLIEST_SILENCE_DAYS } from "../autonomy/outbound-eligibility";
 import { MAX_REPAIRS_PER_DECISION } from "../autonomy/dto/autonomy-review.schemas";
 
 const DAY_MS = 86_400_000;
@@ -49,11 +49,20 @@ export class CronCrmAutonomyService {
   /**
    * Deals and relationships that have gone quiet, handed to the outbound loop.
    *
-   * The cutoff is `NUDGE_AFTER_DAYS`, imported rather than restated: it is the
-   * shorter of the two thresholds `judgeOutbound` applies, so it is the earliest
-   * anything can be due. Everything this hands over is then judged properly —
-   * a relationship with no open deal needs 45 days, not 10, and `composeAndHold`
-   * refuses the ones that are not ready without this sweep needing to know why.
+   * The cutoff is `EARLIEST_SILENCE_DAYS`, imported rather than restated: it is
+   * the earliest any relationship can become due once the threshold moves with
+   * the customer's own reply cadence. Cutting at `NUDGE_AFTER_DAYS` instead —
+   * which is what this did — would never surface the fast-replying
+   * relationships that cadence exists to serve, and CRM-P2-10 would be inert
+   * while looking finished.
+   *
+   * Widening it is cheap in the way that matters: every extra candidate costs a
+   * relationship read, and `composeAndHold` runs `judgeOutbound` before it
+   * spends anything, so one that is not yet due is refused without a provider
+   * call. Everything this hands over is then judged properly — a relationship
+   * with no open deal needs its check-in threshold, not its nudge one, and
+   * `composeAndHold` refuses the ones that are not ready without this sweep
+   * needing to know why.
    *
    * A relationship anchored to a deal rather than a party is skipped:
    * `composeAndHold` addresses a party, and there is nobody to write to without
@@ -66,7 +75,7 @@ export class CronCrmAutonomyService {
     held: number;
     refused: number;
   }> {
-    const cutoff = new Date(Date.now() - NUDGE_AFTER_DAYS * DAY_MS);
+    const cutoff = new Date(Date.now() - EARLIEST_SILENCE_DAYS * DAY_MS);
     let considered = 0;
     let held = 0;
     let refused = 0;

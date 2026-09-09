@@ -22,7 +22,10 @@ import type { AutonomyRepairService } from "../autonomy/autonomy-repair.service"
 import type { OutboundService } from "../autonomy/outbound.service";
 import type { RelationshipStateService } from "../relationships/relationship-state.service";
 import { MAX_REPAIRS_PER_DECISION } from "../autonomy/dto/autonomy-review.schemas";
-import { NUDGE_AFTER_DAYS } from "../autonomy/outbound-eligibility";
+import {
+  EARLIEST_SILENCE_DAYS,
+  NUDGE_AFTER_DAYS,
+} from "../autonomy/outbound-eligibility";
 import { CronCrmAutonomyService } from "./cron-crm-autonomy.service";
 
 const partyAnchored = (partyId: string) => ({
@@ -63,21 +66,31 @@ function makeService(options: {
 
 describe("CronCrmAutonomyService.sweepSilentRelationships", () => {
   /**
-   * The cutoff is the shorter of the two thresholds `judgeOutbound` applies, and
-   * it is imported rather than restated. A sweep with its own copy of the number
+   * The cutoff is the earliest any relationship can become due, and it is
+   * imported rather than restated. A sweep with its own copy of the number
    * either misses deals that are due or pays to load and refuse ones that are
    * not, and the two drift the first time either is tuned.
+   *
+   * CRM-P2-10 moved which number that is. Once the silence threshold varies
+   * with the customer's own reply cadence, `NUDGE_AFTER_DAYS` is no longer the
+   * earliest anything can be due — a customer who answers within the hour is
+   * due at the floor, three days — so a sweep still cutting at ten would never
+   * hand over the relationships the cadence exists to serve. That failure would
+   * be silent: the sweep would run, report success, and the feature would be
+   * inert. This test is the thing that would notice.
    */
-  it("asks for relationships quiet since the nudge threshold, not a number of its own", async () => {
+  it("asks for relationships quiet since the earliest anything can be due", async () => {
     const { service, listAwaitingReply } = makeService({});
     const before = Date.now();
 
     await service.sweepSilentRelationships();
 
     const [, olderThan] = listAwaitingReply.mock.calls[0] as [string, Date, number];
-    const expected = before - NUDGE_AFTER_DAYS * 86_400_000;
+    const expected = before - EARLIEST_SILENCE_DAYS * 86_400_000;
     // Within a second of the threshold, computed against the test's own clock.
     expect(Math.abs(olderThan.getTime() - expected)).toBeLessThan(1_000);
+    /** And it must be at or before the fixed threshold, never after it. */
+    expect(EARLIEST_SILENCE_DAYS).toBeLessThanOrEqual(NUDGE_AFTER_DAYS);
   });
 
   it("hands every quiet party to the outbound loop and tallies what it did", async () => {

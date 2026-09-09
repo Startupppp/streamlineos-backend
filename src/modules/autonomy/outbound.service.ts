@@ -788,6 +788,13 @@ export class OutboundService {
         lastInboundAt: relationshipStates.lastInboundAt,
         lastOutboundAt: relationshipStates.lastOutboundAt,
         awaitingReplySince: relationshipStates.awaitingReplySince,
+        /**
+         * How fast this customer normally answers, which decides when they can
+         * be said to have gone quiet. Stored since relationships shipped and
+         * read by nothing until CRM-P2-10; null until enough replies have been
+         * seen to have a median at all.
+         */
+        replyP50Seconds: relationshipStates.replyP50Seconds,
       })
       .from(relationshipStates)
       .where(
@@ -853,6 +860,7 @@ export class OutboundService {
       awaitingUs: !relationship?.awaitingReplySince,
       nextStepDueAt: deal?.followUpDate ?? null,
       hasReachableAddress: Boolean(recipient),
+      replyP50Seconds: relationship?.replyP50Seconds ?? null,
     };
 
     return {

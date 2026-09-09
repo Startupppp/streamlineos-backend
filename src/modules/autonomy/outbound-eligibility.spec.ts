@@ -1,6 +1,9 @@
 import {
+  EARLIEST_SILENCE_DAYS,
   judgeOutbound,
+  NUDGE_AFTER_DAYS,
   OUTBOUND_SPACING_DAYS,
+  silenceThresholdDays,
   type RelationshipSnapshot,
 } from "./outbound-eligibility";
 
@@ -195,5 +198,147 @@ describe("judgeOutbound", () => {
       }
     }
     expect(classes.has("cold_outreach")).toBe(false);
+  });
+});
+
+/**
+ * CRM-P2-10. Silence measured against how this customer actually answers.
+ *
+ * `reply_p50_seconds` has been computed and stored since relationships shipped
+ * and was read by nothing, so every relationship was judged silent at the same
+ * ten days — which is early for somebody whose normal turnaround is three weeks
+ * and very late for somebody who answers within the hour.
+ */
+describe("silenceThresholdDays", () => {
+  it("keeps the fixed threshold when no cadence has been observed", () => {
+    /** The ordinary case: a relationship with one message in it has no median. */
+    expect(silenceThresholdDays(NUDGE_AFTER_DAYS, null)).toBe(NUDGE_AFTER_DAYS);
+    expect(silenceThresholdDays(NUDGE_AFTER_DAYS, undefined)).toBe(NUDGE_AFTER_DAYS);
+  });
+
+  it("treats a broken measurement as no measurement", () => {
+    /**
+     * Zero is not "replies instantly". Reading it that way would clamp every
+     * relationship whose statistics have not been computed properly to the
+     * floor, which is the most aggressive setting available.
+     */
+    expect(silenceThresholdDays(NUDGE_AFTER_DAYS, 0)).toBe(NUDGE_AFTER_DAYS);
+    expect(silenceThresholdDays(NUDGE_AFTER_DAYS, -60)).toBe(NUDGE_AFTER_DAYS);
+    expect(silenceThresholdDays(NUDGE_AFTER_DAYS, Number.NaN)).toBe(NUDGE_AFTER_DAYS);
+  });
+
+  it("shortens it for somebody who normally answers quickly", () => {
+    /** A two-day turnaround: six days of nothing is three of their rhythms. */
+    expect(silenceThresholdDays(NUDGE_AFTER_DAYS, 2 * 86_400)).toBe(6);
+  });
+
+  it("lengthens it for somebody whose normal turnaround is long", () => {
+    /** A five-day turnaround puts the nudge at fifteen, not at ten. */
+    expect(silenceThresholdDays(NUDGE_AFTER_DAYS, 5 * 86_400)).toBe(15);
+  });
+
+  it("will not chase somebody the same afternoon they were written to", () => {
+    /**
+     * A ten-minute median would otherwise put the threshold at half an hour.
+     * The floor is three days for a nudge, which is inside OUTBOUND_SPACING_DAYS
+     * and therefore cannot produce a second message even at the extreme.
+     */
+    const floor = silenceThresholdDays(NUDGE_AFTER_DAYS, 600);
+    expect(floor).toBe(3);
+    expect(floor).toBeLessThan(OUTBOUND_SPACING_DAYS);
+  });
+
+  it("will not let a slow correspondent push an open deal into a year of silence", () => {
+    /** Three months between replies does not make a hundred-day gap acceptable. */
+    expect(silenceThresholdDays(NUDGE_AFTER_DAYS, 90 * 86_400)).toBe(20);
+  });
+
+  it("scales the band with whichever threshold it is adjusting", () => {
+    /**
+     * The same rule serves the check-in threshold, so the band is a fraction
+     * rather than a pair of absolute days — otherwise the floor written for a
+     * nudge would silently become the rule for a 45-day check-in too.
+     */
+    expect(silenceThresholdDays(45, 600)).toBeCloseTo(13.5, 5);
+    expect(silenceThresholdDays(45, 90 * 86_400)).toBe(90);
+  });
+});
+
+describe("judgeOutbound reads the customer's own cadence", () => {
+  it("nudges a fast correspondent before the fixed threshold would", () => {
+    const verdict = judgeOutbound(
+      snapshot({
+        lastInboundAt: daysAgo(30),
+        lastOutboundAt: daysAgo(7),
+        replyP50Seconds: 2 * 86_400,
+      }),
+    );
+
+    expect(verdict).toEqual({
+      act: true,
+      outboundClass: "nudge",
+      reason: "silence-on-an-open-deal",
+    });
+  });
+
+  it("holds off on a slow correspondent the fixed threshold would have chased", () => {
+    /**
+     * The half of this that protects the customer. At eleven days the old rule
+     * nudged; somebody who takes five days to answer is not late at eleven, and
+     * the message would arrive as nagging rather than as attention.
+     */
+    const verdict = judgeOutbound(
+      snapshot({
+        lastInboundAt: daysAgo(30),
+        lastOutboundAt: daysAgo(11),
+        replyP50Seconds: 5 * 86_400,
+      }),
+    );
+
+    expect(verdict).toEqual({ act: false, reason: "nothing-to-say" });
+  });
+
+  it("changes nothing for a relationship with no measured cadence", () => {
+    /** The regression guard: every existing relationship keeps the old answer. */
+    const quiet = snapshot({ lastInboundAt: daysAgo(30), lastOutboundAt: daysAgo(11) });
+
+    expect(judgeOutbound(quiet)).toEqual({
+      act: true,
+      outboundClass: "nudge",
+      reason: "silence-on-an-open-deal",
+    });
+    expect(judgeOutbound({ ...quiet, lastOutboundAt: daysAgo(9) })).toEqual({
+      act: false,
+      reason: "nothing-to-say",
+    });
+  });
+
+  it("still refuses a reply, however quiet the cadence says it is", () => {
+    /**
+     * Ordering, restated against the new input: the refusals are all checked
+     * before any reason to act, so a cadence that says "overdue" cannot
+     * outrank the fact that they answered.
+     */
+    expect(
+      judgeOutbound(
+        snapshot({
+          lastOutboundAt: daysAgo(30),
+          lastInboundAt: daysAgo(1),
+          replyP50Seconds: 3_600,
+        }),
+      ),
+    ).toEqual({ act: false, reason: "they-replied" });
+  });
+
+  it("is the earliest anything can be due, so the sweep cuts there", () => {
+    /**
+     * The number that keeps the sweep and the judge agreeing. If the sweep still
+     * cut at NUDGE_AFTER_DAYS, no fast-replying relationship would ever be
+     * handed over and the whole mechanism would be inert while looking finished.
+     */
+    expect(EARLIEST_SILENCE_DAYS).toBe(3);
+    expect(silenceThresholdDays(NUDGE_AFTER_DAYS, 1)).toBeGreaterThanOrEqual(
+      EARLIEST_SILENCE_DAYS,
+    );
   });
 });
