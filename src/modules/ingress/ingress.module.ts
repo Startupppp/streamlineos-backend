@@ -8,6 +8,7 @@ import { CrmMailboxService } from "./adapters/crm-mailbox.service";
 import { InboundIngressController } from "./inbound-ingress.controller";
 import { InboundIngressService } from "./inbound-ingress.service";
 import { InboundIngressWorkflow } from "./inbound-ingress.workflow";
+import { WhatsAppChannelsController } from "./adapters/whatsapp-channels.controller";
 import { WhatsAppChannelsService } from "./adapters/whatsapp-channels.service";
 import { WhatsAppIngressController } from "./adapters/whatsapp-ingress.controller";
 import { WhatsAppIngressService } from "./adapters/whatsapp-ingress.service";
@@ -21,7 +22,12 @@ import { WhatsAppIngressService } from "./adapters/whatsapp-ingress.service";
  */
 @Module({
   imports: [AutonomyModule, BillingModule, MailModule, RelationshipsModule],
-  controllers: [InboundIngressController, CrmMailboxController, WhatsAppIngressController],
+  controllers: [
+    InboundIngressController,
+    CrmMailboxController,
+    WhatsAppIngressController,
+    WhatsAppChannelsController,
+  ],
   providers: [
     InboundIngressService,
     InboundIngressWorkflow,
