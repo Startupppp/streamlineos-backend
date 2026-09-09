@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { signBulkSendJobs, signBulkSendRows, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -22,6 +22,22 @@ interface MappedRow {
   phone?: string;
   error?: string;
 }
+
+/**
+ * One page of a job's rows. The detail view shows these in row order; a longer
+ * job is reported by count rather than silently ending at the hundredth row.
+ */
+const BULK_ROW_PAGE = 100;
+
+/**
+ * The error report's own cap, which is not the row page.
+ *
+ * A bulk send that fails wholesale fails in the thousands, and the whole point
+ * of the report is to be able to fix and re-run those rows. Capping it at the
+ * row page meant the report was a window over the first hundred rows rather
+ * than a list of what went wrong.
+ */
+const BULK_ERROR_REPORT_CAP = 2_000;
 
 @Injectable()
 export class SignBulkSendService {
@@ -185,8 +201,17 @@ export class SignBulkSendService {
   async getJob(orgId: string, jobId: number) {
     const job = await this.db.query.signBulkSendJobs.findFirst({ where: and(eq(signBulkSendJobs.id, jobId), eq(signBulkSendJobs.orgId, orgId)) });
     if (!job) throw new NotFoundException("Bulk send job not found");
-    const rows = await this.db.query.signBulkSendRows.findMany({ where: eq(signBulkSendRows.jobId, jobId), orderBy: (r, { asc }) => [asc(r.rowNumber)], limit: 100 });
-    return { job, rows };
+    const rows = await this.db.query.signBulkSendRows.findMany({ where: eq(signBulkSendRows.jobId, jobId), orderBy: (r, { asc }) => [asc(r.rowNumber)], limit: BULK_ROW_PAGE });
+    /*
+     * The cap is real and a bulk send is exactly where it is passed, so the
+     * caller is told how many rows there are rather than being handed a
+     * hundred and left to assume that is all of them.
+     */
+    const [counted] = await this.db
+      .select({ n: sql<string>`count(*)` })
+      .from(signBulkSendRows)
+      .where(eq(signBulkSendRows.jobId, jobId));
+    return { job, rows, rowTotal: Number(counted?.n ?? 0) };
   }
 
   async cancel(orgId: string, jobId: number, actor: { userId: string }) {
@@ -210,8 +235,27 @@ export class SignBulkSendService {
     return updated;
   }
 
+  /**
+   * The failures, all of them, filtered in SQL.
+   *
+   * This used to call `getJob` and filter its result in JavaScript. `getJob`
+   * returns the first hundred rows **by row number**, so the report described
+   * only failures in rows 1–100: a five-hundred-row job whose failures were
+   * rows 200–450 came back as an **empty array** while the job itself reported
+   * `failedCount: 250`. Not a truncated list — a list that says nothing went
+   * wrong about a job that failed half its rows, which is the opposite of what
+   * an error report is for.
+   *
+   * The org check still runs first, through the same `getJob`, because the
+   * failure rows are keyed only on `jobId` and would otherwise be readable
+   * across tenants by anyone who guessed a job id.
+   */
   async getErrorReport(orgId: string, jobId: number) {
-    const { rows } = await this.getJob(orgId, jobId);
-    return rows.filter((r) => r.status === "failed");
+    await this.getJob(orgId, jobId);
+    return this.db.query.signBulkSendRows.findMany({
+      where: and(eq(signBulkSendRows.jobId, jobId), eq(signBulkSendRows.status, "failed")),
+      orderBy: (r, { asc }) => [asc(r.rowNumber)],
+      limit: BULK_ERROR_REPORT_CAP,
+    });
   }
 }
