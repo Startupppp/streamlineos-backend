@@ -72,11 +72,25 @@ describe(`${SEEDED_HARNESS} timesheet entry validation`, () => {
     await seeded?.close();
   }, 60_000);
 
+  /**
+   * Every policy this file sets is *material* under TS-16, so the PATCH needs a
+   * `changeReason` or it answers 400 — and a 400 here does not look like a
+   * missing field, it looks like the validation rule under test rejecting a
+   * legitimate value. That is how it read when TS-16 landed after this file was
+   * written: ten tests went red across four unrelated describes, none of them
+   * about settings.
+   *
+   * The reason is supplied here rather than at each call site so that adding a
+   * field to `MATERIAL_FIELDS` cannot break this file again. The rule itself is
+   * covered where it belongs — `settings-change-reason.spec.ts` for the
+   * classification, and the attendance-draft seeded spec for the refusal
+   * through the API.
+   */
   const settings = (patch: object) =>
     request(seeded.app.getHttpServer())
       .patch("/timesheets/settings")
       .set("Authorization", `Bearer ${token}`)
-      .send(patch);
+      .send({ changeReason: "Entry-validation coverage", ...patch });
 
   const createEntry = (body: object) =>
     request(seeded.app.getHttpServer())
