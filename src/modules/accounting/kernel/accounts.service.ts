@@ -15,6 +15,7 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
+import { getPostgresErrorDetails } from "../../../common/db/postgres-error";
 import { AuditService } from "../../../common/audit/audit.service";
 import { addDays, assertIsoDate, compareDates } from "./fiscal-calendar";
 import {
@@ -380,18 +381,34 @@ export class AccountsService {
     }
   }
 
+  /**
+   * Both halves of this read were looking in the wrong place.
+   *
+   * The SQLSTATE was taken off the value Drizzle threw, and Drizzle throws a
+   * `DrizzleQueryError` that keeps the driver error on `.cause` — so the
+   * comparison was always false and creating an account with a code the book
+   * already uses answered 500 rather than 409. And the constraint was matched
+   * against `error.message`, which on that wrapper is the SQL text
+   * ("Failed query: insert into …"), never the constraint name; even a correct
+   * SQLSTATE read would have fallen through to the generic message.
+   *
+   * `getPostgresErrorDetails` answers both from the cause chain.
+   * `uniq_gl_accounts_book_code` is (book_id, code) WHERE deleted_at IS NULL
+   * and `uniq_gl_accounts_book_system_tag` is (book_id, system_tag) WHERE the
+   * tag is set — both reachable from `create` with caller-supplied values.
+   */
   private translateUniqueViolation(error: unknown, code: string, tag: GlSystemTag | null): Error {
-    const message = error instanceof Error ? error.message : String(error);
-    if ((error as { code?: string })?.code === "23505") {
-      if (message.includes("uniq_gl_accounts_book_code")) {
+    const { code: sqlstate, constraint } = getPostgresErrorDetails(error);
+    if (sqlstate === "23505") {
+      if (constraint === "uniq_gl_accounts_book_code") {
         return new ConflictException(`Account code ${code} is already used in this book`);
       }
-      if (message.includes("uniq_gl_accounts_book_system_tag") && tag) {
+      if (constraint === "uniq_gl_accounts_book_system_tag" && tag) {
         return new ConflictException(`Another account already fills the "${tag}" role`);
       }
       return new ConflictException("That account already exists");
     }
-    return error instanceof Error ? error : new Error(message);
+    return error instanceof Error ? error : new Error(String(error));
   }
 
   private toTree(rows: Omit<AccountNode, "children">[]): AccountNode[] {
