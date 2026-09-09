@@ -172,6 +172,32 @@ export const callAnalyses = pgTable(
       t.activityId,
       t.analyzerVersion,
     ),
+
+    /**
+     * The read every aggregate makes: this organisation's analyses over a
+     * window, newest first.
+     *
+     * The coaching digest, the per-rep summary (CRM-P2-05) and the exemplar
+     * search (CRM-P2-06) all issue exactly `organization_id = ? AND
+     * analyzer_version = ? AND created_at >= ? ORDER BY created_at DESC LIMIT
+     * ?`. Neither index above serves it: `uniq_..._hash` leads with the
+     * organisation but continues into the hash, so the ordering is lost after
+     * one column, and `idx_..._activity` never touches `created_at` at all. The
+     * planner's only option was an organisation-wide scan followed by a sort,
+     * which is fine for a tenant with fifty analyses and is a full read of the
+     * table's largest partition for one with fifty thousand.
+     *
+     * `organization_id` leads because the RLS policy on this table adds
+     * `organization_id = app.current_org_id()`, which is not leakproof and is
+     * therefore evaluated against the heap tuple — an index that did not supply
+     * the column itself could never produce an index-only scan, and the planner
+     * would decline it in a way that reads as "the index did not help".
+     */
+    index("idx_crm_call_analyses_window").on(
+      t.organizationId,
+      t.analyzerVersion,
+      t.createdAt.desc(),
+    ),
   ],
 );
 

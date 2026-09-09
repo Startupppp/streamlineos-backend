@@ -2990,6 +2990,27 @@
       "when": 1787941628254,
       "tag": "0666_lifecycle_expansion_trigger",
       "breakpoints": true
+    },
+    {
+      "idx": 427,
+      "version": "7",
+      "when": 1787941688254,
+      "tag": "0667_crm_segments",
+      "breakpoints": true
+    },
+    {
+      "idx": 428,
+      "version": "7",
+      "when": 1787941748254,
+      "tag": "0668_crm_call_analyses_window",
+      "breakpoints": true
+    },
+    {
+      "idx": 429,
+      "version": "7",
+      "when": 1787941808254,
+      "tag": "0669_crm_deal_competitor_suggestions",
+      "breakpoints": true
     }
   ]
 }
