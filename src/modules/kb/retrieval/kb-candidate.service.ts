@@ -1,9 +1,16 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger, Optional } from "@nestjs/common";
 import { and, desc, eq, inArray, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
 import { kbArticles, kbArticleChunks, kbArticleRestrictions, kbPages } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { CacheService } from "../../../common/cache/cache.service";
+import { assertNever } from "../../../common/types/assert-never";
 import { resolveArticleKeywordSql } from "../core/kb-article-keyword-search";
+import {
+  decideKbRetrievalStrategy,
+  KB_CHUNK_COUNT_CACHE_TTL_SECONDS,
+  KB_EXACT_SCAN_MAX_CHUNKS,
+} from "./kb-retrieval-strategy";
 
 const RRF_CONSTANT = 60;
 const SNIPPET_LENGTH = 160;
@@ -12,7 +19,10 @@ const SNIPPET_LENGTH = 160;
 export class KbCandidateService {
   private readonly logger = new Logger(KbCandidateService.name);
 
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    @Optional() @Inject(CacheService) private readonly cache: CacheService | null = null,
+  ) {}
 
   async hasEmbeddedChunks(orgId: string): Promise<boolean> {
     const [row] = await this.db
@@ -23,19 +33,39 @@ export class KbCandidateService {
     return row !== undefined;
   }
 
+  // Chosen before the query runs: an HNSW pass returns exactly `cap` rows even when it loses recall.
   async vectorChunkIds(orgId: string, vector: string, cap: number): Promise<number[]> {
-    if (cap === 0) return [];
+    if (!Number.isFinite(cap) || cap <= 0) return [];
     await this.db.execute(sql`SET LOCAL hnsw.iterative_scan = relaxed_order`);
-    const annRows = await this.db.execute(
+    const strategy = decideKbRetrievalStrategy(await this.indexedChunkCount(orgId), cap);
+    switch (strategy.kind) {
+      case "ann":
+        return this.annChunkIds(orgId, vector, cap, strategy.efSearch);
+      case "exact":
+        return this.exactChunkIds(orgId, vector, cap);
+      default:
+        return assertNever(strategy);
+    }
+  }
+
+  private async annChunkIds(
+    orgId: string,
+    vector: string,
+    cap: number,
+    efSearch: number,
+  ): Promise<number[]> {
+    await this.db.execute(sql`SET LOCAL hnsw.ef_search = ${sql.raw(String(efSearch))}`);
+    const rows = await this.db.execute(
       sql`SELECT id FROM public.kb_article_chunks
           WHERE org_id = ${orgId}
           ORDER BY embedding <=> ${vector}::vector
           LIMIT ${cap}`,
     );
-    const annIds = annRows.map((r) => Number(r["id"]));
-    if (annIds.length >= cap) return annIds;
+    return rows.map((r) => Number(r["id"]));
+  }
 
-    const exactRows = await this.db.execute(
+  private async exactChunkIds(orgId: string, vector: string, cap: number): Promise<number[]> {
+    const rows = await this.db.execute(
       sql`SELECT id FROM (
             SELECT id, embedding <=> ${vector}::vector AS distance
             FROM public.kb_article_chunks
@@ -45,15 +75,30 @@ export class KbCandidateService {
           ORDER BY scoped.distance
           LIMIT ${cap}`,
     );
-    const exactIds = exactRows.map((r) => Number(r["id"]));
-    if (exactIds.length > annIds.length)
-      this.logger.warn("KB vector ANN pass returned a short candidate pool — re-ran it exactly", {
-        orgId,
-        cap,
-        annRows: annIds.length,
-        exactRows: exactIds.length,
-      });
-    return exactIds;
+    return rows.map((r) => Number(r["id"]));
+  }
+
+  // Bounded at threshold + 1: the decision needs the side, never the true total.
+  private async indexedChunkCount(orgId: string): Promise<number> {
+    const bound = KB_EXACT_SCAN_MAX_CHUNKS + 1;
+    const load = async (): Promise<number> => {
+      const rows = await this.db.execute(
+        sql`SELECT count(*) AS chunk_count
+            FROM (
+              SELECT 1 FROM public.kb_article_chunks
+              WHERE org_id = ${orgId}
+              LIMIT ${bound}
+            ) bounded`,
+      );
+      return Number(rows[0]?.["chunk_count"] ?? 0);
+    };
+    if (this.cache === null) return load();
+    return this.cache.cachedForOrg(
+      orgId,
+      `kb:chunk-count:${orgId}:b${bound}`,
+      load,
+      KB_CHUNK_COUNT_CACHE_TTL_SECONDS,
+    );
   }
 
   async articleKeywordCandidates(
