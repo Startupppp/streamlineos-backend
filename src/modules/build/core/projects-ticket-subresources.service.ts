@@ -33,6 +33,8 @@ import type {
   UpdateRelatedLinkInput,
 } from "./dto/projects.schemas";
 import { assertTicketInOrg } from "./project-access";
+import { AccessService } from "../../access/access.service";
+import { assertTicketReadAccess, type TicketReadAccess } from "./build-ticket-read-access";
 
 const ACTION_LABELS: Record<string, string> = {
   created: "created this ticket",
@@ -61,6 +63,7 @@ export class ProjectsTicketSubresourcesService {
     private readonly checklistsService: ProjectsTicketChecklistsService,
     private readonly linksService: ProjectsTicketLinksService,
     private readonly relationsService: ProjectsTicketRelationsService,
+    @Inject(AccessService) private readonly access: TicketReadAccess,
   ) {}
 
   addComment(u: CurrentUserContext, ticketId: number, body: CommentInput) {
@@ -120,21 +123,13 @@ export class ProjectsTicketSubresourcesService {
   }
 
   async getActivity(
-    orgId: string,
+    actor: CurrentUserContext,
     projectId: number,
     ticketId: number,
     opts: { limit: number; cursor?: string },
   ) {
-    const ticket = await this.db.query.tickets.findFirst({
-      where: and(
-        eq(tickets.id, ticketId),
-        eq(tickets.projectId, projectId),
-        eq(tickets.orgId, orgId),
-        isNull(tickets.deletedAt),
-      ),
-      columns: { id: true },
-    });
-    if (!ticket) throw new NotFoundException("Ticket not found");
+    await assertTicketReadAccess(this.db, this.access, actor, projectId, ticketId);
+    const orgId = actor.orgId;
 
     const position = decodeCursor(opts.cursor);
     const rawId = position !== null ? Number(position.sortValue) : NaN;

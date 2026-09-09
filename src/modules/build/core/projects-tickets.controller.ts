@@ -192,7 +192,7 @@ export class ProjectsTicketsController {
     @Query() query: TicketActivityQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.getActivity(u.orgId, projectId, ticketId, {
+    return this.subresources.getActivity(u, projectId, ticketId, {
       limit: query.limit,
       cursor: query.cursor,
     });

@@ -21,7 +21,7 @@ export function ticketScopePredicate(
 }
 
 export async function resolveTicketsScope(
-  access: AccessService,
+  access: Pick<AccessService, "scopeFor">,
   u: CurrentUserContext,
 ): Promise<DataScope> {
   return access.scopeFor(u, TICKETS_PERMISSION);

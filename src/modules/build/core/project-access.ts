@@ -47,7 +47,7 @@ export async function assertTicketInOrg(
 
 export async function resolveProjectAccess(
   db: Db,
-  access: AccessService,
+  access: Pick<AccessService, "resolveUserPermissions">,
   u: CurrentUserContext,
   projectId: number,
 ): Promise<{ hasAccess: boolean; role: string | null }> {

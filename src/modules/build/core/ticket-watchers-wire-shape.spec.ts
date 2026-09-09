@@ -55,6 +55,7 @@ function build(db: Db) {
     {} as never,
     {} as never,
     {} as never,
+    { scopeFor: jest.fn(), resolveUserPermissions: jest.fn() },
   );
 }
 
