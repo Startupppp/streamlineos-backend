@@ -136,19 +136,7 @@ export class KbMediaService {
       kbBucket,
     );
 
-    await this.db
-      .insert(kbPageAttachments)
-      .values({
-        orgId: u.orgId,
-        pageId: pageId ?? null,
-        fileKey: result.key,
-        fileName: originalname,
-        mimeType: result.mimeType,
-        fileSize: result.size,
-        sha256: result.sha256,
-        uploadedById: u.userId,
-      })
-      .onConflictDoNothing({ target: [kbPageAttachments.orgId, kbPageAttachments.fileKey] });
+    await this.recordAttachment(u, pageId ?? null, originalname, result, kbBucket);
 
     this.audit.log({
       action: "kb.media_upload",
@@ -192,6 +180,54 @@ export class KbMediaService {
     }
 
     return { ...result, name: originalname };
+  }
+
+  /**
+   * The ledger row is the object's only pointer, so it is written under
+   * compensation rather than after a bare `await`.
+   *
+   * A `kb-media` key resolves to its organisation off the key alone
+   * (`ORG_NAMESPACED_KEY_FOLDERS`, `storage-key.ts`), so `assertKeyReadable`
+   * never consults this table and an object with no row stays readable by the
+   * whole tenant. Nothing collects it either: both KB purge paths enumerate
+   * `kb_page_attachments` (`kb-page-attachment-purge.ts`) and the storage sweep
+   * works from the rows they register, so no sweep lists the bucket. The bytes
+   * are therefore removed before the failure propagates, carrying the same
+   * bucket override the upload used — an S3 delete addressed at the wrong bucket
+   * answers success while the object survives.
+   */
+  private async recordAttachment(
+    u: CurrentUserContext,
+    pageId: number | null,
+    fileName: string,
+    result: UploadResult,
+    kbBucket: string | undefined,
+  ): Promise<void> {
+    try {
+      await this.db
+        .insert(kbPageAttachments)
+        .values({
+          orgId: u.orgId,
+          pageId,
+          fileKey: result.key,
+          fileName,
+          mimeType: result.mimeType,
+          fileSize: result.size,
+          sha256: result.sha256,
+          uploadedById: u.userId,
+        })
+        .onConflictDoNothing({ target: [kbPageAttachments.orgId, kbPageAttachments.fileKey] });
+    } catch (error) {
+      await this.storage
+        .deleteFileIfPresent(u.orgId, result.key, kbBucket)
+        .catch((cleanupError: unknown) => {
+          this.logger.error(
+            `Orphaned KB object ${result.key}: the attachment row failed and the object could not be removed (${String(cleanupError)})`,
+          );
+          return false;
+        });
+      throw error;
+    }
   }
 
   /**

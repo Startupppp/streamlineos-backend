@@ -104,7 +104,11 @@ function makeFile(
 
 describe("KbMediaService", () => {
   let service: KbMediaService;
-  let mockStorage: { isConfigured: jest.Mock; uploadFile: jest.Mock };
+  let mockStorage: {
+    isConfigured: jest.Mock;
+    uploadFile: jest.Mock;
+    deleteFileIfPresent: jest.Mock;
+  };
   let mockAudit: { log: jest.Mock };
   let mockSharp: jest.Mock;
   let mockChain: MockChain;
@@ -130,6 +134,7 @@ describe("KbMediaService", () => {
     mockStorage = {
       isConfigured: jest.fn().mockReturnValue(true),
       uploadFile: jest.fn().mockResolvedValue(MOCK_RESULT),
+      deleteFileIfPresent: jest.fn().mockResolvedValue(true),
     };
     mockAudit = { log: jest.fn() };
     mockScanner = { scan: jest.fn().mockResolvedValue({ status: "clean" }) };
