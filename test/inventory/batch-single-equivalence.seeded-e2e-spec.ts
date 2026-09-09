@@ -77,6 +77,8 @@ describe("[seeded-e2e] INV-02 — the batch door and the single door reach the s
   let db: Db;
   let single: Side;
   let batch: Side;
+  /** Counter totals immediately before the replay, so the replay can be measured as a delta. */
+  let countersBeforeReplay: { single: Record<string, number>; batch: Record<string, number> } | null = null;
   const teardowns: Array<() => Promise<void>> = [];
 
   beforeAll(async () => {
@@ -405,6 +407,10 @@ describe("[seeded-e2e] INV-02 — the batch door and the single door reach the s
       levels: await Promise.all([levelsOf(single), levelsOf(batch)]),
       ledger: await Promise.all([ledgerOf(single), ledgerOf(batch)]),
     };
+    countersBeforeReplay = {
+      single: inventoryCounters.snapshotFor(single.orgId),
+      batch: inventoryCounters.snapshotFor(batch.orgId),
+    };
 
     const engine = seededApp.app.get(StockEngineService);
     const batchEngine = seededApp.app.get(StockEngineBatchService);
@@ -430,14 +436,41 @@ describe("[seeded-e2e] INV-02 — the batch door and the single door reach the s
    * feed — conflicts over attempts — would be wrong in the reassuring direction.
    */
   it("counts the replay as a replay on both doors, not as more successes", () => {
+    // Measured as a DELTA across the replay, which is the only form of this
+    // assertion that can be true.
+    //
+    // It used to compare running totals: `replayed >= 5`, then
+    // `replayed === success`. Neither could ever hold. `success` counts every
+    // command that has ever applied against the tenant, and `buildInventoryFixture`
+    // posts eight of its own before this file posts anything, so `success` is 11
+    // where `replayed` can only reach 3 — the number of commands `commandsFor`
+    // actually re-runs. The floor of 5 was copied from the success assertion above
+    // without noticing that the two counters are counting different populations,
+    // and the file has been red for as long as anything has run it.
+    //
+    // The delta says what the docstring above always meant: re-running the same
+    // three commands adds three replays and NOT ONE success. A door that
+    // re-applied on replay would show a success delta here and double the
+    // warehouse.
+    expect(countersBeforeReplay).not.toBeNull();
+    const beforeSingle = countersBeforeReplay!.single;
+    const beforeBatch = countersBeforeReplay!.batch;
     const a = inventoryCounters.snapshotFor(single.orgId);
     const b = inventoryCounters.snapshotFor(batch.orgId);
 
-    expect(a["stock.command.replayed"]).toBeGreaterThanOrEqual(5);
-    expect(b["stock.command.replayed"]).toBe(a["stock.command.replayed"]);
-    // Applied once each, replayed once each — so the two are equal, and neither
-    // door counted its replay as work.
-    expect(a["stock.command.replayed"]).toBe(a["stock.command.success"]);
+    const replayedCommands = commandsFor(single).length;
+    expect(replayedCommands).toBeGreaterThanOrEqual(3);
+
+    expect(a["stock.command.replayed"]! - beforeSingle["stock.command.replayed"]!)
+      .toBe(replayedCommands);
+    expect(b["stock.command.replayed"]! - beforeBatch["stock.command.replayed"]!)
+      .toBe(replayedCommands);
+
+    expect(a["stock.command.success"]! - beforeSingle["stock.command.success"]!).toBe(0);
+    expect(b["stock.command.success"]! - beforeBatch["stock.command.success"]!).toBe(0);
+
+    // And the two doors remain indistinguishable by every counter, which is what
+    // the rest of this file is about.
     expect(b).toEqual(a);
   });
 });
