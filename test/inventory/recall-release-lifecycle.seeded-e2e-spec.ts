@@ -282,6 +282,28 @@ describe("[seeded-e2e] INV-17 — recall, quarantine, release, and a recall that
       expect(rows.every((r) => (r.reason ?? "").startsWith("Recall "))).toBe(true);
     });
 
+    it("records on the line that the quarantine actually held it", async () => {
+      // INV-33. The recall document's own status is OPEN / IN_PROGRESS / CLOSED
+      // and says nothing about stock, so a recall that held every grain and one
+      // that held nothing at all were the same row to every reader. A line
+      // naming a lot with nothing on hand raises no hold; a line naming only a
+      // serial never even flips a lot, so nothing is blocked and the goods stay
+      // pickable. Both commit, and both used to render as OPEN.
+      //
+      // `inv_recall_lines.status` carries the outcome now. Asserted here rather
+      // than only on the screen, because the screen can only be as honest as
+      // what it is sent.
+      const lines = await asTenant(() =>
+        db().execute<{ status: string; lot_id: number | null }>(sql`
+          SELECT status, lot_id FROM inv_recall_lines
+          WHERE org_id = ${scene.orgId} AND recall_id = ${recallId}
+          ORDER BY id`),
+      );
+      expect(lines).toHaveLength(1);
+      expect(lines[0]!.lot_id).toBe(scene.badLot);
+      expect(lines[0]!.status).toBe("QUARANTINED");
+    });
+
     it("leaves the lot standing beside it completely alone", async () => {
       const control = await grainsOf(scene.goodLot);
       expect(control).toHaveLength(1);
@@ -297,6 +319,49 @@ describe("[seeded-e2e] INV-17 — recall, quarantine, release, and a recall that
       );
       expect(closed?.status).toBe("CLOSED");
     });
+  });
+
+  /**
+   * INV-33 — the recall that succeeds and blocks nothing.
+   *
+   * The failure case below refuses, which is the loud kind and is easy to see.
+   * This is the quiet kind, and it is the one the ticket exists for: a line that
+   * names no lot produces an empty `recalledLotIds`, so the lot flip never runs,
+   * no hold is raised, and the whole thing COMMITS. `createRecallSchema` accepts
+   * `{ productVariantId }` and `{ serialId }` on a line, so this is reachable
+   * from the API, not hypothetical.
+   *
+   * Nothing about the recall row distinguishes it from one that pulled every
+   * carton off the shelf. Only the line's outcome does.
+   */
+  describe("a recall that blocks nothing still says so", () => {
+    it("commits, holds not one unit, and records the line as not quarantinable", async () => {
+      const created = await asTenant(() =>
+        recalls().create(
+          scene.orgId,
+          scene.userId,
+          { title: `Recall variant-only ${tag}`, lines: [{ productVariantId: scene.variantId }] },
+          `rl-noquar-${tag}`,
+        ),
+      );
+
+      // It committed, and it looks exactly like a working recall from here.
+      expect(created.status).toBe("OPEN");
+
+      const lines = await asTenant(() =>
+        db().execute<{ status: string }>(sql`
+          SELECT status FROM inv_recall_lines
+          WHERE org_id = ${scene.orgId} AND recall_id = ${created.id}
+          ORDER BY id`),
+      );
+      expect(lines.map((l) => l.status)).toEqual(["NOT_QUARANTINABLE"]);
+
+      // And the control lot really is untouched — the recall blocked nothing,
+      // which is the fact the line status is reporting.
+      expect(await lotStatus(scene.goodLot)).toBe("ACTIVE");
+      expect(await holdRowsFor(scene.goodLot)).toHaveLength(0);
+      await expectReconciled();
+    }, 300_000);
   });
 
   describe("release — the recalled goods come back to the shelf", () => {
