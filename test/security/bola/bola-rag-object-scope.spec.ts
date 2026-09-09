@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { Test, type TestingModule } from "@nestjs/testing";
 import { join } from "node:path";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { and, eq, type SQL } from "drizzle-orm";
@@ -6,6 +7,11 @@ import { kbArticles } from "../../../src/db/schema";
 import { KbSearchService } from "../../../src/modules/kb/retrieval/kb-search.service";
 import { KbCandidateService } from "../../../src/modules/kb/retrieval/kb-candidate.service";
 import { KbAskService } from "../../../src/modules/kb/retrieval/kb-ask.service";
+import { KbCitationVisibilityService } from "../../../src/modules/kb/retrieval/kb-citation-visibility.service";
+import { KbAccessService } from "../../../src/modules/kb/core/kb-access.service";
+import { KbEventsService } from "../../../src/modules/kb/core/kb-events.service";
+import { AiGatewayService } from "../../../src/modules/ai/core/gateway/ai-gateway.service";
+import { DRIZZLE } from "../../../src/db/drizzle.constants";
 import { articleOwnerScopeFilter } from "../../../src/modules/kb/retrieval/kb-article-owner-scope";
 import type { CurrentUserContext } from "../../../src/common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../src/common/auth/principal";
@@ -259,22 +265,29 @@ describe("BOLA sweep — the RAG fix keeps the measured retrieval shape", () => 
 });
 
 describe("BOLA sweep — POST /kb/ask context window", () => {
-  const buildAsk = (scope: DataScope) => {
+  const modules: TestingModule[] = [];
+  afterEach(async () => {
+    await Promise.all(modules.map(module => module.close()));
+    modules.length = 0;
+  });
+  const buildAsk = async (scope: DataScope) => {
     const built = buildSearch(scope);
-    const ask = new KbAskService(
-      built.db as never,
-      built.gateway as never,
-      built.events as never,
-      built.search as never,
-      built.access as never,
-    );
-    return { ...built, ask };
+    const module = await Test.createTestingModule({ providers: [
+      KbAskService, KbCitationVisibilityService,
+      { provide: DRIZZLE, useValue: built.db },
+      { provide: AiGatewayService, useValue: built.gateway },
+      { provide: KbEventsService, useValue: built.events },
+      { provide: KbSearchService, useValue: built.search },
+      { provide: KbAccessService, useValue: built.access },
+    ] }).compile();
+    modules.push(module);
+    return { ...built, ask: module.get(KbAskService) };
   };
 
   it("a non-owner's answer context never contains the other article's text", async () => {
-    const { ask, gateway } = buildAsk("own");
+    const { ask, gateway } = await buildAsk("own");
 
-    const result = await ask.ask(asker(), { question: "what is the comp plan?" } as never);
+    const result = await ask.ask(asker(), { question: "what is the comp plan?" });
 
     const prompt = JSON.stringify(gateway.invokeTextWithUsage.mock.calls[0]?.[0]);
     expect(prompt).toContain(MINE);
@@ -285,9 +298,9 @@ describe("BOLA sweep — POST /kb/ask context window", () => {
   });
 
   it("the owner of both articles still gets both — the answer is not emptied", async () => {
-    const { ask, gateway } = buildAsk("all");
+    const { ask, gateway } = await buildAsk("all");
 
-    await ask.ask(asker(), { question: "what is the comp plan?" } as never);
+    await ask.ask(asker(), { question: "what is the comp plan?" });
 
     const prompt = JSON.stringify(gateway.invokeTextWithUsage.mock.calls[0]?.[0]);
     expect(prompt).toContain(MINE);
@@ -295,8 +308,8 @@ describe("BOLA sweep — POST /kb/ask context window", () => {
   });
 
   it("citation re-verification applies the same predicate the retrieval did", async () => {
-    const { ask, recorded } = buildAsk("own");
-    await ask.ask(asker(), { question: "what is the comp plan?" } as never);
+    const { ask, recorded } = await buildAsk("own");
+    await ask.ask(asker(), { question: "what is the comp plan?" });
 
     const citationQuery = recorded
       .filter((q) => q.table === "kb_articles")
