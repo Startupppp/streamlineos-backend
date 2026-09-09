@@ -69,6 +69,21 @@ export class ChannelAdapterRegistrar implements OnModuleInit {
 
   onModuleInit(): void {
     if (this.config.INV_CHANNEL_ADAPTER !== "fake") return;
+
+    // INV-27. `validateEnv` already refuses this combination at boot, and this
+    // is the same refusal one layer down, because the two are reached
+    // differently: config is validated from `process.env` at startup, while an
+    // `AppConfig` assembled any other way — a test module, a future loader —
+    // reaches the registrar without passing through it. A fake that registers
+    // itself is not a thing to warn about in production; the quantities it
+    // invents are presented to an operator as a marketplace's own count and are
+    // acceptable into the stock ledger.
+    if (this.config.NODE_ENV === "production") {
+      throw new Error(
+        "INV_CHANNEL_ADAPTER=fake is forbidden in production: the fake channel adapter invents stock quantities from a hash of the SKU, and those quantities are presentable as a marketplace's own count and acceptable into inv_stock_transactions.",
+      );
+    }
+
     for (const channelType of EXTERNAL_CHANNEL_TYPES) {
       this.registry.register(channelType, FAKE_CHANNEL_ADAPTER);
     }

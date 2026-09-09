@@ -3,6 +3,8 @@ import { BadRequestException, Inject, Injectable, Logger } from "@nestjs/common"
 import { and, eq } from "drizzle-orm";
 import { invComplianceDocuments } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { APP_CONFIG } from "../../../config/config.module";
+import type { AppConfig } from "../../../config/env.validation";
 import { type Db } from "../../../db/drizzle.module";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
@@ -12,6 +14,7 @@ import {
   COMPLIANCE_EVENTS,
   executeComplianceCall,
   STUB_COMPLIANCE_ADAPTER,
+  productionBlockedStubAdapter,
   unconfiguredLiveAdapter,
   type ComplianceAdapter,
   type ComplianceDocumentKind,
@@ -44,6 +47,7 @@ export class IndiaComplianceService {
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
     private readonly settingsService: InventorySettingsService,
     private readonly audit: InventoryAuditService,
   ) {}
@@ -52,9 +56,20 @@ export class IndiaComplianceService {
    * `stub` is the only adapter that exists. Any other name resolves to one that
    * refuses with NO_CREDENTIALS — loudly, rather than falling back, because a
    * silent fallback is how a rehearsal gets mistaken for a filing.
+   *
+   * INV-25. In production the stub refuses too. Every gate above this one is a
+   * *tenant* setting — the `gst` pack, the two enable flags, and
+   * `complianceAdapter` itself, which is a writable string defaulting to
+   * `"stub"` — so nothing outside this line stops a live deployment issuing
+   * invented IRNs to a customer who turned the feature on. The pack's rule is
+   * that a fake compliance identifier must never be presentable as a filing,
+   * and the only way to hold that is for production to be unable to mint one.
    */
   private adapterFor(code: string): ComplianceAdapter {
-    return code === "stub" ? STUB_COMPLIANCE_ADAPTER : unconfiguredLiveAdapter(code);
+    if (code !== "stub") return unconfiguredLiveAdapter(code);
+    return this.config.NODE_ENV === "production"
+      ? productionBlockedStubAdapter()
+      : STUB_COMPLIANCE_ADAPTER;
   }
 
   /**

@@ -332,3 +332,33 @@ export function unconfiguredLiveAdapter(code: string): ComplianceAdapter {
   });
   return { code, isLive: true, register: refusal, cancel: refusal };
 }
+
+/**
+ * INV-25 — the stub, refusing, because this process is serving real invoices.
+ *
+ * `STUB_COMPLIANCE_ADAPTER` mints `STUB-EINVOICE-<hash>` and that string is
+ * written to `inv_compliance_documents.external_id`. Nothing about the
+ * environment stood between an operator turning on e-invoicing and a document
+ * row carrying an invented IRN: the flags are tenant settings, the adapter code
+ * is a tenant-writable string, and `stub` is its default. The `STUB-` prefix and
+ * the `adapter_is_live` column are honest, but they are labelling, and an
+ * identifier that must not be mintable in production must not be mintable in
+ * production.
+ *
+ * So in production the stub becomes a refusal. The result is a queryable
+ * `FAILED` compliance document with a null `external_id`, an error code an
+ * operator can act on, and an audit row — the same shape a real provider outage
+ * produces, which is the shape the rest of this file already handles.
+ *
+ * `terminal: true`: retrying does not make a tax authority appear.
+ */
+export function productionBlockedStubAdapter(): ComplianceAdapter {
+  const refusal = async (): Promise<ComplianceResult> => ({
+    status: "FAILED",
+    code: "STUB_ADAPTER_FORBIDDEN_IN_PRODUCTION",
+    message:
+      "The stub compliance adapter cannot be used in production: it invents an IRN rather than obtaining one. No tax authority was contacted and no identifier was issued. Configure a real GSP/IRP adapter, or leave e-invoicing and e-waybill disabled.",
+    terminal: true,
+  });
+  return { code: "stub", isLive: false, register: refusal, cancel: refusal };
+}

@@ -304,6 +304,25 @@ const schema = baseSchema
           "APP_DATABASE_URL must not equal DATABASE_URL — they are the application role and the owner role, and pointing both at the owner defeats RLS.",
       });
     }
+
+    // INV-27. `fake` answers every marketplace snapshot with a quantity derived
+    // from a hash of the SKU. Those numbers are not discarded: they are written
+    // to `inv_channel_snapshot_diffs`, served to an operator at
+    // `GET /inventory/channels/:id/snapshot-differences`, and — where the
+    // channel's policy is ALLOW_ADJUSTMENT — acceptable straight into
+    // `inv_stock_transactions`. A boot-time `logger.warn` was the entire
+    // safeguard, and a warning in a log nobody is reading is not one. Refusing
+    // to start is, and the failure is at boot rather than at the first
+    // reconciliation, which is the difference between a deployment that never
+    // happens and stock corrected against a number nobody sent.
+    if (config.INV_CHANNEL_ADAPTER === "fake") {
+      context.addIssue({
+        code: "custom",
+        path: ["INV_CHANNEL_ADAPTER"],
+        message:
+          "INV_CHANNEL_ADAPTER=fake is forbidden in production. The fake adapter invents stock quantities from a hash of the SKU, and those quantities are presentable as a marketplace's own count and acceptable into the stock ledger. Use `none` until a real channel integration exists.",
+      });
+    }
   });
 
 export type AppConfig = z.infer<typeof schema> & { corsOrigins: string[] };
