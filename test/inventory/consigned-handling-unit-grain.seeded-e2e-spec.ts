@@ -295,7 +295,7 @@ describe("[seeded-e2e] INV-18 — consigned, handling-unit-controlled stock keep
       // An operator reading the pallet's label has to be able to see that most
       // of it belongs to a supplier. The read dropped the column too.
       const detail = await asTenant(() =>
-        app.app.get(HandlingUnitService).detail(scene.orgId, scene.palletId),
+        app.app.get(HandlingUnitService).detail(scene.orgId, scene.userId, scene.palletId),
       );
       expect(
         detail.contents.map((c) => ({ ownership: c.ownership, onHand: c.onHand })).sort((a, b) =>

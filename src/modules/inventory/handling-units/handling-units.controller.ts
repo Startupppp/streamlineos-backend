@@ -65,7 +65,7 @@ export class HandlingUnitsController {
     @Param("handlingUnitId", ParseIntPipe) handlingUnitId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.detail(u.orgId, handlingUnitId);
+    return this.svc.detail(u.orgId, u.userId, handlingUnitId);
   }
 
   @Post()

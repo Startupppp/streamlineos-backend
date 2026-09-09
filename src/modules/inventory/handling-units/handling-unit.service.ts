@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql, type SQL } from "drizzle-orm";
 import { invHandlingUnits, invLocations } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -114,10 +114,45 @@ export class HandlingUnitService {
       ),
     );
 
-    return this.detail(orgId, created.handlingUnitId);
+    return this.detailUnscoped(orgId, created.handlingUnitId);
   }
 
-  async detail(orgId: string, handlingUnitId: number): Promise<HandlingUnitDetail> {
+  /**
+   * One handling unit, behind the SAME predicate `list` applies.
+   *
+   * This took no `userId` — the controller never passed one — so while the list
+   * narrowed to the caller's warehouses, the detail behind it answered for any
+   * pallet in the organisation, and what it answers with is the unit's whole
+   * subtree and its ROLLED-UP CONTENTS: what stock is on that pallet.
+   *
+   * The children and contents below are deliberately NOT filtered again.
+   * Nesting here is physical containment, so a caller entitled to the unit is
+   * entitled to what is inside it; filtering the subtree would show somebody a
+   * pallet with part of its contents missing, which is a worse answer than
+   * either showing it or refusing it.
+   */
+  async detail(orgId: string, userId: string, handlingUnitId: number): Promise<HandlingUnitDetail> {
+    const scope = await this.warehouseScope.resolve(orgId, userId);
+    return this.loadDetail(orgId, this.scopePredicate(orgId, scope), handlingUnitId);
+  }
+
+  /**
+   * The unscoped read, named so nobody routes to it by accident.
+   *
+   * `create` and `move` end by returning the unit they just acted on, and both
+   * have ALREADY called `assertLocationVisible` on the location they were given
+   * — so the caller's standing is settled before this runs, and gating it again
+   * would refuse an operator the pallet they have just built or just moved.
+   */
+  private async detailUnscoped(orgId: string, handlingUnitId: number): Promise<HandlingUnitDetail> {
+    return this.loadDetail(orgId, null, handlingUnitId);
+  }
+
+  private async loadDetail(
+    orgId: string,
+    gate: SQL | null,
+    handlingUnitId: number,
+  ): Promise<HandlingUnitDetail> {
     const [unit] = await this.db
       .select({
         id: invHandlingUnits.id,
@@ -128,7 +163,15 @@ export class HandlingUnitService {
         parentHuId: invHandlingUnits.parentHuId,
       })
       .from(invHandlingUnits)
-      .where(and(eq(invHandlingUnits.orgId, orgId), eq(invHandlingUnits.id, handlingUnitId)));
+      .where(
+        and(
+          eq(invHandlingUnits.orgId, orgId),
+          eq(invHandlingUnits.id, handlingUnitId),
+          ...(gate === null ? [] : [gate]),
+        ),
+      );
+    // Out of scope answers the same as missing, so this is not an oracle for
+    // which handling units exist.
     if (!unit) throw new NotFoundException("Not found");
 
     const children = await this.db
@@ -262,7 +305,7 @@ export class HandlingUnitService {
     });
 
     await this.engine.invalidateCaches(orgId);
-    return this.detail(orgId, handlingUnitId);
+    return this.detailUnscoped(orgId, handlingUnitId);
   }
 
   /**
@@ -338,23 +381,34 @@ export class HandlingUnitService {
     assertCanHoldStock(await this.node(tx, orgId, handlingUnitId));
   }
 
+  /**
+   * The one definition of "a handling unit I may see".
+   *
+   * `null` when the caller is unrestricted. A unit with NO location is visible
+   * to everybody: an HU is built before it is put anywhere, and hiding one from
+   * the person who has just made it would be worse than the leak this closes.
+   * That rule is this table's, not a house rule — the labour records exclude an
+   * unattributed row instead — which is exactly why it lives in one place and
+   * both callers read it rather than each spelling it out.
+   */
+  private scopePredicate(orgId: string, scope: number[] | null): SQL | null {
+    if (scope === null) return null;
+    if (scope.length === 0) return sql`FALSE`;
+    return sql`(${invHandlingUnits.locationId} IS NULL OR EXISTS (
+            SELECT 1 FROM inv_locations l
+            WHERE l.id = ${invHandlingUnits.locationId} AND l.org_id = ${orgId}
+              AND l.warehouse_id IN (${sql.join(scope.map((id) => sql`${id}`), sql`, `)})
+          ))`;
+  }
+
   async list(orgId: string, userId: string, filters: { locationId?: number; status?: string; rootsOnly?: boolean }) {
     const scope = await this.warehouseScope.resolve(orgId, userId);
     const conditions = [eq(invHandlingUnits.orgId, orgId)];
     if (filters.locationId) conditions.push(eq(invHandlingUnits.locationId, filters.locationId));
     if (filters.status) conditions.push(sql`${invHandlingUnits.status} = ${filters.status}`);
     if (filters.rootsOnly) conditions.push(sql`${invHandlingUnits.parentHuId} IS NULL`);
-    if (scope !== null) {
-      conditions.push(
-        scope.length === 0
-          ? sql`FALSE`
-          : sql`(${invHandlingUnits.locationId} IS NULL OR EXISTS (
-                  SELECT 1 FROM inv_locations l
-                  WHERE l.id = ${invHandlingUnits.locationId} AND l.org_id = ${orgId}
-                    AND l.warehouse_id IN (${sql.join(scope.map((id) => sql`${id}`), sql`, `)})
-                ))`,
-      );
-    }
+    const gate = this.scopePredicate(orgId, scope);
+    if (gate !== null) conditions.push(gate);
 
     return this.db
       .select({
