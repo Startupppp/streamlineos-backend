@@ -20,7 +20,7 @@ export class NotificationWebPushProvider implements NotificationChannelProvider 
     }
     // RT-001: no content crosses the push boundary. The delivery row carries no
     // category, so the service worker falls back to its generic label.
-    await this.webPush.sendToUser(input.userId, {
+    await this.webPush.sendToUser(input.orgId, input.userId, {
       url: input.link ?? "/notifications",
     });
     return { status: "SENT", providerResponse: { channel: "PUSH" } };

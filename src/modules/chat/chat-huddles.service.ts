@@ -202,7 +202,7 @@ export class ChatHuddlesService {
 
     for (const member of channelMembers) {
       if (member.userId !== userId) {
-        void this.webPush.sendToUser(member.userId, {
+        void this.webPush.sendToUser(orgId, member.userId, {
           category: "CHAT",
           url: `/chat?channel=${channelId}&joinHuddle=1`,
         }).catch((error: unknown) => {
