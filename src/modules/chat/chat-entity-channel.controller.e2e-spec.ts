@@ -10,7 +10,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { MfaPolicyService } from "../access/mfa-policy.service";
 import { makeMfaPolicyStub } from "test/helpers/mfa-policy-stub";
 
-import { describeWithDb, RBAC_E2E_DATABASE_URL } from "test/helpers/db-describe";
+import { describeWithMockedDb } from "test/helpers/db-describe";
 
 type Scope = "all" | "own" | "team" | "none";
 
@@ -67,7 +67,7 @@ const mockDb = {
     .mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(mockDb)),
 };
 
-describeWithDb("Chat entity channel access (e2e, mocked)", () => {
+describeWithMockedDb("Chat entity channel access (e2e, mocked)", () => {
   let app: INestApplication;
 
   beforeAll(async () => {

@@ -19,11 +19,11 @@ import { seedOrg, type SeededFixture } from "test/helpers/seed-builder";
  *   allow        an insider (a channel member) can read and post to their channel
  *   deny         an outsider who holds `chat:channels:read` and `chat:messages:write`
  *                but is NOT a member of the private channel is refused at 404 on read
- *                and at 403 on write — the service checks membership before acting
- *   cross-tenant a member of org B using org A's channel id gets 404 on read and 403 on
- *                write — 404 on read because the tenant predicate returns no channel,
- *                403 on write because `resolveMembershipId` succeeds in org B but
- *                `isChannelMember` finds no membership row for that org/channel pair
+ *                AND at 404 on write — the channel is private, so neither verb may
+ *                confirm that it exists
+ *   cross-tenant a member of org B using org A's channel id gets 404 on read and 404 on
+ *                write — the tenant predicate in `assertChannelMember` finds no channel
+ *                in org B, and a cross-tenant miss is a miss
  *   integrity    after every refused write the `chat_messages` row count for that channel
  *                is re-read from the database and has not changed — the assertion no
  *                mocked spec can make
@@ -36,9 +36,8 @@ import { seedOrg, type SeededFixture } from "test/helpers/seed-builder";
  * predicate is the right complement. The RBAC leg is what this file can attribute on its
  * own: narrowing the `chat:channels:read` grant to a less-permissive key turns the DENY
  * read case green-to-red here and nowhere else. The write count assertion does attribute
- * the service's membership guard: `ChatMessagesService.send` checks membership and throws
- * `ForbiddenException` before any INSERT, so a passing count assertion proves that guard
- * fired.
+ * the service's membership guard: `ChatMessagesService.send` calls `assertChannelMember`
+ * and throws before any INSERT, so a passing count assertion proves that guard fired.
  */
 describe("[seeded-e2e] Chat channel membership — allow, deny and cross-tenant", () => {
   let seeded: SeededE2eApp;
@@ -164,7 +163,7 @@ describe("[seeded-e2e] Chat channel membership — allow, deny and cross-tenant"
     expect(response.status).toBe(404);
   });
 
-  it("DENY (object-level write) — an outsider cannot post to the channel, and no message row is written", async () => {
+  it("DENY (object-level write) — an outsider cannot post to the private channel, and no message row is written", async () => {
     const before = await messageCount();
 
     const response = await request(server as never)
@@ -172,7 +171,7 @@ describe("[seeded-e2e] Chat channel membership — allow, deny and cross-tenant"
       .set("Authorization", `Bearer ${outsiderToken}`)
       .send({ content: "intrusion attempt" });
 
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(404);
     expect(await messageCount()).toBe(before);
   });
 
@@ -184,7 +183,7 @@ describe("[seeded-e2e] Chat channel membership — allow, deny and cross-tenant"
       .set("Authorization", `Bearer ${neighbourToken}`)
       .send({ content: "cross-tenant intrusion" });
 
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(404);
     expect(await messageCount()).toBe(before);
   });
 
