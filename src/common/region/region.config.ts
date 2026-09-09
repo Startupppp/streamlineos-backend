@@ -25,7 +25,6 @@ export interface RegionStorageConfig {
   readonly accessKeyId?: string;
   readonly secretAccessKey?: string;
   readonly publicUrl?: string;
-  readonly kbPublicUrl?: string;
   readonly keyPrefix?: string;
 }
 
@@ -246,7 +245,6 @@ export function resolveRegionTopology(env: NodeJS.ProcessEnv): RegionTopology {
           envKey(key, "R2_PUBLIC_URL"),
           ...flat("NEXT_PUBLIC_R2_PUBLIC_URL"),
         ),
-        kbPublicUrl: read(env, envKey(key, "R2_KB_PUBLIC_URL"), ...flat("R2_KB_PUBLIC_URL")),
         keyPrefix: read(env, envKey(key, "R2_KEY_PREFIX"), ...flat("R2_KEY_PREFIX")),
       },
     };
