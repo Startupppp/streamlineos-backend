@@ -1,7 +1,6 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { ProjectsQueryService } from "./projects-query.service";
-import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
 import type { Db } from "../../../db/drizzle.module";
@@ -37,17 +36,13 @@ function buildDb(captured: Captured) {
   return { select: jest.fn().mockReturnValue(builder) } as unknown as Db;
 }
 
-const mockCache = {
-  cachedVersioned: jest.fn().mockImplementation((_ns: string, _key: string, fn: () => unknown) => fn()),
-} as unknown as CacheService;
-
 const mockAccess = {
   scopeFor: jest.fn().mockResolvedValue("all"),
 } as unknown as AccessService;
 
 async function capture(afterId: number | undefined): Promise<Captured> {
   const captured: Captured = { where: undefined, orderBy: [] };
-  const svc = new ProjectsQueryService(buildDb(captured), mockCache, {} as AuditService, mockAccess);
+  const svc = new ProjectsQueryService(buildDb(captured), {} as AuditService, mockAccess);
   await svc.listProjects(
     { orgId: "org-1", userId: "u-1", principal: humanSessionPrincipal(1, false) } as never,
     { afterId, limit: 9, status: "ALL", search: undefined, pmWorkspaceId: undefined },

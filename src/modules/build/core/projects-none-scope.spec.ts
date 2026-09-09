@@ -1,7 +1,6 @@
 import { Test } from "@nestjs/testing";
 import { ProjectsQueryService } from "./projects-query.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
-import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -11,7 +10,6 @@ it("none project scope does not fall back to membership visibility", async () =>
   const module = await Test.createTestingModule({ providers: [ProjectsQueryService,
     { provide: DRIZZLE, useValue: { select } },
     { provide: AuditService, useValue: {} },
-    { provide: CacheService, useValue: { cachedVersioned: async (_namespace: string, _key: string, fetcher: () => Promise<unknown>) => fetcher() } },
     { provide: AccessService, useValue: { scopeFor: async () => "none" } },
   ] }).compile();
   const actor: CurrentUserContext = { orgId: "org-a", userId: "member", role: "MEMBER", isOrgOwner: false,

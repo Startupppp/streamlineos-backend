@@ -17,21 +17,19 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
 import type { DataScope } from "../../access/access.types";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { resolveProjectsScope } from "./projects-scope";
+import { resolveTicketsScope, ticketScopePredicate } from "./tickets-scope";
 import type { ListProjectsInput } from "./dto/projects.schemas";
 
 @Injectable()
 export class ProjectsQueryService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly cache: CacheService,
     private readonly audit: AuditService,
     private readonly access: AccessService,
   ) {}
@@ -39,16 +37,11 @@ export class ProjectsQueryService {
   async listProjects(u: CurrentUserContext, input: ListProjectsInput) {
     const scope = await resolveProjectsScope(this.access, u);
     if (scope === "none") return { data: [], hasMore: false, nextCursor: null };
+    const ticketScope = await resolveTicketsScope(this.access, u);
     const orgId = u.orgId;
     const userId = u.userId;
     const membershipId = actingMembershipId(u.principal);
-    const key = `${userId}:${scope}:${input.status}:${input.search ?? ""}:${input.afterId ?? "first"}:${input.limit}:${input.pmWorkspaceId ?? ""}`;
-    return this.cache.cachedVersioned(
-      `projects:list:${orgId}`,
-      key,
-      () => this.queryProjects(orgId, userId, membershipId, scope, input),
-      CACHE_TTL.SHORT,
-    );
+    return this.queryProjects(orgId, userId, membershipId, scope, ticketScope, input);
   }
 
   private async queryProjects(
@@ -56,6 +49,7 @@ export class ProjectsQueryService {
     userId: string,
     membershipId: number | null,
     scope: DataScope,
+    ticketScope: DataScope,
     input: ListProjectsInput,
   ) {
     const { search, status, afterId, limit, pmWorkspaceId } = input;
@@ -67,36 +61,27 @@ export class ProjectsQueryService {
     }
 
     if (scope !== "all") {
-      const [memberOf, teamProjectsOf] = await Promise.all([
-        this.db
+      const memberOf = this.db
           .select({ projectId: projectMembers.projectId })
           .from(projectMembers)
-          .where(and(eq(projectMembers.orgId, orgId), eq(projectMembers.membershipId, membershipId ?? -1))),
-        this.db
+          .where(and(eq(projectMembers.orgId, orgId), eq(projectMembers.membershipId, membershipId ?? -1)));
+      const teamProjectsOf = this.db
           .select({ projectId: projectTeamAssignments.projectId })
           .from(projectTeamAssignments)
           .innerJoin(
             projectTeamMembers,
-            eq(projectTeamMembers.teamId, projectTeamAssignments.teamId),
+            and(eq(projectTeamMembers.orgId, projectTeamAssignments.orgId), eq(projectTeamMembers.teamId, projectTeamAssignments.teamId)),
           )
           .where(
             and(
               eq(projectTeamAssignments.orgId, orgId),
               eq(projectTeamMembers.membershipId, membershipId ?? -1),
             ),
-          ),
-      ]);
-      const accessibleProjectIds = Array.from(
-        new Set([
-          ...memberOf.map((m) => m.projectId),
-          ...teamProjectsOf.map((t) => t.projectId),
-        ]),
-      );
+          );
       const memberScopeCondition = or(
         membershipId !== null ? eq(projects.managerMembershipId, membershipId) : undefined,
-        accessibleProjectIds.length > 0
-          ? inArray(projects.id, accessibleProjectIds)
-          : sql`false`,
+        inArray(projects.id, memberOf),
+        inArray(projects.id, teamProjectsOf),
       );
       if (memberScopeCondition) conditions.push(memberScopeCondition);
     }
@@ -150,32 +135,43 @@ export class ProjectsQueryService {
     }
 
     const projectIds = trimmedRows.map((p) => p.id);
+    const memberPreview = this.db.select({
+      membershipId: projectMembers.membershipId,
+      userId: organizationMembers.userId,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      image: users.image,
+    }).from(projectMembers)
+      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, projectMembers.orgId), eq(organizationMembers.id, projectMembers.membershipId)))
+      .innerJoin(users, eq(organizationMembers.userId, users.id))
+      .where(and(eq(projectMembers.orgId, orgId), eq(projectMembers.projectId, projects.id)))
+      .orderBy(asc(projectMembers.membershipId)).limit(5).as("member_preview");
 
     const [progressRows, memberRows, teamRows] = await Promise.all([
       this.db
         .select({
           projectId: tickets.projectId,
           total: count(),
-          done: sql<number>`count(*) filter (where ${tickets.status} = 'DONE')`.as(
+          done: sql<number>`count(*) filter (where ${projectStatuses.type} = 'completed')`.as(
             "done",
           ),
         })
         .from(tickets)
-        .where(and(inArray(tickets.projectId, projectIds), isNull(tickets.deletedAt)))
+        .leftJoin(projectStatuses, and(eq(projectStatuses.orgId, tickets.orgId), eq(projectStatuses.projectId, tickets.projectId), eq(projectStatuses.name, tickets.status)))
+        .where(and(eq(tickets.orgId, orgId), inArray(tickets.projectId, projectIds), isNull(tickets.deletedAt), ticketScopePredicate(ticketScope, orgId, userId)))
         .groupBy(tickets.projectId),
       this.db
         .select({
-          projectId: projectMembers.projectId,
-          membershipId: projectMembers.membershipId,
-          userId: organizationMembers.userId,
-          firstName: users.firstName,
-          lastName: users.lastName,
-          image: users.image,
+          projectId: projects.id,
+          userId: memberPreview.userId,
+          firstName: memberPreview.firstName,
+          lastName: memberPreview.lastName,
+          image: memberPreview.image,
         })
-        .from(projectMembers)
-        .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, projectMembers.orgId), eq(organizationMembers.id, projectMembers.membershipId)))
-        .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .where(inArray(projectMembers.projectId, projectIds)),
+        .from(projects)
+        .innerJoinLateral(memberPreview, sql`true`)
+        .where(and(eq(projects.orgId, orgId), inArray(projects.id, projectIds)))
+        .orderBy(asc(projects.id), asc(memberPreview.membershipId)),
       this.db
         .select({
           projectId: projectMembers.projectId,
@@ -184,10 +180,10 @@ export class ProjectsQueryService {
         .from(projectMembers)
         .innerJoin(
           projectTeamMembers,
-          eq(projectTeamMembers.membershipId, projectMembers.membershipId),
+          and(eq(projectTeamMembers.orgId, projectMembers.orgId), eq(projectTeamMembers.membershipId, projectMembers.membershipId)),
         )
-        .innerJoin(projectTeams, eq(projectTeams.id, projectTeamMembers.teamId))
-        .where(inArray(projectMembers.projectId, projectIds))
+        .innerJoin(projectTeams, and(eq(projectTeams.orgId, projectTeamMembers.orgId), eq(projectTeams.id, projectTeamMembers.teamId)))
+        .where(and(eq(projectMembers.orgId, orgId), inArray(projectMembers.projectId, projectIds)))
         .groupBy(projectMembers.projectId, projectTeams.name),
     ]);
 
