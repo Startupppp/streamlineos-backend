@@ -1,3 +1,4 @@
+import { wholeDaysBetween } from "../lib/period.helpers";
 import { z } from "zod";
 
 /**
@@ -104,13 +105,14 @@ export function reminderDue(
   return null;
 }
 
-/** `to - from`, in whole days. Negative when `to` is earlier. */
-export function daysBetween(from: string, to: string): number {
-  const a = Date.parse(`${from}T00:00:00Z`);
-  const b = Date.parse(`${to}T00:00:00Z`);
-  if (Number.isNaN(a) || Number.isNaN(b)) throw new Error(`not a date: ${from} / ${to}`);
-  return Math.round((b - a) / 86_400_000);
-}
+/**
+ * `to - from`, in whole days. Negative when `to` is earlier.
+ *
+ * Re-exported from `lib/period.helpers` rather than reimplemented: a second
+ * copy of date arithmetic is how the two halves of this module came to
+ * disagree about what a day is.
+ */
+export const daysBetween = wholeDaysBetween;
 
 /** Period end plus the org's submission grace, as a `YYYY-MM-DD` string. */
 export function dueDateFor(periodEnd: string, graceDays: number | null): string {

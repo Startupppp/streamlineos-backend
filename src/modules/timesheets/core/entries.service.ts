@@ -15,7 +15,11 @@ import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { EntriesReadService } from "./entries-read.service";
 import { EntriesPeriodService } from "./entries-period.service";
 import { roundHours } from "./lib/rounding";
-import { formatDateOnly } from "./lib/period.helpers";
+import { formatDateOnly, wholeDaysBetween } from "./lib/period.helpers";
+import { sqlstateOf } from "../../../common/observability/error-classification";
+
+/** `unique_violation`. */
+const SQLSTATE_UNIQUE_VIOLATION = "23505";
 import type {
   CreateEntryInput,
   UpdateEntryInput,
@@ -85,11 +89,7 @@ export class EntriesService {
       throw new BadRequestException("Backdated entries are not allowed");
     }
     if (backdateLimitDays !== null && input.date < today) {
-      const diffDays = Math.floor(
-        (new Date(today).getTime() -
-          new Date(input.date + "T12:00:00").getTime()) /
-          86_400_000,
-      );
+      const diffDays = wholeDaysBetween(input.date, today);
       if (diffDays > backdateLimitDays) {
         throw new BadRequestException(
           `Cannot log time more than ${backdateLimitDays} days in the past`,
@@ -158,26 +158,50 @@ export class EntriesService {
         tx,
       );
 
-      const [inserted] = await tx
-        .insert(timesheets)
-        .values({
-          orgId: u.orgId,
-          userId: u.userId,
-          ticketId: input.ticketId ?? null,
-          projectId: input.projectId ?? null,
-          date: input.date,
-          hours: hours.toString(),
-          description: input.description ?? null,
-          isBillable,
-          billingType,
-          workLink: input.workLink ?? null,
-          source: input.source ?? "MANUAL",
-          timesheetPeriodId: periodId,
-          status: "PENDING",
-          invoicingStatus: "UNINVOICED",
-          payrollStatus: "UNPROCESSED",
-        })
-        .returning();
+      /**
+       * `timesheets` carries three partial unique indexes, and the widest of
+       * them — `uniq_timesheets_work_log`, `(org_id, user_id, date) WHERE
+       * ticket_id IS NULL` — allows only one ticket-less entry per person per
+       * day. A second one raises 23505, and until this catch existed that
+       * reached the client as a 500: an ordinary thing for a user to do,
+       * answered with "internal server error" and an alert.
+       *
+       * SQLSTATE via `sqlstateOf`, not `err.code`: drizzle wraps the driver
+       * error, so the code sits one or two `cause` links down and a direct
+       * `err.code === "23505"` is simply never true.
+       */
+      let inserted;
+      try {
+        [inserted] = await tx
+          .insert(timesheets)
+          .values({
+            orgId: u.orgId,
+            userId: u.userId,
+            ticketId: input.ticketId ?? null,
+            projectId: input.projectId ?? null,
+            date: input.date,
+            hours: hours.toString(),
+            description: input.description ?? null,
+            isBillable,
+            billingType,
+            workLink: input.workLink ?? null,
+            source: input.source ?? "MANUAL",
+            timesheetPeriodId: periodId,
+            status: "PENDING",
+            invoicingStatus: "UNINVOICED",
+            payrollStatus: "UNPROCESSED",
+          })
+          .returning();
+      } catch (err: unknown) {
+        if (sqlstateOf(err) === SQLSTATE_UNIQUE_VIOLATION) {
+          throw new ConflictException(
+            `A time entry already exists for ${input.date}. This organisation allows one ` +
+              `entry per day unless the entry is attached to a ticket; edit the existing ` +
+              `entry instead.`,
+          );
+        }
+        throw err;
+      }
 
       if (!inserted)
         throw new ConflictException("Could not create the time entry");
