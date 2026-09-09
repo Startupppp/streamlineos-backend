@@ -80,7 +80,7 @@ export class KitController {
     return {
       kitVariantId: query.kitVariantId,
       warehouseId: query.warehouseId ?? null,
-      buildable: await this.svc.buildable(u.orgId, query.kitVariantId, query.warehouseId ?? null),
+      buildable: await this.svc.buildable(u.orgId, u.userId, query.kitVariantId, query.warehouseId ?? null),
     };
   }
 

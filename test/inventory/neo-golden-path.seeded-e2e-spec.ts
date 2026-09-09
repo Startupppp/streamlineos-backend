@@ -787,7 +787,7 @@ describe("[seeded-e2e] NEO-16 the world-class path", () => {
     );
 
     const buildable = await asTenant(() =>
-      app.app.get(KitService).buildable(scene.orgId, scene.kitVariantId, scene.warehouseId),
+      app.app.get(KitService).buildable(scene.orgId, scene.userId, scene.kitVariantId, scene.warehouseId),
     );
     expect(Number(buildable)).toBe(5);
 

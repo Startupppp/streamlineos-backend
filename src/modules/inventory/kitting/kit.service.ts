@@ -157,10 +157,42 @@ export class KitService {
    * ---------------------------------------------------------------- */
 
   /** How many whole kits the components at this warehouse could make right now. */
-  async buildable(orgId: string, kitVariantId: number, warehouseId?: number | null): Promise<string> {
+  /**
+   * How many of this kit the caller could build, out of stock the caller holds.
+   *
+   * `warehouseId` is optional and comes from the query string, and this took no
+   * caller identity at all — so omitting it summed component availability across
+   * EVERY warehouse in the organisation, and supplying one read whichever
+   * building was named. Either way it answered over stock the asker may hold no
+   * part of, while `assemble` beside it calls `assertLocationVisible` before it
+   * will move anything.
+   *
+   * Root CLAUDE.md §5 states the rule this broke: an optional filter that widens
+   * scope must be authorized, and the gate must bite. There was no gate.
+   *
+   * Two halves, and the second is the one that matters. A named warehouse is
+   * asserted visible — 404 if not, so it is not an oracle for what exists. An
+   * OMITTED one no longer means "everywhere"; it means everywhere the caller
+   * holds. A default that widens is the failure this class keeps producing.
+   */
+  async buildable(
+    orgId: string,
+    userId: string,
+    kitVariantId: number,
+    warehouseId?: number | null,
+  ): Promise<string> {
     const bom = await this.getBom(orgId, kitVariantId);
     if (bom.length === 0) return "0";
-    const available = await this.availableByComponent(this.db, orgId, bom, warehouseId ?? null);
+
+    if (warehouseId != null) {
+      await this.warehouseScope.assertWarehouseVisible(orgId, userId, warehouseId);
+      const available = await this.availableByComponent(this.db, orgId, bom, warehouseId);
+      return buildableKits(bom as BomLine[], available);
+    }
+
+    const scope = await this.warehouseScope.resolve(orgId, userId);
+    if (scope !== null && scope.length === 0) return "0";
+    const available = await this.availableByComponent(this.db, orgId, bom, null, undefined, scope);
     return buildableKits(bom as BomLine[], available);
   }
 
@@ -170,6 +202,8 @@ export class KitService {
     bom: readonly { componentVariantId: number }[],
     warehouseId: number | null,
     locationId?: number | null,
+    /** `null` is unrestricted; a list narrows the sum to those warehouses. */
+    scope?: number[] | null,
   ): Promise<Map<number, string>> {
     const ids = bom.map((line) => line.componentVariantId);
     if (ids.length === 0) return new Map();
@@ -182,6 +216,11 @@ export class KitService {
         AND sl.product_variant_id IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})
         ${locationId != null ? sql`AND sl.location_id = ${locationId}` : sql``}
         ${warehouseId != null ? sql`AND loc.warehouse_id = ${warehouseId}` : sql``}
+        ${
+          scope != null && scope.length > 0
+            ? sql`AND loc.warehouse_id IN (${sql.join(scope.map((id) => sql`${id}`), sql`, `)})`
+            : sql``
+        }
       GROUP BY sl.product_variant_id
     `);
 
