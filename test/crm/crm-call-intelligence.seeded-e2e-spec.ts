@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import request from "supertest";
 import { eq } from "drizzle-orm";
-import { activities, orgModules, users } from "src/db/schema";
+import { activities, businessParties, orgModules, users } from "src/db/schema";
 import {
   callAnalyses,
   callAnalysisRefusals,
@@ -199,6 +199,25 @@ describe(`${SEEDED_HARNESS} per-rep call metrics and best-call exemplars`, () =>
       },
     ];
 
+    /**
+     * Somebody for the reps to have called.
+     *
+     * `activities` carries `chk_activities_one_anchor` — exactly one of
+     * `party_id`, `deal_id`, `subject_id` must be set — so an unanchored call
+     * is refused by the database. This fixture inserted one anyway, which meant
+     * `beforeAll` threw and all eleven cases in the file reported a hook
+     * failure rather than anything about call intelligence.
+     *
+     * A party is the right anchor: none of `CallAnalysisVisibilityService`'s
+     * queries read the anchor at all, so this restores the fixture to something
+     * the schema accepts without changing what any assertion is measuring.
+     */
+    const [callParty] = await seeded.seedDb
+      .insert(businessParties)
+      .values({ organizationId: fixture.orgId, name: "Northwind Trading" })
+      .returning({ partyId: businessParties.partyId });
+    if (!callParty) throw new Error("fixture: the party the calls are anchored to was not inserted");
+
     for (const call of plan) {
       await seeded.seedDb.insert(activities).values({
         activityId: call.activityId,
@@ -206,6 +225,7 @@ describe(`${SEEDED_HARNESS} per-rep call metrics and best-call exemplars`, () =>
         kind: "call",
         occurredAt: new Date(call.analysedAt.getTime() - HOUR),
         body: "Rep: hello.\nCustomer: hello.\nRep: shall we?\nCustomer: yes.",
+        partyId: callParty.partyId,
         actorKind: "human",
         actorUserId: call.actorUserId,
         source: "manual",
