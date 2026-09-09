@@ -174,6 +174,7 @@ const TENANT_TABLES = [
   "crm_report_definitions",
   "crm_report_runs",
   "crm_sending_domains",
+  "crm_whatsapp_channels",
 ] as const;
 
 /**

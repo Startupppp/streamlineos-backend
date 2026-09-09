@@ -157,7 +157,19 @@ export class WhatsAppIngressController {
      */
     if (!channel) throw new UnauthorizedException("delivery refused");
 
-    const outcome = await this.ingress.accept(channel.binding, raw, signature, safeParse(raw));
+    const outcome = await this.ingress.accept(
+      channel.binding,
+      raw,
+      signature,
+      safeParse(raw),
+      /**
+       * The delivery arrived with no session, so nothing upstream opened a
+       * tenant transaction — and the seam writes to tables behind
+       * `tenant_isolation`. Without this every message verifies and none of
+       * them lands.
+       */
+      this.channels.runInTenant,
+    );
     await this.channels.recordDelivery(channel, outcome);
 
     if (!outcome.accepted) {

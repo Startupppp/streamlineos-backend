@@ -100,6 +100,18 @@ export class WhatsAppChannelsService {
   }
 
   /**
+   * Enter a tenant, for work that arrived with no session to enter it from.
+   *
+   * Lives here because this is the class in the seam that holds a `Db`, and
+   * because the adapter that needs it is deliberately kept free of one. See
+   * `TenantRunner`: the seam's writes are against tables behind
+   * `tenant_isolation`, and under the application role a write with no tenant
+   * context does not land.
+   */
+  runInTenant = <T>(organizationId: string, fn: () => Promise<T>): Promise<T> =>
+    runInNewTenantTransaction(this.db, organizationId, fn);
+
+  /**
    * What the last delivery came to, written onto the channel.
    *
    * A channel that verifies everything and files nothing is the failure mode

@@ -58,6 +58,12 @@ describe("WhatsApp ingress (e2e)", () => {
         Promise.resolve(id === CHANNEL_ID ? channel : null),
       resolveByPhoneNumberId: (line: string) =>
         Promise.resolve(line === FIXTURE_PHONE_NUMBER_ID ? channel : null),
+      /**
+       * The production one opens a tenant transaction, because a delivery
+       * carries no session and the seam writes to tables behind
+       * `tenant_isolation`. Here it only has to be called.
+       */
+      runInTenant: <T>(_orgId: string, fn: () => Promise<T>) => fn(),
       recordDelivery: (
         resolved: { crmWhatsappChannelId: string },
         outcome: { accepted: boolean; delivered?: number; note?: string | null; reason?: string },
