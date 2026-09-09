@@ -391,3 +391,94 @@ overstate campaign revenue.
   to be built, not a gap to be closed, and building the UI first would produce
   exactly the "shipped but unreachable" surface this programme has been
   correcting — of which phase 5 already has four.
+
+## Three side effects that had never run, and how they were found
+
+Everything in this section was found the same way: by running the code against
+a real database as the **application role**, rather than against a `Db` double.
+A double has no policies, so every one of these bugs is invisible to unit
+tests, and all three had unit tests.
+
+The shape is identical in all three cases. A side effect is fired detached —
+`void something(...)` — so the work continues after the request's tenant
+transaction has committed and closed. The tables it then reads are behind
+`tenant_isolation`, whose read predicate **raises** rather than returning
+nothing. The raise lands in a `.catch` and the feature is silently dead.
+
+| Path | State before | Commit |
+|---|---|---|
+| WhatsApp ingress → seam | Every delivery verified, every message offered, nothing filed. Answered 503, indistinguishable from a bad provider day. | `crm(CRM-P0-03)` |
+| `WebhooksDispatchService.dispatch` | **No outbound webhook had ever been delivered.** `deal.won` has been wired at `deals.service.ts:415` the whole time and never left the process. `.catch(() => undefined)` ate the error. | `crm(CRM-P0-04, CRM-P0-05)` |
+| `CrmAutomationBusService.emit` | **Every CRM automation rule was dead** while the studio listed them as active. | `crm(CRM-P0-16)` |
+
+The automation-bus fix has the widest reach: roughly ten call sites across
+`leads`, `deals` and `quotes` emit through that one method, so all of them were
+dead and all of them are now live.
+
+One cost is recorded rather than hidden: the per-rule transaction in
+`crm-automation-bus.service.ts` is held across the `fetch` and the email send
+that a `send_webhook` or `send_email` action performs. The shape that removes
+it is a transaction per database touch inside `crm-automation-runner.service.ts`
+with the external effects on the outbox. That is a larger change to a different
+file and has not been made.
+
+### What now guards them
+
+Four seeded suites, which run only with `APP_DATABASE_URL` pointed at a
+non-owner role — against the owner every policy is inert and they prove nothing:
+
+- `test/crm/crm-whatsapp-ingress.seeded-e2e-spec.ts` — two organisations, so
+  "does it work for the wrong tenant" is asked as well as "does it work".
+- `test/crm/crm-outbound-webhooks.seeded-e2e-spec.ts` — HMAC verified the way a
+  consumer verifies it, over the exact bytes, with the secret the API returned.
+- `test/crm/crm-automation-bus.seeded-e2e-spec.ts` — emitted detached, exactly
+  as `deals.service` emits.
+- `test/crm/crm-tenant-isolation.seeded-e2e-spec.ts` — already existed, and
+  earned its keep: it caught `crm_whatsapp_channels` reading silently empty
+  instead of failing closed, which is what migration 0658 corrects.
+
+Both e2e harnesses gained an opt-in `rawBody` flag, default off. Without it
+neither could host a signed-webhook route at all: the handler would verify the
+empty string, refuse everything, and report a dead endpoint as a working one.
+
+**Executed evidence**, local Postgres `streamline_crm_merge` at journal head,
+`APP_DATABASE_URL` = `streamline_app` (`rolbypassrls = false`):
+
+```
+pnpm test:e2e:seeded            11 suites, 158/158   exit 0
+pnpm typecheck                  exit 0
+jest src/modules/ingress        21 suites, 324/324   exit 0
+jest src/modules/crm/automation-studio   9 suites, 62/62   exit 0
+pnpm check:route-classification exit 0
+pnpm check:migration-chain      exit 0
+```
+
+Not run, and not claimed: `pnpm test:e2e` (the non-seeded config's
+`testRegex` also matches `*.seeded-e2e-spec.ts`, so every seeded suite is
+picked up there and fails for want of a seeded database — pre-existing, and
+true of `crm-golden-path` before any of this work). `pnpm check:permission-keys`
+exits 2, PREREQUISITE UNMET, because it reads a frontend path that does not
+exist beside this checkout. `check:idempotent-commands` and
+`check:tenant-isolation` are red on `accounting/`, `commission/` and
+`billing/` — untouched here.
+
+## The WhatsApp channel, as built
+
+The adapter had been complete and unreachable since phase 2, with a comment
+deferring one decision: where a channel binding lives. It lives in
+`crm_whatsapp_channels` (migration 0657), and the thing it deliberately does
+**not** hold is a provider access token — a leak of the whole table lets an
+attacker forge an inbound message onto a timeline, and does not let them send
+one. That is asserted against the schema source and the create DTO, not
+described in a comment.
+
+The tenant of an unauthenticated delivery is resolved by a SECURITY DEFINER
+function returning the org id and nothing else, following `0385/0386/0387`. An
+id-keyed arm on the policy would have been fewer lines and would have opened
+`app_secret` to every unguarded query written against that table afterwards.
+
+Status codes are a control signal, because Meta retries anything non-2xx: 200
+settles a delivery, 401 refuses it uniformly (so the endpoint cannot be asked
+which business lines this deployment carries), and 503 means some messages
+reached the seam and some did not — the seam deduplicates on the provider's own
+message id, so re-delivery is free.
