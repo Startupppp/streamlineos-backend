@@ -728,4 +728,77 @@ describe(`${SEEDED_HARNESS} CRM golden path — stranger to held send`, () => {
       .set("Authorization", `Bearer ${token}`);
     expect(allowed.status).toBe(200);
   }, 180_000);
+
+  /**
+   * The cold track, which could be paused and never enabled.
+   *
+   * `evaluateColdGate` refuses on `not-enabled` and on the absence of a warmed
+   * domain, and read both from tables whose only writer was the send path's own
+   * pause. This walks the operator surface that closes that: a domain is
+   * registered unverified, the tenant is told what to publish, and enabling is
+   * refused at every step until DNS has actually proved the domain.
+   *
+   * The `.invalid` TLD is reserved by RFC 2606 and can never resolve, so the
+   * verification step exercises the real resolver and the real refusal without
+   * this test depending on — or touching — anybody's live domain.
+   */
+  it("refuses to enable the cold track until a domain is proved", async () => {
+    const suffix = Date.now();
+    const domain = `golden-path-${suffix}.invalid`;
+
+    const registered = await request(seeded.app.getHttpServer())
+      .post("/crm/autonomy/cold-outbound/domains")
+      .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", `golden-path-cold-domain-${suffix}`)
+      .send({ domain, purpose: "cold" });
+    expect(registered.status).toBeLessThan(300);
+
+    const sendingDomainId = registered.body?.data?.sendingDomainId ?? registered.body?.sendingDomainId;
+    expect(typeof sendingDomainId).toBe("string");
+
+    // Registering is a claim, not a proof: enabling must still refuse.
+    const tooEarly = await request(seeded.app.getHttpServer())
+      .post("/crm/autonomy/cold-outbound/track")
+      .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", `golden-path-cold-enable-early-${suffix}`)
+      .send({ enabled: true });
+    expect(tooEarly.status).toBe(409);
+
+    // And the DNS check refuses, because nothing is published under a .invalid name.
+    const verify = await request(seeded.app.getHttpServer())
+      .post(`/crm/autonomy/cold-outbound/domains/${sendingDomainId}/verify`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({});
+    expect(verify.status).toBe(400);
+
+    // Warm-up cannot start ahead of verification either.
+    const warmup = await request(seeded.app.getHttpServer())
+      .post(`/crm/autonomy/cold-outbound/domains/${sendingDomainId}/warmup`)
+      .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", `golden-path-cold-warmup-${suffix}`)
+      .send({});
+    expect(warmup.status).toBe(409);
+
+    // The overview still says off, and tells the tenant exactly what to publish.
+    const overview = await request(seeded.app.getHttpServer())
+      .get("/crm/autonomy/cold-outbound")
+      .set("Authorization", `Bearer ${token}`);
+    expect(overview.status).toBe(200);
+
+    const body = overview.body?.data ?? overview.body;
+    expect(body.enabled).toBe(false);
+    const row = body.domains.find(
+      (d: { sendingDomainId: string }) => d.sendingDomainId === sendingDomainId,
+    );
+    expect(row.verificationRecord).toEqual({
+      name: `_streamline-verify.${domain}`,
+      value: `streamline-verify=${sendingDomainId}`,
+    });
+
+    // And the operator surface is closed to somebody outside the organisation.
+    const denied = await request(seeded.app.getHttpServer())
+      .get("/crm/autonomy/cold-outbound")
+      .set("Authorization", `Bearer ${outsiderToken}`);
+    expect(denied.status).toBe(403);
+  }, 180_000);
 });

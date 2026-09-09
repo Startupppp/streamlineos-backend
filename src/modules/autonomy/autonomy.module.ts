@@ -18,6 +18,8 @@ import { DataQualityModule } from "../data-quality/data-quality.module";
 import { SequenceReplyExitModule } from "./sequences/sequence-reply-exit.module";
 import { AutonomyReviewController } from "./autonomy-review.controller";
 import { OutboundController } from "./outbound.controller";
+import { ColdOutboundAdminController } from "./cold-outbound-admin.controller";
+import { ColdOutboundAdminService } from "./cold-outbound-admin.service";
 
 /**
  * The part of the product that acts without being asked.
@@ -50,7 +52,7 @@ import { OutboundController } from "./outbound.controller";
     DataQualityModule,
     SequenceReplyExitModule,
   ],
-  controllers: [AutonomyReviewController, OutboundController],
+  controllers: [AutonomyReviewController, OutboundController, ColdOutboundAdminController],
   providers: [
     AutonomyService,
     AutonomyActionsService,
@@ -60,6 +62,7 @@ import { OutboundController } from "./outbound.controller";
     AutonomyHoldWorkflow,
     AutonomyRepairService,
     OutboundService,
+    ColdOutboundAdminService,
     /**
      * A provider and not an export, like `AutonomyHoldWorkflow`. It exists to be
      * constructed so its `onModuleInit` reaches `WorkflowRegistry` — a workflow
