@@ -12,6 +12,29 @@ const SPEC_RE = /\.(spec|e2e-spec)\.ts$/;
 
 const HTTP_MUTATION_RE = /^\s*@(?:Post|Put|Patch|Delete)\s*(?:\(|$)/;
 const IDEMPOTENT_RE = /^\s*@Idempotent\b/;
+
+/**
+ * The second fence, which this check used to be blind to.
+ *
+ * There are two real idempotency mechanisms in this codebase and they are not
+ * interchangeable. `@Idempotent("name")` is an interceptor: it requires the
+ * header, claims a fence around the whole handler, and replays a stored
+ * response. `@IdempotencyKey()` is a parameter decorator: it hands the key to
+ * the service, which claims the fence itself — which is what a command must do
+ * when the claim has to happen inside its own transaction, or before a
+ * precondition the command then invalidates.
+ *
+ * Reading only the first reported three inventory handlers as unfenced when
+ * every one of them takes the key and passes it down, and one of them carries a
+ * docstring promising a replay creates nothing. A gate that cries wolf is a
+ * gate people learn to run with `|| true`.
+ *
+ * The parameter alone is not the fence, though: a handler can take the key and
+ * drop it. So the decorator has to appear AND the bound name has to be used
+ * again in the handler body — that is the difference between holding the key
+ * and merely being handed it.
+ */
+const IDEMPOTENCY_KEY_PARAM_RE = /@IdempotencyKey\s*\(\s*\)\s*([a-zA-Z_$][a-zA-Z0-9_$]*)/;
 const PUBLIC_RE = /^\s*@Public\b/;
 const DECORATOR_LINE_RE = /^\s*@\w/;
 const CLASS_PUBLIC_RE = /@Public\(\)\s*\n(?:\s*@[^\n]*\n)*\s*(?:export\s+)?(?:abstract\s+)?class\s/;
@@ -93,6 +116,24 @@ function parseHandlers(src, relPath) {
     const methodLine = lines[j] ?? "";
     const methodMatch = methodLine.match(/^\s+(?:async\s+)?([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/);
     const methodName = methodMatch ? methodMatch[1] : null;
+
+    /**
+     * The handler's own text, from its signature to the next blank-line-then-
+     * decorator or the end of the class. Bounded by a generous line budget
+     * rather than by brace counting, because this file is a line scanner and a
+     * brace counter that got a string literal wrong would silently read the
+     * rest of the class as one handler.
+     */
+    if (!hasIdempotent && methodName) {
+      const body = lines.slice(j, j + 40).join("\n");
+      const bound = body.match(IDEMPOTENCY_KEY_PARAM_RE);
+      if (bound) {
+        const name = bound[1];
+        // Used somewhere other than its own declaration: handed on, not dropped.
+        const uses = body.split(new RegExp(`\\b${name}\\b`, "g")).length - 1;
+        if (uses > 1) hasIdempotent = true;
+      }
+    }
 
     if (mutationDecoratorRoute !== null && methodName) {
       const routeCritical = CRITICAL_ROUTE_RE.test("/" + mutationDecoratorRoute);
