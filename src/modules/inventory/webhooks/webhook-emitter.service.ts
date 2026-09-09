@@ -1,7 +1,7 @@
 import { Injectable, Inject, Logger } from "@nestjs/common";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { invWebhooks, invWebhookEvents, invWebhookEventSubscriptions } from "../../../db/schema";
 import type { WebhookEventType } from "./dto/webhooks.schemas";
 
@@ -91,10 +91,26 @@ export class InventoryWebhookEmitter {
           dedupeKey: options.dedupeKey ?? null,
         })),
       )
-      // Only bites when a dedupeKey is present — the unique index is partial on
-      // `dedupe_key is not null`, so callers without one still get a row each.
+      /**
+       * Only bites when a dedupeKey is present — the unique index is partial on
+       * `dedupe_key is not null`, so callers without one still get a row each.
+       *
+       * The predicate has to be repeated here, and its absence was not a style
+       * problem. PostgreSQL infers which index an `ON CONFLICT` target means,
+       * and a partial index is only inferable when the statement repeats its
+       * predicate. Without it every insert raised
+       *
+       *   there is no unique or exclusion constraint matching the
+       *   ON CONFLICT specification
+       *
+       * — so no webhook was ever enqueued, the outbox dispatch that called this
+       * threw, retried and dead-lettered, and the module's own consumer comment
+       * about "every inventory webhook anyone has ever registered has never
+       * fired" stayed true for one clause.
+       */
       .onConflictDoNothing({
         target: [invWebhookEvents.orgId, invWebhookEvents.webhookId, invWebhookEvents.dedupeKey],
+        where: sql`${invWebhookEvents.dedupeKey} is not null`,
       })
       .returning({ id: invWebhookEvents.id });
 
