@@ -50,6 +50,8 @@ interface Written {
 class FakeDb {
   private readonly planned: PlannedResult[] = [];
   readonly written: Written[] = [];
+  /** Every table a read touched, in order — how a test counts round trips. */
+  readonly reads: Table[] = [];
 
   plan(op: Op, table: Table, rows: Row[], error?: Error): this {
     this.planned.push({ op, table, rows, error });
@@ -86,6 +88,7 @@ class FakeDb {
   }
 
   resolve(op: Op, table: Table): Row[] {
+    if (op === "select") this.reads.push(table);
     return this.take(op, table);
   }
 
@@ -611,5 +614,88 @@ describe("sweeping every organisation", () => {
       "crm-nurture-steps",
       expect.any(Function),
     );
+  });
+});
+
+/**
+ * Names, resolved where the ids are.
+ *
+ * The enrolment row stores a party uuid and a deal integer, and a screen may not
+ * render either. Returning the ids alone forces the caller into one request per
+ * row — or a first-page lookup that reads "a customer you can't see" for
+ * everybody further down the list, which is the shape the first version of the
+ * UI had to take. Both are the caller paying for a join the server can do once.
+ */
+describe("enrolment names", () => {
+  it("resolves the whole page's names in one lookup each, not one per row", async () => {
+    const db = new FakeDb()
+      .plan("select", crmNurtureSequences, [activeSequenceRow()])
+      .plan("select", crmNurtureEnrollments, [
+        {
+          nurtureEnrollmentId: "enrol_1",
+          nurtureSequenceId: SEQUENCE,
+          partyId: "party_a",
+          dealId: 11,
+          status: "active",
+          currentStep: 0,
+          exitReason: null,
+          exitedAt: null,
+          enrolledAt: new Date("2026-01-02T00:00:00Z"),
+        },
+        {
+          nurtureEnrollmentId: "enrol_2",
+          nurtureSequenceId: SEQUENCE,
+          partyId: "party_b",
+          dealId: null,
+          status: "active",
+          currentStep: 1,
+          exitReason: null,
+          exitedAt: null,
+          enrolledAt: new Date("2026-01-01T00:00:00Z"),
+        },
+      ])
+      .plan("select", businessParties, [
+        { partyId: "party_a", name: "Acme Industrial" },
+        { partyId: "party_b", name: "Borden Ltd" },
+      ])
+      .plan("select", deals, [{ id: 11, name: "Acme Q3 renewal" }]);
+
+    const service = new NurtureSequencesService(db.asDb());
+
+    const page = await service.listEnrollments(ORG, SEQUENCE, { limit: 25 });
+
+    expect(page.data[0]).toMatchObject({ partyName: "Acme Industrial", dealName: "Acme Q3 renewal" });
+    // No deal on the second, and a null name rather than a borrowed one.
+    expect(page.data[1]).toMatchObject({ partyName: "Borden Ltd", dealName: null });
+
+    // Two reads for two rows, and they would still be two for two hundred.
+    expect(db.reads.filter((table) => table === businessParties)).toHaveLength(1);
+    expect(db.reads.filter((table) => table === deals)).toHaveLength(1);
+  });
+
+  it("reports a party that has gone as unnamed rather than as its id", async () => {
+    const db = new FakeDb()
+      .plan("select", crmNurtureSequences, [activeSequenceRow()])
+      .plan("select", crmNurtureEnrollments, [
+        {
+          nurtureEnrollmentId: "enrol_1",
+          nurtureSequenceId: SEQUENCE,
+          partyId: "party_gone",
+          dealId: null,
+          status: "exited",
+          currentStep: 2,
+          exitReason: "party-deleted",
+          exitedAt: new Date("2026-02-01T00:00:00Z"),
+          enrolledAt: new Date("2026-01-01T00:00:00Z"),
+        },
+      ])
+      .plan("select", businessParties, [])
+      .plan("select", deals, []);
+
+    const service = new NurtureSequencesService(db.asDb());
+
+    const page = await service.listEnrollments(ORG, SEQUENCE, { limit: 25 });
+
+    expect(page.data[0]!.partyName).toBeNull();
   });
 });

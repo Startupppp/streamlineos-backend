@@ -18,6 +18,7 @@ import {
 import { buildCursorPage, decodeCursor, type CursorPage } from "../../../common/pagination/cursor";
 import { keysetBefore } from "../../../common/pagination/keyset";
 import { getPostgresErrorCode } from "../../../common/db/postgres-error";
+import { partyNamesFor } from "../../party/party-names";
 import { clampWaitHours, stepNumbersAreDense } from "./nurture-cadence";
 import type {
   CreateNurtureSequenceInput,
@@ -51,7 +52,19 @@ export interface NurtureEnrollmentView {
   readonly nurtureEnrollmentId: string;
   readonly nurtureSequenceId: string;
   readonly partyId: string;
+  /**
+   * Resolved here rather than left to the caller.
+   *
+   * A screen may not render a raw id, so returning `partyId` alone forces every
+   * caller to go and find the name — which is one request per row, or a
+   * first-page lookup that silently degrades to "a customer you can't see" for
+   * anybody further down the list. `partyNamesFor` answers the whole page in one
+   * indexed query, which is what `autonomy-review.service.ts` already does for
+   * the decision feed. Null only when the party is gone.
+   */
+  readonly partyName: string | null;
   readonly dealId: number | null;
+  readonly dealName: string | null;
   readonly status: string;
   readonly currentStep: number;
   readonly exitReason: string | null;
@@ -421,10 +434,42 @@ export class NurtureSequencesService {
       )
       .limit(query.limit + 1);
 
-    return buildCursorPage(rows, query.limit, (row) => ({
+    /**
+     * Two lookups for the whole page, after the keyset read rather than joined
+     * into it: a join would multiply nothing here, but it would put two more
+     * tables inside the ordering the cursor depends on.
+     */
+    const [partyNames, dealNames] = await Promise.all([
+      partyNamesFor(this.db, organizationId, rows.map((row) => row.partyId)),
+      this.dealNamesFor(organizationId, rows.map((row) => row.dealId)),
+    ]);
+
+    const named = rows.map((row) => ({
+      ...row,
+      partyName: partyNames.get(row.partyId) ?? null,
+      dealName: row.dealId === null ? null : (dealNames.get(row.dealId) ?? null),
+    }));
+
+    return buildCursorPage(named, query.limit, (row) => ({
       sortValue: row.enrolledAt.toISOString(),
       id: row.nurtureEnrollmentId,
     }));
+  }
+
+  /** Names for one page of enrolments. Soft-deleted deals still have a name. */
+  private async dealNamesFor(
+    organizationId: string,
+    dealIds: readonly (number | null)[],
+  ): Promise<Map<number, string>> {
+    const ids = [...new Set(dealIds.filter((id): id is number => id !== null))];
+    if (ids.length === 0) return new Map();
+
+    const rows = await this.db
+      .select({ id: deals.id, name: deals.name })
+      .from(deals)
+      .where(and(eq(deals.orgId, organizationId), inArray(deals.id, ids)));
+
+    return new Map(rows.map((row) => [row.id, row.name]));
   }
 
   /**
@@ -477,7 +522,7 @@ export class NurtureSequencesService {
           enrolledAt: crmNurtureEnrollments.enrolledAt,
         });
 
-      return enrolled;
+      return this.withNames(organizationId, enrolled);
     } catch (error) {
       /**
        * `uniq_crm_nurture_enrollments_live_party`: one live enrolment per party
@@ -534,7 +579,28 @@ export class NurtureSequencesService {
      */
     if (!updated) throw new NotFoundException("No active enrolment to stop");
 
-    return updated;
+    return this.withNames(organizationId, updated);
+  }
+
+  /**
+   * One enrolment's names. The page read resolves a whole page at once; this is
+   * the single-row path, where two indexed lookups are cheaper than making the
+   * caller go and find a name it will certainly need.
+   */
+  private async withNames(
+    organizationId: string,
+    row: Omit<NurtureEnrollmentView, "partyName" | "dealName">,
+  ): Promise<NurtureEnrollmentView> {
+    const [partyNames, dealNames] = await Promise.all([
+      partyNamesFor(this.db, organizationId, [row.partyId]),
+      this.dealNamesFor(organizationId, [row.dealId]),
+    ]);
+
+    return {
+      ...row,
+      partyName: partyNames.get(row.partyId) ?? null,
+      dealName: row.dealId === null ? null : (dealNames.get(row.dealId) ?? null),
+    };
   }
 
   // ── Reads the rest of this file leans on ──────────────────────────────────
