@@ -22,6 +22,7 @@
 import { readFileSync, readdirSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join, resolve, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { sslForConnectionString } from "./lib/repo-roots.mjs";
 
 const SCRIPT_DIR = fileURLToPath(new URL(".", import.meta.url));
 const BACKEND_ROOT = resolve(SCRIPT_DIR, "../..");
@@ -285,7 +286,7 @@ async function reportCatalogGap(sourceEntries) {
     return;
   }
 
-  const sql = postgres(url, { prepare: false, max: 1, ssl: "require", onnotice: () => {} });
+  const sql = postgres(url, { prepare: false, max: 1, ssl: sslForConnectionString(url), onnotice: () => {} });
   try {
     const rows = await sql`
       SELECT t.relname AS tbl, a.attname AS col

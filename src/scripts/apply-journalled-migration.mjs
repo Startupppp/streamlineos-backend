@@ -11,6 +11,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { sslForConnectionString } from "./lib/repo-roots.mjs";
 import postgres from "postgres";
 
 const MIGRATIONS_DIR = join(process.cwd(), "migrations");
@@ -46,7 +47,7 @@ async function main() {
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
 
-  const sql = postgres(ownerUrl(), { prepare: false, max: 1, ssl: "require", onnotice: () => {} });
+  const sql = postgres(ownerUrl(), { prepare: false, max: 1, ssl: sslForConnectionString(ownerUrl()), onnotice: () => {} });
 
   const [already] = await sql`
     SELECT 1 AS present FROM drizzle.__drizzle_migrations WHERE hash = ${hash} LIMIT 1

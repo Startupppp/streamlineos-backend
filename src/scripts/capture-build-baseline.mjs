@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { sslForConnectionString } from "./lib/repo-roots.mjs";
 import { mkdirSync, writeFileSync } from "node:fs";
 import postgres from "postgres";
 import * as dotenv from "dotenv";
@@ -13,7 +14,7 @@ if (!url) {
 
 const ORG = process.env.SEED_ORG_ID || "aa5627a2-a7de-4dca-97d2-135f3a5f801b";
 const OUT_DIR = resolve(process.cwd(), "../docs/refactor/baseline");
-const sql = postgres(url, { max: 1, prepare: false, ssl: "require", onnotice: () => {} });
+const sql = postgres(url, { max: 1, prepare: false, ssl: sslForConnectionString(url), onnotice: () => {} });
 
 const QUERIES = [
   {

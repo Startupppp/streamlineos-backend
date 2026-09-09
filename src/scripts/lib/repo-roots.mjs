@@ -61,3 +61,17 @@ export function resolveBackendModulesDir() {
   ];
   return { root: firstExisting(candidates), candidates };
 }
+
+/**
+ * Whether a connection string wants TLS.
+ *
+ * Several scripts hardcoded `ssl: "require"`, which makes them unable to talk
+ * to a database reached over `sslmode=disable` — they throw before reading
+ * anything. In `verify-migration-chain.mjs` that throw was swallowed and
+ * reported as "no watermark", so check (f) — the one that catches an applied
+ * watermark sitting ahead of the journal — silently skipped on every local run
+ * while the local database was in precisely that state.
+ */
+export function sslForConnectionString(connectionString) {
+  return /[?&]sslmode=disable\b/.test(connectionString ?? "") ? false : "require";
+}

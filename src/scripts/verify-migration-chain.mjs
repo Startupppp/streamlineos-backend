@@ -21,6 +21,7 @@
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { sslForConnectionString } from "./lib/repo-roots.mjs";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 
@@ -82,7 +83,7 @@ async function readAppliedWatermark() {
   if (!url) return null;
   try {
     const { default: postgres } = await import("postgres");
-    const sql = postgres(url, { prepare: false, max: 1, ssl: "require", onnotice: () => {} });
+    const sql = postgres(url, { prepare: false, max: 1, ssl: sslForConnectionString(url), onnotice: () => {} });
     try {
       const rows = await sql`SELECT max(created_at) AS mx FROM drizzle.__drizzle_migrations`;
       const mx = rows[0]?.mx;
