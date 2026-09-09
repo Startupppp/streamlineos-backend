@@ -427,6 +427,36 @@ export class SlottingService {
   }
 
   /**
+   * Is `locationId` the zone itself or one of its descendants?
+   *
+   * The same recursive walk `slotFor` uses to expand a rule's zone into bins,
+   * with the same depth bound — a second, subtly different definition of
+   * "inside the zone" is how an approval and the rule that proposed it start
+   * disagreeing.
+   */
+  private async isUnderZone(
+    orgId: string,
+    zoneLocationId: number,
+    locationId: number,
+  ): Promise<boolean> {
+    if (zoneLocationId === locationId) return true;
+    const rows = await this.db.execute<{ id: number }>(sql`
+      WITH RECURSIVE zone AS (
+        SELECT id, parent_location_id, 1 AS depth
+        FROM inv_locations
+        WHERE org_id = ${orgId} AND id = ${zoneLocationId}
+        UNION ALL
+        SELECT l.id, l.parent_location_id, zone.depth + 1
+        FROM inv_locations l
+        JOIN zone ON l.parent_location_id = zone.id
+        WHERE l.org_id = ${orgId} AND zone.depth < 16
+      )
+      SELECT id FROM zone WHERE id = ${locationId} LIMIT 1
+    `);
+    return rows.length > 0;
+  }
+
+  /**
    * Approve one, and hand back the transfer it needs.
    *
    * This marks the decision and names the bin; it does **not** post the move.
@@ -440,6 +470,14 @@ export class SlottingService {
     recommendationId: number,
     toLocationId: number,
   ) {
+    /*
+     * Scoped like `list` is. The row was fetched on `org_id` and its id alone,
+     * so a supervisor holding no part of a building could approve a re-slot
+     * inside it — and approving is a decision that ends with stock moving.
+     * Out of scope reads as not found, the same answer a missing row gives.
+     */
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+    if (scope.isEmpty) throw new NotFoundException("Not found");
     const [row] = await this.db
       .select()
       .from(invSlottingRecommendations)
@@ -447,6 +485,7 @@ export class SlottingService {
         and(
           eq(invSlottingRecommendations.orgId, orgId),
           eq(invSlottingRecommendations.id, recommendationId),
+          scope.warehouse(sql`${invSlottingRecommendations.warehouseId}`),
         ),
       );
     if (!row) throw new NotFoundException("Not found");
@@ -455,6 +494,24 @@ export class SlottingService {
     }
 
     await this.warehouseScope.assertLocationVisible(orgId, userId, toLocationId);
+
+    /*
+     * And the bin has to be inside the zone this recommendation is FOR.
+     *
+     * `assertLocationVisible` answers "may this person see that location", which
+     * is a different question and was the only one being asked — so an approver
+     * could accept "move these 400 units to the gold zone" and name a bin in
+     * cold storage, and the recommendation would record itself as approved with
+     * the reason still saying gold. The rule the recommendation came from
+     * expands its zone to descendant bins (`slotFor`); this walks the same tree
+     * from the zone the recommendation stored, so the two cannot disagree about
+     * what "inside the zone" means.
+     */
+    if (!(await this.isUnderZone(orgId, row.toZoneLocationId, toLocationId))) {
+      throw new BadRequestException(
+        "That bin is not inside the zone this recommendation points at. Dismiss it and raise an ordinary transfer if the stock should go somewhere else.",
+      );
+    }
 
     const [updated] = await this.db
       .update(invSlottingRecommendations)
