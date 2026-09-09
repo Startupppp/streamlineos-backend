@@ -320,13 +320,39 @@ export class PickWaveService {
    * lost track of something.
    */
   async joinWave(orgId: string, userId: string, pickListId: number, input: CreateWaveInput) {
+    /*
+     * ## The orders are planned before the wave is looked up, and the order is
+     * the point
+     *
+     * `planWaveLines` opens with `assertWarehouseVisible` on
+     * `input.warehouseId`, so running it first is what puts the warehouse gate
+     * ahead of every query about the wave. It used to run second, and the two
+     * refusals were distinguishable: a caller naming a warehouse they hold
+     * nothing in got "Pick wave not found" when the id was free and "Not found"
+     * when it was taken. Both are 404s, which is why this survived a reading —
+     * but the pair answers "does pick list N exist in this organisation" for
+     * every id, in a module whose whole point is that an operator sees only
+     * their own buildings. §4 calls that an existence oracle and it does not
+     * stop being one because the status codes agree.
+     *
+     * The wave's own warehouse needs no separate assert: `decideWaveJoin`
+     * refuses unless `wave.warehouseId === input.warehouseId`, so a wave in a
+     * building the caller does not hold cannot be joined by naming one they do.
+     * That equality is a picking rule — a wave is a walk through one building —
+     * and the visibility gate rides on it deliberately rather than by accident,
+     * which is why it is written down here.
+     *
+     * The cost is that a caller who names a pick list that does not exist pays
+     * for the planning first. That is a bad id doing a little more work, not a
+     * correct call doing any.
+     */
+    const { lines, allocations } = await this.planWaveLines(orgId, userId, input);
+
     const wave = await this.db.query.invPickLists.findFirst({
       where: and(eq(invPickLists.id, pickListId), eq(invPickLists.orgId, orgId)),
       columns: { id: true, warehouseId: true, status: true, pickNumber: true },
     });
     if (!wave) throw new NotFoundException("Pick wave not found");
-
-    const { lines, allocations } = await this.planWaveLines(orgId, userId, input);
 
     const [shape] = await this.db.execute<{ line_count: number; lines_picked: number }>(sql`
       SELECT COUNT(*)::int AS line_count,
