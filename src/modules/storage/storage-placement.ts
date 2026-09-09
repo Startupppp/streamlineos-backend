@@ -21,6 +21,7 @@ export type StorageConfig = Pick<
   AppConfig,
   | "R2_REGION"
   | "R2_BUCKET_NAME"
+  | "R2_KB_BUCKET_NAME"
   | "R2_ACCESS_KEY_ID"
   | "R2_SECRET_ACCESS_KEY"
   | "R2_ENDPOINT"

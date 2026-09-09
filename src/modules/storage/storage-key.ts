@@ -11,6 +11,9 @@ export const ORG_NAMESPACED_KEY_FOLDERS: ReadonlySet<string> = new Set([
   "kb-sources",
 ]);
 
+// KB uploads target R2_KB_BUCKET_NAME, so a read that omits the override looks in the wrong bucket.
+export const KB_BUCKET_KEY_FOLDERS: ReadonlySet<string> = new Set(["kb-media", "kb-sources"]);
+
 const SENSITIVE_FOLDER_ROOTS: ReadonlySet<string> = new Set([
   "payroll",
   "payroll-exports",

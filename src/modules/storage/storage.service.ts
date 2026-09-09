@@ -21,6 +21,8 @@ import {
   isForeignOrgKey,
   isSensitiveStorageKey,
   isWellFormedStorageKey,
+  KB_BUCKET_KEY_FOLDERS,
+  parseStorageKey,
 } from "./storage-key";
 import { FileQuarantineService, type KeyBlockCheck } from "./file-quarantine.service";
 
@@ -255,7 +257,10 @@ export class StorageService {
   ): Promise<string> {
     await this.assertKeySignable(orgId, key, options.preauthorized === true);
     const placement = await this.placement.forOrg(orgId);
-    const bucketName = this.placement.requireBucket(placement, bucketOverride);
+    const bucketName = this.placement.requireBucket(
+      placement,
+      this.bucketForKey(orgId, key, bucketOverride),
+    );
     const command = new GetObjectCommand({ Bucket: bucketName, Key: key });
     return getSignedUrl(placement.client, command, { expiresIn });
   }
@@ -385,13 +390,23 @@ export class StorageService {
     }
   }
 
+  private bucketForKey(orgId: string, key: string, bucketOverride?: string): string | undefined {
+    if (bucketOverride) return bucketOverride;
+    if (KB_BUCKET_KEY_FOLDERS.has(parseStorageKey(key, orgId).folderRoot))
+      return this.config.R2_KB_BUCKET_NAME;
+    return undefined;
+  }
+
   async getFileStream(
     orgId: string,
     key: string,
     bucketOverride?: string,
   ): Promise<FileStreamResult> {
     const placement = await this.placement.forOrg(orgId);
-    const bucketName = this.placement.requireBucket(placement, bucketOverride);
+    const bucketName = this.placement.requireBucket(
+      placement,
+      this.bucketForKey(orgId, key, bucketOverride),
+    );
     const response = await placement.client.send(
       new GetObjectCommand({ Bucket: bucketName, Key: key }),
     );
