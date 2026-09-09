@@ -4901,6 +4901,41 @@
       "when": 1803000010151,
       "tag": "1073_build_report_revision",
       "breakpoints": true
+    },
+    {
+      "idx": 833,
+      "version": "7",
+      "when": 1803000010152,
+      "tag": "1074_chat_read_cursor_position",
+      "breakpoints": true
+    },
+    {
+      "idx": 834,
+      "version": "7",
+      "when": 1803000010153,
+      "tag": "1075_org_scoped_integration_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 835,
+      "version": "7",
+      "when": 1803000010154,
+      "tag": "1076_drop_kb_space_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 836,
+      "version": "7",
+      "when": 1803000010155,
+      "tag": "1077_chat_huddle_meeting_url",
+      "breakpoints": true
+    },
+    {
+      "idx": 837,
+      "version": "7",
+      "when": 1803000010156,
+      "tag": "1078_kb_version_append_only",
+      "breakpoints": true
     }
   ]
 }

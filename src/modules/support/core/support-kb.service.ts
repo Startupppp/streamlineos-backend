@@ -1,13 +1,26 @@
-import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  HttpException,
+  HttpStatus,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, ilike, inArray, ne, or, sql, type SQL } from "drizzle-orm";
 import {
   kbCategories,
   kbArticles,
   kbArticleTags,
+  kbArticleVersions,
   kbTags,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { OutboxWriter } from "../../../common/outbox/outbox-writer";
+import { recordArticleAttachmentPurge } from "../../kb/wiki/kb-page-attachment-purge";
 import { KbIndexingService } from "../../kb/retrieval/kb-indexing.service";
 import type {
   CreateKbArticleInput,
@@ -204,10 +217,24 @@ export class SupportKbService {
     return { ...article, tags: tagRows.map((t) => t.name) };
   }
 
-  async updateArticle(orgId: string, articleId: number, input: UpdateKbArticleInput) {
+  async updateArticle(
+    orgId: string,
+    articleId: number,
+    input: UpdateKbArticleInput,
+    authorId: string | null = null,
+  ) {
     const current = await this.db.query.kbArticles.findFirst({
       where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)),
-      columns: { id: true, slug: true, status: true, publishedAt: true },
+      columns: {
+        id: true,
+        slug: true,
+        status: true,
+        publishedAt: true,
+        title: true,
+        content: true,
+        visibility: true,
+        contentRevision: true,
+      },
     });
     if (!current) throw new NotFoundException("Article not found");
 
@@ -242,14 +269,53 @@ export class SupportKbService {
       }
     }
 
+    const titleChanged = input.title !== undefined && input.title !== current.title;
+    const contentChanged = input.content !== undefined && input.content !== current.content;
+    const aclChanged = input.visibility !== undefined && input.visibility !== current.visibility;
+
     return this.db.transaction(async (tx) => {
       const [updated] = await tx
         .update(kbArticles)
-        .set(values)
-        .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
+        .set({
+          ...values,
+          ...(contentChanged ? { contentRevision: sql`content_revision + 1` } : {}),
+          ...(aclChanged ? { aclRevision: sql`acl_revision + 1` } : {}),
+        })
+        .where(
+          and(
+            eq(kbArticles.id, articleId),
+            eq(kbArticles.orgId, orgId),
+            eq(kbArticles.contentRevision, current.contentRevision),
+          ),
+        )
         .returning();
 
-      if (!updated) throw new NotFoundException("Article not found");
+      if (!updated) {
+        throw new HttpException(
+          { message: "Article was modified by another editor. Reload to see the latest version.", code: "STALE_REVISION" },
+          HttpStatus.CONFLICT,
+        );
+      }
+
+      if (titleChanged || contentChanged) await this.snapshot(tx, orgId, updated, authorId);
+
+      if (updated.status === "published" && (contentChanged || aclChanged)) {
+        await OutboxWriter.emit(tx, {
+          eventId: randomUUID(),
+          organizationId: orgId,
+          aggregateType: "kb_article",
+          aggregateId: String(articleId),
+          aggregateVersion: Date.now(),
+          eventType: "kb.content.index",
+          payload: {
+            contentType: "article",
+            contentId: articleId,
+            contentRevision: updated.contentRevision,
+            aclRevision: updated.aclRevision,
+          },
+          occurredAt: new Date(),
+        });
+      }
 
       if (input.tags !== undefined) {
         const tagNames = input.tags ?? [];
@@ -269,6 +335,8 @@ export class SupportKbService {
   }
 
   async deleteArticle(orgId: string, articleId: number) {
+    await recordArticleAttachmentPurge(this.db, orgId, [articleId]);
+
     const [deleted] = await this.db
       .delete(kbArticles)
       .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
@@ -276,6 +344,30 @@ export class SupportKbService {
 
     if (!deleted) throw new NotFoundException("Article not found");
     return { success: true };
+  }
+
+  private async snapshot(
+    tx: Tx,
+    orgId: string,
+    article: { id: number; title: string; content: string; excerpt: string | null },
+    authorId: string | null,
+  ): Promise<void> {
+    const [row] = await tx
+      .select({ max: sql<number>`coalesce(max(${kbArticleVersions.versionNumber}), 0)::int` })
+      .from(kbArticleVersions)
+      .where(and(eq(kbArticleVersions.articleId, article.id), eq(kbArticleVersions.orgId, orgId)));
+
+    await tx.insert(kbArticleVersions).values({
+      orgId,
+      articleId: article.id,
+      versionNumber: (row?.max ?? 0) + 1,
+      title: article.title,
+      content: article.content,
+      excerpt: article.excerpt,
+      changeSummary: null,
+      authorId,
+      authorMembershipId: null,
+    });
   }
 
   private async syncArticleTags(tx: Tx, orgId: string, articleId: number, tagNames: string[]): Promise<string[]> {

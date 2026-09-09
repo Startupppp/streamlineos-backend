@@ -1,6 +1,7 @@
 import { HttpStatus, NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { KbPagesService } from "./kb-pages.service";
+import { updatePageSchema } from "./dto/kb-pages.schemas";
 
 jest.mock("../retrieval/kb-page-access.util", () => ({
   assertPageAccessible: jest.fn().mockResolvedValue(undefined),
@@ -139,26 +140,57 @@ describe("KbPagesService — optimistic concurrency control", () => {
     expect(vals).not.toContain(3);
   });
 
-  it("(c) succeeds with no expectedContentRevision (backward compatible)", async () => {
-    const pageRow = makePageRow(1);
+  it("(c) rejects a content write that omits expectedContentRevision", () => {
+    const parsed = updatePageSchema.safeParse({ content: { type: "doc", content: [] } });
+
+    expect(parsed.success).toBe(false);
+    const paths = parsed.success ? [] : parsed.error.issues.map((i) => i.path.join("."));
+    expect(paths).toContain("expectedContentRevision");
+  });
+
+  it("(c) a metadata-only edit needs no precondition — content_revision tracks the body alone", () => {
+    expect(updatePageSchema.safeParse({ title: "New title" }).success).toBe(true);
+    expect(updatePageSchema.safeParse({ status: "published" }).success).toBe(true);
+    expect(updatePageSchema.safeParse({ ownerUserId: null }).success).toBe(true);
+  });
+
+  it("(c) a rename is not gated on someone else's typing", async () => {
+    const currentRevision = 4;
+    const pageRow = makePageRow(currentRevision);
     const updatedRow = { ...pageRow, title: "New title" };
-    const { db } = makeDb(pageRow, [updatedRow]);
+    const { db, capturedWheres } = makeDb(pageRow, [updatedRow]);
     const svc = new KbPagesService(db, notifications, planLimits);
 
     const result = await svc.update(makeUser(), PAGE_ID, { title: "New title" }, false);
 
-    expect(result).toHaveProperty("id", PAGE_ID);
     expect(result.title).toBe("New title");
+    const vals = capturedWheres.flatMap(w => sqlValues(w));
+    expect(vals).not.toContain(currentRevision);
   });
 
-  it("(c) throws NotFoundException (not 409) when page is gone and no expectedContentRevision", async () => {
+  it("(c) a stale content write is 409 STALE_REVISION, never NotFoundException", async () => {
     const pageRow = makePageRow(1);
     const { db } = makeDb(pageRow, []);
     const svc = new KbPagesService(db, notifications, planLimits);
 
-    await expect(
-      svc.update(makeUser(), PAGE_ID, { title: "Gone" }, false),
-    ).rejects.toThrow(NotFoundException);
+    let caught: unknown;
+    try {
+      await svc.update(
+        makeUser(),
+        PAGE_ID,
+        { content: { type: "doc", content: [] }, expectedContentRevision: 1 },
+        false,
+      );
+    } catch (e) {
+      caught = e;
+    }
+
+    expect(caught).not.toBeInstanceOf(NotFoundException);
+    const err = caught as { getStatus?: () => number; getResponse?: () => unknown };
+    expect(typeof err.getStatus === "function" ? err.getStatus() : undefined).toBe(HttpStatus.CONFLICT);
+    expect(typeof err.getResponse === "function" ? err.getResponse() : undefined).toMatchObject({
+      code: "STALE_REVISION",
+    });
   });
 
   it("(d) WHERE clause carries the revision predicate — atomic guard proven via SQL values", async () => {

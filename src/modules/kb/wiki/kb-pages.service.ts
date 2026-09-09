@@ -217,13 +217,15 @@ export class KbPagesService {
       values.trustState = "unverified";
     }
 
-    const revisionGuard = input.expectedContentRevision;
+    /**
+     * `content_revision` tracks the body alone, so the precondition is demanded — and applied —
+     * exactly where an unguarded write destroys work. `updatePageSchema` refuses a body without
+     * it, which is what makes the unguarded content write unrepresentable rather than merely
+     * discouraged; a rename or a status change is not gated on someone else's typing.
+     */
+    const revisionGuard = contentChanged ? input.expectedContentRevision : undefined;
 
     const result = await this.db.transaction(async (tx) => {
-      const updateWhere = revisionGuard !== undefined
-        ? and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), eq(kbPages.contentRevision, revisionGuard))
-        : and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId));
-
       const [updated] = await tx
         .update(kbPages)
         .set({
@@ -231,16 +233,20 @@ export class KbPagesService {
           ...(contentChanged ? { contentRevision: sql`content_revision + 1` } : {}),
           ...(aclChanged ? { aclRevision: sql`acl_revision + 1` } : {}),
         })
-        .where(updateWhere)
+        .where(
+          and(
+            eq(kbPages.id, pageId),
+            eq(kbPages.orgId, orgId),
+            ...(revisionGuard === undefined ? [] : [eq(kbPages.contentRevision, revisionGuard)]),
+          ),
+        )
         .returning(KB_PAGE_COLUMNS);
       if (!updated) {
-        if (revisionGuard !== undefined) {
-          throw new HttpException(
-            { message: "Page was modified by another editor. Reload to see the latest version.", code: "STALE_REVISION" },
-            HttpStatus.CONFLICT,
-          );
-        }
-        throw new NotFoundException("Page not found");
+        if (revisionGuard === undefined) throw new NotFoundException("Page not found");
+        throw new HttpException(
+          { message: "Page was modified by another editor. Reload to see the latest version.", code: "STALE_REVISION" },
+          HttpStatus.CONFLICT,
+        );
       }
 
       if (contentChanged && input.content !== undefined) {

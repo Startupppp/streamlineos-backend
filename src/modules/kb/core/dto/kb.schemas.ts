@@ -74,6 +74,7 @@ export const updateArticleSchema = z.object({
   seoDescription: z.string().trim().max(500).optional(),
   reviewIntervalDays: z.coerce.number().int().positive().nullable().optional(),
   changeSummary: z.string().trim().max(500).optional(),
+  expectedContentRevision: z.coerce.number().int().positive(),
 }).strict();
 export type UpdateArticleInput = z.infer<typeof updateArticleSchema>;
 

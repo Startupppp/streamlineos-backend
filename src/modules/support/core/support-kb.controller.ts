@@ -139,7 +139,7 @@ export class SupportKbController {
     @Body() body: UpdateKbArticleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.kb.updateArticle(u.orgId, articleId, body);
+    return this.kb.updateArticle(u.orgId, articleId, body, u.userId);
   }
 
   @Delete("articles/:articleId")

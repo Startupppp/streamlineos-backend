@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { HttpException, HttpStatus, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, ne, sql, type SQL } from "drizzle-orm";
 import { kbArticles, kbArticleFeedback, kbArticleTags, kbArticleVersions, kbTags } from "../../../db/schema";
@@ -145,20 +145,27 @@ export class KbArticlesService {
     const aclChanged = input.visibility !== undefined && input.visibility !== current.visibility;
 
     const updated = await this.db.transaction(async (tx) => {
-      let result: ArticleRow;
-      if (Object.keys(values).length > 0) {
-        const [row] = await tx
-          .update(kbArticles)
-          .set({
-            ...values,
-            ...(contentChanged ? { contentRevision: sql`content_revision + 1` } : {}),
-            ...(aclChanged ? { aclRevision: sql`acl_revision + 1` } : {}),
-          })
-          .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
-          .returning(KB_ARTICLE_COLUMNS);
-        result = row;
-      } else {
-        result = current;
+      const [result] = await tx
+        .update(kbArticles)
+        .set({
+          ...values,
+          updatedAt: new Date(),
+          ...(contentChanged ? { contentRevision: sql`content_revision + 1` } : {}),
+          ...(aclChanged ? { aclRevision: sql`acl_revision + 1` } : {}),
+        })
+        .where(
+          and(
+            eq(kbArticles.id, articleId),
+            eq(kbArticles.orgId, orgId),
+            eq(kbArticles.contentRevision, input.expectedContentRevision),
+          ),
+        )
+        .returning(KB_ARTICLE_COLUMNS);
+      if (!result) {
+        throw new HttpException(
+          { message: "Article was modified by another editor. Reload to see the latest version.", code: "STALE_REVISION" },
+          HttpStatus.CONFLICT,
+        );
       }
 
       if (titleChanged || contentChanged) {

@@ -38,7 +38,17 @@ export const updatePageSchema = z.object({
   ownerUserId: z.string().nullable().optional(),
   changeSummary: z.string().max(500).optional(),
   expectedContentRevision: z.coerce.number().int().positive().optional(),
-}).strict();
+})
+  .strict()
+  .superRefine((input, ctx) => {
+    if (input.content !== undefined && input.expectedContentRevision === undefined)
+      ctx.addIssue({
+        code: "custom",
+        path: ["expectedContentRevision"],
+        message:
+          "expectedContentRevision is required when content is written — content_revision is what an unguarded write clobbers",
+      });
+  });
 export type UpdatePageInput = z.infer<typeof updatePageSchema>;
 
 export const verifyPageSchema = z.object({
