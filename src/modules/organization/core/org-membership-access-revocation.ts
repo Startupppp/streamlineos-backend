@@ -8,7 +8,6 @@ import {
   chatSavedMessages,
   invitationEvents,
   invitations,
-  kbSpaceGrants,
   organizationMembers,
   organizations,
   ownershipTransfers,
@@ -180,27 +179,6 @@ export class OrgMembershipAccessRevocation {
                     eq(resourceGrants.principalId, memberUserId),
                   ),
                   membershipPrincipalFilter,
-                ),
-              ),
-            );
-          const kbMembershipPrincipalFilter =
-            membershipId !== undefined
-              ? and(
-                  eq(kbSpaceGrants.principalType, "org_membership"),
-                  eq(kbSpaceGrants.principalId, String(membershipId)),
-                )
-              : undefined;
-          await tx
-            .delete(kbSpaceGrants)
-            .where(
-              and(
-                eq(kbSpaceGrants.orgId, orgId),
-                or(
-                  and(
-                    eq(kbSpaceGrants.principalType, "user"),
-                    eq(kbSpaceGrants.principalId, memberUserId),
-                  ),
-                  kbMembershipPrincipalFilter,
                 ),
               ),
             );

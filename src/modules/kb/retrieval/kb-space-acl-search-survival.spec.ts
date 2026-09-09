@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PgDialect } from "drizzle-orm/pg-core";
-import { eq, type SQL } from "drizzle-orm";
-import { kbArticleChunks, kbArticles, kbPages, kbSpaces } from "../../../db/schema";
+import { type SQL } from "drizzle-orm";
+import { kbArticles, kbPages, kbSpaces } from "../../../db/schema";
 import { KbIndexingService } from "./kb-indexing.service";
 import { KbSpacesService } from "../wiki/kb-spaces.service";
 
@@ -161,16 +161,6 @@ function makeSpaces(db: unknown, indexing: KbIndexingService) {
 }
 
 describe("KB retrieval model mirrors the real acl_revision fence", () => {
-  it("the chunk-to-page join is a plain equality, so a mismatched revision removes the row entirely", () => {
-    const pageJoin = render(eq(kbArticleChunks.aclRevision, kbPages.aclRevision)).text;
-    const articleJoin = render(eq(kbArticleChunks.aclRevision, kbArticles.aclRevision)).text;
-    for (const rendered of [pageJoin, articleJoin]) {
-      expect(rendered).toContain("acl_revision");
-      expect(rendered).not.toMatch(/IS NOT DISTINCT FROM/i);
-      expect(rendered).not.toMatch(/>=|<=/);
-    }
-  });
-
   it("the harness reports content as unfindable the moment a chunk revision trails its parent", () => {
     const store = new KbStore();
     store.seed();

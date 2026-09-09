@@ -10,6 +10,7 @@ import { KbArticleReindexService } from "./kb-article-reindex.service";
 import { KbIngestionConsumer } from "./kb-ingestion-consumer";
 import { KbIngestionDeleteConsumer } from "./kb-ingestion-delete-consumer";
 import { KbIngestionLeaseService } from "./kb-ingestion-lease.service";
+import { KbStuckSourceReaperService } from "./kb-stuck-source-reaper.service";
 import {
   KbContentAdapterRegistry,
   KbPageAdapter,
@@ -21,6 +22,7 @@ import { KbPageBackfillService } from "./kb-page-backfill.service";
 import { KbCandidateService } from "./kb-candidate.service";
 import { KbSearchService } from "./kb-search.service";
 import { KbAskService } from "./kb-ask.service";
+import { KbCitationVisibilityService } from "./kb-citation-visibility.service";
 import { KbChatHistoryService } from "./kb-chat-history.service";
 import { KbResearchBriefService } from "./kb-research-brief.service";
 import { KbResearchBriefHandler } from "./kb-research-brief.handler";
@@ -43,16 +45,18 @@ import { KbPageIndexingController } from "./kb-page-indexing.controller";
     KbSourceAdapter,
     KbAttachmentAdapter,
     KbIngestionLeaseService,
+    KbStuckSourceReaperService,
     KbIngestionConsumer,
     KbIngestionDeleteConsumer,
     KbPageBackfillService,
     KbCandidateService,
     KbSearchService,
     KbAskService,
+    KbCitationVisibilityService,
     KbChatHistoryService,
     KbResearchBriefService,
     KbResearchBriefHandler,
   ],
-  exports: [KbIndexingService, KbAttachmentIndexingService, KbArticleReindexService, KbPageBackfillService, KbSearchService, KbAskService],
+  exports: [KbIndexingService, KbAttachmentIndexingService, KbArticleReindexService, KbPageBackfillService, KbSearchService, KbAskService, KbStuckSourceReaperService],
 })
 export class KbRetrievalModule {}

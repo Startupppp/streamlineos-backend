@@ -277,6 +277,7 @@ describe("OrgMembershipService — module-ownership guards", () => {
         { result: [{ isOwner: false, id: 5 }], endWithLimit: true },
         { result: [], endWithLimit: true },
         { result: [] },
+        { result: [] },
       ]);
       const db = {
         delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
@@ -319,10 +320,42 @@ describe("OrgMembershipService — module-ownership guards", () => {
       );
     });
 
+    it("refuses to remove the only admin of a knowledge space", async () => {
+      const tx = buildTxMock([
+        { result: [{ isOwner: false, id: 5 }], endWithLimit: true },
+        { result: [], endWithLimit: true },
+        { result: [] },
+        { result: [{ name: "Engineering Handbook" }] },
+      ]);
+      const db = {
+        delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+        query: {
+          users: {
+            findFirst: jest.fn().mockResolvedValue({ email: "member@example.com" }),
+          },
+        },
+        transaction: jest.fn().mockImplementation(
+          async (fn: (tx: unknown) => Promise<unknown>) => fn(tx),
+        ),
+        update: jest.fn().mockReturnValue({
+          set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+        }),
+      };
+      const svc = await buildService(db);
+
+      await expect(svc.removeMember(ORG_ID, ACTOR_ID, MEMBER_ID)).rejects.toThrow(
+        /Engineering Handbook/,
+      );
+
+      const deleted = tx.delete.mock.calls.map((call) => call[0]);
+      expect(deleted).not.toContain(organizationMembers);
+    });
+
     it("clears the member's ownership transfers before deleting the membership row", async () => {
       const tx = buildTxMock([
         { result: [{ isOwner: false, id: 5 }], endWithLimit: true },
         { result: [], endWithLimit: true },
+        { result: [] },
         { result: [] },
       ]);
       const db = {

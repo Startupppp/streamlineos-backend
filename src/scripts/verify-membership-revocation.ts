@@ -11,8 +11,6 @@ import type { RemovalAction } from "../modules/organization/core/membership-arti
 import {
   agentTokens,
   invitations,
-  kbSpaceGrants,
-  kbSpaces,
   organizationMembers,
   organizations,
   permissions,
@@ -105,10 +103,6 @@ async function snapshot(
       .select({ n: count() })
       .from(resourceGrants)
       .where(and(eq(resourceGrants.orgId, orgId), eq(resourceGrants.principalType, "user"), eq(resourceGrants.principalId, userId)));
-    const [ksg] = await tx
-      .select({ n: count() })
-      .from(kbSpaceGrants)
-      .where(and(eq(kbSpaceGrants.orgId, orgId), eq(kbSpaceGrants.principalType, "user"), eq(kbSpaceGrants.principalId, userId)));
     const [inv] = await tx
       .select({ n: count() })
       .from(invitations)
@@ -124,7 +118,6 @@ async function snapshot(
       user_delegation_permissions: toN(udp),
       agent_tokens: toN(at),
       resource_grants: toN(rg),
-      kb_space_grants: toN(ksg),
       invitations_pending: toN(inv),
     };
   });
@@ -223,17 +216,6 @@ async function main(): Promise<void> {
         tokenPrefix: AGENT_TOKEN_PREFIX,
       });
       await tx.insert(resourceGrants).values({ orgId: ORG_ID, resourceType: "project", resourceId: "fixture-999", principalType: "user", principalId: MEM_USER_ID, level: "viewer" });
-      const [spaceRow] = await tx
-        .insert(kbSpaces)
-        .values({
-          orgId: ORG_ID,
-          name: `Revoc Space ${TS}`,
-          slug: `revoc-space-${TS}`,
-          createdByMembershipId: delRow.id,
-        })
-        .returning({ id: kbSpaces.id });
-      if (!spaceRow) throw new Error("kb space insert failed");
-      await tx.insert(kbSpaceGrants).values({ orgId: ORG_ID, spaceId: spaceRow.id, principalType: "user", principalId: MEM_USER_ID, permissionKey: "kb:spaces:view" });
       await tx.insert(invitations).values({
         id: INV_ID,
         email: MEM_EMAIL,
@@ -256,14 +238,13 @@ async function main(): Promise<void> {
     for (const [k, v] of Object.entries(before)) console.log(`  ${k.padEnd(30)} ${v}`);
 
     // Full removal path: explicit writes (agent_tokens revoke, delegation revoke,
-    // resource_grants delete, kb_space_grants delete, invitation revoke), then
+    // resource_grants delete, invitation revoke), then
     // membership DELETE which cascades the FK-linked artifacts.
     const now = new Date();
     await runInNewTenantTransaction(db, ORG_ID, async (tx) => {
       await tx.update(agentTokens).set({ revokedAt: now }).where(and(eq(agentTokens.orgId, ORG_ID), eq(agentTokens.issuerMembershipId, memId), isNull(agentTokens.revokedAt)));
       await tx.update(userDelegations).set({ status: "REVOKED", revokedAt: now }).where(and(eq(userDelegations.orgId, ORG_ID), eq(userDelegations.status, "ACTIVE"), or(eq(userDelegations.delegatorMembershipId, memId), eq(userDelegations.delegateeMembershipId, memId))));
       await tx.delete(resourceGrants).where(and(eq(resourceGrants.orgId, ORG_ID), eq(resourceGrants.principalType, "user"), eq(resourceGrants.principalId, MEM_USER_ID)));
-      await tx.delete(kbSpaceGrants).where(and(eq(kbSpaceGrants.orgId, ORG_ID), eq(kbSpaceGrants.principalType, "user"), eq(kbSpaceGrants.principalId, MEM_USER_ID)));
       await tx.update(invitations).set({ status: "REVOKED", revokedAt: now }).where(and(eq(invitations.orgId, ORG_ID), eq(invitations.email, MEM_EMAIL), eq(invitations.status, "PENDING"), isNull(invitations.acceptedAt)));
       await tx.delete(organizationMembers).where(and(eq(organizationMembers.userId, MEM_USER_ID), eq(organizationMembers.orgId, ORG_ID)));
     });

@@ -4,6 +4,7 @@ import { InsufficientAiCreditsException } from "../../../common/http/api-excepti
 import { KbEventsService } from "../core/kb-events.service";
 import { KbSearchService } from "./kb-search.service";
 import { KbAccessService } from "../core/kb-access.service";
+import { KbCitationVisibilityService } from "./kb-citation-visibility.service";
 import { AiGatewayService, type AiTextStream } from "../../ai/core/gateway/ai-gateway.service";
 import { kbArticles, kbPages, kbSources } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -34,6 +35,35 @@ export type AskCitation =
   | { kind: "page"; pageId: number; title: string; spaceId: number | null; updatedAt: Date }
   | { kind: "source"; sourceId: number; title: string; spaceId: number | null; updatedAt: Date };
 
+/**
+ * The prompt context is built from the citation list, never from raw retrieval output.
+ * A chunk is disclosed the moment it enters the context window, so filtering the citations
+ * after the model has already summarised the text narrows the link list and nothing else.
+ */
+export function restrictToCited<
+  TTop extends { kind: "article" | "page"; id: number },
+  TSource extends { sourceId: number },
+>(
+  top: TTop[],
+  sources: TSource[],
+  citations: AskCitation[],
+): { top: TTop[]; sources: TSource[] } {
+  const citedArticles = new Set<number>();
+  const citedPages = new Set<number>();
+  const citedSources = new Set<number>();
+  for (const citation of citations) {
+    if (citation.kind === "article") citedArticles.add(citation.articleId);
+    else if (citation.kind === "page") citedPages.add(citation.pageId);
+    else citedSources.add(citation.sourceId);
+  }
+  return {
+    top: top.filter((item) =>
+      item.kind === "article" ? citedArticles.has(item.id) : citedPages.has(item.id),
+    ),
+    sources: sources.filter((item) => citedSources.has(item.sourceId)),
+  };
+}
+
 @Injectable()
 export class KbAskService {
   private readonly logger = new Logger(KbAskService.name);
@@ -44,6 +74,7 @@ export class KbAskService {
     private readonly events: KbEventsService,
     private readonly search: KbSearchService,
     private readonly access: KbAccessService,
+    private readonly citationVisibility: KbCitationVisibilityService,
   ) {}
 
   private async gatherContext(
@@ -56,6 +87,7 @@ export class KbAskService {
         fullContext: string;
         top: Awaited<ReturnType<KbSearchService["retrieveTopArticles"]>>;
         sources: Awaited<ReturnType<KbSearchService["retrieveTopSources"]>>;
+        citations: AskCitation[];
       }
   > {
     return runInTenantTransaction(
@@ -64,14 +96,20 @@ export class KbAskService {
         const hasContent = await this.orgHasIndexedContent(user.orgId);
         if (!hasContent) return { kind: "no-context" as const };
 
-        const top = await this.search.retrieveTopArticles(
+        const retrievedTop = await this.search.retrieveTopArticles(
           user,
           input.question,
           MAX_CONTEXT_ARTICLES,
           input.spaceId,
         );
-        const sources = await this.search.retrieveTopSources(user, input.question, 4);
-        if (top.length === 0 && sources.length === 0) return { kind: "no-context" as const };
+        const retrievedSources = await this.search.retrieveTopSources(user, input.question, 4);
+        if (retrievedTop.length === 0 && retrievedSources.length === 0)
+          return { kind: "no-context" as const };
+
+        const citations = await this.resolveCitations(user, retrievedTop, retrievedSources);
+        if (citations.length === 0) return { kind: "no-context" as const };
+
+        const { top, sources } = restrictToCited(retrievedTop, retrievedSources, citations);
 
         let totalBytes = 0;
         const contextParts: string[] = [];
@@ -116,7 +154,7 @@ export class KbAskService {
           fullContext = fullContext.slice(0, MAX_PROMPT_INPUT_TOKENS * 4);
         }
 
-        return { kind: "context" as const, fullContext, top, sources };
+        return { kind: "context" as const, fullContext, top, sources, citations };
       },
       { orgId: user.orgId },
     );
@@ -153,7 +191,7 @@ export class KbAskService {
   }> {
     const gathered = await this.gatherContext(user, input);
     if (gathered.kind === "no-context") return this.noContextAnswer(user, input.question);
-    const { fullContext, top, sources } = gathered;
+    const { fullContext, top, citations } = gathered;
 
     const gatewayResult = await this.aiGateway.invokeTextWithUsage({
       actor: { orgId: user.orgId, userId: user.userId },
@@ -177,20 +215,18 @@ export class KbAskService {
     const answer = gatewayResult.data;
     const aiUsage = gatewayResult.aiUsage;
 
-    const verifiedCitations = await runInTenantTransaction(
+    await runInTenantTransaction(
       this.db,
-      async () => {
-        await this.events.record(user.orgId, "ai_answer", {
+      () =>
+        this.events.record(user.orgId, "ai_answer", {
           actorMembershipId: actingMembershipId(user.principal) ?? null,
           query: input.question,
           metadata: { sourceIds: top.map((s) => `${s.kind}:${s.id}`) },
-        });
-        return this.resolveCitations(user, top, sources);
-      },
+        }),
       { orgId: user.orgId },
     );
 
-    return { answer, citations: verifiedCitations, hasContext: true, aiUsage };
+    return { answer, citations, hasContext: true, aiUsage };
   }
 
   async streamAsk(
@@ -206,18 +242,16 @@ export class KbAskService {
       this.noContextAnswer(user, input.question);
       return { hasContext: false };
     }
-    const { fullContext, top, sources } = gathered;
+    const { fullContext, top, sources, citations } = gathered;
 
-    const verifiedCitations = await runInTenantTransaction(
+    await runInTenantTransaction(
       this.db,
-      async () => {
-        await this.events.record(user.orgId, "ai_answer", {
+      () =>
+        this.events.record(user.orgId, "ai_answer", {
           actorMembershipId: actingMembershipId(user.principal) ?? null,
           query: input.question,
           metadata: { sourceIds: top.map((s) => `${s.kind}:${s.id}`) },
-        });
-        return this.resolveCitations(user, top, sources);
-      },
+        }),
       { orgId: user.orgId },
     );
 
@@ -235,7 +269,7 @@ export class KbAskService {
     });
 
     return {
-      hasContext: true, aiStream, citations: verifiedCitations,
+      hasContext: true, aiStream, citations,
       verifyCitations: () => runInTenantTransaction(this.db, () => this.resolveCitations(user, top, sources), { orgId: user.orgId }),
     };
   }
@@ -253,9 +287,9 @@ export class KbAskService {
       const pageIds = citations.flatMap((citation) => citation.kind === "page" ? [citation.pageId] : []);
       const sourceIds = citations.flatMap((citation) => citation.kind === "source" ? [citation.sourceId] : []);
       const [articles, pages, sources] = await Promise.all([
-        articleIds.length ? this.resolveVisibleArticles(user, articleIds) : Promise.resolve(new Set<number>()),
-        pageIds.length ? this.resolveVisiblePages(user, pageIds) : Promise.resolve(new Set<number>()),
-        sourceIds.length ? this.resolveVisibleSources(user, sourceIds) : Promise.resolve(new Set<number>()),
+        articleIds.length ? this.citationVisibility.visibleArticles(user, articleIds) : Promise.resolve(new Set<number>()),
+        pageIds.length ? this.citationVisibility.visiblePages(user, pageIds) : Promise.resolve(new Set<number>()),
+        sourceIds.length ? this.citationVisibility.visibleSources(user, sourceIds) : Promise.resolve(new Set<number>()),
       ]);
       if (articleIds.some((id) => !articles.has(id)) || pageIds.some((id) => !pages.has(id)) || sourceIds.some((id) => !sources.has(id)))
         throw new NotFoundException("The saved answer is no longer accessible");
@@ -273,13 +307,13 @@ export class KbAskService {
 
     const [visibleArticles, visiblePages, visibleSources] = await Promise.all([
       articleIds.length > 0
-        ? this.resolveVisibleArticles(user, articleIds)
+        ? this.citationVisibility.visibleArticles(user, articleIds)
         : Promise.resolve(new Set<number>()),
       pageIds.length > 0
-        ? this.resolveVisiblePages(user, pageIds)
+        ? this.citationVisibility.visiblePages(user, pageIds)
         : Promise.resolve(new Set<number>()),
       sourceIds.length > 0
-        ? this.resolveVisibleSources(user, sourceIds)
+        ? this.citationVisibility.visibleSources(user, sourceIds)
         : Promise.resolve(new Set<number>()),
     ]);
 
@@ -297,72 +331,5 @@ export class KbAskService {
       }
     }
     return citations;
-  }
-
-  private async resolveVisibleSources(user: CurrentUserContext, ids: number[]): Promise<Set<number>> {
-    const accessibleSpaceIds = await this.access.getAccessibleSpaceIds(user);
-    const spaceFilter = accessibleSpaceIds.length > 0
-      ? or(isNull(kbSources.spaceId), inArray(kbSources.spaceId, accessibleSpaceIds))
-      : isNull(kbSources.spaceId);
-    const rows = await this.db
-      .select({ id: kbSources.id })
-      .from(kbSources)
-      .where(and(
-        eq(kbSources.orgId, user.orgId),
-        inArray(kbSources.id, ids),
-        isNull(kbSources.deletedAt),
-        eq(kbSources.status, "ready"),
-        spaceFilter,
-      ));
-    return new Set(rows.map((r) => r.id));
-  }
-
-  /**
-   * Re-verification, not a second retrieval — so it has to re-apply BOTH article ACL
-   * dimensions, or it is blind to a revocation in exactly the window it exists to cover.
-   *
-   * It used to re-apply only org, accessible spaces, `status='published'` and the owner
-   * DataScope. `kb_article_restrictions` — the per-article ACL that
-   * `KbCandidateService.article{Keyword,Vector}Candidates` and
-   * `KbSearchService.retrieveTopArticles` all push into the retrieval predicate — was
-   * missing. An article restricted to another membership between the moment retrieval
-   * picked it and the moment the model answered was still cited by title, slug and
-   * space to a reader who could no longer open it.
-   */
-  private async resolveVisibleArticles(user: CurrentUserContext, ids: number[]): Promise<Set<number>> {
-    const spaceIds = await this.access.getAccessibleSpaceIds(user);
-    if (spaceIds.length === 0) return new Set();
-    const [ownerFilter, restrictionFilter] = await Promise.all([
-      this.search.articleOwnerFilterFor(user),
-      this.search.articleRestrictionFilterFor(user),
-    ]);
-    const conditions: SQL[] = [
-      eq(kbArticles.orgId, user.orgId),
-      inArray(kbArticles.id, ids),
-      inArray(kbArticles.spaceId, spaceIds),
-      eq(kbArticles.status, "published"),
-    ];
-    if (ownerFilter) conditions.push(ownerFilter);
-    if (restrictionFilter) conditions.push(restrictionFilter);
-    const rows = await this.db
-      .select({ id: kbArticles.id })
-      .from(kbArticles)
-      .where(and(...conditions));
-    return new Set(rows.map((r) => r.id));
-  }
-
-  private async resolveVisiblePages(user: CurrentUserContext, ids: number[]): Promise<Set<number>> {
-    const projectIds = await getAccessibleProjectIds(this.db, user);
-    const rows = await this.db
-      .select({ id: kbPages.id })
-      .from(kbPages)
-      .where(and(
-        eq(kbPages.orgId, user.orgId),
-        inArray(kbPages.id, ids),
-        isNull(kbPages.deletedAt),
-        ne(kbPages.status, "archived"),
-        pageVisibleTo(user, projectIds),
-      ));
-    return new Set(rows.map((r) => r.id));
   }
 }

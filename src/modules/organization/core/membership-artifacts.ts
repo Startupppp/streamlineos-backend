@@ -380,16 +380,6 @@ export const MEMBERSHIP_ARTIFACTS = [
       "Record-level grants are polymorphic and carry no foreign key, so nothing removes them automatically. Left behind, re-inviting the same person restores their old record access.",
   },
   {
-    id: "kb_space_grants",
-    mechanism: "database-write",
-    table: "kb_space_grants",
-    keyedBy: "principal_type + principal_id",
-    onRemoval: "delete",
-    onSuspension: "retain",
-    reason:
-      "Space grants are polymorphic like resource grants and survive for the same reason.",
-  },
-  {
     id: "kb_space_members",
     mechanism: "database-cascade",
     table: "kb_space_members",

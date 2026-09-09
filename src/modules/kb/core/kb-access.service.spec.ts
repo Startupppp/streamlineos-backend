@@ -2,7 +2,6 @@ import { KbAccessService } from "./kb-access.service";
 import type { AccessService } from "../../access/access.service";
 import type { CacheService } from "../../../common/cache/cache.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { KB_PERMISSIONS } from "../../rbac/permissions/kb";
 
 function makeUser(over: Partial<CurrentUserContext>): CurrentUserContext {
   return {
@@ -15,70 +14,66 @@ function makeUser(over: Partial<CurrentUserContext>): CurrentUserContext {
   } as unknown as CurrentUserContext;
 }
 
-function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
-  if (v === null || v === undefined || typeof v === "string" || typeof v === "number" || typeof v === "boolean") return [v];
-  if (Array.isArray(v)) return v.flatMap((i) => sqlValues(i, seen));
-  if (typeof v !== "object" || seen.has(v as object)) return [];
-  seen.add(v as object);
-  const r = v as { queryChunks?: unknown[]; value?: unknown };
-  return [
-    ...(r.queryChunks ? sqlValues(r.queryChunks, seen) : []),
-    ...(Object.prototype.hasOwnProperty.call(r, "value") ? sqlValues(r.value, seen) : []),
-  ];
-}
-
-describe("KbAccessService — KB_SPACE_VIEWER_PERMISSION constant (Task 2)", () => {
-  it("'kb:spaces:view' is a real entry in the backend KB permission catalog", () => {
-    expect(KB_PERMISSIONS.some((p) => p.name === "kb:spaces:view")).toBe(true);
-  });
-
-  it("the kbSpaceGrants grant-lookup query uses 'kb:spaces:view' as the permission key literal", async () => {
-    const capturedConditions: unknown[] = [];
-
-    const makeChain = () => {
+describe("KbAccessService.getAccessibleSpaceIds — deny by default", () => {
+  function makeService(
+    spaces: { id: number; audience: string }[],
+    grantedSpaceIds: number[],
+  ): KbAccessService {
+    const selectResults: unknown[][] = [spaces, []];
+    const makeChain = (result: unknown[]) => {
       const chain: Record<string, jest.Mock> = {};
       chain.from = jest.fn(() => chain);
       chain.innerJoin = jest.fn(() => chain);
-      chain.where = jest.fn((cond: unknown) => {
-        capturedConditions.push(cond);
-        return Promise.resolve([]);
-      });
+      chain.where = jest.fn(() => Promise.resolve(result));
       return chain;
     };
-
     const db = {
-      select: jest.fn(() => makeChain()),
-      selectDistinct: jest.fn(() => makeChain()),
-      query: {
-        kbSpaces: { findFirst: jest.fn().mockResolvedValue(null) },
-      },
+      select: jest.fn(() => makeChain(selectResults.shift() ?? [])),
+      selectDistinct: jest.fn(() =>
+        makeChain(grantedSpaceIds.map((spaceId) => ({ spaceId }))),
+      ),
     };
-
     const access = {
       holds: jest.fn().mockResolvedValue(false),
       getPermissionsVersion: jest.fn().mockResolvedValue(1),
     } as unknown as AccessService;
     const cache = {
       cachedVersioned: jest.fn().mockImplementation(
-        (_ns: unknown, _uid: unknown, fn: () => unknown) => fn(),
+        (_ns: unknown, _key: unknown, fn: () => unknown) => fn(),
       ),
     } as unknown as CacheService;
+    return new KbAccessService(db as never, cache, access);
+  }
 
-    const svc = new KbAccessService(db as never, cache, access);
+  const member = makeUser({
+    orgId: "org-acl",
+    userId: "u-acl",
+    principal: { kind: "human-session", membershipId: 99, isOrgOwner: false },
+  } as Partial<CurrentUserContext>);
 
-    const user: CurrentUserContext = {
-      orgId: "org-t2",
-      userId: "u-t2",
-      role: "MEMBER",
-      isOrgOwner: false,
-      principal: { kind: "human-session", membershipId: 99, isOrgOwner: false },
-    } as never;
+  it("a member-less internal space is NOT accessible — emptiness is not permission", async () => {
+    const svc = makeService([{ id: 1, audience: "internal" }], []);
 
-    await svc.getAccessibleSpaceIds(user);
+    expect(await svc.getAccessibleSpaceIds(member)).toEqual([]);
+  });
 
-    const allVals = capturedConditions.flatMap((c) => sqlValues(c));
-    expect(allVals).toContain("kb:spaces:view");
-    expect(allVals).not.toContain("kb:space:viewer");
+  it("BITE: the same space IS accessible once the caller is a member", async () => {
+    const svc = makeService([{ id: 1, audience: "internal" }], [1]);
+
+    expect(await svc.getAccessibleSpaceIds(member)).toEqual([1]);
+  });
+
+  it("public and mixed audiences stay open without membership", async () => {
+    const svc = makeService(
+      [
+        { id: 1, audience: "internal" },
+        { id: 2, audience: "public" },
+        { id: 3, audience: "mixed" },
+      ],
+      [],
+    );
+
+    expect(await svc.getAccessibleSpaceIds(member)).toEqual([2, 3]);
   });
 });
 

@@ -102,6 +102,8 @@ export class KbCandidateService {
 
       const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
       const conditions: SQL[] = [
+        eq(kbArticleChunks.orgId, orgId),
+        eq(kbArticles.orgId, orgId),
         inArray(kbArticleChunks.id, chunkIds),
         isNotNull(kbArticleChunks.articleId),
         inArray(kbArticles.spaceId, spaceIds),
@@ -186,6 +188,8 @@ export class KbCandidateService {
         ))
         .where(
           and(
+            eq(kbArticleChunks.orgId, orgId),
+            eq(kbPages.orgId, orgId),
             inArray(kbArticleChunks.id, chunkIds),
             isNotNull(kbArticleChunks.pageId),
             chunkVisibility,

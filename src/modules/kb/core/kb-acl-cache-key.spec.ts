@@ -82,26 +82,64 @@ function userWith(principal: CurrentUserContext["principal"]): CurrentUserContex
 
 describe("kbAclCacheKey — the ACL dimension is a required field, not an optional one", () => {
   it("refuses to build a key without a resolved permissions version", () => {
-    expect(() => kbAclCacheKey(USER, { permissionsVersion: 0, membershipId: MEMBERSHIP })).toThrow(
-      /permissionsVersion/,
-    );
     expect(() =>
-      kbAclCacheKey(USER, { permissionsVersion: Number.NaN, membershipId: MEMBERSHIP }),
+      kbAclCacheKey(USER, { orgId: ORG, permissionsVersion: 0, membershipId: MEMBERSHIP }),
+    ).toThrow(/permissionsVersion/);
+    expect(() =>
+      kbAclCacheKey(USER, {
+        orgId: ORG,
+        permissionsVersion: Number.NaN,
+        membershipId: MEMBERSHIP,
+      }),
     ).toThrow(/permissionsVersion/);
   });
 
+  it("refuses to build a tenant-blind key, so a shared namespace cannot cross organisations", () => {
+    expect(() =>
+      kbAclCacheKey(USER, { orgId: "", permissionsVersion: 1, membershipId: MEMBERSHIP }),
+    ).toThrow(/orgId/);
+  });
+
   it("produces a different key for every ACL dimension that changes the answer", () => {
-    const base = kbAclCacheKey(USER, { permissionsVersion: 1, membershipId: MEMBERSHIP });
-    expect(base).not.toBe(kbAclCacheKey(USER, { permissionsVersion: 2, membershipId: MEMBERSHIP }));
-    expect(base).not.toBe(kbAclCacheKey(USER, { permissionsVersion: 1, membershipId: 8 }));
-    expect(base).not.toBe(kbAclCacheKey("other-user", { permissionsVersion: 1, membershipId: MEMBERSHIP }));
-    expect(base).not.toBe(kbAclCacheKey(USER, { permissionsVersion: 1, membershipId: null }));
+    const base = kbAclCacheKey(USER, {
+      orgId: ORG,
+      permissionsVersion: 1,
+      membershipId: MEMBERSHIP,
+    });
+    expect(base).not.toBe(
+      kbAclCacheKey(USER, { orgId: ORG, permissionsVersion: 2, membershipId: MEMBERSHIP }),
+    );
+    expect(base).not.toBe(
+      kbAclCacheKey(USER, { orgId: ORG, permissionsVersion: 1, membershipId: 8 }),
+    );
+    expect(base).not.toBe(
+      kbAclCacheKey("other-user", { orgId: ORG, permissionsVersion: 1, membershipId: MEMBERSHIP }),
+    );
+    expect(base).not.toBe(
+      kbAclCacheKey(USER, { orgId: ORG, permissionsVersion: 1, membershipId: null }),
+    );
+  });
+
+  it("BITE: the same person in a second organisation gets a different key even under one namespace", () => {
+    const inOrgA = kbAclCacheKey(USER, {
+      orgId: ORG,
+      permissionsVersion: 1,
+      membershipId: MEMBERSHIP,
+    });
+    const inOrgB = kbAclCacheKey(USER, {
+      orgId: "org-other",
+      permissionsVersion: 1,
+      membershipId: MEMBERSHIP,
+    });
+    expect(inOrgA).not.toBe(inOrgB);
+    expect(inOrgA).toContain(ORG);
+    expect(inOrgB).toContain("org-other");
   });
 
   it("is stable for an unchanged ACL dimension, so the cache still caches", () => {
-    expect(kbAclCacheKey(USER, { permissionsVersion: 3, membershipId: MEMBERSHIP })).toBe(
-      kbAclCacheKey(USER, { permissionsVersion: 3, membershipId: MEMBERSHIP }),
-    );
+    expect(
+      kbAclCacheKey(USER, { orgId: ORG, permissionsVersion: 3, membershipId: MEMBERSHIP }),
+    ).toBe(kbAclCacheKey(USER, { orgId: ORG, permissionsVersion: 3, membershipId: MEMBERSHIP }));
   });
 });
 

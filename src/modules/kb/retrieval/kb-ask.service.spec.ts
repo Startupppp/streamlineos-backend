@@ -6,6 +6,7 @@ import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { KbEventsService } from "../core/kb-events.service";
 import { KbSearchService } from "./kb-search.service";
 import { KbAccessService } from "../core/kb-access.service";
+import { KbCitationVisibilityService } from "./kb-citation-visibility.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 
@@ -111,6 +112,7 @@ describe("KbAskService", () => {
         { provide: KbEventsService, useValue: mockEvents },
         { provide: KbSearchService, useValue: mockSearch },
         { provide: KbAccessService, useValue: mockAccess },
+        KbCitationVisibilityService,
         { provide: DRIZZLE, useValue: mockDb },
       ],
     }).compile();

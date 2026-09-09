@@ -1,5 +1,6 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { getTableName, type SQL } from "drizzle-orm";
+import { KbCitationVisibilityService } from "./kb-citation-visibility.service";
 import { KbAskService } from "./kb-ask.service";
 import { KbSearchService } from "./kb-search.service";
 import { KbCandidateService } from "./kb-candidate.service";
@@ -185,6 +186,7 @@ describe("KbAskService — citation re-verification re-applies the article-restr
       events as never,
       search as never,
       access as never,
+      new KbCitationVisibilityService(db as never, access as never, search as never),
     );
     return { ask, access };
   };

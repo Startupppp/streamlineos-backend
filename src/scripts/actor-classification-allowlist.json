@@ -723,12 +723,6 @@
       "justification": "audit trail: who last modified the module access record"
     },
     {
-      "table": "kb_space_grants",
-      "column": "granted_by",
-      "classification": "historical-display-only",
-      "justification": "audit trail: who granted space access; the grantee columns (membership_id) carry authority, not this"
-    },
-    {
       "table": "platform_messages",
       "column": "replied_by_id",
       "classification": "historical-display-only",

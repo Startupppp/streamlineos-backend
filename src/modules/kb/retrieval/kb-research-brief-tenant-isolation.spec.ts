@@ -2,6 +2,10 @@ import type { Db } from "../../../db/drizzle.module";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { KbResearchBriefService } from "./kb-research-brief.service";
 
+const citationVisibility = {
+  partitionVisible: jest.fn().mockResolvedValue({ visible: () => true }),
+} as never;
+
 function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
   if (v === null || v === undefined || typeof v === "string" || typeof v === "number" || typeof v === "boolean") return [v];
   if (Array.isArray(v)) return v.flatMap(i => sqlValues(i, seen));
@@ -42,7 +46,7 @@ describe("KbResearchBriefService — cross-tenant isolation", () => {
 
   it("scopes research brief list to the requesting org (cross-tenant isolation)", async () => {
     const { db, wheres } = makeDb();
-    const svc = new KbResearchBriefService(db, aiJobs);
+    const svc = new KbResearchBriefService(db, aiJobs, citationVisibility);
 
     await svc.list(makeUser(ATTACKER), { limit: 20 });
 
@@ -54,7 +58,7 @@ describe("KbResearchBriefService — cross-tenant isolation", () => {
 
   it("returns research briefs for the owning org (same-tenant control)", async () => {
     const { db } = makeDb();
-    const svc = new KbResearchBriefService(db, aiJobs);
+    const svc = new KbResearchBriefService(db, aiJobs, citationVisibility);
 
     const result = await svc.list(makeUser(OWNER), { limit: 20 });
 

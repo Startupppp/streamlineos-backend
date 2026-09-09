@@ -29,6 +29,7 @@ import { OrgMembershipAccessRevocation } from "./org-membership-access-revocatio
 import {
   queryOwnedModuleKeys,
   queryPrivilegedRoleNames,
+  querySoleAdminSpaceNames,
 } from "./org-member-authority-queries";
 import { PG_FOREIGN_KEY_VIOLATION, PG_NOT_NULL_VIOLATION, PG_RESTRICT_VIOLATION, getPostgresErrorDetails } from "../../../common/db/postgres-error";
 
@@ -110,6 +111,13 @@ export class OrgMemberDepartureService {
           if (privilegedRoles.length > 0) {
             throw new BadRequestException(
               `Remove administrative role(s) before removing this member: ${privilegedRoles.join(", ")}.`,
+            );
+          }
+
+          const soleAdminSpaces = await querySoleAdminSpaceNames(tx, orgId, member.id);
+          if (soleAdminSpaces.length > 0) {
+            throw new BadRequestException(
+              `Assign another knowledge space admin before removing this member. Sole admin of: ${soleAdminSpaces.join(", ")}.`,
             );
           }
 
@@ -237,6 +245,13 @@ export class OrgMemberDepartureService {
           if (ownedModuleKeys.length > 0) {
             throw new BadRequestException(
               `Transfer module ownership before leaving this organization. Owned modules: ${ownedModuleKeys.join(", ")}.`,
+            );
+          }
+
+          const soleAdminSpaces = await querySoleAdminSpaceNames(tx, orgId, membership.id);
+          if (soleAdminSpaces.length > 0) {
+            throw new BadRequestException(
+              `Assign another knowledge space admin before leaving this organization. Sole admin of: ${soleAdminSpaces.join(", ")}.`,
             );
           }
 

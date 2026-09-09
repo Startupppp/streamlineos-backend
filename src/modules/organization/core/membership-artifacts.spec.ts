@@ -364,7 +364,6 @@ describe("the membership artifact inventory is well formed", () => {
     const ids = artifactsRequiringWriteOnRemoval().map((a) => a.id);
 
     expect(ids).toContain("resource_grants");
-    expect(ids).toContain("kb_space_grants");
     expect(ids).toContain("realtime_capability");
     expect(ids).toContain("user_integration_connections");
     expect(ids).toContain("invitations");

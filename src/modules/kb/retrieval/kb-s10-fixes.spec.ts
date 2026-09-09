@@ -9,6 +9,13 @@ import { KbCandidateService } from "./kb-candidate.service";
 
 const makeScopes = (scope = "all") => ({ scopeFor: jest.fn().mockResolvedValue(scope) });
 
+const makeCheckpointStub = () =>
+  ({
+    loadCheckpoints: jest.fn().mockResolvedValue(new Map<number, number[]>()),
+    saveCheckpoints: jest.fn().mockResolvedValue(undefined),
+    clearCheckpoints: jest.fn().mockResolvedValue(undefined),
+  }) as never;
+
 jest.mock("./kb-attachment-extract.util", () => ({
   isExtractableMime: jest.fn().mockReturnValue(true),
   extractAttachmentText: jest.fn().mockResolvedValue(""),
@@ -221,7 +228,7 @@ describe("Fix 3 — embedInBatches: batched calls, order preserved across bounda
       embedBatchWithCredit,
       embedQueryWithCredit,
     } as never;
-    const svc = new KbAttachmentIndexingService(db, gateway, storage);
+    const svc = new KbAttachmentIndexingService(db, gateway, storage, makeCheckpointStub());
 
     await svc.indexSource("org-1", 1, text);
 
@@ -291,7 +298,7 @@ describe("Fix 4 — indexPageDocument: delete-before-insert in transaction, ACL 
       embedBatchWithCredit,
     } as never;
 
-    const svc = new KbAttachmentIndexingService(db, gateway, {} as never);
+    const svc = new KbAttachmentIndexingService(db, gateway, {} as never, makeCheckpointStub());
     const result = await svc.indexPageDocument("org-1", 7, Buffer.from("pdf"), "application/pdf", "doc.pdf");
 
     expect(result.chunks).toBeGreaterThan(0);
@@ -322,7 +329,7 @@ describe("Fix 4 — indexPageDocument: delete-before-insert in transaction, ACL 
     extractMocks.isExtractableMime.mockReturnValue(true);
 
     const embeddings = { isEmbeddingConfigured: jest.fn().mockReturnValue(true) } as never;
-    const svc = new KbAttachmentIndexingService(db, embeddings, {} as never);
+    const svc = new KbAttachmentIndexingService(db, embeddings, {} as never, makeCheckpointStub());
     const result = await svc.indexPageDocument("org-1", 99, Buffer.from(""), "application/pdf", "f.pdf");
 
     expect(result.chunks).toBe(0);

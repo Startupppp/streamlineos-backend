@@ -6,7 +6,18 @@ import type { Db } from "../../../db/drizzle.module";
 import { AiJobsService } from "../../ai/jobs/ai-jobs.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
+import {
+  KbCitationVisibilityService,
+  type CitedRef,
+} from "./kb-citation-visibility.service";
 import type { KbResearchBriefCreateInput, KbResearchBriefListInput } from "./dto/kb-ai.schemas";
+
+const CITED_KINDS = new Set(["article", "page", "source"]);
+
+function toCitedRef(citation: { kind: string; id: number }): CitedRef | null {
+  if (!CITED_KINDS.has(citation.kind)) return null;
+  return { kind: citation.kind, id: citation.id } as CitedRef;
+}
 
 type BriefSummary = {
   id: number;
@@ -30,6 +41,7 @@ export class KbResearchBriefService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly aiJobs: AiJobsService,
+    private readonly citationVisibility: KbCitationVisibilityService,
   ) {}
 
   async enqueue(user: CurrentUserContext, input: KbResearchBriefCreateInput): Promise<{ briefId: number; jobId: number }> {
@@ -136,7 +148,29 @@ export class KbResearchBriefService {
       .limit(1);
     const row = rows[0];
     if (!row) throw new NotFoundException("Research brief not found");
+    await this.assertCitationsStillVisible(user, row.citations);
     return row;
+  }
+
+  /**
+   * A brief is written once and re-opened for months, so its stored citations are a snapshot of
+   * who could read what at generation time. Dropping the newly-invisible ones from the list would
+   * still serve a report whose prose was written FROM those documents, so the whole brief is
+   * refused instead — the same rule `KbAskService.assertReplayCitations` applies to a saved answer.
+   */
+  private async assertCitationsStillVisible(
+    user: CurrentUserContext,
+    citations: BriefDetail["citations"],
+  ): Promise<void> {
+    if (citations === null || citations.length === 0) return;
+    const refs = citations.flatMap((citation) => {
+      const ref = toCitedRef(citation);
+      return ref ? [ref] : [];
+    });
+    if (refs.length === 0) return;
+    const { visible } = await this.citationVisibility.partitionVisible(user, refs);
+    if (refs.some((ref) => !visible(ref)))
+      throw new NotFoundException("This research brief is no longer accessible");
   }
 
   async rateBrief(user: CurrentUserContext, briefId: number, rating: "helpful" | "not_helpful"): Promise<void> {

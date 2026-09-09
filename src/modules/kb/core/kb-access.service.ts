@@ -5,7 +5,6 @@ import {
   kbSpaceMembers,
   kbArticles,
   kbArticleRestrictions,
-  kbSpaceGrants,
   roles,
   roleAssignments,
   organizationMembers,
@@ -20,7 +19,6 @@ import { AccessService } from "../../access/access.service";
 import { kbAclCacheKey, type KbAclDimension } from "./kb-acl-cache-key";
 
 const KB_MANAGE_SPACES = "kb:spaces:manage";
-const KB_SPACE_VIEWER_PERMISSION = "kb:spaces:view";
 
 @Injectable()
 export class KbAccessService {
@@ -55,6 +53,7 @@ export class KbAccessService {
 
   private async resolveAclDimension(user: CurrentUserContext): Promise<KbAclDimension> {
     return {
+      orgId: user.orgId,
       permissionsVersion: await this.access.getPermissionsVersion(user.orgId),
       membershipId: user.principal !== undefined ? accountableMembershipId(user.principal) : null,
     };
@@ -105,38 +104,11 @@ export class KbAccessService {
         ),
       );
 
-    const restrictedRows = await this.db
-      .selectDistinct({ spaceId: kbSpaceMembers.spaceId })
-      .from(kbSpaceMembers)
-      .where(eq(kbSpaceMembers.orgId, user.orgId));
-
     const granted = new Set(grantedRows.map((m) => m.spaceId));
-    const restricted = new Set(restrictedRows.map((m) => m.spaceId));
 
-    const memberAccessIds = spaces
-      .filter(
-        (s) =>
-          s.audience === "public" ||
-          s.audience === "mixed" ||
-          granted.has(s.id) ||
-          !restricted.has(s.id),
-      )
+    return spaces
+      .filter((s) => s.audience === "public" || s.audience === "mixed" || granted.has(s.id))
       .map((s) => s.id);
-
-    const explicitGrantRows = await this.db
-      .selectDistinct({ spaceId: kbSpaceGrants.spaceId })
-      .from(kbSpaceGrants)
-      .where(
-        and(
-          eq(kbSpaceGrants.orgId, user.orgId),
-          eq(kbSpaceGrants.principalType, "user"),
-          eq(kbSpaceGrants.principalId, user.userId),
-          eq(kbSpaceGrants.permissionKey, KB_SPACE_VIEWER_PERMISSION),
-        ),
-      );
-    const explicitGrantedIds = explicitGrantRows.map((r) => r.spaceId);
-
-    return [...new Set([...memberAccessIds, ...explicitGrantedIds])];
   }
 
   async assertSpaceAccessible(user: CurrentUserContext, spaceId: number): Promise<void> {

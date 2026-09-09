@@ -1,4 +1,5 @@
 import type { Db } from "../../../db/drizzle.module";
+import { KbCitationVisibilityService } from "./kb-citation-visibility.service";
 import { KbAskService } from "./kb-ask.service";
 import { ACCOUNT_ONLY_PRINCIPAL } from "../../../common/auth/principal";
 
@@ -48,7 +49,7 @@ describe("KbAskService — cross-tenant isolation", () => {
 
   it("scopes indexed-content check to the requesting org (cross-tenant isolation)", async () => {
     const { db, executeArgs } = makeDb(false);
-    const svc = new KbAskService(db, aiGateway, events, search, access);
+    const svc = new KbAskService(db, aiGateway, events, search, access, new KbCitationVisibilityService(db, access, search));
 
     await svc.ask(makeUser(ATTACKER), { question: "test?" } as never);
 
@@ -60,7 +61,7 @@ describe("KbAskService — cross-tenant isolation", () => {
 
   it("returns no-context answer for the owning org when no content exists (same-tenant control)", async () => {
     const { db } = makeDb(false);
-    const svc = new KbAskService(db, aiGateway, events, search, access);
+    const svc = new KbAskService(db, aiGateway, events, search, access, new KbCitationVisibilityService(db, access, search));
 
     const result = await svc.ask(makeUser(OWNER), { question: "test?" } as never);
 

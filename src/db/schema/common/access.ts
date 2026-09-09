@@ -21,7 +21,6 @@ import {
   permissions,
 } from "./auth";
 import { orgUnits } from "./organization";
-import { kbSpaces } from "../kb/spaces";
 import { modulesCatalog } from "./modules";
 
 export const dataScopeEnum = pgEnum("data_scope", [
@@ -401,51 +400,3 @@ export const groupRoleAssignmentsRelations = relations(
     }),
   }),
 );
-
-export const kbSpaceGrants = pgTable(
-  "kb_space_grants",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    orgId: text("org_id")
-      .references(() => organizations.id, { onDelete: "cascade" })
-      .notNull(),
-    spaceId: integer("space_id").notNull(),
-    principalType: text("principal_type").notNull().default("user"),
-    principalId: text("principal_id").notNull(),
-    permissionKey: text("permission_key").notNull(),
-    grantedBy: text("granted_by").references(() => users.id, {
-      onDelete: "set null",
-    }),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-  },
-  (t) => [
-    uniqueIndex("uniq_kb_space_grants").on(
-      t.orgId,
-      t.spaceId,
-      t.principalType,
-      t.principalId,
-      t.permissionKey,
-    ),
-    index("idx_kb_space_grants_principal").on(
-      t.orgId,
-      t.principalType,
-      t.principalId,
-    ),
-    foreignKey({
-      columns: [t.orgId, t.spaceId],
-      foreignColumns: [kbSpaces.orgId, kbSpaces.id],
-      name: "fk_kb_space_grants_space_id_org",
-    }).onDelete("cascade"),
-  ],
-);
-
-export const kbSpaceGrantsRelations = relations(kbSpaceGrants, ({ one }) => ({
-  organization: one(organizations, {
-    fields: [kbSpaceGrants.orgId],
-    references: [organizations.id],
-  }),
-  grantedByUser: one(users, {
-    fields: [kbSpaceGrants.grantedBy],
-    references: [users.id],
-  }),
-}));

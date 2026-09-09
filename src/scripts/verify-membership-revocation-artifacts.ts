@@ -17,7 +17,7 @@ import { MEMBERSHIP_ARTIFACTS } from "../modules/organization/core/membership-ar
 export const ARTIFACT_COVERAGE: ReadonlySet<string> = new Set([
   "role_assignments", "user_permission_grants", "principal_group_members",
   "user_delegations", "user_module_access", "agent_tokens",
-  "resource_grants", "kb_space_grants", "invitations",
+  "resource_grants", "invitations",
 ]);
 
 export function printUncoveredArtifacts(): void {

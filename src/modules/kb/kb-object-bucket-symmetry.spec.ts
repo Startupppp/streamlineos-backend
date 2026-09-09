@@ -342,6 +342,10 @@ describe("KB article attachments — the read stays on the bucket /storage/uploa
       db as never,
       { isEmbeddingConfigured: () => true } as never,
       store,
+      {
+        loadCheckpoints: async () => new Map<number, number[]>(),
+        saveCheckpoints: async () => undefined,
+      } as never,
     );
 
     await svc.indexAttachment(ORG, 7);

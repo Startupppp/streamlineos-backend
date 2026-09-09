@@ -321,6 +321,29 @@ export class KbSearchService {
     });
   }
 
+  /**
+   * The article half of the attachment predicate. It used to be `inArray(articleId, ids)`
+   * alone, so the method's safety was a precondition on its one caller rather than a
+   * property of the method — the page half already carried `pageVisibleTo`.
+   */
+  private async attachmentArticleScope(
+    user: CurrentUserContext,
+    articleIds: number[],
+  ): Promise<SQL[]> {
+    const [ownerFilter, restrictionFilter] = await Promise.all([
+      this.articleOwnerFilterFor(user),
+      this.articleRestrictionFilterFor(user),
+    ]);
+    const conditions: SQL[] = [
+      inArray(kbArticleChunks.articleId, articleIds),
+      eq(kbArticles.orgId, user.orgId),
+      eq(kbArticles.status, "published"),
+    ];
+    if (ownerFilter) conditions.push(ownerFilter);
+    if (restrictionFilter) conditions.push(restrictionFilter);
+    return conditions;
+  }
+
   async retrieveAttachmentSnippets(
     user: CurrentUserContext,
     query: string,
@@ -336,8 +359,10 @@ export class KbSearchService {
       const vector = embedResult.vectorLiteral;
       const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
       const scope: SQL[] = [];
-      if (articleIds.length > 0)
-        scope.push(inArray(kbArticleChunks.articleId, articleIds));
+      if (articleIds.length > 0) {
+        const articleScope = and(...(await this.attachmentArticleScope(user, articleIds)));
+        if (articleScope) scope.push(articleScope);
+      }
       if (pageIds.length > 0) {
         const projectIds = await this.access.getAccessibleProjectIds(user);
         const pageScope = and(
@@ -349,7 +374,17 @@ export class KbSearchService {
       const rows = await this.db
         .select({ content: kbArticleChunks.content })
         .from(kbArticleChunks)
-        .leftJoin(kbPages, eq(kbPages.id, kbArticleChunks.pageId))
+        .leftJoin(
+          kbPages,
+          and(eq(kbPages.id, kbArticleChunks.pageId), eq(kbPages.orgId, kbArticleChunks.orgId)),
+        )
+        .leftJoin(
+          kbArticles,
+          and(
+            eq(kbArticles.id, kbArticleChunks.articleId),
+            eq(kbArticles.orgId, kbArticleChunks.orgId),
+          ),
+        )
         .where(
           and(
             eq(kbArticleChunks.orgId, user.orgId),

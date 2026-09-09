@@ -20,7 +20,6 @@ import {
   chatSavedMessages,
   invitationEvents,
   invitations,
-  kbSpaceGrants,
   organizationMembers,
   organizations,
   ownershipTransfers,
@@ -234,7 +233,6 @@ describe("OrgMembershipService.revokeOrgScopedAccess", () => {
 
       await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "removed");
 
-      expect(deleteFn).toHaveBeenCalledWith(kbSpaceGrants);
     });
 
     it("revokes pending invitations for the member's email and inserts event records", async () => {
@@ -363,7 +361,6 @@ describe("OrgMembershipService.revokeOrgScopedAccess", () => {
 
       await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "suspended");
 
-      expect(deleteFn).not.toHaveBeenCalledWith(kbSpaceGrants);
     });
 
     it("does NOT revoke pending invitations on suspension", async () => {
@@ -522,7 +519,6 @@ describe("OrgMembershipService.revokeOrgScopedAccess", () => {
       await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "removed");
 
       expect(deleteFn).toHaveBeenCalledWith(resourceGrants);
-      expect(deleteFn).toHaveBeenCalledWith(kbSpaceGrants);
       expect(updateFn).toHaveBeenCalledWith(userIntegrationConnections);
     });
   });
