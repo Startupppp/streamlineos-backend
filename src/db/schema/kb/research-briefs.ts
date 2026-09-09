@@ -28,6 +28,13 @@ export const kbResearchBriefs = pgTable(
     index("idx_kb_research_briefs_org_user").on(table.orgId, table.userId),
     index("idx_kb_research_briefs_job").on(table.jobId),
     unique("uniq_kb_research_briefs_org_id").on(table.orgId, table.id),
+    // The live constraints below carry Postgres 15's column-list form,
+    // `ON DELETE SET NULL (<pointer>)`, which drizzle-orm 0.45's
+    // `UpdateDeleteAction` cannot express — it only emits the bare keyword.
+    // On a composite key the bare form nulls EVERY column including `org_id`,
+    // which is NOT NULL, so the parent DELETE aborts on the child table. 0662
+    // repaired that; regenerating these from Drizzle would reinstall it.
+    // `check:composite-fk-set-null` fails if it comes back.
     foreignKey({ columns: [table.orgId, table.spaceId], foreignColumns: [kbSpaces.orgId, kbSpaces.id], name: "fk_kb_research_briefs_org_space" }).onDelete("set null"),
   ],
 );
