@@ -335,4 +335,32 @@ describe("agent token cross-module boundary (AgentTokenGuard + PermissionGuard)"
   key outside the token's scopes and `PermissionGuard` turns that into a 403.
   Mount `AgentTokenGuard` on any further surface — the CRM MCP controller being
   the obvious candidate — and this is the behaviour that surface inherits.
+
+  CRM-P1-16, the product consequence of the paragraph above, which is easy to
+  read past because both halves look finished on their own.
+
+  `CrmMcpController` (`/crm/mcp`) carries `@UseGuards(JwtAuthGuard)` and nothing
+  else. `JwtAuthGuard` resolves session JWTs and personal access tokens against
+  `user_api_tokens`; it contains no reference to `agent_tokens` at all.
+  `AgentTokenGuard` is the only thing that reads that table, and it admits only
+  a `Bearer slos_` credential.
+
+  Meanwhile the frontend page at `/crm/settings/mcp` is titled "MCP Agent
+  Access" and offers to "Create CRM-scoped agent tokens and inspect the tools
+  exposed to MCP clients" — and it issues `slos_` agent tokens, from
+  `POST /agent-tokens`.
+
+  So a token created on that page and presented to `/crm/mcp/tools` is refused
+  401 as unauthenticated, before scopes are considered. The credential the
+  product hands out for the CRM MCP server is not one that server accepts. Both
+  sides are individually correct, which is why nothing catches it: the guard is
+  right about what it admits, the issuer is right about what it mints, and no
+  test crosses the gap.
+
+  Deliberately not fixed here. Mounting `AgentTokenGuard` on the MCP controller
+  is a decision to let a non-session credential reach customer data, and the
+  isolation story above is what makes that safe rather than what makes it
+  somebody's to do quietly. The two coherent answers are to mount it — the
+  ceiling proven in this file is exactly what would then apply — or to stop the
+  settings page offering agent tokens for a surface that cannot take them.
 */
