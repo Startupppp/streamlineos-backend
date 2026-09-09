@@ -8,6 +8,10 @@ import {
 import { and, asc, desc, eq, gte, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import {
+  getPostgresErrorCode,
+  getPostgresErrorDetails,
+} from "../../common/db/postgres-error";
 import type { TenantTx } from "../../common/tenant/with-tenant";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { deals } from "../../db/schema/crm/deals";
@@ -151,8 +155,13 @@ export class CommissionService {
         { orgId },
       );
     } catch (e: unknown) {
-      if ((e as { code?: string }).code === "23505")
-        throw new ConflictException("A commission plan with this name already exists");
+      // `uniq_crm_commission_plans_org_name` — (org_id, name), caller-supplied.
+      // Read through the helper: Drizzle keeps the SQLSTATE on `.cause`, so
+      // `e.code` was undefined and a duplicate plan name answered 500.
+      if (getPostgresErrorCode(e) === "23505")
+        throw new ConflictException(
+          `A commission plan named "${input.name}" already exists`,
+        );
       throw e;
     }
   }
@@ -412,9 +421,21 @@ export class CommissionService {
         { orgId },
       );
     } catch (e: unknown) {
-      if ((e as { code?: string }).code === "23505")
+      /**
+       * Two indexes reach here and they mean different things, so the message
+       * says which one answered rather than guessing:
+       * `uniq_crm_commission_assignments_open` — (org_id, user_id) WHERE
+       * effective_to IS NULL — is the open-assignment rule the old text named,
+       * and `uniq_crm_commission_assignments_start` — (org_id, user_id,
+       * effective_from) — is a second assignment starting on a day one already
+       * starts on, which the old text described wrongly.
+       */
+      const { code, constraint } = getPostgresErrorDetails(e);
+      if (code === "23505")
         throw new ConflictException(
-          "This person already has an open commission assignment; end it before starting another",
+          constraint === "uniq_crm_commission_assignments_start"
+            ? `This person already has a commission assignment starting on ${input.effectiveFrom}`
+            : "This person already has an open commission assignment; end it before starting another",
         );
       throw e;
     }
