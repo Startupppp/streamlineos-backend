@@ -7,6 +7,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
+import { buildCountVarianceMovements } from "./count-variance-movements";
 import {
   INVENTORY_COMMAND_EVENTS,
   emitInventoryCommandEvent,
@@ -179,22 +180,16 @@ export class InvCycleCountsService {
     const cc = await this.requireCount(orgId, countId);
     if (cc.status !== "REVIEW") throw new BadRequestException("Only REVIEW counts can be posted");
 
+    // `lotId` is selected because the count was TAKEN at lot grain — the line
+    // carries the lot its `systemQty` was read from. Posting the variance
+    // without it moves a different stock level than the one counted: the lot
+    // stays wrong for good and a phantom lot-less row absorbs the correction.
     const lines = await this.db.query.invCycleCountLines.findMany({
       where: eq(invCycleCountLines.cycleCountId, countId),
-      columns: { productVariantId: true, locationId: true, varianceQty: true },
+      columns: { productVariantId: true, locationId: true, lotId: true, varianceQty: true },
     });
 
-    const movements = lines
-      .filter((l) => l.varianceQty !== null && parseFloat(l.varianceQty) !== 0)
-      .map((l) => {
-        const v = parseFloat(l.varianceQty!);
-        return {
-          transactionType: v > 0 ? "CYCLE_COUNT_GAIN" as const : "CYCLE_COUNT_LOSS" as const,
-          productVariantId: l.productVariantId,
-          locationId: l.locationId,
-          quantityDelta: v.toFixed(4),
-        };
-      });
+    const movements = buildCountVarianceMovements(lines);
 
     await this.db.transaction(async (tx) => {
       if (movements.length > 0) {

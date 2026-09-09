@@ -8,6 +8,7 @@ import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
+import { buildCountVarianceMovements } from "./count-variance-movements";
 import {
   INVENTORY_COMMAND_EVENTS,
   emitInventoryCommandEvent,
@@ -171,22 +172,15 @@ export class InvPhysicalAuditsService {
     const audit = await this.requireAudit(orgId, auditId);
     if (audit.status !== "REVIEW") throw new BadRequestException("Only REVIEW audits can be posted");
 
+    // Same grain rule as the cycle count: the audit line records the lot its
+    // `systemQty` was read from, so the correction has to name it or it lands
+    // on a different level than the one that was counted.
     const lines = await this.db.query.invPhysicalAuditLines.findMany({
       where: eq(invPhysicalAuditLines.auditId, auditId),
-      columns: { productVariantId: true, locationId: true, varianceQty: true },
+      columns: { productVariantId: true, locationId: true, lotId: true, varianceQty: true },
     });
 
-    const movements = lines
-      .filter((l) => l.varianceQty !== null && parseFloat(l.varianceQty) !== 0)
-      .map((l) => {
-        const v = parseFloat(l.varianceQty!);
-        return {
-          transactionType: v > 0 ? "CYCLE_COUNT_GAIN" as const : "CYCLE_COUNT_LOSS" as const,
-          productVariantId: l.productVariantId,
-          locationId: l.locationId,
-          quantityDelta: v.toFixed(4),
-        };
-      });
+    const movements = buildCountVarianceMovements(lines);
 
     if (movements.length > 0) {
       await this.engine.execute(orgId, userId, {
