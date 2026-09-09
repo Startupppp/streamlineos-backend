@@ -126,6 +126,41 @@ describe(`${SEEDED_HARNESS} timesheet period lifecycle`, () => {
     expect((await status())?.status).toBe("OPEN");
   }, 60_000);
 
+  /**
+   * TS-11, through the router rather than through the service.
+   *
+   * `GET /timesheets/periods/overdue` and `GET /timesheets/periods/:periodId`
+   * are the same shape to Express, which matches in declaration order. Declared
+   * second, `overdue` would reach `getPeriod` and its `ParseIntPipe`, and the
+   * queue would answer 400 on its own name. `overdue.service.spec.ts` cannot
+   * see that: it calls the service directly and never touches a route.
+   *
+   * The second half is what makes the first half evidence. A 200 on `overdue`
+   * proves the ordering only if the parameter route really would have rejected
+   * it, so the pipe is shown biting on a non-numeric id in the same run. If
+   * somebody removes `ParseIntPipe` this test says so instead of quietly
+   * becoming decoration.
+   */
+  it("serves the overdue queue rather than parsing its name as a period id", async () => {
+    const queue = await request(seeded.app.getHttpServer())
+      .get("/timesheets/periods/overdue")
+      .set("Authorization", `Bearer ${bossToken}`);
+
+    expect(queue.status).toBe(200);
+    expect(queue.body).toMatchObject({
+      escalationThresholds: expect.any(Array),
+      graceDays: expect.any(Number),
+      asOf: expect.any(String),
+      items: expect.any(Array),
+      total: expect.any(Number),
+    });
+
+    const notANumber = await request(seeded.app.getHttpServer())
+      .get("/timesheets/periods/definitely-not-a-period")
+      .set("Authorization", `Bearer ${bossToken}`);
+    expect(notANumber.status).toBe(400);
+  }, 60_000);
+
   it("refuses to recall a period that was never submitted", async () => {
     const res = await act("recall", workerToken);
     expect(res.status).toBe(409);
