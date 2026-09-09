@@ -1,5 +1,162 @@
 # InventoryOS — NEO handoff
 
+## The whole seeded suite, run for the first time — 2026-09-09
+
+**Pushed: backend `b3e4b4ae5`, frontend `6c7695ca6`** (frontend later advanced to
+`e22f80b32` by a concurrent session), both on
+`feat/inventory-world-class-implementation`. No force push. `main` untouched.
+
+**`test/inventory` is 60 suites / 622 tests, EXIT=0.** That is the number this
+pass exists to produce, and the previous one could not have: the suite had never
+been run end to end. The first full run was **57 passed, 3 failed suites, 22
+failed tests**, and the earlier "~54 suites" figure came from runs that stopped
+short of the files that were red.
+
+Two environment findings came before any of that, and both are the kind that
+cost an hour if undiagnosed:
+
+* **The database named in the runbook is 205 migrations behind.**
+  `streamline_crm_merge` has 429 of the journal's 634 migrations applied, so
+  every inventory spec died on `column "measure_mode" of relation
+  "inv_products" does not exist`, `inv_purchase_orders.approved_by_membership_id`
+  and `inv_settings.pack_warehouse`. It is a CRM-branch database. **Use
+  `streamline_inv`** — 634/634 applied, 711 permission rows, RLS enforced for
+  `streamline_app` (it fails closed with "no tenant context" without the GUC).
+  `inv_cold_head` is also at 634 but has only **50** permission rows: the boot
+  reconciler never ran there, so every seeded spec dies on the
+  `role_permission_grants → permissions` foreign key instead.
+* A repo-wide failure across every inventory spec is that drift, not a feature.
+
+### The three red suites, and what each turned out to be
+
+None was a product bug in the feature it tested. All three were the suite
+lying about itself, which is why running it mattered more than reading it.
+
+| Suite | What it was |
+|---|---|
+| `recall-release-lifecycle` | Granted **`inventory:quality:hold`** — a key that exists in no catalogue, no database and on no endpoint. `role_permission_grants.permission_key` has an FK to `permissions.name`, so all 13 tests died in `beforeAll` with a constraint name and no mention of the key. Raising a hold is `inventory:quality:inspect`. |
+| `consigned-handling-unit-grain` | Same shape: **`inventory:handling-units:manage`**, also never real. Handling units are authorized as stock — `inventory:stock:read` / `inventory:stock:transfer`. |
+| `batch-single-equivalence` | Asserted `replayed >= 5` and `replayed === success` on running totals. `success` counts every command ever applied to the tenant and the fixture posts eight before the file posts anything, so success is 11 where replayed can only reach 3. **It could never have passed.** |
+
+Three more were hiding behind those, and only surfaced once the suites got past
+`beforeAll`:
+
+* `recall-release-lifecycle` imported **`QualityHoldsService`**; the class is
+  `HoldsService`. Under ts-jest's `isolatedModules` that compiles, resolves to
+  `undefined`, and `app.get(undefined)` reports *"this provider does not exist
+  in the current context"* — which reads as a broken module. Fixing the name
+  then surfaced two more type errors the failed import had been masking.
+* Its fixture seeded stock under **`rl-blocked-${tag}`**, the same idempotency
+  key the recall two describes below uses, so the recall answered 422 *"already
+  used with a different request"* instead of the `HOLD_EXCEEDS_ON_HAND` the test
+  was written to observe.
+* `consigned-handling-unit-grain` read `created.handlingUnitId` from a
+  `HandlingUnitDetail`, whose id field is `id`.
+
+### Two real product bugs, both found by making a vacuous test honest
+
+1. **A reservation naming the supplier's stock was handed ours.**
+   `ReservationInput.ownership` is documented in `stock-engine.types.ts:116-121`
+   as existing *"so a caller cannot silently reserve the owned row when it meant
+   the consigned one"*, and **nothing read it**.
+   `committedGrainPredicate` pins `ownership = 'OWNED'` — correct, a promise is
+   only ever against our own stock — so `ownership: "VENDOR"` was not refused:
+   it was given the OWNED row. On a shared pallet, where an owned and a
+   consigned grain differ in nothing but that column, reserving 10 "vendor"
+   units silently committed 10 of ours, the totals added up, and nothing
+   complained. Fixed by refusing, not by widening the predicate.
+   The test that should have caught it passed on `.rejects.toThrow()` while the
+   call was dying on `LOCATION_NOT_FOUND` — it passed only `warehouseId`, and a
+   locationless reservation is refused outright, so the consignment gate it
+   names was never reached.
+
+2. **A cycle count knew which lot it counted and the posting threw it away.**
+   `inv_cycle_count_lines.lot_id` is filled by `createCycleCount` from the very
+   `inv_stock_levels` row the `system_qty` was read from — the count is taken at
+   lot grain. Both `postCycleCount` and `postAudit` then selected only
+   `{productVariantId, locationId, varianceQty}`, so the correction landed on
+   the `(variant, location, lot=NULL)` row: the counted lot keeps the wrong
+   number for good and a lot-less phantom absorbs a correction nobody counted.
+   The same two lines also did `parseFloat` then `.toFixed(4)` on a
+   `numeric(18,4)`.
+   `cycle-count-variance.spec.ts` was the only test named for this and it
+   **imported nothing** — it declared `computeVariance`, `classifyMovement` and
+   `buildMovements` inside itself and asserted against those twelve times. It
+   would have stayed green with the counts module deleted, and its private copy
+   reproduced both defects, so the bug was written down as the specification.
+
+### INV-33 was recorded as not applicable, and that was wrong
+
+The §13 table below still says the atomic branch makes
+`PENDING_QUARANTINE`/`QUARANTINE_FAILED` impossible and INV-33's UI therefore
+**not applicable**. The premise is right and the conclusion does not follow.
+
+Atomicity means a quarantine that *fails* rolls back. It does not mean a recall
+that *commits* held anything. A line naming a lot with no stock on hand raises
+no hold; a line naming only a serial or only a variant leaves `recalledLotIds`
+empty, so the lot flip never runs either and nothing is blocked at all.
+`createRecallSchema` accepts `{ serialId }` and `{ productVariantId }` on a
+line, so both are reachable from the API. Both committed, and both rendered as
+an OPEN recall over a list of lots — identical to one that pulled every carton
+off the shelf.
+
+`inv_recall_lines.status` had existed since the table did, defaulted to `OPEN`,
+and was written by nothing and read by nothing. It now carries the outcome the
+transaction already computed and was dropping on the floor — `QUARANTINED`,
+`NOTHING_TO_QUARANTINE`, `NOT_QUARANTINABLE` — with no migration, because the
+column was already there. `OPEN` survives as a real fourth value meaning "not
+recorded", and the UI renders it as **pending, never as held**: every recall
+raised before this reads `OPEN`, and defaulting an unrecorded outcome to success
+would be the original bug with better manners.
+
+### Verification, as run
+
+| | |
+|---|---|
+| Seeded `test/inventory` | **60 suites / 622 tests / EXIT=0** against `streamline_inv` |
+| Backend `pnpm typecheck` | **EXIT=0** (8GB heap; exit code, not a grep) |
+| Frontend `pnpm type-check` | **EXIT=0**, zero errors |
+| `npx eslint` on changed frontend paths | **exit 0** |
+| Frontend inventory guards | `inventory-route-states` 15/15, `inventory-permission-keys` 4/4, `recall-quarantine-states` 6/6 |
+
+### Still blocked, with the exact missing item
+
+* **INV-26 carrier adapter — no sandbox credential exists, and there is nowhere
+  to put one.** There is no carrier environment variable declared anywhere:
+  not in `.env`, not in `.env.example`, and the only `process.env` reads under
+  `src/modules/inventory` are `APP_DATABASE_URL` and `NODE_ENV`. `inv_carriers`
+  has four columns — `name`, `code`, `tracking_url_template`, `is_active` — and
+  no credential column, so a per-tenant sandbox key has no home. Unblocking
+  needs a named courier sandbox account, the columns or secret store to hold it,
+  and a public webhook URL with that courier's signature scheme.
+  The acceptable outcome already holds structurally: `MANUAL_CARRIER_ADAPTER`
+  has `canPoll: false` and fabricates nothing, and `trackingNumber` is only ever
+  operator input (`input.trackingNumber ?? null`) — the system cannot mint a
+  fake carrier identifier because it never generates one.
+* **INV-20/21 Playwright — no harness, before any credential question.**
+  No `playwright.config.*`, no `e2e/` specs, no `test:e2e` script, and
+  `@playwright/test@1.59.1` is present in the pnpm store only as a transitive
+  peer of `next@16.3.0`, not as a declared devDependency. Beyond that, the
+  frontend worktree has **no `.env` at all** (only `.env.example`), so an
+  authenticated run has no `NEXTAUTH_SECRET` to mint a session cookie with.
+
+### Ticket deltas against the §13 table below
+
+* *"Batch behaviour matches single — Ready, 7/7"* — the suite is 9 tests and one
+  of them could never pass. Now 9/9, with the replay measured as a delta.
+* *"Recall/quality-hold execution atomic or recoverable — INV-33 not applicable"*
+  — superseded above. INV-33 was real and is done.
+* *"Handling units and ownership preserved — one hole closed, no gate"* — a
+  second hole is closed (the reservation ownership bug above) and there is now a
+  seeded assertion on that path.
+* *"Seeded e2e covers golden workflows — ~54 suites"* — 60 suites / 622 tests,
+  and three of them were red until this pass.
+* INV-13 and INV-14 were already walked end to end; only the missing assertions
+  were added (the PO and putaway-task rows reaching `RECEIVED`/`COMPLETED`, and
+  the reservation being `CONSUMED` rather than released or deleted — ATP alone
+  cannot tell those apart).
+
+
 ## Reopened and closed again — 2026-09-08
 
 **Pushed: backend `0d464a88c`, frontend `d710aa11e`**, both on
