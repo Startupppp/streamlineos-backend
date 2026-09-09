@@ -5,13 +5,17 @@ import {
   BadRequestException,
   Logger,
 } from "@nestjs/common";
-import { AccessService } from "../../access/access.service";
+import { AccessService, moduleOf } from "../../access/access.service";
+import { authorize } from "../../access/authorize";
+import type { AuthResult } from "../../access/access.types";
+import { ModuleDisabledException } from "../../../common/http/api-exceptions";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AuditService } from "../../../common/audit/audit.service";
-import type { DataScope } from "../../access/access.types";
 import { PartyService } from "../../party/party.service";
 import { DealsService } from "../../deals/deals.service";
 import { ActivitiesService } from "../../activities/activities.service";
 import { ReportingService } from "../../reporting/reporting.service";
+import { CrmMcpSettingsService } from "./crm-mcp-settings.service";
 
 export interface McpToolDefinition {
   name: string;
@@ -29,32 +33,16 @@ export interface McpToolCall {
   arguments: Record<string, unknown>;
 }
 
-export interface McpContext {
-  userId: string;
-  orgId: string;
-}
-
 /**
- * Whether a resolved permission map actually grants a key.
+ * The caller, whole.
  *
- * `resolved.has(key)` is not the question. `resolveUserPermissions` returns
- * `Map<string, DataScope>`, and a key resolved to `"none"` is present in that
- * map and denied — that is how the resolver says no. Asking `has` therefore let
- * an explicitly denied permission read as granted here while failing everywhere
- * else in the product, because `AccessService.holds` is
- * `scopeFor(...) !== "none"` and every `@RequirePermission` route goes through
- * it. This is the same test, said the same way.
- *
- * The array branch that used to sit here was unreachable: nothing returns a
- * `{ permissions: [] }` shape. It survived because the spec mocked it, so the
- * authorization assertions were exercising a branch production never entered.
+ * This was `{ userId: string; orgId: string }`, and that pair is exactly what
+ * could not express the thing this surface has to know: *which credential is
+ * asking*. `AccessService.scopeFor` clamps an agent or personal token to its
+ * own scopes, and it reads that ceiling off `user.principal` — a field the pair
+ * did not carry. See `authorizeTool` below.
  */
-function checkPermission(
-  resolved: ReadonlyMap<string, DataScope> | null | undefined,
-  permission: string,
-): boolean {
-  return (resolved?.get(permission) ?? "none") !== "none";
-}
+export type McpContext = CurrentUserContext;
 
 /**
  * CRM MCP Server.
@@ -78,6 +66,7 @@ export class CrmMcpService {
     private readonly dealsService: DealsService,
     private readonly activitiesService: ActivitiesService,
     private readonly reportingService: ReportingService,
+    private readonly mcpSettings: CrmMcpSettingsService,
   ) {}
 
   /** The complete catalogue of CRM MCP tools. */
@@ -162,16 +151,47 @@ export class CrmMcpService {
     },
   ];
 
-  /** Return list of tools available to the user given their permissions. */
-  async getAvailableTools(context: McpContext): Promise<McpToolDefinition[]> {
-    const permissions = await this.accessService.resolveUserPermissions(
-      context.orgId,
-      context.userId,
-    );
+  /**
+   * One answer to "may this caller use this tool", and it is the product's own.
+   *
+   * `authorize` is what `PermissionGuard` calls for every `@RequirePermission`
+   * route: it rejects an uncatalogued key, resolves module entitlement, and
+   * then asks `AccessService.scopeFor`, which is where a token's ceiling is
+   * applied. This service used to call `resolveUserPermissions(orgId, userId)`
+   * instead — the raw membership map, which takes no principal and therefore
+   * cannot see a ceiling. A token scoped to `crm:deals:read` got every CRM tool
+   * its *issuer* held, here and only here, because every other gated surface in
+   * the product goes through `authorize`. That is the same shape of bug as
+   * CRM-P1-16 one layer down: two correct halves, no path that crossed them.
+   *
+   * It also closes a second gap for free. `CrmMcpController` carries no
+   * `@RequireModule("crm")` — unlike every other CRM controller — so nothing
+   * checked entitlement on this surface. `authorize` resolves it per key.
+   */
+  private authorizeTool(
+    user: McpContext,
+    tool: McpToolDefinition,
+  ): Promise<AuthResult> {
+    return authorize(this.accessService, user, tool.requiredPermission);
+  }
 
-    return this.tools.filter((tool) =>
-      checkPermission(permissions, tool.requiredPermission),
+  /**
+   * Return list of tools available to the caller given what it may do.
+   *
+   * An organisation that has not switched agent access on gets an empty list
+   * rather than a refusal, because that is what the question means: an MCP
+   * client is asking what it may call, and the honest answer is nothing. The
+   * refusal belongs on the call, where somebody is actually trying to do
+   * something — and `executeTool` gives it a distinct message so a scoped-token
+   * problem is never mistaken for a switched-off tenant.
+   */
+  async getAvailableTools(context: McpContext): Promise<McpToolDefinition[]> {
+    if (!(await this.mcpSettings.isEnabled(context.orgId))) return [];
+
+    const decisions = await Promise.all(
+      this.tools.map((tool) => this.authorizeTool(context, tool)),
     );
+    return this.tools.filter((_, index) => decisions[index]?.allow === true);
   }
 
   /** Execute an MCP tool with full permission and tenant re-assertion. */
@@ -179,6 +199,29 @@ export class CrmMcpService {
     context: McpContext,
     call: McpToolCall,
   ): Promise<{ content: Array<{ type: "text"; text: string }> }> {
+    /**
+     * The tenant's own decision, checked before the tool is even resolved.
+     *
+     * Every other gate here answers "may this caller run this tool". None of
+     * them answers whether the organisation wants a machine touching its
+     * customer records at all, and a per-tool key cannot express that — an
+     * admin holds `crm:deals:read` because they read deals, not because they
+     * consented to an agent reading them.
+     *
+     * Audited, because a call arriving at a switched-off tenant is worth a
+     * record: it is either an integration nobody told the operator about or a
+     * credential that outlived the decision to stop using it.
+     */
+    if (!(await this.mcpSettings.isEnabled(context.orgId))) {
+      await this.recordToolAudit(context, "crm.mcp.tool_refused", call.name, {
+        reason: "AGENT_ACCESS_DISABLED",
+        arguments: auditableArguments(call.arguments),
+      });
+      throw new ForbiddenException(
+        "Agent access to the CRM is switched off for this organisation.",
+      );
+    }
+
     const tool = this.tools.find((t) => t.name === call.name);
     if (!tool) {
       /**
@@ -192,17 +235,26 @@ export class CrmMcpService {
       throw new NotFoundException(`Unknown CRM MCP tool: ${call.name}`);
     }
 
-    // Resolve caller's effective permissions
-    const permissions = await this.accessService.resolveUserPermissions(
-      context.orgId,
-      context.userId,
-    );
+    const decision = await this.authorizeTool(context, tool);
 
-    if (!checkPermission(permissions, tool.requiredPermission)) {
+    if (!decision.allow) {
       await this.recordToolAudit(context, "crm.mcp.tool_refused", tool.name, {
         requiredPermission: tool.requiredPermission,
+        reason: decision.reason,
         arguments: auditableArguments(call.arguments),
       });
+      /**
+       * 402 when the module is off, matching `PermissionGuard`.
+       *
+       * A 403 here reads as "you lack the permission" and the frontend's
+       * EntitlementGate keys its upgrade prompt on 402, so answering the wrong
+       * one shows an access-denied dead end where an offer to enable CRM
+       * belongs. The refusal a scoped token gets is the 403 below, and the two
+       * must stay distinguishable.
+       */
+      if (decision.reason === "NO_MODULE") {
+        throw new ModuleDisabledException(moduleOf(tool.requiredPermission));
+      }
       throw new ForbiddenException(
         `Agent lacks required permission '${tool.requiredPermission}' for tool '${tool.name}'`,
       );

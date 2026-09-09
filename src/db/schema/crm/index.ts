@@ -35,6 +35,7 @@ export * from "./issue-records";
 export * from "./lifecycle";
 export * from "./commission";
 export * from "./call-analysis";
+export * from "./mcp-settings";
 export * from "./reporting";
 export * from "./nurture-sequences";
 export * from "./whatsapp-channels";
