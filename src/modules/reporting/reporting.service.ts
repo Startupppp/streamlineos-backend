@@ -8,7 +8,7 @@ import {
 import { and, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
-import { crmReportDefinitions, crmReportRuns } from "../../db/schema";
+import { crmReportDefinitions, crmReportRuns, users } from "../../db/schema";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { AccessService } from "../access/access.service";
 import { compileQuery, type CompiledQuery } from "./compiler/compile";
@@ -108,10 +108,22 @@ export class ReportingService {
         description: crmReportDefinitions.description,
         sourceKey: crmReportDefinitions.sourceKey,
         createdByUserId: crmReportDefinitions.createdByUserId,
+        /**
+         * The author as a name, not only as an id.
+         *
+         * A single projected column off a LEFT JOIN, because `users` is the
+         * global identity table and still carries authentication secrets — an
+         * unprojected relation to it is banned for exactly that reason. The
+         * join is LEFT because the column is nullable and because an author who
+         * has since left the organisation must not remove their report from the
+         * list.
+         */
+        createdByName: users.name,
         createdAt: crmReportDefinitions.createdAt,
         updatedAt: crmReportDefinitions.updatedAt,
       })
       .from(crmReportDefinitions)
+      .leftJoin(users, eq(crmReportDefinitions.createdByUserId, users.id))
       .where(eq(crmReportDefinitions.organizationId, orgId))
       .orderBy(desc(crmReportDefinitions.updatedAt))
       .limit(query.limit)
@@ -287,9 +299,20 @@ export class ReportingService {
         rowCount: crmReportRuns.rowCount,
         durationMs: crmReportRuns.durationMs,
         ranByUserId: crmReportRuns.ranByUserId,
+        /**
+         * Who ran it, as a name.
+         *
+         * Without this the audit read is a list of opaque identifiers, which is
+         * a log rather than an audit trail — nobody reviewing it can answer the
+         * question it exists to answer without a second lookup they have no
+         * screen for. Same LEFT JOIN and same single projected column as the
+         * definition list above, for the same reason.
+         */
+        ranByName: users.name,
         createdAt: crmReportRuns.createdAt,
       })
       .from(crmReportRuns)
+      .leftJoin(users, eq(crmReportRuns.ranByUserId, users.id))
       .where(eq(crmReportRuns.organizationId, orgId))
       .orderBy(desc(crmReportRuns.createdAt))
       .limit(query.limit)
