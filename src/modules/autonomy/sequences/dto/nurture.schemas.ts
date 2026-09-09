@@ -1,4 +1,9 @@
 import { z } from "zod";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
+import {
+  NURTURE_ENROLLMENT_STATUSES,
+  NURTURE_SEQUENCE_STATUSES,
+} from "../../../../db/schema/crm/nurture-sequences";
 import { MAX_SEQUENCE_STEPS, MAX_STEP_WAIT_HOURS } from "../nurture-cadence";
 
 /**
@@ -66,8 +71,50 @@ export const enrolInNurtureSequenceSchema = z
      * The deal it is about, passed through to `composeAndHold` untouched. It
      * carries the salesperson to write as and the conversation to write from, so
      * an enrolment without one produces steps that refuse before they draft.
+     *
+     * A string on the wire, matching `composeOutboundSchema` — the two doors into
+     * the same loop must not disagree about the shape of an identifier. Digits
+     * only, though, which that schema does not require and this one must:
+     * `crm_nurture_enrollments.deal_id` is an `integer` with a foreign key to
+     * `deals.id`, so a non-numeric value reaches Postgres as a `22P02` on the
+     * insert and surfaces as a 500 rather than as the 400 it is.
      */
-    dealId: z.string().trim().min(1).max(64).optional(),
+    dealId: z
+      .string()
+      .trim()
+      .regex(/^[0-9]{1,9}$/, "dealId must be a deal's numeric id")
+      .optional(),
   })
   .strict();
 export type EnrolInNurtureSequenceInput = z.infer<typeof enrolInNurtureSequenceSchema>;
+
+/**
+ * Cursor-paginated, like every other list a background writer is appending to.
+ *
+ * The sweep exits and advances enrolments while somebody is reading the page,
+ * so an offset would shift rows out from under them; `buildCursorPage` walks a
+ * `(timestamp, id)` keyset instead. See `common/pagination/cursor.ts`.
+ */
+export const listNurtureSequencesQuerySchema = z
+  .object({
+    limit: pageSizeField(25),
+    cursor: z.string().min(1).max(512).optional(),
+    status: z.enum(NURTURE_SEQUENCE_STATUSES).optional(),
+  })
+  .strict();
+export type ListNurtureSequencesQuery = z.infer<typeof listNurtureSequencesQuerySchema>;
+
+export const listNurtureEnrollmentsQuerySchema = z
+  .object({
+    limit: pageSizeField(25),
+    cursor: z.string().min(1).max(512).optional(),
+    /**
+     * Defaults to everything rather than to `active`. A sequence nobody is
+     * enrolled in any more and one nobody was ever enrolled in look identical
+     * from an active-only list, and the exit reasons are the whole point of the
+     * feature — `replied` is the number it is judged on.
+     */
+    status: z.enum(NURTURE_ENROLLMENT_STATUSES).optional(),
+  })
+  .strict();
+export type ListNurtureEnrollmentsQuery = z.infer<typeof listNurtureEnrollmentsQuerySchema>;

@@ -58,6 +58,7 @@ import { CronCrmLifecycleService } from "./cron-crm-lifecycle.service";
 import { CronCrmAutonomyService } from "./cron-crm-autonomy.service";
 import { RelationshipsModule } from "../relationships/relationships.module";
 import { AutonomyModule } from "../autonomy/autonomy.module";
+import { AutonomySequencesModule } from "../autonomy/sequences/autonomy-sequences.module";
 import { LifecycleTriggersModule } from "../lifecycle/lifecycle-triggers.module";
 import { CronIdempotencyService } from "./cron-idempotency.service";
 import { CronBuildRetentionService } from "./cron-build-retention.service";
@@ -93,6 +94,7 @@ import { EmploymentFactsModule } from "../directory/employment-facts.module";
     LifecycleTriggersModule,
     RelationshipsModule,
     AutonomyModule,
+    AutonomySequencesModule,
     HrGlobalModule,
     InvoicesModule,
     CrmAutomationStudioModule,

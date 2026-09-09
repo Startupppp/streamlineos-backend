@@ -14,6 +14,7 @@ import { CrmSequencesRunnerService } from "../crm/automation-studio/crm-sequence
 import { CronCrmTasksService } from "./cron-crm-tasks.service";
 import { CronCrmLifecycleService } from "./cron-crm-lifecycle.service";
 import { CronCrmAutonomyService } from "./cron-crm-autonomy.service";
+import { NurtureStepSenderService } from "../autonomy/sequences/nurture-step-sender.service";
 import { CronBuildRetentionService } from "./cron-build-retention.service";
 import { CronBuildSnapshotsService } from "./cron-build-snapshots.service";
 import { CronLeaseService } from "./cron-lease.service";
@@ -27,6 +28,7 @@ export class CronBuildController {
     private readonly crmTasks: CronCrmTasksService,
     private readonly crmLifecycle: CronCrmLifecycleService,
     private readonly crmAutonomy: CronCrmAutonomyService,
+    private readonly nurtureSender: NurtureStepSenderService,
     private readonly buildRetention: CronBuildRetentionService,
     private readonly buildSnapshots: CronBuildSnapshotsService,
     private readonly cronLease: CronLeaseService,
@@ -74,6 +76,17 @@ export class CronBuildController {
   @HttpCode(200)
   postCrmSilenceSweep(@Headers("authorization") authorization?: string) {
     return this.runCrmSilenceSweep(authorization);
+  }
+
+  @Get("crm-nurture-steps")
+  getCrmNurtureSteps(@Headers("authorization") authorization?: string) {
+    return this.runCrmNurtureSteps(authorization);
+  }
+
+  @Post("crm-nurture-steps")
+  @HttpCode(200)
+  postCrmNurtureSteps(@Headers("authorization") authorization?: string) {
+    return this.runCrmNurtureSteps(authorization);
   }
 
   @Get("crm-field-repairs")
@@ -212,6 +225,40 @@ export class CronBuildController {
       };
     } catch (error) {
       logger.error("CRM silence sweep failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  /**
+   * The nurture cadences, advanced one step at a time.
+   *
+   * The engine was written with no caller: `sweepDueSteps` is the only thing that
+   * moves an enrolment forward, so without this endpoint every enrolment sat on
+   * step zero and the whole surface was an authoring screen for a sequence that
+   * never ran.
+   *
+   * 900 seconds, matching the silence sweep and for the same reason — every due
+   * step is a draft somebody pays for. The lease matters more here than there:
+   * `attemptStep` claims a step before composing, so a second concurrent pass
+   * loses the race rather than double-sending, but it loses it *after* deciding
+   * the step was due, and a lease is cheaper than that decision.
+   */
+  private async runCrmNurtureSteps(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("crm-nurture-steps", 900, () =>
+        this.nurtureSender.sweepDueSteps(),
+      );
+      if (!outcome.ran)
+        return { success: true, skipped: true, message: "crm-nurture-steps already running" };
+      const result = outcome.result;
+      return {
+        success: true,
+        message: `Considered ${result.considered} enrolment(s) across ${result.organizations} organization(s): held ${result.held}, refused ${result.refused}, exited ${result.exited}, completed ${result.completed}`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("CRM nurture step sweep failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

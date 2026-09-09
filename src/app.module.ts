@@ -99,6 +99,7 @@ import { SequenceReplyExitModule } from "./modules/autonomy/sequences/sequence-r
 import { CrmMcpModule } from "./modules/crm/mcp/crm-mcp.module";
 import { IngressModule } from "./modules/ingress/ingress.module";
 import { AutonomyModule } from "./modules/autonomy/autonomy.module";
+import { AutonomySequencesModule } from "./modules/autonomy/sequences/autonomy-sequences.module";
 import { CrmImportModule } from "./modules/crm/import/crm-import.module";
 import { PortalModule } from "./modules/portal/portal.module";
 import { ModuleAccessModule } from "./modules/module-access/module-access.module";
@@ -192,6 +193,9 @@ import { EmploymentFactsModule } from "./modules/directory/employment-facts.modu
     CrmMcpModule,
     IngressModule,
     AutonomyModule,
+    // After `AutonomyModule`, which it imports for `OutboundService`. The reply
+    // exit half is registered above and stays a leaf — see its module docstring.
+    AutonomySequencesModule,
     CrmImportModule,
     IssuesModule,
     PortalModule,

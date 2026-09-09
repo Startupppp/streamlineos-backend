@@ -44,6 +44,8 @@ describe("Cron auth (e2e)", () => {
      */
     ["get", "/cron/crm-silence-sweep"],
     ["post", "/cron/crm-silence-sweep"],
+    ["get", "/cron/crm-nurture-steps"],
+    ["post", "/cron/crm-nurture-steps"],
     ["get", "/cron/crm-field-repairs"],
     ["post", "/cron/crm-field-repairs"],
   ];
