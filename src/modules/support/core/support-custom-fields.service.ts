@@ -4,6 +4,7 @@ import { customFieldDefinitions } from "../../../db/schema/custom-field-engine";
 import { supportTicketCustomFieldValues } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { getPostgresErrorCode } from "../../../common/db/postgres-error";
 import type { CreateCustomFieldInput, CustomFieldValueInput, UpdateCustomFieldInput } from "./dto/support.schemas";
 
 const SUPPORT_ENTITY_TYPE = "support_ticket" as const;
@@ -101,8 +102,16 @@ export class SupportCustomFieldsService {
         isActive: input.isActive,
       })
       .returning()
-      .catch((e: { code?: string }) => {
-        if (e.code === "23505") {
+      .catch((e: unknown) => {
+        /**
+         * `uniq_cfd_org_entity_project_key` — (org_id, entity_type,
+         * project_id, key), every column non-null and this path's own values.
+         * The check above is a read followed by a write, so the index answers
+         * when two requests pass that check together — and it never did,
+         * because Drizzle keeps the SQLSTATE on `.cause` and `e.code` off the
+         * wrapper is undefined. The loser got a 500.
+         */
+        if (getPostgresErrorCode(e) === "23505") {
           throw new ConflictException(`A custom field with key "${input.key}" already exists`);
         }
         throw e;
