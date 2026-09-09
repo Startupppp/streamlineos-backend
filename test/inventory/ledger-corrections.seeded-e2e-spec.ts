@@ -348,17 +348,17 @@ describe("[seeded-e2e] ledger corrections and immutability", () => {
       );
       const countId = (created as { id: number }).id;
 
-      await asTenant(() => counts.startCycleCount(scene.orgId, countId));
+      await asTenant(() => counts.startCycleCount(scene.orgId, scene.userId, countId));
       const lines = (created as { lines: Array<{ id: number }> }).lines;
       expect(lines).toHaveLength(1);
       // Counted short by two: a count that finds nothing is the normal outcome
       // and would not prove the variance is being reported.
       await asTenant(() =>
-        counts.updateLines(scene.orgId, countId, {
+        counts.updateLines(scene.orgId, scene.userId, countId, {
           lines: [{ lineId: lines[0]!.id, countedQty: 28 }],
         } as never),
       );
-      await asTenant(() => counts.reviewCycleCount(scene.orgId, countId));
+      await asTenant(() => counts.reviewCycleCount(scene.orgId, scene.userId, countId));
 
       const key = `cyc-post-${randomUUID().slice(0, 8)}`;
       await asTenant(() =>
@@ -401,13 +401,13 @@ describe("[seeded-e2e] ledger corrections and immutability", () => {
       const lines = (created as { lines: Array<{ id: number }> }).lines;
       expect(lines).toHaveLength(1);
 
-      await asTenant(() => audits.startAudit(scene.orgId, auditId));
+      await asTenant(() => audits.startAudit(scene.orgId, scene.userId, auditId));
       await asTenant(() =>
-        audits.updateLines(scene.orgId, auditId, {
+        audits.updateLines(scene.orgId, scene.userId, auditId, {
           lines: [{ lineId: lines[0]!.id, countedQty: 40 }],
         } as never),
       );
-      await asTenant(() => audits.reviewAudit(scene.orgId, auditId));
+      await asTenant(() => audits.reviewAudit(scene.orgId, scene.userId, auditId));
 
       const key = `aud-post-${randomUUID().slice(0, 8)}`;
       await asTenant(() => audits.postAudit(scene.orgId, scene.userId, auditId, key));

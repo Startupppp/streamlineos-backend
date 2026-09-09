@@ -44,7 +44,7 @@ export class InvPhysicalAuditsController {
     @Param("auditId", ParseIntPipe) auditId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.audits.getAudit(u.orgId, auditId);
+    return this.audits.getAudit(u.orgId, u.userId, auditId);
   }
 
   @Post()
@@ -69,7 +69,7 @@ export class InvPhysicalAuditsController {
     @Param("auditId", ParseIntPipe) auditId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.audits.startAudit(u.orgId, auditId);
+    return this.audits.startAudit(u.orgId, u.userId, auditId);
   }
 
   @Patch(":auditId/lines")
@@ -81,7 +81,7 @@ export class InvPhysicalAuditsController {
     @Body() body: UpdateCountLinesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.audits.updateLines(u.orgId, auditId, body);
+    return this.audits.updateLines(u.orgId, u.userId, auditId, body);
   }
 
   @Post(":auditId/review")
@@ -94,7 +94,7 @@ export class InvPhysicalAuditsController {
     @Param("auditId", ParseIntPipe) auditId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.audits.reviewAudit(u.orgId, auditId);
+    return this.audits.reviewAudit(u.orgId, u.userId, auditId);
   }
 
   @Post(":auditId/post")
@@ -119,6 +119,6 @@ export class InvPhysicalAuditsController {
     @Param("auditId", ParseIntPipe) auditId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.audits.cancelAudit(u.orgId, auditId);
+    return this.audits.cancelAudit(u.orgId, u.userId, auditId);
   }
 }

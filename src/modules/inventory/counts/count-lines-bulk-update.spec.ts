@@ -3,8 +3,12 @@ import { InvPhysicalAuditsService } from "./inv-physical-audits.service";
 
 describe("inventory count line bulk updates", () => {
   it.each([
-    [InvCycleCountsService, "requireCount", "getCycleCount"],
-    [InvPhysicalAuditsService, "requireAudit", "getAudit"],
+    // The reader named here is the UNSCOPED one on purpose: `updateLines` has
+    // already passed the scoped `require*` gate for this id, so re-gating the
+    // row it hands back would resolve the caller's warehouses a second time to
+    // reach the same answer.
+    [InvCycleCountsService, "requireCount", "loadCycleCountUnscoped"],
+    [InvPhysicalAuditsService, "requireAudit", "loadAuditUnscoped"],
   ] as const)("updates all submitted lines with one database call", async (Service, guard, getter) => {
     const execute = jest.fn().mockResolvedValue(undefined);
     const cache = { invalidate: jest.fn().mockResolvedValue(undefined) };
@@ -14,7 +18,7 @@ describe("inventory count line bulk updates", () => {
       [getter]: jest.fn().mockResolvedValue({ id: 7 }),
     });
 
-    await service.updateLines("org-1", 7, {
+    await service.updateLines("org-1", "supervisor-1", 7, {
       lines: [
         { lineId: 1, countedQty: 10 },
         { lineId: 2, countedQty: 20 },
