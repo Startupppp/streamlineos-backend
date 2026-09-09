@@ -20,6 +20,7 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { getPostgresErrorDetails } from "../../../common/db/postgres-error";
 import { AuditService } from "../../../common/audit/audit.service";
 import { logger } from "../../../common/logger/logger.service";
 import { AiCreditsService } from "./ai-credits.service";
@@ -388,7 +389,15 @@ export class BillingService {
         }
       });
     } catch (err: unknown) {
-      const pgErr = err as { code?: string; constraint?: string };
+      /**
+       * Both halves came off the wrong object. Drizzle wraps the driver error
+       * and leaves the SQLSTATE on `.cause`, and postgres-js spells the
+       * constraint field `constraint_name`, so `pgErr.code` and
+       * `pgErr.constraint` were each undefined and a second redemption of the
+       * same coupon by the same organisation surfaced as a 500.
+       * `uq_coupon_redemptions_coupon_org` — (coupon_id, org_id).
+       */
+      const pgErr = getPostgresErrorDetails(err);
       if (pgErr.code === "23505") {
         if (pgErr.constraint === "uq_coupon_redemptions_coupon_org") {
           throw new ConflictException(

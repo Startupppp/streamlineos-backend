@@ -1,3 +1,4 @@
+import { DrizzleQueryError } from "drizzle-orm";
 import { NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -381,7 +382,29 @@ describe("AiCreditsService.purchaseCreditsDirectly — DB backstop (23505)", () 
         selectCallCount++;
         return selectCallCount === 1 ? packChain : walletChain;
       }),
-      transaction: jest.fn().mockRejectedValue({ code: "23505" }),
+      /**
+       * A real `DrizzleQueryError` wrapping a real postgres-js error, not a
+       * bare `{ code: "23505" }`.
+       *
+       * The bare object is the shape that made this bug invisible: Drizzle
+       * throws a wrapper and leaves the SQLSTATE on `.cause`, so a service
+       * reading `err.code` never fired — and a mock that puts `code` on the
+       * top-level object passes whether the service reads the wrapper or the
+       * cause. Rejecting with what the driver and ORM actually produce is the
+       * difference between a test that can fail and one that cannot.
+       */
+      transaction: jest.fn().mockRejectedValue(
+        new DrizzleQueryError(
+          "insert into ai_credit_transactions ...",
+          [],
+          Object.assign(
+            new Error(
+              'duplicate key value violates unique constraint "uq_ai_credit_txns_purchase_ref"',
+            ),
+            { code: "23505", constraint_name: "uq_ai_credit_txns_purchase_ref" },
+          ),
+        ),
+      ),
     };
 
     const module = await Test.createTestingModule({
