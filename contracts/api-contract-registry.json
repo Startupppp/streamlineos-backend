@@ -1,7 +1,7 @@
 {
   "version": "1",
   "schemaVersion": "1.1",
-  "generatedAt": "2026-09-06T09:40:34.012Z",
+  "generatedAt": "2026-09-09T07:50:20.618Z",
   "description": "Fail-closed API contract registry. Every HTTP operation, outbox event, and outbound customer webhook event is classified as 'internal' or 'published'. Operations absent from this registry are treated as 'published' by check-api-contract-registry.mjs.",
   "operations": {
     "GET /access/delegations": {
@@ -2282,9 +2282,9 @@
       "sunsetEvidence": null
     },
     "GET /agent/v1/me": {
-      "classification": "published",
+      "classification": "internal",
       "classificationOverride": null,
-      "xExposure": "public",
+      "xExposure": "permissioned",
       "operationId": "AgentController_getMe",
       "owner": null,
       "version": "1",
@@ -2292,21 +2292,12 @@
         "external automation agents holding an agent token (AgentTokenGuard)"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null,
-      "deprecation": null,
-      "knownParameters": [],
-      "idempotency": {
-        "mode": "safe",
-        "key": null,
-        "replay": "Safe method — repeating the request produces no additional side effect.",
-        "source": "http-method"
-      },
-      "contractEvidence": null
+      "sunsetEvidence": null
     },
     "GET /agent/v1/projects": {
-      "classification": "published",
+      "classification": "internal",
       "classificationOverride": null,
-      "xExposure": "public",
+      "xExposure": "permissioned",
       "operationId": "AgentController_listProjects",
       "owner": null,
       "version": "1",
@@ -2314,47 +2305,12 @@
         "external automation agents holding an agent token (AgentTokenGuard)"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null,
-      "deprecation": null,
-      "knownParameters": [
-        {
-          "name": "afterId",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "limit",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "pmWorkspaceId",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "search",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "status",
-          "in": "query",
-          "required": false
-        }
-      ],
-      "idempotency": {
-        "mode": "safe",
-        "key": null,
-        "replay": "Safe method — repeating the request produces no additional side effect.",
-        "source": "http-method"
-      },
-      "contractEvidence": null
+      "sunsetEvidence": null
     },
     "POST /agent/v1/projects": {
-      "classification": "published",
+      "classification": "internal",
       "classificationOverride": null,
-      "xExposure": "public",
+      "xExposure": "permissioned",
       "operationId": "AgentController_createProject",
       "owner": null,
       "version": "1",
@@ -2362,21 +2318,12 @@
         "external automation agents holding an agent token (AgentTokenGuard)"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null,
-      "deprecation": null,
-      "knownParameters": [],
-      "idempotency": {
-        "mode": "natural-key-upsert",
-        "key": "caller-supplied project key",
-        "replay": "When the caller supplies `key`, uniq_projects_org_key rejects the duplicate with 409. When `key` is omitted the key is randomly generated, so a retry silently creates a second project — callers that need retry safety must send an explicit key.",
-        "source": "published-contract-terms"
-      },
-      "contractEvidence": "src/modules/agent-access/agent.controller.ts"
+      "sunsetEvidence": null
     },
     "POST /agent/v1/projects/{projectId}/tickets": {
-      "classification": "published",
+      "classification": "internal",
       "classificationOverride": null,
-      "xExposure": "public",
+      "xExposure": "permissioned",
       "operationId": "AgentController_createTicket",
       "owner": null,
       "version": "1",
@@ -2384,27 +2331,12 @@
         "external automation agents holding an agent token (AgentTokenGuard)"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null,
-      "deprecation": null,
-      "knownParameters": [
-        {
-          "name": "projectId",
-          "in": "path",
-          "required": true
-        }
-      ],
-      "idempotency": {
-        "mode": "at-least-once-unfenced",
-        "key": null,
-        "replay": "Bare insert into tickets with a sequential ticket number. A retry creates a second ticket. No server-side replay fence: a client that retries after a timeout must expect a duplicate.",
-        "source": "published-contract-terms"
-      },
-      "contractEvidence": "src/modules/build/core/projects-tickets-create.service.ts"
+      "sunsetEvidence": null
     },
     "GET /agent/v1/projects/{projectId}/tickets": {
-      "classification": "published",
+      "classification": "internal",
       "classificationOverride": null,
-      "xExposure": "public",
+      "xExposure": "permissioned",
       "operationId": "AgentController_listTickets",
       "owner": null,
       "version": "1",
@@ -2412,112 +2344,12 @@
         "external automation agents holding an agent token (AgentTokenGuard)"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null,
-      "deprecation": null,
-      "knownParameters": [
-        {
-          "name": "assigneeId",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "cursor",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "cycleId",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "dueDateFrom",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "dueDateTo",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "epicId",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "labelIds",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "limit",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "moduleIds",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "orderBy",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "orderDir",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "priority",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "projectId",
-          "in": "path",
-          "required": true
-        },
-        {
-          "name": "search",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "sprintId",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "sprintIds",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "status",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "type",
-          "in": "query",
-          "required": false
-        }
-      ],
-      "idempotency": {
-        "mode": "safe",
-        "key": null,
-        "replay": "Safe method — repeating the request produces no additional side effect.",
-        "source": "http-method"
-      },
-      "contractEvidence": null
+      "sunsetEvidence": null
     },
     "GET /agent/v1/tickets/{ticketId}": {
-      "classification": "published",
+      "classification": "internal",
       "classificationOverride": null,
-      "xExposure": "public",
+      "xExposure": "permissioned",
       "operationId": "AgentController_getTicket",
       "owner": null,
       "version": "1",
@@ -2525,27 +2357,12 @@
         "external automation agents holding an agent token (AgentTokenGuard)"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null,
-      "deprecation": null,
-      "knownParameters": [
-        {
-          "name": "ticketId",
-          "in": "path",
-          "required": true
-        }
-      ],
-      "idempotency": {
-        "mode": "safe",
-        "key": null,
-        "replay": "Safe method — repeating the request produces no additional side effect.",
-        "source": "http-method"
-      },
-      "contractEvidence": null
+      "sunsetEvidence": null
     },
     "PATCH /agent/v1/tickets/{ticketId}": {
-      "classification": "published",
+      "classification": "internal",
       "classificationOverride": null,
-      "xExposure": "public",
+      "xExposure": "permissioned",
       "operationId": "AgentController_updateTicket",
       "owner": null,
       "version": "1",
@@ -2553,27 +2370,12 @@
         "external automation agents holding an agent token (AgentTokenGuard)"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null,
-      "deprecation": null,
-      "knownParameters": [
-        {
-          "name": "ticketId",
-          "in": "path",
-          "required": true
-        }
-      ],
-      "idempotency": {
-        "mode": "optimistic-concurrency",
-        "key": "expectedUpdatedAt",
-        "replay": "expectedUpdatedAt is compared to the stored updatedAt and a mismatch raises a conflict. This is lost-update protection, not replay protection, and the field is optional — an agent that omits it gets neither.",
-        "source": "published-contract-terms"
-      },
-      "contractEvidence": "src/modules/build/core/projects-tickets-update.service.ts"
+      "sunsetEvidence": null
     },
     "POST /agent/v1/tickets/{ticketId}/comments": {
-      "classification": "published",
+      "classification": "internal",
       "classificationOverride": null,
-      "xExposure": "public",
+      "xExposure": "permissioned",
       "operationId": "AgentController_addComment",
       "owner": null,
       "version": "1",
@@ -2581,27 +2383,12 @@
         "external automation agents holding an agent token (AgentTokenGuard)"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null,
-      "deprecation": null,
-      "knownParameters": [
-        {
-          "name": "ticketId",
-          "in": "path",
-          "required": true
-        }
-      ],
-      "idempotency": {
-        "mode": "at-least-once-unfenced",
-        "key": null,
-        "replay": "Bare insert into ticket_comments. A retry creates a duplicate comment. No server-side replay fence: a client that retries after a timeout must expect a duplicate.",
-        "source": "published-contract-terms"
-      },
-      "contractEvidence": "src/modules/build/core/projects-ticket-comments.service.ts"
+      "sunsetEvidence": null
     },
     "GET /agent/v1/work": {
-      "classification": "published",
+      "classification": "internal",
       "classificationOverride": null,
-      "xExposure": "public",
+      "xExposure": "permissioned",
       "operationId": "AgentController_getAllWork",
       "owner": null,
       "version": "1",
@@ -2609,112 +2396,7 @@
         "external automation agents holding an agent token (AgentTokenGuard)"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null,
-      "deprecation": null,
-      "knownParameters": [
-        {
-          "name": "assigneeId",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "cursor",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "cycleId",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "dueDateFrom",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "dueDateTo",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "epicId",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "excludeStatus",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "labelIds",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "limit",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "orderBy",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "orderDir",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "pmWorkspaceId",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "priority",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "projectIds",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "scope",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "search",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "sprintId",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "status",
-          "in": "query",
-          "required": false
-        },
-        {
-          "name": "type",
-          "in": "query",
-          "required": false
-        }
-      ],
-      "idempotency": {
-        "mode": "safe",
-        "key": null,
-        "replay": "Safe method — repeating the request produces no additional side effect.",
-        "source": "http-method"
-      },
-      "contractEvidence": null
+      "sunsetEvidence": null
     },
     "POST /ai/account-summary": {
       "classification": "internal",
@@ -8937,28 +8619,6 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
-    "PATCH /chat/huddles/{huddleId}/deafen": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "ChatHuddlesController_deafen",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "PATCH /chat/huddles/{huddleId}/hand": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "ChatHuddlesController_raiseHand",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
     "PATCH /chat/huddles/{huddleId}/heartbeat": {
       "classification": "internal",
       "classificationOverride": null,
@@ -9008,39 +8668,6 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "ChatHuddlesController_leaveHuddle",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "PATCH /chat/huddles/{huddleId}/mute": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "ChatHuddlesController_setMute",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "PATCH /chat/huddles/{huddleId}/screenshare": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "ChatHuddlesController_setScreenShare",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "POST /chat/huddles/{huddleId}/signal": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "ChatHuddlesController_sendSignal",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -12192,7 +11819,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "public",
-      "operationId": "CronBuildController_getFinanceDepreciation",
+      "operationId": "CronFinanceController_getFinanceDepreciation",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -12203,7 +11830,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "public",
-      "operationId": "CronBuildController_postFinanceDepreciation",
+      "operationId": "CronFinanceController_postFinanceDepreciation",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -12214,7 +11841,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "public",
-      "operationId": "CronBuildController_getFinanceDueChecks",
+      "operationId": "CronFinanceController_getFinanceDueChecks",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -12225,7 +11852,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "public",
-      "operationId": "CronBuildController_postFinanceDueChecks",
+      "operationId": "CronFinanceController_postFinanceDueChecks",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -12236,7 +11863,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "public",
-      "operationId": "CronBuildController_getFinanceRecurringFlush",
+      "operationId": "CronFinanceController_getFinanceRecurringFlush",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -12247,7 +11874,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "public",
-      "operationId": "CronBuildController_postFinanceRecurringFlush",
+      "operationId": "CronFinanceController_postFinanceRecurringFlush",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -12478,7 +12105,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "public",
-      "operationId": "CronSupportController_getKbChatHistoryPurge",
+      "operationId": "CronKbController_getKbChatHistoryPurge",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -12489,7 +12116,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "public",
-      "operationId": "CronSupportController_postKbChatHistoryPurge",
+      "operationId": "CronKbController_postKbChatHistoryPurge",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -12500,7 +12127,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "public",
-      "operationId": "CronSupportController_getKbChunkRetentionSweep",
+      "operationId": "CronKbController_getKbChunkRetentionSweep",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -12511,7 +12138,29 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "public",
-      "operationId": "CronSupportController_postKbChunkRetentionSweep",
+      "operationId": "CronKbController_postKbChunkRetentionSweep",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /cron/kb-stuck-source-reap": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronKbController_getKbStuckSourceReap",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /cron/kb-stuck-source-reap": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronKbController_postKbStuckSourceReap",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -12522,7 +12171,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "public",
-      "operationId": "CronSupportController_getKbTelemetryRetentionSweep",
+      "operationId": "CronKbController_getKbTelemetryRetentionSweep",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -12533,7 +12182,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "public",
-      "operationId": "CronSupportController_postKbTelemetryRetentionSweep",
+      "operationId": "CronKbController_postKbTelemetryRetentionSweep",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -12544,7 +12193,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "public",
-      "operationId": "CronSupportController_getKbTrashPurge",
+      "operationId": "CronKbController_getKbTrashPurge",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -12555,7 +12204,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "public",
-      "operationId": "CronSupportController_postKbTrashPurge",
+      "operationId": "CronKbController_postKbTrashPurge",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -12698,7 +12347,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "public",
-      "operationId": "CronNotificationsController_getNotificationOutboxRetentionSweep",
+      "operationId": "CronNotificationRetentionController_getNotificationOutboxRetentionSweep",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -12709,7 +12358,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "public",
-      "operationId": "CronNotificationsController_postNotificationOutboxRetentionSweep",
+      "operationId": "CronNotificationRetentionController_postNotificationOutboxRetentionSweep",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -12742,7 +12391,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "public",
-      "operationId": "CronNotificationsController_getNotificationsRetentionDetach",
+      "operationId": "CronNotificationRetentionController_getNotificationsRetentionDetach",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -12753,7 +12402,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "public",
-      "operationId": "CronNotificationsController_postNotificationsRetentionDetach",
+      "operationId": "CronNotificationRetentionController_postNotificationsRetentionDetach",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -12764,7 +12413,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "public",
-      "operationId": "CronNotificationsController_getNotificationsRetentionSweep",
+      "operationId": "CronNotificationRetentionController_getNotificationsRetentionSweep",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -12775,7 +12424,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "public",
-      "operationId": "CronNotificationsController_postNotificationsRetentionSweep",
+      "operationId": "CronNotificationRetentionController_postNotificationsRetentionSweep",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -12875,6 +12524,17 @@
       "classificationOverride": null,
       "xExposure": "public",
       "operationId": "CronOutboxController_metrics",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /cron/outbox-events-replay-dead": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronOutboxController_postOutboxEventsReplayDead",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -24984,6 +24644,50 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "GET /integrations/connections/org": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "IntegrationsController_listOrgConnections",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "DELETE /integrations/connections/org/{connectionId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "IntegrationsController_disconnectOrgConnection",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /integrations/connections/org/finalize": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "IntegrationsController_finalizeOrgConnection",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /integrations/connections/org/initiate": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "IntegrationsController_initiateOrgConnection",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /integrations/git/connections": {
       "classification": "internal",
       "classificationOverride": null,
@@ -36759,17 +36463,6 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
-    "GET /realtime/ice-servers": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "universal",
-      "operationId": "RealtimeController_iceServers",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
     "GET /renderer/layouts/{layoutKey}": {
       "classification": "internal",
       "classificationOverride": null,
@@ -42313,6 +42006,72 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "PATCH /chat/huddles/{huddleId}/deafen": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ChatHuddlesController_deafen",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "PATCH /chat/huddles/{huddleId}/hand": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ChatHuddlesController_raiseHand",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "PATCH /chat/huddles/{huddleId}/mute": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ChatHuddlesController_setMute",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "PATCH /chat/huddles/{huddleId}/screenshare": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ChatHuddlesController_setScreenShare",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /chat/huddles/{huddleId}/signal": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ChatHuddlesController_sendSignal",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /realtime/ice-servers": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "universal",
+      "operationId": "RealtimeController_iceServers",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /settings/permissions": {
       "classification": "internal",
       "classificationOverride": null,
@@ -42485,15 +42244,6 @@
       "sunsetEvidence": null
     },
     "accounting.bill.paid": {
-      "classification": "internal",
-      "owner": null,
-      "consumers": [
-        "outbox-relay"
-      ],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "billing.revenue-event": {
       "classification": "internal",
       "owner": null,
       "consumers": [
@@ -42750,6 +42500,7 @@
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
       "emittedFrom": [
+        "s",
         "s"
       ],
       "declaredIn": null,
