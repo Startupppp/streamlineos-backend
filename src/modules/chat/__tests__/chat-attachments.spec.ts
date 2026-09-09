@@ -1,196 +1,321 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { ChatAttachmentsService } from "../chat-attachments.service";
+import { ChatChannelMembersService } from "../chat-channel-members.service";
 import type { StorageService } from "../../storage/storage.service";
-import type { ChatChannelMembersService } from "../chat-channel-members.service";
 import { validateMagicBytes } from "../../storage/file-signatures";
 import { StorageMultipartService } from "../../storage/storage-multipart.service";
 
-/**
- * Denial semantics:
- *   - private channel non-member → 404 (hides channel existence)
- *   - public channel non-member  → 403 (confirms channel exists, denies access)
- * Every denial is paired with a control that proves the test bites.
- */
+const dialect = new PgDialect();
 
 const ORG = "org-a";
 const OTHER_ORG = "org-b";
 const USER = "user-a";
 const CHANNEL_ID = 1;
+const OTHER_CHANNEL_ID = 2;
 const ATTACHMENT_ID = 10;
-const FILE_KEY = "chat/org-a/file.pdf";
+const MEMBERSHIP_ID = 77;
+const FILE_KEY = `${ORG}/chat/2f1c9d0e-4a7b-4c1e-9f3a-8b6d5e2c1a09-file.pdf`;
 const SIGNED_URL = "https://r2.example.com/signed?X-Amz-Signature=abc";
 
-const VALID_ROW = { fileKey: FILE_KEY };
+const REQUIRED_BINDINGS = [
+  "chat_attachments.id",
+  "chat_attachments.org_id",
+  "chat_messages.org_id",
+  "chat_messages.channel_id",
+  "chat_messages.is_deleted",
+] as const;
 
-function makeDb(rows: unknown[] = []) {
-  const mock = {
-    select: jest.fn().mockReturnThis(),
-    from: jest.fn().mockReturnThis(),
-    innerJoin: jest.fn().mockReturnThis(),
-    where: jest.fn().mockReturnThis(),
-    limit: jest.fn().mockResolvedValue(rows),
+type Row = Readonly<Record<string, unknown>>;
+
+function liveAttachment(overrides: Row = {}): Row {
+  return {
+    "chat_attachments.id": ATTACHMENT_ID,
+    "chat_attachments.org_id": ORG,
+    "chat_messages.org_id": ORG,
+    "chat_messages.channel_id": CHANNEL_ID,
+    "chat_messages.is_deleted": false,
+    ...overrides,
   };
-  return mock as unknown as Db;
 }
 
-function makeMembers(opts: { error?: unknown } = {}) {
-  return {
-    assertChannelMembership: opts.error
-      ? jest.fn().mockRejectedValue(opts.error)
-      : jest.fn().mockResolvedValue(undefined),
-  } as unknown as ChatChannelMembersService;
+function equalityBindings(where: SQL): Map<string, unknown> {
+  const { sql: text, params } = dialect.sqlToQuery(where);
+  const bindings = new Map<string, unknown>();
+  const pattern = /"(\w+)"\."(\w+)"\s*=\s*\$(\d+)/gi;
+  let match = pattern.exec(text);
+  while (match !== null) {
+    bindings.set(`${match[1]}.${match[2]}`, params[Number(match[3]) - 1]);
+    match = pattern.exec(text);
+  }
+  return bindings;
 }
 
-function makeStorage() {
-  return {
+interface SelectChain {
+  from: () => SelectChain;
+  innerJoin: () => SelectChain;
+  where: (predicate: SQL) => SelectChain;
+  limit: () => Promise<Array<{ fileKey: string }>>;
+}
+
+interface Harness {
+  readonly service: ChatAttachmentsService;
+  readonly storage: StorageService;
+  readonly predicate: () => SQL;
+  readonly queried: () => boolean;
+}
+
+function makeHarness(opts: {
+  row?: Row;
+  channel?: { id: number; isPrivate: boolean } | null;
+  orgMembership?: { id: number } | null;
+  channelMember?: { role: string } | null;
+} = {}): Harness {
+  const row = opts.row === undefined ? liveAttachment() : opts.row;
+  let captured: SQL | undefined;
+
+  const chain: SelectChain = {
+    from: () => chain,
+    innerJoin: () => chain,
+    where: (predicate: SQL) => {
+      captured = predicate;
+      return chain;
+    },
+    limit: () => {
+      if (captured === undefined)
+        throw new Error("the attachment read ran with no WHERE predicate");
+      const bindings = equalityBindings(captured);
+      if (bindings.size === 0)
+        throw new Error(`the attachment read binds no column: ${dialect.sqlToQuery(captured).sql}`);
+      for (const [column, value] of bindings)
+        if (row[column] !== value) return Promise.resolve([]);
+      return Promise.resolve([{ fileKey: FILE_KEY }]);
+    },
+  };
+
+  const selectFn = jest.fn(() => chain);
+  const db = {
+    select: selectFn,
+    query: {
+      chatChannels: {
+        findFirst: jest.fn().mockResolvedValue(
+          opts.channel === undefined ? { id: CHANNEL_ID, isPrivate: true } : opts.channel,
+        ),
+      },
+      organizationMembers: {
+        findFirst: jest.fn().mockResolvedValue(
+          opts.orgMembership === undefined ? { id: MEMBERSHIP_ID } : opts.orgMembership,
+        ),
+      },
+      chatChannelMembers: {
+        findFirst: jest.fn().mockResolvedValue(
+          opts.channelMember === undefined ? { role: "MEMBER" } : opts.channelMember,
+        ),
+      },
+    },
+  } as unknown as Db;
+
+  const unusedCollaborator = (name: string) =>
+    new Proxy(
+      {},
+      {
+        get() {
+          throw new Error(`${name} must not be reached while signing an attachment`);
+        },
+      },
+    );
+
+  const members = new ChatChannelMembersService(
+    db,
+    unusedCollaborator("CacheService") as never,
+    unusedCollaborator("EntityReferenceService") as never,
+    unusedCollaborator("AblyService") as never,
+  );
+
+  const storage = {
     getFileUrl: jest.fn().mockResolvedValue(SIGNED_URL),
   } as unknown as StorageService;
+
+  return {
+    service: new ChatAttachmentsService(db, storage, members),
+    storage,
+    predicate: () => {
+      if (captured === undefined) throw new Error("no predicate was compiled");
+      return captured;
+    },
+    queried: () => selectFn.mock.calls.length > 0,
+  };
 }
 
-function makeService(db: Db, members: ChatChannelMembersService, storage: StorageService) {
-  return new ChatAttachmentsService(db, storage, members);
-}
+describe("ChatAttachmentsService.getSignedUrl — the predicate is the authorization", () => {
+  it("CONTROL: a current member of the channel gets a 1-hour signed URL", async () => {
+    const harness = makeHarness();
 
-describe("ChatAttachmentsService.getSignedUrl", () => {
-  describe("membership denial", () => {
-    it("DENY: non-member of a PRIVATE channel gets 404, storage is never called", async () => {
-      const storage = makeStorage();
-      const service = makeService(
-        makeDb([VALID_ROW]),
-        makeMembers({ error: new NotFoundException("Channel not found") }),
-        storage,
-      );
+    const result = await harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG);
 
-      await expect(service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG)).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
-      expect(storage.getFileUrl).not.toHaveBeenCalled();
-    });
-
-    it("CONTROL: member of the same private channel gets a signed URL", async () => {
-      const storage = makeStorage();
-      const service = makeService(makeDb([VALID_ROW]), makeMembers(), storage);
-
-      const result = await service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG);
-      expect(result).toEqual({ url: SIGNED_URL });
-    });
-
-    it("DENY: non-member of a PUBLIC channel gets 403, storage is never called", async () => {
-      const storage = makeStorage();
-      const service = makeService(
-        makeDb([VALID_ROW]),
-        makeMembers({ error: new ForbiddenException("You are not a member of this channel") }),
-        storage,
-      );
-
-      await expect(service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG)).rejects.toBeInstanceOf(
-        ForbiddenException,
-      );
-      expect(storage.getFileUrl).not.toHaveBeenCalled();
-    });
-
-    it("CONTROL: member of the same public channel gets a signed URL", async () => {
-      const storage = makeStorage();
-      const service = makeService(makeDb([VALID_ROW]), makeMembers(), storage);
-
-      const result = await service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG);
-      expect(result.url).toBe(SIGNED_URL);
-      expect(storage.getFileUrl).toHaveBeenCalledWith(ORG, FILE_KEY, 3600);
-    });
+    expect(result).toEqual({ url: SIGNED_URL });
+    expect(harness.storage.getFileUrl).toHaveBeenCalledWith(ORG, FILE_KEY, 3600);
   });
 
-  describe("cross-organization isolation", () => {
-    it("DENY: attachment row absent for another org returns 404, storage not called", async () => {
-      const storage = makeStorage();
-      const service = makeService(
-        makeDb([]),
-        makeMembers(),
-        storage,
-      );
+  it("CONTROL: the compiled WHERE constrains every column the denials depend on", async () => {
+    const harness = makeHarness();
 
-      await expect(
-        service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, OTHER_ORG),
-      ).rejects.toBeInstanceOf(NotFoundException);
-      expect(storage.getFileUrl).not.toHaveBeenCalled();
-    });
+    await harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG);
 
-    it("CONTROL: the same attachment id for the correct org succeeds", async () => {
-      const storage = makeStorage();
-      const service = makeService(makeDb([VALID_ROW]), makeMembers(), storage);
-
-      const result = await service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG);
-      expect(result.url).toBe(SIGNED_URL);
-    });
-  });
-
-  describe("signed URL parameters", () => {
-    it("passes orgId and fileKey to StorageService and returns the url", async () => {
-      const storage = makeStorage();
-      const service = makeService(makeDb([VALID_ROW]), makeMembers(), storage);
-
-      await service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG);
-
-      expect(storage.getFileUrl).toHaveBeenCalledWith(ORG, FILE_KEY, 3600);
-    });
-  });
-
-  describe("tenant key scoping", () => {
-    it("(a) signed URL uses the caller orgId as the storage tenant, not a guess from the key", async () => {
-      const storage = makeStorage();
-      const service = makeService(makeDb([VALID_ROW]), makeMembers(), storage);
-
-      await service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG);
-
-      const [calledOrgId] = (storage.getFileUrl as jest.Mock).mock.calls[0] as [string, string, number];
-      expect(calledOrgId).toBe(ORG);
-    });
-
-    it("(b) DENY: a cross-tenant query (no row found) means storage is never reached", async () => {
-      const storage = makeStorage();
-      const service = makeService(makeDb([]), makeMembers(), storage);
-
-      await expect(
-        service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, OTHER_ORG),
-      ).rejects.toBeInstanceOf(NotFoundException);
-      expect(storage.getFileUrl).not.toHaveBeenCalled();
-    });
-
-    it("CONTROL: the correct org gets the signed URL", async () => {
-      const storage = makeStorage();
-      const service = makeService(makeDb([VALID_ROW]), makeMembers(), storage);
-
-      const result = await service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG);
-      expect(result.url).toBe(SIGNED_URL);
-      expect(storage.getFileUrl).toHaveBeenCalledTimes(1);
-    });
+    const bindings = equalityBindings(harness.predicate());
+    for (const column of REQUIRED_BINDINGS) expect(bindings.has(column)).toBe(true);
+    expect(bindings.get("chat_attachments.id")).toBe(ATTACHMENT_ID);
+    expect(bindings.get("chat_attachments.org_id")).toBe(ORG);
+    expect(bindings.get("chat_messages.org_id")).toBe(ORG);
+    expect(bindings.get("chat_messages.channel_id")).toBe(CHANNEL_ID);
+    expect(bindings.get("chat_messages.is_deleted")).toBe(false);
   });
 });
 
-describe("download — short-lived URL lifetime", () => {
-  it("signed URL TTL is exactly 3600 seconds so possession outlives no more than one hour", async () => {
-    const storage = makeStorage();
-    const service = makeService(makeDb([VALID_ROW]), makeMembers(), storage);
+describe("cross-organization isolation — org_id is bound, not merely present", () => {
+  it("DENY: a caller in another org binds its own org and the row does not match", async () => {
+    const harness = makeHarness();
 
-    await service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG);
+    await expect(
+      harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, OTHER_ORG),
+    ).rejects.toBeInstanceOf(NotFoundException);
 
-    const call = (storage.getFileUrl as jest.Mock).mock.calls[0] as [string, string, number];
+    const bindings = equalityBindings(harness.predicate());
+    expect(bindings.get("chat_attachments.org_id")).toBe(OTHER_ORG);
+    expect(bindings.get("chat_messages.org_id")).toBe(OTHER_ORG);
+    expect(harness.storage.getFileUrl).not.toHaveBeenCalled();
+  });
+
+  it("DENY: an attachment posted in a different channel of the same org is not reachable", async () => {
+    const harness = makeHarness();
+
+    await expect(
+      harness.service.getSignedUrl(OTHER_CHANNEL_ID, ATTACHMENT_ID, USER, ORG),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(harness.storage.getFileUrl).not.toHaveBeenCalled();
+  });
+
+  it("DENY: another attachment id in the same channel is not reachable", async () => {
+    const harness = makeHarness();
+
+    await expect(
+      harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID + 1, USER, ORG),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(harness.storage.getFileUrl).not.toHaveBeenCalled();
+  });
+});
+
+describe("channel membership — denial comes from a missing row, not a stubbed throw", () => {
+  it("DENY: a removed member of a PRIVATE channel gets 404 and the attachment is never read", async () => {
+    const harness = makeHarness({
+      channel: { id: CHANNEL_ID, isPrivate: true },
+      channelMember: null,
+    });
+
+    await expect(
+      harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(harness.queried()).toBe(false);
+    expect(harness.storage.getFileUrl).not.toHaveBeenCalled();
+  });
+
+  it("DENY: a removed member of a PUBLIC channel gets 403 and the attachment is never read", async () => {
+    const harness = makeHarness({
+      channel: { id: CHANNEL_ID, isPrivate: false },
+      channelMember: null,
+    });
+
+    await expect(
+      harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(harness.queried()).toBe(false);
+    expect(harness.storage.getFileUrl).not.toHaveBeenCalled();
+  });
+
+  it("DENY: a caller whose organization membership is gone gets 403 before any attachment read", async () => {
+    const harness = makeHarness({ orgMembership: null });
+
+    await expect(
+      harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(harness.queried()).toBe(false);
+  });
+
+  it("DENY: a channel that does not exist in this org gets 404", async () => {
+    const harness = makeHarness({ channel: null });
+
+    await expect(
+      harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(harness.queried()).toBe(false);
+  });
+
+  it("CONTROL: restoring the membership row restores the signed URL", async () => {
+    const harness = makeHarness({
+      channel: { id: CHANNEL_ID, isPrivate: true },
+      channelMember: { role: "MEMBER" },
+    });
+
+    const result = await harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG);
+
+    expect(result.url).toBe(SIGNED_URL);
+  });
+});
+
+describe("a deleted message's attachment is no longer signable", () => {
+  it("DENY: once the message is soft-deleted the attachment 404s", async () => {
+    const harness = makeHarness({
+      row: liveAttachment({ "chat_messages.is_deleted": true }),
+    });
+
+    await expect(
+      harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(harness.storage.getFileUrl).not.toHaveBeenCalled();
+  });
+
+  it("DENY: the predicate itself pins is_deleted to false", async () => {
+    const harness = makeHarness({
+      row: liveAttachment({ "chat_messages.is_deleted": true }),
+    });
+
+    await expect(
+      harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    const rendered = dialect.sqlToQuery(harness.predicate()).sql;
+    expect(rendered).toMatch(/"chat_messages"\."is_deleted"\s*=\s*\$/i);
+    expect(equalityBindings(harness.predicate()).get("chat_messages.is_deleted")).toBe(false);
+  });
+
+  it("CONTROL: the same attachment on a live message still signs, so the guard is not denying everything", async () => {
+    const harness = makeHarness({ row: liveAttachment() });
+
+    const result = await harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG);
+
+    expect(result.url).toBe(SIGNED_URL);
+  });
+});
+
+describe("signed URL lifetime", () => {
+  it("possession outlives no more than one hour", async () => {
+    const harness = makeHarness();
+
+    await harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG);
+
+    const call = (harness.storage.getFileUrl as jest.Mock).mock.calls[0] as [string, string, number];
     expect(call[2]).toBe(3600);
   });
 
-  it("DENY: a user whose channel membership was revoked cannot obtain a signed URL", async () => {
-    const storage = makeStorage();
-    const revokedError = new ForbiddenException("Membership revoked");
-    const service = makeService(
-      makeDb([VALID_ROW]),
-      makeMembers({ error: revokedError }),
-      storage,
-    );
+  it("the storage tenant is the caller's org, not a guess parsed from the key", async () => {
+    const harness = makeHarness();
 
-    await expect(
-      service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG),
-    ).rejects.toBeInstanceOf(ForbiddenException);
-    expect(storage.getFileUrl).not.toHaveBeenCalled();
+    await harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG);
+
+    const [calledOrgId] = (harness.storage.getFileUrl as jest.Mock).mock.calls[0] as [string, string, number];
+    expect(calledOrgId).toBe(ORG);
   });
 });
 

@@ -104,7 +104,7 @@ describe("StorageController.image — cross-tenant isolation for tracked non-sen
     expect(storage.getFileStream).toHaveBeenCalledWith("org-A", "uploads/expense-receipt.jpg");
   });
 
-  it("ALLOW — untracked non-sensitive non-namespaced key is served (public profile images etc.)", async () => {
+  it("ALLOW — untracked non-sensitive, non-chat, non-namespaced key is served (public profile images etc.)", async () => {
     const { controller, storage } = build({});
     const res = mockRes();
     await controller.image({ key: "avatars/user-profile.jpg" }, ctx("org-A"), res);

@@ -20,7 +20,6 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
 import { createHash } from "crypto";
-import { ilike } from "drizzle-orm";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
@@ -31,24 +30,10 @@ import { runInNewTenantTransaction, runOutsideTenantContext } from "../../common
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import {
-  documents,
-  onboardingDocuments,
-  expenses,
-  reimbursements,
-  handbookVersions,
-  payslipPublications,
-  candidateDocumentsVault,
-} from "../../db/schema";
 import { StorageService, type FileStreamResult, type UploadJobResult } from "./storage.service";
 import { validateMagicBytes } from "./file-signatures";
-import {
-  isForeignOrgKey,
-  isSensitiveFolderRoot,
-  ORG_NAMESPACED_KEY_FOLDERS,
-  parseStorageKey,
-  sanitizeFolder,
-} from "./storage-key";
+import { isSensitiveFolderRoot, sanitizeFolder } from "./storage-key";
+import { assertKeyReadable } from "./storage-read-authorization";
 import { FileQuarantineService } from "./file-quarantine.service";
 import { MediaTransformRunner } from "./media-transform.runner";
 import { ApiOkResponse } from "@nestjs/swagger";
@@ -67,15 +52,6 @@ import {
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
 const ORG_QUOTA_BYTES = 5 * 1024 * 1024 * 1024;
 const USER_QUOTA_BYTES = 500 * 1024 * 1024;
-
-type FileOwner = {
-  orgId: string;
-  access: "GENERIC" | "HR_DOCUMENT" | "ONBOARDING_DOCUMENT" | "PAYSLIP" | "CANDIDATE_VAULT";
-};
-
-function requiresDedicatedAccess(owner: FileOwner): boolean {
-  return owner.access !== "GENERIC";
-}
 
 const ALLOWED_UPLOAD_TYPES = [
   "image/jpeg",
@@ -326,7 +302,7 @@ export class StorageController {
 
     const orgId = u.orgId;
 
-    await this.assertKeyReadable(fileKey, u, "File not found");
+    await assertKeyReadable(this.db, this.quarantine, fileKey, orgId, "File not found");
 
     this.audit.log({ action: "file.download", userId: u.userId, orgId, metadata: { fileKey } });
 
@@ -365,7 +341,7 @@ export class StorageController {
       throw new ServiceUnavailableException("Storage not available");
     }
 
-    await this.assertKeyReadable(keyParam, u, "Not found");
+    await assertKeyReadable(this.db, this.quarantine, keyParam, u.orgId, "Not found");
 
     const stream = await this.openStream(u.orgId, keyParam, "Not found");
     res.setHeader("Content-Type", stream.contentType || this.storage.getMimeType(keyParam));
@@ -380,75 +356,6 @@ export class StorageController {
     res.setHeader("Cache-Control", "private, max-age=60, must-revalidate");
     res.setHeader("Vary", "Authorization, Cookie");
     this.pipe(stream.body, res);
-  }
-
-  /**
-   * The single gate every read of a raw object key passes, and it runs on the
-   * request that mints the signed URL rather than on the one that listed the
-   * file — a permission revoked between the two has to bite.
-   *
-   * Order matters. The key is refused for naming a foreign organisation before
-   * anything is looked up, because a key the client chose is an input, not a
-   * fact; only then is ownership resolved from the tables, and only then is the
-   * quarantine consulted, so an unscanned or infected object is unreachable on
-   * both the signed-URL and the streamed path.
-   */
-  private async assertKeyReadable(
-    fileKey: string,
-    user: CurrentUserContext,
-    notFoundMessage: string,
-  ): Promise<void> {
-    if (isForeignOrgKey(fileKey, user.orgId))
-      throw new NotFoundException(notFoundMessage);
-
-    const fileOwner = await this.resolveFileOwner(fileKey, user.orgId);
-    if (fileOwner !== null) {
-      if (fileOwner.orgId !== user.orgId)
-        throw new NotFoundException(notFoundMessage);
-      if (requiresDedicatedAccess(fileOwner))
-        throw new ForbiddenException("Access denied");
-    } else if (isSensitiveFolderRoot(parseStorageKey(fileKey, user.orgId).folderRoot)) {
-      throw new NotFoundException(notFoundMessage);
-    }
-
-    if (await this.quarantine.isKeyBlocked(user.orgId, fileKey))
-      throw new NotFoundException(notFoundMessage);
-  }
-
-  /**
-   * Protected resource types are denied here even for the same tenant and must use
-   * their permission- and record-scoped download endpoint. Omitting a table means a file cannot be proven to belong to any
-   * org: callers treat an unresolved sensitive key as a denial, so a missing table locks its
-   * own file type out rather than exposing it. Returns the owning orgId, or null if untracked.
-   */
-  private async resolveFileOwner(
-    fileKey: string,
-    callerOrgId: string,
-  ): Promise<FileOwner | null> {
-    const { ownerOrgId, folderRoot } = parseStorageKey(fileKey, callerOrgId);
-    if (ownerOrgId !== null && ORG_NAMESPACED_KEY_FOLDERS.has(folderRoot))
-      return { orgId: ownerOrgId, access: "GENERIC" };
-
-    const like = `%${fileKey}%`;
-    const [doc, onboardingDoc, expense, reimbursement, handbookVersion, payslip, vaultDoc] =
-      await Promise.all([
-        this.db.query.documents.findFirst({ where: ilike(documents.fileUrl, like) }),
-        this.db.query.onboardingDocuments.findFirst({ where: ilike(onboardingDocuments.fileUrl, like) }),
-        this.db.query.expenses.findFirst({ where: ilike(expenses.receiptUrl, like) }),
-        this.db.query.reimbursements.findFirst({ where: ilike(reimbursements.receiptUrl, like) }),
-        this.db.query.handbookVersions.findFirst({ where: ilike(handbookVersions.documentUrl, like) }),
-        this.db.query.payslipPublications.findFirst({ where: ilike(payslipPublications.pdfUrl, like) }),
-        this.db.query.candidateDocumentsVault.findFirst({
-          where: ilike(candidateDocumentsVault.fileUrl, like),
-        }),
-      ]);
-    if (doc) return { orgId: doc.orgId, access: "HR_DOCUMENT" };
-    if (onboardingDoc) return { orgId: onboardingDoc.orgId, access: "ONBOARDING_DOCUMENT" };
-    if (payslip) return { orgId: payslip.orgId, access: "PAYSLIP" };
-    if (vaultDoc) return { orgId: vaultDoc.orgId, access: "CANDIDATE_VAULT" };
-    const genericOrgId =
-      expense?.orgId ?? reimbursement?.orgId ?? handbookVersion?.orgId ?? null;
-    return genericOrgId ? { orgId: genericOrgId, access: "GENERIC" } : null;
   }
 
   private async assertUploadAllowed(

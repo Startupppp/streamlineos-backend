@@ -142,7 +142,7 @@ describe("StorageController.download — cross-org file isolation", () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it("allows a download when a NON-sensitive key isn't tracked in any known table", async () => {
+  it("allows a download when a non-sensitive, non-chat key isn't tracked in any known table", async () => {
     const db = buildDb({});
     const { controller } = buildController(db);
     const res = mockRes();

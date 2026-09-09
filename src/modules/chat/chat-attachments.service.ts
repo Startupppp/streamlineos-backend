@@ -32,6 +32,7 @@ export class ChatAttachmentsService {
           eq(chatAttachments.orgId, orgId),
           eq(chatMessages.orgId, orgId),
           eq(chatMessages.channelId, channelId),
+          eq(chatMessages.isDeleted, false),
         ),
       )
       .limit(1);
