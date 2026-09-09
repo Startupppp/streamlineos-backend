@@ -160,3 +160,43 @@ describe("isOwnOrgStorageKey — the predicate every key-ingestion route owes it
     }
   });
 });
+
+/**
+ * A signed URL is only a control if it stops working. `getFileUrl` is the one place chat
+ * attachments become a URL, and the historical defect was minting a PERMANENT public
+ * link — which passes every access test on the day it is written and leaks forever after.
+ */
+describe("StorageService.getFileUrl — the URL expires", () => {
+  const CHAT_KEY = `${ORG_A}/uploads/chat-attachment.pdf`;
+
+  function paramsOf(url: string): URLSearchParams {
+    return new URL(url).searchParams;
+  }
+
+  it("carries the exact TTL the caller asked for, not a default", async () => {
+    const short = await serviceWith().getFileUrl(ORG_A, CHAT_KEY, 60);
+    const chat = await serviceWith().getFileUrl(ORG_A, CHAT_KEY, 3600);
+
+    expect(paramsOf(short).get("X-Amz-Expires")).toBe("60");
+    expect(paramsOf(chat).get("X-Amz-Expires")).toBe("3600");
+  });
+
+  it("is bounded and signed at a point in time — never a permanent link", async () => {
+    const params = paramsOf(await serviceWith().getFileUrl(ORG_A, CHAT_KEY, 3600));
+
+    const expires = Number(params.get("X-Amz-Expires"));
+    expect(Number.isFinite(expires)).toBe(true);
+    expect(expires).toBeGreaterThan(0);
+    expect(expires).toBeLessThanOrEqual(7 * 24 * 60 * 60);
+
+    expect(params.get("X-Amz-Date")).toMatch(/^\d{8}T\d{6}Z$/);
+    expect(params.get("X-Amz-Signature")).toBeTruthy();
+  });
+
+  it("is not the public CDN base — a chat attachment never becomes a public object URL", async () => {
+    const url = await serviceWith().getFileUrl(ORG_A, CHAT_KEY, 3600);
+
+    expect(url.startsWith("https://pub-cdn.example.com")).toBe(false);
+    expect(url).toContain("X-Amz-Signature");
+  });
+});
