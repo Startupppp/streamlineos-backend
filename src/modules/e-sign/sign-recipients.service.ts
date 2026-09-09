@@ -5,8 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { SignAuditService } from "./sign-audit.service";
 import { SignTokensService } from "./sign-tokens.service";
-import { SignSettingsService } from "./sign-settings.service";
-import { SMS_SENDER, type SmsSenderPort } from "./sms/sms-sender.port";
+import { SignAuthMethodPolicy } from "./sign-auth-method.policy";
 import { isEnvelopeEditable, isEnvelopeTerminal } from "./sign-state";
 import type { CreateRecipientInput, UpdateRecipientInput } from "./dto/e-sign.schemas";
 import type { RequestActorContext } from "../../common/audit/actor-context";
@@ -18,8 +17,7 @@ export class SignRecipientsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: SignAuditService,
     private readonly tokens: SignTokensService,
-    private readonly settings: SignSettingsService,
-    @Inject(SMS_SENDER) private readonly sms: SmsSenderPort,
+    private readonly authMethods: SignAuthMethodPolicy,
   ) {}
 
   private async loadEnvelope(orgId: string, envelopeId: number) {
@@ -28,55 +26,6 @@ export class SignRecipientsService {
     });
     if (!envelope) throw new NotFoundException("Envelope not found");
     return envelope;
-  }
-
-  /**
-   * The organisation's own list, at last.
-   *
-   * `sign_org_settings.allowed_auth_methods` has been writable since SignOS
-   * shipped and read by nothing. Its default is
-   * `["email_link", "access_code", "otp_email"]` — precisely the three methods
-   * that work — while the DTO enum accepted all eight, so a recipient could be
-   * configured for `otp_sms`, `sso`, `passkey`, `kba` or `id_verification`, be
-   * *required* to supply a phone number for the first of those, and then find
-   * the envelope unsignable: `authenticate` answers "not yet supported" for
-   * every one of them.
-   *
-   * Refusing at configuration time rather than at signing time is the whole
-   * point. The failure moves from a customer holding a signing link to the
-   * person setting the envelope up, who can still do something about it.
-   */
-  private async assertAuthMethodUsable(orgId: string, input: CreateRecipientInput): Promise<void> {
-    const method = input.authMethod;
-    if (!method || method === "email_link") return;
-
-    const settings = await this.settings.getOrCreate(orgId);
-    const allowed = settings.allowedAuthMethods ?? [];
-    if (!allowed.includes(method)) {
-      throw new BadRequestException(
-        `Authentication method "${method}" is not enabled for this organisation. ` +
-          `Enabled methods: ${allowed.join(", ") || "none"}.`,
-      );
-    }
-
-    /**
-     * Enabled is not the same as available. An organisation may have added
-     * `otp_sms` to its list, but if this deployment has no SMS provider the
-     * code can never be delivered — so the phone number is not requested
-     * either, because requiring a field for a channel that cannot send is the
-     * broken promise this replaces.
-     */
-    if (method === "otp_sms") {
-      if (!this.sms.isConfigured()) {
-        throw new BadRequestException(
-          "SMS one-time codes are enabled for this organisation but no SMS provider is " +
-            "configured in this environment, so the code could not be delivered.",
-        );
-      }
-      if (!input.phone) {
-        throw new BadRequestException("Phone number is required when SMS OTP authentication is selected");
-      }
-    }
   }
 
   private validateForCreate(input: CreateRecipientInput, routingMode: string): void {
@@ -109,7 +58,7 @@ export class SignRecipientsService {
       throw new ForbiddenException("Recipients can only be added to a draft envelope");
     }
     this.validateForCreate(input, envelope.routingMode);
-    await this.assertAuthMethodUsable(orgId, input);
+    await this.authMethods.assertUsable(orgId, input.authMethod, input.phone);
 
     const [recipient] = await this.db
       .insert(signRecipients)
@@ -152,6 +101,31 @@ export class SignRecipientsService {
     }
     if (!isEnvelopeEditable(envelope.status) && isEnvelopeTerminal(envelope.status)) {
       throw new ForbiddenException("This envelope can no longer be modified");
+    }
+
+    /**
+     * The same gate `add` runs, because this is the other way in.
+     *
+     * It was only on `add`, while `updateRecipientSchema` is
+     * `createRecipientSchema.partial()` — the same eight-value enum. One PATCH
+     * restored the state SIGN-P0-03/P0-04/P1-03 were written to end: a
+     * recipient configured for a method `authenticate` refuses as "not yet
+     * supported", found by the customer holding the link.
+     *
+     * Reachable later in the envelope's life than `add`, too. Adding a
+     * recipient requires a draft; this refuses only terminal envelopes, and a
+     * *sent* envelope is neither editable nor terminal — so the method could be
+     * changed underneath someone already invited. Nothing downstream would have
+     * caught it: `validateForSend` checks that an `otp_sms` recipient has a
+     * phone number, never that the method is enabled or deliverable, and it
+     * does not run again after the send.
+     *
+     * Only when the caller actually names the field. Running it on every PATCH
+     * would fail a rename because of a value the caller never mentioned,
+     * whenever the row predates the current allowlist.
+     */
+    if (input.authMethod !== undefined) {
+      await this.authMethods.assertUsable(orgId, input.authMethod, input.phone ?? recipient.phone);
     }
 
     const patch: Partial<typeof signRecipients.$inferInsert> = {};

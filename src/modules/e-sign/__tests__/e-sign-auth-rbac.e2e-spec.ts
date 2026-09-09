@@ -104,6 +104,9 @@ describe("SignOS auth/RBAC (e2e)", () => {
     ["delete", "/sign/admin/watermark-policies/1"],
     ["post", "/sign/admin/run-reminder-sweep"],
     ["post", "/sign/admin/run-expiration-sweep"],
+    ["get", "/sign/admin/sweep-status"],
+    ["get", "/sign/admin/sweep-preview"],
+    ["post", "/sign/envelopes/1/ai/summarize"],
     ["get", "/sign/reports/dashboard"],
     ["get", "/sign/reports/summary"],
   ];

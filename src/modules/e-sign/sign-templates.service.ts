@@ -14,6 +14,7 @@ import { withPublicToken } from "../../common/tenant/with-public-token";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { SignAuditService } from "./sign-audit.service";
 import { SignSettingsService } from "./sign-settings.service";
+import { SignAuthMethodPolicy } from "./sign-auth-method.policy";
 import { SignTokensService } from "./sign-tokens.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import type {
@@ -156,6 +157,7 @@ export class SignTemplatesService {
     private readonly tokens: SignTokensService,
     private readonly planLimits: PlanLimitsService,
     private readonly settings: SignSettingsService,
+    private readonly authMethods: SignAuthMethodPolicy,
   ) {}
 
   async create(orgId: string, userId: string, input: CreateTemplateInput) {
@@ -308,6 +310,31 @@ export class SignTemplatesService {
     const missingRoles = snapshot.roles.filter((role) => !providedRoles.has(role.roleName));
     if (missingRoles.length > 0) {
       throw new BadRequestException(`Missing recipients for template role(s): ${missingRoles.map((r) => r.roleName).join(", ")}`);
+    }
+
+    /**
+     * The snapshot's authentication methods go through the same gate a
+     * recipient does, and before the envelope row exists rather than after.
+     *
+     * `createTemplateSchema` declares `templateJson` as
+     * `z.record(z.string(), z.unknown())`, so a role's `authMethod` is not a
+     * legacy value that leaked in — it is arbitrary caller input, replayed
+     * verbatim into `signRecipients` on every instantiation. That let a holder
+     * of `sign:template:manage` mint recipients on `sso`, `passkey`, `kba`,
+     * `id_verification` or an undeliverable `otp_sms`, none of which
+     * `authenticate` can complete.
+     *
+     * Bulk send drives exactly this path, once per row, so the same bad role
+     * reaches as many customers as the org's row cap allows.
+     */
+    for (const role of snapshot.roles) {
+      const provided = input.recipients.find((r) => r.roleName === role.roleName);
+      await this.authMethods.assertUsable(
+        orgId,
+        role.authMethod as Parameters<SignAuthMethodPolicy["assertUsable"]>[1],
+        provided?.phone,
+        `template role "${role.roleName}"`,
+      );
     }
 
     await this.planLimits.assertWithinLimit(orgId, "signEnvelopes");

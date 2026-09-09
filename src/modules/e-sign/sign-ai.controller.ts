@@ -1,5 +1,7 @@
 import { Controller, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { ModuleGuard } from "../../common/rbac/module.guard";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
@@ -8,8 +10,18 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { SignAiService } from "./sign-ai.service";
 
+/**
+ * The one sign controller that carried no module gate.
+ *
+ * Every other controller in this module pairs `@RequireModule("sign")` with
+ * `ModuleGuard`; this one had neither, so an organisation without SignOS
+ * enabled reached it on the strength of `sign:envelope:view` alone and got 403
+ * only if it lacked that key. It is also the module's only AI route, so the
+ * surface left open is the one that spends credits.
+ */
+@RequireModule("sign")
 @Controller("sign/envelopes/:envelopeId/ai")
-@UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard, RateLimitGuard)
 @RequirePermission("sign:envelope:view")
 @UseRateLimit("ai:invoke")
 export class SignAiController {

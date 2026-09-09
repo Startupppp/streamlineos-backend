@@ -14,6 +14,7 @@ import { SignIntegrationsService } from "./sign-integrations.service";
 import { SignTokensService } from "./sign-tokens.service";
 import { SignPdfService } from "./sign-pdf.service";
 import { SignSettingsService } from "./sign-settings.service";
+import { SignAuthMethodPolicy } from "./sign-auth-method.policy";
 import { SignNotificationsService } from "./sign-notifications.service";
 import { SignDocumentsService } from "./sign-documents.service";
 import { SignDocumentsController } from "./sign-documents.controller";
@@ -72,6 +73,7 @@ import { SignReportsController } from "./sign-reports.controller";
     SignAiController,
   ],
   providers: [
+    SignAuthMethodPolicy,
     SignAuditService,
     SignAiService,
     SignIntegrationsService,
