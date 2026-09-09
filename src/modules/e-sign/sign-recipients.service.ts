@@ -80,8 +80,23 @@ export class SignRecipientsService {
   }
 
   private validateForCreate(input: CreateRecipientInput, routingMode: string): void {
-    if (input.recipientType !== "in_person_host" && !input.email) {
-      throw new BadRequestException("Email is required for this recipient unless in-person signing is used");
+    /**
+     * SIGN-P2-01. An in-person host needs an email like everybody else.
+     *
+     * The exemption that used to sit here read as support for an in-person
+     * ceremony, and there is none: no host-led session route exists anywhere.
+     * `in_person_host` is a signing type, so `computeEnvelopeStatusFromRecipients`
+     * waits for it before the envelope can complete — while the dispatch loop
+     * skips any recipient without an email (`shouldInviteNow && plan.email`).
+     * So an emailless host was never invited, had no other way to reach a
+     * signing session, and blocked the envelope forever. The envelope did not
+     * fail; it simply never finished, which is worse.
+     *
+     * Until a host-led flow exists, the type is a LABEL on an otherwise
+     * ordinary signing recipient. Labels do not change how someone is reached.
+     */
+    if (!input.email) {
+      throw new BadRequestException("Email is required for this recipient");
     }
     if (routingMode === "sequential" && !input.routingOrder) {
       throw new BadRequestException("Routing order is required for sequential envelopes");

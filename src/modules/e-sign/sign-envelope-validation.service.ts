@@ -51,7 +51,13 @@ export class SignEnvelopeValidationService {
     if (signingRecipients.length === 0) errors.push("Envelope has no signer");
 
     for (const r of signingRecipients) {
-      if (r.recipientType !== "in_person_host" && !r.email) {
+      /**
+       * No exemption for `in_person_host` — see SIGN-P2-01 in
+       * SignRecipientsService. An emailless host is never invited and blocks
+       * completion forever, so this catches the envelopes created before the
+       * rule changed rather than letting them be sent into that state.
+       */
+      if (!r.email) {
         errors.push(`Recipient "${r.name}" is missing an email address`);
       }
       if (r.authMethod === "otp_sms" && !r.phone) {
