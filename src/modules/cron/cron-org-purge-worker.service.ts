@@ -238,7 +238,7 @@ export class CronOrgPurgeWorkerService {
 
       this.audit.log({
         action: "org.purged",
-        userId: "system",
+        systemActor: "cron.org-purge-worker",
         orgId,
         targetId: orgId,
         targetType: "organization",

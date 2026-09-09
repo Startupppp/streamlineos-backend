@@ -2955,6 +2955,20 @@
       "when": 1787941328254,
       "tag": "0661_business_parties_timezone",
       "breakpoints": true
+    },
+    {
+      "idx": 422,
+      "version": "7",
+      "when": 1787941388254,
+      "tag": "0662_composite_fk_set_null_nulls_tenant",
+      "breakpoints": true
+    },
+    {
+      "idx": 423,
+      "version": "7",
+      "when": 1787941448254,
+      "tag": "0663_audit_logs_unattributed_actor",
+      "breakpoints": true
     }
   ]
 }

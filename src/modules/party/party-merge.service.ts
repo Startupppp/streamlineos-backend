@@ -326,9 +326,11 @@ export class PartyMergeService {
 
     // logCritical, not log: a merge is destructive and performed unattended, so
     // an audit write that fails must stop it rather than leave it unrecorded.
-    await this.audit.logCritical({
+    // Which is exactly why the unattended case needs a null actor: it used to
+    // write the string "system", which has no row in `users`, so the merges
+    // this line is protecting were the ones it aborted.
+    const mergeAudit = {
       action: "party.merge",
-      userId: input.userId ?? "system",
       orgId: organizationId,
       resourceType: "business_party",
       resourceId: survivorId,
@@ -340,7 +342,13 @@ export class PartyMergeService {
         signals: assessment.signals,
         conflicts: Object.keys(plan.conflicts),
       },
-    });
+    };
+
+    await this.audit.logCritical(
+      input.userId
+        ? { ...mergeAudit, userId: input.userId }
+        : { ...mergeAudit, systemActor: "party.merge.unattended" },
+    );
 
     return {
       partyMergeId: record?.partyMergeId ?? "",
@@ -465,9 +473,8 @@ export class PartyMergeService {
       .set({ revertedAt: new Date(), revertedByUserId: userId ?? null })
       .where(eq(partyMerges.partyMergeId, partyMergeId));
 
-    await this.audit.logCritical({
+    const revertAudit = {
       action: "party.merge.revert",
-      userId: userId ?? "system",
       orgId: organizationId,
       resourceType: "business_party",
       resourceId: record.survivorPartyId,
@@ -476,7 +483,13 @@ export class PartyMergeService {
         restoredPartyId: record.mergedPartyId,
         originallyDecidedBy: record.decidedBy,
       },
-    });
+    };
+
+    await this.audit.logCritical(
+      userId
+        ? { ...revertAudit, userId }
+        : { ...revertAudit, systemActor: "party.merge.revert.unattended" },
+    );
 
     return {
       survivorPartyId: record.survivorPartyId,

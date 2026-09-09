@@ -70,7 +70,8 @@ export class SettingsService {
     Record<
       string,
       {
-        actorId: string;
+        /** Null when no user acted — see `audit_logs.user_id` and migration 0663. */
+        actorId: string | null;
         actorName: string | null;
         action: string;
         at: string;

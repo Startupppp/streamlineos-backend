@@ -19,7 +19,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
-import { AuditService } from "../../common/audit/audit.service";
+import { AuditService, systemActorLabel } from "../../common/audit/audit.service";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import {
@@ -554,7 +554,8 @@ export class ModuleAccessService {
     data: {
       id: number;
       action: string;
-      actorUserId: string;
+      /** Null when no user acted; `actorName` then carries the system's label. */
+      actorUserId: string | null;
       actorName: string;
       actorEmail: string;
       targetId: string | null;
@@ -647,7 +648,12 @@ export class ModuleAccessService {
       id: r.id,
       action: r.action,
       actorUserId: r.actorUserId,
-      actorName: r.actorName ?? r.actorEmail ?? r.actorUserId,
+      actorName:
+        r.actorName ??
+        r.actorEmail ??
+        r.actorUserId ??
+        systemActorLabel(r.metadata) ??
+        "The system",
       actorEmail: r.actorEmail ?? "",
       targetId: r.targetId,
       targetType: r.targetType,

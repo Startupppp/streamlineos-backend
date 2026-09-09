@@ -35,9 +35,10 @@ import { seedOrg, type SeededFixture } from "test/helpers/seed-builder";
  * and asks again. Everything before it would pass with the hash table still
  * empty, because the consent row alone answers while the contact exists.
  *
- * Every opt-out here is attributed to a real member, because the anonymous path
- * cannot run at all — see the note on `recordedBy` below. That is a separate,
- * pre-existing defect, reported rather than worked around here.
+ * Every opt-out here is attributed to a real member. The unattributed path — the
+ * public unsubscribe link, which has no signed-in user — could not run at all
+ * when this was written; it is fixed and covered by
+ * `crm-consent-unattributed-audit.seeded-e2e-spec.ts`.
  *
  * Run with:
  *   DATABASE_URL=postgres://owner@host/db \
@@ -56,16 +57,9 @@ describe(`${SEEDED_HARNESS} an opt-out outlives the contact who made it`, () => 
   let consent: CrmConsentService;
 
   /**
-   * A real member, because `record` cannot run without one.
-   *
-   * Its audit call is `logCritical`, which is awaited and rolls the mutation
-   * back on failure, and it attributes an absent actor as the literal string
-   * "system" — while `audit_logs.user_id` is NOT NULL with a foreign key to
-   * `users`, and nothing anywhere creates a user with that id. So a consent
-   * change with no user attached throws and records nothing, which is the state
-   * the public unsubscribe endpoint is in: it passes `recordedByUserId: null`.
-   * Reported separately; it is a platform-wide convention (119 logCritical call
-   * sites, plus `systemActor`) and not this ticket's to change.
+   * A real member: this file is about an opt-out outliving its contact, so it
+   * holds the actor constant and varies the erasure. The unattributed actor is
+   * its own case, covered by `crm-consent-unattributed-audit`.
    */
   let recordedBy = "";
 
@@ -204,13 +198,21 @@ describe(`${SEEDED_HARNESS} an opt-out outlives the contact who made it`, () => 
      * Consent rows go first, and they have to.
      *
      * `fk_crm_contact_channel_consent_contact_party_id` is a COMPOSITE foreign
-     * key on (org_id, contact_party_id) with ON DELETE SET NULL, and Postgres
-     * nulls every column of a composite key — including `org_id`, which is NOT
-     * NULL. So deleting a party that has consent rows fails outright. That is
-     * its own defect, reported separately; here it only means an erasure must
-     * clear consent before the party, which is what an erasure does anyway and
-     * is exactly the state this test is about. The event log carries the same
-     * constraint, so it goes too.
+     * key on (org_id, contact_party_id). It used to declare ON DELETE SET NULL,
+     * and Postgres nulls every column of a composite key — including `org_id`,
+     * which is NOT NULL — so deleting a party with consent rows aborted on a
+     * not-null violation against this table. That defect is fixed in 0662: the
+     * key is now NO ACTION, so the delete is still refused but the error names
+     * the blocking table instead of a null `org_id`, and
+     * `check:composite-fk-set-null` keeps it from coming back.
+     *
+     * The ordering here is unchanged and is not a workaround: NO ACTION is the
+     * deliberate choice for the erasure path, because `subject-request-plan.ts`
+     * requires a disposition to be declared per table and executed explicitly
+     * rather than performed silently by a cascade. An erasure clears consent
+     * before the party, which is what an erasure does anyway and is exactly the
+     * state this test is about. The event log carries the same constraint, so
+     * it goes too.
      */
     await seeded.seedDb
       .delete(crmContactConsentEvents)

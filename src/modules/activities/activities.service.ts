@@ -30,17 +30,21 @@ export type ActivityActor =
   | { readonly kind: "system"; readonly label: string };
 
 /**
- * `audit_logs.user_id` is NOT NULL, and the repo already writes this sentinel
- * for machine actions (recurring journals, KB page tree, the git integration).
- * The label that says WHICH system did it rides in the entry's metadata, and the
- * activity row itself keeps `actor_label` — this is only the audit column.
+ * `audit_logs.user_id` is nullable, and NULL is what a machine action writes.
+ *
+ * This used to write the sentinel string "system", on the belief that the repo
+ * already did so elsewhere. Nothing ever created a user with that id, so every
+ * one of those writes raised a foreign-key violation — swallowed by `log`,
+ * fatal under `logCritical`. Migration 0663 made the column nullable and
+ * requires the system case to name itself instead, which is the same shape this
+ * module's own `ActivityActor` already has.
  */
-const SYSTEM_AUDIT_USER = "system";
-
-function auditActor(actor: ActivityActor): { userId: string; metadata: Record<string, unknown> } {
+function auditActor(
+  actor: ActivityActor,
+): { userId: string; systemActor?: never } | { userId?: null; systemActor: string } {
   return actor.kind === "human"
-    ? { userId: actor.userId, metadata: {} }
-    : { userId: SYSTEM_AUDIT_USER, metadata: { actorLabel: actor.label } };
+    ? { userId: actor.userId }
+    : { systemActor: actor.label };
 }
 
 @Injectable()
@@ -217,14 +221,13 @@ export class ActivitiesService {
       )
       .returning();
 
-    const audited = auditActor(actor);
     this.audit.log({
       action: "crm.activity.updated",
-      userId: audited.userId,
+      ...auditActor(actor),
       orgId: organizationId,
       resourceType: "activity",
       resourceId: activityId,
-      metadata: { ...audited.metadata, changed: Object.keys(input) },
+      metadata: { changed: Object.keys(input) },
     });
 
     // `subject` is one of the fields the relationship fold reads, so an edit
@@ -250,14 +253,12 @@ export class ActivitiesService {
       )
       .returning();
 
-    const audited = auditActor(actor);
     this.audit.log({
       action: "crm.activity.completed",
-      userId: audited.userId,
+      ...auditActor(actor),
       orgId: organizationId,
       resourceType: "activity",
       resourceId: activityId,
-      metadata: audited.metadata,
     });
 
     return row ?? existing;
@@ -276,14 +277,12 @@ export class ActivitiesService {
         ),
       );
 
-    const audited = auditActor(actor);
     this.audit.log({
       action: "crm.activity.deleted",
-      userId: audited.userId,
+      ...auditActor(actor),
       orgId: organizationId,
       resourceType: "activity",
       resourceId: activityId,
-      metadata: audited.metadata,
     });
 
     await this.materialise(organizationId, activityId);

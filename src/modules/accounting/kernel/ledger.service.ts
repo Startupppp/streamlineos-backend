@@ -238,7 +238,7 @@ export class LedgerService {
      */
     this.audit?.log({
       action: "accounting.journal.posted",
-      userId: userId ?? "system",
+      ...(userId ? { userId } : { systemActor: "accounting.journal.automated-posting" }),
       orgId,
       resourceType: "gl_journals",
       resourceId: journalId,
@@ -352,7 +352,7 @@ export class LedgerService {
 
     this.audit?.log({
       action: "accounting.journal.reversed",
-      userId: userId ?? "system",
+      ...(userId ? { userId } : { systemActor: "accounting.journal.automated-reversal" }),
       orgId,
       resourceType: "gl_journals",
       resourceId: original.id,

@@ -350,9 +350,16 @@ export class CrmConsentService {
           );
         }
 
-        await this.audit.logCritical({
+        /**
+         * The public unsubscribe endpoint has no signed-in user, so this is the
+         * unattributed case: a null actor naming the capture path that acted.
+         * It used to write the string "system", which has no row in `users`, so
+         * this awaited `logCritical` raised a foreign-key violation and rolled
+         * back the opt-out and its suppression hash along with it — clicking
+         * the unsubscribe link recorded nothing at all.
+         */
+        const auditEntry = {
           action: "crm.consent.recorded",
-          userId: input.recordedByUserId ?? "system",
           orgId,
           targetId: String(input.contactId),
           targetType: "crm_contact_consent",
@@ -363,7 +370,13 @@ export class CrmConsentService {
             source: input.source,
             legalBasis: input.legalBasis ?? null,
           },
-        });
+        };
+
+        await this.audit.logCritical(
+          input.recordedByUserId
+            ? { ...auditEntry, userId: input.recordedByUserId }
+            : { ...auditEntry, systemActor: `crm.consent.${input.source}` },
+        );
       },
       { orgId },
     );
