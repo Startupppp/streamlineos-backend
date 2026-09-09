@@ -259,6 +259,47 @@ describe("[seeded-e2e] INV-02 — the batch door and the single door reach the s
       .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
   }
 
+  /**
+   * INV-06 — the cost layers each door left behind.
+   *
+   * Costing is where the batch path does the most work of its own:
+   * `costFromMovementIndex` resolves against costs derived earlier in the SAME
+   * command, so a batch that grouped or reordered movements differently would
+   * produce a valid-looking ledger with the wrong money on it. Levels and
+   * transaction rows would still match; only the layers would disagree.
+   *
+   * Compared by natural key with the fixture's names, like everything else —
+   * `stock_transaction_id` differs between tenants and says nothing.
+   */
+  async function layersOf(side: Side): Promise<
+    Array<{ variant: string; quantity: string; unitCost: string; totalValue: string;
+            remainingQuantity: string; costingMethod: string }>
+  > {
+    const names = namesFor(side);
+    const rows = await runInNewTenantTransaction(db, side.orgId, (tx) =>
+      tx.execute<{
+        product_variant_id: number; quantity: string; unit_cost: string;
+        total_value: string; remaining_quantity: string; costing_method: string;
+      }>(sql`
+        SELECT product_variant_id, quantity, unit_cost, total_value,
+               remaining_quantity, costing_method
+          FROM inv_valuation_layers
+         WHERE org_id = ${side.orgId} AND source_type = 'TEST'
+      `),
+    );
+
+    return rows
+      .map((r) => ({
+        variant: names.variants.get(r.product_variant_id) ?? `?${r.product_variant_id}`,
+        quantity: r.quantity,
+        unitCost: r.unit_cost,
+        totalValue: r.total_value,
+        remainingQuantity: r.remaining_quantity,
+        costingMethod: r.costing_method,
+      }))
+      .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  }
+
   async function outboxOf(side: Side): Promise<Record<string, number>> {
     const rows = await runInNewTenantTransaction(db, side.orgId, (tx) =>
       tx.execute<{ event_type: string; n: number }>(sql`
@@ -307,6 +348,15 @@ describe("[seeded-e2e] INV-02 — the batch door and the single door reach the s
 
   it("writes an identical ledger", async () => {
     const [a, b] = await Promise.all([ledgerOf(single), ledgerOf(batch)]);
+    expect(b).toEqual(a);
+  });
+
+  it("builds identical cost layers", async () => {
+    const [a, b] = await Promise.all([layersOf(single), layersOf(batch)]);
+
+    // The floor again: two empty layer sets are equal and prove nothing, and
+    // only the receipts in this command list carry a unit cost.
+    expect(a.length).toBeGreaterThanOrEqual(2);
     expect(b).toEqual(a);
   });
 
