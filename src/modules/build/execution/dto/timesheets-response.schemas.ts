@@ -12,10 +12,10 @@ const ticketRefSchema = z.object({
   }).nullable(),
 }).nullable();
 
-export const timesheetEntrySchema = z.object({
+export const timesheetRowSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
-  userMembershipId: z.number().int(),
+  userMembershipId: z.number().int().nullable(),
   ticketId: z.number().int().nullable(),
   date: z.string(),
   hours: z.string(),
@@ -46,15 +46,18 @@ export const timesheetEntrySchema = z.object({
   source: z.string(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
-  ticket: ticketRefSchema,
 });
+
+export const timesheetEntrySchema = timesheetRowSchema.extend({ ticket: ticketRefSchema });
 
 export const timesheetPageSchema = z.object({
   items: z.array(timesheetEntrySchema),
   total: z.number().int(),
-  page: z.number().int(),
+  page: z.number().int().optional(),
   pageSize: z.number().int(),
   totalPages: z.number().int(),
+  hasMore: z.boolean(),
+  nextCursor: z.string().nullable(),
 });
 
 export const billingSummaryItemSchema = z.object({
@@ -62,4 +65,3 @@ export const billingSummaryItemSchema = z.object({
   projectName: z.string().nullable(),
   totalHours: z.number(),
 });
-

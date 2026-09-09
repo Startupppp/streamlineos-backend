@@ -24,7 +24,7 @@ import { applyMembershipScope } from "../../timesheets/core/timesheets-core-scop
 import { canActOnPeriod } from "../../timesheets/core/lib/approval-guard";
 import { resolveTimesheetsScope } from "./timesheets-scope";
 import { formatDateOnly } from "../../../common/date";
-import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
+import { timeEntryCursorPredicate, timeEntryPage } from "./timesheets-pagination";
 import { EntriesPeriodService } from "../../timesheets/core/entries-period.service";
 import type {
   BillingSummaryQuery,
@@ -32,9 +32,10 @@ import type {
   RejectEntryInput,
   TeamTimesheetsQuery,
   TimeEntriesListQuery,
+  TimeEntryPaginationQuery,
   UpdateEntryInput,
 } from "./dto/timesheets.schemas";
-import { assertTicketInOrg } from "../core/project-access";
+import { assertProjectInOrg } from "../core/project-access";
 
 @Injectable()
 export class TimesheetsService {
@@ -69,9 +70,16 @@ export class TimesheetsService {
   }
 
   async listTimeEntries(user: CurrentUserContext, query: TimeEntriesListQuery) {
-    const page = query.page ?? 1;
-    const pageSize = query.limit;
-    const { limit, offset } = paginateOffset({ page, pageSize });
+    const limit = query.limit;
+    const cursorPredicate = timeEntryCursorPredicate(query.cursor);
+    if (query.projectId) await assertProjectInOrg(this.db, user.orgId, query.projectId);
+    if (query.ticketId) {
+      const ticket = await this.db.query.tickets.findFirst({ where: and(
+        eq(tickets.id, query.ticketId), eq(tickets.orgId, user.orgId), isNull(tickets.deletedAt),
+        query.projectId ? eq(tickets.projectId, query.projectId) : undefined,
+      ), columns: { id: true } });
+      if (!ticket) throw new NotFoundException("Ticket not found");
+    }
 
     const scope = await resolveTimesheetsScope(this.access, user);
     const membershipId = actingMembershipId(user.principal);
@@ -87,7 +95,7 @@ export class TimesheetsService {
         .from(organizationMembers)
         .where(and(eq(organizationMembers.orgId, user.orgId), eq(organizationMembers.userId, query.userId)))
         .limit(1);
-      if (qMember) conditions.push(eq(timesheets.userMembershipId, qMember.id));
+      conditions.push(eq(timesheets.userMembershipId, qMember?.id ?? -1));
     }
     if (query.startDate) conditions.push(gte(timesheets.date, query.startDate));
     if (query.endDate) conditions.push(lte(timesheets.date, query.endDate));
@@ -97,10 +105,9 @@ export class TimesheetsService {
     const where = and(...conditions);
     const [rows, [totalRow]] = await Promise.all([
       this.db.query.timesheets.findMany({
-        where,
-        orderBy: [desc(timesheets.date)],
-        limit,
-        offset,
+        where: and(where, cursorPredicate),
+        orderBy: [desc(timesheets.date), desc(timesheets.id)],
+        limit: limit + 1,
         with: {
           ticket: {
             columns: { id: true, title: true, projectId: true },
@@ -111,7 +118,7 @@ export class TimesheetsService {
       this.db.select({ total: count() }).from(timesheets).where(where),
     ]);
 
-    return buildListResponse(rows, Number(totalRow?.total ?? 0), { page, pageSize });
+    return timeEntryPage(rows, Number(totalRow?.total ?? 0), limit, query.cursor);
   }
 
   async updateEntry(
@@ -287,9 +294,8 @@ export class TimesheetsService {
   }
 
   async teamTimesheets(user: CurrentUserContext, query: TeamTimesheetsQuery) {
-    const page = query.page;
-    const pageSize = query.limit;
-    const { limit, offset } = paginateOffset({ page, pageSize });
+    const limit = query.limit;
+    const cursorPredicate = timeEntryCursorPredicate(query.cursor);
 
     const scope = await resolveTimesheetsScope(this.access, user);
     if (scope === "none") {
@@ -309,7 +315,7 @@ export class TimesheetsService {
         .from(organizationMembers)
         .where(and(eq(organizationMembers.orgId, user.orgId), eq(organizationMembers.userId, query.userId)))
         .limit(1);
-      if (qMember) conditions.push(eq(timesheets.userMembershipId, qMember.id));
+      conditions.push(eq(timesheets.userMembershipId, qMember?.id ?? -1));
     }
     if (query.startDate) conditions.push(gte(timesheets.date, query.startDate));
     if (query.endDate) conditions.push(lte(timesheets.date, query.endDate));
@@ -318,10 +324,9 @@ export class TimesheetsService {
     const where = and(...conditions);
     const [rows, [totalRow]] = await Promise.all([
       this.db.query.timesheets.findMany({
-        where,
-        orderBy: [desc(timesheets.date)],
-        limit,
-        offset,
+        where: and(where, cursorPredicate),
+        orderBy: [desc(timesheets.date), desc(timesheets.id)],
+        limit: limit + 1,
         with: {
           userMember: {
             columns: { id: true, userId: true },
@@ -335,7 +340,7 @@ export class TimesheetsService {
       this.db.select({ total: count() }).from(timesheets).where(where),
     ]);
 
-    return buildListResponse(rows, Number(totalRow?.total ?? 0), { page, pageSize });
+    return timeEntryPage(rows, Number(totalRow?.total ?? 0), limit, query.cursor);
   }
 
   async billingSummary(user: CurrentUserContext, query: BillingSummaryQuery) {
@@ -380,22 +385,8 @@ export class TimesheetsService {
     );
   }
 
-  async listTicketTimeEntries(orgId: string, ticketId: number) {
-    await assertTicketInOrg(this.db, orgId, ticketId);
-    return this.db.query.timesheets.findMany({
-      where: and(
-        eq(timesheets.ticketId, ticketId),
-        eq(timesheets.orgId, orgId),
-      ),
-      orderBy: [desc(timesheets.date)],
-      limit: 200,
-      with: {
-        ticket: {
-          columns: { id: true, title: true, projectId: true },
-          with: { project: { columns: { id: true, name: true, key: true } } },
-        },
-      },
-    });
+  async listTicketTimeEntries(user: CurrentUserContext, projectId: number, ticketId: number, query: TimeEntryPaginationQuery) {
+    return this.listTimeEntries(user, { ...query, projectId, ticketId });
   }
 
   async logTicketTime(
