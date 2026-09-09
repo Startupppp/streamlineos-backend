@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 import {
   invInspectionPlans,
   invInspectionPlanVersions,
@@ -22,12 +23,6 @@ import type {
   UpdateInspectionPlanInput,
 } from "./dto/inspection-plans.schemas";
 
-/** The driver surfaces the SQLSTATE on an unknown-shaped error object. */
-function isUniqueViolation(error: unknown): boolean {
-  if (typeof error !== "object" || error === null || !("code" in error)) return false;
-  const { code } = error;
-  return code === "23505";
-}
 
 /**
  * D3 — the rule that decides whether an arrival has to be looked at.

@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 import {
   invQualityInspections,
   invQualityInspectionLines,
@@ -463,9 +464,3 @@ export class InspectionsService {
   };
 }
 
-/** The driver surfaces the SQLSTATE on an unknown-shaped error object. */
-function isUniqueViolation(error: unknown): boolean {
-  if (typeof error !== "object" || error === null || !("code" in error)) return false;
-  const { code } = error;
-  return code === "23505";
-}
