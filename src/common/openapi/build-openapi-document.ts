@@ -229,8 +229,13 @@ function applyResponseSchema(
   const statusCode = String(status ?? (method === "post" ? 201 : 200));
   for (const code of Object.keys(responses))
     if (code !== statusCode && isBareSuccessKey(code, responses[code])) delete responses[code];
+  const previous = asRecord(responses[statusCode]) ?? {};
+  const metadata = Object.fromEntries(Object.entries(previous).filter(([key]) => key !== "$ref" && key !== "content"));
   responses[statusCode] = {
-    description: statusCode === "201" ? "Created" : "OK",
+    ...metadata,
+    description: typeof previous.description === "string" && previous.description.trim()
+      ? previous.description
+      : statusCode === "201" ? "Created" : "OK",
     content: { "application/json": { schema: envelopeResponseSchema(schema) } },
   };
   operation.responses = responses;
