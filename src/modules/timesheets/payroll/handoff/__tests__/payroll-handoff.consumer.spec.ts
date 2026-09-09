@@ -155,6 +155,28 @@ describe("PayrollHandoffConsumer", () => {
     await expect(consumer.handle(malformed)).rejects.toThrow(/does not match its schema/);
     expect(seen).toHaveLength(0);
   });
+
+  /**
+   * TS-19. An export written before payroll mappings existed has no `mapping`
+   * in its `filters`, and the payload used to carry that absence straight
+   * through as `undefined` — so "the handoff payload carries the mapping" was
+   * true only for recent exports. The consumer now resolves the organisation's
+   * default, so an adapter always receives a `{ provider, columns }` it can
+   * route on.
+   */
+  it("supplies the default mapping for an export that stored none", async () => {
+    const { port, seen } = capturingPort();
+    const consumer = new PayrollHandoffConsumer(
+      dbReturning([{ ...EXPORT_ROW, filters: {} }]),
+      port,
+      new OutboxConsumerRegistry(),
+    );
+
+    await consumer.handle(EVENT);
+
+    expect(seen[0]!.mapping).toMatchObject({ provider: expect.any(String) });
+    expect(Array.isArray((seen[0]!.mapping as { columns: unknown[] }).columns)).toBe(true);
+  });
 });
 
 describe("RecordingPayrollHandoffAdapter", () => {
@@ -166,7 +188,13 @@ describe("RecordingPayrollHandoffAdapter", () => {
     currency: null,
     entryCount: 5,
     totalHours: 40,
-    mapping: null,
+    /**
+     * TS-19. Was `null`, which the schema accepted while it was `z.unknown()`.
+     * The payload now carries a real mapping on every handoff — the consumer
+     * resolves the org default for an export that stored none — so `null` is no
+     * longer a shape an implementer has to handle.
+     */
+    mapping: { provider: "GENERIC", columns: [] },
     rows: [SNAPSHOT_ROW],
     idempotencyKey: "outbox:org-1:timesheets-payroll-handoff:e1",
     ackPath: "timesheets/payroll/exports/7/ack",

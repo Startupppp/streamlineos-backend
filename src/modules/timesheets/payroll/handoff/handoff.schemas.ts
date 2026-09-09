@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { payrollMappingSchema } from "../dto/payroll.schemas";
 
 /**
  * The contract timesheets offers payroll, owned by timesheets.
@@ -57,8 +58,16 @@ export const payrollHandoffPayloadSchema = z.object({
    * in the schema. A `payCode` field on each row could only have been the same
    * value repeated, or invented, so the mapping stays where it actually
    * lives — once, at the top.
+   *
+   * Typed, and never null. It was `z.unknown()`, which meant an implementer
+   * had no contract to write against and `undefined` satisfied the schema — so
+   * "the payload carries the mapping" was true only when the export happened
+   * to have stored one. The consumer now runs the stored value through
+   * `resolveMapping`, which answers `DEFAULT_PAYROLL_MAPPING` for an export
+   * written before mappings existed, so every handoff carries a mapping that
+   * says which provider and which columns, and an adapter can rely on it.
    */
-  mapping: z.unknown(),
+  mapping: payrollMappingSchema,
   rows: z.array(handoffWorkerRowSchema),
   /**
    * Stable across every retry of one consumer for one export, so an adapter

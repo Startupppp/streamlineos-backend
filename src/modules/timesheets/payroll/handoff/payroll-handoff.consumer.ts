@@ -9,6 +9,7 @@ import {
   type OutboxEventConsumer,
   type OutboxEventRow,
 } from "../../../../common/outbox/outbox-consumer.registry";
+import { resolveMapping } from "../lib/payroll-calc";
 import { TIMESHEET_PAYROLL_HANDOFF_PORT, type TimesheetPayrollHandoffPort } from "./handoff.port";
 import {
   TIMESHEET_EVENTS,
@@ -97,10 +98,22 @@ export class PayrollHandoffConsumer implements OutboxEventConsumer, OnModuleInit
       .array()
       .parse(Array.isArray(row.snapshot) ? row.snapshot : []);
 
-    const mapping =
+    /**
+     * TS-19. Resolved rather than passed through.
+     *
+     * `filters` is jsonb written at export time, so what is in there is
+     * whatever that export stored — a full mapping for a recent one, nothing at
+     * all for an export written before the column existed. `resolveMapping`
+     * answers the organisation's default for both the missing and the
+     * unparseable case, so the payload's `mapping` is always a real
+     * `{ provider, columns }` an adapter can route on, rather than a `null` it
+     * must guess about.
+     */
+    const rawMapping =
       row.filters && typeof row.filters === "object" && "mapping" in row.filters
         ? (row.filters as { mapping: unknown }).mapping
         : null;
+    const mapping = resolveMapping(rawMapping);
 
     const payload: PayrollHandoffPayload = {
       organizationId: event.organizationId,
