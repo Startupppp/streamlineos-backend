@@ -44,7 +44,7 @@ export class InvCycleCountsController {
     @Param("countId", ParseIntPipe) countId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.counts.getCycleCount(u.orgId, countId);
+    return this.counts.getCycleCount(u.orgId, u.userId, countId);
   }
 
   @Post()
@@ -69,7 +69,7 @@ export class InvCycleCountsController {
     @Param("countId", ParseIntPipe) countId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.counts.startCycleCount(u.orgId, countId);
+    return this.counts.startCycleCount(u.orgId, u.userId, countId);
   }
 
   @Patch(":countId/lines")
@@ -81,7 +81,7 @@ export class InvCycleCountsController {
     @Body() body: UpdateCountLinesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.counts.updateLines(u.orgId, countId, body);
+    return this.counts.updateLines(u.orgId, u.userId, countId, body);
   }
 
   @Post(":countId/review")
@@ -94,7 +94,7 @@ export class InvCycleCountsController {
     @Param("countId", ParseIntPipe) countId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.counts.reviewCycleCount(u.orgId, countId);
+    return this.counts.reviewCycleCount(u.orgId, u.userId, countId);
   }
 
   @Post(":countId/post")
@@ -119,6 +119,6 @@ export class InvCycleCountsController {
     @Param("countId", ParseIntPipe) countId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.counts.cancelCycleCount(u.orgId, countId);
+    return this.counts.cancelCycleCount(u.orgId, u.userId, countId);
   }
 }

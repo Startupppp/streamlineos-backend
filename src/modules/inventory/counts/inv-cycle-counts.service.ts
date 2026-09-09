@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql, type SQL } from "drizzle-orm";
 import { invCycleCounts, invCycleCountLines } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -55,9 +55,52 @@ export class InvCycleCountsService {
     }, CACHE_TTL.SHORT);
   }
 
-  async getCycleCount(orgId: string, countId: number) {
+  /**
+   * One cycle count, behind the SAME warehouse scope `listCycleCounts` applies.
+   *
+   * It took no caller id at all — the controller has `@CurrentUser()` in hand
+   * and passed only `u.orgId` — so it answered on `org_id` and the row id alone
+   * while the list directly above it resolves the caller's warehouses and gates
+   * on them. Whoever could not see a count in the list could still read it
+   * whole by id: header, every line, every counted and system quantity.
+   *
+   * NULL WAREHOUSE — EXCLUDED, following this table's own aggregate rather than
+   * a house default. `listCycleCounts` gates through `warehousePredicate`, which
+   * renders `warehouse_id IN (...)` with no `IS NULL` arm, so an unattributed
+   * count is invisible in the list and is invisible here too. That is the
+   * labour-records rule, not the ASN one — the ASN list deliberately keeps
+   * unattributed rows and its detail had to match. `inv_cycle_counts.warehouse_id`
+   * is `NOT NULL` today so the case cannot arise; the rule is written down so
+   * that making it nullable later does not silently pick the other answer.
+   *
+   * Out of scope answers 404, the same as a missing row (§4), so this is not an
+   * oracle for which counts exist. An empty scope compiles to `FALSE` in the
+   * WHERE — exactly what the list does with it — rather than an early return.
+   */
+  async getCycleCount(orgId: string, userId: string, countId: number) {
+    const scope = await this.warehouseScope.resolve(orgId, userId);
+    return this.loadCycleCount(orgId, countId, [
+      this.warehouseScope.warehousePredicate(scope, sql`${invCycleCounts.warehouseId}`),
+    ]);
+  }
+
+  /**
+   * The unscoped read, named so nobody routes to it by accident.
+   *
+   * `createCycleCount` ends by returning the row it has just written, and the
+   * writer is entitled to see what they wrote — gating that path would 404 a
+   * creator against their own new count. Every other caller has already passed
+   * `requireCount` for this same id, so re-gating there would only resolve the
+   * scope a second time. A separate NAMED private method rather than a boolean
+   * flag on the public one, so a future route cannot be pointed at it.
+   */
+  private async loadCycleCountUnscoped(orgId: string, countId: number) {
+    return this.loadCycleCount(orgId, countId, []);
+  }
+
+  private async loadCycleCount(orgId: string, countId: number, scoped: SQL[]) {
     const cc = await this.db.query.invCycleCounts.findFirst({
-      where: and(eq(invCycleCounts.orgId, orgId), eq(invCycleCounts.id, countId)),
+      where: and(eq(invCycleCounts.orgId, orgId), eq(invCycleCounts.id, countId), ...scoped),
       with: {
         creator: { columns: { id: true, name: true } },
         lines: {
@@ -73,6 +116,14 @@ export class InvCycleCountsService {
   }
 
   async createCycleCount(orgId: string, userId: string, data: CreateCycleCountInput) {
+    // The warehouse arrives in the body, so it is the caller's claim and not
+    // something already checked. Without this a planner scoped to one building
+    // could open a count in another and have every stock level in it copied
+    // into the count lines and handed back — the same disclosure the detail
+    // read above was giving away, through the create. `createWave` puts this
+    // exact gate on its own `input.warehouseId`.
+    await this.warehouseScope.assertWarehouseVisible(orgId, userId, data.warehouseId);
+
     const countNumber = await this.numSeq.next(orgId, "CYCLE_COUNT");
 
     const [cc] = await this.db.insert(invCycleCounts).values({
@@ -113,11 +164,11 @@ export class InvCycleCountsService {
     }
 
     await this.cache.invalidateNamespace(CACHE_KEYS.invCycleCountsNamespace(orgId));
-    return this.getCycleCount(orgId, cc.id);
+    return this.loadCycleCountUnscoped(orgId, cc.id);
   }
 
-  async startCycleCount(orgId: string, countId: number) {
-    const cc = await this.requireCount(orgId, countId);
+  async startCycleCount(orgId: string, userId: string, countId: number) {
+    const cc = await this.requireCount(orgId, userId, countId);
     if (cc.status !== "PLANNED") throw new BadRequestException("Only PLANNED counts can be started");
 
     await this.db.update(invCycleCounts)
@@ -125,11 +176,11 @@ export class InvCycleCountsService {
       .where(and(eq(invCycleCounts.orgId, orgId), eq(invCycleCounts.id, countId)));
 
     await this.cache.invalidate(CACHE_KEYS.invCycleCountDetail(orgId, countId));
-    return this.getCycleCount(orgId, countId);
+    return this.loadCycleCountUnscoped(orgId, countId);
   }
 
-  async updateLines(orgId: string, countId: number, data: UpdateCountLinesInput) {
-    const cc = await this.requireCount(orgId, countId);
+  async updateLines(orgId: string, userId: string, countId: number, data: UpdateCountLinesInput) {
+    const cc = await this.requireCount(orgId, userId, countId);
     if (cc.status !== "COUNTING") throw new BadRequestException("Lines can only be updated while status is COUNTING");
 
     if (data.lines.length > 0) {
@@ -154,11 +205,11 @@ export class InvCycleCountsService {
     }
 
     await this.cache.invalidate(CACHE_KEYS.invCycleCountDetail(orgId, countId));
-    return this.getCycleCount(orgId, countId);
+    return this.loadCycleCountUnscoped(orgId, countId);
   }
 
-  async reviewCycleCount(orgId: string, countId: number) {
-    const cc = await this.requireCount(orgId, countId);
+  async reviewCycleCount(orgId: string, userId: string, countId: number) {
+    const cc = await this.requireCount(orgId, userId, countId);
     if (cc.status !== "COUNTING") throw new BadRequestException("Only COUNTING counts can move to REVIEW");
 
     await this.db
@@ -173,11 +224,11 @@ export class InvCycleCountsService {
       .where(and(eq(invCycleCounts.orgId, orgId), eq(invCycleCounts.id, countId)));
 
     await this.cache.invalidate(CACHE_KEYS.invCycleCountDetail(orgId, countId));
-    return this.getCycleCount(orgId, countId);
+    return this.loadCycleCountUnscoped(orgId, countId);
   }
 
   async postCycleCount(orgId: string, userId: string, countId: number, idempotencyKey: string) {
-    const cc = await this.requireCount(orgId, countId);
+    const cc = await this.requireCount(orgId, userId, countId);
     if (cc.status !== "REVIEW") throw new BadRequestException("Only REVIEW counts can be posted");
 
     // `lotId` is selected because the count was TAKEN at lot grain — the line
@@ -241,11 +292,11 @@ export class InvCycleCountsService {
 
     await this.cache.invalidate(CACHE_KEYS.invCycleCountDetail(orgId, countId));
     await this.cache.invalidateNamespace(CACHE_KEYS.invCycleCountsNamespace(orgId));
-    return this.getCycleCount(orgId, countId);
+    return this.loadCycleCountUnscoped(orgId, countId);
   }
 
-  async cancelCycleCount(orgId: string, countId: number) {
-    const cc = await this.requireCount(orgId, countId);
+  async cancelCycleCount(orgId: string, userId: string, countId: number) {
+    const cc = await this.requireCount(orgId, userId, countId);
     if (cc.status === "POSTED") throw new BadRequestException("Posted counts cannot be cancelled");
 
     await this.db.update(invCycleCounts)
@@ -255,9 +306,24 @@ export class InvCycleCountsService {
     await this.cache.invalidate(CACHE_KEYS.invCycleCountDetail(orgId, countId));
   }
 
-  private async requireCount(orgId: string, countId: number) {
+  /**
+   * The gate every mutation funnels through, now carrying the caller.
+   *
+   * `start`, `updateLines`, `review`, `post` and `cancel` all reach the row
+   * through here and not one of them took a caller id, so a supervisor scoped
+   * to one building could start, rewrite every variance on, post or cancel a
+   * count in another. Same predicate as `listCycleCounts` (see `getCycleCount`
+   * for the NULL-warehouse rule and why it is this one), and the same 404 for
+   * out of scope — a 403 would confirm the count exists.
+   */
+  private async requireCount(orgId: string, userId: string, countId: number) {
+    const scope = await this.warehouseScope.resolve(orgId, userId);
     const cc = await this.db.query.invCycleCounts.findFirst({
-      where: and(eq(invCycleCounts.orgId, orgId), eq(invCycleCounts.id, countId)),
+      where: and(
+        eq(invCycleCounts.orgId, orgId),
+        eq(invCycleCounts.id, countId),
+        this.warehouseScope.warehousePredicate(scope, sql`${invCycleCounts.warehouseId}`),
+      ),
       columns: { id: true, status: true, countNumber: true, warehouseId: true },
     });
     if (!cc) throw new NotFoundException("Cycle count not found");
