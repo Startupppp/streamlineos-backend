@@ -88,6 +88,41 @@ export const updateContactSchema = z.object({
 });
 
 /**
+ * The role a party holds.
+ *
+ * Free-form on purpose — CUSTOMER, VENDOR, PARTNER, PROSPECT and whatever a
+ * tenant adds — so this constrains shape rather than vocabulary. It exists
+ * because `party_roles.role` is NOT NULL and `PartyMergeController.addRole`
+ * had no schema between the wire and the insert: a body that named no role
+ * reached Drizzle as `undefined`, the column constraint decided the outcome,
+ * and the caller got a 500 saying the server was broken when what happened
+ * was that they left out a field.
+ *
+ * Trimmed because the upsert targets `(organization_id, party_id, role)`, so
+ * `" CUSTOMER"` and `"CUSTOMER"` would otherwise be two roles on one party
+ * that render identically.
+ */
+export const partyRoleSchema = z
+  .object({ role: z.string().trim().min(1).max(255) })
+  .strict();
+
+/**
+ * The two records a merge fuses.
+ *
+ * Same reason: `merge` took a bare object literal, so a body missing one side
+ * reached `load()` as `undefined` and failed inside the query builder. The
+ * service still owns every decision that matters — same-party, cross-tenant,
+ * which of the two survives — and this only ensures it is asked a question it
+ * can answer.
+ */
+export const partyMergeSchema = z
+  .object({
+    leftPartyId: z.string().uuid(),
+    rightPartyId: z.string().uuid(),
+  })
+  .strict();
+
+/**
  * The mirror check's scan window.
  *
  * `after` resumes a truncated scan of one kind, so it only means anything
@@ -110,4 +145,6 @@ export type CreatePartyInput = z.infer<typeof createPartySchema>;
 export type UpdatePartyInput = z.infer<typeof updatePartySchema>;
 export type CreateContactInput = z.infer<typeof createContactSchema>;
 export type UpdateContactInput = z.infer<typeof updateContactSchema>;
+export type PartyRoleInput = z.infer<typeof partyRoleSchema>;
+export type PartyMergeInput = z.infer<typeof partyMergeSchema>;
 export type MirrorDivergenceQuery = z.infer<typeof mirrorDivergenceQuerySchema>;

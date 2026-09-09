@@ -5,8 +5,15 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { PartyMergeService } from "./party-merge.service";
 import { PartyRolesService } from "./party-roles.service";
+import {
+  partyMergeSchema,
+  partyRoleSchema,
+  type PartyMergeInput,
+  type PartyRoleInput,
+} from "./dto/party.schemas";
 
 /**
  * Roles a party holds, duplicates the system found, and merges.
@@ -37,7 +44,7 @@ export class PartyMergeController {
   async addRole(
     @CurrentUser() user: CurrentUserContext,
     @Param("partyId") partyId: string,
-    @Body() body: { role: string },
+    @Body(new ZodValidationPipe(partyRoleSchema)) body: PartyRoleInput,
   ) {
     return { roles: await this.roles.addRole(user.orgId, partyId, body.role, user.userId) };
   }
@@ -88,7 +95,7 @@ export class PartyMergeController {
   @Idempotent("party.merge")
   async merge(
     @CurrentUser() user: CurrentUserContext,
-    @Body() body: { leftPartyId: string; rightPartyId: string },
+    @Body(new ZodValidationPipe(partyMergeSchema)) body: PartyMergeInput,
   ) {
     return this.merges.merge(user.orgId, {
       leftPartyId: body.leftPartyId,
