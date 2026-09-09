@@ -3,6 +3,7 @@ import type { Db } from "../../db/drizzle.module";
 import { CrmMetadataService } from "../crm/metadata/crm-metadata.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { FORECAST_HISTORY_REQUIREMENT } from "./forecast/forecast-cold-start";
+import type { ForecastTrainingService } from "./forecast/forecast-training.service";
 
 function makeChain(result: unknown[] = []): Record<string, unknown> {
   const chain: Record<string, unknown> = {};
@@ -55,6 +56,24 @@ const mockCache: jest.Mocked<Pick<CacheService, "cached" | "invalidate">> = {
   invalidate: jest.fn(),
 };
 
+/**
+ * A tenant with no accepted model, which is the state every test in this file
+ * is about. `basisFor` is handed the readiness the service counted, and returns
+ * the naive label for it — the same thing the real service does when
+ * `crm_deal_forecast_models` holds no active row, so these tests still assert
+ * the product behaviour rather than the double's.
+ */
+const mockForecastModel: jest.Mocked<
+  Pick<ForecastTrainingService, "basisFor" | "probabilitiesForOpenDeals">
+> = {
+  basisFor: jest.fn(async (_orgId: string, readiness) => ({
+    kind: "naive-weighted" as const,
+    reason: readiness.ready ? ("not-trained-yet" as const) : ("insufficient-history" as const),
+    readiness,
+  })),
+  probabilitiesForOpenDeals: jest.fn(async (_orgId: string) => new Map<number, number>()),
+};
+
 const mockCrmMetadata: jest.Mocked<Pick<CrmMetadataService, "getAggregate">> = {
   getAggregate: jest.fn().mockResolvedValue({
     pipelines: [{ id: "pipe1", type: "deal", isDefault: true }],
@@ -76,6 +95,7 @@ describe("DealsAnalyticsService – forecast snapshots", () => {
       mockDb,
       mockCache as unknown as CacheService,
       mockCrmMetadata as unknown as CrmMetadataService,
+      mockForecastModel as unknown as ForecastTrainingService,
     );
   });
 
@@ -114,6 +134,7 @@ describe("DealsAnalyticsService – deal health", () => {
       mockDb,
       mockCache as unknown as CacheService,
       mockCrmMetadata as unknown as CrmMetadataService,
+      mockForecastModel as unknown as ForecastTrainingService,
     );
   });
 
@@ -186,6 +207,7 @@ function makeForecastService(results: ForecastQueryResults, wonKey = "WON", lost
     makeForecastDb(results),
     mockCache as unknown as CacheService,
     makeTerminalMetadata(wonKey, lostKey) as unknown as CrmMetadataService,
+    mockForecastModel as unknown as ForecastTrainingService,
   );
 }
 

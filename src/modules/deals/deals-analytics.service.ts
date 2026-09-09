@@ -7,7 +7,12 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { CrmMetadataService } from "../crm/metadata/crm-metadata.service";
-import { assessForecastHistory, type ForecastBasis } from "./forecast/forecast-cold-start";
+import {
+  assessForecastHistory,
+  type ForecastBasis,
+  type ForecastReadiness,
+} from "./forecast/forecast-cold-start";
+import { ForecastTrainingService } from "./forecast/forecast-training.service";
 import type { CreateForecastSnapshotInput, CompareForecastSnapshotsInput, ForecastSnapshotsQueryInput } from "./dto/deals.schemas";
 
 export interface ForecastMonth {
@@ -46,6 +51,7 @@ export class DealsAnalyticsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly crmMetadata: CrmMetadataService,
+    private readonly forecastModel: ForecastTrainingService,
   ) {}
 
   private async getTerminalStageKeys(orgId: string): Promise<{ wonKeys: string[]; lostKeys: string[] }> {
@@ -149,6 +155,7 @@ export class DealsAnalyticsService {
     const [allDeals, closedByStage] = await Promise.all([
       this.db
         .select({
+          id: deals.id,
           value: deals.value,
           stage: deals.stage,
           probability: deals.probability,
@@ -164,12 +171,36 @@ export class DealsAnalyticsService {
         .groupBy(deals.stage),
     ]);
 
+    /**
+     * The learned probabilities, where this organisation has a model that earned
+     * the right to produce them.
+     *
+     * Read rather than computed: the nightly pass writes one row per open deal
+     * with the features beside the answer, so the totals here and the
+     * explanation on a deal page are the same arithmetic over the same numbers.
+     * Computing them again in a cached GET would also be a write in a GET, since
+     * a score that nobody stored cannot be argued with later.
+     *
+     * A deal with no row falls back to the weighted arithmetic below, which is
+     * what it was already doing. That happens for a deal created since the last
+     * pass, and for every deal in a tenant on the naive arm.
+     */
+    const readiness = this.forecastReadiness(closedByStage, wonKeys);
+    const [basis, learnedProbabilities] = await Promise.all([
+      this.forecastModel.basisFor(orgId, readiness),
+      this.forecastModel.probabilitiesForOpenDeals(orgId),
+    ]);
+
     const monthMap = new Map<string, ForecastMonth>();
     const stageMap = new Map<string, { count: number; totalValue: number; weightedValue: number; probSum: number }>();
 
     for (const deal of allDeals) {
       const value = Number(deal.value ?? 0);
-      const probability = deal.probability || stageProbMap.get(deal.stage) || 20;
+      const learned = learnedProbabilities.get(deal.id);
+      const probability =
+        learned === undefined
+          ? deal.probability || stageProbMap.get(deal.stage) || 20
+          : learned * 100;
       const weighted = Math.round((value * probability) / 100);
 
       const closeDate = deal.expectedCloseDate
@@ -210,36 +241,34 @@ export class DealsAnalyticsService {
       totalDeals: allDeals.length,
       byMonth,
       byStage,
-      basis: this.forecastBasis(closedByStage, wonKeys),
+      basis,
     };
   }
 
   /**
-   * The label for the arithmetic immediately above: value x probability, where
-   * probability is the tenant's own number, else the stage's, else a flat 20.
+   * How much closed history this organisation has, against the floor a learned
+   * forecast needs.
    *
-   * This is always the naive arm today, and deliberately so — nothing in this
-   * repository fits or scores a model. fitLogisticModel and scoreWithModel have
-   * no callers outside their specs, crm_deal_forecast_models has no writer, and
-   * buildForecast reads neither. Returning a LearnedBasis would therefore label
-   * a number that no model produced, which is precisely the trust forecast-cold-
-   * start.ts exists to protect. The learned arm turns on when a trainer does,
-   * not before.
+   * Two readers, one arithmetic. `basisFor` turns this into the label the
+   * response carries, and the standalone model endpoint counts the same rows a
+   * different way to reach the same answer — which is why the counting lives
+   * here and the labelling does not.
    *
-   * The two reasons are not interchangeable. "insufficient-history" means the
-   * tenant cannot yet be given better and readiness says how much is missing;
-   * "not-trained-yet" means they could be and are not, which is our gap and not
-   * theirs, and a surface that renders both as "not enough data" is lying to the
-   * second tenant.
+   * The two naive reasons are not interchangeable. "insufficient-history" means
+   * the tenant cannot yet be given better and readiness says how much is
+   * missing; "not-trained-yet" means they could be and no accepted model exists,
+   * which is our gap and not theirs. A surface that renders both as "not enough
+   * data" is lying to the second tenant.
    *
-   * Note for whoever writes that surface: the 20 above is a default nobody
-   * typed, so copy along the lines of "the probabilities you set yourself" is
-   * false for any deal left at 0 or sitting in a stage with no active metadata.
+   * Note for whoever writes that surface: the flat 20 in the loop above is a
+   * default nobody typed, so copy along the lines of "the probabilities you set
+   * yourself" is false for any deal left at 0 or sitting in a stage with no
+   * active metadata.
    */
-  private forecastBasis(
+  private forecastReadiness(
     closedByStage: Array<{ stage: string; closed: number }>,
     wonKeys: string[],
-  ): ForecastBasis {
+  ): ForecastReadiness {
     const wonKeySet = new Set(wonKeys);
     let won = 0;
     let lost = 0;
@@ -251,12 +280,7 @@ export class DealsAnalyticsService {
       else lost += closed;
     }
 
-    const readiness = assessForecastHistory({ won, lost });
-    return {
-      kind: "naive-weighted",
-      reason: readiness.ready ? "not-trained-yet" : "insufficient-history",
-      readiness,
-    };
+    return assessForecastHistory({ won, lost });
   }
 
   async getWinLoss(orgId: string) {

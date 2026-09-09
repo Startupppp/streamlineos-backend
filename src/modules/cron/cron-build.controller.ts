@@ -14,6 +14,7 @@ import { CrmSequencesRunnerService } from "../crm/automation-studio/crm-sequence
 import { CronCrmTasksService } from "./cron-crm-tasks.service";
 import { CronCrmLifecycleService } from "./cron-crm-lifecycle.service";
 import { CronCrmAutonomyService } from "./cron-crm-autonomy.service";
+import { CronCrmForecastService } from "./cron-crm-forecast.service";
 import { NurtureStepSenderService } from "../autonomy/sequences/nurture-step-sender.service";
 import { ReportSchedulesService } from "../reporting/report-schedules.service";
 import { CronBuildRetentionService } from "./cron-build-retention.service";
@@ -29,6 +30,7 @@ export class CronBuildController {
     private readonly crmTasks: CronCrmTasksService,
     private readonly crmLifecycle: CronCrmLifecycleService,
     private readonly crmAutonomy: CronCrmAutonomyService,
+    private readonly crmForecast: CronCrmForecastService,
     private readonly nurtureSender: NurtureStepSenderService,
     private readonly reportSchedules: ReportSchedulesService,
     private readonly buildRetention: CronBuildRetentionService,
@@ -100,6 +102,17 @@ export class CronBuildController {
   @HttpCode(200)
   postCrmReportSchedules(@Headers("authorization") authorization?: string) {
     return this.runCrmReportSchedules(authorization);
+  }
+
+  @Get("crm-deal-forecast")
+  getCrmDealForecast(@Headers("authorization") authorization?: string) {
+    return this.runCrmDealForecast(authorization);
+  }
+
+  @Post("crm-deal-forecast")
+  @HttpCode(200)
+  postCrmDealForecast(@Headers("authorization") authorization?: string) {
+    return this.runCrmDealForecast(authorization);
   }
 
   @Get("crm-field-repairs")
@@ -307,6 +320,40 @@ export class CronBuildController {
       };
     } catch (error) {
       logger.error("CRM report schedule sweep failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  /**
+   * Refit the stale forecast models, then score every open pipeline.
+   *
+   * The longest lease of the CRM sweeps, and the only one that earns it: a fit
+   * reads thousands of closed deals and their ledgers per organisation. It is
+   * still a courtesy rather than a safeguard — nothing here is a send, and a
+   * second pass would overwrite the same score rows with the same numbers
+   * rather than doing anything twice.
+   *
+   * A tenant whose model is refused is counted in `refused`, not `failed`. A
+   * model that could not beat the tenant's own stage percentages is the system
+   * working, and folding it into an error count would make a healthy sweep look
+   * broken and a broken one look healthy.
+   */
+  private async runCrmDealForecast(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("crm-deal-forecast", 1800, () =>
+        this.crmForecast.sweep(),
+      );
+      if (!outcome.ran)
+        return { success: true, skipped: true, message: "crm-deal-forecast already running" };
+      const result = outcome.result;
+      return {
+        success: true,
+        message: `Trained ${result.trained}, refused ${result.refused}, scored ${result.scored} deal(s) across ${result.organizations} organization(s)`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("CRM deal forecast sweep failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

@@ -37,6 +37,8 @@ import { CronSignController } from "./cron-sign.controller";
 import { ESignModule } from "../e-sign/e-sign.module";
 import { CronSupportController } from "./cron-support.controller";
 import { ReportingModule } from "../reporting/reporting.module";
+import { DealsModule } from "../deals/deals.module";
+import { CronCrmForecastService } from "./cron-crm-forecast.service";
 import { CronBuildController } from "./cron-build.controller";
 import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
 import { CronNotificationRetentionService } from "./cron-notification-retention.service";
@@ -108,6 +110,7 @@ import { EmploymentFactsModule } from "../directory/employment-facts.module";
     CrmModule,
     /** For the report-schedule sweep, which claims due rows and emits. */
     ReportingModule,
+    DealsModule,
     OutboxModule,
     SessionsModule,
     ESignModule,
@@ -144,6 +147,7 @@ import { EmploymentFactsModule } from "../directory/employment-facts.module";
     CronCrmTasksService,
     CronCrmLifecycleService,
     CronCrmAutonomyService,
+    CronCrmForecastService,
     CronIdempotencyService,
     CronBuildRetentionService,
     CronBuildSnapshotsService,

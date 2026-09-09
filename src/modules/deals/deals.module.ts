@@ -4,6 +4,7 @@ import { DealsAnalyticsController } from "./deals-analytics.controller";
 import { DealsApprovalsController } from "./deals-approvals.controller";
 import { DealsMeetingsController } from "./deals-meetings.controller";
 import { DealsCompetitorsController } from "./deals-competitors.controller";
+import { DealsCompetitorSuggestionsController } from "./deals-competitor-suggestions.controller";
 import { DealsStakeholdersController } from "./deals-stakeholders.controller";
 import { DealsService } from "./deals.service";
 import { DealsCrudService } from "./deals-crud.service";
@@ -13,7 +14,11 @@ import { DealsAnalyticsService } from "./deals-analytics.service";
 import { DealsApprovalsService } from "./deals-approvals.service";
 import { DealsMeetingsService } from "./deals-meetings.service";
 import { DealsCompetitorsService } from "./deals-competitors.service";
+import { DealsCompetitorSuggestionsService } from "./deals-competitor-suggestions.service";
 import { DealsStakeholdersService } from "./deals-stakeholders.service";
+import { DealsForecastModelController } from "./forecast/deals-forecast-model.controller";
+import { ForecastCorpusService } from "./forecast/forecast-corpus.service";
+import { ForecastTrainingService } from "./forecast/forecast-training.service";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { AutomationModule } from "../automation/automation.module";
 import { WebhooksModule } from "../webhooks/webhooks.module";
@@ -34,7 +39,9 @@ import { LifecycleModule } from "../lifecycle/lifecycle.module";
     DealsApprovalsController,
     DealsMeetingsController,
     DealsCompetitorsController,
+    DealsCompetitorSuggestionsController,
     DealsStakeholdersController,
+    DealsForecastModelController,
     DealsController,
   ],
   providers: [
@@ -46,10 +53,13 @@ import { LifecycleModule } from "../lifecycle/lifecycle.module";
     DealsApprovalsService,
     DealsMeetingsService,
     DealsCompetitorsService,
+    DealsCompetitorSuggestionsService,
     DealsStakeholdersService,
+    ForecastCorpusService,
+    ForecastTrainingService,
   ],
   // Ticket 12 advances a stage through the same path a person does, so the
   // ledger, the blueprint check and the cache invalidation all still happen.
-  exports: [DealsService],
+  exports: [DealsService, ForecastTrainingService],
 })
 export class DealsModule {}
