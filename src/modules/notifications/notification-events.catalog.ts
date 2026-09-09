@@ -1173,6 +1173,37 @@ const TIMESHEETS = [
     defaultChannels: IA_EMAIL,
     dedupeWindowSeconds: 86_400,
   }),
+  /**
+   * TS-24. The three transitions somebody is waiting on.
+   *
+   * All `IA_EMAIL`, because the point of the ticket is the email leg: an
+   * approver who is not in the product when a timesheet lands, and a worker
+   * whose week was rejected, both need to hear about it somewhere other than a
+   * bell icon they are not looking at. `EMAIL` routes through
+   * `NotificationDispatchService` to the existing SMTP provider and the
+   * existing `notification_outbox` — no new vendor and no second mailer, which
+   * is the other half of the ticket.
+   *
+   * `dedupeWindowSeconds` stays at the 60-second default rather than the
+   * reminders' day. A period really can be submitted, rejected, resubmitted and
+   * approved inside an afternoon, and swallowing the second decision because it
+   * resembled the first would be worse than a duplicate.
+   */
+  e("timesheets.period.submitted", "timesheets", "PROJECTS", "Timesheet submitted for approval", {
+    description: "A team member submitted a timesheet period and it is waiting for your approval.",
+    defaultChannels: IA_EMAIL,
+  }),
+  e("timesheets.period.approved", "timesheets", "PROJECTS", "Timesheet approved", {
+    description: "Your submitted timesheet period was approved.",
+    defaultType: "SUCCESS",
+    defaultChannels: IA_EMAIL,
+  }),
+  e("timesheets.period.rejected", "timesheets", "PROJECTS", "Timesheet rejected", {
+    description: "Your submitted timesheet period was rejected and needs changes.",
+    defaultPriority: "HIGH",
+    defaultType: "WARNING",
+    defaultChannels: IA_EMAIL,
+  }),
 ] as const;
 
 export const NOTIFICATION_EVENT_CATALOG = [

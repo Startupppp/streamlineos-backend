@@ -48,12 +48,25 @@ export class WebhooksDispatchService {
    * nothing at all.
    */
   dispatch(orgId: string, eventName: string, payload: Record<string, unknown>): void {
-    void this.run(orgId, eventName, payload).catch(
+    void this.deliverNow(orgId, eventName, payload).catch(
       logSideEffectFailure("webhook dispatch", { orgId, eventName }),
     );
   }
 
-  private async run(orgId: string, eventName: string, payload: Record<string, unknown>): Promise<void> {
+  /**
+   * The same delivery, awaited.
+   *
+   * `dispatch` is the right shape for a request handler, which has already
+   * returned and has nowhere to throw to. It is the wrong shape for a caller
+   * that *can* handle a failure — an outbox consumer, for instance, whose whole
+   * job is to retry. Handing that caller the fire-and-forget version would mark
+   * the event DELIVERED whatever happened here, which is the failure mode the
+   * outbox exists to prevent.
+   *
+   * Identical work either way; only the error handling differs, and only the
+   * caller can decide which they need.
+   */
+  async deliverNow(orgId: string, eventName: string, payload: Record<string, unknown>): Promise<void> {
     /**
      * A tenant transaction of its own, because there is no longer one to
      * borrow.
