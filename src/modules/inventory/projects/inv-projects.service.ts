@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 import {
   invProjects,
   invProjectRequirements,
@@ -878,14 +879,4 @@ export class InvProjectsService {
   }
 }
 
-/** Same walk as the products service's: Drizzle hangs the driver error off `cause`. */
-function isUniqueViolation(err: unknown): boolean {
-  let current: unknown = err;
-  for (let depth = 0; depth < 5; depth++) {
-    if (typeof current !== "object" || current === null) return false;
-    if ("code" in current && current.code === "23505") return true;
-    if (!("cause" in current)) return false;
-    current = current.cause;
-  }
-  return false;
-}
+

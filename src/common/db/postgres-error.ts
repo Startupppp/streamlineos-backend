@@ -76,3 +76,15 @@ export function isForeignKeyViolation(error: unknown): boolean {
 export function isCheckViolation(error: unknown): boolean {
   return getPostgresErrorCode(error) === "23514";
 }
+
+/**
+ * 23P01 — an EXCLUSION constraint refused the row.
+ *
+ * The one people forget, and the one that most needs a 409 rather than a 500:
+ * it is how overlapping ranges are rejected — a dock appointment booked over
+ * another, a worker engagement overlapping an existing one — so the caller's
+ * next move is to pick a different time, not to retry.
+ */
+export function isExclusionViolation(error: unknown): boolean {
+  return getPostgresErrorCode(error) === "23P01";
+}

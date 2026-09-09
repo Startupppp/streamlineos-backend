@@ -3,6 +3,7 @@ import {
   getPostgresErrorCode,
   getPostgresErrorDetails,
   isCheckViolation,
+  isExclusionViolation,
   isForeignKeyViolation,
   isUniqueViolation,
 } from "./postgres-error";
@@ -65,6 +66,17 @@ describe("the SQLSTATE predicates", () => {
 
   it("sees a check violation through Drizzle's wrapper", () => {
     expect(isCheckViolation(wrapped("23514"))).toBe(true);
+  });
+
+  it("sees an exclusion violation through Drizzle's wrapper", () => {
+    /*
+     * 23P01, the one people forget. It is how overlapping ranges are rejected —
+     * a dock appointment booked over another, a worker engagement overlapping an
+     * existing one — so it most needs a 409 rather than a 500: the caller's next
+     * move is a different time, not a retry.
+     */
+    expect(isExclusionViolation(wrapped("23P01"))).toBe(true);
+    expect(isExclusionViolation(wrapped("23505"))).toBe(false);
   });
 
   it("is false rather than throwing for anything that is not a database error", () => {
