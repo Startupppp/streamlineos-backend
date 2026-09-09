@@ -1,8 +1,10 @@
 import { Test } from "@nestjs/testing";
+import { sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { PoService } from "./purchase-orders/po.service";
-import { GrnService } from "./purchase-orders/grn.service";
+import { GrnReadService } from "./purchase-orders/grn-read.service";
+import { WarehouseScopeService } from "./stock-engine/warehouse-scope.service";
 import { SoCoreService } from "./sales-orders/so-core.service";
 import { SoFulfillmentService } from "./sales-orders/so-fulfillment.service";
 import { SoLifecycleService } from "./sales-orders/so-lifecycle.service";
@@ -95,23 +97,55 @@ describe("PoService — cross-tenant isolation", () => {
   });
 });
 
-describe("GrnService — cross-tenant isolation", () => {
+/**
+ * These two used to exercise `GrnService.listGrns`, which NOTHING CALLED.
+ *
+ * The GRN read path moved to `GrnReadService` when INV-109 closed a warehouse
+ * leak on it — putting the scope in the predicate AND in the cache key, and
+ * asserting a named warehouse before the cache because "a gate behind a cache is
+ * a gate that runs once". The old copy stayed behind on `GrnService`,
+ * unscoped, and this isolation spec went on testing it.
+ *
+ * So the isolation claim covered a method the product does not run, while the
+ * one it does run had no isolation spec at all. That reads as coverage from
+ * every direction except the one that matters. The dead copy is deleted and
+ * these now drive `GrnReadService`, which is what the controller resolves.
+ */
+describe("GrnReadService — cross-tenant isolation", () => {
   const OWNER = "org-owner";
   const ATTACKER = "org-attacker";
+  const UNRESTRICTED = {
+    key: "all",
+    isEmpty: false,
+    unrestricted: true,
+    warehouse: () => sql`TRUE`,
+    location: () => sql`TRUE`,
+    anyOf: () => sql`TRUE`,
+  };
+  const scope = {
+    forUser: jest.fn(async () => UNRESTRICTED),
+    assertWarehouseVisible: jest.fn(async () => {}),
+  };
+
+  async function readService(db: unknown) {
+    return Test.createTestingModule({
+      providers: [
+        ...INVENTORY_ISOLATION_STUBS,
+        GrnReadService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: CacheService, useValue: cache },
+        { provide: WarehouseScopeService, useValue: scope },
+      ],
+    })
+      .compile()
+      .then((m) => m.get(GrnReadService));
+  }
 
   it("returns empty GRN list for a foreign org (isolation — deny)", async () => {
     const { db, selectWhere } = makeDb([]);
-    const svc = await Test.createTestingModule({
-      providers: [
-        ...INVENTORY_ISOLATION_STUBS,
-        GrnService,
-        { provide: DRIZZLE, useValue: db },
-        { provide: CacheService, useValue: cache },
-        { provide: StockEngineService, useValue: { execute: jest.fn() } },
-      ],
-    }).compile().then((m) => m.get(GrnService));
+    const svc = await readService(db);
 
-    const result = await svc.listGrns(ATTACKER, { page: 1, limit: 20 });
+    const result = await svc.listGrns(ATTACKER, "user-1", { page: 1, limit: 20 });
     expect(result.items).toHaveLength(0);
     const whereArg = selectWhere.mock.calls[0]?.[0] as unknown;
     expect(sqlValues(whereArg)).toContain(ATTACKER);
@@ -120,18 +154,31 @@ describe("GrnService — cross-tenant isolation", () => {
   it("returns GRNs for the owning org (isolation — control)", async () => {
     const GRN = { id: 1, orgId: OWNER, number: "GRN-0001" };
     const { db } = makeDb([GRN]);
-    const svc = await Test.createTestingModule({
-      providers: [
-        ...INVENTORY_ISOLATION_STUBS,
-        GrnService,
-        { provide: DRIZZLE, useValue: db },
-        { provide: CacheService, useValue: cache },
-        { provide: StockEngineService, useValue: { execute: jest.fn() } },
-      ],
-    }).compile().then((m) => m.get(GrnService));
+    const svc = await readService(db);
 
-    const result = await svc.listGrns(OWNER, { page: 1, limit: 20 });
+    const result = await svc.listGrns(OWNER, "user-1", { page: 1, limit: 20 });
     expect(result.items).toHaveLength(1);
+  });
+
+  it("puts the caller's scope in the cache key, not only in the predicate", async () => {
+    // The trap this whole path exists because of: a scoped query cached under a
+    // scope-free key serves one caller's narrowed answer to the next, and
+    // defeats the scope in both directions (CLAUDE.md §6).
+    const { db } = makeDb([]);
+    const svc = await readService(db);
+    /*
+     * Read the shared mock's calls rather than `jest.spyOn`-ing it. Spying on a
+     * module-level `jest.fn()` replaces its implementation with a bare auto-mock,
+     * and `mockRestore()` does not put the original implementation back — it
+     * leaves `cachedVersioned` returning `undefined` for every test AFTER this
+     * one in the file. That is not a hypothetical: it broke the two SoCoreService
+     * cases below on the first run.
+     */
+    cache.cachedVersioned.mockClear();
+
+    await svc.listGrns(OWNER, "user-1", { page: 1, limit: 20 });
+
+    expect(String(cache.cachedVersioned.mock.calls[0]?.[1] ?? "")).toContain("all:");
   });
 });
 
