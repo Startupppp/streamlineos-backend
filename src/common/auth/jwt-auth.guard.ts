@@ -97,25 +97,36 @@ export class JwtAuthGuard implements CanActivate {
         // Every request re-reads the tombstone. A positive-result cache used to sit here
         // and it made revocation take effect up to its TTL later, on a per-process basis.
         let tombstone: boolean | null = null;
-        let useDatabase = this.redis === null;
+        let redisErrored = false;
         if (this.redis) {
           try {
             tombstone = await this.redis.get<boolean>(
               `revoked:session:${claims.sessionId}`,
             );
           } catch (err) {
-            useDatabase = true;
+            redisErrored = true;
             this.logger.error(
               `session revocation lookup failed, falling back to the database: ${err instanceof Error ? err.message : String(err)}`,
             );
           }
         }
 
-        let revoked = tombstone === true;
-        if (useDatabase)
-          revoked = (await this.isRevokedInDatabase(claims.sessionId)) === true;
+        // Positive tombstone: session is durably revoked — deny without a DB read (hot path).
+        if (tombstone === true) throw new UnauthorizedException("Session has been revoked");
 
-        if (revoked) throw new UnauthorizedException("Session has been revoked");
+        // Consult the DB when: Redis is absent, Redis errored, or tombstone was a cache miss (null).
+        const needsDatabase = this.redis === null || redisErrored || tombstone === null;
+        if (needsDatabase) {
+          const dbResult = await this.isRevokedInDatabase(claims.sessionId);
+          if (dbResult === null) {
+            // Both revocation authorities failed — fail closed rather than admit a possibly-revoked session.
+            this.logger.error(
+              `session revocation double-failure for sessionId=${claims.sessionId}: both Redis and the database were unavailable; denying to fail closed`,
+            );
+            throw new UnauthorizedException("Session revocation check unavailable");
+          }
+          if (dbResult) throw new UnauthorizedException("Session has been revoked");
+        }
       }
       const allowNoOrg = this.reflector.getAllAndOverride<boolean>(
         ALLOW_NO_ORG_KEY,
@@ -194,7 +205,8 @@ export class JwtAuthGuard implements CanActivate {
    * When it is missing or erroring, `user_sessions.is_revoked` is the durable
    * answer — so an Upstash outage costs a database read, not a 500 on every
    * authenticated request and not a silently unenforced revocation. Only a
-   * double failure returns null, and the caller then treats the session as live.
+   * double failure (Redis already failed, and this query also throws) returns
+   * null; the caller then denies the session to fail closed.
    */
   private async isRevokedInDatabase(sessionId: string): Promise<boolean | null> {
     try {

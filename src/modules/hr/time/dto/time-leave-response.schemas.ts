@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { wireDate } from "../../../../common/openapi/wire-types";
-import { successSchema } from "../../../../common/openapi/response-envelopes";
 
 export const leaveTypeRowSchema = z.object({
   id: z.number().int(),
@@ -190,4 +189,3 @@ export const teamAvailabilityItemSchema = z.object({
   userImage: z.string().nullable(),
 });
 
-export { successSchema };

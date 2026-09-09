@@ -12,11 +12,10 @@ import {
 } from "./kb-citation-visibility.service";
 import type { KbResearchBriefCreateInput, KbResearchBriefListInput } from "./dto/kb-ai.schemas";
 
-const CITED_KINDS = new Set(["article", "page", "source"]);
-
 function toCitedRef(citation: { kind: string; id: number }): CitedRef | null {
-  if (!CITED_KINDS.has(citation.kind)) return null;
-  return { kind: citation.kind, id: citation.id } as CitedRef;
+  if (citation.kind === "article" || citation.kind === "page" || citation.kind === "source")
+    return { kind: citation.kind, id: citation.id };
+  return null;
 }
 
 type BriefSummary = {

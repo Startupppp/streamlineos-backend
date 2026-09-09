@@ -109,8 +109,6 @@ export const holidayRowSchema = z.object({
   updatedAt: wireDate(),
 });
 
-export const holidayCreateResponseSchema = z.object({ ok: z.boolean() });
-
 export const interviewQuestionRowSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),

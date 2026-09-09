@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, isNull, ne } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import {
   accountOrganizationIndex,
   organizationLegalHolds,
@@ -27,6 +27,7 @@ import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { withIdentity } from "../../../common/tenant/with-identity";
 import { repairLastActiveOrgIds } from "./lifecycle/last-active-org-repair";
+import { nextActiveOrgIdsQuery } from "./lifecycle/next-active-org";
 import { OrganizationSagaService } from "./lifecycle/organization-saga.service";
 
 @Injectable()
@@ -77,39 +78,26 @@ export class OrgLifecycleService {
     }
   }
 
-  private async findNextActiveOrgId(
-    db: DbOrTx,
-    userId: string,
-    excludeOrgId: string,
-  ): Promise<string | null> {
-    const [remaining] = await db
-      .select({ orgId: organizationMembers.orgId })
-      .from(organizationMembers)
-      .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
-      .where(
-        and(
-          eq(organizationMembers.userId, userId),
-          eq(organizationMembers.status, "ACTIVE"),
-          eq(organizations.status, "ACTIVE"),
-          isNull(organizations.deletedAt),
-          ne(organizationMembers.orgId, excludeOrgId),
-        ),
-      )
-      .orderBy(desc(organizationMembers.joinedAt))
-      .limit(1);
-    return remaining?.orgId ?? null;
-  }
-
   private async resolveReplacementOrgIds(
     orgId: string,
     memberUserIds: string[],
   ): Promise<Map<string, string | null>> {
-    const replacements = new Map<string, string | null>();
-    for (const memberUserId of memberUserIds) {
-      const nextOrgId = await withIdentity(this.db, memberUserId, (tx) =>
-        this.findNextActiveOrgId(tx, memberUserId, orgId),
+    const replacements = new Map<string, string | null>(
+      memberUserIds.map((memberUserId) => [memberUserId, null]),
+    );
+    if (memberUserIds.length === 0) return replacements;
+    const rows = await runInTenantTransaction(
+      this.db,
+      (tx) => tx.execute(nextActiveOrgIdsQuery(memberUserIds)),
+      { orgId },
+    );
+    for (const row of rows) {
+      const memberUserId = typeof row.user_id === "string" ? row.user_id : null;
+      if (memberUserId === null) continue;
+      replacements.set(
+        memberUserId,
+        typeof row.next_org_id === "string" ? row.next_org_id : null,
       );
-      replacements.set(memberUserId, nextOrgId);
     }
     return replacements;
   }

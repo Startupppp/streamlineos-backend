@@ -223,11 +223,6 @@ export const getExitTreatmentResponseSchema = z.object({
   exitDate: z.string(),
 });
 
-export const getWorkforceCostResponseSchema = z.object({
-  departmentBreakdown: z.array(z.object({ departmentId: z.string().nullable(), departmentName: z.string().nullable(), headcount: z.number().int(), totalCostCents: z.number() })),
-  total: z.object({ headcount: z.number().int(), totalCostCents: z.number() }),
-});
-
 export const submitRecommendationResponseSchema = fullRecommendationSchema;
 export const listFailedSyncsResponseSchema = z.array(syncLogSchema);
 export const detectDuplicatePunchesResponseSchema = z.array(z.object({

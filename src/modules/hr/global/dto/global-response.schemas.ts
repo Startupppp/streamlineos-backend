@@ -111,7 +111,6 @@ export const listWorkAuthsResponseSchema = cursorPageSchema(workAuthSchema);
 export const getWorkAuthResponseSchema = workAuthSchema;
 export const createWorkAuthResponseSchema = workAuthSchema;
 export const updateWorkAuthResponseSchema = workAuthSchema;
-export const verifyWorkAuthResponseSchema = workAuthSchema;
 export const listExpiringWorkAuthsResponseSchema = cursorPageSchema(workAuthSchema);
 
 export const convertToEmployeeResponseSchema = z.object({ ok: z.literal(true), employmentId: z.number().int().nullable() });

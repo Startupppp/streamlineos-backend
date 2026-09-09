@@ -4950,6 +4950,13 @@
       "when": 1803000010158,
       "tag": "1080_chat_invite_link_expiry",
       "breakpoints": true
+    },
+    {
+      "idx": 840,
+      "version": "7",
+      "when": 1803000010159,
+      "tag": "1081_next_active_org_resolver",
+      "breakpoints": true
     }
   ]
 }

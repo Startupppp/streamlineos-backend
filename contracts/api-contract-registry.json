@@ -1,7 +1,7 @@
 {
   "version": "1",
   "schemaVersion": "1.1",
-  "generatedAt": "2026-09-09T07:50:20.618Z",
+  "generatedAt": "2026-09-09T15:59:26.739Z",
   "description": "Fail-closed API contract registry. Every HTTP operation, outbox event, and outbound customer webhook event is classified as 'internal' or 'published'. Operations absent from this registry are treated as 'published' by check-api-contract-registry.mjs.",
   "operations": {
     "GET /access/delegations": {
@@ -28016,6 +28016,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "GET /kb/pages/{pageId}/indexing-status": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbSourcesController_pageIngestionStatus",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "PATCH /kb/pages/{pageId}/lock": {
       "classification": "internal",
       "classificationOverride": null,
@@ -28406,6 +28417,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "KbSourcesController_upload",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /kb/sources/{sourceId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbSourcesController_get",
       "owner": null,
       "version": "1",
       "consumers": [],

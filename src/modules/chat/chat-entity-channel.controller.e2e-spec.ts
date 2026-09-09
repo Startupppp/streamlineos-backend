@@ -6,9 +6,16 @@ import { AppModule } from "../../app.module";
 import { AllExceptionsFilter } from "../../common/http/all-exceptions.filter";
 import { stubMembershipState } from "../../../test/helpers/membership-state";
 import { AccessService } from "../access/access.service";
+import { moduleAvailabilityResolver } from "../../common/rbac/module-availability";
 import { DRIZZLE } from "../../db/drizzle.constants";
+import type { Db } from "../../db/drizzle.types";
 import { MfaPolicyService } from "../access/mfa-policy.service";
 import { makeMfaPolicyStub } from "test/helpers/mfa-policy-stub";
+import { installFixtureRegionRegistry } from "test/helpers/e2e-app";
+import { PayrollJobsWorkerService } from "../payroll/jobs/payroll-jobs-worker.service";
+import { PayrollCalendarReminderScheduler } from "../payroll/insights/payroll-calendar-reminder.scheduler";
+import { NotificationDeliveryWorker } from "../notifications/notification-delivery-worker.service";
+import { PermissionCatalogSyncService } from "../rbac/permission-catalog-sync.service";
 
 import { describeWithMockedDb } from "test/helpers/db-describe";
 
@@ -23,6 +30,26 @@ type Scope = "all" | "own" | "team" | "none";
 const mockAccess = {
   resolveUserPermissions: jest.fn<Promise<Map<string, Scope>>, unknown[]>(),
   isModuleEnabled: jest.fn().mockResolvedValue(true),
+  // Bridge the fixture onto authorize()'s AccessResolver surface (scopeFor/getModuleState/buildModuleAvailabilityResolver).
+  scopeFor: jest.fn(async (_ctx: unknown, key: string): Promise<Scope> => {
+    const map = await mockAccess.resolveUserPermissions();
+    return map.get(key) ?? "none";
+  }),
+  getModuleState: jest.fn(
+    async (orgId: string, moduleKey: string): Promise<boolean | undefined> =>
+      mockAccess.isModuleEnabled(orgId, moduleKey),
+  ),
+  buildModuleAvailabilityResolver: (
+    getModuleMap: (orgId: string) => Promise<Record<string, boolean>>,
+  ) =>
+    moduleAvailabilityResolver(
+      {
+        isCoreModule: () => false,
+        getModuleMap,
+        getPlanLockedModules: async () => [],
+      },
+      { getUserDeniedModules: async () => new Set<string>() },
+    ),
 };
 
 function q(value: unknown[]): Promise<unknown[]> & { limit: jest.Mock } {
@@ -57,9 +84,12 @@ const mockDb = {
   limit: jest.fn().mockResolvedValue([TICKET_ROW]),
   insert: jest.fn().mockReturnThis(),
   values: jest.fn().mockReturnThis(),
+  onConflictDoUpdate: jest.fn().mockReturnThis(),
+  onConflictDoNothing: jest.fn().mockReturnThis(),
   returning: jest.fn().mockResolvedValue([{ id: 1, name: "Ticket", type: "GROUP" }]),
   update: jest.fn().mockReturnThis(),
   set: jest.fn().mockReturnThis(),
+  orderBy: jest.fn().mockResolvedValue([]),
   execute: jest.fn().mockResolvedValue([]),
   __client: { end: jest.fn().mockResolvedValue(undefined) },
   transaction: jest
@@ -74,6 +104,13 @@ describeWithMockedDb("Chat entity channel access (e2e, mocked)", () => {
     process.env.DATABASE_URL ??=
       process.env.RBAC_E2E_DATABASE_URL ?? "postgres://u:p@localhost:5432/db";
     process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
+    process.env.ADMISSION_ENABLED = "false";
+    process.env.NOTIFICATIONS_INPROCESS_WORKER = "false";
+    process.env.HR_EXPORT_WORKER_ENABLED = "false";
+    process.env.PAYROLL_EXPORT_WORKER_ENABLED = "false";
+    process.env.EXPENSE_EXPORT_WORKER_ENABLED = "false";
+    process.env.FINANCE_REPORT_EXPORT_WORKER_ENABLED = "false";
+    process.env.GDPR_EXPORT_WORKER_ENABLED = "false";
 
     const ref = await stubMembershipState(
       Test.createTestingModule({ imports: [AppModule] })
@@ -82,10 +119,19 @@ describeWithMockedDb("Chat entity channel access (e2e, mocked)", () => {
         .overrideProvider(DRIZZLE)
         .useValue(mockDb)
         .overrideProvider(MfaPolicyService)
-        .useValue(makeMfaPolicyStub()),
+        .useValue(makeMfaPolicyStub())
+        .overrideProvider(PayrollJobsWorkerService)
+        .useValue({})
+        .overrideProvider(PayrollCalendarReminderScheduler)
+        .useValue({})
+        .overrideProvider(NotificationDeliveryWorker)
+        .useValue({})
+        .overrideProvider(PermissionCatalogSyncService)
+        .useValue({}),
       { member_1: { role: "MEMBER" } },
     ).compile();
 
+    installFixtureRegionRegistry(ref.get<Db>(DRIZZLE));
     app = ref.createNestApplication();
     app.useGlobalFilters(new AllExceptionsFilter());
     await app.init();

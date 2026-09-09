@@ -25,12 +25,7 @@ export async function reserveTicketCapacity(
         sql`, `,
       )})`
     : sql``;
-  const rows = await tx.execute<{
-    name: string;
-    wip_limit: number | null;
-    current_count: number;
-    status_exists: boolean;
-  }>(sql`
+  const rows = await tx.execute(sql`
     WITH incoming(status, amount) AS (VALUES ${sql.join(values, sql`, `)}), configured AS (
       SELECT id, name, wip_limit FROM build.project_statuses
       WHERE org_id = ${orgId} AND project_id = ${projectId}
@@ -43,17 +38,16 @@ export async function reserveTicketCapacity(
     GROUP BY i.status, ps.id, ps.wip_limit
   `);
   for (const row of rows) {
+    const name = String(row.name ?? "");
+    const wipLimit = row.wip_limit != null ? Number(row.wip_limit) : null;
+    const currentCount = Number(row.current_count);
     if (row.status_exists === false)
       throw new ConflictException(
-        `Column '${row.name}' no longer exists; refresh and retry`,
+        `Column '${name}' no longer exists; refresh and retry`,
       );
-    if (
-      row.wip_limit != null &&
-      Number(row.current_count) + (counts.get(row.name) ?? 0) >
-        Number(row.wip_limit)
-    )
+    if (wipLimit != null && currentCount + (counts.get(name) ?? 0) > wipLimit)
       throw new ConflictException(
-        `Column '${row.name}' exceeds its WIP limit of ${row.wip_limit}`,
+        `Column '${name}' exceeds its WIP limit of ${wipLimit}`,
       );
   }
 }

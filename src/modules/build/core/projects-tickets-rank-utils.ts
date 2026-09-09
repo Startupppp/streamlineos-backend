@@ -59,15 +59,16 @@ export async function rankTicket(db: Db, cache: CacheService, access: AccessServ
     if (gap) throw new ConflictException("Board order changed; refresh and retry");
     const rank = lower && upper ? sql`(${lower} + ${upper}) / 2`
       : lower ? sql`${lower} + 1000` : upper ? sql`${upper} - 1000` : sql`1000`;
-    const [position] = await tx.execute<{ rank: string; valid: boolean }>(sql`
+    const [positionRow] = await tx.execute(sql`
       SELECT (${rank})::text AS rank,
         ${lower ? sql`(${rank}) > ${lower}` : sql`true`} AND
         ${upper ? sql`(${rank}) < ${upper}` : sql`true`} AS valid
     `);
-    if (!position?.valid) throw new ConflictException("Rank gap exhausted or reversed; refresh board order");
+    if (!positionRow?.valid) throw new ConflictException("Rank gap exhausted or reversed; refresh board order");
+    const rankValue = String(positionRow?.rank ?? "");
     if (body.status !== undefined) await validateBatchTransition(tx, actor, projectId, [target], status, policy.role);
     const now = new Date();
-    const [updated] = await tx.update(tickets).set({ rank: position.rank, status, updatedAt: now, version: sql`${tickets.version} + 1` })
+    const [updated] = await tx.update(tickets).set({ rank: rankValue, status, updatedAt: now, version: sql`${tickets.version} + 1` })
       .where(and(eq(tickets.orgId, actor.orgId), eq(tickets.projectId, projectId), eq(tickets.id, ticketId), isNull(tickets.deletedAt)))
       .returning({ id: tickets.id, rank: tickets.rank, status: tickets.status });
     if (!updated) throw new NotFoundException("Ticket not found");

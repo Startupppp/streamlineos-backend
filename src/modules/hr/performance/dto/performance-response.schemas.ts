@@ -191,7 +191,6 @@ export const getReviewResponseSchema = reviewRowSchema.extend({
 });
 
 export const updateReviewResponseSchema = successSchema;
-export const deleteReviewResponseSchema = successSchema;
 
 export const listCyclesResponseSchema = z.array(reviewCycleSchema);
 
@@ -215,4 +214,3 @@ export const getCycleResponseSchema = reviewCycleSchema.extend({
 });
 
 export const updateCycleResponseSchema = successSchema;
-export const deleteCycleResponseSchema = successSchema;

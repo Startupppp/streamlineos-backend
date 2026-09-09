@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { hrSafetyIncidentTypeEnum, hrSafetyIncidentSeverityEnum, hrSafetyIncidentStatusEnum } from "../../../../db/schema/hr/safety";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
-import { cursorPageSchema, successSchema } from "../../../../common/openapi/response-envelopes";
+import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
 
 export const hrCaseSchema = z.object({
   id: z.number().int(),
@@ -194,4 +194,3 @@ export const wellnessPulseSchema = z.object({
   burnoutThreshold: z.number().int(),
 });
 
-export { successSchema };

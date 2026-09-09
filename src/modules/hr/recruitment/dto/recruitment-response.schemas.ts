@@ -25,7 +25,6 @@ export {
 } from "./recruitment-candidates-response.schemas";
 
 export {
-  pipelineStageSchema,
   pipelineResponseSchema,
   diversityReportSchema,
   bgvComplianceItemSchema,
@@ -39,7 +38,6 @@ export {
 export {
   talentPoolSchema,
   talentPoolMemberRowSchema,
-  talentPoolMemberItemSchema,
   talentPoolMembersResponseSchema,
 } from "./recruitment-talent-pools-response.schemas";
 
@@ -49,7 +47,6 @@ export {
   candidateMessageSchema,
   candidateMessageRawSchema,
   messageThreadItemSchema,
-  emailSequenceStepSchema,
   emailSequenceWithStepsSchema,
   emailSequenceListItemSchema,
   emailSequenceDetailSchema,
@@ -65,7 +62,6 @@ export {
   vendorSubmissionItemSchema,
   vendorSubmissionRawSchema,
   headcountRowSchema,
-  headcountListItemSchema,
   headcountListPageSchema,
   externalReferralRawSchema,
   externalReferralWithRelationsSchema,
@@ -85,7 +81,6 @@ export {
   candidateOfferSchema,
   offerVersionSchema,
   offerNegotiationSchema,
-  offerListItemSchema,
   offerListResponseSchema,
 } from "./recruitment-offers-response.schemas";
 
@@ -104,4 +99,4 @@ export {
   candidateActivityEventSchema,
 } from "./recruitment-candidate-records-response.schemas";
 
-export { successSchema, cursorPageSchema } from "../../../../common/openapi/response-envelopes";
+export { successSchema } from "../../../../common/openapi/response-envelopes";

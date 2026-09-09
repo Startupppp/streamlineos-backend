@@ -37,6 +37,18 @@ function makeFallbackDb(isRevoked: boolean): Db {
   } as unknown as Db;
 }
 
+function makeThrowingDb(): Db {
+  return {
+    select: jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          limit: jest.fn().mockRejectedValue(new Error("DB unavailable")),
+        }),
+      }),
+    }),
+  } as unknown as Db;
+}
+
 function buildGuard(opts: {
   tombstone?: boolean | null;
   membershipState?: { active: boolean; membershipId: number | null; role: string; isOwner: boolean };
@@ -75,8 +87,8 @@ function buildGuard(opts: {
 }
 
 describe("JwtAuthGuard — revoked-session tombstone bite proofs", () => {
-  it("NEUTER: no tombstone in Redis → guard passes (proves guard is not unconditionally denying)", async () => {
-    const guard = buildGuard({ tombstone: null });
+  it("NEUTER: no tombstone in Redis + DB says not-revoked → guard passes (Redis miss goes to DB)", async () => {
+    const guard = buildGuard({ tombstone: null, db: makeFallbackDb(false) });
     const result = await guard.canActivate(makeContext());
     expect(result).toBe(true);
   });
@@ -95,6 +107,45 @@ describe("JwtAuthGuard — revoked-session tombstone bite proofs", () => {
   it("database fallback: Redis throws AND DB says revoked → UnauthorizedException", async () => {
     const guard = buildGuard({ redisThrows: true, db: makeFallbackDb(true) });
     await expect(guard.canActivate(makeContext())).rejects.toThrow(UnauthorizedException);
+  });
+
+  it("BITE: durably revoked row with no Redis tombstone → rejected (Redis miss falls through to DB)", async () => {
+    const guard = buildGuard({ tombstone: null, db: makeFallbackDb(true) });
+    await expect(guard.canActivate(makeContext())).rejects.toThrow(UnauthorizedException);
+  });
+
+  it("BITE: Redis throws AND DB throws → rejected (double-failure fails closed)", async () => {
+    const guard = buildGuard({ redisThrows: true, db: makeThrowingDb() });
+    await expect(guard.canActivate(makeContext())).rejects.toThrow(UnauthorizedException);
+  });
+
+  it("BITE: tombstone present → rejected and the database was NOT queried (hot path preserved)", async () => {
+    const selectFn = jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          limit: jest.fn().mockResolvedValue([{ isRevoked: false }]),
+        }),
+      }),
+    });
+    const db = { select: selectFn } as unknown as Db;
+    const guard = buildGuard({ tombstone: true, db });
+    await expect(guard.canActivate(makeContext())).rejects.toThrow(UnauthorizedException);
+    expect(selectFn).not.toHaveBeenCalled();
+  });
+
+  it("no tombstone and is_revoked=false → admitted, exactly one database read", async () => {
+    const selectFn = jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          limit: jest.fn().mockResolvedValue([{ isRevoked: false }]),
+        }),
+      }),
+    });
+    const db = { select: selectFn } as unknown as Db;
+    const guard = buildGuard({ tombstone: null, db });
+    const result = await guard.canActivate(makeContext());
+    expect(result).toBe(true);
+    expect(selectFn).toHaveBeenCalledTimes(1);
   });
 });
 

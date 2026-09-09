@@ -142,7 +142,6 @@ const reorgScenarioSchema = z.object({
 });
 
 export const listPositionsResponseSchema = cursorPageSchema(positionSchema);
-export const getPositionResponseSchema = positionSchema;
 export const createPositionResponseSchema = positionSchema;
 export const updatePositionResponseSchema = positionSchema;
 export const assignPositionResponseSchema = positionSchema;

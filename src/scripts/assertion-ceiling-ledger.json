@@ -205,10 +205,6 @@
       "as": 1,
       "nonNull": 0
     },
-    "src/modules/build/core/projects-reports.service.ts": {
-      "as": 1,
-      "nonNull": 0
-    },
     "src/modules/build/core/projects-roadmap.service.ts": {
       "as": 0,
       "nonNull": 1
@@ -216,10 +212,6 @@
     "src/modules/build/core/projects-tickets-create.service.ts": {
       "as": 0,
       "nonNull": 3
-    },
-    "src/modules/build/core/projects-tickets-read.service.ts": {
-      "as": 1,
-      "nonNull": 0
     },
     "src/modules/build/core/projects-tickets-update.service.ts": {
       "as": 1,
@@ -236,10 +228,6 @@
     "src/modules/chat/chat-channel-list.service.ts": {
       "as": 3,
       "nonNull": 0
-    },
-    "src/modules/chat/chat-channels.service.ts": {
-      "as": 0,
-      "nonNull": 1
     },
     "src/modules/chat/chat-fanout-outbox.ts": {
       "as": 1,

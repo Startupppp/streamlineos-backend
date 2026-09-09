@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { wireDate } from "../../../../common/openapi/wire-types";
-import { successSchema } from "../../../../common/openapi/response-envelopes";
 
 const successionPlanSchema = z.object({
   id: z.number().int(),
@@ -26,5 +25,3 @@ export const listSuccessionPlansResponseSchema = z.object({
 export const createSuccessionPlanResponseSchema = successionPlanSchema;
 
 export const updateSuccessionPlanResponseSchema = successionPlanSchema;
-
-export const deleteSuccessionPlanResponseSchema = successSchema;

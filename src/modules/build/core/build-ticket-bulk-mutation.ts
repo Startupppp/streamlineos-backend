@@ -35,7 +35,7 @@ export async function bulkMutateTickets(db: Db, access: AccessService, actor: Cu
     }
     if (body.parentTicketId != null) {
       if (ids.includes(body.parentTicketId)) throw new BadRequestException("Cannot set a ticket as its own parent");
-      const [ancestor] = await tx.execute<{ found: boolean; cycle: boolean }>(sql`
+      const [ancestorRow] = await tx.execute(sql`
         WITH RECURSIVE ancestors AS (
           SELECT id, parent_ticket_id FROM build.tickets
           WHERE id = ${body.parentTicketId} AND org_id = ${actor.orgId} AND project_id = ${projectId} AND deleted_at IS NULL
@@ -45,8 +45,8 @@ export async function bulkMutateTickets(db: Db, access: AccessService, actor: Cu
         ) SELECT EXISTS(SELECT 1 FROM ancestors) AS found,
           EXISTS(SELECT 1 FROM ancestors WHERE id IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})) AS cycle
       `);
-      if (!ancestor?.found) throw new NotFoundException("Parent ticket not found in this project");
-      if (ancestor.cycle) throw new BadRequestException("Cannot set parent: this would create a cycle");
+      if (!ancestorRow?.found) throw new NotFoundException("Parent ticket not found in this project");
+      if (ancestorRow?.cycle) throw new BadRequestException("Cannot set parent: this would create a cycle");
     }
     if (body.status !== undefined) {
       const effectiveRows = rows.map((row) => ({ ...row,

@@ -20,6 +20,7 @@ import {
   chatSavedMessages,
   invitationEvents,
   invitations,
+  kbSpaceMembers,
   organizationMembers,
   organizations,
   ownershipTransfers,
@@ -226,13 +227,18 @@ describe("OrgMembershipService.revokeOrgScopedAccess", () => {
       expect(deleteFn).toHaveBeenCalledWith(resourceGrants);
     });
 
-    it("deletes KB space grants for the user principal", async () => {
+    it("leaves KB space grants to the membership FK cascade instead of deleting them itself", async () => {
       const { tx, deleteFn } = buildTx();
       mockRunInTenantTransaction.mockImplementation((_db, fn) => fn(tx as unknown as Parameters<typeof fn>[0]));
       const { service } = await buildService();
 
       await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "removed");
 
+      // kb_space_members carries ON DELETE CASCADE to organization_members (fk_kb_space_members_org_membership).
+      // revokeOrgScopedAccess revokes access without deleting the membership row, so the FK cascade
+      // fires only when the membership row is later deleted — this function correctly does not issue
+      // an explicit delete and defers to the cascade.
+      expect(deleteFn).not.toHaveBeenCalledWith(kbSpaceMembers);
     });
 
     it("revokes pending invitations for the member's email and inserts event records", async () => {
@@ -361,6 +367,9 @@ describe("OrgMembershipService.revokeOrgScopedAccess", () => {
 
       await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "suspended");
 
+      // Suspension is reversible — kb_space_members rows are retained (onSuspension: "retain"
+      // in MEMBERSHIP_ARTIFACTS). No explicit delete should be issued for this table on suspension.
+      expect(deleteFn).not.toHaveBeenCalledWith(kbSpaceMembers);
     });
 
     it("does NOT revoke pending invitations on suspension", async () => {

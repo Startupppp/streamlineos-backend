@@ -22,10 +22,22 @@ function makeKeyring(overrides: Partial<JwtKeyringService> = {}): JwtKeyringServ
   } as unknown as JwtKeyringService;
 }
 
+function makeRevocationDb(): never {
+  return {
+    select: jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          limit: jest.fn().mockResolvedValue([{ isRevoked: false }]),
+        }),
+      }),
+    }),
+  } as never;
+}
+
 function makeGuard(keyring: JwtKeyringService): JwtAuthGuard {
   return new JwtAuthGuard(
     new Reflector(),
-    {} as never,
+    makeRevocationDb(),
     null,
     { isAccountActive: jest.fn(), resolve: jest.fn() } as never,
     keyring,

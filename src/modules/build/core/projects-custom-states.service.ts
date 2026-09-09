@@ -320,7 +320,7 @@ export class ProjectsCustomStatesService {
 
     await this.db.transaction(async (tx) => {
       await lockProjectTicketMutation(tx, orgId, existing.projectId);
-      const [moving] = await tx.execute<{ count: number }>(sql`
+      const [moving] = await tx.execute(sql`
         SELECT count(*)::int AS count FROM build.tickets
         WHERE org_id = ${orgId} AND project_id = ${existing.projectId}
           AND status = ${existing.name} AND deleted_at IS NULL
