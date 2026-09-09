@@ -78,7 +78,7 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=8192
 
-  # The five inventory ratchets, BY NAME, in a job of their own. `pnpm test` above
+  # The inventory ratchets, BY NAME, in a job of their own. `pnpm test` above
   # already runs them, but only if the whole suite is green enough to get there —
   # and the suite is large, slow and shares a verdict with everything else. Named
   # here they are readable in the run log and can never be silenced by an unrelated
@@ -142,10 +142,22 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=8192
 
-      # Anti-vacuity. Seven `--testPathPattern` runs that match nothing exit 1 under
+      # INV-24. The gate holding all 85 inventory idempotency fences, and the one
+      # this job did not run. `idempotent-guard-placement` above is a different
+      # file and matches a different pattern, so every claim T23-T28 make — that
+      # no mutating inventory route duplicates on retry, that a route demanding a
+      # key uses it, that each classification carries a rationale — executed only
+      # when somebody remembered to run it locally. It is a pure source scan: no
+      # database, no environment.
+      - name: Ratchet - inventory idempotency coverage
+        run: pnpm exec jest --ci --testPathPattern=inventory-idempotency-coverage
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+
+      # Anti-vacuity. Nine `--testPathPattern` runs that match nothing exit 1 under
       # `--ci`, but a renamed spec would also just stop existing quietly if anyone
       # ever added `--passWithNoTests`. This asserts the files are actually there.
-      - name: The seven ratchets exist
+      - name: The nine ratchets exist
         run: |
           set -euo pipefail
           missing=0
@@ -154,12 +166,69 @@ jobs:
             src/modules/inventory/__tests__/inventory-schema-reachability.spec.ts \
             src/modules/inventory/stock-engine/__tests__/available-formula-single-definition.spec.ts \
             src/modules/inventory/__tests__/idempotent-guard-placement.spec.ts \
+            src/modules/inventory/__tests__/inventory-idempotency-coverage.spec.ts \
+            src/modules/inventory/__tests__/inventory-schema-parity.db.spec.ts \
             src/modules/inventory/stock-engine/__tests__/quantity.property.spec.ts \
             src/modules/inventory/__tests__/inventory-gate-exemptions.spec.ts \
             src/db/cold-build-integrity.spec.ts ; do
             if [ ! -f "$f" ]; then echo "MISSING RATCHET: $f"; missing=1; fi
           done
           exit $missing
+
+  # INV-23. The declared inventory schema against the live one, on every pull
+  # request rather than only on a schedule.
+  #
+  # Two complementary gates, and neither existed on the PR path. `db:verify-rls`
+  # sweeps the live catalogue for a tenant table with RLS off, or on with no
+  # policy naming `org_id` — it ran only in `tenant-isolation`, which is gated to
+  # `schedule || workflow_dispatch`, so a migration that created a tenant table
+  # and forgot its policy merged green and stayed that way until somebody ran a
+  # nightly. `inventory-schema-parity` is the inventory half: RLS enabled and at
+  # least one policy per `inv_*` table, the 16 named CHECK constraints present
+  # and `convalidated`, and declared-vs-live columns in both directions.
+  #
+  # A separate job, with the credential at job level, because a step cannot read
+  # the env it declares itself and the ratchet job's pure source scans must not
+  # start seeing a DATABASE_URL. Without the secret the steps report *skipped*,
+  # which a fork's pull request can neither fix nor be blocked by — and
+  # `check:db-spec-gates` in `verify` is what stops that skip becoming permanent.
+  inventory-live-schema:
+    name: Inventory live schema and RLS
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Gate - RLS enabled and a tenant policy on every tenant table
+        if: env.DATABASE_URL != ''
+        run: pnpm db:verify-rls
+
+      - name: Gate - inventory declared schema against the live one
+        if: env.DATABASE_URL != ''
+        run: pnpm exec jest --ci --runInBand --testPathPattern=inventory-schema-parity
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+          APP_DATABASE_URL: ${{ secrets.CI_APP_DATABASE_URL }}
+          INV_DB_TESTS: "1"
+
+      # The applied-migration watermark against the journal: an ORPHAN row is a
+      # migration applied from a branch this checkout does not contain, and a
+      # SKIPPED one is a file the journal orders before the watermark and the
+      # database never ran. Both are how a live database silently stops matching
+      # its own migrations.
+      - name: Gate - applied migrations match the journal
+        if: env.DATABASE_URL != ''
+        run: pnpm check:migration-ledger
 
   verify:
     runs-on: ubuntu-latest
