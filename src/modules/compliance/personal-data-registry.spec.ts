@@ -33,6 +33,38 @@ describe("every table holding personal data is registered", () => {
 
   const TABLE = /export const \w+ = pgTable\(\s*\n?\s*"([a-z0-9_]+)"/g;
 
+  /** Any column declaration, whatever its type — for the registry-side check. */
+  const ANY_COLUMN = /\b\w+\s*:\s*\w+\(\s*"([a-z0-9_]+)"/g;
+
+  /**
+   * A table's own body, and not one character of the next table's.
+   *
+   * This used to be `source.slice(afterTheMatch).split("\n);")[0]`, which is
+   * only correct for a table whose definition ends on a line-initial `);` — the
+   * two-argument form with an index callback. The far commoner
+   * `pgTable("x", { … });` ends `});`, so the split ran on until some later
+   * table happened to end the other way, and every column in between was
+   * attributed to the earlier table. That is how `organization_members` came to
+   * be credited with `users`' email and how a phantom `address_hash` reached two
+   * consent tables: 81 of 149 registry entries were column bleed.
+   *
+   * Balancing parentheses from `pgTable(` stops exactly where the call does.
+   */
+  function tableBody(source: string, matchIndex: number): string {
+    const open = source.indexOf("(", matchIndex);
+    if (open === -1) return "";
+    let depth = 0;
+    for (let i = open; i < source.length; i++) {
+      const char = source[i];
+      if (char === "(") depth += 1;
+      else if (char === ")") {
+        depth -= 1;
+        if (depth === 0) return source.slice(open, i);
+      }
+    }
+    return source.slice(open);
+  }
+
   function walk(dir: string, found: string[] = []): string[] {
     for (const entry of readdirSync(dir)) {
       const full = join(dir, entry);
@@ -47,7 +79,7 @@ describe("every table holding personal data is registered", () => {
     for (const file of walk(SCHEMA_ROOT)) {
       const source = readFileSync(file, "utf8");
       for (const match of source.matchAll(TABLE)) {
-        const body = source.slice(match.index! + match[0].length).split("\n);")[0] ?? "";
+        const body = tableBody(source, match.index!);
         const columns = [...body.matchAll(COLUMN)].map((column) => column[1]!);
         if (columns.some((column) => PERSONAL.test(column))) found.push(match[1]!);
       }
@@ -73,6 +105,49 @@ describe("every table holding personal data is registered", () => {
     // A register that counts tables which no longer exist overstates the problem,
     // and an overstated problem is one people stop reading.
     expect(stale).toEqual([]);
+  });
+
+  /** Every column the schema declares, per table, whatever its type. */
+  function columnsByTable(): Map<string, Set<string>> {
+    const byTable = new Map<string, Set<string>>();
+    for (const file of walk(SCHEMA_ROOT)) {
+      const source = readFileSync(file, "utf8");
+      for (const match of source.matchAll(TABLE)) {
+        const body = tableBody(source, match.index!);
+        const bucket = byTable.get(match[1]!) ?? new Set<string>();
+        for (const column of body.matchAll(ANY_COLUMN)) bucket.add(column[1]!);
+        byTable.set(match[1]!, bucket);
+      }
+    }
+    return byTable;
+  }
+
+  /**
+   * The direction nothing checked, and the reason a phantom column survived.
+   *
+   * The test above asks "does the schema hold anything the registry missed". It
+   * cannot ask the opposite, so an entry naming a column no table has passed
+   * silently — and an erasure built from such an entry emits SQL that fails on a
+   * column that does not exist, in the one code path where failing quietly is
+   * worst. 94 of 149 entries were in that state on 2026-09-09.
+   */
+  it("names no column the schema does not declare", () => {
+    const schema = columnsByTable();
+    const phantom: string[] = [];
+
+    for (const entry of PERSONAL_DATA_TABLES) {
+      const columns = schema.get(entry.table);
+      // A table the scan cannot see at all is the other test's problem, not this
+      // one's — reporting it here would blame the wrong thing twice.
+      if (!columns) continue;
+      for (const column of entry.columns)
+        if (!columns.has(column)) phantom.push(`${entry.table}.${column}`);
+    }
+
+    // Either the column was renamed and the entry needs following, or it was
+    // never on this table. Both are worth a diff; neither is worth an inventory
+    // that quietly describes a database nobody has.
+    expect(phantom).toEqual([]);
   });
 
   it("says how a person is scoped in every entry", () => {

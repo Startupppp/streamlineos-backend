@@ -76,14 +76,22 @@ describe("declared dispositions", () => {
   });
 
   it("stays far smaller than the registry it sits beside", () => {
-    // The registry inventories 150 tables and refuses to dispose of any of them,
-    // because "inventing [that many] of those would produce a document that
-    // looks like a compliance control and is not one". This file only escapes
-    // that objection while it stays short. If it ever approaches the registry's
-    // size, somebody has started guessing, and that is the failure -- not a
-    // missing feature.
+    // The registry inventories every table holding personal data and refuses to
+    // dispose of any of them, because "inventing [that many] of those would
+    // produce a document that looks like a compliance control and is not one".
+    // This file only escapes that objection while it stays short. If it ever
+    // approaches the registry's size, somebody has started guessing, and that is
+    // the failure -- not a missing feature.
     expect(DECLARED_DISPOSITIONS.length).toBeLessThanOrEqual(24);
-    expect(PERSONAL_DATA_TABLES.length).toBeGreaterThan(100);
+
+    // A ratio rather than a floor under the registry's own count. That floor was
+    // 100 and it passed only because the registry was inflated: its generator
+    // bled columns between adjacent tables, so 81 of 149 entries described a
+    // table holding none of what was claimed. Correcting it to 68 broke this
+    // assertion, which had quietly become a lock on the wrong number. What the
+    // test is actually about is the gap between an inventory and a disposition,
+    // and that survives the registry being any honest size.
+    expect(DECLARED_DISPOSITIONS.length * 3).toBeLessThan(PERSONAL_DATA_TABLES.length);
   });
 
   it("never disposes of the record a regulator reads", () => {
