@@ -1,6 +1,6 @@
 import request from "supertest";
 import { eq } from "drizzle-orm";
-import { orgModules, signEnvelopes, signOrgSettings } from "src/db/schema";
+import { orgModules, signAuditEvents, signEnvelopes, signOrgSettings } from "src/db/schema";
 import {
   SEEDED_HARNESS,
   createSeededE2eApp,
@@ -67,6 +67,7 @@ describe(`${SEEDED_HARNESS} sign authentication methods are offered honestly`, (
 
   afterAll(async () => {
     if (fixture) {
+      await seeded.seedDb.delete(signAuditEvents).where(eq(signAuditEvents.orgId, fixture.orgId));
       await seeded.seedDb.delete(signEnvelopes).where(eq(signEnvelopes.orgId, fixture.orgId));
       await seeded.seedDb.delete(signOrgSettings).where(eq(signOrgSettings.orgId, fixture.orgId));
       await fixture.teardown();
@@ -127,5 +128,38 @@ describe(`${SEEDED_HARNESS} sign authentication methods are offered honestly`, (
     const message = JSON.stringify(res.body);
     expect(message).toMatch(/no SMS provider is configured/i);
     expect(message).not.toMatch(/not enabled for this organisation/i);
+  }, 60_000);
+
+  /**
+   * SIGN-P0-08, proved on a real audit row rather than in isolation.
+   *
+   * `geolocation_json` has existed since SignOS shipped and nothing had ever
+   * written to it. What matters is not that a country appears — no geo-IP
+   * provider is configured and none is added here — but that the row states
+   * how much it knows. A null column cannot distinguish "the lookup failed",
+   * "it was never attempted" and "it genuinely found nothing", and an audit
+   * record that cannot distinguish those is not evidence.
+   */
+  it("records what it knows about the signer's address on every audit event", async () => {
+    const rows = await seeded.seedDb
+      .select({ geolocation: signAuditEvents.geolocationJson, eventType: signAuditEvents.eventType })
+      .from(signAuditEvents)
+      .where(eq(signAuditEvents.orgId, fixture.orgId));
+
+    expect(rows.length).toBeGreaterThan(0);
+
+    const withGeo = rows.filter((r) => r.geolocation !== null);
+    expect(withGeo.length).toBe(rows.length);
+
+    const sample = withGeo[0]!.geolocation as Record<string, unknown>;
+    expect(sample).toMatchObject({
+      source: "address-classification",
+      confidence: "none",
+      country: null,
+    });
+    expect(String(sample.note)).toMatch(/no geo-ip provider is configured/i);
+    /** Family and scope are the facts it can actually stand behind. */
+    expect(sample).toHaveProperty("family");
+    expect(sample).toHaveProperty("scope");
   }, 60_000);
 });

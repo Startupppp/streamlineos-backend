@@ -27,6 +27,8 @@ import { SignEnvelopeDispatchService } from "./sign-envelope-dispatch.service";
 import { SignEnvelopeSweepsService } from "./sign-envelope-sweeps.service";
 import { SMS_SENDER } from "./sms/sms-sender.port";
 import { EnvSmsSender } from "./sms/env-sms-sender";
+import { SIGN_GEO_IP } from "./geo/geo-ip.port";
+import { AddressGeoIp } from "./geo/address-geo-ip";
 import { SignEnvelopesController } from "./sign-envelopes.controller";
 import { SignFinalizationService } from "./sign-finalization.service";
 import { SignPublicService } from "./sign-public.service";
@@ -83,6 +85,11 @@ import { SignReportsController } from "./sign-reports.controller";
      * knows about; binding a provider is the whole change.
      */
     { provide: SMS_SENDER, useClass: EnvSmsSender },
+    /**
+     * Geolocation, behind a port. The shipped resolver uses no network and
+     * says so in every row it writes; binding a real provider is the change.
+     */
+    { provide: SIGN_GEO_IP, useClass: AddressGeoIp },
   ],
   exports: [
     SignAuditService,
