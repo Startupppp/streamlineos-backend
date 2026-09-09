@@ -206,6 +206,48 @@ export class CrmConsentService {
       .onConflictDoNothing();
   }
 
+  /**
+   * The address-only copy of an opt-out, for a contact we still have.
+   *
+   * Takes the transaction rather than opening one: the caller is recording the
+   * opt-out, and the two must commit together or not at all.
+   *
+   * Silently does nothing when the contact has no address — there is nothing to
+   * suppress, and a contact can legitimately have none. Not an error, because
+   * it must never be the reason an opt-out fails to record.
+   */
+  private async retainSuppressionForContact(
+    tx: Parameters<Parameters<typeof runInTenantTransaction>[1]>[0],
+    orgId: string,
+    contactId: number,
+    reason: string,
+  ): Promise<void> {
+    const [row] = await tx
+      .select({ email: businessParties.email })
+      .from(contactPartyMap)
+      .innerJoin(businessParties, PARTY_OF_CONTACT)
+      .where(
+        and(
+          eq(contactPartyMap.organizationId, orgId),
+          eq(contactPartyMap.contactId, contactId),
+        ),
+      )
+      .limit(1);
+
+    const normalised = row?.email?.trim().toLowerCase();
+    if (!normalised) return;
+
+    await tx
+      .insert(crmSuppressionHashes)
+      .values({
+        orgId,
+        channel: "EMAIL",
+        addressHash: hashAddress(normalised),
+        reason,
+      })
+      .onConflictDoNothing();
+  }
+
   async record(
     orgId: string,
     input: {
@@ -276,6 +318,37 @@ export class CrmConsentService {
           sourceDetail: input.sourceDetail ?? null,
           recordedByUserId: input.recordedByUserId ?? null,
         });
+
+        /**
+         * CRM-P1-11. An opt-out has to outlive the row it was captured on.
+         *
+         * `crm_contact_channel_consent` is keyed on `contact_id`, so a contact
+         * erased under a DPDP request takes its opt-out with it — and if the
+         * same address is imported again, both suppression readers find nothing
+         * and mail resumes to somebody who withdrew consent.
+         *
+         * `crm_suppression_hashes` exists precisely to survive that, and both
+         * readers already union it in: `suppressedEmails` here, and
+         * `OutboundService.isSuppressed` at send time. Nothing had ever written
+         * a row, so that half of both queries was permanently empty and the
+         * union added nothing at all.
+         *
+         * Written in the same transaction as the consent row, because an
+         * opt-out recorded without its durable copy is the exact state this is
+         * meant to prevent.
+         *
+         * EMAIL only, deliberately: both readers filter `channel = 'EMAIL'`,
+         * and writing phone hashes nothing reads would be storing a fact with
+         * no consumer — the shape of the bug being fixed here.
+         */
+        if (input.status === "OPTED_OUT" && input.channel === "EMAIL") {
+          await this.retainSuppressionForContact(
+            tx,
+            orgId,
+            input.contactId,
+            `consent:${input.source}`,
+          );
+        }
 
         await this.audit.logCritical({
           action: "crm.consent.recorded",
