@@ -37,3 +37,4 @@ export * from "./commission";
 export * from "./call-analysis";
 export * from "./reporting";
 export * from "./nurture-sequences";
+export * from "./whatsapp-channels";

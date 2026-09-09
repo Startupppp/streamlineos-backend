@@ -2920,6 +2920,13 @@
       "when": 1787941028254,
       "tag": "0656_autonomy_auto_quote_opt_in",
       "breakpoints": true
+    },
+    {
+      "idx": 417,
+      "version": "7",
+      "when": 1787941088254,
+      "tag": "0657_crm_whatsapp_channels",
+      "breakpoints": true
     }
   ]
 }

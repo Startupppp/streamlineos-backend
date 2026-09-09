@@ -265,6 +265,22 @@ export function installFixtureRegionRegistry(db: Db): void {
 export interface E2eAppOptions {
   /** Extra provider overrides — services the controller under test injects. */
   overrides?: ReadonlyArray<{ provide: unknown; useValue: unknown }>;
+  /**
+   * Keep the received bytes on the request, as `main.ts` does.
+   *
+   * Off by default because it costs a copy of every body, and because a suite
+   * asserting the guard chain has no use for it. On for the one thing that
+   * cannot be tested without it: a handler that verifies an HMAC.
+   *
+   * A signature covers the bytes the sender sent. Re-serialising a parsed
+   * object changes key order and whitespace and produces a different digest, so
+   * a handler that signed `JSON.stringify(req.body)` rejects every genuine
+   * delivery — and passes every test built on its own serialisation. Without
+   * this flag the harness has no `rawBody` at all, so such a handler reads the
+   * empty string and refuses everything, which is a green suite for a broken
+   * endpoint in the other direction.
+   */
+  rawBody?: boolean;
 }
 
 /**
@@ -416,7 +432,7 @@ export async function createE2eApp(options: E2eAppOptions = {}): Promise<INestAp
   // `transaction` that hands back a `tx` with only the two methods they need.
   if (typeof seedTarget.transaction === "function" && typeof seedTarget.insert === "function")
     await seedOrg(seedTarget, FIXTURE_ORG_ID, FIXTURE_ORG_ID);
-  const app = ref.createNestApplication();
+  const app = ref.createNestApplication({ rawBody: options.rawBody === true });
   app.enableVersioning({
     type: VersioningType.URI,
     defaultVersion: [API_VERSION_CURRENT, VERSION_NEUTRAL],

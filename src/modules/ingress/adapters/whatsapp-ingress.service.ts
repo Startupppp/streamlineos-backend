@@ -24,21 +24,21 @@ import {
  * the other one: a delivery that verifies, parses, files nothing and reports
  * itself healthy. Every count below exists so that cannot happen quietly.
  *
- * Deliberately not registered in `IngressModule`: the ingress module is shared
- * with two other channel adapters landing in the same tree, and the wiring —
- * this provider, its controller, and where the channel binding is stored — is
- * one decision that should be made once rather than three times. See the
- * ticket report.
+ * Registered in `IngressModule` since CRM-P0-01, behind
+ * `WhatsAppIngressController`. That ticket also settled the question this
+ * comment used to defer — where the binding lives — with the
+ * `crm_whatsapp_channels` table (migration 0657) and the SECURITY DEFINER
+ * resolver that finds a tenant for a delivery carrying no session.
  */
 
 /**
  * The organisation's end of a WhatsApp conversation.
  *
- * Passed in rather than looked up, because where it is stored is the open
- * question. `user_integration_connections` is where the platform rule says a
- * Composio connection is mirrored, but its `toolkit` union is closed over
- * `gmail`, `outlook` and `googlecalendar`, so widening it is a schema change
- * this ticket is not permitted to make.
+ * Still passed in rather than looked up here, so this file stays testable from
+ * a fixture with no database. `WhatsAppChannelsService` is what builds one, out
+ * of `crm_whatsapp_channels` — not out of `user_integration_connections`, whose
+ * `toolkit` union is closed over `gmail`, `outlook` and `googlecalendar` and is
+ * read by three other adapters that should not have to care about this one.
  */
 export interface WhatsAppChannelBinding {
   readonly organizationId: string;
