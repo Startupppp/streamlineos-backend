@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import {
   invRecallEvents,
   invRecallLines,
@@ -18,7 +18,10 @@ import { StockEngineBatchService } from "../stock-engine/stock-engine-batch.serv
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import type { ListRecallsQueryInput, CreateRecallInput, UpdateRecallInput } from "./dto/quality.schemas";
-import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
+import {
+  WarehouseScopeService,
+  type ResolvedWarehouseScope,
+} from "../stock-engine/warehouse-scope.service";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { isPositive } from "../stock-engine/decimal";
 import { runIdempotent } from "../stock-engine/idempotency";
@@ -95,47 +98,56 @@ export class RecallsService {
     private readonly simulation: RecallSimulationService,
   ) {}
 
+  /**
+   * INV-109. A recall carries no warehouse of its own; it is attributable
+   * through the lots and variants its lines name, and those through the stock
+   * they hold. A recall touching nothing an operator can see stays out of their
+   * list — and, since INV-SCOPE-QUALITY, out of their detail too.
+   *
+   * The NULL rule falls out of the EXISTS and is worth naming: a recall whose
+   * lines match no stock row in any of the caller's warehouses — including one
+   * matching no stock at all — is **excluded**. It is not the ASN rule, where an
+   * unattributed row stays visible to everyone; a recall is attributed
+   * indirectly, so "no attribution" here means "touches nothing you hold", not
+   * "not yet filled in". Lives in one place so the list and the detail cannot
+   * drift apart, which is how this defect got written in the first place.
+   *
+   * Hiding a safety event reads uncomfortably, so worth being explicit:
+   * visibility is not what stops recalled goods moving. The allocator refuses a
+   * recalled lot under every strategy regardless of who is looking, so scoping
+   * changes what an operator reads, never what the engine permits.
+   */
+  private recallInScope(orgId: string, scope: ResolvedWarehouseScope): SQL | undefined {
+    if (scope.unrestricted) return undefined;
+    return sql`EXISTS (
+      SELECT 1
+      FROM inv_recall_lines rl
+      JOIN inv_stock_levels sl
+        ON sl.org_id = rl.org_id
+       AND (sl.lot_id = rl.lot_id
+            OR (rl.lot_id IS NULL AND sl.product_variant_id = rl.product_variant_id))
+      WHERE rl.org_id = ${orgId}
+        AND rl.recall_id = ${invRecallEvents.id}
+        AND ${scope.location(sql`sl.location_id`)}
+    )`;
+  }
+
   async list(orgId: string, userId: string, query: ListRecallsQueryInput) {
     const { status, page, limit } = query;
     const offset = (page - 1) * limit;
-    const scope = await this.warehouseScope.resolve(orgId, userId);
+    const scope = await this.warehouseScope.forUser(orgId, userId);
     // The resolved scope belongs in the key. Without it the first caller's
     // warehouses are cached and served to the next, which defeats the
     // predicate in both directions.
-    const scopeKey =
-      scope === null ? "all" : ([...scope].sort((a, b) => a - b).join(".") || "none");
-    const hash = `${scopeKey}:${status ?? ""}:${limit}:${offset}`;
+    const hash = `${scope.key}:${status ?? ""}:${limit}:${offset}`;
     return this.cache.cachedVersioned(
       CACHE_KEYS.invQualityRecallsNamespace(orgId),
       hash,
       async () => {
         const conditions = [eq(invRecallEvents.orgId, orgId)];
 
-        // INV-109. A recall carries no warehouse of its own; it is attributable
-        // through the lots and variants its lines name, and those through the
-        // stock they hold. A recall touching nothing an operator can see stays
-        // out of their list.
-        //
-        // Hiding a safety event reads uncomfortably, so worth being explicit:
-        // visibility is not what stops recalled goods moving. The allocator
-        // refuses a recalled lot under every strategy regardless of who is
-        // looking, so scoping the list changes what an operator reads, never
-        // what the engine permits.
-        if (scope !== null) {
-          conditions.push(
-            sql`EXISTS (
-              SELECT 1
-              FROM inv_recall_lines rl
-              JOIN inv_stock_levels sl
-                ON sl.org_id = rl.org_id
-               AND (sl.lot_id = rl.lot_id
-                    OR (rl.lot_id IS NULL AND sl.product_variant_id = rl.product_variant_id))
-              WHERE rl.org_id = ${orgId}
-                AND rl.recall_id = ${invRecallEvents.id}
-                AND ${this.warehouseScope.locationPredicate(scope, sql`sl.location_id`)}
-            )`,
-          );
-        }
+        const inScope = this.recallInScope(orgId, scope);
+        if (inScope !== undefined) conditions.push(inScope);
 
         if (status) conditions.push(eq(invRecallEvents.status, status));
         const where = and(...conditions);
@@ -155,9 +167,40 @@ export class RecallsService {
     );
   }
 
-  async findOne(orgId: string, id: number) {
+  /**
+   * One recall, read by id.
+   *
+   * `list` above resolves the caller's warehouses; this took no `userId`, so it
+   * answered on `org_id` and the id alone — and it returns more than the list
+   * does, since it goes on to name every shipment the recalled lots went out
+   * on. An operator who could not see the recall could still read its whole
+   * blast radius, customers included, by walking the ids.
+   *
+   * A miss is 404, never 403 (§4): telling somebody they are forbidden from
+   * recall 91 tells them recall 91 exists.
+   */
+  async findOne(orgId: string, userId: string, id: number) {
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+    return this.loadRecallDetail(orgId, id, this.recallInScope(orgId, scope));
+  }
+
+  /**
+   * The same detail without the warehouse gate, for the one path entitled to it.
+   *
+   * `create` ends by handing back the recall it has just raised, and gating that
+   * would 404 an operator against their own new record — a recall raised against
+   * lots that turn out to hold no stock in their warehouses matches no EXISTS at
+   * all. A named private method rather than a flag on `findOne`, so a future
+   * route cannot be pointed at the ungated read by accident; this is the shape
+   * the ASN detail fix used (`loadAsnUnscoped`), for the same reason.
+   */
+  private loadRecallUnscoped(orgId: string, id: number) {
+    return this.loadRecallDetail(orgId, id, undefined);
+  }
+
+  private async loadRecallDetail(orgId: string, id: number, inScope: SQL | undefined) {
     const recall = await this.db.query.invRecallEvents.findFirst({
-      where: and(eq(invRecallEvents.id, id), eq(invRecallEvents.orgId, orgId)),
+      where: and(eq(invRecallEvents.id, id), eq(invRecallEvents.orgId, orgId), inScope),
       with: { lines: true },
     });
     if (!recall) throw new NotFoundException("Not found");
@@ -404,7 +447,7 @@ export class RecallsService {
     );
 
     await this.cache.invalidateNamespace(CACHE_KEYS.invQualityRecallsNamespace(orgId));
-    return this.findOne(orgId, executed.recall.id);
+    return this.loadRecallUnscoped(orgId, executed.recall.id);
   }
 
   /**
@@ -454,9 +497,22 @@ export class RecallsService {
     };
   }
 
+  /**
+   * Closing or renarrating a recall — the same gate the detail now applies.
+   *
+   * This one had `userId` in hand and spent it only on the audit row, so an
+   * operator holding one warehouse could CLOSE a recall raised against stock in
+   * another. Closing is what stops a safety event being chased, so it is a
+   * worse thing to reach than the read beside it.
+   */
   async update(orgId: string, userId: string, id: number, input: UpdateRecallInput) {
+    const scope = await this.warehouseScope.forUser(orgId, userId);
     const recall = await this.db.query.invRecallEvents.findFirst({
-      where: and(eq(invRecallEvents.id, id), eq(invRecallEvents.orgId, orgId)),
+      where: and(
+        eq(invRecallEvents.id, id),
+        eq(invRecallEvents.orgId, orgId),
+        this.recallInScope(orgId, scope),
+      ),
     });
     if (!recall) throw new NotFoundException("Not found");
     const patch: Partial<typeof invRecallEvents.$inferInsert> = {};

@@ -56,7 +56,7 @@ export class RecallsController {
     @Param("recallId", ParseIntPipe) id: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.findOne(u.orgId, id);
+    return this.svc.findOne(u.orgId, u.userId, id);
   }
 
   /**
