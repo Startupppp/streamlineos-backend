@@ -29,6 +29,8 @@ import { SMS_SENDER } from "./sms/sms-sender.port";
 import { EnvSmsSender } from "./sms/env-sms-sender";
 import { SIGN_GEO_IP } from "./geo/geo-ip.port";
 import { AddressGeoIp } from "./geo/address-geo-ip";
+import { SignBulkSendConsumer } from "./sign-bulk-send.consumer";
+import { OutboxModule } from "../../common/outbox/outbox.module";
 import { SignEnvelopesController } from "./sign-envelopes.controller";
 import { SignFinalizationService } from "./sign-finalization.service";
 import { SignPublicService } from "./sign-public.service";
@@ -44,7 +46,18 @@ import { SignReportsService } from "./sign-reports.service";
 import { SignReportsController } from "./sign-reports.controller";
 
 @Module({
-  imports: [StorageModule, EmailModule, AccessModule, AutomationModule, WebhooksModule, NotificationsModule, BillingModule, AiModule],
+  imports: [
+    StorageModule,
+    EmailModule,
+    AccessModule,
+    AutomationModule,
+    WebhooksModule,
+    NotificationsModule,
+    BillingModule,
+    AiModule,
+    /** For OutboxConsumerRegistry: bulk send is queued rather than run inline. */
+    OutboxModule,
+  ],
   controllers: [
     SignDocumentsController,
     SignRecipientsController,
@@ -79,6 +92,7 @@ import { SignReportsController } from "./sign-reports.controller";
     SignBulkSendService,
     SignWatermarkService,
     SignReportsService,
+    SignBulkSendConsumer,
     /**
      * SMS, behind a port. The shipped sender reports that nothing is
      * configured, which is the truth in every environment this repository

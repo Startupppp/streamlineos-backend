@@ -38,6 +38,12 @@ export const signBulkSendRows = pgTable(
     status: signBulkRowStatusEnum("status").default("pending").notNull(),
     envelopeId: integer("envelope_id").references(() => signEnvelopes.id, { onDelete: "set null" }),
     errorMessage: text("error_message"),
+    /**
+     * Tries for THIS row, not for the job. One bad address in a spreadsheet of
+     * five hundred must not stop the other four hundred and ninety-nine, and
+     * must not be retried forever either.
+     */
+    attempts: integer("attempts").default(0).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
