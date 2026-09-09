@@ -424,11 +424,11 @@ export class SignEnvelopesService {
     return this.sweeps.sendManualReminder(orgId, envelopeId, actor);
   }
 
-  runReminderSweep() {
-    return this.sweeps.runReminderSweep();
+  runReminderSweep(orgId: string) {
+    return this.sweeps.runReminderSweep(orgId);
   }
 
-  runExpirationSweep() {
-    return this.sweeps.runExpirationSweep();
+  runExpirationSweep(orgId: string) {
+    return this.sweeps.runExpirationSweep(orgId);
   }
 }

@@ -75,17 +75,25 @@ export class SignAdminController {
     return { success: true };
   }
 
+  /**
+   * Run now, for this organisation only.
+   *
+   * `u.orgId` is not a convenience — until it was passed, an admin here swept
+   * every tenant in the database. See `SignEnvelopeSweepsService.runReminderSweep`.
+   * These two remain manual triggers; the scheduled pass is
+   * `POST /cron/sign-envelope-sweeps`, which walks organisations itself.
+   */
   @Post("run-reminder-sweep")
   @RequirePermission("sign:admin:manage")
-  async runReminderSweep() {
-    const remindedCount = await this.envelopes.runReminderSweep();
+  async runReminderSweep(@CurrentUser() u: CurrentUserContext) {
+    const remindedCount = await this.envelopes.runReminderSweep(u.orgId);
     return { remindedCount };
   }
 
   @Post("run-expiration-sweep")
   @RequirePermission("sign:admin:manage")
-  async runExpirationSweep() {
-    const expiredCount = await this.envelopes.runExpirationSweep();
+  async runExpirationSweep(@CurrentUser() u: CurrentUserContext) {
+    const expiredCount = await this.envelopes.runExpirationSweep(u.orgId);
     return { expiredCount };
   }
 }

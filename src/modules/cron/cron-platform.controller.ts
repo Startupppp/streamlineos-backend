@@ -27,6 +27,7 @@ import { TimesheetRemindersSweepService } from "../timesheets/core/reminders-swe
 import { BuildDueSweepService } from "../build/core/build-due-sweep.service";
 import { CrmFollowupSweepService } from "../crm/core/crm-followup-sweep.service";
 import { NotificationTimeSweepsService } from "../notifications/time-sweeps/notification-time-sweeps.service";
+import { CronSignService } from "./cron-sign.service";
 import { CronLeaseService } from "./cron-lease.service";
 
 @Public()
@@ -51,6 +52,7 @@ export class CronPlatformController {
     private readonly crmFollowupSweep: CrmFollowupSweepService,
     private readonly timeSweeps: NotificationTimeSweepsService,
     private readonly accountOrgIndex: AccountOrganizationIndexService,
+    private readonly signSweeps: CronSignService,
     private readonly cronLease: CronLeaseService,
   ) {}
 
@@ -247,6 +249,17 @@ export class CronPlatformController {
     @Headers("authorization") authorization?: string,
   ) {
     return this.runTimesheetsExceptionDetection(authorization);
+  }
+
+  @Get("sign-envelope-sweeps")
+  getSignEnvelopeSweeps(@Headers("authorization") authorization?: string) {
+    return this.runSignEnvelopeSweeps(authorization);
+  }
+
+  @Post("sign-envelope-sweeps")
+  @HttpCode(200)
+  postSignEnvelopeSweeps(@Headers("authorization") authorization?: string) {
+    return this.runSignEnvelopeSweeps(authorization);
   }
 
   private async runWorkflowTick(authorization?: string) {
@@ -580,6 +593,30 @@ export class CronPlatformController {
       };
     } catch (error) {
       logger.error("Timesheet reminders cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runSignEnvelopeSweeps(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("sign-envelope-sweeps", 600, () =>
+        this.signSweeps.sweepEnvelopes(),
+      );
+      if (!outcome.ran) {
+        return { success: true, skipped: true, message: "sign-envelope-sweeps already running" };
+      }
+      const result = outcome.result;
+      return {
+        success: true,
+        message:
+          `E-sign envelope sweeps: scanned ${result.organizations} orgs, ` +
+          `expired ${result.expired}, reminded ${result.reminded}` +
+          (result.failed > 0 ? `, ${result.failed} org(s) failed` : ""),
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Sign envelope sweeps cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

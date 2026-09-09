@@ -132,10 +132,29 @@ export class SignEnvelopeSweepsService {
     return { remindedCount };
   }
 
-  async runReminderSweep(): Promise<number> {
+  /**
+   * `orgId` is required, and it is required because leaving it out was a
+   * cross-tenant write.
+   *
+   * No `sign_*` table is under RLS — 194 tables are and none of them is one of
+   * ours — so this module isolates tenants the only other way there is: an
+   * explicit `org_id` predicate on every query. Every other method here does
+   * that (`findEnvelope`, `listForEnvelope`). These two sweeps did not, and
+   * nothing downstream caught it: an admin in one organisation pressing
+   * `POST /sign/admin/run-reminder-sweep` re-issued a **new signing token** for
+   * every eligible recipient in **every** organisation in the database, which
+   * both invalidates links already sitting in other tenants' signers' inboxes
+   * and emails those signers. `runExpirationSweep` was worse — it expired other
+   * tenants' envelopes and revoked their recipients' tokens.
+   *
+   * Making the parameter required rather than optional-with-a-default is the
+   * point: a default would let the unsafe call keep compiling.
+   */
+  async runReminderSweep(orgId: string): Promise<number> {
     const now = new Date();
     const candidates = await this.db.query.signEnvelopes.findMany({
       where: and(
+        eq(signEnvelopes.orgId, orgId),
         inArray(signEnvelopes.status, [
           "sent",
           "delivered",
@@ -161,10 +180,12 @@ export class SignEnvelopeSweepsService {
     return sentCount;
   }
 
-  async runExpirationSweep(): Promise<number> {
+  /** Tenant-scoped for the reason given on `runReminderSweep`. */
+  async runExpirationSweep(orgId: string): Promise<number> {
     const now = new Date();
     const expiring = await this.db.query.signEnvelopes.findMany({
       where: and(
+        eq(signEnvelopes.orgId, orgId),
         inArray(signEnvelopes.status, [
           "sent",
           "delivered",

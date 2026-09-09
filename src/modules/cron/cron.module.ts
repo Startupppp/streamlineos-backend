@@ -27,6 +27,7 @@ import { InvoicesModule } from "../invoices/invoices.module";
 import { AiJobsModule } from "../ai/jobs/ai-jobs.module";
 import { SupportKbGapModule } from "../support/kb-gap";
 import { TimesheetsCoreModule } from "../timesheets/core/timesheets-core.module";
+import { ESignModule } from "../e-sign/e-sign.module";
 import { OrganizationModule } from "../organization/core/organization.module";
 import { CronBillingController } from "./cron-billing.controller";
 import { CronInvitationExpiryController } from "./cron-invitation-expiry.controller";
@@ -55,6 +56,7 @@ import { CronEmailOutboxService } from "./cron-email-outbox.service";
 import { CronSupportService } from "./cron-support.service";
 import { CronCrmTasksService } from "./cron-crm-tasks.service";
 import { CronCrmLifecycleService } from "./cron-crm-lifecycle.service";
+import { CronSignService } from "./cron-sign.service";
 import { CronCrmAutonomyService } from "./cron-crm-autonomy.service";
 import { RelationshipsModule } from "../relationships/relationships.module";
 import { AutonomyModule } from "../autonomy/autonomy.module";
@@ -100,6 +102,7 @@ import { EmploymentFactsModule } from "../directory/employment-facts.module";
     CrmAutomationStudioModule,
     BillingModule,
     TimesheetsCoreModule,
+    ESignModule,
     OrganizationModule,
     ProjectsModule,
     CrmModule,
@@ -136,6 +139,7 @@ import { EmploymentFactsModule } from "../directory/employment-facts.module";
     NotificationRetentionService,
     CronCrmTasksService,
     CronCrmLifecycleService,
+    CronSignService,
     CronCrmAutonomyService,
     CronIdempotencyService,
     CronBuildRetentionService,
