@@ -1,6 +1,7 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { CrmMcpService, type McpContext } from "./crm-mcp.service";
+import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
 import type { DataScope } from "../../access/access.types";
 import { PartyService } from "../../party/party.service";
@@ -10,6 +11,7 @@ import { ReportingService } from "../../reporting/reporting.service";
 
 describe("CrmMcpService", () => {
   let service: CrmMcpService;
+  let audit: { logCritical: jest.Mock };
   let accessService: { resolveUserPermissions: jest.Mock };
   let partyService: { list: jest.Mock; findOne: jest.Mock };
   let dealsService: { list: jest.Mock; findOne: jest.Mock };
@@ -40,9 +42,12 @@ describe("CrmMcpService", () => {
       preview: jest.fn(),
     };
 
+    audit = { logCritical: jest.fn().mockResolvedValue(undefined) };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CrmMcpService,
+        { provide: AuditService, useValue: audit },
         { provide: AccessService, useValue: accessService },
         { provide: PartyService, useValue: partyService },
         { provide: DealsService, useValue: dealsService },
@@ -170,6 +175,68 @@ describe("CrmMcpService", () => {
           arguments: {},
         }),
       ).rejects.toThrow(NotFoundException);
+    });
+
+    /**
+     * CRM-P1-04. Every one of these tools reads a tenant's customer data, and
+     * `executeTool` used to write nothing at all — an agent could list parties,
+     * deals, activities and reports leaving no record it had been there.
+     */
+    it("records what the agent read, and how much of it", async () => {
+      accessService.resolveUserPermissions.mockResolvedValue(
+        new Map<string, DataScope>([["party:parties:view", "all"]]),
+      );
+      partyService.list.mockResolvedValue({ data: [{ id: "p1" }, { id: "p2" }] });
+
+      await service.executeTool(context, {
+        name: "crm_list_parties",
+        arguments: { limit: 20, search: "acme corp" },
+      });
+
+      expect(audit.logCritical).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "crm.mcp.tool_executed",
+          orgId: "org_crm_test",
+          targetId: "crm_list_parties",
+          targetType: "crm_mcp_tool",
+          metadata: expect.objectContaining({
+            requiredPermission: "party:parties:view",
+            /** Two rows, not "a list" — the size is most of the signal. */
+            resultCount: 2,
+            /** The search term itself is not copied into the audit log. */
+            arguments: { limit: 20, search: { redacted: true, length: 9 } },
+          }),
+        }),
+      );
+    });
+
+    it("records a refusal, which is the entry a reviewer most wants", async () => {
+      accessService.resolveUserPermissions.mockResolvedValue(new Map<string, DataScope>());
+
+      await expect(
+        service.executeTool(context, { name: "crm_list_deals", arguments: { limit: 5 } }),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(audit.logCritical).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "crm.mcp.tool_refused",
+          targetId: "crm_list_deals",
+        }),
+      );
+    });
+
+    it("records an agent asking for a tool that does not exist", async () => {
+      /** A probe that leaves no trace is the one worth having a record of. */
+      await expect(
+        service.executeTool(context, { name: "payroll_post_run", arguments: {} }),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(audit.logCritical).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "crm.mcp.tool_unknown",
+          metadata: expect.objectContaining({ requestedTool: "payroll_post_run" }),
+        }),
+      );
     });
 
     it("executes crm_get_party with caller's orgId", async () => {

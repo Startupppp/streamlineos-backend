@@ -6,6 +6,7 @@ import {
   Logger,
 } from "@nestjs/common";
 import { AccessService } from "../../access/access.service";
+import { AuditService } from "../../../common/audit/audit.service";
 import type { DataScope } from "../../access/access.types";
 import { PartyService } from "../../party/party.service";
 import { DealsService } from "../../deals/deals.service";
@@ -71,6 +72,7 @@ export class CrmMcpService {
   private readonly logger = new Logger("CrmMcp");
 
   constructor(
+    private readonly audit: AuditService,
     private readonly accessService: AccessService,
     private readonly partyService: PartyService,
     private readonly dealsService: DealsService,
@@ -179,6 +181,14 @@ export class CrmMcpService {
   ): Promise<{ content: Array<{ type: "text"; text: string }> }> {
     const tool = this.tools.find((t) => t.name === call.name);
     if (!tool) {
+      /**
+       * Audited before the refusal. An agent asking for a tool that does not
+       * exist is a probe, and a probe that leaves no trace is the one worth
+       * having a record of.
+       */
+      await this.recordToolAudit(context, "crm.mcp.tool_unknown", call.name, {
+        requestedTool: call.name,
+      });
       throw new NotFoundException(`Unknown CRM MCP tool: ${call.name}`);
     }
 
@@ -189,6 +199,10 @@ export class CrmMcpService {
     );
 
     if (!checkPermission(permissions, tool.requiredPermission)) {
+      await this.recordToolAudit(context, "crm.mcp.tool_refused", tool.name, {
+        requiredPermission: tool.requiredPermission,
+        arguments: auditableArguments(call.arguments),
+      });
       throw new ForbiddenException(
         `Agent lacks required permission '${tool.requiredPermission}' for tool '${tool.name}'`,
       );
@@ -289,6 +303,24 @@ export class CrmMcpService {
         throw new BadRequestException(`Unimplemented tool handler: ${tool.name}`);
     }
 
+    /**
+     * CRM-P1-04. Recorded before the result is handed back, and awaited.
+     *
+     * Every tool here is a read, so the data has already left the database by
+     * this point — but it has not left the process, and an unaudited agent read
+     * is precisely what this exists to prevent. `logCritical` rather than
+     * `log`, so a failure to record surfaces as an error instead of quietly
+     * returning the tenant's data with no trace that an agent asked for it.
+     *
+     * `resultCount` because "the agent read one deal" and "the agent read every
+     * deal you have" are the same tool call and very different events.
+     */
+    await this.recordToolAudit(context, "crm.mcp.tool_executed", tool.name, {
+      requiredPermission: tool.requiredPermission,
+      arguments: auditableArguments(call.arguments),
+      resultCount: countResults(result),
+    });
+
     return {
       content: [
         {
@@ -298,4 +330,71 @@ export class CrmMcpService {
       ],
     };
   }
+
+  private async recordToolAudit(
+    context: McpContext,
+    action: string,
+    toolName: string,
+    metadata: Record<string, unknown>,
+  ): Promise<void> {
+    await this.audit.logCritical({
+      action,
+      userId: context.userId,
+      orgId: context.orgId,
+      targetId: toolName,
+      targetType: "crm_mcp_tool",
+      metadata,
+    });
+  }
+}
+
+/**
+ * What of a tool call is safe and useful to keep.
+ *
+ * Ids, numbers and booleans are kept: they are what makes an entry
+ * reconstructable — "read deal 412" rather than "read a deal". Free text is
+ * not, because the only string arguments these tools take are search terms,
+ * and a tenant's audit log should not accumulate a second copy of everything
+ * anybody has ever searched for. Its presence is recorded instead, so a
+ * reviewer can see a search happened and how long the term was.
+ */
+export function auditableArguments(
+  args: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(args ?? {})) {
+    if (typeof value === "number" || typeof value === "boolean") {
+      out[key] = value;
+      continue;
+    }
+    if (typeof value === "string") {
+      /** An id is worth keeping verbatim; a search term is not. */
+      out[key] = /^[0-9]+$/.test(value) || UUID.test(value)
+        ? value
+        : { redacted: true, length: value.length };
+      continue;
+    }
+    if (value === null) out[key] = null;
+  }
+  return out;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * How much came back, when that is answerable.
+ *
+ * The services behind these tools return several shapes — a bare array, a
+ * paginated envelope, a single record. Null rather than 0 where it cannot be
+ * told, because "one row" and "could not count" must not read the same.
+ */
+export function countResults(result: unknown): number | null {
+  if (Array.isArray(result)) return result.length;
+  if (result && typeof result === "object") {
+    const data = (result as { data?: unknown; items?: unknown }).data ??
+      (result as { items?: unknown }).items;
+    if (Array.isArray(data)) return data.length;
+    return 1;
+  }
+  return result === undefined || result === null ? 0 : 1;
 }
