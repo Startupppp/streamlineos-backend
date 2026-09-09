@@ -1147,3 +1147,26 @@ Three statements, none of them in inventory:
 Exit codes are 0 clean, 1 for a new offender or a stale acknowledgement, 2 if
 the scan finds no partial index at all. All four were produced deliberately
 rather than assumed.
+
+
+## Final seeded run, 2026-09-09
+
+The whole suite, not the two golden paths:
+
+```
+DATABASE_URL=postgres://…/streamline_inv APP_DATABASE_URL=postgres://streamline_app@…/streamline_inv \
+  pnpm test:e2e:seeded --testPathPattern=test/inventory
+
+Test Suites: 57 passed, 57 total
+Tests:       586 passed, 586 total
+Time:        2085 s
+```
+
+Zero `FAIL` lines. The database is the cold build described above, reached
+`634/634`, and the application role is `streamline_app` with `rolbypassrls =
+false` — so every one of those suites ran under RLS as a non-owner, which is the
+only configuration in which the four side-effect bugs found this week were
+visible at all.
+
+Two of those bugs — the webhook emitter's `ON CONFLICT` and the reservation
+grain — were fixed inside this window, and the run above is after both.
