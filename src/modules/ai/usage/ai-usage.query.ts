@@ -8,9 +8,9 @@ export async function queryAiUsage(db: Db, orgId: string) {
   const [totals, byFeature, daily, latencyStats, feedbackByFeature, suggestionCounts] = await Promise.all([
     db
       .select({
-        totalTokens: sum(aiUsageLogs.totalTokens).mapWith(Number),
-        promptTokens: sum(aiUsageLogs.promptTokens).mapWith(Number),
-        completionTokens: sum(aiUsageLogs.completionTokens).mapWith(Number),
+        totalTokens: sql<number>`COALESCE(SUM(${aiUsageLogs.totalTokens}), 0)`.mapWith(Number),
+        promptTokens: sql<number>`COALESCE(SUM(${aiUsageLogs.promptTokens}), 0)`.mapWith(Number),
+        completionTokens: sql<number>`COALESCE(SUM(${aiUsageLogs.completionTokens}), 0)`.mapWith(Number),
         estimatedCostUsd: sql<string>`COALESCE(SUM(${aiUsageLogs.estimatedCostUsd}), 0)::text`,
         requestCount: sql<number>`COUNT(*)::int`,
       })

@@ -142,10 +142,48 @@ describeWithMockedDb("Chat entity channel access (e2e, mocked)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockAccess.isModuleEnabled.mockResolvedValue(true);
-    mockDb.query.chatChannels.findFirst.mockResolvedValue(null);
-    mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ userId: "member_1" });
+    const now = new Date();
+    mockDb.query.chatChannels.findFirst.mockResolvedValue({
+      id: 1,
+      orgId: "org_1",
+      name: "Test Channel",
+      type: "GROUP",
+      description: null,
+      avatarUrl: null,
+      isArchived: false,
+      entityType: null,
+      entityId: null,
+      isPinned: false,
+      isPrivate: true,
+      messageCount: 0,
+      lastMessageAt: now,
+      createdAt: now,
+      updatedAt: now,
+      members: [],
+    });
+    mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ id: 1 });
     mockDb.query.chatMessages.findMany.mockResolvedValue([]);
-    mockDb.query.chatMessages.findFirst.mockResolvedValue({ id: 1, channelId: 1 });
+    mockDb.query.chatMessages.findFirst.mockResolvedValue({
+      id: 1,
+      orgId: "org_1",
+      channelId: 1,
+      senderMembershipId: null,
+      content: "parent message",
+      replyToId: null,
+      isEdited: false,
+      isDeleted: false,
+      messageType: "text",
+      metadata: null,
+      actionStatus: null,
+      clientKey: null,
+      channelPosition: 1,
+      createdAt: now,
+      updatedAt: now,
+      attachments: [],
+      senderMembership: null,
+      reactions: [],
+      replyTo: null,
+    });
     mockDb.where.mockReturnValue(q([TICKET_ROW]));
     mockDb.limit.mockResolvedValue([TICKET_ROW]);
   });
@@ -153,15 +191,23 @@ describeWithMockedDb("Chat entity channel access (e2e, mocked)", () => {
   const messageCarryingTicketRef = [
     {
       id: 1,
+      orgId: "org_1",
       channelId: 1,
-      senderId: "member_1",
+      senderMembershipId: null,
       content: "look at this",
-      createdAt: new Date(),
       replyToId: null,
+      isEdited: false,
+      isDeleted: false,
       messageType: "text",
       metadata: { entities: [{ type: "ticket", id: "7" }] },
-      sender: { id: "member_1", name: "Ann", image: null },
+      actionStatus: null,
+      clientKey: null,
+      channelPosition: 1,
+      createdAt: new Date(),
+      updatedAt: new Date(),
       attachments: [],
+      senderMembership: null,
+      reactions: [],
       replyTo: null,
     },
   ];

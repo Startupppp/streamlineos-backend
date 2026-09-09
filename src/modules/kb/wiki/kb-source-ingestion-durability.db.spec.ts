@@ -34,6 +34,7 @@ import { runWithTenantContext } from "../../../common/tenant/tenant-context";
 import { StorageService } from "../../storage/storage.service";
 import { KbAttachmentIndexingService } from "../retrieval/kb-attachment-indexing.service";
 import { KbSourceAdapter } from "../retrieval/kb-content-adapter";
+import { KbAccessService } from "../core/kb-access.service";
 import { KbSourcesService } from "./kb-sources.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
@@ -77,6 +78,10 @@ describe("KB source ingestion is durable, not only after-commit", () => {
         {
           provide: KbAttachmentIndexingService,
           useValue: { indexSource, removeSourceChunks: jest.fn() },
+        },
+        {
+          provide: KbAccessService,
+          useValue: { assertArticleViewable: jest.fn().mockResolvedValue(undefined) },
         },
       ],
     }).compile();
