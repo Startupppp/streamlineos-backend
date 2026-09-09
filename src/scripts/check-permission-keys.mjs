@@ -51,6 +51,7 @@
  */
 
 import { readFileSync, readdirSync } from "node:fs";
+import { describeFrontendRoot, resolveFrontendRoot } from "./frontend-root.mjs";
 import { join, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -89,15 +90,20 @@ export function checkNamespacePilot(pilotEntry, routeRefs, modulesDir) {
 const args = process.argv.slice(2);
 
 const SCRIPT_DIR = fileURLToPath(new URL(".", import.meta.url));
-// scripts/ → src/ → backend/ → repo root
-const REPO_ROOT = resolve(SCRIPT_DIR, "../../..");
-const BACKEND_ROOT = resolve(REPO_ROOT, "backend");
+// scripts/ → src/ → the backend checkout itself. This used to climb one level
+// further and then look for `backend/` and `frontend/` siblings, a layout this
+// repository has never had — so the gate exited 2 from every checkout, main
+// included, and had never run once.
+const BACKEND_ROOT = resolve(SCRIPT_DIR, "../..");
 const BACKEND_MODULES_DIR = join(BACKEND_ROOT, "src", "modules");
-const FRONTEND_UNION_FILES = [
-  join(REPO_ROOT, "frontend", "lib", "rbac", "permissions", "permission-key-foundation.ts"),
-  join(REPO_ROOT, "frontend", "lib", "rbac", "permissions", "permission-key-extended.ts"),
-  join(REPO_ROOT, "frontend", "lib", "rbac", "permissions", "permission-key-business.ts"),
-];
+const FRONTEND = resolveFrontendRoot(BACKEND_ROOT);
+const FRONTEND_UNION_FILES = FRONTEND.root
+  ? [
+      join(FRONTEND.root, "lib", "rbac", "permissions", "permission-key-foundation.ts"),
+      join(FRONTEND.root, "lib", "rbac", "permissions", "permission-key-extended.ts"),
+      join(FRONTEND.root, "lib", "rbac", "permissions", "permission-key-business.ts"),
+    ]
+  : [];
 
 // The extractors live in ./permission-key-extractors.mjs so this check and
 // check-navigation-permissions read keys through one implementation.
@@ -250,6 +256,15 @@ try {
   process.exit(2);
 }
 
+/**
+ * Which checkout the frontend half came from, printed before any verdict. A
+ * comparison between two repositories is only meaningful if you know which two,
+ * and a fallback to an unpaired checkout compares against whatever branch that
+ * one is on.
+ */
+process.stdout.write(`${describeFrontendRoot(FRONTEND)}\n`);
+if (!FRONTEND.root) process.exit(2);
+
 try {
   const unionSources = FRONTEND_UNION_FILES.map((f) => readFileSync(f, "utf8"));
   frontendCatalog = parseUnionKeys(unionSources);
@@ -282,7 +297,7 @@ const missingFrontend = new Map();
 const unresolved = new Map();
 
 for (const ref of routeRefs) {
-  const rel = relative(REPO_ROOT, ref.file);
+  const rel = relative(BACKEND_ROOT, ref.file);
   if (!ref.resolved) {
     if (!unresolved.has(ref.identifier)) unresolved.set(ref.identifier, []);
     unresolved.get(ref.identifier).push(`${rel}:${ref.line}`);

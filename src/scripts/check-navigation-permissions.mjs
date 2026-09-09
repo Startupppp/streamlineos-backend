@@ -12,6 +12,7 @@
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, resolve, relative } from "node:path";
+import { describeFrontendRoot, resolveFrontendRoot } from "./frontend-root.mjs";
 import { fileURLToPath } from "node:url";
 import {
   loadBackendCatalog,
@@ -70,9 +71,23 @@ const args = process.argv.slice(2);
 
 const SCRIPT_DIR = fileURLToPath(new URL(".", import.meta.url));
 // scripts/ -> src/ -> backend/ -> repo root
-const REPO_ROOT = resolve(SCRIPT_DIR, "../../..");
-const BACKEND_MODULES_DIR = join(REPO_ROOT, "backend", "src", "modules");
-const NAV_DIR = join(REPO_ROOT, "frontend", "components", "layout", "sidebar");
+// scripts/ → src/ → the backend checkout. This used to climb one level further
+// and look for `backend/` and `frontend/` siblings — a layout this repository
+// has never had, so the gate exited 2 everywhere and had never run.
+const BACKEND_ROOT = resolve(SCRIPT_DIR, "../..");
+const BACKEND_MODULES_DIR = join(BACKEND_ROOT, "src", "modules");
+const FRONTEND = resolveFrontendRoot(BACKEND_ROOT);
+const NAV_DIR = FRONTEND.root
+  ? join(FRONTEND.root, "components", "layout", "sidebar")
+  : join(BACKEND_ROOT, "__no_frontend__");
+
+/**
+ * Printed on every run, pass or fail. This gate compares two repositories, and
+ * a finding only means something if you know which two checkouts produced it —
+ * an unpaired frontend is on whatever branch it happens to be on, and a
+ * "missing" backend route may simply live on a branch this one has not merged.
+ */
+process.stdout.write(`${describeFrontendRoot(FRONTEND)}\n`);
 
 const SPEC_RE = /\.(spec|e2e-spec|test)\.ts$/;
 const NAV_FILE_RE = /^sidebar-(home-nav|nav-groups-.+|nav-routes-.+)\.ts$/;
@@ -298,7 +313,7 @@ for (const name of navFiles) {
 // -- report ------------------------------------------------------------------
 
 const where = (g) => {
-  const rel = relative(REPO_ROOT, g.file);
+  const rel = relative(BACKEND_ROOT, g.file);
   const dest = g.href ?? `group "${g.label}"`;
   return `${rel}:${g.line}  ${dest}`;
 };
