@@ -15,6 +15,7 @@ import { CronCrmTasksService } from "./cron-crm-tasks.service";
 import { CronCrmLifecycleService } from "./cron-crm-lifecycle.service";
 import { CronCrmAutonomyService } from "./cron-crm-autonomy.service";
 import { NurtureStepSenderService } from "../autonomy/sequences/nurture-step-sender.service";
+import { ReportSchedulesService } from "../reporting/report-schedules.service";
 import { CronBuildRetentionService } from "./cron-build-retention.service";
 import { CronBuildSnapshotsService } from "./cron-build-snapshots.service";
 import { CronLeaseService } from "./cron-lease.service";
@@ -29,6 +30,7 @@ export class CronBuildController {
     private readonly crmLifecycle: CronCrmLifecycleService,
     private readonly crmAutonomy: CronCrmAutonomyService,
     private readonly nurtureSender: NurtureStepSenderService,
+    private readonly reportSchedules: ReportSchedulesService,
     private readonly buildRetention: CronBuildRetentionService,
     private readonly buildSnapshots: CronBuildSnapshotsService,
     private readonly cronLease: CronLeaseService,
@@ -87,6 +89,17 @@ export class CronBuildController {
   @HttpCode(200)
   postCrmNurtureSteps(@Headers("authorization") authorization?: string) {
     return this.runCrmNurtureSteps(authorization);
+  }
+
+  @Get("crm-report-schedules")
+  getCrmReportSchedules(@Headers("authorization") authorization?: string) {
+    return this.runCrmReportSchedules(authorization);
+  }
+
+  @Post("crm-report-schedules")
+  @HttpCode(200)
+  postCrmReportSchedules(@Headers("authorization") authorization?: string) {
+    return this.runCrmReportSchedules(authorization);
   }
 
   @Get("crm-field-repairs")
@@ -259,6 +272,41 @@ export class CronBuildController {
       };
     } catch (error) {
       logger.error("CRM nurture step sweep failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  /**
+   * Saved reports that are due, claimed and handed to the outbox.
+   *
+   * This sweep sends nothing and runs no report. It advances `next_run_at` and
+   * writes the outbox event in one transaction, and everything after that is
+   * the consumer's — running the report and posting the mail inside a sweep
+   * would lose both if the process died between them, and would hold a
+   * database connection for the length of an email provider's outage.
+   *
+   * The lease is short for the same reason the work is small: a tick that only
+   * moves timestamps and inserts events finishes in milliseconds, and a long
+   * lease on cheap work is a long outage when a process dies holding it. The
+   * atomic advance is what actually prevents a double send, so the lease is a
+   * courtesy rather than the safeguard.
+   */
+  private async runCrmReportSchedules(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("crm-report-schedules", 120, () =>
+        this.reportSchedules.sweepDueSchedules(),
+      );
+      if (!outcome.ran)
+        return { success: true, skipped: true, message: "crm-report-schedules already running" };
+      const result = outcome.result;
+      return {
+        success: true,
+        message: `Claimed ${result.claimed} due schedule(s) across ${result.organizations} organization(s)`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("CRM report schedule sweep failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

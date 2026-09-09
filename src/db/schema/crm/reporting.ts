@@ -1,5 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 import { organizations } from "../common/auth";
 /**
  * `import type`, and it has to stay that way.
@@ -145,3 +154,126 @@ export const crmReportRuns = pgTable(
 
 export type CrmReportDefinition = typeof crmReportDefinitions.$inferSelect;
 export type CrmReportRun = typeof crmReportRuns.$inferSelect;
+
+/**
+ * A saved report, and when it should arrive without anybody asking.
+ *
+ * ## Whose authority a scheduled run carries
+ *
+ * `run_as_user_id` is the one column here that is a security decision rather
+ * than a setting. Running a report needs `crm:reporting:run` *and* the key that
+ * governs the source's rows everywhere else — and the compiled statement is
+ * narrowed by that person's DataScope. A schedule has no requester at the
+ * moment it fires, so it has to name one, and it names the person who set it up.
+ *
+ * The alternative, running unattended work with no subject, would make a
+ * schedule a way to read rows the person who created it could not. It also
+ * means a schedule fails closed when its owner's access is withdrawn, which is
+ * the behaviour a leaver should produce.
+ *
+ * ## Why the recipients are a table
+ *
+ * One row per recipient rather than an array on the schedule: an address has to
+ * be removable on its own, has to be indexable to answer "what does this person
+ * receive", and a jsonb array is none of that. It is also the shape an
+ * unsubscribe link needs to act on.
+ */
+export const crmReportSchedules = pgTable(
+  "crm_report_schedules",
+  {
+    reportScheduleId: text("report_schedule_id")
+      .primaryKey()
+      .$defaultFn(() => randomUUID()),
+    organizationId: text("organization_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+    reportDefinitionId: text("report_definition_id").notNull(),
+    /** `daily` | `weekly` | `monthly`; validated by `report-schedule-cadence.ts`. */
+    cadence: text("cadence").notNull(),
+    /** 0-23 in the organisation's own zone, not the server's. */
+    hourOfDay: integer("hour_of_day").notNull(),
+    /** 0 (Sunday) - 6. Read only by a weekly cadence. */
+    dayOfWeek: integer("day_of_week").notNull().default(1),
+    /** 1-28. Read only by a monthly cadence; 29-31 are refused, never clamped. */
+    dayOfMonth: integer("day_of_month").notNull().default(1),
+    /** Whose permissions and DataScope the unattended run is executed under. */
+    runAsUserId: text("run_as_user_id").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    /**
+     * How many times this has fired, and the outbox event's aggregate version.
+     *
+     * `outbox_events` is unique on (org, aggregate type, aggregate id, aggregate
+     * version), so a repeat emitter that hardcodes version 1 succeeds exactly
+     * once and then violates the constraint on every later firing — a report
+     * that arrives once and then silently never again. Incremented in the same
+     * statement that advances `next_run_at`, so it is monotonic by construction.
+     */
+    runCount: integer("run_count").notNull().default(0),
+    /**
+     * The next instant this is due, precomputed rather than derived at sweep
+     * time. A sweep that recomputed every schedule's cadence to find the due
+     * ones would read every row on every tick; this makes it a bounded index
+     * range scan, and it is what the sweep advances atomically with the emit so
+     * one report cannot go out twice.
+     */
+    nextRunAt: timestamp("next_run_at").notNull(),
+    lastRunAt: timestamp("last_run_at"),
+    /** Why the last attempt failed, so a silently dead schedule is visible. */
+    lastError: text("last_error"),
+    createdByUserId: text("created_by_user_id"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    /** The sweep: this tenant's schedules that are due, in due order. */
+    index("idx_crm_report_schedules_due").on(table.organizationId, table.nextRunAt),
+    /** "What is scheduled off this report", asked before deleting one. */
+    index("idx_crm_report_schedules_definition").on(
+      table.organizationId,
+      table.reportDefinitionId,
+    ),
+    /** The composite tenant key every child table's FK leads with. */
+    uniqueIndex("uniq_crm_report_schedules_org_id").on(
+      table.organizationId,
+      table.reportScheduleId,
+    ),
+  ],
+);
+
+export const crmReportScheduleRecipients = pgTable(
+  "crm_report_schedule_recipients",
+  {
+    reportScheduleRecipientId: text("report_schedule_recipient_id")
+      .primaryKey()
+      .$defaultFn(() => randomUUID()),
+    organizationId: text("organization_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+    reportScheduleId: text("report_schedule_id").notNull(),
+    /** Stored canonical — trimmed and lowercased — so uniqueness means it. */
+    email: text("email").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_crm_report_schedule_recipients_schedule").on(
+      table.organizationId,
+      table.reportScheduleId,
+    ),
+    /**
+     * One address per schedule. Two rows would send the same report twice to
+     * the same person, which reads as the system malfunctioning rather than as
+     * a duplicate somebody added.
+     */
+    uniqueIndex("uniq_crm_report_schedule_recipients").on(
+      table.organizationId,
+      table.reportScheduleId,
+      table.email,
+    ),
+  ],
+);
+
+export type CrmReportSchedule = typeof crmReportSchedules.$inferSelect;
+export type CrmReportScheduleRecipient = typeof crmReportScheduleRecipients.$inferSelect;

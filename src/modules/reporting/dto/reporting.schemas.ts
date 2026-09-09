@@ -10,6 +10,7 @@ import {
   type FilterNode,
   type QueryDescription,
 } from "../compiler/query-description";
+import { MAX_DAY_OF_MONTH, REPORT_CADENCES } from "../report-schedule-cadence";
 
 /**
  * The HTTP boundary.
@@ -218,3 +219,52 @@ export type ListQuery = z.infer<typeof listQuerySchema>;
  */
 export const asQueryDescription = (input: QueryDescriptionInput): QueryDescription =>
   input as QueryDescription;
+
+/**
+ * Scheduling a saved report.
+ *
+ * `dayOfMonth` stops at 28 rather than clamping 29-31, and that is the one
+ * bound here worth defending: a schedule set to "the 31st" either skips
+ * February entirely or silently becomes "the 28th" for one month a year, and
+ * both are a report that did not arrive when somebody was told it would.
+ * Refusing at the boundary makes the operator say which they meant.
+ */
+const recipientEmail = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .email()
+  .max(320);
+
+export const createScheduleSchema = z
+  .object({
+    reportDefinitionId: z.string().min(1).max(64),
+    cadence: z.enum(REPORT_CADENCES),
+    hourOfDay: z.number().int().min(0).max(23),
+    dayOfWeek: z.number().int().min(0).max(6).optional(),
+    dayOfMonth: z.number().int().min(1).max(MAX_DAY_OF_MONTH).optional(),
+    /**
+     * At least one. A schedule with no recipients runs the report, spends the
+     * database time and delivers it to nobody — which is indistinguishable from
+     * a broken schedule and costs the same.
+     */
+    recipients: z.array(recipientEmail).min(1).max(50),
+  })
+  .strict();
+
+export const updateScheduleSchema = z
+  .object({
+    cadence: z.enum(REPORT_CADENCES).optional(),
+    hourOfDay: z.number().int().min(0).max(23).optional(),
+    dayOfWeek: z.number().int().min(0).max(6).optional(),
+    dayOfMonth: z.number().int().min(1).max(MAX_DAY_OF_MONTH).optional(),
+    enabled: z.boolean().optional(),
+    recipients: z.array(recipientEmail).min(1).max(50).optional(),
+  })
+  .strict()
+  .refine((body) => Object.keys(body).length > 0, {
+    message: "an update must change something",
+  });
+
+export type CreateScheduleInput = z.infer<typeof createScheduleSchema>;
+export type UpdateScheduleInput = z.infer<typeof updateScheduleSchema>;

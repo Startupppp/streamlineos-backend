@@ -48,6 +48,14 @@ describe("Cron auth (e2e)", () => {
     ["post", "/cron/crm-nurture-steps"],
     ["get", "/cron/crm-field-repairs"],
     ["post", "/cron/crm-field-repairs"],
+    /**
+     * The report timetable. Listed here for the reason the block above gives:
+     * this table is what proves the route resolves at boot, which is the one
+     * failure mode a scheduled feature has that `tsc` cannot see — an
+     * unregistered sweep compiles green and simply never runs.
+     */
+    ["get", "/cron/crm-report-schedules"],
+    ["post", "/cron/crm-report-schedules"],
   ];
 
   function callRoute(method: Method, path: string): request.Test {
