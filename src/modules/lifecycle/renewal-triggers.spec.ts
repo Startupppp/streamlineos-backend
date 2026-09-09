@@ -1,4 +1,5 @@
 import {
+  EXPANSION_WINDOW_DAYS,
   MAX_TRIGGER_ATTEMPTS,
   RENEWAL_LEAD_DAYS,
   TRIGGER_RETRY_DAYS,
@@ -298,5 +299,170 @@ describe("the lead window's own constants", () => {
      * re-offering is that the loop's refusals expire.
      */
     expect(RENEWAL_LEAD_DAYS).toBeGreaterThan(TRIGGER_RETRY_DAYS * MAX_TRIGGER_ATTEMPTS);
+  });
+});
+
+/**
+ * CRM-P2-07. The third reason to open a conversation, and the one the book was
+ * missing: the customer said they wanted more.
+ *
+ * `expansion-interest` has been a first-class lifecycle signal since the risk
+ * model shipped — worth -20 against churn — and nothing ever opened a
+ * conversation off it. The product could tell you a customer had asked for more
+ * and had no way to act on it until their renewal came round, which for an
+ * annual contract is up to a year of silence after somebody raised their hand.
+ */
+describe("when an expansion conversation opens", () => {
+  /** Far outside the renewal window, so nothing else is competing for the account. */
+  const quiet = { renewalOn: "2027-06-30", healthStatus: "healthy", riskScore: 0 };
+  const daysAgo = (days: number) => new Date(AS_OF.getTime() - days * 86_400_000);
+
+  it("opens on a recent interest from a healthy customer", () => {
+    const decision = decideTrigger(
+      candidate({ ...quiet, expansionSignalAt: daysAgo(3) }),
+    );
+
+    expect(decision).toEqual({
+      action: "open",
+      kind: "expansion-ready",
+      /** The day they said it, not the day the sweep noticed. */
+      dueOn: "2026-08-24",
+    });
+  });
+
+  it("does nothing for a customer who has not asked", () => {
+    /** The ordinary case, and it must stay ordinary: most customers have no signal. */
+    expect(decideTrigger(candidate(quiet))).toEqual({
+      action: "stand-down",
+      reason: "not-due",
+    });
+  });
+
+  it("lets an old interest go rather than acting on it months later", () => {
+    /**
+     * A customer who mentioned a second team in March has not been waiting since
+     * March. Opening that conversation in June reads as nobody having listened.
+     */
+    const stale = decideTrigger(
+      candidate({ ...quiet, expansionSignalAt: daysAgo(EXPANSION_WINDOW_DAYS + 1) }),
+    );
+    expect(stale).toEqual({ action: "stand-down", reason: "not-due" });
+
+    const fresh = decideTrigger(
+      candidate({ ...quiet, expansionSignalAt: daysAgo(EXPANSION_WINDOW_DAYS) }),
+    );
+    expect(fresh).toMatchObject({ action: "open", kind: "expansion-ready" });
+  });
+
+  it("answers a struggling customer's interest as churn, not as an opportunity", () => {
+    /**
+     * The ordering that matters most here. A customer who is critical and has
+     * mentioned wanting more is telling you what is at RISK, not what is on
+     * offer, and selling into that is the worst message in the product.
+     */
+    const decision = decideTrigger(
+      candidate({
+        ...quiet,
+        healthStatus: "critical",
+        expansionSignalAt: daysAgo(2),
+      }),
+    );
+
+    expect(decision).toMatchObject({ action: "open", kind: "churn-risk" });
+  });
+
+  it("defers to the risk score when it disagrees with the health band", () => {
+    /**
+     * The two are built from different evidence and can disagree; when they do
+     * the pessimistic one wins. A green health band on a customer whose contract
+     * is full of escalations is not permission to upsell them.
+     */
+    const decision = decideTrigger(
+      candidate({
+        ...quiet,
+        riskScore: RISK_AT_RISK_THRESHOLD,
+        expansionSignalAt: daysAgo(2),
+      }),
+    );
+
+    expect(decision).toMatchObject({ action: "open", kind: "churn-risk" });
+  });
+
+  it("says nothing when the model could not score the customer", () => {
+    /** Selling more into a customer nobody can score is a person's decision. */
+    expect(
+      decideTrigger(candidate({ ...quiet, healthStatus: null, expansionSignalAt: daysAgo(2) })),
+    ).toEqual({ action: "stand-down", reason: "not-due" });
+  });
+
+  it("stays out of the way of a renewal that is already due", () => {
+    /**
+     * Inside the lead window the renewal is the conversation, and expansion is
+     * part of it. Two messages about the same account in the same fortnight is
+     * two where the customer expected none.
+     */
+    const decision = decideTrigger(
+      candidate({
+        ...quiet,
+        renewalOn: "2026-10-01",
+        expansionSignalAt: daysAgo(2),
+      }),
+    );
+
+    expect(decision).toMatchObject({ action: "open", kind: "renewal-due" });
+  });
+
+  it("does not date the conversation into the future on a skewed signal", () => {
+    /** Clock skew, or a rep filing something they have already agreed. */
+    const decision = decideTrigger(
+      candidate({ ...quiet, expansionSignalAt: new Date(AS_OF.getTime() + 86_400_000 * 5) }),
+    );
+
+    expect(decision).toMatchObject({ action: "open", kind: "expansion-ready", dueOn: "2026-08-27" });
+  });
+
+  it("never opens a second conversation while one is already running", () => {
+    /**
+     * Idempotency is resolved before any freshness question, so an expansion
+     * signal on an account the loop is already working is not a new trigger.
+     */
+    expect(
+      decideTrigger(
+        candidate({
+          ...quiet,
+          expansionSignalAt: daysAgo(1),
+          existing: existing({ holdPlaced: true }),
+        }),
+      ),
+    ).toEqual({ action: "stand-down", reason: "already-working" });
+  });
+});
+
+describe("what an expansion opportunity is called, and asks for", () => {
+  it("does not call an expansion a renewal", () => {
+    /**
+     * The row lands in a rep's deal list beside ordinary new business, and the
+     * distortion runs both ways: a renewal that reads as new business inflates
+     * open pipeline, and an expansion that reads as a renewal hides revenue that
+     * genuinely is new.
+     */
+    expect(renewalOpportunityName("Kavya Textiles", "2027-06-30", "expansion-ready")).toBe(
+      "Expansion — Kavya Textiles",
+    );
+    expect(renewalOpportunityName("Kavya Textiles", "2027-06-30", "renewal-due")).toContain(
+      "Renewal —",
+    );
+  });
+
+  it("does not mention the renewal date in an expansion's next step", () => {
+    /**
+     * Bringing up the contract date in reply to "we might need another team"
+     * turns an opening into a negotiation. The sentence is what the drafting
+     * model is told was agreed, so what it omits matters as much as what it says.
+     */
+    const step = renewalNextStep("expansion-ready", "2027-06-30");
+    expect(step).not.toContain("2027-06-30");
+    expect(step).not.toMatch(/renew/i);
+    expect(step).toMatch(/wanting more/i);
   });
 });

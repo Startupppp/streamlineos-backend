@@ -9,6 +9,7 @@ import {
   customerHealthAssessments,
   customerLifecycleTriggers,
   customerLifecycles,
+  customerLifecycleSignals,
   type LifecycleTriggerKind,
 } from "../../db/schema/crm/lifecycle";
 import { DealsService } from "../deals/deals.service";
@@ -16,6 +17,7 @@ import { OutboundService } from "../autonomy/outbound.service";
 import { addDays, calendarDateOf, formatIsoDate } from "./lifecycle-terms";
 import {
   CHURN_TRIGGER_HEALTH_BAND,
+  EXPANSION_WINDOW_DAYS,
   RENEWAL_LEAD_DAYS,
   decideTrigger,
   renewalNextStep,
@@ -316,7 +318,7 @@ export class LifecycleTriggersService {
     let dealId: number;
     try {
       const created = await this.deals.createDeal(organizationId, candidate.ownerUserId, {
-        name: renewalOpportunityName(customerName, candidate.renewalOn),
+        name: renewalOpportunityName(customerName, candidate.renewalOn, kind),
         /**
          * Major units here because that is what the route's schema takes, and
          * overwritten with the exact integer below before anything reads it.
@@ -551,16 +553,47 @@ export class LifecycleTriggersService {
     opts: { asOf: Date; limit: number; customerLifecycleId: string | null },
   ): Promise<LoadedCandidate[]> {
     const horizon = formatIsoDate(addDays(calendarDateOf(opts.asOf), RENEWAL_LEAD_DAYS));
+    /**
+     * The oldest expansion signal still worth acting on; see
+     * `EXPANSION_WINDOW_DAYS`.
+     *
+     * An ISO string with an explicit cast rather than a `Date`. A raw `sql`
+     * fragment carries no column type for Drizzle to serialise against, so the
+     * driver receives a bare `Date` and refuses it — the query fails at run time
+     * with a type error that no unit test and no typecheck can see. The cast is
+     * what makes the comparison a timestamp one rather than a text one.
+     */
+    const expansionHorizon = new Date(
+      opts.asOf.getTime() - EXPANSION_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+    ).toISOString();
 
     const conditions: SQL[] = [eq(customerLifecycles.organizationId, organizationId)];
     if (opts.customerLifecycleId) {
       conditions.push(eq(customerLifecycles.customerLifecycleId, opts.customerLifecycleId));
     } else {
       conditions.push(eq(customerLifecycles.status, "active"));
+      /**
+       * The expansion arm widens what is loaded, and it has to.
+       *
+       * The other three arms are all about revenue leaving, so a healthy
+       * customer whose renewal is a year out was never a candidate — which is
+       * exactly the customer CRM-P2-07 is about. Without this arm the expansion
+       * branch in `decideTrigger` would be unreachable in production while
+       * passing every unit test, because the row it decides on would never be
+       * selected.
+       */
+      const expansionInterested = sql`EXISTS (
+        SELECT 1 FROM ${customerLifecycleSignals}
+        WHERE ${customerLifecycleSignals.organizationId} = ${customerLifecycles.organizationId}
+          AND ${customerLifecycleSignals.customerLifecycleId} = ${customerLifecycles.customerLifecycleId}
+          AND ${customerLifecycleSignals.kind} = 'expansion-interest'
+          AND ${customerLifecycleSignals.observedAt} >= ${expansionHorizon}::timestamp
+      )`;
       const due = or(
         lte(customerLifecycles.renewalOn, horizon),
         gte(customerLifecycles.riskScore, RISK_AT_RISK_THRESHOLD),
         eq(customerHealthAssessments.healthStatus, CHURN_TRIGGER_HEALTH_BAND),
+        expansionInterested,
         sql`${customerLifecycleTriggers.customerLifecycleTriggerId} IS NOT NULL`,
       );
       if (due) conditions.push(due);
@@ -575,6 +608,30 @@ export class LifecycleTriggersService {
         renewalOn: customerLifecycles.renewalOn,
         riskScore: customerLifecycles.riskScore,
         lastSignalAt: customerLifecycles.lastSignalAt,
+        /**
+         * When this customer last said they wanted more.
+         *
+         * A correlated MAX rather than a join, because a join on the signals
+         * table multiplies the candidate rows by every signal on the lifecycle
+         * and this query already left-joins four tables. `expansion-interest` is
+         * the only kind read here — the rest of the signal history is what the
+         * risk score is for.
+         */
+        /*
+          Typed as text, because that is what comes back. A raw `sql` fragment
+          carries no column mapping, so Drizzle hands the driver's own value
+          through untouched — `sql<Date | null>` would have been a cast asserting
+          something false, and the first thing to call a Date method on it would
+          throw at run time with every typecheck green. Converted at the use
+          site, once, in `toTriggerCandidate`.
+        */
+        expansionSignalAt: sql<string | null>`(
+          SELECT MAX(${customerLifecycleSignals.observedAt})
+          FROM ${customerLifecycleSignals}
+          WHERE ${customerLifecycleSignals.organizationId} = ${customerLifecycles.organizationId}
+            AND ${customerLifecycleSignals.customerLifecycleId} = ${customerLifecycles.customerLifecycleId}
+            AND ${customerLifecycleSignals.kind} = 'expansion-interest'
+        )`,
         contractValueMinor: customerLifecycles.contractValueMinor,
         healthScore: customerHealthAssessments.score,
         healthStatus: customerHealthAssessments.healthStatus,
@@ -651,6 +708,8 @@ interface LoadedCandidate {
   readonly renewalOn: string;
   readonly riskScore: number;
   readonly lastSignalAt: Date | null;
+  /** An ISO timestamp as the driver returned it; see the projection. */
+  readonly expansionSignalAt: string | null;
   readonly contractValueMinor: number;
   readonly healthScore: number | null;
   readonly healthStatus: string | null;
@@ -703,6 +762,7 @@ function toTriggerCandidate(candidate: LoadedCandidate, asOf: Date): TriggerCand
     riskScore: candidate.riskScore,
     healthStatus: candidate.healthStatus,
     lastSignalAt: candidate.lastSignalAt,
+    expansionSignalAt: toDate(candidate.expansionSignalAt),
     existing: candidate.triggerId
       ? {
           hasOpportunity: candidate.opportunityDealId !== null,
@@ -735,4 +795,17 @@ function base(
 function messageOf(error: unknown): string {
   if (error instanceof Error && error.message) return error.message;
   return "Unknown error";
+}
+
+/**
+ * The one place a raw-SQL timestamp becomes a Date.
+ *
+ * An unparseable value is treated as absent rather than passed on as an Invalid
+ * Date, which would compare false against everything and make an expansion
+ * signal silently stop working rather than fail.
+ */
+function toDate(value: string | null): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }

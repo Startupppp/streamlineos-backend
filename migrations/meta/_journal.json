@@ -2983,6 +2983,13 @@
       "when": 1787941568254,
       "tag": "0665_crm_mcp_off_by_default",
       "breakpoints": true
+    },
+    {
+      "idx": 426,
+      "version": "7",
+      "when": 1787941628254,
+      "tag": "0666_lifecycle_expansion_trigger",
+      "breakpoints": true
     }
   ]
 }

@@ -73,6 +73,38 @@ export const MAX_TRIGGER_ATTEMPTS = 6;
  */
 export const CHURN_TRIGGER_HEALTH_BAND = "critical";
 
+/**
+ * How long a stated interest in buying more stays actionable.
+ *
+ * The same 90 days the risk model decays over, and for the same reason: a
+ * customer who mentioned a second team in March has not been waiting since
+ * March, and opening that conversation in June reads as nobody having listened.
+ * Past the window the signal is history rather than an opening.
+ */
+export const EXPANSION_WINDOW_DAYS = 90;
+
+/**
+ * How close to a renewal an expansion conversation stops being its own.
+ *
+ * Inside the renewal lead window the renewal is the conversation to have, and
+ * expansion is part of it — opening a second one about the same account in the
+ * same fortnight is two messages where the customer expected none. The bound is
+ * the lead window itself rather than a number of its own, so the two cannot
+ * drift into overlapping or leaving a gap.
+ */
+export const EXPANSION_QUIET_BEFORE_RENEWAL_DAYS = RENEWAL_LEAD_DAYS;
+
+/**
+ * The health bands an expansion conversation may open under.
+ *
+ * Anything worse is a churn conversation wearing an expansion's clothes: a
+ * customer who is struggling and has mentioned wanting more is telling you what
+ * is at risk, not what is on offer. `null` — the model could not say — is
+ * excluded on purpose. Selling more into a customer nobody can score is a
+ * decision a person should make.
+ */
+export const EXPANSION_HEALTH_BANDS: readonly string[] = ["healthy"];
+
 /** What the sweep is given about one contract. Values, so this stays testable. */
 export interface TriggerCandidate {
   readonly status: string;
@@ -86,6 +118,14 @@ export interface TriggerCandidate {
   readonly healthStatus: string | null;
   /** The newest signal on the lifecycle, which is when the evidence arrived. */
   readonly lastSignalAt: Date | null;
+  /**
+   * When this customer last said they wanted more, if they have.
+   *
+   * The newest `expansion-interest` signal on the term. Null is the ordinary
+   * case: most customers have not asked, and the expansion branch below simply
+   * does not apply to them.
+   */
+  readonly expansionSignalAt?: Date | null;
   /** The trigger already on this term, if a previous sweep opened one. */
   readonly existing: ExistingTrigger | null;
   readonly asOf: Date;
@@ -202,7 +242,73 @@ export function decideTrigger(candidate: TriggerCandidate): TriggerDecision {
       dueOn: evidenceDate(candidate, today),
     };
 
+  /**
+   * Last of the three, and the order is the argument.
+   *
+   * A customer who is both critical and interested in more is a churn
+   * conversation — the expansion is what is at risk, not what is on offer — and
+   * a renewal already inside its window is handled above, so reaching here means
+   * the calendar is quiet and nothing is wrong. That is the only state in which
+   * "they asked for more" is the whole reason to write.
+   */
+  if (isExpansionEvidence(candidate, today))
+    return {
+      action: "open",
+      kind: "expansion-ready",
+      /**
+       * The day they said it, not the day a sweep noticed. Same clamps as the
+       * churn path: never into the future, never before the term began.
+       */
+      dueOn: notBeforeTerm(
+        clampToToday(calendarDateOf(candidate.expansionSignalAt ?? candidate.asOf), today),
+        candidate.termStartedOn,
+      ),
+    };
+
   return standDown("not-due");
+}
+
+/**
+ * Evidence that this is a moment to offer more rather than to wait.
+ *
+ * All four conditions, not any: a stated interest, recent enough to still be
+ * one, a customer who is demonstrably fine, and a renewal far enough off that
+ * this is its own conversation. Any one of them missing and the honest answer is
+ * that a person should decide.
+ */
+export function isExpansionEvidence(
+  candidate: Pick<
+    TriggerCandidate,
+    "expansionSignalAt" | "healthStatus" | "riskScore" | "renewalOn" | "asOf"
+  >,
+  today: CalendarDate,
+): boolean {
+  const signalAt = candidate.expansionSignalAt;
+  if (!signalAt) return false;
+
+  const observed = calendarDateOf(signalAt);
+  const age = daysBetween(observed, today);
+  /** Negative age is a signal dated in the future; still fresh, never stale. */
+  if (age > EXPANSION_WINDOW_DAYS) return false;
+
+  if (!EXPANSION_HEALTH_BANDS.includes(candidate.healthStatus ?? "")) return false;
+  /**
+   * The risk score has to agree with the health band. They are built from
+   * different evidence and can disagree, and when they do the pessimistic one
+   * wins — `isChurnEvidence` above would already have caught a high score, so
+   * this is the belt to that brace and is what keeps the two branches from ever
+   * both being true.
+   */
+  if (isChurnEvidence(candidate)) return false;
+
+  const renewal = parseIsoDate(candidate.renewalOn);
+  if (!renewal) return false;
+  return daysBetween(today, renewal) > EXPANSION_QUIET_BEFORE_RENEWAL_DAYS;
+}
+
+/** A signal dated in the future must not date a conversation into it. */
+function clampToToday(date: CalendarDate, today: CalendarDate): CalendarDate {
+  return daysBetween(date, today) < 0 ? today : date;
 }
 
 /**
@@ -277,12 +383,19 @@ const DEAL_NAME_CHARS = 120;
 /**
  * The opportunity's name, as it appears in the pipeline a person works.
  *
- * It says "Renewal" first because the row lands in a rep's deal list beside
- * ordinary new business, and a renewal that reads as a new opportunity distorts
- * every forecast that counts open pipeline.
+ * It says what kind of conversation this is first, because the row lands in a
+ * rep's deal list beside ordinary new business. A renewal that reads as a new
+ * opportunity distorts every forecast counting open pipeline — and an expansion
+ * that reads as a renewal distorts it the other way, since expansion IS new
+ * revenue and a renewal is revenue already counted.
  */
-export function renewalOpportunityName(customerName: string, renewalOn: string): string {
+export function renewalOpportunityName(
+  customerName: string,
+  renewalOn: string,
+  kind: LifecycleTriggerKind = "renewal-due",
+): string {
   const who = customerName.trim() || "Customer";
+  if (kind === "expansion-ready") return cap(`Expansion — ${who}`, DEAL_NAME_CHARS);
   return cap(`Renewal — ${who} (${renewalOn})`, DEAL_NAME_CHARS);
 }
 
@@ -290,16 +403,26 @@ export function renewalOpportunityName(customerName: string, renewalOn: string):
  * The next step written onto the opportunity, which is the sentence the drafting
  * model is told was agreed.
  *
- * Two forms, because the two triggers are asking for different conversations. A
- * scheduled renewal asks whether they are continuing. A renewal opened early
- * because the evidence is bad asks the same question with the reason attached,
- * so the draft is about the relationship rather than the paperwork.
+ * Three forms, because the three triggers are asking for different
+ * conversations. A scheduled renewal asks whether they are continuing. A renewal
+ * opened early because the evidence is bad asks the same question with the
+ * reason attached, so the draft is about the relationship rather than the
+ * paperwork. An expansion asks about the thing they raised, and deliberately
+ * does not mention the renewal at all — bringing up the contract date in reply
+ * to "we might need another team" turns an opening into a negotiation.
  *
- * It never states the contract value. The recipient's own price is not something
- * an autonomously drafted message should quote — the model paraphrases, and a
- * paraphrased number in a renewal mail is a commercial error nobody can recall.
+ * None of them states the contract value. The recipient's own price is not
+ * something an autonomously drafted message should quote — the model
+ * paraphrases, and a paraphrased number in a renewal mail is a commercial error
+ * nobody can recall.
  */
 export function renewalNextStep(kind: LifecycleTriggerKind, renewalOn: string): string {
+  if (kind === "expansion-ready")
+    return cap(
+      "They have raised wanting more from us. Find out what they need, and agree the next step for it.",
+      NEXT_STEP_CHARS,
+    );
+
   const sentence =
     kind === "churn-risk"
       ? `Open the renewal conversation early: this account is showing churn risk ahead of its ${renewalOn} renewal. Confirm they are continuing and surface anything that is not working.`

@@ -537,10 +537,19 @@ export type CustomerHealthFactorRow = typeof customerHealthFactors.$inferSelect;
 /**
  * Why a customer was put in front of the outbound loop.
  *
- * Two reasons, one machine. `renewal-due` is the calendar: the term comes up
+ * Three reasons, one machine. `renewal-due` is the calendar: the term comes up
  * inside the lead window and the conversation opens on schedule. `churn-risk` is
  * the evidence overruling the calendar — the score says waiting for the diary is
- * a mistake, so the same conversation opens early.
+ * a mistake, so the same conversation opens early. `expansion-ready` is the
+ * opposite evidence: the customer has said they want more, nothing is wrong, and
+ * the renewal is still far enough off that waiting for it would let the moment
+ * pass.
+ *
+ * Expansion is deliberately the last of the three to be considered. A customer
+ * who is both critical and interested in more is a churn conversation — the
+ * expansion is what is at risk, not what is on offer — and a renewal already
+ * inside its window is the conversation to have rather than a second one about
+ * the same account in the same week.
  *
  * They are recorded apart and act identically on purpose. A retention feature
  * that answers churn with its own sender, its own hold and its own guardrails
@@ -549,7 +558,11 @@ export type CustomerHealthFactorRow = typeof customerHealthFactors.$inferSelect;
  * between these two is the DATE the conversation became due, which is a column,
  * not a subsystem.
  */
-export const LIFECYCLE_TRIGGER_KINDS = ["renewal-due", "churn-risk"] as const;
+export const LIFECYCLE_TRIGGER_KINDS = [
+  "renewal-due",
+  "churn-risk",
+  "expansion-ready",
+] as const;
 export type LifecycleTriggerKind = (typeof LIFECYCLE_TRIGGER_KINDS)[number];
 
 /**
