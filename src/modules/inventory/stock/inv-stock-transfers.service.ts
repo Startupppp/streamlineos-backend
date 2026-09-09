@@ -148,6 +148,29 @@ export class InvStockTransfersService {
       throw new BadRequestException("From and to locations must be different");
     }
 
+    /*
+     * You may send stock only out of a building you hold.
+     *
+     * `createTransferInTx` below is two plain inserts — no stock engine, no
+     * movements — so nothing checked either location, and `fromLocationId` came
+     * straight off the request body. Any holder of the create permission could
+     * draft a transfer OUT of any warehouse in the organisation. The engine's
+     * `assertLocationsInScope` only bites later, when movements actually post,
+     * and only when there are movements to post.
+     *
+     * THE SOURCE IS ASSERTED AND THE DESTINATION DELIBERATELY IS NOT, and that
+     * asymmetry is a product rule rather than an oversight: an operator in one
+     * building sending stock to another is the ordinary case, and they will
+     * routinely hold no part of the destination. Requiring both would refuse
+     * every legitimate inter-warehouse transfer made by the people who make
+     * them. Taking stock OUT of a building you hold nothing in is the move that
+     * has no honest reading.
+     *
+     * 404 rather than 403, so naming a location you cannot see does not confirm
+     * it exists.
+     */
+    await this.warehouseScope.assertLocationVisible(orgId, userId, data.fromLocationId);
+
     // A4. Moving a discontinued SKU between warehouses is new demand on it —
     // the goods have to be picked, counted and put away somewhere — and the
     // lifecycle gate covered selling but not this.
