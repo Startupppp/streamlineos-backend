@@ -4,7 +4,7 @@ import { chatMessages } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AblyService } from "../realtime/ably.service";
-import { isChannelMember, resolveMembershipId } from "./chat-membership-lookup";
+import { assertChannelMember } from "./chat-channel-authorization";
 
 @Injectable()
 export class ChatMessageModerationService {
@@ -40,12 +40,7 @@ export class ChatMessageModerationService {
     });
     if (!message) throw new NotFoundException("Message not found");
 
-    const membershipId = await resolveMembershipId(this.db, orgId, userId);
-    if (
-      membershipId === null ||
-      !(await isChannelMember(this.db, message.channelId, orgId, membershipId))
-    )
-      throw new ForbiddenException("You are not a member of this channel");
+    const { membershipId } = await assertChannelMember(this.db, channelId, userId, orgId);
 
     return { message, membershipId };
   }

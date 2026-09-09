@@ -110,6 +110,7 @@ describe("ChatMessageModerationService — cross-tenant isolation on edit and re
     const db = {
       query: {
         chatMessages: { findFirst: jest.fn().mockResolvedValue(messageRow) },
+        chatChannels: { findFirst: jest.fn().mockResolvedValue({ id: 1, isPrivate: false }) },
         organizationMembers: { findFirst: jest.fn().mockResolvedValue(null) },
         chatChannelMembers: { findFirst: jest.fn().mockResolvedValue(null) },
       },

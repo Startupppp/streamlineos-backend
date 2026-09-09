@@ -27,6 +27,11 @@ import {
   type ReactionRow,
 } from "./chat-message-reaction-shape";
 
+const REPLY_PREVIEW_WITH = {
+  columns: { id: true, content: true },
+  with: { senderMembership: { columns: { userId: true } } },
+} as const;
+
 type ChatSender = {
   id: string | null;
   name: string | null;
@@ -166,9 +171,7 @@ export class ChatMessageTimelineService {
         attachments: { columns: { id: true, fileName: true, fileUrl: true, fileKey: true, fileSize: true, mimeType: true } },
         senderMembership: { columns: { userId: true } },
         reactions: MESSAGE_REACTIONS_WITH,
-        replyTo: {
-          with: { senderMembership: { columns: { userId: true } } },
-        },
+        replyTo: REPLY_PREVIEW_WITH,
       },
     });
 
@@ -256,9 +259,7 @@ export class ChatMessageTimelineService {
         attachments: { columns: { id: true, fileName: true, fileUrl: true, fileKey: true, fileSize: true, mimeType: true } },
         senderMembership: { columns: { userId: true } },
         reactions: MESSAGE_REACTIONS_WITH,
-        replyTo: {
-          with: { senderMembership: { columns: { userId: true } } },
-        },
+        replyTo: REPLY_PREVIEW_WITH,
       },
     });
 
@@ -294,9 +295,7 @@ export class ChatMessageTimelineService {
         attachments: { columns: { id: true, fileName: true, fileUrl: true, fileKey: true, fileSize: true, mimeType: true } },
         senderMembership: { columns: { userId: true } },
         reactions: MESSAGE_REACTIONS_WITH,
-        replyTo: {
-          with: { senderMembership: { columns: { userId: true } } },
-        },
+        replyTo: REPLY_PREVIEW_WITH,
       },
     });
 
@@ -336,9 +335,7 @@ export class ChatMessageTimelineService {
         attachments: { columns: { id: true, fileName: true, fileUrl: true, fileKey: true, fileSize: true, mimeType: true } },
         senderMembership: { columns: { userId: true } },
         reactions: MESSAGE_REACTIONS_WITH,
-        replyTo: {
-          with: { senderMembership: { columns: { userId: true } } },
-        },
+        replyTo: REPLY_PREVIEW_WITH,
       },
     });
 

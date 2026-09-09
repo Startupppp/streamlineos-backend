@@ -67,6 +67,9 @@ describe("ChatMessagesService", () => {
     jest.clearAllMocks();
     mockOrgSettings.getSettings.mockResolvedValue({ maxAttachmentSizeMb: 25 });
     mockStorage.isValidFileKey.mockReturnValue(true);
+    mockDb.query.chatChannels.findFirst.mockResolvedValue({ id: 1, isPrivate: false });
+    mockDb.query.organizationMembers.findFirst.mockResolvedValue({ id: 10 });
+    mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ id: 10, role: "MEMBER" });
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ChatMessagesService,
@@ -83,11 +86,30 @@ describe("ChatMessagesService", () => {
   });
 
   describe("send", () => {
-    it("throws ForbiddenException if user is not a channel member", async () => {
-      mockDb.limit.mockResolvedValueOnce([]);
+    it("throws NotFoundException for a non-member of a PRIVATE channel, never confirming it exists", async () => {
+      mockDb.query.chatChannels.findFirst.mockResolvedValue({ id: 1, isPrivate: true });
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValue(null);
+      await expect(
+        service.send(1, "user1", "org1", { content: "hello", attachments: [] }),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockDb.transaction).not.toHaveBeenCalled();
+    });
+
+    it("CONTROL: a non-member of a PUBLIC channel still gets ForbiddenException", async () => {
+      mockDb.query.chatChannels.findFirst.mockResolvedValue({ id: 1, isPrivate: false });
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValue(null);
       await expect(
         service.send(1, "user1", "org1", { content: "hello", attachments: [] }),
       ).rejects.toThrow(ForbiddenException);
+      expect(mockDb.transaction).not.toHaveBeenCalled();
+    });
+
+    it("CONTROL: a channel in another organization is NotFoundException before membership is read", async () => {
+      mockDb.query.chatChannels.findFirst.mockResolvedValue(undefined);
+      await expect(
+        service.send(1, "user1", "org1", { content: "hello", attachments: [] }),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockDb.query.chatChannelMembers.findFirst).not.toHaveBeenCalled();
     });
 
     it("sanitizes XSS content before persisting", async () => {
@@ -220,6 +242,9 @@ describe("ChatMessageModerationService", () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockDb.query.chatChannels.findFirst.mockResolvedValue({ id: 1, isPrivate: false });
+    mockDb.query.organizationMembers.findFirst.mockResolvedValue({ id: 10 });
+    mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ id: 10, role: "MEMBER" });
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ChatMessageModerationService,

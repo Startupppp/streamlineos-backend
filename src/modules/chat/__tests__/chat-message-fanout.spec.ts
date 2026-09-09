@@ -77,9 +77,7 @@ describe("ChatMessagesService.send", () => {
 
   it("hands the composer's mention identities to the fan-out, checked against the roster", async () => {
     const { service, db } = makeService();
-    (db.limit as jest.Mock)
-      .mockResolvedValueOnce([{ membershipId: 1 }])
-      .mockResolvedValueOnce([{ userId: "user-alex" }]);
+    (db.limit as jest.Mock).mockResolvedValueOnce([{ userId: "user-alex" }]);
 
     await service.send(1, "sender", "org-1", {
       content: "hello @alex",
@@ -93,7 +91,6 @@ describe("ChatMessagesService.send", () => {
   it("persists sender identity in the outbox payload while the send transaction is open", async () => {
     const { service, db } = makeService();
     (db.limit as jest.Mock)
-      .mockResolvedValueOnce([{ membershipId: 1 }])
       .mockResolvedValueOnce([{ id: 1, type: "PUBLIC" }])
       .mockResolvedValueOnce([{ name: "Alice", image: "https://cdn.example.com/alice.jpg" }]);
 

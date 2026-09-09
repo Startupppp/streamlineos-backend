@@ -9,19 +9,6 @@ const channelBaseSchema = z.object({
   description: z.string().optional(),
   avatarUrl: z.string().optional(),
   memberIds: z.array(z.string()).min(1).max(200),
-  entityType: z
-    .enum([
-      "project",
-      "client",
-      "deal",
-      "task",
-      "ticket",
-      "sprint",
-      "release",
-      "incident",
-    ])
-    .optional(),
-  entityId: z.string().optional(),
 });
 
 export const createChannelSchema = z.discriminatedUnion("type", [
@@ -29,9 +16,9 @@ export const createChannelSchema = z.discriminatedUnion("type", [
     type: z.literal("DIRECT"),
     targetUserId: z.string().min(1),
   }).strict(),
-  channelBaseSchema.extend({ type: z.literal("GROUP") }),
-  channelBaseSchema.extend({ type: z.literal("PUBLIC") }),
-  channelBaseSchema.extend({ type: z.literal("PRIVATE") }),
+  channelBaseSchema.extend({ type: z.literal("GROUP") }).strict(),
+  channelBaseSchema.extend({ type: z.literal("PUBLIC") }).strict(),
+  channelBaseSchema.extend({ type: z.literal("PRIVATE") }).strict(),
 ]);
 
 export const updateChannelSchema = z.object({

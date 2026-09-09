@@ -3,6 +3,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { chatChannelMembers, chatChannels, organizationMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import type { TenantTx } from "../../db/drizzle.types";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { CacheService } from "../../common/cache/cache.service";
 import type { CreateChannelInput } from "./dto/chat.schemas";
@@ -16,6 +17,7 @@ import {
   flattenChannelMember,
 } from "./chat-channel-member-shape";
 import { CHAT_ENTITY_CHANNEL_CONFLICT } from "./chat-entity-channel-conflict-target";
+import { assertChannelMember } from "./chat-channel-authorization";
 
 export { entityChannelFallbackName } from "./chat-channel-list.service";
 
@@ -58,6 +60,7 @@ export class ChatChannelsService {
   }
 
   async reconcileEntityChannelDisplayName(channelId: number, actor: EntityActor): Promise<void> {
+    await assertChannelMember(this.db, channelId, actor.userId, actor.orgId);
     const channel = await this.db.query.chatChannels.findFirst({
       where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, actor.orgId)),
       columns: { id: true, name: true, entityType: true, entityId: true },
@@ -65,6 +68,20 @@ export class ChatChannelsService {
     if (!channel) throw new NotFoundException("Channel not found");
     if (!channel.entityType || !channel.entityId) return;
     await this.ensureEntityChannelDisplayName(channel, actor);
+  }
+
+  private async loadChannelDetail(executor: Db | TenantTx, channelId: number, orgId: string) {
+    const channel = await executor.query.chatChannels.findFirst({
+      where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)),
+      with: {
+        members: {
+          columns: CHANNEL_MEMBER_COLUMNS,
+          with: { membership: CHANNEL_MEMBER_MEMBERSHIP_WITH },
+        },
+      },
+    });
+    if (!channel) throw new NotFoundException("Channel not found");
+    return { ...channel, members: channel.members.map(flattenChannelMember) };
   }
 
   async createChannel(orgId: string, userId: string, body: CreateChannelInput) {
@@ -103,7 +120,11 @@ export class ChatChannelsService {
               ch.members.some((m) => m.membershipId === targetMembershipId),
         );
 
-        if (dmChannel) return { channel: dmChannel, created: false };
+        if (dmChannel)
+          return {
+            channel: await this.loadChannelDetail(this.db, dmChannel.id, orgId),
+            created: false,
+          };
       }
 
       const [targetUser, currentUser] = await Promise.all([
@@ -139,13 +160,13 @@ export class ChatChannelsService {
               ],
         );
 
-        return created;
+        return this.loadChannelDetail(tx, created.id, orgId);
       });
 
       return { channel, created: true };
     }
 
-    const { name, description, avatarUrl, memberIds, entityType, entityId } = body;
+    const { name, description, avatarUrl, memberIds } = body;
     const allMembers = [...new Set([userId, ...memberIds])];
     const memberRows = await this.db
       .select({ userId: organizationMembers.userId, membershipId: organizationMembers.id })
@@ -159,9 +180,7 @@ export class ChatChannelsService {
     // this column to answer 404 rather than 403.
     const isPrivate = channelType !== "PUBLIC";
 
-    if (!entityType) {
-      await this.planLimits.assertWithinLimit(orgId, "chatChannels");
-    }
+    await this.planLimits.assertWithinLimit(orgId, "chatChannels");
 
     const channel = await this.db.transaction(async (tx) => {
       const [created] = await tx
@@ -174,21 +193,23 @@ export class ChatChannelsService {
           avatarUrl,
           createdByMembershipId: creatorMembershipId,
           isPrivate,
-          ...(entityType ? { entityType } : {}),
-          ...(entityId ? { entityId } : {}),
         })
         .returning();
 
       await tx.insert(chatChannelMembers).values(
-        allMembers.map((uid) => ({
-          orgId,
-          channelId: created.id,
-          membershipId: membershipByUser.get(uid)!,
-          role: uid === userId ? "ADMIN" : "MEMBER",
-        })),
+        allMembers.map((uid) => {
+          const membershipId = membershipByUser.get(uid);
+          if (membershipId === undefined) throw new NotFoundException("User not found in this organization");
+          return {
+            orgId,
+            channelId: created.id,
+            membershipId,
+            role: uid === userId ? "ADMIN" : "MEMBER",
+          };
+        }),
       );
 
-      return created;
+      return this.loadChannelDetail(tx, created.id, orgId);
     });
 
     return { channel, created: true };
@@ -225,9 +246,9 @@ export class ChatChannelsService {
     // not see each other.
     //
     // `uniq_chat_channels_org_entity` (migration 1058) is now the arbiter and the loser of
-    // the race gets no row back — it re-reads the winner's channel INSIDE the same
-    // transaction and returns that, so both callers see one channel and neither 500s.
-    const raced = await this.db.transaction(async (tx) => {
+    // the race gets no row back; both callers then read the one committed channel through
+    // `loadEntityChannel`, so they see the same channel in the same shape and neither 500s.
+    await this.db.transaction(async (tx) => {
       const [created] = await tx
         .insert(chatChannels)
         .values({
@@ -242,7 +263,7 @@ export class ChatChannelsService {
         .onConflictDoNothing(CHAT_ENTITY_CHANNEL_CONFLICT)
         .returning();
 
-      if (!created) return null;
+      if (!created) return;
 
       await tx.insert(chatChannelMembers).values({
         orgId: actor.orgId,
@@ -250,23 +271,19 @@ export class ChatChannelsService {
         membershipId: actorMembershipId,
         role: "ADMIN",
       });
-
-      return created;
     });
 
-    if (raced) return raced;
-
-    const winner = await this.loadEntityChannel(entityType, entityId, actor);
-    if (!winner) throw new NotFoundException("Record not found");
-    return winner;
+    const channel = await this.loadEntityChannel(entityType, entityId, actor);
+    if (!channel) throw new NotFoundException("Record not found");
+    return channel;
   }
 
   /**
    * The record's channel with its roster, named through the entity seam.
    *
-   * Shared by the pre-check and the conflict-loser path so the two return the same shape:
-   * the loser of a create race must not get a bare channel row where the winner's peer got
-   * one with members on it.
+   * Shared by the pre-check, the create winner and the conflict loser so all three return
+   * the same shape: no caller gets a bare channel row where its peer got one with members
+   * on it, and `channelDetailSchema` describes every one of them.
    */
   private async loadEntityChannel(entityType: string, entityId: string, actor: EntityActor) {
     const channel = await this.db.query.chatChannels.findFirst({

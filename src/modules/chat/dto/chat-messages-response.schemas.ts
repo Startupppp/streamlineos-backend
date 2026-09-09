@@ -13,7 +13,7 @@ export const chatAttachmentSchema = z.object({
 });
 
 const chatSenderSchema = z.object({
-  id: z.string(),
+  id: z.string().nullable(),
   name: z.string().nullable(),
   image: z.string().nullable(),
 });
@@ -40,8 +40,17 @@ const chatMessageBaseSchema = z.object({
   attachments: z.array(chatAttachmentSchema),
 });
 
+export const chatReplyPreviewSchema = z
+  .object({
+    id: z.number().int(),
+    content: z.string().nullable(),
+    senderId: z.string().nullable(),
+    sender: chatSenderSchema,
+  })
+  .strict();
+
 export const chatMessageSchema = chatMessageBaseSchema.extend({
-  replyTo: chatMessageBaseSchema.nullable().optional(),
+  replyTo: chatReplyPreviewSchema.nullable().optional(),
 });
 
 export const chatMessagePageSchema = z.object({

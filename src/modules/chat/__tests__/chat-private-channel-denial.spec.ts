@@ -7,6 +7,9 @@ import { ChatPinsService } from "../chat-pins.service";
 import { ChatReactionsService } from "../chat-reactions.service";
 import { ChatSummarizeService } from "../chat-summarize.service";
 import { ChatMessagesService } from "../chat-messages.service";
+import { ChatMessageModerationService } from "../chat-message-moderation.service";
+import { ChatChannelMembersService } from "../chat-channel-members.service";
+import { CacheService } from "../../../common/cache/cache.service";
 import type { EntityActor } from "../../entity-reference/entity-reference.types";
 
 /**
@@ -27,14 +30,16 @@ const actor: EntityActor = {
   isOrgOwner: false,
 };
 
-function dbWithChannel(isPrivate: boolean, opts: { member?: unknown } = {}) {
+function dbWithChannel(isPrivate: boolean, opts: { member?: unknown; message?: unknown } = {}) {
   const member = "member" in opts ? opts.member : null;
+  const message = "message" in opts ? opts.message : null;
   return {
     query: {
       chatChannels: { findFirst: jest.fn().mockResolvedValue({ id: CHANNEL_ID, isPrivate }) },
       chatChannelMembers: { findFirst: jest.fn().mockResolvedValue(member) },
       organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: MEMBERSHIP }) },
       chatMessageReactions: { findMany: jest.fn().mockResolvedValue([]) },
+      chatMessages: { findFirst: jest.fn().mockResolvedValue(message) },
     },
     select: jest.fn().mockReturnThis(),
     from: jest.fn().mockReturnThis(),
@@ -44,8 +49,18 @@ function dbWithChannel(isPrivate: boolean, opts: { member?: unknown } = {}) {
     values: jest.fn().mockReturnThis(),
     onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
     delete: jest.fn().mockReturnThis(),
+    update: jest.fn().mockReturnThis(),
+    set: jest.fn().mockReturnThis(),
+    transaction: jest.fn(),
   };
 }
+
+const AUTHORED_MESSAGE = {
+  id: MESSAGE_ID,
+  channelId: CHANNEL_ID,
+  senderMembershipId: MEMBERSHIP,
+  isDeleted: false,
+};
 
 function pins(db: ReturnType<typeof dbWithChannel>) {
   return new ChatPinsService(db as unknown as Db, {} as unknown as EntityReferenceService);
@@ -59,6 +74,28 @@ function reactions(db: ReturnType<typeof dbWithChannel>) {
 
 function summarize(db: ReturnType<typeof dbWithChannel>) {
   return new ChatSummarizeService(db as unknown as Db, { get: jest.fn() } as unknown as ModuleRef);
+}
+
+function messages(db: { query: { chatMessages: { findFirst: jest.Mock } } }) {
+  return new ChatMessagesService(
+    db as unknown as Db,
+    ...(Array(6).fill({}) as [never, never, never, never, never, never]),
+  );
+}
+
+function moderation(db: ReturnType<typeof dbWithChannel>) {
+  return new ChatMessageModerationService(db as unknown as Db, {
+    publishChatEvent: jest.fn().mockResolvedValue(undefined),
+  } as unknown as AblyService);
+}
+
+function channelMembers(db: ReturnType<typeof dbWithChannel>) {
+  return new ChatChannelMembersService(
+    db as unknown as Db,
+    {} as unknown as CacheService,
+    {} as unknown as EntityReferenceService,
+    {} as unknown as AblyService,
+  );
 }
 
 describe("private-channel denial does not disclose existence", () => {
@@ -127,16 +164,132 @@ describe("private-channel denial does not disclose existence", () => {
       );
     });
   });
+
+  describe("ChatMessagesService.send", () => {
+    it("DENY: a non-member of a PRIVATE channel gets 404, not 403", async () => {
+      const db = dbWithChannel(true);
+      await expect(
+        messages(db).send(CHANNEL_ID, USER, ORG, { content: "hi" }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(db.transaction).not.toHaveBeenCalled();
+    });
+
+    it("CONTROL: a non-member of a PUBLIC channel still gets 403", async () => {
+      const db = dbWithChannel(false);
+      await expect(
+        messages(db).send(CHANNEL_ID, USER, ORG, { content: "hi" }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(db.transaction).not.toHaveBeenCalled();
+    });
+
+    it("CONTROL: a channel in another organization is 404 before membership is read", async () => {
+      const db = dbWithChannel(false);
+      db.query.chatChannels.findFirst.mockResolvedValue(undefined);
+      await expect(
+        messages(db).send(CHANNEL_ID, USER, ORG, { content: "hi" }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(db.query.chatChannelMembers.findFirst).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("ChatMessageModerationService.edit", () => {
+    it("DENY: a non-member of a PRIVATE channel gets 404 for a message that really is there", async () => {
+      const db = dbWithChannel(true, { message: AUTHORED_MESSAGE });
+      await expect(
+        moderation(db).edit(MESSAGE_ID, CHANNEL_ID, USER, ORG, "rewritten"),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(db.update).not.toHaveBeenCalled();
+    });
+
+    it("CONTROL: a non-member of a PUBLIC channel still gets 403", async () => {
+      const db = dbWithChannel(false, { message: AUTHORED_MESSAGE });
+      await expect(
+        moderation(db).edit(MESSAGE_ID, CHANNEL_ID, USER, ORG, "rewritten"),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(db.update).not.toHaveBeenCalled();
+    });
+
+    it("CONTROL: a member who is not the author gets 403 inside the correct scope", async () => {
+      const db = dbWithChannel(true, {
+        member: { role: "MEMBER" },
+        message: { ...AUTHORED_MESSAGE, senderMembershipId: MEMBERSHIP + 1 },
+      });
+      await expect(
+        moderation(db).edit(MESSAGE_ID, CHANNEL_ID, USER, ORG, "rewritten"),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(db.update).not.toHaveBeenCalled();
+    });
+
+    it("CONTROL: the author who is a member edits it", async () => {
+      const db = dbWithChannel(true, { member: { role: "MEMBER" }, message: AUTHORED_MESSAGE });
+      await expect(
+        moderation(db).edit(MESSAGE_ID, CHANNEL_ID, USER, ORG, "rewritten"),
+      ).resolves.toEqual({ ok: true });
+      expect(db.update).toHaveBeenCalled();
+    });
+  });
+
+  describe("ChatChannelMembersService admin routes", () => {
+    it("DENY: updateChannel by a non-member of a PRIVATE channel is 404, not 403", async () => {
+      const db = dbWithChannel(true);
+      await expect(
+        channelMembers(db).updateChannel(CHANNEL_ID, USER, { name: "renamed" }, ORG),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(db.update).not.toHaveBeenCalled();
+    });
+
+    it("CONTROL: updateChannel by a non-member of a PUBLIC channel is still 403", async () => {
+      const db = dbWithChannel(false);
+      await expect(
+        channelMembers(db).updateChannel(CHANNEL_ID, USER, { name: "renamed" }, ORG),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it("CONTROL: updateChannel by a plain member of a PRIVATE channel is 403, not 404", async () => {
+      const db = dbWithChannel(true, { member: { role: "MEMBER" } });
+      await expect(
+        channelMembers(db).updateChannel(CHANNEL_ID, USER, { name: "renamed" }, ORG),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(db.update).not.toHaveBeenCalled();
+    });
+
+    it("CONTROL: updateChannel by the channel admin writes the new name", async () => {
+      const db = dbWithChannel(true, { member: { role: "ADMIN" } });
+      await expect(
+        channelMembers(db).updateChannel(CHANNEL_ID, USER, { name: "renamed" }, ORG),
+      ).resolves.toEqual({ ok: true });
+      expect(db.set).toHaveBeenCalledWith(expect.objectContaining({ name: "renamed" }));
+    });
+
+    it("DENY: updateMemberRole by a non-member of a PRIVATE channel is 404, not 403", async () => {
+      const db = dbWithChannel(true);
+      await expect(
+        channelMembers(db).updateMemberRole(CHANNEL_ID, "target-user", USER, ORG, "ADMIN"),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(db.update).not.toHaveBeenCalled();
+    });
+
+    it("CONTROL: updateMemberRole by a non-member of a PUBLIC channel is still 403", async () => {
+      const db = dbWithChannel(false);
+      await expect(
+        channelMembers(db).updateMemberRole(CHANNEL_ID, "target-user", USER, ORG, "ADMIN"),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it("CONTROL: updateMemberRole by the channel admin writes the new role", async () => {
+      const db = dbWithChannel(true, { member: { role: "ADMIN" } });
+      await expect(
+        channelMembers(db).updateMemberRole(CHANNEL_ID, "target-user", USER, ORG, "ADMIN"),
+      ).resolves.toEqual({ ok: true });
+      expect(db.set).toHaveBeenCalledWith({ role: "ADMIN" });
+    });
+  });
 });
 
 describe("ChatMessagesService.sendThreadReply parent lookup", () => {
   it("binds the parent message to the caller organization", async () => {
     const findFirst = jest.fn().mockResolvedValue(undefined);
-    const db = { query: { chatMessages: { findFirst } } };
-    const service = new ChatMessagesService(
-      db as unknown as Db,
-      ...(Array(6).fill({}) as [never, never, never, never, never, never]),
-    );
+    const service = messages({ query: { chatMessages: { findFirst } } });
 
     await expect(
       service.sendThreadReply(CHANNEL_ID, MESSAGE_ID, USER, ORG, { content: "hi" } as never),

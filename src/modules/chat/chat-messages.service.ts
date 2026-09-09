@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -17,6 +16,7 @@ import {
 import type { ChatAttachmentPayload, PersistedMessage } from "./chat-message.types";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import type { TenantTx } from "../../db/drizzle.types";
 import { logger } from "../../common/logger/logger.service";
 import { resolveMentionedUserIds } from "./chat-mentions";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
@@ -29,7 +29,8 @@ import type { SendMessageInput } from "./dto/chat.schemas";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { CHAT_MESSAGE_FANOUT_EVENT } from "./chat-fanout-outbox";
 import { MESSAGE_FANOUT_PROVIDER, type MessageFanoutProvider } from "./message-fanout.interface";
-import { resolveChannelMembershipId, resolveMembershipId } from "./chat-membership-lookup";
+import { resolveMembershipId } from "./chat-membership-lookup";
+import { assertChannelMember } from "./chat-channel-authorization";
 import { CHAT_MESSAGE_CLIENT_KEY_CONFLICT } from "./chat-message-conflict-target";
 import { StorageService } from "../storage/storage.service";
 
@@ -70,10 +71,32 @@ export class ChatMessagesService {
     });
   }
 
+  private async requireReplyTargetInChannel(
+    executor: Db | TenantTx,
+    orgId: string,
+    channelId: number,
+    messageId: number,
+  ): Promise<void> {
+    const target = await executor.query.chatMessages.findFirst({
+      where: and(
+        eq(chatMessages.id, messageId),
+        eq(chatMessages.orgId, orgId),
+        eq(chatMessages.channelId, channelId),
+        eq(chatMessages.isDeleted, false),
+      ),
+      columns: { id: true },
+    });
+
+    if (!target) throw new NotFoundException("Message not found");
+  }
+
   async send(channelId: number, userId: string, orgId: string, body: SendMessageInput) {
-    const senderMembershipId = await resolveChannelMembershipId(this.db, orgId, userId, channelId);
-    if (senderMembershipId === null)
-      throw new ForbiddenException("You are not a member of this channel");
+    const { membershipId: senderMembershipId } = await assertChannelMember(
+      this.db,
+      channelId,
+      userId,
+      orgId,
+    );
 
     // A retry of a send whose response was lost must return the original message, not
     // post a second one. Checked after membership so it cannot be used as a probe.
@@ -126,6 +149,9 @@ export class ChatMessagesService {
           .limit(1);
 
         if (!channel) throw new NotFoundException("Channel not found");
+
+        if (body.replyToId !== undefined)
+          await this.requireReplyTargetInChannel(tx, orgId, channelId, body.replyToId);
 
         const [senderRow] = await tx
           .select({ name: users.name, image: users.image })
@@ -307,17 +333,7 @@ export class ChatMessagesService {
     orgId: string,
     body: SendMessageInput,
   ) {
-    const parentMessage = await this.db.query.chatMessages.findFirst({
-      where: and(
-        eq(chatMessages.id, parentMessageId),
-        eq(chatMessages.orgId, orgId),
-        eq(chatMessages.channelId, channelId),
-        eq(chatMessages.isDeleted, false),
-      ),
-      columns: { id: true, channelId: true },
-    });
-
-    if (!parentMessage) throw new NotFoundException("Message not found");
+    await this.requireReplyTargetInChannel(this.db, orgId, channelId, parentMessageId);
 
     return this.send(channelId, userId, orgId, { ...body, replyToId: parentMessageId });
   }
