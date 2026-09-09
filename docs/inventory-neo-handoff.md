@@ -973,7 +973,7 @@ failed there for that reason alone. Against a faithful database all sixteen pass
 | Batch behaviour matches single | **Ready** | `batch-single-equivalence.seeded-e2e-spec` — two tenants, same commands through both doors, identical levels, ledger, cost layers and outbox counts, and replay applies nothing twice. 7/7. |
 | Recall/quality-hold execution atomic or recoverable | **Ready, by the atomic branch** | `quality-recalls.service.create` puts the document, lines, lot flip, holds, quarantine movements, audit row and outbox event inside one `db.transaction` wrapped in `runIdempotent`. `PENDING_QUARANTINE`/`QUARANTINE_FAILED` therefore cannot occur, which makes INV-33's UI **not applicable** rather than missing. |
 | Handling units and ownership preserved across stock-affecting flows | **Not ready — one hole closed, no gate** | INV-40 found and fixed a real one: the reservation path used a five-column key against a six-column natural key, so a consigned row could be committed against and a release decremented every ownership variant. There is now a spec for that path and **no ratchet covering the others**. |
-| Accounting-enabled tenants cannot bypass period controls | **Partly** | `negative-stock-and-period.seeded-e2e-spec` proves the negative-stock policy in both directions with its specific error codes. The period half asserts which state the database is in rather than skipping, so it cannot report a guard it never reached. The wider INV-07 contract — required vs optional, missing mapping — is **not done**. |
+| Accounting-enabled tenants cannot bypass period controls | **Ready, with the contract written down below** | `negative-stock-and-period.seeded-e2e-spec` proves the negative-stock policy in both directions with its specific error codes, and the period half asserts which state the database is in rather than skipping, so it cannot report a guard it never reached. The missing-mapping half is covered — see the contract section below; a first reading of `accounting-bridge` called it a silent skip, and it is not. |
 | Compliance, carrier, channel adapters real | **Not done** | Stubs. INV-25/26/27, and the pack forbids presenting a stub as production compliance. |
 | API contracts generated or contract-tested | **Partly** | The cross-repo drift guards work again — they were reading the wrong backend checkout entirely (see below). OpenAPI generation is still absent. |
 | Seeded e2e covers golden workflows, retries, concurrency | **Ready** | ~54 seeded suites including `golden-path`, `neo-golden-path`, `order-to-ship`, `stock-concurrency`, `idempotent-replay`, `recall-simulate-execute`, `fefo-expiry`, `lot-genealogy`. |
@@ -1003,3 +1003,48 @@ direction that costs the most: **confidently, with a specific wrong answer**.
 
 A guard that cries wolf is a guard people learn to run with `|| true`, so both
 count as making the checks real rather than as making them pass.
+
+
+## The accounting contract (INV-07), as it actually behaves
+
+Written after reading the code twice. The first reading called the missing-
+mapping path a silent skip and marked INV-07 unfinished; that was wrong, and
+the correction is worth more than the original note.
+
+There are three questions, and the module answers them separately on purpose:
+
+**Is the accounting module installed?** Probed with `to_regclass`, never by
+catching `42P01` inside the engine transaction — a caught 42P01 poisons the
+transaction it was raised in. Where the tables are absent there is no ledger to
+post to and no period to respect, and the movement proceeds. That is the
+"optional" half, and it is the state a warehouse-only deployment runs in.
+
+**Is the period open?** Where `accounting_periods` exists, `assertOpen` refuses
+a movement into a closed or locked period before anything is written. An
+enabled tenant cannot post into a closed period, which is the acceptance INV-07
+asks for, and `negative-stock-and-period.seeded-e2e-spec` exercises it.
+
+**Is the account mapped?** The interesting one. A missing chart-of-accounts
+entry does **not** fail the movement, and the argument in the source is right:
+a goods receipt is a physical fact that already happened, and refusing to
+record it because nobody has set up account 1300 moves the warehouse's records
+further from the truth rather than closer.
+
+What makes that legitimate rather than a swallow is that the gap is
+**queryable**. `inv-gl-recon.service` reports `missingCoa` and `unmatched`
+alongside the valuation-to-journal comparison, exposed at
+`GET inventory/reconciliation/gl` behind `inventory:reports:read`. So a movement
+that produced no accounting entry is discoverable by asking, not only by
+grepping a log — which is the difference the pack's "never silent skip when
+enabled" is really about, and why `PENDING_ACCOUNTING` is offered as an
+alternative to failing rather than as the only answer.
+
+The check is done as a lookup rather than by catching what
+`persistJournalEntry` throws, which matters for the same reason as the
+`to_regclass` probe: the thrown thing is a plain `Error` today and would be a
+Postgres error the moment the lookup moved.
+
+**What is still missing here**: nothing in the reconciliation path is covered by
+a seeded test. The report exists and is reachable; that it reports the right
+number when an account is genuinely unmapped is unproven, and INV-08 is where
+that belongs.
