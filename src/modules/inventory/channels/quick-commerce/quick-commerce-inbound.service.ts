@@ -112,6 +112,37 @@ export class QuickCommerceInboundService {
     input: IngestPlatformPoInput,
     idempotencyKey: string,
   ) {
+    /*
+     * The warehouse this document is for, and the caller has to hold it.
+     * `input.warehouseId` came straight off the request body and was written
+     * unchecked; nothing downstream catches it, because ingesting posts no
+     * movements and the stock engine's `assertLocationsInScope` never runs on
+     * this path.
+     *
+     * The judgement is not really open here — this service's own two siblings
+     * already made it. `acceptPurchaseOrder` asserts `input.warehouseId` before
+     * turning the document into a Streamline PO, and `createAsn` asserts the
+     * warehouse it books an appointment against. Ingest is the door those two
+     * are reached through: the warehouse it stamps on the row is the building
+     * that will fulfil the platform's order, and once a scoped operator has
+     * stamped somebody else's, the fill-rate and dock work hang off it.
+     *
+     * Only asserted when one is given: the column is nullable and the field is
+     * optional, because a document can legitimately arrive before anyone has
+     * decided which building serves it. 404 rather than 403, so naming a
+     * warehouse you cannot see does not confirm it exists.
+     *
+     * FIRST, before the settings read, the adapter, the parse and the duplicate
+     * probe. A caller who may not see the warehouse should cause no work on its
+     * behalf and should not be able to read the refusal's shape to learn which
+     * packs this organisation has switched on or whether a provider PO number is
+     * already held. The spec's db stub has only `transaction`, so any query
+     * before this check TypeErrors — the ordering is asserted, not described.
+     */
+    if (input.warehouseId != null) {
+      await this.warehouseScope.assertWarehouseVisible(orgId, userId, input.warehouseId);
+    }
+
     const settings = await this.settings.get(orgId);
     if (!settings.packs.quickCommerce) {
       throw new BadRequestException(
