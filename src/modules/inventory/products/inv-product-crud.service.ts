@@ -23,6 +23,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
@@ -40,27 +41,6 @@ import type {
   UpdateProductInput,
   ListProductsInput,
 } from "./dto/inv-products.schemas";
-
-/**
- * `23505`, wherever the driver left it.
- *
- * This used to read `err.code` off the thrown value alone. Drizzle wraps every
- * driver failure in a `DrizzleQueryError` and hangs the original off `cause`, so
- * that check saw `undefined` and let unique violations past as unhandled 500s —
- * which is the one thing this helper exists to stop, and it was silently failing
- * to do it on the restore path *and* on the auto-SKU retry in `createProduct`.
- * Walking the chain rather than the top frame is the whole fix.
- */
-function isUniqueViolation(err: unknown): boolean {
-  let current: unknown = err;
-  for (let depth = 0; depth < 5; depth++) {
-    if (typeof current !== "object" || current === null) return false;
-    if ("code" in current && current.code === "23505") return true;
-    if (!("cause" in current)) return false;
-    current = current.cause;
-  }
-  return false;
-}
 
 const TAX_FIELD_SET: ReadonlySet<string> = new Set(PRODUCT_TAX_FIELD_KEYS);
 const PHARMACY_FIELD_SET: ReadonlySet<string> = new Set(PRODUCT_PHARMACY_FIELD_KEYS);

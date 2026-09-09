@@ -48,3 +48,31 @@ export function getPostgresErrorDetails(
 export function getPostgresErrorCode(error: unknown): string | undefined {
   return getPostgresErrorDetails(error).code;
 }
+
+/**
+ * The predicates below were, until this commit, a SECOND implementation of the
+ * walk above, living in `postgres-errors.ts` — the same directory, one letter
+ * apart in the filename — plus a THIRD private copy inside
+ * `inventory/products/inv-product-crud.service.ts`.
+ *
+ * The plural file's own docblock explained that 53 of 63 files handling `23505`
+ * never mention `cause`, and concluded "the reason it spread is that there was
+ * nowhere shared to put it". There was: this file, with twelve callers, sitting
+ * next to it. Two answers to one question is how the next `err.code === "23505"`
+ * gets written, so there is now one walk and these read off it.
+ */
+
+/** 23505 — a unique constraint was violated. Answer with 409, never 500. */
+export function isUniqueViolation(error: unknown): boolean {
+  return getPostgresErrorCode(error) === "23505";
+}
+
+/** 23503 — a foreign key was violated: the row it points at is missing, or in use. */
+export function isForeignKeyViolation(error: unknown): boolean {
+  return getPostgresErrorCode(error) === "23503";
+}
+
+/** 23514 — a CHECK constraint refused the row. */
+export function isCheckViolation(error: unknown): boolean {
+  return getPostgresErrorCode(error) === "23514";
+}

@@ -13,7 +13,7 @@ import {
 } from "../../../db/schema";
 import { availableQtySumSql } from "../stock-engine/available-sql";
 import { subDec, cmpDec, isNegative } from "../stock-engine/decimal";
-import { isUniqueViolation } from "../../../common/db/postgres-errors";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 import type {
   CreateChannelInput,
   UpdateChannelInput,
