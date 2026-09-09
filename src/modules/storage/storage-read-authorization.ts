@@ -17,6 +17,11 @@ import {
   ORG_NAMESPACED_KEY_FOLDERS,
   parseStorageKey,
 } from "./storage-key";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import {
+  assertKbObjectReadable,
+  KB_OBJECT_KEY_FOLDERS,
+} from "../kb/wiki/kb-object-access";
 
 const CHAT_FOLDER_ROOT = "chat";
 
@@ -58,10 +63,18 @@ export async function assertKeyReadable(
   db: Db,
   quarantine: QuarantineGate,
   fileKey: string,
-  orgId: string,
+  viewer: CurrentUserContext,
   notFoundMessage: string,
 ): Promise<void> {
+  const orgId = viewer.orgId;
   if (isForeignOrgKey(fileKey, orgId)) throw new NotFoundException(notFoundMessage);
+
+  if (KB_OBJECT_KEY_FOLDERS.has(parseStorageKey(fileKey, orgId).folderRoot)) {
+    await assertKbObjectReadable(db, viewer, fileKey, notFoundMessage);
+    if (await quarantine.isKeyBlocked(orgId, fileKey))
+      throw new NotFoundException(notFoundMessage);
+    return;
+  }
 
   const fileOwner = await resolveFileOwner(db, fileKey, orgId);
   if (fileOwner !== null) {

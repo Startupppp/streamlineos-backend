@@ -32,10 +32,18 @@ function mockRes() {
   return { res: res as unknown as import("express").Response, headers };
 }
 
-function build() {
+function build(kbAttachment: unknown = { pageId: 7, uploadedById: "user-1" }, kbPage: unknown = { id: 7 }) {
   const findFirst = jest.fn().mockResolvedValue(null);
+  const selectChain: Record<string, jest.Mock> = {};
+  selectChain["from"] = jest.fn(() => selectChain);
+  selectChain["innerJoin"] = jest.fn(() => selectChain);
+  selectChain["where"] = jest.fn().mockResolvedValue([]);
   const db = {
+    select: jest.fn(() => selectChain),
     query: {
+      kbPageAttachments: { findFirst: jest.fn().mockResolvedValue(kbAttachment) },
+      kbPages: { findFirst: jest.fn().mockResolvedValue(kbPage) },
+      organizationMembers: { findMany: jest.fn().mockResolvedValue([]) },
       documents: { findFirst },
       onboardingDocuments: { findFirst },
       expenses: { findFirst },
@@ -122,7 +130,7 @@ describe("a key naming another organisation is refused before anything is read",
     expect(storage.getFileStream).not.toHaveBeenCalled();
   });
 
-  it("serves the caller's own organisation for the same key shape (control)", async () => {
+  it("serves the caller's own organisation when the page behind the key is visible (control)", async () => {
     const { controller, storage } = build();
     const { res } = mockRes();
 
@@ -132,5 +140,25 @@ describe("a key naming another organisation is refused before anything is read",
       ORG_A,
       `kb-media/${ORG_A}/cover.webp`,
     );
+  });
+
+  it("refuses a kb-media key whose page the caller cannot see, even inside their own org", async () => {
+    const { controller, storage } = build({ pageId: 7, uploadedById: "someone-else" }, null);
+    const { res } = mockRes();
+
+    await expect(
+      controller.image({ key: `kb-media/${ORG_A}/cover.webp` }, ctx(ORG_A), res),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(storage.getFileStream).not.toHaveBeenCalled();
+  });
+
+  it("refuses a kb-media key with no attachment row — an orphaned object is not readable", async () => {
+    const { controller, storage } = build(null, null);
+    const { res } = mockRes();
+
+    await expect(
+      controller.image({ key: `kb-media/${ORG_A}/orphan.webp` }, ctx(ORG_A), res),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(storage.getFileStream).not.toHaveBeenCalled();
   });
 });

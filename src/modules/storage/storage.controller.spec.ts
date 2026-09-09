@@ -357,10 +357,17 @@ describe("StorageService private file references", () => {
 });
 
 describe("StorageController — org-namespaced keys prove their own owner", () => {
-  function buildDb() {
+  function buildDb(kbAttachment: unknown = { pageId: 7, uploadedById: "u1" }) {
     const empty = { findFirst: jest.fn().mockResolvedValue(null) };
+    const selectChain: Record<string, jest.Mock> = {};
+    selectChain["from"] = jest.fn(() => selectChain);
+    selectChain["innerJoin"] = jest.fn(() => selectChain);
+    selectChain["where"] = jest.fn().mockResolvedValue([]);
     return {
+      select: jest.fn(() => selectChain),
       query: {
+        kbPageAttachments: { findFirst: jest.fn().mockResolvedValue(kbAttachment) },
+        kbPages: { findFirst: jest.fn().mockResolvedValue({ id: 7 }) },
         documents: empty,
         onboardingDocuments: empty,
         expenses: empty,
@@ -390,10 +397,10 @@ describe("StorageController — org-namespaced keys prove their own owner", () =
   const audit = { log: jest.fn() };
   const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) };
 
-  function build() {
+  function build(kbAttachment: unknown = { pageId: 7, uploadedById: "u1" }) {
     const storage = buildStorage();
     const controller = new StorageController(
-      buildDb() as never,
+      buildDb(kbAttachment) as never,
       storage as never,
       audit as never,
       access as never,
@@ -432,6 +439,13 @@ describe("StorageController — org-namespaced keys prove their own owner", () =
     const { controller, storage } = build();
     await controller.image({ key: KEY_A }, ctx("org-A"), mockRes());
     expect(storage.getFileStream).toHaveBeenCalledWith("org-A", KEY_A);
+  });
+
+  it("404s a kb-media key with no attachment row — an orphaned object is not readable", async () => {
+    const { controller } = build(null);
+    await expect(
+      controller.image({ key: KEY_A }, ctx("org-A"), mockRes()),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it("leaves untracked non-namespaced keys on their existing path", async () => {
