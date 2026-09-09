@@ -103,6 +103,14 @@ describe("[seeded-e2e] INV-18 — consigned, handling-unit-controlled stock keep
       return [...out];
     });
 
+  const describeCommitted = (list: Row[]) =>
+    list.map((r) => ({
+      location: r.location_id,
+      hu: r.handling_unit_id,
+      ownership: r.ownership,
+      committed: r.committed,
+    }));
+
   const describeRows = (list: Row[]) =>
     list.map((r) => ({
       location: r.location_id,
@@ -182,7 +190,13 @@ describe("[seeded-e2e] INV-18 — consigned, handling-unit-controlled stock keep
           `cg-hu-${tag}`,
         ),
       );
-      scene.palletId = created.handlingUnitId;
+      // `create` returns a `HandlingUnitDetail`, whose id field is `id` —
+      // `handlingUnitId` is the argument name on `detail()`, not a field on
+      // what it returns. Reading the wrong one gave `undefined`, which the
+      // next matcher reported as "received value must be a number" rather
+      // than as a shape mismatch. ts-jest runs this file with `diagnostics:
+      // false`, so only `tsc` could ever have caught it.
+      scene.palletId = created.id;
       expect(scene.palletId).toBeGreaterThan(0);
     }, 300_000);
 
@@ -313,9 +327,15 @@ describe("[seeded-e2e] INV-18 — consigned, handling-unit-controlled stock keep
 
   describe("pick — a reservation cannot reach the supplier's pallet", () => {
     it("refuses to commit more than the owned stock, however much is on the shelf", async () => {
-      // 103 units of this variant are in the building and 43 are ours. Asking
-      // for 50 must fail on the consignment gate, not succeed by counting the
-      // vendor's 60.
+      // 85 units sit on this pallet and 25 of them are ours. Asking for 50 must
+      // fail on the consignment gate, not succeed by counting the vendor's 60.
+      //
+      // The grain is named in full, and that is the fix rather than a detail.
+      // This used to pass only `warehouseId` — and `createReservationInTx`
+      // refuses a locationless reservation outright ("a promise with nothing
+      // behind it"), so the call died on LOCATION_NOT_FOUND before the
+      // consignment gate was ever reached. `.rejects.toThrow()` accepted that
+      // happily: the test was green, and the thing it names was never executed.
       await expect(
         asTenant(() =>
           app.app.get(ReservationService).createReservation(scene.orgId, scene.userId, {
@@ -323,23 +343,62 @@ describe("[seeded-e2e] INV-18 — consigned, handling-unit-controlled stock keep
             sourceId: `cg-res-over-${tag}`,
             productVariantId: scene.variantId,
             warehouseId: scene.warehouseId,
+            locationId: scene.aisle,
+            lotId: scene.lotId,
+            handlingUnitId: scene.palletId,
+            ownership: "OWNED",
             qty: "50.0000",
           }),
         ),
-      ).rejects.toThrow();
+        // Named, so a future LOCATION_NOT_FOUND cannot pass for a refusal again.
+      ).rejects.toMatchObject({ response: { code: "INSUFFICIENT_STOCK" } });
 
       const committed = (await rows()).map((r) => r.committed);
       expect(committed).toEqual(["0.0000", "0.0000", "0.0000"]);
     }, 300_000);
 
-    it("commits against the owned rows only, and leaves the vendor's untouched", async () => {
+    it("refuses to promise the supplier's stock at all, even when there is plenty of it", async () => {
+      // 60 consigned units are on the pallet and not one of them may be sold.
+      // Asking for 10 of them by name is the case `ownership` on the input
+      // exists for: without it a caller meaning the vendor's row would have
+      // silently reserved ours.
+      await expect(
+        asTenant(() =>
+          app.app.get(ReservationService).createReservation(scene.orgId, scene.userId, {
+            sourceType: "inv18-probe",
+            sourceId: `cg-res-vendor-${tag}`,
+            productVariantId: scene.variantId,
+            warehouseId: scene.warehouseId,
+            locationId: scene.aisle,
+            lotId: scene.lotId,
+            handlingUnitId: scene.palletId,
+            ownership: "VENDOR",
+            qty: "10.0000",
+          }),
+        ),
+      ).rejects.toMatchObject({ response: { code: "INSUFFICIENT_STOCK" } });
+
+      const committed = (await rows()).map((r) => r.committed);
+      expect(committed).toEqual(["0.0000", "0.0000", "0.0000"]);
+    }, 300_000);
+
+    it("commits against the owned row only, and leaves the vendor's untouched", async () => {
+      // All 25 of our units on the pallet, which is the whole of the owned side
+      // of a grain the vendor also occupies. A reservation is per grain — it
+      // cannot span the loose 18 on the dock and the 25 up the aisle — so this
+      // is the largest promise the shared pallet supports, and it is exactly
+      // the one that would over-commit if ownership were being collapsed.
       await asTenant(() =>
         app.app.get(ReservationService).createReservation(scene.orgId, scene.userId, {
           sourceType: "inv18-probe",
           sourceId: `cg-res-ok-${tag}`,
           productVariantId: scene.variantId,
           warehouseId: scene.warehouseId,
-          qty: "40.0000",
+          locationId: scene.aisle,
+          lotId: scene.lotId,
+          handlingUnitId: scene.palletId,
+          ownership: "OWNED",
+          qty: OWNED_ON_PALLET,
         }),
       );
 
@@ -349,10 +408,12 @@ describe("[seeded-e2e] INV-18 — consigned, handling-unit-controlled stock keep
       // The single assertion this whole section exists for.
       expect(vendorRow!.committed).toBe("0.0000");
 
-      const ownedCommitted = after
-        .filter((r) => r.ownership === "OWNED")
-        .reduce((sum, r) => sum + Number(r.committed), 0);
-      expect(ownedCommitted).toBe(40);
+      // And on the right owned row: the pallet's, not the loose one on the dock.
+      expect(describeCommitted(after)).toEqual([
+        { location: scene.dock, hu: null, ownership: "OWNED", committed: "0.0000" },
+        { location: scene.aisle, hu: scene.palletId, ownership: "OWNED", committed: OWNED_ON_PALLET },
+        { location: scene.aisle, hu: scene.palletId, ownership: "VENDOR", committed: "0.0000" },
+      ]);
       await expectReconciled();
     }, 300_000);
   });

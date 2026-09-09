@@ -118,6 +118,22 @@ export class ReservationService {
     // with nothing behind it. Every internal caller already resolves a location.
     if (!input.locationId) throw new BadRequestException({ code: INV_ERRORS.LOCATION_NOT_FOUND });
 
+    // NEO-11. `committedGrainPredicate` pins `ownership = 'OWNED'`, and that is
+    // right: a promise is only ever made against our own stock. What was missing
+    // is the refusal. `ReservationInput.ownership` is documented as existing "so
+    // a caller cannot silently reserve the owned row when it meant the consigned
+    // one" — and nothing read it, so a caller naming VENDOR was handed the OWNED
+    // row and promised our units instead. On a shared pallet, where an owned and
+    // a consigned grain differ in nothing but this column, that is the exact
+    // collapse INV-18 exists to prevent, and it was invisible: the reservation
+    // succeeded, the numbers added up, and the wrong row moved.
+    if (input.ownership !== undefined && input.ownership !== "OWNED") {
+      throw new BadRequestException({
+        code: INV_ERRORS.INSUFFICIENT_STOCK,
+        message: "Stock owned by somebody else cannot be reserved",
+      });
+    }
+
     await tx.insert(invStockLevels).values({
       orgId, productVariantId: input.productVariantId,
       locationId: input.locationId, lotId: input.lotId ?? null,

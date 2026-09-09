@@ -4,7 +4,11 @@ import { DRIZZLE } from "src/db/drizzle.constants";
 import type { Db } from "src/db/drizzle.module";
 import { runInNewTenantTransaction } from "src/common/tenant/run-in-tenant-transaction";
 import { RecallsService } from "src/modules/inventory/quality/quality-recalls.service";
-import { QualityHoldsService } from "src/modules/inventory/quality/quality-holds.service";
+// The class is `HoldsService`. Importing it as `QualityHoldsService` compiled
+// under ts-jest's `isolatedModules`, resolved to `undefined` at runtime, and
+// `app.get(undefined)` reported "this provider does not exist in the current
+// context" — which reads as a broken module rather than a wrong import name.
+import { HoldsService } from "src/modules/inventory/quality/quality-holds.service";
 import { StockEngineService } from "src/modules/inventory/stock-engine/stock-engine.service";
 import { InvReconciliationService } from "src/modules/inventory/reconciliation/inv-reconciliation.service";
 import { InvStockAdjustmentsService } from "src/modules/inventory/stock/inv-stock-adjustments.service";
@@ -89,7 +93,7 @@ describe("[seeded-e2e] INV-17 — recall, quarantine, release, and a recall that
 
   const db = () => app.app.get<Db>(DRIZZLE);
   const recalls = () => app.app.get(RecallsService);
-  const holds = () => app.app.get(QualityHoldsService);
+  const holds = () => app.app.get(HoldsService);
 
   /** Every grain of one lot, so a per-grain claim is a claim and not a total. */
   const grainsOf = (lotId: number): Promise<Grain[]> =>
@@ -235,7 +239,13 @@ describe("[seeded-e2e] INV-17 — recall, quarantine, release, and a recall that
     await seedStock(`rl-bad-a-${tag}`, scene.badLot, scene.binA, IN_BIN_A);
     await seedStock(`rl-bad-b-${tag}`, scene.badLot, scene.binB, IN_BIN_B);
     await seedStock(`rl-good-${tag}`, scene.goodLot, scene.binA, CONTROL_QTY);
-    await seedStock(`rl-blocked-${tag}`, scene.blockedLot, scene.binB, "30.0000");
+    // NOT `rl-blocked-${tag}`: the recall two describes below uses that exact
+    // string as ITS idempotency key, so the fixture completed the key first and
+    // the recall came back 422 "already used with a different request" instead
+    // of the HOLD_EXCEEDS_ON_HAND the test was written to observe. A fixture and
+    // a test naming their commands after the same scenario is an easy collision
+    // to write and an expensive one to read.
+    await seedStock(`rl-seed-blocked-${tag}`, scene.blockedLot, scene.binB, "30.0000");
   }, 600_000);
 
   afterAll(async () => {
