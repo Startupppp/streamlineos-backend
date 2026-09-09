@@ -710,4 +710,56 @@ export const CRM_PERMISSIONS: Permission[] = [
     action: "run",
     description: "Run a report and return its rows",
   },
+  {
+    /*
+      Reading segments, and evaluating them.
+
+      Two keys where reporting has three, and the missing one is `run`. Reporting
+      separates executing from authoring because a report run is unbounded work
+      the tenant shapes -- arbitrary projections, grouping, a thousand rows -- so
+      "may build reports" and "may pull the numbers" are worth granting apart. A
+      segment's shape is fixed by the module: a capped sample and one aggregate.
+      Evaluating one is what reading it means, so a third key would gate an
+      operation nobody can usefully be denied while still being shown the
+      segment, and an unusable key is how a catalogue starts lying about what it
+      controls.
+
+      Never sufficient on its own. Every read that touches rows also requires the
+      key the registry declares on the source -- `party:parties:view` for parties
+      -- checked in the service, because a guard can only check a constant and
+      the source is known only after the body or the stored row is read. Without
+      that second check this key would be a way to count and list the customers
+      whose own screen refuses you.
+
+      The action is `view`, so `buildModuleMemberPermissionKeys` hands it to
+      `CRM_MODULE_MEMBER` along with every other CRM read. That is intended: a
+      segment discloses nothing the party screen does not, because the party key
+      is required on top of it.
+    */
+    name: "crm:segments:view",
+    resource: "crm:segments",
+    action: "view",
+    description:
+      "View saved CRM segments and evaluate one to see how many parties it matches and who they are",
+  },
+  {
+    /*
+      Authoring a segment.
+
+      A separate authority from reading one for the reason a saved report's is: a
+      segment is named, shared, and is what other people will target a campaign
+      at, so writing one is an organisational act rather than a personal query. A
+      badly drawn segment does not leak anything -- the party key still gates the
+      rows -- but it becomes the definition of "our lapsed enterprise accounts"
+      for everybody who reads it afterwards.
+
+      `manage` rather than create/update/delete separately: the three are one
+      job, done by one person on one screen, and splitting them would produce
+      grants nobody assembles.
+    */
+    name: "crm:segments:manage",
+    resource: "crm:segments",
+    action: "manage",
+    description: "Create, edit and delete CRM segments",
+  },
 ];

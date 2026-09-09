@@ -101,6 +101,7 @@ import { IngressModule } from "./modules/ingress/ingress.module";
 import { AutonomyModule } from "./modules/autonomy/autonomy.module";
 import { AutonomySequencesModule } from "./modules/autonomy/sequences/autonomy-sequences.module";
 import { CrmImportModule } from "./modules/crm/import/crm-import.module";
+import { CrmSegmentsModule } from "./modules/crm/segments/crm-segments.module";
 import { PortalModule } from "./modules/portal/portal.module";
 import { ModuleAccessModule } from "./modules/module-access/module-access.module";
 import { IdempotencyModule } from "./common/idempotency/idempotency.module";
@@ -197,6 +198,10 @@ import { EmploymentFactsModule } from "./modules/directory/employment-facts.modu
     // exit half is registered above and stays a leaf — see its module docstring.
     AutonomySequencesModule,
     CrmImportModule,
+    // Consumes the reporting compiler and imports nothing, so it sits anywhere;
+    // beside the other CRM sub-modules rather than beside `ReportingModule`,
+    // because the surface it owns is a CRM one.
+    CrmSegmentsModule,
     IssuesModule,
     PortalModule,
     ModuleAccessModule,
