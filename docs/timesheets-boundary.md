@@ -76,6 +76,37 @@ broken, so each has a test that would notice:
    outside that wrapper would fail on every export, in the background, where
    nobody is looking.
 
+## The period lifecycle, and where it goes
+
+Added by TS-05/TS-06, alongside the export chain above.
+
+```text
+POST /timesheets/periods/:id/submit | approve | reject | lock
+  └─ one transaction:
+       update timesheet_periods  -> status, and event_seq = event_seq + 1
+       OutboxWriter.emit         -> timesheets.period.{submitted|approved|rejected|locked}
+  └─ commit
+       ...later, cron: POST /cron/outbox-events-worker
+         └─ TimesheetLifecycleConsumer (registered for all four types)
+              └─ WebhooksDispatchService.deliverNow -> the org's subscribed endpoints
+```
+
+`aggregate_version` is `timesheet_periods.event_seq`, a counter incremented by
+the same UPDATE that performs the transition. `outbox_events` is UNIQUE on
+`(organization_id, aggregate_type, aggregate_id, aggregate_version)`, and a
+period emits repeatedly — it can be submitted, rejected, submitted again,
+approved and locked, and reopened to do it all over. A constant version works
+once per period and then fails forever; a wall-clock version collides on
+approve-with-lock, which emits two events from one transaction sharing one
+`now`.
+
+Notifications (TS-24) do **not** ride this path. They are emitted through
+`NotificationDispatchService` in the request, where `registerAfterCommit` drains
+on the request's own commit; that is the existing pipeline and therefore the
+existing email outbox, which is what the ticket asks for. The outbox events
+carry the same facts to *external* subscribers — see
+`docs/timesheets-webhooks.md` for the payloads.
+
 ## What an implementer does
 
 Bind `TIMESHEET_PAYROLL_HANDOFF_PORT` to a class implementing
