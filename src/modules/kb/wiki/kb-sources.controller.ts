@@ -19,24 +19,29 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { KbSourcesService } from "./kb-sources.service";
+import { KbSourcesService, type KbSourceListItem } from "./kb-sources.service";
 import {
   createKbSourceNoteSchema,
+  kbPageIdParamsSchema,
+  kbPageIngestionStatusSchema,
+  kbSourceIdParamsSchema,
   kbSourcesListQuerySchema,
   type CreateKbSourceNoteInput,
+  type KbPageIngestionStatus,
   type KbSourcesListQuery,
 } from "./dto/kb-sources.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
-import { MultipartAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
+  MultipartAction,
+  ResponseSchema,
+} from "../../../common/openapi/zod-operation-contracts";
+import {
+  kbSourceListItemSchema,
   kbSourcePageSchema,
   kbSourceSchema,
   kbSourceSuccessSchema,
 } from "./dto/kb-space-response.schemas";
-import { z } from "zod";
-
-const sourceIdParams = z.object({ sourceId: z.coerce.number().int().positive() }).strict();
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -54,26 +59,35 @@ export class KbSourcesController {
     return this.sources.list(u.orgId, query);
   }
 
-  /**
-   * `@Idempotent` because this route spends money and creates a row, and the retry that
-   * causes both is the ordinary one: a 20 MB PDF on a phone, the client's 30s timeout
-   * expiring while the server is still embedding, the user pressing upload again. Each POST
-   * inserts a NEW `kb_sources` row, so the content-hash short-circuit that saves the page and
-   * article paths cannot help — the second row is a different `sourceId` and therefore a
-   * different chunk family. Two rows, two full embed batches billed, and `/kb/ask` citing the
-   * same document twice.
-   *
-   * `check:idempotent-commands` reports "every in-scope mutating handler carries @Idempotent"
-   * and did so with this route unfenced: its scope is a keyword list
-   * (`checkout|purchase|payout|…|publish|approve|…`) that no AI-metered KB route matches. The
-   * gate is green over a route it never looked at; that is worth knowing, not worth widening
-   * here.
-   */
+  @Get("sources/:sourceId")
+  @RequirePermission("kb:pages:view")
+  @Validate({ params: kbSourceIdParamsSchema })
+  @ResponseSchema(kbSourceListItemSchema)
+  async get(
+    @Param("sourceId", ParseIntPipe) sourceId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<KbSourceListItem> {
+    return this.sources.get(u.orgId, sourceId);
+  }
+
+  @Get("pages/:pageId/indexing-status")
+  @RequirePermission("kb:pages:view")
+  @Validate({ params: kbPageIdParamsSchema })
+  @ResponseSchema(kbPageIngestionStatusSchema)
+  async pageIngestionStatus(
+    @Param("pageId", ParseIntPipe) pageId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<KbPageIngestionStatus> {
+    return this.sources.pageIngestionStatus(u, pageId);
+  }
+
   @Post("sources")
   @MultipartAction({ file: "file", fields: { spaceId: "string" } })
   @Idempotent("kb.source.create")
   @RequirePermission("kb:pages:create")
-  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 25 * 1024 * 1024 } }))
+  @UseInterceptors(
+    FileInterceptor("file", { limits: { fileSize: 25 * 1024 * 1024 } }),
+  )
   @HttpCode(201)
   @ResponseSchema(kbSourceSchema)
   async upload(
@@ -105,7 +119,7 @@ export class KbSourcesController {
 
   @Delete("sources/:sourceId")
   @RequirePermission("kb:pages:delete")
-  @Validate({ params: sourceIdParams })
+  @Validate({ params: kbSourceIdParamsSchema })
   @ResponseSchema(kbSourceSuccessSchema)
   async remove(
     @Param("sourceId", ParseIntPipe) sourceId: number,
