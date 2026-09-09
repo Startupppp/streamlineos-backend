@@ -260,9 +260,9 @@ describe("ChatChannelMembersService", () => {
       expect(p1.members).toHaveLength(2);
       expect(p1.nextCursor).toBe(2);
 
-      const p2 = await service.listMembers(CH, ADMIN_ID, ORG, p1.nextCursor, 2);
+      const p2 = await service.listMembers(CH, ADMIN_ID, ORG, p1.nextCursor ?? undefined, 2);
       expect(p2.members).toHaveLength(1);
-      expect(p2.nextCursor).toBeUndefined();
+      expect(p2.nextCursor).toBeNull();
 
       const allIds = [...p1.members.map((m) => m.id), ...p2.members.map((m) => m.id)];
       expect(allIds).toEqual([1, 2, 3]);

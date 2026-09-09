@@ -119,7 +119,7 @@ export class ChatPresenceService {
           and(
             eq(chatMessages.orgId, chatChannelMembers.orgId),
             eq(chatMessages.channelId, chatChannelMembers.channelId),
-            gt(chatMessages.createdAt, chatChannelMembers.lastReadAt),
+            gt(chatMessages.channelPosition, chatChannelMembers.lastReadPosition),
             eq(chatMessages.isDeleted, false),
           ),
         )

@@ -50,6 +50,10 @@ export class ChatChannelMembersImplementation {
     await assertChannelMember(this.db, channelId, userId, orgId);
   }
 
+  private channelHighWaterMark(channelId: number, orgId: string) {
+    return sql<number>`COALESCE((SELECT ${chatChannels.messageCount} FROM ${chatChannels} WHERE ${chatChannels.id} = ${channelId} AND ${chatChannels.orgId} = ${orgId}), 0)`;
+  }
+
   async getChannel(channelId: number, userId: string, orgId: string) {
     await assertChannelMember(this.db, channelId, userId, orgId);
 
@@ -86,7 +90,7 @@ export class ChatChannelMembersImplementation {
 
     const hasMore = rows.length > PAGE_SIZE;
     const pageSlice = hasMore ? rows.slice(0, PAGE_SIZE) : rows;
-    const nextCursor = hasMore ? pageSlice[pageSlice.length - 1]?.id : undefined;
+    const nextCursor = hasMore ? (pageSlice[pageSlice.length - 1]?.id ?? null) : null;
     return { members: pageSlice.map(flattenChannelMember), nextCursor };
   }
 
@@ -112,6 +116,7 @@ export class ChatChannelMembersImplementation {
       channelId,
       membershipId: targetMembershipId,
       role: "MEMBER",
+      lastReadPosition: this.channelHighWaterMark(channelId, orgId),
     });
 
     return { ok: true };
@@ -152,18 +157,8 @@ export class ChatChannelMembersImplementation {
   }
 
   async updateChannel(channelId: number, userId: string, body: UpdateChannelInput, orgId: string) {
-    const membershipId = await resolveOrgMembership(this.db, orgId, userId);
-    const membership = await this.db.query.chatChannelMembers.findFirst({
-      where: and(
-        eq(chatChannelMembers.orgId, orgId),
-        eq(chatChannelMembers.channelId, channelId),
-        eq(chatChannelMembers.membershipId, membershipId),
-      ),
-      columns: { role: true },
-    });
-
-    if (!membership) throw new ForbiddenException("You are not a member of this channel");
-    if (membership.role !== "ADMIN")
+    const { role } = await assertChannelMember(this.db, channelId, userId, orgId);
+    if (role !== "ADMIN")
       throw new ForbiddenException("Only channel admins can update channel details");
 
     const updateData: Partial<typeof chatChannels.$inferInsert> = { updatedAt: new Date() };
@@ -218,6 +213,7 @@ export class ChatChannelMembersImplementation {
       channelId,
       membershipId: actorMembershipId,
       role: "MEMBER",
+      lastReadPosition: this.channelHighWaterMark(channelId, actor.orgId),
     });
 
     return { ok: true };
@@ -288,9 +284,13 @@ export class ChatChannelMembersImplementation {
     // GREATEST, not assignment: two marks in flight together commit in either order,
     // and a plain write lets the older one rewind the cursor and resurrect read messages.
     const readAt = new Date().toISOString();
+    const highWaterMark = this.channelHighWaterMark(channelId, orgId);
     await this.db
       .update(chatChannelMembers)
-      .set({ lastReadAt: sql`GREATEST(${chatChannelMembers.lastReadAt}, ${readAt}::timestamp)` })
+      .set({
+        lastReadAt: sql`GREATEST(${chatChannelMembers.lastReadAt}, ${readAt}::timestamp)`,
+        lastReadPosition: sql`GREATEST(${chatChannelMembers.lastReadPosition}, ${highWaterMark})`,
+      })
       .where(
         and(
           eq(chatChannelMembers.orgId, orgId),
@@ -307,20 +307,23 @@ export class ChatChannelMembersImplementation {
   async markChannelUnread(channelId: number, userId: string, orgId: string) {
     const { membershipId } = await assertChannelMember(this.db, channelId, userId, orgId);
     const latestMessage = await this.db
-      .select({ createdAt: chatMessages.createdAt })
+      .select({ channelPosition: chatMessages.channelPosition, createdAt: chatMessages.createdAt })
       .from(chatMessages)
       .where(and(eq(chatMessages.orgId, orgId), eq(chatMessages.channelId, channelId), eq(chatMessages.isDeleted, false)))
-      .orderBy(desc(chatMessages.createdAt))
+      .orderBy(desc(chatMessages.channelPosition))
       .limit(1)
       .then((rows) => rows[0]);
 
+    const lastReadPosition = latestMessage
+      ? Math.max(latestMessage.channelPosition - 1, 0)
+      : 0;
     const lastReadAt = latestMessage?.createdAt
       ? new Date(new Date(latestMessage.createdAt).getTime() - 1)
       : new Date(0);
 
     await this.db
       .update(chatChannelMembers)
-      .set({ lastReadAt })
+      .set({ lastReadAt, lastReadPosition })
       .where(
         and(
           eq(chatChannelMembers.orgId, orgId),
@@ -458,16 +461,8 @@ export class ChatChannelMembersImplementation {
   }
 
   async updateMemberRole(channelId: number, targetUserId: string, requesterId: string, orgId: string, role: string) {
-    const requesterMembershipId = await resolveOrgMembership(this.db, orgId, requesterId);
-    const requester = await this.db.query.chatChannelMembers.findFirst({
-      where: and(
-        eq(chatChannelMembers.orgId, orgId),
-        eq(chatChannelMembers.channelId, channelId),
-        eq(chatChannelMembers.membershipId, requesterMembershipId),
-      ),
-      columns: { role: true },
-    });
-    if (!requester || requester.role !== "ADMIN") throw new ForbiddenException("Only admins can change roles");
+    const { role: requesterRole } = await assertChannelMember(this.db, channelId, requesterId, orgId);
+    if (requesterRole !== "ADMIN") throw new ForbiddenException("Only admins can change roles");
 
     const targetMembershipId = await resolveOrgMembership(this.db, orgId, targetUserId);
     if (!targetMembershipId) return { ok: true };

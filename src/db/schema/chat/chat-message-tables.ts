@@ -48,6 +48,10 @@ export const chatMessages = pgTable(
     index("idx_chat_messages_unread")
       .on(table.orgId, table.channelId, table.isDeleted, table.createdAt)
       .where(sql`is_deleted = false`),
+    // Not redundant with the index above: that one's trailing key serves the channel-list last-message LATERAL's `ORDER BY created_at DESC`, this one's serves the unread counters' `channel_position >` range (migration 1074).
+    index("idx_chat_messages_unread_position")
+      .on(table.orgId, table.channelId, table.isDeleted, table.channelPosition)
+      .where(sql`is_deleted = false`),
     // TOTAL, not partial. The catalog carried `WHERE is_deleted = false` here while this
     // declaration said total (migration 1058 closed the drift by widening the catalog).
     // The predicate has to go: `ChatMessageTimelineService.list` reads a channel WITHOUT an

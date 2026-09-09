@@ -71,6 +71,7 @@ export const chatChannelMembers = pgTable(
     membershipId: integer("membership_id").notNull(),
     role: text("role").default("MEMBER").notNull(),
     lastReadAt: timestamp("last_read_at").defaultNow().notNull(),
+    lastReadPosition: bigint("last_read_position", { mode: "number" }).notNull().default(0),
     joinedAt: timestamp("joined_at").defaultNow().notNull(),
     mutedUntil: timestamp("muted_until"),
     archivedAt: timestamp("archived_at"),

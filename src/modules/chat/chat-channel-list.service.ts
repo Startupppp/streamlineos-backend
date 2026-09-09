@@ -285,7 +285,7 @@ export class ChatChannelListService {
             inArray(chatMessages.channelId, channelIds),
             eq(chatMessages.isDeleted, false),
             eq(chatMessages.orgId, orgId),
-            gt(chatMessages.createdAt, chatChannelMembers.lastReadAt),
+            gt(chatMessages.channelPosition, chatChannelMembers.lastReadPosition),
           ),
         )
         .groupBy(chatMessages.channelId);

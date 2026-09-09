@@ -160,6 +160,8 @@
     "perf:prepare-http-seed:self-test": "node test/perf/prepare-perf-http-seed.mjs --self-test",
     "measure:cache-hit": "node --env-file-if-exists=.env src/scripts/measure-cache-hit-latency.mjs",
     "measure:cache-hit:self-test": "node src/scripts/measure-cache-hit-latency.mjs --self-test",
+    "seed:kb-retrieval-corpus": "node test/perf/ai/seed-kb-retrieval-corpus.mjs",
+    "measure:kb-retrieval": "node test/perf/ai/measure-kb-retrieval-latency.mjs",
     "perf:merge-route-budgets": "node test/perf/merge-http-route-budgets.mjs",
     "check:route-budgets-http": "node test/perf/merge-http-route-budgets.mjs --check",
     "check:route-budgets-http:self-test": "node test/perf/merge-http-route-budgets.mjs --self-test",
