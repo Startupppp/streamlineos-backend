@@ -11,9 +11,15 @@
  * named `email`.
  *
  * Measured against the schema, that misses most of the surface. This file is the
- * measurement: 68 tables carry personal data, of which 52 are scoped by
- * `org_id`, 10 by `organization_id` — invisible to a script that queries the
+ * measurement: 70 tables carry personal data, of which 52 are scoped by
+ * `org_id`, 12 by `organization_id` — invisible to a script that queries the
  * first — and 6 by nothing at all, so no tenant predicate reaches them.
+ *
+ * The count is prose and prose drifts: it read 68 / 52 / 10 / 6 while the list
+ * already held 69 entries, because an entry can be added without touching the
+ * paragraph above it. The spec counts the list, not this sentence — so treat
+ * the numbers here as a reading taken on a date, and re-take it when you add
+ * a row.
  *
  * **Those numbers were 154 / 138 / 10 / 6 until 2026-09-09, and they were
  * wrong.** The generator extracted a table's body with
@@ -93,6 +99,13 @@ export const PERSONAL_DATA_TABLES: readonly PersonalDataTable[] = [
   { table: "crm_mailbox_sync", columns: ["mailbox_address"], scope: "organization_id" },
   { table: "crm_outbound_messages", columns: ["recipient_email"], scope: "organization_id" },
   { table: "crm_people", columns: ["email", "phone"], scope: "org_id" },
+  /*
+    A scheduled report's recipient list is a standing instruction to email a
+    person on a timetable, so it is the one kind of address where leaving the
+    row behind keeps sending mail after the person is gone — an erasure that
+    misses it does not merely retain data, it goes on acting on it.
+  */
+  { table: "crm_report_schedule_recipients", columns: ["email"], scope: "organization_id" },
   { table: "crm_suppression_hashes", columns: ["address_hash"], scope: "org_id" },
   /*
     Listed, and a false positive — the scan flags `business_phone_number_id`

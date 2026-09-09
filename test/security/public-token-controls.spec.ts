@@ -1,12 +1,14 @@
 /**
  * public-token-controls.spec.ts
  *
- * Static verification of public token security controls.
- * No live database or network needed — reads source files as strings.
+ * Verification of public token security controls. No live database or network
+ * needed: most of it reads source files as strings, and the agent-token
+ * expiry/revocation block drives the real resolver against a database double
+ * and inspects the SQL it produces.
  *
  * Verifies:
  *   1. hashToken is a bare unsalted SHA-256 (design fact; security note recorded).
- *   2. Agent token guard enforces expiry at read time.
+ *   2. Agent token resolution filters revoked and expired tokens in the statement.
  *   3. Agent token cap enforced at TOKEN_CAP = 10.
  *   4. expiresAt column is nullable — non-expiring tokens are allowed.
  *   5. Every known @UseRateLimit key used on a @Public() route is in TIERS.
@@ -18,6 +20,13 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
+import {
+  AGENT_TOKEN_PREFIX,
+  resolveAgentToken,
+} from "../../src/common/auth/agent-token-resolution";
 
 const BACKEND_ROOT = join(__dirname, "../..");
 
@@ -53,17 +62,94 @@ describe("hashToken", () => {
   });
 });
 
-describe("agent token guard — expiry enforcement", () => {
-  const guardSrc = src("src/modules/agent-access/agent-token.guard.ts");
+/**
+ * Expiry and revocation, asked of the query rather than of the file.
+ *
+ * These two tests used to `readFileSync` the guard and grep it for `expiresAt`
+ * and `revokedAt`. They went red the day the lookup was lifted out of
+ * `AgentTokenGuard` into the shared `resolveAgentToken` — the controls had not
+ * moved an inch, and the sweep could not tell the difference between a refactor
+ * and a deletion. That cuts both ways: the grep would equally have passed on a
+ * file that merely *mentions* `revokedAt` in a comment, or selects the column
+ * without filtering on it. It never once looked at the WHERE clause.
+ *
+ * So this drives the real resolver against a database double, captures the
+ * predicate it actually hands to `.where(...)`, and compiles it to SQL. What is
+ * asserted is the text Postgres would receive: a revoked row and an expired row
+ * are excluded by the statement itself, which is the only place they can be
+ * excluded — the caller never sees the rows to check them.
+ *
+ * Testing the resolver rather than the guard is deliberate. It has two callers
+ * now (`AgentTokenGuard` on `/agent/v1`, `JwtAuthGuard` on `@AllowAgentToken()`
+ * routes), and one of them regressing while the other held would be invisible
+ * to a per-guard test.
+ */
+describe("agent token resolution — expiry and revocation enforcement", () => {
+  const VALID_TOKEN = `${AGENT_TOKEN_PREFIX}${"a".repeat(48)}`;
 
-  it("queries expiresAt with an expiry predicate", () => {
-    expect(guardSrc).toMatch(/expiresAt/);
-    expect(guardSrc).toMatch(/gt\s*\(|isNull\s*\(/);
+  /**
+   * Runs the real resolver against a double that answers with no rows.
+   *
+   * No rows is the right answer to give it: `resolveAgentToken` returns null
+   * the moment the lookup comes back empty, so it never reaches the membership
+   * seam or `runInTenantTransaction`, and the double needs neither a tenant
+   * context nor a membership fixture. The predicate is built on the way in
+   * regardless, which is the whole of what is under test here.
+   */
+  async function predicateSql(): Promise<{ sql: string; params: unknown[] }> {
+    let captured: SQL | undefined;
+    const chain = {
+      from: () => chain,
+      where: (predicate: SQL) => {
+        captured = predicate;
+        return { limit: () => Promise.resolve([] as unknown[]) };
+      },
+    };
+    const tx = { execute: () => Promise.resolve([]), select: () => chain };
+    const db = {
+      transaction: (fn: (t: typeof tx) => Promise<unknown>) => fn(tx),
+    };
+    const membership = { resolve: () => Promise.resolve(null) };
+
+    const resolved = await resolveAgentToken(
+      db as never,
+      membership as never,
+      VALID_TOKEN,
+    );
+    // A token the statement did not return is a token the caller refuses.
+    expect(resolved).toBeNull();
+    expect(captured).toBeDefined();
+
+    const query = new PgDialect().sqlToQuery(captured!);
+    return { sql: query.sql, params: [...query.params] };
+  }
+
+  it("excludes revoked tokens in the statement, not in the caller", async () => {
+    const { sql } = await predicateSql();
+    expect(sql).toMatch(/"agent_tokens"\."revoked_at"\s+is\s+null/i);
   });
 
-  it("checks revokedAt so revocation is honoured", () => {
-    expect(guardSrc).toMatch(/revokedAt|revoked_at/);
-    expect(guardSrc).toMatch(/isNull/);
+  it("excludes expired tokens, while still admitting non-expiring ones", async () => {
+    const { sql, params } = await predicateSql();
+    // Both halves matter: without the `is null` arm every non-expiring token
+    // would be refused, and without the `>` arm expiry would not be enforced.
+    expect(sql).toMatch(/"agent_tokens"\."expires_at"\s+is\s+null/i);
+    expect(sql).toMatch(/"agent_tokens"\."expires_at"\s*>\s*\$\d/);
+    // The comparison is against a bound instant, so it is evaluated at read
+    // time rather than baked into a cached plan or a client-supplied value.
+    expect(
+      params.some((p) => typeof p === "string" && !Number.isNaN(Date.parse(p))),
+    ).toBe(true);
+  });
+
+  it("keys the lookup on the hash of the presented credential", async () => {
+    const { sql, params } = await predicateSql();
+    expect(sql).toMatch(/"agent_tokens"\."token_hash"\s*=\s*\$\d/);
+    expect(params).toContain(
+      createHash("sha256").update(VALID_TOKEN).digest("hex"),
+    );
+    // ...and never on the credential itself.
+    expect(params).not.toContain(VALID_TOKEN);
   });
 });
 

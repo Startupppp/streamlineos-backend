@@ -168,6 +168,20 @@ const baseSchema = z
     TWILIO_ACCOUNT_SID: z.preprocess(emptyToUndefined, z.string().optional()),
     TWILIO_AUTH_TOKEN: z.preprocess(emptyToUndefined, z.string().optional()),
     TWILIO_FROM_NUMBER: z.preprocess(emptyToUndefined, z.string().optional()),
+    /**
+     * SMS one-time codes for e-signature. `EnvSmsSender` reads both at
+     * construction and offers the `otp_sms` authentication method only when
+     * both are present, so a typo in either one silently removes a signing
+     * method a tenant configured — which is exactly the failure the schema
+     * exists to turn into a boot error. Optional because no provider ships
+     * bound; the URL is validated as a URL so a half-pasted value fails at
+     * boot rather than at the moment a signer is waiting for a code.
+     */
+    SIGN_SMS_PROVIDER_URL: optionalUrl,
+    SIGN_SMS_PROVIDER_TOKEN: z.preprocess(
+      emptyToUndefined,
+      z.string().trim().optional(),
+    ),
     APP_BRAND_NAME: z.preprocess(
       emptyToUndefined,
       z.string().trim().optional(),
