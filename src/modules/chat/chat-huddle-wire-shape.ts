@@ -6,8 +6,7 @@
  * `HuddleParticipant` declared `user` and `userId` at the top level — and
  * `apiClient.get<Huddle | null>` is a cast, so the compiler vouched for a shape the API had never
  * sent. `membership.columns` was additionally `{}`, so `userId` was not even selected: every tile
- * and every screenshare label read "Unknown", `isInHuddle` was permanently false so the huddle
- * panel never rendered, and the WebRTC mesh had no peer ids to dial.
+ * read "Unknown" and `isInHuddle` was permanently false, so the huddle panel never rendered.
  *
  * The join is flattened by the same `flattenChannelMember` the channel-member routes use, so the
  * two member shapes in chat are one shape. `startedByMembership` becomes `startedByUser`, and
@@ -26,6 +25,7 @@ export const HUDDLE_WIRE_COLUMNS = {
   channelId: true,
   status: true,
   calendarEventId: true,
+  meetingUrl: true,
   startedAt: true,
   endedAt: true,
 } as const;
@@ -36,9 +36,6 @@ export const HUDDLE_PARTICIPANT_WIRE_COLUMNS = {
   huddleId: true,
   joinedAt: true,
   leftAt: true,
-  isMuted: true,
-  handRaised: true,
-  isScreenSharing: true,
 } as const;
 
 /** Every key a huddle carries on the wire, and nothing else. */
@@ -47,6 +44,7 @@ export const HUDDLE_WIRE_KEYS = [
   "channelId",
   "endedAt",
   "id",
+  "meetingUrl",
   "participants",
   "startedAt",
   "startedBy",
@@ -56,11 +54,8 @@ export const HUDDLE_WIRE_KEYS = [
 
 /** Every key a huddle participant carries on the wire, and nothing else. */
 export const HUDDLE_PARTICIPANT_WIRE_KEYS = [
-  "handRaised",
   "huddleId",
   "id",
-  "isMuted",
-  "isScreenSharing",
   "joinedAt",
   "leftAt",
   "user",

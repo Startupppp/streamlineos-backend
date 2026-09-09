@@ -38,6 +38,7 @@ import { ChatInviteLinksService } from "./chat-invite-links.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { ChatSummarizeService } from "./chat-summarize.service";
 import { RealtimeModule } from "../realtime/realtime.module";
+import { IntegrationsModule } from "../integrations/core/integrations.module";
 import { EntityReferenceModule } from "../entity-reference/entity-reference.module";
 import { OutboxModule } from "../../common/outbox/outbox.module";
 import { ChatFanoutOutboxConsumer } from "./chat-fanout-outbox.consumer";
@@ -45,7 +46,7 @@ import { MESSAGE_FANOUT_PROVIDER } from "./message-fanout.interface";
 import { OutboxBackedMessageFanoutProvider } from "./outbox-backed-message-fanout.provider";
 
 @Module({
-  imports: [BillingModule, NotificationsModule, RealtimeModule, EntityReferenceModule, OutboxModule],
+  imports: [BillingModule, NotificationsModule, RealtimeModule, IntegrationsModule, EntityReferenceModule, OutboxModule],
   controllers: [
     ChatAttachmentsController,
     ChatActionsController,

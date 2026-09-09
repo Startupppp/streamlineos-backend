@@ -36,10 +36,6 @@ describe("AblyService — realtime adapter absent (no key configured)", () => {
     await expect(service.publishHuddleEvent("org-1", 1, "join", {})).resolves.not.toThrow();
   });
 
-  it("publishHuddleSignal is a no-op", async () => {
-    await expect(service.publishHuddleSignal("org-1", 1, "user-2", {})).resolves.not.toThrow();
-  });
-
   it("publishToUser without requireConfigured is a no-op", async () => {
     await expect(service.publishToUser("org-1", "user-1", "event", {})).resolves.not.toThrow();
   });

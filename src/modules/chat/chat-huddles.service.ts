@@ -1,10 +1,11 @@
 import { ForbiddenException, Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
-import { chatChannels, chatHuddleParticipants, chatHuddles } from "../../db/schema";
+import { and, eq } from "drizzle-orm";
+import { chatHuddles } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { AblyService } from "../realtime/ably.service";
 import { AuditService } from "../../common/audit/audit.service";
+import { ComposioGateway } from "../integrations/core/composio.gateway";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
@@ -14,7 +15,7 @@ import {
   resolveMembershipIdAnyStatus,
 } from "./chat-huddle-access";
 import { assertHuddleInviteCapacity, assertHuddleJoinCapacity, type HuddleCapacityDeps } from "./chat-huddle-capacity";
-import { createHuddleCalendarEvent } from "./chat-huddle-calendar";
+import { startHuddleWithMeeting, type HuddleWire } from "./chat-huddle-start";
 import {
   HUDDLE_MAX_DURATION_MS,
   endHuddle,
@@ -25,11 +26,7 @@ import {
   transferHuddleHost,
   upsertHuddleParticipant,
 } from "./chat-huddle-lifecycle";
-import { notifyHuddleStarted } from "./chat-huddle-notifications";
 import { loadHuddleWire } from "./chat-huddle-wire-shape";
-
-/** A started huddle books two hours of calendar; the real end time replaces it when the call ends. */
-const HUDDLE_ESTIMATED_DURATION_MS = 2 * 60 * 60 * 1000;
 
 @Injectable()
 export class ChatHuddlesService {
@@ -42,6 +39,7 @@ export class ChatHuddlesService {
     private readonly orgSettings: ChatOrgSettingsService,
     private readonly planLimits: PlanLimitsService,
     private readonly dispatch: NotificationDispatchService,
+    private readonly composio: ComposioGateway,
   ) {}
 
   private capacityDeps(): HuddleCapacityDeps {
@@ -60,7 +58,7 @@ export class ChatHuddlesService {
         eq(chatHuddles.channelId, channelId),
         eq(chatHuddles.status, "active"),
       ),
-      columns: { id: true, channelId: true, startedByMembershipId: true, status: true, calendarEventId: true, startedAt: true, endedAt: true, hasVideo: true },
+      columns: { id: true, channelId: true, startedByMembershipId: true, status: true, calendarEventId: true, startedAt: true, endedAt: true },
     });
     if (!huddle) return null;
 
@@ -81,93 +79,19 @@ export class ChatHuddlesService {
     return loadHuddleWire(this.db, huddle.id, orgId);
   }
 
-  async startHuddle(channelId: number, userId: string, orgId: string) {
-    const starterMembershipId = await this.assertMember(channelId, userId, orgId);
-
-    const channel = await this.db.query.chatChannels.findFirst({
-      where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)),
-      columns: { name: true },
-    });
-    const channelName = channel?.name ?? "channel";
-
-    const now = new Date();
-    const estimatedEndsAt = new Date(now.getTime() + HUDDLE_ESTIMATED_DURATION_MS);
-
-    let isNewHuddle = false;
-    const huddle = await this.db.transaction(async (tx) => {
-      await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(hashtext(${orgId} || ':huddle:' || ${channelId}::text)::bigint)`,
-      );
-
-      const existing = await tx.query.chatHuddles.findFirst({
-        where: and(
-          eq(chatHuddles.orgId, orgId),
-          eq(chatHuddles.channelId, channelId),
-          eq(chatHuddles.status, "active"),
-        ),
-      });
-      if (existing) {
-        await upsertHuddleParticipant(tx, orgId, existing.id, starterMembershipId);
-        return existing;
-      }
-      isNewHuddle = true;
-
-      const calendarEventId = await createHuddleCalendarEvent(tx, {
-        orgId,
-        channelId,
-        channelName,
-        starterMembershipId,
-        startsAt: now,
-        estimatedEndsAt,
-      });
-
-      const [created] = await tx
-        .insert(chatHuddles)
-        .values({
-          orgId,
-          channelId,
-          startedByMembershipId: starterMembershipId,
-          status: "active",
-          calendarEventId,
-          hasVideo: false,
-        })
-        .returning();
-
-      await tx.insert(chatHuddleParticipants).values({
-        orgId,
-        huddleId: created.id,
-        membershipId: starterMembershipId,
-      });
-
-      return created;
-    });
-
-    if (isNewHuddle) {
-      await this.ably.publishHuddleEvent(orgId, channelId, "huddle:started", {
-        huddleId: huddle.id,
-        channelId,
-        startedBy: userId,
-      });
-
-      this.audit.log({
-        action: "huddle.started",
-        userId,
-        orgId,
-        targetId: String(huddle.id),
-        targetType: "huddle",
-        metadata: { channelId },
-      });
-
-      await notifyHuddleStarted(this.db, this.dispatch, {
-        orgId,
-        channelId,
-        channelName,
-        huddleId: huddle.id,
-        actorUserId: userId,
-      });
-    }
-
-    return loadHuddleWire(this.db, huddle.id, orgId);
+  async startHuddle(channelId: number, userId: string, orgId: string): Promise<HuddleWire> {
+    return startHuddleWithMeeting(
+      {
+        db: this.db,
+        ably: this.ably,
+        audit: this.audit,
+        dispatch: this.dispatch,
+        composio: this.composio,
+      },
+      channelId,
+      userId,
+      orgId,
+    );
   }
 
   async joinHuddle(huddleId: number, userId: string, orgId: string) {

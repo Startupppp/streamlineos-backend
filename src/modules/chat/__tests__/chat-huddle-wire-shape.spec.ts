@@ -1,5 +1,10 @@
+jest.mock("@composio/core", () => ({ Composio: jest.fn() }));
+
+import { z } from "zod";
 import { ChatHuddlesService } from "../chat-huddles.service";
 import { HUDDLE_PARTICIPANT_WIRE_KEYS, HUDDLE_WIRE_KEYS } from "../chat-huddle-wire-shape";
+import { huddleWireSchema } from "../dto/chat-misc-response.schemas";
+import { primeRelocationTrafficTracker } from "../../../common/relocation/relocation-traffic-tracker";
 import { type Db } from "../../../db/drizzle.module";
 
 /**
@@ -19,6 +24,8 @@ import { type Db } from "../../../db/drizzle.module";
 const ORG = "org-1";
 const CHANNEL = 7;
 const HUDDLE = 42;
+const CALENDAR_EVENT = 5;
+const MEET = "https://meet.google.com/abc-defg-hij";
 const ME = "user-me";
 const OTHER = "user-other";
 const HOST_MEMBERSHIP = 11;
@@ -37,9 +44,6 @@ function nestedParticipantRow(userId: string | null, id: number, over: Record<st
     huddleId: HUDDLE,
     joinedAt: new Date("2026-09-01T10:00:00Z"),
     leftAt: null,
-    isMuted: false,
-    handRaised: false,
-    isScreenSharing: false,
     membership:
       userId === null
         ? null
@@ -57,7 +61,8 @@ function nestedHuddleRow(participants: ReturnType<typeof nestedParticipantRow>[]
     id: HUDDLE,
     channelId: CHANNEL,
     status: "active",
-    calendarEventId: null,
+    calendarEventId: CALENDAR_EVENT,
+    meetingUrl: MEET,
     startedAt: new Date("2026-09-01T10:00:00Z"),
     endedAt: null,
     participants,
@@ -71,10 +76,9 @@ const staleCheckRow = {
   channelId: CHANNEL,
   startedByMembershipId: HOST_MEMBERSHIP,
   status: "active",
-  calendarEventId: null,
+  calendarEventId: CALENDAR_EVENT,
   startedAt: new Date(),
   endedAt: null,
-  hasVideo: false,
 };
 
 interface DoubleOptions {
@@ -83,16 +87,17 @@ interface DoubleOptions {
 
 function makeDb(wireRow: unknown, options: DoubleOptions = {}) {
   const huddleFindFirst = jest.fn();
-  if (options.existingHuddleInTransaction) huddleFindFirst.mockResolvedValueOnce({ id: HUDDLE, channelId: CHANNEL });
+  if (options.existingHuddleInTransaction) huddleFindFirst.mockResolvedValueOnce({ id: HUDDLE });
   else huddleFindFirst.mockResolvedValueOnce(staleCheckRow);
   huddleFindFirst.mockResolvedValueOnce(wireRow);
 
   const chain: Record<string, unknown> = {};
-  for (const method of ["insert", "values", "update", "set", "delete", "select", "from", "orderBy"])
+  for (const method of ["insert", "values", "update", "set", "delete", "select", "from", "orderBy", "innerJoin"])
     chain[method] = jest.fn(() => chain);
   chain.where = jest.fn(() => Promise.resolve([]));
   chain.limit = jest.fn(() => Promise.resolve([]));
   chain.onConflictDoUpdate = jest.fn(() => Promise.resolve([]));
+  chain.onConflictDoNothing = jest.fn(() => Promise.resolve([]));
   chain.returning = jest.fn(() => Promise.resolve([{ id: HUDDLE }]));
   chain.execute = jest.fn(() => Promise.resolve([]));
   chain.transaction = jest.fn((cb: (tx: unknown) => Promise<unknown>) => cb(chain));
@@ -119,8 +124,11 @@ function build(db: Db) {
     { getSettings: jest.fn().mockResolvedValue({ maxHuddleParticipants: 50 }) } as never,
     { resolveTier: jest.fn().mockResolvedValue({ tier: "PAID", plan: "STARTER" }) } as never,
     { emit: jest.fn().mockResolvedValue({}) } as never,
+    { isConfigured: () => true, executeTool: jest.fn() } as never,
   );
 }
+
+beforeEach(() => primeRelocationTrafficTracker([], Date.now()));
 
 describe("chat huddle — one wire shape, with the identity at the top level", () => {
   it("GET /chat/channels/:id/huddle puts the user on the participant, not under membership", async () => {
@@ -136,6 +144,23 @@ describe("chat huddle — one wire shape, with the identity at the top level", (
     expect(participant?.userId).toBe(ME);
     expect(participant?.user?.id).toBe(ME);
     expect(participant?.user?.name).toBe("Me");
+  });
+
+  it("carries the Google Meet link — it is the only way into the call", async () => {
+    const db = makeDb(nestedHuddleRow([nestedParticipantRow(ME, 1)]));
+    const huddle = await build(db).getActiveHuddle(CHANNEL, ME, ORG);
+
+    expect(huddle?.meetingUrl).toBe(MEET);
+    expect(WIRE_KEYS).toContain("meetingUrl");
+  });
+
+  it("carries no per-peer media state: mute, hand and screen share left with the mesh", async () => {
+    const db = makeDb(nestedHuddleRow([nestedParticipantRow(ME, 1)]));
+    const participant = (await build(db).getActiveHuddle(CHANNEL, ME, ORG))?.participants[0];
+
+    expect(participant).not.toHaveProperty("isMuted");
+    expect(participant).not.toHaveProperty("handRaised");
+    expect(participant).not.toHaveProperty("isScreenSharing");
   });
 
   it("renames startedByMembership to startedByUser and answers startedBy as a USER id", async () => {
@@ -189,11 +214,56 @@ describe("chat huddle — one wire shape, with the identity at the top level", (
 });
 
 /**
+ * The declared contract, parsed against the value the handler actually returns.
+ *
+ * `ResponseContractInterceptor` throws under NODE_ENV=test and logs everywhere else, so a
+ * `@ResponseSchema` that disagrees with the payload is a per-request error line in production
+ * and nothing at all in a typecheck. `calendarEventId` was declared `z.string().nullable()`
+ * against an `integer` column, so every huddle that owned a calendar event violated it.
+ */
+describe("chat huddle — huddleWireSchema parses the payload the service returns", () => {
+  it("accepts the served huddle, meeting link and integer calendar event id included", async () => {
+    const db = makeDb(nestedHuddleRow([nestedParticipantRow(ME, 1), nestedParticipantRow(OTHER, 2)]));
+    const huddle = await build(db).getActiveHuddle(CHANNEL, ME, ORG);
+
+    const parsed = huddleWireSchema.safeParse(huddle);
+    expect(parsed.success).toBe(true);
+  });
+
+  it("BITE: the previous string-typed calendarEventId rejects the integer the column holds", async () => {
+    const db = makeDb(nestedHuddleRow([nestedParticipantRow(ME, 1)]));
+    const huddle = await build(db).getActiveHuddle(CHANNEL, ME, ORG);
+
+    const previous = huddleWireSchema.extend({ calendarEventId: z.string().nullable() });
+    const parsed = previous.safeParse(huddle);
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.issues.map((i) => i.path.join("."))).toContain("calendarEventId");
+  });
+
+  it("BITE: a huddle with no meeting link is representable on the wire but is not silently absent", async () => {
+    const row = { ...nestedHuddleRow([nestedParticipantRow(ME, 1)]), meetingUrl: null };
+    const db = makeDb(row);
+    const huddle = await build(db).getActiveHuddle(CHANNEL, ME, ORG);
+
+    expect(huddleWireSchema.safeParse(huddle).success).toBe(true);
+    expect(huddle && "meetingUrl" in huddle).toBe(true);
+    expect(huddle?.meetingUrl).toBeNull();
+  });
+
+  it("BITE: a non-URL meeting link is refused rather than shipped as a dead join button", async () => {
+    const row = { ...nestedHuddleRow([nestedParticipantRow(ME, 1)]), meetingUrl: "not-a-url" };
+    const db = makeDb(row);
+    const huddle = await build(db).getActiveHuddle(CHANNEL, ME, ORG);
+
+    expect(huddleWireSchema.safeParse(huddle).success).toBe(false);
+  });
+});
+
+/**
  * The consumer predicates, run against the real payload.
  *
- * These four are the live readers of a huddle participant:
+ * These live readers of a huddle participant:
  * `huddle-participant-card.tsx:81` renders `participant.user?.name ?? "Unknown"`,
- * `huddle-screenshare-view.tsx:53` resolves a presenter's name by `p.userId`,
  * `use-message-panel-data.ts:92` decides `isInHuddle` by `p.userId === currentUserId` — which gates
  * whether the huddle panel renders at all — and `huddle-panel.tsx:68` decides `isHost` by
  * `huddle.startedBy === currentUserId`.
@@ -227,7 +297,7 @@ describe("chat huddle — the participant predicates against the real payload", 
     expect(preFixParticipants.map(tileName)).toEqual(["Unknown", "Unknown"]);
   });
 
-  it("BITE: the pre-fix nested payload labels the screenshare Unknown, because userId was never sent", () => {
+  it("BITE: the pre-fix nested payload never resolves a participant by user id", () => {
     expect(nameFor(preFixParticipants, OTHER)).toBe("Unknown");
   });
 
@@ -248,7 +318,7 @@ describe("chat huddle — the participant predicates against the real payload", 
     expect(huddle?.participants.map(tileName)).toEqual(["Me", "Ada Lovelace"]);
   });
 
-  it("the served payload labels the screenshare with the presenter's name", async () => {
+  it("the served payload resolves a participant by user id", async () => {
     const db = makeDb(nestedHuddleRow([nestedParticipantRow(ME, 1), nestedParticipantRow(OTHER, 2)]));
     const huddle = await build(db).getActiveHuddle(CHANNEL, ME, ORG);
 

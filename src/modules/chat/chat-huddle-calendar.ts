@@ -19,6 +19,7 @@ export interface HuddleCalendarEventInput {
   starterMembershipId: number;
   startsAt: Date;
   estimatedEndsAt: Date;
+  meetingUrl: string;
 }
 
 /**
@@ -38,6 +39,7 @@ export async function createHuddleCalendarEvent(
       category: "huddle",
       entityType: "huddle",
       entityId: input.channelId.toString(),
+      meetingUrl: input.meetingUrl,
       startDate: input.startsAt,
       endDate: input.estimatedEndsAt,
       allDay: false,

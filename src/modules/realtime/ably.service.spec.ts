@@ -44,25 +44,33 @@ describe("AblyService capabilities", () => {
     expect(capability["cell:legacy-1:chat:org-1:8"]).toBeUndefined();
   });
 
-  it("never grants a wildcard chat or huddle capability", () => {
+  it("never grants a wildcard capability of any kind on a chat token", () => {
     const { capability } = capabilityFor(service, () =>
       service.createChatTokenRequest("user-1", "org-1", [7]),
     );
 
-    for (const resource of Object.keys(capability)) {
-      const isOwnSignalChannel = resource === "cell:legacy-1:huddle-signal:org-1:*:user-1";
-      if (isOwnSignalChannel) continue;
-      expect(resource).not.toContain("*");
-    }
+    for (const resource of Object.keys(capability)) expect(resource).not.toContain("*");
   });
 
-  it("scopes huddle signalling to the caller and makes it subscribe-only", () => {
+  /**
+   * The mesh is gone: the transport is a Google Meet link, so no browser signals a peer and the
+   * one wildcard this token ever carried — `huddle-signal:{org}:*:{clientId}` — has no consumer.
+   * A grant nobody uses is a grant an attacker can still use.
+   */
+  it("grants no huddle-signal channel at all", () => {
     const { capability } = capabilityFor(service, () =>
       service.createChatTokenRequest("user-1", "org-1", [7]),
     );
 
-    expect(capability["cell:legacy-1:huddle-signal:org-1:*:user-1"]).toEqual(["subscribe"]);
-    expect(capability["cell:legacy-1:huddle-signal:org-1:*"]).toBeUndefined();
+    expect(Object.keys(capability).filter((r) => r.includes("huddle-signal"))).toEqual([]);
+  });
+
+  it("still grants the huddle lifecycle channel, which drives the panel", () => {
+    const { capability } = capabilityFor(service, () =>
+      service.createChatTokenRequest("user-1", "org-1", [7]),
+    );
+
+    expect(capability["cell:legacy-1:huddle:org-1:7"]).toEqual(["subscribe", "publish"]);
   });
 
   it("grants notifications only on the caller's own channel", () => {

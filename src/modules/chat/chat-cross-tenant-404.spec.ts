@@ -1,5 +1,6 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { ChatHuddleSignalsService } from "./chat-huddle-signals.service";
+import { assertHuddleChannelMember } from "./chat-huddle-access";
 import { ChatChannelsService } from "./chat-channels.service";
 import { ChatSavedService } from "./chat-saved.service";
 import type { Db } from "../../db/drizzle.module";
@@ -23,7 +24,7 @@ describe("chat — a channel, huddle or saved message outside the caller's org a
         update: jest.fn().mockReturnValue({ set }),
       } as unknown as Db;
       return {
-        svc: new ChatHuddleSignalsService(db, stub<ConstructorParameters<typeof ChatHuddleSignalsService>[1]>()),
+        svc: new ChatHuddleSignalsService(db),
         update: db.update as unknown as jest.Mock,
       };
     }
@@ -45,7 +46,11 @@ describe("chat — a channel, huddle or saved message outside the caller's org a
   describe("POST /chat/channels/:channelId/refresh-name", () => {
     function make(channel: unknown) {
       const db = {
-        query: { chatChannels: { findFirst: jest.fn().mockResolvedValue(channel) } },
+        query: {
+          chatChannels: { findFirst: jest.fn().mockResolvedValue(channel) },
+          organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 3 }) },
+          chatChannelMembers: { findFirst: jest.fn().mockResolvedValue({ role: "MEMBER" }) },
+        },
       } as unknown as Db;
       return new ChatChannelsService(
         db,
@@ -90,31 +95,26 @@ describe("chat — a channel, huddle or saved message outside the caller's org a
     });
   });
 
-  describe("assertMember resolves the channel before the membership check", () => {
+  describe("assertHuddleChannelMember resolves the channel before the membership check", () => {
     function make(channel: unknown, member: unknown) {
-      const db = {
+      return {
         query: {
           organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 3 }) },
           chatChannels: { findFirst: jest.fn().mockResolvedValue(channel) },
           chatChannelMembers: { findFirst: jest.fn().mockResolvedValue(member) },
-          chatHuddles: { findFirst: jest.fn().mockResolvedValue({ id: 1, channelId: 1, status: "active" }) },
         },
-        update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn() }) }),
       } as unknown as Db;
-      return new ChatHuddleSignalsService(db, {
-        publishHuddleEvent: jest.fn(),
-      } as unknown as ConstructorParameters<typeof ChatHuddleSignalsService>[1]);
     }
 
     it("answers 404, not 403, for a channel the org does not own", async () => {
-      await expect(make(undefined, undefined).setScreenShare(1, "u-1", true, ATTACKER_ORG)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        assertHuddleChannelMember(make(undefined, undefined), 1, "u-1", ATTACKER_ORG),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it("still answers 403 for an owned channel the caller is not a member of", async () => {
       await expect(
-        make({ isArchived: false }, undefined).setScreenShare(1, "u-1", true, OWNER_ORG),
+        assertHuddleChannelMember(make({ isArchived: false }, undefined), 1, "u-1", OWNER_ORG),
       ).rejects.toThrow(ForbiddenException);
     });
   });

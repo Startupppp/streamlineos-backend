@@ -2,11 +2,11 @@
  * Every state transition a huddle can make: a participant arriving or leaving, the host moving on,
  * and the call itself ending.
  *
- * A huddle has no server-side session — the mesh is peer to peer — so "is this call still running"
- * is answered entirely by these rows. A tab closed without a leave leaves a participant row open
- * forever, which is why the read path reaps stale participants before it trusts the count, and why
- * a huddle whose last participant is gone is ended here rather than left `active` for the next
- * reader to trip over.
+ * The call itself happens at Google Meet, which tells us nothing about who is in it, so "is this
+ * huddle still running" is answered entirely by these rows. A tab closed without a leave leaves a
+ * participant row open forever, which is why the heartbeat exists, why the read path reaps stale
+ * participants before it trusts the count, and why a huddle whose last participant is gone is
+ * ended here rather than left `active` for the next reader to trip over.
  */
 import { and, eq, isNull, lt } from "drizzle-orm";
 import { chatHuddleParticipants, chatHuddles } from "../../db/schema";
@@ -42,7 +42,7 @@ export async function upsertHuddleParticipant(
     .values({ orgId, huddleId, membershipId })
     .onConflictDoUpdate({
       target: [chatHuddleParticipants.huddleId, chatHuddleParticipants.membershipId],
-      set: { leftAt: null, joinedAt: now, isMuted: false, handRaised: false, lastSeenAt: now },
+      set: { leftAt: null, joinedAt: now, lastSeenAt: now },
     });
 }
 

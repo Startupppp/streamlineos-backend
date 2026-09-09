@@ -1,10 +1,12 @@
 /**
  * How many people may be in a huddle, and who decides.
  *
- * Three ceilings apply at once and the smallest wins: the plan (Free huddles are one-to-one), the
- * organization's own `maxHuddleParticipants` setting, and `HUDDLE_MESH_MAX_PARTICIPANTS` — a hard
- * technical bound, because the call is a full peer-to-peer mesh and an eleventh participant costs
- * every other browser another pair of streams. Someone already in the call is never refused
+ * Two ceilings apply and the smaller wins: the plan (Free huddles are one-to-one) and the
+ * organization's own `maxHuddleParticipants` setting. There is no longer a transport ceiling —
+ * the call is a Google Meet room, not a peer-to-peer mesh — so the org setting is the operative
+ * cap for the first time. It is clamped to the same 2..500 band `chatOrgSettingsResponseSchema`
+ * and `updateChatSettingsSchema` validate, so a row written before those bounds existed cannot
+ * declare an unbounded room or a room of zero. Someone already in the call is never refused
  * re-entry: a dropped connection reconnecting must not be told the room it is in is full.
  */
 import { ForbiddenException } from "@nestjs/common";
@@ -16,14 +18,24 @@ import type { PlanLimitsService } from "../billing/core/plan-limits.service";
 import {
   FREE_HUDDLE_MAX_PARTICIPANTS,
   FREE_HUDDLE_UPGRADE_MESSAGE,
-  HUDDLE_MESH_MAX_PARTICIPANTS,
   PLAN_FEATURE_FLAGS,
 } from "../billing/core/plan-entitlements.constants";
+
+export const HUDDLE_PARTICIPANT_FLOOR = 2;
+export const HUDDLE_PARTICIPANT_CEILING = 500;
 
 export interface HuddleCapacityDeps {
   db: Db;
   planLimits: PlanLimitsService;
   orgSettings: ChatOrgSettingsService;
+}
+
+export function clampHuddleCap(configured: number): number {
+  if (!Number.isFinite(configured)) return HUDDLE_PARTICIPANT_FLOOR;
+  return Math.min(
+    Math.max(Math.trunc(configured), HUDDLE_PARTICIPANT_FLOOR),
+    HUDDLE_PARTICIPANT_CEILING,
+  );
 }
 
 export async function assertHuddleJoinCapacity(
@@ -32,6 +44,12 @@ export async function assertHuddleJoinCapacity(
   huddleId: number,
   callerMembershipId: number,
 ): Promise<void> {
+  const { tier } = await deps.planLimits.resolveTier(orgId);
+  const { maxHuddleParticipants } = await deps.orgSettings.getSettings(orgId);
+  const orgCap = clampHuddleCap(maxHuddleParticipants);
+  const freeCapped = !PLAN_FEATURE_FLAGS[tier].chatGroupHuddles;
+  const effectiveCap = freeCapped ? Math.min(orgCap, FREE_HUDDLE_MAX_PARTICIPANTS) : orgCap;
+
   const activeParticipants = await deps.db.query.chatHuddleParticipants.findMany({
     where: and(
       eq(chatHuddleParticipants.orgId, orgId),
@@ -39,18 +57,15 @@ export async function assertHuddleJoinCapacity(
       isNull(chatHuddleParticipants.leftAt),
     ),
     columns: { membershipId: true },
-    limit: HUDDLE_MESH_MAX_PARTICIPANTS + 1,
+    limit: effectiveCap + 1,
   });
   if (activeParticipants.some((p) => p.membershipId === callerMembershipId)) return;
 
-  const { tier } = await deps.planLimits.resolveTier(orgId);
-  if (!PLAN_FEATURE_FLAGS[tier].chatGroupHuddles && activeParticipants.length >= FREE_HUDDLE_MAX_PARTICIPANTS)
+  if (freeCapped && activeParticipants.length >= FREE_HUDDLE_MAX_PARTICIPANTS)
     throw new ForbiddenException(FREE_HUDDLE_UPGRADE_MESSAGE);
 
-  const { maxHuddleParticipants } = await deps.orgSettings.getSettings(orgId);
-  const effectiveCap = Math.min(maxHuddleParticipants, HUDDLE_MESH_MAX_PARTICIPANTS);
-  if (activeParticipants.length >= effectiveCap)
-    throw new ForbiddenException(`This call is full (max ${effectiveCap} participants)`);
+  if (activeParticipants.length >= orgCap)
+    throw new ForbiddenException(`This call is full (max ${orgCap} participants)`);
 }
 
 /**

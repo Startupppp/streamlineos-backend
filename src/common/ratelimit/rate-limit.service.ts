@@ -54,7 +54,6 @@ const TIERS: Record<string, Tier> = {
   "public:roadmap-feedback": { limit: 5, windowSecs: 3600 },
   "chat:send-message": { limit: 30, windowSecs: 60 },
   "chat:huddle": { limit: 20, windowSecs: 60 },
-  "chat:huddle-signal": { limit: 240, windowSecs: 60 },
   "chat:huddle-heartbeat": { limit: 10, windowSecs: 60 },
   "whiteboard:public-view": { limit: 60, windowSecs: 60 },
   "whiteboard:public-edit": { limit: 30, windowSecs: 60 },

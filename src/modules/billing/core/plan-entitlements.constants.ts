@@ -115,11 +115,8 @@ export const PLAN_PRICES_PAISE: Record<PaidPlan, number> = {
   ENTERPRISE: 499_900,   // ₹4,999
 };
 
-/** Free-plan group huddle cap (1:1 only). Paid plans use org settings up to mesh max. */
+/** Free-plan group huddle cap (1:1 only). Paid plans use the org's own huddle setting. */
 export const FREE_HUDDLE_MAX_PARTICIPANTS = 2;
-
-/** Mesh topology hard cap for huddles (WebRTC mesh limit, not a plan entitlement). */
-export const HUDDLE_MESH_MAX_PARTICIPANTS = 10;
 
 export const FREE_HUDDLE_UPGRADE_MESSAGE =
   "Huddles are one-to-one on the Free plan. Upgrade to start group huddles.";

@@ -63,9 +63,6 @@ export class AblyService {
       [cellPrefixed(this.cellId, `notifications:${orgId}:${clientId}`)]: [
         "subscribe",
       ],
-      [cellPrefixed(this.cellId, `huddle-signal:${orgId}:*:${clientId}`)]: [
-        "subscribe",
-      ],
       [this.presenceChannelName(orgId)]: ["subscribe", "presence"],
     };
     for (const channelId of channelIds.slice(0, MAX_CAPABILITY_CHANNELS)) {
@@ -140,35 +137,6 @@ export class AblyService {
           orgId,
           channelId,
           event,
-          error: error instanceof Error ? error.message : String(error),
-          cause:
-            error instanceof Error && error.cause instanceof Error
-              ? error.cause.message
-              : undefined,
-        });
-      });
-  }
-
-  async publishHuddleSignal(
-    orgId: string,
-    channelId: number,
-    targetUserId: string,
-    data: unknown,
-  ): Promise<void> {
-    if (!this.apiKey) return;
-    await this.rest()
-      .channels.get(
-        cellPrefixed(
-          this.cellId,
-          `huddle-signal:${orgId}:${channelId}:${targetUserId}`,
-        ),
-      )
-      .publish("signal", data)
-      .catch((error: unknown) => {
-        this.logger.error("ably: publishHuddleSignal failed", {
-          orgId,
-          channelId,
-          targetUserId,
           error: error instanceof Error ? error.message : String(error),
           cause:
             error instanceof Error && error.cause instanceof Error
