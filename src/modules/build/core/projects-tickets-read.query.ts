@@ -21,7 +21,7 @@ const TICKET_LIST_COLUMNS = {
   ticketNumber: true,
   sprintId: true,
   epicId: true,
-  assigneeId: true,
+  assigneeMembershipId: true,
   reporterId: true,
   points: true,
   storyPoints: true,
@@ -40,25 +40,25 @@ const TICKET_LIST_COLUMNS = {
   updatedAt: true,
 } as const;
 
-export function queryTickets(
+export async function queryTickets(
   db: Db,
   where: SQL<unknown> | undefined,
   orderBy: SQL<unknown>[],
   limit: number,
 ) {
-  return db.query.tickets.findMany({
+  const rows = await db.query.tickets.findMany({
     where,
     limit,
     columns: TICKET_LIST_COLUMNS,
     with: {
-      assignee: { columns: USER_COLS },
+      assignee: { columns: {}, with: { user: { columns: USER_COLS } } },
       assignees: {
-        with: { user: { columns: USER_COLS } },
+        with: { user: { columns: {}, with: { user: { columns: USER_COLS } } } },
       },
       labels: {
         with: {
           label: {
-            columns: { id: true, name: true, color: true },
+            columns: { id: true, orgId: true, name: true, color: true, createdAt: true },
           },
         },
       },
@@ -74,4 +74,13 @@ export function queryTickets(
     },
     orderBy,
   });
+  return rows.map((row) => ({
+    ...row,
+    assigneeId: row.assignee?.user?.id ?? null,
+    assignee: row.assignee?.user ?? null,
+    assignees: row.assignees.flatMap((assignment) => {
+      const user = assignment.user?.user;
+      return user ? [{ ...assignment, userId: user.id, user }] : [];
+    }),
+  }));
 }

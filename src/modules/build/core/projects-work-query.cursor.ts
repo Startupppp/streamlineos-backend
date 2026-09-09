@@ -14,8 +14,8 @@ const SORT_COLUMNS = {
 export function serializeSortValue(
   row: {
     rank: string | null;
-    createdAt: Date | null;
-    updatedAt: Date | null;
+    cursorCreatedAt: string;
+    cursorUpdatedAt: string;
     priority: string | null;
     dueDate: string | null;
   },
@@ -25,17 +25,13 @@ export function serializeSortValue(
     case "rank":
       return row.rank ?? "";
     case "created":
-      return row.createdAt instanceof Date
-        ? row.createdAt.toISOString()
-        : String(row.createdAt ?? "");
+      return row.cursorCreatedAt;
     case "updated":
-      return row.updatedAt instanceof Date
-        ? row.updatedAt.toISOString()
-        : String(row.updatedAt ?? "");
+      return row.cursorUpdatedAt;
     case "priority":
       return row.priority ?? "";
     case "dueDate":
-      return row.dueDate ?? "";
+      return row.dueDate ?? "__null__";
   }
 }
 
@@ -44,15 +40,7 @@ export function buildCursorPredicate(
   dir: SortDirection,
   position: CursorPosition,
 ): SQL<unknown> {
-  const col = SORT_COLUMNS[sortKey];
-  const id = Number(position.id);
-  const value =
-    sortKey === "created" || sortKey === "updated"
-      ? new Date(position.sortValue)
-      : position.sortValue;
-  return dir === "asc"
-    ? sql`(${col}, ${tickets.id}) > (${sql.param(value, col)}, ${sql.param(id, tickets.id)})`
-    : sql`(${col}, ${tickets.id}) < (${sql.param(value, col)}, ${sql.param(id, tickets.id)})`;
+  return cursorBoundary(sql`${SORT_COLUMNS[sortKey]}`, sql`${tickets.id}`, sortKey, dir, position);
 }
 
 export function buildMineCursorPredicate(
@@ -60,12 +48,23 @@ export function buildMineCursorPredicate(
   dir: SortDirection,
   position: CursorPosition,
 ): SQL<unknown> {
-  const id = Number(position.id);
-  const value =
-    sortKey === "created" || sortKey === "updated"
-      ? new Date(position.sortValue).toISOString()
-      : String(position.sortValue);
-  return dir === "asc"
-    ? sql`(u.sort_col, u.id) > (${sql.param(value)}, ${sql.param(id)})`
-    : sql`(u.sort_col, u.id) < (${sql.param(value)}, ${sql.param(id)})`;
+  return cursorBoundary(sql`u.sort_col`, sql`u.id`, sortKey, dir, position);
+}
+
+function cursorBoundary(
+  column: SQL<unknown>,
+  idColumn: SQL<unknown>,
+  sortKey: WorkSortKey,
+  dir: SortDirection,
+  position: CursorPosition,
+): SQL<unknown> {
+  const id = sql.param(Number(position.id));
+  if (sortKey === "dueDate" && position.sortValue === "__null__")
+    return dir === "asc"
+      ? sql`(${column} IS NULL AND ${idColumn} > ${id})`
+      : sql`(${column} IS NOT NULL OR (${column} IS NULL AND ${idColumn} < ${id}))`;
+  const value = sql.param(position.sortValue);
+  if (dir === "desc") return sql`(${column}, ${idColumn}) < (${value}, ${id})`;
+  const tuple = sql`(${column}, ${idColumn}) > (${value}, ${id})`;
+  return sortKey === "dueDate" ? sql`(${tuple} OR ${column} IS NULL)` : tuple;
 }

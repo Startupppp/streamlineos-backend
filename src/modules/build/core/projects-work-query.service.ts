@@ -279,7 +279,11 @@ export class ProjectsWorkQueryService {
 
     const [rawRows, countRows] = await Promise.all([
       this.db
-        .select(WORK_ROW_SELECTION)
+        .select({
+          ...WORK_ROW_SELECTION,
+          cursorCreatedAt: sql<string>`${tickets.createdAt}::text`,
+          cursorUpdatedAt: sql<string>`${tickets.updatedAt}::text`,
+        })
         .from(tickets)
         .innerJoin(projects, eq(tickets.projectId, projects.id))
         .leftJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
@@ -350,7 +354,11 @@ export class ProjectsWorkQueryService {
     }
 
     const rows = await this.db
-      .select(WORK_ROW_SELECTION)
+      .select({
+        ...WORK_ROW_SELECTION,
+        cursorCreatedAt: sql<string>`${tickets.createdAt}::text`,
+        cursorUpdatedAt: sql<string>`${tickets.updatedAt}::text`,
+      })
       .from(tickets)
       .innerJoin(projects, eq(tickets.projectId, projects.id))
       .leftJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))

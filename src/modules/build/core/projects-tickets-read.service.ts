@@ -59,32 +59,28 @@ function ticketCursorBoundary(
   const id = Number(position.id);
   if (!Number.isSafeInteger(id) || id <= 0) return undefined;
 
-  let decoded: TicketCursorSort;
+  let decoded: unknown;
   try {
-    decoded = JSON.parse(String(position.sortValue)) as TicketCursorSort;
+    decoded = JSON.parse(String(position.sortValue));
   } catch {
     return undefined;
   }
   if (
-    !decoded ||
+    typeof decoded !== "object" || decoded === null ||
+    !("primary" in decoded) || !("createdAt" in decoded) ||
     !(decoded.primary === null || typeof decoded.primary === "string") ||
     typeof decoded.createdAt !== "string"
   ) {
     return undefined;
   }
 
-  const createdAt = new Date(decoded.createdAt);
-  if (Number.isNaN(createdAt.getTime())) return undefined;
+  if (Number.isNaN(Date.parse(decoded.createdAt))) return undefined;
   const primaryColumn = TICKET_ORDERBY_COLUMNS[orderBy];
-  const primaryValue =
-    orderBy === "created" || orderBy === "updated"
-      ? decoded.primary === null
-        ? null
-        : new Date(decoded.primary)
-      : decoded.primary;
-  if (primaryValue instanceof Date && Number.isNaN(primaryValue.getTime())) return undefined;
+  const primaryValue = decoded.primary;
+  const timestampPrimary = orderBy === "created" || orderBy === "updated";
+  if (timestampPrimary && primaryValue !== null && Number.isNaN(Date.parse(primaryValue))) return undefined;
 
-  const createdParam = sql.param(createdAt, tickets.createdAt);
+  const createdParam = sql`${decoded.createdAt}::timestamptz`;
   const idParam = sql.param(id, tickets.id);
   const tail = sql`(
     ${tickets.createdAt} < ${createdParam}
@@ -97,7 +93,7 @@ function ticketCursorBoundary(
       : or(and(isNull(primaryColumn), tail), isNotNull(primaryColumn));
   }
 
-  const primaryParam = sql.param(primaryValue, primaryColumn);
+  const primaryParam = timestampPrimary ? sql`${primaryValue}::timestamptz` : sql.param(primaryValue, primaryColumn);
   return direction === "asc"
     ? sql`(
         ${primaryColumn} > ${primaryParam}
@@ -370,9 +366,9 @@ export class ProjectsTicketsReadService {
     const rows = await this.db
       .select({
         id: tickets.id,
-        cursorPrimary: primaryColumn,
+        cursorPrimaryText: sql<string | null>`${primaryColumn}::text`,
         rank: tickets.rank,
-        createdAt: tickets.createdAt,
+        cursorCreatedAt: sql<string>`${tickets.createdAt}::text`,
       })
       .from(tickets)
       .where(bounded)
@@ -384,13 +380,8 @@ export class ProjectsTicketsReadService {
         orderBy === "rank"
           ? row.rank ?? ""
           : JSON.stringify({
-              primary:
-                row.cursorPrimary instanceof Date
-                  ? row.cursorPrimary.toISOString()
-                  : row.cursorPrimary === null
-                    ? null
-                    : String(row.cursorPrimary),
-              createdAt: row.createdAt.toISOString(),
+              primary: row.cursorPrimaryText,
+              createdAt: row.cursorCreatedAt,
             } satisfies TicketCursorSort),
       id: String(row.id),
     }));

@@ -68,8 +68,23 @@ export const ticketDetailSchema = ticketRowSchema.extend({
   labels: z.array(z.object({ id: z.number().int(), name: z.string(), color: z.string().nullable() })),
 });
 
+export const ticketListRowSchema = ticketRowSchema.pick({
+  id: true, orgId: true, title: true, type: true, status: true, priority: true,
+  projectId: true, ticketNumber: true, sprintId: true, epicId: true,
+  assigneeMembershipId: true, reporterId: true, points: true, storyPoints: true,
+  link: true, rank: true, parentTicketId: true, originalEstimate: true,
+  timeSpent: true, startDate: true, dueDate: true, moduleId: true, cycleId: true,
+  sequenceId: true, estimate: true, createdAt: true, updatedAt: true,
+}).extend({
+  assigneeId: z.string().nullable(),
+  assignee: userSummarySchema,
+  assignees: z.array(z.object({ id: z.number().int(), ticketId: z.number().int(), assignedAt: wireDate(), assignedBy: z.string().nullable(), userId: z.string(), user: userSummarySchema.unwrap() })),
+  labels: z.array(z.object({ id: z.number().int(), ticketId: z.number().int(), labelId: z.number().int(), createdAt: wireDate(), label: z.object({ id: z.number().int(), orgId: z.string(), name: z.string(), color: z.string().nullable(), createdAt: wireDate() }) })),
+  cycle: z.object({ id: z.number().int(), name: z.string(), status: z.string(), startDate: z.string(), endDate: z.string() }).nullable(),
+});
+
 export const ticketListPageSchema = z.object({
-  data: z.array(ticketRowSchema),
+  data: z.array(ticketListRowSchema),
   pagination: z.object({
     limit: z.number().int(),
     hasMore: z.boolean(),
@@ -218,15 +233,25 @@ export const columnCountsSchema = z.record(z.string(), z.number().int());
 
 export const allWorkItemSchema = z.object({
   id: z.number().int(),
-  orgId: z.string(),
   title: z.string(),
   type: z.string(),
   status: z.string(),
-  priority: z.string(),
+  priority: z.string().nullable(),
   projectId: z.number().int().nullable(),
+  projectKey: z.string().nullable(),
+  projectName: z.string().nullable(),
   ticketNumber: z.number().int(),
   dueDate: z.string().nullable(),
-  assigneeMembershipId: z.number().int().nullable(),
+  startDate: z.string().nullable(),
+  points: z.number().nullable(),
+  estimate: z.number().nullable(),
+  rank: z.string().nullable(),
+  sprintId: z.number().int().nullable(),
+  cycleId: z.number().int().nullable(),
+  epicId: z.number().int().nullable(),
+  assigneeId: z.string().nullable(),
+  assignee: userSummarySchema.unwrap().extend({ email: z.string().nullable() }).nullable(),
+  labels: z.array(z.object({ id: z.number().int(), name: z.string(), color: z.string().nullable() })),
   createdAt: wireDate(),
   updatedAt: wireDate(),
 });
@@ -238,4 +263,3 @@ export const allWorkPageSchema = z.object({
   hasMore: z.boolean(),
   total: z.number().int().optional(),
 });
-

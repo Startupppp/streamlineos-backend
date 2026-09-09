@@ -99,7 +99,7 @@ function buildHarness(board: Board) {
         findMany: jest.fn(({ where }: { where: SQL }) => {
           const { params } = dialect.sqlToQuery(where);
           const ids = params.filter((p): p is number => typeof p === "number");
-          return Promise.resolve(ids.map((id) => ({ id, title: `T${id}` })));
+          return Promise.resolve(ids.map((id) => ({ id, title: `T${id}`, assignee: null, assignees: [] })));
         }),
       },
     },

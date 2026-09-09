@@ -38,6 +38,7 @@ export class ProjectsQueryService {
 
   async listProjects(u: CurrentUserContext, input: ListProjectsInput) {
     const scope = await resolveProjectsScope(this.access, u);
+    if (scope === "none") return { data: [], hasMore: false, nextCursor: null };
     const orgId = u.orgId;
     const userId = u.userId;
     const membershipId = actingMembershipId(u.principal);
