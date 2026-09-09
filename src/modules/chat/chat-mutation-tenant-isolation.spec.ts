@@ -16,6 +16,7 @@ import { ChatHuddleSignalsService } from "./chat-huddle-signals.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
+import { ComposioGateway } from "../integrations/core/composio.gateway";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -288,6 +289,7 @@ describe("ChatHuddlesService — cross-tenant isolation on huddle operations", (
         { provide: AuditService, useValue: { log: jest.fn() } },
         { provide: ChatOrgSettingsService, useValue: {} },
         { provide: PlanLimitsService, useValue: {} },
+        { provide: ComposioGateway, useValue: {} },
       ],
     }).compile();
     const service = module.get(ChatHuddlesService);
