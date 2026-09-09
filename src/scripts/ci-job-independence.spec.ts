@@ -100,15 +100,47 @@ describe("T20 — CI jobs that must not be able to silence each other", () => {
     expect(commands).toContain("--ci --testPathPattern");
     expect(commands).not.toContain("--passWithNoTests");
 
-    // And every ratchet step has a file the job asserts is present, so adding a
-    // ratchet without its existence check — the way a rename becomes invisible —
-    // fails here rather than a year later.
+    /*
+     * Every ratchet has a file the job asserts is present, and every asserted
+     * file is actually run by something — the two directions of "a rename
+     * becomes invisible".
+     *
+     * This was `asserted.size === ratchets.length` and had been RED. Not because
+     * a ratchet lost its existence check, but because the list legitimately
+     * guards a NINTH file — `inventory-schema-parity.db.spec.ts` — which runs in
+     * the sibling `inventory-live-schema` job, deliberately separate so this
+     * job's pure source scans never see a `DATABASE_URL`. Equality punished the
+     * workflow for asserting more than the minimum, and asserting that file here
+     * is right: it costs nothing and it is free of the credential this job must
+     * not hold.
+     *
+     * So the pairing is made explicit through each step's own
+     * `--testPathPattern`, which is the only real link between a step name and
+     * the file it runs, and the second direction searches the WHOLE workflow
+     * rather than this one job.
+     */
     expect(body).toContain("MISSING RATCHET");
     const existenceCheck = body.slice(body.indexOf("ratchets exist"));
-    const asserted = new Set(
-      [...existenceCheck.matchAll(/src\/[^\s"';]+\.spec\.ts/g)].map((m) => m[0]),
-    );
-    expect(asserted.size).toBe(ratchets.length);
+    const asserted = [...existenceCheck.matchAll(/src\/[^\s"';]+\.spec\.ts/g)].map((m) => m[0]);
+    expect(new Set(asserted).size).toBe(asserted.length);
+
+    const patternsIn = (text: string): string[] =>
+      [...text.matchAll(/--testPathPattern=([^\s"'\\]+)/g)].map((m) => m[1] ?? "");
+
+    // (1) No ratchet without an existence check.
+    for (const step of body.split(/^ {6}- name: /m).slice(1)) {
+      const name = (step.split("\n")[0] ?? "").trim();
+      if (!name.startsWith("Ratchet - ")) continue;
+      const patterns = patternsIn(step);
+      expect(patterns.length).toBeGreaterThan(0);
+      for (const pattern of patterns)
+        expect(asserted.some((file) => file.includes(pattern))).toBe(true);
+    }
+
+    // (2) No existence check for a file nothing runs, anywhere in the workflow.
+    const everyPattern = patternsIn(src);
+    for (const file of asserted)
+      expect(everyPattern.some((pattern) => file.includes(pattern))).toBe(true);
   });
 
   it("triggers on a push to a feature branch, not only on a mergeable PR", () => {
