@@ -444,8 +444,29 @@ export class GrnService {
     warehouseId: number | null,
     requested: number | undefined,
   ): Promise<number> {
-    if (requested === undefined)
+    if (requested === undefined) {
+      /*
+       * The named location below has been asserted since it was written. The
+       * DEFAULT was not, and it is the same receipt into the same building: with
+       * no `locationId` in the body this falls back to the first active location
+       * of the *purchase order's* warehouse, which `loadReceivablePo` looks up on
+       * `org_id` alone. So a body naming somebody else's purchase order received
+       * goods into somebody else's building, and a draft — which posts no
+       * movements — never reached the engine's `assertLocationsInScope` to be
+       * refused there.
+       *
+       * The warehouse rather than the resolved location, because they are the
+       * same question here (the default is by construction inside that
+       * warehouse) and `assertWarehouseVisible` answers it without a second
+       * query. 404, not 403.
+       *
+       * This refuses no flow that completes today: a receipt that actually posts
+       * movements into a warehouse the caller does not hold is already refused
+       * by the engine, and an unrestricted caller passes both.
+       */
+      await this.warehouseScope.assertWarehouseVisible(orgId, userId, warehouseId);
       return this.poService.resolveLocationId(orgId, warehouseId);
+    }
 
     const loc = await this.db.query.invLocations.findFirst({
       where: and(
