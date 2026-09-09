@@ -21,23 +21,16 @@
  *     node test/perf/ai/measure-kb-retrieval-latency.mjs [--runs=25] [--json=out.json]
  */
 import { writeFileSync } from "node:fs";
-import postgres from "postgres";
 import { CORPUS, TOTAL_CHUNKS } from "./kb-retrieval-corpus.mjs";
-
-const ownerUrl = process.env.PERF_DATABASE_URL;
-const appUrl = process.env.PERF_APP_DATABASE_URL;
-if (!ownerUrl || !appUrl) {
-  console.error("PERF_DATABASE_URL and PERF_APP_DATABASE_URL are both required.");
-  process.exit(2);
-}
-for (const [name, url] of [
-  ["PERF_DATABASE_URL", ownerUrl],
-  ["PERF_APP_DATABASE_URL", appUrl],
-])
-  if (!/\/scratch_/.test(url)) {
-    console.error(`Refusing to run: ${name} must name a scratch_* database.`);
-    process.exit(2);
-  }
+import {
+  assertAppRoleIsNotPrivileged,
+  assertRlsBites,
+  describePlan,
+  inRolledBackTx,
+  openConnections,
+  percentile,
+  sumBuffers,
+} from "./kb-retrieval-probe.mjs";
 
 const args = process.argv.slice(2);
 /**
@@ -52,14 +45,20 @@ const runs = Math.max(
 );
 const jsonOut = args.find((a) => a.startsWith("--json="))?.slice(7);
 
-const owner = postgres(ownerUrl, { max: 1, onnotice: () => {} });
-const app = postgres(appUrl, { max: 1, onnotice: () => {} });
+const { owner, app } = openConnections();
 
 /**
- * `KbCandidateService.vectorChunkIds` verbatim, and the fence it falls back to.
- * Caps come from the real call sites: `articleVectorCandidates` uses
- * `pool * 4` where `pool = max(limit * 3, limit)`, and `KbRagRetrievalService`
- * uses `DEFAULT_TOP_K * 4` = 24.
+ * The RLS-only form of `KbCandidateService.vectorChunkIds`, and the fence it
+ * falls back to. Caps come from the real call sites: `articleVectorCandidates`
+ * uses `pool * 4` where `pool = max(limit * 3, limit)`, and
+ * `KbRagRetrievalService` uses `DEFAULT_TOP_K * 4` = 24.
+ *
+ * **This is not the production query shape**, and the header used to claim it
+ * was. `kb-candidate.service.ts:30-33` carries an explicit `WHERE org_id = $1`
+ * on top of RLS, which changes the plan. The production shape is measured by
+ * `measure-kb-retrieval-recall.mjs`, which is where recall and plan choice are
+ * decided; this file keeps the RLS-only form so its numbers stay comparable
+ * with the run already recorded in `45-scale/`.
  */
 const SCENARIOS = [
   {
@@ -88,64 +87,11 @@ const SCENARIOS = [
   },
 ];
 
-function percentile(sortedAscending, fraction) {
-  if (sortedAscending.length === 0) return 0;
-  const index = Math.min(
-    sortedAscending.length - 1,
-    Math.max(0, Math.ceil(fraction * sortedAscending.length) - 1),
-  );
-  return sortedAscending[index];
-}
-
-function sumBuffers(node, acc = { hit: 0, read: 0 }) {
-  acc.hit += node["Shared Hit Blocks"] ?? 0;
-  acc.read += node["Shared Read Blocks"] ?? 0;
-  for (const child of node.Plans ?? []) sumBuffers(child, acc);
-  return acc;
-}
-
-function describePlan(node) {
-  const names = [];
-  const walk = (n) => {
-    names.push(n["Node Type"] === "Index Scan" ? `Index Scan(${n["Index Name"]})` : n["Node Type"]);
-    for (const c of n.Plans ?? []) walk(c);
-  };
-  walk(node);
-  return names.join(" > ");
-}
-
 async function queryVectors(count) {
   const rows = await owner`
     SELECT emb::text AS emb FROM perf_topic_pool ORDER BY id LIMIT ${count}`;
   if (rows.length === 0) throw new Error("perf_topic_pool is empty — run the seeder first");
   return rows.map((r) => r.emb);
-}
-
-async function assertAppRoleIsNotPrivileged() {
-  const [role] = await app`
-    SELECT current_user AS name, rolbypassrls, rolsuper
-    FROM pg_roles WHERE rolname = current_user`;
-  if (role.rolbypassrls || role.rolsuper)
-    throw new Error(
-      `Refusing to measure as ${role.name}: it bypasses RLS, so the tenant qual would not be planned.`,
-    );
-  return role.name;
-}
-
-/** Proves the GUC really gates the table, so a silent BYPASSRLS cannot pass unnoticed. */
-async function assertRlsBites() {
-  let raised = null;
-  try {
-    await app.begin(async (tx) => {
-      await tx.unsafe(`SELECT count(*) FROM public.kb_article_chunks`);
-      throw new Error("ROLLBACK");
-    });
-  } catch (error) {
-    raised = error;
-  }
-  const message = raised instanceof Error ? raised.message : String(raised);
-  if (!/no tenant context|42501/.test(message))
-    throw new Error(`Expected 42501 with no tenant GUC, got: ${message}`);
 }
 
 async function measure(scenario, orgId, vectors) {
@@ -156,21 +102,20 @@ async function measure(scenario, orgId, vectors) {
 
   for (let i = 0; i < runs + 3; i += 1) {
     const vector = vectors[i % vectors.length];
-    let sample = null;
-    await app
-      .begin(async (tx) => {
-        await tx.unsafe(`SET LOCAL app.organization_id = '${orgId}'`);
-        await tx.unsafe(`SET LOCAL hnsw.iterative_scan = ${scenario.iterativeScan}`);
+    const sample = await inRolledBackTx(
+      app,
+      [
+        `SET LOCAL app.organization_id = '${orgId}'`,
+        `SET LOCAL hnsw.iterative_scan = ${scenario.iterativeScan}`,
+      ],
+      async (tx) => {
         const explained = await tx.unsafe(
           `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${scenario.sql}`,
           [vector],
         );
-        sample = explained[0]["QUERY PLAN"][0];
-        throw new Error("__rollback__");
-      })
-      .catch((error) => {
-        if (!(error instanceof Error) || error.message !== "__rollback__") throw error;
-      });
+        return explained[0]["QUERY PLAN"][0];
+      },
+    );
 
     // The first three are warm-up: a cold page cache and a cold HNSW entry point
     // would otherwise dominate the first sample and skew the median.
@@ -200,8 +145,8 @@ async function measure(scenario, orgId, vectors) {
 
 async function main() {
   const [{ current_database: db }] = await owner`SELECT current_database()`;
-  const roleName = await assertAppRoleIsNotPrivileged();
-  await assertRlsBites();
+  const roleName = await assertAppRoleIsNotPrivileged(app);
+  await assertRlsBites(app);
 
   const counts = await owner`
     SELECT org_id, count(*)::int AS chunks
