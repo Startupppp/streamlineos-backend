@@ -336,13 +336,12 @@ describe("agent token cross-module boundary (AgentTokenGuard + PermissionGuard)"
   Mount `AgentTokenGuard` on any further surface — the CRM MCP controller being
   the obvious candidate — and this is the behaviour that surface inherits.
 
-  CRM-P1-16, the product consequence of the paragraph above, which is easy to
-  read past because both halves look finished on their own.
+  CRM-P1-16, RESOLVED — the paragraph above is the reason it was possible.
 
-  `CrmMcpController` (`/crm/mcp`) carries `@UseGuards(JwtAuthGuard)` and nothing
+  `CrmMcpController` (`/crm/mcp`) carried `@UseGuards(JwtAuthGuard)` and nothing
   else. `JwtAuthGuard` resolves session JWTs and personal access tokens against
-  `user_api_tokens`; it contains no reference to `agent_tokens` at all.
-  `AgentTokenGuard` is the only thing that reads that table, and it admits only
+  `user_api_tokens`; it contained no reference to `agent_tokens` at all.
+  `AgentTokenGuard` was the only thing that read that table, and it admits only
   a `Bearer slos_` credential.
 
   Meanwhile the frontend page at `/crm/settings/mcp` is titled "MCP Agent
@@ -350,17 +349,36 @@ describe("agent token cross-module boundary (AgentTokenGuard + PermissionGuard)"
   exposed to MCP clients" — and it issues `slos_` agent tokens, from
   `POST /agent-tokens`.
 
-  So a token created on that page and presented to `/crm/mcp/tools` is refused
-  401 as unauthenticated, before scopes are considered. The credential the
-  product hands out for the CRM MCP server is not one that server accepts. Both
-  sides are individually correct, which is why nothing catches it: the guard is
-  right about what it admits, the issuer is right about what it mints, and no
-  test crosses the gap.
+  So a token created on that page and presented to `/crm/mcp/tools` was refused
+  401 as unauthenticated, before scopes were considered. The credential the
+  product handed out for the CRM MCP server was not one that server accepted.
+  Both sides were individually correct, which is why nothing caught it: the
+  guard was right about what it admitted, the issuer was right about what it
+  minted, and no test crossed the gap.
 
-  Deliberately not fixed here. Mounting `AgentTokenGuard` on the MCP controller
-  is a decision to let a non-session credential reach customer data, and the
-  isolation story above is what makes that safe rather than what makes it
-  somebody's to do quietly. The two coherent answers are to mount it — the
-  ceiling proven in this file is exactly what would then apply — or to stop the
-  settings page offering agent tokens for a surface that cannot take them.
+  The product owner took the first of the two answers: mount it. What that
+  required was more than a mount, and the extra part is worth stating because
+  the isolation story above is what made it safe:
+
+  1. Not a second guard. Nest runs APP_GUARDs before controller guards, so
+     `JwtAuthGuard` answered a `slos_` credential before any controller-level
+     `AgentTokenGuard` could run — the two would have shadowed, not composed.
+     `@Public()`, which is how `AgentController` escapes the global chain, would
+     have switched off `MfaGuard` and `ModuleGuard` too. So the opt-in lives
+     inside `JwtAuthGuard` as `@AllowAgentToken()`, closed by default, and both
+     guards now read `agent_tokens` through one shared `resolveAgentToken`.
+
+  2. The ceiling did not yet bind on that surface. `CrmMcpService` authorized
+     with `resolveUserPermissions(orgId, userId)` — the raw membership map,
+     which takes no principal and so cannot see a token's scopes. Mounting
+     alone would have admitted a `crm:deals:read` token and handed it every CRM
+     tool its issuer held. It now goes through `authorize`, the same function
+     `PermissionGuard` calls, so the behaviour this file proves is the
+     behaviour that surface actually inherited.
+
+  The reachability note above still holds for payroll and inventory: no
+  production route of theirs is wired to this chain. It no longer holds
+  generally — `crm-mcp-agent-token.seeded-e2e-spec.ts` drives a real agent token
+  at `/agent/v1/me` with the `build` module enabled and receives exactly the 403
+  proven here, on a live route, from a real caller.
 */
