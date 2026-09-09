@@ -304,7 +304,23 @@ export class CrmMcpService {
         if (typeof anyDealsService.list === "function") {
           result = await anyDealsService.list(context.orgId, query);
         } else if (typeof anyDealsService.listDeals === "function") {
-          result = await anyDealsService.listDeals(context.orgId, context.userId, query, "global");
+          /*
+           * THIS ONE WAS NOT HARMLESS. `listDeals` has taken a real
+           * `DataScope` all along, and "global" is not a member of it —
+           * `applyScope` falls through to its exhaustive default and returns
+           * `sql\`false\``, so `crm_list_deals` has been answering every agent
+           * with an EMPTY LIST. Silently: an empty result from a deals query is
+           * indistinguishable from an organisation that has no deals.
+           *
+           * Found only because the sibling `crm_get_deal` passed the same string
+           * to a method that ignored it, and fixing that made this one visible.
+           */
+          result = await anyDealsService.listDeals(
+            context.orgId,
+            context.userId,
+            query,
+            decision.scope,
+          );
         }
         break;
       }
@@ -315,7 +331,23 @@ export class CrmMcpService {
         if (typeof anyDealsService.findOne === "function") {
           result = await anyDealsService.findOne(context.orgId, dealId);
         } else if (typeof anyDealsService.getDeal === "function") {
-          result = await anyDealsService.getDeal(context.orgId, context.userId, dealId, "global");
+          /*
+           * `decision.scope`, not the string "global" this passed before.
+           *
+           * `authorize` above resolves the caller's DataScope and clamps it to a
+           * token's ceiling, and the docblock on this class promises "the exact
+           * same permission resolution via AccessService" as HTTP. The handler
+           * then threw that away and passed a value that is not a `DataScope` at
+           * all — harmless only because `getDeal` took two arguments and ignored
+           * it, which is to say the scope had never reached the query on either
+           * path. Now that the HTTP path honours it, so does this one.
+           */
+          result = await anyDealsService.getDeal(
+            context.orgId,
+            context.userId,
+            dealId,
+            decision.scope,
+          );
         }
         break;
       }

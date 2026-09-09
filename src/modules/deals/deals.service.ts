@@ -72,8 +72,8 @@ export class DealsService {
     return this.crud.createDeal(orgId, userId, input);
   }
 
-  getDeal(orgId: string, dealId: number) {
-    return this.crud.getDeal(orgId, dealId);
+  getDeal(orgId: string, userId: string, dealId: number, scope: DataScope) {
+    return this.crud.getDeal(orgId, userId, dealId, scope);
   }
 
   deleteDeal(orgId: string, userId: string, dealId: number) {
@@ -88,8 +88,8 @@ export class DealsService {
     return this.crud.bulkDelete(orgId, userId, input);
   }
 
-  cloneDeal(orgId: string, dealId: number) {
-    return this.crud.cloneDeal(orgId, dealId);
+  cloneDeal(orgId: string, userId: string, dealId: number, scope: DataScope) {
+    return this.crud.cloneDeal(orgId, userId, dealId, scope);
   }
 
   listActivities(orgId: string, dealId: number) {
