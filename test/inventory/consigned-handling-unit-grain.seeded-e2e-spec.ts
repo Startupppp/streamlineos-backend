@@ -42,7 +42,13 @@ const PERMISSIONS = [
   "inventory:stock:reconcile",
   "inventory:quality:read",
   "inventory:quality:recall",
-  "inventory:handling-units:manage",
+  // Handling units are authorized as stock, not as a namespace of their own:
+  // `handling-units.controller.ts` reads with `inventory:stock:read` and moves
+  // with `inventory:stock:transfer`. `inventory:handling-units:manage` was a
+  // key that has never existed in the catalogue, and the FK on
+  // `role_permission_grants.permission_key` refuses it — which is what made
+  // this suite red the first time the whole of `test/inventory` was run.
+  "inventory:stock:transfer",
 ] as const;
 
 /** On the pallet, and the supplier's. */

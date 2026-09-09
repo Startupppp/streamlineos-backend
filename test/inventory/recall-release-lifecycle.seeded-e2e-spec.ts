@@ -42,7 +42,12 @@ const PERMISSIONS = [
   "inventory:stock:reconcile",
   "inventory:quality:read",
   "inventory:quality:recall",
-  "inventory:quality:hold",
+  // Raising a hold is `inventory:quality:inspect` — `holds.controller.ts:49`.
+  // `inventory:quality:hold` reads like the obvious name and has never existed
+  // in the catalogue; the FK on `role_permission_grants.permission_key` refuses
+  // it, which is what made this suite red the first time the whole of
+  // `test/inventory` was run.
+  "inventory:quality:inspect",
   "inventory:quality:release",
 ] as const;
 
