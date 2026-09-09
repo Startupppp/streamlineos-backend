@@ -273,6 +273,14 @@ export class SupportKbService {
     const contentChanged = input.content !== undefined && input.content !== current.content;
     const aclChanged = input.visibility !== undefined && input.visibility !== current.visibility;
 
+    /**
+     * The precondition comes from the client, not from the row this request just read — a
+     * revision read microseconds earlier only closes the window inside one request and still
+     * lets two editors overwrite each other. `updateKbArticleSchema` demands it whenever
+     * content is written, so an unguarded body write cannot be expressed.
+     */
+    const revisionGuard = contentChanged ? input.expectedContentRevision : undefined;
+
     return this.db.transaction(async (tx) => {
       const [updated] = await tx
         .update(kbArticles)
@@ -285,12 +293,13 @@ export class SupportKbService {
           and(
             eq(kbArticles.id, articleId),
             eq(kbArticles.orgId, orgId),
-            eq(kbArticles.contentRevision, current.contentRevision),
+            ...(revisionGuard === undefined ? [] : [eq(kbArticles.contentRevision, revisionGuard)]),
           ),
         )
         .returning();
 
       if (!updated) {
+        if (revisionGuard === undefined) throw new NotFoundException("Article not found");
         throw new HttpException(
           { message: "Article was modified by another editor. Reload to see the latest version.", code: "STALE_REVISION" },
           HttpStatus.CONFLICT,

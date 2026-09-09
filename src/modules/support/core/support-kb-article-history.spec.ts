@@ -131,16 +131,31 @@ describe("SupportKbService.updateArticle — history, revision bump and lost-upd
     });
   });
 
-  it("guards the UPDATE with the revision it read — the predicate is in the bound SQL", async () => {
+  it("guards the UPDATE with the revision the CLIENT sent, not the one it just read", async () => {
     const { db, capturedWheres } = makeDb(makeCurrent(7), [makeUpdated(8)]);
     const svc = new SupportKbService(db, indexing);
 
-    await svc.updateArticle(ORG_ID, ARTICLE_ID, { content: "new body" });
+    await svc.updateArticle(ORG_ID, ARTICLE_ID, {
+      content: "new body",
+      expectedContentRevision: 5,
+    });
 
     const vals = capturedWheres.flatMap(w => sqlValues(w));
-    expect(vals).toContain(7);
+    expect(vals).toContain(5);
+    expect(vals).not.toContain(7);
     expect(vals).toContain(ARTICLE_ID);
     expect(vals).toContain(ORG_ID);
+  });
+
+  it("a metadata-only edit carries no revision predicate — a rename is not gated on someone else's typing", async () => {
+    const { db, capturedWheres } = makeDb(makeCurrent(7), [makeUpdated(7)]);
+    const svc = new SupportKbService(db, indexing);
+
+    await svc.updateArticle(ORG_ID, ARTICLE_ID, { title: "Renamed" });
+
+    const vals = capturedWheres.flatMap(w => sqlValues(w));
+    expect(vals).not.toContain(7);
+    expect(vals).toContain(ARTICLE_ID);
   });
 
   it("throws 409 STALE_REVISION and writes no version when a concurrent edit won the race", async () => {
@@ -149,7 +164,10 @@ describe("SupportKbService.updateArticle — history, revision bump and lost-upd
 
     let caught: unknown;
     try {
-      await svc.updateArticle(ORG_ID, ARTICLE_ID, { content: "new body" });
+      await svc.updateArticle(ORG_ID, ARTICLE_ID, {
+        content: "new body",
+        expectedContentRevision: 5,
+      });
     } catch (e) {
       caught = e;
     }

@@ -42,7 +42,18 @@ export const updateKbArticleSchema = z.object({
   status: z.enum(["draft", "published", "archived"]).optional(),
   visibility: z.enum(["public", "internal"]).optional(),
   tags: z.array(z.string().min(1).max(50)).max(20).nullable().optional(),
-}).strict();
+  expectedContentRevision: z.coerce.number().int().positive().optional(),
+})
+  .strict()
+  .superRefine((input, ctx) => {
+    if (input.content !== undefined && input.expectedContentRevision === undefined)
+      ctx.addIssue({
+        code: "custom",
+        path: ["expectedContentRevision"],
+        message:
+          "expectedContentRevision is required when content is written — content_revision is what an unguarded write clobbers",
+      });
+  });
 
 export const createKbCommentSchema = z.object({
   body: z.string().trim().min(1, "Comment cannot be empty").max(5000),
