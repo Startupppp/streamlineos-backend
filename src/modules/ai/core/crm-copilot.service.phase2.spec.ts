@@ -10,7 +10,7 @@ import { AiJobsService } from "../jobs/ai-jobs.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { OrgFeatureFlags } from "./services/org-features.service";
 import type { AiInvokeResult } from "./gateway/ai-gateway.types";
-import { DealPredictionSchema } from "./dto/output.schemas";
+import { DealPredictionSchema, type StaleDeal } from "./dto/output.schemas";
 
 const ALL_FLAGS_ON: OrgFeatureFlags = {
   aiChat: true,
@@ -243,10 +243,11 @@ describe("CrmCopilotService Phase 2", () => {
    */
   function computedDigest(
     result: Awaited<ReturnType<CrmPipelineService["stalePipelineDigest"]>>,
-  ) {
-    if (!("staleDeals" in result))
+  ): { staleDeals: StaleDeal[] } {
+    const staleDeals = (result as { staleDeals?: StaleDeal[] }).staleDeals;
+    if (staleDeals === undefined)
       throw new Error("expected a computed digest, got a queued job");
-    return result;
+    return { staleDeals };
   }
 
   describe("stalePipelineDigest (CrmPipelineService)", () => {
