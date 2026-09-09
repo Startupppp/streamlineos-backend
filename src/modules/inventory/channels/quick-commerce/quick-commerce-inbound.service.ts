@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import {
   invAsnLines,
   invAsns,
@@ -592,14 +592,60 @@ export class QuickCommerceInboundService {
       ),
     );
 
-    return this.asnDetail(orgId, asnId.asnId);
+    return this.loadAsnUnscoped(orgId, asnId.asnId);
   }
 
-  async asnDetail(orgId: string, asnId: number) {
+  /**
+   * One ASN, behind the SAME warehouse scope `listAsns` applies.
+   *
+   * This took no `userId` at all — the controller never passed one — so it
+   * answered on `org_id` and the row id alone while the list directly below it
+   * resolves the caller's warehouses and gates on them. The list was scoped and
+   * the detail was not, which is the same shape as the labour-records hole:
+   * whoever cannot see a row in the list can still read it whole by id.
+   *
+   * Not reachable from the product today, because nothing calls this route yet.
+   * That is the reason to fix it now rather than later: the quick-commerce UI is
+   * unbuilt, and a detail page wired to an unscoped read is how the hole ships.
+   *
+   * The predicate matches the LIST's, including `warehouseId IS NULL` — an ASN
+   * with no warehouse attributed is visible to everyone there, and a detail that
+   * refused those would deny rows the list had just offered. That is a different
+   * rule from the labour records, where an unattributed row is excluded; each
+   * detail follows its own aggregate rather than a house default.
+   *
+   * Out of scope is 404, the same answer as a missing row, so this does not
+   * become an oracle for which ASNs exist.
+   */
+  async asnDetail(orgId: string, userId: string, asnId: number) {
+    const scope = await this.warehouseScope.resolve(orgId, userId);
+    const conditions = [eq(invAsns.orgId, orgId), eq(invAsns.id, asnId)];
+    if (scope !== null) {
+      conditions.push(
+        scope.length === 0
+          ? sql`FALSE`
+          : sql`(${invAsns.warehouseId} IS NULL OR ${inArray(invAsns.warehouseId, scope)})`,
+      );
+    }
+    return this.loadAsn(conditions, orgId, asnId);
+  }
+
+  /**
+   * The unscoped read, named so nobody routes to it by accident.
+   *
+   * `createAsn` returns the row it has just written, and the writer is entitled
+   * to see what they wrote — putting the read gate on that path would 404 a
+   * creator against their own new record.
+   */
+  private async loadAsnUnscoped(orgId: string, asnId: number) {
+    return this.loadAsn([eq(invAsns.orgId, orgId), eq(invAsns.id, asnId)], orgId, asnId);
+  }
+
+  private async loadAsn(conditions: SQL[], orgId: string, asnId: number) {
     const [header] = await this.db
       .select()
       .from(invAsns)
-      .where(and(eq(invAsns.orgId, orgId), eq(invAsns.id, asnId)));
+      .where(and(...conditions));
     if (!header) throw new NotFoundException("Not found");
 
     const lines = await this.db

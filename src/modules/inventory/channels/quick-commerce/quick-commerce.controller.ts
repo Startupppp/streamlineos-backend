@@ -117,7 +117,7 @@ export class QuickCommerceController {
     @Param("asnId", ParseIntPipe) asnId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.asnDetail(u.orgId, asnId);
+    return this.svc.asnDetail(u.orgId, u.userId, asnId);
   }
 
   @Post("asns")
