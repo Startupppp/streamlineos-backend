@@ -243,8 +243,8 @@ export class CallAnalysisVisibilityService {
     organizationId: string,
     activityIds: readonly string[],
     analyzerVersion: number,
-  ): Promise<Map<string, { repUserId: string | null; release: CallAnalysisRelease | null }>> {
-    const out = new Map<string, { repUserId: string | null; release: CallAnalysisRelease | null }>();
+  ): Promise<Map<string, CallAnalysisSubjectFacts>> {
+    const out = new Map<string, CallAnalysisSubjectFacts>();
     if (activityIds.length === 0) return out;
 
     const ids = [...new Set(activityIds)];
@@ -255,6 +255,13 @@ export class CallAnalysisVisibilityService {
           activityId: activities.activityId,
           actorKind: activities.actorKind,
           actorUserId: activities.actorUserId,
+          /**
+           * When the call happened, which is not when it was analysed. The
+           * visibility rule reasons entirely from `analysed_at` and never wants
+           * this — it is here for the surfaces that list calls back to a human,
+           * where "analysed on Tuesday" is not what somebody is looking for.
+           */
+          occurredAt: activities.occurredAt,
         })
         .from(activities)
         .where(
@@ -291,10 +298,25 @@ export class CallAnalysisVisibilityService {
     for (const call of calls) {
       out.set(call.activityId, {
         repUserId: call.actorKind === "human" ? call.actorUserId : null,
+        occurredAt: call.occurredAt ?? null,
         release: releaseByActivity.get(call.activityId) ?? null,
       });
     }
 
     return out;
   }
+}
+
+/**
+ * What the batched read knows about one call.
+ *
+ * A named type rather than an inline object because three services now destructure
+ * it, and an inline shape that gains a field is a shape every one of them has to
+ * be re-read to understand.
+ */
+export interface CallAnalysisSubjectFacts {
+  readonly repUserId: string | null;
+  /** Null only when the activity read did not supply one. */
+  readonly occurredAt: Date | null;
+  readonly release: CallAnalysisRelease | null;
 }

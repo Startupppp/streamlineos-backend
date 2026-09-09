@@ -8,6 +8,7 @@ import {
   callAnalysisReleases,
 } from "../../db/schema/crm/call-analysis";
 import type { AccessService } from "../access/access.service";
+import { CallAnalysisCohortService } from "./call-analysis-cohort.service";
 import { CallAnalysisVisibilityService } from "./call-analysis-visibility.service";
 import { COACHING_MIN_COHORT } from "./call-coaching";
 import { CallCoachingService } from "./call-coaching.service";
@@ -208,7 +209,14 @@ function build(analyses: AnalysisRow[], calls: ActivityRow[]) {
     db,
     access as unknown as AccessService,
   );
-  return { orgsAsked, service: new CallCoachingService(db, visibility, CONSENTING) };
+  /**
+   * The digest no longer assembles its own cohort; `CallAnalysisCohortService`
+   * does, and the digest maps what it is handed. The double below is unchanged
+   * because the reads are unchanged — the same three tables in the same order —
+   * which is the evidence that the extraction moved code and not behaviour.
+   */
+  const cohort = new CallAnalysisCohortService(db, visibility, CONSENTING);
+  return { orgsAsked, service: new CallCoachingService(cohort) };
 }
 
 describe("the coaching digest", () => {
