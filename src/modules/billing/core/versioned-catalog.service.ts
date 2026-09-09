@@ -192,8 +192,28 @@ export class VersionedCatalogService {
         })
         .onConflictDoUpdate({
           target: [orgEntitlementOverrides.orgId, orgEntitlementOverrides.idempotencyKey],
+          /**
+           * `uq_org_ent_overrides_idem` is partial — `WHERE idempotency_key IS
+           * NOT NULL`. PostgreSQL only infers a partial index when the
+           * statement repeats its predicate, so without this the arbiter
+           * matches nothing and the whole statement is rejected before it
+           * runs: "there is no unique or exclusion constraint matching the ON
+           * CONFLICT specification". Not a weaker guarantee — no insert at all.
+           *
+           * `setWhere` below reads like it would serve, and does not: it
+           * qualifies the UPDATE, not the conflict target. That near-miss is
+           * why this was invisible.
+           */
+          targetWhere: sql`idempotency_key IS NOT NULL`,
           set: { limitValue, reason, effectiveFrom: now, effectiveUntil: null },
-          setWhere: sql`idempotency_key IS NOT NULL`,
+          /**
+           * Qualified, because a DO UPDATE ... WHERE has both the stored row
+           * and `excluded` in scope, and a bare `idempotency_key` is ambiguous
+           * there — PostgreSQL rejects the statement a second time, for a
+           * second reason. The ON CONFLICT target above needs no qualification
+           * for the opposite reason: only the target table is in scope there.
+           */
+          setWhere: sql`${orgEntitlementOverrides.idempotencyKey} IS NOT NULL`,
         });
     } catch (err: unknown) {
       const pgErr = err as { code?: string };
