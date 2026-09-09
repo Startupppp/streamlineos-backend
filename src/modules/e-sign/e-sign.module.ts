@@ -25,6 +25,8 @@ import { SignEnvelopesService } from "./sign-envelopes.service";
 import { SignEnvelopeValidationService } from "./sign-envelope-validation.service";
 import { SignEnvelopeDispatchService } from "./sign-envelope-dispatch.service";
 import { SignEnvelopeSweepsService } from "./sign-envelope-sweeps.service";
+import { SMS_SENDER } from "./sms/sms-sender.port";
+import { EnvSmsSender } from "./sms/env-sms-sender";
 import { SignEnvelopesController } from "./sign-envelopes.controller";
 import { SignFinalizationService } from "./sign-finalization.service";
 import { SignPublicService } from "./sign-public.service";
@@ -75,6 +77,12 @@ import { SignReportsController } from "./sign-reports.controller";
     SignBulkSendService,
     SignWatermarkService,
     SignReportsService,
+    /**
+     * SMS, behind a port. The shipped sender reports that nothing is
+     * configured, which is the truth in every environment this repository
+     * knows about; binding a provider is the whole change.
+     */
+    { provide: SMS_SENDER, useClass: EnvSmsSender },
   ],
   exports: [
     SignAuditService,

@@ -1,4 +1,11 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { signDocuments, signEnvelopes, signFields, signPublicForms, signRecipients, signSignatureAssets, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -12,6 +19,7 @@ import { SignEnvelopesService } from "./sign-envelopes.service";
 import { SignFinalizationService } from "./sign-finalization.service";
 import { SignNotificationsService } from "./sign-notifications.service";
 import { SignIntegrationsService } from "./sign-integrations.service";
+import { SMS_SENDER, type SmsSenderPort } from "./sms/sms-sender.port";
 import { SignTemplatesService, parseTemplateSnapshot } from "./sign-templates.service";
 import { SignSettingsService } from "./sign-settings.service";
 import type {
@@ -58,6 +66,7 @@ export class SignPublicService {
     private readonly templates: SignTemplatesService,
     private readonly settings: SignSettingsService,
     private readonly integrations: SignIntegrationsService,
+    @Inject(SMS_SENDER) private readonly sms: SmsSenderPort,
   ) {}
 
   async getPublicForm(slug: string) {
@@ -260,8 +269,25 @@ export class SignPublicService {
   async requestOtp(token: string) {
     return this.withRecipientSession(token, async ({ recipient, envelope }) => {
       this.assertActive(recipient, envelope);
-      if (recipient.authMethod !== "otp_email") throw new BadRequestException("OTP is not enabled for this recipient");
-      if (!recipient.email) throw new BadRequestException("No email on file for OTP delivery");
+      if (recipient.authMethod !== "otp_email" && recipient.authMethod !== "otp_sms") {
+        throw new BadRequestException("OTP is not enabled for this recipient");
+      }
+
+      const viaSms = recipient.authMethod === "otp_sms";
+      if (viaSms && !recipient.phone) throw new BadRequestException("No phone number on file for OTP delivery");
+      if (!viaSms && !recipient.email) throw new BadRequestException("No email on file for OTP delivery");
+
+      /**
+       * Checked before the code is minted, not after. Storing a hash and an
+       * expiry and then failing to deliver leaves the recipient staring at a
+       * code entry box for a message that was never sent — and the stored hash
+       * would make a later, working attempt look like a replay.
+       */
+      if (viaSms && !this.sms.isConfigured()) {
+        throw new ServiceUnavailableException(
+          "SMS one-time codes are not available in this environment",
+        );
+      }
 
       const otp = this.tokens.generateOtp();
       await this.db
@@ -269,8 +295,15 @@ export class SignPublicService {
         .set({ otpCodeHash: this.tokens.hash(otp), otpExpiresAt: new Date(Date.now() + 10 * 60 * 1000), otpAttempts: 0 })
         .where(eq(signRecipients.id, recipient.id));
 
-      await this.notifications.sendOtpCode(recipient.email, recipient.name, otp);
-      return { sent: true };
+      if (viaSms) {
+        await this.sms.send(
+          recipient.phone!,
+          `Your signing code is ${otp}. It expires in 10 minutes.`,
+        );
+      } else {
+        await this.notifications.sendOtpCode(recipient.email!, recipient.name, otp);
+      }
+      return { sent: true, via: viaSms ? "sms" : "email" };
     });
   }
 
@@ -287,7 +320,13 @@ export class SignPublicService {
         passed = true;
       } else if (recipient.authMethod === "access_code") {
         passed = Boolean(input.accessCode) && recipient.accessCodeHash === this.tokens.hash(input.accessCode ?? "");
-      } else if (recipient.authMethod === "otp_email") {
+      } else if (recipient.authMethod === "otp_email" || recipient.authMethod === "otp_sms") {
+        /**
+         * One branch for both channels, deliberately. The code, the hash, the
+         * expiry, the attempt counter and the lockout are properties of the
+         * one-time code — not of how it travelled. A separate SMS branch is
+         * how the two drift until one of them forgets to check the expiry.
+         */
         passed =
           Boolean(input.otpCode) &&
           recipient.otpCodeHash === this.tokens.hash(input.otpCode ?? "") &&

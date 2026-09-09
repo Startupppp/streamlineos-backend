@@ -5,6 +5,8 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { SignAuditService } from "./sign-audit.service";
 import { SignTokensService } from "./sign-tokens.service";
+import { SignSettingsService } from "./sign-settings.service";
+import { SMS_SENDER, type SmsSenderPort } from "./sms/sms-sender.port";
 import { isEnvelopeEditable, isEnvelopeTerminal } from "./sign-state";
 import type { CreateRecipientInput, UpdateRecipientInput } from "./dto/e-sign.schemas";
 import type { RequestActorContext } from "../../common/audit/actor-context";
@@ -16,6 +18,8 @@ export class SignRecipientsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: SignAuditService,
     private readonly tokens: SignTokensService,
+    private readonly settings: SignSettingsService,
+    @Inject(SMS_SENDER) private readonly sms: SmsSenderPort,
   ) {}
 
   private async loadEnvelope(orgId: string, envelopeId: number) {
@@ -26,12 +30,58 @@ export class SignRecipientsService {
     return envelope;
   }
 
+  /**
+   * The organisation's own list, at last.
+   *
+   * `sign_org_settings.allowed_auth_methods` has been writable since SignOS
+   * shipped and read by nothing. Its default is
+   * `["email_link", "access_code", "otp_email"]` — precisely the three methods
+   * that work — while the DTO enum accepted all eight, so a recipient could be
+   * configured for `otp_sms`, `sso`, `passkey`, `kba` or `id_verification`, be
+   * *required* to supply a phone number for the first of those, and then find
+   * the envelope unsignable: `authenticate` answers "not yet supported" for
+   * every one of them.
+   *
+   * Refusing at configuration time rather than at signing time is the whole
+   * point. The failure moves from a customer holding a signing link to the
+   * person setting the envelope up, who can still do something about it.
+   */
+  private async assertAuthMethodUsable(orgId: string, input: CreateRecipientInput): Promise<void> {
+    const method = input.authMethod;
+    if (!method || method === "email_link") return;
+
+    const settings = await this.settings.getOrCreate(orgId);
+    const allowed = settings.allowedAuthMethods ?? [];
+    if (!allowed.includes(method)) {
+      throw new BadRequestException(
+        `Authentication method "${method}" is not enabled for this organisation. ` +
+          `Enabled methods: ${allowed.join(", ") || "none"}.`,
+      );
+    }
+
+    /**
+     * Enabled is not the same as available. An organisation may have added
+     * `otp_sms` to its list, but if this deployment has no SMS provider the
+     * code can never be delivered — so the phone number is not requested
+     * either, because requiring a field for a channel that cannot send is the
+     * broken promise this replaces.
+     */
+    if (method === "otp_sms") {
+      if (!this.sms.isConfigured()) {
+        throw new BadRequestException(
+          "SMS one-time codes are enabled for this organisation but no SMS provider is " +
+            "configured in this environment, so the code could not be delivered.",
+        );
+      }
+      if (!input.phone) {
+        throw new BadRequestException("Phone number is required when SMS OTP authentication is selected");
+      }
+    }
+  }
+
   private validateForCreate(input: CreateRecipientInput, routingMode: string): void {
     if (input.recipientType !== "in_person_host" && !input.email) {
       throw new BadRequestException("Email is required for this recipient unless in-person signing is used");
-    }
-    if ((input.authMethod === "otp_sms") && !input.phone) {
-      throw new BadRequestException("Phone number is required when SMS OTP authentication is selected");
     }
     if (routingMode === "sequential" && !input.routingOrder) {
       throw new BadRequestException("Routing order is required for sequential envelopes");
@@ -44,6 +94,7 @@ export class SignRecipientsService {
       throw new ForbiddenException("Recipients can only be added to a draft envelope");
     }
     this.validateForCreate(input, envelope.routingMode);
+    await this.assertAuthMethodUsable(orgId, input);
 
     const [recipient] = await this.db
       .insert(signRecipients)
