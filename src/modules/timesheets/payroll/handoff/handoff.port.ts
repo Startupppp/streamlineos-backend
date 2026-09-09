@@ -1,4 +1,4 @@
-import type { PayrollHandoffPayload } from "./handoff.schemas";
+import type { PayrollAckPayload, PayrollHandoffPayload } from "./handoff.schemas";
 
 /**
  * The seam payroll may implement, and which timesheets calls.
@@ -23,6 +23,23 @@ export interface TimesheetPayrollHandoffPort {
    * than lost.
    */
   deliver(payload: PayrollHandoffPayload): Promise<void>;
+
+  /**
+   * Called once per acknowledgement, from the outbox consumer, on the same
+   * terms as `deliver`.
+   *
+   * Required rather than optional on purpose. An acknowledgement is how an
+   * export stops being in flight, and a REJECTED or FAILED status is how an
+   * organisation learns its payroll data did not land. An implementer who has
+   * not thought about that should fail to compile rather than silently
+   * discard it — the same reason the CRM ingress seam takes a required tenant
+   * runner.
+   *
+   * An export can be acknowledged more than once as its status moves, so this
+   * is not once-per-export; `payload.idempotencyKey` is stable per
+   * acknowledgement, not per export.
+   */
+  acknowledged(payload: PayrollAckPayload): Promise<void>;
 }
 
 export const TIMESHEET_PAYROLL_HANDOFF_PORT = Symbol("TimesheetPayrollHandoffPort");

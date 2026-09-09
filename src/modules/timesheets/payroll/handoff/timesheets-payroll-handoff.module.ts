@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { OutboxModule } from "../../../../common/outbox/outbox.module";
 import { PayrollHandoffConsumer } from "./payroll-handoff.consumer";
+import { PayrollAckConsumer } from "./payroll-ack.consumer";
 import { RecordingPayrollHandoffAdapter } from "./recording-handoff.adapter";
 import { TIMESHEET_PAYROLL_HANDOFF_PORT } from "./handoff.port";
 
@@ -18,6 +19,7 @@ import { TIMESHEET_PAYROLL_HANDOFF_PORT } from "./handoff.port";
   imports: [OutboxModule],
   providers: [
     PayrollHandoffConsumer,
+    PayrollAckConsumer,
     { provide: TIMESHEET_PAYROLL_HANDOFF_PORT, useClass: RecordingPayrollHandoffAdapter },
   ],
   exports: [TIMESHEET_PAYROLL_HANDOFF_PORT],

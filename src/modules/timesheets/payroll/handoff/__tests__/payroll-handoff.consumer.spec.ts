@@ -77,6 +77,8 @@ function capturingPort() {
     deliver: async (payload) => {
       seen.push(payload);
     },
+    /** Not exercised here; the ack consumer has its own spec. */
+    acknowledged: async () => undefined,
   };
   return { port, seen };
 }

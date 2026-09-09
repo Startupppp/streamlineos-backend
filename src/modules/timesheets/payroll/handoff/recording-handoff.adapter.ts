@@ -1,6 +1,11 @@
 import { Injectable, Logger } from "@nestjs/common";
 import type { TimesheetPayrollHandoffPort } from "./handoff.port";
-import { payrollHandoffPayloadSchema, type PayrollHandoffPayload } from "./handoff.schemas";
+import {
+  payrollAckPayloadSchema,
+  payrollHandoffPayloadSchema,
+  type PayrollAckPayload,
+  type PayrollHandoffPayload,
+} from "./handoff.schemas";
 
 /**
  * The adapter that ships when no payroll implementation is bound.
@@ -39,5 +44,22 @@ export class RecordingPayrollHandoffAdapter implements TimesheetPayrollHandoffPo
         `workers=${parsed.rows.length} hours=${parsed.totalHours} ` +
         `idempotencyKey=${parsed.idempotencyKey}`,
     );
+  }
+
+  /**
+   * Logged at `warn` when the payroll system says the data did not land, and
+   * at `log` otherwise. With no implementation bound there is nothing to
+   * reconcile against, so the honest thing is to make a rejection loud rather
+   * than record it at the same volume as a success.
+   */
+  async acknowledged(payload: PayrollAckPayload): Promise<void> {
+    const parsed = payrollAckPayloadSchema.parse(payload);
+    const line =
+      `payroll export ${parsed.exportId} acknowledged ${parsed.status} ` +
+      `by ${parsed.ackBy} at ${parsed.ackAt}` +
+      (parsed.note ? ` — ${parsed.note}` : "");
+
+    if (parsed.status === "REJECTED" || parsed.status === "FAILED") this.logger.warn(line);
+    else this.logger.log(line);
   }
 }

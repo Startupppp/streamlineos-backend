@@ -14,7 +14,9 @@ import {
 } from "src/modules/timesheets/payroll/handoff/handoff.port";
 import {
   TIMESHEET_EVENTS,
+  payrollAckPayloadSchema,
   payrollHandoffPayloadSchema,
+  type PayrollAckPayload,
   type PayrollHandoffPayload,
 } from "src/modules/timesheets/payroll/handoff/handoff.schemas";
 
@@ -57,6 +59,7 @@ describe(`${SEEDED_HARNESS} payroll handoff — an export reaches the port, not 
   let fixture: SeededFixture;
   let token: string;
   let delivered: PayrollHandoffPayload[];
+  let acknowledged: PayrollAckPayload[];
 
   beforeAll(async () => {
     seeded = await createSeededE2eApp();
@@ -123,9 +126,13 @@ describe(`${SEEDED_HARNESS} payroll handoff — an export reaches the port, not 
      * would prove the test's own wiring instead.
      */
     delivered = [];
+    acknowledged = [];
     const port = seeded.app.get<TimesheetPayrollHandoffPort>(TIMESHEET_PAYROLL_HANDOFF_PORT);
     jest.spyOn(port, "deliver").mockImplementation(async (payload: PayrollHandoffPayload) => {
       delivered.push(payload);
+    });
+    jest.spyOn(port, "acknowledged").mockImplementation(async (payload: PayrollAckPayload) => {
+      acknowledged.push(payload);
     });
   }, 180_000);
 
@@ -173,24 +180,27 @@ describe(`${SEEDED_HARNESS} payroll handoff — an export reaches the port, not 
     });
   }, 120_000);
 
-  it("delivers it to the bound port when the worker runs, and does not dead-letter", async () => {
-    /**
-     * The lease is shared, so a worker run can legitimately answer
-     * `{ skipped: true }` while another suite holds it. Waiting the skip out
-     * is the difference between a real assertion and one that passes on a
-     * 200 that did nothing.
-     */
-    let ran = false;
-    for (let attempt = 0; attempt < 10 && !ran; attempt++) {
+  /**
+   * The lease is shared, so a worker run can legitimately answer
+   * `{ skipped: true }` while another suite holds it. Waiting the skip out is
+   * the difference between a real assertion and one that passes on a 200 that
+   * did nothing.
+   */
+  const drainOutbox = async () => {
+    for (let attempt = 0; attempt < 10; attempt++) {
       const res = await request(seeded.app.getHttpServer())
         .post("/cron/outbox-events-worker")
         .set("Authorization", `Bearer ${process.env.CRON_SECRET ?? ""}`)
         .send({});
       expect(res.status).toBe(200);
-      if (res.body?.skipped !== true) ran = true;
-      else await new Promise((r) => setTimeout(r, 3_000));
+      if (res.body?.skipped !== true) return true;
+      await new Promise((r) => setTimeout(r, 3_000));
     }
-    expect(ran).toBe(true);
+    return false;
+  };
+
+  it("delivers it to the bound port when the worker runs, and does not dead-letter", async () => {
+    expect(await drainOutbox()).toBe(true);
 
     const [row] = await seeded.seedDb
       .select({
@@ -248,4 +258,70 @@ describe(`${SEEDED_HARNESS} payroll handoff — an export reaches the port, not 
     expect(rows).toHaveLength(2);
     expect(rows.every((r) => r.payrollStatus === "EXPORTED")).toBe(true);
   }, 60_000);
+
+  describe("acknowledgement", () => {
+    const ackPath = () => `/timesheets/payroll/exports/${exportId}/ack`;
+
+    const ack = (status: string, note?: string) =>
+      request(seeded.app.getHttpServer())
+        .patch(ackPath())
+        .set("Authorization", `Bearer ${token}`)
+        .send({ status, ...(note ? { note } : {}) });
+
+    it("records the acknowledgement and its event in one transaction", async () => {
+      const res = await ack("RECEIVED", "queued for the September run");
+      expect(res.status).toBe(200);
+
+      const rows = await seeded.seedDb
+        .select({ payload: outboxEvents.payload, state: outboxEvents.deliveryState })
+        .from(outboxEvents)
+        .where(
+          and(
+            eq(outboxEvents.organizationId, fixture.orgId),
+            eq(outboxEvents.eventType, TIMESHEET_EVENTS.payrollExportAcked),
+          ),
+        );
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.payload).toMatchObject({ export_id: exportId, status: "RECEIVED" });
+    }, 120_000);
+
+    it("reaches the port when the worker runs", async () => {
+      expect(await drainOutbox()).toBe(true);
+
+      expect(acknowledged).toHaveLength(1);
+      expect(() => payrollAckPayloadSchema.parse(acknowledged[0])).not.toThrow();
+      expect(acknowledged[0]).toMatchObject({ exportId, status: "RECEIVED" });
+    }, 180_000);
+
+    /**
+     * An export is acknowledged more than once as its status moves, so the
+     * second ack must produce a SECOND event rather than colliding with the
+     * first on `(org, aggregate_type, aggregate_id, aggregate_version)`. A
+     * constant version would have raised 23505 here.
+     */
+    it("emits a second event when the status changes later", async () => {
+      expect((await ack("ACCEPTED")).status).toBe(200);
+      expect(await drainOutbox()).toBe(true);
+
+      expect(acknowledged.map((a) => a.status)).toEqual(["RECEIVED", "ACCEPTED"]);
+      expect(acknowledged[0]!.idempotencyKey).not.toBe(acknowledged[1]!.idempotencyKey);
+    }, 180_000);
+
+    it("leaves every acknowledgement event delivered, none dead", async () => {
+      const rows = await seeded.seedDb
+        .select({ state: outboxEvents.deliveryState, lastError: outboxEvents.lastError })
+        .from(outboxEvents)
+        .where(
+          and(
+            eq(outboxEvents.organizationId, fixture.orgId),
+            eq(outboxEvents.eventType, TIMESHEET_EVENTS.payrollExportAcked),
+          ),
+        );
+
+      expect(rows).toHaveLength(2);
+      const notDelivered = rows.filter((r) => r.state !== "DELIVERED");
+      expect(notDelivered.map((r) => `${r.state}: ${r.lastError}`)).toEqual([]);
+    }, 120_000);
+  });
 });

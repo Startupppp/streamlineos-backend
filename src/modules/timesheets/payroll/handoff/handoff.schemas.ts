@@ -99,7 +99,38 @@ export const payrollExportReadyEventSchema = z.object({
 
 export type PayrollExportReadyEvent = z.infer<typeof payrollExportReadyEventSchema>;
 
+/**
+ * What an acknowledgement carries.
+ *
+ * The status is the point: an implementer that answers REJECTED or FAILED is
+ * telling the organisation its payroll data did not land, and that has to be
+ * distinguishable from silence. `ackAt` and `ackBy` say when and by whom.
+ */
+export const payrollAckPayloadSchema = z.object({
+  organizationId: z.string().min(1),
+  exportId: z.number().int().positive(),
+  status: z.enum(["RECEIVED", "ACCEPTED", "REJECTED", "FAILED"]),
+  note: z.string().nullable(),
+  ackAt: z.string(),
+  ackBy: z.string().min(1),
+  idempotencyKey: z.string().min(1),
+});
+
+export type PayrollAckPayload = z.infer<typeof payrollAckPayloadSchema>;
+
+export const payrollExportAckedEventSchema = z.object({
+  organization_id: z.string().min(1),
+  export_id: z.number().int().positive(),
+  status: z.enum(["RECEIVED", "ACCEPTED", "REJECTED", "FAILED"]),
+  note: z.string().nullable(),
+  acked_at: z.string(),
+  actor_user_id: z.string().min(1),
+});
+
+export type PayrollExportAckedEvent = z.infer<typeof payrollExportAckedEventSchema>;
+
 /** Event names, in one place so a producer and a consumer cannot disagree. */
 export const TIMESHEET_EVENTS = {
   payrollExportReady: "timesheets.payroll.export.ready",
+  payrollExportAcked: "timesheets.payroll.export.acked",
 } as const;
