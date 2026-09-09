@@ -4,6 +4,7 @@ import {
   attendance,
   orgModules,
   outboxEvents,
+  timesheetPeriods,
   timesheetSettings,
   timesheets,
 } from "src/db/schema";
@@ -66,6 +67,8 @@ describe(`${SEEDED_HARNESS} attendance to timesheet`, () => {
   let workerToken = "";
   let userId = "";
   let keySeq = 0;
+  /** Set by the drafting test; the submit test carries the same period. */
+  let draftedPeriodId: number | null = null;
 
   const draft = () =>
     request(seeded.app.getHttpServer())
@@ -205,6 +208,14 @@ describe(`${SEEDED_HARNESS} attendance to timesheet`, () => {
     /** 09:00–17:30 less a 30-minute break is 8.00; 10:00–14:00 is 4.00. */
     expect(rows.map((r) => Number(r.hours)).sort((a, b) => a - b)).toEqual([4, 8]);
     expect(rows.every((r) => r.source === "IMPORT")).toBe(true);
+
+    /**
+     * Both clock days sit in one Monday-to-Sunday week, so the drafting created
+     * exactly one period — and it is that one the submit step below has to
+     * carry, not whichever period happens to be current.
+     */
+    expect(response.body.periodIds).toHaveLength(1);
+    draftedPeriodId = response.body.periodIds[0];
   }, 60_000);
 
   /**
@@ -229,13 +240,25 @@ describe(`${SEEDED_HARNESS} attendance to timesheet`, () => {
     expect(rows).toHaveLength(2);
   }, 60_000);
 
+  /**
+   * The last link of clock → draft → submit, and the one worth being careful
+   * about: submitting *some* period proves the transition works, not that the
+   * hours the clock produced are the hours somebody signed. So this submits the
+   * period the drafting itself returned, and checks the period's own total
+   * first — 8.00 + 4.00 = 12.00, the two segments and nothing else.
+   */
   it("carries the drafted hours into the period the worker submits", async () => {
-    const current = await request(seeded.app.getHttpServer())
-      .get("/timesheets/periods/current")
-      .set("Authorization", `Bearer ${workerToken}`);
-    expect(current.status).toBe(200);
+    expect(draftedPeriodId).not.toBeNull();
+    const periodId = draftedPeriodId as number;
 
-    const periodId: number = current.body.period?.id ?? current.body.id;
+    const [before] = await seeded.seedDb
+      .select({ totalHours: timesheetPeriods.totalHours, status: timesheetPeriods.status })
+      .from(timesheetPeriods)
+      .where(
+        and(eq(timesheetPeriods.orgId, fixture.orgId), eq(timesheetPeriods.id, periodId)),
+      );
+    expect(Number(before?.totalHours)).toBe(12);
+    expect(before?.status).toBe("OPEN");
 
     const submitted = await request(seeded.app.getHttpServer())
       .post(`/timesheets/periods/${periodId}/submit`)
@@ -243,14 +266,21 @@ describe(`${SEEDED_HARNESS} attendance to timesheet`, () => {
       .set("Idempotency-Key", `submit-${periodId}-${++keySeq}`)
       .send({});
 
-    /**
-     * The current period is this week, not the seeded May window, so submitting
-     * it is a legal transition regardless of whether it holds the drafted
-     * entries. What matters for the happy path is that it is accepted and
-     * announced — the hours themselves were asserted against the rows above.
-     */
     expect(submitted.status).toBe(200);
     expect(submitted.body.status ?? submitted.body.period?.status).toBe("SUBMITTED");
+
+    /** The entries themselves are stamped, not just the period's status. */
+    const stamped = await seeded.seedDb
+      .select({ submittedAt: timesheets.submittedAt })
+      .from(timesheets)
+      .where(
+        and(
+          eq(timesheets.orgId, fixture.orgId),
+          eq(timesheets.timesheetPeriodId, periodId),
+        ),
+      );
+    expect(stamped).toHaveLength(2);
+    expect(stamped.every((row) => row.submittedAt !== null)).toBe(true);
 
     const events = await seeded.seedDb
       .select({
