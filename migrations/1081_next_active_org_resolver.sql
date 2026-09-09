@@ -27,8 +27,15 @@
 -- users today, one statement at a time, and hands it to the same caller. This migration changes the
 -- statement count, not the data anybody can see.
 
+-- `next_org_id` is text, not uuid: organizations.id and organization_members.org_id are both
+-- `text` on this schema, and so is app.current_org_id(). A uuid return column compiled fine and
+-- failed at apply time with "return type mismatch in function declared to return record"; the
+-- cold replay caught it, no static check could have.
+SET lock_timeout = '5s';
+--> statement-breakpoint
+
 CREATE OR REPLACE FUNCTION app.next_active_org_ids(p_user_ids text[])
-RETURNS TABLE (user_id text, next_org_id uuid)
+RETURNS TABLE (user_id text, next_org_id text)
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
