@@ -9,6 +9,7 @@ import { Reflector } from "@nestjs/core";
 import { createHash } from "node:crypto";
 import { firstValueFrom, of } from "rxjs";
 import { IdempotencyInterceptor } from "./idempotency.interceptor";
+import { IDEMPOTENCY_OPTIONAL } from "./idempotency.constants";
 import type { Db } from "../../db/drizzle.module";
 
 const COMMAND = "portal.createGrant";
@@ -62,9 +63,21 @@ function makeDb(opts: DbMockOptions) {
   return { db: db as unknown as Db, setCalls };
 }
 
-function makeReflector(commandName: string | undefined): Reflector {
+/**
+ * Key-aware, not a blanket `mockReturnValue`.
+ *
+ * It used to answer the same value for every metadata key it was asked about,
+ * which was harmless while `IDEMPOTENCY_COMMAND` was the only one. Once
+ * `IDEMPOTENCY_OPTIONAL` existed, a blanket mock answered the command *name*
+ * for it — a truthy string — and every fence in the suite silently became
+ * optional, so "requires an Idempotency-Key header" would have passed by not
+ * requiring it.
+ */
+function makeReflector(commandName: string | undefined, optional = false): Reflector {
   return {
-    getAllAndOverride: jest.fn().mockReturnValue(commandName),
+    getAllAndOverride: jest.fn((key: string) =>
+      key === IDEMPOTENCY_OPTIONAL ? optional : commandName,
+    ),
   } as unknown as Reflector;
 }
 
@@ -106,6 +119,41 @@ describe("IdempotencyInterceptor", () => {
     await expect(
       interceptor.intercept(makeCtx(req, {}), makeHandler("ok")),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  /**
+   * TS-17. `@Idempotent(name, { required: false })`.
+   *
+   * The point of the option is that an endpoint can offer replay safety without
+   * making every existing caller send a header they have never sent — a 400 on
+   * a POST with a body reads like a validation failure and is hard to diagnose.
+   * So: no key, no fence, no error.
+   */
+  it("passes through with no key when the fence is optional", async () => {
+    const { db, setCalls } = makeDb({});
+    const interceptor = new IdempotencyInterceptor(makeReflector(COMMAND, true), db);
+    const handler = makeHandler("ok");
+
+    const result$ = await interceptor.intercept(makeCtx(makeReq({ headers: {} }), {}), handler);
+
+    expect(await firstValueFrom(result$)).toBe("ok");
+    expect(handler.handle).toHaveBeenCalled();
+    expect(setCalls).toHaveLength(0);
+  });
+
+  /**
+   * And the other half: optional means the header may be absent, not that it is
+   * ignored. A caller who sends one still gets the full contract.
+   */
+  it("still fences an optional command when a key is supplied", async () => {
+    const { db } = makeDb({ insertReturning: [{ fenceId: 9 }] });
+    const interceptor = new IdempotencyInterceptor(makeReflector(COMMAND, true), db);
+    const handler = makeHandler("ok");
+
+    const result$ = await interceptor.intercept(makeCtx(makeReq(), { statusCode: 201 }), handler);
+
+    expect(await firstValueFrom(result$)).toBe("ok");
+    expect(handler.handle).toHaveBeenCalled();
   });
 
   it("skips the fence when there is no tenant context", async () => {

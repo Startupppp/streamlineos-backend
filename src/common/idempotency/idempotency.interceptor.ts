@@ -21,6 +21,7 @@ import type { CurrentUserContext } from "../auth/backend-claims";
 import {
   IDEMPOTENCY_COMMAND,
   IDEMPOTENCY_LEASE_MS,
+  IDEMPOTENCY_OPTIONAL,
   IDEMPOTENCY_TTL_MS,
 } from "./idempotency.constants";
 
@@ -71,6 +72,22 @@ export class IdempotencyInterceptor implements NestInterceptor {
     const rawKey = req.headers["idempotency-key"];
     const idempotencyKey = typeof rawKey === "string" ? rawKey.trim() : "";
     if (!idempotencyKey) {
+      /**
+       * An optional fence lets the request through rather than answering 400.
+       *
+       * The 400 is the right answer for a command that must not execute twice,
+       * but it reads at the call site like a body validation failure, so
+       * turning it on for a high-frequency existing endpoint breaks every
+       * caller that never sent the header in a way that is hard to diagnose.
+       * `@Idempotent(name, { required: false })` is how an endpoint offers
+       * replay safety to callers who want it without demanding it of callers
+       * who do not.
+       */
+      const optional = this.reflector.getAllAndOverride<boolean | undefined>(
+        IDEMPOTENCY_OPTIONAL,
+        [context.getHandler(), context.getClass()],
+      );
+      if (optional) return next.handle();
       throw new BadRequestException(
         "An Idempotency-Key header is required for this operation",
       );
