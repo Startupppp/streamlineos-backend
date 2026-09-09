@@ -7,6 +7,7 @@ import { logger } from "../../common/logger/logger.service";
 import { computeNextRunAt } from "../build/core/projects-recurrence.util";
 import { bulkUpdateFromValues, type BulkUpdateRow } from "../../common/db/bulk-update";
 import { forEachOrg, type TenantTx } from "../../common/tenant";
+import { reserveTicketCapacity } from "../build/core/build-ticket-capacity";
 
 const BATCH_SIZE = 50;
 
@@ -171,6 +172,10 @@ export class CronProjectsService {
 
     try {
       await tx.transaction(async (innerTx) => {
+        for (const projectId of [...projectIds].sort((a, b) => a - b))
+          await reserveTicketCapacity(innerTx, orgId, projectId, children
+            .filter(child => child.projectId === projectId)
+            .map(child => ({ status: child.status ?? "TODO", count: 1 })));
         const inserted = await innerTx
           .insert(tickets)
           .values(children)

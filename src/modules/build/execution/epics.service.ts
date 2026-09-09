@@ -6,6 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import type { CreateEpicInput, UpdateEpicInput } from "./dto/iterations.schemas";
 import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
 import { assertProjectInOrg } from "../core/project-access";
+import { reserveTicketCapacity } from "../core/build-ticket-capacity";
 
 @Injectable()
 export class EpicsService {
@@ -39,7 +40,7 @@ export class EpicsService {
   async createEpic(orgId: string, userId: string, projectId: number, input: CreateEpicInput) {
     await assertProjectInOrg(this.db, orgId, projectId);
     const [epic] = await this.db.transaction(async (tx) => {
-
+      await reserveTicketCapacity(tx, orgId, projectId, [{ status: "TODO", count: 1 }]);
       const nextNumber = await allocateTicketNumbers(tx, orgId, projectId);
 
       return tx

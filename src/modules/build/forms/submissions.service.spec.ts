@@ -312,7 +312,7 @@ describe("SubmissionsService.createSubmission", () => {
 
     await svc.createSubmission(ORG_ID, USER_ID, PROJECT_ID, FORM_ID, { values: {} });
 
-    expect(executeSpy).toHaveBeenCalledTimes(1);
+    expect(executeSpy).toHaveBeenCalledTimes(3);
   });
 
   it("does NOT acquire advisory lock when form has no create_task/create_bug actions", async () => {

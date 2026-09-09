@@ -1,13 +1,11 @@
-import { ConflictException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, count, eq, isNull, notInArray } from "drizzle-orm";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import type { Db } from "../../../db/drizzle.types";
-import { tickets } from "../../../db/schema";
 import { ProjectsInvalidTicketStatusException } from "../../../common/http/api-exceptions";
 import { assertTransitionAllowed, fetchTransitionsAndStatuses } from "./projects-tickets-workflow-utils";
 import type { readMutationTickets } from "./build-ticket-mutation-policy";
+import { reserveTicketCapacity } from "./build-ticket-capacity";
 
 type MutationRows = Awaited<ReturnType<typeof readMutationTickets>>;
 
@@ -16,15 +14,8 @@ export async function validateBatchTransition(db: Db, actor: CurrentUserContext,
   if (!["TODO", "IN_PROGRESS", "IN_REVIEW", "DONE", ...workflow.statuses.map((row) => row.name)].includes(status))
     throw new ProjectsInvalidTicketStatusException(status);
   const changed = rows.filter((row) => row.status !== status);
-  const wipLimit = workflow.statuses.find((row) => row.name === status)?.wipLimit;
-  if (changed.length > 0 && wipLimit != null) {
-    const [occupancy] = await db.select({ count: count() }).from(tickets).where(and(
-      eq(tickets.orgId, actor.orgId), eq(tickets.projectId, projectId), eq(tickets.status, status),
-      isNull(tickets.deletedAt), notInArray(tickets.id, rows.map((row) => row.id)),
-    ));
-    if (Number(occupancy?.count ?? 0) + rows.length > wipLimit)
-      throw new ConflictException(`Column '${status}' exceeds its WIP limit of ${wipLimit}`);
-  }
+  if (changed.length > 0)
+    await reserveTicketCapacity(db, actor.orgId, projectId, [{ status, count: rows.length }], rows.map(row => row.id));
   const prefetched = { ...workflow, ticketFields: new Map(rows.map((row) => [row.id, row])), wipAlreadyChecked: true };
   for (const row of changed)
     await assertTransitionAllowed(db, actor.orgId, projectId, row.status, status, {

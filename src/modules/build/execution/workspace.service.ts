@@ -12,6 +12,7 @@ import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { assertProjectAccess } from "../core/project-access";
 import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
+import { reserveTicketCapacity } from "../core/build-ticket-capacity";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import type {
@@ -160,6 +161,7 @@ export class IntakeService {
 
     if (input.status === "accepted") {
       return this.db.transaction(async (tx) => {
+        await reserveTicketCapacity(tx, orgId, item.projectId, [{ status: "TODO", count: 1 }]);
         const ticketNumber = await allocateTicketNumbers(tx, orgId, item.projectId);
 
         const description =

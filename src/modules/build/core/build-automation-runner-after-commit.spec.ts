@@ -37,6 +37,8 @@ describe("BuildAutomationRunnerService — automations are deferred past the req
   const updateWhere = jest.fn().mockResolvedValue(undefined);
   const updateSet = jest.fn().mockReturnValue({ where: updateWhere });
   const mockDb = {
+    transaction: jest.fn(),
+    execute: jest.fn(),
     select: jest.fn().mockReturnValue(dbSelect),
     update: jest.fn().mockReturnValue({ set: updateSet }),
     insert: jest.fn(),
@@ -49,6 +51,8 @@ describe("BuildAutomationRunnerService — automations are deferred past the req
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockDb.transaction.mockImplementation(async (work: (tx: typeof mockDb) => Promise<unknown>) => work(mockDb));
+    mockDb.execute.mockResolvedValue([]);
     mockDb.select.mockReturnValue(dbSelect);
     dbSelect.from.mockReturnThis();
     dbSelect.where.mockResolvedValue([RULE]);

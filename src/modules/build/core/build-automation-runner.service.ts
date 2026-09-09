@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   projectAutomations,
   projectStatuses,
@@ -13,6 +13,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
+import { reserveTicketCapacity } from "./build-ticket-capacity";
 import {
   evaluateNormalizedCondition,
   type ConditionOp,
@@ -121,7 +122,7 @@ export class BuildAutomationRunnerService {
     action: StoredAction,
     authorId: string | null,
   ): Promise<void> {
-    const ticketWhere = and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId));
+    const ticketWhere = and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), isNull(tickets.deletedAt));
     switch (action.type) {
       case "set_status": {
         const statusExists = await this.db.query.projectStatuses.findFirst({
@@ -141,10 +142,12 @@ export class BuildAutomationRunnerService {
           });
           return;
         }
-        await this.db
-          .update(tickets)
-          .set({ status: action.value, updatedAt: new Date() })
-          .where(ticketWhere);
+        await this.db.transaction(async tx => {
+          await reserveTicketCapacity(tx, orgId, projectId, [{ status: action.value, count: 1 }], [ticketId]);
+          await tx.update(tickets)
+            .set({ status: action.value, updatedAt: new Date(), version: sql`${tickets.version} + 1` })
+            .where(ticketWhere);
+        });
         return;
       }
       case "set_assignee": {

@@ -53,6 +53,8 @@ describe("BuildAutomationRunnerService", () => {
   const mockUpdateChain = { set: mockSetFn, where: mockWhereFn };
 
   const mockDb = {
+    transaction: jest.fn(),
+    execute: jest.fn(),
     select: jest.fn().mockReturnValue(dbSelect),
     update: jest.fn().mockReturnValue(mockUpdateChain),
     insert: jest.fn().mockReturnValue(dbInsert),
@@ -71,6 +73,8 @@ describe("BuildAutomationRunnerService", () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockDb.transaction.mockImplementation(async (work: (tx: typeof mockDb) => Promise<unknown>) => work(mockDb));
+    mockDb.execute.mockResolvedValue([]);
     mockDb.select.mockReturnValue(dbSelect);
     dbSelect.from.mockReturnThis();
     dbSelect.where.mockResolvedValue([]);
@@ -107,6 +111,15 @@ describe("BuildAutomationRunnerService", () => {
 
     expect(mockDb.update).toHaveBeenCalled();
     expect(mockSetFn).toHaveBeenCalledWith(expect.objectContaining({ status: "IN_PROGRESS" }));
+  });
+
+  it("leaves the ticket unchanged when an automation targets a full column", async () => {
+    dbSelect.where.mockResolvedValue([makeRule()]);
+    mockDb.execute.mockResolvedValue([{ name: "IN_PROGRESS", wip_limit: 1, current_count: 1 }]);
+    service.runForTicketEvent("org-1", 1, "ticket.created", BASE_TICKET);
+    await flush();
+    expect(mockDb.update).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith("BuildAutomationRunner: action failed", expect.objectContaining({ actionType: "set_status" }));
   });
 
   it("skips set_status and logs a warning when the status does not exist in the project", async () => {

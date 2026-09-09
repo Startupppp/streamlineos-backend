@@ -1,4 +1,6 @@
 import { Test, type TestingModule } from "@nestjs/testing";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
 import { BuildEntityActions } from "./build-entity.actions";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -42,7 +44,7 @@ function makeTx() {
     insert: jest.fn(),
     values: jest.fn(),
     returning: jest.fn().mockResolvedValue([STUB_CREATED_TICKET]),
-    execute: jest.fn().mockResolvedValue(undefined),
+    execute: jest.fn(async (statement: SQL) => new PgDialect().sqlToQuery(statement).sql.includes("project_ticket_counters") ? [{ start: 1 }] : []),
     select: jest.fn(),
     from: jest.fn(),
   };

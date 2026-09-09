@@ -32,7 +32,8 @@ import type { UpdateTicketInput } from "./dto/projects.schemas";
 import { normalizeTicketType, resolveAssigneeId } from "./tickets-helpers";
 import { computeNextRunAt } from "./projects-recurrence.util";
 import { lockProjectTicketMutation } from "./build-ticket-mutation-policy";
-import { assertTransitionAllowed, enforceWipLimitForStatus } from "./projects-tickets-workflow-utils";
+import { assertTransitionAllowed } from "./projects-tickets-workflow-utils";
+import { reserveTicketCapacity } from "./build-ticket-capacity";
 import { resolveValidTicketStatuses } from "./ticket-status.util";
 import { ProjectsInvalidTicketStatusException } from "../../../common/http/api-exceptions";
 
@@ -239,7 +240,7 @@ export class ProjectsTicketsUpdateService {
         const valid = await resolveValidTicketStatuses(tx, ticketProjectId, orgId);
         if (!valid.has(input.status)) throw new ProjectsInvalidTicketStatusException(input.status);
         if (input.status !== before.status) {
-          await enforceWipLimitForStatus(tx, orgId, ticketProjectId, input.status, ticketId);
+          await reserveTicketCapacity(tx, orgId, ticketProjectId, [{ status: input.status, count: 1 }], [ticketId]);
           await assertTransitionAllowed(tx, orgId, ticketProjectId, before.status, input.status, {
             userId: actingUserId, userProjectRole: accessResult.role, isOrgOwner: u.isOrgOwner, ticketId,
           });

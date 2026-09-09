@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { type Db } from "../../../db/drizzle.module";
 import { projects, tickets } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -7,6 +7,8 @@ import type {
   EntityActor,
 } from "../../entity-reference/entity-reference.types";
 import { isProjectMember, text } from "./build-entity-action-helpers";
+import { reserveTicketCapacity } from "../core/build-ticket-capacity";
+import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
 
 const TICKET_TYPES = ["TASK", "BUG"] as const;
 type TicketType = (typeof TICKET_TYPES)[number];
@@ -42,19 +44,15 @@ export async function createTicketFromAction(
   const title = (text(input, "title") ?? description.slice(0, 80)).trim() || "Untitled";
 
   const created = await db.transaction(async (tx) => {
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
-
-    const [maxRow] = await tx
-      .select({ max: sql<number>`COALESCE(MAX(${tickets.ticketNumber}), 0)` })
-      .from(tickets)
-      .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, actor.orgId)));
+    await reserveTicketCapacity(tx, actor.orgId, projectId, [{ status: "TODO", count: 1 }]);
+    const ticketNumber = await allocateTicketNumbers(tx, actor.orgId, projectId);
 
     const [row] = await tx
       .insert(tickets)
       .values({
         orgId: actor.orgId,
         projectId,
-        ticketNumber: (maxRow?.max ?? 0) + 1,
+        ticketNumber,
         title,
         description: description || null,
         type,

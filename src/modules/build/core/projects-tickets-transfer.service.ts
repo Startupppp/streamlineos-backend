@@ -22,6 +22,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { ImportTicketsInput, UpdateTicketInput } from "./dto/projects.schemas";
 import { resolveAssigneeId } from "./tickets-helpers";
 import { allocateTicketNumbers } from "./lib/allocate-ticket-number";
+import { reserveTicketCapacity } from "./build-ticket-capacity";
 
 const EXPORT_ROW_CAP = 5_000;
 
@@ -172,7 +173,7 @@ export class ProjectsTicketsTransferService {
     let createdCount = 0;
 
     await this.db.transaction(async (tx) => {
-
+      await reserveTicketCapacity(tx, u.orgId, projectId, toCreate.map(row => ({ status: row.status ?? "TODO", count: 1 })));
       let nextNum = await allocateTicketNumbers(tx, u.orgId, projectId, toCreate.length);
 
       const rowsWithNumbers = toCreate.map((item) => {

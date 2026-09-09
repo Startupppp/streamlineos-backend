@@ -18,6 +18,7 @@ import type {
 import { resolveValidTicketStatuses } from "../core/ticket-status.util";
 import { isProjectMember, text } from "./build-entity-action-helpers";
 import { createTicketFromAction } from "./build-entity-ticket-create";
+import { reserveTicketCapacity } from "../core/build-ticket-capacity";
 
 type TicketActivityAction =
   | "status_changed"
@@ -95,6 +96,7 @@ export class BuildEntityActions {
     if (!valid.has(nextStatus)) return { ok: false, reason: "invalid" };
 
     await this.db.transaction(async (tx) => {
+      await reserveTicketCapacity(tx, actor.orgId, projectId, [{ status: nextStatus, count: 1 }], [ticketId]);
       await tx
         .update(tickets)
         .set({ status: nextStatus, updatedAt: new Date() })

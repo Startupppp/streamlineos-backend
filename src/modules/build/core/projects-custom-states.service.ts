@@ -16,6 +16,8 @@ import {
 } from "../../../db/schema";
 import { bulkUpdateFromValues } from "../../../common/db/bulk-update";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { lockProjectTicketMutation } from "./build-ticket-mutation-policy";
+import { reserveTicketCapacity } from "./build-ticket-capacity";
 import { type Db } from "../../../db/drizzle.module";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -174,6 +176,7 @@ export class ProjectsCustomStatesService {
     if (data.type !== undefined) updateData.type = data.type;
 
     const updated = await this.db.transaction(async (tx) => {
+      await lockProjectTicketMutation(tx, orgId, existing.projectId);
       if (data.name !== undefined && data.name !== existing.name) {
         await tx
           .update(tickets)
@@ -316,6 +319,13 @@ export class ProjectsCustomStatesService {
     }
 
     await this.db.transaction(async (tx) => {
+      await lockProjectTicketMutation(tx, orgId, existing.projectId);
+      const [moving] = await tx.execute<{ count: number }>(sql`
+        SELECT count(*)::int AS count FROM build.tickets
+        WHERE org_id = ${orgId} AND project_id = ${existing.projectId}
+          AND status = ${existing.name} AND deleted_at IS NULL
+      `);
+      await reserveTicketCapacity(tx, orgId, existing.projectId, [{ status: fallback.name, count: Number(moving?.count ?? 0) }]);
       await tx
         .update(tickets)
         .set({ status: fallback.name })

@@ -41,7 +41,7 @@ async function harness(size = 1, allowed = true, missingProject = false) {
   const values = jest.fn().mockResolvedValue(undefined);
   const remove = jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) });
   const db = { select, update: jest.fn(() => ({ set })), insert: jest.fn(() => ({ values })), delete: remove,
-    execute: jest.fn().mockResolvedValue([]), transaction: jest.fn(),
+    execute: jest.fn(async () => statuses.map(status => ({ name: status.name, wip_limit: status.wipLimit, current_count: occupancy.count, status_exists: true, has_statuses: true }))), transaction: jest.fn(),
     query: {
       projects: { findFirst: jest.fn().mockResolvedValue(missingProject ? undefined : { id: 1 }) },
       organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 9 }) },
@@ -124,9 +124,9 @@ describe("Build bulk mutations: fail-whole authorization and fixed query budgets
     h.occupancy.count = 2;
     try {
       await expect(h.service.bulkUpdate(actor, 1, { ticketIds: [1, 2], status: "DONE" })).rejects.toThrow(ConflictException);
-      expect(h.db.select).toHaveBeenCalledTimes(4);
+      expect(h.db.select).toHaveBeenCalledTimes(3);
       expect(h.set).not.toHaveBeenCalled();
-      expect(h.db.execute).toHaveBeenCalledTimes(1);
+      expect(h.db.execute).toHaveBeenCalledTimes(3);
       expect(h.db.execute.mock.invocationCallOrder[0]).toBeLessThan(h.db.select.mock.invocationCallOrder[0] ?? Infinity);
     } finally { await h.module.close(); }
   });
@@ -139,7 +139,8 @@ describe("Build bulk mutations: fail-whole authorization and fixed query budgets
     h.occupancy.count = 1;
     try {
       await expect(h.service.bulkUpdate(actor, 1, { ticketIds: h.rows.map((row) => row.id), status: "DONE" })).resolves.toMatchObject({ updated: 100 });
-      expect(h.db.select).toHaveBeenCalledTimes(4);
+      expect(h.db.select).toHaveBeenCalledTimes(3);
+      expect(h.db.execute).toHaveBeenCalledTimes(3);
     } finally { await h.module.close(); }
   });
 });

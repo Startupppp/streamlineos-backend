@@ -10,6 +10,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CreateActionItemInput, UpdateActionItemInput } from "./dto/meetings.schemas";
 import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
+import { reserveTicketCapacity } from "../core/build-ticket-capacity";
 
 type ActionItemPatch = Partial<
   Pick<
@@ -158,6 +159,7 @@ export class ActionItemsService {
       if (!item) throw new NotFoundException("Action item not found");
       if (item.convertedTicketId !== null) throw new ConflictException("Action item already converted to a task");
 
+      await reserveTicketCapacity(tx, orgId, projectId, [{ status: "TODO", count: 1 }]);
       const nextNumber = await allocateTicketNumbers(tx, orgId, projectId);
 
       const [ticket] = await tx

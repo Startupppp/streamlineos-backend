@@ -6,6 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CreateSubmissionInput, UpdateSubmissionInput } from "./dto/forms.schemas";
 import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
+import { reserveTicketCapacity } from "../core/build-ticket-capacity";
 
 type FormRow = typeof projectForms.$inferSelect;
 type SubmissionRow = typeof formSubmissions.$inferSelect;
@@ -79,6 +80,7 @@ export class SubmissionsService {
 
     const [submission] = await this.db.transaction(async (tx) => {
       if (ticketActions.length > 0) {
+        await reserveTicketCapacity(tx, orgId, projectId, [{ status: "TODO", count: ticketActions.length }]);
         const startNumber = await allocateTicketNumbers(tx, orgId, projectId, ticketActions.length);
         const inserted = await tx
           .insert(tickets)

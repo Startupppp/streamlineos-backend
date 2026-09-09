@@ -29,8 +29,7 @@ import type { CreateTicketInput } from "./dto/projects.schemas";
 import { computeNextRunAt } from "./projects-recurrence.util";
 import { normalizeTicketType } from "./tickets-helpers";
 import { allocateTicketNumbers } from "./lib/allocate-ticket-number";
-import { lockProjectTicketMutation } from "./build-ticket-mutation-policy";
-import { enforceWipLimitForStatus } from "./projects-tickets-workflow-utils";
+import { reserveTicketCapacity } from "./build-ticket-capacity";
 
 @Injectable()
 export class ProjectsTicketsCreateService {
@@ -93,8 +92,7 @@ export class ProjectsTicketsCreateService {
     const reporterMembershipId = actorMap.get(reporterUserId)?.membershipId ?? null;
 
     const [ticket] = await this.db.transaction(async (tx) => {
-      await lockProjectTicketMutation(tx, u.orgId, projectId);
-      await enforceWipLimitForStatus(tx, u.orgId, projectId, body.status ?? "TODO", 0);
+      await reserveTicketCapacity(tx, u.orgId, projectId, [{ status: body.status ?? "TODO", count: 1 }]);
       const nextTicketNumber = await allocateTicketNumbers(tx, u.orgId, projectId);
 
       const isRecurring =
@@ -246,6 +244,7 @@ export class ProjectsTicketsCreateService {
     const feedbackActorMap = await resolveOrganizationActorsByUserIds(this.db, orgId, [actingUserId]);
     const feedbackActorMembershipId = feedbackActorMap.get(actingUserId)?.membershipId ?? null;
     const [ticket] = await this.db.transaction(async (tx) => {
+      await reserveTicketCapacity(tx, orgId, projectId, [{ status: "TODO", count: 1 }]);
       const nextNum = await allocateTicketNumbers(tx, orgId, projectId);
 
       const [created] = await tx

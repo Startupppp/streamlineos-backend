@@ -226,7 +226,7 @@ export const exportTicketsResultSchema = z.object({
 
 export const importTicketsResultSchema = z.object({
   created: z.number().int(),
-  skipped: z.number().int(),
+  skipped: z.array(z.object({ row: z.number().int(), reason: z.string() })),
 });
 
 export const columnCountsSchema = z.record(z.string(), z.number().int());
