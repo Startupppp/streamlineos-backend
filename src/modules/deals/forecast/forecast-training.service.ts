@@ -29,6 +29,7 @@ import {
   HOLDOUT_FRACTION,
   acceptModel,
   assessForecastHistory,
+  reportableProbability,
   type ForecastBasis,
   type ForecastReadiness,
   type NaiveReason,
@@ -433,16 +434,27 @@ export class ForecastTrainingService {
 
     const score: DealScore = scoreWithModel(active.model, vector.values);
 
+    /**
+     * Stored inside the band the product is willing to assert, not raw.
+     *
+     * `scoreWithModel` is left alone on purpose — the acceptance gate reads its
+     * output directly, and a model whose worst predictions were pulled towards
+     * the middle before being scored would look better calibrated than it is.
+     * The band belongs here, where a number stops being arithmetic and becomes
+     * a claim on a screen.
+     */
+    const probability = reportableProbability(score.probability);
+
     return {
       organizationId: orgId,
       dealId: deal.snapshot.dealId,
       crmDealForecastModelId: active.modelId,
       asOf: now,
       scoredAt: now,
-      probability: score.probability,
-      intervalLower: score.interval.lower,
-      intervalUpper: score.interval.upper,
-      expectedValueMinor: Math.round(score.probability * deal.snapshot.valueMinor),
+      probability,
+      intervalLower: reportableProbability(score.interval.lower),
+      intervalUpper: reportableProbability(score.interval.upper),
+      expectedValueMinor: Math.round(probability * deal.snapshot.valueMinor),
       features: featureValuesToRecord(vector.values),
       factors: score.factors.map((factor) => ({
         feature: factor.feature,

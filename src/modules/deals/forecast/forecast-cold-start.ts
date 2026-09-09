@@ -47,6 +47,38 @@ export const FORECAST_ACCEPTANCE = {
   minHoldoutDeals: 10,
 } as const;
 
+/**
+ * The furthest a stored forecast is allowed to go towards certainty.
+ *
+ * A logistic fit on separable data drives the logit far enough that
+ * `sigmoid` rounds to exactly 1 in double precision, and a small pipeline is
+ * separable more often than it sounds: every deal that was worked was won and
+ * every deal nobody touched was lost is a real pattern, not a synthetic one.
+ * The arithmetic is not wrong — the claim is. "100%" tells a rep the deal is
+ * banked and makes `expectedValue` equal to the full contract value, and no
+ * model fitted on sixty closed deals has earned either statement.
+ *
+ * So the band is applied where a probability becomes something the product
+ * asserts — the stored score and the pipeline weight — and NOT to the holdout
+ * predictions the acceptance gate reads. Clamping before the gate would flatter
+ * a badly calibrated model by pulling its worst predictions towards the middle,
+ * which is the one place this must not help.
+ *
+ * 0.02/0.98 rather than something tighter: wide enough that a genuinely
+ * confident model still reads as confident, narrow enough that nothing on
+ * screen ever says a deal is certain.
+ */
+export const FORECAST_REPORTED_BAND = { floor: 0.02, ceiling: 0.98 } as const;
+
+/** Pulls a probability inside the band the product is willing to assert. */
+export function reportableProbability(probability: number): number {
+  if (!Number.isFinite(probability)) return 0.5;
+  return Math.min(
+    FORECAST_REPORTED_BAND.ceiling,
+    Math.max(FORECAST_REPORTED_BAND.floor, probability),
+  );
+}
+
 export interface ClosedHistory {
   readonly won: number;
   readonly lost: number;

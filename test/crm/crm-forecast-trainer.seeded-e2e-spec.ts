@@ -9,7 +9,10 @@ import {
   orgModules,
 } from "src/db/schema";
 import { ForecastTrainingService } from "src/modules/deals/forecast/forecast-training.service";
-import { FORECAST_HISTORY_REQUIREMENT } from "src/modules/deals/forecast/forecast-cold-start";
+import {
+  FORECAST_HISTORY_REQUIREMENT,
+  FORECAST_REPORTED_BAND,
+} from "src/modules/deals/forecast/forecast-cold-start";
 import { runInNewTenantTransaction } from "src/common/tenant/run-in-tenant-transaction";
 import {
   SEEDED_HARNESS,
@@ -253,11 +256,22 @@ describe(`${SEEDED_HARNESS} the forecast trainer refuses before it ships`, () =>
        * shrink the corpus below the floor again; running into the future would
        * seed deals that closed tomorrow.
        */
+      /**
+       * One deal in six contradicts the pattern, and that is the point.
+       *
+       * A perfectly separable corpus drives the logit far enough that `sigmoid`
+       * rounds to exactly 1 in double precision — the model is not wrong, but
+       * the fixture stops resembling any pipeline and stops exercising the
+       * interval, which is the part that makes a small-sample model honest.
+       * A sixth of deals going the other way leaves a signal a fit can find and
+       * a residual uncertainty it has to report.
+       */
+      const contrary = index % 6 === 5;
       await seedClosedDeal({
         won,
         closedDaysAgo: 700 - index * 9,
-        activities: won ? 8 + (index % 3) : 1,
-        advanced: won,
+        activities: (won ? !contrary : contrary) ? 8 + (index % 3) : 1,
+        advanced: won ? !contrary : contrary,
       });
     }
     for (let index = 0; index < 3; index += 1) await seedOpenDeal();
@@ -286,8 +300,14 @@ describe(`${SEEDED_HARNESS} the forecast trainer refuses before it ships`, () =>
 
     expect(scores).toHaveLength(3);
     for (const score of scores) {
-      expect(Number(score.probability)).toBeGreaterThan(0);
-      expect(Number(score.probability)).toBeLessThan(1);
+      /**
+       * Inside the band the product is willing to assert, never at its edges.
+       * A stored 1.0 renders as "100%" and makes the expected value the full
+       * contract value, and no model fitted on sixty closed deals has earned
+       * either statement — see FORECAST_REPORTED_BAND.
+       */
+      expect(Number(score.probability)).toBeGreaterThanOrEqual(FORECAST_REPORTED_BAND.floor);
+      expect(Number(score.probability)).toBeLessThanOrEqual(FORECAST_REPORTED_BAND.ceiling);
       /** The interval is what makes a small-sample model honest. */
       expect(Number(score.intervalLower)).toBeLessThanOrEqual(Number(score.probability));
       expect(Number(score.intervalUpper)).toBeGreaterThanOrEqual(Number(score.probability));
@@ -314,8 +334,8 @@ describe(`${SEEDED_HARNESS} the forecast trainer refuses before it ships`, () =>
     );
     expect(probabilities.size).toBe(3);
     for (const probability of probabilities.values()) {
-      expect(probability).toBeGreaterThan(0);
-      expect(probability).toBeLessThan(1);
+      expect(probability).toBeGreaterThanOrEqual(FORECAST_REPORTED_BAND.floor);
+      expect(probability).toBeLessThanOrEqual(FORECAST_REPORTED_BAND.ceiling);
     }
   }, 120_000);
 
