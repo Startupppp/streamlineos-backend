@@ -1,6 +1,8 @@
-import { Controller, Get, Headers, HttpCode, InternalServerErrorException, Post } from "@nestjs/common";
+import { Controller, Get, Headers, HttpCode, InternalServerErrorException, Post, Query } from "@nestjs/common";
+import { z } from "zod";
 import { Public } from "../../common/auth/public.decorator";
 import { OutboxPublisherService } from "../../common/outbox/outbox-publisher.service";
+import { OutboxReplayService } from "../../common/outbox/outbox-replay.service";
 import { assertCronSecret } from "./cron-secret";
 import { CronLeaseService } from "./cron-lease.service";
 import { CronOutboxRetentionService } from "./cron-outbox-retention.service";
@@ -9,9 +11,14 @@ import {
   outboxMetricsResponseSchema,
   outboxReportResponseSchema,
   outboxEventsRetentionSweepResponseSchema,
+  outboxEventsReplayDeadQuerySchema,
+  outboxEventsReplayDeadResponseSchema,
 } from "./dto/cron-outbox-response.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
 import { logger } from "../../common/logger/logger.service";
 import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+
+type OutboxReplayDeadQuery = z.infer<typeof outboxEventsReplayDeadQuerySchema>;
 
 /** Platform scheduler entry point for the generic transactional outbox. */
 @Public()
@@ -21,6 +28,7 @@ export class CronOutboxController {
     private readonly publisher: OutboxPublisherService,
     private readonly lease: CronLeaseService,
     private readonly outboxRetention: CronOutboxRetentionService,
+    private readonly outboxReplay: OutboxReplayService,
   ) {}
 
   @Get("outbox-events-worker")
@@ -65,6 +73,18 @@ export class CronOutboxController {
     return this.runOutboxEventsRetentionSweep(authorization);
   }
 
+  @Post("outbox-events-replay-dead")
+  @BodylessAction()
+  @HttpCode(200)
+  @Validate({ query: outboxEventsReplayDeadQuerySchema })
+  @ResponseSchema(outboxEventsReplayDeadResponseSchema)
+  postOutboxEventsReplayDead(
+    @Query() query: OutboxReplayDeadQuery,
+    @Headers("authorization") authorization?: string,
+  ) {
+    return this.runOutboxEventsReplayDead(query, authorization);
+  }
+
   private async run(authorization?: string) {
     assertCronSecret(authorization);
     const outcome = await this.lease.withLease("outbox-events-worker", 120, () =>
@@ -74,6 +94,28 @@ export class CronOutboxController {
       return { success: true, skipped: true, message: "outbox-events-worker already running" };
     }
     return { success: true, ...outcome.result };
+  }
+
+  private async runOutboxEventsReplayDead(query: OutboxReplayDeadQuery, authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.lease.withLease("outbox-events-replay-dead", 600, () =>
+        this.outboxReplay.replayDeadLetters(query),
+      );
+      if (!outcome.ran)
+        return { success: true, skipped: true, message: "outbox-events-replay-dead already running" };
+      const result = outcome.result;
+      return {
+        success: true,
+        message:
+          `Outbox replay: ${result.replayed} dead-lettered event(s) requeued as PENDING` +
+          (result.truncated ? " (truncated — rerun)" : ""),
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Outbox events dead-letter replay cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
   }
 
   private async runOutboxEventsRetentionSweep(authorization?: string) {

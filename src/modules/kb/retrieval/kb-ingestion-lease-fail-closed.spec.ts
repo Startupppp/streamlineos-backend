@@ -1,9 +1,12 @@
 import { KbIngestionConsumer } from "./kb-ingestion-consumer";
 import {
   KbIngestionLeaseService,
+  KB_LEASE_CONTENDED_CODE,
+  KB_LEASE_TTL_SECONDS,
   KB_LEASE_UNAVAILABLE_CODE,
   type KbIngestionLease,
 } from "./kb-ingestion-lease.service";
+import { OUTBOX_LEASE_MS } from "../../../common/outbox/outbox-claim";
 import {
   KbContentAdapterRegistry,
   type KbPageAdapter,
@@ -74,7 +77,10 @@ function makeTracingAdapter(recorder: InterleaveRecorder) {
   return { adapter, open: () => releaseBarrier?.() };
 }
 
-function buildConsumer(lease: Pick<KbIngestionLeaseService, "acquire" | "release">, pageAdapter: KbPageAdapter) {
+function buildConsumer(
+  lease: Pick<KbIngestionLeaseService, "acquire" | "release" | "startHeartbeat">,
+  pageAdapter: KbPageAdapter,
+) {
   const noop = (contentType: string) =>
     ({ contentType, handle: jest.fn().mockResolvedValue(undefined) }) as unknown as never;
   const adapterRegistry = new KbContentAdapterRegistry();
@@ -131,8 +137,35 @@ describe("KbIngestionLeaseService — the degraded path is closed, not open", ()
     expect(redis.set).toHaveBeenCalledWith(
       `kb:ingest:lease:${ORG_ID}:page:${CONTENT_ID}`,
       lease.token,
-      { ex: 300, nx: true },
+      { ex: KB_LEASE_TTL_SECONDS, nx: true },
     );
+  });
+
+  it("BITE: the TTL expires before the outbox re-claims, so a crashed worker cannot block its own redelivery", () => {
+    expect(KB_LEASE_TTL_SECONDS * 1_000).toBeLessThan(OUTBOX_LEASE_MS);
+  });
+
+  it("renews only for the token that holds the lease", async () => {
+    const redis = { eval: jest.fn().mockResolvedValue(1) };
+    const service = new KbIngestionLeaseService(redis as never);
+
+    expect(await service.renew(ORG_ID, "page", CONTENT_ID, "tok")).toEqual({ status: "renewed" });
+    expect(redis.eval).toHaveBeenCalledWith(
+      expect.stringContaining("expire"),
+      [`kb:ingest:lease:${ORG_ID}:page:${CONTENT_ID}`],
+      ["tok", String(KB_LEASE_TTL_SECONDS)],
+    );
+  });
+
+  it("reports a lost lease when the stored token is no longer ours", async () => {
+    const redis = { eval: jest.fn().mockResolvedValue(0) };
+    const service = new KbIngestionLeaseService(redis as never);
+    jest
+      .spyOn((service as unknown as { logger: { error: (...a: unknown[]) => void } }).logger, "error")
+      .mockImplementation(() => undefined);
+
+    expect(await service.renew(ORG_ID, "page", CONTENT_ID, "tok")).toEqual({ status: "lost" });
+    expect(service.health().lostCount).toBe(1);
   });
 
   it("carries no boolean an unwary caller could read as permission to proceed", async () => {
@@ -153,6 +186,7 @@ describe("KbIngestionLeaseService — the degraded path is observable", () => {
     expect(service.health()).toEqual({
       unavailableCount: 2,
       contendedCount: 0,
+      lostCount: 0,
       lastUnavailableReason: "redis_not_configured",
     });
   });
@@ -221,6 +255,7 @@ describe("KbIngestionConsumer — no Redis means no ingestion, not unguarded ing
     const failOpenLease = {
       acquire: jest.fn().mockResolvedValue({ status: "acquired", token: "" }),
       release: jest.fn().mockResolvedValue(undefined),
+      startHeartbeat: jest.fn().mockReturnValue({ stop: jest.fn(), lost: () => false }),
     };
     const consumer = buildConsumer(failOpenLease, adapter);
 
@@ -235,7 +270,7 @@ describe("KbIngestionConsumer — no Redis means no ingestion, not unguarded ing
     expect(adapter.handle).toHaveBeenCalledTimes(2);
   });
 
-  it("a genuinely contended lease suppresses the duplicate; only unavailability fails the event", async () => {
+  it("a genuinely contended lease fails the event too — a normal return would mark it DELIVERED", async () => {
     const recorder: InterleaveRecorder = { events: [], maxConcurrent: 0 };
     const { adapter, open } = makeTracingAdapter(recorder);
     const redis = { set: jest.fn().mockResolvedValue(null) };
@@ -243,7 +278,7 @@ describe("KbIngestionConsumer — no Redis means no ingestion, not unguarded ing
     const consumer = buildConsumer(lease, adapter);
     open();
 
-    await expect(consumer.handle(makeEvent())).resolves.toBeUndefined();
+    await expect(consumer.handle(makeEvent())).rejects.toThrow(KB_LEASE_CONTENDED_CODE);
     expect(adapter.handle).not.toHaveBeenCalled();
   });
 

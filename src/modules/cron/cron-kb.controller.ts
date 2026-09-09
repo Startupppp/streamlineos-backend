@@ -14,11 +14,13 @@ import { CronKbChunkRetentionService } from "./cron-kb-chunk-retention.service";
 import { CronKbChatRetentionService } from "./cron-kb-chat-retention.service";
 import { CronKbTelemetryRetentionService } from "./cron-kb-telemetry-retention.service";
 import { CronLeaseService } from "./cron-lease.service";
+import { KbStuckSourceReaperService } from "../kb/retrieval/kb-stuck-source-reaper.service";
 import {
   kbTrashPurgeResponseSchema,
   kbChunkRetentionSweepResponseSchema,
   kbTelemetryRetentionSweepResponseSchema,
   kbChatHistoryPurgeResponseSchema,
+  kbStuckSourceReapResponseSchema,
 } from "./dto/cron-support-response.schemas";
 import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 
@@ -30,6 +32,7 @@ export class CronKbController {
     private readonly kbChunkRetention: CronKbChunkRetentionService,
     private readonly kbChatRetention: CronKbChatRetentionService,
     private readonly kbTelemetryRetention: CronKbTelemetryRetentionService,
+    private readonly kbStuckSources: KbStuckSourceReaperService,
     private readonly cronLease: CronLeaseService,
   ) {}
 
@@ -87,6 +90,42 @@ export class CronKbController {
   @ResponseSchema(kbChatHistoryPurgeResponseSchema)
   postKbChatHistoryPurge(@Headers("authorization") authorization?: string) {
     return this.runKbChatHistoryPurge(authorization);
+  }
+
+  @Get("kb-stuck-source-reap")
+  @ResponseSchema(kbStuckSourceReapResponseSchema)
+  getKbStuckSourceReap(@Headers("authorization") authorization?: string) {
+    return this.runKbStuckSourceReap(authorization);
+  }
+
+  @Post("kb-stuck-source-reap")
+  @BodylessAction()
+  @HttpCode(200)
+  @ResponseSchema(kbStuckSourceReapResponseSchema)
+  postKbStuckSourceReap(@Headers("authorization") authorization?: string) {
+    return this.runKbStuckSourceReap(authorization);
+  }
+
+  private async runKbStuckSourceReap(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("kb-stuck-source-reap", 600, () =>
+        this.kbStuckSources.reap(),
+      );
+      if (!outcome.ran)
+        return { success: true, skipped: true, message: "kb-stuck-source-reap already running" };
+      const result = outcome.result;
+      return {
+        success: true,
+        message:
+          `KB stuck sources: failed ${result.sourcesFailed} source(s) across ${result.orgsProcessed} orgs` +
+          (result.truncated ? " (truncated — rerun)" : ""),
+        ...result,
+      };
+    } catch (error) {
+      logger.error("KB stuck source reap cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
   }
 
   private async runKbTrashPurge(authorization?: string) {

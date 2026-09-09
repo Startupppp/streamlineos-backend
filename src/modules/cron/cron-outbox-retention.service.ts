@@ -69,6 +69,17 @@ export async function runBatchedDelete(
  * column's own `timestamp` mapper rather than guessed at by the driver. Only the
  * `LIMIT` stays raw — Drizzle's delete builder has no `.limit()`, which is why
  * the batching needs the subselect at all.
+ *
+ * DEAD is deliberately NOT in the terminal set. A dead-lettered row is not a
+ * finished effect, it is an unfinished one: the work it describes never
+ * happened, and the row plus its `last_error` is the only durable record that it
+ * was owed. Deleting it at 30 days made the dead-letter queue a place events
+ * quietly went to be forgotten — a lost KB ingestion became unrecoverable, with
+ * `kb_sources.status` still reading `processing`. A DEAD row now leaves this
+ * sweep only through an explicit disposition: `OutboxReplayService` requeues it
+ * as PENDING, after which its next terminal state is swept normally. The cost is
+ * that an undrained queue grows without bound, which is the correct pressure —
+ * `alert:dead-outbox` reports it and a human decides.
  */
 export async function sweepOrgOutboxRetention(
   tx: TenantTx,
@@ -84,7 +95,7 @@ export async function sweepOrgOutboxRetention(
           sql`${outboxEvents.outboxEventId} IN (
             SELECT ${outboxEvents.outboxEventId} FROM ${outboxEvents}
             WHERE ${eq(outboxEvents.organizationId, orgId)}
-              AND ${outboxEvents.deliveryState} IN ('DELIVERED', 'DEAD', 'SUPPRESSED')
+              AND ${outboxEvents.deliveryState} IN ('DELIVERED', 'SUPPRESSED')
               AND ${lt(outboxEvents.occurredAt, cutoff)}
             LIMIT ${limit}
           )`,

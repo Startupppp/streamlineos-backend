@@ -63,6 +63,24 @@ export const kbTelemetryRetentionSweepResponseSchema = z.union([
   }),
 ]);
 
+export const kbStuckSourceReapResponseSchema = z.union([
+  cronSkippedSchema,
+  z.object({
+    success: z.literal(true),
+    message: z.string(),
+    orgsProcessed: z.number().int().nonnegative(),
+    orgsFailed: z.number().int().nonnegative(),
+    sourcesFailed: z.number().int().nonnegative(),
+    truncated: z.boolean(),
+    leaseHealth: z.object({
+      unavailableCount: z.number().int().nonnegative(),
+      contendedCount: z.number().int().nonnegative(),
+      lostCount: z.number().int().nonnegative(),
+      lastUnavailableReason: z.string().nullable(),
+    }),
+  }),
+]);
+
 export const kbChatHistoryPurgeResponseSchema = z.union([
   cronSkippedSchema,
   z.object({

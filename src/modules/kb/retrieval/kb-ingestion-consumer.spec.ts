@@ -1,5 +1,10 @@
 import { KbIngestionConsumer } from "./kb-ingestion-consumer";
-import { KbIngestionLeaseService, type KbIngestionLease } from "./kb-ingestion-lease.service";
+import {
+  KbIngestionLeaseService,
+  KB_LEASE_CONTENDED_CODE,
+  KB_LEASE_LOST_CODE,
+  type KbIngestionLease,
+} from "./kb-ingestion-lease.service";
 import { KbContentAdapterRegistry, KbPageAdapter, KbArticleAdapter, KbSourceAdapter, KbAttachmentAdapter } from "./kb-content-adapter";
 import { OutboxConsumerRegistry, type OutboxEventRow } from "../../../common/outbox/outbox-consumer.registry";
 import { OUTBOX_MAX_RETRIES } from "../../../common/outbox/outbox-envelope";
@@ -52,6 +57,8 @@ function makeLease(acquired = true): jest.Mocked<KbIngestionLeaseService> {
   return {
     acquire: jest.fn().mockResolvedValue(outcome),
     release: jest.fn().mockResolvedValue(undefined),
+    renew: jest.fn().mockResolvedValue({ status: "renewed" }),
+    startHeartbeat: jest.fn().mockReturnValue({ stop: jest.fn(), lost: () => false }),
   } as unknown as jest.Mocked<KbIngestionLeaseService>;
 }
 
@@ -240,30 +247,18 @@ describe("KbIngestionConsumer", () => {
   });
 
   describe("L1 — lease exclusivity under concurrent claim", () => {
-    it("suppresses the duplicate delivery when the lease is already held by another worker", async () => {
+    it("BITE: a contended lease FAILS the delivery, so the outbox never marks the event DELIVERED", async () => {
       const contendedLease = makeLease(false);
       const { consumer } = buildConsumer({ lease: contendedLease });
 
-      await expect(consumer.handle(makeEvent())).resolves.toBeUndefined();
+      await expect(consumer.handle(makeEvent())).rejects.toThrow(KB_LEASE_CONTENDED_CODE);
     });
 
     it("does not call the adapter when the lease is not acquired", async () => {
       const contendedLease = makeLease(false);
       const { consumer, pageAdapter } = buildConsumer({ lease: contendedLease });
 
-      await consumer.handle(makeEvent());
-
-      expect(pageAdapter.handle).not.toHaveBeenCalled();
-    });
-
-    it("BITE: contention never consumes a retry, so a hot document cannot dead-letter unindexed", async () => {
-      const contendedLease = makeLease(false);
-      const { consumer, pageAdapter } = buildConsumer({ lease: contendedLease });
-
-      for (let attempt = 0; attempt < OUTBOX_MAX_RETRIES - 1; attempt++)
-        await expect(
-          consumer.handle(makeEvent({ retryCount: attempt })),
-        ).resolves.toBeUndefined();
+      await expect(consumer.handle(makeEvent())).rejects.toThrow(KB_LEASE_CONTENDED_CODE);
 
       expect(pageAdapter.handle).not.toHaveBeenCalled();
     });
@@ -272,7 +267,7 @@ describe("KbIngestionConsumer", () => {
       const contendedLease = makeLease(false);
       const { consumer } = buildConsumer({ lease: contendedLease });
 
-      await consumer.handle(makeEvent());
+      await expect(consumer.handle(makeEvent())).rejects.toThrow(KB_LEASE_CONTENDED_CODE);
 
       expect(contendedLease.release).not.toHaveBeenCalled();
     });
@@ -285,19 +280,30 @@ describe("KbIngestionConsumer", () => {
 
       expect(lease.release).toHaveBeenCalledWith(ORG_ID, "page", CONTENT_ID, "tok-1");
     });
-  });
 
-  describe("D1 — retry-to-DLQ: dead-lettered after max retries", () => {
-    it("throws KB_INGESTION_DEAD_LETTER at OUTBOX_MAX_RETRIES without calling the adapter", async () => {
-      const { consumer, pageAdapter } = buildConsumer();
+    it("heartbeats the lease for the length of the run and stops on the way out", async () => {
+      const lease = makeLease();
+      const stop = jest.fn();
+      (lease.startHeartbeat as jest.Mock).mockReturnValue({ stop, lost: () => false });
+      const { consumer } = buildConsumer({ lease });
 
-      await expect(
-        consumer.handle(makeEvent({ retryCount: OUTBOX_MAX_RETRIES })),
-      ).rejects.toThrow("KB_INGESTION_DEAD_LETTER");
-      expect(pageAdapter.handle).not.toHaveBeenCalled();
+      await consumer.handle(makeEvent());
+
+      expect(lease.startHeartbeat).toHaveBeenCalledWith(ORG_ID, "page", CONTENT_ID, "tok-1");
+      expect(stop).toHaveBeenCalledTimes(1);
     });
 
-    it("still processes the event below the dead-letter threshold", async () => {
+    it("fails the delivery when the heartbeat lost the lease mid-run", async () => {
+      const lease = makeLease();
+      (lease.startHeartbeat as jest.Mock).mockReturnValue({ stop: jest.fn(), lost: () => true });
+      const { consumer } = buildConsumer({ lease });
+
+      await expect(consumer.handle(makeEvent())).rejects.toThrow(KB_LEASE_LOST_CODE);
+    });
+  });
+
+  describe("D1 — the consumer does not second-guess the relay's dead-letter decision", () => {
+    it("still ingests at the highest retryCount a consumer can observe", async () => {
       const { consumer, pageAdapter } = buildConsumer();
 
       await consumer.handle(makeEvent({ retryCount: OUTBOX_MAX_RETRIES - 1 }));

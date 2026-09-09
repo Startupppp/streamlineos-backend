@@ -1,11 +1,12 @@
-import { Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { kbArticleChunks, kbArticles, kbArticleAttachments, kbPages } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
-import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { StorageService } from "../../storage/storage.service";
+import { KbIngestionCheckpointService } from "./kb-ingestion-checkpoint.service";
+import { embedChunksWithResumption } from "./kb-embedding-resumption";
 import {
   extractAttachmentText,
   isExtractableMime,
@@ -46,21 +47,20 @@ export class KbAttachmentIndexingService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly aiGateway: AiGatewayService,
     private readonly storage: StorageService,
+    private readonly checkpoint: KbIngestionCheckpointService,
   ) {}
 
-  private async embedInBatches(orgId: string, chunks: string[], feature = "kb.indexing"): Promise<number[][]> {
-    const embedResult = await this.aiGateway.embedBatchWithCredit({
-      texts: chunks,
-      orgId,
-      feature,
-      charge: true,
-    });
-    if (!embedResult.ok) {
-      if (embedResult.kind === "quota_exceeded")
-        throw new InsufficientAiCreditsException({ message: embedResult.message });
-      throw new ServiceUnavailableException(embedResult.message);
-    }
-    return embedResult.vectors;
+  private embed(
+    orgId: string,
+    contentType: string,
+    contentId: number,
+    contentHash: string,
+    chunks: string[],
+  ): Promise<number[][]> {
+    return embedChunksWithResumption(
+      { aiGateway: this.aiGateway, checkpoint: this.checkpoint, logger: this.logger },
+      { orgId, contentType, contentId, contentHash, chunks },
+    );
   }
 
   async indexSource(
@@ -89,7 +89,7 @@ export class KbAttachmentIndexingService {
       return stored.chunkCount;
     }
 
-    const embeddings = await this.embedInBatches(orgId, chunks);
+    const embeddings = await this.embed(orgId, "source", sourceId, contentHash, chunks);
 
     await replaceSourceChunks(this.db, orgId, sourceId, chunks, embeddings, contentHash);
 
@@ -183,7 +183,7 @@ export class KbAttachmentIndexingService {
       return { chunks: stored.chunkCount, warning: null };
     }
 
-    const embeddings = await this.embedInBatches(orgId, chunks);
+    const embeddings = await this.embed(orgId, "attachment", attachmentId, contentHash, chunks);
 
     await replaceAttachmentChunks(this.db, orgId, attachmentId, attachment.articleId, chunks, embeddings, {
       contentHash,
@@ -255,7 +255,7 @@ export class KbAttachmentIndexingService {
       return { chunks: stored.chunkCount, warning: null };
     }
 
-    const embeddings = await this.embedInBatches(orgId, chunks);
+    const embeddings = await this.embed(orgId, "page_document", pageId, contentHash, chunks);
 
     await replacePageDocumentChunks(this.db, orgId, pageId, chunks, embeddings, {
       contentHash,

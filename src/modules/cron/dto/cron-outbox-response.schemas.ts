@@ -42,6 +42,25 @@ export const outboxReportResponseSchema = z.object({
   reports: z.array(outboxOrgReportSchema),
 });
 
+export const outboxEventsReplayDeadQuerySchema = z
+  .object({
+    eventType: z.string().min(1).max(200).optional(),
+    organizationId: z.string().min(1).max(200).optional(),
+  })
+  .strict();
+
+export const outboxEventsReplayDeadResponseSchema = z.union([
+  cronSkippedSchema,
+  z.object({
+    success: z.literal(true),
+    message: z.string(),
+    organizationsProcessed: z.number().int().nonnegative(),
+    organizationsFailed: z.number().int().nonnegative(),
+    replayed: z.number().int().nonnegative(),
+    truncated: z.boolean(),
+  }),
+]);
+
 export const outboxEventsRetentionSweepResponseSchema = z.union([
   cronSkippedSchema,
   z.object({

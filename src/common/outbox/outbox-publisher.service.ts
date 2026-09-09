@@ -6,7 +6,7 @@ import { type Db } from "../../db/drizzle.module";
 import { APP_CONFIG } from "../../config/config.module";
 import type { AppConfig } from "../../config/env.validation";
 import {
-  nextRetryDelayMs,
+  nextRetryDelayWithJitterMs,
   shouldDeadLetter,
   shouldSuppressForLifecycle,
 } from "./outbox-envelope";
@@ -227,7 +227,7 @@ export class OutboxPublisherService {
           deliveryState: "PENDING",
           retryCount,
           lastError: message,
-          leaseExpiresAt: new Date(Date.now() + nextRetryDelayMs(retryCount)),
+          leaseExpiresAt: new Date(Date.now() + nextRetryDelayWithJitterMs(retryCount)),
         })
         .where(and(
           eq(outboxEvents.outboxEventId, event.outboxEventId),

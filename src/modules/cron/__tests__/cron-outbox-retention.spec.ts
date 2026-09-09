@@ -47,15 +47,24 @@ describe("CronOutboxRetentionService — SQL predicates and batching", () => {
   });
 
   describe("outbox_events predicate (capturedWheres[0])", () => {
-    it("filters only terminal delivery states: DELIVERED, DEAD, SUPPRESSED", async () => {
+    it("filters only settled delivery states: DELIVERED, SUPPRESSED", async () => {
       const { capturedWheres } = setupSingleOrg([]);
       const svc = new CronOutboxRetentionService({} as unknown as Db);
       await svc.sweep();
 
       const rendered = dialect.sqlToQuery(capturedWheres[0]!);
       expect(rendered.sql).toContain(
-        `"outbox_events"."delivery_state" IN ('DELIVERED', 'DEAD', 'SUPPRESSED')`,
+        `"outbox_events"."delivery_state" IN ('DELIVERED', 'SUPPRESSED')`,
       );
+    });
+
+    it("BITE: never deletes a DEAD row — an undrained dead letter is unfinished work, not history", async () => {
+      const { capturedWheres } = setupSingleOrg([]);
+      const svc = new CronOutboxRetentionService({} as unknown as Db);
+      await svc.sweep();
+
+      const rendered = dialect.sqlToQuery(capturedWheres[0]!);
+      expect(rendered.sql).not.toContain("'DEAD'");
     });
 
     it("does NOT include PENDING rows in the delete predicate", async () => {
