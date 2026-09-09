@@ -110,6 +110,12 @@ export interface CallAnalysisCohort {
   readonly sinceDays: number;
   /** The lower bound on `analysed_at`, not on when the calls happened. */
   readonly since: Date;
+  /**
+   * The instant `since` was measured back from, so `until - since` is exactly
+   * `sinceDays` days. A caller that reads the clock again for the upper bound
+   * gets a window a few milliseconds longer than the period it is labelling.
+   */
+  readonly until: Date;
   /** True when the window held more analyses than `maxRows`. */
   readonly truncated: boolean;
   /** Whether this viewer holds `crm:call-analysis:view-team`. */
@@ -135,7 +141,20 @@ export class CallAnalysisCohortService {
 
   async read(user: CurrentUserContext, request: CohortRequest): Promise<CallAnalysisCohort> {
     const sinceDays = clampDays(request.sinceDays);
-    const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
+    /**
+     * One clock read, reported alongside `since`.
+     *
+     * The window is `[since, until]` and callers need both ends of it. The
+     * aggregate route used to take `since` from here and read the clock again
+     * for the other end, so the two were a few milliseconds apart and the span
+     * was `sinceDays` days *plus that gap* — which `trendBuckets`, counting
+     * backwards in whole buckets, closed with an extra bucket a few
+     * milliseconds wide. A seven-day trend came back with eight points, the
+     * first of them always empty, under a `bucket: "day"` label.
+     */
+    const asOf = Date.now();
+    const until = new Date(asOf);
+    const since = new Date(asOf - sinceDays * 24 * 60 * 60 * 1000);
     const maxRows = Math.max(1, Math.trunc(request.maxRows));
 
     /**
@@ -230,6 +249,7 @@ export class CallAnalysisCohortService {
     return {
       sinceDays,
       since,
+      until,
       truncated,
       canReadTeam: viewer.canReadTeam,
       calls,

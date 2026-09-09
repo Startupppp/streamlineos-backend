@@ -113,8 +113,15 @@ export class CallRepAggregatesService {
        * cohort. Anchoring on the data would make the last bucket end whenever
        * the team last made a call, so a quiet week would silently shift every
        * boundary and two requests a day apart would chart different periods.
+       *
+       * The cohort's instant rather than a fresh `new Date()`, because both
+       * ends of the window have to come from one clock read: a second read is
+       * milliseconds later, which makes the span `sinceDays` days plus a
+       * fraction, and `trendBuckets` closes that fraction with a whole extra
+       * bucket. A seven-day trend charted eight points, the first a few
+       * milliseconds wide and permanently empty.
        */
-      { since: cohort.since, until: new Date(), bucket },
+      { since: cohort.since, until: cohort.until, bucket },
     );
 
     const page = Math.max(1, Math.trunc(query.page));
