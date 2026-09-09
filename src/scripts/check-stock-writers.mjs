@@ -71,17 +71,44 @@ function writesIn(source, table) {
  * rather than something the scanner can check, and it is here so that a widened
  * exception is visible as a diff rather than as a silent change of meaning.
  */
+/**
+ * The six columns `uniq_inv_stock_levels_natural_key` is built from.
+ *
+ * A writer that names a row by fewer than all of them writes to more rows than
+ * it means to, and the extra ones are somebody else's stock. This module has
+ * had that bug twice — `lot_id` missing from a release predicate, then
+ * `ownership` missing from the same one — and both times the arithmetic
+ * clamped, so there was no negative number and no error, just stock quietly
+ * becoming available again.
+ *
+ * Checked only for writers, not for readers. Most of the module aggregates
+ * across grains on purpose: a stock report, a forecast and a reorder proposal
+ * are all supposed to sum a variant across lots and pallets, so requiring the
+ * full key of every reader would flag thirty correct files and teach everyone
+ * to ignore the gate.
+ */
+const NATURAL_KEY = [
+  "product_variant_id|productVariantId",
+  "location_id|locationId",
+  "lot_id|lotId",
+  "serial_id|serialId",
+  "handling_unit_id|handlingUnitId",
+  "ownership",
+];
+
 const ACKNOWLEDGED = [
   {
     file: "stock-engine/movement-apply.service.ts",
     tables: ["levels", "ledger"],
     buckets: "everything",
+    grain: "full",
     reason: "The kernel. This is the one writer the invariant exists to protect.",
   },
   {
     file: "stock-engine/stock-level-locks.ts",
     tables: ["levels"],
     buckets: "none — inserts an all-zero row",
+    grain: "full",
     reason:
       "Materialises a missing grain so it can be locked, with ON CONFLICT DO NOTHING and every bucket '0'. It moves no quantity; without it the kernel cannot take a row lock on a grain that has never held stock.",
   },
@@ -89,6 +116,7 @@ const ACKNOWLEDGED = [
     file: "stock-engine/reservation.service.ts",
     tables: ["levels"],
     buckets: "committed",
+    grain: "full",
     reason:
       "INV-40, OPEN. Reservations increment and decrement `committed` directly and write no ledger row. A reservation is a promise rather than a movement, so it is not obviously the kernel's work — but it is the one exception here that the pack has already decided should be removed.",
   },
@@ -96,6 +124,7 @@ const ACKNOWLEDGED = [
     file: "reconciliation/inv-reconciliation.service.ts",
     tables: ["levels"],
     buckets: "all derived buckets",
+    grain: "full",
     reason:
       "Drift repair. Recomputes every bucket FROM the ledger rather than moving stock — the ledger stays the truth and this makes the projection agree with it again. Routing it through the kernel would mean posting compensating movements for drift whose cause is unknown.",
   },
@@ -103,6 +132,7 @@ const ACKNOWLEDGED = [
     file: "stock-engine/stock-projection.service.ts",
     tables: ["levels"],
     buckets: "on_order, outgoing_qty",
+    grain: "full",
     reason:
       "Projections of documents, not of stock. `on_order` counts purchase order lines and `outgoing_qty` counts pick tasks; neither has a ledger movement behind it, because nothing has physically happened yet.",
   },
@@ -186,6 +216,42 @@ function main() {
         `The scan is broken; a clean result here would mean nothing.\n`,
     );
     process.exit(2);
+  }
+
+  /**
+   * A writer that cannot name the whole grain.
+   *
+   * Presence of the column name in the file, not in the specific statement —
+   * this is a line scanner, and a writer that mentions `ownership` nowhere at
+   * all cannot be keying on it. That is exactly the shape both real bugs had:
+   * the word appeared in neither the predicate nor anywhere else in
+   * `reservation.service.ts`.
+   */
+  const grainGaps = [];
+  for (const entry of ACKNOWLEDGED) {
+    if (entry.grain !== "full") continue;
+    const file = join(BACKEND_ROOT, "src", "modules", "inventory", entry.file);
+    let source;
+    try {
+      source = readFileSync(file, "utf8");
+    } catch {
+      continue;
+    }
+    const missing = NATURAL_KEY.filter(
+      (alternatives) => !alternatives.split("|").some((name) => source.includes(name)),
+    );
+    if (missing.length > 0) grainGaps.push({ file: entry.file, missing });
+  }
+
+  if (grainGaps.length > 0) {
+    process.stdout.write(`FAIL — ${grainGaps.length} writer(s) never name part of the natural key:\n`);
+    for (const gap of grainGaps)
+      process.stdout.write(`  ${gap.file} — never mentions: ${gap.missing.join(", ")}\n`);
+    process.stdout.write(
+      `\n\`inv_stock_levels\` is keyed on all six. A writer that names a row by fewer writes to ` +
+        `more rows than it means to, and the surplus is somebody else's stock.\n`,
+    );
+    process.exit(1);
   }
 
   /** An exception that no longer writes is a stale claim, and stale claims rot. */
