@@ -1,4 +1,5 @@
 import { INestApplication } from "@nestjs/common";
+import { configureBuildDatabaseAccess } from "test/build/configure-build-database-access";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { signToken } from "../../../../test/helpers/sign-token";
@@ -9,6 +10,7 @@ import {
   organizations,
   pmWorkspaces,
   projectMembers,
+  projectStatuses,
   projects,
   tickets,
   users,
@@ -104,6 +106,7 @@ describeWithDb(
           .values({ orgId: ORG_ID, projectId: projectIds.target, membershipId: membershipIds.member })
           .onConflictDoNothing();
 
+        await tx.insert(projectStatuses).values({ orgId: ORG_ID, projectId: projectIds.target, name: "TODO" });
         const ticketRows = Array.from({ length: 101 }, (_, i) => ({
           orgId: ORG_ID,
           projectId: projectIds.target,
@@ -128,6 +131,8 @@ describeWithDb(
       if (db) await cleanup();
       if (app) await app.close();
     });
+
+    beforeEach(() => configureBuildDatabaseAccess(app, db));
 
     afterEach(() => {
       jest.restoreAllMocks();

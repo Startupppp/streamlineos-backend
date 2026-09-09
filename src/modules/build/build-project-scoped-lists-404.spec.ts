@@ -42,12 +42,7 @@ describe("build — a project-scoped list refuses a projectId the org does not o
     [
       "GET /build/:projectId/analytics",
       (db) =>
-        new ProjectsAnalyticsService(
-          db,
-          { cached: (_k: string, fn: () => Promise<unknown>) => fn() } as unknown as ConstructorParameters<
-            typeof ProjectsAnalyticsService
-          >[1],
-        ).getProjectAnalytics(ATTACKER_ORG, 1),
+        new ProjectsAnalyticsService(db).getProjectAnalytics(ATTACKER_ORG, 1),
     ],
   ];
 

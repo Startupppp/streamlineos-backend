@@ -1,4 +1,5 @@
 import { INestApplication } from "@nestjs/common";
+import { configureBuildDatabaseAccess } from "test/build/configure-build-database-access";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { signToken } from "../../../../test/helpers/sign-token";
@@ -128,6 +129,8 @@ describeWithDb(
       if (db) await cleanup();
       if (app) await app.close();
     });
+
+    beforeEach(() => configureBuildDatabaseAccess(app, db));
 
     afterEach(() => {
       jest.restoreAllMocks();

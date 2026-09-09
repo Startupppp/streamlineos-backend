@@ -51,7 +51,8 @@ export class ProjectsReportsController {
   @Get("resource-allocation")
   @RequirePermission("build:view")
   @ResponseSchema(z.array(resourceAllocationItemSchema))
-  resourceAllocation(@CurrentUser() u: CurrentUserContext) {
+  async resourceAllocation(@CurrentUser() u: CurrentUserContext) {
+    await this.reports.authorizeOrganization(u);
     return this.analytics.resourceAllocation(u.orgId);
   }
 
@@ -59,10 +60,11 @@ export class ProjectsReportsController {
   @RequirePermission("build:view")
   @ResponseSchema(analyticsSchema)
   @Validate({ params: projectIdParams })
-  getAnalytics(
+  async getAnalytics(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    await this.reports.authorizeProject(u, projectId);
     return this.analytics.getProjectAnalytics(u.orgId, projectId);
   }
 
@@ -75,7 +77,7 @@ export class ProjectsReportsController {
     @Query() query: BurnupQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reports.burnup(u.orgId, projectId, query);
+    return this.reports.burnup(u, projectId, query);
   }
 
   @Get(":projectId/reports/cfd")
@@ -87,7 +89,7 @@ export class ProjectsReportsController {
     @Query() query: CfdQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reports.cfd(u.orgId, projectId, query);
+    return this.reports.cfd(u, projectId, query);
   }
 
   @Get(":projectId/reports/critical-path")
@@ -98,7 +100,7 @@ export class ProjectsReportsController {
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reports.criticalPath(u.orgId, projectId);
+    return this.reports.criticalPath(u, projectId);
   }
 
   @Get(":projectId/reports/velocity")
@@ -109,7 +111,7 @@ export class ProjectsReportsController {
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reports.velocity(u.orgId, projectId);
+    return this.reports.velocity(u, projectId);
   }
 
   @Get(":projectId/reports/cycle-time")
@@ -120,7 +122,7 @@ export class ProjectsReportsController {
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reports.getCycleTimeReport(u.orgId, projectId);
+    return this.reports.getCycleTimeReport(u, projectId);
   }
 
   @Get(":projectId/reports/lead-time")
@@ -131,7 +133,7 @@ export class ProjectsReportsController {
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reports.getLeadTimeReport(u.orgId, projectId);
+    return this.reports.getLeadTimeReport(u, projectId);
   }
 
   @Post(":projectId/reports/snapshot")
@@ -144,6 +146,6 @@ export class ProjectsReportsController {
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reports.snapshot(u.orgId, projectId);
+    return this.reports.snapshot(u, projectId);
   }
 }

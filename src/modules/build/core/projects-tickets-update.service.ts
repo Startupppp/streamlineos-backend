@@ -31,6 +31,10 @@ import { ProjectsTicketConflictException } from "../../../common/http/api-except
 import type { UpdateTicketInput } from "./dto/projects.schemas";
 import { normalizeTicketType, resolveAssigneeId } from "./tickets-helpers";
 import { computeNextRunAt } from "./projects-recurrence.util";
+import { lockProjectTicketMutation } from "./build-ticket-mutation-policy";
+import { assertTransitionAllowed, enforceWipLimitForStatus } from "./projects-tickets-workflow-utils";
+import { resolveValidTicketStatuses } from "./ticket-status.util";
+import { ProjectsInvalidTicketStatusException } from "../../../common/http/api-exceptions";
 
 @Injectable()
 export class ProjectsTicketsUpdateService {
@@ -47,6 +51,7 @@ export class ProjectsTicketsUpdateService {
   ) {}
 
   private async assertSelfRefChain(
+    tx: DbOrTx,
     orgId: string,
     ticketId: number,
     refId: number,
@@ -65,7 +70,7 @@ export class ProjectsTicketsUpdateService {
     const nextColT =
       field === "parentTicketId" ? sql.raw('t."parent_ticket_id"') : sql.raw('t."epic_id"');
 
-    const chainRows = await this.db.execute<{
+    const chainRows = await tx.execute<{
       id: number;
       next_id: number | null;
       project_id: number | null;
@@ -73,13 +78,13 @@ export class ProjectsTicketsUpdateService {
     }>(sql`
       WITH RECURSIVE chain(id, next_id, project_id, depth) AS (
         SELECT id, ${nextCol}, project_id, 0
-        FROM tickets
-        WHERE id = ${refId} AND org_id = ${orgId}
+        FROM build.tickets
+        WHERE id = ${refId} AND org_id = ${orgId} AND deleted_at IS NULL
         UNION ALL
         SELECT t.id, ${nextColT}, t.project_id, c.depth + 1
-        FROM tickets t
+        FROM build.tickets t
         JOIN chain c ON t.id = c.next_id
-        WHERE t.org_id = ${orgId} AND c.depth < 100
+        WHERE t.org_id = ${orgId} AND t.deleted_at IS NULL AND c.depth < 100
       )
       SELECT id, next_id, project_id, depth FROM chain
     `);
@@ -199,6 +204,9 @@ export class ProjectsTicketsUpdateService {
     const beforeAssigneeId: string | null = null;
     const beforeAssigneeMembershipId = before.assigneeMembershipId;
 
+    if (input.version !== undefined && input.version !== before.version)
+      throw new ProjectsTicketConflictException();
+
     if (input.expectedUpdatedAt !== undefined) {
       const expected = new Date(input.expectedUpdatedAt);
       if (before.updatedAt.getTime() !== expected.getTime()) {
@@ -217,67 +225,28 @@ export class ProjectsTicketsUpdateService {
     if (!accessResult.hasAccess)
       throw new ForbiddenException("Not authorized to update this ticket");
 
-    if (input.parentTicketId != null)
-      await this.assertSelfRefChain(
-        orgId,
-        ticketId,
-        input.parentTicketId,
-        "parentTicketId",
-        before.projectId,
-      );
-
-    if (input.epicId != null)
-      await this.assertSelfRefChain(
-        orgId,
-        ticketId,
-        input.epicId,
-        "epicId",
-        before.projectId,
-      );
-
-    if (input.status !== undefined) {
-      const statusChanged = input.status !== before.status;
-      if (statusChanged) {
-        await Promise.all([
-          this.query.validateTicketStatus(
-            ticketProjectId,
-            orgId,
-            input.status,
-          ),
-          this.query.enforceWipLimitForStatus(
-            orgId,
-            before.projectId,
-            input.status,
-            ticketId,
-          ),
-        ]);
-        await this.query.assertTransitionAllowed(
-          orgId,
-          ticketProjectId,
-          before.status,
-          input.status,
-          {
-            userId: actingUserId,
-            userProjectRole: accessResult.role,
-            isOrgOwner: u.isOrgOwner,
-            ticketId,
-          },
-        );
-      } else {
-        await this.query.validateTicketStatus(
-          before.projectId,
-          orgId,
-          input.status,
-        );
-      }
-    }
-
     const newAssignee = resolveAssigneeId(input.assigneeId);
     await this.db.transaction(async (tx) => {
+      if (systemJobCovers(u.principal, "build:tickets:update"))
+        await lockProjectTicketMutation(tx, orgId, ticketProjectId);
+      else
+        await this.query.authorizeMutation(tx, u, ticketProjectId, [ticketId]);
+      if (input.parentTicketId != null)
+        await this.assertSelfRefChain(tx, orgId, ticketId, input.parentTicketId, "parentTicketId", ticketProjectId);
+      if (input.epicId != null)
+        await this.assertSelfRefChain(tx, orgId, ticketId, input.epicId, "epicId", ticketProjectId);
+      if (input.status !== undefined) {
+        const valid = await resolveValidTicketStatuses(tx, ticketProjectId, orgId);
+        if (!valid.has(input.status)) throw new ProjectsInvalidTicketStatusException(input.status);
+        if (input.status !== before.status) {
+          await enforceWipLimitForStatus(tx, orgId, ticketProjectId, input.status, ticketId);
+          await assertTransitionAllowed(tx, orgId, ticketProjectId, before.status, input.status, {
+            userId: actingUserId, userProjectRole: accessResult.role, isOrgOwner: u.isOrgOwner, ticketId,
+          });
+        }
+      }
       const versionCondition =
-        input.version !== undefined
-          ? and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt), eq(tickets.version, input.version))
-          : and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt));
+        and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt), eq(tickets.version, before.version));
       const affected = await tx
         .update(tickets)
         .set({ ...updateData, version: sql`${tickets.version} + 1` })

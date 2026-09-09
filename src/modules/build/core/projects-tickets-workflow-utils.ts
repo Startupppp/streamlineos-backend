@@ -2,7 +2,6 @@ import {
   BadRequestException,
   ConflictException,
 } from "@nestjs/common";
-import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import {
   and,
   count,
@@ -34,14 +33,15 @@ export type WorkflowStatusRow = {
 export type PrefetchedWorkflow = {
   transitions: WorkflowTransitionRow[];
   statuses: WorkflowStatusRow[];
+  ticketFields?: Map<number, Pick<typeof tickets.$inferSelect, "assigneeMembershipId" | "dueDate" | "priority" | "points" | "epicId" | "sprintId">>;
+  wipAlreadyChecked?: boolean;
 };
 
-async function fetchTransitionsAndStatuses(
+export async function fetchTransitionsAndStatuses(
   db: Db,
   orgId: string,
   projectId: number,
 ): Promise<PrefetchedWorkflow> {
-  try {
     const [transitions, statuses] = await Promise.all([
       db
         .select({
@@ -74,10 +74,6 @@ async function fetchTransitionsAndStatuses(
         ),
     ]);
     return { transitions, statuses };
-  } catch (err) {
-    logSideEffectFailure("workflow transition fetch", { orgId, projectId })(err);
-    return { transitions: [], statuses: [] };
-  }
 }
 
 export async function assertTransitionAllowed(
@@ -163,7 +159,10 @@ export async function assertTransitionAllowed(
       Array.isArray(transition.requiredFields) &&
       transition.requiredFields.length > 0
     ) {
-      if (ticketRows === undefined) ticketRows = await readTicketRequiredFields();
+      if (ticketRows === undefined) {
+        const prefetchedTicket = prefetched?.ticketFields?.get(context.ticketId);
+        ticketRows = prefetchedTicket ? [prefetchedTicket] : await readTicketRequiredFields();
+      }
 
       if (ticketRows.length > 0) {
         const row = ticketRows[0];
@@ -190,7 +189,7 @@ export async function assertTransitionAllowed(
   }
 
   const toStatus = idToStatus.get(resolvedTo);
-  if (toStatus?.wipLimit != null) {
+  if (toStatus?.wipLimit != null && !prefetched?.wipAlreadyChecked) {
     await assertWipLimit(
       db,
       orgId,

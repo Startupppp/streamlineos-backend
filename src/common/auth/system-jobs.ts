@@ -4,6 +4,10 @@ export interface SystemJobDefinition {
 }
 
 export const SYSTEM_JOBS = {
+  "build.daily-snapshots": {
+    reason: "Captures tenant-scoped project aggregates for the authenticated daily scheduler.",
+    ceiling: ["build:manage"],
+  },
   "payroll.run.finalize-posting": {
     reason:
       "Posts the salary-accrual journal when a payroll run locks. Writes accounting and reads nothing else.",

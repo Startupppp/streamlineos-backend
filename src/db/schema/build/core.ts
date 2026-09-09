@@ -59,6 +59,7 @@ export const projects = build.table(
       features?: Record<string, boolean>;
     }>(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    reportRevision: bigint("report_revision", { mode: "number" }).default(0).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()

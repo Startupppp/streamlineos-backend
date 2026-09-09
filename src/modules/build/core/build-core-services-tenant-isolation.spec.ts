@@ -7,14 +7,16 @@ jest.mock("./ticket-status.util", () => ({
 }));
 
 import { NotFoundException } from "@nestjs/common";
+import { Test } from "@nestjs/testing";
+import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import type { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import type { NotificationsService } from "../../notifications/notifications.service";
 import type { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
-import type { AccessService } from "../../access/access.service";
-import type { CacheService } from "../../../common/cache/cache.service";
+import { AccessService } from "../../access/access.service";
+import { CacheService } from "../../../common/cache/cache.service";
 import { ProjectsInvalidTicketStatusException } from "../../../common/http/api-exceptions";
 import { resolveValidTicketStatuses } from "./ticket-status.util";
 
@@ -123,15 +125,21 @@ describe("ProjectsTicketsTransferService — cross-tenant isolation", () => {
 });
 
 describe("ProjectsTicketsQueryService — cross-tenant isolation", () => {
-  function makeQuerySvc(db: Db): ProjectsTicketsQueryService {
-    return new ProjectsTicketsQueryService(db, {} as unknown as CacheService);
+  async function makeQuerySvc(db: Db): Promise<ProjectsTicketsQueryService> {
+    const module = await Test.createTestingModule({ providers: [
+      ProjectsTicketsQueryService,
+      { provide: DRIZZLE, useValue: db },
+      { provide: CacheService, useValue: {} },
+      { provide: AccessService, useValue: {} },
+    ] }).compile();
+    return module.get(ProjectsTicketsQueryService);
   }
 
   describe("validateTicketStatus", () => {
     it("throws ProjectsInvalidTicketStatusException when status is not valid (DENY)", async () => {
       mockResolveValidTicketStatuses.mockResolvedValue(new Set(["TODO", "IN_PROGRESS"]));
       const db = {} as unknown as Db;
-      const svc = makeQuerySvc(db);
+      const svc = await makeQuerySvc(db);
       await expect(
         svc.validateTicketStatus(10, ATTACKER_ORG, "UNKNOWN_STATUS"),
       ).rejects.toThrow(ProjectsInvalidTicketStatusException);
@@ -140,7 +148,7 @@ describe("ProjectsTicketsQueryService — cross-tenant isolation", () => {
     it("passes orgId to resolveValidTicketStatuses (predicate check — DENY)", async () => {
       mockResolveValidTicketStatuses.mockResolvedValue(new Set(["TODO"]));
       const db = {} as unknown as Db;
-      const svc = makeQuerySvc(db);
+      const svc = await makeQuerySvc(db);
       await expect(svc.validateTicketStatus(10, ATTACKER_ORG, "INVALID")).rejects.toThrow(
         ProjectsInvalidTicketStatusException,
       );
@@ -152,7 +160,7 @@ describe("ProjectsTicketsQueryService — cross-tenant isolation", () => {
         new Set(["TODO", "IN_PROGRESS", "CUSTOM_STATUS"]),
       );
       const db = {} as unknown as Db;
-      const svc = makeQuerySvc(db);
+      const svc = await makeQuerySvc(db);
       await expect(
         svc.validateTicketStatus(10, OWNER_ORG, "CUSTOM_STATUS"),
       ).resolves.toBeUndefined();

@@ -232,10 +232,7 @@ export class ProjectsTicketsService {
   }
 
   async rankTicket(u: CurrentUserContext, projectId: number, ticketId: number, body: RankTicketInput) {
-    return this.query.rankTicket(u.orgId, projectId, ticketId, body, {
-      userId: u.userId,
-      isOrgOwner: u.isOrgOwner,
-    });
+    return this.query.rankTicket(u, projectId, ticketId, body);
   }
 
   async exportTickets(u: CurrentUserContext, projectId: number) {

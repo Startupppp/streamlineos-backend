@@ -53,7 +53,7 @@ describe("ProjectsTicketsUpdateService — assignee notification settles inside 
 
   const dispatch = { emit: jest.fn().mockResolvedValue(undefined) } as never;
   const activity = { logTicketFieldChanges: jest.fn().mockResolvedValue(undefined) } as never;
-  const query = { validateTicketStatus: jest.fn().mockResolvedValue(undefined) } as never;
+  const query = { authorizeMutation: jest.fn().mockResolvedValue([]), validateTicketStatus: jest.fn().mockResolvedValue(undefined) } as never;
   const read = { checkProjectAccess: jest.fn().mockResolvedValue({ hasAccess: true, role: "ADMIN" }) } as never;
   const webhooksDispatch = { enqueue: jest.fn().mockResolvedValue(undefined) } as never;
   const automationRunner = { runForTicketEvent: jest.fn() } as never;
@@ -79,7 +79,7 @@ describe("ProjectsTicketsUpdateService — assignee notification settles inside 
       automationRunner,
       cache,
     );
-    const u = { orgId: ORG, userId: "u1", isOrgOwner: true } as never;
+    const u = { orgId: ORG, userId: "u1", isOrgOwner: true, principal: { kind: "human-session", membershipId: 1, isOrgOwner: true } } as never;
 
     await svc.updateTicket(u, 1, { title: "Renamed" });
 

@@ -11,9 +11,10 @@ function harness(enqueueFails: boolean) {
   const tx = {
     update: jest.fn().mockReturnValue({
       set: jest.fn().mockReturnValue({
-        where: jest.fn().mockImplementation(async () => {
+        where: jest.fn().mockImplementation(() => ({ returning: async () => {
           timeline.push("mutation-staged");
-        }),
+          return [{ id: 4 }];
+        } })),
       }),
     }),
   };

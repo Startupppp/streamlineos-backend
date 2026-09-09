@@ -1,4 +1,6 @@
 import { INestApplication } from "@nestjs/common";
+import { configureBuildDatabaseAccess } from "test/build/configure-build-database-access";
+import { timesheetPageSchema } from "./dto/timesheets-response.schemas";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { signToken } from "../../../../test/helpers/sign-token";
@@ -109,6 +111,8 @@ describeWithDb(
       if (app) await app.close();
     });
 
+    beforeEach(() => configureBuildDatabaseAccess(app, db));
+
     afterEach(() => {
       jest.restoreAllMocks();
     });
@@ -132,7 +136,7 @@ describeWithDb(
         .set("Authorization", `Bearer ${token}`);
 
       expect(res.status).toBe(200);
-      const ids = (res.body as Array<{ id: number }>).map((e) => e.id);
+      const ids = timesheetPageSchema.parse(res.body).items.map((e) => e.id);
       expect(ids).toEqual(expect.arrayContaining([entryIds.admin, entryIds.member]));
     });
 
@@ -155,9 +159,9 @@ describeWithDb(
         .set("Authorization", `Bearer ${token}`);
 
       expect(res.status).toBe(200);
-      const returned = res.body as Array<{ id: number; userId: string }>;
+      const returned = timesheetPageSchema.parse(res.body).items;
       expect(returned.length).toBeGreaterThan(0);
-      expect(returned.every((e) => e.userId === U.member)).toBe(true);
+      expect(returned.map((e) => e.id)).toEqual([entryIds.member]);
       expect(returned.map((e) => e.id)).not.toContain(entryIds.admin);
     });
 
@@ -178,7 +182,7 @@ describeWithDb(
         .set("Authorization", `Bearer ${token}`);
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual([]);
+      expect(timesheetPageSchema.parse(res.body).items).toEqual([]);
     });
 
     it("403 before any scope is resolved when the caller holds no timesheets permission", async () => {
@@ -214,7 +218,7 @@ describeWithDb(
         .set("Authorization", `Bearer ${token}`);
 
       expect(res.status).toBe(200);
-      const ids = (res.body as Array<{ id: number }>).map((e) => e.id);
+      const ids = timesheetPageSchema.parse(res.body).items.map((e) => e.id);
       expect(ids).toEqual(expect.arrayContaining([entryIds.admin, entryIds.member]));
     });
   },

@@ -3,21 +3,17 @@ import { and, count, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { cycles, organizationMembers, projects, ticketAssignees, tickets, timesheets, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { assertProjectInOrg } from "./project-access";
 
 @Injectable()
 export class ProjectsAnalyticsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly cache: CacheService,
   ) {}
 
   async getProjectAnalytics(orgId: string, projectId: number) {
     await assertProjectInOrg(this.db, orgId, projectId);
-    const key = `projects:analytics:${orgId}:${projectId}`;
-    return this.cache.cached(key, () => this.computeProjectAnalytics(orgId, projectId), CACHE_TTL.MEDIUM);
+    return this.computeProjectAnalytics(orgId, projectId);
   }
 
   private async computeProjectAnalytics(orgId: string, projectId: number) {
@@ -235,10 +231,6 @@ export class ProjectsAnalyticsService {
   }
 
   async resourceAllocation(orgId: string) {
-    const key = `projects:resource-allocation:${orgId}`;
-    return this.cache.cached(
-      key,
-      async () => {
         const activeProjects = await this.db.query.projects.findMany({
           where: and(eq(projects.orgId, orgId), eq(projects.status, "ACTIVE"), isNull(projects.deletedAt)),
           columns: { id: true, name: true, key: true },
@@ -347,8 +339,5 @@ export class ProjectsAnalyticsService {
         }
 
         return [...byMember.values()].sort((a, b) => b.totalOpen - a.totalOpen);
-      },
-      CACHE_TTL.SHORT,
-    );
   }
 }

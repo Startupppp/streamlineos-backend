@@ -66,6 +66,7 @@ export class SprintsService {
   }
 
   async createSprint(orgId: string, projectId: number, input: CreateSprintInput) {
+    await assertProjectInOrg(this.db, orgId, projectId);
     const [sprint] = await this.db
       .insert(sprints)
       .values({
@@ -104,9 +105,10 @@ export class SprintsService {
       where: and(eq(sprints.id, sprintId), eq(sprints.orgId, orgId), isNull(sprints.deletedAt)),
       columns: { id: true, name: true, status: true, projectId: true },
     });
+    if (!before) throw new NotFoundException("Sprint not found");
 
     await this.db.transaction(async (tx) => {
-      await tx
+      const changed = await tx
         .update(sprints)
         .set({
           ...(input.name && { name: input.name }),
@@ -115,7 +117,9 @@ export class SprintsService {
           ...(input.goal !== undefined && { goal: input.goal }),
           ...(input.status && { status: input.status }),
         })
-        .where(and(eq(sprints.id, sprintId), eq(sprints.orgId, orgId)));
+        .where(and(eq(sprints.id, sprintId), eq(sprints.orgId, orgId), isNull(sprints.deletedAt)))
+        .returning({ id: sprints.id });
+      if (changed.length === 0) throw new NotFoundException("Sprint not found");
 
       if (before && input.status === "COMPLETED" && before.status !== "COMPLETED") {
         await OutboxWriter.emit(tx, {

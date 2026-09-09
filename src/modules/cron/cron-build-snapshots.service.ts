@@ -6,6 +6,7 @@ import type { Db } from "../../db/drizzle.module";
 import { forEachOrg } from "../../common/tenant";
 import { logger } from "../../common/logger/logger.service";
 import { ProjectsReportsService } from "../build/core/projects-reports.service";
+import { systemActor } from "../../common/auth/system-actor";
 
 // How many ACTIVE projects to snapshot per org per run.
 // Orgs exceeding this cap have the overflow counted in projectsSkipped and
@@ -59,7 +60,7 @@ export class CronBuildSnapshotsService {
 
         for (const row of batch) {
           try {
-            await this.projectsReports.snapshot(orgId, row.id);
+            await this.projectsReports.snapshot(systemActor("build.daily-snapshots", orgId), row.id);
             projectsProcessed++;
           } catch (err) {
             projectsFailed++;

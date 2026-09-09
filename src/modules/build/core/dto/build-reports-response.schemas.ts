@@ -67,59 +67,54 @@ export const resourceAllocationItemSchema = z.object({
   assignedTickets: z.number().int().optional(),
 }).passthrough();
 
-export const burnupDataSchema = z.object({
-  dates: z.array(z.string()),
-  completed: z.array(z.number().int()),
-  added: z.array(z.number().int()),
-  total: z.array(z.number().int()).optional(),
-  scope: z.array(z.number().int()).optional(),
-}).passthrough();
+export const burnupDataSchema = z.array(z.object({
+  date: z.string(),
+  scope: z.number(),
+  completed: z.number(),
+}));
 
 export const cfdDataSchema = z.object({
   dates: z.array(z.string()),
-  statuses: z.array(z.string()),
-  data: z.array(z.array(z.number().int())),
-}).passthrough();
+  groups: z.array(z.string()),
+  series: z.array(z.object({
+    date: z.string(), backlog: z.number(), unstarted: z.number(),
+    started: z.number(), completed: z.number(), cancelled: z.number(),
+  })),
+});
 
 export const criticalPathSchema = z.object({
-  tasks: z.array(z.object({
-    id: z.number().int(),
+  criticalPath: z.array(z.object({
+    ticketId: z.number().int(),
     title: z.string(),
-    duration: z.number().int(),
-    earlyStart: z.number().int(),
-    earlyFinish: z.number().int(),
-    lateStart: z.number().int(),
-    lateFinish: z.number().int(),
-    slack: z.number().int(),
-    isCritical: z.boolean(),
-  })).optional(),
-  criticalPath: z.array(z.number().int()).optional(),
-}).passthrough();
+    estimate: z.number(),
+    earliestStart: z.number(),
+    earliestFinish: z.number(),
+  })),
+  totalDuration: z.number(),
+  nodeCount: z.number().int(),
+  edgeCount: z.number().int(),
+  hasCycle: z.boolean(),
+});
 
-export const velocitySchema = z.object({
-  sprints: z.array(z.object({
-    sprintId: z.number().int(),
-    sprintName: z.string(),
-    committed: z.number().int(),
-    completed: z.number().int(),
-  })).optional(),
-  avgVelocity: z.number().optional(),
-}).passthrough();
+export const velocitySchema = z.array(z.object({
+  sprintId: z.number().int(),
+  name: z.string(),
+  startDate: z.string(),
+  endDate: z.string(),
+  committedPoints: z.number().int(),
+  completedPoints: z.number().int(),
+  committedCount: z.number().int(),
+  completedCount: z.number().int(),
+}));
 
-export const cycleTimeSchema = z.object({
-  statuses: z.array(z.string()).optional(),
-  avgDays: z.array(z.number()).optional(),
-  medianDays: z.array(z.number()).optional(),
-}).passthrough();
+export const cycleTimeSchema = z.array(z.object({
+  week: z.string(), avgDays: z.number(), count: z.number().int(),
+}));
 
-export const leadTimeSchema = z.object({
-  avgLeadDays: z.number().optional(),
-  medianLeadDays: z.number().optional(),
-  tickets: z.array(z.object({
-    id: z.number().int(),
-    leadDays: z.number(),
-  })).optional(),
-}).passthrough();
+export const leadTimeSchema = z.array(z.object({
+  week: z.string(), avgDays: z.number(), p50Days: z.number(),
+  p90Days: z.number(), count: z.number().int(),
+}));
 
 export const snapshotResultSchema = z.object({
   captured: z.number().int(),

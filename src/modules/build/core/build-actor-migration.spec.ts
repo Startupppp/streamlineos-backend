@@ -212,6 +212,7 @@ describe("ProjectsTicketsCreateService.createTicket — actor seam", () => {
     const tx = {
       insert: jest.fn().mockReturnValue(insertChain),
       execute: jest.fn().mockResolvedValue([{ start: 1 }]),
+      select: jest.fn().mockReturnValue({ from: () => ({ where: () => ({ limit: async () => [] }) }) }),
     };
     return cb(tx);
   });

@@ -3,7 +3,6 @@ import { NotFoundException } from "@nestjs/common";
 import { ProjectsAnalyticsService } from "./projects-analytics.service";
 import { ProjectsWorkspaceMembersService } from "./projects-workspace-members.service";
 import { ProjectsBudgetService } from "./projects-budget.service";
-import type { CacheService } from "../../../common/cache/cache.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 import type { AccessService } from "../../access/access.service";
@@ -53,8 +52,7 @@ function makeAnalyticsDb(): { db: Db; capturedWheres: unknown[]; projectFindFirs
 describe("ProjectsAnalyticsService — cross-tenant isolation", () => {
   it("getProjectAnalytics scopes queries to requesting org (cross-tenant isolation)", async () => {
     const { db, capturedWheres } = makeAnalyticsDb();
-    const cache = { cached: jest.fn().mockImplementation((_k: string, fn: () => unknown) => fn()) } as unknown as CacheService;
-    const svc = new ProjectsAnalyticsService(db, cache);
+    const svc = new ProjectsAnalyticsService(db);
 
     await svc.getProjectAnalytics(ATTACKER_ORG, 1);
 
@@ -67,16 +65,14 @@ describe("ProjectsAnalyticsService — cross-tenant isolation", () => {
   it("getProjectAnalytics refuses a project the requesting org does not own (404, not an empty 200)", async () => {
     const { db, projectFindFirst } = makeAnalyticsDb();
     projectFindFirst.mockResolvedValue(undefined);
-    const cache = { cached: jest.fn().mockImplementation((_k: string, fn: () => unknown) => fn()) } as unknown as CacheService;
-    const svc = new ProjectsAnalyticsService(db, cache);
+    const svc = new ProjectsAnalyticsService(db);
 
     await expect(svc.getProjectAnalytics(ATTACKER_ORG, 1)).rejects.toThrow(NotFoundException);
   });
 
   it("getProjectAnalytics works for the owning org (control — same-tenant access works)", async () => {
     const { db } = makeAnalyticsDb();
-    const cache = { cached: jest.fn().mockImplementation((_k: string, fn: () => unknown) => fn()) } as unknown as CacheService;
-    const svc = new ProjectsAnalyticsService(db, cache);
+    const svc = new ProjectsAnalyticsService(db);
 
     const result = await svc.getProjectAnalytics(OWNER_ORG, 1);
     expect(result).toBeDefined();
