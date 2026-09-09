@@ -358,7 +358,7 @@ describe("[seeded-e2e] customer return approval", () => {
     await inspect(returnId, lineIds[0]!, "SCRAP");
     await approve(returnId);
 
-    await asTenant(() => returns().cancel(scene.orgId, returnId));
+    await asTenant(() => returns().cancel(scene.orgId, scene.userId, returnId));
     await expect(post(returnId)).rejects.toThrow(BadRequestException);
   });
 

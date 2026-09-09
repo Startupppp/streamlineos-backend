@@ -1,5 +1,5 @@
 import { Inject, Injectable, BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import {
   invCustomerReturns, invCustomerReturnLines, invSerialNumbers,
   invLocations, invSalesOrders, invShipments,
@@ -9,7 +9,10 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
-import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
+import {
+  WarehouseScopeService,
+  type ResolvedWarehouseScope,
+} from "../stock-engine/warehouse-scope.service";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { runIdempotent, revivedId } from "../stock-engine/idempotency";
@@ -45,6 +48,52 @@ export class CustomerReturnsService {
     private readonly warehouseScope: WarehouseScopeService,
   ) {}
 
+  /**
+   * Which returns this caller may see — the list's rule, now the only copy.
+   *
+   * A return carries no warehouse of its own. It is attributable through
+   * whichever source document it came back against — the order or the shipment
+   * — and a return with neither belongs to no warehouse.
+   *
+   * The NULL rule falls out of that and is worth stating, because it differs by
+   * table on purpose. A NULL `so_id` makes `NULL IN (…)` NULL, likewise a NULL
+   * `shipment_id`, and `NULL OR NULL` is NULL, so a return anchored to neither
+   * document is **excluded** from a scoped caller's view. That is the opposite
+   * of the ASN detail, where an unattributed row stays visible to everyone: an
+   * ASN header names its warehouse nullably because it may not be known yet,
+   * whereas a return with no order and no shipment is anchored to nothing and
+   * showing it to every operator in the org would be a different list from the
+   * one this has always been. Each detail follows its own aggregate.
+   */
+  private returnInScope(orgId: string, scope: ResolvedWarehouseScope): SQL {
+    return scope.anyOf(
+      sql`${invCustomerReturns.soId} IN (SELECT id FROM inv_sales_orders WHERE org_id = ${orgId} AND ${scope.warehouse(sql.raw("warehouse_id"))})`,
+      sql`${invCustomerReturns.shipmentId} IN (SELECT id FROM inv_shipments WHERE org_id = ${orgId} AND ${scope.warehouse(sql.raw("warehouse_id"))})`,
+    );
+  }
+
+  /**
+   * The gate for the mutations that lock the row themselves.
+   *
+   * `approve` and `post` open with a `SELECT … FOR UPDATE` in raw SQL, and
+   * threading the predicate through that would put the scope inside a statement
+   * whose job is locking. They ask this first instead. A miss is 404, never 403
+   * (§4): a "forbidden" on a return id confirms the return exists.
+   */
+  private async assertReturnVisible(orgId: string, userId: string, returnId: number) {
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+    const [visible] = await this.db
+      .select({ id: invCustomerReturns.id })
+      .from(invCustomerReturns)
+      .where(and(
+        eq(invCustomerReturns.id, returnId),
+        eq(invCustomerReturns.orgId, orgId),
+        this.returnInScope(orgId, scope),
+      ))
+      .limit(1);
+    if (!visible) throw new NotFoundException("Customer return not found");
+  }
+
   async list(orgId: string, userId: string, filters: ListReturnsInput) {
     const { status, page, limit } = filters;
     const offset = (page - 1) * limit;
@@ -52,15 +101,9 @@ export class CustomerReturnsService {
     const hash = `${scope.key}:${status ?? ""}:${limit}:${offset}`;
 
     return this.cache.cachedVersioned(CACHE_KEYS.invCustomerReturnsNamespace(orgId), hash, async () => {
-      // A return carries no warehouse of its own. It is attributable through
-      // whichever source document it came back against — the order or the
-      // shipment — and a return with neither belongs to no warehouse.
       const conditions = [
         eq(invCustomerReturns.orgId, orgId),
-        scope.anyOf(
-          sql`${invCustomerReturns.soId} IN (SELECT id FROM inv_sales_orders WHERE org_id = ${orgId} AND ${scope.warehouse(sql.raw("warehouse_id"))})`,
-          sql`${invCustomerReturns.shipmentId} IN (SELECT id FROM inv_shipments WHERE org_id = ${orgId} AND ${scope.warehouse(sql.raw("warehouse_id"))})`,
-        ),
+        this.returnInScope(orgId, scope),
       ];
       if (status) conditions.push(eq(invCustomerReturns.status, status));
       const where = and(...conditions);
@@ -89,9 +132,41 @@ export class CustomerReturnsService {
     }, CACHE_TTL.SHORT);
   }
 
-  async get(orgId: string, returnId: number) {
+  /**
+   * One return, read by id — and, until now, by anyone in the org.
+   *
+   * `list` beside it resolves the caller's warehouses; this took no `userId`,
+   * because the controller never passed one, so it answered on `org_id` and the
+   * return id. It also returns more than the list does: the client, the creator,
+   * the approver and every line, which is the customer and the goods.
+   */
+  async get(orgId: string, userId: string, returnId: number) {
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+    return this.loadCustomerReturn(orgId, returnId, this.returnInScope(orgId, scope));
+  }
+
+  /**
+   * The same read without the warehouse gate.
+   *
+   * For the paths handing back a row the caller has just written or has already
+   * been gated for: `create`, where gating would 404 an operator against the
+   * return they just raised — a return whose order and shipment sit outside
+   * their warehouses matches no predicate at all — and the tails of `approve`,
+   * `post` and `cancel`, each of which has run the gate above. Named and
+   * private rather than a boolean on `get`, so a future route cannot be pointed
+   * at the ungated read by accident; the shape `loadAsnUnscoped` established.
+   */
+  private loadCustomerReturnUnscoped(orgId: string, returnId: number) {
+    return this.loadCustomerReturn(orgId, returnId, undefined);
+  }
+
+  private async loadCustomerReturn(orgId: string, returnId: number, inScope: SQL | undefined) {
     const ret = await this.db.query.invCustomerReturns.findFirst({
-      where: and(eq(invCustomerReturns.id, returnId), eq(invCustomerReturns.orgId, orgId)),
+      where: and(
+        eq(invCustomerReturns.id, returnId),
+        eq(invCustomerReturns.orgId, orgId),
+        inScope,
+      ),
       with: {
         creator: { columns: { id: true, name: true } },
         approver: { columns: { id: true, name: true } },
@@ -187,7 +262,7 @@ export class CustomerReturnsService {
     );
 
     await this.cache.invalidateNamespace(CACHE_KEYS.invCustomerReturnsNamespace(orgId));
-    return this.get(orgId, ret.id);
+    return this.loadCustomerReturnUnscoped(orgId, ret.id);
   }
 
   /**
@@ -209,11 +284,18 @@ export class CustomerReturnsService {
     returnId: number,
     input: InspectReturnLineInput,
   ) {
+    // The same gate the list applies. Recording a disposition is deciding what
+    // happens to the goods, and it was reachable on any return in the org.
+    const scope = await this.warehouseScope.forUser(orgId, userId);
     const [ret] = await this.db
       .select({ id: invCustomerReturns.id, status: invCustomerReturns.status })
       .from(invCustomerReturns)
       .where(
-        and(eq(invCustomerReturns.orgId, orgId), eq(invCustomerReturns.id, returnId)),
+        and(
+          eq(invCustomerReturns.orgId, orgId),
+          eq(invCustomerReturns.id, returnId),
+          this.returnInScope(orgId, scope),
+        ),
       );
     if (!ret) throw new NotFoundException("Customer return not found");
     // B9. DRAFT only. Inspecting a posted return would change a disposition the
@@ -266,6 +348,7 @@ export class CustomerReturnsService {
     userId: string,
     input: ApproveReturnInput,
   ) {
+    await this.assertReturnVisible(orgId, userId, returnId);
     await this.db.transaction(async (tx) => {
       const [locked] = await tx.execute<{
         status: string;
@@ -329,7 +412,7 @@ export class CustomerReturnsService {
     });
 
     await this.cache.invalidateNamespace(CACHE_KEYS.invCustomerReturnsNamespace(orgId));
-    return this.get(orgId, returnId);
+    return this.loadCustomerReturnUnscoped(orgId, returnId);
   }
 
   /**
@@ -348,6 +431,7 @@ export class CustomerReturnsService {
     idempotencyKey: string,
     data: PostCustomerReturnInput,
   ) {
+    await this.assertReturnVisible(orgId, userId, returnId);
     const posted = await this.db.transaction((tx) =>
       runIdempotent(
         tx,
@@ -369,7 +453,7 @@ export class CustomerReturnsService {
       this.cache.invalidateNamespace(CACHE_KEYS.invCustomerReturnsNamespace(orgId)),
       this.cache.del(CACHE_KEYS.invCustomerReturnDetail(orgId, returnId)),
     ]);
-    return this.get(orgId, posted);
+    return this.loadCustomerReturnUnscoped(orgId, posted);
   }
 
   private async postInTx(
@@ -551,10 +635,25 @@ export class CustomerReturnsService {
     return Number(anyLoc.id);
   }
 
-  /** B9. Cancellable from DRAFT and from APPROVED — an approval is reversible until it posts. */
-  async cancel(orgId: string, returnId: number) {
+  /**
+   * B9. Cancellable from DRAFT and from APPROVED — an approval is reversible
+   * until it posts.
+   *
+   * The sharpest thing in this file, and it took no caller identity at all: the
+   * controller had `@CurrentUser()` in hand and passed only `orgId`, so anybody
+   * with the permission could cancel any return in the organisation by id,
+   * including one approved in a warehouse they have never worked in. It reads
+   * under the list's own predicate now, and a miss is 404 rather than 403 so the
+   * refusal does not confirm the return exists.
+   */
+  async cancel(orgId: string, userId: string, returnId: number) {
+    const scope = await this.warehouseScope.forUser(orgId, userId);
     const ret = await this.db.query.invCustomerReturns.findFirst({
-      where: and(eq(invCustomerReturns.id, returnId), eq(invCustomerReturns.orgId, orgId)),
+      where: and(
+        eq(invCustomerReturns.id, returnId),
+        eq(invCustomerReturns.orgId, orgId),
+        this.returnInScope(orgId, scope),
+      ),
     });
     if (!ret) throw new NotFoundException("Customer return not found");
     if (ret.status !== "DRAFT" && ret.status !== "APPROVED")
@@ -569,7 +668,7 @@ export class CustomerReturnsService {
       ));
 
     await this.cache.invalidateNamespace(CACHE_KEYS.invCustomerReturnsNamespace(orgId));
-    return this.get(orgId, returnId);
+    return this.loadCustomerReturnUnscoped(orgId, returnId);
   }
 }
 

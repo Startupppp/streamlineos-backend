@@ -59,7 +59,7 @@ export class CustomerReturnsController {
     @Param("returnId", ParseIntPipe) returnId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.get(u.orgId, returnId);
+    return this.service.get(u.orgId, u.userId, returnId);
   }
 
   @Post()
@@ -133,6 +133,6 @@ export class CustomerReturnsController {
     @Param("returnId", ParseIntPipe) returnId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.cancel(u.orgId, returnId);
+    return this.service.cancel(u.orgId, u.userId, returnId);
   }
 }

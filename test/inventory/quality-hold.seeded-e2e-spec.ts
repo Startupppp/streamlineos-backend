@@ -369,7 +369,7 @@ describe("[seeded-e2e] quality holds and the availability formula", () => {
       // at. The gate is `inspectedAt`, so the return is inspected before it is
       // posted rather than posted on the strength of the intake note.
       const returnId = (created as { id: number }).id;
-      const detail = (await asTenant(() => returns.get(scene.orgId, returnId))) as {
+      const detail = (await asTenant(() => returns.get(scene.orgId, scene.userId, returnId))) as {
         lines: Array<{ id: number }>;
       };
       for (const line of detail.lines) {
@@ -581,7 +581,7 @@ describe("[seeded-e2e] quality holds and the availability formula", () => {
       );
       const returnId = (created as { id: number }).id;
 
-      const detail = (await asTenant(() => returns.get(scene.orgId, returnId))) as {
+      const detail = (await asTenant(() => returns.get(scene.orgId, scene.userId, returnId))) as {
         lines: Array<{ id: number }>;
       };
       for (const line of detail.lines) {
