@@ -19,6 +19,11 @@ import { isEnvelopeSignable } from "./sign-state";
 import type { RequestActorContext } from "../../common/audit/actor-context";
 import { forEachOrg } from "../../common/tenant/for-each-org";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import {
+  SWEEP_EXPECTED_WITHIN_HOURS,
+  sweepStaleness,
+  type SweepStaleness,
+} from "./sign-sweep-staleness";
 
 /**
  * Which of an envelope's recipients a reminder would go to.
@@ -401,12 +406,17 @@ export class SignEnvelopeSweepsService {
      */
     return (["reminder", "expiration"] as const).map((sweep) => {
       const row = rows.find((r) => r.sweep === sweep);
+      const staleness = sweepStaleness(row ? { ranAt: row.ranAt, error: row.error } : null);
       return {
         sweep,
         ranAt: row?.ranAt ? row.ranAt.toISOString() : null,
         affected: row?.affected ?? 0,
         error: row?.error ?? null,
         neverRun: !row,
+        /** SIGN-P1-02: the same judgement the platform alert makes. */
+        staleness,
+        healthy: staleness === "ok",
+        expectedWithinHours: SWEEP_EXPECTED_WITHIN_HOURS,
       };
     });
   }
@@ -443,4 +453,7 @@ export interface SignSweepRunSummary {
   affected: number;
   error: string | null;
   neverRun: boolean;
+  staleness: SweepStaleness;
+  healthy: boolean;
+  expectedWithinHours: number;
 }

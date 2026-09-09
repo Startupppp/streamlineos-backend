@@ -55,6 +55,8 @@
     "seed:marketplace-apps": "node --env-file=.env -r ts-node/register src/db/seeds/marketplace-apps.seed.ts",
     "purge:user": "node src/scripts/purge-user.mjs",
     "e2e:smoke": "node src/scripts/e2e-smoke.mjs",
+    "alert:sign-sweep-stale": "node --env-file-if-exists=.env src/scripts/alert-sign-sweep-stale.mjs",
+    "alert:sign-sweep-stale:self-test": "node src/scripts/alert-sign-sweep-stale.mjs --self-test",
     "alert:dead-outbox": "node --env-file-if-exists=.env src/scripts/alert-dead-outbox.mjs",
     "alert:dead-outbox:self-test": "node src/scripts/alert-dead-outbox.mjs --self-test",
     "alert:dead-delivery": "node --env-file-if-exists=.env src/scripts/alert-dead-delivery.mjs",
