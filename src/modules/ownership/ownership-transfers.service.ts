@@ -20,6 +20,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { stableHash } from "../../common/cache/cache-hash";
 import { forEachOrg, registerAfterCommit } from "../../common/tenant";
 import { logger } from "../../common/logger/logger.service";
+import { getPostgresErrorCode } from "../../common/db/postgres-error";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import {
   fetchMembershipById,
@@ -137,8 +138,16 @@ export class OwnershipTransfersService {
 
       return { transferId: transfer.id, expiresAt: transfer.expiresAt };
     } catch (err: unknown) {
-      const pgErr = err as { code?: string };
-      if (pgErr.code === "23505") {
+      /**
+       * `uniq_ownership_xfers_org_pending_org` — a partial unique on (org_id)
+       * WHERE status = 'PENDING' AND scope = 'ORGANIZATION', so one pending
+       * hand-over of the whole organisation at a time. Nothing checks for one
+       * before inserting, which makes this the only guard there is — and it
+       * never fired, because Drizzle leaves the SQLSTATE on `.cause` and
+       * `pgErr.code` off the wrapper was always undefined. A second initiation
+       * answered 500.
+       */
+      if (getPostgresErrorCode(err) === "23505") {
         throw new ConflictException(
           "A pending org ownership transfer already exists",
         );
@@ -267,8 +276,11 @@ export class OwnershipTransfersService {
 
       return { transferId: transfer.id, expiresAt: transfer.expiresAt };
     } catch (err: unknown) {
-      const pgErr = err as { code?: string };
-      if (pgErr.code === "23505") {
+      /**
+       * `uniq_ownership_xfers_org_pending_module` — (org_id, module_key) WHERE
+       * status = 'PENDING' AND scope = 'MODULE'. Same shape, same silence.
+       */
+      if (getPostgresErrorCode(err) === "23505") {
         throw new ConflictException(
           `A pending transfer for module "${moduleKey}" already exists`,
         );
