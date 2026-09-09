@@ -59,9 +59,16 @@ export const createEnvelopeSchema = z.object({
   watermarkPolicyId: z.number().int().positive().optional(),
   expiresAt: z.string().datetime().optional(),
   reminderEnabled: z.boolean().default(true),
-  reminderFirstAfterDays: z.number().int().min(1).max(90).default(3),
-  reminderRepeatDays: z.number().int().min(1).max(90).default(3),
-  reminderMaxCount: z.number().int().min(0).max(20).default(5),
+  /**
+   * Optional, not defaulted. A `.default(3)` here is indistinguishable from a
+   * caller who asked for 3, so the organisation's configured cadence could
+   * never be consulted — the setting was not merely unread, it was
+   * unreachable. Absence now means "use the org default", resolved in
+   * SignEnvelopesService.create.
+   */
+  reminderFirstAfterDays: z.number().int().min(1).max(90).optional(),
+  reminderRepeatDays: z.number().int().min(1).max(90).optional(),
+  reminderMaxCount: z.number().int().min(0).max(20).optional(),
   metadataJson: z.record(z.string(), z.unknown()).optional(),
 });
 export type CreateEnvelopeInput = z.infer<typeof createEnvelopeSchema>;

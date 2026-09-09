@@ -13,6 +13,7 @@ import { type Db } from "../../db/drizzle.module";
 import { withPublicToken } from "../../common/tenant/with-public-token";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { SignAuditService } from "./sign-audit.service";
+import { SignSettingsService } from "./sign-settings.service";
 import { SignTokensService } from "./sign-tokens.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import type {
@@ -69,9 +70,15 @@ export interface TemplateSnapshot {
   allowDecline: boolean;
   expirationDays: number;
   reminderEnabled: boolean;
-  reminderFirstAfterDays: number;
-  reminderRepeatDays: number;
-  reminderMaxCount: number;
+  /**
+   * Optional on purpose. The parser used to substitute 3/2/3 here — a third
+   * hardcoded cadence, agreeing with neither the column defaults (3/3/5) nor
+   * the DTO's, and unreachable by any org setting. Absence now means "use the
+   * organisation's default", resolved at instantiation.
+   */
+  reminderFirstAfterDays?: number;
+  reminderRepeatDays?: number;
+  reminderMaxCount?: number;
   watermarkPolicyId?: number | null;
   roles: TemplateRole[];
   documents: TemplateDocument[];
@@ -131,9 +138,9 @@ export function parseTemplateSnapshot(json: Record<string, unknown>): TemplateSn
     allowDecline: Boolean(json["allowDecline"]),
     expirationDays: typeof json["expirationDays"] === "number" ? json["expirationDays"] : 30,
     reminderEnabled: Boolean(json["reminderEnabled"]),
-    reminderFirstAfterDays: typeof json["reminderFirstAfterDays"] === "number" ? json["reminderFirstAfterDays"] : 3,
-    reminderRepeatDays: typeof json["reminderRepeatDays"] === "number" ? json["reminderRepeatDays"] : 2,
-    reminderMaxCount: typeof json["reminderMaxCount"] === "number" ? json["reminderMaxCount"] : 3,
+    reminderFirstAfterDays: typeof json["reminderFirstAfterDays"] === "number" ? json["reminderFirstAfterDays"] : undefined,
+    reminderRepeatDays: typeof json["reminderRepeatDays"] === "number" ? json["reminderRepeatDays"] : undefined,
+    reminderMaxCount: typeof json["reminderMaxCount"] === "number" ? json["reminderMaxCount"] : undefined,
     watermarkPolicyId: typeof json["watermarkPolicyId"] === "number" ? json["watermarkPolicyId"] : null,
     roles: Array.isArray(json["roles"]) ? json["roles"].map(parseRole) : [],
     documents: Array.isArray(json["documents"]) ? json["documents"].map(parseDocument) : [],
@@ -148,6 +155,7 @@ export class SignTemplatesService {
     private readonly audit: SignAuditService,
     private readonly tokens: SignTokensService,
     private readonly planLimits: PlanLimitsService,
+    private readonly settings: SignSettingsService,
   ) {}
 
   async create(orgId: string, userId: string, input: CreateTemplateInput) {
@@ -304,6 +312,9 @@ export class SignTemplatesService {
 
     await this.planLimits.assertWithinLimit(orgId, "signEnvelopes");
 
+    /** A template that predates the cadence fields inherits the org's, not a constant. */
+    const orgSettings = await this.settings.getOrCreate(orgId);
+
     const [envelope] = await this.db
       .insert(signEnvelopes)
       .values({
@@ -321,9 +332,10 @@ export class SignTemplatesService {
         sourceEntityType: input.sourceEntityType,
         sourceEntityId: input.sourceEntityId,
         reminderEnabled: snapshot.reminderEnabled,
-        reminderFirstAfterDays: snapshot.reminderFirstAfterDays,
-        reminderRepeatDays: snapshot.reminderRepeatDays,
-        reminderMaxCount: snapshot.reminderMaxCount,
+        reminderFirstAfterDays:
+          snapshot.reminderFirstAfterDays ?? orgSettings.defaultReminderFirstAfterDays,
+        reminderRepeatDays: snapshot.reminderRepeatDays ?? orgSettings.defaultReminderRepeatDays,
+        reminderMaxCount: snapshot.reminderMaxCount ?? orgSettings.defaultReminderMaxCount,
       })
       .returning();
 
