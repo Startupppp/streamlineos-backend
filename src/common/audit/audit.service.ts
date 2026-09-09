@@ -85,6 +85,35 @@ export class AuditService {
     await this.write(entry);
   }
 
+  /**
+   * Awaited, and committed on a transaction of its own.
+   *
+   * `logCritical` writes through the ambient tenant transaction, which is the
+   * right coupling for auditing a mutation: the record and the change it
+   * describes commit together or not at all. It is exactly the wrong coupling
+   * for auditing a *refusal*. A refusal is delivered by throwing, the throw
+   * unwinds through `TenantContextInterceptor`, `withTenant` rolls the request
+   * transaction back, and the row recording the refusal is rolled back with it
+   * — so the one audit entry nobody can reconstruct from the data is also the
+   * only one that never survives. Measured on `POST /crm/mcp/call`: the row was
+   * visible to the request's own transaction and absent from the table
+   * afterwards.
+   *
+   * `runOutsideTenantContext` puts `write` back on the branch that opens its
+   * own `withTenant`, so the entry commits on a second connection and the
+   * caller's rollback cannot reach it. Still awaited, and still throwing on
+   * failure, so a surface that cannot record a refusal still fails loudly
+   * rather than refusing in silence.
+   *
+   * Use it wherever the audit row must outlive the request it describes. Use
+   * `logCritical` everywhere else — an audit of a mutation belongs in that
+   * mutation's transaction, and writing it out of band would leave a record of
+   * a change that never happened.
+   */
+  async logCriticalOutsideTransaction(entry: AuditEntry): Promise<void> {
+    await runOutsideTenantContext(() => this.write(entry));
+  }
+
   private async write(entry: AuditEntry): Promise<void> {
     const values = this.buildValues(entry);
     const orgId = values.orgId;

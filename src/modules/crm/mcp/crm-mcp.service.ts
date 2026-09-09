@@ -10,7 +10,7 @@ import { authorize } from "../../access/authorize";
 import type { AuthResult } from "../../access/access.types";
 import { ModuleDisabledException } from "../../../common/http/api-exceptions";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { AuditService } from "../../../common/audit/audit.service";
+import { AuditService, type AuditEntry } from "../../../common/audit/audit.service";
 import { PartyService } from "../../party/party.service";
 import { DealsService } from "../../deals/deals.service";
 import { ActivitiesService } from "../../activities/activities.service";
@@ -213,7 +213,7 @@ export class CrmMcpService {
      * credential that outlived the decision to stop using it.
      */
     if (!(await this.mcpSettings.isEnabled(context.orgId))) {
-      await this.recordToolAudit(context, "crm.mcp.tool_refused", call.name, {
+      await this.recordRefusedToolAudit(context, "crm.mcp.tool_refused", call.name, {
         reason: "AGENT_ACCESS_DISABLED",
         arguments: auditableArguments(call.arguments),
       });
@@ -229,7 +229,7 @@ export class CrmMcpService {
        * exist is a probe, and a probe that leaves no trace is the one worth
        * having a record of.
        */
-      await this.recordToolAudit(context, "crm.mcp.tool_unknown", call.name, {
+      await this.recordRefusedToolAudit(context, "crm.mcp.tool_unknown", call.name, {
         requestedTool: call.name,
       });
       throw new NotFoundException(`Unknown CRM MCP tool: ${call.name}`);
@@ -238,7 +238,7 @@ export class CrmMcpService {
     const decision = await this.authorizeTool(context, tool);
 
     if (!decision.allow) {
-      await this.recordToolAudit(context, "crm.mcp.tool_refused", tool.name, {
+      await this.recordRefusedToolAudit(context, "crm.mcp.tool_refused", tool.name, {
         requiredPermission: tool.requiredPermission,
         reason: decision.reason,
         arguments: auditableArguments(call.arguments),
@@ -383,20 +383,70 @@ export class CrmMcpService {
     };
   }
 
+  /**
+   * The record of a call that ran, in the request's own transaction.
+   *
+   * `logCritical` rather than `log`, so a failure to record surfaces as an
+   * error instead of quietly returning the tenant's data with no trace that an
+   * agent asked for it.
+   */
   private async recordToolAudit(
     context: McpContext,
     action: string,
     toolName: string,
     metadata: Record<string, unknown>,
   ): Promise<void> {
-    await this.audit.logCritical({
+    await this.audit.logCritical(
+      this.toolAuditEntry(context, action, toolName, metadata),
+    );
+  }
+
+  /**
+   * The record of a call this method is about to refuse — written where the
+   * refusal cannot take it with it.
+   *
+   * A refusal is delivered by throwing. The throw unwinds out of the handler,
+   * through `TenantContextInterceptor`, and `withTenant` rolls the request's
+   * transaction back — including any row written inside it. So the three
+   * refusal entries below went through `logCritical` and were rolled back every
+   * time: measured against a real database, the row was visible to the
+   * request's own transaction and gone from the table once the 403 was
+   * delivered. The comment on `executeTool` says an unaudited agent read is
+   * what this exists to prevent; an agent *denied* a read left even less
+   * behind, because that path has no surviving row anywhere else to infer it
+   * from.
+   *
+   * `logCriticalOutsideTransaction` commits the entry on a transaction of its
+   * own, so the rollback that carries the refusal cannot reach it. It is still
+   * awaited: a surface that cannot record a refusal must fail loudly rather
+   * than refuse in silence.
+   */
+  private async recordRefusedToolAudit(
+    context: McpContext,
+    action: string,
+    toolName: string,
+    metadata: Record<string, unknown>,
+  ): Promise<void> {
+    await this.audit.logCriticalOutsideTransaction(
+      this.toolAuditEntry(context, action, toolName, metadata),
+    );
+  }
+
+  /** The entry itself, so the two durabilities cannot drift apart on its shape. */
+  private toolAuditEntry(
+    context: McpContext,
+    action: string,
+    toolName: string,
+    metadata: Record<string, unknown>,
+  ): AuditEntry {
+    return {
       action,
       userId: context.userId,
       orgId: context.orgId,
       targetId: toolName,
       targetType: "crm_mcp_tool",
       metadata,
-    });
+    };
   }
 }
 

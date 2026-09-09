@@ -265,6 +265,7 @@ describe("CRM MCP agent token, issuer to guard", () => {
     const audit = {
       log: jest.fn(),
       logCritical: jest.fn().mockResolvedValue(undefined),
+      logCriticalOutsideTransaction: jest.fn().mockResolvedValue(undefined),
     };
 
     const moduleRef = await Test.createTestingModule({

@@ -16,7 +16,7 @@ import { CrmMcpSettingsService } from "./crm-mcp-settings.service";
 
 describe("CrmMcpService", () => {
   let service: CrmMcpService;
-  let audit: { logCritical: jest.Mock };
+  let audit: { logCritical: jest.Mock; logCriticalOutsideTransaction: jest.Mock };
   let mcpSettings: { isEnabled: jest.Mock };
   let accessService: {
     scopeFor: jest.Mock;
@@ -98,7 +98,10 @@ describe("CrmMcpService", () => {
       preview: jest.fn(),
     };
 
-    audit = { logCritical: jest.fn().mockResolvedValue(undefined) };
+    audit = {
+      logCritical: jest.fn().mockResolvedValue(undefined),
+      logCriticalOutsideTransaction: jest.fn().mockResolvedValue(undefined),
+    };
     mcpSettings = { isEnabled: jest.fn().mockResolvedValue(true) };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -262,14 +265,26 @@ describe("CrmMcpService", () => {
       );
     });
 
-    it("records a refusal, which is the entry a reviewer most wants", async () => {
+    /**
+     * The refusal entries name `logCriticalOutsideTransaction`, and which
+     * method they name is the whole assertion.
+     *
+     * `logCritical` writes through the request's transaction, and a refusal is
+     * delivered by throwing — so `TenantContextInterceptor` rolls that
+     * transaction back and takes the row with it. This file cannot see that:
+     * the audit service is a double here, so the call is recorded whichever
+     * method receives it and every version of this test passed throughout the
+     * defect. It pins the choice; `test/crm/crm-mcp-audit.seeded-e2e-spec.ts`
+     * is what proves the row is still in `audit_logs` after the 403.
+     */
+    it("records a refusal where the refusal cannot roll it back", async () => {
       grantScopes([]);
 
       await expect(
         service.executeTool(context, { name: "crm_list_deals", arguments: { limit: 5 } }),
       ).rejects.toThrow(ForbiddenException);
 
-      expect(audit.logCritical).toHaveBeenCalledWith(
+      expect(audit.logCriticalOutsideTransaction).toHaveBeenCalledWith(
         expect.objectContaining({
           action: "crm.mcp.tool_refused",
           targetId: "crm_list_deals",
@@ -283,7 +298,7 @@ describe("CrmMcpService", () => {
         service.executeTool(context, { name: "payroll_post_run", arguments: {} }),
       ).rejects.toThrow(NotFoundException);
 
-      expect(audit.logCritical).toHaveBeenCalledWith(
+      expect(audit.logCriticalOutsideTransaction).toHaveBeenCalledWith(
         expect.objectContaining({
           action: "crm.mcp.tool_unknown",
           metadata: expect.objectContaining({ requestedTool: "payroll_post_run" }),
@@ -437,7 +452,7 @@ describe("CrmMcpService", () => {
         .executeTool(context, { name: "crm_list_parties", arguments: {} })
         .catch(() => undefined);
 
-      expect(audit.logCritical).toHaveBeenCalledWith(
+      expect(audit.logCriticalOutsideTransaction).toHaveBeenCalledWith(
         expect.objectContaining({ action: "crm.mcp.tool_refused" }),
       );
     });
