@@ -1078,3 +1078,72 @@ enabled posting". That contradicts the argument the bridge already makes and
 which the contract section above accepts — that a physical movement should not
 be refused for a bookkeeping gap. If INV-09 is built, the blocking decision
 should be revisited deliberately rather than inherited from the ticket line.
+
+## The ON CONFLICT class, and why a mocked database cannot see it
+
+INV-29 was not a webhook bug. It was one instance of a defect that the
+repository's testing style is structurally unable to detect, so it is worth
+writing down as a class.
+
+A partial unique index is only *inferable* as an `ON CONFLICT` arbiter when the
+statement repeats the index's predicate. Omit it and PostgreSQL does not fall
+back to a weaker guarantee — it rejects the statement before executing it:
+
+```
+ERROR:  there is no unique or exclusion constraint matching the ON CONFLICT specification
+```
+
+Every insert through that path throws. In INV-29's case the throw propagated
+into the outbox dispatcher, which retried and dead-lettered, so no inventory
+webhook had ever been delivered. Nine unit suites covered those files and were
+green, before and after. They had to be: a mocked database holds no indexes, so
+it cannot refuse a statement, and the half of the bug that matters lives in the
+schema file rather than at the call site.
+
+### The check, and the three answers it gave before the right one
+
+`pnpm check:partial-index-upserts` derives every partial unique index from
+`src/db/schema/**` and flags any `onConflictDo*` whose target names one without
+repeating the predicate. Its first three versions were confidently wrong, and
+each correction is a rule worth keeping:
+
+| Version | Findings | What was wrong |
+|---|---|---|
+| Column names only | 32 | `(orgId, moduleKey)` is a partial index on one table and an ordinary one on another. Fixed by resolving the enclosing `.insert(<table>)`. |
+| Untempered regex | 12 | A plain `uniqueIndex(...)` followed two lines later by a partial `index(...).where(...)` read as one partial unique index. |
+| Predicate key unknown | 5 | `onConflictDoNothing` takes `where`; `onConflictDoUpdate` takes `targetWhere`. `setWhere` qualifies the UPDATE and arbitrates nothing. |
+
+The second correction is the one to remember, because the database refuted it.
+Four of those twelve indexes are not partial in a live database at all, and
+`pg_indexes` said so before any code was changed. **A scanner's answer about
+the schema is a hypothesis; `pg_indexes` and `EXPLAIN` are the evidence.**
+Every finding below was confirmed by asking PostgreSQL to plan the real
+statement, not by reading the source.
+
+### What it found
+
+Three statements, none of them in inventory:
+
+- **`billing/core/versioned-catalog.service.ts` — fixed here.** Broken twice
+  over. It targeted the partial `uq_org_ent_overrides_idem` without the
+  predicate, and repairing that exposed a second refusal: its `setWhere` names
+  `idempotency_key` unqualified, in a `DO UPDATE ... WHERE` where both the
+  stored row and `excluded` are in scope. Its only callers today are a unit
+  spec, so this threw on first real use rather than breaking something live.
+  `entitlement-override-upsert.db.spec.ts` drives the real service and fails
+  3/3 against the old code, passes 3/3 against the new; the existing unit spec
+  passes against both, which is the point.
+
+- **`payroll/payout/locking.service.ts:167` and `:202` — not fixed.** Payroll
+  is on this effort's denylist. Both TDS year-to-date upserts are refused by
+  PostgreSQL today. They also need a decision this work cannot make: the **live
+  index carries five columns** (`org_id, user_id, fiscal_year, period_key,
+  run_id`) where the schema declaration and the code target name four, so
+  whether TDS YTD is keyed per run or per period is a product question for that
+  module's owner. The check lists both as still-broken-and-out-of-reach, and
+  fails if either stops being an offender, so the note cannot rot into a
+  rubber stamp.
+
+Exit codes are 0 clean, 1 for a new offender or a stale acknowledgement, 2 if
+the scan finds no partial index at all. All four were produced deliberately
+rather than assumed.
