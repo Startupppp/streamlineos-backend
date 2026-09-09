@@ -89,6 +89,7 @@ describe("[seeded-e2e] the golden path", () => {
   let teardown: () => Promise<void>;
   let grnId: number;
   let soId: number;
+  let poId: number;
   /** A second, lot-tracked SKU, so the recall has two lots to tell apart. */
   let lotVariantId: number;
 
@@ -219,7 +220,7 @@ describe("[seeded-e2e] the golden path", () => {
         ],
       }),
     );
-    const poId = (po as { id: number }).id;
+    poId = (po as { id: number }).id;
     await asTenant(() => app.app.get(PoService).sendPo(scene.orgId, poId, scene.userId));
 
     const [line] = await asTenant(() =>
@@ -287,6 +288,28 @@ describe("[seeded-e2e] the golden path", () => {
     expect(await onHandAt(scene.receivingId)).toBe(0);
     expect(await onHandAt(scene.storageId)).toBe(100);
     expect(await atp()).toBe(100);
+
+    // INV-13. The other half of "PO → GRN → putaway" is the paperwork, and it
+    // fails independently of the stock. Levels can be perfect while the order
+    // still reads SENT and the task still reads PENDING — at which point the
+    // buyer reorders goods that are already on the shelf, and the putaway queue
+    // shows work that has been done. `receiving` asserts the status the receipt
+    // *announced* in its event payload; what is asserted here is the row, which
+    // is the thing the next reader actually queries.
+    const [po] = await asTenant(() =>
+      db().execute<{ status: string }>(sql`
+        SELECT status FROM inv_purchase_orders
+        WHERE org_id = ${scene.orgId} AND id = ${poId}`),
+    );
+    expect(po!.status).toBe("RECEIVED");
+
+    const [putawayTask] = await asTenant(() =>
+      db().execute<{ status: string }>(sql`
+        SELECT status FROM inv_putaway_tasks
+        WHERE org_id = ${scene.orgId} AND id = ${task.taskId}`),
+    );
+    expect(putawayTask!.status).toBe("COMPLETED");
+
     await expectReconciled("putaway");
   }, SLICE_TIMEOUT_MS);
 
@@ -386,6 +409,25 @@ describe("[seeded-e2e] the golden path", () => {
     // either double-counted the reservation or failed to release it.
     expect(await onHandAt(scene.storageId)).toBe(70);
     expect(await atp()).toBe(70);
+
+    // INV-14. ATP proves the reservation stopped withholding stock. It cannot
+    // say WHY it stopped, and the two reasons are not interchangeable:
+    // CONSUMED means a shipment fulfilled the promise, RELEASED means somebody
+    // cancelled it, and a hard DELETE means the promise was never accounted for
+    // at all. All three zero `committed` and all three leave ATP at exactly 70,
+    // so the arithmetic above passes under every one of them.
+    //
+    // The row is the only place the difference survives, and it is the row a
+    // stock auditor reads when they ask why 30 units left the building. So the
+    // count is asserted too: exactly one reservation, still there, CONSUMED.
+    const reservations = await asTenant(() =>
+      db().execute<{ status: string }>(sql`
+        SELECT status FROM inv_stock_reservations
+        WHERE org_id = ${scene.orgId} AND source_type = 'inv_sales_order'
+          AND source_id = ${String(soId)}`),
+    );
+    expect(reservations.map((r) => r.status)).toEqual(["CONSUMED"]);
+
     await expectReconciled("shipped");
   }, SLICE_TIMEOUT_MS);
 
