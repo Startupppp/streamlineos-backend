@@ -18,6 +18,33 @@ describe("PostgreSQL error helpers", () => {
     });
   });
 
+  /**
+   * The field names above are `pg`'s. This repo connects through postgres-js,
+   * which spells the same field `constraint_name` — see `errorFields` in
+   * `postgres/src/connection.js`, where the server's `n` field is mapped. A
+   * helper that reads only `constraint` therefore answered `undefined` for
+   * every error this deployment can actually raise, and the test above could
+   * not see it because it fabricated the field it was looking for.
+   */
+  it("reads the constraint name postgres-js actually sets", () => {
+    const driverError = Object.assign(
+      new Error(
+        'duplicate key value violates unique constraint "uniq_crm_pricebooks_org_name"',
+      ),
+      {
+        code: "23505",
+        constraint_name: "uniq_crm_pricebooks_org_name",
+        severity: "ERROR",
+      },
+    );
+    const error = new DrizzleQueryError("insert into ...", [], driverError);
+
+    expect(getPostgresErrorDetails(error)).toEqual({
+      code: "23505",
+      constraint: "uniq_crm_pricebooks_org_name",
+    });
+  });
+
   it("still supports an unwrapped driver error", () => {
     expect(getPostgresErrorCode({ code: "23505" })).toBe("23505");
   });
