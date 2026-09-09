@@ -40,7 +40,7 @@ import { CrmAutomationBusService } from "src/modules/crm/automation-studio/crm-a
 describe(`${SEEDED_HARNESS} CRM automation bus — a detached emit still reaches its rules`, () => {
   let seeded: SeededE2eApp;
   let fixture: SeededFixture;
-  let ruleId: string;
+  let ruleId = 0;
 
   beforeAll(async () => {
     seeded = await createSeededE2eApp();

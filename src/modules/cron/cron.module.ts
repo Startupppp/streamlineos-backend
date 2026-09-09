@@ -33,6 +33,8 @@ import { CronInvitationExpiryController } from "./cron-invitation-expiry.control
 import { CronHrController } from "./cron-hr.controller";
 import { CronPlatformController } from "./cron-platform.controller";
 import { CronOutboxController } from "./cron-outbox.controller";
+import { CronSignController } from "./cron-sign.controller";
+import { ESignModule } from "../e-sign/e-sign.module";
 import { CronSupportController } from "./cron-support.controller";
 import { CronBuildController } from "./cron-build.controller";
 import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
@@ -105,12 +107,14 @@ import { EmploymentFactsModule } from "../directory/employment-facts.module";
     CrmModule,
     OutboxModule,
     SessionsModule,
+    ESignModule,
   ],
   controllers: [
     CronBillingController,
     CronHrController,
     CronPlatformController,
     CronOutboxController,
+    CronSignController,
     CronSupportController,
     CronBuildController,
     CronInvitationExpiryController,

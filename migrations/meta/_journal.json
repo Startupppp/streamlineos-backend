@@ -2934,6 +2934,13 @@
       "when": 1787941148254,
       "tag": "0658_crm_whatsapp_channels_fail_closed",
       "breakpoints": true
+    },
+    {
+      "idx": 419,
+      "version": "7",
+      "when": 1787941208254,
+      "tag": "0659_sign_sweep_runs",
+      "breakpoints": true
     }
   ]
 }

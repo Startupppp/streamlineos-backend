@@ -76,6 +76,14 @@ import { SignReportsController } from "./sign-reports.controller";
     SignWatermarkService,
     SignReportsService,
   ],
-  exports: [SignAuditService, SignSettingsService, SignEnvelopesService, SignFinalizationService, SignTemplatesService],
+  exports: [
+    SignAuditService,
+    SignSettingsService,
+    SignEnvelopesService,
+    SignFinalizationService,
+    SignTemplatesService,
+    /** For the platform cron controller, which drives the sweeps across orgs. */
+    SignEnvelopeSweepsService,
+  ],
 })
 export class ESignModule {}
