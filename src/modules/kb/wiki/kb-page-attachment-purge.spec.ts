@@ -4,6 +4,9 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
   ),
 }));
 
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
+
 interface PurgeMark {
   status: string;
   confirmedAt?: Date;
@@ -11,7 +14,16 @@ interface PurgeMark {
   failedReason: string | null;
 }
 
+interface PendingPurgeRow {
+  orgId: string;
+  storageKey: string;
+  purpose: string;
+  bucket: string;
+  status: string;
+}
+
 const mockPurgeMarks: PurgeMark[] = [];
+const mockInsertedBatches: PendingPurgeRow[][] = [];
 const mockInsertValues = jest.fn();
 const mockUpdateWhere = jest.fn().mockResolvedValue(undefined);
 const mockUpdateSet = jest.fn((mark: PurgeMark) => {
@@ -21,7 +33,8 @@ const mockUpdateSet = jest.fn((mark: PurgeMark) => {
 
 const mockTenantTx = {
   insert: jest.fn(() => ({
-    values: jest.fn((rows: unknown) => {
+    values: jest.fn((rows: PendingPurgeRow[]) => {
+      mockInsertedBatches.push(rows);
       mockInsertValues(rows);
       return { onConflictDoUpdate: jest.fn().mockResolvedValue(undefined) };
     }),
@@ -31,59 +44,161 @@ const mockTenantTx = {
 
 import {
   attemptPageAttachmentPurge,
+  recordArticleAttachmentPurge,
   recordPageAttachmentPurge,
+  KB_ARTICLE_ATTACHMENT_PURGE_PURPOSE,
   KB_PAGE_ATTACHMENT_PURGE_PURPOSE,
 } from "./kb-page-attachment-purge";
 
 const ORG = "org-1";
+const CHUNK = 500;
 
-function attachmentDb(rows: Array<{ fileKey: string }>) {
-  interface AttachmentChain {
-    orderBy: jest.Mock<AttachmentChain, []>;
-    limit: jest.Mock<AttachmentChain, [number]>;
-    then: <R>(resolve: (value: Array<{ fileKey: string }>) => R) => Promise<R>;
-  }
-  const chain: AttachmentChain = {
-    orderBy: jest.fn((): AttachmentChain => chain),
-    limit: jest.fn((_pageSize: number): AttachmentChain => chain),
-    then: <R,>(resolve: (value: Array<{ fileKey: string }>) => R) =>
-      Promise.resolve(rows).then(resolve),
-  };
-  const where = jest.fn(() => chain);
+interface AttachmentRow {
+  id: number;
+  fileKey: string;
+}
+
+interface SelectChain {
+  orderBy: () => SelectChain;
+  limit: (n: number) => Promise<AttachmentRow[]>;
+}
+
+const dialect = new PgDialect();
+
+/**
+ * The keyset cursor is read off the rendered predicate rather than assumed:
+ * `gt(id, afterId)` is the last bound parameter, so a mock that answered the
+ * same page forever — which is what the previous one did — cannot exist here.
+ */
+function cursorOf(condition: SQL | undefined): number {
+  if (condition === undefined) throw new Error("the purge select ran with no WHERE clause");
+  const { params } = dialect.sqlToQuery(condition);
+  return Number(params[params.length - 1]);
+}
+
+function attachmentDb(rows: AttachmentRow[]) {
+  const cursors: number[] = [];
+  const pageSizes: number[] = [];
+  const where = jest.fn((condition: SQL | undefined) => {
+    const afterId = cursorOf(condition);
+    cursors.push(afterId);
+    if (cursors.length > 12)
+      throw new Error(`keyset loop never advanced past ${afterId} — afterId is not being moved`);
+    const remaining = rows.filter((r) => r.id > afterId);
+    const chain: SelectChain = {
+      orderBy: () => chain,
+      limit: (n: number) => {
+        pageSizes.push(n);
+        return Promise.resolve(remaining.slice(0, n));
+      },
+    };
+    return chain;
+  });
   return {
     select: jest.fn(() => ({ from: jest.fn(() => ({ where })) })),
     where,
+    cursors,
+    pageSizes,
   };
 }
 
-describe("recordPageAttachmentPurge — the write-ahead record is opened before the row is cascaded away", () => {
-  beforeEach(() => jest.clearAllMocks());
+function keyRows(count: number, prefix: string, firstId = 1): AttachmentRow[] {
+  return Array.from({ length: count }, (_, i) => ({
+    id: firstId + i,
+    fileKey: `${prefix}/${firstId + i}.webp`,
+  }));
+}
 
-  it("opens one pending storage_pending_purge row per distinct file key", async () => {
+function insertedRows(call: number): PendingPurgeRow[] {
+  const batch = mockInsertedBatches[call];
+  if (batch === undefined) throw new Error(`no storage_pending_purge insert at call ${call}`);
+  return batch;
+}
+
+function resetPurgeCaptures(): void {
+  jest.clearAllMocks();
+  mockInsertedBatches.length = 0;
+  mockPurgeMarks.length = 0;
+}
+
+describe("recordPageAttachmentPurge — the write-ahead record is opened before the row is cascaded away", () => {
+  beforeEach(resetPurgeCaptures);
+
+  it("opens one pending storage_pending_purge row per distinct file key, in the KB bucket", async () => {
     const db = attachmentDb([
-      { fileKey: "kb-media/org-1/a.webp" },
-      { fileKey: "kb-media/org-1/b.pdf" },
-      { fileKey: "kb-media/org-1/a.webp" },
+      { id: 1, fileKey: "kb-media/org-1/a.webp" },
+      { id: 2, fileKey: "kb-media/org-1/b.pdf" },
+      { id: 3, fileKey: "kb-media/org-1/a.webp" },
     ]);
 
     const keys = await recordPageAttachmentPurge(db as never, ORG, [10, 11]);
 
     expect(keys).toEqual(["kb-media/org-1/a.webp", "kb-media/org-1/b.pdf"]);
     expect(mockInsertValues).toHaveBeenCalledTimes(1);
-    expect(mockInsertValues).toHaveBeenCalledWith([
+    expect(insertedRows(0)).toEqual([
       {
         orgId: ORG,
         storageKey: "kb-media/org-1/a.webp",
         purpose: KB_PAGE_ATTACHMENT_PURGE_PURPOSE,
+        bucket: "kb",
         status: "pending",
       },
       {
         orgId: ORG,
         storageKey: "kb-media/org-1/b.pdf",
         purpose: KB_PAGE_ATTACHMENT_PURGE_PURPOSE,
+        bucket: "kb",
         status: "pending",
       },
     ]);
+  });
+
+  it("walks the cursor across three batches and chunks the insert to match", async () => {
+    const db = attachmentDb(keyRows(1_200, "kb-media/org-1"));
+
+    const keys = await recordPageAttachmentPurge(db as never, ORG, [10]);
+
+    expect(db.where).toHaveBeenCalledTimes(3);
+    expect(db.cursors).toEqual([0, 500, 1_000]);
+    expect(db.pageSizes).toEqual([CHUNK, CHUNK, CHUNK]);
+    expect(keys).toHaveLength(1_200);
+    expect(keys[0]).toBe("kb-media/org-1/1.webp");
+    expect(keys[1_199]).toBe("kb-media/org-1/1200.webp");
+    expect(mockInsertValues).toHaveBeenCalledTimes(3);
+    expect(insertedRows(0)).toHaveLength(CHUNK);
+    expect(insertedRows(1)).toHaveLength(CHUNK);
+    expect(insertedRows(2)).toHaveLength(200);
+    expect(insertedRows(1)[0].storageKey).toBe("kb-media/org-1/501.webp");
+    expect(insertedRows(2)[199].storageKey).toBe("kb-media/org-1/1200.webp");
+  });
+
+  it("bites: the cursor each batch requests is the last id the previous batch returned", async () => {
+    const db = attachmentDb(keyRows(1_100, "kb-media/org-1"));
+
+    await recordPageAttachmentPurge(db as never, ORG, [10]);
+
+    expect(db.cursors[0]).toBe(0);
+    expect(db.cursors[1]).toBe(500);
+    expect(db.cursors[2]).toBe(1_000);
+    for (let i = 1; i < db.cursors.length; i++)
+      expect(db.cursors[i]).toBeGreaterThan(db.cursors[i - 1]);
+  });
+
+  it("deduplicates a file key that two attachments share across batch boundaries", async () => {
+    const rows = keyRows(CHUNK, "kb-media/org-1");
+    const shared = rows[0];
+    if (!shared) throw new Error("fixture is empty");
+    rows.push({ id: 900, fileKey: shared.fileKey });
+    rows.push({ id: 901, fileKey: "kb-media/org-1/unique.webp" });
+    const db = attachmentDb(rows);
+
+    const keys = await recordPageAttachmentPurge(db as never, ORG, [10]);
+
+    expect(db.where).toHaveBeenCalledTimes(2);
+    expect(keys).toHaveLength(CHUNK + 1);
+    expect(keys.filter((k) => k === shared.fileKey)).toHaveLength(1);
+    expect(mockInsertValues).toHaveBeenCalledTimes(2);
+    expect(insertedRows(1)).toHaveLength(1);
   });
 
   it("writes nothing when the page set carries no attachments", async () => {
@@ -93,13 +208,13 @@ describe("recordPageAttachmentPurge — the write-ahead record is opened before 
   });
 
   it("reads no attachment rows at all for an empty page set", async () => {
-    const db = attachmentDb([{ fileKey: "k" }]);
+    const db = attachmentDb([{ id: 1, fileKey: "k" }]);
     await expect(recordPageAttachmentPurge(db as never, ORG, [])).resolves.toEqual([]);
     expect(db.select).not.toHaveBeenCalled();
   });
 
   it("bites: a failed write-ahead insert propagates, so the caller cannot go on to delete the page", async () => {
-    const db = attachmentDb([{ fileKey: "kb-media/org-1/a.webp" }]);
+    const db = attachmentDb([{ id: 1, fileKey: "kb-media/org-1/a.webp" }]);
     mockTenantTx.insert.mockImplementationOnce(() => {
       throw new Error("23514 storage_pending_purge");
     });
@@ -110,13 +225,67 @@ describe("recordPageAttachmentPurge — the write-ahead record is opened before 
   });
 });
 
+describe("recordArticleAttachmentPurge — the article cascade gets the same write-ahead row", () => {
+  beforeEach(resetPurgeCaptures);
+
+  it("records every attachment key of the article in the DEFAULT bucket", async () => {
+    const db = attachmentDb([
+      { id: 4, fileKey: "uploads/org-1/handbook.pdf" },
+      { id: 5, fileKey: "uploads/org-1/policy.docx" },
+    ]);
+
+    const keys = await recordArticleAttachmentPurge(db as never, ORG, [77]);
+
+    expect(keys).toEqual(["uploads/org-1/handbook.pdf", "uploads/org-1/policy.docx"]);
+    expect(insertedRows(0)).toEqual([
+      {
+        orgId: ORG,
+        storageKey: "uploads/org-1/handbook.pdf",
+        purpose: KB_ARTICLE_ATTACHMENT_PURGE_PURPOSE,
+        bucket: "default",
+        status: "pending",
+      },
+      {
+        orgId: ORG,
+        storageKey: "uploads/org-1/policy.docx",
+        purpose: KB_ARTICLE_ATTACHMENT_PURGE_PURPOSE,
+        bucket: "default",
+        status: "pending",
+      },
+    ]);
+  });
+
+  it("bites: it never records the KB bucket, which would delete nothing and confirm the row away", async () => {
+    const db = attachmentDb([{ id: 4, fileKey: "uploads/org-1/handbook.pdf" }]);
+
+    await recordArticleAttachmentPurge(db as never, ORG, [77]);
+
+    expect(insertedRows(0).map((r) => r.bucket)).toEqual(["default"]);
+    expect(insertedRows(0).map((r) => r.bucket)).not.toContain("kb");
+  });
+
+  it("walks the cursor rather than reading every attachment of a large article at once", async () => {
+    const db = attachmentDb(keyRows(700, "uploads/org-1"));
+
+    const keys = await recordArticleAttachmentPurge(db as never, ORG, [77]);
+
+    expect(db.cursors).toEqual([0, 500]);
+    expect(db.pageSizes).toEqual([CHUNK, CHUNK]);
+    expect(keys).toHaveLength(700);
+  });
+
+  it("reads nothing and writes nothing for an empty article set", async () => {
+    const db = attachmentDb([{ id: 1, fileKey: "k" }]);
+    await expect(recordArticleAttachmentPurge(db as never, ORG, [])).resolves.toEqual([]);
+    expect(db.select).not.toHaveBeenCalled();
+    expect(mockInsertValues).not.toHaveBeenCalled();
+  });
+});
+
 const KB_BUCKET = "kb-files";
 
 describe("attemptPageAttachmentPurge — best effort, never throwing back at the caller", () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-    mockPurgeMarks.length = 0;
-  });
+  beforeEach(resetPurgeCaptures);
 
   it("deletes each object and confirms its row", async () => {
     const storage = { deleteFileIfPresent: jest.fn().mockResolvedValue(true) };

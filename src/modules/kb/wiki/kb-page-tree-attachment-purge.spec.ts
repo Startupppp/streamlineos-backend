@@ -19,10 +19,15 @@ jest.mock("./kb-page-attachment-purge", () => ({
     mockCalls.push("attempt");
     return { confirmed: 1, failed: 0 };
   }),
+  purgeOrphanedKbMedia: jest.fn(async () => {
+    mockCalls.push("orphans");
+    return mockOrphanCount;
+  }),
 }));
 
 let mockCalls: string[] = [];
 let mockRecordThrows = false;
+let mockOrphanCount = 0;
 
 import { KbPageTreeService } from "./kb-page-tree.service";
 
@@ -46,11 +51,13 @@ function thenable<T>(rows: T, extra: Record<string, unknown> = {}) {
 
 function makeTreeDb(options: {
   trashedIds?: number[];
+  trashedBatches?: number[][];
   expiredBatches?: number[][];
   subtreeIds?: number[];
 }) {
   const selectResults: Array<Array<{ id: number }>> = [];
   if (options.trashedIds) selectResults.push(options.trashedIds.map((id) => ({ id })));
+  for (const batch of options.trashedBatches ?? []) selectResults.push(batch.map((id) => ({ id })));
   for (const batch of options.expiredBatches ?? []) selectResults.push(batch.map((id) => ({ id })));
 
   let selectIndex = 0;
@@ -93,7 +100,17 @@ describe("KbPageTreeService — every path that cascades kb_page_attachments rec
     jest.clearAllMocks();
     mockCalls = [];
     mockRecordThrows = false;
+    mockOrphanCount = 0;
   });
+
+  function makeTree(db: unknown, audit: unknown = makeAudit()) {
+    return new KbPageTreeService(
+      db as never,
+      audit as never,
+      makeStorage() as never,
+      makeConfig() as never,
+    );
+  }
 
   it("emptyTrash records the purge before it deletes the pages", async () => {
     const db = makeTreeDb({ trashedIds: [10, 11] });
@@ -109,18 +126,48 @@ describe("KbPageTreeService — every path that cascades kb_page_attachments rec
     expect(mockCalls).toEqual(["record:10,11", "delete", "attempt"]);
   });
 
-  it("purgeExpired records the purge before it deletes each batch", async () => {
+  it("purgeExpired records the purge before it deletes each batch, then sweeps page-less media", async () => {
     const db = makeTreeDb({ expiredBatches: [[20, 21], []] });
-    const svc = new KbPageTreeService(
-      db as never,
-      makeAudit() as never,
-      makeStorage() as never,
-      makeConfig() as never,
-    );
+    const svc = makeTree(db);
 
     await svc.purgeExpired(ORG, new Date("2026-01-01"));
 
-    expect(mockCalls).toEqual(["record:20,21", "delete", "attempt"]);
+    expect(mockCalls).toEqual(["record:20,21", "delete", "attempt", "orphans"]);
+  });
+
+  it("purgeExpired sweeps page-less media even when nothing expired — that is the only path that reaches it", async () => {
+    const db = makeTreeDb({ expiredBatches: [[]] });
+    const audit = makeAudit();
+    mockOrphanCount = 3;
+    const svc = makeTree(db, audit);
+
+    await expect(svc.purgeExpired(ORG, new Date("2026-01-01"))).resolves.toBe(0);
+
+    expect(mockCalls).toEqual(["orphans"]);
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "kb.media.orphan_purged",
+        metadata: { purgedCount: 3 },
+      }),
+    );
+  });
+
+  it("emptyTrash keeps asking while a batch comes back full, and stops on a short one", async () => {
+    const full = Array.from({ length: 500 }, (_, i) => i + 1);
+    const db = makeTreeDb({ trashedBatches: [full, [777]] });
+    const svc = makeTree(db);
+
+    await svc.emptyTrash(makeUser());
+
+    expect(db.select).toHaveBeenCalledTimes(2);
+    expect(mockCalls).toEqual([
+      `record:${full.join(",")}`,
+      "delete",
+      "attempt",
+      "record:777",
+      "delete",
+      "attempt",
+    ]);
   });
 
   it("hardDelete records the purge for the whole subtree before it deletes the pages", async () => {

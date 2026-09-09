@@ -1,12 +1,18 @@
-import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, lt, sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
-import { kbPageAttachments } from "../../../db/schema";
-import { storagePendingPurge } from "../../../db/schema/common/storage-pending-purge";
+import { kbArticleAttachments, kbPageAttachments, kbPages } from "../../../db/schema";
+import {
+  storagePendingPurge,
+  type StoragePurgeBucket,
+} from "../../../db/schema/common/storage-pending-purge";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
 export const KB_PAGE_ATTACHMENT_PURGE_PURPOSE = "kb:page:purge";
+export const KB_ARTICLE_ATTACHMENT_PURGE_PURPOSE = "support:kb-article:delete";
+export const KB_ORPHAN_MEDIA_PURGE_PURPOSE = "kb:media-orphan:purge";
 
 const PURGE_BOOKKEEPING_CHUNK = 500;
+const ORPHAN_MEDIA_MIN_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 export interface PageAttachmentObjectStore {
   deleteFileIfPresent(
@@ -55,7 +61,59 @@ export async function recordPageAttachmentPurge(
     if (batch.length < PURGE_BOOKKEEPING_CHUNK || last === undefined) break;
     afterId = last.id;
   }
-  const keys = [...seen];
+  return openPurgeRecords(db, orgId, [...seen], KB_PAGE_ATTACHMENT_PURGE_PURPOSE, "kb");
+}
+
+/**
+ * `kb_article_attachments` cascades away with its article through
+ * `fk_kb_article_attachments_org_article`, exactly as the page table does, and
+ * its objects live in the DEFAULT bucket because the client obtained the key
+ * from `POST /storage/upload`, which writes with no override.
+ */
+export async function recordArticleAttachmentPurge(
+  db: Db,
+  orgId: string,
+  articleIds: number[],
+): Promise<string[]> {
+  if (articleIds.length === 0) return [];
+
+  const seen = new Set<string>();
+  let afterId = 0;
+  for (;;) {
+    const batch = await db
+      .select({ id: kbArticleAttachments.id, fileKey: kbArticleAttachments.fileKey })
+      .from(kbArticleAttachments)
+      .where(
+        and(
+          eq(kbArticleAttachments.orgId, orgId),
+          inArray(kbArticleAttachments.articleId, articleIds),
+          gt(kbArticleAttachments.id, afterId),
+        ),
+      )
+      .orderBy(asc(kbArticleAttachments.id))
+      .limit(PURGE_BOOKKEEPING_CHUNK);
+    for (const r of batch) if (r.fileKey.trim().length > 0) seen.add(r.fileKey);
+    const last = batch[batch.length - 1];
+    if (batch.length < PURGE_BOOKKEEPING_CHUNK || last === undefined) break;
+    afterId = last.id;
+  }
+
+  return openPurgeRecords(db, orgId, [...seen], KB_ARTICLE_ATTACHMENT_PURGE_PURPOSE, "default");
+}
+
+/**
+ * `bucket` is written explicitly rather than left for the sweep to infer from
+ * `purpose`: the purpose map is a fallback for rows that predate the column, and
+ * a second producer of the same purpose would silently redirect every one of
+ * these deletes at the wrong bucket, where an absent key answers SUCCESS.
+ */
+async function openPurgeRecords(
+  db: Db,
+  orgId: string,
+  keys: string[],
+  purpose: string,
+  bucket: StoragePurgeBucket,
+): Promise<string[]> {
   if (keys.length === 0) return [];
 
   await runInNewTenantTransaction(db, orgId, async (tx) => {
@@ -66,13 +124,14 @@ export async function recordPageAttachmentPurge(
           keys.slice(i, i + PURGE_BOOKKEEPING_CHUNK).map((storageKey) => ({
             orgId,
             storageKey,
-            purpose: KB_PAGE_ATTACHMENT_PURGE_PURPOSE,
+            purpose,
+            bucket,
             status: "pending",
           })),
         )
         .onConflictDoUpdate({
           target: [storagePendingPurge.orgId, storagePendingPurge.storageKey],
-          set: { status: "pending", lastAttemptedAt: null, failedReason: null },
+          set: { status: "pending", bucket, lastAttemptedAt: null, failedReason: null },
         });
   });
 
@@ -126,6 +185,93 @@ export async function attemptPageAttachmentPurge(
   }
 
   return { confirmed, failed };
+}
+
+/**
+ * A `page_id IS NULL` attachment row is reachable by no other purge path — the
+ * page cascade selects by page id and nothing else ever touches the table — yet
+ * the row is not automatically debris: the cover picker uploads with no page id
+ * and stores the returned key in `kb_pages.cover_image`, so a live cover is a
+ * page-less row. Anything a page still names is therefore excluded, trashed
+ * pages included, because a restore must find its cover intact.
+ */
+export async function purgeOrphanedKbMedia(
+  db: Db,
+  storage: PageAttachmentObjectStore,
+  orgId: string,
+  now: Date,
+  kbBucket: string | undefined,
+): Promise<number> {
+  const cutoff = new Date(now.getTime() - ORPHAN_MEDIA_MIN_AGE_MS);
+  let purged = 0;
+  let afterId = 0;
+  for (;;) {
+    const batch = await db
+      .select({ id: kbPageAttachments.id, fileKey: kbPageAttachments.fileKey })
+      .from(kbPageAttachments)
+      .where(
+        and(
+          eq(kbPageAttachments.orgId, orgId),
+          isNull(kbPageAttachments.pageId),
+          isNull(kbPageAttachments.deletedAt),
+          lt(kbPageAttachments.createdAt, cutoff),
+          gt(kbPageAttachments.id, afterId),
+        ),
+      )
+      .orderBy(asc(kbPageAttachments.id))
+      .limit(PURGE_BOOKKEEPING_CHUNK);
+
+    const last = batch[batch.length - 1];
+    if (last === undefined) break;
+    afterId = last.id;
+
+    const referenced = await coverImageKeys(
+      db,
+      orgId,
+      batch.map((r) => r.fileKey),
+    );
+    const orphans = batch.filter((r) => !referenced.has(r.fileKey));
+    if (orphans.length > 0) {
+      const keys = await openPurgeRecords(
+        db,
+        orgId,
+        [...new Set(orphans.map((r) => r.fileKey))],
+        KB_ORPHAN_MEDIA_PURGE_PURPOSE,
+        "kb",
+      );
+      const ids = orphans.map((r) => r.id);
+      await runInNewTenantTransaction(db, orgId, async (tx) => {
+        await tx
+          .update(kbPageAttachments)
+          .set({ deletedAt: now })
+          .where(
+            and(eq(kbPageAttachments.orgId, orgId), inArray(kbPageAttachments.id, ids)),
+          );
+      });
+      await attemptPageAttachmentPurge(db, storage, orgId, keys, kbBucket);
+      purged += ids.length;
+    }
+
+    if (batch.length < PURGE_BOOKKEEPING_CHUNK) break;
+  }
+
+  return purged;
+}
+
+async function coverImageKeys(
+  db: Db,
+  orgId: string,
+  keys: string[],
+): Promise<Set<string>> {
+  if (keys.length === 0) return new Set();
+  // The reposition control appends a `#y=NN` fragment to the stored key.
+  const coverKey = sql<string>`split_part(${kbPages.coverImage}, '#', 1)`;
+  const rows = await db
+    .select({ coverKey })
+    .from(kbPages)
+    .where(and(eq(kbPages.orgId, orgId), inArray(coverKey, keys)))
+    .limit(PURGE_BOOKKEEPING_CHUNK);
+  return new Set(rows.map((r) => r.coverKey));
 }
 
 interface PurgeMark {

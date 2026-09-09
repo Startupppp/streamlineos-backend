@@ -9,19 +9,21 @@ import { randomUUID } from "node:crypto";
 import { and, eq, inArray, isNull, isNotNull, lt, sql, type SQL } from "drizzle-orm";
 import { pageVisibleTo } from "../retrieval/kb-page-visibility";
 import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
-import { kbPages, kbPageLinks, kbArticleChunks } from "../../../db/schema";
+import { kbPages, kbArticleChunks } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
-import { extractPageLinkIds } from "./kb-page-content.util";
 import { AuditService } from "../../../common/audit/audit.service";
-import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { MovePageInput } from "./dto/kb-pages.schemas";
 import { assertPageAccessible } from "../retrieval/kb-page-access.util";
 import { KB_PAGE_COLUMNS, KB_PAGE_LIST_COLUMNS, type KbPageListItem, type KbPageRow } from "./kb-page-columns";
 import { StorageService } from "../../storage/storage.service";
-import { attemptPageAttachmentPurge, recordPageAttachmentPurge } from "./kb-page-attachment-purge";
+import {
+  attemptPageAttachmentPurge,
+  purgeOrphanedKbMedia,
+  recordPageAttachmentPurge,
+} from "./kb-page-attachment-purge";
 import { APP_CONFIG } from "../../../config/config.module";
 import type { AppConfig } from "../../../config/env.validation";
 
@@ -269,38 +271,49 @@ export class KbPageTreeService {
 
   async emptyTrash(user: CurrentUserContext): Promise<{ purgedCount: number }> {
     const orgId = user.orgId;
-    const trashed = await this.db
-      .select({ id: kbPages.id })
-      .from(kbPages)
-      .where(and(eq(kbPages.orgId, orgId), isNotNull(kbPages.deletedAt)));
+    let purgedCount = 0;
 
-    if (trashed.length === 0) return { purgedCount: 0 };
+    for (;;) {
+      const trashed = await this.db
+        .select({ id: kbPages.id })
+        .from(kbPages)
+        .where(and(eq(kbPages.orgId, orgId), isNotNull(kbPages.deletedAt)))
+        .orderBy(kbPages.id)
+        .limit(EXPIRED_PURGE_BATCH_SIZE);
 
-    const ids = trashed.map((p) => p.id);
-    const purgeKeys = await recordPageAttachmentPurge(this.db, orgId, ids);
+      if (trashed.length === 0) break;
 
-    const deleted = await this.db
-      .delete(kbPages)
-      .where(and(eq(kbPages.orgId, orgId), inArray(kbPages.id, ids)))
-      .returning({ id: kbPages.id });
+      const ids = trashed.map((p) => p.id);
+      const purgeKeys = await recordPageAttachmentPurge(this.db, orgId, ids);
 
-    await attemptPageAttachmentPurge(
-      this.db,
-      this.storage,
-      orgId,
-      purgeKeys,
-      this.config.R2_KB_BUCKET_NAME,
-    );
+      const deleted = await this.db
+        .delete(kbPages)
+        .where(and(eq(kbPages.orgId, orgId), inArray(kbPages.id, ids)))
+        .returning({ id: kbPages.id });
+
+      await attemptPageAttachmentPurge(
+        this.db,
+        this.storage,
+        orgId,
+        purgeKeys,
+        this.config.R2_KB_BUCKET_NAME,
+      );
+
+      purgedCount += deleted.length;
+      if (trashed.length < EXPIRED_PURGE_BATCH_SIZE) break;
+    }
+
+    if (purgedCount === 0) return { purgedCount: 0 };
 
     this.audit.log({
       action: "kb.trash.emptied",
       userId: user.userId,
       orgId,
       resourceType: "kb_page",
-      metadata: { purgedCount: deleted.length },
+      metadata: { purgedCount },
     });
 
-    return { purgedCount: deleted.length };
+    return { purgedCount };
   }
 
   async purgeExpired(orgId: string, olderThan: Date): Promise<number> {
@@ -340,6 +353,22 @@ export class KbPageTreeService {
       );
       purgedCount += ids.length;
     }
+
+    const orphanCount = await purgeOrphanedKbMedia(
+      this.db,
+      this.storage,
+      orgId,
+      new Date(),
+      this.config.R2_KB_BUCKET_NAME,
+    );
+    if (orphanCount > 0)
+      this.audit.log({
+        action: "kb.media.orphan_purged",
+        userId: "system",
+        orgId,
+        resourceType: "kb_page_attachment",
+        metadata: { purgedCount: orphanCount },
+      });
 
     if (purgedCount === 0) return 0;
 

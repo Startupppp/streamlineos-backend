@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, ne, sql } from "drizzle-orm";
 import {
   kbSpaces,
   kbSpaceMembers,
@@ -13,6 +13,7 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import type { TenantTx } from "../../../db/drizzle.types";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbAccessService } from "../core/kb-access.service";
 import { KbIndexingService } from "../retrieval/kb-indexing.service";
@@ -26,6 +27,8 @@ import type {
   CreateSpaceInput,
   UpdateSpaceInput,
 } from "../core/dto/kb.schemas";
+
+const SPACE_CONTENT_BATCH_SIZE = 500;
 
 type SpaceRow = typeof kbSpaces.$inferSelect;
 
@@ -210,38 +213,76 @@ export class KbSpacesService {
           .returning({ id: kbSpaces.id });
         if (!deleted) throw new NotFoundException("Space not found");
 
-        const [articles, pages] = await Promise.all([
+        await this.emitContentDeletes(tx, orgId, "article", (afterId) =>
           tx
             .select({ id: kbArticles.id })
             .from(kbArticles)
-            .where(and(eq(kbArticles.orgId, orgId), eq(kbArticles.spaceId, spaceId))),
+            .where(
+              and(
+                eq(kbArticles.orgId, orgId),
+                eq(kbArticles.spaceId, spaceId),
+                gt(kbArticles.id, afterId),
+              ),
+            )
+            .orderBy(asc(kbArticles.id))
+            .limit(SPACE_CONTENT_BATCH_SIZE),
+        );
+        await this.emitContentDeletes(tx, orgId, "page", (afterId) =>
           tx
             .select({ id: kbPages.id })
             .from(kbPages)
-            .where(and(eq(kbPages.orgId, orgId), eq(kbPages.spaceId, spaceId))),
-        ]);
-
-        const occurredAt = new Date();
-        await OutboxWriter.emitMany(
-          tx,
-          [
-            ...articles.map((row) => ({ contentType: "article" as const, id: row.id })),
-            ...pages.map((row) => ({ contentType: "page" as const, id: row.id })),
-          ].map(({ contentType, id }) => ({
-            eventId: randomUUID(),
-            organizationId: orgId,
-            aggregateType: contentType === "article" ? "kb_article" : "kb_page",
-            aggregateId: String(id),
-            aggregateVersion: occurredAt.getTime(),
-            eventType: "kb.content.delete",
-            payload: { contentType, contentId: id },
-            occurredAt,
-          })),
+            .where(
+              and(
+                eq(kbPages.orgId, orgId),
+                eq(kbPages.spaceId, spaceId),
+                gt(kbPages.id, afterId),
+              ),
+            )
+            .orderBy(asc(kbPages.id))
+            .limit(SPACE_CONTENT_BATCH_SIZE),
         );
       },
       { orgId },
     );
     await this.access.invalidateAccessibleSpaceIds(orgId);
     return { success: true };
+  }
+
+  /**
+   * Keyset-batched inside the space's own transaction: the events must commit
+   * with the soft delete, so they cannot move to a transaction of their own, but
+   * a space holding tens of thousands of pages must not be read into one array.
+   */
+  private async emitContentDeletes(
+    tx: TenantTx,
+    orgId: string,
+    contentType: "article" | "page",
+    nextBatch: (afterId: number) => Promise<{ id: number }[]>,
+  ): Promise<void> {
+    const aggregateType = contentType === "article" ? "kb_article" : "kb_page";
+    let afterId = 0;
+    for (;;) {
+      const rows = await nextBatch(afterId);
+      const last = rows[rows.length - 1];
+      if (last === undefined) break;
+      afterId = last.id;
+
+      const occurredAt = new Date();
+      await OutboxWriter.emitMany(
+        tx,
+        rows.map((row) => ({
+          eventId: randomUUID(),
+          organizationId: orgId,
+          aggregateType,
+          aggregateId: String(row.id),
+          aggregateVersion: occurredAt.getTime(),
+          eventType: "kb.content.delete",
+          payload: { contentType, contentId: row.id },
+          occurredAt,
+        })),
+      );
+
+      if (rows.length < SPACE_CONTENT_BATCH_SIZE) break;
+    }
   }
 }
