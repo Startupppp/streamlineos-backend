@@ -78,17 +78,3 @@ export class SchemaAttendanceAdapter implements TimesheetAttendancePort {
     );
   }
 }
-
-/**
- * What an organisation with no attendance tracking gets.
- *
- * Returns nothing and says nothing. Bound only where a deployment has decided
- * attendance is not a source of truth for timesheets; the empty array is a
- * legitimate answer under the port's contract.
- */
-@Injectable()
-export class NoAttendanceAdapter implements TimesheetAttendancePort {
-  async getClockSegments(): Promise<ClockSegment[]> {
-    return [];
-  }
-}
