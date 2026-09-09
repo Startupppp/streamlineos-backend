@@ -62,14 +62,29 @@ describe(`${SEEDED_HARNESS} payroll handoff — an export reaches the port, not 
         permissionKeys: ["timesheets:payroll:export", "timesheets:payroll:view"],
       })
       .build();
+    /**
+     * Both, and the second one is the interesting one.
+     *
+     * Every controller in `modules/timesheets` — all thirteen, including this
+     * one — carries `@RequireModule("build")`, while the module registry
+     * declares `timesheets` as its own plan-gated module with its own route
+     * and cache namespace. Enabling only `timesheets` here produced 402 on the
+     * export; adding `build` is what makes it reachable. That is recorded as a
+     * finding rather than fixed, because flipping the decorator would revoke
+     * access from any organisation that has Build and not Timesheets, which is
+     * not a call this pack gets to make.
+     */
     await seeded.seedDb
       .insert(orgModules)
-      .values({ orgId: fixture.orgId, moduleKey: "timesheets", enabled: true })
+      .values([
+        { orgId: fixture.orgId, moduleKey: "timesheets", enabled: true },
+        { orgId: fixture.orgId, moduleKey: "build", enabled: true },
+      ])
       .onConflictDoNothing();
 
     const admin = fixture.members["payroll-admin"];
     if (!admin) throw new Error("fixture member 'payroll-admin' missing");
-    token = await signSeededToken(seeded, admin);
+    token = await signSeededToken(admin.userId, fixture.orgId);
 
     /**
      * Approved, unprocessed hours — the only rows `runExport` considers.
@@ -114,6 +129,7 @@ describe(`${SEEDED_HARNESS} payroll handoff — an export reaches the port, not 
   }, 180_000);
 
   afterAll(async () => {
+    await fixture?.teardown();
     await seeded?.close();
   }, 60_000);
 
@@ -132,7 +148,7 @@ describe(`${SEEDED_HARNESS} payroll handoff — an export reaches the port, not 
 
     const rows = await seeded.seedDb
       .select({
-        id: outboxEvents.id,
+        id: outboxEvents.outboxEventId,
         aggregateId: outboxEvents.aggregateId,
         deliveryState: outboxEvents.deliveryState,
         payload: outboxEvents.payload,

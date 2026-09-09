@@ -1141,6 +1141,40 @@ const ACCOUNTING = [
   ),
 ];
 
+/**
+ * Timesheet reminders.
+ *
+ * `category` is PROJECTS, not a new TIMESHEETS value. The category is a
+ * Postgres enum shared with several modules, and `ALTER TYPE ... ADD VALUE`
+ * cannot run inside a transaction — which is how every migration here runs. A
+ * cosmetic grouping is not worth that operational edge, and attribution is not
+ * lost: `sourceModule` says "timesheets" and that is what the settings UI
+ * groups by.
+ *
+ * Both are user-configurable and neither is mandatory. A reminder is a
+ * courtesy; someone who has turned them off has said something and should be
+ * believed.
+ */
+const TIMESHEETS = [
+  e("timesheets.period.due_soon", "timesheets", "PROJECTS", "Timesheet due soon", {
+    description: "A timesheet period is approaching its submission deadline and has not been submitted.",
+    defaultChannels: IA_EMAIL,
+    /**
+     * A day. The sweep is idempotent per period per day by dedupe key, but the
+     * cron may be invoked more than once a day and the window is the second
+     * line of defence — 60 seconds would let an hourly cron send 24 times.
+     */
+    dedupeWindowSeconds: 86_400,
+  }),
+  e("timesheets.period.overdue", "timesheets", "PROJECTS", "Timesheet overdue", {
+    description: "A timesheet period has passed its submission deadline and has not been submitted.",
+    defaultPriority: "HIGH",
+    defaultType: "WARNING",
+    defaultChannels: IA_EMAIL,
+    dedupeWindowSeconds: 86_400,
+  }),
+] as const;
+
 export const NOTIFICATION_EVENT_CATALOG = [
     ...CHAT,
     ...PROJECTS,
@@ -1156,6 +1190,7 @@ export const NOTIFICATION_EVENT_CATALOG = [
     ...BILLING,
     ...SECURITY,
     ...SUPPORT,
+    ...TIMESHEETS,
     ...SYSTEM,
     ...ACCOUNTING,
     ...OWNERSHIP,

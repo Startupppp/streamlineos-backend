@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { reminderRulesSchema } from "./reminder-rules.schemas";
 
 export const updateCoreSettingsSchema = z.object({
   workWeekStart: z.number().int().min(0).max(6).optional(),
@@ -22,7 +23,13 @@ export const updateCoreSettingsSchema = z.object({
   clientApprovalEnabled: z.boolean().optional(),
   lockAfterApproval: z.boolean().optional(),
   lockAfterInvoice: z.boolean().optional(),
-  reminderRules: z.unknown().optional(),
+  /**
+   * Was `z.unknown()`, which combined with `updateSettings` copying every
+   * defined field straight through made this column an open JSON sink that
+   * nothing read. Now parsed, so a typo'd key is rejected at the edge rather
+   * than stored and silently ignored.
+   */
+  reminderRules: reminderRulesSchema.optional(),
   allowFutureEntries: z.boolean().optional(),
   expectedDailyHours: z.number().positive().max(24).optional().nullable(),
   expectedWeeklyHours: z.number().positive().max(168).optional().nullable(),

@@ -32,9 +32,11 @@ import { TimesheetsAiController } from "./timesheets-ai.controller";
 import { TimesheetsAiService } from "./timesheets-ai.service";
 import { AiModule } from "../../ai/core/ai.module";
 import { AccountingKernelModule } from "../../accounting/kernel/accounting-kernel.module";
+import { NotificationsModule } from "../../notifications/notifications.module";
+import { TimesheetRemindersSweepService } from "./reminders-sweep.service";
 
 @Module({
-  imports: [AiModule, AccountingKernelModule],
+  imports: [AiModule, AccountingKernelModule, NotificationsModule],
   controllers: [
     EntriesController,
     TimerController,
@@ -69,7 +71,14 @@ import { AccountingKernelModule } from "../../accounting/kernel/accounting-kerne
     ExceptionsService,
     ExceptionsDetectorService,
     TimesheetsAiService,
+    TimesheetRemindersSweepService,
   ],
-  exports: [EntriesService, SettingsService, ExceptionsDetectorService, EntriesPeriodService],
+  exports: [
+    EntriesService,
+    SettingsService,
+    ExceptionsDetectorService,
+    EntriesPeriodService,
+    TimesheetRemindersSweepService,
+  ],
 })
 export class TimesheetsCoreModule {}
