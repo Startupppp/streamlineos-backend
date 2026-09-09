@@ -1,10 +1,14 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
+import { ForbiddenException, Inject, Injectable, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
+import { and, asc, desc, eq, gte, inArray, isNull, ne, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { projectDailySnapshots, projectStatuses, projects, sprintScopeEvents, sprints, tickets, workItemRelations } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { addDays, differenceInCalendarDays, formatDateOnly } from "../../../common/date";
 import type { BurnupQuery, CfdQuery } from "./dto/projects.schemas";
+import type { VelocityQuery } from "./dto/analytics.schemas";
+import { queryVelocityReport } from "./projects-velocity-report";
+import { MAX_BURNUP_DAYS, MAX_BURNUP_EVENTS, MAX_CRITICAL_PATH_EDGES, MAX_CRITICAL_PATH_TICKETS } from "./projects-report-limits";
 import { buildEdges, computeCriticalPath } from "./projects-critical-path.util";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
@@ -21,17 +25,6 @@ export type { BurnupPoint } from "./projects-burnup.util";
 
 const STATE_GROUPS = ["backlog", "unstarted", "started", "completed", "cancelled"] as const;
 type StateGroup = (typeof STATE_GROUPS)[number];
-
-export interface VelocitySprint {
-  sprintId: number;
-  name: string;
-  startDate: string;
-  endDate: string;
-  committedPoints: number;
-  completedPoints: number;
-  committedCount: number;
-  completedCount: number;
-}
 
 @Injectable()
 export class ProjectsReportsService {
@@ -86,16 +79,20 @@ export class ProjectsReportsService {
           columns: { id: true, startDate: true, endDate: true },
         });
 
-    if (!sprint) return [];
+    if (!sprint) {
+      if (query.sprintId) throw new NotFoundException("Sprint not found");
+      return [];
+    }
+    const startDate = new Date(sprint.startDate);
+    const endDate = new Date(sprint.endDate);
+    const days = differenceInCalendarDays(endDate, startDate) + 1;
+    if (!Number.isSafeInteger(days) || days < 1 || days > MAX_BURNUP_DAYS)
+      throw new UnprocessableEntityException(`Burnup reports support sprint ranges of 1 to ${MAX_BURNUP_DAYS} days`);
 
-    const cacheKey = `projects:burnup:${orgId}:${projectId}:${sprint.id}:r${revision}`;
+    const cacheKey = `projects:burnup:${orgId}:${projectId}:${sprint.id}:bounded:r${revision}`;
     return this.cache.cached(
       cacheKey,
       async () => {
-        const startDate = new Date(sprint.startDate);
-        const endDate = new Date(sprint.endDate);
-        const days = Math.max(differenceInCalendarDays(endDate, startDate) + 1, 1);
-
         const events = await this.db
           .select({
             ticketId: sprintScopeEvents.ticketId,
@@ -110,7 +107,10 @@ export class ProjectsReportsService {
               eq(sprintScopeEvents.sprintId, sprint.id),
             ),
           )
-          .orderBy(asc(sprintScopeEvents.createdAt));
+          .orderBy(asc(sprintScopeEvents.createdAt), asc(sprintScopeEvents.id))
+          .limit(MAX_BURNUP_EVENTS + 1);
+        if (events.length > MAX_BURNUP_EVENTS)
+          throw new UnprocessableEntityException(`Burnup reports support at most ${MAX_BURNUP_EVENTS} sprint events; choose a smaller sprint`);
 
         if (events.length > 0)
           return computeBurnupFromEvents(events, startDate, days);
@@ -219,73 +219,13 @@ export class ProjectsReportsService {
     return { dates, groups: [...STATE_GROUPS], series };
   }
 
-  async velocity(actor: CurrentUserContext, projectId: number): Promise<VelocitySprint[]> {
+  async velocity(actor: CurrentUserContext, projectId: number, query: VelocityQuery) {
     const orgId = actor.orgId;
     const revision = await this.requireProject(actor, projectId);
-
-    const cacheKey = `projects:velocity:${orgId}:${projectId}:r${revision}`;
+    const cacheKey = `projects:velocity:${orgId}:${projectId}:r${revision}:${query.limit}:${query.cursor ?? "first"}`;
     return this.cache.cached(
       cacheKey,
-      async () => {
-        const projectSprints = await this.db
-          .select({
-            id: sprints.id,
-            name: sprints.name,
-            startDate: sprints.startDate,
-            endDate: sprints.endDate,
-            status: sprints.status,
-          })
-          .from(sprints)
-          .where(
-            and(
-              eq(sprints.projectId, projectId),
-              eq(sprints.orgId, orgId),
-              inArray(sprints.status, ["ACTIVE", "COMPLETED"]),
-              isNull(sprints.deletedAt),
-            ),
-          )
-          .orderBy(asc(sprints.startDate));
-
-        if (projectSprints.length === 0) return [];
-
-        const sprintIds = projectSprints.map((s) => s.id);
-
-        const statsRows = await this.db
-          .select({
-            sprintId: tickets.sprintId,
-            committedCount: sql<number>`COUNT(*)::int`,
-            committedPoints: sql<number>`COALESCE(SUM(${tickets.storyPoints}), 0)::int`,
-            completedCount: sql<number>`COUNT(*) FILTER (WHERE ${projectStatuses.type} = 'completed')::int`,
-            completedPoints: sql<number>`COALESCE(SUM(CASE WHEN ${projectStatuses.type} = 'completed' THEN ${tickets.storyPoints} ELSE 0 END), 0)::int`,
-          })
-          .from(tickets)
-          .leftJoin(
-            projectStatuses,
-            and(
-              eq(tickets.orgId, projectStatuses.orgId),
-              eq(tickets.projectId, projectStatuses.projectId),
-              eq(tickets.status, projectStatuses.name),
-            ),
-          )
-          .where(and(eq(tickets.orgId, orgId), inArray(tickets.sprintId, sprintIds), isNull(tickets.deletedAt)))
-          .groupBy(tickets.sprintId);
-
-        const statsMap = new Map(statsRows.map((r) => [r.sprintId, r]));
-
-        return projectSprints.map((s) => {
-          const stats = statsMap.get(s.id);
-          return {
-            sprintId: s.id,
-            name: s.name,
-            startDate: s.startDate.toISOString(),
-            endDate: s.endDate.toISOString(),
-            committedPoints: stats?.committedPoints ?? 0,
-            completedPoints: stats?.completedPoints ?? 0,
-            committedCount: stats?.committedCount ?? 0,
-            completedCount: stats?.completedCount ?? 0,
-          };
-        });
-      },
+      () => queryVelocityReport(this.db, orgId, projectId, query),
       CACHE_TTL.SHORT,
     );
   }
@@ -364,12 +304,16 @@ export class ProjectsReportsService {
             count: sql<number>`COUNT(*)::int`,
           })
           .from(tickets)
+          .innerJoin(projectStatuses, and(
+            eq(projectStatuses.orgId, tickets.orgId), eq(projectStatuses.projectId, tickets.projectId),
+            eq(projectStatuses.name, tickets.status),
+          ))
           .where(
             and(
               eq(tickets.orgId, orgId),
               eq(tickets.projectId, projectId),
               isNull(tickets.deletedAt),
-              eq(tickets.status, "DONE"),
+              eq(projectStatuses.type, "completed"),
               gte(tickets.updatedAt, sql`NOW() - INTERVAL '12 weeks'`),
             ),
           )
@@ -396,12 +340,16 @@ export class ProjectsReportsService {
             count: sql<number>`COUNT(*)::int`,
           })
           .from(tickets)
+          .innerJoin(projectStatuses, and(
+            eq(projectStatuses.orgId, tickets.orgId), eq(projectStatuses.projectId, tickets.projectId),
+            eq(projectStatuses.name, tickets.status),
+          ))
           .where(
             and(
               eq(tickets.orgId, orgId),
               eq(tickets.projectId, projectId),
               isNull(tickets.deletedAt),
-              eq(tickets.status, "DONE"),
+              eq(projectStatuses.type, "completed"),
               gte(tickets.updatedAt, sql`NOW() - INTERVAL '12 weeks'`),
             ),
           )
@@ -415,14 +363,17 @@ export class ProjectsReportsService {
     const orgId = actor.orgId;
     const revision = await this.requireProject(actor, projectId);
 
-    const cacheKey = `projects:critical-path:${orgId}:${projectId}:r${revision}`;
+    const cacheKey = `projects:critical-path:${orgId}:${projectId}:bounded:r${revision}`;
     return this.cache.cached(
       cacheKey,
       async () => {
         const ticketRows = await this.db
           .select({ id: tickets.id, title: tickets.title, storyPoints: tickets.storyPoints })
           .from(tickets)
+          .limit(MAX_CRITICAL_PATH_TICKETS + 1)
           .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)));
+        if (ticketRows.length > MAX_CRITICAL_PATH_TICKETS)
+          throw new UnprocessableEntityException(`Critical-path reports support at most ${MAX_CRITICAL_PATH_TICKETS} tickets per project`);
 
         const ticketIds = ticketRows.map((t) => t.id);
         const validIds = new Set(ticketIds);
@@ -431,6 +382,7 @@ export class ProjectsReportsService {
           return { criticalPath: [], totalDuration: 0, nodeCount: 0, edgeCount: 0, hasCycle: false };
         }
 
+        const relatedTicket = alias(tickets, "critical_path_related_ticket");
         const relations = await this.db
           .select({
             workItemId: workItemRelations.workItemId,
@@ -438,12 +390,24 @@ export class ProjectsReportsService {
             relationType: workItemRelations.relationType,
           })
           .from(workItemRelations)
+          .innerJoin(tickets, and(
+            eq(tickets.orgId, workItemRelations.orgId), eq(tickets.id, workItemRelations.workItemId),
+            eq(tickets.projectId, projectId), isNull(tickets.deletedAt),
+          ))
+          .innerJoin(relatedTicket, and(
+            eq(relatedTicket.orgId, workItemRelations.orgId), eq(relatedTicket.id, workItemRelations.relatedWorkItemId),
+            eq(relatedTicket.projectId, projectId), isNull(relatedTicket.deletedAt),
+          ))
+          .limit(MAX_CRITICAL_PATH_EDGES + 1)
           .where(
             and(
-              inArray(workItemRelations.workItemId, ticketIds),
-              inArray(workItemRelations.relatedWorkItemId, ticketIds),
+              eq(workItemRelations.orgId, orgId),
+              inArray(workItemRelations.relationType, ["blocks", "blocked_by"]),
+              ne(workItemRelations.workItemId, workItemRelations.relatedWorkItemId),
             ),
           );
+        if (relations.length > MAX_CRITICAL_PATH_EDGES)
+          throw new UnprocessableEntityException(`Critical-path reports support at most ${MAX_CRITICAL_PATH_EDGES} dependencies per project`);
 
         const edges = buildEdges(relations, validIds);
 

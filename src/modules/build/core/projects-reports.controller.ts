@@ -6,8 +6,12 @@ import {
   ParseIntPipe,
   Post,
   Query,
+  Res,
   UseGuards,
 } from "@nestjs/common";
+import { ApiOkResponse } from "@nestjs/swagger";
+import type { Response } from "express";
+import { velocityQuerySchema, type VelocityQuery } from "./dto/analytics.schemas";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -106,12 +110,25 @@ export class ProjectsReportsController {
   @Get(":projectId/reports/velocity")
   @RequirePermission("build:view")
   @ResponseSchema(velocitySchema)
-  @Validate({ params: projectIdParams })
-  velocity(
+  @ApiOkResponse({ description: "Most recent sprint page, displayed chronologically; follow Link for older history", headers: {
+    "Link": { description: "Relative next-page link for older sprints", schema: { type: "string" } },
+    "X-Next-Cursor": { description: "Opaque next-page cursor, empty on the final page", schema: { type: "string" } },
+    "X-Has-More": { description: "Whether older sprints exist", schema: { type: "boolean" } },
+  } })
+  @Validate({ params: projectIdParams, query: velocityQuerySchema })
+  async velocity(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
+    @Query() query: VelocityQuery,
+    @Res({ passthrough: true }) response: Response,
   ) {
-    return this.reports.velocity(u, projectId);
+    const page = await this.reports.velocity(u, projectId, query);
+    response.setHeader("Access-Control-Expose-Headers", "Link, X-Next-Cursor, X-Has-More");
+    response.setHeader("X-Has-More", String(page.pagination.hasMore));
+    response.setHeader("X-Next-Cursor", page.pagination.nextCursor ?? "");
+    if (page.pagination.nextCursor)
+      response.setHeader("Link", `</build/${projectId}/reports/velocity?limit=${query.limit}&cursor=${encodeURIComponent(page.pagination.nextCursor)}>; rel="next"`);
+    return page.data;
   }
 
   @Get(":projectId/reports/cycle-time")

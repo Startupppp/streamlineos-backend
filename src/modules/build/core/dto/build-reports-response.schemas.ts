@@ -71,7 +71,7 @@ export const burnupDataSchema = z.array(z.object({
   date: z.string(),
   scope: z.number(),
   completed: z.number(),
-}));
+})).max(366);
 
 export const cfdDataSchema = z.object({
   dates: z.array(z.string()),
@@ -105,7 +105,7 @@ export const velocitySchema = z.array(z.object({
   completedPoints: z.number().int(),
   committedCount: z.number().int(),
   completedCount: z.number().int(),
-}));
+})).max(100);
 
 export const cycleTimeSchema = z.array(z.object({
   week: z.string(), avgDays: z.number(), count: z.number().int(),

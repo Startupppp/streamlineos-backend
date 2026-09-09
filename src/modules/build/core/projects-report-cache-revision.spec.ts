@@ -17,12 +17,15 @@ describe("Build report cache revision", () => {
       return value;
     });
     const where = jest.fn(async () => rows);
+    const query = { where, innerJoin: jest.fn(), limit: jest.fn() };
+    query.innerJoin.mockReturnValue(query);
+    query.limit.mockReturnValue(query);
     const module = await Test.createTestingModule({
       providers: [
         ProjectsReportsService,
         { provide: DRIZZLE, useValue: {
           query: { projects: { findFirst: async () => ({ id: 1, reportRevision }) } },
-          select: () => ({ from: () => ({ where }) }),
+          select: () => ({ from: () => query }),
         } },
         { provide: CacheService, useValue: { cached } },
         { provide: AccessService, useValue: { scopeFor: async () => "all" } },

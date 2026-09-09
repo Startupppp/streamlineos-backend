@@ -1,0 +1,4 @@
+export const MAX_BURNUP_DAYS = 366;
+export const MAX_BURNUP_EVENTS = 20_000;
+export const MAX_CRITICAL_PATH_EDGES = 20_000;
+export const MAX_CRITICAL_PATH_TICKETS = 5_000;

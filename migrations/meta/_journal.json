@@ -4936,6 +4936,13 @@
       "when": 1803000010156,
       "tag": "1078_kb_version_append_only",
       "breakpoints": true
+    },
+    {
+      "idx": 838,
+      "version": "7",
+      "when": 1803000010157,
+      "tag": "1079_build_velocity_cursor_index",
+      "breakpoints": true
     }
   ]
 }
