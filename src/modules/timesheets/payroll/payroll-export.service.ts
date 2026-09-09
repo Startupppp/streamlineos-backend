@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -28,6 +29,8 @@ import {
   round2,
 } from "./lib/payroll-calc";
 import { payrollSnapshotSchema } from "./dto/payroll.schemas";
+import { OutboxWriter } from "../../../common/outbox/outbox-writer";
+import { TIMESHEET_EVENTS } from "./handoff/handoff.schemas";
 import type {
   AckExportInput,
   ExportPayrollInput,
@@ -193,6 +196,42 @@ export class PayrollExportService {
         .update(timesheets)
         .set({ payrollStatus: "EXPORTED", payrollExportId: exportRow.id, updatedAt: new Date() })
         .where(inArray(timesheets.id, eligible.map((e) => e.id)));
+
+      /**
+       * Emitted inside this transaction, not after it, so an export can never
+       * exist without its handoff event and an event can never point at an
+       * export that rolled back. The rows themselves stay out of the payload
+       * — they are on `exportRow.snapshot` already, and duplicating every
+       * worker's name and email into a durable replayable log is not a
+       * reasonable price for saving the consumer one read.
+       */
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: orgId,
+        aggregateType: "timesheet_export",
+        aggregateId: String(exportRow.id),
+        /**
+         * 1, and only ever 1. `(org, aggregate_type, aggregate_id,
+         * aggregate_version)` is unique, and an export row is created once and
+         * never revised — so this aggregate has exactly one version. The
+         * `Date.now()` used by aggregates that do change would buy nothing
+         * here and would make a replay look like a second version.
+         */
+        aggregateVersion: 1,
+        eventType: TIMESHEET_EVENTS.payrollExportReady,
+        payload: {
+          organization_id: orgId,
+          export_id: exportRow.id,
+          period_start: input.start,
+          period_end: input.end,
+          entry_count: exportRow.entryCount,
+          worker_count: rows.length,
+          total_hours: exportRow.totalHours,
+          format: input.format,
+          actor_user_id: userId,
+        },
+        occurredAt: new Date(),
+      });
 
       return { exportRow, rows };
     });
