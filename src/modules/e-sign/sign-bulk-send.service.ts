@@ -24,6 +24,16 @@ export const SIGN_BULK_SEND_QUEUED = "sign.bulk_send.queued";
  */
 const MAX_ROW_ATTEMPTS = 3;
 
+/** One page of a job's rows, for the detail view. The job's counts are exact. */
+const JOB_ROWS_PAGE_LIMIT = 100;
+
+/**
+ * The error report is a download, so it is not paged at 100 like a list — a
+ * report truncated to a screenful is not a report. It is still bounded, and
+ * says when it hit the bound.
+ */
+const ERROR_REPORT_LIMIT = 5_000;
+
 export interface BulkProcessResult {
   jobId: number;
   processed: number;
@@ -399,8 +409,14 @@ export class SignBulkSendService {
   async getJob(orgId: string, jobId: number) {
     const job = await this.db.query.signBulkSendJobs.findFirst({ where: and(eq(signBulkSendJobs.id, jobId), eq(signBulkSendJobs.orgId, orgId)) });
     if (!job) throw new NotFoundException("Bulk send job not found");
-    const rows = await this.db.query.signBulkSendRows.findMany({ where: eq(signBulkSendRows.jobId, jobId), orderBy: (r, { asc }) => [asc(r.rowNumber)], limit: 100 });
-    return { job, rows };
+    const rows = await this.db.query.signBulkSendRows.findMany({ where: eq(signBulkSendRows.jobId, jobId), orderBy: (r, { asc }) => [asc(r.rowNumber)], limit: JOB_ROWS_PAGE_LIMIT });
+    /**
+     * `rowsTruncated` because the cap was previously invisible: a caller
+     * reading `rows.length` on a large job had no way to tell a complete list
+     * from the first hundred of it. The counts on the job itself are the whole
+     * truth; these rows are a page of evidence.
+     */
+    return { job, rows, rowsTruncated: job.totalCount > rows.length };
   }
 
   async cancel(orgId: string, jobId: number, actor: { userId: string }) {
@@ -424,8 +440,43 @@ export class SignBulkSendService {
     return updated;
   }
 
+  /**
+   * Every failed row of a job, not the failures among its first page.
+   *
+   * This used to be `getJob(...).rows.filter(failed)`, and `getJob` caps its
+   * rows at 100 ordered by row number. So for a job of five hundred whose
+   * first hundred rows sent cleanly, the error report was EMPTY while the job
+   * reported four hundred failures — the report was silently truncated at the
+   * one point somebody consults it to find out what went wrong, and the
+   * absence of rows read as "nothing to fix". A job may hold up to
+   * `bulkSendMaxRowsPerJob`, which an organisation may set as high as 10,000,
+   * so the gap is not a corner case.
+   *
+   * Queried on `(job_id, status)`, which is indexed, and capped explicitly
+   * with the count and the cap both reported — a download that is short must
+   * say so rather than look complete.
+   */
   async getErrorReport(orgId: string, jobId: number) {
-    const { rows } = await this.getJob(orgId, jobId);
-    return rows.filter((r) => r.status === "failed");
+    /** Tenant check first: this must 404 for another organisation's job. */
+    const job = await this.db.query.signBulkSendJobs.findFirst({
+      where: and(eq(signBulkSendJobs.id, jobId), eq(signBulkSendJobs.orgId, orgId)),
+      columns: { id: true, failedCount: true },
+    });
+    if (!job) throw new NotFoundException("Bulk send job not found");
+
+    const rows = await this.db.query.signBulkSendRows.findMany({
+      where: and(eq(signBulkSendRows.jobId, jobId), eq(signBulkSendRows.status, "failed")),
+      orderBy: (r, { asc }) => [asc(r.rowNumber)],
+      limit: ERROR_REPORT_LIMIT,
+    });
+
+    return {
+      rows,
+      /** From the job's own tally, so a truncated page cannot understate it. */
+      failedCount: job.failedCount,
+      returned: rows.length,
+      limit: ERROR_REPORT_LIMIT,
+      truncated: rows.length === ERROR_REPORT_LIMIT && job.failedCount > rows.length,
+    };
   }
 }
