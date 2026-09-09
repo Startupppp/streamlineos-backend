@@ -111,10 +111,20 @@ const USER_CTX = {
 const AUDIT_MOCK = { record: jest.fn().mockResolvedValue(undefined) };
 const RATE_RESOLVER_MOCK = { resolveMany: jest.fn().mockResolvedValue([]) };
 
+/**
+ * TS-24. Approval now tells the worker, through the existing notification
+ * pipeline. This spec is about actor resolution and does not assert on the
+ * notification — it only has to exist, because a service that cannot notify
+ * would fail here for a reason that has nothing to do with what is being
+ * tested.
+ */
+const NOTIFICATIONS_MOCK = { emit: jest.fn().mockResolvedValue(undefined) };
+
 beforeEach(() => {
   jest.resetAllMocks();
   AUDIT_MOCK.record.mockResolvedValue(undefined);
   RATE_RESOLVER_MOCK.resolveMany.mockResolvedValue([]);
+  NOTIFICATIONS_MOCK.emit.mockResolvedValue(undefined);
 });
 
 describe("TimesheetsApprovalsService — actor resolution on period approval", () => {
@@ -123,7 +133,13 @@ describe("TimesheetsApprovalsService — actor resolution on period approval", (
     mockAssertActor.mockRejectedValue(
       new OrganizationActorError(ORG_ID, { kind: "user", userId: APPROVER_ID }, "no-membership"),
     );
-    const svc = new ApprovalsService(db as never, {} as never, AUDIT_MOCK as never, RATE_RESOLVER_MOCK as never);
+    const svc = new ApprovalsService(
+      db as never,
+      {} as never,
+      AUDIT_MOCK as never,
+      RATE_RESOLVER_MOCK as never,
+      NOTIFICATIONS_MOCK as never,
+    );
 
     await expect(svc.approvePeriod(USER_CTX, PERIOD_ID)).rejects.toThrow(NotFoundException);
     expect(db._transaction).not.toHaveBeenCalled();
@@ -134,7 +150,13 @@ describe("TimesheetsApprovalsService — actor resolution on period approval", (
     mockAssertActor.mockRejectedValue(
       new OrganizationActorError(ORG_ID, { kind: "user", userId: APPROVER_ID }, "membership-inactive"),
     );
-    const svc = new ApprovalsService(db as never, {} as never, AUDIT_MOCK as never, RATE_RESOLVER_MOCK as never);
+    const svc = new ApprovalsService(
+      db as never,
+      {} as never,
+      AUDIT_MOCK as never,
+      RATE_RESOLVER_MOCK as never,
+      NOTIFICATIONS_MOCK as never,
+    );
 
     await expect(svc.approvePeriod(USER_CTX, PERIOD_ID)).rejects.toThrow(ForbiddenException);
     expect(db._transaction).not.toHaveBeenCalled();
@@ -148,7 +170,13 @@ describe("TimesheetsApprovalsService — actor resolution on period approval", (
       "membership-in-another-organization",
     );
     mockAssertActor.mockRejectedValue(err);
-    const svc = new ApprovalsService(db as never, {} as never, AUDIT_MOCK as never, RATE_RESOLVER_MOCK as never);
+    const svc = new ApprovalsService(
+      db as never,
+      {} as never,
+      AUDIT_MOCK as never,
+      RATE_RESOLVER_MOCK as never,
+      NOTIFICATIONS_MOCK as never,
+    );
 
     let caught: Error | null = null;
     try {
@@ -171,7 +199,13 @@ describe("TimesheetsApprovalsService — actor resolution on period approval", (
       isOwner: true,
       resolvedVia: "user" as const,
     });
-    const svc = new ApprovalsService(db as never, {} as never, AUDIT_MOCK as never, RATE_RESOLVER_MOCK as never);
+    const svc = new ApprovalsService(
+      db as never,
+      {} as never,
+      AUDIT_MOCK as never,
+      RATE_RESOLVER_MOCK as never,
+      NOTIFICATIONS_MOCK as never,
+    );
 
     await svc.approvePeriod(USER_CTX, PERIOD_ID);
 
