@@ -151,6 +151,7 @@ describe("KB sources — the delete addresses the bucket the upload used", () =>
       store,
       indexing() as never,
       config as never,
+      {} as never,
     );
 
     await svc.createFile(USER, textFile as never);
@@ -174,6 +175,7 @@ describe("KB sources — the delete addresses the bucket the upload used", () =>
       store,
       indexing() as never,
       config as never,
+      {} as never,
     );
 
     await svc.createFile(USER, textFile as never);

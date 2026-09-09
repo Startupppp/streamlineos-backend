@@ -41,6 +41,7 @@ function makeService(
     makeStorage(deleteFileFn) as never,
     makeIndexing() as never,
     makeConfig() as never,
+    {} as never,
   );
 }
 

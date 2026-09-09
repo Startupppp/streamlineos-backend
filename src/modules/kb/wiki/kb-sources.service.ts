@@ -24,9 +24,11 @@ import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import type { TenantTx } from "../../../db/drizzle.types";
 import { assertPageAccessible } from "../retrieval/kb-page-access.util";
+import { KbAccessService } from "../core/kb-access.service";
 import type {
   CreateKbSourceNoteInput,
   KbIngestionState,
+  KbArticleIngestionStatus,
   KbPageIngestionStatus,
   KbSourcesListQuery,
 } from "./dto/kb-sources.schemas";
@@ -92,6 +94,7 @@ export class KbSourcesService {
     private readonly storage: StorageService,
     private readonly attachmentIndexing: KbAttachmentIndexingService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    private readonly access: KbAccessService,
   ) {}
 
   async list(
@@ -145,7 +148,22 @@ export class KbSourcesService {
     pageId: number,
   ): Promise<KbPageIngestionStatus> {
     await assertPageAccessible(this.db, user, pageId);
+    return { pageId, ...(await this.ingestionStatusFor(user.orgId, "kb_page", pageId)) };
+  }
 
+  async articleIngestionStatus(
+    user: CurrentUserContext,
+    articleId: number,
+  ): Promise<KbArticleIngestionStatus> {
+    await this.access.assertArticleViewable(user, articleId);
+    return { articleId, ...(await this.ingestionStatusFor(user.orgId, "kb_article", articleId)) };
+  }
+
+  private async ingestionStatusFor(
+    orgId: string,
+    aggregateType: string,
+    aggregateId: number,
+  ): Promise<Omit<KbPageIngestionStatus, "pageId">> {
     const [event] = await this.db
       .select({
         deliveryState: outboxEvents.deliveryState,
@@ -157,9 +175,9 @@ export class KbSourcesService {
       .from(outboxEvents)
       .where(
         and(
-          eq(outboxEvents.organizationId, user.orgId),
-          eq(outboxEvents.aggregateType, "kb_page"),
-          eq(outboxEvents.aggregateId, String(pageId)),
+          eq(outboxEvents.organizationId, orgId),
+          eq(outboxEvents.aggregateType, aggregateType),
+          eq(outboxEvents.aggregateId, String(aggregateId)),
           eq(outboxEvents.eventType, "kb.content.index"),
         ),
       )
@@ -168,7 +186,6 @@ export class KbSourcesService {
 
     if (!event)
       return {
-        pageId,
         state: "unknown",
         retryCount: 0,
         occurredAt: null,
@@ -177,7 +194,6 @@ export class KbSourcesService {
       };
 
     return {
-      pageId,
       state: ingestionStateOf(event.deliveryState),
       retryCount: event.retryCount,
       occurredAt: event.occurredAt,

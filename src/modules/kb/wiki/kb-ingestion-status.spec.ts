@@ -60,7 +60,7 @@ function makeDb(rows: Record<string, unknown>[]): { db: Db; capture: Capture } {
 }
 
 function service(db: Db): KbSourcesService {
-  return new KbSourcesService(db, {} as never, {} as never, {} as never);
+  return new KbSourcesService(db, {} as never, {} as never, {} as never, {} as never);
 }
 
 function params(condition: SQL | undefined): unknown[] {

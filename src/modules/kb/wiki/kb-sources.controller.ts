@@ -22,11 +22,14 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbSourcesService, type KbSourceListItem } from "./kb-sources.service";
 import {
   createKbSourceNoteSchema,
+  kbArticleIdParamsSchema,
   kbPageIdParamsSchema,
+  kbArticleIngestionStatusSchema,
   kbPageIngestionStatusSchema,
   kbSourceIdParamsSchema,
   kbSourcesListQuerySchema,
   type CreateKbSourceNoteInput,
+  type KbArticleIngestionStatus,
   type KbPageIngestionStatus,
   type KbSourcesListQuery,
 } from "./dto/kb-sources.schemas";
@@ -68,6 +71,17 @@ export class KbSourcesController {
     @CurrentUser() u: CurrentUserContext,
   ): Promise<KbSourceListItem> {
     return this.sources.get(u.orgId, sourceId);
+  }
+
+  @Get("articles/:articleId/indexing-status")
+  @RequirePermission("kb:articles:view")
+  @Validate({ params: kbArticleIdParamsSchema })
+  @ResponseSchema(kbArticleIngestionStatusSchema)
+  async articleIngestionStatus(
+    @Param("articleId", ParseIntPipe) articleId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<KbArticleIngestionStatus> {
+    return this.sources.articleIngestionStatus(u, articleId);
   }
 
   @Get("pages/:pageId/indexing-status")

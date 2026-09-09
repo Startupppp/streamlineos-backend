@@ -49,6 +49,7 @@ function service(db: Db): KbSourcesService {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
   );
 }
 

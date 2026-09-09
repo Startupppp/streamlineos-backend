@@ -60,3 +60,18 @@ export const kbPageIngestionStatusSchema = z.object({
 });
 
 export type KbPageIngestionStatus = z.infer<typeof kbPageIngestionStatusSchema>;
+
+export const kbArticleIdParamsSchema = z
+  .object({ articleId: z.coerce.number().int().positive() })
+  .strict();
+
+export const kbArticleIngestionStatusSchema = z.object({
+  articleId: z.number().int(),
+  state: kbIngestionStateSchema,
+  retryCount: z.number().int(),
+  occurredAt: nullableWireDate(),
+  publishedAt: nullableWireDate(),
+  deadLetteredAt: nullableWireDate(),
+});
+
+export type KbArticleIngestionStatus = z.infer<typeof kbArticleIngestionStatusSchema>;
