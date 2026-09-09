@@ -10,6 +10,7 @@ import {
   SENDER_MEMBERSHIP_WITH_USER,
   flattenMessageSender,
 } from "./chat-message-sender-shape";
+import { MESSAGE_REACTIONS_WITH, foldReactions } from "./chat-message-reaction-shape";
 
 @Injectable()
 export class ChatSavedService {
@@ -45,6 +46,7 @@ export class ChatSavedService {
             senderMembership: SENDER_MEMBERSHIP_WITH_USER,
             channel: { columns: { id: true, name: true, type: true } },
             attachments: true,
+            reactions: MESSAGE_REACTIONS_WITH,
           },
         },
       },
@@ -53,7 +55,10 @@ export class ChatSavedService {
     const page = buildIdCursorPage(rows, safeLimit, (row) => row.id);
     const resolved = await this.entities.withResolvedReferences(
       actor,
-      page.data.map((row) => flattenMessageSender(row.message)),
+      page.data.map((row) => {
+        const { reactions, ...message } = row.message;
+        return { ...flattenMessageSender(message), reactions: foldReactions(reactions) };
+      }),
     );
     return {
       items: page.data.map((row, index) => ({ ...row, message: resolved[index] })),

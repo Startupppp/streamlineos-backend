@@ -98,7 +98,8 @@ export const chatSavedListResponseSchema = z.object({
       message: savedMessageItemSchema,
     }),
   ),
-  nextCursor: z.number().int().optional(),
+  // buildIdCursorPage returns null on the last page, never undefined.
+  nextCursor: z.number().int().nullable().optional(),
 });
 
 export const chatInviteLinkTokenSchema = z.object({
