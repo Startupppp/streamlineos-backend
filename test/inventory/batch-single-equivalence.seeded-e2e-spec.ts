@@ -1,0 +1,345 @@
+import { randomUUID } from "node:crypto";
+import { sql } from "drizzle-orm";
+import { DRIZZLE } from "src/db/drizzle.constants";
+import type { Db } from "src/db/drizzle.module";
+import { runInNewTenantTransaction } from "src/common/tenant/run-in-tenant-transaction";
+import { StockEngineService } from "src/modules/inventory/stock-engine/stock-engine.service";
+import { StockEngineBatchService } from "src/modules/inventory/stock-engine/stock-engine-batch.service";
+import type { StockEngineCommand } from "src/modules/inventory/stock-engine/stock-engine.types";
+import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
+import { seedOrg } from "test/helpers/seed-builder";
+import { buildInventoryFixture, type InventoryFixture } from "test/helpers/inventory-fixture";
+
+/**
+ * INV-02 — one command list, two doors, and the same warehouse behind both.
+ *
+ * `StockEngineService.executeInTx` and `StockEngineBatchService.executeManyInTx`
+ * are two entry points to one kernel. That is the design: the batch path claims
+ * every idempotency key, takes every row lock in natural-key order, then calls
+ * `MovementApplyService.apply` exactly as the single path does. Nothing here
+ * checks that they call the same function — INV-01's gate does that, by reading
+ * the source.
+ *
+ * What is unprovable by reading is whether they *arrive at the same place*. The
+ * batch path does real work of its own before it delegates — hashing, claiming,
+ * grouping, ordering locks — and every one of those is a chance to lose a
+ * movement, merge two grains that should stay apart, or apply a command twice.
+ * A bug in any of them leaves both paths individually green, because each has
+ * its own tests and neither has ever been asked to agree with the other.
+ *
+ * So: two organisations seeded from the same fixture builder, the same commands
+ * posted one at a time through one and all at once through the other, and then
+ * the two warehouses compared. Ids differ between tenants and are worthless as
+ * a comparison, so everything is compared by natural key with the fixture's own
+ * names substituted for its ids.
+ *
+ *   pnpm test:e2e:seeded --testPathPattern=batch-single-equivalence
+ */
+
+const PERMISSIONS = [
+  "inventory:warehouses:scope-all",
+  "inventory:stock:read",
+  "inventory:stock:adjust",
+];
+
+/** Compared shapes, with every tenant-specific id replaced by a fixture name. */
+interface NormalisedLevel {
+  variant: string;
+  location: string;
+  lot: string | null;
+  ownership: string;
+  onHand: string;
+  committed: string;
+  blockedQty: string;
+  qualityHoldQty: string;
+  outgoingQty: string;
+}
+
+interface NormalisedTransaction {
+  variant: string;
+  location: string;
+  lot: string | null;
+  ownership: string;
+  transactionType: string;
+  quantityDelta: string;
+  quantityBucket: string;
+}
+
+interface Side {
+  orgId: string;
+  userId: string;
+  fixture: InventoryFixture;
+}
+
+describe("[seeded-e2e] INV-02 — the batch door and the single door reach the same warehouse", () => {
+  let seededApp: SeededE2eApp;
+  let db: Db;
+  let single: Side;
+  let batch: Side;
+  const teardowns: Array<() => Promise<void>> = [];
+
+  beforeAll(async () => {
+    seededApp = await createSeededE2eApp();
+    db = seededApp.app.get<Db>(DRIZZLE);
+
+    const build = async (tag: string): Promise<Side> => {
+      const seeded = await seedOrg(seededApp.seedDb)
+        .addMember("keeper", { permissionKeys: PERMISSIONS })
+        .build();
+      teardowns.push(() => seeded.teardown());
+      const userId = seeded.members["keeper"]!.userId;
+      const fixture = await buildInventoryFixture(seededApp.app, seeded.orgId, userId, tag);
+      return { orgId: seeded.orgId, userId, fixture };
+    };
+
+    single = await build("eq-single");
+    batch = await build("eq-batch");
+  }, 600_000);
+
+  afterAll(async () => {
+    for (const teardown of teardowns.reverse()) await teardown().catch(() => undefined);
+    if (seededApp) await seededApp.close();
+  }, 120_000);
+
+  /**
+   * The same work, expressed against whichever tenant is being driven.
+   *
+   * Deliberately more than one command and more than one movement per command:
+   * a batch that flattened its commands, or that applied only the first
+   * movement of each, would still pass a single-command comparison. Two of them
+   * touch the same grain, because ordering within a batch is where a lock
+   * sequence can differ from the sequential one.
+   */
+  const commandsFor = (side: Side): StockEngineCommand[] => {
+    const f = side.fixture;
+    const key = (n: string) => `inv02-${side.fixture.orgId}-${n}`;
+    return [
+      {
+        idempotencyKey: key("receipt"),
+        sourceType: "TEST",
+        sourceId: "inv02-1",
+        reason: "equivalence receipt",
+        postingDate: "2026-06-02",
+        movements: [
+          {
+            transactionType: "PURCHASE",
+            productVariantId: f.variants.widget.variantId,
+            locationId: f.locations.mainBin,
+            quantityDelta: "25.0000",
+            unitCost: "3.5000",
+          },
+          {
+            transactionType: "PURCHASE",
+            productVariantId: f.variants.gadget.variantId,
+            locationId: f.locations.mainBin,
+            lotId: f.lots.lotA,
+            quantityDelta: "15.0000",
+            unitCost: "2.0000",
+          },
+        ],
+      },
+      {
+        idempotencyKey: key("issue"),
+        sourceType: "TEST",
+        sourceId: "inv02-2",
+        reason: "equivalence issue",
+        postingDate: "2026-06-02",
+        movements: [
+          {
+            // The same grain the first command received into: the interesting
+            // case, because a batch orders its locks and a sequence does not.
+            transactionType: "ADJUSTMENT_OUT",
+            productVariantId: f.variants.widget.variantId,
+            locationId: f.locations.mainBin,
+            quantityDelta: "-10.0000",
+          },
+        ],
+      },
+      {
+        idempotencyKey: key("transfer"),
+        sourceType: "TEST",
+        sourceId: "inv02-3",
+        reason: "equivalence move",
+        postingDate: "2026-06-02",
+        movements: [
+          {
+            transactionType: "TRANSFER_OUT",
+            productVariantId: f.variants.sprocket.variantId,
+            locationId: f.locations.mainBin,
+            quantityDelta: "-5.0000",
+          },
+          {
+            transactionType: "TRANSFER_IN",
+            productVariantId: f.variants.sprocket.variantId,
+            locationId: f.locations.overflowBin,
+            quantityDelta: "5.0000",
+          },
+        ],
+      },
+    ];
+  };
+
+  /** Fixture ids → stable names, so two tenants can be compared at all. */
+  const namesFor = (side: Side) => {
+    const f = side.fixture;
+    const variants = new Map<number, string>([
+      [f.variants.widget.variantId, "widget"],
+      [f.variants.gadget.variantId, "gadget"],
+      [f.variants.sprocket.variantId, "sprocket"],
+    ]);
+    const locations = new Map<number, string>([
+      [f.locations.mainBin, "mainBin"],
+      [f.locations.mainQc, "mainQc"],
+      [f.locations.overflowBin, "overflowBin"],
+    ]);
+    const lots = new Map<number, string>([
+      [f.lots.lotA, "lotA"],
+      [f.lots.lotB, "lotB"],
+    ]);
+    return { variants, locations, lots };
+  };
+
+  async function levelsOf(side: Side): Promise<NormalisedLevel[]> {
+    const names = namesFor(side);
+    // In a tenant transaction: these suites run as the application role, and a
+    // context-less read of a table behind `tenant_isolation` raises rather than
+    // returning nothing.
+    const rows = await runInNewTenantTransaction(db, side.orgId, (tx) =>
+      tx.execute<{
+        product_variant_id: number; location_id: number; lot_id: number | null;
+        ownership: string; on_hand: string; committed: string; blocked_qty: string;
+        quality_hold_qty: string; outgoing_qty: string;
+      }>(sql`
+        SELECT product_variant_id, location_id, lot_id, ownership,
+               on_hand, committed, blocked_qty, quality_hold_qty, outgoing_qty
+          FROM inv_stock_levels WHERE org_id = ${side.orgId}
+      `),
+    );
+
+    return rows
+      .map((r) => ({
+        variant: names.variants.get(r.product_variant_id) ?? `?${r.product_variant_id}`,
+        location: names.locations.get(r.location_id) ?? `?${r.location_id}`,
+        lot: r.lot_id === null ? null : (names.lots.get(r.lot_id) ?? `?${r.lot_id}`),
+        ownership: r.ownership,
+        onHand: r.on_hand,
+        committed: r.committed,
+        blockedQty: r.blocked_qty,
+        qualityHoldQty: r.quality_hold_qty,
+        outgoingQty: r.outgoing_qty,
+      }))
+      .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  }
+
+  async function ledgerOf(side: Side): Promise<NormalisedTransaction[]> {
+    const names = namesFor(side);
+    const rows = await runInNewTenantTransaction(db, side.orgId, (tx) =>
+      tx.execute<{
+        product_variant_id: number; location_id: number; lot_id: number | null;
+        ownership: string; transaction_type: string; quantity_change: string;
+        quantity_bucket: string;
+      }>(sql`
+        SELECT product_variant_id, location_id, lot_id, ownership,
+               transaction_type, quantity_change, quantity_bucket
+          FROM inv_stock_transactions
+         WHERE org_id = ${side.orgId} AND reference_type = 'TEST'
+      `),
+    );
+
+    return rows
+      .map((r) => ({
+        variant: names.variants.get(r.product_variant_id) ?? `?${r.product_variant_id}`,
+        location: names.locations.get(r.location_id) ?? `?${r.location_id}`,
+        lot: r.lot_id === null ? null : (names.lots.get(r.lot_id) ?? `?${r.lot_id}`),
+        ownership: r.ownership,
+        transactionType: r.transaction_type,
+        quantityDelta: r.quantity_change,
+        quantityBucket: r.quantity_bucket,
+      }))
+      .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  }
+
+  async function outboxOf(side: Side): Promise<Record<string, number>> {
+    const rows = await runInNewTenantTransaction(db, side.orgId, (tx) =>
+      tx.execute<{ event_type: string; n: number }>(sql`
+        SELECT event_type, count(*)::int AS n
+          FROM outbox_events WHERE organization_id = ${side.orgId}
+         GROUP BY event_type
+      `),
+    );
+    return Object.fromEntries(rows.map((r) => [r.event_type, r.n]));
+  }
+
+  it(
+    "posts the same commands through both doors",
+    async () => {
+      const engine = seededApp.app.get(StockEngineService);
+      const batchEngine = seededApp.app.get(StockEngineBatchService);
+
+      await runInNewTenantTransaction(db, single.orgId, async (tx) => {
+        for (const cmd of commandsFor(single))
+          await engine.executeInTx(tx, single.orgId, single.userId, cmd);
+      });
+
+      await runInNewTenantTransaction(db, batch.orgId, async (tx) => {
+        await batchEngine.executeManyInTx(tx, batch.orgId, batch.userId, commandsFor(batch));
+      });
+    },
+    600_000,
+  );
+
+  /**
+   * The floor. Both sides being empty, or the fixture failing to seed, would
+   * make every comparison below trivially true — which is the failure mode a
+   * differential test is most prone to.
+   */
+  it("moved a measurable amount of stock on both sides", async () => {
+    const [a, b] = await Promise.all([ledgerOf(single), ledgerOf(batch)]);
+
+    expect(a.length).toBeGreaterThanOrEqual(5);
+    expect(b.length).toBe(a.length);
+  });
+
+  it("leaves identical stock levels", async () => {
+    const [a, b] = await Promise.all([levelsOf(single), levelsOf(batch)]);
+    expect(b).toEqual(a);
+  });
+
+  it("writes an identical ledger", async () => {
+    const [a, b] = await Promise.all([ledgerOf(single), ledgerOf(batch)]);
+    expect(b).toEqual(a);
+  });
+
+  it("emits the same events, the same number of times", async () => {
+    const [a, b] = await Promise.all([outboxOf(single), outboxOf(batch)]);
+    expect(b).toEqual(a);
+  });
+
+  /**
+   * Replay is where the two paths are most likely to disagree, because the
+   * batch claims every key up front and the sequence claims them one at a time.
+   * A batch that re-applied on replay would double the warehouse.
+   */
+  it("replays identically on both doors, applying nothing twice", async () => {
+    const before = {
+      levels: await Promise.all([levelsOf(single), levelsOf(batch)]),
+      ledger: await Promise.all([ledgerOf(single), ledgerOf(batch)]),
+    };
+
+    const engine = seededApp.app.get(StockEngineService);
+    const batchEngine = seededApp.app.get(StockEngineBatchService);
+
+    await runInNewTenantTransaction(db, single.orgId, async (tx) => {
+      for (const cmd of commandsFor(single))
+        await engine.executeInTx(tx, single.orgId, single.userId, cmd);
+    });
+    await runInNewTenantTransaction(db, batch.orgId, async (tx) => {
+      await batchEngine.executeManyInTx(tx, batch.orgId, batch.userId, commandsFor(batch));
+    });
+
+    expect(await levelsOf(single)).toEqual(before.levels[0]);
+    expect(await levelsOf(batch)).toEqual(before.levels[1]);
+    expect(await ledgerOf(single)).toEqual(before.ledger[0]);
+    expect(await ledgerOf(batch)).toEqual(before.ledger[1]);
+  }, 600_000);
+});
