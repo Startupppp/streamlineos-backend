@@ -42,10 +42,6 @@ export class EntriesService {
     return this.reader.listEntries(u, query);
   }
 
-  getEntryById(orgId: string, entryId: number) {
-    return this.reader.getEntryById(orgId, entryId);
-  }
-
   recomputePeriodTotals(
     orgId: string,
     periodId: number,
@@ -230,7 +226,7 @@ export class EntriesService {
       return inserted;
     });
 
-    return this.reader.getEntryById(u.orgId, entry.id);
+    return this.reader.getEntryUnscoped(u.orgId, entry.id);
   }
 
   async updateEntry(
@@ -324,7 +320,7 @@ export class EntriesService {
       });
     });
 
-    return this.reader.getEntryById(u.orgId, entryId);
+    return this.reader.getEntryUnscoped(u.orgId, entryId);
   }
 
   async voidEntry(
