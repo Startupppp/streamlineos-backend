@@ -204,6 +204,14 @@ export class CommissionController {
   @Post("earnings/:earningId/approve")
   @HttpCode(200)
   @RequirePermission("crm:commission-earnings:approve")
+  /**
+   * Fenced, because this one settles money owed to a person. A retried
+   * approval — a double-tap, a proxy replay, a client that resends on a
+   * timeout it never saw resolve — must return the first approval rather than
+   * record a second, and the retry is exactly the case where nobody is
+   * watching closely enough to notice.
+   */
+  @Idempotent("crm.commission.earning_approve")
   approve(
     @Param("earningId") earningId: string,
     @CurrentUser() u: CurrentUserContext,

@@ -8,7 +8,8 @@ import { BadRequestException, ConflictException, NotFoundException } from "@nest
 import { Test, type TestingModule } from "@nestjs/testing";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { CommissionRuleSet } from "../../db/schema/crm/commission";
-import { CommissionService, clampToInt4, earningsUserFilter } from "./commission.service";
+import { CommissionService, clampToInt4 } from "./commission.service";
+import { earningsUserFilter } from "./commission-scope";
 
 /**
  * The properties that make a payout reproducible, checked where they live.

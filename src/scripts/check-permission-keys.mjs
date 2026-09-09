@@ -54,6 +54,12 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  BACKEND_ROOT,
+  WORKSPACE_ROOT,
+  resolveBackendModulesDir,
+  resolveFrontendRoot,
+} from "./lib/repo-roots.mjs";
+import {
   loadBackendCatalog,
   loadModuleManifest,
   parsePermissionConstants,
@@ -88,16 +94,18 @@ export function checkNamespacePilot(pilotEntry, routeRefs, modulesDir) {
 
 const args = process.argv.slice(2);
 
-const SCRIPT_DIR = fileURLToPath(new URL(".", import.meta.url));
-// scripts/ → src/ → backend/ → repo root
-const REPO_ROOT = resolve(SCRIPT_DIR, "../../..");
-const BACKEND_ROOT = resolve(REPO_ROOT, "backend");
-const BACKEND_MODULES_DIR = join(BACKEND_ROOT, "src", "modules");
-const FRONTEND_UNION_FILES = [
-  join(REPO_ROOT, "frontend", "lib", "rbac", "permissions", "permission-key-foundation.ts"),
-  join(REPO_ROOT, "frontend", "lib", "rbac", "permissions", "permission-key-extended.ts"),
-  join(REPO_ROOT, "frontend", "lib", "rbac", "permissions", "permission-key-business.ts"),
-];
+// Roots are RESOLVED, not assumed: this gate spent its whole life exiting 2
+// because it hardcoded a `<root>/backend` + `<root>/frontend` monorepo layout
+// that this checkout does not use. See src/scripts/lib/repo-roots.mjs.
+const REPO_ROOT = WORKSPACE_ROOT;
+const { root: FRONTEND_ROOT, candidates: FRONTEND_CANDIDATES } = resolveFrontendRoot();
+const { root: RESOLVED_MODULES_DIR } = resolveBackendModulesDir();
+const BACKEND_MODULES_DIR = RESOLVED_MODULES_DIR ?? join(BACKEND_ROOT, "src", "modules");
+const FRONTEND_UNION_FILES = (FRONTEND_ROOT === null ? [] : [
+  join(FRONTEND_ROOT, "lib", "rbac", "permissions", "permission-key-foundation.ts"),
+  join(FRONTEND_ROOT, "lib", "rbac", "permissions", "permission-key-extended.ts"),
+  join(FRONTEND_ROOT, "lib", "rbac", "permissions", "permission-key-business.ts"),
+]);
 
 // The extractors live in ./permission-key-extractors.mjs so this check and
 // check-navigation-permissions read keys through one implementation.

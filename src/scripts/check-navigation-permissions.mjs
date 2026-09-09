@@ -14,6 +14,11 @@ import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  WORKSPACE_ROOT,
+  resolveBackendModulesDir,
+  resolveFrontendRoot,
+} from "./lib/repo-roots.mjs";
+import {
   loadBackendCatalog,
   loadModuleManifest,
   parseNavGates,
@@ -68,11 +73,18 @@ export function checkNavRoutePilot(pilotEntry, navRoutes) {
 
 const args = process.argv.slice(2);
 
-const SCRIPT_DIR = fileURLToPath(new URL(".", import.meta.url));
-// scripts/ -> src/ -> backend/ -> repo root
-const REPO_ROOT = resolve(SCRIPT_DIR, "../../..");
-const BACKEND_MODULES_DIR = join(REPO_ROOT, "backend", "src", "modules");
-const NAV_DIR = join(REPO_ROOT, "frontend", "components", "layout", "sidebar");
+// Roots are RESOLVED, not assumed. This gate hardcoded a `<root>/backend` +
+// `<root>/frontend` monorepo layout the checkout does not use, so it exited 2
+// for a missing prerequisite on every run and never once compared a navigation
+// entry against a permission key. See src/scripts/lib/repo-roots.mjs.
+const REPO_ROOT = WORKSPACE_ROOT;
+const { root: FRONTEND_ROOT, candidates: FRONTEND_CANDIDATES } = resolveFrontendRoot();
+const { root: RESOLVED_MODULES_DIR } = resolveBackendModulesDir();
+const BACKEND_MODULES_DIR = RESOLVED_MODULES_DIR ?? join(REPO_ROOT, "backend", "src", "modules");
+const NAV_DIR =
+  FRONTEND_ROOT === null
+    ? join(REPO_ROOT, "frontend", "components", "layout", "sidebar")
+    : join(FRONTEND_ROOT, "components", "layout", "sidebar");
 
 const SPEC_RE = /\.(spec|e2e-spec|test)\.ts$/;
 const NAV_FILE_RE = /^sidebar-(home-nav|nav-groups-.+|nav-routes-.+)\.ts$/;

@@ -21,6 +21,7 @@ import {
 } from "../../db/schema/crm/commission";
 import { evaluateCommission, periodWindow } from "./commission-rules";
 import { decomposeEvaluation } from "./commission-accrual";
+import { earningsUserFilter } from "./commission-scope";
 import { recordAccrualForEarning } from "./commission-accrual.service";
 import type {
   AssignInput,
@@ -86,14 +87,6 @@ export function clampToInt4(value: number): number {
  *
  * Returns null only when the caller may see everybody and asked for everybody.
  */
-export function earningsUserFilter(
-  query: { userId?: string },
-  viewer: { userId: string; viewAll: boolean },
-): string | null {
-  if (!viewer.viewAll) return viewer.userId;
-  return query.userId ?? null;
-}
-
 @Injectable()
 export class CommissionService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}

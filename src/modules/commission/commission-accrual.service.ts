@@ -21,7 +21,7 @@ import {
   type AccrualPart,
   type RuleContribution,
 } from "./commission-accrual";
-import { earningsUserFilter } from "./commission.service";
+import { earningsUserFilter } from "./commission-scope";
 import type {
   AccrualCurveQuery,
   AccrualQuery,

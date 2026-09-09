@@ -16,6 +16,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { DealsCompetitorSuggestionsService } from "./deals-competitor-suggestions.service";
 import {
   acceptCompetitorSuggestionSchema,
@@ -90,6 +91,13 @@ export class DealsCompetitorSuggestionsController {
   @Post(":dealId/competitor-suggestions/:suggestionId/accept")
   @HttpCode(200)
   @RequirePermission("crm:deals:update")
+  /**
+   * Fenced, because accepting is the one call here that writes a competitor
+   * row. Without it a retried request — a double-tap, a proxy replay — files
+   * the same agreement twice against a customer record, and the second one is
+   * indistinguishable from a person who really did agree twice.
+   */
+  @Idempotent("crm.deals.competitor_suggestion_accept")
   accept(
     @Param("dealId", ParseIntPipe) dealId: number,
     @Param("suggestionId") suggestionId: string,
