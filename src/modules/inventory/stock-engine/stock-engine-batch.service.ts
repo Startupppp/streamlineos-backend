@@ -9,7 +9,7 @@ import { WarehouseScopeService } from "./warehouse-scope.service";
 import { claimIdempotencyKey, extractEngineResult } from "./idempotency";
 import { loadCostingContext } from "./costing-context";
 import { InventoryAccountingBridge } from "./accounting-bridge";
-import { lockLevels, type LevelGrain } from "./stock-level-locks";
+import { lockLevels, lockCapacityLocations, type LevelGrain } from "./stock-level-locks";
 import { MovementApplyService, resolvePostingDate } from "./movement-apply.service";
 import {
   type StockEngineCommand,
@@ -126,6 +126,21 @@ export class StockEngineBatchService {
       tx,
       orgId,
       active.flatMap(({ cmd }) => grainsOf(cmd)),
+    );
+
+    // INV-10. `apply` locks the capped bins its own command raises, which is
+    // enough for a single command but not for a batch: command 1 would take bin
+    // X and command 2 bin Y, while a concurrent batch took them in the other
+    // order, and the pair deadlocks instead of queueing. Taking every capped bin
+    // the whole batch raises in one id-ordered statement — the same discipline
+    // `lockLevels` applies to grains — makes each command's own lock a re-take
+    // of something already held.
+    await lockCapacityLocations(
+      tx,
+      orgId,
+      active.flatMap(({ cmd }) =>
+        MovementApplyService.raisedLocations(cmd.movements),
+      ),
     );
 
     for (const { index, cmd, postingDate } of active) {

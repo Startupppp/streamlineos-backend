@@ -5,7 +5,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { InventoryAuditService } from "./inventory-audit.service";
 import { MovementCostingService } from "./movement-costing.service";
 import { addDec, mulDec, cmpDec, isPositive, isNegative } from "./decimal";
-import { levelKey, type LockedLevel } from "./stock-level-locks";
+import { levelKey, lockCapacityLocations, type LockedLevel } from "./stock-level-locks";
 import { emitStockMovementPosted } from "./stock-events";
 import { inventoryCounters } from "../observability/inventory-counters";
 import type { CostingLookup } from "./costing-context";
@@ -115,17 +115,12 @@ export class MovementApplyService {
   ) {}
 
   /**
-   * Locations with no capacity recorded are unlimited, which is the common case
-   * and must stay free. One aggregate covers every raised location; the HAVING
-   * does the comparison in the database so a numeric never becomes a float on
-   * the way to a decision.
+   * Every location this command adds physical stock to. A movement that only
+   * blocks or holds does not raise the bin, and a movement that takes stock out
+   * cannot breach a ceiling.
    */
-  async assertLocationCapacity(
-    tx: Tx,
-    orgId: string,
-    movements: StockEngineCommand["movements"],
-  ): Promise<void> {
-    const raised = [
+  static raisedLocations(movements: StockEngineCommand["movements"]): number[] {
+    return [
       ...new Set(
         movements
           .filter(
@@ -136,7 +131,31 @@ export class MovementApplyService {
           .map((m) => m.locationId),
       ),
     ];
+  }
+
+  /**
+   * Locations with no capacity recorded are unlimited, which is the common case
+   * and must stay free. One aggregate covers every raised location; the HAVING
+   * does the comparison in the database so a numeric never becomes a float on
+   * the way to a decision.
+   *
+   * INV-10. The aggregate spans every grain in the bin while `lockLevels` locks
+   * only the grains this command names, so two commands over different lots
+   * could each read a total under capacity and commit a position over it —
+   * measured at 120 units in a 100-unit bin. The location row lock taken first
+   * is what makes the read-then-decide sequence atomic against another writer
+   * into the same bin. Uncapped bins are not locked, so the common case pays
+   * nothing.
+   */
+  async assertLocationCapacity(
+    tx: Tx,
+    orgId: string,
+    movements: StockEngineCommand["movements"],
+  ): Promise<void> {
+    const raised = MovementApplyService.raisedLocations(movements);
     if (raised.length === 0) return;
+
+    await lockCapacityLocations(tx, orgId, raised);
 
     const over = await tx.execute<{ id: number; code: string; capacity: string; total: string }>(sql`
       SELECT l.id, l.code, l.capacity::text AS capacity, COALESCE(SUM(sl.on_hand), 0)::text AS total

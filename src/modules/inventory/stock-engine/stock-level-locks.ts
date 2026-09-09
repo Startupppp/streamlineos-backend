@@ -54,6 +54,56 @@ interface LockedLevelRow extends Record<string, unknown> {
   average_cost: string | null;
 }
 
+/**
+ * INV-10 — serialise the writers into a bin that records a capacity.
+ *
+ * `assertLocationCapacity` compares a bin's capacity against `SUM(on_hand)`
+ * over *every* grain in it, but `lockLevels` locks only the grains the command
+ * itself names. Two commands raising different lots of one product into the
+ * same bin therefore take disjoint row locks, and under READ COMMITTED neither
+ * aggregate can see the other's uncommitted row: both read a total under
+ * capacity, both pass, and the bin commits over it. Measured at 120 units in a
+ * 100-unit bin, on both the single and the batch path.
+ *
+ * Locking the *location* row closes it, because the capacity question is asked
+ * per location and not per grain. Bins with no capacity recorded are the common
+ * case and are deliberately not locked — unlimited storage must stay
+ * contention-free — so this costs a row lock only where a limit exists to
+ * enforce.
+ *
+ * Ordered by id in one statement for the same reason `lockLevels` is: a
+ * command raising two capped bins must take them in the same order as every
+ * other command, or two of them deadlock instead of queueing. Within a
+ * transaction this always runs *after* `lockLevels`, so the global order is
+ * levels then locations.
+ *
+ * `FOR NO KEY UPDATE`, not `FOR UPDATE`, and the difference is not cosmetic.
+ * `inv_stock_levels.location_id` is a foreign key, so the INSERT `lockLevels`
+ * does for a grain that does not exist yet takes `FOR KEY SHARE` on the parent
+ * location row. `FOR UPDATE` is the one mode `FOR KEY SHARE` conflicts with, so
+ * two commands would each hold the parent's key-share lock and each wait for
+ * the other to release it — measured as a `40P01` deadlock the first time this
+ * was written that way, not as the queueing it looks like. `FOR NO KEY UPDATE`
+ * conflicts with itself, which is the mutual exclusion this needs, and not with
+ * `FOR KEY SHARE`, which is the FK traffic it must not block.
+ */
+export async function lockCapacityLocations(
+  tx: Tx,
+  orgId: string,
+  locationIds: readonly number[],
+): Promise<void> {
+  const unique = [...new Set(locationIds)].sort((a, b) => a - b);
+  if (unique.length === 0) return;
+  await tx.execute(sql`
+    SELECT id FROM inv_locations
+    WHERE org_id = ${orgId}
+      AND id IN (${sql.join(unique.map((id) => sql`${id}`), sql`, `)})
+      AND capacity IS NOT NULL
+    ORDER BY id
+    FOR NO KEY UPDATE
+  `);
+}
+
 export function levelKey(grain: LevelGrain): string {
   return [
     grain.productVariantId,
