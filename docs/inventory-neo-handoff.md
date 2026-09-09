@@ -1048,3 +1048,33 @@ Postgres error the moment the lookup moved.
 a seeded test. The report exists and is reachable; that it reports the right
 number when an account is genuinely unmapped is unproven, and INV-08 is where
 that belongs.
+
+## INV-09: there is no account mapping, and the codes are constants
+
+Worth stating plainly because the accounting section above could be read as
+more finished than it is.
+
+`GL_POSTING_RULES` names account codes `1300`, `2000` and `5000` as literals,
+and the journal builders in `purchase-orders/lib/receipt-journal.ts` and
+`sales-orders/so-fulfillment.service.ts` use the same literals. There is no
+mapping table, no per-tenant configuration and no admin surface: `grep` for
+`accountMapping` across `modules/inventory` returns nothing but the bridge's
+own lookup of whether a code exists.
+
+So the integration assumes every tenant uses the same chart of accounts. A
+tenant whose inventory asset account is not numbered 1300 does not get a
+mis-posting — `postJournalEntry` finds no such code and skips, and the movement
+shows up in the GL reconciliation as `MISSING_COA`, which is the honest
+outcome. But it means the accounting bridge is, today, functional only for
+tenants who happen to match the hardcoded chart.
+
+That is INV-09 and it is **not started**. Doing it properly is a schema
+addition, a service, a controller, permission keys on both sides and a settings
+screen — the six mappings the ticket names are inventory asset, COGS, GRNI,
+landed-cost clearing, write-off, and adjustment gain/loss.
+
+One caveat on the ticket's own wording: it asks that a missing mapping "blocks
+enabled posting". That contradicts the argument the bridge already makes and
+which the contract section above accepts — that a physical movement should not
+be refused for a bookkeeping gap. If INV-09 is built, the blocking decision
+should be revisited deliberately rather than inherited from the ticket line.
