@@ -55,6 +55,26 @@ export function cmpDec(a: string, b: string): number {
   return x < y ? -1 : x > y ? 1 : 0;
 }
 
+/**
+ * Whether `parseScaled` can read this string as a quantity or an amount.
+ *
+ * Stated here, beside the parser, because a caller that validates input with
+ * its own idea of "a number" and then hands the string to this module has two
+ * encodings of one rule — and the two disagree in the direction that loses
+ * goods. The importer used `parseFloat`, which stops at the first character it
+ * cannot read and returns what it has rather than failing: `parseFloat("1,000")`
+ * is `1`, and a spreadsheet writes that separator by default. `BigInt` inside
+ * `parseScaled` would have thrown on the same string, so the grammar the
+ * parser actually accepts is the only safe thing to validate against.
+ *
+ * Exponent notation is refused deliberately. `parseScaled` cannot read `1e5`,
+ * so accepting it here would move the failure from a row error to a raised
+ * `SyntaxError` in the middle of a transaction.
+ */
+export function isDecimalString(a: string): boolean {
+  return /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(a.trim());
+}
+
 export function isNegative(a: string): boolean {
   return parseScaled(a) < 0n;
 }

@@ -7,6 +7,20 @@ import { INV_ERRORS } from "../../stock-engine/stock-engine.types";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
+/**
+ * INV-37 — `resolveLotId` and `resolveSerialIds` are the single encoding of
+ * "find or open this batch" and "bring these units into stock", and the
+ * opening-stock importer needs both. It runs inside the request's tenant
+ * transaction rather than one it opened itself, so it holds a `Db` — the
+ * tenant-aware proxy that resolves to that transaction — not a `Tx`.
+ *
+ * Widened rather than copied: a second resolver in the importer is exactly the
+ * duplication INV-48 was raised to delete, and it would drift first on the
+ * question that matters, which is whether an existing lot number is reused or a
+ * second lot with the same number is opened beside it.
+ */
+type LotStore = Db | Tx;
+
 /** The lot fields a receipt line carries until it posts. */
 export interface ReceiptLotDraft {
   lotNumber: string | null;
@@ -103,7 +117,7 @@ export async function assertSerialsAcceptable(
 
 /** Finds or opens the batch the counter wrote on the line. */
 export async function resolveLotId(
-  tx: Tx,
+  tx: LotStore,
   orgId: string,
   productVariantId: number,
   line: ReceiptLotDraft,
@@ -144,7 +158,7 @@ export async function resolveLotId(
 
 /** Brings each scanned unit into stock, creating the ones we have never seen. */
 export async function resolveSerialIds(
-  tx: Tx,
+  tx: LotStore,
   orgId: string,
   productVariantId: number,
   locationId: number,
