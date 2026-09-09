@@ -461,13 +461,13 @@ describe("[seeded-e2e] INV-02 — the batch door and the single door reach the s
     const replayedCommands = commandsFor(single).length;
     expect(replayedCommands).toBeGreaterThanOrEqual(3);
 
-    expect(a["stock.command.replayed"]! - beforeSingle["stock.command.replayed"]!)
+    expect(a["stock.command.replayed"] - beforeSingle["stock.command.replayed"])
       .toBe(replayedCommands);
-    expect(b["stock.command.replayed"]! - beforeBatch["stock.command.replayed"]!)
+    expect(b["stock.command.replayed"] - beforeBatch["stock.command.replayed"])
       .toBe(replayedCommands);
 
-    expect(a["stock.command.success"]! - beforeSingle["stock.command.success"]!).toBe(0);
-    expect(b["stock.command.success"]! - beforeBatch["stock.command.success"]!).toBe(0);
+    expect(a["stock.command.success"] - beforeSingle["stock.command.success"]).toBe(0);
+    expect(b["stock.command.success"] - beforeBatch["stock.command.success"]).toBe(0);
 
     // And the two doors remain indistinguishable by every counter, which is what
     // the rest of this file is about.
