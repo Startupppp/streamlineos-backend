@@ -35,6 +35,8 @@ import { AiModule } from "../../ai/core/ai.module";
 import { AccountingKernelModule } from "../../accounting/kernel/accounting-kernel.module";
 import { NotificationsModule } from "../../notifications/notifications.module";
 import { TimesheetRemindersSweepService } from "./reminders-sweep.service";
+import { TIMESHEET_ATTENDANCE_PORT } from "./attendance/attendance.port";
+import { SchemaAttendanceAdapter } from "./attendance/schema-attendance.adapter";
 
 @Module({
   imports: [AiModule, AccountingKernelModule, NotificationsModule],
@@ -74,6 +76,12 @@ import { TimesheetRemindersSweepService } from "./reminders-sweep.service";
     ExceptionsDetectorService,
     TimesheetsAiService,
     TimesheetRemindersSweepService,
+    /**
+     * Attendance, through a port. Swapping this binding is how a deployment
+     * says attendance is not a source of truth for timesheets, or moves to an
+     * HR-published service when one exists — nothing else in the module changes.
+     */
+    { provide: TIMESHEET_ATTENDANCE_PORT, useClass: SchemaAttendanceAdapter },
   ],
   exports: [
     EntriesService,
@@ -81,6 +89,7 @@ import { TimesheetRemindersSweepService } from "./reminders-sweep.service";
     ExceptionsDetectorService,
     EntriesPeriodService,
     TimesheetRemindersSweepService,
+    TIMESHEET_ATTENDANCE_PORT,
   ],
 })
 export class TimesheetsCoreModule {}
