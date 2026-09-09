@@ -41,7 +41,7 @@ export class HoldsController {
     @Param("holdId", ParseIntPipe) holdId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.findOne(u.orgId, holdId);
+    return this.svc.findOne(u.orgId, u.userId, holdId);
   }
 
   @Post()

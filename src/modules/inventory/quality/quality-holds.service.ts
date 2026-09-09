@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql, type SQL } from "drizzle-orm";
 import { invQualityHolds, invStockLevels } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -14,7 +14,10 @@ import {
   emitInventoryCommandEvent,
 } from "../stock-engine/command-events";
 import type { ListHoldsQueryInput, CreateHoldInput } from "./dto/quality.schemas";
-import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
+import {
+  WarehouseScopeService,
+  type ResolvedWarehouseScope,
+} from "../stock-engine/warehouse-scope.service";
 
 @Injectable()
 export class HoldsService {
@@ -26,18 +29,39 @@ export class HoldsService {
     private readonly audit: InventoryAuditService,
   ) {}
 
+  /**
+   * Which holds this caller may see, and the rule the detail below must match.
+   *
+   * A hold names the bin the units are standing in, so it is attributed through
+   * `location_id` and nothing else. `locationPredicate` renders
+   * `location_id IN (SELECT id FROM inv_locations WHERE warehouse_id IN (…))`,
+   * and a hold with a NULL `location_id` therefore evaluates to NULL and is
+   * **excluded** — an unattributed hold is invisible to a scoped operator.
+   *
+   * That is deliberately NOT the ASN rule, where an unattributed row stays
+   * visible to everyone: an ASN header names its warehouse nullably because the
+   * warehouse may not be known yet, whereas a hold without a bin is a hold
+   * standing nowhere, and showing it to every operator in the org would be a
+   * different list from the one this one has always been. Each detail follows
+   * its own aggregate.
+   */
+  private holdInScope(scope: ResolvedWarehouseScope): SQL {
+    return scope.location(sql`${invQualityHolds.locationId}`);
+  }
+
   async list(orgId: string, userId: string, query: ListHoldsQueryInput) {
     const { status, productVariantId, page, limit } = query;
     const offset = (page - 1) * limit;
-    const scope = await this.warehouseScope.resolve(orgId, userId);
-    const scopeKey = scope === null ? "all" : ([...scope].sort((a, b) => a - b).join(".") || "none");
-    const hash = `${scopeKey}:${status ?? ""}:${productVariantId ?? ""}:${limit}:${offset}`;
+    // `scopeKey` rather than a hand-rolled join: this file now has two cache
+    // keys carrying the discriminator and they must not drift apart.
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+    const hash = `${scope.key}:${status ?? ""}:${productVariantId ?? ""}:${limit}:${offset}`;
     return this.cache.cachedVersioned(
       CACHE_KEYS.invQualityHoldsNamespace(orgId),
       `list:${hash}`,
       async () => {
         const conditions = [eq(invQualityHolds.orgId, orgId)];
-        conditions.push(this.warehouseScope.locationPredicate(scope, sql`${invQualityHolds.locationId}`));
+        conditions.push(this.holdInScope(scope));
         if (status) conditions.push(eq(invQualityHolds.status, status));
         if (productVariantId) conditions.push(eq(invQualityHolds.productVariantId, productVariantId));
         const where = and(...conditions);
@@ -70,14 +94,35 @@ export class HoldsService {
     );
   }
 
-  async findOne(orgId: string, holdId: number) {
+  /**
+   * One hold, read by id — and, until now, read by anyone in the org.
+   *
+   * `list` beside it resolves the caller's warehouses and gates on them; this
+   * took no `userId` at all, because the controller never passed one, so a hold
+   * an operator could not see in the list was theirs to read whole by id.
+   *
+   * The cache key carries the scope discriminator, and that is not decoration.
+   * Adding the predicate below while leaving the key as `detail:<id>` would have
+   * made this WORSE than the unscoped read it replaces: the first caller's
+   * narrowed answer would be stored under a scope-free key and served to the
+   * next, defeating the filter in both directions — CLAUDE.md §6, and the reason
+   * `scopeKey` exists at all.
+   */
+  async findOne(orgId: string, userId: string, holdId: number) {
+    const scope = await this.warehouseScope.forUser(orgId, userId);
     return this.cache.cachedVersioned(
       CACHE_KEYS.invQualityHoldsNamespace(orgId),
-      `detail:${holdId}`,
+      `detail:${scope.key}:${holdId}`,
       async () => {
         const row = await this.db.query.invQualityHolds.findFirst({
-          where: and(eq(invQualityHolds.id, holdId), eq(invQualityHolds.orgId, orgId)),
+          where: and(
+            eq(invQualityHolds.id, holdId),
+            eq(invQualityHolds.orgId, orgId),
+            this.holdInScope(scope),
+          ),
         });
+        // 404 rather than 403: a "forbidden" on an id the caller may not see
+        // tells them the hold exists, which is the existence oracle §4 bars.
         if (!row) throw new NotFoundException("Not found");
         return row;
       },
@@ -192,14 +237,45 @@ export class HoldsService {
       this.engine.invalidateCaches(orgId),
       this.cache.invalidateNamespace(CACHE_KEYS.invQualityHoldsNamespace(orgId)),
     ]);
+    return this.loadHoldUnscoped(orgId, holdId);
+  }
+
+  /**
+   * The hold, read without the warehouse gate.
+   *
+   * For the two paths that hand back a row the caller has just written or has
+   * already been gated for: `create`, where gating would 404 an operator against
+   * the hold they just raised, and the tail of `release`, which has run the gate
+   * above. A named private method rather than a flag on `findOne`, so a future
+   * route cannot be pointed at the ungated read by accident.
+   */
+  private loadHoldUnscoped(orgId: string, holdId: number) {
     return this.db.query.invQualityHolds.findFirst({
       where: and(eq(invQualityHolds.id, holdId), eq(invQualityHolds.orgId, orgId)),
     });
   }
 
+  /**
+   * Releasing a hold was gated at the wrong end.
+   *
+   * `engine.execute` refuses movements into a warehouse the caller does not
+   * hold, so the *movement* was covered — but two things sat in front of it.
+   * The status read above it answered on `org_id` and the id alone, so an
+   * out-of-scope hold could be distinguished by whether it came back 409
+   * "Invalid state" or 404. And where a hold names no bin, the fallback below
+   * picks whichever location in the ORG holds that variant: pick one inside the
+   * caller's own warehouses and `assertLocationsInScope` passes, so a hold they
+   * cannot see is released for real. The gate belongs on the read, matching
+   * `list`.
+   */
   async release(orgId: string, userId: string, holdId: number, idempotencyKey: string) {
+    const scope = await this.warehouseScope.forUser(orgId, userId);
     const hold = await this.db.query.invQualityHolds.findFirst({
-      where: and(eq(invQualityHolds.id, holdId), eq(invQualityHolds.orgId, orgId)),
+      where: and(
+        eq(invQualityHolds.id, holdId),
+        eq(invQualityHolds.orgId, orgId),
+        this.holdInScope(scope),
+      ),
     });
     if (!hold) throw new NotFoundException("Not found");
     if (hold.status !== "ACTIVE") throw new ConflictException("Invalid state");
@@ -287,8 +363,6 @@ export class HoldsService {
     });
 
     await this.cache.invalidateNamespace(CACHE_KEYS.invQualityHoldsNamespace(orgId));
-    return this.db.query.invQualityHolds.findFirst({
-      where: and(eq(invQualityHolds.id, holdId), eq(invQualityHolds.orgId, orgId)),
-    });
+    return this.loadHoldUnscoped(orgId, holdId);
   }
 }
