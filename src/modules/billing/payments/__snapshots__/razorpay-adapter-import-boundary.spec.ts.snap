@@ -1,0 +1,8 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`payment provider import boundary documents every current importer so a new one is visible 1`] = `
+[
+  "src/modules/billing/payments/payments.module.ts",
+  "src/modules/billing/payments/razorpay-adapter-readiness.spec.ts",
+]
+`;
