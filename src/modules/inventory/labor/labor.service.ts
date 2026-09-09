@@ -160,7 +160,35 @@ export class LaborService {
   }
 
   /** One person's recent lines, for the "why is this number what it is" question. */
-  async recentFor(orgId: string, subjectUserId: string, limit: number) {
+  /**
+   * One person's records, behind the SAME warehouse scope the board applies.
+   *
+   * This took `subjectUserId` straight from the query string and filtered on
+   * `org_id` and that id alone — the caller's own identity never reached it.
+   * `board()` above resolves `warehouseScope.forUser` and states in its own
+   * comment that "a supervisor scoped to no warehouse sees nobody, not
+   * everybody"; the drill-down BEHIND that board then answered for anybody, in
+   * any warehouse, to any holder of `inventory:labor:read`.
+   *
+   * The aggregate was scoped and the detail was not, which is the worse way
+   * round: this returns individual work — every task, start and finish time,
+   * units, scans and bin changes for a named colleague. A supervisor for
+   * warehouse A could read a picker who has only ever worked in warehouse B,
+   * and a user with no warehouse at all — shown nothing by the board on purpose
+   * — could read everyone by calling this route directly.
+   *
+   * Scoped on `warehouse` rather than `anyOf(warehouse, location)` deliberately:
+   * the detail must be a subset of what the board counted, and the board gates
+   * on `lr.warehouse_id`. Widening here would show rows the aggregate above
+   * never included.
+   *
+   * Out of scope returns an empty list, not a 403 — the same answer as the
+   * board, and it declines to confirm whether that person has records at all.
+   */
+  async recentFor(orgId: string, callerUserId: string, subjectUserId: string, limit: number) {
+    const scope = await this.warehouseScope.forUser(orgId, callerUserId);
+    if (scope.isEmpty) return [];
+
     return this.db
       .select({
         id: invLaborRecords.id,
@@ -175,7 +203,13 @@ export class LaborService {
         standardSeconds: invLaborRecords.standardSeconds,
       })
       .from(invLaborRecords)
-      .where(and(eq(invLaborRecords.orgId, orgId), eq(invLaborRecords.userId, subjectUserId)))
+      .where(
+        and(
+          eq(invLaborRecords.orgId, orgId),
+          eq(invLaborRecords.userId, subjectUserId),
+          scope.warehouse(sql`${invLaborRecords.warehouseId}`),
+        ),
+      )
       .orderBy(desc(invLaborRecords.completedAt), desc(invLaborRecords.id))
       .limit(limit);
   }

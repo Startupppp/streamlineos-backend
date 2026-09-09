@@ -46,6 +46,6 @@ export class LaborController {
     @Query(new ZodValidationPipe(laborRecentQuerySchema)) query: LaborRecentQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.recentFor(u.orgId, query.userId, query.limit);
+    return this.svc.recentFor(u.orgId, u.userId, query.userId, query.limit);
   }
 }
