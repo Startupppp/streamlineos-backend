@@ -228,13 +228,6 @@ export function outstandingQuantities(
   return outstanding;
 }
 
-/** The whole map as one figure, for a queue row that only shows progress. */
-export function totalOf(quantities: QuantityByVariant): string {
-  let total = "0";
-  for (const quantity of quantities.values()) total = addDec(total, quantity);
-  return total;
-}
-
 export function toReconciliationLines(
   quantities: QuantityByVariant,
 ): ReconciliationLine[] {

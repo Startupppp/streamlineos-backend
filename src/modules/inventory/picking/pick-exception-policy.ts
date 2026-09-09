@@ -21,20 +21,6 @@ export function requiresReview(reason: PickExceptionReason): boolean {
 }
 
 /**
- * B5 — `WRONG_LOCATION` is the one reason that does not close its line.
- *
- * The other four all say the units are not coming: the shelf was short, the bin
- * was empty, the goods were broken, or something else went in the tote. This one
- * says the goods exist and the wave sent the picker to the wrong place, which is
- * a correction rather than a write-off — so the line is retargeted to where they
- * actually were and the work stays outstanding. Treating it as closing would
- * turn "I found them one aisle over" into an order that ships short.
- */
-export function closesLine(reason: PickExceptionReason): boolean {
-  return reason !== "WRONG_LOCATION";
-}
-
-/**
  * Whether a pick line is finished with, as one expression.
  *
  * Three readers need this rule — `waveIsComplete`, the wave queue's
@@ -50,7 +36,15 @@ export function closesLine(reason: PickExceptionReason): boolean {
  * The three clauses, in the order they matter:
  *
  *   1. picked in full — the ordinary way a line ends;
- *   2. `WRONG_LOCATION` never closes it (see `closesLine`);
+ *   2. `WRONG_LOCATION` never closes it. The other four reasons all say the
+ *      units are not coming: the shelf was short, the bin was empty, the goods
+ *      were broken, or something else went in the tote. This one says the goods
+ *      exist and the wave sent the picker to the wrong place, which is a
+ *      correction rather than a write-off — so the line is retargeted and the
+ *      work stays outstanding. Treating it as closing would turn "I found them
+ *      one aisle over" into an order that ships short. INV-48: this rule had a
+ *      second, unused TypeScript encoding beside this one, which is how two
+ *      copies of a rule start disagreeing;
  *   3. a reason that needs a reviewer closes it only once one has been. This is
  *      B5's "unresolved can block wave complete where required" — the block is
  *      the absence of a close, not a separate flag, so there is no second thing

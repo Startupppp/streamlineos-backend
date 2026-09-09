@@ -11,7 +11,6 @@ import {
   type TaxDocumentKind,
 } from "./lib/line-tax";
 
-export { computeLineTax } from "./lib/line-tax";
 export type { LineTaxSnapshot, TaxDocumentKind } from "./lib/line-tax";
 
 export interface ResolveLineTaxInput {
