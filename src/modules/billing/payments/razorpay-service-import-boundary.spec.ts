@@ -1,7 +1,25 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
-const SRC_ROOT = join(__dirname, "../../../../");
+/**
+ * `src/`, not the repository root.
+ *
+ * This was one `..` too many, so `walkTs` recursed the whole checkout —
+ * `node_modules`, whose nested pnpm symlinks form a cycle, and any registered
+ * git worktree under `.claude/`. The suite did not fail an assertion; it failed
+ * to run at all, with `ELOOP: too many symbolic links`, which reads like an
+ * environment problem rather than the off-by-one it is. There is nothing to scan
+ * for a Razorpay import outside our own source anyway.
+ */
+const SRC_ROOT = join(__dirname, "../../../");
+/**
+ * Paths are reported from the repository root even though only `src/` is walked,
+ * so the snapshot reads `src/modules/...` — the form somebody can paste into an
+ * editor. Deriving it from `SRC_ROOT` would have rewritten every entry, and a
+ * snapshot that moves when the scan is fixed is a snapshot that would not have
+ * noticed a real importer appearing.
+ */
+const REPO_ROOT = join(SRC_ROOT, "..");
 const ADAPTERS_DIR = join(__dirname, "adapters");
 const RAZORPAY_SERVICE_DEF = join(__dirname, "../core/razorpay.service.ts");
 const BILLING_SERVICE = join(__dirname, "../core/billing.service.ts");
@@ -65,7 +83,7 @@ describe("RazorpayService import boundary", () => {
     .filter((f) => !isInsideAdaptersDir(f))
     .filter((f) => !isCompositionRoot(f));
 
-  const relativeViolators = violators.map((f) => relative(SRC_ROOT, f).replace(/\\/g, "/"));
+  const relativeViolators = violators.map((f) => relative(REPO_ROOT, f).replace(/\\/g, "/"));
 
   it("billing.service.ts does not import RazorpayService", () => {
     expect(relativeViolators).not.toContain("src/modules/billing/core/billing.service.ts");

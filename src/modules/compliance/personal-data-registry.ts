@@ -94,6 +94,17 @@ export const PERSONAL_DATA_TABLES: readonly PersonalDataTable[] = [
   { table: "crm_outbound_messages", columns: ["recipient_email"], scope: "organization_id" },
   { table: "crm_people", columns: ["email", "phone"], scope: "org_id" },
   { table: "crm_suppression_hashes", columns: ["address_hash"], scope: "org_id" },
+  /*
+    Listed, and a false positive — the scan flags `business_phone_number_id`
+    because it contains "phone", but the number it identifies is the TENANT's own
+    WhatsApp Business sender, not a data subject's. It is here anyway, because
+    the alternative is teaching the scan an exception and the registry's whole
+    argument is that a false positive costs one line and an argument in a diff,
+    while a false negative costs a table nobody erases. `app_secret` and
+    `verify_token` on the same table are credentials rather than personal data;
+    they need rotating on a breach, not erasing on a subject request.
+  */
+  { table: "crm_whatsapp_channels", columns: ["business_phone_number_id"], scope: "organization_id" },
   { table: "csat_responses", columns: ["respondent_email"], scope: "org_id" },
   { table: "deals", columns: ["contact_email", "contact_phone"], scope: "org_id" },
   { table: "email_outbox", columns: ["to_email"], scope: "organization_id" },
