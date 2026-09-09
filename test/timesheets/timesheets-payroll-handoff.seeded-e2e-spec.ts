@@ -8,7 +8,10 @@ import {
   type SeededE2eApp,
 } from "test/helpers/seeded-e2e-app";
 import { seedOrg, type SeededFixture } from "test/helpers/seed-builder";
-import { TIMESHEET_PAYROLL_HANDOFF_PORT } from "src/modules/timesheets/payroll/handoff/handoff.port";
+import {
+  TIMESHEET_PAYROLL_HANDOFF_PORT,
+  type TimesheetPayrollHandoffPort,
+} from "src/modules/timesheets/payroll/handoff/handoff.port";
 import {
   TIMESHEET_EVENTS,
   payrollHandoffPayloadSchema,
@@ -95,23 +98,21 @@ describe(`${SEEDED_HARNESS} payroll handoff — an export reaches the port, not 
       {
         orgId: fixture.orgId,
         userId: admin.userId,
-        userMembershipId: admin.membershipId,
         date: WINDOW_START,
         hours: "8.00",
         description: "handoff probe day one",
-        status: "APPROVED",
-        payrollStatus: "UNPROCESSED",
+        status: "APPROVED" as const,
+        payrollStatus: "UNPROCESSED" as const,
         isBillable: true,
       },
       {
         orgId: fixture.orgId,
         userId: admin.userId,
-        userMembershipId: admin.membershipId,
         date: WINDOW_END,
         hours: "6.50",
         description: "handoff probe day two",
-        status: "APPROVED",
-        payrollStatus: "UNPROCESSED",
+        status: "APPROVED" as const,
+        payrollStatus: "UNPROCESSED" as const,
         isBillable: false,
       },
     ]);
@@ -122,7 +123,7 @@ describe(`${SEEDED_HARNESS} payroll handoff — an export reaches the port, not 
      * would prove the test's own wiring instead.
      */
     delivered = [];
-    const port = seeded.app.get(TIMESHEET_PAYROLL_HANDOFF_PORT);
+    const port = seeded.app.get<TimesheetPayrollHandoffPort>(TIMESHEET_PAYROLL_HANDOFF_PORT);
     jest.spyOn(port, "deliver").mockImplementation(async (payload: PayrollHandoffPayload) => {
       delivered.push(payload);
     });

@@ -24,6 +24,6 @@
     "esModuleInterop": true,
     "resolveJsonModule": true
   },
-  "include": ["src/**/*", "evals/**/*"],
+  "include": ["src/**/*", "evals/**/*", "test/**/*"],
   "exclude": ["node_modules", "dist", "drizzle.config.ts"]
 }
