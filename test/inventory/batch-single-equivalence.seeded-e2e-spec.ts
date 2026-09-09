@@ -6,6 +6,7 @@ import { runInNewTenantTransaction } from "src/common/tenant/run-in-tenant-trans
 import { StockEngineService } from "src/modules/inventory/stock-engine/stock-engine.service";
 import { StockEngineBatchService } from "src/modules/inventory/stock-engine/stock-engine-batch.service";
 import type { StockEngineCommand } from "src/modules/inventory/stock-engine/stock-engine.types";
+import { inventoryCounters } from "src/modules/inventory/observability/inventory-counters";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
 import { seedOrg } from "test/helpers/seed-builder";
 import { buildInventoryFixture, type InventoryFixture } from "test/helpers/inventory-fixture";
@@ -366,6 +367,35 @@ describe("[seeded-e2e] INV-02 — the batch door and the single door reach the s
   });
 
   /**
+   * INV-36 — the counters an operator reads, compared the same way.
+   *
+   * `inventoryCounters` had exactly one test and it asserted the *source text*:
+   * it read `movement-apply.service.ts` off disk and checked the file contained
+   * the literal `inventoryCounters.increment(orgId, "stock.command.success")`.
+   * That passes against a call sitting behind an `if (false)`, and it passes
+   * against a batch path that increments once per batch instead of once per
+   * command. Nothing had ever executed the engine and looked at a number.
+   *
+   * The counters are per-organisation and the two sides are two organisations
+   * running the identical command list, so parity is the natural assertion and
+   * it needs no fixture of its own: whatever the single door counted, the batch
+   * door must have counted too.
+   */
+  it("counts the same commands on both doors", () => {
+    const a = inventoryCounters.snapshotFor(single.orgId);
+    const b = inventoryCounters.snapshotFor(batch.orgId);
+
+    // The floor. Two all-zero snapshots are equal and would prove nothing —
+    // which is exactly what this file would have reported before the counter
+    // was wired up at all.
+    expect(a["stock.command.success"]).toBeGreaterThanOrEqual(5);
+    // One success per applied command, not per batch: the batch orchestrator
+    // calls `apply` once per command and the counter lives inside it.
+    expect(b["stock.command.success"]).toBe(a["stock.command.success"]);
+    expect(b).toEqual(a);
+  });
+
+  /**
    * Replay is where the two paths are most likely to disagree, because the
    * batch claims every key up front and the sequence claims them one at a time.
    * A batch that re-applied on replay would double the warehouse.
@@ -392,4 +422,22 @@ describe("[seeded-e2e] INV-02 — the batch door and the single door reach the s
     expect(await ledgerOf(single)).toEqual(before.ledger[0]);
     expect(await ledgerOf(batch)).toEqual(before.ledger[1]);
   }, 600_000);
+
+  /**
+   * INV-36, the half that matters more than parity: a replay must be counted as
+   * a replay. A path that counted the second run a success would report a
+   * warehouse doing twice the work it did, and the ratio the counters exist to
+   * feed — conflicts over attempts — would be wrong in the reassuring direction.
+   */
+  it("counts the replay as a replay on both doors, not as more successes", () => {
+    const a = inventoryCounters.snapshotFor(single.orgId);
+    const b = inventoryCounters.snapshotFor(batch.orgId);
+
+    expect(a["stock.command.replayed"]).toBeGreaterThanOrEqual(5);
+    expect(b["stock.command.replayed"]).toBe(a["stock.command.replayed"]);
+    // Applied once each, replayed once each — so the two are equal, and neither
+    // door counted its replay as work.
+    expect(a["stock.command.replayed"]).toBe(a["stock.command.success"]);
+    expect(b).toEqual(a);
+  });
 });
