@@ -159,12 +159,23 @@ function runChecks(dir, gapsFile = CHAIN_GAPS_FILE, appliedWatermark = null) {
 
   // (f) The applied watermark is ahead of the journal.
   //
-  // Drizzle decides what to run by comparing each entry's `when` against the highest
-  // created_at already in drizzle.__drizzle_migrations. A row recorded with a
-  // timestamp above every journal entry therefore disables the migrator for everyone:
-  // db:migrate keeps reporting success while applying nothing, and the tables those
-  // migrations were meant to create or protect never appear. This is checked only
-  // when a database is reachable, because CI has none.
+  // Stock drizzle-kit decides what to run by comparing each entry's `when` against
+  // the highest created_at already in drizzle.__drizzle_migrations. A row recorded
+  // with a timestamp above every journal entry therefore disables that migrator for
+  // everyone: it reports success while applying nothing, and the tables those
+  // migrations were meant to create or protect never appear.
+  //
+  // `db:migrate` no longer runs stock drizzle-kit — it runs
+  // run-pending-migrations.mjs, which queues every entry and lets the file-hash
+  // guard decide, so it SEES work below the watermark. This check still matters for
+  // two reasons: the condition means the database and the journal were built by
+  // different lineages and neither describes the other, and anything still invoking
+  // `drizzle-kit migrate` directly (a CI step, a runbook, a habit) is silently
+  // applying nothing. Measured on the shared Neon branch 2026-09-10: 140 of 434
+  // journalled migrations unapplied, and the watermark dated 2027-02-19 — a FUTURE
+  // timestamp, which is how it got above every entry in the first place.
+  //
+  // Checked only when a database is reachable, because CI has none.
   if (appliedWatermark !== null && entries.length > 0) {
     const journalMax = Math.max(...entries.map((e) => e.when));
     if (appliedWatermark > journalMax) {
@@ -172,7 +183,7 @@ function runChecks(dir, gapsFile = CHAIN_GAPS_FILE, appliedWatermark = null) {
         `(f) WATERMARK AHEAD OF JOURNAL  applied max created_at=${appliedWatermark} ` +
           `(${new Date(appliedWatermark).toISOString()}) exceeds the newest journal entry ` +
           `when=${journalMax} (${new Date(journalMax).toISOString()}) — every entry below it is ` +
-          `silently skipped and db:migrate still reports success`,
+          `silently skipped by stock drizzle-kit, which still reports success. db:migrate now uses run-pending-migrations.mjs and is unaffected; run it with --dry-run to see what this database is actually missing.`,
       );
     }
   }
