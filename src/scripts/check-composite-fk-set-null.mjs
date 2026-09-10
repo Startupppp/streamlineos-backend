@@ -51,16 +51,16 @@ export const KNOWN_UNFIXED = new Map([
   ["fk_feedback_posts_crm_organization_party_id", "build.feedback_posts → business_parties; owner: build"],
   ["fk_feedbucket_submissions_crm_contact_party_id", "build.feedbucket_submissions → business_parties; owner: build"],
   ["fk_feedbucket_submissions_crm_organization_party_id", "build.feedbucket_submissions → business_parties; owner: build"],
-  // Single-column keys to global `users`, same defect at arity 1: purging a user
-  // aborts on these. Five are hr_*, which is out of scope here; sign_* is its
-  // owner's call because a sender is arguably not nullable on a sent envelope.
-  ["hr_disciplinary_actions_issued_by_users_id_fk", "hr_disciplinary_actions.issued_by → users; owner: hr"],
-  ["hr_effective_dated_changes_created_by_users_id_fk", "hr_effective_dated_changes.created_by → users; owner: hr"],
-  ["hr_emergency_events_created_by_users_id_fk", "hr_emergency_events.created_by → users; owner: hr"],
-  ["hr_safety_incidents_reported_by_users_id_fk", "hr_safety_incidents.reported_by → users; owner: hr"],
-  ["hr_simulations_created_by_users_id_fk", "hr_simulations.created_by → users; owner: hr"],
-  ["sign_bulk_send_jobs_sender_user_id_users_id_fk", "sign_bulk_send_jobs.sender_user_id → users; owner: sign"],
-  ["sign_envelopes_sender_user_id_users_id_fk", "sign_envelopes.sender_user_id → users; owner: sign"],
+  // The seven arity-1 keys to global `users` that used to sit here — five hr_*,
+  // two sign_* — are GONE as of 2026-09-10, verified against pg_catalog rather
+  // than taken from this gate's own word: six of the constraints no longer
+  // exist at all, and `hr_safety_incidents_reported_by_users_id_fk` now carries
+  // NO ACTION (`confdeltype='a'`), which is the correct repair for anything on
+  // the DPDP path — a database-level SET NULL there would perform a disposition
+  // `subject-request-plan.ts` requires to be declared per table.
+  //
+  // Removed rather than left, because the docblock above means it: a stale
+  // entry is a FAILURE, and it re-authorises the next occurrence on that name.
 ]);
 
 /**
