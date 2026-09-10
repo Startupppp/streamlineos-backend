@@ -149,12 +149,20 @@ export class CustomerReturnsService {
    * The same read without the warehouse gate.
    *
    * For the paths handing back a row the caller has just written or has already
-   * been gated for: `create`, where gating would 404 an operator against the
-   * return they just raised — a return whose order and shipment sit outside
-   * their warehouses matches no predicate at all — and the tails of `approve`,
-   * `post` and `cancel`, each of which has run the gate above. Named and
-   * private rather than a boolean on `get`, so a future route cannot be pointed
-   * at the ungated read by accident; the shape `loadAsnUnscoped` established.
+   * been gated for: `create`, and the tails of `approve`, `post` and `cancel`,
+   * each of which has run the gate above.
+   *
+   * `create`'s claim on it is narrower than it was. It used to cover a return
+   * anchored to somebody else's order or shipment, which matched no predicate
+   * and so 404ed its own author; `assertSourceInScope` refuses that outright
+   * now. What is left is the walk-in return, citing neither document — anchored
+   * to no warehouse, therefore invisible to every scoped operator including the
+   * one who just raised it. That is the list's rule working as written, and it
+   * is still not a reason to hide a row from the person who wrote it.
+   *
+   * Named and private rather than a boolean on `get`, so a future route cannot
+   * be pointed at the ungated read by accident; the shape `loadAsnUnscoped`
+   * established.
    */
   private loadCustomerReturnUnscoped(orgId: string, returnId: number) {
     return this.loadCustomerReturn(orgId, returnId, undefined);
@@ -178,6 +186,87 @@ export class CustomerReturnsService {
     return ret;
   }
 
+  /**
+   * You may raise a return only against a document out of a warehouse you hold.
+   *
+   * `create` validated `so_id` and `shipment_id` against the ORG and stopped
+   * there, so a scoped operator could anchor a DRAFT to another warehouse's
+   * order or shipment. Nothing moved — a DRAFT posts no stock — and every step
+   * after it is gated, so the document became invisible to the person who
+   * raised it the moment they saved it: a write into a building they hold
+   * nothing in, leaving an orphaned draft behind. It also let them measure
+   * somebody else's despatches, because `assertCustomerReturnWithinShipped`
+   * below reads that shipment's lines on their behalf and the refusal names the
+   * quantity.
+   *
+   * OR, NOT AND, and that is the list's rule rather than a looser reading of
+   * it: `returnInScope` attributes a return through the order OR the shipment,
+   * so a return this caller could SEE is a return they may create. Asking of
+   * each document independently would be stricter than the list and would
+   * refuse real work — `inv_sales_orders.warehouse_id` is nullable, so an order
+   * booked before it was allocated carries none at all, and the operator who
+   * then shipped it out of their own warehouse would be refused a return
+   * against the pair. The transfer's source/destination asymmetry does not
+   * transfer here: these two ids are not two ends of a movement, they are two
+   * spellings of one anchor.
+   *
+   * `clientId` is not asked about — a customer is not a building.
+   *
+   * The NULL rule falls out of the same expression rather than being restated:
+   * `NULL IN (…)` is NULL, so a document attributed to no warehouse anchors
+   * this return to none of the caller's, exactly as it is excluded from their
+   * list.
+   *
+   * 404 (§4), and it does not say which of the two documents failed. The org
+   * checks in front of it have already told this caller both ids exist in their
+   * tenant; naming the one that sits outside their warehouses would add the
+   * single fact the gate exists to withhold.
+   */
+  private async assertSourceInScope(
+    orgId: string,
+    userId: string,
+    source: { soId?: number | null; shipmentId?: number | null },
+  ): Promise<void> {
+    // A walk-in return cites no document at all. `assertCustomerReturnWithinShipped`
+    // makes the same exception for the same reason: there is nothing to measure
+    // it against, and nothing to attribute it to either.
+    if (source.soId == null && source.shipmentId == null) return;
+
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+    // Asked before the queries rather than compiled to `TRUE` inside them: an
+    // org-wide caller is the common case on this path and two round trips to
+    // learn nothing is two too many.
+    if (scope.unrestricted) return;
+
+    if (source.soId != null) {
+      const [inScope] = await this.db
+        .select({ id: invSalesOrders.id })
+        .from(invSalesOrders)
+        .where(and(
+          eq(invSalesOrders.id, source.soId),
+          eq(invSalesOrders.orgId, orgId),
+          scope.warehouse(sql`${invSalesOrders.warehouseId}`),
+        ))
+        .limit(1);
+      if (inScope) return;
+    }
+
+    if (source.shipmentId != null) {
+      const [inScope] = await this.db
+        .select({ id: invShipments.id })
+        .from(invShipments)
+        .where(and(
+          eq(invShipments.id, source.shipmentId),
+          eq(invShipments.orgId, orgId),
+          scope.warehouse(sql`${invShipments.warehouseId}`),
+        ))
+        .limit(1);
+      if (inScope) return;
+    }
+
+    throw new NotFoundException("Sales order or shipment not found");
+  }
+
   async create(orgId: string, userId: string, data: CreateCustomerReturnInput) {
     if (data.soId !== undefined && data.soId !== null) {
       const so = await this.db.query.invSalesOrders.findFirst({
@@ -194,6 +283,10 @@ export class CustomerReturnsService {
       });
       if (!shipment) throw new BadRequestException("Shipment not found in this organization");
     }
+
+    // The two checks above answer "is this id mine to name at all"; neither ever
+    // asked whose building the document came out of. This does.
+    await this.assertSourceInScope(orgId, userId, data);
 
     if (data.clientId !== undefined && data.clientId !== null) {
       /*

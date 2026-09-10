@@ -64,20 +64,50 @@ export interface DbHarness {
   wheres: SQL[];
   /** Every `where` a WRITE built. Empty means nothing was updated. */
   updates: SQL[];
+  /**
+   * Every row set an INSERT was handed, in order. Empty means nothing was
+   * written — which is the assertion a create-side gate needs, because a
+   * service that inserted the rows and refused afterwards would still satisfy a
+   * `rejects` on its own.
+   */
+  inserts: unknown[];
   /** Records whether a mutation ever got as far as opening its transaction. */
   transaction: jest.Mock;
 }
 
 /**
- * `detail` answers the relational-query reads; `reads` answers the `select()`
- * chains in order (an absent entry answers the empty set).
+ * The tables the two return services read through the relational query builder.
+ *
+ * The returns themselves, plus the source documents a create validates on its
+ * way in. Listed rather than proxied so an unlisted table fails loudly as
+ * "cannot read properties of undefined" instead of quietly answering nothing.
+ */
+const RQB_TABLES = [
+  "invCustomerReturns",
+  "invVendorReturns",
+  "invSalesOrders",
+  "invShipments",
+  "invVendors",
+  "invPurchaseOrders",
+  "invGrns",
+] as const;
+
+/**
+ * `detail` answers the relational-query reads; `rows` overrides it per table,
+ * which is what a create needs — its org-existence checks must ANSWER before
+ * the scope gate behind them is ever reached. `reads` answers the `select()`
+ * chains in order (an absent entry answers the empty set), and `inserted` is
+ * what an insert's `returning()` hands back.
  */
 export function dbWith(opts: {
   detail?: unknown;
+  rows?: Readonly<Record<string, unknown>>;
   reads?: readonly (readonly unknown[])[];
+  inserted?: readonly unknown[];
 } = {}): DbHarness {
   const wheres: SQL[] = [];
   const updates: SQL[] = [];
+  const inserts: unknown[] = [];
   let read = 0;
   const reads = opts.reads ?? [];
 
@@ -101,16 +131,30 @@ export function dbWith(opts: {
   writeChain["then"] = (resolve: (v: unknown) => unknown, reject: (r: unknown) => unknown) =>
     Promise.resolve([]).then(resolve, reject);
 
-  const relational = {
+  // Its own chain rather than a third role for `writeChain`: an insert is the
+  // one write these suites need to observe the PAYLOAD of, and `returning()`
+  // has to hand back a row or the create's own tail read dereferences undefined.
+  const insertChain: Record<string, unknown> = {};
+  insertChain["values"] = (rowsInserted: unknown) => {
+    inserts.push(rowsInserted);
+    return insertChain;
+  };
+  insertChain["returning"] = () => insertChain;
+  insertChain["then"] = (resolve: (v: unknown) => unknown, reject: (r: unknown) => unknown) =>
+    Promise.resolve(opts.inserted ?? []).then(resolve, reject);
+
+  const relationalFor = (table: string) => ({
     findFirst: (args: { where: SQL }) => {
       wheres.push(args.where);
-      return Promise.resolve(opts.detail);
+      return Promise.resolve(
+        opts.rows && table in opts.rows ? opts.rows[table] : opts.detail,
+      );
     },
     findMany: (args: { where: SQL }) => {
       wheres.push(args.where);
       return Promise.resolve([]);
     },
-  };
+  });
 
   /*
    * A transaction mock that never runs its callback would silently void every
@@ -128,14 +172,23 @@ export function dbWith(opts: {
     ),
   );
 
+  const query: Record<string, unknown> = {};
+  for (const table of RQB_TABLES) query[table] = relationalFor(table);
+
   const db = {
-    query: { invCustomerReturns: relational, invVendorReturns: relational },
+    query,
     select: () => readChain,
     update: () => writeChain,
-    insert: () => writeChain,
+    insert: () => insertChain,
     transaction,
   };
-  return { db: db as never, wheres, updates, transaction: transaction as jest.Mock };
+  return {
+    db: db as never,
+    wheres,
+    updates,
+    inserts,
+    transaction: transaction as jest.Mock,
+  };
 }
 
 export function cacheWith() {
