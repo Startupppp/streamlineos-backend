@@ -50,6 +50,10 @@ export const NO_TENANT_TRANSACTION_ALLOWLIST = new Map([
     "src/modules/organization/core/organization.controller.ts",
     "identity-scoped organization discovery and switching; each handler opens its own withIdentity or runInTenantTransaction before touching the database",
   ],
+  [
+    "src/modules/inventory/channels/channel-webhook.controller.ts",
+    "inbound marketplace webhook: the caller is a marketplace with no session, so there is no tenant to derive and the interceptor would open nothing anyway. ChannelSnapshotService resolves the organisation from the channel id through a SECURITY DEFINER resolver and opens its own tenant transaction, and refuses anything whose HMAC does not verify. The decorator makes that reason explicit rather than incidental",
+  ],
 ]);
 
 export const CONTEXT_EXIT_ALLOWLIST = new Map([
