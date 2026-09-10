@@ -1,4 +1,12 @@
-import { DealsAnalyticsService } from "./deals-analytics.service";
+import { DealsAnalyticsService, type DealsViewScope } from "./deals-analytics.service";
+
+/**
+ * A manager, whose scope is `all`. These tests are about the forecast's cold-start
+ * label and its arithmetic, not about narrowing, so they take the widest scope —
+ * where `applyScope` returns `sql`true`` and every number is what it always was.
+ * The narrowing itself is asserted in `deals-analytics-scope.spec.ts`.
+ */
+const MANAGER: DealsViewScope = { scope: "all", userId: "manager-1" };
 import type { Db } from "../../db/drizzle.module";
 import { CrmMetadataService } from "../crm/metadata/crm-metadata.service";
 import { CacheService } from "../../common/cache/cache.service";
@@ -139,7 +147,7 @@ describe("DealsAnalyticsService – deal health", () => {
   });
 
   it("returns a health object with score and level", async () => {
-    const health = await service.getDealHealth("org1", 42);
+    const health = await service.getDealHealth("org1", 42, MANAGER);
 
     expect(health).toMatchObject({
       dealId: 42,
@@ -223,7 +231,7 @@ describe("DealsAnalyticsService – forecast cold start", () => {
   it("tells a tenant with no closed history that the number is their own weighted pipeline", async () => {
     const service = makeForecastService({ open: [openDeal], closed: [] });
 
-    const forecast = await service.getForecast("org1");
+    const forecast = await service.getForecast("org1", MANAGER);
 
     expect(forecast.basis).toEqual({
       kind: "naive-weighted",
@@ -255,7 +263,7 @@ describe("DealsAnalyticsService – forecast cold start", () => {
       "CLOSED_LOST",
     );
 
-    const forecast = await service.getForecast("org1");
+    const forecast = await service.getForecast("org1", MANAGER);
 
     // 23 closed, so still short of the floor, and the missing outcome is what
     // the tenant is told about: twelve more losses, not "no more wins needed".
@@ -283,7 +291,7 @@ describe("DealsAnalyticsService – forecast cold start", () => {
       ],
     });
 
-    const forecast = await service.getForecast("org1");
+    const forecast = await service.getForecast("org1", MANAGER);
 
     // Crossing the floor is our cue to train, not permission to claim we did.
     // "not-trained-yet" is the gap on our side; a surface that renders it as
@@ -298,7 +306,7 @@ describe("DealsAnalyticsService – forecast cold start", () => {
   it("carries the label through the cached read path the controller returns, alongside the untouched totals", async () => {
     const service = makeForecastService({ open: [openDeal], closed: [] });
 
-    const forecast = await service.getForecast("org1");
+    const forecast = await service.getForecast("org1", MANAGER);
 
     // The controller is a passthrough, so this object is the response body:
     // every pre-existing field still means what it meant, plus the label.

@@ -4,7 +4,9 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { AccessService } from "../access/access.service";
 import { DealsAnalyticsService } from "./deals-analytics.service";
+import { resolveDealsReadScope } from "./deals-scope";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import {
@@ -22,24 +24,37 @@ import {
 @Controller("deals")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class DealsAnalyticsController {
-  constructor(private readonly analytics: DealsAnalyticsService) {}
+  constructor(
+    private readonly analytics: DealsAnalyticsService,
+    private readonly access: AccessService,
+  ) {}
+
+  /**
+   * Every `crm:deals:read` route here resolves the same scope the deals list
+   * resolves, through the same helper. `crm:deals:forecast` and
+   * `crm:deals:manage` below do not, and are not scopable in the catalog: a
+   * snapshot is the organisation's forecast whoever captured it.
+   */
+  private viewScope(u: CurrentUserContext) {
+    return resolveDealsReadScope(this.access, u).then((scope) => ({ scope, userId: u.userId }));
+  }
 
   @Get("stats")
   @RequirePermission("crm:deals:read")
-  getStats(@CurrentUser() u: CurrentUserContext) {
-    return this.analytics.getStats(u.orgId);
+  async getStats(@CurrentUser() u: CurrentUserContext) {
+    return this.analytics.getStats(u.orgId, await this.viewScope(u));
   }
 
   @Get("aging")
   @RequirePermission("crm:deals:read")
-  getAging(@CurrentUser() u: CurrentUserContext) {
-    return this.analytics.getAging(u.orgId);
+  async getAging(@CurrentUser() u: CurrentUserContext) {
+    return this.analytics.getAging(u.orgId, await this.viewScope(u));
   }
 
   @Get("forecast")
   @RequirePermission("crm:deals:read")
-  getForecast(@CurrentUser() u: CurrentUserContext) {
-    return this.analytics.getForecast(u.orgId);
+  async getForecast(@CurrentUser() u: CurrentUserContext) {
+    return this.analytics.getForecast(u.orgId, await this.viewScope(u));
   }
 
   @Get("forecast/snapshots")
@@ -72,17 +87,17 @@ export class DealsAnalyticsController {
 
   @Get("win-loss")
   @RequirePermission("crm:deals:read")
-  getWinLoss(@CurrentUser() u: CurrentUserContext) {
-    return this.analytics.getWinLoss(u.orgId);
+  async getWinLoss(@CurrentUser() u: CurrentUserContext) {
+    return this.analytics.getWinLoss(u.orgId, await this.viewScope(u));
   }
 
   @Get(":dealId/health")
   @RequirePermission("crm:deals:read")
-  getDealHealth(
+  async getDealHealth(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.analytics.getDealHealth(u.orgId, dealId);
+    return this.analytics.getDealHealth(u.orgId, dealId, await this.viewScope(u));
   }
 
   @Patch("forecast/:snapshotId/override")
