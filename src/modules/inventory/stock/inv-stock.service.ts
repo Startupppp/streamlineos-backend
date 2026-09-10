@@ -1,7 +1,12 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, gte, lte, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, getTableName, gte, lte, sql, type SQL } from "drizzle-orm";
 import {
+  invLocations,
+  invProducts,
+  invProductVariants,
+  invStockLevels,
   invStockTransactions,
+  invWarehouses,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -27,6 +32,160 @@ import type {
  */
 const SEARCH_MATCH_CAP = 500;
 
+/**
+ * The table as it is spelled in `listStockLevels`' `FROM` clause.
+ *
+ * `availableQtySql` takes the alias its caller used, because the expression
+ * mentions five columns by name and has to reach the right table. The query
+ * below does not alias `inv_stock_levels`, so Postgres names it after itself and
+ * this is that name -- read off the schema rather than typed out, so a table
+ * rename cannot leave a string behind that still compiles.
+ *
+ * This is the trap already recorded in this module and it is worth restating:
+ * the same expression inside Drizzle's RELATIONAL query builder is a runtime
+ * `missing FROM-clause entry`, because that builder renames the root table to
+ * its TypeScript key (`"invStockLevels"`) while the expression still says
+ * `inv_stock_levels`. It typechecks, it builds, and it 500s. That is the reason
+ * this list is an explicit `select()` with joins rather than a `findMany` with
+ * `with:` like `listTransactions` beside it.
+ */
+const STOCK_LEVELS_TABLE = getTableName(invStockLevels);
+
+/**
+ * The response shape, as a cache-key discriminator.
+ *
+ * `listStockLevels` is cached, and the row shape changed: the response used to
+ * carry the driver's own snake_case column names and no joins at all, so
+ * `on_hand` arrived where the client reads `onHand` and every product and
+ * location name rendered as a dash. Entries of that old shape are still sitting
+ * in Redis under the current namespace version at deploy time, and the version
+ * is per-org -- there is no boot-time hook that could bump every tenant's.
+ *
+ * So the shape rides in the key instead of relying on eviction. A new deploy
+ * simply reads at a key no old entry occupies, which costs one cold fill per
+ * key and cannot serve a single stale row of the previous shape. Bump it
+ * whenever the fields below change again.
+ */
+const RESPONSE_SHAPE = "s2";
+
+/**
+ * One stock-level row as it reaches the wire.
+ *
+ * Written out rather than inferred because the frontend hook writes it out too
+ * (`RawStockLevel` in `hooks/api/inventory/stock-levels.ts`) and the two halves
+ * are a contract: this is the shape that hook parses, field for field, and the
+ * nesting mirrors `listTransactions` because that is how this module already
+ * hands a client an identity for a variant and a bin.
+ *
+ * Every quantity is a STRING. These are Postgres `numeric` columns, the driver
+ * returns them as strings, and the hook's type says string and calls `Number()`
+ * on them. Declaring a number here and shipping a string is precisely how the
+ * table came to read `NaN`.
+ */
+export interface StockLevelItem {
+  id: number;
+  onHand: string;
+  committed: string;
+  onOrder: string;
+  available: string;
+  blockedQty: string;
+  qualityHoldQty: string;
+  averageCost: string | null;
+  productVariant: {
+    id: number;
+    name: string | null;
+    sku: string | null;
+    product: { id: number; name: string; sku: string; reorderPoint: string | null } | null;
+  } | null;
+  location: {
+    id: number;
+    name: string;
+    code: string;
+    warehouse: { id: number; name: string } | null;
+  } | null;
+}
+
+/**
+ * The row as the join hands it over.
+ *
+ * Drizzle's `select()` groups columns one level deep and no further -- a third
+ * level is not a nested selection to it, it is a value, and it fails to compile.
+ * So the product and the warehouse ride flat inside their parent's group and are
+ * re-nested by `toStockLevelItem` below. That is also why nothing here is
+ * nullable-by-group: a group mixing two tables is never nullified wholesale by
+ * the driver mapper, so each field arrives null on its own and the parent object
+ * is decided explicitly.
+ */
+interface StockLevelJoinRow {
+  id: number;
+  onHand: string;
+  committed: string;
+  onOrder: string;
+  available: string;
+  blockedQty: string;
+  qualityHoldQty: string;
+  averageCost: string | null;
+  productVariant: {
+    id: number | null;
+    name: string | null;
+    sku: string | null;
+    productId: number | null;
+    productName: string | null;
+    productSku: string | null;
+    reorderPoint: string | null;
+  };
+  location: {
+    id: number | null;
+    name: string | null;
+    code: string | null;
+    warehouseId: number | null;
+    warehouseName: string | null;
+  };
+}
+
+/**
+ * Re-nests a joined row into the shape the client parses.
+ *
+ * The null checks are per-field rather than a single `id === null` probe on
+ * purpose: `name` and `code` are `NOT NULL` columns, so testing them is what
+ * narrows them from `string | null` to `string` without an assertion, and an
+ * assertion is the thing that would let a genuinely absent join through as a
+ * half-built object.
+ */
+export function toStockLevelItem(row: StockLevelJoinRow): StockLevelItem {
+  const variant = row.productVariant;
+  const location = row.location;
+
+  const product =
+    variant.productId !== null && variant.productName !== null && variant.productSku !== null
+      ? { id: variant.productId, name: variant.productName, sku: variant.productSku, reorderPoint: variant.reorderPoint }
+      : null;
+
+  const warehouse =
+    location.warehouseId !== null && location.warehouseName !== null
+      ? { id: location.warehouseId, name: location.warehouseName }
+      : null;
+
+  return {
+    id: row.id,
+    onHand: row.onHand,
+    committed: row.committed,
+    onOrder: row.onOrder,
+    available: row.available,
+    blockedQty: row.blockedQty,
+    qualityHoldQty: row.qualityHoldQty,
+    averageCost: row.averageCost,
+    productVariant:
+      variant.id === null
+        ? null
+        : { id: variant.id, name: variant.name, sku: variant.sku, product },
+    location:
+      location.id === null || location.name === null || location.code === null
+        ? null
+        : { id: location.id, name: location.name, code: location.code, warehouse },
+  };
+}
+
 @Injectable()
 export class InvStockService {
   constructor(
@@ -44,78 +203,138 @@ export class InvStockService {
   private scopeFragment(scope: WarehouseScope, orgId: string): { sql: SQL; key: string } {
     if (scope === null) return { sql: sql``, key: "all" };
     if (scope.length === 0) return { sql: sql`AND FALSE`, key: "none" };
-    const ids = sql.join(scope.map((id) => sql`${id}`), sql`, `);
     return {
-      sql: sql`AND sl.location_id IN (SELECT id FROM inv_locations WHERE org_id = ${orgId} AND warehouse_id IN (${ids}))`,
+      sql: sql`AND ${this.scopePredicate(scope, orgId, sql.raw("sl.location_id"))}`,
       key: [...scope].sort((a, b) => a - b).join("."),
     };
+  }
+
+  /**
+   * The same scope as a bare predicate over a location column the caller names.
+   *
+   * `scopeFragment` above splices into hand-written SQL that aliases
+   * `inv_stock_levels` as `sl`; `listStockLevels` builds its `WHERE` out of
+   * Drizzle conditions over the unaliased table. One of them has to say which
+   * column it means, so both go through this and the subquery -- which is the
+   * part that decides who may see which building -- exists once.
+   */
+  private scopePredicate(scope: WarehouseScope, orgId: string, locationColumn: SQL): SQL {
+    if (scope === null) return sql`TRUE`;
+    if (scope.length === 0) return sql`FALSE`;
+    const ids = sql.join(scope.map((id) => sql`${id}`), sql`, `);
+    return sql`${locationColumn} IN (SELECT id FROM inv_locations WHERE org_id = ${orgId} AND warehouse_id IN (${ids}))`;
   }
 
   async listStockLevels(orgId: string, userId: string, filters: ListStockLevelsInput) {
     const { warehouseId, locationId, productId, variantId, lotId, serialId, lowStock, negative, search, page, limit } = filters;
     const offset = (page - 1) * limit;
-    const scope = this.scopeFragment(await this.warehouseScope.resolve(orgId, userId), orgId);
+    const scope = await this.warehouseScope.resolve(orgId, userId);
+    const scopeKey = this.warehouseScope.scopeKey(scope);
     const showCost = await this.costVisibility.canSeeCost(orgId, userId);
-    const hash = `${showCost ? "cost" : "nocost"}:${scope.key}:${warehouseId ?? ""}:${locationId ?? ""}:${productId ?? ""}:${variantId ?? ""}:${lotId ?? ""}:${serialId ?? ""}:${lowStock ?? ""}:${negative ?? ""}:${search ?? ""}:${limit}:${offset}`;
+    const hash = `${RESPONSE_SHAPE}:${showCost ? "cost" : "nocost"}:${scopeKey}:${warehouseId ?? ""}:${locationId ?? ""}:${productId ?? ""}:${variantId ?? ""}:${lotId ?? ""}:${serialId ?? ""}:${lowStock ?? ""}:${negative ?? ""}:${search ?? ""}:${limit}:${offset}`;
 
     return this.cache.cachedVersioned(`inv:stock:levels:${orgId}`, hash, async () => {
+      /*
+       * One predicate, shared by the page and by its count.
+       * These were two hand-copied ten-line blocks of SQL, which is a filter
+       * waiting to be added to one of them and not the other -- a page that
+       * disagrees with its own total.
+       */
+      const conditions: SQL[] = [
+        eq(invStockLevels.orgId, orgId),
+        this.scopePredicate(scope, orgId, sql`${invStockLevels.locationId}`),
+      ];
+      if (locationId) conditions.push(eq(invStockLevels.locationId, locationId));
+      if (variantId) conditions.push(eq(invStockLevels.productVariantId, variantId));
+      if (lotId) conditions.push(eq(invStockLevels.lotId, lotId));
+      if (serialId) conditions.push(eq(invStockLevels.serialId, serialId));
+      if (negative) conditions.push(sql`${invStockLevels.onHand}::numeric < 0`);
+      if (warehouseId) conditions.push(
+        sql`${invStockLevels.locationId} IN (SELECT id FROM inv_locations WHERE warehouse_id = ${warehouseId} AND org_id = ${orgId})`,
+      );
+      if (productId) conditions.push(
+        sql`${invStockLevels.productVariantId} IN (SELECT id FROM inv_product_variants WHERE product_id = ${productId})`,
+      );
+      if (search) conditions.push(
+        sql`${invStockLevels.productVariantId} IN (SELECT app.search_inventory_variant_ids(${search}, ${SEARCH_MATCH_CAP}))`,
+      );
+      /*
+       * Deliberately still a correlated subquery rather than the joined
+       * `inv_products` below: the count query carries no joins, and a predicate
+       * that means one thing on the page and another in the total is the bug
+       * this block was just collapsed to prevent.
+       */
+      if (lowStock) conditions.push(
+        sql`${invStockLevels.onHand}::numeric <= COALESCE((SELECT p.reorder_point::numeric FROM inv_product_variants v JOIN inv_products p ON p.id = v.product_id WHERE v.id = ${invStockLevels.productVariantId}), 0)`,
+      );
+      const where = and(...conditions);
 
+      /*
+       * The joins are LEFT and carry no `deleted_at` filter. The row being
+       * listed is the stock, not the catalogue entry: a variant that has been
+       * retired while units of it are still standing in a bin is exactly the row
+       * an operator most needs named, and filtering it here would put the dash
+       * back on the one line that has to be explained.
+       */
       // [B1-08] Run data + count queries in parallel.
-      // [B1-10] Explicit column projection instead of SELECT sl.*.
-      // [B1-23] No typed generic on db.execute; fields read via Number()/String() converters below.
       const [rows, countRows] = await Promise.all([
-        this.db.execute(sql`
-          SELECT
-            sl.id,
-            sl.org_id,
-            sl.product_variant_id,
-            sl.location_id,
-            sl.lot_id,
-            sl.serial_id,
-            sl.on_hand,
-            sl.committed,
-            sl.on_order,
-            sl.blocked_qty,
-            sl.quality_hold_qty,
-            sl.outgoing_qty,
-            sl.average_cost,
-            sl.updated_at,
-            ${availableQtySql("sl")} AS available
-          FROM inv_stock_levels sl
-          WHERE sl.org_id = ${orgId}
-            ${scope.sql}
-            ${locationId ? sql`AND sl.location_id = ${locationId}` : sql``}
-            ${variantId ? sql`AND sl.product_variant_id = ${variantId}` : sql``}
-            ${lotId ? sql`AND sl.lot_id = ${lotId}` : sql``}
-            ${serialId ? sql`AND sl.serial_id = ${serialId}` : sql``}
-            ${negative ? sql`AND sl.on_hand::numeric < 0` : sql``}
-            ${warehouseId ? sql`AND sl.location_id IN (SELECT id FROM inv_locations WHERE warehouse_id = ${warehouseId} AND org_id = ${orgId})` : sql``}
-            ${productId ? sql`AND sl.product_variant_id IN (SELECT id FROM inv_product_variants WHERE product_id = ${productId})` : sql``}
-            ${search ? sql`AND sl.product_variant_id IN (SELECT app.search_inventory_variant_ids(${search}, ${SEARCH_MATCH_CAP}))` : sql``}
-            ${lowStock ? sql`AND sl.on_hand::numeric <= COALESCE((SELECT p.reorder_point::numeric FROM inv_product_variants v JOIN inv_products p ON p.id = v.product_id WHERE v.id = sl.product_variant_id), 0)` : sql``}
-          ORDER BY sl.updated_at DESC
-          LIMIT ${limit} OFFSET ${offset}
-        `),
-        this.db.execute(sql`
-          SELECT count(*)::int AS count FROM inv_stock_levels sl
-          WHERE sl.org_id = ${orgId}
-            ${scope.sql}
-            ${locationId ? sql`AND sl.location_id = ${locationId}` : sql``}
-            ${variantId ? sql`AND sl.product_variant_id = ${variantId}` : sql``}
-            ${lotId ? sql`AND sl.lot_id = ${lotId}` : sql``}
-            ${serialId ? sql`AND sl.serial_id = ${serialId}` : sql``}
-            ${negative ? sql`AND sl.on_hand::numeric < 0` : sql``}
-            ${warehouseId ? sql`AND sl.location_id IN (SELECT id FROM inv_locations WHERE warehouse_id = ${warehouseId} AND org_id = ${orgId})` : sql``}
-            ${productId ? sql`AND sl.product_variant_id IN (SELECT id FROM inv_product_variants WHERE product_id = ${productId})` : sql``}
-            ${search ? sql`AND sl.product_variant_id IN (SELECT app.search_inventory_variant_ids(${search}, ${SEARCH_MATCH_CAP}))` : sql``}
-            ${lowStock ? sql`AND sl.on_hand::numeric <= COALESCE((SELECT p.reorder_point::numeric FROM inv_product_variants v JOIN inv_products p ON p.id = v.product_id WHERE v.id = sl.product_variant_id), 0)` : sql``}
-        `),
+        this.db
+          .select({
+            id: invStockLevels.id,
+            onHand: invStockLevels.onHand,
+            committed: invStockLevels.committed,
+            onOrder: invStockLevels.onOrder,
+            available: sql<string>`${availableQtySql(STOCK_LEVELS_TABLE)}::text`.as("available"),
+            blockedQty: sql<string>`COALESCE(${invStockLevels.blockedQty}, '0')`.as("blocked_qty"),
+            qualityHoldQty: sql<string>`COALESCE(${invStockLevels.qualityHoldQty}, '0')`.as("quality_hold_qty"),
+            averageCost: invStockLevels.averageCost,
+            productVariant: {
+              id: invProductVariants.id,
+              name: invProductVariants.name,
+              sku: invProductVariants.sku,
+              productId: invProducts.id,
+              productName: invProducts.name,
+              productSku: invProducts.sku,
+              reorderPoint: invProducts.reorderPoint,
+            },
+            location: {
+              id: invLocations.id,
+              name: invLocations.name,
+              code: invLocations.code,
+              warehouseId: invWarehouses.id,
+              warehouseName: invWarehouses.name,
+            },
+          })
+          .from(invStockLevels)
+          .leftJoin(invProductVariants, eq(invProductVariants.id, invStockLevels.productVariantId))
+          .leftJoin(invProducts, eq(invProducts.id, invProductVariants.productId))
+          .leftJoin(invLocations, eq(invLocations.id, invStockLevels.locationId))
+          .leftJoin(invWarehouses, eq(invWarehouses.id, invLocations.warehouseId))
+          .where(where)
+          .orderBy(desc(invStockLevels.updatedAt))
+          .limit(limit)
+          .offset(offset),
+        this.db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(invStockLevels)
+          .where(where),
       ]);
 
-      const countRow = countRows[0];
-      const total = Number(countRow?.["count"] ?? 0);
-      const items = showCost ? rows : stripCostFields(rows);
-      return { items, total, page, totalPages: Math.ceil(total / limit) };
+      const total = Number(countRows[0]?.count ?? 0);
+      const items = rows.map(toStockLevelItem);
+      /*
+       * `averageCost` is the one cost-bearing field on this row and
+       * `stripCostFields` knows it under both spellings, so renaming it out of
+       * snake_case did not quietly disarm the strip. That is asserted rather
+       * than assumed -- see `stock-levels-response-shape.spec.ts`.
+       */
+      return {
+        items: showCost ? items : stripCostFields(items),
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      };
     }, CACHE_TTL.SHORT);
   }
 

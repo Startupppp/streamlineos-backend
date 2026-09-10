@@ -317,6 +317,27 @@ const PAIRS: readonly Pair[] = [
     shape was actually wrong.
   */
   { controller: "import-export/export.controller.ts", prefix: "inventory/export", verb: "Post", route: "jobs", service: "import-export/export.service.ts", table: "invExportJobs", anchor: "errorRows", hook: "admin.ts", type: "ExportJob" },
+  /*
+    The endpoint this gate was written too late to catch. `listStockLevels` was
+    a raw `db.execute`, so it had NO projection to read and was left off this
+    table on those grounds — and meanwhile it shipped the driver's own
+    snake_case column names to a hook reading camelCase, with no join at all
+    behind the product and location names. `NaN` in every quantity column and a
+    dash for every name, in every tenant, for the life of the endpoint. It is on
+    the table now because the read is an explicit `select()`.
+
+    State the reach plainly, because this pair is easy to over-read. `membersOf`
+    records depth-1 names only, so what is compared is the TEN top-level fields
+    against `RawStockLevel`'s ten. It does not see inside `productVariant` or
+    `location`: Drizzle's `select()` groups columns exactly one level deep, so
+    the service carries `product` and `warehouse` flat inside their parent group
+    and re-nests them in TypeScript, and no key scanner reading a projection
+    literal can follow that. The nested tree is pinned instead by
+    `stock/__tests__/stock-levels-response-shape.spec.ts`, field by field. This
+    row catches the defect that actually happened — a top-level field renamed,
+    dropped, or spelled the way the driver spells it.
+  */
+  { controller: "stock/inv-stock.controller.ts", prefix: "inventory/stock", verb: "Get", route: null, service: "stock/inv-stock.service.ts", table: "invStockLevels", anchor: "qualityHoldQty", hook: "stock-levels.ts", type: "RawStockLevel" },
 ];
 
 function endpointOf(pair: Pair): string {
