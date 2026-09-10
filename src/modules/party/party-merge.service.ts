@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { aliasedTable, and, count, desc, eq, inArray, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
 import {
@@ -494,6 +494,84 @@ export class PartyMergeService {
     return {
       survivorPartyId: record.survivorPartyId,
       restoredPartyId: record.mergedPartyId,
+    };
+  }
+
+  /**
+   * The merges this organisation has performed, most recent first.
+   *
+   * `party_merges` already held everything a revert needs, and nothing read it —
+   * so the only moment a merge could be undone was the moment it happened, from
+   * whatever the caller still had in hand. A destructive operation whose reversal
+   * expires with the toast that announced it is not reversible in any sense the
+   * user experiences, which is the whole reason the snapshot is taken.
+   *
+   * The survivor is joined in for its name; the loser is not, because it is
+   * soft-deleted and every party read in this module filters that out. Its name
+   * comes from the snapshot instead, which is the record of what it was called
+   * at the moment it stopped existing — the right answer here even if a later
+   * revert-and-rename made the live row disagree.
+   */
+  async listMerges(
+    organizationId: string,
+    query: { page: number; limit: number; includeReverted: boolean },
+  ) {
+    const survivor = aliasedTable(businessParties, "survivor_party");
+
+    const where = and(
+      eq(partyMerges.organizationId, organizationId),
+      query.includeReverted ? undefined : isNull(partyMerges.revertedAt),
+      eq(survivor.organizationId, organizationId),
+    );
+
+    const [rows, totals] = await Promise.all([
+      this.db
+        .select({
+          partyMergeId: partyMerges.partyMergeId,
+          survivorPartyId: partyMerges.survivorPartyId,
+          survivorName: survivor.name,
+          mergedPartyId: partyMerges.mergedPartyId,
+          snapshot: partyMerges.snapshot,
+          decidedBy: partyMerges.decidedBy,
+          decidedByUserId: partyMerges.decidedByUserId,
+          confidence: partyMerges.confidence,
+          conflicts: partyMerges.conflicts,
+          mergedAt: partyMerges.mergedAt,
+          revertedAt: partyMerges.revertedAt,
+        })
+        .from(partyMerges)
+        .innerJoin(survivor, eq(survivor.partyId, partyMerges.survivorPartyId))
+        .where(where)
+        .orderBy(desc(partyMerges.mergedAt), desc(partyMerges.partyMergeId))
+        .limit(query.limit)
+        .offset((query.page - 1) * query.limit),
+      this.db
+        .select({ total: count() })
+        .from(partyMerges)
+        .innerJoin(survivor, eq(survivor.partyId, partyMerges.survivorPartyId))
+        .where(where),
+    ]);
+
+    return {
+      data: rows.map((row) => {
+        const snapshot = row.snapshot as unknown as MergeSnapshot | null;
+        return {
+          partyMergeId: row.partyMergeId,
+          survivorPartyId: row.survivorPartyId,
+          survivorName: row.survivorName,
+          mergedPartyId: row.mergedPartyId,
+          mergedName: String(snapshot?.mergedBefore?.name ?? ""),
+          decidedBy: row.decidedBy,
+          decidedByUserId: row.decidedByUserId,
+          confidence: row.confidence,
+          // The keys only: the discarded values are evidence for an audit
+          // reader, not something a list should put on screen.
+          conflictFields: Object.keys(row.conflicts ?? {}),
+          mergedAt: row.mergedAt,
+          revertedAt: row.revertedAt,
+        };
+      }),
+      pagination: { page: query.page, limit: query.limit, total: totals[0]?.total ?? 0 },
     };
   }
 

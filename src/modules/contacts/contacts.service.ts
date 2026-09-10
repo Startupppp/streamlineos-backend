@@ -21,6 +21,7 @@ import type { ContactInsert } from "../party/party-legacy-writer";
 import {
   CONTACT_PARTY_COLUMNS,
   CONTACT_PARTY_JOIN,
+  canonicalContactOnly,
   contactIdIs,
   contactPartyScope,
 } from "./contact-party-reader";
@@ -103,6 +104,15 @@ export class ContactsService {
     return this.db
       .select({
         id: CONTACT_PARTY_COLUMNS.id,
+        /*
+         * The record this contact id is an alias for.
+         *
+         * Carried because merging two customer records is a party-grain
+         * operation — `POST /party/merges` — and the screens that offer it speak
+         * contact ids. Translating in the client would mean a second round trip
+         * per row through a map the projection is already standing on.
+         */
+        partyId: CONTACT_PARTY_COLUMNS.partyId,
         orgId: CONTACT_PARTY_COLUMNS.orgId,
         name: CONTACT_PARTY_COLUMNS.name,
         email: CONTACT_PARTY_COLUMNS.email,
@@ -191,7 +201,10 @@ export class ContactsService {
   }
 
   private listConditions(orgId: string, filters: ListInput, employerPartyId: string | null): SQL[] {
-    const conditions: SQL[] = [...contactPartyScope(orgId)];
+    // Canonical rows only: a party that answers to several contact ids after a
+    // merge is one person, and the list is where showing it twice would read as
+    // the merge having failed. See `canonicalContactOnly`.
+    const conditions: SQL[] = [...contactPartyScope(orgId), canonicalContactOnly(orgId)];
     if (employerPartyId) {
       conditions.push(eq(businessParties.employerPartyId, employerPartyId));
     }
@@ -268,6 +281,7 @@ export class ContactsService {
       .where(
         and(
           ...contactPartyScope(orgId),
+          canonicalContactOnly(orgId),
           or(
             ilike(CONTACT_PARTY_COLUMNS.name, q),
             ilike(CONTACT_PARTY_COLUMNS.email, q),
@@ -435,6 +449,10 @@ export class ContactsService {
         .where(
           and(
             ...contactPartyScope(orgId),
+            // The export is a list, so it takes the same one-row-per-party rule
+            // the screen does; a CSV that re-imports a merged-away duplicate
+            // would undo the merge on the next round trip.
+            canonicalContactOnly(orgId),
             // The keyset stays on the map's own id: it is the primary key of
             // `(organization_id, contact_id)`, so it is unique per tenant and a
             // page can neither repeat nor skip.

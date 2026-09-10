@@ -9,9 +9,13 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { PartyMergeService } from "./party-merge.service";
 import { PartyRolesService } from "./party-roles.service";
 import {
+  partyDuplicateQuerySchema,
+  partyMergeListQuerySchema,
   partyMergeSchema,
   partyRoleSchema,
+  type PartyDuplicateQuery,
   type PartyMergeInput,
+  type PartyMergeListQuery,
   type PartyRoleInput,
 } from "./dto/party.schemas";
 
@@ -73,9 +77,9 @@ export class PartyMergeController {
   @RequirePermission("party:duplicates:view")
   async listCandidates(
     @CurrentUser() user: CurrentUserContext,
-    @Query("status") status?: string,
+    @Query(new ZodValidationPipe(partyDuplicateQuerySchema)) query: PartyDuplicateQuery,
   ) {
-    return { data: await this.roles.listCandidates(user.orgId, status ?? "PENDING") };
+    return this.roles.listCandidates(user.orgId, query);
   }
 
   @Delete("duplicates/:candidateId")
@@ -102,7 +106,29 @@ export class PartyMergeController {
       rightPartyId: body.rightPartyId,
       decidedBy: "USER",
       userId: user.userId,
+      // A merge reached through this route is one a person confirmed, so the
+      // record they picked survives. Without this the service fell back to
+      // `chooseSurvivor` and kept whichever was older, discarding the answer to
+      // the only question the dialog asks.
+      preferSurvivorPartyId: body.preferSurvivorPartyId,
     });
+  }
+
+  /**
+   * What has been merged, so a merge can be undone after the fact.
+   *
+   * `party:merges:manage` rather than a view key: this list exists to be acted
+   * on, every row is a revert control, and a second key naming the same set for
+   * reading would only be a weaker way in.
+   */
+  @Get("merges")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("party:merges:manage")
+  async listMerges(
+    @CurrentUser() user: CurrentUserContext,
+    @Query(new ZodValidationPipe(partyMergeListQuerySchema)) query: PartyMergeListQuery,
+  ) {
+    return this.merges.listMerges(user.orgId, query);
   }
 
   @Post("merges/:partyMergeId/revert")

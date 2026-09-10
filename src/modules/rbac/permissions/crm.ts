@@ -218,11 +218,46 @@ export const CRM_PERMISSIONS: Permission[] = [
     description: "Manage deal forecasts and overrides",
   },
   {
+    /*
+      NOT scopable, where the neighbouring CRM read keys are — because a contact
+      has no owner to scope by, anywhere in the model.
+
+      It was declared `scopable: true` when the key was born (dbb946d68), in a
+      commit that gated the CRM controllers in bulk and gave the flag to
+      `crm:quotes:read` in the same stroke. The precedent it was copied from is
+      real: 5a6261d97 made the lead keys scopable, and a lead genuinely has
+      `assigned_to_id`. A contact never did.
+
+      Three places would have to carry that owner, and none does. The legacy
+      `contacts` row has no owner column — its only associations are
+      `organization_id`, `lead_id` and `deal_id`. Party, which is canonical since
+      ticket 02 and where these reads actually resolve, keeps
+      `business_parties.owner_user_id` — but `party-mirror-fields.ts` maps it for
+      LEAD (`assigned_to_id`) and CLIENT (`account_manager_id`) only, so a party
+      holding the CONTACT role has it null by construction. And the employer
+      fallback — "contacts at accounts I own" — has nowhere to stand either:
+      `crm_organizations` has no owner column.
+
+      So `own` could only ever have meant "contacts I am somehow near", and the
+      honest reading is that it meant nothing. The successor agrees: the route
+      this key's list is deprecated towards, `party:contacts:view`, is not
+      scopable, and `permissions/party.ts` declares no scopable key at all.
+
+      Removing the promise rather than inventing an owner to satisfy it: a key
+      that offers a restriction it cannot apply is worse than one that does not
+      offer it, because the grant is accepted, stored and shown back on the
+      access screen while every row stays visible.
+
+      `crm:contacts:manage` was never scopable, so nothing changes on the write
+      side. Pinned by `crm-contacts-scope.spec.ts`; the already-issued `own` and
+      `team` offers are withdrawn from existing databases by migration 0670,
+      because `PermissionCatalogSyncService` only ever inserts into
+      `permission_supported_scopes` and would have left them standing.
+    */
     name: "crm:contacts:view",
     resource: "crm:contacts",
     action: "view",
     description: "View CRM contacts",
-    scopable: true,
   },
   {
     name: "crm:contacts:manage",
@@ -338,12 +373,6 @@ export const CRM_PERMISSIONS: Permission[] = [
     resource: "crm:quotes",
     action: "approve",
     description: "Approve or reject quotes requiring approval",
-  },
-  {
-    name: "crm:contacts:merge",
-    resource: "crm:contacts",
-    action: "merge",
-    description: "Merge duplicate CRM contacts",
   },
   {
     name: "crm:organizations:merge",

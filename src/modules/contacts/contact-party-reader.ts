@@ -1,4 +1,5 @@
 import { eq, isNull, sql, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { businessParties, contactPartyMap } from "../../db/schema/party";
 
 /**
@@ -96,4 +97,37 @@ export function contactPartyScope(orgId: string): SQL[] {
 /** One contact, by the numeric id everything outside Party still holds. */
 export function contactIdIs(contactId: number): SQL {
   return eq(contactPartyMap.contactId, contactId);
+}
+
+/** A second reference to the map, to ask whether a lower id names the same party. */
+const lowerMap = alias(contactPartyMap, "lower_contact_map");
+
+/**
+ * One row per party, for the reads that would otherwise show a person twice.
+ *
+ * `party_id` is deliberately not unique on this map: `PartyMergeService`
+ * re-points the loser's row onto the survivor so an old id in a bookmark or a
+ * foreign key still resolves. A party therefore answers to several contact ids
+ * after a merge, and every read starting `FROM contact_party_map` returns one
+ * row per alias — which is the merged-away duplicate reappearing on the list
+ * that merge was called to clean up.
+ *
+ * Lowest id wins, the same rule `crmOrgIdsOfParties` resolves a party's
+ * `crm_organizations` id by, and for the same reason: any alias is a correct
+ * answer to "which contact is this", and picking deterministically is what stops
+ * the answer flapping between two of them.
+ *
+ * **List reads only.** A point read (`getContact`, `assertContactAccess`,
+ * anything reached by `contactIdIs`) must still resolve a non-canonical alias,
+ * or the bookmark the merge was careful to keep working 404s instead. So this is
+ * a predicate the collection reads opt into rather than part of
+ * `contactPartyScope`, which they all share.
+ */
+export function canonicalContactOnly(orgId: string): SQL {
+  return sql`not exists (
+    select 1 from ${lowerMap}
+    where ${lowerMap.organizationId} = ${orgId}
+      and ${lowerMap.partyId} = ${contactPartyMap.partyId}
+      and ${lowerMap.contactId} < ${contactPartyMap.contactId}
+  )`;
 }

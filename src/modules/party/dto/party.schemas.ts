@@ -119,6 +119,48 @@ export const partyMergeSchema = z
   .object({
     leftPartyId: z.string().uuid(),
     rightPartyId: z.string().uuid(),
+    /**
+     * Which of the two the caller chose to keep.
+     *
+     * Optional because an unattended merge has nobody to ask, and `merge` then
+     * falls back to `chooseSurvivor` — which keeps the older record, the right
+     * default for a decision nobody made. It is the wrong answer the moment
+     * somebody did: `planMerge` resolves every field conflict in the survivor's
+     * favour, so keeping the other one hands a stale stub's name and domain to
+     * the record the user was looking straight at, and reports success. This
+     * route had no way to say it at all, so the merge dialog's whole question
+     * was unanswerable over HTTP; `CrmOrganizationsService.mergeOrganizations`
+     * has always passed it on the service call.
+     *
+     * `merge` rejects a value naming neither party rather than ignoring it.
+     */
+    preferSurvivorPartyId: z.string().uuid().optional(),
+  })
+  .strict();
+
+/** The merge ledger's scan window; see `listMerges`. */
+export const partyMergeListQuerySchema = z
+  .object({
+    page: pageNumberField,
+    limit: pageSizeField(20, 100),
+    /**
+     * Reverted merges are hidden by default.
+     *
+     * The list exists so a merge can be undone after the toast is gone, and one
+     * already undone is not an action — it is history. `true` shows both, for
+     * the reader asking what happened to a record rather than what they can
+     * still take back.
+     */
+    includeReverted: z.coerce.boolean().default(false),
+  })
+  .strict();
+
+/** The duplicate queue's scan window; see `listCandidates`. */
+export const partyDuplicateQuerySchema = z
+  .object({
+    page: pageNumberField,
+    limit: pageSizeField(20, 100),
+    status: z.enum(["PENDING", "MERGED", "DISMISSED"]).default("PENDING"),
   })
   .strict();
 
@@ -147,4 +189,6 @@ export type CreateContactInput = z.infer<typeof createContactSchema>;
 export type UpdateContactInput = z.infer<typeof updateContactSchema>;
 export type PartyRoleInput = z.infer<typeof partyRoleSchema>;
 export type PartyMergeInput = z.infer<typeof partyMergeSchema>;
+export type PartyMergeListQuery = z.infer<typeof partyMergeListQuerySchema>;
+export type PartyDuplicateQuery = z.infer<typeof partyDuplicateQuerySchema>;
 export type MirrorDivergenceQuery = z.infer<typeof mirrorDivergenceQuerySchema>;

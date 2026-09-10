@@ -1,5 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull } from "drizzle-orm";
+import { aliasedTable } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
 import { businessParties, partyDuplicateCandidates, partyRoles } from "../../db/schema";
@@ -208,17 +209,111 @@ export class PartyRolesService {
     return result;
   }
 
-  async listCandidates(organizationId: string, status = "PENDING") {
-    return this.db
-      .select()
-      .from(partyDuplicateCandidates)
-      .where(
-        and(
-          eq(partyDuplicateCandidates.organizationId, organizationId),
-          eq(partyDuplicateCandidates.status, status),
-        ),
-      )
-      .limit(100);
+  /**
+   * The queue, with both records named rather than identified.
+   *
+   * The candidate row holds two party ids and nothing else about them, so
+   * returning it raw makes a reviewer decide whether two businesses are the same
+   * from a pair of UUIDs. Both sides are joined in and projected to the fields
+   * the decision actually turns on — the name, the address and the line the
+   * detector matched on — which is also what keeps a party id from reaching a
+   * screen (frontend §5).
+   *
+   * The join is an inner one on both sides and re-states the tenant on each,
+   * rather than leaning on the candidate row's own `organization_id`: a party
+   * hard-deleted out from under a stale candidate drops the row from the queue
+   * instead of rendering half a pair, and a party id in the row cannot reach
+   * another tenant's record even if it were tampered with.
+   */
+  async listCandidates(
+    organizationId: string,
+    query: { page: number; limit: number; status: string },
+  ) {
+    const low = aliasedTable(businessParties, "low_party");
+    const high = aliasedTable(businessParties, "high_party");
+
+    const where = and(
+      eq(partyDuplicateCandidates.organizationId, organizationId),
+      eq(partyDuplicateCandidates.status, query.status),
+      eq(low.organizationId, organizationId),
+      eq(high.organizationId, organizationId),
+      isNull(low.deletedAt),
+      isNull(high.deletedAt),
+    );
+
+    const joined = () =>
+      this.db
+        .select({
+          candidateId: partyDuplicateCandidates.candidateId,
+          score: partyDuplicateCandidates.score,
+          signals: partyDuplicateCandidates.signals,
+          blockers: partyDuplicateCandidates.blockers,
+          status: partyDuplicateCandidates.status,
+          detectedAt: partyDuplicateCandidates.detectedAt,
+          lowPartyId: low.partyId,
+          lowName: low.name,
+          lowEmail: low.email,
+          lowPhone: low.phone,
+          lowKind: low.partyKind,
+          lowCreatedAt: low.createdAt,
+          highPartyId: high.partyId,
+          highName: high.name,
+          highEmail: high.email,
+          highPhone: high.phone,
+          highKind: high.partyKind,
+          highCreatedAt: high.createdAt,
+        })
+        .from(partyDuplicateCandidates)
+        .innerJoin(low, eq(low.partyId, partyDuplicateCandidates.lowPartyId))
+        .innerJoin(high, eq(high.partyId, partyDuplicateCandidates.highPartyId));
+
+    const [rows, totals] = await Promise.all([
+      joined()
+        .where(where)
+        // Strongest first: a reviewer working down the queue should meet the
+        // pairs most likely to be one business before the marginal ones.
+        .orderBy(desc(partyDuplicateCandidates.score), asc(partyDuplicateCandidates.candidateId))
+        .limit(query.limit)
+        .offset((query.page - 1) * query.limit),
+      this.db
+        .select({ total: count() })
+        .from(partyDuplicateCandidates)
+        .innerJoin(low, eq(low.partyId, partyDuplicateCandidates.lowPartyId))
+        .innerJoin(high, eq(high.partyId, partyDuplicateCandidates.highPartyId))
+        .where(where),
+    ]);
+
+    return {
+      data: rows.map((row) => ({
+        candidateId: row.candidateId,
+        score: row.score,
+        signals: row.signals ?? [],
+        blockers: row.blockers ?? [],
+        status: row.status,
+        detectedAt: row.detectedAt,
+        left: {
+          partyId: row.lowPartyId,
+          name: row.lowName,
+          email: row.lowEmail,
+          phone: row.lowPhone,
+          partyKind: row.lowKind,
+          createdAt: row.lowCreatedAt,
+        },
+        right: {
+          partyId: row.highPartyId,
+          name: row.highName,
+          email: row.highEmail,
+          phone: row.highPhone,
+          partyKind: row.highKind,
+          createdAt: row.highCreatedAt,
+        },
+      })),
+      pagination: {
+        page: query.page,
+        limit: query.limit,
+        total: totals[0]?.total ?? 0,
+      },
+    };
   }
 
   async dismissCandidate(

@@ -21,12 +21,8 @@ import { ContactRolesService } from "./contact-roles.service";
 import {
   contactRoleCreateSchema,
   contactRoleListSchema,
-  mergeContactsSchema,
-  duplicatesQuerySchema,
   type ContactRoleCreateInput,
   type ContactRoleListInput,
-  type MergeContactsInput,
-  type DuplicatesQueryInput,
 } from "./dto/contact-roles.schemas";
 
 @RequireModule("crm")
@@ -34,25 +30,6 @@ import {
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ContactRolesController {
   constructor(private readonly svc: ContactRolesService) {}
-
-  @Get("duplicates")
-  @RequirePermission("crm:contacts:view")
-  getDuplicates(
-    @Query(new ZodValidationPipe(duplicatesQuerySchema)) query: DuplicatesQueryInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.svc.getDuplicateContacts(u.orgId, query);
-  }
-
-  @Post("merge")
-  @HttpCode(200)
-  @RequirePermission("crm:contacts:merge")
-  mergeContacts(
-    @Body(new ZodValidationPipe(mergeContactsSchema)) body: MergeContactsInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.svc.mergeContacts(u.orgId, body, u.userId);
-  }
 
   @Get(":contactId/roles")
   @RequirePermission("crm:contacts:view")
