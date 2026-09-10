@@ -1,3 +1,4 @@
+import { ScopedRead } from "../access/scoped-read";
 import type { Db } from "../../db/drizzle.module";
 import { LeadsReportsService } from "./leads-reports.service";
 
@@ -40,7 +41,7 @@ describe("LeadsReportsService — cross-tenant isolation", () => {
     const teamReports = { getSalesLeaderboard: jest.fn().mockResolvedValue({}) };
     const access = { getDataScopeForUser: jest.fn(), membersWithPermission: jest.fn().mockResolvedValue([]) };
     const svc = new LeadsReportsService(db, cache as never, teamReports as never, access as never);
-    await svc.getLeadAnalytics(ATTACKER, {});
+    await svc.getLeadAnalytics(ScopedRead.of(ATTACKER, "user-1", "all"), {});
     const allVals = where.mock.calls.flat().flatMap((c: unknown) => sqlValues(c));
     expect(allVals).toContain(ATTACKER);
   });
@@ -53,7 +54,7 @@ describe("LeadsReportsService — cross-tenant isolation", () => {
     const teamReports = { getSalesLeaderboard: jest.fn().mockResolvedValue({}) };
     const access = { getDataScopeForUser: jest.fn(), membersWithPermission: jest.fn().mockResolvedValue([]) };
     const svc = new LeadsReportsService(db, cache as never, teamReports as never, access as never);
-    const result = await svc.getLeadAnalytics(OWNER, {});
+    const result = await svc.getLeadAnalytics(ScopedRead.of(OWNER, "user-1", "all"), {});
     expect(result).toBeDefined();
   });
 });

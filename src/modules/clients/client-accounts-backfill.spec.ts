@@ -1,4 +1,5 @@
 import { ClientAccountsService } from "./client-accounts.service";
+import { ScopedRead } from "../access/scoped-read";
 
 const registerAfterCommit = jest.fn();
 
@@ -76,7 +77,7 @@ describe("client account backfill — the statement that aborted GET /clients", 
   it("casts the seeded status to the enum, never to text", async () => {
     const { service, execute } = makeHarness();
 
-    await service.getClientAccounts("org-1", "all", "user-1", {} as never);
+    await service.getClientAccounts(ScopedRead.of("org-1", "user-1", "all"), {} as never);
 
     expect(execute).toHaveBeenCalled();
     const statement = sqlText(execute.mock.calls[0]?.[0]);
@@ -92,7 +93,7 @@ describe("client account backfill — the statement that aborted GET /clients", 
       return true;
     });
 
-    await service.getClientAccounts("org-1", "all", "user-1", {} as never);
+    await service.getClientAccounts(ScopedRead.of("org-1", "user-1", "all"), {} as never);
 
     expect(registerAfterCommit).toHaveBeenCalledTimes(1);
     expect(hook).toBeDefined();
@@ -116,7 +117,7 @@ describe("client account backfill — the statement that aborted GET /clients", 
       return true;
     });
 
-    await service.getClientAccounts("org-1", "all", "user-1", {} as never);
+    await service.getClientAccounts(ScopedRead.of("org-1", "user-1", "all"), {} as never);
 
     await expect(hook?.()).rejects.toThrow("insert exploded");
   });
@@ -124,7 +125,7 @@ describe("client account backfill — the statement that aborted GET /clients", 
   it("runs the backfill inline when there is no ambient transaction to defer past", async () => {
     const { service, execute } = makeHarness();
 
-    await service.getClientAccounts("org-1", "all", "user-1", {} as never);
+    await service.getClientAccounts(ScopedRead.of("org-1", "user-1", "all"), {} as never);
 
     expect(registerAfterCommit).toHaveBeenCalledTimes(1);
     expect(execute).toHaveBeenCalledTimes(1);

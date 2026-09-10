@@ -1,3 +1,4 @@
+import { ScopedRead } from "../access/scoped-read";
 import { and } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { decodeCursor, encodeCursor } from "../../common/pagination/cursor";
@@ -118,7 +119,7 @@ describe("ContactsService — keyset pagination", () => {
     const { db, whereConds } = buildChain([[contactRow(50, "Carol")]], []);
     const svc = buildService(db);
 
-    await svc.list("org-1", "user-1", "all", { limit: 2, cursor });
+    await svc.list(ScopedRead.of("org-1", "user-1", "all"), { limit: 2, cursor });
 
     const [capturedCond] = whereConds;
     const { sql: sqlText } = renderWhereArg(capturedCond);
@@ -142,13 +143,13 @@ describe("ContactsService — keyset pagination", () => {
     );
     const svc = buildService(db);
 
-    const page1 = await svc.list("org-1", "user-1", "all", { limit: 2 });
+    const page1 = await svc.list(ScopedRead.of("org-1", "user-1", "all"), { limit: 2 });
 
     expect(page1.hasMore).toBe(true);
     expect(decodeCursor(page1.nextCursor)).toEqual({ sortValue: "Bob", id: "3" });
 
     const cursor2 = page1.nextCursor ?? undefined;
-    const page2 = await svc.list("org-1", "user-1", "all", { limit: 2, cursor: cursor2 });
+    const page2 = await svc.list(ScopedRead.of("org-1", "user-1", "all"), { limit: 2, cursor: cursor2 });
 
     expect(page2.hasMore).toBe(false);
     expect(page2.nextCursor).toBeNull();
@@ -171,11 +172,11 @@ describe("ContactsService — keyset pagination", () => {
     );
     const svc = buildService(db);
 
-    const page1 = await svc.list("org-1", "user-1", "all", { limit: 2 });
+    const page1 = await svc.list(ScopedRead.of("org-1", "user-1", "all"), { limit: 2 });
     expect(page1.total).toBe(3);
 
     const cursor2 = page1.nextCursor ?? undefined;
-    const page2 = await svc.list("org-1", "user-1", "all", { limit: 2, cursor: cursor2 });
+    const page2 = await svc.list(ScopedRead.of("org-1", "user-1", "all"), { limit: 2, cursor: cursor2 });
     expect(page2.total).toBeUndefined();
   });
 
@@ -187,7 +188,7 @@ describe("ContactsService — keyset pagination", () => {
     const { db } = buildChain([[alice, bob, carol]], [[{ count: 3 }]]);
     const svc = buildService(db);
 
-    const result = await svc.list("org-1", "user-1", "all", { limit: 2, cursor: "not-a-valid-cursor!!!" });
+    const result = await svc.list(ScopedRead.of("org-1", "user-1", "all"), { limit: 2, cursor: "not-a-valid-cursor!!!" });
 
     expect(result.total).toBe(3);
     expect(result.items).toHaveLength(2);

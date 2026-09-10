@@ -1,3 +1,4 @@
+import { ScopedRead } from "../access/scoped-read";
 import { ContactsService } from "./contacts.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { createMirroredContacts } from "../party/party-legacy-contacts";
@@ -148,7 +149,7 @@ describe("ContactsService bulk import", () => {
     const service = new ContactsService(db as never, {} as never, {} as never);
 
     const chunks: string[] = [];
-    for await (const chunk of service.exportCsvChunks("org-1", "user-1", "all")) chunks.push(chunk);
+    for await (const chunk of service.exportCsvChunks(ScopedRead.of("org-1", "user-1", "all"))) chunks.push(chunk);
     const csv = chunks.join("");
 
     expect(db.transaction).toHaveBeenCalledTimes(2);
@@ -168,7 +169,7 @@ describe("ContactsService bulk import", () => {
       {} as never,
     );
 
-    await service.list("org-1", "user-1", "all", { limit: 25 });
+    await service.list(ScopedRead.of("org-1", "user-1", "all"), { limit: 25 });
 
     expect(cachedVersioned).toHaveBeenCalledWith(
       CACHE_KEYS.contactsListNamespace("org-1"),

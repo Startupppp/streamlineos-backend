@@ -1,6 +1,6 @@
 import type { Db } from "../../db/drizzle.module";
 import { DealsImportExportService } from "./deals-import-export.service";
-import type { DataScope } from "../access/access.types";
+import { ScopedRead } from "../access/scoped-read";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -63,7 +63,7 @@ describe("DealsImportExportService.exportCsv — cross-tenant isolation + DataSc
     const planLimits = { assertWithinLimit: jest.fn() };
     const crud = {} as never;
     const svc = new DealsImportExportService(db, planLimits as never, crud);
-    await svc.exportCsv(ORG_B, USER_A, "all" as DataScope);
+    await svc.exportCsv(ScopedRead.of(ORG_B, USER_A, "all"));
     const vals = where.mock.calls.flat().flatMap((c: unknown) => sqlValues(c));
     expect(vals).toContain(ORG_B);
     expect(vals).not.toContain(ORG_A);
@@ -74,7 +74,7 @@ describe("DealsImportExportService.exportCsv — cross-tenant isolation + DataSc
     const planLimits = { assertWithinLimit: jest.fn() };
     const crud = {} as never;
     const svc = new DealsImportExportService(db, planLimits as never, crud);
-    await svc.exportCsv(ORG_A, USER_A, "own" as DataScope);
+    await svc.exportCsv(ScopedRead.of(ORG_A, USER_A, "own"));
     const vals = where.mock.calls.flat().flatMap((c: unknown) => sqlValues(c));
     expect(vals).toContain(USER_A);
   });
@@ -84,7 +84,7 @@ describe("DealsImportExportService.exportCsv — cross-tenant isolation + DataSc
     const planLimits = { assertWithinLimit: jest.fn() };
     const crud = {} as never;
     const svc = new DealsImportExportService(db, planLimits as never, crud);
-    const result = await svc.exportCsv(ORG_A, USER_A, "none" as DataScope);
+    const result = await svc.exportCsv(ScopedRead.of(ORG_A, USER_A, "none"));
     expect(result.rowCount).toBe(0);
     expect(result.truncated).toBe(false);
     expect(db.select).not.toHaveBeenCalled();

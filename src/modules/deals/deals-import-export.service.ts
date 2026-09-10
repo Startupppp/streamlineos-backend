@@ -10,8 +10,7 @@ import { logSideEffectFailure } from "../../common/logger/side-effect";
 import { toCsv } from "../inventory/import-export/csv.util";
 import { DealsCrudService } from "./deals-crud.service";
 import type { BulkImportDealsInput } from "./dto/deals.schemas";
-import type { DataScope } from "../access/access.types";
-import { applyScope } from "../access/apply-scope";
+import type { ScopedRead } from "../access/scoped-read";
 
 @Injectable()
 export class DealsImportExportService {
@@ -90,7 +89,7 @@ export class DealsImportExportService {
     return { created, failed };
   }
 
-  async exportCsv(orgId: string, userId: string, scope: DataScope): Promise<{ csv: string; truncated: boolean; rowCount: number }> {
+  async exportCsv(read: ScopedRead): Promise<{ csv: string; truncated: boolean; rowCount: number }> {
     const headers = [
       "id",
       "name",
@@ -104,8 +103,13 @@ export class DealsImportExportService {
       "notes",
       "createdAt",
     ];
-    if (scope === "none") return { csv: toCsv(headers, []), truncated: false, rowCount: 0 };
-    const rows = await this.db
+    const rows = await read.read(
+      {
+        tenant: deals.orgId,
+        scope: { columns: { ownerColumn: deals.assignedToId } },
+        and: [isNull(deals.deletedAt)],
+      },
+      ({ sql: where }) => this.db
       .select({
         id: deals.id,
         name: deals.name,
@@ -121,9 +125,11 @@ export class DealsImportExportService {
       })
       .from(deals)
       .leftJoin(users, eq(deals.assignedToId, users.id))
-      .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), applyScope(scope, orgId, userId, { ownerColumn: deals.assignedToId })))
+      .where(where)
       .orderBy(desc(deals.updatedAt))
-      .limit(EXPORT_ROW_CAP);
+      .limit(EXPORT_ROW_CAP),
+      () => [],
+    );
 
     const truncated = rows.length === EXPORT_ROW_CAP;
     return {

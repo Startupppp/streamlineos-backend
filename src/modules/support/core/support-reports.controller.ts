@@ -47,7 +47,9 @@ export class SupportReportsController {
     @Query() filters: SupportReportFiltersInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveSupportTicketsViewScope(this.access, u);
+    const read = await resolveSupportTicketsViewScope(this.access, u);
+    // An agent-performance report groups by agent; below `all` the only agent the caller may see is themselves.
+    const scope = read.rawScope("agent-performance report narrows its GROUP BY subject, not a row predicate");
     const scopeToUserId = scope === "all" ? undefined : u.userId;
     return this.reports.getAgentPerformance(u.orgId, { ...filters, scopeToUserId });
   }

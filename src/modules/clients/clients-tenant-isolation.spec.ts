@@ -1,3 +1,4 @@
+import { ScopedRead } from "../access/scoped-read";
 import type { Db } from "../../db/drizzle.module";
 import { ClientsService } from "./clients.service";
 import { ClientOnboardingService } from "./client-onboarding.service";
@@ -87,7 +88,7 @@ describe("ClientsService — cross-tenant isolation", () => {
   it("listClients: queries scoped to attacker org (deny)", async () => {
     const { db, where } = makeDb([]);
     const svc = buildSvc(db);
-    const result = await svc.listClients(ATTACKER, "user-1", "all");
+    const result = await svc.listClients(ScopedRead.of(ATTACKER, "user-1", "all"));
     expect(result).toHaveLength(0);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
@@ -97,7 +98,7 @@ describe("ClientsService — cross-tenant isolation", () => {
     const row = { id: 1, orgId: OWNER, name: "Acme" };
     const { db } = makeDb([row]);
     const svc = buildSvc(db);
-    const result = await svc.listClients(OWNER, "user-1", "all");
+    const result = await svc.listClients(ScopedRead.of(OWNER, "user-1", "all"));
     expect(result).toHaveLength(1);
   });
 });
@@ -137,7 +138,7 @@ describe("ClientAccountsService — cross-tenant isolation", () => {
   it("getClientAccounts: queries scoped to attacker org (cross-tenant isolation deny)", async () => {
     const { db, findMany } = makeQueryDb([]);
     const svc = buildSvc(db);
-    const result = await svc.getClientAccounts(ATTACKER, "all", "user-1", {});
+    const result = await svc.getClientAccounts(ScopedRead.of(ATTACKER, "user-1", "all"), {});
     const r = result as Record<string, unknown>;
     const arr = (r.accounts ?? r.items ?? []) as unknown[];
     expect(arr).toHaveLength(0);
@@ -149,7 +150,7 @@ describe("ClientAccountsService — cross-tenant isolation", () => {
     const row = { id: 1, orgId: OWNER, clientName: "Acme", salesRep: null, assignedCrm: null };
     const { db, findMany } = makeQueryDb([row]);
     const svc = buildSvc(db);
-    await svc.getClientAccounts(OWNER, "all", "user-1", {});
+    await svc.getClientAccounts(ScopedRead.of(OWNER, "user-1", "all"), {});
     expect(findMany).toHaveBeenCalled();
     expect(sqlValues(findMany.mock.calls[0]?.[0]?.where)).toContain(OWNER);
   });

@@ -70,8 +70,8 @@ export class ContactsController {
     @Query() filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveContactsViewScope(this.access, u);
-    return this.contacts.list(u.orgId, u.userId, scope, filters);
+    const read = await resolveContactsViewScope(this.access, u);
+    return this.contacts.list(read, filters);
   }
 
   @Deprecated({ sunset: "2026-10-25", link: "/party/parties/:partyId/contacts" })
@@ -109,8 +109,8 @@ export class ContactsController {
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ): Promise<void> {
-    const scope = await resolveContactsViewScope(this.access, u);
-    for await (const chunk of this.contacts.exportCsvChunks(u.orgId, u.userId, scope)) {
+    const read = await resolveContactsViewScope(this.access, u);
+    for await (const chunk of this.contacts.exportCsvChunks(read)) {
       if (res.destroyed) return;
       if (!res.write(chunk)) await once(res, "drain");
     }
@@ -125,8 +125,8 @@ export class ContactsController {
     @Query() query: SearchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveContactsViewScope(this.access, u);
-    return this.contacts.search(u.orgId, u.userId, scope, query.q);
+    const read = await resolveContactsViewScope(this.access, u);
+    return this.contacts.search(read, query.q);
   }
 
   @Get(":contactId")

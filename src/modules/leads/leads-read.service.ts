@@ -9,6 +9,7 @@ import {
   lte,
   or,
   inArray,
+  isNull,
   sql,
   type SQL,
 } from "drizzle-orm";
@@ -18,13 +19,13 @@ import { leadActivities, users, crmCampaigns } from "../../db/schema";
 import { businessParties, leadPartyMap } from "../../db/schema/party";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import type { DataScope } from "../access/access.types";
+import type { ScopedRead } from "../access/scoped-read";
 import {
   LEAD_PARTY_COLUMNS,
   LEAD_PARTY_JOIN,
   leadIdIs,
   leadPartyScope,
-  pushLeadPartyViewScope,
+  LEAD_PARTY_SCOPE,
 } from "./lead-party-reader";
 import {
   LeadsBoardService,
@@ -33,7 +34,7 @@ import {
 } from "./leads-board.service";
 import type { ListInput } from "./dto/lead.schemas";
 
-export type ListFilters = ListInput & { userId?: string; scope?: DataScope };
+export type ListFilters = ListInput & { read: ScopedRead };
 
 const COMPANY_SEARCH_CAP = 500;
 
@@ -66,34 +67,35 @@ export class LeadsReadService {
     );
   }
 
-  async listLeads(orgId: string, filters?: ListFilters) {
-    const where = leadPartyScope(orgId);
-
-    pushLeadPartyViewScope(where, orgId, filters?.scope, filters?.userId);
-    if (filters?.status) where.push(eq(LEAD_PARTY_COLUMNS.status, filters.status));
-    if (filters?.priority) where.push(eq(LEAD_PARTY_COLUMNS.priority, filters.priority));
-    if (filters?.source) where.push(eq(LEAD_PARTY_COLUMNS.source, filters.source));
-    if (filters?.assignedToId)
-      where.push(eq(LEAD_PARTY_COLUMNS.assignedToId, filters.assignedToId));
-    if (filters?.dateFrom)
-      where.push(gte(LEAD_PARTY_COLUMNS.createdAt, new Date(filters.dateFrom)));
-    if (filters?.dateTo) where.push(lte(LEAD_PARTY_COLUMNS.createdAt, new Date(filters.dateTo)));
-    if (filters?.search) {
+  async listLeads(orgId: string, filters: ListFilters) {
+    const read = filters.read;
+    const domain: (SQL | undefined)[] = [
+      eq(leadPartyMap.organizationId, orgId),
+      isNull(businessParties.deletedAt),
+      filters.status ? eq(LEAD_PARTY_COLUMNS.status, filters.status) : undefined,
+      filters.priority ? eq(LEAD_PARTY_COLUMNS.priority, filters.priority) : undefined,
+      filters.source ? eq(LEAD_PARTY_COLUMNS.source, filters.source) : undefined,
+      filters.assignedToId ? eq(LEAD_PARTY_COLUMNS.assignedToId, filters.assignedToId) : undefined,
+      filters.dateFrom ? gte(LEAD_PARTY_COLUMNS.createdAt, new Date(filters.dateFrom)) : undefined,
+      filters.dateTo ? lte(LEAD_PARTY_COLUMNS.createdAt, new Date(filters.dateTo)) : undefined,
+    ];
+    if (filters.search) {
       const like = `%${filters.search}%`;
       const companyCondition = await this.companySearchCondition(filters.search, like);
-      const combined = or(
-        sql`${LEAD_PARTY_COLUMNS.name} ILIKE ${like}`,
-        sql`${LEAD_PARTY_COLUMNS.email} ILIKE ${like}`,
-        sql`${LEAD_PARTY_COLUMNS.phone} ILIKE ${like}`,
-        companyCondition,
+      domain.push(
+        or(
+          sql`${LEAD_PARTY_COLUMNS.name} ILIKE ${like}`,
+          sql`${LEAD_PARTY_COLUMNS.email} ILIKE ${like}`,
+          sql`${LEAD_PARTY_COLUMNS.phone} ILIKE ${like}`,
+          companyCondition,
+        ),
       );
-      if (combined) where.push(combined);
     }
 
-    const sortBy = filters?.sortBy ?? "createdAt";
-    const sortOrder = filters?.sortOrder ?? "desc";
-    const limit = filters?.limit ?? 50;
-    const position = decodeCursor(filters?.cursor);
+    const sortBy = filters.sortBy ?? "createdAt";
+    const sortOrder = filters.sortOrder ?? "desc";
+    const limit = filters.limit ?? 50;
+    const position = decodeCursor(filters.cursor);
 
     const colMap = {
       name: LEAD_PARTY_COLUMNS.name,
@@ -119,8 +121,19 @@ export class LeadsReadService {
       : undefined;
 
     const orderFn = sortOrder === "asc" ? asc(sortableCol) : desc(sortableCol);
-    const whereClause = keysetCond ? and(...where, keysetCond) : and(...where);
-    const baseWhereClause = and(...where);
+    const spec = { tenant: businessParties.organizationId, scope: LEAD_PARTY_SCOPE };
+    const whereClause = read.compose(
+      { ...spec, and: [...domain, keysetCond] },
+      (clause) => clause.sql,
+      () => null,
+    );
+    const baseWhereClause = read.compose(
+      { ...spec, and: domain },
+      (clause) => clause.sql,
+      () => null,
+    );
+    if (whereClause === null || baseWhereClause === null)
+      return { leads: [], totalCount: 0, hasMore: false, nextCursor: null };
 
     const [rows, countResult] = await Promise.all([
       this.db
@@ -145,7 +158,7 @@ export class LeadsReadService {
         .where(whereClause)
         .orderBy(orderFn, desc(idCol))
         .limit(limit + 1),
-      filters?.cursor === undefined
+      filters.cursor === undefined
         ? this.db
             .select({ c: count() })
             .from(leadPartyMap)
@@ -177,11 +190,11 @@ export class LeadsReadService {
     };
   }
 
-  async getBoard(orgId: string, opts?: BoardOpts) {
+  async getBoard(orgId: string, opts: BoardOpts) {
     return this.boardService.getBoard(orgId, opts);
   }
 
-  async getStats(orgId: string, filters?: StatsFilters) {
+  async getStats(orgId: string, filters: StatsFilters) {
     return this.boardService.getStats(orgId, filters);
   }
 

@@ -1,5 +1,6 @@
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
+import { ScopedRead } from "../access/scoped-read";
 import { isScopable } from "../rbac/permissions";
 
 /**
@@ -31,9 +32,9 @@ export const ISSUES_VIEW_PERMISSION = "crm:issues:view";
 export async function resolveIssuesViewScope(
   access: PermissionScopeReader,
   u: CurrentUserContext,
-): Promise<DataScope> {
-  if (u.isOrgOwner) return "all";
-  if (!isScopable(ISSUES_VIEW_PERMISSION)) return "all";
+): Promise<ScopedRead> {
+  if (u.isOrgOwner) return ScopedRead.of(u.orgId, u.userId, "all");
+  if (!isScopable(ISSUES_VIEW_PERMISSION)) return ScopedRead.of(u.orgId, u.userId, "all");
   const resolved = await access.resolveUserPermissions(u.orgId, u.userId);
-  return resolved.get(ISSUES_VIEW_PERMISSION) ?? "none";
+  return ScopedRead.of(u.orgId, u.userId, resolved.get(ISSUES_VIEW_PERMISSION) ?? "none");
 }

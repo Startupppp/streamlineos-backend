@@ -152,32 +152,38 @@ export class GoalsService {
   async list(u: CurrentUserContext, filters: ListInput): Promise<ListResponse<GoalListItem>> {
     const { orgId, userId } = u;
     const membershipId = actingMembershipId(u.principal);
-    const scope = await resolveGoalsScope(this.access, u);
+    const read = await resolveGoalsScope(this.access, u);
 
-    const conditions: ReturnType<typeof and>[] = [eq(okrGoals.orgId, orgId), isNull(okrGoals.deletedAt)];
-
-    if (scope !== "all") {
-      const ownershipFilter = membershipId !== null
-        ? or(
-            eq(okrGoals.ownerMembershipId, membershipId),
-            eq(okrGoals.createdByMembershipId, membershipId),
-          )
-        : eq(okrGoals.ownerMembershipId, -1);
-      if (ownershipFilter) conditions.push(ownershipFilter);
-    }
-
-    if (filters.status) conditions.push(eq(okrGoals.status, filters.status));
-    if (filters.level) conditions.push(eq(okrGoals.level, filters.level));
-    if (filters.ownerId) conditions.push(sql`EXISTS (SELECT 1 FROM organization_members om WHERE om.org_id = ${orgId} AND om.user_id = ${filters.ownerId} AND om.id = ${okrGoals.ownerMembershipId})`);
-    if (filters.projectId !== undefined)
-      conditions.push(eq(okrGoals.projectId, filters.projectId));
-    if (filters.search)
-      conditions.push(ilike(okrGoals.title, `%${filters.search}%`));
+    // Ownership on a goal is a membership id on either the owner or the creator, so it is a domain predicate rather than a user column.
+    const ownGoal = membershipId !== null
+      ? or(
+          eq(okrGoals.ownerMembershipId, membershipId),
+          eq(okrGoals.createdByMembershipId, membershipId),
+        )
+      : eq(okrGoals.ownerMembershipId, -1);
 
     const limit = Math.min(filters.limit, 100);
     const offset = (filters.page - 1) * limit;
-    const where = and(...conditions);
     const page = { page: filters.page, pageSize: limit };
+    const where = read.compose(
+      {
+        tenant: okrGoals.orgId,
+        scope: { own: ownGoal ?? eq(okrGoals.ownerMembershipId, -1) },
+        and: [
+          isNull(okrGoals.deletedAt),
+          filters.status ? eq(okrGoals.status, filters.status) : undefined,
+          filters.level ? eq(okrGoals.level, filters.level) : undefined,
+          filters.ownerId
+            ? sql`EXISTS (SELECT 1 FROM organization_members om WHERE om.org_id = ${orgId} AND om.user_id = ${filters.ownerId} AND om.id = ${okrGoals.ownerMembershipId})`
+            : undefined,
+          filters.projectId !== undefined ? eq(okrGoals.projectId, filters.projectId) : undefined,
+          filters.search ? ilike(okrGoals.title, `%${filters.search}%`) : undefined,
+        ],
+      },
+      (clause) => clause.sql,
+      () => null,
+    );
+    if (where === null) return buildListResponse([], 0, page);
 
     const [goals, [totalRow]] = await Promise.all([
       this.db.query.okrGoals.findMany({

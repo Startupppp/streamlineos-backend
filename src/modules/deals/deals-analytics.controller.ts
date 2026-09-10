@@ -55,8 +55,8 @@ export class DealsAnalyticsController {
   @RequirePermission("crm:deals:read")
   @ResponseSchema(dealAgingSchema)
   async getAging(@CurrentUser() u: CurrentUserContext) {
-    const scope = await resolveDealsReadScope(this.access, u);
-    return this.analytics.getAging(u.orgId, u.userId, scope);
+    const read = await resolveDealsReadScope(this.access, u);
+    return this.analytics.getAging(read);
   }
 
   @Get("forecast")

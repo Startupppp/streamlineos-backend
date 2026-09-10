@@ -63,8 +63,8 @@ export class LeadsReportsController {
     @Query() query: AnalyticsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveLeadsViewScope(this.access, u);
-    return this.reports.getLeadAnalytics(u.orgId, query, { scope, userId: u.userId });
+    const read = await resolveLeadsViewScope(this.access, u);
+    return this.reports.getLeadAnalytics(read, query);
   }
 
   @Get("dashboard-metrics")
@@ -99,11 +99,8 @@ export class LeadsReportsController {
   @RequirePermission("crm:leads:view")
   @ResponseSchema(leadsSlaAlertsSchema)
   async getSlaAlerts(@CurrentUser() u: CurrentUserContext) {
-    const scope = await resolveLeadsViewScope(this.access, u);
-    return this.reports.getLeadSlaAlerts(u.orgId, {
-      ownScope: scope === "own" || scope === "none",
-      userId: u.userId,
-    });
+    const read = await resolveLeadsViewScope(this.access, u);
+    return this.reports.getLeadSlaAlerts(read);
   }
 
   @Get("follow-ups")
@@ -156,8 +153,8 @@ export class LeadsReportsController {
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ) {
-    const scope = await resolveLeadsViewScope(this.access, u);
-    const result = await this.exports.exportCsv(u.orgId, u.userId, scope, query);
+    const read = await resolveLeadsViewScope(this.access, u);
+    const result = await this.exports.exportCsv(read, query);
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", 'attachment; filename="leads-export.csv"');
     if (result.truncated) res.setHeader("X-Truncated", "true");

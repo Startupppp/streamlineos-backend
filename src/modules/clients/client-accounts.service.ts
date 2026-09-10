@@ -1,8 +1,8 @@
 import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { logSideEffectFailure } from "../../common/logger/side-effect";
 import { eq, and, desc, sql, count, or } from "drizzle-orm";
-import type { DataScope } from "../access/access.types";
-import { applyClientAccountsScope } from "./client-accounts-scope";
+import type { ScopedRead } from "../access/scoped-read";
+import { CLIENT_ACCOUNTS_SCOPE } from "./client-accounts-scope";
 import { Redis } from "@upstash/redis";
 import { clientAccounts, clientAccountActivities } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -41,83 +41,80 @@ export class ClientAccountsService {
     private readonly access: AccessService,
   ) {}
 
-  async getClientAccounts(
-    orgId: string,
-    scope: DataScope,
-    userId: string,
-    filters: ListAccountsInput,
-  ) {
+  async getClientAccounts(read: ScopedRead, filters: ListAccountsInput) {
+    const orgId = read.orgId;
     const backfill = () =>
       runClientAccountsBackfill(
         { db: this.db, redis: this.redis, access: this.access, logger: this.logger },
         orgId,
-        userId,
+        read.actorId,
       );
     if (!registerAfterCommit(backfill)) await backfill();
 
-    const f = [eq(clientAccounts.orgId, orgId)];
-    if (scope !== "all") f.push(applyClientAccountsScope(scope, orgId, userId));
-    if (filters.status) f.push(eq(clientAccounts.status, filters.status));
-    if (filters.search) {
-      const s = `%${filters.search}%`;
-      f.push(
-        or(
-          sql`${clientAccounts.clientName} ILIKE ${s}`,
-          sql`${clientAccounts.clientEmail} ILIKE ${s}`,
-          sql`${clientAccounts.clientPhone} ILIKE ${s}`,
-        )!,
-      );
-    }
-
+    const search = filters.search ? `%${filters.search}%` : undefined;
     const page = filters.page ?? 1;
     const limit = filters.limit ?? 25;
     const offset = (page - 1) * limit;
+    const empty = { accounts: [], totalCount: 0, page, totalPages: 0 };
 
-    const [items, [countResult]] = await Promise.all([
-      this.db.query.clientAccounts.findMany({
-        where: and(...f),
-        orderBy: [desc(clientAccounts.createdAt)],
-        limit,
-        offset,
-        with: {
-          salesRep: { columns: { id: true, name: true, image: true } },
-          assignedCrm: { columns: { id: true, name: true, image: true } },
-        },
-      }),
-      this.db.select({ count: count() }).from(clientAccounts).where(and(...f)),
-    ]);
-
-    return {
-      accounts: items,
-      totalCount: countResult?.count ?? 0,
-      page,
-      totalPages: Math.ceil((countResult?.count ?? 0) / limit),
-    };
-  }
-
-  getClientAccount(orgId: string, id: number, scope: DataScope = "all", userId?: string) {
-    return this.loadClientAccount(orgId, id, scope, userId);
-  }
-
-  private async loadClientAccount(
-    orgId: string,
-    id: number,
-    scope: DataScope = "all",
-    userId?: string,
-  ) {
-    const conditions = [eq(clientAccounts.id, id), eq(clientAccounts.orgId, orgId)];
-    if (scope !== "all" && userId) {
-      conditions.push(applyClientAccountsScope(scope, orgId, userId));
-    }
-
-    const account = await this.db.query.clientAccounts.findFirst({
-      where: and(...conditions),
-      with: {
-        salesRep: { columns: { id: true, name: true, image: true, email: true } },
-        assignedCrm: { columns: { id: true, name: true, image: true, email: true } },
-        lead: { columns: { id: true, name: true, source: true, priority: true } },
+    return read.read(
+      {
+        tenant: clientAccounts.orgId,
+        scope: CLIENT_ACCOUNTS_SCOPE,
+        and: [
+          filters.status ? eq(clientAccounts.status, filters.status) : undefined,
+          search
+            ? or(
+                sql`${clientAccounts.clientName} ILIKE ${search}`,
+                sql`${clientAccounts.clientEmail} ILIKE ${search}`,
+                sql`${clientAccounts.clientPhone} ILIKE ${search}`,
+              )
+            : undefined,
+        ],
       },
-    });
+      async ({ sql: where }) => {
+        const [items, [countResult]] = await Promise.all([
+          this.db.query.clientAccounts.findMany({
+            where,
+            orderBy: [desc(clientAccounts.createdAt)],
+            limit,
+            offset,
+            with: {
+              salesRep: { columns: { id: true, name: true, image: true } },
+              assignedCrm: { columns: { id: true, name: true, image: true } },
+            },
+          }),
+          this.db.select({ count: count() }).from(clientAccounts).where(where),
+        ]);
+        return {
+          accounts: items,
+          totalCount: countResult?.count ?? 0,
+          page,
+          totalPages: Math.ceil((countResult?.count ?? 0) / limit),
+        };
+      },
+      () => empty,
+    );
+  }
+
+  getClientAccount(read: ScopedRead, id: number) {
+    return this.loadClientAccount(read, id);
+  }
+
+  private async loadClientAccount(read: ScopedRead, id: number) {
+    const account = await read.read(
+      { tenant: clientAccounts.orgId, scope: CLIENT_ACCOUNTS_SCOPE, and: [eq(clientAccounts.id, id)] },
+      ({ sql: where }) =>
+        this.db.query.clientAccounts.findFirst({
+          where,
+          with: {
+            salesRep: { columns: { id: true, name: true, image: true, email: true } },
+            assignedCrm: { columns: { id: true, name: true, image: true, email: true } },
+            lead: { columns: { id: true, name: true, source: true, priority: true } },
+          },
+        }),
+      () => undefined,
+    );
     if (!account) return null;
 
     const activities = await this.db.query.clientAccountActivities.findMany({
@@ -166,17 +163,17 @@ export class ClientAccountsService {
     return activity;
   }
 
-  listRenewals(orgId: string, scope: DataScope, userId: string) {
-    const conditions = [eq(clientAccounts.orgId, orgId)];
-    if (scope !== "all") {
-      conditions.push(applyClientAccountsScope(scope, orgId, userId));
-    }
-    return this.db.query.clientAccounts.findMany({
-      where: and(...conditions),
-      with: { salesRep: { columns: { id: true, name: true } } },
-      orderBy: (t, { asc }) => [asc(t.clientName)],
-      limit: 100,
-    });
+  listRenewals(read: ScopedRead) {
+    return read.read(
+      { tenant: clientAccounts.orgId, scope: CLIENT_ACCOUNTS_SCOPE },
+      ({ sql: where }) => this.db.query.clientAccounts.findMany({
+        where,
+        with: { salesRep: { columns: { id: true, name: true } } },
+        orderBy: (t, { asc }) => [asc(t.clientName)],
+        limit: 100,
+      }),
+      () => [],
+    );
   }
 
   async updateRenewal(orgId: string, accountId: number, input: UpdateRenewalInput) {

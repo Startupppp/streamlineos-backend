@@ -1,3 +1,4 @@
+import { ScopedRead } from "../access/scoped-read";
 import type { Db } from "../../db/drizzle.module";
 import { ContactsService } from "./contacts.service";
 
@@ -47,7 +48,7 @@ describe("ContactsService — cross-tenant isolation", () => {
   it("search: returns nothing for a different org (cross-tenant isolation deny)", async () => {
     const { db, where } = makeDb([]);
     const svc = buildSvc(db);
-    const result = await svc.search(ATTACKER, "user-attacker", "all", "Alice");
+    const result = await svc.search(ScopedRead.of(ATTACKER, "user-attacker", "all"), "Alice");
     expect(result).toHaveLength(0);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
@@ -57,7 +58,7 @@ describe("ContactsService — cross-tenant isolation", () => {
     const row = { id: 1, orgId: OWNER, name: "Alice", email: "alice@owner.com" };
     const { db } = makeDb([row]);
     const svc = buildSvc(db);
-    const result = await svc.search(OWNER, "user-owner", "all", "Alice");
+    const result = await svc.search(ScopedRead.of(OWNER, "user-owner", "all"), "Alice");
     expect(result).toHaveLength(1);
   });
 });

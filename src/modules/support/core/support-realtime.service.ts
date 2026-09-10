@@ -6,7 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { AblyService } from "../../realtime/ably.service";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { resolveSupportTicketsViewScope } from "./support-tickets-scope";
+import { resolveSupportTicketsViewScope, supportTicketScope } from "./support-tickets-scope";
 
 /**
  * Bounds the capability document. Anyone with more assigned tickets than this is an
@@ -34,29 +34,22 @@ export class SupportRealtimeService {
       throw new ServiceUnavailableException("Realtime updates are not configured");
     }
 
-    const scope = await resolveSupportTicketsViewScope(this.access, u);
-    if (scope === "all") {
+    const read = await resolveSupportTicketsViewScope(this.access, u);
+    // An Ably capability is a channel wildcard or an id list, not a SQL predicate: the value itself decides which shape is issued.
+    if (read.rawScope("ably capability is a wildcard or an id list, never a predicate") === "all") {
       return this.ably.createSupportTokenRequest(u.userId, u.orgId, { wildcard: true });
     }
-    if (scope === "none") {
-      return this.ably.createSupportTokenRequest(u.userId, u.orgId, {
-        wildcard: false,
-        ticketIds: [],
-      });
-    }
 
-    const rows = await this.db
-      .select({ id: supportTickets.id })
-      .from(supportTickets)
-      .where(
-        // support_tickets carries no deleted_at — the table is not soft-deleted,
-        // so there is no deletion predicate to mirror from listTickets.
-        and(
-          eq(supportTickets.orgId, u.orgId),
-          sql`${supportTickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id = ${u.userId} AND status = 'ACTIVE')`,
-        ),
-      )
-      .limit(MAX_SCOPED_CHANNELS);
+    // support_tickets carries no deleted_at — the table is not soft-deleted, so there is no deletion predicate to mirror from listTickets.
+    const rows = await read.read(
+      { tenant: supportTickets.orgId, scope: supportTicketScope(u.orgId, u.userId) },
+      ({ sql: where }) => this.db
+        .select({ id: supportTickets.id })
+        .from(supportTickets)
+        .where(where)
+        .limit(MAX_SCOPED_CHANNELS),
+      () => [],
+    );
 
     return this.ably.createSupportTokenRequest(u.userId, u.orgId, {
       wildcard: false,

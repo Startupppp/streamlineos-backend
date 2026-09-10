@@ -25,7 +25,7 @@ import {
   type StageActor,
   type StageTransitionRow,
 } from "./deal-stage-ledger";
-import type { DataScope } from "../access/access.types";
+import type { ScopedRead } from "../access/scoped-read";
 import type {
   BulkImportDealsInput,
   CreateDealInput,
@@ -62,8 +62,8 @@ export class DealsService {
     private readonly importExport: DealsImportExportService,
   ) {}
 
-  listDeals(orgId: string, userId: string, query: ListDealsInput, scope: DataScope) {
-    return this.crud.listDeals(orgId, userId, query, scope);
+  listDeals(read: ScopedRead, query: ListDealsInput) {
+    return this.crud.listDeals(read, query);
   }
 
   createDeal(orgId: string, userId: string, input: CreateDealInput) {
@@ -110,8 +110,8 @@ export class DealsService {
     return this.importExport.bulkImport(orgId, userId, input);
   }
 
-  exportCsv(orgId: string, userId: string, scope: DataScope) {
-    return this.importExport.exportCsv(orgId, userId, scope);
+  exportCsv(read: ScopedRead) {
+    return this.importExport.exportCsv(read);
   }
 
   private async resolvePipelineStageMap(orgId: string, pipelineId: string | null): Promise<Map<string, { stageType: string; isTerminal: boolean; probability: number }>> {

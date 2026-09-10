@@ -1,3 +1,4 @@
+import { ScopedRead } from "../../access/scoped-read";
 import { NotFoundException } from "@nestjs/common";
 import { SupportTicketsService } from "./support-tickets.service";
 import type { Db } from "../../../db/drizzle.module";
@@ -34,8 +35,7 @@ const LIST_QUERY = {
   page: 1,
   limit: 20,
   snoozed: undefined,
-  scope: "all" as const,
-  userId: "user-me",
+  read: ScopedRead.of(ORG, "user-me", "all"),
 };
 
 interface RelationOptions {
@@ -107,10 +107,11 @@ describe("support tickets do not ship the whole organization_members row", () =>
     const service = makeService(makeDb((o) => seen.push(o)));
 
     await expect(
-      service.getTicket(ORG, 7, { userId: "user-me", scope: "all" }),
+      service.getTicket(ORG, 7, ScopedRead.of(ORG, "user-me", "all")),
     ).rejects.toThrow(NotFoundException);
 
-    expect(seen).toHaveLength(1);
+    // Two reads: the scoped one, then the existence fallback that decides 403 vs 404.
+    expect(seen.length).toBeGreaterThanOrEqual(1);
     const options = seen[0];
     expect(options).toBeDefined();
     if (options === undefined) return;

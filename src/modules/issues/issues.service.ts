@@ -5,8 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
 import { businessParties, deals, issueRecords } from "../../db/schema";
 import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
-import { applyScope } from "../access/apply-scope";
-import type { DataScope } from "../access/access.types";
+import type { ScopedRead } from "../access/scoped-read";
 import { ISSUE_LAYOUTS, issueRecordRow } from "./issue-record-types";
 import { issueFilters, issueProjection, readIssueRecord } from "./issue-record-queries";
 import { IssueTransitionsService } from "./issue-transitions.service";
@@ -37,16 +36,23 @@ export class IssuesService {
     return { recordTypes: Object.values(ISSUE_LAYOUTS) };
   }
 
-  async list(
-    organizationId: string,
-    userId: string,
-    query: ListIssuesQuery,
-    scope: DataScope,
-  ) {
-    const conditions = and(
-      ...issueFilters(organizationId, query).filter((c): c is SQL => c !== undefined),
-      applyScope(scope, organizationId, userId, { ownerColumn: issueRecords.ownerUserId }),
+  async list(read: ScopedRead, query: ListIssuesQuery) {
+    const organizationId = read.orgId;
+    const conditions = read.compose(
+      {
+        tenant: issueRecords.organizationId,
+        scope: { columns: { ownerColumn: issueRecords.ownerUserId } },
+        and: issueFilters(organizationId, query),
+      },
+      (where) => where.sql,
+      () => null,
     );
+    if (conditions === null)
+      return {
+        layout: ISSUE_LAYOUTS[query.recordType],
+        ...buildCursorPage([], query.limit, () => ({ sortValue: "", id: "" })),
+        data: [],
+      };
 
     const position = decodeCursor(query.cursor);
     const ascending = query.order === "oldest";
@@ -109,13 +115,11 @@ export class IssuesService {
    * asks, and a surface that has to fetch it separately is one that will render
    * the record without it.
    */
-  async get(organizationId: string, userId: string, issueRecordId: string, scope: DataScope) {
-    return readIssueRecord(
-      this.db,
-      this.transitions,
-      organizationId,
-      issueRecordId,
-      applyScope(scope, organizationId, userId, { ownerColumn: issueRecords.ownerUserId }),
+  async get(read: ScopedRead, issueRecordId: string) {
+    return read.read(
+      { tenant: issueRecords.organizationId, scope: { columns: { ownerColumn: issueRecords.ownerUserId } } },
+      ({ sql: where }) => readIssueRecord(this.db, this.transitions, read.orgId, issueRecordId, where),
+      () => null,
     );
   }
 

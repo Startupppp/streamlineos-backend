@@ -102,8 +102,8 @@ export class TasksController {
     @Query() query: AnalyticsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveTasksViewScope(this.access, u);
-    return this.analytics.analytics(u.orgId, u.userId, scope, query);
+    const read = await resolveTasksViewScope(this.access, u);
+    return this.analytics.analytics(read, query);
   }
 
   @Get("sequences")

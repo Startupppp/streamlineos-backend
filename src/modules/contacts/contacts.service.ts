@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, gt } from "drizzle-orm";
+import { and, asc, eq, gt } from "drizzle-orm";
 import { businessParties, contactPartyMap } from "../../db/schema/party";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -18,9 +18,9 @@ import {
   CONTACT_PARTY_COLUMNS,
   CONTACT_PARTY_JOIN,
   contactPartyScope,
-  contactPartyViewScope,
+  CONTACT_PARTY_SCOPE,
 } from "./contact-party-reader";
-import type { DataScope } from "../access/access.types";
+import type { ScopedRead } from "../access/scoped-read";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { queryContacts, searchContacts, getOneContact } from "./contacts-query";
 import type {
@@ -38,20 +38,19 @@ export class ContactsService {
     private readonly planLimits: PlanLimitsService,
   ) {}
 
-  list(orgId: string, userId: string, scope: DataScope, filters: ListInput) {
-    // The scope and the actor are part of the key: caching a scoped result under
-    // an unscoped one serves one caller's rows to the next.
-    const hash = `${scope}:${scope === "all" ? "org" : userId}:${filters.search ?? ""}:${filters.organizationId ?? ""}:${filters.limit ?? ""}:${filters.cursor ?? ""}`;
+  list(read: ScopedRead, filters: ListInput) {
+    // The scope and the actor are part of the key: caching a scoped result under an unscoped one serves one caller's rows to the next.
+    const hash = `${read.discriminator}:${filters.search ?? ""}:${filters.organizationId ?? ""}:${filters.limit ?? ""}:${filters.cursor ?? ""}`;
     return this.cache.cachedVersioned(
-      CACHE_KEYS.contactsListNamespace(orgId),
+      CACHE_KEYS.contactsListNamespace(read.orgId),
       hash,
-      () => queryContacts(this.db, orgId, userId, scope, filters),
+      () => queryContacts(this.db, read, filters),
       CACHE_TTL.SHORT,
     );
   }
 
-  search(orgId: string, userId: string, scope: DataScope, query: string) {
-    return searchContacts(this.db, orgId, userId, scope, query);
+  search(read: ScopedRead, query: string) {
+    return searchContacts(this.db, read, query);
   }
 
   getContact(orgId: string, id: number) {
@@ -155,11 +154,8 @@ export class ContactsService {
     }
   }
 
-  async *exportCsvChunks(
-    orgId: string,
-    userId: string,
-    scope: DataScope,
-  ): AsyncGenerator<string> {
+  async *exportCsvChunks(read: ScopedRead): AsyncGenerator<string> {
+    const orgId = read.orgId;
     const headers = [
       "id",
       "name",
@@ -175,6 +171,19 @@ export class ContactsService {
     const pageSize = 500;
     let afterId = 0;
     for (;;) {
+      const pageWhere = read.compose(
+        {
+          tenant: businessParties.organizationId,
+          scope: CONTACT_PARTY_SCOPE,
+          and: [
+            eq(contactPartyMap.organizationId, orgId),
+            gt(contactPartyMap.contactId, afterId),
+          ],
+        },
+        (where) => where.sql,
+        () => null,
+      );
+      if (pageWhere === null) return;
       /* One page, one transaction. The handler is `@NoTenantTransaction()` because the
        * generator stays open for the whole download; holding the request transaction
        * across every `res.write` would pin a pooled connection to the client's socket. */
@@ -194,13 +203,7 @@ export class ContactsService {
             })
             .from(contactPartyMap)
             .innerJoin(businessParties, CONTACT_PARTY_JOIN)
-            .where(
-              and(
-                ...contactPartyScope(orgId),
-                contactPartyViewScope(orgId, userId, scope),
-                gt(contactPartyMap.contactId, afterId),
-              ),
-            )
+            .where(pageWhere)
             .orderBy(asc(contactPartyMap.contactId))
             .limit(pageSize),
         { orgId },

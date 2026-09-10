@@ -13,7 +13,7 @@ import {
   LEAD_PARTY_COLUMNS,
   LEAD_PARTY_JOIN,
   leadPartyScope,
-  pushLeadPartyViewScope,
+  LEAD_PARTY_SCOPE,
 } from "./lead-party-reader";
 import { resolveLeadStatusSemantics } from "./lead-status-semantics";
 import type {
@@ -22,10 +22,21 @@ import type {
 } from "./dto/lead-reports.schemas";
 import { type Db } from "../../db/drizzle.module";
 import { DRIZZLE } from "../../db/drizzle.constants";
-import type { DataScope } from "../access/access.types";
+import type { ScopedRead } from "../access/scoped-read";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { CacheService } from "../../common/cache/cache.service";
 import { LeadsReportsTeamService } from "./leads-reports-team.service";
+
+const EMPTY_LEAD_ANALYTICS = {
+  totalLeads: 0,
+  totalLeadsPrevPeriod: 0,
+  conversionRate: 0,
+  conversionRatePrevPeriod: 0,
+  totalRevenue: 0,
+  conversionBySource: [] as { source: string; total: number; converted: number }[],
+  monthlyRevenue: [] as { month: string; revenue: number }[],
+  assignmentDistribution: [] as { userId: string; name: string | null; total: number }[],
+};
 
 @Injectable()
 export class LeadsReportsService {
@@ -36,17 +47,26 @@ export class LeadsReportsService {
     private readonly access: AccessService,
   ) {}
 
-  async getLeadAnalytics(
-    orgId: string,
-    filters: AnalyticsQuery,
-    viewScope?: { scope: DataScope; userId: string },
-  ) {
-    const f = leadPartyScope(orgId);
-    pushLeadPartyViewScope(f, orgId, viewScope?.scope, viewScope?.userId);
-    if (filters.dateFrom)
-      f.push(gte(LEAD_PARTY_COLUMNS.createdAt, new Date(filters.dateFrom)));
-    if (filters.dateTo)
-      f.push(lte(LEAD_PARTY_COLUMNS.createdAt, new Date(filters.dateTo + "T23:59:59")));
+  async getLeadAnalytics(read: ScopedRead, filters: AnalyticsQuery) {
+    const orgId = read.orgId;
+    const analyticsWhere = read.compose(
+      {
+        tenant: businessParties.organizationId,
+        scope: LEAD_PARTY_SCOPE,
+        and: [
+          eq(leadPartyMap.organizationId, orgId),
+          isNull(businessParties.deletedAt),
+          filters.dateFrom ? gte(LEAD_PARTY_COLUMNS.createdAt, new Date(filters.dateFrom)) : undefined,
+          filters.dateTo
+            ? lte(LEAD_PARTY_COLUMNS.createdAt, new Date(filters.dateTo + "T23:59:59"))
+            : undefined,
+        ],
+      },
+      (where) => where.sql,
+      () => null,
+    );
+    if (analyticsWhere === null) return EMPTY_LEAD_ANALYTICS;
+    const f = [analyticsWhere];
 
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -334,8 +354,8 @@ export class LeadsReportsService {
     return this.teamReports.getSalesTeamCapacity(orgId);
   }
 
-  getLeadSlaAlerts(orgId: string, opts: { ownScope?: boolean; userId?: string }) {
-    return this.teamReports.getLeadSlaAlerts(orgId, opts);
+  getLeadSlaAlerts(read: ScopedRead) {
+    return this.teamReports.getLeadSlaAlerts(read);
   }
 
   async getFollowUps(orgId: string, query: FollowUpsQuery) {

@@ -96,8 +96,8 @@ export class SupportTicketsController {
     @Query() query: ListTicketsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveSupportTicketsViewScope(this.access, u);
-    return this.tickets.listTickets(u.orgId, { ...query, scope, userId: u.userId });
+    const read = await resolveSupportTicketsViewScope(this.access, u);
+    return this.tickets.listTickets(u.orgId, { ...query, read });
   }
 
   @Post()
@@ -128,8 +128,8 @@ export class SupportTicketsController {
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveSupportTicketsViewScope(this.access, u);
-    return this.tickets.getTicket(u.orgId, supportTicketId, { userId: u.userId, scope });
+    const read = await resolveSupportTicketsViewScope(this.access, u);
+    return this.tickets.getTicket(u.orgId, supportTicketId, read);
   }
 
   @Patch(":supportTicketId")

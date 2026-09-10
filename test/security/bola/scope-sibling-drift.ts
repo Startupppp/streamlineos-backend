@@ -16,7 +16,7 @@ import { buildSourceIndex, resolveInjectedType, type SourceIndex } from "./tenan
 const SCOPE_RESOLUTION_RE =
   /\b(?:resolve[A-Za-z0-9_$]*Scope|readRequestScope|rbacScope|applyScope|DataScope|viewAll|scopeToUserId)\b/;
 
-/** Reading a scope and never spending it is not applying it; `check:scope-application` owns that half. */
+/** Reading a scope and never spending it is not applying it; `check:scope-boundary` owns that half. */
 export function resolvesScope(text: string): boolean {
   return SCOPE_RESOLUTION_RE.test(text);
 }

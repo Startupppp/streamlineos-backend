@@ -106,8 +106,8 @@ export class ClientsController {
     @Query() query: ListAccountsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveClientsReadScope(this.access, u);
-    return this.accounts.getClientAccounts(u.orgId, scope, u.userId, query);
+    const read = await resolveClientsReadScope(this.access, u);
+    return this.accounts.getClientAccounts(read, query);
   }
 
   @Deprecated({ sunset: "2026-10-25", link: "/crm/organizations" })
@@ -115,8 +115,8 @@ export class ClientsController {
   @RequirePermission("crm:clients:read")
   @ResponseSchema(clientListSchema)
   async listClients(@CurrentUser() u: CurrentUserContext) {
-    const scope = await resolveClientsReadScope(this.access, u);
-    return this.clients.listClients(u.orgId, u.userId, scope);
+    const read = await resolveClientsReadScope(this.access, u);
+    return this.clients.listClients(read);
   }
 
   @Get("export")
@@ -125,8 +125,8 @@ export class ClientsController {
   @Header("Content-Type", "text/csv; charset=utf-8")
   @Header("Content-Disposition", 'attachment; filename="clients-export.csv"')
   async exportCsv(@CurrentUser() u: CurrentUserContext) {
-    const scope = await resolveClientsReadScope(this.access, u);
-    return this.clients.exportCsv(u.orgId, u.userId, scope);
+    const read = await resolveClientsReadScope(this.access, u);
+    return this.clients.exportCsv(read);
   }
 
   @Get("health")
@@ -137,16 +137,16 @@ export class ClientsController {
     @Query() query: HealthQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveClientsReadScope(this.access, u);
-    return this.clients.getHealth(u.orgId, query.status, query.limit, u.userId, scope);
+    const read = await resolveClientsReadScope(this.access, u);
+    return this.clients.getHealth(read, query.status, query.limit);
   }
 
   @Get("churn-alerts")
   @RequirePermission("crm:clients:read")
   @ResponseSchema(churnAlertsSchema)
   async getChurnAlerts(@CurrentUser() u: CurrentUserContext) {
-    const scope = await resolveClientsReadScope(this.access, u);
-    return this.clients.getChurnAlerts(u.orgId, u.userId, scope);
+    const read = await resolveClientsReadScope(this.access, u);
+    return this.clients.getChurnAlerts(read);
   }
 
   @Get("assign-crm")
@@ -173,8 +173,8 @@ export class ClientsController {
   @RequirePermission("crm:clients:read")
   @ResponseSchema(renewalListSchema)
   async listRenewals(@CurrentUser() u: CurrentUserContext) {
-    const scope = await resolveClientsReadScope(this.access, u);
-    return this.accounts.listRenewals(u.orgId, scope, u.userId);
+    const read = await resolveClientsReadScope(this.access, u);
+    return this.accounts.listRenewals(read);
   }
 
   @Patch("renewals/:accountId")
@@ -321,8 +321,8 @@ export class ClientsController {
     @Param("clientId", ParseIntPipe) clientId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveClientsReadScope(this.access, u);
-    const account = await this.accounts.getClientAccount(u.orgId, clientId, scope, u.userId);
+    const read = await resolveClientsReadScope(this.access, u);
+    const account = await this.accounts.getClientAccount(read, clientId);
     if (!account) throw new NotFoundException("Client account not found");
     return account;
   }

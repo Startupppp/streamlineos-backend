@@ -6,7 +6,7 @@
  *
  * WHY THIS GATE EXISTS
  * `check:route-classification` proves every handler DECLARES an exposure, and
- * `check:module-gate` / `check:scope-application` / `check:record-access` gate the
+ * `check:module-gate` / `check:scope-boundary` / `check:record-access` gate the
  * SOURCE side of authorization. Nothing asserted that a deny TEST exists. A gate
  * whose deny branch is never exercised is an assertion about the decorator, not
  * about the guard: the decorator can name a key nobody holds, the guard can be

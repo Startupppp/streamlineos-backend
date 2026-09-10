@@ -80,8 +80,8 @@ export class DealsController {
     @Query() query: ListDealsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveDealsReadScope(this.access, u);
-    return this.deals.listDeals(u.orgId, u.userId, query, scope);
+    const read = await resolveDealsReadScope(this.access, u);
+    return this.deals.listDeals(read, query);
   }
 
   @Post()
@@ -141,8 +141,8 @@ export class DealsController {
   @RequirePermission("crm:deals:read")
   @ApiOkResponse({ description: "CSV file download", content: { "text/csv": { schema: { type: "string" } } } })
   async exportCsv(@CurrentUser() u: CurrentUserContext, @Res() res: Response) {
-    const scope = await resolveDealsReadScope(this.access, u);
-    const result = await this.deals.exportCsv(u.orgId, u.userId, scope);
+    const read = await resolveDealsReadScope(this.access, u);
+    const result = await this.deals.exportCsv(read);
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", 'attachment; filename="deals-export.csv"');
     if (result.truncated) res.setHeader("X-Truncated", "true");

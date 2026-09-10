@@ -65,8 +65,8 @@ export class IssuesController {
     @Query() query: ListIssuesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveIssuesViewScope(this.access, u);
-    return this.issues.list(u.orgId, u.userId, query, scope);
+    const read = await resolveIssuesViewScope(this.access, u);
+    return this.issues.list(read, query);
   }
 
   @Get(":issueRecordId")
@@ -77,8 +77,8 @@ export class IssuesController {
     @Param("issueRecordId") issueRecordId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveIssuesViewScope(this.access, u);
-    return this.issues.get(u.orgId, u.userId, issueRecordId, scope);
+    const read = await resolveIssuesViewScope(this.access, u);
+    return this.issues.get(read, issueRecordId);
   }
 
   @Get(":issueRecordId/transitions")
@@ -90,8 +90,8 @@ export class IssuesController {
     @Query() query: ListTransitionsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveIssuesViewScope(this.access, u);
-    await this.issues.get(u.orgId, u.userId, issueRecordId, scope);
+    const read = await resolveIssuesViewScope(this.access, u);
+    await this.issues.get(read, issueRecordId);
     return this.transitions.list(u.orgId, issueRecordId, query.limit);
   }
 

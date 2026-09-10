@@ -61,12 +61,8 @@ export class LeadsController {
     @Query() filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveLeadsViewScope(this.access, u);
-    return this.leads.listLeads(u.orgId, {
-      ...filters,
-      scope,
-      userId: u.userId,
-    });
+    const read = await resolveLeadsViewScope(this.access, u);
+    return this.leads.listLeads(u.orgId, { ...filters, read });
   }
 
   @Post()
@@ -90,11 +86,8 @@ export class LeadsController {
   @RequirePermission("crm:leads:view")
   @ResponseSchema(leadBoardSchema)
   async getBoard(@CurrentUser() u: CurrentUserContext) {
-    const scope = await resolveLeadsViewScope(this.access, u);
-    return this.leads.getBoard(u.orgId, {
-      scope,
-      userId: u.userId,
-    });
+    const read = await resolveLeadsViewScope(this.access, u);
+    return this.leads.getBoard(u.orgId, { read });
   }
 
   @Get("stats")
@@ -105,13 +98,8 @@ export class LeadsController {
     @Query("dateTo") dateTo: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveLeadsViewScope(this.access, u);
-    return this.leads.getStats(u.orgId, {
-      dateFrom,
-      dateTo,
-      scope,
-      userId: u.userId,
-    });
+    const read = await resolveLeadsViewScope(this.access, u);
+    return this.leads.getStats(u.orgId, { dateFrom, dateTo, read });
   }
 
   @Get(":leadId")

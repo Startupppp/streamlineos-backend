@@ -1,5 +1,5 @@
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import type { DataScope } from "../access/access.types";
+import { ScopedRead } from "../access/scoped-read";
 import { AccessService } from "../access/access.service";
 
 export const TASKS_VIEW_PERMISSION = "crm:tasks:view";
@@ -7,14 +7,13 @@ export const TASKS_VIEW_PERMISSION = "crm:tasks:view";
 /**
  * `crm:tasks:view` IS scopable, so testing it for mere presence collapsed `own`
  * and `team` into `all`: the owner predicate was dropped entirely and
- * `?assigneeId=<anyone>` returned that person's tasks. The gate is the resolved
- * DataScope, not the key sitting beside `tasks:read` in the same roles.
+ * `?assigneeId=<anyone>` returned that person's tasks.
  */
 export async function resolveTasksViewScope(
   access: AccessService,
   u: CurrentUserContext,
-): Promise<DataScope> {
-  if (u.isOrgOwner) return "all";
+): Promise<ScopedRead> {
+  if (u.isOrgOwner) return ScopedRead.of(u.orgId, u.userId, "all");
   const resolved = await access.resolveUserPermissions(u.orgId, u.userId);
-  return resolved.get(TASKS_VIEW_PERMISSION) ?? "none";
+  return ScopedRead.of(u.orgId, u.userId, resolved.get(TASKS_VIEW_PERMISSION) ?? "none");
 }

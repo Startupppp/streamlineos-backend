@@ -85,15 +85,15 @@ export class LeadsService {
     });
   }
 
-  async listLeads(orgId: string, filters?: ListFilters) {
+  async listLeads(orgId: string, filters: ListFilters) {
     return this.reads.listLeads(orgId, filters);
   }
 
-  async getBoard(orgId: string, opts?: BoardOpts) {
+  async getBoard(orgId: string, opts: BoardOpts) {
     return this.reads.getBoard(orgId, opts);
   }
 
-  async getStats(orgId: string, filters?: StatsFilters) {
+  async getStats(orgId: string, filters: StatsFilters) {
     return this.reads.getStats(orgId, filters);
   }
 

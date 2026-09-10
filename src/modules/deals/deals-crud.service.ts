@@ -1,8 +1,7 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { logSideEffectFailure } from "../../common/logger/side-effect";
 import { and, count, desc, eq, inArray, isNull, type SQL } from "drizzle-orm";
-import { applyScope } from "../access/apply-scope";
-import type { DataScope } from "../access/access.types";
+import type { ScopedRead } from "../access/scoped-read";
 import { deals, dealStageTransitions, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -32,43 +31,46 @@ export class DealsCrudService {
     private readonly planLimits: PlanLimitsService,
   ) {}
 
-  listDeals(orgId: string, userId: string, query: ListDealsInput, scope: DataScope) {
-    const hash = Buffer.from(JSON.stringify({ ...query, userId, scope })).toString("base64");
+  listDeals(read: ScopedRead, query: ListDealsInput) {
+    const orgId = read.orgId;
+    const hash = Buffer.from(JSON.stringify({ ...query, scope: read.discriminator })).toString("base64");
     return this.cache.cachedVersioned(
       `deals:list:${orgId}`,
       hash,
       async () => {
-        const conditions: SQL[] = [
-          eq(deals.orgId, orgId), isNull(deals.deletedAt),
-          applyScope(scope, orgId, userId, { ownerColumn: deals.assignedToId }),
-        ];
-        if (query.stage) conditions.push(eq(deals.stage, query.stage));
-        if (query.assignedToId) conditions.push(eq(deals.assignedToId, query.assignedToId));
-
-        const where = and(...conditions);
+        const filters: SQL[] = [];
+        if (query.stage) filters.push(eq(deals.stage, query.stage));
+        if (query.assignedToId) filters.push(eq(deals.assignedToId, query.assignedToId));
         const pageSize = query.limit ?? 50;
         const offset = query.offset ?? 0;
-
-        const [rows, [totalRow]] = await Promise.all([
-          this.db.query.deals.findMany({
-            where,
-            with: {
-              assignedTo: { columns: { id: true, name: true, image: true } },
-              lead: { columns: { id: true, name: true } },
-              client: { columns: { id: true, name: true } },
-            },
-            orderBy: [desc(deals.updatedAt)],
-            limit: pageSize,
-            offset,
-          }),
-          this.db.select({ total: count() }).from(deals).where(where),
-        ]);
-
         // This list pages by `offset`, so the envelope's page number is derived from it.
-        return buildListResponse(rows, Number(totalRow?.total ?? 0), {
-          page: pageSize > 0 ? Math.floor(offset / pageSize) + 1 : 1,
-          pageSize,
-        });
+        const page = { page: pageSize > 0 ? Math.floor(offset / pageSize) + 1 : 1, pageSize };
+
+        return read.read(
+          {
+            tenant: deals.orgId,
+            scope: { columns: { ownerColumn: deals.assignedToId } },
+            and: [isNull(deals.deletedAt), ...filters],
+          },
+          async ({ sql: where }) => {
+            const [rows, [totalRow]] = await Promise.all([
+              this.db.query.deals.findMany({
+                where,
+                with: {
+                  assignedTo: { columns: { id: true, name: true, image: true } },
+                  lead: { columns: { id: true, name: true } },
+                  client: { columns: { id: true, name: true } },
+                },
+                orderBy: [desc(deals.updatedAt)],
+                limit: pageSize,
+                offset,
+              }),
+              this.db.select({ total: count() }).from(deals).where(where),
+            ]);
+            return buildListResponse(rows, Number(totalRow?.total ?? 0), page);
+          },
+          () => buildListResponse([], 0, page),
+        );
       },
       CACHE_TTL.SHORT,
     );

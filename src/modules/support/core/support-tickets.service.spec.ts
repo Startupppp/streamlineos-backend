@@ -1,3 +1,4 @@
+import { ScopedRead } from "../../access/scoped-read";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import { SupportTicketsService } from "./support-tickets.service";
@@ -350,9 +351,11 @@ describe("SupportTicketsService", () => {
 
   describe("cross-org isolation", () => {
     it("getTicket throws NotFoundException for a ticket belonging to a different org", async () => {
-      mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(undefined);
+      mockDb.query.supportTickets.findFirst.mockResolvedValue(undefined);
 
-      await expect(service.getTicket("org1", 123, { userId: "user1", scope: "all" })).rejects.toThrow(NotFoundException);
+      await expect(
+        service.getTicket("org1", 123, ScopedRead.of("org1", "user1", "all")),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it("listMessages throws NotFoundException for a ticket belonging to a different org", async () => {

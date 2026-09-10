@@ -16,15 +16,16 @@ import { SupportSlaService } from "./support-sla.service";
 import { SupportAiService } from "./support-ai.service";
 import { SupportCustomFieldsService } from "./support-custom-fields.service";
 import { AutomationService } from "../../automation/automation.service";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import { SupportTicketActivityService } from "./support-ticket-activity.service";
 import { SupportTicketMessagesService } from "./support-ticket-messages.service";
 import { SupportTicketOperationsService } from "./support-ticket-operations.service";
 import {
-  buildTicketListPredicate,
+  ticketListFilters,
   ticketListCacheKey,
   type ListTicketsQuery,
 } from "./support-ticket-list-query";
+import { supportTicketScope } from "./support-tickets-scope";
 import { resolveTicketRouting } from "./support-ticket-routing";
 import {
   insertTicketWithOpeningMessage,
@@ -71,31 +72,36 @@ export class SupportTicketsService {
       `support:tickets:${orgId}`,
       ticketListCacheKey(query),
       async () => {
-        const predicate = buildTicketListPredicate(orgId, query);
-        if (predicate.kind === "deny") return { items: [], total: 0, page, totalPages: 0 };
-        const conditions = predicate.conditions;
         const offset = (page - 1) * limit;
-
-        const [items, [countResult]] = await Promise.all([
-          this.db.query.supportTickets.findMany({
-            where: and(...conditions),
-            orderBy: [desc(supportTickets.createdAt)],
-            limit,
-            offset,
-            with: {
-              client: { columns: { id: true, name: true } },
-              assigneeMembership: { columns: { id: true }, with: { user: { columns: { id: true, name: true, image: true } } } },
-              creatorMembership: { columns: { id: true }, with: { user: { columns: { id: true, name: true } } } },
-            },
-          }),
-          this.db
-            .select({ count: sql<number>`count(*)::int` })
-            .from(supportTickets)
-            .where(and(...conditions)),
-        ]);
-
-        const total = countResult?.count ?? 0;
-        return { items, total, page, totalPages: Math.ceil(total / limit) };
+        return query.read.read(
+          {
+            tenant: supportTickets.orgId,
+            scope: supportTicketScope(orgId, query.read.actorId),
+            and: ticketListFilters(orgId, query),
+          },
+          async ({ sql: where }) => {
+            const [items, [countResult]] = await Promise.all([
+              this.db.query.supportTickets.findMany({
+                where,
+                orderBy: [desc(supportTickets.createdAt)],
+                limit,
+                offset,
+                with: {
+                  client: { columns: { id: true, name: true } },
+                  assigneeMembership: { columns: { id: true }, with: { user: { columns: { id: true, name: true, image: true } } } },
+                  creatorMembership: { columns: { id: true }, with: { user: { columns: { id: true, name: true } } } },
+                },
+              }),
+              this.db
+                .select({ count: sql<number>`count(*)::int` })
+                .from(supportTickets)
+                .where(where),
+            ]);
+            const total = countResult?.count ?? 0;
+            return { items, total, page, totalPages: Math.ceil(total / limit) };
+          },
+          () => ({ items: [], total: 0, page, totalPages: 0 }),
+        );
       },
       CACHE_TTL.SHORT,
     );
@@ -165,23 +171,36 @@ export class SupportTicketsService {
     };
   }
 
-  async getTicket(orgId: string, ticketId: number, actor: { userId: string; scope: DataScope }) {
-    const ticket = await this.db.query.supportTickets.findFirst({
-      where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
-      with: {
-        client: { columns: { id: true, name: true } },
-        assigneeMembership: { columns: { id: true }, with: { user: { columns: { id: true, name: true, image: true } } } },
-        creatorMembership: { columns: { id: true }, with: { user: { columns: { id: true, name: true } } } },
-        messages: {
-          with: { author: { columns: { id: true, name: true, image: true } } },
-          orderBy: [asc(supportTicketMessages.createdAt)],
-        },
+  async getTicket(orgId: string, ticketId: number, read: ScopedRead) {
+    const ticket = await read.read(
+      {
+        tenant: supportTickets.orgId,
+        scope: supportTicketScope(orgId, read.actorId),
+        and: [eq(supportTickets.id, ticketId)],
       },
-    });
-    if (!ticket) throw new NotFoundException("Ticket not found");
-    if (actor.scope === "none") throw new ForbiddenException("Not authorized to view tickets");
-    if (actor.scope !== "all" && ticket.assigneeMembership?.user?.id !== actor.userId)
-      throw new ForbiddenException("Not authorized to view this ticket");
+      ({ sql: where }) => this.db.query.supportTickets.findFirst({
+        where,
+        with: {
+          client: { columns: { id: true, name: true } },
+          assigneeMembership: { columns: { id: true }, with: { user: { columns: { id: true, name: true, image: true } } } },
+          creatorMembership: { columns: { id: true }, with: { user: { columns: { id: true, name: true } } } },
+          messages: {
+            with: { author: { columns: { id: true, name: true, image: true } } },
+            orderBy: [asc(supportTicketMessages.createdAt)],
+          },
+        },
+      }),
+      () => undefined,
+    );
+    // Same tenant but out of scope is a permission answer, not an existence one, so the fallback read decides which.
+    if (!ticket) {
+      const exists = await this.db.query.supportTickets.findFirst({
+        where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
+        columns: { id: true },
+      });
+      if (exists) throw new ForbiddenException("Not authorized to view this ticket");
+      throw new NotFoundException("Ticket not found");
+    }
     const customFieldValues = await this.customFields.getFieldValues(orgId, ticketId);
     return { ...ticket, customFieldValues };
   }

@@ -1,7 +1,6 @@
 import { eq, isNull, sql, type SQL } from "drizzle-orm";
 import { businessParties, contactPartyMap } from "../../db/schema/party";
-import { applyScope } from "../access/apply-scope";
-import type { DataScope, ScopePredicate } from "../access/access.types";
+import type { ScopeShape } from "../access/scoped-read";
 
 /**
  * Where this module's reads get their contacts.
@@ -109,10 +108,6 @@ export function contactIdIs(contactId: number): SQL {
  * same set through the list, the search and the export. Applied on all three,
  * because a scope one read honours and its export ignores is not a scope.
  */
-export function contactPartyViewScope(
-  orgId: string,
-  userId: string,
-  scope: DataScope,
-): ScopePredicate {
-  return applyScope(scope, orgId, userId, { ownerColumn: businessParties.ownerUserId });
-}
+export const CONTACT_PARTY_SCOPE: ScopeShape = {
+  columns: { ownerColumn: businessParties.ownerUserId },
+};
