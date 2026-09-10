@@ -2262,6 +2262,13 @@
       "when": 1787830380446,
       "tag": "0535_crm_mcp",
       "breakpoints": true
+    },
+    {
+      "idx": 431,
+      "version": "7",
+      "when": 1787941988254,
+      "tag": "0671_accounting_reads_not_scopable",
+      "breakpoints": true
     }
   ]
 }
