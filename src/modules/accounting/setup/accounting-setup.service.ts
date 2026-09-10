@@ -1,6 +1,6 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { ConflictException, Inject, Injectable } from "@nestjs/common";
 import { and, eq, sql } from "drizzle-orm";
-import { taxRegistrations, type TaxRegime } from "../../../db/schema";
+import { glCurrencies, taxRegistrations, type TaxRegime } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -47,6 +47,8 @@ export class AccountingSetupService {
     userId: string,
     input: EnableAccountingInput,
   ): Promise<EnableAccountingResult> {
+    await this.assertReferenceDataInstalled(input.baseCurrency);
+
     const alreadyEnabled = await this.books.findDefault(orgId);
     const book = await this.books.enable(orgId, userId, input);
     const pack = this.packs.get(book.localizationPack);
@@ -88,6 +90,57 @@ export class AccountingSetupService {
       taxCodesSeeded: counts.taxCodes,
       nextSteps: await this.nextSteps(book.id, pack.status, pack.code),
     };
+  }
+
+  /**
+   * ACC-02's actual failure mode: enabled, and unprovisioned in a way nothing said.
+   *
+   * `gl_book_currencies.currency_code` has an FK to `gl_currencies(code)`, and
+   * `BooksService.enable` inserts the base-currency row with
+   * `onConflictDoNothing()` -- which suppresses a UNIQUE conflict and cannot
+   * suppress an FK violation. So on a database where `gl_currencies` is empty,
+   * every attempt to switch accounting on for any organisation dies with a raw
+   * 23503 out of the driver, and the operator is told nothing they can act on.
+   *
+   * **The empty table is not hypothetical and not test-only.** `0464_gl_kernel`
+   * carries both the DDL and this seed. `0489_chain_creates_early` and
+   * `0619_chain_creates_what_production_has` transcribe a `pg_catalog`, so they
+   * recreate the STRUCTURE and cannot recreate the DATA. Measured on the shared
+   * branch: `gl_currencies` exists with the right columns and holds ZERO rows,
+   * and `gl_accounts` is empty beside it. A correctly-shaped empty table is the
+   * hardest kind of missing to notice.
+   *
+   * A cheap read on a tiny reference table, once per enablement, in exchange for
+   * an error an operator can act on -- and it names the migration to run rather
+   * than the constraint that fired.
+   */
+  private async assertReferenceDataInstalled(baseCurrency: string | undefined): Promise<void> {
+    /*
+      Emptiness first, and separately, because it is the failure that was actually
+      measured and the only one an operator cannot diagnose. A caller who omits
+      `baseCurrency` gets the pack's default, resolved inside `BooksService`; this
+      does not duplicate that resolution, so an unknown code is only checked when
+      the caller named one.
+    */
+    const [installed] = await this.db.select({ code: glCurrencies.code }).from(glCurrencies).limit(1);
+    if (!installed) {
+      throw new ConflictException(
+        "Accounting reference data is not installed on this database: gl_currencies is empty, " +
+          "so no book can name a base currency. Apply migration 0464_gl_kernel, which carries the " +
+          "currency seed as well as the schema.",
+      );
+    }
+
+    if (baseCurrency === undefined) return;
+    const [currency] = await this.db
+      .select({ code: glCurrencies.code })
+      .from(glCurrencies)
+      .where(eq(glCurrencies.code, baseCurrency))
+      .limit(1);
+    if (!currency)
+      throw new ConflictException(
+        `${baseCurrency} is not one of the currencies this deployment knows about.`,
+      );
   }
 
   /**
