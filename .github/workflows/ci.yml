@@ -439,9 +439,9 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm check:module-di:self-test && pnpm check:module-di
 
-      - name: Every resolved DataScope reaches a predicate
+      - name: A DataScope is spent through a scoped read
         if: ${{ !cancelled() }}
-        run: pnpm check:scope-application
+        run: pnpm check:scope-boundary:self-test && pnpm check:scope-boundary
 
       - name: No record read can return a deleted row
         if: ${{ !cancelled() }}
@@ -641,7 +641,7 @@ jobs:
         run: pnpm check:transaction-callbacks:self-test && pnpm check:transaction-callbacks
 
       # check:route-classification proves every handler DECLARES an exposure and
-      # check:module-gate / :scope-application gate the source side; nothing
+      # check:module-gate / :scope-boundary gate the source side; nothing
       # asserted a deny TEST exists per gated handler. A gate whose deny branch is
       # never exercised is an assertion about the decorator, not about the guard.
       # Measured 3,220 authorization-gated handlers, 767 with an attributable deny
