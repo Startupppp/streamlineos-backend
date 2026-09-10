@@ -31,6 +31,7 @@ import {
   type ListLandedCostVouchersInput,
 } from "./dto/landed-cost.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 /**
  * G5 — landed cost as a document with a life.
@@ -106,6 +107,7 @@ export class LandedCostController {
    * layers twice and there is no movement to reverse it with.
    */
   @Post(":voucherId/apply")
+  @BodylessAction()
   @HttpCode(HttpStatus.OK)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:landed-cost:manage")

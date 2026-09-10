@@ -27,7 +27,7 @@ import {
   type ImportErrorsQueryInput,
 } from "./dto/import-export.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { MultipartAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, MultipartAction } from "../../../common/openapi/zod-operation-contracts";;
 import { z } from "zod";
 
 const jobIdParams = z.object({ jobId: z.coerce.number().int().positive() }).strict();
@@ -72,6 +72,7 @@ export class ImportController {
 
   /** Applies the next chunk. Call until `finished` — that is the resume loop. */
   @Post("staged/:jobId/process")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:import")
   processChunk(
@@ -82,6 +83,7 @@ export class ImportController {
   }
 
   @Post("staged/:jobId/cancel")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:import")
   @Idempotent("inventory.import.staged.cancel")

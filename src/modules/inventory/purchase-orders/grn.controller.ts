@@ -17,6 +17,7 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const grnIdParams = z.object({ grnId: z.coerce.number().int().positive() }).strict();
 
@@ -77,6 +78,7 @@ export class GrnController {
   }
 
   @Post(":grnId/count")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:receive")
   @Idempotent("inventory.grn.counting.start")
@@ -90,6 +92,7 @@ export class GrnController {
   }
 
   @Post(":grnId/quality-review")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:receive")
   @Idempotent("inventory.grn.quality-review.submit")
@@ -103,6 +106,7 @@ export class GrnController {
   }
 
   @Post(":grnId/post")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:receive")
   @HttpCode(HttpStatus.OK)

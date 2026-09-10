@@ -36,6 +36,7 @@ import type {
   UpdateProjectInput,
   UpdateRequirementInput,
 } from "./dto/inv-projects.schemas";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 /**
  * B1 — construction projects and the material each site still needs.
@@ -155,6 +156,7 @@ export class InvProjectsController {
   }
 
   @Post(":projectId/requirements/:requirementId/release")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reserve")
   @Idempotent("inventory.project.requirement.release")

@@ -14,6 +14,7 @@ import { Public } from "../../../common/auth/public.decorator";
 import { NoTenantTransaction } from "../../../common/tenant/no-tenant-transaction.decorator";
 import { logger } from "../../../common/logger/logger.service";
 import { ChannelSnapshotService } from "./channel-snapshot.service";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 /**
  * E6 — the inbound channel webhook. Verify, acknowledge, enqueue.
@@ -57,6 +58,7 @@ export class ChannelWebhookController {
   constructor(private readonly snapshots: ChannelSnapshotService) {}
 
   @Post("inbound/:channelId")
+  @BodylessAction()
   @HttpCode(HttpStatus.ACCEPTED)
   async inbound(
     @Param("channelId", ParseIntPipe) channelId: number,

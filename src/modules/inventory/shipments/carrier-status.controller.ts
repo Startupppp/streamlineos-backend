@@ -9,6 +9,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { CarrierStatusService } from "./carrier-status.service";
 import { carrierStatusSchema, type CarrierStatusInput } from "./dto/carrier-status.schemas";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 @RequireModule("inventory")
 @Controller("inventory/shipments")
@@ -54,6 +55,7 @@ export class CarrierStatusController {
    * used to state as "coming soon".
    */
   @Post(":shipmentId/refresh-tracking")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
   @HttpCode(HttpStatus.OK)

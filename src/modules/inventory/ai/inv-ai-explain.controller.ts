@@ -73,6 +73,7 @@ export class InvAiExplainController {
    * no page render reaches this.
    */
   @Post("ops-brief/narrate")
+  @BodylessAction()
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:ai:read")

@@ -28,6 +28,7 @@ import {
   type ListPutawayTasksInput,
 } from "./dto/putaway.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 /**
  * B3 — the putaway workbench.
@@ -87,6 +88,7 @@ export class PutawayTaskController {
    * protected.
    */
   @Post("tasks/:taskId/claim")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   @Idempotent("inventory.putaway.task.claim")
@@ -98,6 +100,7 @@ export class PutawayTaskController {
   }
 
   @Post("tasks/:taskId/abandon")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   abandonTask(
@@ -108,6 +111,7 @@ export class PutawayTaskController {
   }
 
   @Post("tasks/:taskId/cancel")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   @Idempotent("inventory.putaway.task.cancel")

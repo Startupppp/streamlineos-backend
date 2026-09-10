@@ -35,6 +35,7 @@ import {
   type SubstitutePickLineInput,
 } from "./dto/picking.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 @RequireModule("inventory")
 @Controller("inventory/picking")
@@ -125,6 +126,7 @@ export class PickWaveController {
    * client believes it is protected.
    */
   @Post("waves/:pickListId/claim")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:ship")
   @Idempotent("inventory.picking.wave.claim")
@@ -136,6 +138,7 @@ export class PickWaveController {
   }
 
   @Post("waves/:pickListId/abandon")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:ship")
   abandonWave(

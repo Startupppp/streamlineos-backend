@@ -32,6 +32,7 @@ import type {
   UpdateInspectionPlanInput,
 } from "./dto/inspection-plans.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 @RequireModule("inventory")
 @Controller("inventory/quality/inspection-plans")
@@ -114,6 +115,7 @@ export class InspectionPlansController {
   }
 
   @Post(":planId/versions/:versionId/activate")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:plans:manage")
   activateVersion(

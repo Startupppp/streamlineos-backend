@@ -29,6 +29,7 @@ import {
   type ListSnapshotDiffsQueryInput,
   type ResolveSnapshotDiffInput,
 } from "./dto/channel-snapshot.schemas";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 /**
  * E6 — the operator's surface over channel snapshot differences.
@@ -113,6 +114,7 @@ export class ChannelSnapshotCronController {
   }
 
   @Post("inventory-channel-snapshot")
+  @BodylessAction()
   @HttpCode(HttpStatus.OK)
   runPost(@Headers("authorization") authorization?: string): Promise<SnapshotSweepResult> {
     return this.run(authorization);

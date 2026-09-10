@@ -71498,7 +71498,8 @@
           "ChannelSnapshotCron"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/inventory-reslot": {
@@ -71570,7 +71571,8 @@
           "SlottingCron"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/inventory-webhook-delivery": {
@@ -71642,7 +71644,8 @@
           "InventoryWebhookDelivery"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/invitation-expiry": {
@@ -147252,7 +147255,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:ai:read",
-        "description": "Exposure: permission — inventory:ai:read"
+        "description": "Exposure: permission — inventory:ai:read",
+        "x-bodyless": true
       }
     },
     "/inventory/ai/reorder-proposal": {
@@ -149125,7 +149129,8 @@
           "ChannelWebhook"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/inventory/channels/pools/allocate": {
@@ -152593,7 +152598,8 @@
         "x-permission": "inventory:purchase-orders:receive",
         "description": "Exposure: permission — inventory:purchase-orders:receive",
         "x-idempotency-command": "inventory.grn.counting.start",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/inventory/goods-receipts/{grnId}/post": {
@@ -152645,7 +152651,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:purchase-orders:receive",
-        "description": "Exposure: permission — inventory:purchase-orders:receive"
+        "description": "Exposure: permission — inventory:purchase-orders:receive",
+        "x-bodyless": true
       }
     },
     "/inventory/goods-receipts/{grnId}/quality-review": {
@@ -152702,7 +152709,8 @@
         "x-permission": "inventory:purchase-orders:receive",
         "description": "Exposure: permission — inventory:purchase-orders:receive",
         "x-idempotency-command": "inventory.grn.quality-review.submit",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/inventory/goods-receipts/{grnId}/reverse": {
@@ -153547,7 +153555,8 @@
         "x-permission": "inventory:import",
         "description": "Exposure: permission — inventory:import",
         "x-idempotency-command": "inventory.import.staged.cancel",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/inventory/import/staged/{jobId}/errors": {
@@ -153663,7 +153672,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:import",
-        "description": "Exposure: permission — inventory:import"
+        "description": "Exposure: permission — inventory:import",
+        "x-bodyless": true
       }
     },
     "/inventory/import/staged/{jobId}/rows": {
@@ -154692,7 +154702,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:landed-cost:manage",
-        "description": "Exposure: permission — inventory:landed-cost:manage"
+        "description": "Exposure: permission — inventory:landed-cost:manage",
+        "x-bodyless": true
       }
     },
     "/inventory/landed-cost/{voucherId}/charges": {
@@ -155476,7 +155487,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:settings:manage",
-        "description": "Exposure: permission — inventory:settings:manage"
+        "description": "Exposure: permission — inventory:settings:manage",
+        "x-bodyless": true
       }
     },
     "/inventory/metrics": {
@@ -157473,7 +157485,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:sales-orders:ship",
-        "description": "Exposure: permission — inventory:sales-orders:ship"
+        "description": "Exposure: permission — inventory:sales-orders:ship",
+        "x-bodyless": true
       }
     },
     "/inventory/picking/waves/{pickListId}/claim": {
@@ -157528,7 +157541,8 @@
         "x-permission": "inventory:sales-orders:ship",
         "description": "Exposure: permission — inventory:sales-orders:ship",
         "x-idempotency-command": "inventory.picking.wave.claim",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/inventory/picking/waves/{pickListId}/confirm": {
@@ -161090,7 +161104,8 @@
         "x-permission": "inventory:stock:reserve",
         "description": "Exposure: permission — inventory:stock:reserve",
         "x-idempotency-command": "inventory.project.requirement.release",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/inventory/projects/{projectId}/requirements/{requirementId}/reserve": {
@@ -162279,7 +162294,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:stock:transfer",
-        "description": "Exposure: permission — inventory:stock:transfer"
+        "description": "Exposure: permission — inventory:stock:transfer",
+        "x-bodyless": true
       }
     },
     "/inventory/putaway/tasks/{taskId}/cancel": {
@@ -162334,7 +162350,8 @@
         "x-permission": "inventory:stock:transfer",
         "description": "Exposure: permission — inventory:stock:transfer",
         "x-idempotency-command": "inventory.putaway.task.cancel",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/inventory/putaway/tasks/{taskId}/claim": {
@@ -162389,7 +162406,8 @@
         "x-permission": "inventory:stock:transfer",
         "description": "Exposure: permission — inventory:stock:transfer",
         "x-idempotency-command": "inventory.putaway.task.claim",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/inventory/putaway/tasks/{taskId}/complete": {
@@ -163378,7 +163396,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:quality:plans:manage",
-        "description": "Exposure: permission — inventory:quality:plans:manage"
+        "description": "Exposure: permission — inventory:quality:plans:manage",
+        "x-bodyless": true
       }
     },
     "/inventory/quality/inspections": {
@@ -169207,7 +169226,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:shipments:manage",
-        "description": "Exposure: permission — inventory:shipments:manage"
+        "description": "Exposure: permission — inventory:shipments:manage",
+        "x-bodyless": true
       }
     },
     "/inventory/shipments/{shipmentId}/ship": {

@@ -36,6 +36,7 @@ import type {
   ApproveRecommendationInput, CreateSlottingRuleInput, DismissRecommendationInput, ListRecommendationsQuery, ListSlottingRulesQuery, SetSlottingRuleActiveInput } from "./dto/slotting.schemas";
 import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 /**
  * NEO-6 - slotting.
@@ -170,6 +171,7 @@ export class SlottingCronController {
   }
 
   @Post("inventory-reslot")
+  @BodylessAction()
   @HttpCode(HttpStatus.OK)
   runPost(@Headers("authorization") authorization?: string): Promise<ReslotSweepResult> {
     return this.run(authorization);
