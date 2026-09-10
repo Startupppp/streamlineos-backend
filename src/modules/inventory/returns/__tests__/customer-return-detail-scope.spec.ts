@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { NotFoundException } from "@nestjs/common";
 import type { SQL } from "drizzle-orm";
@@ -246,9 +246,34 @@ describe("the ungated read that is allowed to stay", () => {
     expect(service).toContain(
       "private loadCustomerReturnUnscoped(orgId: string, returnId: number)",
     );
-    expect(service).toContain("return this.loadCustomerReturnUnscoped(orgId, ret.id);");
     expect(service).toMatch(/async get\(orgId: string, userId: string, returnId: number\)/);
     expect(service).toMatch(/async cancel\(orgId: string, userId: string, returnId: number\)/);
+
+    /*
+     * `create` moved to `lib/customer-return-create.ts`, and the boundary did
+     * NOT move with it. The lib reaches the ungated read through a closure the
+     * service binds, so nothing under `returns/lib/` calls or imports it and no
+     * future route can. Asserted rather than trusted: the obvious way to do
+     * that split — export `loadCustomerReturnUnscoped` from the lib — is
+     * exactly what naming it private was for.
+     *
+     * The check is on `loadCustomerReturnUnscoped(`, with the paren: a call or
+     * a declaration. A lib is free to NAME it in a comment explaining why it
+     * uses a callback instead, and one does.
+     */
+    const libDir = join(__dirname, "..", "lib");
+    for (const file of readdirSync(libDir)) {
+      const text = readFileSync(join(libDir, file), "utf8");
+      expect({ file, callsUngatedRead: text.includes("loadCustomerReturnUnscoped(") }).toEqual({
+        file,
+        callsUngatedRead: false,
+      });
+    }
+    const createLib = readFileSync(join(libDir, "customer-return-create.ts"), "utf8");
+    expect(createLib).toContain("return deps.reloadUnscopedReturn(orgId, ret.id);");
+    expect(service).toContain(
+      "reloadUnscopedReturn: (orgId, returnId) => this.loadCustomerReturnUnscoped(orgId, returnId)",
+    );
 
     // The half the census cannot see: a controller still sending only `orgId`.
     const controller = readFileSync(join(__dirname, "..", "customer-returns.controller.ts"), "utf8");

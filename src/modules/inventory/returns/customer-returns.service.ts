@@ -1,32 +1,25 @@
 import { Inject, Injectable, BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
-import {
-  invCustomerReturns, invCustomerReturnLines, invSerialNumbers,
-  invLocations, invSalesOrders, invShipments,
-} from "../../../db/schema";
-import { clientPartyMap } from "../../../db/schema/party";
+import { invCustomerReturns, invCustomerReturnLines } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
-import {
-  WarehouseScopeService,
-  type ResolvedWarehouseScope,
-} from "../stock-engine/warehouse-scope.service";
+import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { runIdempotent, revivedId } from "../stock-engine/idempotency";
-import type { StockMovement } from "../stock-engine/stock-engine.types";
+import { returnInScope } from "./lib/customer-return-scope";
 import {
-  INVENTORY_COMMAND_EVENTS,
-  emitInventoryCommandEvent,
-} from "../stock-engine/command-events";
+  createCustomerReturn,
+  type ReturnCreateDeps,
+} from "./lib/customer-return-create";
 import {
-  movementsForDisposition,
-  serialStatusForDisposition,
-  type ReturnSerialStatus,
-} from "./return-dispositions";
-import { assertCustomerReturnWithinShipped } from "./returnable-quantity";
+  assertEveryLineInspected,
+  assertReturnableInTx,
+  postReturnInTx,
+  type ReturnPostDeps,
+} from "./lib/customer-return-post";
 import type {
   ListReturnsInput,
   CreateCustomerReturnInput,
@@ -36,7 +29,6 @@ import type {
 } from "./dto/inv-returns.schemas";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
-type ReturnLineRow = typeof invCustomerReturnLines.$inferSelect;
 
 @Injectable()
 export class CustomerReturnsService {
@@ -47,30 +39,6 @@ export class CustomerReturnsService {
     private readonly numSeq: NumberSequenceService,
     private readonly warehouseScope: WarehouseScopeService,
   ) {}
-
-  /**
-   * Which returns this caller may see — the list's rule, now the only copy.
-   *
-   * A return carries no warehouse of its own. It is attributable through
-   * whichever source document it came back against — the order or the shipment
-   * — and a return with neither belongs to no warehouse.
-   *
-   * The NULL rule falls out of that and is worth stating, because it differs by
-   * table on purpose. A NULL `so_id` makes `NULL IN (…)` NULL, likewise a NULL
-   * `shipment_id`, and `NULL OR NULL` is NULL, so a return anchored to neither
-   * document is **excluded** from a scoped caller's view. That is the opposite
-   * of the ASN detail, where an unattributed row stays visible to everyone: an
-   * ASN header names its warehouse nullably because it may not be known yet,
-   * whereas a return with no order and no shipment is anchored to nothing and
-   * showing it to every operator in the org would be a different list from the
-   * one this has always been. Each detail follows its own aggregate.
-   */
-  private returnInScope(orgId: string, scope: ResolvedWarehouseScope): SQL {
-    return scope.anyOf(
-      sql`${invCustomerReturns.soId} IN (SELECT id FROM inv_sales_orders WHERE org_id = ${orgId} AND ${scope.warehouse(sql.raw("warehouse_id"))})`,
-      sql`${invCustomerReturns.shipmentId} IN (SELECT id FROM inv_shipments WHERE org_id = ${orgId} AND ${scope.warehouse(sql.raw("warehouse_id"))})`,
-    );
-  }
 
   /**
    * The gate for the mutations that lock the row themselves.
@@ -88,7 +56,7 @@ export class CustomerReturnsService {
       .where(and(
         eq(invCustomerReturns.id, returnId),
         eq(invCustomerReturns.orgId, orgId),
-        this.returnInScope(orgId, scope),
+        returnInScope(orgId, scope),
       ))
       .limit(1);
     if (!visible) throw new NotFoundException("Customer return not found");
@@ -103,7 +71,7 @@ export class CustomerReturnsService {
     return this.cache.cachedVersioned(CACHE_KEYS.invCustomerReturnsNamespace(orgId), hash, async () => {
       const conditions = [
         eq(invCustomerReturns.orgId, orgId),
-        this.returnInScope(orgId, scope),
+        returnInScope(orgId, scope),
       ];
       if (status) conditions.push(eq(invCustomerReturns.status, status));
       const where = and(...conditions);
@@ -142,7 +110,7 @@ export class CustomerReturnsService {
    */
   async get(orgId: string, userId: string, returnId: number) {
     const scope = await this.warehouseScope.forUser(orgId, userId);
-    return this.loadCustomerReturn(orgId, returnId, this.returnInScope(orgId, scope));
+    return this.loadCustomerReturn(orgId, returnId, returnInScope(orgId, scope));
   }
 
   /**
@@ -186,176 +154,9 @@ export class CustomerReturnsService {
     return ret;
   }
 
-  /**
-   * You may raise a return only against a document out of a warehouse you hold.
-   *
-   * `create` validated `so_id` and `shipment_id` against the ORG and stopped
-   * there, so a scoped operator could anchor a DRAFT to another warehouse's
-   * order or shipment. Nothing moved — a DRAFT posts no stock — and every step
-   * after it is gated, so the document became invisible to the person who
-   * raised it the moment they saved it: a write into a building they hold
-   * nothing in, leaving an orphaned draft behind. It also let them measure
-   * somebody else's despatches, because `assertCustomerReturnWithinShipped`
-   * below reads that shipment's lines on their behalf and the refusal names the
-   * quantity.
-   *
-   * OR, NOT AND, and that is the list's rule rather than a looser reading of
-   * it: `returnInScope` attributes a return through the order OR the shipment,
-   * so a return this caller could SEE is a return they may create. Asking of
-   * each document independently would be stricter than the list and would
-   * refuse real work — `inv_sales_orders.warehouse_id` is nullable, so an order
-   * booked before it was allocated carries none at all, and the operator who
-   * then shipped it out of their own warehouse would be refused a return
-   * against the pair. The transfer's source/destination asymmetry does not
-   * transfer here: these two ids are not two ends of a movement, they are two
-   * spellings of one anchor.
-   *
-   * `clientId` is not asked about — a customer is not a building.
-   *
-   * The NULL rule falls out of the same expression rather than being restated:
-   * `NULL IN (…)` is NULL, so a document attributed to no warehouse anchors
-   * this return to none of the caller's, exactly as it is excluded from their
-   * list.
-   *
-   * 404 (§4), and it does not say which of the two documents failed. The org
-   * checks in front of it have already told this caller both ids exist in their
-   * tenant; naming the one that sits outside their warehouses would add the
-   * single fact the gate exists to withhold.
-   */
-  private async assertSourceInScope(
-    orgId: string,
-    userId: string,
-    source: { soId?: number | null; shipmentId?: number | null },
-  ): Promise<void> {
-    // A walk-in return cites no document at all. `assertCustomerReturnWithinShipped`
-    // makes the same exception for the same reason: there is nothing to measure
-    // it against, and nothing to attribute it to either.
-    if (source.soId == null && source.shipmentId == null) return;
-
-    const scope = await this.warehouseScope.forUser(orgId, userId);
-    // Asked before the queries rather than compiled to `TRUE` inside them: an
-    // org-wide caller is the common case on this path and two round trips to
-    // learn nothing is two too many.
-    if (scope.unrestricted) return;
-
-    if (source.soId != null) {
-      const [inScope] = await this.db
-        .select({ id: invSalesOrders.id })
-        .from(invSalesOrders)
-        .where(and(
-          eq(invSalesOrders.id, source.soId),
-          eq(invSalesOrders.orgId, orgId),
-          scope.warehouse(sql`${invSalesOrders.warehouseId}`),
-        ))
-        .limit(1);
-      if (inScope) return;
-    }
-
-    if (source.shipmentId != null) {
-      const [inScope] = await this.db
-        .select({ id: invShipments.id })
-        .from(invShipments)
-        .where(and(
-          eq(invShipments.id, source.shipmentId),
-          eq(invShipments.orgId, orgId),
-          scope.warehouse(sql`${invShipments.warehouseId}`),
-        ))
-        .limit(1);
-      if (inScope) return;
-    }
-
-    throw new NotFoundException("Sales order or shipment not found");
-  }
-
+  /** @see lib/customer-return-create.ts */
   async create(orgId: string, userId: string, data: CreateCustomerReturnInput) {
-    if (data.soId !== undefined && data.soId !== null) {
-      const so = await this.db.query.invSalesOrders.findFirst({
-        where: and(eq(invSalesOrders.id, data.soId), eq(invSalesOrders.orgId, orgId)),
-        columns: { id: true },
-      });
-      if (!so) throw new BadRequestException("Sales order not found in this organization");
-    }
-
-    if (data.shipmentId !== undefined && data.shipmentId !== null) {
-      const shipment = await this.db.query.invShipments.findFirst({
-        where: and(eq(invShipments.id, data.shipmentId), eq(invShipments.orgId, orgId)),
-        columns: { id: true },
-      });
-      if (!shipment) throw new BadRequestException("Shipment not found in this organization");
-    }
-
-    // The two checks above answer "is this id mine to name at all"; neither ever
-    // asked whose building the document came out of. This does.
-    await this.assertSourceInScope(orgId, userId, data);
-
-    if (data.clientId !== undefined && data.clientId !== null) {
-      /*
-       * Asked of `client_party_map` rather than `clients`, which answers the same
-       * question through the Party seam. The map's primary key is
-       * `(organization_id, client_id)` and its composite foreign key cascades from
-       * `clients`, so a row exists here exactly when the client exists in this
-       * tenant -- which is all this check ever wanted. `invCustomerReturns.client_id`
-       * still points at `clients`, so the id kept here is still the legacy one.
-       */
-      const [client] = await this.db
-        .select({ id: clientPartyMap.clientId })
-        .from(clientPartyMap)
-        .where(
-          and(
-            eq(clientPartyMap.clientId, data.clientId),
-            eq(clientPartyMap.organizationId, orgId),
-          ),
-        )
-        .limit(1);
-      if (!client) throw new BadRequestException("Client not found in this organization");
-    }
-
-    // B9, item 3. Refused at intake as well as at approval, so somebody typing
-    // 12 against a shipment of 10 finds out now rather than after an inspection
-    // walk. Return id 0 excludes nothing, which is right: this return does not
-    // exist yet.
-    await assertCustomerReturnWithinShipped(
-      this.db,
-      orgId,
-      0,
-      { soId: data.soId ?? null, shipmentId: data.shipmentId ?? null },
-      data.lines.map((line) => ({
-        productVariantId: line.productVariantId,
-        lotId: line.lotId ?? null,
-        serialId: line.serialId ?? null,
-        quantity: line.quantity,
-      })),
-    );
-
-    const returnNumber = await this.numSeq.next(orgId, "CUSTOMER_RETURN");
-
-    const [ret] = await this.db.insert(invCustomerReturns).values({
-      orgId,
-      returnNumber,
-      soId: data.soId,
-      shipmentId: data.shipmentId,
-      clientId: data.clientId,
-      notes: data.notes,
-      status: "DRAFT",
-      createdBy: userId,
-    }).returning();
-
-    await this.db.insert(invCustomerReturnLines).values(
-      data.lines.map((line) => ({
-        orgId,
-        returnId: ret.id,
-        productVariantId: line.productVariantId,
-        lotId: line.lotId,
-        serialId: line.serialId,
-        quantity: line.quantity,
-        disposition: line.disposition,
-        targetLocationId: line.targetLocationId,
-        notes: line.reason,
-      }))
-    );
-
-    await this.cache.invalidateNamespace(CACHE_KEYS.invCustomerReturnsNamespace(orgId));
-    return this.loadCustomerReturnUnscoped(orgId, ret.id);
+    return createCustomerReturn(this.returnDeps, orgId, userId, data);
   }
 
   /**
@@ -387,7 +188,7 @@ export class CustomerReturnsService {
         and(
           eq(invCustomerReturns.orgId, orgId),
           eq(invCustomerReturns.id, returnId),
-          this.returnInScope(orgId, scope),
+          returnInScope(orgId, scope),
         ),
       );
     if (!ret) throw new NotFoundException("Customer return not found");
@@ -471,7 +272,7 @@ export class CustomerReturnsService {
       if (lines.length === 0)
         throw new BadRequestException("A customer return with no lines cannot be approved");
       assertEveryLineInspected(lines);
-      await this.assertReturnableInTx(
+      await assertReturnableInTx(
         tx,
         orgId,
         {
@@ -549,6 +350,7 @@ export class CustomerReturnsService {
     return this.loadCustomerReturnUnscoped(orgId, posted);
   }
 
+  /** @see lib/customer-return-post.ts */
   private async postInTx(
     tx: Tx,
     orgId: string,
@@ -557,175 +359,24 @@ export class CustomerReturnsService {
     idempotencyKey: string,
     data: PostCustomerReturnInput,
   ): Promise<number> {
-    // The row lock before anything is read. Two posts under different keys
-    // otherwise both see APPROVED and both move stock.
-    const [locked] = await tx.execute<{ status: string }>(sql`
-      SELECT status FROM inv_customer_returns
-      WHERE id = ${returnId} AND org_id = ${orgId} FOR UPDATE`);
-    if (!locked) throw new NotFoundException("Customer return not found");
-    // Already posted under some other key. The ledger is append-only and the
-    // goods are already on the shelf, so the only correct answer is to change
-    // nothing.
-    if (locked.status === "POSTED") return returnId;
-    if (locked.status !== "APPROVED") {
-      throw new BadRequestException(
-        locked.status === "DRAFT"
-          ? "This customer return must be approved before it can be posted"
-          : `A ${locked.status} customer return cannot be posted`,
-      );
-    }
-
-    const ret = await tx.query.invCustomerReturns.findFirst({
-      where: and(eq(invCustomerReturns.id, returnId), eq(invCustomerReturns.orgId, orgId)),
-      with: { lines: true },
-    });
-    if (!ret) throw new NotFoundException("Customer return not found");
-
-    // INV-209. Re-asserted under the lock rather than trusted from the
-    // approval: posting is what moves stock, so posting is what has to be sure.
-    assertEveryLineInspected(ret.lines);
-    await this.assertReturnableInTx(tx, orgId, ret, ret.lines);
-
-    const engineMovements: StockMovement[] = [];
-    for (const line of ret.lines) {
-      const targetLocationId = await this.resolveTargetLocation(tx, orgId, line);
-      engineMovements.push(...movementsForDisposition(
-        {
-          productVariantId: line.productVariantId,
-          disposition: line.disposition,
-          quantity: line.quantity,
-          lotId: line.lotId,
-          serialId: line.serialId,
-        },
-        targetLocationId,
-      ));
-    }
-
-    const byStatus = new Map<ReturnSerialStatus, number[]>();
-    for (const line of ret.lines) {
-      if (line.serialId === null) continue;
-      const serialStatus = serialStatusForDisposition(line.disposition);
-      const ids = byStatus.get(serialStatus) ?? [];
-      ids.push(line.serialId);
-      byStatus.set(serialStatus, ids);
-    }
-
-    if (engineMovements.length > 0) {
-      await this.engine.executeInTx(tx, orgId, userId, {
-        // Derived rather than shared: the command's own key is already claimed
-        // by `runIdempotent` above, and handing the engine the same string
-        // would make it collide with that live claim.
-        idempotencyKey: `${idempotencyKey}:stock`,
-        sourceType: "inv_customer_return",
-        sourceId: String(returnId),
-        reason: data.reason,
-        movements: engineMovements,
-      });
-    }
-
-    for (const [serialStatus, ids] of byStatus) {
-      await tx.update(invSerialNumbers)
-        .set({ status: serialStatus })
-        .where(inArray(invSerialNumbers.id, ids));
-    }
-
-    await tx.update(invCustomerReturns)
-      .set({ status: "POSTED", postedAt: new Date(), updatedAt: new Date() })
-      .where(and(
-        eq(invCustomerReturns.id, returnId),
-        eq(invCustomerReturns.orgId, orgId),
-        eq(invCustomerReturns.status, "APPROVED"),
-      ));
-
-    await emitInventoryCommandEvent(tx, {
-      orgId,
-      eventType: INVENTORY_COMMAND_EVENTS.RETURN_POSTED,
-      aggregateType: "inv_customer_return",
-      aggregateId: String(returnId),
-      actorUserId: userId,
-      payload: {
-        // One event type for both directions, because "goods came back" is
-        // one thing a consumer subscribes to; which way they went is a
-        // field, not a separate contract.
-        returnType: "CUSTOMER",
-        returnId,
-        returnNumber: ret.returnNumber,
-        soId: ret.soId,
-        shipmentId: ret.shipmentId,
-        clientId: ret.clientId,
-        lineCount: ret.lines.length,
-        // What was decided about the goods. A restock and a scrap are the
-        // same document and opposite outcomes, and a consumer that has to
-        // re-read the lines to tell them apart has been told nothing.
-        dispositions: ret.lines.map((line) => ({
-          lineId: line.id,
-          productVariantId: line.productVariantId,
-          disposition: line.disposition,
-        })),
-        // Item 5. The pointer, carried so an accounting adapter can reconcile
-        // the credit against the goods without asking us for it.
-        creditReference: ret.creditReference,
-        approvedBy: ret.approvedBy,
-        reason: data.reason ?? null,
-        idempotencyKey,
-      },
-    });
-
-    return returnId;
-  }
-
-  private assertReturnableInTx(
-    tx: Tx,
-    orgId: string,
-    ret: { id: number; soId: number | null; shipmentId: number | null },
-    lines: ReturnLineRow[],
-  ): Promise<void> {
-    return assertCustomerReturnWithinShipped(
-      tx,
-      orgId,
-      ret.id,
-      { soId: ret.soId, shipmentId: ret.shipmentId },
-      lines,
-    );
+    return postReturnInTx(this.returnDeps, tx, orgId, returnId, userId, idempotencyKey, data);
   }
 
   /**
-   * Where these goods land.
-   *
-   * The line's own choice wins. Failing that the disposition decides the kind of
-   * place: quarantined goods want a QUARANTINE bin, everything kept wants a
-   * RETURNS bin. The final fallback excludes locations flagged unsellable —
-   * every warehouse has a `TRANSIT` location and it is `is_sellable = false`, so
-   * restocking into one would raise on-hand while availability stayed flat and
-   * the goods would read as lost.
+   * Built explicitly rather than passing `this`: TypeScript will not
+   * structurally match a class carrying `private` members to an interface.
+   * `reloadUnscopedReturn` is what keeps the ungated read on the service —
+   * see the note in `lib/customer-return-create.ts`.
    */
-  private async resolveTargetLocation(
-    tx: Tx,
-    orgId: string,
-    line: Pick<ReturnLineRow, "disposition" | "targetLocationId">,
-  ): Promise<number> {
-    if (line.targetLocationId) return line.targetLocationId;
-
-    type LocationType = typeof invLocations.$inferSelect["locationType"];
-    const locationType: LocationType = line.disposition === "QUARANTINE" ? "QUARANTINE" : "RETURNS";
-    const loc = await tx.query.invLocations.findFirst({
-      where: and(
-        eq(invLocations.orgId, orgId),
-        eq(invLocations.locationType, locationType),
-        eq(invLocations.isActive, true),
-      ),
-      columns: { id: true },
-    });
-
-    if (loc) return loc.id;
-
-    const [anyLoc] = await tx.execute<{ id: number }>(sql`
-      SELECT id FROM inv_locations
-      WHERE org_id = ${orgId} AND is_active = true AND is_sellable IS NOT FALSE
-      ORDER BY id ASC LIMIT 1`);
-
-    if (!anyLoc) throw new BadRequestException("No active location found for customer return");
-    return Number(anyLoc.id);
+  private get returnDeps(): ReturnCreateDeps & ReturnPostDeps {
+    return {
+      db: this.db,
+      cache: this.cache,
+      engine: this.engine,
+      numSeq: this.numSeq,
+      warehouseScope: this.warehouseScope,
+      reloadUnscopedReturn: (orgId, returnId) => this.loadCustomerReturnUnscoped(orgId, returnId),
+    };
   }
 
   /**
@@ -745,7 +396,7 @@ export class CustomerReturnsService {
       where: and(
         eq(invCustomerReturns.id, returnId),
         eq(invCustomerReturns.orgId, orgId),
-        this.returnInScope(orgId, scope),
+        returnInScope(orgId, scope),
       ),
     });
     if (!ret) throw new NotFoundException("Customer return not found");
@@ -765,24 +416,3 @@ export class CustomerReturnsService {
   }
 }
 
-/**
- * INV-209. Posting moves stock, so every line must have been *looked at* first
- * — `inspectedAt`, not merely `disposition`.
- *
- * Gating on the disposition was the weaker test and it defeated the ticket: a
- * disposition declared at intake is a guess from the customer's description,
- * which is exactly the thing that was posting stock without anybody opening the
- * box. It is still accepted at create as a statement of intent; it just no
- * longer counts as an inspection.
- *
- * Reported together rather than one at a time: somebody clearing a twelve-line
- * return should not discover the gaps twelve attempts later.
- */
-function assertEveryLineInspected(lines: ReturnLineRow[]): void {
-  const uninspected = lines.filter((line) => line.inspectedAt === null);
-  if (uninspected.length > 0) {
-    throw new BadRequestException(
-      `These lines have not been inspected yet: ${uninspected.map((l) => l.id).join(", ")}`,
-    );
-  }
-}
