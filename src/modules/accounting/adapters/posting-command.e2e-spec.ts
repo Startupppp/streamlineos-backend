@@ -82,7 +82,13 @@ beforeAll(async () => {
   const sequences = new SequenceService(db);
   books = new BooksService(db, packs);
   ledger = new LedgerService(db, sequences, packs);
-  commands = new PostingCommandService(db, books, ledger);
+  /*
+    A refusal is audited on a connection of its own (ACC-15), which this suite
+    has no tenant context for. The stub keeps the e2e about posting rather than
+    about auditing; `posting-refusals.spec.ts` covers the audit itself.
+  */
+  const audit = { logCriticalOutsideTransaction: async () => undefined } as never;
+  commands = new PostingCommandService(db, books, ledger, audit);
 });
 
 afterAll(async () => {

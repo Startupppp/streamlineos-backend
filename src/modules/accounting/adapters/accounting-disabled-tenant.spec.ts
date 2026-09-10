@@ -38,7 +38,8 @@ function serviceWithoutABook() {
     },
   } as never;
 
-  return new PostingCommandService(db, books, ledger);
+  const audit = { logCriticalOutsideTransaction: async () => undefined } as never;
+  return new PostingCommandService(db, books, ledger, audit);
 }
 
 /** A caller's transaction. Every use is recorded so "untouched" can be asserted. */

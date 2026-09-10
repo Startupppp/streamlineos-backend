@@ -4,6 +4,7 @@ import { glParties, type GlSystemTag } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { reportError } from "../../../common/observability";
 import type { Db } from "../../../db/drizzle.module";
+import { AuditService } from "../../../common/audit/audit.service";
 import { BooksService } from "../kernel/books.service";
 import { LedgerService } from "../kernel/ledger.service";
 import type { PostJournalLineCommand } from "../kernel/ledger.types";
@@ -31,6 +32,7 @@ export class PostingCommandService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly books: BooksService,
     private readonly ledger: LedgerService,
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -79,7 +81,12 @@ export class PostingCommandService {
       };
     };
 
-    return tx ? run(tx) : this.db.transaction(run);
+    try {
+      return await (tx ? run(tx) : this.db.transaction(run));
+    } catch (error) {
+      await this.recordRefusal(orgId, userId, command, error);
+      throw error;
+    }
   }
 
   /**
@@ -162,6 +169,77 @@ export class PostingCommandService {
   }
 
   /* ------------------------------------------------------------ internals */
+
+  /**
+   * Leave a durable trace of a refusal, so a caller that swallows one cannot
+   * make it invisible.
+   *
+   * The ACL cannot force a caller to rethrow, and one already does not:
+   * `payroll-posting.service.ts` wraps its paid-disbursement posting in
+   * `catch (err) { this.logger.error(...) }`, so a locked period or a missing
+   * `net_pay_clearing` account leaves the payroll run looking posted with no
+   * journal behind it. That code is payroll's business logic and not this
+   * pack's to change — but making the refusal survive independently of what
+   * the caller does with it *is* the adapter contract, which is what ACC-15
+   * asks for.
+   *
+   * Outside the transaction, deliberately. A refusal is delivered by throwing,
+   * the throw unwinds through `TenantContextInterceptor`, `withTenant` rolls
+   * the request transaction back, and an audit row written inside it would be
+   * rolled back too — the one entry nobody can reconstruct from the data would
+   * be the only one that never survives.
+   *
+   * `BOOK_NOT_ENABLED` is excluded. It is the honest opt-out and is raised on
+   * every posting attempt by every organisation that never enabled accounting;
+   * auditing it would bury the real refusals under enormous volume.
+   */
+  private async recordRefusal(
+    orgId: string,
+    userId: string | null,
+    command: PostingCommand,
+    error: unknown,
+  ): Promise<void> {
+    if (error instanceof AdapterRejection && error.code === "BOOK_NOT_ENABLED") return;
+
+    const code = error instanceof AdapterRejection ? error.code : "UNEXPECTED";
+    try {
+      await this.audit.logCriticalOutsideTransaction({
+        action: "accounting.posting.refused",
+        orgId,
+        /*
+          A posting can arrive unattended — a payroll lock from a sweep, an
+          outbox redelivery — and the audit table's actor is a union rather
+          than a nullable id precisely so "nobody acted" cannot be confused
+          with "an actor was lost".
+        */
+        ...(userId === null
+          ? { systemActor: `accounting-adapter:${command.sourceType}` as const }
+          : { userId }),
+        resourceType: "gl_journals",
+        resourceId: `${command.sourceType}:${command.sourceId}:${command.purpose}`,
+        result: "FAILURE",
+        metadata: {
+          code,
+          message: error instanceof Error ? error.message : String(error),
+          sourceType: command.sourceType,
+          sourceId: command.sourceId,
+          purpose: command.purpose,
+          journalDate: command.journalDate,
+        },
+      });
+    } catch (auditError) {
+      /*
+        The rejection is the signal the caller needs; an audit-infrastructure
+        failure must not replace it. Swapping "this book has no account tagged
+        cogs" for "audit write failed" would turn an actionable message into an
+        unactionable one, so this is logged and the original rethrown.
+      */
+      this.logger.error(
+        `Could not record a refused posting for ${command.sourceType} ${command.sourceId}: ` +
+          `${auditError instanceof Error ? auditError.message : String(auditError)}`,
+      );
+    }
+  }
 
   private async resolveLines(
     orgId: string,
