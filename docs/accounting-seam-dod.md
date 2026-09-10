@@ -26,6 +26,7 @@ proved by the specs named below, which run in the ordinary suite.
 | ACC-02 Provisioning check when accounting is enabled | Done | `accounting/setup/accounting-provisioning.spec.ts` |
 | ACC-03 Account mapping model | Done, **3 of 6 roles** | `accounting/kernel/system-tag-roles.spec.ts`, migration `0672` |
 | ACC-04 FE account-mapping screen | Done | `features/accounting/settings/__tests__/account-mappings-card.test.tsx` (frontend) |
+| ACC-02/17 FE provisioning notice | Done, **found unrendered** | `features/accounting/setup/__tests__/provisioning-notice.test.tsx` (frontend) |
 | ACC-05 Enforce the period before valuation posts | Done | `accounting/adapters/inventory-post-atomicity.spec.ts` |
 | ACC-06 Missing map fails deterministically | Done | `accounting/adapters/posting-rejections-over-http.spec.ts` |
 | ACC-07 Post only via `PostingCommandService` | Done | `accounting/adapters/inventory-posting-keys.spec.ts` |
@@ -183,6 +184,32 @@ leaves the run looking posted. Payroll business logic is outside this pack's
 fence; ACC-15 makes the refusal survive independently by auditing it in the
 adapter, and a test in `posting-refusals.spec.ts` fails the day payroll stops
 swallowing so the gap is not forgotten.
+
+---
+
+## The reachability sweep, and what it found
+
+Run at the end because this pack found "built, and nothing routes to it" four
+times in other people's code and I shipped it once myself. Every controller
+added here is registered and reaches `app.module.ts` through
+`AccountingRootModule`; the account-mapping card is rendered by
+`/accounting/settings`.
+
+One thing was not. **The provisioning verdict was computed, returned in every
+`/accounting/setup/status` response, typed on the frontend, and rendered by
+nobody** — so an organisation with the module on and no book, whose every stock
+movement and invoice was being accepted and recorded nowhere, saw exactly the
+screen an organisation that never opted in sees. And ACC-17's
+`fiscal_year_ending` never reached the frontend union at all, which no type
+error could reveal: the consumer's own union did not know the state existed, so
+its `switch` stayed exhaustive over a stale set.
+
+Fixed, with two cross-repo drift guards — every backend state must have a
+branch in the component, and must be present in the frontend union — each
+verified by deliberate breakage. The lesson worth keeping is that a field is
+not a route: reachability for an API *field* has to be checked in the consuming
+repository, and the check is only as good as its parse (mine found 2 of 5
+states until an assertion floor caught it).
 
 ---
 
