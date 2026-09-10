@@ -1,5 +1,4 @@
 import { eq, isNull, sql, type SQL } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
 import { businessParties, contactPartyMap } from "../../db/schema/party";
 
 /**
@@ -99,9 +98,6 @@ export function contactIdIs(contactId: number): SQL {
   return eq(contactPartyMap.contactId, contactId);
 }
 
-/** A second reference to the map, to ask whether a lower id names the same party. */
-const lowerMap = alias(contactPartyMap, "lower_contact_map");
-
 /**
  * One row per party, for the reads that would otherwise show a person twice.
  *
@@ -124,10 +120,18 @@ const lowerMap = alias(contactPartyMap, "lower_contact_map");
  * `contactPartyScope`, which they all share.
  */
 export function canonicalContactOnly(orgId: string): SQL {
+  /*
+   * The alias is declared in the fragment rather than built with `alias()`.
+   * Interpolating an aliased table into a `sql` template emits the alias NAME
+   * where a relation belongs — `from "lower_contact_map"` — which typechecks,
+   * builds, and then 500s at runtime on a relation that does not exist. The
+   * outer references stay Drizzle columns so the table this correlates against
+   * is still the schema's.
+   */
   return sql`not exists (
-    select 1 from ${lowerMap}
-    where ${lowerMap.organizationId} = ${orgId}
-      and ${lowerMap.partyId} = ${contactPartyMap.partyId}
-      and ${lowerMap.contactId} < ${contactPartyMap.contactId}
+    select 1 from ${contactPartyMap} as lower_contact_map
+    where lower_contact_map.organization_id = ${orgId}
+      and lower_contact_map.party_id = ${contactPartyMap.partyId}
+      and lower_contact_map.contact_id < ${contactPartyMap.contactId}
   )`;
 }
