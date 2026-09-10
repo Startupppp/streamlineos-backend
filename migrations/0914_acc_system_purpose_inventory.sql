@@ -1,3 +1,17 @@
+-- @irreversible
+--
+-- Not because anything here is destructive — nothing is dropped, nothing is
+-- backfilled, and a tenant who never opens the settings screen sees no change.
+-- It is irreversible because PostgreSQL has no `ALTER TYPE ... DROP VALUE`: an
+-- enum label, once added, cannot be removed. The only way back is to rebuild the
+-- type and rewrite every column that uses it, which for `acc_system_purpose`
+-- means `acc_system_account_map` and would take an ACCESS EXCLUSIVE lock to undo
+-- six labels nothing is obliged to use.
+--
+-- Written as a declaration rather than a rollback file that pretends: a
+-- `.down.sql` here could only be a no-op or a lie, and `check:migration-rollback`
+-- exists precisely so the difference is stated instead of assumed.
+
 -- INV-09 — the six inventory account mappings, as purposes an admin can map.
 --
 -- `acc_system_account_map` already carries eighteen system-account purposes with
