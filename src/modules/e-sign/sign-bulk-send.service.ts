@@ -247,6 +247,20 @@ export class SignBulkSendService {
         if (failure === null) successCount++;
         else failedCount++;
       }
+
+      await runInNewTenantTransaction(this.db, orgId, async () => {
+        await this.db
+          .update(signBulkSendJobs)
+          .set({ status: "completed", completedAt: new Date(), successCount, failedCount })
+          .where(eq(signBulkSendJobs.id, jobId));
+
+        await this.audit.record({
+          orgId,
+          actorType: "system",
+          eventType: "bulk_job_completed",
+          eventMessage: `Bulk send job completed: ${successCount} sent, ${failedCount} failed`,
+        });
+      });
     } catch (error) {
       /*
        * Partial success needs a terminal state for a run that did not finish.
@@ -257,6 +271,10 @@ export class SignBulkSendService {
        * `signBulkJobStatusEnum` from the start with nothing to set it; this is
        * the case it was for. The counts are written as they actually stand, so
        * the rows that did send are still reported as sent.
+       *
+       * The completion write is inside the guarded block for the same reason:
+       * it is one transaction, so if it throws it wrote nothing, and the job
+       * would otherwise be left `running` by the very statement meant to end it.
        */
       await runInNewTenantTransaction(this.db, orgId, () =>
         this.db
@@ -266,20 +284,6 @@ export class SignBulkSendService {
       );
       throw error;
     }
-
-    await runInNewTenantTransaction(this.db, orgId, async () => {
-      await this.db
-        .update(signBulkSendJobs)
-        .set({ status: "completed", completedAt: new Date(), successCount, failedCount })
-        .where(eq(signBulkSendJobs.id, jobId));
-
-      await this.audit.record({
-        orgId,
-        actorType: "system",
-        eventType: "bulk_job_completed",
-        eventMessage: `Bulk send job completed: ${successCount} sent, ${failedCount} failed`,
-      });
-    });
 
     /*
      * The completion email is a network call and the run is over, so it is sent
