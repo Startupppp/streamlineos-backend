@@ -19,6 +19,9 @@ import type { MailFolder, MailMessageSummary } from "./dto/mail-schemas";
  * alternate by date so every page straddles both.
  */
 
+/* The cursor signer takes its key from config now, so the harness states it. */
+const CURSOR_SECRET = "k".repeat(64);
+
 const ORG_ID = "org-1";
 const USER_ID = "user-1";
 const FOLDER: MailFolder = "inbox";
@@ -135,7 +138,9 @@ function buildHarness(
   } as unknown as CacheService;
 
   return {
-    service: new MailService(accounts, gmail, outlook, cache, metadata),
+    service: new MailService(accounts, gmail, outlook, cache, metadata, {
+      ENCRYPTION_KEY: CURSOR_SECRET,
+    }),
     gmailPageSizes,
   };
 }
@@ -168,9 +173,6 @@ function duplicates(keys: readonly string[]): string[] {
 }
 
 describe("multi-account inbox paging", () => {
-  beforeAll(() => {
-    process.env.ENCRYPTION_KEY = process.env.ENCRYPTION_KEY ?? "k".repeat(64);
-  });
 
   it("returns every message from both providers exactly once", async () => {
     const { gmail, outlook } = buildMailboxes(12);
