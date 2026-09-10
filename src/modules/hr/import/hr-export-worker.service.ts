@@ -15,12 +15,12 @@ import {
 } from "../../../common/tenant";
 import { StorageService } from "../../storage/storage.service";
 import { HrExportFileService } from "./hr-export-file.service";
+import { HrExportJobsService } from "./hr-export-jobs.service";
 import {
-  HrExportJobsService,
   HrExportProcessingError,
   isHrExportWorkerEnabled,
   type HrExportJobRow,
-} from "./hr-export-jobs.service";
+} from "./hr-export-jobs.types";
 
 const POLL_INTERVAL_MS = 30_000;
 const STALE_JOB_MS = 15 * 60_000;

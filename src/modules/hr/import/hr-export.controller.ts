@@ -28,10 +28,8 @@ import {
   exportJobIdSchema,
   type CreateEmployeeExportJobInput,
 } from "./dto/export-job.dto";
-import {
-  HrExportJobsService,
-  type HrExportJobView,
-} from "./hr-export-jobs.service";
+import { HrExportJobsService } from "./hr-export-jobs.service";
+import type { HrExportJobView } from "./hr-export-jobs.types";
 import { HrExportWorkerService } from "./hr-export-worker.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ApiOkResponse } from "@nestjs/swagger";

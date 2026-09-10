@@ -14,7 +14,7 @@ import {
 import {
   isExportScopeStillAllowed,
   narrowestExportScope,
-} from "./hr-export-jobs.service";
+} from "./hr-export-jobs.types";
 
 describe("HR employee export", () => {
   it("validates and normalizes bounded employee filters", () => {
