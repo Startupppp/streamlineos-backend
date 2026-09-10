@@ -278,6 +278,12 @@ describe(`${SEEDED_HARNESS} nurture enrol and list`, () => {
      */
     const res = await enrol(operatorToken, otherOrgSequenceId, { partyId });
     expect(res.status).toBe(404);
+    /**
+     * The message, not just the status. Nest answers an unmounted route with a
+     * 404 of its own, so a bare status assertion here would go on passing if the
+     * handler were deleted — which is exactly what the revert test found.
+     */
+    expect(res.body.message).toBe("Sequence not found");
   }, 60_000);
 
   it("answers 404 for a customer belonging to another organisation", async () => {
@@ -288,6 +294,8 @@ describe(`${SEEDED_HARNESS} nurture enrol and list`, () => {
      */
     const res = await enrol(operatorToken, sequenceId, { partyId: otherOrgPartyId });
     expect(res.status).toBe(404);
+    /** The handler's own words, so an unmounted route cannot satisfy this. */
+    expect(res.body.message).toBe("Customer not found");
   }, 60_000);
 
   it("rejects an unknown field rather than ignoring it", async () => {
@@ -415,9 +423,11 @@ describe(`${SEEDED_HARNESS} nurture enrol and list`, () => {
     /** Again 404, not 403, and not an empty 200 that would confirm the id. */
     const res = await listEnrollments(strangerToken, sequenceId);
     expect(res.status).toBe(404);
+    expect(res.body.message).toBe("Sequence not found");
 
     const mirrored = await listEnrollments(operatorToken, otherOrgSequenceId);
     expect(mirrored.status).toBe(404);
+    expect(mirrored.body.message).toBe("Sequence not found");
   }, 60_000);
 
   it("lets the other tenant list its own sequence", async () => {
