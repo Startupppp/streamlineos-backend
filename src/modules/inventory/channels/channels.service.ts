@@ -5,6 +5,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
+import { ChannelPoolService } from "../stock-engine/channel-pool.service";
 import {
   invChannels,
   invChannelStockPublications,
@@ -27,6 +28,7 @@ export class ChannelsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly audit: InventoryAuditService,
+    private readonly channelPools: ChannelPoolService,
   ) {}
 
   list(orgId: string, page = 1, limit = 100) {
@@ -193,6 +195,10 @@ export class ChannelsService {
     let skipped = 0;
 
     const rows: Array<typeof invChannelStockPublications.$inferInsert> = [];
+    // Kept beside `rows` rather than derived from it: `$inferInsert` types
+    // `publishedQty` as optional because the column has a default, so mapping it
+    // back out yields `string | undefined` for a value that is always set here.
+    const poolRows: Array<{ channelId: number; productVariantId: number; publishedQty: string }> = [];
     for (const [productVariantId, available] of variantMap.entries()) {
       const afterBuffer = subDec(available, safetyBuffer);
       const publishable = isNegative(afterBuffer) ? "0.0000" : afterBuffer;
@@ -212,6 +218,7 @@ export class ChannelsService {
         error: pubError,
         publishedAt: pubAt,
       });
+      poolRows.push({ channelId, productVariantId, publishedQty: publishable });
       synced++;
     }
 
@@ -236,6 +243,21 @@ export class ChannelsService {
             updatedAt: now,
           },
         });
+    }
+
+    // The pool row carries `published_qty` — "what this channel was last told" —
+    // and until now NOTHING wrote it. `listForChannel`, `listForVariant` and the
+    // allocate result all select that column, and the controller serves the first
+    // two, so every caller was reading the DEFAULT '0' forever while the real
+    // figure sat in `inv_channel_stock_publications`. Written here because this is
+    // the moment the channel is told.
+    //
+    // Only on a real publish: `pubStatus` is FAILED for any non-INTERNAL channel
+    // ("Provider not connected"), and a channel that was told nothing has no last
+    // told figure. Upserting cannot disturb promises — `hasAnyPool` gates on
+    // `reserved_qty > 0`, and this writes `published_qty` only.
+    if (pubStatus === "PUBLISHED" && poolRows.length > 0) {
+      await this.channelPools.recordPublishedInTx(this.db, orgId, poolRows);
     }
 
     await this.audit.insert(this.db, {

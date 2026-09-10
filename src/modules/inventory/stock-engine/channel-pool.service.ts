@@ -386,18 +386,32 @@ export class ChannelPoolService {
   /**
    * What the channel was last told. A snapshot never writes `reserved_qty` — E6's
    * rule, unchanged: a marketplace's figure is a signal, not a ledger entry.
+   *
+   * Set-based and chunked, because this runs over a whole catalogue on the
+   * publish path: a statement per variant would be an N+1 against `syncStock`,
+   * which already chunks its own insert at 500 for exactly that reason. The
+   * conflict arm reads `excluded`, which is also the only form that is correct
+   * once more than one row is in flight.
    */
   async recordPublishedInTx(
-    tx: Tx,
+    executor: Tx | Db,
     orgId: string,
     rows: Array<{ channelId: number; productVariantId: number; warehouseId?: number | null; publishedQty: string }>,
   ): Promise<void> {
-    for (const row of rows) {
-      await tx.execute(sql`
+    const CHUNK = 500;
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      const chunk = rows.slice(i, i + CHUNK);
+      await executor.execute(sql`
         INSERT INTO inv_channel_pools (org_id, channel_id, warehouse_id, product_variant_id, published_qty)
-        VALUES (${orgId}, ${row.channelId}, ${row.warehouseId ?? null}, ${row.productVariantId}, ${row.publishedQty}::numeric)
+        VALUES ${sql.join(
+          chunk.map(
+            (row) =>
+              sql`(${orgId}, ${row.channelId}, ${row.warehouseId ?? null}, ${row.productVariantId}, ${row.publishedQty}::numeric)`,
+          ),
+          sql`, `,
+        )}
         ON CONFLICT (org_id, channel_id, product_variant_id, coalesce(warehouse_id, 0))
-        DO UPDATE SET published_qty = ${row.publishedQty}::numeric, updated_at = now()
+        DO UPDATE SET published_qty = excluded.published_qty, updated_at = now()
       `);
     }
   }

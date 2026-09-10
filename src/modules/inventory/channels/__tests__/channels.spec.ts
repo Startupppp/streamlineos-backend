@@ -21,6 +21,15 @@ function makeAudit() {
   return { insert: jest.fn().mockResolvedValue(undefined) };
 }
 
+/**
+ * `ChannelPoolService`, of which `syncStock` uses exactly one method.
+ * `recordPublishedInTx` is real on that class — a double for a method the
+ * service does not have is what check:mock-surface exists to catch.
+ */
+function makePools() {
+  return { recordPublishedInTx: jest.fn().mockResolvedValue(undefined) };
+}
+
 function makeCache() {
   return {
     cached: jest.fn().mockImplementation((_k: string, fn: () => Promise<unknown>) => fn()),
@@ -58,7 +67,7 @@ describe("ChannelsService.syncStock — publishable math", () => {
       insert: jest.fn().mockReturnValue(makeInsertChain(insertedValues)),
     };
 
-    const service = new ChannelsService(db as never, makeCache() as never, makeAudit() as never);
+    const service = new ChannelsService(db as never, makeCache() as never, makeAudit() as never, makePools() as never);
     const result = await service.syncStock(ORG, USER, CHANNEL_ID);
 
     expect(result.synced).toBe(1);
@@ -78,7 +87,7 @@ describe("ChannelsService.syncStock — publishable math", () => {
       insert: jest.fn().mockReturnValue(makeInsertChain(insertedValues)),
     };
 
-    const service = new ChannelsService(db as never, makeCache() as never, makeAudit() as never);
+    const service = new ChannelsService(db as never, makeCache() as never, makeAudit() as never, makePools() as never);
     const result = await service.syncStock(ORG, USER, CHANNEL_ID);
 
     expect(result.synced).toBe(1);
@@ -96,7 +105,7 @@ describe("ChannelsService.syncStock — publishable math", () => {
       insert: jest.fn().mockReturnValue(makeInsertChain()),
     };
 
-    const service = new ChannelsService(db as never, makeCache() as never, makeAudit() as never);
+    const service = new ChannelsService(db as never, makeCache() as never, makeAudit() as never, makePools() as never);
     const result = await service.syncStock(ORG, USER, CHANNEL_ID);
 
     expect(result.synced).toBe(0);
@@ -115,7 +124,7 @@ describe("ChannelsService.syncStock — publishable math", () => {
       insert: jest.fn().mockReturnValue(makeInsertChain(insertedValues)),
     };
 
-    const service = new ChannelsService(db as never, makeCache() as never, makeAudit() as never);
+    const service = new ChannelsService(db as never, makeCache() as never, makeAudit() as never, makePools() as never);
     await service.syncStock(ORG, USER, CHANNEL_ID);
 
     expect(insertedValues[0]).toMatchObject({ status: "PUBLISHED", error: null });
@@ -133,7 +142,7 @@ describe("ChannelsService.syncStock — publishable math", () => {
       insert: jest.fn().mockReturnValue(makeInsertChain(insertedValues)),
     };
 
-    const service = new ChannelsService(db as never, makeCache() as never, makeAudit() as never);
+    const service = new ChannelsService(db as never, makeCache() as never, makeAudit() as never, makePools() as never);
     const result = await service.syncStock(ORG, USER, CHANNEL_ID);
 
     expect(result.synced).toBe(1);
@@ -149,7 +158,7 @@ describe("ChannelsService.syncStock — publishable math", () => {
       insert: jest.fn(),
     };
 
-    const service = new ChannelsService(db as never, makeCache() as never, makeAudit() as never);
+    const service = new ChannelsService(db as never, makeCache() as never, makeAudit() as never, makePools() as never);
     const result = await service.syncStock(ORG, USER, CHANNEL_ID);
 
     expect(result).toEqual({ synced: 0, skipped: 0 });
@@ -163,7 +172,7 @@ describe("ChannelsService.syncStock — publishable math", () => {
       insert: jest.fn(),
     };
 
-    const service = new ChannelsService(db as never, makeCache() as never, makeAudit() as never);
+    const service = new ChannelsService(db as never, makeCache() as never, makeAudit() as never, makePools() as never);
     await expect(service.syncStock(ORG, USER, CHANNEL_ID)).rejects.toThrow(NotFoundException);
   });
 
@@ -179,9 +188,60 @@ describe("ChannelsService.syncStock — publishable math", () => {
       insert: jest.fn().mockReturnValue(makeInsertChain(insertedValues)),
     };
 
-    const service = new ChannelsService(db as never, makeCache() as never, makeAudit() as never);
+    const service = new ChannelsService(db as never, makeCache() as never, makeAudit() as never, makePools() as never);
     await service.syncStock(ORG, USER, CHANNEL_ID);
 
     expect(insertedValues[0]).toMatchObject({ publishedQty: "11.0000", availableQty: "11.0000" });
+  });
+  /**
+   * `inv_channel_pools.published_qty` had NO writer anywhere in the codebase.
+   * `listForChannel`, `listForVariant` and the allocate result all select it, and
+   * `channel-pools.controller.ts` serves the first two, so the API reported the
+   * column DEFAULT '0' for every pool row forever while the real figure sat in
+   * `inv_channel_stock_publications`. These two pin the writer and its condition;
+   * both fail against the code before this fix — the first because nothing called
+   * the recorder at all.
+   */
+  it("records the published figure onto the channel pool row", async () => {
+    const channel = buildChannel({ safetyBuffer: "1", publishThreshold: "0" });
+    const pools = makePools();
+
+    const db = {
+      query: { invChannels: { findFirst: jest.fn().mockResolvedValue(channel) } },
+      select: jest.fn().mockReturnValueOnce(makeWhereChain([{ id: 1 }])),
+      execute: jest.fn().mockResolvedValue([{ product_variant_id: 7, available: "8.0000" }]),
+      insert: jest.fn().mockReturnValue(makeInsertChain([])),
+    };
+
+    const service = new ChannelsService(db as never, makeCache() as never, makeAudit() as never, pools as never);
+    await service.syncStock(ORG, USER, CHANNEL_ID);
+
+    expect(pools.recordPublishedInTx).toHaveBeenCalledTimes(1);
+    const [, orgArg, rowsArg] = pools.recordPublishedInTx.mock.calls[0];
+    expect(orgArg).toBe(ORG);
+    // The same number the publication row carries, not the raw availability:
+    // 8 available less a safety buffer of 1.
+    expect(rowsArg).toEqual([{ channelId: CHANNEL_ID, productVariantId: 7, publishedQty: "7.0000" }]);
+  });
+
+  it("does not record a published figure when the channel was never told", async () => {
+    // Any non-INTERNAL channel publishes as FAILED ("Provider not connected").
+    // A channel that was told nothing has no last-told figure, so writing one
+    // would be a number the operator can act on that never left the building.
+    const channel = buildChannel({ channelType: "MARKETPLACE", safetyBuffer: "0", publishThreshold: "0" });
+    const pools = makePools();
+
+    const db = {
+      query: { invChannels: { findFirst: jest.fn().mockResolvedValue(channel) } },
+      select: jest.fn().mockReturnValueOnce(makeWhereChain([{ id: 1 }])),
+      execute: jest.fn().mockResolvedValue([{ product_variant_id: 7, available: "8.0000" }]),
+      insert: jest.fn().mockReturnValue(makeInsertChain([])),
+    };
+
+    const service = new ChannelsService(db as never, makeCache() as never, makeAudit() as never, pools as never);
+    const result = await service.syncStock(ORG, USER, CHANNEL_ID);
+
+    expect(result.synced).toBe(1);
+    expect(pools.recordPublishedInTx).not.toHaveBeenCalled();
   });
 });
