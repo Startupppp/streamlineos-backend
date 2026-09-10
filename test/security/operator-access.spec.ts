@@ -40,7 +40,7 @@
  *   Requires WIRING: "roots" in jest config must include "<rootDir>/test".
  */
 
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 const BACKEND_ROOT = join(__dirname, "../..");
@@ -63,8 +63,7 @@ describe("operator access — absence confirmed", () => {
       .filter((e) => !e.isDirectory() && String(e.name).endsWith(".ts"))
       .map((e) => join(String(e.parentPath ?? e.path), e.name));
     const hasOperatorTable = allSchemaFiles.some((f) => {
-      const { readFileSync } = require("node:fs");
-      const content = readFileSync(f, "utf8") as string;
+      const content = readFileSync(f, "utf8");
       return (
         content.includes("platform_operator_sessions") ||
         content.includes("operator_sessions")
@@ -80,7 +79,6 @@ describe("operator access — absence confirmed", () => {
 
 describe("operator access — gap severity", () => {
   it("audit_logs has no principalType column (operator access would be unauditable today)", () => {
-    const { readFileSync } = require("node:fs");
     const auditSchema = readFileSync(
       join(BACKEND_ROOT, "src/db/schema/common/audit-logs.ts"),
       "utf8",
@@ -89,7 +87,6 @@ describe("operator access — gap severity", () => {
   });
 
   it("ModuleLadder includes platform-admin for billing delegation only, not operator access", () => {
-    const { readFileSync } = require("node:fs");
     const moduleRegistry = readFileSync(
       join(BACKEND_ROOT, "src/common/rbac/module-registry.ts"),
       "utf8",

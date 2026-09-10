@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import { NotFoundException } from "@nestjs/common";
@@ -81,10 +83,7 @@ describe("surveys and the scope their permission declares", () => {
     );
     expect(sqlText(wheres[0] as SQL)).toContain('"created_by" =');
 
-    const source = require("node:fs").readFileSync(
-      require("node:path").join(__dirname, "survey-forms.service.ts"),
-      "utf8",
-    ) as string;
+    const source = readFileSync(join(__dirname, "survey-forms.service.ts"), "utf8");
     expect((source.match(/await this\.get\(orgId, userId, surveyId, scope\)/g) ?? []).length)
       .toBeGreaterThanOrEqual(4);
   });
