@@ -28,10 +28,6 @@ import {
   updateOrgDepartmentSchema,
   createOrgTeamSchema,
   updateOrgTeamSchema,
-  moveOrgTeamSchema,
-  moveBusinessUnitSchema,
-  moveOrgBranchSchema,
-  moveOrgDepartmentSchema,
   createOrgLocationSchema,
   updateOrgLocationSchema,
   createCostCenterSchema,
@@ -48,10 +44,6 @@ import {
   type UpdateOrgDepartmentInput,
   type CreateOrgTeamInput,
   type UpdateOrgTeamInput,
-  type MoveOrgTeamInput,
-  type MoveBusinessUnitInput,
-  type MoveOrgBranchInput,
-  type MoveOrgDepartmentInput,
   type CreateOrgLocationInput,
   type UpdateOrgLocationInput,
   type CreateCostCenterInput,
@@ -80,16 +72,15 @@ import {
   locationResponseSchema,
   costCenterListResponseSchema,
   costCenterResponseSchema,
-  hierarchyMoveResponseSchema,
 } from "./dto/org-hierarchy-response.schemas";
-import { z } from "zod";
-
-const businessUnitIdParams = z.object({ businessUnitId: z.string().min(1) }).strict();
-const branchIdParams = z.object({ branchId: z.string().min(1) }).strict();
-const departmentIdParams = z.object({ departmentId: z.string().min(1) }).strict();
-const teamIdParams = z.object({ teamId: z.string().min(1) }).strict();
-const locationIdParams = z.object({ locationId: z.string().min(1) }).strict();
-const costCenterIdParams = z.object({ costCenterId: z.string().min(1) }).strict();
+import {
+  businessUnitIdParams,
+  branchIdParams,
+  departmentIdParams,
+  teamIdParams,
+  locationIdParams,
+  costCenterIdParams,
+} from "./org-hierarchy-params";
 
 @Controller("org-hierarchy")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -446,65 +437,5 @@ export class OrgHierarchyController {
   ) {
     await this.service.deleteCostCenter(u.orgId, u.userId, costCenterId);
     return { message: "Cost center retired; its history was preserved" };
-  }
-
-  @Patch("business-units/:businessUnitId/move")
-  @ResponseSchema(hierarchyMoveResponseSchema)
-  @RequirePermission("settings:organization:manage")
-  @Validate({ params: businessUnitIdParams, body: moveBusinessUnitSchema })
-  moveBusinessUnit(
-    @Param("businessUnitId") businessUnitId: string,
-    @Body() body: MoveBusinessUnitInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.service.moveBusinessUnit(
-      u.orgId,
-      businessUnitId,
-      body.parentId ?? null,
-    );
-  }
-
-  @Patch("branches/:branchId/move")
-  @ResponseSchema(hierarchyMoveResponseSchema)
-  @RequirePermission("settings:organization:manage")
-  @Validate({ params: branchIdParams, body: moveOrgBranchSchema })
-  moveBranch(
-    @Param("branchId") branchId: string,
-    @Body() body: MoveOrgBranchInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.service.moveBranch(
-      u.orgId,
-      branchId,
-      body.businessUnitId ?? null,
-    );
-  }
-
-  @Patch("departments/:departmentId/move")
-  @ResponseSchema(hierarchyMoveResponseSchema)
-  @RequirePermission("settings:organization:manage")
-  @Validate({ params: departmentIdParams, body: moveOrgDepartmentSchema })
-  moveDepartment(
-    @Param("departmentId") departmentId: string,
-    @Body() body: MoveOrgDepartmentInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.service.moveDepartment(
-      u.orgId,
-      departmentId,
-      body.branchId ?? null,
-    );
-  }
-
-  @Patch("teams/:teamId/move")
-  @ResponseSchema(hierarchyMoveResponseSchema)
-  @RequirePermission("settings:organization:manage")
-  @Validate({ params: teamIdParams, body: moveOrgTeamSchema })
-  moveTeam(
-    @Param("teamId") teamId: string,
-    @Body() body: MoveOrgTeamInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.service.moveTeam(u.orgId, teamId, body.departmentId);
   }
 }
