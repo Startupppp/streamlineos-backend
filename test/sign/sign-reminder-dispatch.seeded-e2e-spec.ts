@@ -14,6 +14,10 @@ import {
   type SeededE2eApp,
 } from "test/helpers/seeded-e2e-app";
 import { seedOrg, type SeededFixture } from "test/helpers/seed-builder";
+import {
+  armMailEgressTripwire,
+  type MailEgressTripwire,
+} from "test/helpers/mail-egress-tripwire";
 
 /**
  * SIGN-P1-05 and SIGN-P1-07.
@@ -69,6 +73,9 @@ describe(`${SEEDED_HARNESS} a reminder reaches the signer with a link that works
   /** What the dry run said would happen, to be held against what did. */
   let predictedAffected = -1;
 
+  /** Armed for the whole run; see the no-egress test below for what it buys. */
+  let egress: MailEgressTripwire;
+
   const seedEnvelope = async (opts: {
     title: string;
     sentAt: Date;
@@ -112,6 +119,7 @@ describe(`${SEEDED_HARNESS} a reminder reaches the signer with a link that works
   };
 
   beforeAll(async () => {
+    egress = armMailEgressTripwire();
     seeded = await createSeededE2eApp();
     fixture = await seedOrg(seeded.seedDb).addMember("sender", { permissionKeys: [] }).build();
     await seeded.seedDb
@@ -139,6 +147,7 @@ describe(`${SEEDED_HARNESS} a reminder reaches the signer with a link that works
       await fixture.teardown();
     }
     await seeded?.close();
+    egress?.disarm();
   }, 60_000);
 
   const runReminderSweep = async (query = "") => {
@@ -239,6 +248,50 @@ describe(`${SEEDED_HARNESS} a reminder reaches the signer with a link that works
     expect(due?.count).toBe(1);
     expect(due?.lastAt).not.toBeNull();
   }, 120_000);
+
+  /**
+   * The reminder is readable as mail, and no provider was called to produce it.
+   *
+   * Until the harness overrode the transport, this suite sent for real.
+   * `jest-e2e-seeded.json` loads the true `.env` via `dotenv/config`, which
+   * carries `EMAIL_PROVIDER=resend` and a live key, and `enqueueAndTry` is a
+   * send-through — it writes the `email_outbox` row and immediately calls
+   * `sendEmailOnceDirect`. So every assertion above about a queued reminder was
+   * also, silently, a genuine Resend API call against production quota. Nothing
+   * was ever delivered only because these fixtures use `@test.invalid`; and the
+   * sweep is org-wide, so it also re-sent for every other tenant's due envelope
+   * in the shared database, whose addresses this file does not choose.
+   *
+   * Two claims, because either alone is weak. The outbox row above proves a row
+   * was written, not that anything was handed to a transport; the capture
+   * proves what the transport received. And "no provider call" is unfalsifiable
+   * on its own — an empty `attempts` list reads identically whether the
+   * override works or the suite never sent at all — so the control below
+   * requires the tripwire to actually fire at a provider host first.
+   */
+  it("hands the reminder to a transport that never leaves the process", async () => {
+    const captured = seeded.mail.to(dueEmail);
+    expect(captured).toHaveLength(1);
+    expect(captured[0]!.subject).toBe(
+      'Reminder: "Overdue for a nudge" needs your signature',
+    );
+    /** `enqueueAndTry`'s send-through, not the retrying `dispatchEmail` path. */
+    expect(captured[0]!.via).toBe("sendEmailOnceDirect");
+    /** The same link the outbox row carries, so the capture is the real message. */
+    expect(captured[0]!.html).toContain("/sign/");
+
+    /** The control: the tripwire is armed and does fire at a provider host. */
+    await expect(fetch("https://api.resend.com/emails")).rejects.toThrow(
+      /mail egress blocked/,
+    );
+    expect(egress.attempts).toEqual(["api.resend.com"]);
+
+    /**
+     * And that deliberate attempt is the ONLY one — every reminder this suite
+     * sent, for this tenant and every other, stayed in memory.
+     */
+    expect(egress.attempts.filter((h) => h !== "api.resend.com")).toEqual([]);
+  }, 60_000);
 
   it("carries a signing link that actually opens a session", async () => {
     const [mail] = await remindersFor(dueEmail);

@@ -8,12 +8,21 @@ import { AllExceptionsFilter } from "src/common/http/all-exceptions.filter";
 import { INTERNAL_TOKEN_AUDIENCE, INTERNAL_TOKEN_ISSUER } from "src/common/auth/backend-claims";
 import * as schema from "src/db/schema";
 import type { Db } from "src/db/drizzle.module";
+import { EmailProviderService } from "src/modules/email/email.provider";
+import { CapturingMailTransport } from "./mail-capture";
 
 export const SEEDED_HARNESS = "[seeded-e2e]" as const;
 
 export interface SeededE2eApp {
   app: INestApplication;
   seedDb: Db;
+  /**
+   * Outbound mail this run produced, captured in memory.
+   *
+   * The transport is overridden, so nothing reaches a provider. Assert against
+   * this instead: `seeded.mail.to(addr)`, `.withSubject(...)`, `.last()`.
+   */
+  mail: CapturingMailTransport;
   close(): Promise<void>;
 }
 
@@ -37,7 +46,29 @@ export async function createSeededE2eApp(
   if (!ownerUrl) throw new Error("DATABASE_URL must be set for seeded e2e tests");
   process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
 
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+  /**
+   * Mail never leaves the process.
+   *
+   * `jest-e2e-seeded.json` loads the real `.env` through `dotenv/config`, which
+   * carries `EMAIL_PROVIDER=resend` and a live `RESEND_API_KEY`, and nothing
+   * here stubbed the transport — so every seeded spec that sent mail spent real
+   * Resend quota, and was one real-looking fixture address away from mailing a
+   * stranger. Overriding the provider is also what makes "an email went to X
+   * with subject Y" assertable at all; today no spec can say that, which is
+   * likely why the live calls went unnoticed.
+   *
+   * The override is on `EmailProviderService`, which is the single chokepoint:
+   * `buildEmailClients` — the only place a `Resend` or `SendMailClient` is
+   * constructed — is called from its constructor and nowhere else, and with the
+   * provider replaced by value that constructor never runs, so no client is
+   * built and no key is read.
+   */
+  const mail = new CapturingMailTransport();
+
+  const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    .overrideProvider(EmailProviderService)
+    .useValue(mail)
+    .compile();
   const app = moduleRef.createNestApplication({ rawBody: options.rawBody === true });
   app.useGlobalFilters(new AllExceptionsFilter());
   await app.init();
@@ -48,6 +79,7 @@ export async function createSeededE2eApp(
   return {
     app,
     seedDb,
+    mail,
     async close() {
       await app.close();
       await seedClient.end({ timeout: 5 });
