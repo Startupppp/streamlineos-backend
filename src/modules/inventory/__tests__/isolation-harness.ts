@@ -86,12 +86,24 @@ export function makeIsolationDb(rows: unknown[] = []): IsolationDb {
   const selectWhere = rootChain.where as jest.Mock;
   const selectFrom = jest.fn().mockReturnValue(rootChain);
 
-  const db = {
+  /**
+   * The transaction handle is the SAME recorder as the outer db.
+   *
+   * It used to be `fn({})`. Any service whose work happens inside
+   * `db.transaction(tx => ...)` — putaway completion, sync batches, pick
+   * exceptions, most commands in this module — then ran against an empty object,
+   * so the org predicate it built was recorded nowhere and an isolation test
+   * asserting on it saw an empty array. That failure at least looked like a
+   * failure; the dangerous version is the same test written to pass, which would
+   * have certified isolation for a transaction nobody watched.
+   */
+  const db: Record<string, unknown> = {};
+  Object.assign(db, {
     select: jest.fn().mockReturnValue({ from: selectFrom }),
     selectDistinct: jest.fn().mockReturnValue({ from: selectFrom }),
     query: new Proxy({} as Record<string, typeof handler>, { get: () => handler }),
     execute,
-    transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({})),
+    transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(db)),
     update: jest.fn().mockReturnValue({
       set: jest.fn().mockReturnValue({
         where: jest.fn().mockResolvedValue([]),
@@ -106,9 +118,9 @@ export function makeIsolationDb(rows: unknown[] = []): IsolationDb {
       }),
     }),
     delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
-  } as unknown as Db;
+  });
 
-  return { db, findMany, findFirst, selectWhere, execute };
+  return { db: db as unknown as Db, findMany, findFirst, selectWhere, execute };
 }
 
 export const cacheStub = () => ({
