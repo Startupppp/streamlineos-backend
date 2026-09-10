@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { AccountingKernelModule } from "../kernel/accounting-kernel.module";
 import { PostingCommandService } from "./posting-command.service";
 import { ReconciliationController } from "./reconciliation/reconciliation.controller";
+import { StockGlReconciliationService } from "./reconciliation/stock-gl-reconciliation.service";
 import { UnpostedMovementsService } from "./reconciliation/unposted-movements.service";
 
 /**
@@ -18,7 +19,7 @@ import { UnpostedMovementsService } from "./reconciliation/unposted-movements.se
 @Module({
   imports: [AccountingKernelModule],
   controllers: [ReconciliationController],
-  providers: [PostingCommandService, UnpostedMovementsService],
-  exports: [PostingCommandService, UnpostedMovementsService],
+  providers: [PostingCommandService, UnpostedMovementsService, StockGlReconciliationService],
+  exports: [PostingCommandService, UnpostedMovementsService, StockGlReconciliationService],
 })
 export class AccountingAdaptersModule {}
