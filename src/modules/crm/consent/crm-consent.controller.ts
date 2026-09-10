@@ -115,7 +115,41 @@ export class CrmPublicConsentController {
   async unsubscribe(
     @Body(new ZodValidationPipe(unsubscribeSchema)) body: UnsubscribeInput,
   ) {
-    const payload = verifyUnsubscribeToken(body.token);
+    return this.honour(body.token);
+  }
+
+  /**
+   * The same withdrawal, addressed the way a MAIL CLIENT can reach it.
+   *
+   * The body form above cannot be the whole surface: RFC 8058 one-click sends
+   * `List-Unsubscribe=One-Click` as the body and nothing else, and a human who
+   * clicks the link issues a GET. Neither carries our JSON. So the token moves
+   * into the path and both verbs answer, which is the same shape the platform's
+   * own `notifications/unsubscribe/:token` settled on.
+   *
+   * The body form stays because it is a real public contract with its own
+   * coverage; all three share one handler so the withdrawal itself has exactly
+   * one implementation.
+   */
+  @Get("unsubscribe/:token")
+  @Public()
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("crm:public-unsubscribe")
+  async unsubscribeByLink(@Param("token") token: string) {
+    return this.honour(token);
+  }
+
+  @Post("unsubscribe/:token")
+  @Public()
+  @HttpCode(200)
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("crm:public-unsubscribe")
+  async unsubscribeOneClick(@Param("token") token: string) {
+    return this.honour(token);
+  }
+
+  private async honour(token: string) {
+    const payload = verifyUnsubscribeToken(token);
 
     // Always the same response, valid token or not. Distinguishing them would
     // turn this endpoint into an oracle for whether a contact exists.

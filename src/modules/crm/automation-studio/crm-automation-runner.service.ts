@@ -15,7 +15,7 @@ import { PARTY_OF_LEAD } from "../crm-party-reads";
 import type { CrmAutomationCondition, AutomationGraphNode } from "../../../db/schema/crm/automation-rules";
 import { logger } from "../../../common/logger/logger.service";
 import { NotificationsService } from "../../notifications/notifications.service";
-import { CrmOutboundEmailService } from "../consent/crm-outbound-email.service";
+import { CrmOutboundEmailService, contactUnsubscribe } from "../consent/crm-outbound-email.service";
 import type { StudioEventPayload, RunStepLog } from "./types";
 import { evaluateConditions, type StudioCondition } from "./crm-automation-condition-evaluator";
 import { updateMirroredLeads } from "../../party/party-legacy-leads";
@@ -217,11 +217,16 @@ export class CrmAutomationRunnerService {
           return { nodeId, type: actionKey, status: "ok", at };
         }
         case "send_email": {
-          await this.email.send(orgId, {
-            to: String(config["to"] ?? ""),
-            subject: String(config["subject"] ?? ""),
-            html: String(config["body"] ?? ""),
-          });
+          await this.email.send(
+            orgId,
+            {
+              to: String(config["to"] ?? ""),
+              subject: String(config["subject"] ?? ""),
+              html: String(config["body"] ?? ""),
+            },
+            /* Only a contact has a consent row to withdraw; see the sender. */
+            contactUnsubscribe(payload.entityType, payload.entityId),
+          );
           return { nodeId, type: actionKey, status: "ok", at };
         }
         case "call_webhook": {

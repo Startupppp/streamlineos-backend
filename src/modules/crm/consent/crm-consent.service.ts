@@ -473,6 +473,33 @@ export class CrmConsentService {
       );
   }
 
+  /**
+   * The address a contact is reachable at, so an unsubscribe link can be checked
+   * against the person it is about to be sent to.
+   *
+   * An unsubscribe token names a contact. Putting one in a message that went to
+   * somebody else would hand that somebody the power to opt this contact out, so
+   * the sender verifies rather than assuming its `to` is the enrolled contact's
+   * address. Returns null when there is no party, no address, or the contact
+   * belongs to another organisation -- every one of which means "do not attach
+   * a link", which is the safe answer for all three.
+   */
+  async contactEmail(orgId: string, contactId: number): Promise<string | null> {
+    const [row] = await this.db
+      .select({ email: businessParties.email })
+      .from(contactPartyMap)
+      .innerJoin(businessParties, PARTY_OF_CONTACT)
+      .where(
+        and(
+          eq(contactPartyMap.organizationId, orgId),
+          eq(contactPartyMap.contactId, contactId),
+        ),
+      )
+      .limit(1);
+    const email = row?.email?.trim();
+    return email && email.length > 0 ? email : null;
+  }
+
   /** Contacts with no consent row at all for a channel, for data-quality surfacing. */
   async countMissingConsent(orgId: string, channel: ConsentChannel): Promise<number> {
     const [row] = await this.db
