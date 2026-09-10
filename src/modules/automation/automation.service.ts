@@ -336,12 +336,26 @@ export class AutomationService {
     orgId: string,
     ruleId: number,
     payload: EventPayload,
+    triggerPrefix?: string,
   ): Promise<{ runId: number; matched: boolean; status: "skipped" | "success" | "failed"; actionResults: ActionResult[] }> {
     const rule = await this.db.query.automationRules.findFirst({
-      where: and(eq(automationRules.id, ruleId), eq(automationRules.orgId, orgId)),
+      where: and(
+        eq(automationRules.id, ruleId), eq(automationRules.orgId, orgId),
+        triggerPrefix ? like(automationRules.triggerEvent, `${triggerPrefix}%`) : undefined,
+      ),
       columns: { id: true, triggerEvent: true, conditions: true, actions: true },
     });
     if (!rule) throw new NotFoundException("Automation not found");
+    if (rule.actions.some((action) => action.type.startsWith("support_"))) {
+      const ticketId = payload.ticketId;
+      if (typeof ticketId !== "number" || !Number.isSafeInteger(ticketId) || ticketId <= 0)
+        throw new NotFoundException("Ticket not found");
+      const ticket = await this.db.query.supportTickets.findFirst({
+        where: and(eq(supportTickets.orgId, orgId), eq(supportTickets.id, ticketId)),
+        columns: { id: true },
+      });
+      if (!ticket) throw new NotFoundException("Ticket not found");
+    }
 
     const { matched, actionResults } = await this.runRule(
       orgId,
@@ -431,7 +445,9 @@ export class AutomationService {
     return rule;
   }
 
-  async updateRule(orgId: string, ruleId: number, input: UpdateAutomationRuleInput) {
+  async updateRule(orgId: string, ruleId: number, input: UpdateAutomationRuleInput, triggerPrefix?: string) {
+    if (triggerPrefix && input.triggerEvent !== undefined && !input.triggerEvent.startsWith(triggerPrefix))
+      throw new NotFoundException("Automation not found");
     const [updated] = await this.db
       .update(automationRules)
       .set({
@@ -443,26 +459,34 @@ export class AutomationService {
         ...(input.isEnabled !== undefined ? { isEnabled: input.isEnabled } : {}),
         updatedAt: new Date(),
       })
-      .where(and(eq(automationRules.id, ruleId), eq(automationRules.orgId, orgId)))
+      .where(and(
+        eq(automationRules.id, ruleId), eq(automationRules.orgId, orgId),
+        triggerPrefix ? like(automationRules.triggerEvent, `${triggerPrefix}%`) : undefined,
+      ))
       .returning();
     if (!updated) throw new NotFoundException("Automation not found");
     return updated;
   }
 
-  async deleteRule(orgId: string, ruleId: number) {
+  async deleteRule(orgId: string, ruleId: number, triggerPrefix?: string) {
     const [deleted] = await this.db
       .delete(automationRules)
-      .where(and(eq(automationRules.id, ruleId), eq(automationRules.orgId, orgId)))
+      .where(and(
+        eq(automationRules.id, ruleId), eq(automationRules.orgId, orgId),
+        triggerPrefix ? like(automationRules.triggerEvent, `${triggerPrefix}%`) : undefined,
+      ))
       .returning();
     if (!deleted) throw new NotFoundException("Automation not found");
     return { success: true };
   }
 
-  listRuns(orgId: string, ruleId?: number) {
+  listRuns(orgId: string, ruleId?: number, triggerPrefix?: string) {
     return this.db.query.automationRuns.findMany({
-      where: ruleId
-        ? and(eq(automationRuns.orgId, orgId), eq(automationRuns.ruleId, ruleId))
-        : eq(automationRuns.orgId, orgId),
+      where: and(
+        eq(automationRuns.orgId, orgId),
+        ruleId ? eq(automationRuns.ruleId, ruleId) : undefined,
+        triggerPrefix ? like(automationRuns.triggerEvent, `${triggerPrefix}%`) : undefined,
+      ),
       orderBy: (fields, { desc: descOp }) => [descOp(fields.createdAt)],
       limit: 100,
     });

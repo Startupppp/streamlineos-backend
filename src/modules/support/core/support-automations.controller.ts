@@ -42,7 +42,9 @@ import {
 } from "./dto/support-automations-response.schemas";
 import { z } from "zod";
 
-const automationIdParams = z.object({ automationId: z.coerce.number().int().positive() }).strict();
+const automationIdParams = z
+  .object({ automationId: z.coerce.number().int().positive() })
+  .strict();
 
 const TICKET_TRIGGER_PREFIX = "ticket.";
 
@@ -63,7 +65,10 @@ export class SupportAutomationsController {
     @Query() query: ListSupportAutomationsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.automations.listRules(u.orgId, { ...query, triggerPrefix: TICKET_TRIGGER_PREFIX });
+    return this.automations.listRules(u.orgId, {
+      ...query,
+      triggerPrefix: TICKET_TRIGGER_PREFIX,
+    });
   }
 
   @Post("automations")
@@ -76,10 +81,19 @@ export class SupportAutomationsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (!body.triggerEvent.startsWith(TICKET_TRIGGER_PREFIX)) {
-      throw new NotFoundException(`Support automations must use a "${TICKET_TRIGGER_PREFIX}*" trigger`);
+      throw new NotFoundException(
+        `Support automations must use a "${TICKET_TRIGGER_PREFIX}*" trigger`,
+      );
     }
     const result = await this.automations.createRule(u.orgId, u.userId, body);
-    await this.audit.record(u.orgId, u.userId, "automation", result.id, "created", body);
+    await this.audit.record(
+      u.orgId,
+      u.userId,
+      "automation",
+      result.id,
+      "created",
+      body,
+    );
     return result;
   }
 
@@ -92,8 +106,20 @@ export class SupportAutomationsController {
     @Body() body: UpdateAutomationRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.automations.updateRule(u.orgId, automationId, body);
-    await this.audit.record(u.orgId, u.userId, "automation", automationId, "updated", body);
+    const result = await this.automations.updateRule(
+      u.orgId,
+      automationId,
+      body,
+      TICKET_TRIGGER_PREFIX,
+    );
+    await this.audit.record(
+      u.orgId,
+      u.userId,
+      "automation",
+      automationId,
+      "updated",
+      body,
+    );
     return result;
   }
 
@@ -101,9 +127,22 @@ export class SupportAutomationsController {
   @RequirePermission("support:settings:manage")
   @Validate({ params: automationIdParams })
   @ResponseSchema(supportAutomationSuccessSchema)
-  async deleteAutomation(@Param("automationId", ParseIntPipe) automationId: number, @CurrentUser() u: CurrentUserContext) {
-    const result = await this.automations.deleteRule(u.orgId, automationId);
-    await this.audit.record(u.orgId, u.userId, "automation", automationId, "deleted");
+  async deleteAutomation(
+    @Param("automationId", ParseIntPipe) automationId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const result = await this.automations.deleteRule(
+      u.orgId,
+      automationId,
+      TICKET_TRIGGER_PREFIX,
+    );
+    await this.audit.record(
+      u.orgId,
+      u.userId,
+      "automation",
+      automationId,
+      "deleted",
+    );
     return result;
   }
 
@@ -117,13 +156,25 @@ export class SupportAutomationsController {
     @Body() body: TestAutomationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.automations.testRule(u.orgId, automationId, body.payload);
+    return this.automations.testRule(
+      u.orgId,
+      automationId,
+      body.payload,
+      TICKET_TRIGGER_PREFIX,
+    );
   }
 
   @Get("automation-runs")
   @RequirePermission("support:settings:manage")
   @ResponseSchema(automationRunListSchema)
-  listAutomationRuns(@Query("automationId") automationId: string | undefined, @CurrentUser() u: CurrentUserContext) {
-    return this.automations.listRuns(u.orgId, automationId ? Number(automationId) : undefined);
+  listAutomationRuns(
+    @Query("automationId") automationId: string | undefined,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.automations.listRuns(
+      u.orgId,
+      automationId ? Number(automationId) : undefined,
+      TICKET_TRIGGER_PREFIX,
+    );
   }
 }
