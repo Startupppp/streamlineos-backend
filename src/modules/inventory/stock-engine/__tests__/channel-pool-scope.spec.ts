@@ -109,7 +109,10 @@ describe("channel availability and the caller's warehouses", () => {
      * SYSTEM USER behind it holds no warehouse, which is not an access question
      * at all.
      */
-    const source = readFileSync(join(__dirname, "..", "channel-pool.service.ts"), "utf8");
+    // `availability` moved to lib/channel-availability.ts when the service was
+    // split; this reads where the parameter actually lives now, not where it
+    // used to. A source assertion that reads the wrong file passes vacuously.
+    const source = readFileSync(join(__dirname, "..", "lib", "channel-availability.ts"), "utf8");
     expect(source).toContain("scope?: number[] | null;");
     expect(source).toMatch(/scope === undefined \|\| scope === null/);
   });

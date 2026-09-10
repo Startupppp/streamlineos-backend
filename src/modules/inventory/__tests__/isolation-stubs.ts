@@ -77,7 +77,6 @@ export const INVENTORY_ISOLATION_STUBS: Provider[] = [
   {
     provide: ChannelPoolService,
     useValue: {
-      availability: jest.fn().mockResolvedValue({ items: [] }),
       availabilityFor: jest.fn().mockResolvedValue({ available: "0" }),
       assertPromisable: jest.fn().mockResolvedValue(undefined),
       allocate: jest.fn().mockResolvedValue(undefined),

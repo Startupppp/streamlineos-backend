@@ -2,6 +2,7 @@ import { BadRequestException } from "@nestjs/common";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { ChannelPoolService } from "../channel-pool.service";
 import { channelReservedQtySql } from "../available-sql";
+import { availability } from "../lib/channel-availability";
 import { netAvailableQty } from "../decimal";
 
 const render = (sql: ReturnType<typeof channelReservedQtySql>) => new PgDialect().sqlToQuery(sql);
@@ -88,7 +89,7 @@ describe("NEO-1 — availability", () => {
       ["AS others", [{ others: "6.0000", mine: "2.0000" }]],
     ]);
 
-    const result = await service().availability(tx as never, "org1", {
+    const result = await availability(tx as never, "org1", {
       productVariantId: 7,
       warehouseId: 3,
       forChannelId: 9,

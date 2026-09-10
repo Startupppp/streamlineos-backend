@@ -3,27 +3,16 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { invChannelPools, invChannels } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { availableQtySumSql, channelReservedQtySql } from "./available-sql";
-import { addDec, cmpDec, netAvailableQty, subDec } from "./decimal";
+import { addDec, cmpDec, subDec } from "./decimal";
 import { runIdempotent, revivedScalar } from "./idempotency";
 import { INV_ERRORS } from "./stock-engine.types";
 import { InventoryAuditService } from "./inventory-audit.service";
 import { WarehouseScopeService } from "./warehouse-scope.service";
+import { availability, hasAnyPool, type ChannelAvailability, type Tx } from "./lib/channel-availability";
 
-type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+export type { ChannelAvailability };
 
-export interface ChannelAvailability {
-  productVariantId: number;
-  warehouseId: number | null;
-  /** Physical, sellable, net of committed/blocked/hold/outgoing. `availableQty`. */
-  available: string;
-  /** What other channels are holding, per the grain rule in `channel-pools.ts`. */
-  reservedByOthers: string;
-  /** What this channel (or, org-wide, this pool row) already holds. */
-  reservedForChannel: string;
-  /** `netAvailableQty(available, reservedByOthers)` — what may still be promised. */
-  netAvailable: string;
-}
+
 
 export interface PoolAllocationInput {
   channelId: number;
@@ -68,95 +57,6 @@ export class ChannelPoolService {
     private readonly warehouseScope: WarehouseScopeService,
   ) {}
 
-  /**
-   * The one place the grain rule is applied.
-   *
-   * `forChannelId` splits the answer in two: everything held by *other* channels
-   * reduces what may be promised, and what this channel holds is reported beside
-   * it so a caller can tell "someone else has it" from "you already have it".
-   * Without a channel, every pool counts as somebody else's — which is exactly
-   * right for a direct sale.
-   */
-  async availability(
-    executor: Tx | Db,
-    orgId: string,
-    params: {
-      productVariantId: number;
-      warehouseId?: number | null;
-      forChannelId?: number | null;
-      /**
-       * The caller's warehouses, when this is answering a person rather than the
-       * promise path. `undefined` is unrestricted, which is what the internal
-       * callers want: `assertPromisable` is deciding whether the ORGANISATION
-       * can promise these units, not whether the requester may look at them.
-       */
-      scope?: number[] | null;
-    },
-  ): Promise<ChannelAvailability> {
-    const warehouseId = params.warehouseId ?? null;
-    const forChannelId = params.forChannelId ?? null;
-    const scope = params.scope;
-
-    /*
-     * A NAMED warehouse filters to it. An OMITTED one used to mean `TRUE` — every
-     * building in the organisation — and now means every building the caller
-     * holds, when a caller was supplied. A default that widens is the half of
-     * this that reads as correct: the explicit parameter looks like the whole
-     * surface, and it is the missing one that opens the estate.
-     */
-    const warehouseGate =
-      warehouseId != null
-        ? sql`loc.warehouse_id = ${warehouseId}`
-        : scope === undefined || scope === null
-          ? sql`TRUE`
-          : scope.length === 0
-            ? sql`FALSE`
-            : sql`loc.warehouse_id IN (${sql.join(scope.map((id) => sql`${id}`), sql`, `)})`;
-
-    const [physical] = await executor.execute<{ available: string }>(sql`
-      SELECT ${availableQtySumSql("sl")} AS available
-      FROM inv_stock_levels sl
-      JOIN inv_locations loc ON loc.id = sl.location_id AND loc.org_id = sl.org_id
-      WHERE sl.org_id = ${orgId}
-        AND sl.product_variant_id = ${params.productVariantId}
-        AND ${warehouseGate}
-    `);
-
-    const [claims] = await executor.execute<{ others: string; mine: string }>(sql`
-      SELECT
-        ${channelReservedQtySql({
-          orgId,
-          productVariantId: params.productVariantId,
-          warehouseId,
-          excludeChannelId: forChannelId,
-        })} AS others,
-        ${
-          forChannelId == null
-            ? sql`0::numeric`
-            : sql`(
-                SELECT COALESCE(SUM(cp.reserved_qty), 0)::numeric
-                FROM inv_channel_pools cp
-                WHERE cp.org_id = ${orgId}
-                  AND cp.product_variant_id = ${params.productVariantId}
-                  AND cp.channel_id = ${forChannelId}
-                  AND ${warehouseId == null ? sql`TRUE` : sql`(cp.warehouse_id IS NULL OR cp.warehouse_id = ${warehouseId})`}
-              )`
-        } AS mine
-    `);
-
-    const available = String(physical?.available ?? "0");
-    const reservedByOthers = String(claims?.others ?? "0");
-    const reservedForChannel = String(claims?.mine ?? "0");
-
-    return {
-      productVariantId: params.productVariantId,
-      warehouseId,
-      available,
-      reservedByOthers,
-      reservedForChannel,
-      netAvailable: netAvailableQty(available, reservedByOthers),
-    };
-  }
 
   /** The same question from a request, outside any transaction the caller owns. */
   /**
@@ -178,10 +78,10 @@ export class ChannelPoolService {
   ): Promise<ChannelAvailability> {
     if (params.warehouseId != null) {
       await this.warehouseScope.assertWarehouseVisible(orgId, userId, params.warehouseId);
-      return this.availability(this.db, orgId, params);
+      return availability(this.db, orgId, params);
     }
     const scope = await this.warehouseScope.resolve(orgId, userId);
-    return this.availability(this.db, orgId, { ...params, scope });
+    return availability(this.db, orgId, { ...params, scope });
   }
 
   /**
@@ -203,12 +103,12 @@ export class ChannelPoolService {
       forChannelId?: number | null;
     },
   ): Promise<void> {
-    const claimed = await this.hasAnyPool(tx, orgId, params.productVariantId);
+    const claimed = await hasAnyPool(tx, orgId, params.productVariantId);
     // The overwhelmingly common case is a variant no channel has claimed, and
     // that must not cost two aggregates on every reservation in the product.
     if (!claimed) return;
 
-    const state = await this.availability(tx, orgId, {
+    const state = await availability(tx, orgId, {
       productVariantId: params.productVariantId,
       warehouseId: params.warehouseId,
       forChannelId: params.forChannelId ?? null,
@@ -224,16 +124,6 @@ export class ChannelPoolService {
     }
   }
 
-  private async hasAnyPool(executor: Tx | Db, orgId: string, productVariantId: number): Promise<boolean> {
-    const [row] = await executor.execute<{ present: boolean }>(sql`
-      SELECT EXISTS (
-        SELECT 1 FROM inv_channel_pools cp
-        WHERE cp.org_id = ${orgId} AND cp.product_variant_id = ${productVariantId}
-          AND cp.reserved_qty > 0
-      ) AS present
-    `);
-    return row?.present === true;
-  }
 
   /**
    * Move units into or out of a channel's claim.
@@ -301,7 +191,7 @@ export class ChannelPoolService {
     }
 
     if (cmpDec(input.deltaQty, "0") > 0) {
-      const state = await this.availability(tx, orgId, {
+      const state = await availability(tx, orgId, {
         productVariantId: input.productVariantId,
         warehouseId,
         forChannelId: input.channelId,
