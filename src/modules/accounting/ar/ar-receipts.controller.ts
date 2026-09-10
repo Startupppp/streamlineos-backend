@@ -61,6 +61,7 @@ export class ArReceiptsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:receivables:manage")
   @HttpCode(200)
+  @Idempotent("accounting.ar.receipt.allocate")
   allocate(
     @Param("receiptId") receiptId: string,
     @Body(new ZodValidationPipe(allocateReceiptSchema)) body: AllocateReceiptInput,

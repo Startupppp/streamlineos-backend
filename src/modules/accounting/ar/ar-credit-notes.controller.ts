@@ -133,6 +133,7 @@ export class ArCreditNotesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:credit-notes:manage")
   @HttpCode(200)
+  @Idempotent("accounting.ar.credit-note.allocate")
   allocate(
     @Param("creditNoteId") creditNoteId: string,
     @Body(new ZodValidationPipe(allocateCreditNoteSchema)) body: AllocateCreditNoteInput,

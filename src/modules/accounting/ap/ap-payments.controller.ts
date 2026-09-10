@@ -61,6 +61,7 @@ export class ApPaymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payables:manage")
   @HttpCode(200)
+  @Idempotent("accounting.payables.payment.allocate")
   allocate(
     @Param("paymentId") paymentId: string,
     @Body(new ZodValidationPipe(allocatePaymentSchema)) body: AllocatePaymentInput,

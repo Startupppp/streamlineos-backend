@@ -16,6 +16,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { BooksService } from "../kernel/books.service";
 import { ComplianceService } from "./compliance.service";
 import { ComplianceTransportRegistry } from "./transport/compliance-transport.registry";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 /**
  * What the product has and has not done about a document's e-reporting duty.
@@ -94,6 +95,7 @@ export class ComplianceController {
   @Post("documents/:documentType/:documentId/submit")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:receivables:manage")
+  @Idempotent("accounting.compliance.document.submit")
   async submitDocument(
     @Param("documentType") documentType: string,
     @Param("documentId") documentId: string,
