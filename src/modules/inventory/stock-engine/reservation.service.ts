@@ -2,6 +2,8 @@ import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { invStockReservations, invStockLevels } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { CacheService } from "../../../common/cache/cache.service";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { type Db } from "../../../db/drizzle.module";
 import { InventorySettingsService } from "./inventory-settings.service";
 import { ChannelPoolService } from "./channel-pool.service";
@@ -104,7 +106,39 @@ export class ReservationService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly settingsService: InventorySettingsService,
     private readonly channelPools: ChannelPoolService,
+    private readonly cache: CacheService,
   ) {}
+
+  /**
+   * Every write to `inv_stock_reservations` has to bump the list namespace,
+   * and this service was doing none of them.
+   *
+   * `InvStockReservationsService` caches the reservations list under
+   * `inv:reservations:list:<org>` with `cachedVersioned` at a 30s TTL, and
+   * invalidates it from its own two writers. But THIS service writes the same
+   * table from five more places, and did not hold a CacheService at all -- so a
+   * pick that consumed a hold left the endpoint answering ACTIVE for up to
+   * thirty seconds after the row said CONSUMED. Measured: reservation 453 was
+   * CONSUMED in the database at 15:28:00 and the endpoint still reported ACTIVE
+   * half a minute later.
+   *
+   * Two services writing one table and only one of them invalidating is the
+   * shape of the bug; putting it HERE, in the service that owns the write,
+   * covers every caller -- picking, projects, substitution, GRN posting -- and
+   * every future one, rather than asking each to remember.
+   *
+   * Deferred through `registerAfterCommit` because these methods are called
+   * inside a caller's transaction as often as they open their own: the hooks
+   * drain only on success, so a rolled-back release never bumps. With no
+   * ambient context (a background sweep such as `expireStale`) there is nothing
+   * to wait for, so it runs inline -- CLAUDE.md section 4 asks for exactly that
+   * fallback rather than dropping the work.
+   */
+  private invalidateReservationList(orgId: string): void {
+    const namespace = `inv:reservations:list:${orgId}`;
+    const deferred = registerAfterCommit(() => this.cache.invalidateNamespace(namespace));
+    if (!deferred) void this.cache.invalidateNamespace(namespace);
+  }
 
   async createReservation(orgId: string, userId: string, input: ReservationInput): Promise<typeof invStockReservations.$inferSelect> {
     return this.db.transaction(async (tx) => this.createReservationInTx(tx, orgId, userId, input));
@@ -234,6 +268,8 @@ export class ReservationService {
       expiresAt: input.expiresAt ?? null,
     }).returning();
 
+    this.invalidateReservationList(orgId);
+
     return reservation!;
   }
 
@@ -280,6 +316,8 @@ export class ReservationService {
       .set({ status: "RELEASED" })
       .where(eq(invStockReservations.id, reservationId));
 
+    this.invalidateReservationList(orgId);
+
     if (reservation.location_id) {
       await releaseCommitted(tx, orgId, {
         productVariantId: reservation.product_variant_id,
@@ -321,6 +359,8 @@ export class ReservationService {
       if (!reservation || reservation.status !== "ACTIVE") return;
 
       await tx.update(invStockReservations).set({ status: "CONSUMED" }).where(eq(invStockReservations.id, reservationId));
+
+      this.invalidateReservationList(orgId);
 
       if (reservation.location_id) {
         await releaseCommitted(tx, orgId, {
@@ -391,6 +431,8 @@ export class ReservationService {
       RETURNING id
     `);
 
+    this.invalidateReservationList(orgId);
+
     const withLocation = reservations.filter((r) => r.locationId !== null);
     for (const r of withLocation) {
       await releaseCommitted(tx, orgId, {
@@ -430,6 +472,8 @@ export class ReservationService {
       await tx.update(invStockReservations)
         .set({ status: "EXPIRED" })
         .where(and(eq(invStockReservations.orgId, orgId), inArray(invStockReservations.id, ids)));
+
+      this.invalidateReservationList(orgId);
 
       for (const r of stale) {
         if (r.location_id === null) continue;

@@ -22,6 +22,13 @@ const settings = { get: jest.fn() };
  * double: it keeps this spec about expiry and fails loudly if the gate ever
  * migrates onto this path.
  */
+/**
+ * `expireStale` is a background sweep: `forEachOrg` gives it no ambient request
+ * transaction, so `registerAfterCommit` has nothing to defer to and the
+ * invalidation runs inline. That is the branch this double exercises.
+ */
+const cache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined) };
+
 const channelPools = {
   assertPromisable: jest.fn(() => {
     throw new Error("expireStale must not consult channel pools");
@@ -29,14 +36,20 @@ const channelPools = {
 };
 
 describe("ReservationService.expireStale", () => {
+  beforeEach(() => {
+    cache.invalidateNamespace.mockClear();
+  });
+
   it("returns 0 and performs no writes when nothing is stale", async () => {
     const tx: MockTx = { execute: jest.fn().mockResolvedValue([]), update: jest.fn() };
-    const service = new ReservationService(buildDb(tx) as never, settings as never, channelPools as never);
+    const service = new ReservationService(buildDb(tx) as never, settings as never, channelPools as never, cache as never);
 
     const count = await service.expireStale("org1");
 
     expect(count).toBe(0);
     expect(tx.update).not.toHaveBeenCalled();
+    // Nothing changed, so nothing to invalidate.
+    expect(cache.invalidateNamespace).not.toHaveBeenCalled();
   });
 
   it("marks stale reservations EXPIRED and decrements committed only for located ones", async () => {
@@ -53,7 +66,7 @@ describe("ReservationService.expireStale", () => {
         return c;
       }),
     };
-    const service = new ReservationService(buildDb(tx) as never, settings as never, channelPools as never);
+    const service = new ReservationService(buildDb(tx) as never, settings as never, channelPools as never, cache as never);
 
     const count = await service.expireStale("org1");
 
@@ -69,5 +82,31 @@ describe("ReservationService.expireStale", () => {
       JSON.stringify((q as { queryChunks?: unknown[] }).queryChunks ?? q).includes("committed"),
     );
     expect(decrements).toHaveLength(1);
+  });
+
+  /*
+   * The reservations list is cached at a 30s TTL under this namespace and
+   * `InvStockReservationsService` bumps it from its own two writers. This
+   * service writes the same table from five more places and held no
+   * CacheService at all, so an expiry (or a pick's consume) left the endpoint
+   * answering ACTIVE for up to half a minute after the row had moved on.
+   *
+   * Asserted on the ORG-SCOPED key, not merely that something was invalidated:
+   * a namespace missing the org would either be a cross-tenant bust or a
+   * permanent miss, and both read as "the cache was invalidated".
+   */
+  it("bumps the reservations list namespace once the rows have moved", async () => {
+    const stale = [{ id: 1, location_id: 10, product_variant_id: 100, reserved_qty: "5.0000" }];
+    const tx: MockTx = {
+      execute: jest.fn().mockResolvedValue(stale),
+      update: jest.fn().mockImplementation(() => makeUpdateChain()),
+    };
+    const service = new ReservationService(
+      buildDb(tx) as never, settings as never, channelPools as never, cache as never,
+    );
+
+    await service.expireStale("org1");
+
+    expect(cache.invalidateNamespace).toHaveBeenCalledWith("inv:reservations:list:org1");
   });
 });

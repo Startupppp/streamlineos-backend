@@ -186,6 +186,9 @@ describe("ReservationService — cross-tenant isolation", () => {
         ReservationService,
         { provide: DRIZZLE, useValue: db },
         { provide: InventorySettingsService, useValue: settingsMock },
+        // ReservationService now bumps the reservations list namespace on every
+        // write; the file's shared `cache` double already serves its siblings.
+        { provide: CacheService, useValue: cache },
       ],
     }).compile().then((m) => m.get(ReservationService));
 
@@ -210,6 +213,9 @@ describe("ReservationService — cross-tenant isolation", () => {
         ReservationService,
         { provide: DRIZZLE, useValue: db },
         { provide: InventorySettingsService, useValue: settingsMock },
+        // ReservationService now bumps the reservations list namespace on every
+        // write; the file's shared `cache` double already serves its siblings.
+        { provide: CacheService, useValue: cache },
       ],
     }).compile().then((m) => m.get(ReservationService));
 
