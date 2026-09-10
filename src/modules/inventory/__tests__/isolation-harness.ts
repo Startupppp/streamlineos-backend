@@ -58,6 +58,10 @@ export interface IsolationDb {
   findFirst: jest.Mock;
   selectWhere: jest.Mock;
   execute: jest.Mock;
+  /** Payloads passed to `insert().values(...)`. */
+  insertValues: jest.Mock;
+  /** Predicates passed to `update().set().where(...)` and `delete().where(...)`. */
+  writeWhere: jest.Mock;
 }
 
 /**
@@ -74,6 +78,8 @@ export function makeIsolationDb(rows: unknown[] = []): IsolationDb {
   const findMany = jest.fn().mockResolvedValue(rows);
   const findFirst = jest.fn().mockResolvedValue(rows[0] ?? null);
   const execute = jest.fn().mockResolvedValue(rows);
+  const insertValues = jest.fn();
+  const writeWhere = jest.fn();
   const handler = { findMany, findFirst };
 
   function makeChain(): Record<string, unknown> {
@@ -117,21 +123,50 @@ export function makeIsolationDb(rows: unknown[] = []): IsolationDb {
     transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(db)),
     update: jest.fn().mockReturnValue({
       set: jest.fn().mockReturnValue({
-        where: jest.fn().mockResolvedValue([]),
-        returning: jest.fn().mockResolvedValue([]),
+        where: jest.fn().mockImplementation((w: unknown) => {
+          writeWhere(w);
+          return Object.assign(Promise.resolve(rows), {
+            returning: jest.fn().mockResolvedValue(rows),
+          });
+        }),
+        returning: jest.fn().mockResolvedValue(rows),
       }),
     }),
+    /**
+     * `insert().values(...)` is recorded, because for a whole class of commands
+     * that IS the tenant scoping. `claimIdempotencyKey` stamps `orgId` into the
+     * row it inserts and never puts it in a `where` at all, so a harness that
+     * watched only predicates reported every idempotent command as unscoped.
+     *
+     * `.returning()` answers `rows` rather than `[]` for the same reason: an
+     * empty return makes `claimIdempotencyKey` treat the claim as lost and take
+     * the retry branch, so the command's real body — the part with the
+     * org-scoped reads worth asserting on — never runs.
+     */
     insert: jest.fn().mockReturnValue({
-      values: jest.fn().mockReturnValue({
-        returning: jest.fn().mockResolvedValue([]),
-        onConflictDoNothing: jest.fn().mockResolvedValue([]),
-        onConflictDoUpdate: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }),
+      values: jest.fn().mockImplementation((v: unknown) => {
+        insertValues(v);
+        const tail = {
+          returning: jest.fn().mockResolvedValue(rows),
+          onConflictDoNothing: jest.fn().mockReturnValue({
+            returning: jest.fn().mockResolvedValue(rows),
+          }),
+          onConflictDoUpdate: jest.fn().mockReturnValue({
+            returning: jest.fn().mockResolvedValue(rows),
+          }),
+        };
+        return Object.assign(Promise.resolve(rows), tail);
       }),
     }),
-    delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
+    delete: jest.fn().mockReturnValue({
+      where: jest.fn().mockImplementation((w: unknown) => {
+        writeWhere(w);
+        return Promise.resolve(rows);
+      }),
+    }),
   });
 
-  return { db: db as unknown as Db, findMany, findFirst, selectWhere, execute };
+  return { db: db as unknown as Db, findMany, findFirst, selectWhere, execute, insertValues, writeWhere };
 }
 
 /**

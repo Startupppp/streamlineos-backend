@@ -24,6 +24,10 @@ import { ReservationService } from "./stock-engine/reservation.service";
 import { GrnService } from "./purchase-orders/grn.service";
 import { NoopWesAdapter } from "./wes/wes-adapter";
 import { GrnReadService } from "./purchase-orders/grn-read.service";
+import { PutawayCompleteService } from "./putaway/putaway-complete.service";
+import { PickConfirmService } from "./picking/pick-confirm.service";
+import { PickExceptionReportService } from "./picking/pick-exception-report.service";
+import { SyncBatchService } from "./sync/sync-batch.service";
 import { PoService } from "./purchase-orders/po.service";
 
 /**
@@ -130,6 +134,13 @@ const EXTRA = [
     },
   },
   {
+    // SyncBatchService injects it. The PickConfirmService case below still gets
+    // the REAL class: `cls` is registered after EXTRA and the last provider for
+    // a token wins.
+    provide: PickConfirmService,
+    useValue: { confirmPick: jest.fn().mockResolvedValue(undefined) },
+  },
+  {
     provide: GrnService,
     useValue: {
       getGrn: jest.fn().mockResolvedValue(null),
@@ -167,8 +178,27 @@ const LABELS_PROVIDERS = [
   { provide: PoService, useValue: { getPo: jest.fn().mockResolvedValue(PO_FIXTURE), listPos: jest.fn().mockResolvedValue({ items: [] }) } },
 ];
 
+/**
+ * Read the org out of predicates AND out of insert payloads.
+ *
+ * For an idempotent command the tenant scoping is the INSERT: `claimIdempotencyKey`
+ * stamps `orgId` into the row it writes and never puts it in a `where` at all. A
+ * helper that watched only predicates reported every one of them as unscoped.
+ * Insert payloads are plain objects, so their values are taken directly rather
+ * than walked as SQL.
+ */
 function boundValues(...mocks: jest.Mock[]): unknown[] {
-  return mocks.flatMap((m) => m.mock.calls.flatMap((c) => sqlValues(c[0])));
+  return mocks.flatMap((m) =>
+    m.mock.calls.flatMap((c) => {
+      const arg = c[0];
+      const asSql = sqlValues(arg);
+      const asPayload =
+        arg !== null && typeof arg === "object" && !Array.isArray(arg)
+          ? Object.values(arg as Record<string, unknown>)
+          : [];
+      return [...asSql, ...asPayload];
+    }),
+  );
 }
 
 async function build<T>(cls: new (...a: never[]) => T, settings?: unknown, extra: unknown[] = []) {
@@ -199,17 +229,19 @@ function isolates<T>(
 ) {
   describe(`${name} — cross-tenant isolation`, () => {
     it("binds the caller's org before acting (isolation — deny)", async () => {
-      const { svc, selectWhere, findMany, findFirst, execute } = await build(cls, settings, extra);
-      await call(svc, ATTACKER).catch(() => undefined);
-      const bound = boundValues(selectWhere, findMany, findFirst, execute);
+      const h = await build(cls, settings, extra);
+      await call(h.svc, ATTACKER).catch(() => undefined);
+      const bound = boundValues(h.selectWhere, h.findMany, h.findFirst, h.execute, h.insertValues, h.writeWhere);
       expect(bound).toContain(ATTACKER);
       expect(bound).not.toContain(OWNER);
     });
 
     it("binds the owning org before acting (isolation — control)", async () => {
-      const { svc, selectWhere, findMany, findFirst, execute } = await build(cls, settings, extra);
-      await call(svc, OWNER).catch(() => undefined);
-      expect(boundValues(selectWhere, findMany, findFirst, execute)).toContain(OWNER);
+      const h = await build(cls, settings, extra);
+      await call(h.svc, OWNER).catch(() => undefined);
+      expect(
+        boundValues(h.selectWhere, h.findMany, h.findFirst, h.execute, h.insertValues, h.writeWhere),
+      ).toContain(OWNER);
     });
   });
 }
@@ -220,3 +252,7 @@ isolates("InvTaxTreatmentService", InvTaxTreatmentService, (s, org) =>
   s.resolveLineTax(org, { productVariantId: 1, documentKind: "INVOICE", taxableAmount: "100" } as never), GST_SETTINGS);
 isolates("InvLabelsService", InvLabelsService, (s, org) => s.grnNote(org, 1, USER), undefined, LABELS_PROVIDERS);
 isolates("LandedCostApplyService", LandedCostApplyService, (s, org) => s.applyVoucher(org, USER, 1, KEY));
+isolates("PutawayCompleteService", PutawayCompleteService, (s, org) => s.complete(org, USER, 1, {} as never, KEY));
+isolates("PickConfirmService", PickConfirmService, (s, org) => s.confirmPick(org, USER, 1, {} as never, KEY));
+isolates("PickExceptionReportService", PickExceptionReportService, (s, org) => s.reportException(org, USER, 1, {} as never, KEY));
+isolates("SyncBatchService", SyncBatchService, (s, org) => s.apply(org, USER, { operations: [{ kind: "SCAN", barcode: "X" }] } as never));
