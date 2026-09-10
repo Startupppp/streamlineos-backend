@@ -177,7 +177,9 @@
     "browser:measure": "node --env-file-if-exists=.env src/scripts/browser-driver.mjs",
     "browser:measure:self-test": "node src/scripts/browser-driver.mjs --self-test",
     "db:apply-one": "node --env-file=.env src/scripts/apply-journalled-migration.mjs",
-    "scan:legacy-actors:catalog": "node --env-file=.env src/scripts/scan-legacy-org-actors.mjs --catalog"
+    "scan:legacy-actors:catalog": "node --env-file=.env src/scripts/scan-legacy-org-actors.mjs --catalog",
+    "census:module-entitlement": "node --env-file=.env src/scripts/census-module-entitlement.mjs",
+    "census:module-entitlement:self-test": "node src/scripts/census-module-entitlement.mjs --self-test"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",
