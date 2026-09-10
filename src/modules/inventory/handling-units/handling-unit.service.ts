@@ -9,16 +9,22 @@ import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { runIdempotent } from "../stock-engine/idempotency";
 import {
-  assertCanHoldStock,
   assertCanTakeChildren,
   assertNoCycle,
-  type HandlingUnitNode,
 } from "./handling-unit-rules";
 import type {
   CreateHandlingUnitInput,
   MoveHandlingUnitInput,
   NestHandlingUnitInput,
 } from "./dto/handling-units.schemas";
+import {
+  ancestorsOf,
+  assertCanHoldStockInTx,
+  contentsOf,
+  detailIn,
+  node,
+  subtreeIds,
+} from "./lib/handling-unit-tree";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -180,8 +186,8 @@ export class HandlingUnitService {
       .where(and(eq(invHandlingUnits.orgId, orgId), eq(invHandlingUnits.parentHuId, handlingUnitId)))
       .orderBy(asc(invHandlingUnits.id));
 
-    const subtree = await this.subtreeIds(this.db, orgId, handlingUnitId);
-    const rolledUp = await this.contentsOf(this.db, orgId, subtree);
+    const subtree = await subtreeIds(this.db, orgId, handlingUnitId);
+    const rolledUp = await contentsOf(this.db, orgId, subtree);
 
     return {
       ...unit,
@@ -232,8 +238,8 @@ export class HandlingUnitService {
         .where(and(eq(invLocations.orgId, orgId), eq(invLocations.id, input.toLocationId)));
       if (!destination) throw new NotFoundException("Not found");
 
-      const subtree = await this.subtreeIds(tx, orgId, handlingUnitId);
-      const contents = await this.contentsOf(tx, orgId, subtree);
+      const subtree = await subtreeIds(tx, orgId, handlingUnitId);
+      const contents = await contentsOf(tx, orgId, subtree);
 
       // INV-18. `ownership` is part of `inv_stock_levels`' natural key and was
       // absent from both legs, so every movement defaulted to `OWNED`. A pallet
@@ -346,10 +352,10 @@ export class HandlingUnitService {
       // its whereabouts and whether it holds stock, and a gate behind that has
       // already answered the question the caller was not entitled to ask.
       await this.assertUnitVisible(tx, orgId, scope, handlingUnitId);
-      const child = await this.node(tx, orgId, handlingUnitId);
+      const child = await node(tx, orgId, handlingUnitId);
 
       if (input.parentHuId === null) {
-        if (child.parentHuId === null) return this.detailIn(tx, orgId, handlingUnitId);
+        if (child.parentHuId === null) return detailIn(tx, orgId, handlingUnitId);
         /*
          * The unit being un-nested FROM, and not a formality. A nested child
          * carries no location of its own, and `scopePredicate` lets an
@@ -359,7 +365,7 @@ export class HandlingUnitService {
          * and the parent's `locationId` is what this then writes onto the child.
          */
         await this.assertUnitVisible(tx, orgId, scope, child.parentHuId);
-        const parent = await this.node(tx, orgId, child.parentHuId);
+        const parent = await node(tx, orgId, child.parentHuId);
         await tx
           .update(invHandlingUnits)
           .set({ parentHuId: null, locationId: parent.locationId, updatedAt: new Date() })
@@ -374,7 +380,7 @@ export class HandlingUnitService {
           before: { parentHuId: child.parentHuId },
           after: { parentHuId: null, locationId: parent.locationId },
         });
-        return this.detailIn(tx, orgId, handlingUnitId);
+        return detailIn(tx, orgId, handlingUnitId);
       }
 
       if (input.parentHuId === handlingUnitId) {
@@ -385,9 +391,9 @@ export class HandlingUnitService {
       // a carton they legitimately hold and hang it onto a pallet in a building
       // they cannot see, which re-homes it past every gate this service has.
       await this.assertUnitVisible(tx, orgId, scope, input.parentHuId);
-      const parent = await this.node(tx, orgId, input.parentHuId);
+      const parent = await node(tx, orgId, input.parentHuId);
       assertCanTakeChildren(parent);
-      assertNoCycle(handlingUnitId, await this.ancestorsOf(tx, orgId, input.parentHuId));
+      assertNoCycle(handlingUnitId, await ancestorsOf(tx, orgId, input.parentHuId));
 
       // A child's whereabouts is its parent's, and the schema CHECK refuses a
       // row that claims both.
@@ -406,19 +412,13 @@ export class HandlingUnitService {
         after: { parentHuId: input.parentHuId },
       });
 
-      return this.detailIn(tx, orgId, handlingUnitId);
+      return detailIn(tx, orgId, handlingUnitId);
     });
   }
 
-  /**
-   * The gate every path that puts stock onto a handling unit passes through -
-   * receiving, putaway, an adjustment that names one.
-   *
-   * It is a service method rather than a private helper because receiving is in
-   * another module and must ask rather than carry a copy of the rule.
-   */
+  /** @see lib/handling-unit-tree.ts — grn.service.ts calls this through the service. */
   async assertCanHoldStockInTx(tx: Tx, orgId: string, handlingUnitId: number): Promise<void> {
-    assertCanHoldStock(await this.node(tx, orgId, handlingUnitId));
+    return assertCanHoldStockInTx(tx, orgId, handlingUnitId);
   }
 
   /**
@@ -493,126 +493,4 @@ export class HandlingUnitService {
       .limit(100);
   }
 
-  /* ---------------------------------------------------------------- *
-   * internals
-   * ---------------------------------------------------------------- */
-
-  private async node(executor: Tx | Db, orgId: string, handlingUnitId: number): Promise<HandlingUnitNode> {
-    const [row] = await executor.execute<{
-      id: number; parent_hu_id: number | null; location_id: number | null;
-      status: string; holds_stock: boolean; child_count: number;
-    }>(sql`
-      SELECT hu.id, hu.parent_hu_id, hu.location_id, hu.status,
-             EXISTS (
-               SELECT 1 FROM inv_stock_levels sl
-               WHERE sl.org_id = hu.org_id AND sl.handling_unit_id = hu.id AND sl.on_hand <> 0
-             ) AS holds_stock,
-             (SELECT count(*) FROM inv_handling_units c
-              WHERE c.org_id = hu.org_id AND c.parent_hu_id = hu.id)::int AS child_count
-      FROM inv_handling_units hu
-      WHERE hu.org_id = ${orgId} AND hu.id = ${handlingUnitId}
-    `);
-    if (!row) throw new NotFoundException("Not found");
-    return {
-      id: Number(row.id),
-      parentHuId: row.parent_hu_id === null ? null : Number(row.parent_hu_id),
-      locationId: row.location_id === null ? null : Number(row.location_id),
-      status: row.status,
-      holdsStock: row.holds_stock === true,
-      childCount: Number(row.child_count),
-    };
-  }
-
-  /** The chain from a unit upwards, nearest first. Bounded, so a bad row cannot loop for ever. */
-  private async ancestorsOf(executor: Tx | Db, orgId: string, handlingUnitId: number): Promise<number[]> {
-    const rows = await executor.execute<{ id: number }>(sql`
-      WITH RECURSIVE chain AS (
-        SELECT id, parent_hu_id, 1 AS depth
-        FROM inv_handling_units WHERE org_id = ${orgId} AND id = ${handlingUnitId}
-        UNION ALL
-        SELECT hu.id, hu.parent_hu_id, chain.depth + 1
-        FROM inv_handling_units hu
-        JOIN chain ON hu.id = chain.parent_hu_id
-        WHERE hu.org_id = ${orgId} AND chain.depth < 32
-      )
-      SELECT id FROM chain
-    `);
-    return rows.map((r) => Number(r.id));
-  }
-
-  /** A unit and every unit nested inside it, to any depth. */
-  private async subtreeIds(executor: Tx | Db, orgId: string, handlingUnitId: number): Promise<number[]> {
-    const rows = await executor.execute<{ id: number }>(sql`
-      WITH RECURSIVE tree AS (
-        SELECT id, 1 AS depth FROM inv_handling_units
-        WHERE org_id = ${orgId} AND id = ${handlingUnitId}
-        UNION ALL
-        SELECT hu.id, tree.depth + 1
-        FROM inv_handling_units hu
-        JOIN tree ON hu.parent_hu_id = tree.id
-        WHERE hu.org_id = ${orgId} AND tree.depth < 32
-      )
-      SELECT id FROM tree
-    `);
-    return rows.map((r) => Number(r.id));
-  }
-
-  private async contentsOf(
-    executor: Tx | Db,
-    orgId: string,
-    handlingUnitIds: readonly number[],
-  ): Promise<Array<HandlingUnitContentRow & { currentLocationId: number }>> {
-    if (handlingUnitIds.length === 0) return [];
-    const rows = await executor.execute<{
-      product_variant_id: number; lot_id: number | null; serial_id: number | null;
-      handling_unit_id: number; location_id: number; on_hand: string;
-      ownership: "OWNED" | "VENDOR" | "CUSTOMER";
-    }>(sql`
-      SELECT product_variant_id, lot_id, serial_id, handling_unit_id, location_id, on_hand, ownership
-      FROM inv_stock_levels
-      WHERE org_id = ${orgId}
-        AND handling_unit_id IN (${sql.join(handlingUnitIds.map((id) => sql`${id}`), sql`, `)})
-        AND on_hand <> 0
-      ORDER BY id
-    `);
-    return rows.map((r) => ({
-      productVariantId: Number(r.product_variant_id),
-      lotId: r.lot_id === null ? null : Number(r.lot_id),
-      serialId: r.serial_id === null ? null : Number(r.serial_id),
-      handlingUnitId: Number(r.handling_unit_id),
-      ownership: r.ownership,
-      currentLocationId: Number(r.location_id),
-      onHand: String(r.on_hand),
-    }));
-  }
-
-  private async detailIn(tx: Tx, orgId: string, handlingUnitId: number): Promise<HandlingUnitDetail> {
-    const node = await this.node(tx, orgId, handlingUnitId);
-    const [row] = await tx
-      .select({
-        id: invHandlingUnits.id,
-        huCode: invHandlingUnits.huCode,
-        kind: invHandlingUnits.kind,
-        status: invHandlingUnits.status,
-        locationId: invHandlingUnits.locationId,
-        parentHuId: invHandlingUnits.parentHuId,
-      })
-      .from(invHandlingUnits)
-      .where(and(eq(invHandlingUnits.orgId, orgId), eq(invHandlingUnits.id, handlingUnitId)));
-    if (!row) throw new NotFoundException("Not found");
-
-    const children = await tx
-      .select({ id: invHandlingUnits.id })
-      .from(invHandlingUnits)
-      .where(and(eq(invHandlingUnits.orgId, orgId), eq(invHandlingUnits.parentHuId, handlingUnitId)));
-
-    const rolledUp = await this.contentsOf(tx, orgId, await this.subtreeIds(tx, orgId, handlingUnitId));
-
-    return {
-      ...row,
-      childIds: children.map((c) => c.id),
-      contents: node.holdsStock ? rolledUp.filter((r) => r.handlingUnitId === handlingUnitId) : [],
-      rolledUpContents: rolledUp,
-    };
-  }
 }
