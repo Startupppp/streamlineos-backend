@@ -158,28 +158,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /**
-   * Every RBAC read goes through here, and every failure THROWS.
-   *
-   * It used to swallow anything `isMissingRelationError` matched and return the
-   * caller's empty fallback. That predicate is a substring test for
-   * "does not exist", so it also caught `column ... does not exist` (schema drift
-   * mid-deploy), `role ... does not exist` and `database ... does not exist` — and
-   * the resolver reads an empty grants list as "this user holds no permissions".
-   * The empty result is then cached for the snapshot's validity window, so one
-   * transient failure degrades a user to zero permissions for seconds, with a
-   * `warn` fired at most once per process and no error the user can see.
-   * On `DeniedModulesResolver` the same fallback is worse than silent: an empty
-   * denied-modules list fails OPEN, restoring modules the org took away.
-   *
-   * Failing closed loudly is the repository's stated policy for exactly this
-   * class — `env.validation.ts` forbids `RBAC_MIGRATION_MODE=degrade` in
-   * production "because missing entitlement tables must fail closed". A throw
-   * reaches `PermissionGuard`, which logs the error with the permission key and
-   * denies; nothing is cached, so the next request re-reads. No caller wants the
-   * empty array for its own sake: every one of them wants rows, and the fallback
-   * parameter is gone so the silent path cannot be reintroduced by passing one.
-   */
+  // Every RBAC read THROWS on failure: an empty grants list reads as "holds nothing", and an empty denied-modules list fails OPEN. Pinned by access-read-failure-throws.spec.ts.
   private async readAccessTable<T>(read: () => PromiseLike<T>): Promise<T> {
     return read();
   }
@@ -404,10 +383,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
         { orgId },
       );
 
-    // Token-attenuated requests filter scopes by tokenScopes, so two callers
-    // with the same (orgId, userId) may receive different snapshots. Rather than
-    // encoding the full scope set in the cache key, skip caching entirely for
-    // this path — it is uncommon and correctness dominates.
+    // Two token-attenuated callers with the same (orgId, userId) get different snapshots, so this path is never cached.
     if (currentUserContext.tokenScopes !== null) return compute();
 
     const version = await this.getPermissionsVersion(orgId);
