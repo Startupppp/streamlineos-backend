@@ -136,10 +136,9 @@ export class SignEnvelopeSweepsService {
    * `orgId` is required, and it is required because leaving it out was a
    * cross-tenant write.
    *
-   * No `sign_*` table is under RLS — 194 tables are and none of them is one of
-   * ours — so this module isolates tenants the only other way there is: an
-   * explicit `org_id` predicate on every query. Every other method here does
-   * that (`findEnvelope`, `listForEnvelope`). These two sweeps did not, and
+   * Every query in this module carries an explicit `org_id` predicate, and every
+   * other method here does that (`findEnvelope`, `listForEnvelope`). These two
+   * sweeps did not, and
    * nothing downstream caught it: an admin in one organisation pressing
    * `POST /sign/admin/run-reminder-sweep` re-issued a **new signing token** for
    * every eligible recipient in **every** organisation in the database, which
@@ -149,6 +148,27 @@ export class SignEnvelopeSweepsService {
    *
    * Making the parameter required rather than optional-with-a-default is the
    * point: a default would let the unsafe call keep compiling.
+   *
+   * WHAT CHANGED SINCE, because this docblock used to say the opposite and the
+   * opposite is load-bearing. It read "no `sign_*` table is under RLS — 194
+   * tables are and none of them is one of ours". That was measured and true when
+   * written; it is false now. A cold-built schema at head has 867 tables under
+   * RLS and every `sign_*` table is among them, each with the same
+   * `tenant_isolation` policy — `org_id = app.current_org_id()`.
+   *
+   * No migration names them, which is why grepping the migrations for `sign_`
+   * beside "ROW LEVEL SECURITY" finds nothing: `0378_rls_remaining_tenant_tables`
+   * is a deliberately unfiltered catalog sweep over every remaining table with a
+   * tenant column, and it swept these up without ever writing their names.
+   *
+   * It changes what the old failure WAS, not whether this parameter is needed.
+   * Callers reach these sweeps inside a tenant transaction, so the GUC is set and
+   * RLS would now confine an unscoped sweep to the caller's own organisation
+   * rather than mailing every tenant's signers; with no GUC at all it fails
+   * closed on 42501 instead. So RLS is a real backstop today and the explicit
+   * predicate is defence in depth. The predicate stays regardless: it is the
+   * contract this service states, it is what the spec pins, and it keeps the
+   * method correct independently of which context happens to call it.
    */
   async runReminderSweep(orgId: string): Promise<number> {
     const now = new Date();

@@ -9,9 +9,13 @@ const ORG_B = "22222222-2222-4222-8222-222222222222";
 /**
  * The sweeps were reading every tenant's envelopes.
  *
- * No `sign_*` table is under RLS — 194 tables in this schema are and not one of
- * them is ours — so the module isolates tenants with an explicit `org_id`
- * predicate on every query and nothing else. `runReminderSweep` and
+ * The module isolates tenants with an explicit `org_id` predicate on every
+ * query. (This header used to add "and nothing else — no `sign_*` table is under
+ * RLS"; that was true when measured and is not now. Every `sign_*` table carries
+ * the `tenant_isolation` policy today, swept in by
+ * `0378_rls_remaining_tenant_tables`, which names no table and so answers no
+ * grep. RLS is a backstop; the predicate below is still the contract.)
+ * `runReminderSweep` and
  * `runExpirationSweep` were the only two methods in the service that took no
  * `orgId` and filtered on none, which meant an admin pressing "run now" in one
  * organisation re-issued signing tokens for recipients in **all** of them, and

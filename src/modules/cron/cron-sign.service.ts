@@ -32,11 +32,18 @@ export interface SignSweepReport {
  * that way. E-sign simply was not on it.
  *
  * `forEachOrg` rather than one pass over the table, and that distinction is
- * load-bearing here rather than stylistic: no `sign_*` table is under RLS, so
- * the sweeps isolate tenants with an explicit `org_id` predicate and nothing
- * else. Walking organisations gives each one its own transaction and its own
- * scoped call, so a tenant whose envelope has a bad recipient row cannot fail —
- * or silently touch — anybody else's.
+ * load-bearing here rather than stylistic. Walking organisations gives each one
+ * its own transaction, its own tenant GUC and its own scoped call, so a tenant
+ * whose envelope has a bad recipient row cannot fail — or silently touch —
+ * anybody else's.
+ *
+ * This used to justify itself with "no `sign_*` table is under RLS". That was
+ * measured and true once and is false now: a cold-built schema at head has 867
+ * tables under RLS and every `sign_*` table is one of them, swept in by
+ * `0378_rls_remaining_tenant_tables`, an unfiltered catalog pass that names no
+ * table — which is why no grep for `sign_` in the migrations turns it up. The
+ * per-org walk is still the right shape, for the transaction and failure
+ * isolation above rather than for being the only tenant boundary there is.
  */
 @Injectable()
 export class CronSignService {

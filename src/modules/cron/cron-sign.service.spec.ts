@@ -45,10 +45,15 @@ describe("CronSignService", () => {
 
   it("sweeps each organisation with its own id, never a shared pass", async () => {
     /*
-     * The whole reason this service exists rather than one call over the table:
-     * no `sign_*` table is under RLS, so an unscoped sweep reads every tenant's
-     * envelopes. If this ever calls the sweeps without an orgId, the isolation
-     * is gone again.
+     * The whole reason this service exists rather than one call over the table.
+     * If this ever calls the sweeps without an orgId, the per-tenant scoping is
+     * gone again — and the sweeps re-issue signing tokens and expire envelopes,
+     * so "gone" means other tenants' signers get email.
+     *
+     * The older note here said no `sign_*` table is under RLS. It is out of date:
+     * they all carry `tenant_isolation` now. That makes RLS a backstop, not a
+     * reason to stop passing the id — this assertion is about the id reaching
+     * the sweep, which is what keeps the call correct on its own terms.
      */
     walkOrgs([ORG_A, ORG_B]);
     const { service, calls } = makeEnvelopes();
