@@ -19,7 +19,7 @@ fast-forward. That branch is an ancestor and should not be committed to again.
 | X2 Commissions UI | Complete before this pass | CRM commission plan/accrual routes/hooks/components, backed by `src/modules/commission/`. |
 | X3 Renewals / health UI | Complete | `/crm/renewals` and `/crm/health` with lifecycle hooks, navigation, and loading/error/empty/denied states. |
 | X4 MCP token/settings UI | Complete, with a corrected security claim | `/crm/settings/mcp` and token management ship. See **X4 correction** below — the isolation property is real but holds for a different reason than the ticket states, and a genuine defect was found and fixed behind it. |
-| X5 Golden path e2e | **Run, and green** | 6/6, under RLS, on a cold-built database, and it now proves US8 end to end — cancelling stops the class, and a person lifts the stop through the real endpoint. See **Verification**. |
+| X5 Golden path e2e | **Run, and green** | **7/7, exit 0** (re-run 2026-09-10 — it was 6/6 when this row was written; a seventh case has since been added). Under RLS, on a cold-built database at journal head, and it proves US8 end to end — cancelling stops the class, and a person lifts the stop through the real endpoint. Transcript and exit code: `docs/crm-golden-path-run-2026-09-10.md`. |
 | X6 Signup + first value | Complete | Public `/signup`, passwordless workspace creation, country-derived region placement, activation checklist mounted at `frontend/app/(authenticated)/crm/page.tsx:179`. `seedDemoDataset` runs inside `provisionWorkspace` (`src/modules/auth/auth.service.ts:200`). |
 | X7 Leftover identity modules | **Reclassified — see below** | The schema-level collapse is done and `legacy-identity-collapse.spec.ts` proves it. The modules themselves must stay. |
 | X8 Honest handoff | This document | |
@@ -137,7 +137,8 @@ DATABASE_URL=… APP_DB_PASSWORD=… node src/scripts/db-bootstrap-app-role.mjs
 #         can create objects in: (none)
 ```
 
-**Seeded e2e, whole suite, under real RLS:**
+**Seeded e2e, whole suite, under real RLS** — *as measured on 2026-09-08; see
+the note below before quoting these numbers:*
 
 ```bash
 DATABASE_URL=<owner>  APP_DATABASE_URL=<streamline_app>  CRON_SECRET=…  \
@@ -147,9 +148,16 @@ DATABASE_URL=<owner>  APP_DATABASE_URL=<streamline_app>  CRON_SECRET=…  \
 # Tests:       129 passed, 129 total
 ```
 
-That includes `crm-golden-path` (6/6), `crm-inbound-ingress`,
-`crm-import-roundtrip`, `crm-tenant-isolation`, `kb-page-visibility` and the
-harness self-tests.
+That included `crm-golden-path`, `crm-inbound-ingress`, `crm-import-roundtrip`,
+`crm-tenant-isolation`, `kb-page-visibility` and the harness self-tests.
+
+⚠ **That whole-suite figure is historical and must not be re-quoted as current.**
+`test/**/*.seeded-e2e-spec.ts` now matches **42** spec files, not 6, so "6 suites
+/ 129 tests" describes a suite that no longer exists rather than a green result.
+It has not been re-measured since. What *has* been re-run, with the command line
+and the exit code recorded in-repo, is the golden path — **7/7, exit 0**, on a
+database rebuilt to this branch's journal head (433/433) under the non-owner
+role: `docs/crm-golden-path-run-2026-09-10.md`.
 
 **`APP_DATABASE_URL` is load-bearing, not optional.** Run as the owner, the two
 harness self-tests — "direct query without tenant GUC is denied by RLS" and
