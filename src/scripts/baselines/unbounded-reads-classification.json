@@ -3233,6 +3233,11 @@
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "Classified 2026-09-10. Same code, new path: reserveRequirement and releaseRequirement moved verbatim out of inv-projects.service.ts when that 912-line file was decomposed for check:file-sizes. Read against the moved queries rather than copied from the parent: both matches select the existing reservation rows for ONE requirement, filtered on (org_id, source, source_id) - the holds a single project requirement already has, which is the same shape the parent entry was classified FALSE-POSITIVE for. FALSE-POSITIVE rather than BOUNDED because BOUNDED is a FIXED verdict asserting the scanner no longer matches, and it still does."
+    },
+    "/inventory/sales-orders/lib/statutory-filing.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "CRM/Inventory excluded product domain - do not fix in this lane",
+      "justification": "Classified 2026-09-10. Same code, new path: fileStatutoryDocuments and fileOne moved verbatim out of so-fulfillment.service.ts when that 673-line file was decomposed for check:file-sizes. The parent carries the same EXCLUDED-MODULE verdict. The single match reads the shipment LINES of one shipment (filtered on shipment_id, behind an early return when there is no shipmentId), so it is bounded by one document either way."
     }
   }
 }
