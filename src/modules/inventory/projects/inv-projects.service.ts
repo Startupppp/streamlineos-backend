@@ -23,7 +23,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { ReservationService } from "../stock-engine/reservation.service";
-import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
+import { WarehouseScopeService, type WarehouseScope } from "../stock-engine/warehouse-scope.service";
 import { availableQtySql, availableQtySumSql } from "../stock-engine/available-sql";
 import { addDec, cmpDec } from "../stock-engine/decimal";
 import { assessCoverage, type RiskReason } from "./lib/coverage";
@@ -74,6 +74,57 @@ export interface RequirementCoverage {
   riskReason: RiskReason;
 }
 
+/**
+ * B1 — construction projects, and the deliberate answer to "why is this not
+ * warehouse-scoped?".
+ *
+ * A warehouse-scope census reads this file as ten un-gated candidates. Nine of
+ * them are un-gated **on purpose**, and this is where that is written down so
+ * the next census does not raise them again.
+ *
+ * **A project is a demand source, not a place.** `inv_projects` carries no
+ * warehouse column and is not missing one: its own schema docblock says
+ * "material for a site is reserved out of the dark store that will serve it",
+ * and `zone` exists precisely so *several* dark stores can be ranked to cover a
+ * shortage. The warehouse lives one level down, on the requirement, and it is
+ * nullable on purpose — "we need 200 bags by Friday" is a real requirement
+ * before anybody has decided where they come from. A project is therefore not a
+ * per-warehouse object at all; it is an org-wide planning object that DRAWS FROM
+ * warehouses, line by line, and different lines on one site legitimately name
+ * different stores or none.
+ *
+ * Scoping the project header through its requirements was considered and
+ * rejected on evidence, not taste. `NULL IN (…)` is NULL — the rule this module
+ * uses everywhere — so a project whose lines name no store yet would be
+ * invisible to exactly the planner whose job is to give those lines a store, and
+ * a project with no lines at all (every project, for the first second of its
+ * life) would be invisible to the person who just created it, including to the
+ * `addRequirement` call that would have made it visible. That is not a tail to
+ * patch around; it is a deadlock, and it is the schema telling us the header is
+ * not the warehouse-attributed grain.
+ *
+ * **What a scoped operator can see here, and why that is correct.** Everything
+ * on the planning surface: every site in the organisation, its client, its
+ * dates, its status, every material line, and the name of the store a line is
+ * pointed at. A store's name, code and zone are org structure, not stock — the
+ * project row already carries a `zone` drawn from the same vocabulary — and a
+ * line that read "expected from ▮▮▮" would be unreadable to the planner it is
+ * for. Availability likewise stays the org-wide number: `coverageFor` answers
+ * "can this demand be met", which is the same question `/:soId/atp` answers, and
+ * that surface settled it the same way — the number stays org-wide, the gate
+ * goes on the claim.
+ *
+ * **What a scoped operator cannot do.** Take or give back a hold on stock
+ * standing in a building they are not assigned to. That is the one thing in this
+ * file that is not planning, and the controller already says so in words: reserve
+ * and release carry `inventory:stock:reserve` and not the project key, because
+ * "holding stock is a claim on the warehouse, and whoever may make that claim is
+ * a warehouse decision, not a project one". Those two methods are gated on the
+ * bin the stock actually stands in — see `assertHoldsInScope`.
+ *
+ * `projects-warehouse-scope.spec.ts` pins both halves: the gate on the two
+ * claims, and the *absence* of a gate on the nine planning surfaces.
+ */
 @Injectable()
 export class InvProjectsService {
   constructor(
@@ -556,6 +607,48 @@ export class InvProjectsService {
   }
 
   /**
+   * The one gate in this file, and the only thing here that is not org-wide.
+   *
+   * Asked of the bin the stock **actually stands in**, never of the requirement's
+   * `warehouse_id`. That column is an expectation ("which store the site expects
+   * to be served from") and `updateRequirementSchema` lets anyone PATCH it, so a
+   * gate reading it would answer for a building the hold is not in — and a hold
+   * re-homed on paper would gate against the new store while the units stayed at
+   * the old one. `inv_stock_reservations.location_id` is where the `committed`
+   * quantity was actually written, and it is the only honest question to ask.
+   *
+   * Both callers ask it before touching anything: `reserveRequirement` because a
+   * top-up **replaces** the standing hold, and `releaseRequirement` because
+   * releasing hands another building's units back to whoever wants them next.
+   * Neither reaches `StockEngineService.executeInTx`, so `assertLocationsInScope`
+   * never runs on this path — `releaseReservationInTx` writes
+   * `inv_stock_levels.committed` directly and says in its own docblock that the
+   * gate belongs at the client-named entry point. This is that entry point.
+   *
+   * Every hold is asserted before any is touched, so a scoped caller cannot get a
+   * partial release. `uniq_inv_reservations_org_source_active` allows one active
+   * hold per line, so this loop is one iteration in practice; it is a loop because
+   * the release path is one, and a gate that covered only the first row would be
+   * a gate that agreed with the code by coincidence.
+   *
+   * 404, never 403: a "forbidden" on a requirement whose hold sits in another
+   * building confirms both the hold and the building exist, which turns a probe
+   * into an existence oracle (§4). `assertLocationVisible` already answers that
+   * way, and an unattributed hold (`location_id IS NULL`) is attributable to none
+   * of the caller's warehouses, so it is refused too — `NULL IN (…)` is NULL, the
+   * same rule the rest of the module reads by.
+   */
+  private async assertHoldsInScope(
+    orgId: string,
+    userId: string,
+    holds: readonly { locationId: number | null }[],
+  ): Promise<void> {
+    for (const hold of holds) {
+      await this.warehouseScope.assertLocationVisible(orgId, userId, hold.locationId);
+    }
+  }
+
+  /**
    * B1 — which bin a project hold should be taken from.
    *
    * `ReservationService` refuses a reservation with no location, and rightly:
@@ -570,6 +663,14 @@ export class InvProjectsService {
    * second would collide. When nothing covers it in one place the call is
    * refused **naming the largest single-bin figure**, so the operator can split
    * the requirement or move stock rather than guess why it failed.
+   *
+   * The candidate bins are narrowed to the caller's warehouses. Without that, a
+   * requirement naming no store — the normal state of a line nobody has planned
+   * yet — sends this org-wide, and a picker assigned to one building auto-takes a
+   * hold in another. Worse than the read it looks like: `assertHoldsInScope` would
+   * then refuse them the release, so the hold they just created would be stuck
+   * standing with nobody able to give it back. Gating the pick and gating the
+   * release are the same gate asked at both ends.
    */
   private async resolveReservationLocation(
     orgId: string,
@@ -587,6 +688,8 @@ export class InvProjectsService {
      * is told to transfer stock in that is already standing in front of them.
      */
     heldHere: ReadonlyMap<number, string>,
+    /** The caller's warehouses; `null` is the org-wide permission and adds no predicate. */
+    scope: WarehouseScope,
   ): Promise<{ locationId: number; available: string } | { locationId: null; best: string }> {
     const rows = await this.db
       .select({
@@ -600,6 +703,10 @@ export class InvProjectsService {
           eq(invStockLevels.orgId, orgId),
           eq(invStockLevels.productVariantId, productVariantId),
           eq(invLocations.isPickable, true),
+          // Built through the service rather than an `inArray`, so `null` renders
+          // TRUE and an empty scope renders FALSE. An `inArray(col, [])` is the
+          // shape that quietly means something else on a caller holding nothing.
+          this.warehouseScope.warehousePredicate(scope, sql`${invLocations.warehouseId}`),
           ...(warehouseId != null ? [eq(invLocations.warehouseId, warehouseId)] : []),
         ),
       )
@@ -692,6 +799,8 @@ export class InvProjectsService {
     // is resolved against the total rather than against the increment.
     const totalQty = addDec(alreadyHeld, qty);
 
+    const scope = await this.warehouseScope.resolve(orgId, userId);
+
     let locationId = input.locationId;
     if (locationId != null) {
       const owned = await this.db.query.invLocations.findFirst({
@@ -699,6 +808,10 @@ export class InvProjectsService {
         columns: { id: true },
       });
       if (!owned) throw new NotFoundException("Storage location not found");
+      // Owning the bin is tenancy; being shown it is scope. `warehouseId` is
+      // optional on this payload, so a caller naming a bare `locationId` skipped
+      // the assert above entirely and could take a hold anywhere in the org.
+      await this.warehouseScope.assertLocationVisible(orgId, userId, locationId);
     } else {
       const resolved = await this.resolveReservationLocation(
         orgId,
@@ -706,6 +819,7 @@ export class InvProjectsService {
         warehouseId,
         totalQty,
         await this.heldByLocation(orgId, requirementId),
+        scope,
       );
       if (resolved.locationId === null) {
         throw new BadRequestException({
@@ -719,7 +833,7 @@ export class InvProjectsService {
     }
 
     const existing = await this.db
-      .select({ id: invStockReservations.id })
+      .select({ id: invStockReservations.id, locationId: invStockReservations.locationId })
       .from(invStockReservations)
       .where(
         and(
@@ -729,6 +843,9 @@ export class InvProjectsService {
           eq(invStockReservations.status, "ACTIVE"),
         ),
       );
+    // A top-up releases what is standing before it re-takes the total, so the
+    // caller has to be allowed to touch the OLD bin as well as the new one.
+    await this.assertHoldsInScope(orgId, userId, existing);
 
     const reservation = await this.db.transaction(async (tx) => {
       // Replace rather than add: the unique index allows one active hold per
@@ -774,13 +891,24 @@ export class InvProjectsService {
     return reservation;
   }
 
-  /** Releases every active hold on a requirement and puts the line back to REQUESTED. */
+  /**
+   * Releases every active hold on a requirement and puts the line back to REQUESTED.
+   *
+   * Gated on the bin each hold stands in, which is the half `reserveRequirement`
+   * had and this did not. Releasing is not the harmless end of reserving: it
+   * hands the units back to whoever asks next, and this path never reaches
+   * `StockEngineService.executeInTx`, so nothing downstream was going to catch
+   * it. A picker assigned to one building could take any project requirement id
+   * in the organisation and drop another building's hold — and because the
+   * project surface is org-wide by design (see the class docblock), every id they
+   * needed was already on the screen in front of them.
+   */
   async releaseRequirement(orgId: string, userId: string, projectId: number, requirementId: number) {
     await this.assertPack(orgId);
     await this.requirementOr404(orgId, projectId, requirementId);
 
     const active = await this.db
-      .select({ id: invStockReservations.id })
+      .select({ id: invStockReservations.id, locationId: invStockReservations.locationId })
       .from(invStockReservations)
       .where(
         and(
@@ -796,6 +924,12 @@ export class InvProjectsService {
         message: "Nothing is currently held for this line.",
       });
     }
+    // The 400 above and the 404 below do tell an out-of-scope caller whether a
+    // hold exists on this line, and that is not a leak here: `getProject`
+    // already reports `coverage.reservedQty` on every line to every reader,
+    // because the planning surface is org-wide by design. What the gate protects
+    // is the ACT, not the fact — the units, and who may hand them back.
+    await this.assertHoldsInScope(orgId, userId, active);
 
     const released = await this.db.transaction(async (tx) => {
       let count = 0;
