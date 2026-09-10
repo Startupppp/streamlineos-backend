@@ -137,7 +137,7 @@ export class InvWarehousesController {
     @Body() body: UpdateWarehouseInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.warehouses.updateWarehouse(u.orgId, warehouseId, body);
+    return this.warehouses.updateWarehouse(u.orgId, u.userId, warehouseId, body);
   }
 
   @Get(":warehouseId/stock")
@@ -170,7 +170,7 @@ export class InvWarehousesController {
     @Body() body: CreateLocationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.warehouses.createLocation(u.orgId, warehouseId, body);
+    return this.warehouses.createLocation(u.orgId, u.userId, warehouseId, body);
   }
 
   @Patch(":warehouseId/locations/:locationId")
@@ -183,6 +183,6 @@ export class InvWarehousesController {
     @Body() body: UpdateLocationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.warehouses.updateLocation(u.orgId, locationId, body);
+    return this.warehouses.updateLocation(u.orgId, u.userId, locationId, body);
   }
 }

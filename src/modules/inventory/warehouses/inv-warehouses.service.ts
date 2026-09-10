@@ -185,7 +185,20 @@ export class InvWarehousesService {
 
   // B1-01 BOLA: pre-deactivation stock check now includes eq(invLocations.orgId, orgId).
   // B1-12: stock check + isDefault reset + update wrapped in one transaction.
-  async updateWarehouse(orgId: string, warehouseId: number, data: UpdateWarehouseInput) {
+  /**
+   * `getWarehouse` scopes and this did not, which is incoherent on its face: an
+   * operator could EDIT a building they are not allowed to LOOK at.
+   *
+   * `inventory:warehouses:manage` is not org-wide authority --
+   * `inventory:warehouses:scope-all` is a separate key, so a regional manager
+   * holding `:manage` and assigned one building held the permission and none of
+   * the reach. Two of the three edits here are worse than a rename: `isActive:
+   * false` deactivates somebody else's warehouse, and `isDefault` clears the
+   * flag on EVERY warehouse in the organisation before setting it here, which
+   * quietly redirects every default-destination decision to your building.
+   */
+  async updateWarehouse(orgId: string, userId: string, warehouseId: number, data: UpdateWarehouseInput) {
+    await this.warehouseScope.assertWarehouseVisible(orgId, userId, warehouseId);
     await this.assertMaterialsPackForFields(orgId, data);
     const updated = await this.db.transaction(async (tx) => {
       if (data.isActive === false) {
@@ -247,7 +260,9 @@ export class InvWarehousesService {
     });
   }
 
-  async createLocation(orgId: string, warehouseId: number, data: CreateLocationInput) {
+  /** A bin belongs to a building, so the gate is the building's -- same one `listLocations` uses. */
+  async createLocation(orgId: string, userId: string, warehouseId: number, data: CreateLocationInput) {
+    await this.warehouseScope.assertWarehouseVisible(orgId, userId, warehouseId);
     const wh = await this.db.query.invWarehouses.findFirst({
       where: and(eq(invWarehouses.id, warehouseId), eq(invWarehouses.orgId, orgId)),
       columns: { id: true },
@@ -264,7 +279,13 @@ export class InvWarehousesService {
     return loc!;
   }
 
-  async updateLocation(orgId: string, locationId: number, data: UpdateLocationInput) {
+  /**
+   * Scoped by the LOCATION rather than by a warehouse in the path: the route
+   * carries both, and trusting the path's warehouse id would let a caller name
+   * their own building while editing a bin in another.
+   */
+  async updateLocation(orgId: string, userId: string, locationId: number, data: UpdateLocationInput) {
+    await this.warehouseScope.assertLocationVisible(orgId, userId, locationId);
     if (data.isActive === false) {
       const [stockRow] = await this.db
         .select({ count: sql<number>`count(*)::int` })
