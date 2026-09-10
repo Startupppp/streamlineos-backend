@@ -60,6 +60,7 @@ import {
   parseRouteRefs,
   parseUnionKeys,
 } from "./permission-key-extractors.mjs";
+import { resolveFrontendRoot, resolveBackendModulesDir } from "./lib/repo-roots.mjs";
 
 export { parsePermissionConstants, parseRouteRefs, parseUnionKeys };
 
@@ -91,12 +92,27 @@ const args = process.argv.slice(2);
 const SCRIPT_DIR = fileURLToPath(new URL(".", import.meta.url));
 // scripts/ → src/ → backend/ → repo root
 const REPO_ROOT = resolve(SCRIPT_DIR, "../../..");
-const BACKEND_ROOT = resolve(REPO_ROOT, "backend");
-const BACKEND_MODULES_DIR = join(BACKEND_ROOT, "src", "modules");
+/**
+ * `<workspace>/backend` and `<workspace>/frontend` are a monorepo layout this
+ * checkout has never used, so this gate exited 2 on every run. It is the gate
+ * that proves a backend key is typeable in the frontend and that a
+ * frontend-only ghost key cannot exist, and it has never once made that
+ * comparison here.
+ *
+ * The paired-worktree helper matters more here than anywhere: this backend is
+ * `inv-wt-backend`, so its frontend is `inv-wt-frontend`. Pointing it at
+ * `streamlineos-frontend` would diff an inventory catalog against a CRM union
+ * on a different branch and report every legitimate difference as a missing
+ * key — confidently wrong instead of honestly unable to run.
+ */
+const { root: FRONTEND_ROOT, candidates: FRONTEND_CANDIDATES } = resolveFrontendRoot();
+const { root: RESOLVED_MODULES_DIR } = resolveBackendModulesDir();
+const BACKEND_MODULES_DIR = RESOLVED_MODULES_DIR ?? join(REPO_ROOT, "backend", "src", "modules");
+const FRONTEND_UNION_BASE = FRONTEND_ROOT ?? join(REPO_ROOT, "frontend");
 const FRONTEND_UNION_FILES = [
-  join(REPO_ROOT, "frontend", "lib", "rbac", "permissions", "permission-key-foundation.ts"),
-  join(REPO_ROOT, "frontend", "lib", "rbac", "permissions", "permission-key-extended.ts"),
-  join(REPO_ROOT, "frontend", "lib", "rbac", "permissions", "permission-key-business.ts"),
+  join(FRONTEND_UNION_BASE, "lib", "rbac", "permissions", "permission-key-foundation.ts"),
+  join(FRONTEND_UNION_BASE, "lib", "rbac", "permissions", "permission-key-extended.ts"),
+  join(FRONTEND_UNION_BASE, "lib", "rbac", "permissions", "permission-key-business.ts"),
 ];
 
 // The extractors live in ./permission-key-extractors.mjs so this check and

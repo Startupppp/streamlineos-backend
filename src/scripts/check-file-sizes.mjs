@@ -12,6 +12,7 @@
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, extname } from "node:path";
+import { resolveFrontendRepoRoot } from "./lib/repo-roots.mjs";
 
 const LIMIT = 500;
 const MIN_FILES = 50;
@@ -22,17 +23,33 @@ function resolvePath(relativeUrl) {
 
 const SRC = resolvePath("../");
 const BACKEND_ROOT = resolvePath("../../");
-const EXCEPTIONS_DOC = resolvePath(
-  "../../../architecture-refactor/final-refactor/issues/file-size-exceptions.md",
-);
+/**
+ * The exceptions registry lives in the FRONTEND repo, not the workspace root.
+ * This resolved `<workspace>/architecture-refactor/...`, which has never
+ * existed, so the gate exited 1 on every run without scanning a single file —
+ * indistinguishable from "a file is over the limit". Resolved through the
+ * paired-worktree helper instead: this checkout's registry is in
+ * `inv-wt-frontend/`, not `streamlineos-frontend/`.
+ */
+const { root: FRONTEND_REPO_ROOT, candidates: FRONTEND_REPO_CANDIDATES } =
+  resolveFrontendRepoRoot();
+const EXCEPTIONS_DOC = FRONTEND_REPO_ROOT
+  ? join(FRONTEND_REPO_ROOT, "architecture-refactor", "final-refactor", "issues", "file-size-exceptions.md")
+  : null;
 
 function loadExceptions() {
   let doc;
+  if (EXCEPTIONS_DOC === null) {
+    // 2, not 1: nothing was measured. Exit 1 here says "a file is too long".
+    console.error("check-file-sizes: PREREQUISITE MISSING — cannot locate the frontend repo holding the exceptions registry. Tried:");
+    for (const candidate of FRONTEND_REPO_CANDIDATES) console.error(`  ${candidate}`);
+    process.exit(2);
+  }
   try {
     doc = readFileSync(EXCEPTIONS_DOC, "utf8");
   } catch {
-    console.error(`check-file-sizes: cannot read exceptions doc at ${EXCEPTIONS_DOC}`);
-    process.exit(1);
+    console.error(`check-file-sizes: PREREQUISITE MISSING — cannot read exceptions doc at ${EXCEPTIONS_DOC}`);
+    process.exit(2);
   }
   return parseExceptions(doc);
 }

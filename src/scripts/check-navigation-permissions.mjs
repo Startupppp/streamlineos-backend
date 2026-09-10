@@ -20,6 +20,7 @@ import {
   parsePermissionConstants,
   parseRouteRefs,
 } from "./permission-key-extractors.mjs";
+import { resolveFrontendRoot, resolveBackendModulesDir } from "./lib/repo-roots.mjs";
 
 const PILOT_MODULE = "timesheets";
 
@@ -71,8 +72,19 @@ const args = process.argv.slice(2);
 const SCRIPT_DIR = fileURLToPath(new URL(".", import.meta.url));
 // scripts/ -> src/ -> backend/ -> repo root
 const REPO_ROOT = resolve(SCRIPT_DIR, "../../..");
-const BACKEND_MODULES_DIR = join(REPO_ROOT, "backend", "src", "modules");
-const NAV_DIR = join(REPO_ROOT, "frontend", "components", "layout", "sidebar");
+/**
+ * `<workspace>/backend` and `<workspace>/frontend` are a monorepo layout this
+ * checkout has never used, so both resolved to nothing and the gate exited 2
+ * for a missing prerequisite on every run. Resolved through the paired-worktree
+ * helper: this backend is `inv-wt-backend`, so its frontend is
+ * `inv-wt-frontend`, NOT `streamlineos-frontend` — comparing against the wrong
+ * worktree would report another branch's navigation as drift.
+ */
+const { root: FRONTEND_ROOT, candidates: FRONTEND_CANDIDATES } = resolveFrontendRoot();
+const { root: BACKEND_MODULES_DIR } = resolveBackendModulesDir();
+const NAV_DIR = FRONTEND_ROOT
+  ? join(FRONTEND_ROOT, "components", "layout", "sidebar")
+  : join(REPO_ROOT, "frontend", "components", "layout", "sidebar");
 
 const SPEC_RE = /\.(spec|e2e-spec|test)\.ts$/;
 const NAV_FILE_RE = /^sidebar-(home-nav|nav-groups-.+|nav-routes-.+)\.ts$/;
@@ -264,6 +276,8 @@ try {
 
 if (!existsSync(NAV_DIR)) {
   process.stderr.write(`Cannot read frontend navigation manifest dir: ${NAV_DIR}\n`);
+  process.stderr.write("Tried these frontend roots:\n");
+  for (const candidate of FRONTEND_CANDIDATES) process.stderr.write(`  ${candidate}\n`);
   process.exit(2);
 }
 
