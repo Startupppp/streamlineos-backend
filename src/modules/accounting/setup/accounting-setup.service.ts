@@ -1,12 +1,55 @@
 import { ConflictException, Inject, Injectable } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
-import { glCurrencies, taxRegistrations, type TaxRegime } from "../../../db/schema";
+import { and, eq, isNull, sql } from "drizzle-orm";
+import {
+  glAccounts,
+  glCurrencies,
+  taxRegistrations,
+  type GlSystemTag,
+  type TaxRegime,
+} from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
+import { AccessService } from "../../access/access.service";
 import { BooksService, type EnableAccountingInput } from "../kernel/books.service";
 import { TaxService } from "../tax/tax.service";
 import { PackRegistry } from "../packs/pack.registry";
+
+/**
+ * The account roles the inventory bridge resolves today, from the three call
+ * sites `docs/inventory-gl-contract.md` §2 enumerates. A book missing any of
+ * them is a book whose first goods receipt throws `UNKNOWN_ACCOUNT_TAG` — and,
+ * because that post runs after the stock transaction has committed (§3.3),
+ * throws it with the stock already moved.
+ *
+ * ACC-03 extends this list with the four roles that do not exist yet; it is
+ * deliberately the *measured* set rather than the aspirational one, so this
+ * check tells the truth before that ticket lands rather than after.
+ */
+export const INVENTORY_SEAM_ROLES = [
+  "inventory",
+  "cogs",
+  "ap_control",
+  "ar_control",
+  "sales",
+] as const satisfies readonly GlSystemTag[];
+
+/**
+ * Whether this organisation's accounting is actually able to receive a posting.
+ *
+ * Three states, and the middle one is the whole point of ACC-02: an org can
+ * have the accounting module switched on — paying for it, seeing its
+ * navigation — and have no book at all. In that state every inventory post
+ * raises `BOOK_NOT_ENABLED`, the bridge swallows it at `debug` exactly as it is
+ * required to, and the org produces no journals for as long as nobody notices.
+ * `BOOK_NOT_ENABLED` is indistinguishable from the honest opt-out at the point
+ * where it is caught. It is only distinguishable here.
+ */
+export type AccountingProvisioning =
+  | { state: "not_requested" }
+  | { state: "unprovisioned"; message: string }
+  | { state: "incomplete"; bookId: string; missingRoles: GlSystemTag[]; message: string }
+  | { state: "ready"; bookId: string };
 
 export interface EnableAccountingResult {
   bookId: string;
@@ -40,6 +83,7 @@ export class AccountingSetupService {
     private readonly tax: TaxService,
     private readonly packs: PackRegistry,
     private readonly audit: AuditService,
+    private readonly access: AccessService,
   ) {}
 
   async enable(
@@ -208,10 +252,92 @@ export class AccountingSetupService {
       );
   }
 
+  /**
+   * Is this organisation's accounting able to accept a posting, and if not, why.
+   *
+   * Deliberately read-only and deliberately not on the inventory hot path. The
+   * tempting shape — have the bridge refuse a goods receipt whenever the module
+   * is on and the book is missing — would mean an org that switched accounting
+   * on this morning could not receive goods this afternoon, which trades a
+   * quiet reporting gap for a loud operational outage. `docs/inventory-gl-contract.md`
+   * §4 fails closed on a book that *exists* and refuses; a book that was never
+   * created is a setup task, and the answer to a setup task is to say so.
+   */
+  async provisioning(orgId: string): Promise<AccountingProvisioning> {
+    const book = await this.books.findDefault(orgId);
+
+    if (!book) {
+      /*
+        Only ask about the module when there is no book. An org with a book has
+        settled the question by creating one, and this saves an entitlement
+        round trip on the common path.
+      */
+      const requested = await this.access.isModuleEnabled(orgId, "accounting");
+      if (!requested) return { state: "not_requested" };
+      return {
+        state: "unprovisioned",
+        message:
+          "The accounting module is enabled for this organisation but no book of accounts exists, " +
+          "so nothing can post to the ledger: every stock movement, invoice and payroll run is " +
+          "being accepted and recorded nowhere. Run accounting setup to create the book.",
+      };
+    }
+
+    const missingRoles = await this.missingSeamRoles(book.id);
+    if (missingRoles.length > 0) {
+      return {
+        state: "incomplete",
+        bookId: book.id,
+        missingRoles,
+        message:
+          `This book has no account tagged ${missingRoles.map((r) => `"${r}"`).join(", ")}. ` +
+          "Inventory resolves accounts by role, so the first movement needing one of these will " +
+          "be refused — after the stock has already moved. Re-run the chart of accounts setup.",
+      };
+    }
+
+    return { state: "ready", bookId: book.id };
+  }
+
+  /**
+   * The same verdict, as a refusal. For callers that must not proceed on an
+   * organisation whose accounting cannot receive what they are about to send.
+   */
+  async requireProvisioned(orgId: string): Promise<void> {
+    const verdict = await this.provisioning(orgId);
+    if (verdict.state === "unprovisioned" || verdict.state === "incomplete") {
+      throw new ConflictException(verdict.message);
+    }
+  }
+
+  /** Which of the roles the inventory bridge names are not tagged in this book. */
+  private async missingSeamRoles(bookId: string): Promise<GlSystemTag[]> {
+    const rows = await this.db
+      .select({ systemTag: glAccounts.systemTag })
+      .from(glAccounts)
+      .where(
+        and(
+          eq(glAccounts.bookId, bookId),
+          eq(glAccounts.isActive, true),
+          isNull(glAccounts.deletedAt),
+        ),
+      );
+    const tagged = new Set(rows.map((r) => r.systemTag).filter(Boolean));
+    return INVENTORY_SEAM_ROLES.filter((role) => !tagged.has(role));
+  }
+
   /** Where setup stands — drives the onboarding checklist. */
   async status(orgId: string) {
     const book = await this.books.findDefault(orgId);
-    if (!book) return { enabled: false as const };
+    if (!book) {
+      /*
+        Additive: `enabled: false` still means what it always did. What it never
+        carried was the difference between "this org does not use accounting"
+        and "this org is paying for accounting and posting into a void", which
+        rendered identically as an empty settings page.
+      */
+      return { enabled: false as const, provisioning: await this.provisioning(orgId) };
+    }
 
     const pack = this.packs.get(book.localizationPack);
     const counts = await this.counts(book.id);
@@ -222,6 +348,7 @@ export class AccountingSetupService {
       accounts: counts.accounts,
       taxCodes: counts.taxCodes,
       taxRegistrations: counts.registrations,
+      provisioning: await this.provisioning(orgId),
       nextSteps: await this.nextSteps(book.id, pack.status, pack.code),
     };
   }

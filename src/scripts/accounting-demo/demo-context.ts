@@ -64,6 +64,17 @@ export interface Context extends Services {
   baseCurrency: string;
 }
 
+/**
+ * The demo is, by construction, an organisation that wants accounting — it is
+ * about to enable it. Entitlement is the one thing `AccountingSetupService`
+ * asks the platform for, and only on the path where no book exists yet, so the
+ * demo answers it directly rather than standing up the whole access stack for
+ * a single boolean it already knows.
+ */
+const demoAccess = {
+  isModuleEnabled: async () => true,
+} as unknown as ConstructorParameters<typeof AccountingSetupService>[5];
+
 export function buildServices(db: Db) {
   const packs = new PackRegistry();
   const audit = new AuditService(db);
@@ -86,7 +97,7 @@ export function buildServices(db: Db) {
     accounts,
     fx,
     parties,
-    setup: new AccountingSetupService(db, books, tax, packs, audit),
+    setup: new AccountingSetupService(db, books, tax, packs, audit, demoAccess),
     opening: new OpeningBalancesService(db, books, ledger, audit),
     invoices: new ArDocumentsService(db, books, ledger, sequences, packs, tax, parties, compliance),
     receipts: new ArReceiptsService(db, books, ledger, sequences, packs, parties),
