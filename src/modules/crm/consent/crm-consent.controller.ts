@@ -20,9 +20,11 @@ import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { verifyUnsubscribeToken } from "./unsubscribe-token.util";
 import {
+  consentEventsQuerySchema,
   contactParamSchema,
   missingConsentQuerySchema,
   recordConsentSchema,
+  type ConsentEventsQuery,
   type ContactParam,
   type MissingConsentQuery,
   type RecordConsentInput,
@@ -42,6 +44,26 @@ export class CrmConsentController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.consent.listForContact(u.orgId, params.contactId);
+  }
+
+  /**
+   * The evidence trail. `listForContact` above answers "what may we send them
+   * now"; this answers "when did that become true, on what basis, at whose
+   * hand" -- the question a DPDP or GDPR review actually asks, and the one the
+   * product had no route for even though it wrote the rows on every change.
+   *
+   * Gated on `view` rather than `manage`: reading a history is a read. It is
+   * the same key the current-position route carries, so anybody who can see
+   * the consent card can see how it got that way.
+   */
+  @Get("contacts/:contactId/events")
+  @RequirePermission("crm:contacts:view")
+  listEvents(
+    @Param(new ZodValidationPipe(contactParamSchema)) params: ContactParam,
+    @Query(new ZodValidationPipe(consentEventsQuerySchema)) query: ConsentEventsQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.consent.listConsentEvents(u.orgId, params.contactId, query.limit);
   }
 
   @Post("contacts/:contactId")

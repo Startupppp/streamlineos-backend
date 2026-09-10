@@ -29,9 +29,21 @@ export const missingConsentQuerySchema = z
   .object({ channel: channelEnum })
   .strict();
 
+/**
+ * The evidence trail is append-only and unbounded, so the cap is not optional
+ * -- 100/page is the hard ceiling every list endpoint here observes. The
+ * default is deliberately smaller than the ceiling: the card that reads this
+ * shows a recent history, and asking for 100 rows to render ten is waste the
+ * caller cannot see.
+ */
+export const consentEventsQuerySchema = z
+  .object({ limit: z.coerce.number().int().min(1).max(100).default(20) })
+  .strict();
+
 export type ContactParam = z.infer<typeof contactParamSchema>;
 export type RecordConsentInput = z.infer<typeof recordConsentSchema>;
 export type MissingConsentQuery = z.infer<typeof missingConsentQuerySchema>;
+export type ConsentEventsQuery = z.infer<typeof consentEventsQuerySchema>;
 
 export const unsubscribeSchema = z
   .object({ token: z.string().min(16).max(2048) })

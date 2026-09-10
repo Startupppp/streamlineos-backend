@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import {
   crmContactChannelConsent,
@@ -382,9 +382,74 @@ export class CrmConsentService {
     );
   }
 
+  /**
+   * The evidence trail, which was being written and read by nothing.
+   *
+   * `record()` appends a row here on every change, carrying `fromStatus` ->
+   * `toStatus`, the basis claimed and who claimed it. Nothing in the codebase
+   * read that table: no service method, no route. So the product recorded
+   * exactly what a DPDP or GDPR review asks for — what changed, when, on what
+   * basis, at whose hand — and had no way to produce it.
+   *
+   * Separate from `listForContact` because they answer different questions.
+   * That one returns the CURRENT position, at most one row per channel, because
+   * `uniq_crm_consent_org_contact_channel` allows only one and `record()`
+   * upserts. This one is the history, and only this one can answer "when did
+   * they opt out".
+   *
+   * Projected rather than `select()`, per §1: `orgId` and `contactPartyId` are
+   * ours and not the caller's, and a raw row hands back both.
+   */
+  async listConsentEvents(orgId: string, contactId: number, limit: number) {
+    return this.db
+      .select({
+        id: crmContactConsentEvents.id,
+        contactId: crmContactConsentEvents.contactId,
+        channel: crmContactConsentEvents.channel,
+        fromStatus: crmContactConsentEvents.fromStatus,
+        toStatus: crmContactConsentEvents.toStatus,
+        legalBasis: crmContactConsentEvents.legalBasis,
+        source: crmContactConsentEvents.source,
+        sourceDetail: crmContactConsentEvents.sourceDetail,
+        recordedByUserId: crmContactConsentEvents.recordedByUserId,
+        createdAt: crmContactConsentEvents.createdAt,
+      })
+      .from(crmContactConsentEvents)
+      .where(
+        and(
+          eq(crmContactConsentEvents.orgId, orgId),
+          eq(crmContactConsentEvents.contactId, contactId),
+        ),
+      )
+      /*
+        Newest first, and `id` breaks the tie. Two changes can land in the same
+        millisecond — an import touching several channels does exactly that —
+        and ordering on the timestamp alone would let them swap between requests,
+        which in an evidence trail reads as the record changing its story.
+      */
+      .orderBy(desc(crmContactConsentEvents.createdAt), desc(crmContactConsentEvents.id))
+      .limit(limit);
+  }
+
+  /**
+   * Current position per channel — at most one row each, because
+   * `uniq_crm_consent_org_contact_channel` allows only one and `record()`
+   * upserts. For the history, see `listConsentEvents`.
+   */
   async listForContact(orgId: string, contactId: number) {
     return this.db
-      .select()
+      .select({
+        id: crmContactChannelConsent.id,
+        contactId: crmContactChannelConsent.contactId,
+        channel: crmContactChannelConsent.channel,
+        status: crmContactChannelConsent.status,
+        legalBasis: crmContactChannelConsent.legalBasis,
+        source: crmContactChannelConsent.source,
+        sourceDetail: crmContactChannelConsent.sourceDetail,
+        capturedAt: crmContactChannelConsent.capturedAt,
+        expiresAt: crmContactChannelConsent.expiresAt,
+        recordedByUserId: crmContactChannelConsent.recordedByUserId,
+      })
       .from(crmContactChannelConsent)
       .where(
         and(
