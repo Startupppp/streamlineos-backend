@@ -3024,6 +3024,21 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "Classified 2026-09-10 by reading the call site. FALSE-POSITIVE rather than BOUNDED because BOUNDED is a FIXED verdict here \u2014 it asserts the scanner no longer matches, and a continued match is reported as a regression. The pattern is still present and always will be; it is simply not a violation: every read is keyed to ONE platform purchase order \u2014 `const [header]` by id, its lines, its payout lines, and candidates filtered by the po numbers already in hand."
     },
+    "/inventory/channels/quick-commerce/lib/quick-commerce-asn.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11 by reading the call sites, when createAsn and assertReceivable moved out of quick-commerce-inbound.service.ts unchanged \u2014 this gate keys on path, so a move forces a restatement. FALSE-POSITIVE rather than BOUNDED because BOUNDED is a FIXED verdict here \u2014 it asserts the scanner no longer matches, and a continued match is reported as a regression. The pattern is still present and always will be; it is simply not a violation: `const [po]` is a purchase order by id, `const [any]` is an existence probe for ONE po's confirmed ASNs, and `const [asn]` is an ASN by id."
+    },
+    "/inventory/channels/quick-commerce/lib/quick-commerce-ingest.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11 by reading the call sites, when ingestPurchaseOrder moved out of quick-commerce-inbound.service.ts unchanged \u2014 this gate keys on path, so a move forces a restatement. FALSE-POSITIVE rather than BOUNDED because BOUNDED is a FIXED verdict here \u2014 it asserts the scanner no longer matches, and a continued match is reported as a regression. The pattern is still present and always will be; it is simply not a violation: both are single-row lookups on a unique key \u2014 `const [channel]` on (org, qc_provider) and `const [row]` on (org, provider, provider_po_number), which is the fence the whole duplicate-delivery rule rests on."
+    },
+    "/inventory/channels/quick-commerce/lib/quick-commerce-line-resolution.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11 by reading the call sites, when resolveLines moved out of quick-commerce-inbound.service.ts unchanged \u2014 this gate keys on path, so a move forces a restatement. FALSE-POSITIVE rather than BOUNDED because BOUNDED is a FIXED verdict here \u2014 it asserts the scanner no longer matches, and a continued match is reported as a regression. The pattern is still present and always will be; it is simply not a violation: both reads are filtered `inArray` on the EANs and SKUs parsed off ONE platform document, so the bound is that document's line count; each is also guarded by a length check so an empty set issues no query at all."
+    },
     "/inventory/channels/quick-commerce/quick-commerce-inbound.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",

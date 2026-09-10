@@ -42,20 +42,37 @@ const CANNOT_INVALIDATE: ReadonlyArray<{ file: string; method: string; reason: s
       "Guards on grn.status !== POSTED. Applying a landed-cost voucher writes the voucher and the valuation, never the GRN's status, so the precondition survives its own effect.",
   },
   {
-    file: "channels/quick-commerce/quick-commerce-inbound.service.ts",
+    file: "channels/quick-commerce/lib/quick-commerce-accept.ts",
     method: "acceptPurchaseOrder",
     reason:
       "Guards on REJECTED and CANCELLED. Accepting sets ACCEPTED; it cannot produce either of the statuses it refuses, so a retry reaches the claim.",
   },
 ];
 
+/**
+ * `*.service.ts` AND everything under a `lib/` directory.
+ *
+ * The `.service.ts` walk alone had a hole that opened as soon as a large
+ * service was decomposed: the flows that call `runIdempotent` move into
+ * `lib/`, the class keeps a delegate that does not, and this check goes quiet
+ * on exactly the code it was written for. Widened 2026-09-11 when
+ * `acceptPurchaseOrder` moved to `channels/quick-commerce/lib/`; the floor
+ * below asserts the walk still reaches enough claiming files to mean anything.
+ */
 const serviceFiles = readdirSync(INVENTORY, { recursive: true, encoding: "utf8" })
-  .filter((f) => f.endsWith(".service.ts"))
+  .filter((f) => f.endsWith(".ts") && !f.endsWith(".spec.ts"))
+  .filter((f) => f.endsWith(".service.ts") || /(^|\/)lib\//.test(f))
   .sort();
 
 /** Method bodies, keyed by name, for every method that claims an idempotency key. */
 function claimingMethods(source: string): Array<{ name: string; beforeClaim: string }> {
-  const starts = [...source.matchAll(/\n {2}(?:async )?([A-Za-z_][A-Za-z0-9_]*)\(/g)];
+  // Class members (two-space indent) and module-level functions alike — the
+  // second shape is what a decomposed service's `lib/` file is made of.
+  const starts = [
+    ...source.matchAll(
+      /\n(?: {2}(?:private )?(?:async )?([A-Za-z_][A-Za-z0-9_]*)\(|(?:export )?(?:async )?function ([A-Za-z_][A-Za-z0-9_]*)\()/g,
+    ),
+  ];
   const out: Array<{ name: string; beforeClaim: string }> = [];
   for (let i = 0; i < starts.length; i++) {
     const from = starts[i]!.index!;
@@ -63,7 +80,7 @@ function claimingMethods(source: string): Array<{ name: string; beforeClaim: str
     const body = source.slice(from, to);
     const claim = body.indexOf("runIdempotent(");
     if (claim === -1) continue;
-    out.push({ name: starts[i]![1]!, beforeClaim: body.slice(0, claim) });
+    out.push({ name: (starts[i]![1] ?? starts[i]![2])!, beforeClaim: body.slice(0, claim) });
   }
   return out;
 }
@@ -72,11 +89,17 @@ const GUARD = /if\s*\([^)]*\.status[^)]*\)\s*(?:\{[^}]*)?throw new \w+/s;
 
 describe("T04 — a status guard may not stand in front of the claim it invalidates", () => {
   it("finds the services at all, so a broken walk cannot pass as zero violations", () => {
-    expect(serviceFiles.length).toBeGreaterThan(30);
+    expect(serviceFiles.length).toBeGreaterThan(150);
     const claiming = serviceFiles.filter((f: string) =>
       readFileSync(resolve(INVENTORY, f), "utf8").includes("runIdempotent("),
     );
-    expect(claiming.length).toBeGreaterThan(10);
+    expect(claiming.length).toBeGreaterThanOrEqual(30);
+
+    // The specific regression this floor exists for: the `.service.ts`-only
+    // walk reached 27 claiming files and MISSED five in `lib/`, two of them
+    // (`sales-orders/lib/so-pack.ts`, `so-pick-pack.ts`) already there before
+    // this was noticed. A decomposition must not be able to empty this check.
+    expect(claiming.filter((f: string) => /(^|\/)lib\//.test(f)).length).toBeGreaterThanOrEqual(5);
   });
 
   it("keeps every status guard inside the claim, or names why it cannot invalidate it", () => {

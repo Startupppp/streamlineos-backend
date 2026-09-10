@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { NotFoundException } from "@nestjs/common";
 import { PgDialect } from "drizzle-orm/pg-core";
@@ -128,10 +128,34 @@ describe("one ASN, read by id", () => {
      * private method rather than a flag on the public one, so a future route
      * cannot be pointed at it by accident.
      */
-    const source = readFileSync(join(__dirname, "..", "quick-commerce-inbound.service.ts"), "utf8");
-    expect(source).toContain("private async loadAsnUnscoped(");
-    expect(source).toContain("return this.loadAsnUnscoped(orgId, asnId.asnId);");
+    const service = readFileSync(join(__dirname, "..", "quick-commerce-inbound.service.ts"), "utf8");
+    const asnLib = readFileSync(
+      join(__dirname, "..", "lib", "quick-commerce-asn.ts"),
+      "utf8",
+    );
+
+    // The ungated read is still a named PRIVATE method on the service.
+    expect(service).toContain("private async loadAsnUnscoped(");
+    // ...and the create path still returns it.
+    expect(asnLib).toContain("return deps.reloadUnscopedAsn(orgId, asnId.asnId);");
     // And the public one still resolves a scope.
-    expect(source).toMatch(/async asnDetail\([^)]*userId: string[^)]*\)/);
+    expect(service).toMatch(/async asnDetail\([^)]*userId: string[^)]*\)/);
+
+    /*
+     * `createAsn` moved to `lib/`, and the boundary moved with it rather than
+     * being widened: the lib reaches the ungated read through a callback the
+     * service binds in `qcDeps`, so nothing under `lib/` exports it and no
+     * future route can import it. Asserted rather than trusted, because the
+     * obvious way to do that split — export `loadAsnUnscoped` from the lib —
+     * is exactly what the method's name exists to prevent.
+     */
+    for (const file of readdirSync(join(__dirname, "..", "lib"))) {
+      const text = readFileSync(join(__dirname, "..", "lib", file), "utf8");
+      expect({ file, mentionsUngatedRead: text.includes("loadAsnUnscoped") }).toEqual({
+        file,
+        mentionsUngatedRead: false,
+      });
+    }
+    expect(service).toContain("reloadUnscopedAsn: (orgId, asnId) => this.loadAsnUnscoped(orgId, asnId)");
   });
 });
