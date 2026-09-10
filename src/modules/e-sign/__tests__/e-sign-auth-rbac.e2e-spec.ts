@@ -87,7 +87,6 @@ describe("SignOS auth/RBAC (e2e)", () => {
     ["patch", "/sign/templates/1"],
     ["post", "/sign/templates/1/duplicate"],
     ["post", "/sign/templates/1/create-envelope"],
-    ["post", "/sign/templates/1/publish-public-form"],
     ["post", "/sign/bulk-send/jobs"],
     ["get", "/sign/bulk-send/jobs"],
     ["get", "/sign/bulk-send/jobs/1"],

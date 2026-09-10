@@ -227,22 +227,6 @@ export const createEnvelopeFromTemplateSchema = z.object({
 });
 export type CreateEnvelopeFromTemplateInput = z.infer<typeof createEnvelopeFromTemplateSchema>;
 
-export const publishPublicFormSchema = z.object({
-  slug: z
-    .string()
-    .trim()
-    .min(3)
-    .max(80)
-    .regex(/^[a-z0-9-]+$/, "Slug must be lowercase letters, numbers, and hyphens"),
-  accessCode: z.string().trim().min(4).max(50).optional(),
-  maxSubmissions: z.number().int().positive().optional(),
-  expiresAt: z.string().datetime().optional(),
-  completionRedirectUrl: z.string().trim().url().optional(),
-  webhookUrl: z.string().trim().url().optional(),
-  embedAllowed: z.boolean().default(false),
-});
-export type PublishPublicFormInput = z.infer<typeof publishPublicFormSchema>;
-
 // ---- Bulk send ----
 
 export const createBulkSendJobSchema = z.object({

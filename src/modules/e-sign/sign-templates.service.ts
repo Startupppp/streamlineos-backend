@@ -4,13 +4,11 @@ import {
   signDocuments,
   signEnvelopes,
   signFields,
-  signPublicForms,
   signRecipients,
   signTemplates,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { withPublicToken } from "../../common/tenant/with-public-token";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { SignAuditService } from "./sign-audit.service";
 import { SignTokensService } from "./sign-tokens.service";
@@ -19,7 +17,6 @@ import type {
   CreateTemplateInput,
   UpdateTemplateInput,
   CreateEnvelopeFromTemplateInput,
-  PublishPublicFormInput,
 } from "./dto/e-sign.schemas";
 import type { RequestActorContext } from "../../common/audit/actor-context";
 
@@ -409,59 +406,5 @@ export class SignTemplatesService {
     });
 
     return envelope;
-  }
-
-  async publishPublicForm(orgId: string, userId: string, templateId: number, input: PublishPublicFormInput) {
-    const template = await this.get(orgId, templateId);
-    if (template.status !== "published") throw new ForbiddenException("Only published templates can be turned into a public form");
-
-    const existingSlug = await this.db.query.signPublicForms.findFirst({ where: eq(signPublicForms.slug, input.slug) });
-    if (existingSlug) throw new BadRequestException("This slug is already in use");
-
-    const [form] = await this.db
-      .insert(signPublicForms)
-      .values({
-        orgId,
-        templateId,
-        slug: input.slug,
-        status: "published",
-        accessCodeHash: input.accessCode ? this.tokens.hash(input.accessCode) : null,
-        maxSubmissions: input.maxSubmissions,
-        expiresAt: input.expiresAt ? new Date(input.expiresAt) : undefined,
-        completionRedirectUrl: input.completionRedirectUrl,
-        webhookUrl: input.webhookUrl,
-        embedAllowed: input.embedAllowed,
-        createdBy: userId,
-      })
-      .returning();
-
-    await this.audit.record({
-      orgId,
-      envelopeId: null,
-      actorType: "internal_user",
-      actorUserId: userId,
-      eventType: "public_form_published",
-      eventMessage: `Published public form at /${input.slug}`,
-    });
-
-    return form;
-  }
-
-  async getPublicForm(slug: string) {
-    const form = await withPublicToken(this.db, slug, (tx) =>
-      tx.query.signPublicForms.findFirst({ where: eq(signPublicForms.slug, slug) }),
-    );
-    if (!form || form.status !== "published") throw new NotFoundException("Form not found");
-    if (form.expiresAt && form.expiresAt.getTime() < Date.now()) throw new NotFoundException("Form not found");
-    if (form.maxSubmissions && form.submissionCount >= form.maxSubmissions) throw new NotFoundException("Form not found");
-
-    return runInTenantTransaction(
-      this.db,
-      async (tx) => {
-        const template = await tx.query.signTemplates.findFirst({ where: eq(signTemplates.id, form.templateId) });
-        return { form: { slug: form.slug, requiresAccessCode: Boolean(form.accessCodeHash), embedAllowed: form.embedAllowed }, template };
-      },
-      { orgId: form.orgId },
-    );
   }
 }
