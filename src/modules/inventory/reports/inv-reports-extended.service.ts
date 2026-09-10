@@ -484,8 +484,8 @@ export class InvReportsExtendedService {
           -- them is how a business ends up with three months of cement.
           --
           -- Scoped to the *warehouse this stock row is in*: a purchase order
-          -- headed for Kompally does not cover an Uppal stockout, which is
-          -- exactly the case the transfer board exists for.
+          -- headed for one facility does not cover a stockout at another, which
+          -- is exactly the case the transfer board exists for.
           COALESCE((
             SELECT SUM(GREATEST(pol.quantity::numeric - pol.quantity_received::numeric, 0))
             FROM inv_po_lines pol

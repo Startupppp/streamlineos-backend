@@ -139,6 +139,8 @@
     "check:record-access:self-test": "node src/scripts/check-record-access.mjs --self-test",
     "check:cache-invalidation": "node src/scripts/check-cache-invalidation.mjs",
     "check:stock-writers": "node src/scripts/check-stock-writers.mjs",
+    "check:tenant-neutral": "node src/scripts/check-tenant-neutral.mjs",
+    "check:tenant-neutral:self-test": "node src/scripts/check-tenant-neutral.mjs --self-test",
     "check:partial-index-upserts": "node src/scripts/check-partial-index-upserts.mjs",
     "check:stock-writers:self-test": "node src/scripts/check-stock-writers.mjs --self-test",
     "check:cache-invalidation:self-test": "node src/scripts/check-cache-invalidation.mjs --self-test",
