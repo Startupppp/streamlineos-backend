@@ -28,7 +28,7 @@ function serviceWith(rows: readonly { code: string }[][]) {
   chain["limit"] = () => Promise.resolve(rows[read++] ?? []);
   const db = { select: () => chain } as never;
   const stub = {} as never;
-  return new AccountingSetupService(db, stub, stub, stub, stub, stub);
+  return new AccountingSetupService(db, stub, stub, stub, stub, stub, stub);
 }
 
 /** `enable` is only reachable through the private guard, so drive it through `enable`. */

@@ -14,6 +14,7 @@ import { AccessService } from "../../access/access.service";
 import { BooksService, type EnableAccountingInput } from "../kernel/books.service";
 import { TaxService } from "../tax/tax.service";
 import { PackRegistry } from "../packs/pack.registry";
+import { PeriodsService } from "../kernel/periods.service";
 import { INVENTORY_SEAM_ROLES } from "../kernel/system-tag-roles";
 
 export { INVENTORY_SEAM_ROLES };
@@ -33,7 +34,25 @@ export type AccountingProvisioning =
   | { state: "not_requested" }
   | { state: "unprovisioned"; message: string }
   | { state: "incomplete"; bookId: string; missingRoles: GlSystemTag[]; message: string }
+  | {
+      state: "fiscal_year_ending";
+      bookId: string;
+      endsOn: string;
+      daysRemaining: number;
+      message: string;
+    }
   | { state: "ready"; bookId: string };
+
+/**
+ * How long before a fiscal year ends the product starts saying so.
+ *
+ * Thirty days is chosen against what the warning costs to act on, not against
+ * how urgent it feels: opening the next year is one click, and the person who
+ * has to click it is a finance lead who does not read the settings page daily.
+ * A week would routinely land inside somebody's holiday; a quarter would be
+ * background noise for two months and ignored by the time it mattered.
+ */
+const FISCAL_YEAR_WARNING_DAYS = 30;
 
 export interface EnableAccountingResult {
   bookId: string;
@@ -68,6 +87,7 @@ export class AccountingSetupService {
     private readonly packs: PackRegistry,
     private readonly audit: AuditService,
     private readonly access: AccessService,
+    private readonly periods: PeriodsService,
   ) {}
 
   async enable(
@@ -267,6 +287,9 @@ export class AccountingSetupService {
       };
     }
 
+    const cliff = await this.fiscalYearCliff(orgId, book.id);
+    if (cliff) return cliff;
+
     const missingRoles = await this.missingSeamRoles(book.id);
     if (missingRoles.length > 0) {
       return {
@@ -293,6 +316,68 @@ export class AccountingSetupService {
     if (verdict.state === "unprovisioned" || verdict.state === "incomplete") {
       throw new ConflictException(verdict.message);
     }
+  }
+
+  /**
+   * The last fiscal year is about to end and no later one is open.
+   *
+   * `LedgerService.resolvePeriod` refuses a journal whose date no period covers
+   * — "No accounting period covers {date}. Open the fiscal year first." — and
+   * nothing opens the next year on a schedule. So on the first day of a new
+   * fiscal year (1 April, for the India pack) every posting on an organisation
+   * whose next year was never opened is refused: invoices, goods receipts,
+   * shipments, payroll runs.
+   *
+   * It is worse than a clean outage, because **it is not uniform**. AP calls
+   * `ensureFiscalYear` before it posts (`ap-documents.service.ts`,
+   * `ap-payments.service.ts`), so a supplier bill quietly opens the new year
+   * and succeeds. AR does not, and neither does the inventory bridge — measured,
+   * zero `ensureFiscalYear` calls in either. So the cost side of the ledger
+   * keeps working while the revenue side stops, which makes accounting look
+   * healthy at exactly the moment it is refusing every invoice.
+   *
+   * This warns rather than fixing it, deliberately. Opening a fiscal year
+   * creates a year and twelve periods and is a decision with accounting
+   * meaning; a seam pack should not make it silently on someone's behalf, and
+   * the honest reading of the asymmetry above is that AP is too eager rather
+   * than AR too strict. Turning a dated annual cliff into a warning a month out
+   * is the part that is unambiguously this pack's to do.
+   */
+  private async fiscalYearCliff(
+    orgId: string,
+    bookId: string,
+  ): Promise<AccountingProvisioning | null> {
+    const years = await this.periods.listFiscalYears(orgId, bookId);
+    if (years.length === 0) return null;
+
+    /*
+      The latest END, not the latest start. A pack whose years are opened out of
+      order — a backdated prior year opened after the current one — would
+      otherwise report the wrong cliff, and the question being asked is "how far
+      forward can this book post", which only the furthest end answers.
+    */
+    const furthest = years.reduce((a, b) => (a.endsOn >= b.endsOn ? a : b));
+    const daysRemaining = daysBetween(this.today(), furthest.endsOn);
+
+    if (daysRemaining > FISCAL_YEAR_WARNING_DAYS) return null;
+
+    return {
+      state: "fiscal_year_ending",
+      bookId,
+      endsOn: furthest.endsOn,
+      daysRemaining,
+      message:
+        `The last open fiscal year ends on ${furthest.endsOn}` +
+        (daysRemaining >= 0 ? `, in ${daysRemaining} day${daysRemaining === 1 ? "" : "s"}` : "") +
+        ". Nothing opens the next one automatically, and from the day after that date every " +
+        "invoice, goods receipt, shipment and payroll run will be refused because no accounting " +
+        "period covers the date. Open the next fiscal year.",
+    };
+  }
+
+  /** Today, as an ISO date. Extracted so a test can pin it. */
+  protected today(): string {
+    return new Date().toISOString().slice(0, 10);
   }
 
   /** Which of the roles the inventory bridge names are not tagged in this book. */
@@ -375,4 +460,17 @@ export class AccountingSetupService {
     steps.push("Add a bank account and import your first statement");
     return steps;
   }
+}
+
+/**
+ * Whole days from one ISO date to another, negative once the later one is past.
+ *
+ * Both are plain dates with no time and no zone, so this subtracts UTC
+ * midnights rather than going through the host's timezone — a fiscal year ends
+ * on a date, not at an instant, and reading it through a local clock would move
+ * the boundary by a day for half the world.
+ */
+function daysBetween(from: string, to: string): number {
+  const MS_PER_DAY = 24 * 60 * 60 * 1000;
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / MS_PER_DAY);
 }

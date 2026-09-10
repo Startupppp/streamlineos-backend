@@ -18,10 +18,19 @@ import { AccountingSetupService, INVENTORY_SEAM_ROLES } from "./accounting-setup
  * stock movement has committed (§3.3).
  */
 
+/**
+ * A fiscal year far enough out that the ACC-17 cliff warning stays quiet, so
+ * the tests about roles are testing roles.
+ */
+const FAR_FUTURE_YEAR = [{ name: "2026-27", startsOn: "2026-04-01", endsOn: "2027-03-31" }];
+const TODAY = "2026-09-10";
+
 function serviceWith(opts: {
   book?: { id: string } | null;
   moduleEnabled?: boolean;
   taggedAccounts?: readonly (string | null)[];
+  fiscalYears?: Array<{ name: string; startsOn: string; endsOn: string }>;
+  today?: string;
 }) {
   const rows = (opts.taggedAccounts ?? []).map((systemTag) => ({ systemTag }));
 
@@ -32,9 +41,18 @@ function serviceWith(opts: {
 
   const books = { findDefault: async () => opts.book ?? null } as never;
   const access = { isModuleEnabled: async () => opts.moduleEnabled ?? false } as never;
+  const periods = {
+    listFiscalYears: async () => opts.fiscalYears ?? FAR_FUTURE_YEAR,
+  } as never;
   const stub = {} as never;
 
-  return new AccountingSetupService(db, books, stub, stub, stub, access);
+  /* `today` is a protected seam so the cliff can be tested without a clock. */
+  class Pinned extends AccountingSetupService {
+    protected override today(): string {
+      return opts.today ?? TODAY;
+    }
+  }
+  return new Pinned(db, books, stub, stub, stub, access, periods);
 }
 
 /** Every role the bridge names, so a book can be fully provisioned in a test. */
@@ -79,6 +97,7 @@ describe("accounting provisioning", () => {
           return false;
         },
       } as never,
+      { listFiscalYears: async () => FAR_FUTURE_YEAR } as never,
     );
 
     expect(await service.provisioning("org-1")).toEqual({ state: "ready", bookId: "book-1" });
@@ -124,6 +143,110 @@ describe("accounting provisioning", () => {
       taggedAccounts: [null, null, ...ALL_ROLES],
     });
     expect(await service.provisioning("org-1")).toEqual({ state: "ready", bookId: "book-1" });
+  });
+
+  it("warns a month before the last fiscal year runs out", async () => {
+    /*
+      ACC-17. `LedgerService.resolvePeriod` refuses a journal whose date no
+      period covers, and nothing opens the next fiscal year on a schedule. So on
+      1 April — the India pack's year start — every posting on an organisation
+      whose next year was never opened is refused, and the only warning today is
+      the failure itself.
+    */
+    const service = serviceWith({
+      book: { id: "book-1" },
+      taggedAccounts: [...ALL_ROLES],
+      fiscalYears: [{ name: "2025-26", startsOn: "2025-04-01", endsOn: "2026-03-31" }],
+      today: "2026-03-10",
+    });
+    const verdict = await service.provisioning("org-1");
+
+    expect(verdict.state).toBe("fiscal_year_ending");
+    expect(verdict.state === "fiscal_year_ending" && verdict.daysRemaining).toBe(21);
+    expect(verdict.state === "fiscal_year_ending" && verdict.message).toMatch(
+      /Nothing opens the next one automatically/,
+    );
+    /* Names what stops, because "open the next fiscal year" alone reads optional. */
+    expect(verdict.state === "fiscal_year_ending" && verdict.message).toMatch(
+      /invoice, goods receipt, shipment and payroll run will be refused/,
+    );
+  });
+
+  it("stays quiet while there is still a year of runway", async () => {
+    const service = serviceWith({
+      book: { id: "book-1" },
+      taggedAccounts: [...ALL_ROLES],
+      fiscalYears: [{ name: "2026-27", startsOn: "2026-04-01", endsOn: "2027-03-31" }],
+      today: "2026-09-10",
+    });
+    expect(await service.provisioning("org-1")).toEqual({ state: "ready", bookId: "book-1" });
+  });
+
+  it("keeps warning after the cliff, rather than falling silent past it", async () => {
+    /*
+      The day after is when it matters most. A `daysRemaining > 0` guard would
+      make the warning disappear at exactly the moment every posting starts
+      failing, leaving the settings page reporting `ready` on a book that can
+      accept nothing.
+    */
+    const service = serviceWith({
+      book: { id: "book-1" },
+      taggedAccounts: [...ALL_ROLES],
+      fiscalYears: [{ name: "2025-26", startsOn: "2025-04-01", endsOn: "2026-03-31" }],
+      today: "2026-04-02",
+    });
+    const verdict = await service.provisioning("org-1");
+
+    expect(verdict.state).toBe("fiscal_year_ending");
+    expect(verdict.state === "fiscal_year_ending" && verdict.daysRemaining).toBe(-2);
+  });
+
+  it("reads the furthest year end, not the most recently opened", async () => {
+    /*
+      A backdated prior year opened after the current one would otherwise report
+      a cliff that passed years ago. The question is "how far forward can this
+      book post", and only the furthest end answers it.
+    */
+    const service = serviceWith({
+      book: { id: "book-1" },
+      taggedAccounts: [...ALL_ROLES],
+      fiscalYears: [
+        { name: "2026-27", startsOn: "2026-04-01", endsOn: "2027-03-31" },
+        { name: "2024-25", startsOn: "2024-04-01", endsOn: "2025-03-31" },
+      ],
+      today: "2026-09-10",
+    });
+    expect((await service.provisioning("org-1")).state).toBe("ready");
+  });
+
+  it("counts days on UTC midnights, not through the host's clock", async () => {
+    /*
+      A fiscal year ends on a DATE. Parsing it through a local timezone would
+      move the boundary by a day for half the world, and this repo has already
+      had a leave persisted a day early for exactly that reason.
+    */
+    const service = serviceWith({
+      book: { id: "book-1" },
+      taggedAccounts: [...ALL_ROLES],
+      fiscalYears: [{ name: "2025-26", startsOn: "2025-04-01", endsOn: "2026-03-31" }],
+      today: "2026-03-31",
+    });
+    const verdict = await service.provisioning("org-1");
+    expect(verdict.state === "fiscal_year_ending" && verdict.daysRemaining).toBe(0);
+  });
+
+  it("says nothing about a book with no fiscal year at all", async () => {
+    /*
+      That is a different fault and `enable` already refuses it. Reporting a
+      cliff for a book that was never opened would send someone to the wrong
+      screen.
+    */
+    const service = serviceWith({
+      book: { id: "book-1" },
+      taggedAccounts: [...ALL_ROLES],
+      fiscalYears: [],
+    });
+    expect((await service.provisioning("org-1")).state).toBe("ready");
   });
 
   it("refuses, with the same sentence, when a caller must not proceed", async () => {

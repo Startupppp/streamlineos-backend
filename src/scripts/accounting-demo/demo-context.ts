@@ -17,6 +17,7 @@ import {
 } from "../../db/schema";
 import type { Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
+import { PeriodsService } from "../../modules/accounting/kernel/periods.service";
 import { AccountingSetupService } from "../../modules/accounting/setup/accounting-setup.service";
 import { OpeningBalancesService } from "../../modules/accounting/setup/opening-balances.service";
 import { AccountsService } from "../../modules/accounting/kernel/accounts.service";
@@ -86,6 +87,7 @@ export function buildServices(db: Db) {
   const accounts = new AccountsService(db, audit);
   const fx = new FxService(db, audit);
   const compliance = new ComplianceService(db);
+  const periods = new PeriodsService(db, books, packs, audit);
   const bankAccounts = new BankAccountsService(db, books);
   const statements = new StatementImportService(db, bankAccounts);
   const matching = new MatchingService(db, bankAccounts);
@@ -97,7 +99,7 @@ export function buildServices(db: Db) {
     accounts,
     fx,
     parties,
-    setup: new AccountingSetupService(db, books, tax, packs, audit, demoAccess),
+    setup: new AccountingSetupService(db, books, tax, packs, audit, demoAccess, periods),
     opening: new OpeningBalancesService(db, books, ledger, audit),
     invoices: new ArDocumentsService(db, books, ledger, sequences, packs, tax, parties, compliance),
     receipts: new ArReceiptsService(db, books, ledger, sequences, packs, parties),
