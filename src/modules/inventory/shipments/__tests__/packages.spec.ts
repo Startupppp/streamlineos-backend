@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import { PackagesService } from "../packages.service";
 import { INV_ERRORS } from "../../stock-engine/stock-engine.types";
+import { scopeOf } from "../../__tests__/warehouse-scope-harness";
 
 function limitChain(result: unknown[]) {
   const limit = jest.fn().mockResolvedValue(result);
@@ -73,14 +74,17 @@ function makeCartonization(assertFits = async () => undefined) {
   return { assertFits, suggest: async () => ({}) };
 }
 
-/** Unrestricted scope: these are behaviour tests, not scope tests. */
+/**
+ * Unrestricted scope: these are behaviour tests, not scope tests.
+ *
+ * The REAL `WarehouseScopeService` behind a stub resolver rather than a
+ * hand-written object. The service now builds its predicates through
+ * `forUser`, and a hand-written stub that answers `unrestricted: true` while
+ * omitting `warehouse`/`anyOf` type-checks (`as never`) and dies at runtime —
+ * which is how this fixture announced itself when the gate landed.
+ */
 function makeWarehouseScope() {
-  return {
-    resolve: async () => null,
-    forUser: async () => ({ key: "all", isEmpty: false, unrestricted: true, anyOf: null }),
-    assertWarehouseVisible: async () => undefined,
-    assertLocationVisible: async () => undefined,
-  };
+  return scopeOf(null).service;
 }
 
 function makeBarcode(scan: unknown = { lookup: { type: "not_found" } }) {

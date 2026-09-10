@@ -82,7 +82,7 @@ export class PackagesController {
     @Param("packageId", ParseIntPipe) packageId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.findOne(u.orgId, packageId);
+    return this.svc.findOne(u.orgId, u.userId, packageId);
   }
 
   @Post()
@@ -116,7 +116,7 @@ export class PackagesController {
     @Param("packageId", ParseIntPipe) packageId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.reconciliation(u.orgId, packageId);
+    return this.svc.reconciliation(u.orgId, u.userId, packageId);
   }
 
   @Post(":packageId/scan")

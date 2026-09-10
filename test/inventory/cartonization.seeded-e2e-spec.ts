@@ -335,7 +335,7 @@ describe("[seeded-e2e] cartonization", () => {
         expect(state.packed[0]?.quantity).toBe(`${attempt}.0000`);
       }
 
-      const state = await asTenant(() => packages().reconciliation(scene.orgId, pkg.id));
+      const state = await asTenant(() => packages().reconciliation(scene.orgId, scene.userId, pkg.id));
       expect(state.soId).toBe(soId);
       // Nothing outstanding: the carton holds the order.
       expect(state.outstanding).toEqual([]);
@@ -381,7 +381,7 @@ describe("[seeded-e2e] cartonization", () => {
       ).rejects.toThrow(INV_ERRORS.PACKAGE_CONTENT_MISMATCH);
 
       // And nothing was written on the way to being refused.
-      const state = await asTenant(() => packages().reconciliation(scene.orgId, pkg.id));
+      const state = await asTenant(() => packages().reconciliation(scene.orgId, scene.userId, pkg.id));
       expect(state.packed).toEqual([{ productVariantId: scene.smallItem, quantity: "2.0000" }]);
     });
 
@@ -439,7 +439,7 @@ describe("[seeded-e2e] cartonization", () => {
       ).rejects.toThrow(/do not fit/);
 
       // Still open, so the packer can pick a bigger box rather than start again.
-      const detail = await asTenant(() => packages().findOne(scene.orgId, pkg.id));
+      const detail = await asTenant(() => packages().findOne(scene.orgId, scene.userId, pkg.id));
       expect(detail.status).toBe("OPEN");
 
       await expect(

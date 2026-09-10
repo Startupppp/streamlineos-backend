@@ -1,5 +1,5 @@
 import { Injectable, Inject, NotFoundException, ConflictException, BadRequestException } from "@nestjs/common";
-import { and, eq, desc, sql } from "drizzle-orm";
+import { and, eq, desc, sql, type SQL } from "drizzle-orm";
 import {
   invPackages,
   invPackageLines,
@@ -11,7 +11,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
-import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
+import { WarehouseScopeService, type ResolvedWarehouseScope } from "../stock-engine/warehouse-scope.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import { InvBarcodeService } from "../barcode/inv-barcode.service";
@@ -56,6 +56,30 @@ export class PackagesService {
     private readonly barcode: InvBarcodeService,
   ) {}
 
+  /**
+   * Which packages this caller may see — the list's rule, now the only copy.
+   *
+   * A package carries no warehouse of its own; its shipment does, and so does
+   * the order it is packing, so it is attributable either way and EITHER
+   * suffices. OR, not AND: requiring both would hide a carton whose order is in
+   * scope purely because its shipment column is still null at the bench.
+   *
+   * The NULL half falls out of that and differs by table on purpose. `NULL IN
+   * (…)` is NULL and `NULL OR NULL` is NULL, so a package anchored to neither
+   * document is EXCLUDED from a scoped caller's view — which is exactly what the
+   * list has always done. Each detail follows its own aggregate.
+   *
+   * Private and single so the detail reads cannot drift from the list: this list
+   * gained its scope and every read beside it was simply never told, which is
+   * the whole defect.
+   */
+  private packageInScope(orgId: string, scope: ResolvedWarehouseScope): SQL {
+    return scope.anyOf(
+      sql`${invPackages.shipmentId} IN (SELECT id FROM inv_shipments WHERE org_id = ${orgId} AND ${scope.warehouse(sql.raw("warehouse_id"))})`,
+      sql`${invPackages.soId} IN (SELECT id FROM inv_sales_orders WHERE org_id = ${orgId} AND ${scope.warehouse(sql.raw("warehouse_id"))})`,
+    );
+  }
+
   async list(orgId: string, userId: string, query: ListPackagesQueryInput) {
     const { shipmentId, soId, status, page, limit } = query;
     const offset = (page - 1) * limit;
@@ -63,14 +87,9 @@ export class PackagesService {
     const hash = `${scope.key}:${shipmentId ?? ""}:${soId ?? ""}:${status ?? ""}:${limit}:${offset}`;
 
     return this.cache.cachedVersioned(CACHE_KEYS.invPackagesNamespace(orgId), `list:${hash}`, async () => {
-      // A package carries no warehouse of its own; its shipment does, and so
-      // does the order it is packing.
       const conditions = [
         eq(invPackages.orgId, orgId),
-        scope.anyOf(
-          sql`${invPackages.shipmentId} IN (SELECT id FROM inv_shipments WHERE org_id = ${orgId} AND ${scope.warehouse(sql.raw("warehouse_id"))})`,
-          sql`${invPackages.soId} IN (SELECT id FROM inv_sales_orders WHERE org_id = ${orgId} AND ${scope.warehouse(sql.raw("warehouse_id"))})`,
-        ),
+        this.packageInScope(orgId, scope),
       ];
       if (shipmentId) conditions.push(eq(invPackages.shipmentId, shipmentId));
       if (soId) conditions.push(eq(invPackages.soId, soId));
@@ -86,9 +105,19 @@ export class PackagesService {
     }, CACHE_TTL.SHORT);
   }
 
-  async findOne(orgId: string, packageId: number) {
-    return this.cache.cachedVersioned(CACHE_KEYS.invPackagesNamespace(orgId), `detail:${packageId}`, async () => {
-      const [pkg] = await this.db.select().from(invPackages).where(and(eq(invPackages.id, packageId), eq(invPackages.orgId, orgId))).limit(1);
+  /**
+   * One package, read by id — and, until now, by anyone in the org.
+   *
+   * The scope discriminator in the cache key is load-bearing (§6): the predicate
+   * below under a scope-free `detail:<id>` key would store one caller's narrowed
+   * answer and serve it to the next, defeating the filter in both directions and
+   * leaving this worse than the unscoped read it replaces.
+   */
+  async findOne(orgId: string, userId: string, packageId: number) {
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+    return this.cache.cachedVersioned(CACHE_KEYS.invPackagesNamespace(orgId), `detail:${scope.key}:${packageId}`, async () => {
+      const [pkg] = await this.db.select().from(invPackages).where(and(eq(invPackages.id, packageId), eq(invPackages.orgId, orgId), this.packageInScope(orgId, scope))).limit(1);
+      // 404, never 403 (§4) — a "forbidden" on a package id confirms it exists.
       if (!pkg) throw new NotFoundException("Package not found");
       const lines = await this.db.select().from(invPackageLines).where(eq(invPackageLines.packageId, packageId));
       return { ...pkg, lines };
@@ -101,8 +130,8 @@ export class PackagesService {
    * Read at the bench between scans, so the packer can see the order emptying
    * rather than discovering at close that a carton holds one unit too many.
    */
-  async reconciliation(orgId: string, packageId: number) {
-    const pkg = await this.loadPackage(orgId, packageId);
+  async reconciliation(orgId: string, userId: string, packageId: number) {
+    const pkg = await this.loadPackage(orgId, userId, packageId);
     const soId = await this.resolveSoId(orgId, pkg);
     if (soId === null) {
       return { soId: null, picked: [], packed: [], outstanding: [] };
@@ -120,6 +149,20 @@ export class PackagesService {
   }
 
   async create(orgId: string, userId: string, input: CreatePackageInput) {
+    /*
+     * `shipmentId` came straight off the request body and was checked by
+     * NOTHING — not the scope, not even the organisation. A carton could be
+     * hung off any shipment in the tenant, and it counts: `packedQuantities`
+     * reads every package standing for that order, so a carton attached to
+     * another warehouse's despatch takes room off the reconciliation the
+     * legitimate packer there is measured against, and their next scan is
+     * refused for goods they hold in their hand.
+     *
+     * Measured by the SHIPMENT's own rule — its warehouse column — rather than
+     * one invented here, and answered 404 so naming an id you cannot see does
+     * not confirm it exists.
+     */
+    if (input.shipmentId !== undefined) await this.assertShipmentInScope(orgId, userId, input.shipmentId);
     if (input.soId !== undefined) await this.assertSalesOrder(orgId, input.soId);
     if (input.cartonTypeId !== undefined) await this.assertCartonType(orgId, input.cartonTypeId);
 
@@ -204,6 +247,12 @@ export class PackagesService {
     // is taken against it.
     const resolved = await this.resolveScan(orgId, userId, input);
 
+    // Resolved out here because it reads through the injected db rather than the
+    // transaction handle; the predicate it builds is applied to the read INSIDE
+    // the claim, so the gate sees the same snapshot the write does and a refusal
+    // rolls the claim back with it rather than burning the key.
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+
     await this.db.transaction((tx) =>
       runIdempotent(
         tx,
@@ -214,8 +263,10 @@ export class PackagesService {
           const [pkg] = await tx
             .select({ status: invPackages.status, soId: invPackages.soId })
             .from(invPackages)
-            .where(and(eq(invPackages.id, packageId), eq(invPackages.orgId, orgId)))
+            .where(and(eq(invPackages.id, packageId), eq(invPackages.orgId, orgId), this.packageInScope(orgId, scope)))
             .limit(1);
+          // 404 before the status is ever consulted: a ConflictException on a
+          // package the caller may not see would report its state to them.
           if (!pkg) throw new NotFoundException("Package not found");
           if (pkg.status !== "OPEN") throw new ConflictException("Package is not OPEN");
           if (pkg.soId === null) {
@@ -288,11 +339,11 @@ export class PackagesService {
     );
 
     await this.cache.invalidateNamespace(CACHE_KEYS.invPackagesNamespace(orgId));
-    return this.reconciliation(orgId, packageId);
+    return this.reconciliation(orgId, userId, packageId);
   }
 
   async updateLines(orgId: string, userId: string, packageId: number, input: UpdatePackageLinesInput) {
-    const pkg = await this.loadPackage(orgId, packageId);
+    const pkg = await this.loadPackage(orgId, userId, packageId);
     if (pkg.status !== "OPEN") throw new ConflictException("Package is not OPEN");
 
     // The same gate the scan path passes. Without it a client could set any
@@ -330,11 +381,11 @@ export class PackagesService {
       });
     });
     await this.cache.invalidateNamespace(CACHE_KEYS.invPackagesNamespace(orgId));
-    return this.findOne(orgId, packageId);
+    return this.findOne(orgId, userId, packageId);
   }
 
   async close(orgId: string, userId: string, packageId: number, input: ClosePackageInput = {}) {
-    const pkg = await this.loadPackage(orgId, packageId);
+    const pkg = await this.loadPackage(orgId, userId, packageId);
     if (pkg.status !== "OPEN") throw new ConflictException("Package is not OPEN");
 
     const lines = await this.db.select().from(invPackageLines).where(eq(invPackageLines.packageId, packageId));
@@ -373,17 +424,17 @@ export class PackagesService {
       .where(and(eq(invPackages.id, packageId), eq(invPackages.orgId, orgId)));
     await this.audit.insert(this.db, { orgId, actorUserId: userId, action: "package.closed", resourceType: "package", resourceId: String(packageId) });
     await this.cache.invalidateNamespace(CACHE_KEYS.invPackagesNamespace(orgId));
-    return this.findOne(orgId, packageId);
+    return this.findOne(orgId, userId, packageId);
   }
 
   async reopen(orgId: string, userId: string, packageId: number) {
-    const pkg = await this.loadPackage(orgId, packageId);
+    const pkg = await this.loadPackage(orgId, userId, packageId);
     if (pkg.status !== "CLOSED") throw new ConflictException("Package is not CLOSED");
 
     await this.db.update(invPackages).set({ status: "OPEN", updatedAt: new Date() }).where(and(eq(invPackages.id, packageId), eq(invPackages.orgId, orgId)));
     await this.audit.insert(this.db, { orgId, actorUserId: userId, action: "package.reopened", resourceType: "package", resourceId: String(packageId) });
     await this.cache.invalidateNamespace(CACHE_KEYS.invPackagesNamespace(orgId));
-    return this.findOne(orgId, packageId);
+    return this.findOne(orgId, userId, packageId);
   }
 
   /** B6 — the queue the packing bench reads. See `packing-queue.ts`. */
@@ -392,12 +443,24 @@ export class PackagesService {
     return readPackingQueue(this.db, orgId, scope, query);
   }
 
-  private async loadPackage(orgId: string, packageId: number) {
+  /**
+   * The funnel every id-taking command comes through, and therefore the gate.
+   *
+   * `reconciliation`, `updateLines`, `close` and `reopen` all reach the row
+   * here, and it filtered on `org_id` and the id alone — so a carton in a
+   * building the caller holds nothing in could be read whole, have its entire
+   * manifest replaced, be closed, or be reopened after somebody else closed it.
+   * Gating here rather than at each of the four is the point: the next command
+   * that loads a package by id is gated by construction.
+   */
+  private async loadPackage(orgId: string, userId: string, packageId: number) {
+    const scope = await this.warehouseScope.forUser(orgId, userId);
     const [pkg] = await this.db
       .select()
       .from(invPackages)
-      .where(and(eq(invPackages.id, packageId), eq(invPackages.orgId, orgId)))
+      .where(and(eq(invPackages.id, packageId), eq(invPackages.orgId, orgId), this.packageInScope(orgId, scope)))
       .limit(1);
+    // 404, never 403 (§4) — a "forbidden" on a package id confirms it exists.
     if (!pkg) throw new NotFoundException("Package not found");
     return pkg;
   }
@@ -421,6 +484,25 @@ export class PackagesService {
       .where(and(eq(invShipments.id, pkg.shipmentId), eq(invShipments.orgId, orgId)))
       .limit(1);
     return shipment?.soId ?? null;
+  }
+
+  /**
+   * The shipment a new carton may be hung off: this org's, and out of a building
+   * the caller holds. Measured with `ShipmentsService`'s own predicate rather
+   * than a second reading of it.
+   */
+  private async assertShipmentInScope(orgId: string, userId: string, shipmentId: number): Promise<void> {
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+    const [shipment] = await this.db
+      .select({ id: invShipments.id })
+      .from(invShipments)
+      .where(and(
+        eq(invShipments.id, shipmentId),
+        eq(invShipments.orgId, orgId),
+        scope.warehouse(sql`${invShipments.warehouseId}`),
+      ))
+      .limit(1);
+    if (!shipment) throw new NotFoundException("Shipment not found");
   }
 
   private async assertSalesOrder(orgId: string, soId: number): Promise<void> {
