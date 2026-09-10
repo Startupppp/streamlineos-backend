@@ -1,7 +1,6 @@
-import { and, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
 import {
   invLocations,
-  invLots,
   invProductVariants,
   invPurchaseOrders,
   invStockLevels,
@@ -15,6 +14,18 @@ import { availableQtySumSql } from "../../stock-engine/available-sql";
 import type { ResolvedWarehouseScope } from "../../stock-engine/warehouse-scope.service";
 import type { InvEvidenceReference } from "../dto/inv-ai-contract";
 import type { InvCopilotToolName } from "./dto/inv-copilot.schemas";
+import {
+  COPILOT_ROW_CAP,
+  COPILOT_TEXT_CAP,
+  EMPTY,
+  evidenceFrom,
+  locationScoped,
+  takeCapped,
+  text,
+} from "./lib/copilot-tool-helpers";
+import { INV_COPILOT_SUPPLY_TOOLS } from "./lib/copilot-tools-supply";
+
+export { COPILOT_ROW_CAP, COPILOT_TEXT_CAP };
 
 /**
  * F2 — the copilot's entire reach.
@@ -49,7 +60,6 @@ import type { InvCopilotToolName } from "./dto/inv-copilot.schemas";
  * short" and small enough that seven tools cannot assemble a prompt nobody
  * budgeted for.
  */
-export const COPILOT_ROW_CAP = 20;
 
 /**
  * Tenant free-text — a product name, a lot number, a vendor name, a PO note —
@@ -57,11 +67,9 @@ export const COPILOT_ROW_CAP = 20;
  * injection with a token bill, and because a table cell is not the place to
  * discover that somebody pasted a contract into a field.
  */
-export const COPILOT_TEXT_CAP = 120;
 
 /** How far back a movements question looks, and how far forward an expiry one does. */
 const MOVEMENT_WINDOW_DAYS = 30;
-const EXPIRY_WINDOW_DAYS = 30;
 
 export type InvCopilotCell = string | number | null;
 
@@ -89,7 +97,7 @@ export interface InvCopilotToolContext {
   };
 }
 
-interface ToolDefinition {
+export interface ToolDefinition {
   label: string;
   /** Shown to the model when it chooses. Static text from this file only. */
   description: string;
@@ -101,45 +109,6 @@ interface ToolDefinition {
   }>;
 }
 
-/** Bound a tenant string on the way into a result. */
-function text(value: string | null | undefined): string | null {
-  if (value === null || value === undefined) return null;
-  return value.length > COPILOT_TEXT_CAP ? `${value.slice(0, COPILOT_TEXT_CAP)}…` : value;
-}
-
-/** Read one page past the cap so "there are more" is a fact, not a guess. */
-function takeCapped<T>(rows: T[]): { page: T[]; truncated: boolean } {
-  return rows.length > COPILOT_ROW_CAP
-    ? { page: rows.slice(0, COPILOT_ROW_CAP), truncated: true }
-    : { page: rows, truncated: false };
-}
-
-/** Collect distinct evidence references, dropping anything without a real id. */
-function evidenceFrom(
-  entries: ReadonlyArray<[InvEvidenceReference["kind"], number | null | undefined]>,
-): InvEvidenceReference[] {
-  const seen = new Set<string>();
-  const refs: InvEvidenceReference[] = [];
-  for (const [kind, id] of entries) {
-    if (typeof id !== "number" || !Number.isInteger(id) || id <= 0) continue;
-    const key = `${kind}:${id}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    refs.push({ kind, id });
-  }
-  return refs;
-}
-
-const EMPTY = { rows: [], evidence: [], truncated: false } as const;
-
-/**
- * The one place the warehouse gate is expressed for a table keyed by location.
- * `inv_stock_levels` and `inv_stock_transactions` both name a location and not
- * a warehouse, so both go through here rather than each writing the subquery.
- */
-function locationScoped(ctx: InvCopilotToolContext, column: ReturnType<typeof sql>) {
-  return ctx.scope.location(column);
-}
 
 export const INV_COPILOT_TOOL_TABLE: Readonly<
   Record<InvCopilotToolName, ToolDefinition>
@@ -462,143 +431,7 @@ export const INV_COPILOT_TOOL_TABLE: Readonly<
     },
   },
 
-  expiring_lots: {
-    label: `Lots expiring within ${EXPIRY_WINDOW_DAYS} days`,
-    description:
-      "Lots with stock still on hand whose expiry date is close. Answers 'what is about to go out of date'.",
-    columns: ["lotNumber", "sku", "expiryDate", "onHand"],
-    async run(ctx) {
-      if (ctx.scope.isEmpty) return { ...EMPTY, rows: [], evidence: [] };
-      const horizon = new Date();
-      horizon.setDate(horizon.getDate() + EXPIRY_WINDOW_DAYS);
-      const cutoff = horizon.toISOString().slice(0, 10);
-
-      // A lot has no warehouse of its own; it is wherever its stock is. So the
-      // gate rides on the stock rows, and the same subquery supplies the
-      // quantity — a lot whose only stock sits outside the asker's warehouses
-      // sums to zero and drops out with everything else that has none.
-      const scopedOnHand = sql<string>`COALESCE((
-        SELECT SUM(sl.on_hand::numeric)
-        FROM inv_stock_levels sl
-        WHERE sl.lot_id = ${invLots.id}
-          AND sl.org_id = ${ctx.orgId}
-          AND ${ctx.scope.location(sql`sl.location_id`)}
-      ), 0)`;
-
-      const rows = await ctx.db
-        .select({
-          lotId: invLots.id,
-          lotNumber: invLots.lotNumber,
-          variantId: invLots.productVariantId,
-          sku: invProductVariants.sku,
-          expiryDate: invLots.expiryDate,
-          onHand: sql<string>`${scopedOnHand}::text`,
-        })
-        .from(invLots)
-        .innerJoin(
-          invProductVariants,
-          and(
-            eq(invProductVariants.id, invLots.productVariantId),
-            eq(invProductVariants.orgId, invLots.orgId),
-          ),
-        )
-        .where(
-          and(
-            eq(invLots.orgId, ctx.orgId),
-            lte(invLots.expiryDate, cutoff),
-            sql`${scopedOnHand} > 0`,
-            ...(ctx.focus.variantId ? [eq(invLots.productVariantId, ctx.focus.variantId)] : []),
-          ),
-        )
-        .orderBy(invLots.expiryDate)
-        .limit(COPILOT_ROW_CAP + 1);
-
-      const { page, truncated } = takeCapped(rows);
-      return {
-        truncated,
-        rows: page.map((r) => ({
-          // A lot number is tenant free-text and arrives here bounded. It is
-          // rendered as a value in a table cell and quoted as data in the
-          // narration prompt; it never becomes an instruction.
-          lotNumber: text(r.lotNumber),
-          sku: text(r.sku),
-          expiryDate: r.expiryDate,
-          onHand: r.onHand,
-        })),
-        evidence: evidenceFrom(
-          page.flatMap((r) => [
-            ["lot", r.lotId] as const,
-            ["product_variant", r.variantId] as const,
-          ]),
-        ),
-      };
-    },
-  },
-
-  vendor_delay: {
-    label: "Overdue supplier deliveries",
-    description:
-      "Open purchase orders past their expected delivery date, by vendor, with how many days late. Answers 'which supplier is holding us up'.",
-    columns: ["vendor", "poNumber", "expectedDelivery", "daysLate"],
-    async run(ctx) {
-      if (ctx.scope.isEmpty) return { ...EMPTY, rows: [], evidence: [] };
-      const today = new Date().toISOString().slice(0, 10);
-
-      const rows = await ctx.db
-        .select({
-          poId: invPurchaseOrders.id,
-          poNumber: invPurchaseOrders.poNumber,
-          vendorId: invPurchaseOrders.vendorId,
-          vendor: invVendors.name,
-          warehouseId: invPurchaseOrders.warehouseId,
-          expectedDelivery: invPurchaseOrders.expectedDeliveryDate,
-          // Computed in Postgres against the same `today` the predicate uses, so
-          // the figure and the filter cannot disagree, and so the model is never
-          // asked to subtract two dates.
-          daysLate: sql<number>`(${today}::date - ${invPurchaseOrders.expectedDeliveryDate}::date)::int`,
-        })
-        .from(invPurchaseOrders)
-        .innerJoin(
-          invVendors,
-          and(
-            eq(invVendors.id, invPurchaseOrders.vendorId),
-            eq(invVendors.orgId, invPurchaseOrders.orgId),
-          ),
-        )
-        .where(
-          and(
-            eq(invPurchaseOrders.orgId, ctx.orgId),
-            sql`${invPurchaseOrders.status} IN ('SENT', 'PARTIAL')`,
-            sql`${invPurchaseOrders.expectedDeliveryDate} < ${today}`,
-            ctx.scope.warehouse(sql`${invPurchaseOrders.warehouseId}`),
-            ...(ctx.focus.vendorId ? [eq(invPurchaseOrders.vendorId, ctx.focus.vendorId)] : []),
-            ...(ctx.focus.warehouseId
-              ? [eq(invPurchaseOrders.warehouseId, ctx.focus.warehouseId)]
-              : []),
-          ),
-        )
-        .orderBy(invPurchaseOrders.expectedDeliveryDate)
-        .limit(COPILOT_ROW_CAP + 1);
-
-      const { page, truncated } = takeCapped(rows);
-      return {
-        truncated,
-        rows: page.map((r) => ({
-          vendor: text(r.vendor),
-          poNumber: text(r.poNumber),
-          expectedDelivery: r.expectedDelivery,
-          daysLate: r.daysLate,
-        })),
-        evidence: evidenceFrom(
-          page.flatMap((r) => [
-            ["purchase_order", r.poId] as const,
-            ["vendor", r.vendorId] as const,
-            ["warehouse", r.warehouseId] as const,
-          ]),
-        ),
-      };
-    },
-  },
+  ...INV_COPILOT_SUPPLY_TOOLS,
 };
 
 /**
