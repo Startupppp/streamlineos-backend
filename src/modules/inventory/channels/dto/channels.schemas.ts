@@ -1,5 +1,5 @@
 import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
-﻿import { z } from "zod";
+import { z } from "zod";
 
 export const createChannelSchema = z.object({
   name: z.string().min(1),

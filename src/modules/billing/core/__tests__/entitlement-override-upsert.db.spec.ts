@@ -1,5 +1,9 @@
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
+// The relational query builder needs the whole schema map to resolve `with`
+// clauses; this spec reads only billing tables through it and touches no
+// legacy identity table.
+// eslint-disable-next-line no-restricted-imports
 import * as schema from "../../../../db/schema";
 import type { Db } from "../../../../db/drizzle.module";
 import { VersionedCatalogService } from "../versioned-catalog.service";

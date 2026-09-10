@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import { ChannelPoolService } from "../channel-pool.service";
@@ -107,10 +109,7 @@ describe("channel availability and the caller's warehouses", () => {
      * SYSTEM USER behind it holds no warehouse, which is not an access question
      * at all.
      */
-    const source = require("node:fs").readFileSync(
-      require("node:path").join(__dirname, "..", "channel-pool.service.ts"),
-      "utf8",
-    ) as string;
+    const source = readFileSync(join(__dirname, "..", "channel-pool.service.ts"), "utf8");
     expect(source).toContain("scope?: number[] | null;");
     expect(source).toMatch(/scope === undefined \|\| scope === null/);
   });

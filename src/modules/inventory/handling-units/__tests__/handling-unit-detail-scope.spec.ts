@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { NotFoundException } from "@nestjs/common";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
@@ -134,10 +136,7 @@ describe("reading one handling unit", () => {
      * read `scopePredicate`. Asserted against the source because the claim is
      * about there being ONE of it.
      */
-    const source = require("node:fs").readFileSync(
-      require("node:path").join(__dirname, "..", "handling-unit.service.ts"),
-      "utf8",
-    ) as string;
+    const source = readFileSync(join(__dirname, "..", "handling-unit.service.ts"), "utf8");
     expect(source.match(/IS NULL OR EXISTS/g) ?? []).toHaveLength(1);
     expect(source).toContain("private scopePredicate(");
   });
@@ -147,10 +146,7 @@ describe("reading one handling unit", () => {
     // caller's standing is settled; gating again would refuse an operator the
     // pallet they have just built. Named, never a boolean flag, so a route
     // cannot be pointed at it by accident.
-    const source = require("node:fs").readFileSync(
-      require("node:path").join(__dirname, "..", "handling-unit.service.ts"),
-      "utf8",
-    ) as string;
+    const source = readFileSync(join(__dirname, "..", "handling-unit.service.ts"), "utf8");
     expect(source).toContain("private async detailUnscoped(");
     expect(source.match(/this\.detailUnscoped\(/g) ?? []).toHaveLength(2);
   });

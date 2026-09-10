@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { NotFoundException } from "@nestjs/common";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
@@ -157,10 +159,7 @@ describe("one physical audit, reached by id", () => {
 
 describe("the audit a caller has just created", () => {
   it("is read back through a named unscoped method, not a flag on the public one", () => {
-    const source = require("node:fs").readFileSync(
-      require("node:path").join(__dirname, "..", "inv-physical-audits.service.ts"),
-      "utf8",
-    ) as string;
+    const source = readFileSync(join(__dirname, "..", "inv-physical-audits.service.ts"), "utf8");
     expect(source).toContain("private async loadAuditUnscoped(");
     expect(source).toContain("return this.loadAuditUnscoped(orgId, audit.id);");
     expect(source).toMatch(/async getAudit\([^)]*userId: string[^)]*\)/);

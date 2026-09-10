@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import { LaborService } from "../labor.service";
@@ -102,10 +104,7 @@ describe("one person's labour records", () => {
      * never counted. Asserted against the source because the claim is about
      * which column each query names, and both are hand-written SQL in one file.
      */
-    const source = require("node:fs").readFileSync(
-      require("node:path").join(__dirname, "..", "labor.service.ts"),
-      "utf8",
-    ) as string;
+    const source = readFileSync(join(__dirname, "..", "labor.service.ts"), "utf8");
     expect(source).toContain("scope.warehouse(sql`lr.warehouse_id`)");
     expect(source).toContain("scope.warehouse(sql`${invLaborRecords.warehouseId}`)");
     // `.anyOf(` with the dot: the prose above this method names `anyOf` when it

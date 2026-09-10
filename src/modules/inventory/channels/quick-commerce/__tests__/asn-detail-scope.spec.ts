@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { NotFoundException } from "@nestjs/common";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
@@ -126,10 +128,7 @@ describe("one ASN, read by id", () => {
      * private method rather than a flag on the public one, so a future route
      * cannot be pointed at it by accident.
      */
-    const source = require("node:fs").readFileSync(
-      require("node:path").join(__dirname, "..", "quick-commerce-inbound.service.ts"),
-      "utf8",
-    ) as string;
+    const source = readFileSync(join(__dirname, "..", "quick-commerce-inbound.service.ts"), "utf8");
     expect(source).toContain("private async loadAsnUnscoped(");
     expect(source).toContain("return this.loadAsnUnscoped(orgId, asnId.asnId);");
     // And the public one still resolves a scope.

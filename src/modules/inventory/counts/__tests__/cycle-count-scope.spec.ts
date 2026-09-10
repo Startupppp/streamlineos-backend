@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { NotFoundException } from "@nestjs/common";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
@@ -186,10 +188,7 @@ describe("the count a caller has just created", () => {
      * separate NAMED private method, so a future route cannot be pointed at it
      * by accident, which a boolean parameter would invite.
      */
-    const source = require("node:fs").readFileSync(
-      require("node:path").join(__dirname, "..", "inv-cycle-counts.service.ts"),
-      "utf8",
-    ) as string;
+    const source = readFileSync(join(__dirname, "..", "inv-cycle-counts.service.ts"), "utf8");
     expect(source).toContain("private async loadCycleCountUnscoped(");
     expect(source).toContain("return this.loadCycleCountUnscoped(orgId, cc.id);");
     // And the public reader still resolves a scope.
