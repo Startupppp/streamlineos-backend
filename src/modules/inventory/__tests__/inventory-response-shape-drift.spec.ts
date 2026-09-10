@@ -307,8 +307,16 @@ const PAIRS: readonly Pair[] = [
     with a contrived anchor; now that all three reads share one named projection
     it belongs here, and the shared constant is why the parser above learned to
     follow a spread.
+
+    POST, not GET, and the distinction was worth catching. I first wrote this as
+    `verb: "Get", route: "jobs"` and it passed — because the hook-call anchor
+    matches the path as a substring, and `admin.ts` calls
+    `POST /inventory/export/jobs` on line 258. The GET list has NO consumer in
+    the frontend at all, so a pair naming it would have asserted a relationship
+    that does not exist while looking green. POST is also the endpoint whose
+    shape was actually wrong.
   */
-  { controller: "import-export/export.controller.ts", prefix: "inventory/export", verb: "Get", route: "jobs", service: "import-export/export.service.ts", table: "invExportJobs", anchor: "errorRows", hook: "admin.ts", type: "ExportJob" },
+  { controller: "import-export/export.controller.ts", prefix: "inventory/export", verb: "Post", route: "jobs", service: "import-export/export.service.ts", table: "invExportJobs", anchor: "errorRows", hook: "admin.ts", type: "ExportJob" },
 ];
 
 function endpointOf(pair: Pair): string {
