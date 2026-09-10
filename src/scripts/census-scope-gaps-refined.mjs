@@ -64,7 +64,23 @@ for (const file of walk(ROOT)) {
     // one level: does it call a same-file method that scopes?
     const viaHelper = [...scopedHelpers].find((h) => new RegExp(`this\\.${h}\\s*\\(`).test(m.body));
     if (viaHelper) continue;
-    const takesUser = /userId|actorUserId|user:|currentUser/.test(m.body.split("\n")[0]);
+    /**
+     * The whole PARAMETER LIST, not the first line of it.
+     *
+     * This read `body.split("\n")[0]`, so any method whose parameters wrap —
+     * which in this codebase is most of them the moment there are three —
+     * was reported as taking no user. `StockEngineService.reverse` declares
+     * `userId` on its SECOND line and was flagged `!!`, i.e. "cannot resolve
+     * caller warehouses without a signature change", when the signature was
+     * already right there. The marker is what a reader triages by, so a wrong
+     * one sends the reader to rewrite a signature that needs nothing.
+     *
+     * Stop at the first `{` after the closing paren: past that is the body,
+     * where a local named `userId` says nothing about what the caller passed.
+     */
+    const openBrace = m.body.indexOf("{");
+    const signature = openBrace === -1 ? m.body : m.body.slice(0, openBrace);
+    const takesUser = /userId|actorUserId|user:|currentUser/.test(signature);
     rows.push({ file: file.replace(ROOT + "/", ""), line: m.line, name: m.name, takesUser });
   }
 }
