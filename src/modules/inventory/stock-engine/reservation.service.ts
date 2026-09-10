@@ -237,6 +237,27 @@ export class ReservationService {
     return reservation!;
   }
 
+  /**
+   * Releases one hold. Deliberately NOT warehouse-gated — its callers are.
+   *
+   * It takes a `userId` and spends it on nothing, which reads like the defect it
+   * used to enable and is not one: every caller here releases the reservations
+   * belonging to its OWN aggregate, found by `source_type` and `source_id` —
+   * cancelling a transfer, cancelling a sales order, a project standing down a
+   * requirement, a pick substitution. A sales order legitimately spans two
+   * buildings, so a gate on this helper would refuse the operator cancelling it.
+   * Those commands owe a gate on themselves, not here; `cancelTransfer` in
+   * particular does not have one yet.
+   *
+   * The one path where a CLIENT names a reservation id is
+   * `InvStockReservationsService.releaseReservation`, and that is where the gate
+   * went — the same split as `createTransfer` / `createTransferInTx`. The public
+   * `releaseReservation` that used to sit beside this method was deleted rather
+   * than left ungated next to it: it wrapped this in a transaction, had no
+   * caller anywhere, and was the obvious wrong thing for a new route to reach
+   * for. Reconstruct it as `db.transaction((tx) => releaseReservationInTx(…))`
+   * if one is ever needed, with the gate in front.
+   */
   async releaseReservationInTx(
     tx: Tx, orgId: string, userId: string, reservationId: number,
   ): Promise<ReleasedReservation | null> {
@@ -281,12 +302,6 @@ export class ReservationService {
       handlingUnitId: reservation.handling_unit_id === null ? null : Number(reservation.handling_unit_id),
       reservedQty: reservation.reserved_qty,
     };
-  }
-
-  async releaseReservation(
-    orgId: string, userId: string, reservationId: number,
-  ): Promise<ReleasedReservation | null> {
-    return this.db.transaction((tx) => this.releaseReservationInTx(tx, orgId, userId, reservationId));
   }
 
   async consumeReservation(orgId: string, userId: string, reservationId: number): Promise<void> {

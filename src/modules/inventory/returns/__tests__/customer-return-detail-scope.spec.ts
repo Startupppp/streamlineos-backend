@@ -4,7 +4,7 @@ import { NotFoundException } from "@nestjs/common";
 import type { SQL } from "drizzle-orm";
 import { CustomerReturnsService } from "../customer-returns.service";
 import type { WarehouseScopeService } from "../../stock-engine/warehouse-scope.service";
-import { cacheWith, dbWith, scopeClause, scopeOf, sqlText } from "./warehouse-scope-harness";
+import { cacheWith, dbWith, scopeClause, scopeOf, sqlText } from "../../__tests__/warehouse-scope-harness";
 
 /**
  * `list` was scoped and everything you could do to one return by id was not.

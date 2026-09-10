@@ -4,7 +4,7 @@ import { NotFoundException } from "@nestjs/common";
 import type { SQL } from "drizzle-orm";
 import { VendorReturnsService } from "../vendor-returns.service";
 import type { WarehouseScopeService } from "../../stock-engine/warehouse-scope.service";
-import { cacheWith, dbWith, scopeClause, scopeOf, sqlText } from "./warehouse-scope-harness";
+import { cacheWith, dbWith, scopeClause, scopeOf, sqlText } from "../../__tests__/warehouse-scope-harness";
 
 /**
  * The customer half's twin, against a different attribution rule.

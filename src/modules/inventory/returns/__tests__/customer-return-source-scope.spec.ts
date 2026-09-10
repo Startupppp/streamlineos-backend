@@ -4,7 +4,7 @@ import { CustomerReturnsService } from "../customer-returns.service";
 import { assertCustomerReturnWithinShipped } from "../returnable-quantity";
 import type { WarehouseScopeService } from "../../stock-engine/warehouse-scope.service";
 import type { CreateCustomerReturnInput } from "../dto/inv-returns.schemas";
-import { cacheWith, dbWith, scopeOf, sqlText, type DbHarness } from "./warehouse-scope-harness";
+import { cacheWith, dbWith, scopeOf, sqlText, type DbHarness } from "../../__tests__/warehouse-scope-harness";
 
 /**
  * A return could be raised against another warehouse's order or shipment.

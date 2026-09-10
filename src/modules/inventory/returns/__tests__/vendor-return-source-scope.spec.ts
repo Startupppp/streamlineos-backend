@@ -4,7 +4,7 @@ import { VendorReturnsService } from "../vendor-returns.service";
 import { assertVendorReturnWithinReceived } from "../returnable-quantity";
 import type { WarehouseScopeService } from "../../stock-engine/warehouse-scope.service";
 import type { CreateVendorReturnInput } from "../dto/inv-returns.schemas";
-import { cacheWith, dbWith, scopeOf, sqlText, type DbHarness } from "./warehouse-scope-harness";
+import { cacheWith, dbWith, scopeOf, sqlText, type DbHarness } from "../../__tests__/warehouse-scope-harness";
 
 /**
  * An RMA could be raised against a receipt taken into another warehouse.

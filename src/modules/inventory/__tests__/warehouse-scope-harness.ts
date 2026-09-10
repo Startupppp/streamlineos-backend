@@ -1,10 +1,14 @@
 /**
- * Shared fixtures for the two return-scope suites.
+ * Shared fixtures for the inventory warehouse-scope suites.
  *
- * Not a `.spec.ts`, so jest does not collect it as a suite of its own — it is
- * imported by `customer-return-detail-scope.spec.ts` and its vendor twin, which
- * exercise the same defect against two different attribution rules and would
- * otherwise carry two copies of this that could drift apart.
+ * Not a `.spec.ts`, so jest does not collect it as a suite of its own. It lived
+ * under `returns/__tests__` while only the two return suites used it; the stock
+ * module's release gate needs the same fixtures, and a helper two sub-modules
+ * import does not belong inside one of them.
+ *
+ * Every suite that uses it exercises the same defect against a different
+ * attribution rule, and would otherwise carry its own copy of this that could
+ * drift apart.
  *
  * Three mocking notes, each of which cost a cycle elsewhere in this pass:
  *  - Bound values come from `PgDialect().sqlToQuery(statement).params`, never
@@ -17,7 +21,7 @@
  */
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
-import { WarehouseScopeService } from "../../stock-engine/warehouse-scope.service";
+import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 
 export function sqlText(statement: SQL): string {
   return new PgDialect().sqlToQuery(statement).sql;
@@ -76,11 +80,13 @@ export interface DbHarness {
 }
 
 /**
- * The tables the two return services read through the relational query builder.
+ * The tables these services read through the relational query builder.
  *
- * The returns themselves, plus the source documents a create validates on its
- * way in. Listed rather than proxied so an unlisted table fails loudly as
- * "cannot read properties of undefined" instead of quietly answering nothing.
+ * The scoped aggregates themselves, plus the source documents a create
+ * validates on its way in. Listed rather than proxied so an unlisted table
+ * fails loudly as "cannot read properties of undefined" instead of quietly
+ * answering nothing — which is how the reservations list announced itself when
+ * this harness moved up here.
  */
 const RQB_TABLES = [
   "invCustomerReturns",
@@ -90,6 +96,7 @@ const RQB_TABLES = [
   "invVendors",
   "invPurchaseOrders",
   "invGrns",
+  "invStockReservations",
 ] as const;
 
 /**

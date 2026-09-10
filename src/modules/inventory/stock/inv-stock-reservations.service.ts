@@ -12,7 +12,10 @@ import {
   describeGrain,
   emitInventoryCommandEvent,
 } from "../stock-engine/command-events";
-import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
+import {
+  WarehouseScopeService,
+  type ResolvedWarehouseScope,
+} from "../stock-engine/warehouse-scope.service";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import type { ListReservationsInput, CreateReservationInput, ReleaseReservationInput, OpeningStockInput } from "./dto/inv-stock.schemas";
 import { loadOrderableVariants, loadCorrectableVariants } from "../products/lib/orderable-variants";
@@ -173,6 +176,56 @@ export class InvStockReservationsService {
     };
   }
 
+  /**
+   * Which reservations this caller may see — the list's rule, now the only copy.
+   *
+   * Both columns are nullable, so a reservation may be attributed by either. A
+   * row attributed by neither names no warehouse at all and stays invisible to a
+   * warehouse-scoped caller. `anyOf` rather than both: this row IS the example
+   * in `ResolvedWarehouseScope`'s own note — requiring both would deny a
+   * reservation whose location is in scope purely because its warehouse column
+   * is null.
+   */
+  private reservationInScope(scope: ResolvedWarehouseScope): SQL {
+    return scope.anyOf(
+      scope.warehouse(sql`${invStockReservations.warehouseId}`),
+      scope.location(sql`${invStockReservations.locationId}`),
+    );
+  }
+
+  /**
+   * The gate for a command that names a reservation by id.
+   *
+   * `releaseReservation` took `input.reservationId` off the request body and
+   * carried it to `releaseReservationInTx`, which filters on `org_id` alone —
+   * it takes a `userId` and spends it on nothing. So a scoped operator could
+   * release a hold in a building they hold nothing in.
+   *
+   * That is the mirror of the create-side gate above, and it is NOT inert the
+   * way the return drafts were. Releasing decrements `committed` and hands the
+   * quantity straight back to general availability: the people who do hold the
+   * building lose a promise they made, their availability moves under them, and
+   * nothing in their view says who did it. The create-side note reads
+   * "it makes that quantity unavailable to the people who DO hold the
+   * building"; this is the same sentence with the sign flipped.
+   *
+   * 404 on a miss, never 403 (§4) — a "forbidden" on a reservation id confirms
+   * the reservation exists.
+   */
+  private async assertReservationVisible(orgId: string, userId: string, reservationId: number) {
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+    const [visible] = await this.db
+      .select({ id: invStockReservations.id })
+      .from(invStockReservations)
+      .where(and(
+        eq(invStockReservations.orgId, orgId),
+        eq(invStockReservations.id, reservationId),
+        this.reservationInScope(scope),
+      ))
+      .limit(1);
+    if (!visible) throw new NotFoundException("Reservation not found");
+  }
+
   async listReservations(orgId: string, userId: string, filters: ListReservationsInput) {
     const { sourceType, status, variantId, warehouseId, page, limit } = filters;
     const offset = (page - 1) * limit;
@@ -182,13 +235,7 @@ export class InvStockReservationsService {
     return this.cache.cachedVersioned(`inv:reservations:list:${orgId}`, hash, async () => {
       const conditions: SQL[] = [
         eq(invStockReservations.orgId, orgId),
-        // Both columns are nullable, so a reservation may be attributed by
-        // either. A row attributed by neither names no warehouse at all and
-        // stays invisible to a warehouse-scoped caller.
-        scope.anyOf(
-          scope.warehouse(sql`${invStockReservations.warehouseId}`),
-          scope.location(sql`${invStockReservations.locationId}`),
-        ),
+        this.reservationInScope(scope),
       ];
       if (sourceType) conditions.push(eq(invStockReservations.sourceType, sourceType));
       if (status) conditions.push(eq(invStockReservations.status, status));
@@ -411,6 +458,27 @@ export class InvStockReservationsService {
     input: ReleaseReservationInput,
     idempotencyKey: string,
   ) {
+    /*
+     * You may release only a hold in a building you hold.
+     *
+     * BEFORE the claim, not inside it, for the reason the return posts gate
+     * where they do: a release that is going to be refused must not consume the
+     * caller's idempotency key, or a client correcting the id and retrying with
+     * the same key replays a stored refusal instead of the release.
+     *
+     * The gate is HERE and deliberately not in `releaseReservationInTx`, which
+     * is the same split as `createTransfer` / `createTransferInTx`. Five other
+     * modules call that helper — cancelling a transfer, cancelling a sales
+     * order, a project standing down a requirement, a pick substitution — and
+     * every one of them releases the reservations belonging to its OWN
+     * aggregate, found by `source_type` and `source_id` rather than by an id a
+     * client named. Gating the shared helper would refuse a legitimate sales
+     * order cancellation that spans two buildings; those paths owe a gate on
+     * their own command, which is a different question from this one. This
+     * method is the only place a caller names a reservation id directly.
+     */
+    await this.assertReservationVisible(orgId, userId, input.reservationId);
+
     await this.db.transaction((tx) =>
       runIdempotent(
         tx,
