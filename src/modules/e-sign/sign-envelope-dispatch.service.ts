@@ -9,6 +9,7 @@ import { and, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { addDays } from "date-fns";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
+import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { signEnvelopes, signRecipients, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -148,33 +149,66 @@ export class SignEnvelopeDispatchService {
       return row;
     });
 
-    for (const plan of sendPlans) {
-      if (plan.shouldInviteNow && plan.email) {
-        const signingUrl = this.tokens.buildSigningUrl(plan.rawToken);
-        await this.notifications.sendInvitation(
-          plan.email,
-          plan.name,
-          senderNameStr,
-          envelope.title,
-          envelope.message ?? undefined,
-          signingUrl,
-        );
-      }
-    }
-
-    if (envelope.ccTiming === "on_send") {
-      for (const cc of recipientRows.filter(
-        (r) => r.recipientType === "cc" || r.recipientType === "viewer",
-      )) {
-        if (cc.email) {
-          await this.notifications.sendCcNotice(
-            cc.email,
-            cc.name,
+    /*
+     * Every email leaves *after* the transaction, never inside it.
+     *
+     * `this.db` is the tenant-aware proxy, so the block above is only a
+     * SAVEPOINT whenever a request transaction is already open — these sends
+     * used to run with that transaction still holding its pooled connection,
+     * which §4 forbids: an SMTP outage held the connection for its whole
+     * duration, and a throw here rolled the "sent" flip and the recipients'
+     * token writes back underneath invitations already sitting in inboxes.
+     *
+     * `registerAfterCommit` is the right one of §4's three mechanisms, not the
+     * outbox row written a few lines above. The recipient rows already carry
+     * the token hash and `resend` mints a fresh token for anyone left at
+     * `invited`, so a crash before the hook runs is re-drivable; an outbox
+     * payload, by contrast, would have to carry the *raw* signing token — a
+     * bearer credential stored in plaintext, against hash-only-at-rest.
+     *
+     * The hook drains only if the request transaction commits, and the
+     * interceptor logs and reports a failure rather than swallowing it.
+     *
+     * It returns false when the ambient context carries no hook array, and
+     * that is precisely what bulk send sees: `runInNewTenantTransaction`
+     * builds a context without one, so only `TenantContextInterceptor` can
+     * defer. Bulk therefore falls back to the line below and keeps today's
+     * behaviour — one row's email inside that row's transaction — rather than
+     * dropping the invitation on the floor.
+     */
+    const deliverNotifications = async () => {
+      for (const plan of sendPlans) {
+        if (plan.shouldInviteNow && plan.email) {
+          const signingUrl = this.tokens.buildSigningUrl(plan.rawToken);
+          await this.notifications.sendInvitation(
+            plan.email,
+            plan.name,
+            senderNameStr,
             envelope.title,
-            `${appUrl()}/sign/envelopes/${envelopeId}`,
+            envelope.message ?? undefined,
+            signingUrl,
           );
         }
       }
+
+      if (envelope.ccTiming === "on_send") {
+        for (const cc of recipientRows.filter(
+          (r) => r.recipientType === "cc" || r.recipientType === "viewer",
+        )) {
+          if (cc.email) {
+            await this.notifications.sendCcNotice(
+              cc.email,
+              cc.name,
+              envelope.title,
+              `${appUrl()}/sign/envelopes/${envelopeId}`,
+            );
+          }
+        }
+      }
+    };
+
+    if (!registerAfterCommit(deliverNotifications)) {
+      await deliverNotifications();
     }
 
     await this.audit.record({

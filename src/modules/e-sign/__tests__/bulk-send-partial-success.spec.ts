@@ -283,12 +283,18 @@ describe("bulk send survives a failure partway through", () => {
 
     it("bounds the irreversible half to the one row that failed", () => {
       /*
-       * `dispatch.send` sends after its own inner block but still inside the
-       * row's transaction, so row 3's invitation did leave before that
-       * transaction died and now describes an envelope that does not exist.
-       * That residue is real and deliberate — what changed is that it is one
-       * row's worth. Under a single request transaction this list was
-       * [1, 2, 3]: every invitation already sent, orphaned at once.
+       * Still exactly one row's worth, and still deliberate.
+       *
+       * `dispatch.send` defers its emails with `registerAfterCommit` now, but
+       * that returns false under `runInNewTenantTransaction` — which is what
+       * opens each row's transaction — so bulk takes the inline fallback and
+       * row 3's invitation still leaves before that transaction dies,
+       * describing an envelope that does not exist. `envelopes.send` is a
+       * double here, so this pins the bound rather than dispatch's own
+       * behaviour; `send-defers-invitation.spec.ts` pins that.
+       *
+       * Under a single request transaction this list was [1, 2, 3]: every
+       * invitation already sent, orphaned at once.
        */
       const committed = h.committedRows();
       expect(h.sentEmails.filter((n) => !committed.has(n))).toEqual([3]);

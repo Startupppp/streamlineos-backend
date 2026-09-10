@@ -189,13 +189,18 @@ export class SignBulkSendService {
    * was `idle_in_transaction_session_timeout` the session is gone outright, and
    * only a fresh connection can record anything at all.
    *
-   * What is deliberately NOT solved here: `dispatch.send` sends the invitation
-   * after its own inner block, so the email still goes out inside the row's
-   * transaction. That send is shared with the single-envelope route and moving
-   * it is a change to `dispatch.send`, not to this file. The blast radius is
-   * what changed — a pooled connection is held across one email rather than
-   * five thousand, and the 60s idle guard now scopes to a single row, so a hung
-   * provider costs that row and the job continues.
+   * What is still NOT solved here: the invitation email. `dispatch.send` now
+   * defers its sends with `registerAfterCommit`, but that returns false unless
+   * the ambient context carries a hook array, and only
+   * `TenantContextInterceptor` builds one. `runInNewTenantTransaction` does
+   * not, so every row below takes the documented inline fallback and its email
+   * still leaves inside the row's transaction. Closing that would mean
+   * teaching `runInNewTenantTransaction` to drain hooks — a change to the
+   * tenant seam and every one of its callers, not to this file.
+   *
+   * The blast radius is what changed — a pooled connection is held across one
+   * email rather than five thousand, and the 60s idle guard now scopes to a
+   * single row, so a hung provider costs that row and the job continues.
    */
   private async process(orgId: string, userId: string, jobId: number, templateId: number, roleName: string, rows: MappedRow[]) {
     await runInNewTenantTransaction(this.db, orgId, () =>
