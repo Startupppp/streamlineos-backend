@@ -3173,6 +3173,11 @@
       "verdict": "ACTIONABLE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "Classified 2026-09-10 by reading the call site: the vendor filter materialises EVERY purchase-order id for that vendor as a subquery input; it grows with the vendor's history. Left ACTIONABLE deliberately: this is the backlog entry, not a dismissal."
+    },
+    "/inventory/projects/lib/reservation-location.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-10. Extracted verbatim from inv-projects.service.ts in 8120b858d; the parent's FALSE-POSITIVE verdict does NOT cover this query and never did. That justification reads 'reservation and stock reads filtered inArray on those requirement ids', which describes the parent's OTHER selects. This one is filtered by org, ONE productVariantId, isPickable and the warehouse scope - never by requirement id - so its cardinality is 'every pickable bin holding this SKU in the caller's buildings', which has no structural cap. Splitting the file is what surfaced it; the match was always there. ACTIONABLE rather than FALSE-POSITIVE, and the bound is already worked out. The loop returns argmax of `effective = available + heldHere.get(location)`, so the winner is always in (the heldHere locations) UNION (the single top row by raw available among locations NOT in heldHere): a location with no credit has effective == available, so only the raw maximum of that group can win it. `best` is the same argmax and `bestLocation` is that argmax gated on >= qty, so both are decided by the same small candidate set. |heldHere| is the bins one requirement already holds. So the fix is a LIMIT plus an explicit fetch of the heldHere ids, NOT a keyset migration. One behavioural caveat to pin in a test before making that change: ties on `effective` currently resolve to whichever row came first under ORDER BY available DESC, and a bounded rewrite would have to preserve that or declare a new rule."
     }
   }
 }
