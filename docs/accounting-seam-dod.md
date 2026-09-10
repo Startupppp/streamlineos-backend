@@ -113,9 +113,38 @@ records the sales order as its reference and never the shipment, so on a
 partially shipped order one posted shipment makes the whole order look posted.
 The report says so in its own payload.
 
-**ACC-14 live IRP transport is blocked.** No provider credentials. ACC-13's mock
-transport is in and is the substitute until they exist; no adapter may declare
-`isReal = true` until then, which is asserted.
+**ACC-14 live IRP transport is blocked.** Confirmed rather than assumed: there
+are no IRP or GSP credentials in the env schema, none in `.env` or
+`.env.example`, and no provider client anywhere in `src` — the only matches for
+`irp` outside the mock are comments saying it does not exist yet.
+
+ACC-13's mock is the substitute, and the seam is built so ACC-14 is small. What
+it has to do, and what it must not:
+
+- Implement `ComplianceTransportAdapter`. The port already carries the four
+  outcomes, and `unavailable` versus `rejected` is the distinction that matters
+  most: a portal timeout must not tell somebody to correct an invoice that may
+  be perfectly valid.
+- Add an `irp` member to `COMPLIANCE_TRANSPORT` in `env.validation.ts`. It is
+  deliberately absent today, so nobody can set it and believe a document is
+  being filed.
+- Flip `isReal` to `true` — which fails
+  `compliance-transport.spec.ts`'s "no adapter claiming to be real". That
+  failure is the point: it is the prompt to re-read the honesty rules at the
+  moment they stop being theoretical.
+- Write rows under `transport: "irp"`, not `mock_irp`. The narrative's
+  `SYNTHETIC_TRANSPORTS` set is what separates the two, and nothing else needs
+  to change for `filed` to start meaning filed.
+- Keep credentials out of the repository and out of logs, and keep the call out
+  of the posting transaction — `POST .../submit` is a separate request for that
+  reason.
+
+Three IRP behaviours the mock does not model, and a real adapter must: a
+duplicate-IRN response for a document already filed (the IRP returns the
+original IRN, which should be recorded as `accepted`, not as an error); the
+24-hour cancellation window, after which a filed document can only be credited,
+not cancelled; and auth-token expiry, which needs a refresh rather than being
+surfaced as a rejection.
 
 **Invoices already posted under `sales_invoice:{id}:issue`** on a live database
 keep a key no future `:post` will match, so the ADR's round-trip can double-post
