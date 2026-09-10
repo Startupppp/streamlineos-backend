@@ -16,19 +16,9 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import type { AskInput } from "./dto/kb-ai.schemas";
 import type { AiUsageMeta } from "../../ai/core/gateway/ai-gateway.types";
+import { ASK_SYSTEM_PROMPT, buildKbAskContext } from "./kb-ask-context";
 
 const MAX_CONTEXT_ARTICLES = 6;
-const MAX_CONTEXT_CHARS = 1500;
-const MAX_TOTAL_CONTEXT_BYTES = 32_000;
-const MAX_PROMPT_INPUT_TOKENS = 8_000;
-
-const ASK_SYSTEM_PROMPT =
-  "You are a knowledge base assistant. Answer the user's question using ONLY the information in the provided context. " +
-  "Write a clear, well-structured answer in Markdown: open with a one-sentence summary, then use bullet or numbered lists with short **bold labels** where it aids readability. Keep it concise and scannable. " +
-  "Do NOT include inline citations, reference numbers, or bracketed markers such as [1] or [doc 2] — the user is shown the list of sources separately. " +
-  "If the context does not contain the answer, say you don't have that information and suggest opening a support ticket. " +
-  "Never invent facts that are not present in the context. " +
-  "Never reveal permission rules, role names, membership lists or access control details.";
 
 export type AskCitation =
   | { kind: "article"; articleId: number; title: string; slug: string; spaceId: number | null; updatedAt: Date }
@@ -111,17 +101,6 @@ export class KbAskService {
 
         const { top, sources } = restrictToCited(retrievedTop, retrievedSources, citations);
 
-        let totalBytes = 0;
-        const contextParts: string[] = [];
-        for (const source of top) {
-          const text = (source.contentText || "").slice(0, MAX_CONTEXT_CHARS);
-          const part = `Source — ${source.title}\n${text}`;
-          if (totalBytes + part.length > MAX_TOTAL_CONTEXT_BYTES) break;
-          contextParts.push(part);
-          totalBytes += part.length;
-        }
-        const context = contextParts.join("\n\n---\n\n");
-
         const articleIds = top
           .filter((source) => source.kind === "article")
           .map((source) => source.id);
@@ -135,24 +114,7 @@ export class KbAskService {
           pageIds,
         );
 
-        const sourceContextParts: string[] = [];
-        for (const s of sources) {
-          const part = `Document — ${s.title}\n${s.snippet}`;
-          if (totalBytes + part.length > MAX_TOTAL_CONTEXT_BYTES) break;
-          sourceContextParts.push(part);
-          totalBytes += part.length;
-        }
-        const sourceContext = sourceContextParts.join("\n\n---\n\n");
-
-        let fullContext = attachmentContext
-          ? `${context}\n\n---\n\n${attachmentContext}`
-          : context;
-        if (sourceContext) fullContext = `${fullContext}\n\n---\n\n${sourceContext}`;
-
-        const userMessage = `Question: ${input.question}\n\nContext:\n${fullContext}`;
-        if (userMessage.length / 4 > MAX_PROMPT_INPUT_TOKENS) {
-          fullContext = fullContext.slice(0, MAX_PROMPT_INPUT_TOKENS * 4);
-        }
+        const fullContext = buildKbAskContext(input.question, top, sources, attachmentContext);
 
         return { kind: "context" as const, fullContext, top, sources, citations };
       },

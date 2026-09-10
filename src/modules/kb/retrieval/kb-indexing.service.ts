@@ -13,14 +13,12 @@ import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { sha256, chunkText } from "./kb-chunk-utils";
 import { KbIngestionCheckpointService } from "./kb-ingestion-checkpoint.service";
 import { embedChunksWithResumption } from "./kb-embedding-resumption";
+import { indexArticleContent } from "./kb-article-indexing";
 import {
   deleteArticleChunks,
   deletePageChunks,
-  loadArticleChunkState,
   loadPageChunkState,
-  replaceArticleBodyChunks,
   replacePageBodyChunks,
-  updateArticleChunkRevisions,
   updatePageChunkAcl,
 } from "./kb-chunk-repository";
 
@@ -63,89 +61,10 @@ export class KbIndexingService {
   }
 
   async indexArticle(orgId: string, articleId: number, signal?: AbortSignal): Promise<void> {
-    const article = await runInTenantTransaction(this.db, async (tx) =>
-      tx.query.kbArticles.findFirst({
-        where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)),
-        columns: {
-          status: true,
-          contentText: true,
-          contentRevision: true,
-          aclRevision: true,
-        },
-      }),
-    { orgId });
-
-    if (
-      !article ||
-      article.status !== "published" ||
-      !article.contentText?.trim() ||
-      !this.aiGateway.isEmbeddingConfigured()
-    ) {
-      await this.removeArticleChunks(orgId, articleId);
-      return;
-    }
-
-    const chunks = chunkText(article.contentText);
-    const contentHash = sha256(article.contentText);
-
-    if (chunks.length === 0) {
-      await this.removeArticleChunks(orgId, articleId);
-      return;
-    }
-
-    const stored = await loadArticleChunkState(this.db, orgId, articleId);
-
-    const contentRevision = article.contentRevision;
-    const aclRevision = article.aclRevision;
-
-    // An unchanged hash returned unconditionally, stranding the chunk ACL: the candidate
-    // gate joins acl_revision with `=`, so a restriction change that left the text alone
-    // dropped the article out of retrieval until somebody edited its body.
-    if (stored?.contentHash === contentHash) {
-      if (
-        stored.aclRevision === aclRevision &&
-        stored.contentRevision === contentRevision
-      )
-        return;
-
-      this.logger.log("KB article ACL updated (content unchanged)", { orgId, articleId });
-      await updateArticleChunkRevisions(this.db, orgId, articleId, {
-        aclRevision,
-        contentRevision,
-      });
-      return;
-    }
-
-    this.logger.log("KB article indexing started", {
-      orgId,
-      articleId,
-      chunks: chunks.length,
-    });
-
-    const embeddings = await this.embed(
-      orgId,
-      "article",
-      articleId,
-      contentHash,
-      chunks,
-      signal,
+    return indexArticleContent(
+      { db: this.db, aiGateway: this.aiGateway, checkpoint: this.checkpoint, logger: this.logger },
+      orgId, articleId, signal,
     );
-
-    await replaceArticleBodyChunks(
-      this.db,
-      orgId,
-      articleId,
-      chunks,
-      embeddings,
-      { contentHash, contentRevision, aclRevision },
-      (tx) => this.checkpoint.clearCheckpoints(tx, orgId, "article", articleId),
-    );
-
-    this.logger.log("KB article indexing committed", {
-      orgId,
-      articleId,
-      chunks: chunks.length,
-    });
   }
 
   /**

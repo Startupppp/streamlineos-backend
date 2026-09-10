@@ -11,13 +11,13 @@
  * drizzle condition object; a mock still cannot measure recall — `kb-vector-recall.db.spec.ts`
  * does that against a real HNSW index — but it can pin which query is issued and why.
  */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { Test } from "@nestjs/testing";
 import { sql, type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { CacheService } from "../../../common/cache/cache.service";
 import { KbCandidateService } from "./kb-candidate.service";
 import { KB_EXACT_SCAN_MAX_CHUNKS } from "./kb-retrieval-strategy";
+import { DRIZZLE } from "../../../db/drizzle.constants";
 
 const ORG = "org-recall";
 const VECTOR = "[0.1,0.2]";
@@ -97,14 +97,19 @@ describe("a full ANN pool no longer decides anything — the deleted heuristic",
     expect(rendered.findIndex(isCount)).toBeLessThan(rendered.findIndex(isAnn));
   });
 
-  it("no comparison of a returned pool's length against the cap survives in the vector path", () => {
-    const source = readFileSync(join(__dirname, "kb-candidate.service.ts"), "utf8");
-    const from = source.indexOf("async vectorChunkIds");
-    const to = source.indexOf("async articleKeywordCandidates");
-    expect(from).toBeGreaterThan(-1);
-    expect(to).toBeGreaterThan(from);
-    expect(source.slice(from, to)).not.toMatch(/\.length\s*>=?\s*cap/);
-    expect(source).toContain("decideKbRetrievalStrategy");
+  it("an empty ANN result does not trigger an exact scan for a large tenant", async () => {
+    const { db, rendered } = makeDb(LARGE_TENANT, 0, CAP);
+    const module = await Test.createTestingModule({
+      providers: [KbCandidateService, { provide: DRIZZLE, useValue: db }],
+    }).compile();
+    try {
+      const result = await module.get(KbCandidateService).vectorChunkIds(ORG, VECTOR, CAP);
+      expect(result).toEqual([]);
+      expect(rendered.filter(isAnn)).toHaveLength(1);
+      expect(rendered.filter(isExact)).toHaveLength(0);
+    } finally {
+      await module.close();
+    }
   });
 });
 

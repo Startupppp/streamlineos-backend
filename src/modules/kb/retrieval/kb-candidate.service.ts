@@ -4,13 +4,8 @@ import { kbArticles, kbArticleChunks, kbArticleRestrictions, kbPages } from "../
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { assertNever } from "../../../common/types/assert-never";
 import { resolveArticleKeywordSql } from "../core/kb-article-keyword-search";
-import {
-  decideKbRetrievalStrategy,
-  KB_CHUNK_COUNT_CACHE_TTL_SECONDS,
-  KB_EXACT_SCAN_MAX_CHUNKS,
-} from "./kb-retrieval-strategy";
+import { queryVectorChunkIds } from "./kb-vector-candidate-query";
 
 const RRF_CONSTANT = 60;
 const SNIPPET_LENGTH = 160;
@@ -35,70 +30,7 @@ export class KbCandidateService {
 
   // Chosen before the query runs: an HNSW pass returns exactly `cap` rows even when it loses recall.
   async vectorChunkIds(orgId: string, vector: string, cap: number): Promise<number[]> {
-    if (!Number.isFinite(cap) || cap <= 0) return [];
-    await this.db.execute(sql`SET LOCAL hnsw.iterative_scan = relaxed_order`);
-    const strategy = decideKbRetrievalStrategy(await this.indexedChunkCount(orgId), cap);
-    switch (strategy.kind) {
-      case "ann":
-        return this.annChunkIds(orgId, vector, cap, strategy.efSearch);
-      case "exact":
-        return this.exactChunkIds(orgId, vector, cap);
-      default:
-        return assertNever(strategy);
-    }
-  }
-
-  private async annChunkIds(
-    orgId: string,
-    vector: string,
-    cap: number,
-    efSearch: number,
-  ): Promise<number[]> {
-    await this.db.execute(sql`SET LOCAL hnsw.ef_search = ${sql.raw(String(efSearch))}`);
-    const rows = await this.db.execute(
-      sql`SELECT id FROM public.kb_article_chunks
-          WHERE org_id = ${orgId}
-          ORDER BY embedding <=> ${vector}::vector
-          LIMIT ${cap}`,
-    );
-    return rows.map((r) => Number(r["id"]));
-  }
-
-  private async exactChunkIds(orgId: string, vector: string, cap: number): Promise<number[]> {
-    const rows = await this.db.execute(
-      sql`SELECT id FROM (
-            SELECT id, embedding <=> ${vector}::vector AS distance
-            FROM public.kb_article_chunks
-            WHERE org_id = ${orgId}
-            OFFSET 0
-          ) scoped
-          ORDER BY scoped.distance
-          LIMIT ${cap}`,
-    );
-    return rows.map((r) => Number(r["id"]));
-  }
-
-  // Bounded at threshold + 1: the decision needs the side, never the true total.
-  private async indexedChunkCount(orgId: string): Promise<number> {
-    const bound = KB_EXACT_SCAN_MAX_CHUNKS + 1;
-    const load = async (): Promise<number> => {
-      const rows = await this.db.execute(
-        sql`SELECT count(*) AS chunk_count
-            FROM (
-              SELECT 1 FROM public.kb_article_chunks
-              WHERE org_id = ${orgId}
-              LIMIT ${bound}
-            ) bounded`,
-      );
-      return Number(rows[0]?.["chunk_count"] ?? 0);
-    };
-    if (this.cache === null) return load();
-    return this.cache.cachedForOrg(
-      orgId,
-      `kb:chunk-count:${orgId}:b${bound}`,
-      load,
-      KB_CHUNK_COUNT_CACHE_TTL_SECONDS,
-    );
+    return queryVectorChunkIds(this.db, this.cache, orgId, vector, cap);
   }
 
   async articleKeywordCandidates(

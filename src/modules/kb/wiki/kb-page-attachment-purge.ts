@@ -1,17 +1,13 @@
 import { and, asc, eq, gt, inArray, isNull, lt, sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { kbArticleAttachments, kbPageAttachments, kbPages } from "../../../db/schema";
-import {
-  storagePendingPurge,
-  type StoragePurgeBucket,
-} from "../../../db/schema/common/storage-pending-purge";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { markPurge, openPurgeRecords, PURGE_BOOKKEEPING_CHUNK } from "./kb-purge-ledger";
 
 export const KB_PAGE_ATTACHMENT_PURGE_PURPOSE = "kb:page:purge";
 export const KB_ARTICLE_ATTACHMENT_PURGE_PURPOSE = "support:kb-article:delete";
 export const KB_ORPHAN_MEDIA_PURGE_PURPOSE = "kb:media-orphan:purge";
 
-const PURGE_BOOKKEEPING_CHUNK = 500;
 const ORPHAN_MEDIA_MIN_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 export interface PageAttachmentObjectStore {
@@ -99,43 +95,6 @@ export async function recordArticleAttachmentPurge(
   }
 
   return openPurgeRecords(db, orgId, [...seen], KB_ARTICLE_ATTACHMENT_PURGE_PURPOSE, "default");
-}
-
-/**
- * `bucket` is written explicitly rather than left for the sweep to infer from
- * `purpose`: the purpose map is a fallback for rows that predate the column, and
- * a second producer of the same purpose would silently redirect every one of
- * these deletes at the wrong bucket, where an absent key answers SUCCESS.
- */
-async function openPurgeRecords(
-  db: Db,
-  orgId: string,
-  keys: string[],
-  purpose: string,
-  bucket: StoragePurgeBucket,
-): Promise<string[]> {
-  if (keys.length === 0) return [];
-
-  await runInNewTenantTransaction(db, orgId, async (tx) => {
-    for (let i = 0; i < keys.length; i += PURGE_BOOKKEEPING_CHUNK)
-      await tx
-        .insert(storagePendingPurge)
-        .values(
-          keys.slice(i, i + PURGE_BOOKKEEPING_CHUNK).map((storageKey) => ({
-            orgId,
-            storageKey,
-            purpose,
-            bucket,
-            status: "pending",
-          })),
-        )
-        .onConflictDoUpdate({
-          target: [storagePendingPurge.orgId, storagePendingPurge.storageKey],
-          set: { status: "pending", bucket, lastAttemptedAt: null, failedReason: null },
-        });
-  });
-
-  return keys;
 }
 
 /**
@@ -274,28 +233,3 @@ async function coverImageKeys(
   return new Set(rows.map((r) => r.coverKey));
 }
 
-interface PurgeMark {
-  status: "confirmed" | "failed";
-  confirmedAt?: Date;
-  lastAttemptedAt: Date;
-  failedReason: string | null;
-}
-
-async function markPurge(
-  db: Db,
-  orgId: string,
-  storageKey: string,
-  set: PurgeMark,
-): Promise<void> {
-  await runInNewTenantTransaction(db, orgId, async (tx) => {
-    await tx
-      .update(storagePendingPurge)
-      .set({ ...set, attemptCount: sql`${storagePendingPurge.attemptCount} + 1` })
-      .where(
-        and(
-          eq(storagePendingPurge.orgId, orgId),
-          eq(storagePendingPurge.storageKey, storageKey),
-        ),
-      );
-  });
-}
