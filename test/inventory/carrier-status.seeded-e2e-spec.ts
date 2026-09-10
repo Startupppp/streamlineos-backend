@@ -82,7 +82,19 @@ describe("[seeded-e2e] carrier status events", () => {
     app = await createSeededE2eApp();
     const seeded = await seedOrg(app.seedDb)
       .onPlan("PAID")
-      .addMember("dispatcher", { permissionKeys: ["inventory:shipments:manage"] })
+      /*
+       * `scope-all` as well as the shipments key. Warehouse scope denies by
+       * default -- a member assigned no warehouse transacts in none -- so
+       * without it `WarehouseScopeService.resolve` returns `[]`,
+       * `shipmentInScope` becomes `FALSE`, and `ShipmentsService.ship` cannot
+       * find the very shipment this scene just seeded. That is the rule
+       * working, not a bug: 56 of the 63 inventory seeded specs grant this,
+       * and this file was the only one of the remainder that reaches a
+       * warehouse-scoped write.
+       */
+      .addMember("dispatcher", {
+        permissionKeys: ["inventory:shipments:manage", "inventory:warehouses:scope-all"],
+      })
       .build();
     teardowns.push(() => seeded.teardown());
     const tag = randomUUID().slice(0, 6);
