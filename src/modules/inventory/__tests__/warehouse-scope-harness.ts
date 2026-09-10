@@ -100,6 +100,8 @@ const RQB_TABLES = [
   "invStockAdjustments",
   "invLots",
   "invStockTransactions",
+  "invStockTransfers",
+  "invSerialNumbers",
 ] as const;
 
 /**

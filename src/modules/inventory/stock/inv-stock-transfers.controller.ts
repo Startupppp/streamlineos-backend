@@ -59,7 +59,7 @@ export class InvStockTransfersController {
     @Param("transferId", ParseIntPipe) transferId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.transfers.getTransfer(u.orgId, transferId);
+    return this.transfers.getTransfer(u.orgId, u.userId, transferId);
   }
 
   @Post()

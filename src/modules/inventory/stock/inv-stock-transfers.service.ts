@@ -15,7 +15,10 @@ import {
 } from "../stock-engine/command-events";
 import { ReservationService } from "../stock-engine/reservation.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
-import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
+import {
+  WarehouseScopeService,
+  type ResolvedWarehouseScope,
+} from "../stock-engine/warehouse-scope.service";
 import { TransitLocationService } from "../stock-engine/transit-location.service";
 import type { ListTransfersInput, CreateTransferInput, CompleteTransferInput } from "./dto/inv-stock.schemas";
 import { loadOrderableVariants } from "../products/lib/orderable-variants";
@@ -42,6 +45,150 @@ export class InvStockTransfersService {
     private readonly warehouseScope: WarehouseScopeService,
     private readonly transitLocations: TransitLocationService,
   ) {}
+
+  /**
+   * Which transfers this caller may see — the list's rule, now the only copy.
+   *
+   * BOTH ends, because a transfer is one document about two buildings: seeing a
+   * single leg exposes the counterpart warehouse's movement, which is the rule
+   * `listTransfers` has applied since the warehouse work landed and the one the
+   * loads fix already borrowed for a transfer on a load line.
+   *
+   * The NULL half is worth stating because it differs by table on purpose.
+   * `locationPredicate` renders `location_id IN (SELECT …)`, so a transfer whose
+   * end is attributed to no location evaluates to NULL and is EXCLUDED for a
+   * scoped caller — exactly what the list already did. That is not the handling
+   * unit's rule, which keeps an `IS NULL` escape because a unit nested inside
+   * another genuinely has no location of its own. Each detail follows its own
+   * aggregate.
+   *
+   * Private and single so the detail and the four commands cannot drift from the
+   * list: two hand-copied predicates agreeing today is not the same as them
+   * being one predicate, and the list gaining a scope the rest were never told
+   * about is the whole defect.
+   */
+  private transferInScope(scope: ResolvedWarehouseScope): SQL {
+    return sql`(${this.transferSourceInScope(scope)} AND ${this.transferDestinationInScope(scope)})`;
+  }
+
+  /**
+   * The building the goods leave from, and the authority every command that
+   * touches the SOURCE is measured against.
+   *
+   * The four commands below deliberately do NOT take `transferInScope` above,
+   * and the reason is written into `createTransfer`: the source is asserted on
+   * create and the destination is not, because an operator in one building
+   * sending stock to another routinely holds no part of the destination.
+   * Gating `reserve`, `dispatch` and `cancel` on both ends would therefore
+   * refuse the very operator the create rule exists to allow — they could raise
+   * an inter-warehouse transfer and then not reserve or dispatch it.
+   *
+   * So each command asks about the end it actually touches, and asks it through
+   * this one definition rather than spelling out a fresh `scope.location(...)`
+   * call per method. The list's pair is composed from the same two halves, so
+   * nothing here can drift from the list either.
+   */
+  private transferSourceInScope(scope: ResolvedWarehouseScope): SQL {
+    return scope.location(sql`${invStockTransfers.fromLocationId}`);
+  }
+
+  /**
+   * The building the goods arrive in. `completeTransfer` is a receipt, so this
+   * is the end that answers for it — the same end the stock engine will assert
+   * on the arrival movement a moment later.
+   */
+  private transferDestinationInScope(scope: ResolvedWarehouseScope): SQL {
+    return scope.location(sql`${invStockTransfers.toLocationId}`);
+  }
+
+  /**
+   * One transfer, read whole, through whatever gate the caller earned.
+   *
+   * `gate` is `null` only for the two paths that have ALREADY settled the
+   * caller's standing on the way in — `createTransfer` and `reserveTransfer`
+   * both end by returning the document they just acted on, and both asserted
+   * the source before they touched it. Handing them the list's both-ends
+   * predicate would 404 an operator the transfer they have this instant
+   * created, because the create rule lets them name a destination they do not
+   * hold. Named so nobody routes to it by accident.
+   */
+  private async loadTransfer(orgId: string, transferId: number, gate: SQL | null) {
+    return this.db.query.invStockTransfers.findFirst({
+      where: gate === null
+        ? and(eq(invStockTransfers.id, transferId), eq(invStockTransfers.orgId, orgId))
+        : and(eq(invStockTransfers.id, transferId), eq(invStockTransfers.orgId, orgId), gate),
+      with: {
+        fromLocation: true,
+        toLocation: true,
+        fromWarehouse: { columns: { id: true, name: true } },
+        toWarehouse: { columns: { id: true, name: true } },
+        creator: { columns: { id: true, name: true } },
+        lines: {
+          with: {
+            productVariant: { with: { product: { columns: { id: true, name: true, sku: true } } } },
+            lot: { columns: { id: true, lotNumber: true } },
+            serial: { columns: { id: true, serialNumber: true } },
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Reads the header, its lines, both bins, both buildings and who raised it.
+   *
+   * It took no `userId` at all — the controller had `@CurrentUser()` in hand and
+   * passed only `orgId` — while the list beside it has narrowed on both ends
+   * since the warehouse work landed. So a transfer an operator could not see in
+   * their list was theirs to read whole by id, including the counterpart
+   * warehouse's bin, quantities, lots and serials. Nothing downstream would have
+   * caught it: a read posts no movements, so the engine's
+   * `assertLocationsInScope` never runs on this path.
+   *
+   * Not cached, so there is no key to carry a scope discriminator — but if one
+   * is ever added it must carry `scope.key`, or this becomes worse than the
+   * unscoped read it replaces (§6).
+   */
+  /**
+   * The object gate for a command, on the end that command actually touches.
+   *
+   * A projection rather than the whole document: this refuses BEFORE the status
+   * is read, so a caller who may not see a transfer is told "not found" rather
+   * than "only PENDING transfers can be reserved", which would report the
+   * document's state to them. 404, never 403 (§4).
+   */
+  private async assertCommandEnd(
+    orgId: string,
+    userId: string,
+    transferId: number,
+    end: "source" | "destination",
+  ): Promise<void> {
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+    if (scope.unrestricted) return;
+    const [visible] = await this.db
+      .select({ id: invStockTransfers.id })
+      .from(invStockTransfers)
+      .where(
+        and(
+          eq(invStockTransfers.id, transferId),
+          eq(invStockTransfers.orgId, orgId),
+          end === "source"
+            ? this.transferSourceInScope(scope)
+            : this.transferDestinationInScope(scope),
+        ),
+      )
+      .limit(1);
+    if (!visible) throw new NotFoundException("Transfer not found");
+  }
+
+  private async assertScopedTransfer(orgId: string, userId: string, transferId: number) {
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+    const found = await this.loadTransfer(orgId, transferId, this.transferInScope(scope));
+    // 404 rather than 403: a "forbidden" on a transfer id confirms the transfer
+    // exists, which turns a probe into an existence oracle (§4).
+    if (!found) throw new NotFoundException("Transfer not found");
+    return found;
+  }
 
   async listTransfers(orgId: string, filters: ListTransfersInput, scope: DataScope = "all", userId?: string) {
     if (scope === "none") return { items: [], total: 0, page: filters.page, totalPages: 0 };
@@ -83,9 +230,7 @@ export class InvStockTransfersService {
     if (userId) {
       // A transfer is in scope only if BOTH ends are — seeing one leg would
       // expose the counterpart warehouse's stock movement.
-      const warehouseScope = await this.warehouseScope.resolve(orgId, userId);
-      conditions.push(this.warehouseScope.locationPredicate(warehouseScope, sql`${invStockTransfers.fromLocationId}`));
-      conditions.push(this.warehouseScope.locationPredicate(warehouseScope, sql`${invStockTransfers.toLocationId}`));
+      conditions.push(this.transferInScope(await this.warehouseScope.forUser(orgId, userId)));
     }
     const where = and(...conditions);
 
@@ -110,24 +255,8 @@ export class InvStockTransfersService {
     return { items, total: countResult[0]?.count ?? 0, page, totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit) };
   }
 
-  getTransfer(orgId: string, transferId: number) {
-    return this.db.query.invStockTransfers.findFirst({
-      where: and(eq(invStockTransfers.id, transferId), eq(invStockTransfers.orgId, orgId)),
-      with: {
-        fromLocation: true,
-        toLocation: true,
-        fromWarehouse: { columns: { id: true, name: true } },
-        toWarehouse: { columns: { id: true, name: true } },
-        creator: { columns: { id: true, name: true } },
-        lines: {
-          with: {
-            productVariant: { with: { product: { columns: { id: true, name: true, sku: true } } } },
-            lot: { columns: { id: true, lotNumber: true } },
-            serial: { columns: { id: true, serialNumber: true } },
-          },
-        },
-      },
-    });
+  async getTransfer(orgId: string, userId: string, transferId: number) {
+    return this.assertScopedTransfer(orgId, userId, transferId);
   }
 
   // B1-04: Header + lines inserted in a single transaction.
@@ -187,7 +316,11 @@ export class InvStockTransfersService {
       ),
     );
 
-    const transfer = await this.getTransfer(orgId, transferId);
+    // Unscoped on purpose: the caller's standing was settled by the source
+    // assert above, and the create rule lets them name a destination they do
+    // not hold — so the list's both-ends predicate would 404 them the document
+    // they have just raised.
+    const transfer = await this.loadTransfer(orgId, transferId, null);
     if (!transfer) throw new NotFoundException("Transfer not found after create");
     return transfer;
   }
@@ -236,7 +369,24 @@ export class InvStockTransfersService {
    * transfer could not be reserved. Replaying the original answer is the point
    * of the key.
    */
+  /**
+   * Holds the stock the transfer will take, at the SOURCE bin.
+   *
+   * This was the sharpest of the four. Nothing downstream catches it, and here
+   * that is a rule rather than an omission: a reservation is a soft hold that
+   * posts no movement, so `ReservationService` never reaches the stock engine
+   * and `assertLocationsInScope` never runs. `reserveTransferInTx` locked the
+   * row on `org_id` and the id alone, so any holder of the transfer permission
+   * could take another building's stock out of its available pool — the goods
+   * stay on the shelf and stop being sellable, and the keeper there sees their
+   * availability fall with no document of their own to explain it.
+   *
+   * Gated on the entry read so an out-of-scope attempt never reaches the
+   * idempotency claim and cannot burn a key either.
+   */
   async reserveTransfer(orgId: string, userId: string, transferId: number, idempotencyKey: string) {
+    await this.assertCommandEnd(orgId, userId, transferId, "source");
+
     const transfer = await this.db.transaction((tx) =>
       runIdempotent(
         tx,
@@ -248,7 +398,10 @@ export class InvStockTransfersService {
       ),
     );
 
-    return this.getTransfer(orgId, transfer);
+    // Unscoped for the same reason `createTransfer` is: the source gate above
+    // has already settled this caller's standing, and the both-ends predicate
+    // would refuse them a transfer they were entitled to reserve.
+    return this.loadTransfer(orgId, transfer, null);
   }
 
   private async reserveTransferInTx(
@@ -329,6 +482,20 @@ export class InvStockTransfersService {
   // between dispatch and completion: total on-hand silently dropped for the
   // duration of the journey and nothing told a planner where the units were.
   async dispatchTransfer(orgId: string, userId: string, transferId: number, idempotencyKey: string) {
+    /*
+     * The movements this posts are already the engine's business — TRANSFER_OUT
+     * at the source bin and TRANSFER_IN at the source warehouse's transit
+     * location are both inside the source building, so `assertLocationsInScope`
+     * would refuse an outsider a moment later and the STOCK was never at risk.
+     *
+     * What was at risk is everything before that: the header read reports the
+     * status of a document the caller may not see, and the transit-location
+     * resolve can CREATE a bin in a building they hold nothing in. Refusing here
+     * means neither happens, and the refusal is a 404 rather than a status
+     * conflict that would describe the document.
+     */
+    await this.assertCommandEnd(orgId, userId, transferId, "source");
+
     const transfer = await this.db.query.invStockTransfers.findFirst({
       where: and(eq(invStockTransfers.id, transferId), eq(invStockTransfers.orgId, orgId)),
       with: { lines: true },
@@ -548,6 +715,16 @@ export class InvStockTransfersService {
   // closes; adding a transit issue for goods that were never dispatched would
   // simply fail for want of stock.
   async completeTransfer(orgId: string, userId: string, transferId: number, data: CompleteTransferInput, idempotencyKey: string) {
+    /*
+     * The DESTINATION end, because completing is a receipt: the goods land in
+     * `toLocationId` and the person who answers for that is the keeper there.
+     * It is also the end the engine will assert on the arrival movement, so this
+     * refuses nothing the engine would have allowed — it simply refuses it
+     * before the status is disclosed and before a short receipt can be described
+     * back to somebody who cannot see the document.
+     */
+    await this.assertCommandEnd(orgId, userId, transferId, "destination");
+
     const transfer = await this.db.query.invStockTransfers.findFirst({
       where: and(eq(invStockTransfers.id, transferId), eq(invStockTransfers.orgId, orgId)),
       with: { lines: true },
@@ -654,6 +831,21 @@ export class InvStockTransfersService {
    * cancelled — the request had in fact succeeded.
    */
   async cancelTransfer(orgId: string, userId: string, transferId: number, idempotencyKey: string) {
+    /*
+     * The SOURCE end. Cancelling releases the reservations this transfer holds
+     * at the source bin and flips the document terminal, and both are the source
+     * keeper's business.
+     *
+     * Nothing downstream catches this one either: cancel posts no movements at
+     * all — it stops at RESERVED by design, so there is never anything in
+     * transit to unwind — which means the stock engine is not on this path and
+     * `assertLocationsInScope` never runs. So a stranger could cancel another
+     * building's transfer outright: the reservations are released, the document
+     * goes CANCELLED, and nothing is visible until goods that were supposed to
+     * leave have not left.
+     */
+    await this.assertCommandEnd(orgId, userId, transferId, "source");
+
     const transfer = await this.db.query.invStockTransfers.findFirst({
       where: and(eq(invStockTransfers.id, transferId), eq(invStockTransfers.orgId, orgId)),
       // Existence only — the status check moved inside the claim.
