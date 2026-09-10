@@ -123,4 +123,51 @@ describe("ledger boundary", () => {
     );
     expect(importers).toEqual([]);
   });
+
+  /*
+    ACC-07/ACC-19. Every assertion above matches the Drizzle *identifier* —
+    `.insert(glJournals)`, `\bglJournalLines\b`. Raw SQL names the table, not
+    the symbol, so `tx.execute(sql`INSERT INTO gl_journals ...`)` in any module
+    would have passed all seven of them.
+
+    Nothing exploits that today: measured across `src`, the only raw mentions of
+    these tables are `posting-command.service.ts`'s idempotency-key lookup, the
+    report queries, a demo script and the permission catalogue — all reads, all
+    inside accounting. The gate is closed while that is still true, which is the
+    only time closing it is free.
+  */
+  it("has no raw-SQL write to the ledger tables outside the kernel", () => {
+    const writers = grep(
+      "(INSERT[[:space:]]+INTO|UPDATE|DELETE[[:space:]]+FROM)[[:space:]]+\"?gl_journal",
+    ).filter((f) => !f.endsWith(".spec.ts") && !f.endsWith(".e2e-spec.ts"));
+
+    expect(writers.filter((f) => !KERNEL_WRITERS.includes(f))).toEqual([]);
+  });
+
+  it("keeps the ledger table names out of raw SQL in every non-accounting module", () => {
+    /*
+      A read through raw SQL is as much a boundary crossing as a read through
+      the schema object — it couples another module to the ledger's column
+      names, which is what the ACL exists to prevent.
+    */
+    const referencing = grep("gl_journals|gl_journal_lines").filter(
+      (f) =>
+        f.startsWith("modules/") &&
+        !f.startsWith("modules/accounting/") &&
+        !f.startsWith("modules/rbac/permissions/") &&
+        !READ_ONLY_REFERENCES.includes(f),
+    );
+    expect(referencing).toEqual([]);
+  });
+
+  it("fails loudly if the grep itself stops working", () => {
+    /*
+      `grep()` swallows its own failure and returns `[]`, so a broken pattern,
+      a moved `SRC` or a missing `grep` binary would make every `toEqual([])`
+      above pass over nothing. This is the floor under all of them: a pattern
+      that is known to match must keep matching.
+    */
+    expect(grep("gl_journals|gl_journal_lines").length).toBeGreaterThan(5);
+    expect(grep("\\bglJournalLines\\b").length).toBeGreaterThan(1);
+  });
 });
