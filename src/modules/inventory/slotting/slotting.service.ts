@@ -1,11 +1,14 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql, type SQL } from "drizzle-orm";
 import { invSlottingRecommendations, invSlottingRules } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { forEachOrg } from "../../../common/tenant";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
-import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
+import {
+  WarehouseScopeService,
+  type ResolvedWarehouseScope,
+} from "../stock-engine/warehouse-scope.service";
 import { classifyVelocity, rankBySlot, type SlottedSuggestion } from "./slotting-rules";
 import type { PutawaySuggestion } from "../warehouses/putaway-suggestion";
 import type {
@@ -57,17 +60,30 @@ export class SlottingService {
    * Rules
    * ---------------------------------------------------------------- */
 
+  /**
+   * Which slotting rules this caller may see — the list's rule, now the only
+   * copy.
+   *
+   * A rule names its warehouse directly and NOT NULL, so this is the plain
+   * column predicate and there is no null case to decide: every rule belongs to
+   * exactly one building. Both readings of the scope used to be spelled out by
+   * hand here and in `listRecommendations`, and the command beside each was
+   * simply never told — which is why they are one method each now.
+   */
+  private ruleInScope(scope: ResolvedWarehouseScope): SQL {
+    return scope.warehouse(sql`${invSlottingRules.warehouseId}`);
+  }
+
+  /** The same, for a recommendation. Also a NOT NULL warehouse column. */
+  private recommendationInScope(scope: ResolvedWarehouseScope): SQL {
+    return scope.warehouse(sql`${invSlottingRecommendations.warehouseId}`);
+  }
+
   async listRules(orgId: string, userId: string, warehouseId?: number) {
-    const scope = await this.warehouseScope.resolve(orgId, userId);
+    const scope = await this.warehouseScope.forUser(orgId, userId);
     const conditions = [eq(invSlottingRules.orgId, orgId)];
     if (warehouseId) conditions.push(eq(invSlottingRules.warehouseId, warehouseId));
-    if (scope !== null) {
-      conditions.push(
-        scope.length === 0
-          ? sql`FALSE`
-          : sql`${invSlottingRules.warehouseId} IN (${sql.join(scope.map((id) => sql`${id}`), sql`, `)})`,
-      );
-    }
+    conditions.push(this.ruleInScope(scope));
 
     return this.db
       .select()
@@ -109,11 +125,35 @@ export class SlottingService {
     return rule;
   }
 
+  /**
+   * Turn a rule on or off.
+   *
+   * `listRules` above narrows to the caller's buildings and `createRule` asserts
+   * the one it writes into; this reached the row on `org_id` and the id alone,
+   * so a supervisor holding no part of a warehouse could disable its slotting
+   * policy.
+   *
+   * Nothing downstream would have caught it. A rule toggle posts no stock, so
+   * the engine's `assertLocationsInScope` never runs on this path; the damage is
+   * quiet and arrives later, through `slotFor` — every putaway in that building
+   * silently stops being ranked by the policy somebody wrote, and the goods go
+   * to whatever bin the generic suggestion offers.
+   *
+   * The predicate rides the UPDATE, so there is no window between a check and
+   * the write. No row matched is 404, never 403 (§4).
+   */
   async setRuleActive(orgId: string, userId: string, ruleId: number, isActive: boolean) {
+    const scope = await this.warehouseScope.forUser(orgId, userId);
     const [rule] = await this.db
       .update(invSlottingRules)
       .set({ isActive, updatedAt: new Date() })
-      .where(and(eq(invSlottingRules.orgId, orgId), eq(invSlottingRules.id, ruleId)))
+      .where(
+        and(
+          eq(invSlottingRules.orgId, orgId),
+          eq(invSlottingRules.id, ruleId),
+          this.ruleInScope(scope),
+        ),
+      )
       .returning();
     if (!rule) throw new NotFoundException("Not found");
 
@@ -371,19 +411,13 @@ export class SlottingService {
   }
 
   async listRecommendations(orgId: string, userId: string, query: ListRecommendationsQuery) {
-    const scope = await this.warehouseScope.resolve(orgId, userId);
+    const scope = await this.warehouseScope.forUser(orgId, userId);
     const conditions = [
       eq(invSlottingRecommendations.orgId, orgId),
       sql`${invSlottingRecommendations.status} = ${query.status}`,
     ];
     if (query.warehouseId) conditions.push(eq(invSlottingRecommendations.warehouseId, query.warehouseId));
-    if (scope !== null) {
-      conditions.push(
-        scope.length === 0
-          ? sql`FALSE`
-          : sql`${invSlottingRecommendations.warehouseId} IN (${sql.join(scope.map((id) => sql`${id}`), sql`, `)})`,
-      );
-    }
+    conditions.push(this.recommendationInScope(scope));
 
     return this.db
       .select()
@@ -401,6 +435,19 @@ export class SlottingService {
    * and the alternative is the sweep proposing the same move again tomorrow.
    */
   async dismiss(orgId: string, userId: string, recommendationId: number, reason?: string) {
+    /*
+     * Scoped like `list` and `approve` already are. `approve` gained its gate
+     * because approving ends with stock moving; dismissing was left because it
+     * "touches nothing but the row", and that reading is the mistake. The row is
+     * the decision: a stranger dismissing another building's re-slot removes it
+     * from the supervisor's queue there, and the sweep will not propose it again
+     * because DISMISSED is exactly the state that says somebody looked. It also
+     * stamps `decided_by` with a person who never saw it.
+     *
+     * On the UPDATE rather than in front of it, so the scope and the PENDING
+     * status are settled by one statement. 404, never 403.
+     */
+    const scope = await this.warehouseScope.forUser(orgId, userId);
     const [row] = await this.db
       .update(invSlottingRecommendations)
       .set({ status: "DISMISSED", decidedBy: userId, decidedAt: new Date(), updatedAt: new Date() })
@@ -409,6 +456,7 @@ export class SlottingService {
           eq(invSlottingRecommendations.orgId, orgId),
           eq(invSlottingRecommendations.id, recommendationId),
           sql`${invSlottingRecommendations.status} = 'PENDING'`,
+          this.recommendationInScope(scope),
         ),
       )
       .returning();
@@ -485,7 +533,7 @@ export class SlottingService {
         and(
           eq(invSlottingRecommendations.orgId, orgId),
           eq(invSlottingRecommendations.id, recommendationId),
-          scope.warehouse(sql`${invSlottingRecommendations.warehouseId}`),
+          this.recommendationInScope(scope),
         ),
       );
     if (!row) throw new NotFoundException("Not found");

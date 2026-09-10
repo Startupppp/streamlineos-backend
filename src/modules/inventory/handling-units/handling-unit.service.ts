@@ -318,11 +318,47 @@ export class HandlingUnitService {
    * unlikely.
    */
   async nest(orgId: string, userId: string, handlingUnitId: number, input: NestHandlingUnitInput) {
+    /*
+     * `create` and `move` both assert the location they write into and `detail`
+     * and `list` both narrow through `scopePredicate`. Nesting reached every
+     * unit it touched through `node`, which filters on `org_id` and the id
+     * alone — so a packer in one building could take a carton off another
+     * building's pallet, or hang their own carton onto it.
+     *
+     * Nothing downstream would have caught it, and here that is a rule rather
+     * than an omission: nesting posts NO movements. The units do not go
+     * anywhere — a child's whereabouts simply becomes its parent's — so the
+     * stock engine is not on this path and `assertLocationsInScope` never runs.
+     * What changes is where the system believes somebody else's goods are, and
+     * an un-nest writes a location onto the child from a pallet the caller may
+     * never have stood next to.
+     *
+     * BOTH ends, every time, because either alone leaves a door open: gating
+     * only the child still lets a caller hang it onto a stranger's pallet, and
+     * gating only the parent still lets them strip a stranger's carton off one
+     * they own. The parent is asserted BEFORE `assertCanTakeChildren` so a
+     * refusal cannot report the parent's kind or status back either.
+     */
+    const scope = await this.warehouseScope.resolve(orgId, userId);
+
     return this.db.transaction(async (tx) => {
+      // Before the row is read, not after: `node` reports the unit's status,
+      // its whereabouts and whether it holds stock, and a gate behind that has
+      // already answered the question the caller was not entitled to ask.
+      await this.assertUnitVisible(tx, orgId, scope, handlingUnitId);
       const child = await this.node(tx, orgId, handlingUnitId);
 
       if (input.parentHuId === null) {
         if (child.parentHuId === null) return this.detailIn(tx, orgId, handlingUnitId);
+        /*
+         * The unit being un-nested FROM, and not a formality. A nested child
+         * carries no location of its own, and `scopePredicate` lets an
+         * unattributed unit through on purpose — so the child gate above passes
+         * for every nested carton in the organisation. Its whereabouts live on
+         * the parent, which is therefore the row that actually answers for it,
+         * and the parent's `locationId` is what this then writes onto the child.
+         */
+        await this.assertUnitVisible(tx, orgId, scope, child.parentHuId);
         const parent = await this.node(tx, orgId, child.parentHuId);
         await tx
           .update(invHandlingUnits)
@@ -345,6 +381,10 @@ export class HandlingUnitService {
         throw new BadRequestException("That would put a handling unit inside itself");
       }
 
+      // The destination. Asserting the child alone would still let a caller take
+      // a carton they legitimately hold and hang it onto a pallet in a building
+      // they cannot see, which re-homes it past every gate this service has.
+      await this.assertUnitVisible(tx, orgId, scope, input.parentHuId);
       const parent = await this.node(tx, orgId, input.parentHuId);
       assertCanTakeChildren(parent);
       assertNoCycle(handlingUnitId, await this.ancestorsOf(tx, orgId, input.parentHuId));
@@ -391,6 +431,33 @@ export class HandlingUnitService {
    * unattributed row instead — which is exactly why it lives in one place and
    * both callers read it rather than each spelling it out.
    */
+  /**
+   * The object gate, built from the same `scopePredicate` the list and the
+   * detail read narrow through — so a unit `nest` will act on is exactly a unit
+   * the caller could have found in their list. A second hand-written reading of
+   * the rule would be free to drift from it; this one cannot.
+   *
+   * 404 rather than 403: a "forbidden" on a handling-unit id confirms the unit
+   * exists, which turns a probe into an existence oracle (§4). It is also the
+   * same answer `node` gives for an id that is not there, so the two are
+   * indistinguishable from outside, which is the point.
+   */
+  private async assertUnitVisible(
+    tx: Tx,
+    orgId: string,
+    scope: number[] | null,
+    handlingUnitId: number,
+  ): Promise<void> {
+    const gate = this.scopePredicate(orgId, scope);
+    if (gate === null) return;
+    const [visible] = await tx
+      .select({ id: invHandlingUnits.id })
+      .from(invHandlingUnits)
+      .where(and(eq(invHandlingUnits.orgId, orgId), eq(invHandlingUnits.id, handlingUnitId), gate))
+      .limit(1);
+    if (!visible) throw new NotFoundException("Not found");
+  }
+
   private scopePredicate(orgId: string, scope: number[] | null): SQL | null {
     if (scope === null) return null;
     if (scope.length === 0) return sql`FALSE`;
