@@ -143,6 +143,19 @@ export class AccountingKernelController {
     return this.accounts.listPostable(u.orgId, book.id);
   }
 
+  /**
+   * Every system role and the account filling it — the account-mapping screen.
+   * Declared before `accounts/:accountId` because Nest matches in order and
+   * would otherwise read "mappings" as an account id.
+   */
+  @Get("accounts/mappings")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:accounts:read")
+  async listAccountMappings(@CurrentUser() u: CurrentUserContext) {
+    const book = await this.books.requireDefault(u.orgId);
+    return this.accounts.listSystemTagMappings(u.orgId, book.id);
+  }
+
   @Get("accounts/:accountId")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:accounts:read")

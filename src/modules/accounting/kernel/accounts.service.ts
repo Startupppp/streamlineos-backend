@@ -19,6 +19,13 @@ import { getPostgresErrorDetails } from "../../../common/db/postgres-error";
 import { AuditService } from "../../../common/audit/audit.service";
 import { addDays, assertIsoDate, compareDates } from "./fiscal-calendar";
 import {
+  ALL_SYSTEM_TAGS,
+  INVENTORY_SEAM_ROLES,
+  INVENTORY_SEAM_ROLES_PENDING,
+  SYSTEM_TAG_ACCOUNT_TYPES,
+  accountTypeFitsRole,
+} from "./system-tag-roles";
+import {
   readAccountLedger,
   type AccountBalance,
   type AccountLedgerPage,
@@ -154,6 +161,12 @@ export class AccountsService {
   async create(orgId: string, userId: string, bookId: string, input: CreateAccountInput) {
     if (input.isHeader && input.isCash) {
       throw new BadRequestException("A header account cannot also be a cash account");
+    }
+    if (input.systemTag) {
+      this.assertRoleFitsType(input.systemTag, input.accountType);
+      if (input.isHeader) {
+        throw new BadRequestException("A header account cannot fill a posting role");
+      }
     }
     if (input.parentAccountId) {
       await this.assertParentUsable(orgId, bookId, input.parentAccountId);
@@ -306,6 +319,7 @@ export class AccountsService {
     if (tag && account.isHeader) {
       throw new BadRequestException("A header account cannot fill a posting role");
     }
+    if (tag) this.assertRoleFitsType(tag, account.accountType);
 
     return this.db.transaction(async (tx) => {
       if (tag) {
@@ -338,6 +352,72 @@ export class AccountsService {
         after: { systemTag: tag },
       });
       return updated;
+    });
+  }
+
+  /**
+   * A role has a shape. `cogs` on an equity account balances perfectly well and
+   * is still wrong — the journal is fine and the P&L is quietly missing its
+   * cost of sales, which is the kind of error that survives until an auditor
+   * finds it. See `system-tag-roles.ts` for why this is checked when a tag is
+   * assigned and never when a journal is posted.
+   */
+  private assertRoleFitsType(tag: GlSystemTag, accountType: GlAccountType): void {
+    if (accountTypeFitsRole(tag, accountType)) return;
+    const allowed = SYSTEM_TAG_ACCOUNT_TYPES[tag];
+    throw new BadRequestException(
+      `The "${tag}" role belongs on ${allowed.join(" or ")} account, not ${accountType}. ` +
+        "Documents resolve accounts by role, so this mapping would classify every posting " +
+        "that uses it onto the wrong side of the statements.",
+    );
+  }
+
+  /**
+   * Every system role and the account filling it, for the mapping screen.
+   *
+   * Returns all roles rather than only the mapped ones: the screen's job is to
+   * show what is *not* mapped, and a list that omits the unmapped shows an
+   * operator nothing to do.
+   */
+  async listSystemTagMappings(orgId: string, bookId: string) {
+    const rows = await this.db
+      .select({
+        id: glAccounts.id,
+        code: glAccounts.code,
+        name: glAccounts.name,
+        accountType: glAccounts.accountType,
+        systemTag: glAccounts.systemTag,
+      })
+      .from(glAccounts)
+      .where(
+        and(
+          eq(glAccounts.orgId, orgId),
+          eq(glAccounts.bookId, bookId),
+          eq(glAccounts.isActive, true),
+          isNull(glAccounts.deletedAt),
+        ),
+      );
+
+    const byTag = new Map(rows.filter((r) => r.systemTag).map((r) => [r.systemTag, r]));
+    const required = new Set<string>(INVENTORY_SEAM_ROLES);
+    const pending = new Set<string>(INVENTORY_SEAM_ROLES_PENDING);
+
+    return ALL_SYSTEM_TAGS.map((tag) => {
+      const account = byTag.get(tag);
+      return {
+        tag,
+        allowedAccountTypes: SYSTEM_TAG_ACCOUNT_TYPES[tag],
+        account: account
+          ? { id: account.id, code: account.code, name: account.name, accountType: account.accountType }
+          : null,
+        /* Inventory refuses a movement without this one, today. */
+        requiredByInventory: required.has(tag),
+        /*
+          Seeded by the chart and resolved by nothing yet. Shown so the screen
+          can say so, rather than presenting it as a gap the operator caused.
+        */
+        awaitingInventorySupport: pending.has(tag),
+      };
     });
   }
 

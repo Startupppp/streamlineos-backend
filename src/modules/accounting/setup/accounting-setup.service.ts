@@ -14,25 +14,9 @@ import { AccessService } from "../../access/access.service";
 import { BooksService, type EnableAccountingInput } from "../kernel/books.service";
 import { TaxService } from "../tax/tax.service";
 import { PackRegistry } from "../packs/pack.registry";
+import { INVENTORY_SEAM_ROLES } from "../kernel/system-tag-roles";
 
-/**
- * The account roles the inventory bridge resolves today, from the three call
- * sites `docs/inventory-gl-contract.md` §2 enumerates. A book missing any of
- * them is a book whose first goods receipt throws `UNKNOWN_ACCOUNT_TAG` — and,
- * because that post runs after the stock transaction has committed (§3.3),
- * throws it with the stock already moved.
- *
- * ACC-03 extends this list with the four roles that do not exist yet; it is
- * deliberately the *measured* set rather than the aspirational one, so this
- * check tells the truth before that ticket lands rather than after.
- */
-export const INVENTORY_SEAM_ROLES = [
-  "inventory",
-  "cogs",
-  "ap_control",
-  "ar_control",
-  "sales",
-] as const satisfies readonly GlSystemTag[];
+export { INVENTORY_SEAM_ROLES };
 
 /**
  * Whether this organisation's accounting is actually able to receive a posting.

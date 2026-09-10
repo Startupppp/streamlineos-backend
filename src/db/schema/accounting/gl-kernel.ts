@@ -87,6 +87,13 @@ export const glSystemTagEnum = pgEnum("gl_system_tag", [
   "undeposited",
   "ar_control",
   "ap_control",
+  /**
+   * Goods received not invoiced. The receipt credits this; the bill debits it
+   * and credits `ap_control`, so it nets to zero per PO line. Crediting AP
+   * directly at receipt puts a balance in the control account for which no bill
+   * exists, and the AP subledger cannot then agree with it (0672).
+   */
+  "grni",
   "sales",
   "other_income",
   "cogs",
@@ -128,6 +135,14 @@ export const glSystemTagEnum = pgEnum("gl_system_tag", [
   "depreciation_expense",
   "deferred_revenue",
   "inventory",
+  /** Scrap, quality write-off, recall destruction: stock that left without a sale. */
+  "inventory_write_off",
+  /**
+   * Cycle-count and physical-audit variance, both directions — a gain credits
+   * it and a loss debits it, so the balance is the period's net adjustment cost
+   * rather than two figures that must be added back to mean anything (0672).
+   */
+  "inventory_adjustment",
 ]);
 
 /* ------------------------------------------------------------------ books */

@@ -87,6 +87,15 @@ export const BASE_CHART_OF_ACCOUNTS: readonly CoaTemplateAccount[] = Object.free
   },
 
   {
+    code: "2110",
+    name: "Goods received not invoiced",
+    type: "LIABILITY",
+    parentCode: "2000",
+    systemTag: "grni",
+    description: "A goods receipt credits this; the supplier bill debits it and credits AP",
+  },
+
+  {
     code: "2300",
     name: "Withholding tax payable",
     type: "LIABILITY",
@@ -144,6 +153,22 @@ export const BASE_CHART_OF_ACCOUNTS: readonly CoaTemplateAccount[] = Object.free
   /* ----------------------------------------------------------- expenses */
   { code: "5000", name: "Expenses", type: "EXPENSE", isHeader: true },
   { code: "5100", name: "Cost of sales", type: "EXPENSE", parentCode: "5000", systemTag: "cogs" },
+  {
+    code: "5110",
+    name: "Inventory write-off",
+    type: "EXPENSE",
+    parentCode: "5000",
+    systemTag: "inventory_write_off",
+    description: "Scrap, quality write-off, recall destruction — stock that left without a sale",
+  },
+  {
+    code: "5120",
+    name: "Inventory adjustment",
+    type: "EXPENSE",
+    parentCode: "5000",
+    systemTag: "inventory_adjustment",
+    description: "Count variance both ways: a loss debits it, a gain credits it, so the balance is the net",
+  },
   { code: "5200", name: "Salaries and wages", type: "EXPENSE", parentCode: "5000", systemTag: "salary" },
   { code: "5300", name: "Operating expenses", type: "EXPENSE", parentCode: "5000", systemTag: "opex" },
   { code: "5310", name: "Rent", type: "EXPENSE", parentCode: "5000" },
