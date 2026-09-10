@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import type { Db } from "../../../../db/drizzle.module";
+import { isUnkeyedQualityHold } from "./genealogy-queries";
 
 /**
  * D1. Document nodes carry a business number, not a row id.
@@ -38,6 +39,14 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 export function documentFallbackLabel(referenceType: string, referenceId: string): string {
+  // A hold raised before `HoldsService.create` named its own aggregate carries
+  // the organisation id here, and "Quality hold #<uuid>" is not a document
+  // number an operator can do anything with. The walk already refuses to expand
+  // these (`isUnkeyedQualityHold`); this is the same fact said in the label, so
+  // the node reads as the dead end it is rather than as a reference somebody
+  // should go looking for.
+  if (isUnkeyedQualityHold({ referenceType, referenceId }))
+    return `${TYPE_LABELS[referenceType] ?? referenceType} (unlinked)`;
   return `${TYPE_LABELS[referenceType] ?? referenceType} #${referenceId}`;
 }
 

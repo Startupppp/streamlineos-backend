@@ -135,6 +135,33 @@ export function expandItemsOfKind(
     LIMIT ${rowCap(frontier.length, query)}`);
 }
 
+/**
+ * A hold document that does not name a hold.
+ *
+ * `HoldsService.create` posted its QUARANTINE_IN with `sourceId: String(orgId)`
+ * until that was fixed, so every manual hold raised in an organisation before
+ * then shares the one reference `QUALITY_HOLD:<orgId>`. The walk keys documents
+ * on `(reference_type, reference_id)`, so expanding that reference reaches every
+ * lot and serial the tenant has ever held, and a trace from one quarantined
+ * batch arrives at unrelated ones.
+ *
+ * The ledger cannot be repaired in place: `inv_stock_transactions` is append-only
+ * (`trg_inv_stock_transactions_no_restatement`, migration 0529 — "you do not edit
+ * history; you post a movement that says history was wrong"), and `reference_id`
+ * is one of the columns it freezes. So the compensation belongs here, on the
+ * read side, which is the only place it can live.
+ *
+ * The test is "not a hold id" rather than "equal to this org id": a hold id is
+ * `String(hold.id)` off a serial column and is therefore always a positive
+ * integer, so anything else is a reference that cannot resolve to a hold. That
+ * is both the precise signature of the historical defect and the right rule for
+ * any future reference this walk cannot follow — a document nobody can identify
+ * is not a document two lots can be said to share.
+ */
+export function isUnkeyedQualityHold(ref: DocumentRef): boolean {
+  return ref.referenceType === "QUALITY_HOLD" && !/^[1-9][0-9]*$/.test(ref.referenceId);
+}
+
 /** Every lot and serial that moved on one of the frontier's documents. */
 export function expandDocuments(
   db: Db,
@@ -143,9 +170,13 @@ export function expandDocuments(
   query: GenealogyQueryInput,
   scope: GenealogyScopeFilters,
 ): Promise<LedgerRow[]> {
-  if (frontier.length === 0) return Promise.resolve([]);
+  // Dropped before the statement is built rather than filtered inside it: an
+  // unkeyed hold matches an enormous number of ledger rows, and the point is not
+  // to discard them after the LATERAL has found them but never to ask.
+  const walkable = frontier.filter((d) => !isUnkeyedQualityHold(d));
+  if (walkable.length === 0) return Promise.resolve([]);
   const values = sql.join(
-    frontier.map((d) => sql`(${d.referenceType}::text, ${d.referenceId}::text)`),
+    walkable.map((d) => sql`(${d.referenceType}::text, ${d.referenceId}::text)`),
     sql`, `,
   );
   return db.execute<LedgerRow>(sql`
@@ -164,7 +195,7 @@ export function expandDocuments(
       ORDER BY t.id DESC
       LIMIT ${query.maxFanout + 1}
     ) x
-    LIMIT ${rowCap(frontier.length, query)}`);
+    LIMIT ${rowCap(walkable.length, query)}`);
 }
 
 /**

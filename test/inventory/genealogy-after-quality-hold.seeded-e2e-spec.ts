@@ -322,6 +322,82 @@ describe(`${SEEDED_HARNESS} INV-42 — lot genealogy after a manual quality hold
     }, 300_000);
   });
 
+  describe("holds written before the fix, which the ledger will not let us repair", () => {
+    /**
+     * The rows the pre-fix `HoldsService.create` left behind, created the only
+     * way they still can be: INSERTed. `inv_stock_transactions` is append-only —
+     * `trg_inv_stock_transactions_no_restatement` (migration 0529) refuses any
+     * UPDATE of `reference_id` on a posted movement — so a backfill migration
+     * cannot exist and these references are permanent. The compensation is on
+     * the read side, and this is what holds it in place.
+     */
+    const insertLegacyHold = (lotId: number, locationId: number) =>
+      asTenant(() =>
+        db().execute(sql`
+          INSERT INTO inv_stock_transactions
+            (org_id, product_variant_id, location_id, lot_id, transaction_type,
+             quantity_change, quantity_before, quantity_after, quantity_bucket,
+             ownership, reference_type, reference_id, created_by)
+          VALUES (${scene.orgId}, ${scene.variantId}, ${locationId}, ${lotId},
+                  'QUARANTINE_IN', '1.0000', '0.0000', '1.0000', 'QUALITY_HOLD',
+                  'OWNED', 'QUALITY_HOLD', ${scene.orgId}, ${scene.userId})`),
+      );
+
+    it("has two batches sharing one unkeyed hold reference", async () => {
+      // The fixture, and the vacuity guard for everything below: both lots must
+      // really carry a movement under the SAME reference, or "does not cross"
+      // would be a claim about a graph that never had an edge to cross.
+      await insertLegacyHold(scene.lot, scene.binA);
+      await insertLegacyHold(scene.strangerLot, scene.binB);
+
+      const rows = await asTenant(() =>
+        db().execute<{ lot_id: number }>(sql`
+          SELECT lot_id FROM inv_stock_transactions
+           WHERE org_id = ${scene.orgId}
+             AND reference_type = 'QUALITY_HOLD'
+             AND reference_id = ${scene.orgId}
+           ORDER BY lot_id`),
+      );
+      expect(rows).toHaveLength(2);
+      expect(new Set(rows.map((r) => r.lot_id))).toEqual(
+        new Set([scene.lot, scene.strangerLot]),
+      );
+    }, 300_000);
+
+    it("draws the legacy hold but refuses to walk through it", async () => {
+      const { body } = await lotGraph();
+      // Not truncated: the walk was not cut short by a cap, it declined to
+      // follow an edge. Those are different answers and the caller is told the
+      // honest one.
+      expect(body.truncation.complete).toBe(true);
+
+      // The movement happened, so it is still drawn — suppressing it would be
+      // inventing a history in which the batch was never held.
+      const node = body.nodes.find((n) => n.key === `QUALITY_HOLD:${scene.orgId}`);
+      expect(node).toBeDefined();
+      // And it is labelled as the dead end it is, rather than showing an
+      // operator a tenant UUID as though it were a document number.
+      expect(node!.label).toBe("Quality hold (unlinked)");
+
+      // The point of the whole exercise: the shared reference no longer joins
+      // the two batches. Without the read-side compensation this walk reaches
+      // lot:STRANGER in one hop from that node.
+      expect(body.nodes.some((n) => n.lotId === scene.strangerLot)).toBe(false);
+      expect(body.nodes.map((n) => n.key)).not.toContain(`inv_grn:${scene.strangerGrnId}`);
+    }, 300_000);
+
+    it("still walks the holds that are keyed properly", async () => {
+      // The control. A compensation that suppressed every QUALITY_HOLD document
+      // would also pass the test above, and would have thrown away the fix this
+      // file was written for.
+      const { body } = await lotGraph();
+      const keyed = body.nodes.find((n) => n.key === `QUALITY_HOLD:${String(holdId)}`);
+      expect(keyed).toBeDefined();
+      expect(keyed!.label).toBe(`Quality hold #${String(holdId)}`);
+      expect(body.edges.some((e) => e.transactionType === "QUARANTINE_IN")).toBe(true);
+    }, 300_000);
+  });
+
   describe("the ordering the fix depends on", () => {
     it("rolls the hold document back with the movement it could not post", async () => {
       // The fix inserts `inv_quality_holds` *before* the movement, so the
