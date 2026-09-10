@@ -100,7 +100,7 @@ describe("CACHE_INVALIDATION_MATRIX — structure", () => {
   });
 
   it(
-    "coverage guard — 108 write and 35 ttl-only" +
+    "coverage guard — 107 write and 36 ttl-only" +
       " (update both counts when the matrix grows)",
     () => {
       const writeCount = CACHE_INVALIDATION_MATRIX.filter(
@@ -109,8 +109,8 @@ describe("CACHE_INVALIDATION_MATRIX — structure", () => {
       const ttlCount = CACHE_INVALIDATION_MATRIX.filter(
         (e) => e.invalidation.kind === "ttl-only",
       ).length;
-      expect(writeCount).toBe(108);
-      expect(ttlCount).toBe(35);
+      expect(writeCount).toBe(107);
+      expect(ttlCount).toBe(36);
       expect(writeCount + ttlCount).toBe(CACHE_INVALIDATION_MATRIX.length);
     },
   );

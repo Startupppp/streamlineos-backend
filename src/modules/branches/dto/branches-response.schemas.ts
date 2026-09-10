@@ -1,6 +1,5 @@
 import { z } from "zod";
-import { wireDate, nullableWireDate } from "../../../common/openapi/wire-types";
-import { successSchema } from "../../../common/openapi/response-envelopes";
+import { wireDate } from "../../../common/openapi/wire-types";
 
 const branchStaffSchema = z.object({
   id: z.string(),
@@ -55,26 +54,4 @@ export const branchDetailSchema = z.object({
   ),
 });
 
-export const orgUnitRowSchema = z.object({
-  id: z.string(),
-  orgId: z.string(),
-  kind: z.string(),
-  parentId: z.string().nullable(),
-  name: z.string(),
-  code: z.string(),
-  description: z.string().nullable(),
-  headMembershipId: z.number().int().nullable(),
-  status: z.string(),
-  metadata: z.record(z.string(), z.unknown()).nullable(),
-  rowVersion: z.number().int(),
-  archivedAt: nullableWireDate(),
-  archivedByMembershipId: z.number().int().nullable(),
-  updatedByMembershipId: z.number().int().nullable(),
-  createdAt: wireDate(),
-  updatedAt: wireDate(),
-  deletedAt: nullableWireDate(),
-});
-
 export const branchListSchema = z.array(branchListItemSchema);
-
-export { successSchema };

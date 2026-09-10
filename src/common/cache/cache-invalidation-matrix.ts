@@ -123,7 +123,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
     invalidation: {
       kind: "write",
       events: [
-        "BranchesService (invalidateForOrg(orgId,'org:units:BRANCH'))",
         "OrgHierarchyBranchesService (invalidateForOrg(orgId,'org:units:BRANCH'))",
         "OrgHierarchyCacheService.invalidateAfterMutation (any hierarchy mutation)",
       ],
@@ -135,8 +134,7 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
     invalidation: {
       kind: "write",
       events: [
-        "BranchesService.create/update/archive (invalidateForOrg(orgId,'branches:list'))",
-        "OrgHierarchyBranchesService.create/update/archive",
+        "OrgHierarchyBranchesService.create/update/archive (invalidateForOrg(orgId,'branches:list'))",
       ],
     },
   },
