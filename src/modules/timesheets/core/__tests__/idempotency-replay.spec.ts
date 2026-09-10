@@ -198,9 +198,20 @@ function makeCtx(
   } as unknown as ExecutionContext;
 }
 
-function request(key: string | undefined, body: unknown) {
+/**
+ * `params` is what Express hands the interceptor after routing, so the values
+ * are the raw path strings — `"11"`, not `11`. The fence hashes them as they
+ * arrive, and a test that passed numbers here would be hashing something no
+ * request ever produces.
+ */
+function request(
+  key: string | undefined,
+  body: unknown,
+  params: Record<string, string> = {},
+) {
   return {
     headers: key === undefined ? {} : { "idempotency-key": key },
+    params,
     body,
     user: USER,
   };
@@ -506,52 +517,101 @@ describe("TS-17 timesheets idempotency", () => {
   });
 
   /**
-   * A property of the fence worth having written down, because it is invisible
-   * from the route table: the request hash covers `{ commandName, body }` and
-   * nothing else. `POST /timesheets/timer/:timerId/stop` takes no body, so two
-   * stops of two *different* timers under one key hash identically and the
-   * second replays the first.
+   * The collision this file used to record as observed behaviour.
    *
-   * That is not a bug in the interceptor — a key is meant to identify one
-   * attempt at one command, and reusing it across two commands is the caller
-   * misusing it. It is recorded because the failure mode is silent and
-   * plausible: a client that mints one key per app session, rather than per
-   * attempt, stops one timer and is told it stopped the other.
+   * The request hash covered `{ commandName, body }` and nothing else.
+   * `POST /timesheets/timer/:timerId/stop` takes no body, so two stops of two
+   * *different* timers under one key hashed identically and the second replayed
+   * the first: timer 22 kept running and the caller was told it had stopped.
+   * The caveat is now an assertion, because the hash covers the route params
+   * too — see `IdempotencyInterceptor.hashRequest`.
+   *
+   * It was never a timesheets quirk. Sixty-nine fenced routes across the
+   * platform are param-carrying with no body and every one shared the defect:
+   * posting two AR invoices, approving two purchase orders, accepting two
+   * enterprise quotes. This route is simply the cheapest place to pin it.
+   *
+   * Reusing one key across two resources is still the caller misusing it. The
+   * change is in *which* answer that earns — a 422 that names the misuse rather
+   * than a 200 describing the wrong timer.
    */
-  it("hashes the body and not the route params, so one key spans two timers", async () => {
-    const { db } = makeFenceStore();
-    const stopped: number[] = [];
-    const timer = {
-      stopTimer: (_u: CurrentUserContext, timerId: number) => {
-        stopped.push(timerId);
-        return Promise.resolve({ timerId, status: "STOPPED" });
-      },
-    } as unknown as TimerService;
-    const controller = new TimerController(timer);
-    const interceptor = new IdempotencyInterceptor(new Reflector(), db);
-    const ctx = () =>
+  describe("one key, two timers", () => {
+    function stopFixture() {
+      const stopped: number[] = [];
+      const timer = {
+        stopTimer: (_u: CurrentUserContext, timerId: number) => {
+          stopped.push(timerId);
+          return Promise.resolve({ timerId, status: "STOPPED" });
+        },
+      } as unknown as TimerService;
+      return { controller: new TimerController(timer), stopped };
+    }
+
+    const stopCtx = (key: string, timerId: string) =>
       makeCtx(
         TimerController.prototype.stop,
         TimerController,
-        request("one-key-per-session", undefined),
+        request(key, undefined, { timerId }),
       );
 
-    const first = await firstValueFrom(
-      await interceptor.intercept(
-        ctx(),
-        callHandler(() => controller.stop(11, USER)),
-      ),
-    );
-    await settle();
-    const second = await firstValueFrom(
-      await interceptor.intercept(
-        ctx(),
-        callHandler(() => controller.stop(22, USER)),
-      ),
-    );
+    it("refuses the second timer instead of replaying the first", async () => {
+      const { db } = makeFenceStore();
+      const { controller, stopped } = stopFixture();
+      const interceptor = new IdempotencyInterceptor(new Reflector(), db);
 
-    expect(first).toEqual({ timerId: 11, status: "STOPPED" });
-    expect(second).toEqual({ timerId: 11, status: "STOPPED" });
-    expect(stopped).toEqual([11]);
+      const first = await firstValueFrom(
+        await interceptor.intercept(
+          stopCtx("one-key-per-session", "11"),
+          callHandler(() => controller.stop(11, USER)),
+        ),
+      );
+      await settle();
+
+      const second = interceptor.intercept(
+        stopCtx("one-key-per-session", "22"),
+        callHandler(() => controller.stop(22, USER)),
+      );
+
+      expect(first).toEqual({ timerId: 11, status: "STOPPED" });
+      await expect(second).rejects.toBeInstanceOf(UnprocessableEntityException);
+      /**
+       * The assertion that would have caught the original bug. A fence that
+       * answered `{ timerId: 11 }` to the second call looked plausible; what
+       * made it a bug is that timer 22 was never stopped — and the mirror of
+       * that is that timer 11 must not be stopped twice either.
+       */
+      expect(stopped).toEqual([11]);
+    });
+
+    /**
+     * The other half, and the reason this could not be fixed by hashing the URL
+     * blindly: a genuine retry is the same request to the same URL, so its
+     * params are identical to the original's and it must still replay. Without
+     * this case, an implementation that simply salted every hash with something
+     * unique would pass the test above while destroying the fence.
+     */
+    it("still replays a genuine retry of the same timer", async () => {
+      const { db, rows } = makeFenceStore();
+      const { controller, stopped } = stopFixture();
+      const interceptor = new IdempotencyInterceptor(new Reflector(), db);
+
+      const first = await firstValueFrom(
+        await interceptor.intercept(
+          stopCtx("retry-same-timer", "11"),
+          callHandler(() => controller.stop(11, USER)),
+        ),
+      );
+      await settle();
+
+      const retry = callHandler(() => controller.stop(11, USER));
+      const second = await firstValueFrom(
+        await interceptor.intercept(stopCtx("retry-same-timer", "11"), retry),
+      );
+
+      expect(second).toEqual(first);
+      expect(retry.handle).not.toHaveBeenCalled();
+      expect(stopped).toEqual([11]);
+      expect(rows).toHaveLength(1);
+    });
   });
 });

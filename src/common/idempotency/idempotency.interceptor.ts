@@ -65,6 +65,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
 
     const req = context.switchToHttp().getRequest<{
       headers: Record<string, unknown>;
+      params?: Record<string, unknown>;
       body?: unknown;
       user?: CurrentUserContext;
     }>();
@@ -103,9 +104,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
     if (!user?.orgId || !user.userId) return next.handle();
 
     const audience = user.sessionId?.startsWith("pat:") ? "pat" : "internal";
-    const requestHash = createHash("sha256")
-      .update(JSON.stringify({ commandName, body: req.body ?? null }))
-      .digest("hex");
+    const requestHash = this.hashRequest(commandName, req.params, req.body);
 
     const claim = await this.claim({
       orgId: user.orgId,
@@ -148,6 +147,52 @@ export class IdempotencyInterceptor implements NestInterceptor {
         },
       }),
     );
+  }
+
+  /**
+   * The identity of a command: its name, the resource it addresses, and its body.
+   *
+   * The route params are in here because without them the hash cannot tell two
+   * resources apart. `POST /timesheets/timer/:timerId/stop` carries no body, so
+   * under `{ commandName, body }` alone every stop of every timer hashed
+   * identically — a caller that reuses one key stops timer 11, then calls stop
+   * on timer 22 and is replayed the first response. Timer 22 keeps running and
+   * the caller is told it stopped. Sixty-nine fenced routes across the platform
+   * are param-carrying with no body and shared exactly that defect; posting two
+   * different AR invoices under one key had the same shape.
+   *
+   * Params can only ever narrow the hash, never widen it: a retry is the same
+   * request to the same URL, so its params are identical to the original's by
+   * construction. Nothing here relies on them being excluded — no two fenced
+   * routes share a command name across differing param shapes, so no
+   * cross-route dedupe is disturbed.
+   *
+   * Two details are load-bearing:
+   *
+   *   - **Keys are sorted.** `JSON.stringify` follows insertion order, and
+   *     Express builds `req.params` in the order the segments appear in the
+   *     path. Sorting means the hash depends on the params themselves rather
+   *     than on how the route happens to be spelled.
+   *   - **An empty params object is omitted entirely**, so a route with no
+   *     params hashes byte-identically to what it hashed before params were
+   *     considered at all. That is what keeps this change from invalidating
+   *     the live fences of the 83 param-free routes — see the spec, which
+   *     pins the format so the property cannot regress silently.
+   */
+  private hashRequest(
+    commandName: string,
+    params: Record<string, unknown> | undefined,
+    body: unknown,
+  ): string {
+    const keys = Object.keys(params ?? {}).sort();
+    const canonical: Record<string, unknown> = { commandName };
+    if (keys.length > 0) {
+      canonical.params = Object.fromEntries(
+        keys.map((k) => [k, String(params![k])]),
+      );
+    }
+    canonical.body = body ?? null;
+    return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
   }
 
   /**

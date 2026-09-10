@@ -23,8 +23,13 @@ export interface IdempotentOptions {
 /**
  * Marks a mutating handler as a sensitive command that must be replay-safe. Callers supply an
  * `Idempotency-Key` header; the first request executes and its response is stored, a completed
- * retry replays that response, a same-key different-body request is rejected (422), and a
+ * retry replays that response, a same-key different-request retry is rejected (422), and a
  * concurrent in-flight duplicate is rejected (409).
+ *
+ * "Same request" means the command name, the route params and the body together
+ * — so one key reused across two resources under the same route (stopping two
+ * different timers, posting two different invoices) is a 422 rather than a
+ * replay of the first. See `IdempotencyInterceptor.hashRequest`.
  *
  * With `{ required: false }` the header becomes optional: present, it is
  * honoured exactly as above; absent, the handler runs unfenced. See
