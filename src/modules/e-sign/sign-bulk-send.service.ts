@@ -3,6 +3,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { signBulkSendJobs, signBulkSendRows, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { SignAuditService } from "./sign-audit.service";
 import { SignSettingsService } from "./sign-settings.service";
 import { SignNotificationsService } from "./sign-notifications.service";
@@ -68,156 +69,226 @@ export class SignBulkSendService {
     });
   }
 
+  /**
+   * A bulk send completes what it can, and that is a restoration rather than a
+   * change of intent.
+   *
+   * `sign_bulk_send_jobs` carries `successCount` and `failedCount`, every row
+   * carries its own `status` and `errorMessage`, and `getErrorReport` exists to
+   * hand an operator the rows that failed so they can be fixed and re-run. That
+   * is the shape of an operation designed to finish partially — and the loop in
+   * `process` has always had a per-row `try`/`catch` that records one failure
+   * and moves on. What defeated it was the transaction boundary, not the
+   * design: every row lived in the one request transaction, so the first
+   * unhandled failure discarded the rows that `catch` had carefully recorded
+   * along with the envelopes they described.
+   *
+   * All-or-nothing was never really available. It would mean deleting the
+   * counters, the per-row status and the error report — and it could not be
+   * honoured regardless, because the invitation emails are the irreversible
+   * half of the operation and no transaction has ever covered them. Rolling
+   * back was not restoring the world; it was destroying the only record of what
+   * had already been sent.
+   */
   async createJob(orgId: string, userId: string, input: CreateBulkSendJobInput) {
-    const template = await this.templates.get(orgId, input.templateId);
-    if (template.status !== "published") throw new BadRequestException("Only published templates can be used for bulk send");
+    /*
+     * Validation and job creation stay atomic together: a job row without its
+     * rows, or rows without their job, is worse than no job at all. Everything
+     * past this point is per-row.
+     *
+     * It needs an explicit transaction because the route carries
+     * `@NoTenantTransaction()`, so there is no ambient context and `this.db`
+     * would otherwise reach the pool with no `app.current_org_id` GUC — denied
+     * by RLS rather than silently cross-tenant, but denied all the same.
+     */
+    const { job, mapped, roleName } = await runInNewTenantTransaction(this.db, orgId, async () => {
+      const template = await this.templates.get(orgId, input.templateId);
+      if (template.status !== "published") throw new BadRequestException("Only published templates can be used for bulk send");
 
-    const snapshot = parseTemplateSnapshot(template.templateJson);
-    const signingRoles = snapshot.roles.filter((r) => SIGNING_RECIPIENT_TYPES.includes(r.recipientType));
-    if (signingRoles.length !== 1) {
-      throw new BadRequestException("Bulk send requires a template with exactly one signer role (mail-merge style)");
-    }
+      const snapshot = parseTemplateSnapshot(template.templateJson);
+      const signingRoles = snapshot.roles.filter((r) => SIGNING_RECIPIENT_TYPES.includes(r.recipientType));
+      if (signingRoles.length !== 1) {
+        throw new BadRequestException("Bulk send requires a template with exactly one signer role (mail-merge style)");
+      }
 
-    const orgSettings = await this.settings.getOrCreate(orgId);
-    if (input.rows.length > orgSettings.bulkSendMaxRowsPerJob) {
-      throw new BadRequestException(`Bulk send is limited to ${orgSettings.bulkSendMaxRowsPerJob} rows per job for this organization`);
-    }
+      const orgSettings = await this.settings.getOrCreate(orgId);
+      if (input.rows.length > orgSettings.bulkSendMaxRowsPerJob) {
+        throw new BadRequestException(`Bulk send is limited to ${orgSettings.bulkSendMaxRowsPerJob} rows per job for this organization`);
+      }
 
-    const activeJobs = await this.db.query.signBulkSendJobs.findMany({
-      where: and(eq(signBulkSendJobs.orgId, orgId), inArray(signBulkSendJobs.status, [...ACTIVE_JOB_STATUSES])),
-    });
-    if (activeJobs.length >= orgSettings.bulkSendMaxActiveJobs) {
-      throw new BadRequestException(`This organization already has ${orgSettings.bulkSendMaxActiveJobs} active bulk send jobs`);
-    }
+      const activeJobs = await this.db.query.signBulkSendJobs.findMany({
+        where: and(eq(signBulkSendJobs.orgId, orgId), inArray(signBulkSendJobs.status, [...ACTIVE_JOB_STATUSES])),
+      });
+      if (activeJobs.length >= orgSettings.bulkSendMaxActiveJobs) {
+        throw new BadRequestException(`This organization already has ${orgSettings.bulkSendMaxActiveJobs} active bulk send jobs`);
+      }
 
-    const mapped = this.mapRows(input.rows, input.columnMapping);
+      const rows = this.mapRows(input.rows, input.columnMapping);
 
-    const [job] = await this.db
-      .insert(signBulkSendJobs)
-      .values({
+      const [created] = await this.db
+        .insert(signBulkSendJobs)
+        .values({
+          orgId,
+          templateId: input.templateId,
+          senderUserId: userId,
+          status: input.dryRun ? "validating" : "pending",
+          columnMappingJson: input.columnMapping,
+          totalCount: rows.length,
+        })
+        .returning();
+
+      await this.db.insert(signBulkSendRows).values(
+        rows.map((row) => ({
+          jobId: created.id,
+          rowNumber: row.rowNumber,
+          rawDataJson: row.raw,
+          status: row.error ? ("failed" as const) : ("pending" as const),
+          errorMessage: row.error,
+        })),
+      );
+
+      await this.audit.record({
         orgId,
-        templateId: input.templateId,
-        senderUserId: userId,
-        status: input.dryRun ? "validating" : "pending",
-        columnMappingJson: input.columnMapping,
-        totalCount: mapped.length,
-      })
-      .returning();
+        actorType: "internal_user",
+        actorUserId: userId,
+        eventType: "bulk_job_created",
+        eventMessage: `Bulk send job created from template "${template.name}" (${rows.length} rows${input.dryRun ? ", dry run" : ""})`,
+      });
 
-    await this.db.insert(signBulkSendRows).values(
-      mapped.map((row) => ({
-        jobId: job.id,
-        rowNumber: row.rowNumber,
-        rawDataJson: row.raw,
-        status: row.error ? ("failed" as const) : ("pending" as const),
-        errorMessage: row.error,
-      })),
-    );
-
-    await this.audit.record({
-      orgId,
-      actorType: "internal_user",
-      actorUserId: userId,
-      eventType: "bulk_job_created",
-      eventMessage: `Bulk send job created from template "${template.name}" (${mapped.length} rows${input.dryRun ? ", dry run" : ""})`,
+      return { job: created, mapped: rows, roleName: signingRoles[0].roleName };
     });
 
     if (input.dryRun) {
       const preview = mapped.slice(0, 5);
       const failedCount = mapped.filter((r) => r.error).length;
-      const [updated] = await this.db
-        .update(signBulkSendJobs)
-        .set({ status: "completed", completedAt: new Date(), successCount: mapped.length - failedCount, failedCount })
-        .where(eq(signBulkSendJobs.id, job.id))
-        .returning();
+      const updated = await runInNewTenantTransaction(this.db, orgId, async () => {
+        const [row] = await this.db
+          .update(signBulkSendJobs)
+          .set({ status: "completed", completedAt: new Date(), successCount: mapped.length - failedCount, failedCount })
+          .where(eq(signBulkSendJobs.id, job.id))
+          .returning();
+        return row;
+      });
       return { job: updated, preview, dryRun: true };
     }
 
-    /*
-     * Synchronous, inside the request's transaction — and the bound this used to
-     * cite as reassurance does not say what it sounds like.
-     *
-     * The comment here read "acceptable for an admin-triggered, bounded-size
-     * (maxRows) job". There is no `maxRows` anywhere in this module; the real
-     * bound is `.max(5000)` on `createBulkSendJobSchema.rows`. Five thousand
-     * envelopes is not a small synchronous job.
-     *
-     * MEASURED, because the shape of the failure is not obvious:
-     *  - `TenantContextInterceptor` wraps the whole request in ONE transaction
-     *    and this route does not carry `@NoTenantTransaction()` (17 others do).
-     *  - `dispatch.send` opens `this.db.transaction(...)`, which nested inside
-     *    that request transaction is a SAVEPOINT, not an independent commit. So
-     *    nothing here commits until the request itself commits, at the end.
-     *  - Each row still sends its invitation email over the network, after its
-     *    savepoint but inside the outer transaction, so the session sits
-     *    idle-in-transaction for the duration of every send.
-     *  - `idle_in_transaction_session_timeout` defaults to 60s and
-     *    `statement_timeout` to 30s (`pool.config.ts`).
-     *
-     * The asymmetry is the bug: the emails are irreversible and the rows are
-     * not. One slow provider, one gateway timeout, or simply enough rows, and
-     * the transaction is torn down — rolling back every envelope row while the
-     * invitations already sent stay in their recipients' inboxes, each linking
-     * to an envelope that no longer exists. It also holds a pooled connection
-     * for the whole run, which backend §4 forbids for exactly this reason.
-     *
-     * NOT FIXED HERE, deliberately. The fix is per-row transaction boundaries
-     * (`@NoTenantTransaction()` plus `runInNewTenantTransaction` per row, since
-     * opting out drops the tenant context entirely and every query would be
-     * denied under RLS). That converts a bulk send from all-or-nothing to
-     * partial-success, which is a product decision about what an operator sees
-     * when row 3,000 fails — not a refactor to make quietly. Raised rather than
-     * guessed.
-     */
-    await this.process(orgId, userId, job.id, input.templateId, signingRoles[0].roleName, mapped);
-    const finalJob = await this.getJob(orgId, job.id);
+    await this.process(orgId, userId, job.id, input.templateId, roleName, mapped);
+    const finalJob = await runInNewTenantTransaction(this.db, orgId, () => this.getJob(orgId, job.id));
     return { job: finalJob.job, dryRun: false };
   }
 
+  /**
+   * One transaction per row, and the row's outcome written in a second one.
+   *
+   * The second transaction is the point of the whole change, and it is easy to
+   * mistake for redundancy. On the failure path the row's own transaction has
+   * already rolled back by the time the error is caught, so a status write
+   * issued inside it would be discarded together with the work it exists to
+   * report — leaving a row that failed sitting at `pending` with no error
+   * message and a `failedCount` that never learned about it. When the failure
+   * was `idle_in_transaction_session_timeout` the session is gone outright, and
+   * only a fresh connection can record anything at all.
+   *
+   * What is deliberately NOT solved here: `dispatch.send` sends the invitation
+   * after its own inner block, so the email still goes out inside the row's
+   * transaction. That send is shared with the single-envelope route and moving
+   * it is a change to `dispatch.send`, not to this file. The blast radius is
+   * what changed — a pooled connection is held across one email rather than
+   * five thousand, and the 60s idle guard now scopes to a single row, so a hung
+   * provider costs that row and the job continues.
+   */
   private async process(orgId: string, userId: string, jobId: number, templateId: number, roleName: string, rows: MappedRow[]) {
-    await this.db.update(signBulkSendJobs).set({ status: "running" }).where(eq(signBulkSendJobs.id, jobId));
+    await runInNewTenantTransaction(this.db, orgId, () =>
+      this.db.update(signBulkSendJobs).set({ status: "running" }).where(eq(signBulkSendJobs.id, jobId)),
+    );
 
     let successCount = 0;
     let failedCount = 0;
 
-    for (const row of rows) {
-      if (row.error) {
-        failedCount++;
-        continue;
-      }
-      try {
-        const envelope = await this.templates.instantiate(orgId, userId, templateId, {
-          recipients: [{ roleName, name: row.name!, email: row.email, phone: row.phone }],
+    try {
+      for (const row of rows) {
+        if (row.error) {
+          failedCount++;
+          continue;
+        }
+
+        /*
+         * `templates.instantiate` and `envelopes.send` both reach `this.db`,
+         * which the tenant-aware proxy routes into whichever transaction is
+         * ambient — so this one covers the envelope, its recipients and the
+         * outbox row `dispatch.send` writes, and commits them before the next
+         * row begins.
+         */
+        let envelopeId: number | null = null;
+        let failure: string | null = null;
+        try {
+          envelopeId = await runInNewTenantTransaction(this.db, orgId, async () => {
+            const envelope = await this.templates.instantiate(orgId, userId, templateId, {
+              recipients: [{ roleName, name: row.name!, email: row.email, phone: row.phone }],
+            });
+            await this.envelopes.send(orgId, envelope.id, { orgId, userId });
+            return envelope.id;
+          });
+        } catch (error) {
+          failure = error instanceof Error ? error.message : "Failed to create envelope";
+        }
+
+        await runInNewTenantTransaction(this.db, orgId, async () => {
+          const patch =
+            failure === null
+              ? { status: "success" as const, envelopeId, updatedAt: new Date() }
+              : { status: "failed" as const, errorMessage: failure, updatedAt: new Date() };
+          await this.db
+            .update(signBulkSendRows)
+            .set(patch)
+            .where(and(eq(signBulkSendRows.jobId, jobId), eq(signBulkSendRows.rowNumber, row.rowNumber)));
         });
-        await this.envelopes.send(orgId, envelope.id, { orgId, userId });
-        await this.db
-          .update(signBulkSendRows)
-          .set({ status: "success", envelopeId: envelope.id, updatedAt: new Date() })
-          .where(and(eq(signBulkSendRows.jobId, jobId), eq(signBulkSendRows.rowNumber, row.rowNumber)));
-        successCount++;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to create envelope";
-        await this.db
-          .update(signBulkSendRows)
-          .set({ status: "failed", errorMessage: message, updatedAt: new Date() })
-          .where(and(eq(signBulkSendRows.jobId, jobId), eq(signBulkSendRows.rowNumber, row.rowNumber)));
-        failedCount++;
+
+        if (failure === null) successCount++;
+        else failedCount++;
       }
+    } catch (error) {
+      /*
+       * Partial success needs a terminal state for a run that did not finish.
+       * Nothing rolls the job row back any more, so a throw escaping here would
+       * leave it `running` for ever — and `running` is one of
+       * `ACTIVE_JOB_STATUSES`, so it would also hold one of the organisation's
+       * active-job slots permanently, refusing later jobs. `failed` has been in
+       * `signBulkJobStatusEnum` from the start with nothing to set it; this is
+       * the case it was for. The counts are written as they actually stand, so
+       * the rows that did send are still reported as sent.
+       */
+      await runInNewTenantTransaction(this.db, orgId, () =>
+        this.db
+          .update(signBulkSendJobs)
+          .set({ status: "failed", completedAt: new Date(), successCount, failedCount })
+          .where(eq(signBulkSendJobs.id, jobId)),
+      );
+      throw error;
     }
 
-    await this.db
-      .update(signBulkSendJobs)
-      .set({ status: "completed", completedAt: new Date(), successCount, failedCount })
-      .where(eq(signBulkSendJobs.id, jobId));
+    await runInNewTenantTransaction(this.db, orgId, async () => {
+      await this.db
+        .update(signBulkSendJobs)
+        .set({ status: "completed", completedAt: new Date(), successCount, failedCount })
+        .where(eq(signBulkSendJobs.id, jobId));
 
-    await this.audit.record({
-      orgId,
-      actorType: "system",
-      eventType: "bulk_job_completed",
-      eventMessage: `Bulk send job completed: ${successCount} sent, ${failedCount} failed`,
+      await this.audit.record({
+        orgId,
+        actorType: "system",
+        eventType: "bulk_job_completed",
+        eventMessage: `Bulk send job completed: ${successCount} sent, ${failedCount} failed`,
+      });
     });
 
-    const sender = await this.db.query.users.findFirst({ where: eq(users.id, userId) });
+    /*
+     * The completion email is a network call and the run is over, so it is sent
+     * outside any transaction. The sender is resolved inside one first: with no
+     * ambient context `this.db` reaches the pool with no tenant GUC.
+     */
+    const sender = await runInNewTenantTransaction(this.db, orgId, () =>
+      this.db.query.users.findFirst({ where: eq(users.id, userId) }),
+    );
     if (sender?.email) {
       await this.notifications.sendBulkJobCompleted(sender.email, sender.name ?? "there", jobId, rows.length, successCount, failedCount);
     }
