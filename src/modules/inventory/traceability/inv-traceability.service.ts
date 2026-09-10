@@ -111,7 +111,43 @@ export class InvTraceabilityService {
     return { items, total: countRows[0]?.total ?? 0, page, totalPages: Math.ceil((countRows[0]?.total ?? 0) / limit) };
   }
 
-  async getLotDetail(orgId: string, lotId: number) {
+  /**
+   * The gate `listLots` has had since INV-109 and the two methods below it did not.
+   *
+   * A lot carries no warehouse or location column of its own; it is attributable
+   * through the stock it holds. `listLots` encodes that and says so at length --
+   * a lot with stock in a warehouse you hold is yours, a lot with stock nowhere
+   * is attributable to none and stays hidden. This is that same predicate, so
+   * the detail and its aggregate agree rather than each inventing a rule.
+   *
+   * 404 rather than 403: a 403 on a lot number the caller may not see confirms
+   * the lot exists, which is enough to probe another building's inventory.
+   */
+  private async requireLot(orgId: string, userId: string, lotId: number): Promise<void> {
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+    if (scope.unrestricted) return;
+
+    const [visible] = await this.db
+      .select({ id: invLots.id })
+      .from(invLots)
+      .where(and(
+        eq(invLots.id, lotId),
+        eq(invLots.orgId, orgId),
+        sql`EXISTS (
+          SELECT 1 FROM inv_stock_levels sl
+          WHERE sl.org_id = ${orgId}
+            AND sl.lot_id = ${invLots.id}
+            AND ${scope.location(sql`sl.location_id`)}
+        )`,
+      ))
+      .limit(1);
+    if (!visible) throw new NotFoundException("Lot not found");
+  }
+
+  async getLotDetail(orgId: string, userId: string, lotId: number) {
+    await this.requireLot(orgId, userId, lotId);
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+
     const lot = await this.db.query.invLots.findFirst({
       where: and(eq(invLots.id, lotId), eq(invLots.orgId, orgId)),
       with: { productVariant: { with: { product: true } } },
@@ -133,9 +169,25 @@ export class InvTraceabilityService {
         .from(invStockLevels)
         .innerJoin(invLocations, eq(invStockLevels.locationId, invLocations.id))
         .innerJoin(invWarehouses, eq(invLocations.warehouseId, invWarehouses.id))
-        .where(and(eq(invStockLevels.lotId, lotId), eq(invStockLevels.orgId, orgId))),
+        /*
+          Scoped a second time, and not redundantly. The gate above decides
+          whether the LOT is visible -- it is, as soon as any of its stock is in
+          a warehouse the caller holds. This decides how much of the lot they
+          see, and without it a single pallet in Pune would hand over the
+          quantities, locations and warehouse NAMES of the same lot in every
+          other building. Same deny-by-default direction as the list.
+        */
+        .where(and(
+          eq(invStockLevels.lotId, lotId),
+          eq(invStockLevels.orgId, orgId),
+          scope.location(sql`${invStockLevels.locationId}`),
+        )),
       this.db.query.invStockTransactions.findMany({
-        where: and(eq(invStockTransactions.lotId, lotId), eq(invStockTransactions.orgId, orgId)),
+        where: and(
+          eq(invStockTransactions.lotId, lotId),
+          eq(invStockTransactions.orgId, orgId),
+          scope.location(sql`${invStockTransactions.locationId}`),
+        ),
         orderBy: [desc(invStockTransactions.createdAt)],
         limit: 50,
         with: { location: { columns: { id: true, name: true, code: true } } },
@@ -145,7 +197,18 @@ export class InvTraceabilityService {
     return { lot, stockByLocation, movements };
   }
 
-  async updateLotStatus(orgId: string, lotId: number, body: UpdateLotStatusInput) {
+  /**
+   * Quarantining and releasing a lot, which anyone in the organisation could do
+   * to any building's stock.
+   *
+   * This method took no caller id at all, so it could not scope whatever the
+   * controller intended -- and the route behind it is `inventory:stock:adjust`,
+   * held by every operator. Releasing a lot somebody else quarantined is the
+   * sharp direction: the hold disappears, the stock becomes pickable again, and
+   * the people who raised it are not told.
+   */
+  async updateLotStatus(orgId: string, userId: string, lotId: number, body: UpdateLotStatusInput) {
+    await this.requireLot(orgId, userId, lotId);
     const lot = await this.db.query.invLots.findFirst({
       where: and(eq(invLots.id, lotId), eq(invLots.orgId, orgId)),
     });

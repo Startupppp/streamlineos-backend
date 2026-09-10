@@ -66,7 +66,7 @@ export class InvTraceabilityController {
     @Param("lotId", ParseIntPipe) lotId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.traceability.getLotDetail(u.orgId, lotId);
+    return this.traceability.getLotDetail(u.orgId, u.userId, lotId);
   }
 
   @Patch("lots/:lotId/status")
@@ -78,7 +78,7 @@ export class InvTraceabilityController {
     @Body() body: UpdateLotStatusInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.traceability.updateLotStatus(u.orgId, lotId, body);
+    return this.traceability.updateLotStatus(u.orgId, u.userId, lotId, body);
   }
 
   @Get("serials")

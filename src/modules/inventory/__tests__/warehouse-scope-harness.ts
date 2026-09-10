@@ -98,6 +98,8 @@ const RQB_TABLES = [
   "invGrns",
   "invStockReservations",
   "invStockAdjustments",
+  "invLots",
+  "invStockTransactions",
 ] as const;
 
 /**
