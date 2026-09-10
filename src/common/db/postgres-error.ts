@@ -8,6 +8,13 @@ export type PostgresErrorDetails = {
  * SQLSTATE and constraint name on `.cause`. Walk the bounded cause chain so
  * domain services can consistently translate database constraints into safe,
  * actionable HTTP errors.
+ *
+ * The constraint name arrives under one of two spellings, so read both: this
+ * repo drives postgres-js, which calls the field `constraint_name`
+ * (`node_modules/postgres/src/connection.js:46`, error field code 110 — 'n'),
+ * while `constraint` is node-postgres's name for it. Reading only `constraint`
+ * meant every caller comparing a constraint name got `undefined` on every real
+ * failure.
  */
 export function getPostgresErrorDetails(
   error: unknown,
@@ -29,14 +36,16 @@ export function getPostgresErrorDetails(
     const candidate = current as {
       code?: unknown;
       constraint?: unknown;
+      constraint_name?: unknown;
       cause?: unknown;
     };
 
     if (!code && typeof candidate.code === "string") {
       code = candidate.code;
     }
-    if (!constraint && typeof candidate.constraint === "string") {
-      constraint = candidate.constraint;
+    if (!constraint) {
+      const named = candidate.constraint ?? candidate.constraint_name;
+      if (typeof named === "string") constraint = named;
     }
     if (code && constraint) break;
     current = candidate.cause;
