@@ -43,12 +43,29 @@ export const ACCOUNTING_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Manage all chart of accounts settings and archiving",
   },
+  /**
+   * NOT `scopable`, deliberately. The only column that could narrow a journal
+   * is `gl_journals.posted_by_user_id`, and it is not an owner:
+   *
+   *  - Most of the 15 `gl_journal_source` values are machine-posted —
+   *    `fx_reval`, `payroll_run`, `bank_fee`, `billing_invoice`,
+   *    `withholding`. "Posted by" is whoever clicked a button in another
+   *    module, or nobody.
+   *  - It is nullable and `ON DELETE SET NULL`, so journals would drop out of
+   *    a narrowed read the day the person who posted them left.
+   *  - The aggregates over the same rows are not scopable and could not be:
+   *    trial balance (`accounting:reports:read`) and account ledger
+   *    (`accounting:general-ledger:read`). Narrowing the detail while the
+   *    totals stay whole restricts nothing — it only stops the two agreeing.
+   *
+   * A journal is the audit record. Offering `own` here would promise a
+   * confidentiality boundary that double-entry does not have.
+   */
   {
     name: "accounting:journal:read",
     resource: "accounting:journal",
     action: "read",
     description: "View journal entries",
-    scopable: true,
   },
   {
     name: "accounting:journal:create",
@@ -122,12 +139,29 @@ export const ACCOUNTING_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Create and manage tracking dimensions",
   },
+  /**
+   * NOT `scopable`, deliberately. A receivable has no per-person owner, and
+   * both columns that look like one are worse than no restriction:
+   *
+   *  - `ar_documents.created_by` is who KEYED the invoice, not who owns it.
+   *    Narrowing to it empties the ledger for the AR manager who keyed none,
+   *    and it is nullable / `ON DELETE SET NULL` besides.
+   *  - `gl_parties` — the customer — has no `owner_user_id` at all. It reaches
+   *    CRM only through the `external_refs` jsonb, deliberately ("a pointer,
+   *    never a copy"), because accounting must work with CRM absent (A12).
+   *    Scoping through the CRM account owner the way `lead-party-reader.ts`
+   *    does would return nothing for every accounting-native party.
+   *
+   * `GET ar/aging` and `GET ar/open-items` are gated on this same key and are
+   * BALANCE reports. `ArAgingService` already declines to assert `balanced`
+   * once a query is filtered; an invisible RBAC filter would leave that
+   * assertion standing over a subset and make it a lie.
+   */
   {
     name: "accounting:receivables:read",
     resource: "accounting:receivables",
     action: "read",
     description: "View accounts receivable invoices and balances",
-    scopable: true,
   },
   {
     name: "accounting:receivables:manage",
@@ -183,12 +217,17 @@ export const ACCOUNTING_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Manage collections actions and escalations",
   },
+  /**
+   * NOT `scopable`, deliberately — the payables half of the reasoning on
+   * `accounting:receivables:read` above. `ap_documents.created_by` is the
+   * clerk who entered the bill, and the vendor (`gl_parties`) carries no
+   * owner. Nothing on either row answers "whose bill is this".
+   */
   {
     name: "accounting:payables:read",
     resource: "accounting:payables",
     action: "read",
     description: "View accounts payable bills and balances",
-    scopable: true,
   },
   {
     name: "accounting:payables:manage",
@@ -386,12 +425,25 @@ export const ACCOUNTING_PERMISSIONS: Permission[] = [
     action: "approve",
     description: "Approve reimbursement requests",
   },
+  /**
+   * NOT `scopable`, and it has no route of its own.
+   *
+   * The approval instances live in HR's workflow tables. Its sibling
+   * `accounting:approvals:decide` is used by `hr-workflow-engine.service.ts`
+   * purely as a ROLE MARKER: the `finance_role` assignee rule resolves it
+   * through `membersWithPermission` to find who counts as finance. This read
+   * half has no surface. If one is ever built it will read
+   * `hr_workflow_instances`, and the "approvals assigned to me" narrowing
+   * belongs there, on HR's key, against HR's assignee column — not here.
+   *
+   * Kept rather than retired because organisations may already hold it; that
+   * is a separate decision from whether it promises a scope.
+   */
   {
     name: "accounting:approvals:read",
     resource: "accounting:approvals",
     action: "read",
     description: "View accounting approval workflows",
-    scopable: true,
   },
   {
     name: "accounting:approvals:decide",
