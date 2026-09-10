@@ -16,6 +16,10 @@ import { DealsService } from "../../deals/deals.service";
 import { ActivitiesService } from "../../activities/activities.service";
 import { ReportingService } from "../../reporting/reporting.service";
 import { CrmMcpSettingsService } from "./crm-mcp-settings.service";
+import { listPartiesQuerySchema } from "../../party/dto/party.schemas";
+import { listDealsSchema } from "../../deals/dto/deals.schemas";
+import { timelineQuerySchema } from "../../activities/dto/activity.schemas";
+import { asQueryDescription, queryDescriptionSchema } from "../../reporting/dto/reporting.schemas";
 
 export interface McpToolDefinition {
   name: string;
@@ -55,6 +59,34 @@ export type McpContext = CurrentUserContext;
  * - Access to payroll, inventory, or accounting is impossible through this server.
  * - A caller without the required permission is refused with 403 Forbidden.
  */
+/**
+ * What each report source returns to an agent.
+ *
+ * Fixed per source and named from `REPORTING_REGISTRY`, the closed set the
+ * compiler resolves against — a name absent from it is refused at compile time
+ * rather than becoming a column. An agent chooses the source; it does not name
+ * columns, because inventing a field name here is exactly how the previous
+ * version failed: it asked for `["id", "name", "value"]` on every source, and
+ * not one of those three is a field of any of them.
+ */
+const MCP_REPORT_PROJECTIONS: Record<string, { kind: "field"; field: string }[]> = {
+  parties: [
+    { kind: "field", field: "name" },
+    { kind: "field", field: "party_type" },
+    { kind: "field", field: "status" },
+  ],
+  deals: [
+    { kind: "field", field: "name" },
+    { kind: "field", field: "stage" },
+    { kind: "field", field: "value_minor" },
+  ],
+  activities: [
+    { kind: "field", field: "kind" },
+    { kind: "field", field: "subject" },
+    { kind: "field", field: "occurred_at" },
+  ],
+};
+
 @Injectable()
 export class CrmMcpService {
   private readonly logger = new Logger("CrmMcp");
@@ -77,10 +109,9 @@ export class CrmMcpService {
       inputSchema: {
         type: "object",
         properties: {
-          search: { type: "string", description: "Search query by name, email or domain" },
+          search: { type: "string", description: "Search by name, legal name or email" },
           page: { type: "number", description: "Page number (default 1)" },
           limit: { type: "number", description: "Page size (default 20, max 100)" },
-          standing: { type: "string", description: "Filter by standing (lead, contact, customer)" },
         },
       },
       requiredPermission: "party:parties:view",
@@ -103,9 +134,9 @@ export class CrmMcpService {
       inputSchema: {
         type: "object",
         properties: {
-          pipelineId: { type: "number", description: "Pipeline ID filter" },
-          stageId: { type: "number", description: "Stage ID filter" },
-          page: { type: "number", description: "Page number" },
+          stage: { type: "string", description: "Filter by pipeline stage" },
+          assignedToId: { type: "string", description: "Filter to one owner's deals" },
+          offset: { type: "number", description: "Rows to skip (default 0)" },
           limit: { type: "number", description: "Items per page (max 100)" },
         },
       },
@@ -125,13 +156,16 @@ export class CrmMcpService {
     },
     {
       name: "crm_list_activities",
-      description: "List recent CRM activities (calls, emails, meetings, notes) attached to parties or deals.",
+      description:
+        "Read the activity timeline (calls, emails, meetings, notes) for one party or one deal. An anchor is required.",
       inputSchema: {
         type: "object",
         properties: {
-          dealId: { type: "number", description: "Filter by deal ID" },
-          page: { type: "number", description: "Page number" },
-          limit: { type: "number", description: "Items per page (max 100)" },
+          partyId: { type: "string", description: "Anchor: the party whose timeline to read" },
+          dealId: { type: "number", description: "Anchor: the deal whose timeline to read" },
+          kind: { type: "string", description: "Filter by activity kind" },
+          cursor: { type: "string", description: "Opaque cursor from the previous page" },
+          limit: { type: "number", description: "Items per page (default 25, max 100)" },
         },
       },
       requiredPermission: "crm:activities:view",
@@ -142,8 +176,8 @@ export class CrmMcpService {
       inputSchema: {
         type: "object",
         properties: {
-          reportKey: { type: "string", description: "Allowlisted report key" },
-          source: { type: "string", description: "Data source (parties, deals, activities)" },
+          source: { type: "string", description: "Data source: parties, deals or activities" },
+          limit: { type: "number", description: "Row cap (default 50, max 1000)" },
         },
         required: ["source"],
       },
@@ -263,123 +297,143 @@ export class CrmMcpService {
     const args = call.arguments || {};
     let result: unknown;
 
-    const anyPartyService = this.partyService as unknown as Record<string, Function>;
-    const anyDealsService = this.dealsService as unknown as Record<string, Function>;
-    const anyActivitiesService = this.activitiesService as unknown as Record<string, Function>;
-    const anyReportingService = this.reportingService as unknown as Record<string, Function>;
-
+    /*
+     * The four services are called directly, with their real types. That is the
+     * fix here, not a tidy-up.
+     *
+     * This block used to cast each one to `Record<string, Function>` and probe
+     * it — `if (typeof svc.list === "function") … else if (typeof svc.listParties
+     * === "function")`. No service has a `list`, a `findOne` or a `preview`, so
+     * every first branch was dead and only the fallbacks ever ran; and because
+     * the cast erased the signatures, nothing checked what the fallbacks were
+     * handed. Every handler disagreed with the service it called, and the file
+     * compiled clean:
+     *
+     *   crm_list_parties     sent `query`; the schema and the service read
+     *                        `search`, so an agent's search term was dropped and
+     *                        every call returned page one of everything.
+     *   crm_list_deals       sent `page`, `pipelineId` and `stageId`; the input
+     *                        has `offset` and `stage` and no notion of a
+     *                        pipeline — three of its four advertised filters did
+     *                        nothing, and paging was impossible.
+     *   crm_list_activities  sent `page` to a keyset timeline that pages on
+     *                        `cursor`, and could pass no anchor at all, which
+     *                        falls through to `subject_id = ''` and matches
+     *                        nothing.
+     *   crm_get_party        did `String(args.partyId)` and then tested the
+     *                        result for emptiness. `String(undefined)` is
+     *                        `"undefined"`, which is truthy, so a missing id was
+     *                        looked up as that literal string instead of refused.
+     *   crm_run_report       sent `fields` where the description takes `select`,
+     *                        naming fields that are in no source's registry, and
+     *                        omitted the required `limit` — three independent
+     *                        errors under one `as any`. It answered 400 to every
+     *                        call ever made to it.
+     *
+     * Arguments are parsed by each module's own Zod schema rather than re-coerced
+     * by hand here, which is what stops the two surfaces drifting apart again:
+     * the bounds an agent gets are the bounds the HTTP route enforces, including
+     * the page cap and the timeline's "a timeline is read for a party, a deal or
+     * a subject" rule. A ZodError raised here maps to 400 in AllExceptionsFilter,
+     * so a malformed tool call is refused rather than quietly reinterpreted.
+     */
     switch (tool.name) {
       case "crm_list_parties": {
-        const query = {
-          page: typeof args.page === "number" ? args.page : 1,
-          limit: Math.min(typeof args.limit === "number" ? args.limit : 20, 100),
-          query: typeof args.search === "string" ? args.search : undefined,
-        };
-        if (typeof anyPartyService.list === "function") {
-          result = await anyPartyService.list(context.orgId, query);
-        } else if (typeof anyPartyService.listParties === "function") {
-          result = await anyPartyService.listParties(context.orgId, query);
-        }
+        const query = listPartiesQuerySchema.parse({
+          page: args.page ?? 1,
+          limit: args.limit ?? 20,
+          ...(args.search === undefined ? {} : { search: args.search }),
+        });
+        result = await this.partyService.listParties(context.orgId, query);
         break;
       }
 
       case "crm_get_party": {
-        const partyId = String(args.partyId);
+        const partyId = typeof args.partyId === "string" ? args.partyId.trim() : "";
         if (!partyId) throw new BadRequestException("partyId is required");
-        if (typeof anyPartyService.findOne === "function") {
-          result = await anyPartyService.findOne(context.orgId, partyId);
-        } else if (typeof anyPartyService.getParty === "function") {
-          result = await anyPartyService.getParty(context.orgId, partyId);
-        }
+        result = await this.partyService.getParty(context.orgId, partyId);
         break;
       }
 
       case "crm_list_deals": {
-        const query = {
-          page: typeof args.page === "number" ? args.page : 1,
-          limit: Math.min(typeof args.limit === "number" ? args.limit : 20, 100),
-          pipelineId: typeof args.pipelineId === "number" ? args.pipelineId : undefined,
-          stageId: typeof args.stageId === "number" ? args.stageId : undefined,
-        };
-        if (typeof anyDealsService.list === "function") {
-          result = await anyDealsService.list(context.orgId, query);
-        } else if (typeof anyDealsService.listDeals === "function") {
-          /*
-           * THIS ONE WAS NOT HARMLESS. `listDeals` has taken a real
-           * `DataScope` all along, and "global" is not a member of it —
-           * `applyScope` falls through to its exhaustive default and returns
-           * `sql\`false\``, so `crm_list_deals` has been answering every agent
-           * with an EMPTY LIST. Silently: an empty result from a deals query is
-           * indistinguishable from an organisation that has no deals.
-           *
-           * Found only because the sibling `crm_get_deal` passed the same string
-           * to a method that ignored it, and fixing that made this one visible.
-           */
-          result = await anyDealsService.listDeals(
-            context.orgId,
-            context.userId,
-            query,
-            decision.scope,
-          );
-        }
+        /*
+         * `decision.scope`, not the literal string "global" this passed before.
+         *
+         * "global" is not a member of `DataScope`, so `applyScope` fell through
+         * to its exhaustive default and returned sql`false`: this tool answered
+         * every agent with an EMPTY LIST, silently, because an empty deals result
+         * is indistinguishable from an organisation that has no deals.
+         */
+        const query = listDealsSchema.parse({
+          limit: args.limit ?? 20,
+          ...(args.offset === undefined ? {} : { offset: args.offset }),
+          ...(args.stage === undefined ? {} : { stage: args.stage }),
+          ...(args.assignedToId === undefined ? {} : { assignedToId: args.assignedToId }),
+        });
+        result = await this.dealsService.listDeals(
+          context.orgId,
+          context.userId,
+          query,
+          decision.scope,
+        );
         break;
       }
 
       case "crm_get_deal": {
+        /*
+         * `authorize` above resolves the caller's DataScope and clamps it to a
+         * token's ceiling, and this class promises "the exact same permission
+         * resolution via AccessService" as HTTP. Passing anything else throws
+         * that promise away.
+         */
         const dealId = Number(args.dealId);
-        if (Number.isNaN(dealId)) throw new BadRequestException("Valid dealId is required");
-        if (typeof anyDealsService.findOne === "function") {
-          result = await anyDealsService.findOne(context.orgId, dealId);
-        } else if (typeof anyDealsService.getDeal === "function") {
-          /*
-           * `decision.scope`, not the string "global" this passed before.
-           *
-           * `authorize` above resolves the caller's DataScope and clamps it to a
-           * token's ceiling, and the docblock on this class promises "the exact
-           * same permission resolution via AccessService" as HTTP. The handler
-           * then threw that away and passed a value that is not a `DataScope` at
-           * all — harmless only because `getDeal` took two arguments and ignored
-           * it, which is to say the scope had never reached the query on either
-           * path. Now that the HTTP path honours it, so does this one.
-           */
-          result = await anyDealsService.getDeal(
-            context.orgId,
-            context.userId,
-            dealId,
-            decision.scope,
-          );
-        }
+        if (!Number.isInteger(dealId) || dealId < 1)
+          throw new BadRequestException("Valid dealId is required");
+        result = await this.dealsService.getDeal(
+          context.orgId,
+          context.userId,
+          dealId,
+          decision.scope,
+        );
         break;
       }
 
       case "crm_list_activities": {
-        const query = {
-          page: typeof args.page === "number" ? args.page : 1,
-          limit: Math.min(typeof args.limit === "number" ? args.limit : 20, 100),
-          dealId: typeof args.dealId === "number" ? args.dealId : undefined,
-        };
-        if (typeof anyActivitiesService.list === "function") {
-          result = await anyActivitiesService.list(context.orgId, query);
-        } else if (typeof anyActivitiesService.timeline === "function") {
-          result = await anyActivitiesService.timeline(context.orgId, query);
-        }
+        /*
+         * The anchor is required, and that is the timeline's own rule rather
+         * than one invented here — `timelineQuerySchema` refines on it. Without
+         * one the service's anchor falls to `subject_id = ''`, which matches
+         * nothing, so an unanchored call returned an empty page that reads as
+         * "this deal has no activity". Refusing says what actually happened.
+         */
+        const query = timelineQuerySchema.parse({
+          limit: args.limit ?? 25,
+          ...(args.partyId === undefined ? {} : { partyId: args.partyId }),
+          ...(args.dealId === undefined ? {} : { dealId: args.dealId }),
+          ...(args.kind === undefined ? {} : { kind: args.kind }),
+          ...(args.cursor === undefined ? {} : { cursor: args.cursor }),
+        });
+        result = await this.activitiesService.timeline(context.orgId, query);
         break;
       }
 
       case "crm_run_report": {
-        const source = String(args.source || "deals");
-        if (typeof anyReportingService.preview === "function") {
-          result = await anyReportingService.preview(context.orgId, context.userId, {
-            source,
-            fields: ["id", "name", "value"],
-            limit: 50,
-          });
-        } else if (typeof anyReportingService.runAdHoc === "function") {
-          result = await anyReportingService.runAdHoc(context.orgId, context.userId, {
-            source,
-            fields: ["id", "name", "value"],
-          } as any);
-        }
+        const source = typeof args.source === "string" ? args.source : "";
+        const select = MCP_REPORT_PROJECTIONS[source];
+        if (!select)
+          throw new BadRequestException(
+            `Unknown report source '${source}'. Valid sources: ${Object.keys(MCP_REPORT_PROJECTIONS).join(", ")}.`,
+          );
+        const query = queryDescriptionSchema.parse({
+          source,
+          select,
+          limit: args.limit ?? 50,
+        });
+        result = await this.reportingService.runAdHoc(
+          context.orgId,
+          context.userId,
+          asQueryDescription(query),
+        );
         break;
       }
 

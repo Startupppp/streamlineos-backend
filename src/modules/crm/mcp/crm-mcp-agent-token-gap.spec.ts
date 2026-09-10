@@ -137,8 +137,13 @@ describe("CRM MCP agent token, issuer to guard", () => {
     tokenHash: string;
   } | null = null;
 
-  const deals = { list: jest.fn(), findOne: jest.fn() };
-  const parties = { list: jest.fn(), findOne: jest.fn() };
+  /*
+   * The real method names. These were `list` and `findOne`, which no service
+   * has — the handler probed for them, never found them, and fell through to
+   * the methods below with arguments nothing type-checked.
+   */
+  const deals = { listDeals: jest.fn(), getDeal: jest.fn() };
+  const parties = { listParties: jest.fn(), getParty: jest.fn() };
 
   beforeAll(async () => {
     /**
@@ -288,8 +293,8 @@ describe("CRM MCP agent token, issuer to guard", () => {
         },
         { provide: PartyService, useValue: parties },
         { provide: DealsService, useValue: deals },
-        { provide: ActivitiesService, useValue: { list: jest.fn() } },
-        { provide: ReportingService, useValue: { preview: jest.fn() } },
+        { provide: ActivitiesService, useValue: { timeline: jest.fn() } },
+        { provide: ReportingService, useValue: { runAdHoc: jest.fn() } },
         /**
          * Agent access is on unless a test says otherwise.
          *
@@ -318,8 +323,8 @@ describe("CRM MCP agent token, issuer to guard", () => {
   });
 
   beforeEach(() => {
-    deals.list.mockResolvedValue({ items: [{ id: 1, name: "Big Deal" }] });
-    parties.list.mockResolvedValue({ data: [{ id: "p1" }] });
+    deals.listDeals.mockResolvedValue({ items: [{ id: 1, name: "Big Deal" }] });
+    parties.listParties.mockResolvedValue({ data: [{ id: "p1" }] });
   });
 
   function withToken(method: "get" | "post", path: string) {
@@ -356,7 +361,7 @@ describe("CRM MCP agent token, issuer to guard", () => {
       .send({ name: "crm_list_deals", arguments: { limit: 5 } })
       .expect(201);
 
-    expect(deals.list).toHaveBeenCalled();
+    expect(deals.listDeals).toHaveBeenCalled();
     expect(res.body.content[0].text).toContain("Big Deal");
   });
 
@@ -367,7 +372,7 @@ describe("CRM MCP agent token, issuer to guard", () => {
       .send({ name: "crm_list_parties", arguments: {} })
       .expect(403);
 
-    expect(parties.list).not.toHaveBeenCalled();
+    expect(parties.listParties).not.toHaveBeenCalled();
   });
 
   it("refuses with 403 rather than 402, so the client is not told to buy a module", async () => {
