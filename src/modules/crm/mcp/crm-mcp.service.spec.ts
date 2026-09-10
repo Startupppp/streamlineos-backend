@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { Test, TestingModule } from "@nestjs/testing";
 import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { CrmMcpService, type McpContext } from "./crm-mcp.service";
@@ -653,5 +655,63 @@ describe("CrmMcpService", () => {
       expect(Object.getOwnPropertyNames(ActivitiesService.prototype)).not.toContain("list");
       expect(Object.getOwnPropertyNames(ReportingService.prototype)).not.toContain("preview");
     });
+  });
+  /**
+   * What a tool advertises must be something it reads.
+   *
+   * `crm_list_parties` offered agents a `standing` filter and `crm_run_report` a
+   * `reportKey`; nothing read either. `crm_list_deals` offered `pipelineId` and
+   * `stageId` against an input type that has neither. A caller who filters a
+   * list and receives the unfiltered list back cannot tell that it happened —
+   * which makes an advertised-and-ignored parameter worse than a missing one.
+   *
+   * Read off the source rather than by calling, because a handler that ignores a
+   * property cannot be made to reveal that by any argument you pass it.
+   */
+  describe("every advertised input is read by its handler", () => {
+    const source = readFileSync(join(__dirname, "crm-mcp.service.ts"), "utf8");
+
+    /*
+     * Comments are stripped first, and that is not fastidiousness. The handlers
+     * carry a docblock naming `args.partyId`, `page` and `pipelineId` while
+     * explaining what went wrong with them — so a search over raw text would
+     * match this file's own explanation of the bug and report it fixed. I have
+     * written that assertion before; it passes for the worst possible reason.
+     */
+    const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+
+    function handlerBody(tool: string): string {
+      const start = code.indexOf(`case "${tool}":`);
+      expect(start).toBeGreaterThan(-1);
+      const rest = code.slice(start + tool.length + 8);
+      const next = rest.search(/\n {6}(?:case "|default:)/);
+      return next === -1 ? rest : rest.slice(0, next);
+    }
+
+    /*
+     * The catalogue is read off the service the module built, not off a
+     * hand-constructed one. My first version did `new CrmMcpService({} as never
+     * x8)` — jest ran it happily because ts-jest has diagnostics off here, and
+     * `tsc` rejected it: the constructor takes seven. A spec that constructs a
+     * class by hand breaks every time that class gains a dependency, and it
+     * would have been asserting against a second definition of the catalogue.
+     *
+     * One `it` rather than `it.each`, because `it.each` needs its table when the
+     * describe is defined and `service` does not exist until `beforeEach`.
+     */
+    it("reads every property it declares, for every tool", () => {
+      expect(service.tools.length).toBeGreaterThanOrEqual(6);
+
+      const unread: string[] = [];
+      for (const tool of service.tools) {
+        const body = handlerBody(tool.name);
+        for (const prop of Object.keys(tool.inputSchema.properties))
+          if (!body.includes(`args.${prop}`)) unread.push(`${tool.name}.${prop}`);
+      }
+
+      /* Named, so a failure says which parameter is a lie rather than just failing. */
+      expect(unread).toEqual([]);
+    });
+
   });
 });
