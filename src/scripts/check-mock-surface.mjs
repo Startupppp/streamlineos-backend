@@ -379,7 +379,7 @@ function collectFiles(dir, predicate) {
     const full = join(dir, entry);
     const stat = statSync(full);
     if (stat.isDirectory()) results.push(...collectFiles(full, predicate));
-    else if (predicate(entry)) results.push(full);
+    else if (predicate(entry, full)) results.push(full);
   }
   return results;
 }
@@ -821,7 +821,27 @@ function makeService(): AnotherService {
 // Real scan
 // ---------------------------------------------------------------------------
 
-const specFiles = collectFiles(SRC_ROOT, (name) => name.endsWith(".spec.ts") || name.endsWith(".e2e-spec.ts"));
+/**
+ * Spec files AND shared test-support files under a `__tests__/` directory.
+ *
+ * The walk used to take `*.spec.ts` only, so every shared stub module was
+ * invisible — and a shared stub is the worst possible place to miss a phantom,
+ * because one wrong name is inherited by every spec that imports it and surfaces
+ * as "x is not a function" inside whichever service first reaches that branch.
+ * Found exactly that: `INVENTORY_ISOLATION_STUBS` provided
+ * `InventoryAccountingBridge` as `{ postMovement }`, a method the real class does
+ * not have, while omitting the five it does.
+ */
+const isTestSupportFile = (name, full) =>
+  name.endsWith(".ts") &&
+  !name.endsWith(".d.ts") &&
+  /[\\/]__tests__[\\/]/.test(full);
+
+const specFiles = collectFiles(
+  SRC_ROOT,
+  (name, full) =>
+    name.endsWith(".spec.ts") || name.endsWith(".e2e-spec.ts") || isTestSupportFile(name, full),
+);
 
 if (specFiles.length < MIN_SPEC_FILES) {
   console.error(`FATAL: Found only ${specFiles.length} spec files — expected at least ${MIN_SPEC_FILES}.`);
