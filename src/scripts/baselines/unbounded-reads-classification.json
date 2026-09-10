@@ -3089,6 +3089,11 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "Classified 2026-09-10 by reading the call site. FALSE-POSITIVE rather than BOUNDED because BOUNDED is a FIXED verdict here \u2014 it asserts the scanner no longer matches, and a continued match is reported as a regression. The pattern is still present and always will be; it is simply not a violation: every read is scoped to one goods receipt and its lines."
     },
+    "/inventory/purchase-orders/lib/grn-post-tx.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11 by reading the moved call site. This is the same read previously classified under /inventory/purchase-orders/grn-post.service.ts \u2014 the body of postInTx moved into lib/grn-post-tx.ts unchanged, and this gate keys on path, so the verdict has to be restated rather than inherited. It selects every inv_po_lines row of ONE purchase order to decide RECEIVED vs PARTIAL, so the bound is the order's own line count. FALSE-POSITIVE rather than BOUNDED because BOUNDED is a FIXED verdict here: it asserts the scanner no longer matches, and a continued match is reported as a regression."
+    },
     "/inventory/purchase-orders/lib/receipt-lots-serials.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",

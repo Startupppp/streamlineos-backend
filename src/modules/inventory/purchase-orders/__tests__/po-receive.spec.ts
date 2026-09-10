@@ -146,7 +146,10 @@ describe("GRN idempotency — engine call deduplication", () => {
  */
 describe("a receipt that posted its own stock cannot be posted again", () => {
   const receiveSrc = readFileSync(join(__dirname, "..", "grn-receive.service.ts"), "utf8");
-  const postSrc = readFileSync(join(__dirname, "..", "grn-post.service.ts"), "utf8");
+  // `postInTx`'s body lives in `lib/grn-post-tx.ts`; the service keeps only the
+  // surface. Reading the service here would find no guards at all and every
+  // case below would pass vacuously - which the floor test catches.
+  const postSrc = readFileSync(join(__dirname, "..", "lib", "grn-post-tx.ts"), "utf8");
 
   /** The statuses `postInTx` turns away, read from its own guards. */
   function refusedByPost(): string[] {

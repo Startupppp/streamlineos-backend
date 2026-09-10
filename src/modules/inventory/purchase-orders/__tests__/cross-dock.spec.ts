@@ -17,7 +17,21 @@ import { join } from "node:path";
  * The quantities themselves are the engine's, and the golden path (NEO-16)
  * exercises them against a real database.
  */
+/**
+ * The post path is three files: `grn-post.service.ts` holds the surface and the
+ * transaction boundary, `lib/grn-post-tx.ts` the body of `postInTx`, and
+ * `lib/grn-post-movements.ts` the movement shapes and the cross-dock legs.
+ * Read all three, and assert below that the service still delegates - a
+ * source-text spec left pointing at the file the code MOVED OUT OF passes
+ * vacuously, which is how this spec failed when `postInTx` was extracted.
+ */
 const POST_SERVICE = readFileSync(join(__dirname, "..", "grn-post.service.ts"), "utf8");
+const POST_TX = readFileSync(join(__dirname, "..", "lib", "grn-post-tx.ts"), "utf8");
+const POST_MOVEMENTS = readFileSync(
+  join(__dirname, "..", "lib", "grn-post-movements.ts"),
+  "utf8",
+);
+const POST_PATH = [POST_SERVICE, POST_TX, POST_MOVEMENTS].join("\n");
 const GRAINS = readFileSync(
   join(__dirname, "..", "..", "putaway", "putaway-receipt-grains.ts"),
   "utf8",
@@ -28,23 +42,30 @@ const DESTINATION = readFileSync(
 );
 
 describe("NEO-8 - cross-dock", () => {
+  it("reads the file the post path actually lives in", () => {
+    // The anti-vacuity floor for the `POST_PATH` assertions below.
+    expect(POST_SERVICE).toContain('from "./lib/grn-post-tx"');
+    expect(POST_TX).toContain("export async function postInTx(");
+    expect(POST_MOVEMENTS).toContain("export function buildCrossDockLegs(");
+  });
+
   it("appends the legs after every receipt, never interleaved", () => {
     // A leg written before its own receipt would inherit a cost the engine has
     // not computed yet, which under FIFO is a different number from the right one.
-    const collect = POST_SERVICE.indexOf("crossDockLegs.push");
-    const append = POST_SERVICE.indexOf("movements.push(...crossDockLegs)");
+    const collect = POST_TX.indexOf("crossDockLegs.push");
+    const append = POST_TX.indexOf("movements.push(...crossDockLegs)");
     expect(collect).toBeGreaterThan(-1);
     expect(append).toBeGreaterThan(collect);
   });
 
   it("takes the inbound leg's cost from the receipt rather than estimating it", () => {
-    expect(POST_SERVICE).toContain("costFromMovementIndex: receiptIndex");
+    expect(POST_MOVEMENTS).toContain("costFromMovementIndex: receiptIndex");
   });
 
   it("refuses a cross-dock in a warehouse with no staging location", () => {
     // Putting somebody's goods in a bin nobody chose is worse than telling them
     // the building is not set up for this.
-    expect(POST_SERVICE).toContain("no outbound staging location");
+    expect(POST_PATH).toContain("no outbound staging location");
     expect(DESTINATION).toContain("findCrossDockStagingLocation");
     expect(DESTINATION).toContain("location_type = 'SHIPPING'");
   });
@@ -52,8 +73,8 @@ describe("NEO-8 - cross-dock", () => {
   it("reserves the units to the order that pulled them across the dock", () => {
     // Otherwise they sit at a pickable staging location as ordinary free stock
     // and the next order to ask is offered them.
-    expect(POST_SERVICE).toContain("createReservationInTx");
-    expect(POST_SERVICE).toContain("inv_sales_order");
+    expect(POST_PATH).toContain("createReservationInTx");
+    expect(POST_PATH).toContain("inv_sales_order");
   });
 
   it("raises no putaway task for them, by construction rather than by a flag", () => {
