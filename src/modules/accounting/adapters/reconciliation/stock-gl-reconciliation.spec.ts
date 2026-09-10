@@ -210,6 +210,43 @@ describe("the queries behind it", () => {
     expect(glQuery.slice(0, 600)).toContain("j.source_type = 'stock_move'");
   });
 
+  it("signs the movement value, because total_cost never does", () => {
+    /*
+      The bug this file's mocks could not see, and the reason it survived
+      review: every test above hands the verdict logic two numbers that are
+      already signed, so the arithmetic was proved correct over inputs the
+      query could not actually produce.
+
+      `total_cost` is a POSITIVE MAGNITUDE in both directions. `recordIssue`
+      accumulates from zero over positive quantities and `applyCosting` writes
+      that back onto the transaction, so an outflow's row looks exactly like an
+      inflow's and the direction survives only in `quantity_change`. Summing
+      the column raw therefore added shipments where the ledger subtracts them.
+
+      Measured on the development database at the time of the fix: summed raw
+      the movements came to 339,600 minor units, signed to 160,400, and the
+      339,600 figure was wrong by 179,200 — exactly twice the 89,600 of
+      outflow. A tenant that had merely received and shipped would have been
+      told, in the report's own words, that it had "a defect in the bridge".
+    */
+    const movementQuery = source.slice(source.indexOf("FROM inv_stock_transactions"));
+    expect(source).toContain("round(t.total_cost * 100) * sign(t.quantity_change)");
+    expect(movementQuery.slice(0, 200)).not.toMatch(/SUM\(round\(t\.total_cost \* 100\)\)/);
+  });
+
+  it("leaves the unposted-movements report counting magnitudes, which is correct there", () => {
+    /*
+      The two reports want opposite things from the same column and the
+      distinction is easy to erase by making them "consistent". ACC-09 measures
+      a balance, so direction matters; ACC-08 measures the SIZE of a gap, where
+      a receipt nobody posted and a shipment nobody posted are both missing
+      value and signing them would let one hide the other.
+    */
+    const unposted = readFileSync(join(__dirname, "unposted-movements.service.ts"), "utf8");
+    expect(unposted).toContain("Math.abs(Number(row.total_cost))");
+    expect(unposted).not.toContain("sign(t.quantity_change)");
+  });
+
   it("binds the org on both sides of every join", () => {
     /*
       Raw SQL, so no `eq(table.orgId, …)` guards it — the same exposure the

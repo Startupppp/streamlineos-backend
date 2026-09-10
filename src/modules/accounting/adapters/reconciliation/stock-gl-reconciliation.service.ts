@@ -156,10 +156,22 @@ export class StockGlReconciliationService {
   /**
    * Value of the stock movements that reached the ledger, over the same window.
    *
-   * Signed, matching the GL side: a receipt debits inventory and a shipment
-   * credits it, so `total_cost` carries the sign already and summing it raw is
-   * correct here — unlike the ACC-08 report, which counts magnitudes because
-   * it is measuring a gap rather than a balance.
+   * Signed to match the GL side — and the sign has to be applied here, because
+   * `total_cost` does not carry it. This comment previously claimed the
+   * opposite and the query summed the column raw, which was wrong in the most
+   * expensive direction: an outflow records a POSITIVE magnitude, so a tenant
+   * that both received and shipped had its shipments added where the ledger
+   * subtracts them, the difference came to twice the shipment value, and the
+   * report called that "a defect in the bridge" on a bridge that was fine.
+   *
+   * Measured on the development database rather than argued from the code:
+   * every SALE and TRANSFER_OUT row carries a positive `total_cost` and not
+   * one row in the table is negative. `recordIssue` accumulates from zero over
+   * positive quantities and `applyCosting` writes that magnitude back onto the
+   * transaction, so the direction lives only in `quantity_change`.
+   *
+   * ACC-08's report is unaffected: it counts magnitudes deliberately, because
+   * it measures the size of a gap rather than a balance.
    */
   private async postedMovementValueMinor(
     orgId: string,
@@ -168,7 +180,7 @@ export class StockGlReconciliationService {
     to: string,
   ): Promise<number> {
     const rows = (await this.db.execute(sql`
-      SELECT COALESCE(SUM(round(t.total_cost * 100)), 0)::bigint AS net
+      SELECT COALESCE(SUM(round(t.total_cost * 100) * sign(t.quantity_change)), 0)::bigint AS net
       FROM inv_stock_transactions t
       WHERE t.org_id = ${orgId}
         AND t.posting_date >= ${from}
