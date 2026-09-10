@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
-import { SQL, aliasedTable, and, asc, count, desc, eq, gt, ilike, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { SQL, and, asc, count, desc, eq, gt, isNull, ne, or, sql } from "drizzle-orm";
 import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
 import {
   documentAuditLogs,
@@ -26,31 +26,10 @@ import { keysetBeforeId } from "../../../common/pagination/keyset";
 import {
   decodeOnboardingSummaryCursor,
   dispatchOnboardingDocumentSubmittedEvent,
+  onboardingSearchCondition,
+  type OnboardingDocumentListRow,
+  reviewerUsers,
 } from "./onboarding-views-support";
-
-const reviewerUsers = aliasedTable(users, "reviewer");
-
-type OnboardingDocumentListRow = {
-  id: number;
-  orgId: string;
-  userId: string;
-  employeeName: string | null;
-  documentTypeId: number;
-  documentTypeName: string;
-  isMandatory: boolean;
-  hasFile: boolean;
-  fileName: string | null;
-  fileSize: number | null;
-  mimeType: string | null;
-  version: number;
-  status: string;
-  reviewedBy: string | null;
-  reviewedAt: Date | null;
-  remarks: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  reviewerName: string | null;
-};
 
 @Injectable()
 export class OnboardingViewsService {
@@ -69,7 +48,7 @@ export class OnboardingViewsService {
         () => sql`false`,
       ),
     ];
-    if (query.search) conditions.push(await this.onboardingSearchCondition(query.search));
+    if (query.search) conditions.push(await onboardingSearchCondition(this.db, query.search));
 
     const latestDocs = this.db
       .selectDistinctOn([onboardingDocuments.userId, onboardingDocuments.documentTypeId], {
@@ -489,25 +468,6 @@ export class OnboardingViewsService {
 
       return updated;
     });
-  }
-
-  private static readonly ONBOARDING_SEARCH_CAP = 500;
-
-  private async onboardingSearchCondition(search: string): Promise<SQL> {
-    const designationIlike = ilike(hrEmployments.designation, `%${search}%`);
-    const rows = await this.db.execute(
-      sql`SELECT app.search_hr_person_ids(${search}, ${OnboardingViewsService.ONBOARDING_SEARCH_CAP + 1}) AS id`,
-    );
-    if (rows.length === 0) return designationIlike;
-    if (rows.length > OnboardingViewsService.ONBOARDING_SEARCH_CAP) {
-      const fallback = or(ilike(users.name, `%${search}%`), designationIlike);
-      if (!fallback) throw new InternalServerErrorException("Failed to build onboarding search fallback");
-      return fallback;
-    }
-    const ids = rows.map((r) => Number(r["id"]));
-    const condition = or(inArray(hrPeople.id, ids), designationIlike);
-    if (!condition) throw new InternalServerErrorException("Failed to build onboarding search condition");
-    return condition;
   }
 
 }
