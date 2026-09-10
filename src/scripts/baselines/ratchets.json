@@ -64,10 +64,10 @@
         "direction": "ratchet"
       },
       "ratchets.EARLY_RETURN": {
-        "value": 5,
+        "value": 4,
         "direction": "ratchet",
         "owner": "platform DB · platform · surveys · timesheets",
-        "reason": "A NEW CLASS, not a raise of an existing number, and this gate correctly refused it until that was said out loud: adding it read as a net raise of 5 for vacuous-assertions.json. Measured 7 sites, 2 FIXED before baselining (soft-delete-predicates and recruitment-candidate-vault), 5 registered — 2 ENVIRONMENT guards (a live db handle, NODE_ENV) and 3 DOMAIN guards (it.each cases over wholly-@Public() controllers). Sized after the fixable ones were fixed, not to the breach."
+        "reason": "Lowered 5 -> 4 on 2026-09-11 after removing tenant-relationship-integrity.spec.ts's always-null live-DB adapter and early return. Its four design tests now explicitly make no SQL claim; a requested live mode fails closed and directs operators to the guarded dedicated DB probe. The prior five-site baseline was established after two earlier repairs; four existing environment/domain guards remain."
       }
     },
     "check-ai-charge-declared.mjs": {
@@ -832,10 +832,10 @@
         "reason": "6 describe.skip blocks in src/modules/ai/core/crm-copilot.service.phase2.spec.ts, all targeting CrmScoringService/CrmBriefService. Accepted residual R-9, blocker SCOPE, review 2026-12-01."
       },
       "CONDITIONAL_BASELINE": {
-        "value": 20,
+        "value": 19,
         "direction": "ratchet",
         "owner": "backend platform owner",
-        "reason": "Runtime-selected describes. LOWERED 29 -> 20 on 2026-09-07, and the count itself went 76 -> 20, because the class was RETIRED rather than repriced. The 56 *.db.spec.ts files each opened with `const describeDb = ENABLED && DB_URL ? describe : describe.skip`; that ternary existed only because the default jest run walked those files on machines with no database. They are now selected by suite instead, exactly as *.e2e-spec.ts already was — jest-db.json selects the 56, `pnpm test:db-specs` runs them, and the default jest config ignores \\.db\\.spec\\.ts$ — so the gate became redundant and was deleted. Each spec now THROWS naming the variable it needs when its database is absent, so a missing prerequisite is a red suite and can no longer skip. 19 of the 56 also carried a hermetic half that ran in the default suite; that half was split into a sibling *.spec.ts rather than allowed to fall out of the run silently (16 files, 71 tests, all passing with no database, counted before and after). The 20 survivors are genuinely infrastructure-gated: 9 *.eval.spec.ts needing an AI provider key, 6 src/degradation/** needing a real S3/Ably/read-replica, and the seeded-E2E and perf specs that need specific tenant fixtures to mean anything. This also dissolves the recorded tension with PRD-C018: a new *.db.spec.ts now joins jest-db.json and adds nothing to this class. A ratchet is lowered to the measured value, never raised to fit one."
+        "reason": "Lowered 20 -> 19 on 2026-09-11 after removing the vacuous tenant-integrity describe.skip selector. The AI-project mocked controller suite no longer needs a DB URL, and its three TODOs now execute. This retains the prior 29 -> 20 reduction from separating explicitly selected .db.spec.ts suites: unconfigured selected DB suites fail rather than silently skip. Current measured conditional sites plus aliases total 19; no suppression budget was raised."
       }
     },
     "check-transaction-callbacks.mjs": {

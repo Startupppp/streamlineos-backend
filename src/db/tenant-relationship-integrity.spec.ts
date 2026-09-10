@@ -1,37 +1,11 @@
-/**
- * AR-02: Cross-tenant insertion guard tests.
- *
- * Each test proves that the composite FK (org_id, child_id) -> (org_id, id)
- * rejects a child row whose org_id disagrees with its parent's org_id.
- *
- * WHAT IS PROVEN: a child record that references a valid parent in a different
- * org is rejected at the DB layer with a foreign key violation (23503), proving
- * the composite FK closes the cross-tenant link gap.
- *
- * These are integration tests that must run against a real DB. They belong in
- * the e2e suite (`pnpm test:e2e`) and require TENANT_A_ORG_ID / TENANT_B_ORG_ID
- * env vars that point to two organisations seeded in the test DB.
- *
- * HOW THE COMPOSITE FK REJECTS THE BAD INSERT:
- *   A row (org_id = 'org-B', parent_id = <id that belongs to org-A>) has no
- *   match in the parent table for the pair (org-B, <id>), so PG raises 23503.
- *   A single-column FK on (parent_id) alone would accept this because the id
- *   exists — just in a different org.
- */
-
-
-const SKIP_REASON = "AR-02 integrity tests require TENANT_A_ORG_ID and TENANT_B_ORG_ID env vars pointing to a live seeded DB.";
-
-function skipUnlessSeeded() {
-  const a = process.env["TENANT_A_ORG_ID"];
-  const b = process.env["TENANT_B_ORG_ID"];
-  if (!a || !b) return SKIP_REASON;
-  return null;
-}
+if (process.env.TENANT_A_ORG_ID || process.env.TENANT_B_ORG_ID)
+  throw new Error(
+    "AR-02: tenant-relationship-integrity.spec.ts only runs unit design checks; legacy tenant IDs cannot count as SQL proof. " +
+    "For guarded real-database verification configure TENANT_FK_PROBE_* and run pnpm test:db-specs --runTestsByPath src/db/tenant-relationship-integrity.db.spec.ts. " +
+    "RBAC-001 remains incomplete until that probe passes against an approved disposable database.",
+  );
 
 describe("AR-02 cross-tenant FK integrity", () => {
-  const skip = skipUnlessSeeded();
-
   describe("composite FK design invariants (unit-provable)", () => {
     it("single-column FK accepts a cross-tenant id (demonstrates the attack vector)", () => {
       const singleColFkCheck = (parentOrgId: string, childOrgId: string, parentId: number, childParentId: number): boolean => {
@@ -75,7 +49,7 @@ describe("AR-02 cross-tenant FK integrity", () => {
       expect(after[2]).toMatchObject({ orgId: "org-A", id: 3, epicId: null });
     });
 
-    it("cross-tenant gate covers all required table pairs", () => {
+    it("records the expected relationship names, without claiming schema or SQL coverage", () => {
       const requiredCompositeRelationships: Array<{ child: string; parent: string; constraint: string }> = [
         { child: "build.tickets", parent: "build.tickets", constraint: "fk_tickets_org_epic" },
         { child: "build.tickets", parent: "build.tickets", constraint: "fk_tickets_org_parent" },
@@ -105,26 +79,4 @@ describe("AR-02 cross-tenant FK integrity", () => {
     });
   });
 
-  (skip ? describe.skip : describe)("live DB cross-tenant rejection (requires seeded orgs)", () => {
-    type LiveDb = { execute: (query: unknown, params: unknown[]) => Promise<unknown> };
-    function resolveTestDb(): LiveDb | null { return null; }
-
-    it("tickets: cross-tenant epicId FK is rejected with 23503", async () => {
-      const db = resolveTestDb();
-      if (!db) return;
-
-      const orgA = process.env["TENANT_A_ORG_ID"]!;
-      const orgB = process.env["TENANT_B_ORG_ID"]!;
-
-      await expect(
-        db.execute(`
-          INSERT INTO build.tickets (org_id, epic_id, title, type, priority, status, ticket_number, project_id)
-          SELECT $1, t.id, 'cross-tenant-test', 'TASK', 'MEDIUM', 'TODO', -999, t.project_id
-          FROM build.tickets t
-          WHERE t.org_id = $2
-          LIMIT 1
-        `, [orgB, orgA]),
-      ).rejects.toMatchObject({ code: "23503" });
-    });
-  });
 });

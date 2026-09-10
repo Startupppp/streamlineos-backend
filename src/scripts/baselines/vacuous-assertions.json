@@ -7,7 +7,7 @@
     "COND_ASSERT": 0,
     "FLOATING_ASSERT": 0,
     "FOCUSED": 0,
-    "EARLY_RETURN": 5
+    "EARLY_RETURN": 4
   },
   "allowed": [
     {
@@ -27,12 +27,6 @@
       "title": "PRODUCT-BLOCKED \u2014 no operator access mechanism: this spec documents the gap",
       "class": "TAUTOLOGY",
       "reason": "Deliberate: there is no operator-access mechanism to test, and the spec exists to keep the absence visible. Already recorded against ticket 35 box 8. It becomes a real test the moment an operator-access mechanism exists, and this registration is what will make that visible."
-    },
-    {
-      "file": "src/db/tenant-relationship-integrity.spec.ts",
-      "title": "tickets: cross-tenant epicId FK is rejected with 23503",
-      "class": "EARLY_RETURN",
-      "reason": "ENVIRONMENT guard, not a reach guard: `if (!db) return;` where db is the live connection this integration case needs. The same file already selects describe.skip on the same condition, so this is the honest-skip shape check:test-suppressions classifies as CONDITIONAL; it is registered here because an early return reports as PASSED rather than skipped, which is the half no gate could see. Owner: platform DB."
     },
     {
       "file": "src/degradation/redis.spec.ts",

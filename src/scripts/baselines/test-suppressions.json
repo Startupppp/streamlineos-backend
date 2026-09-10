@@ -108,27 +108,6 @@
       "blocker": "QUARANTINE, recorded not excused: CRM is excluded from the 10/10 release and these blocks hold live assertions against CrmScoringService/CrmBriefService that do not run. Counted against the quarantine ratchet so the class cannot grow."
     },
     {
-      "file": "src/modules/ai/core/projects-ai.controller.e2e-spec.ts",
-      "title": "400 on non-numeric projectId (controller uses string param with no ParseIntPipe; NaN passes through to service; would need a pipe added to enforce this)",
-      "kind": "it.todo",
-      "class": "PLACEHOLDER",
-      "blocker": "the assertion needs a source change first (a ParseIntPipe on the route, or an LlmService override seam). Empty body — nothing is switched off."
-    },
-    {
-      "file": "src/modules/ai/core/projects-ai.controller.e2e-spec.ts",
-      "title": "402 on plan gate fires before service (orgOwner bypass not needed — plan check is in controller)",
-      "kind": "it.todo",
-      "class": "PLACEHOLDER",
-      "blocker": "the assertion needs a source change first (a ParseIntPipe on the route, or an LlmService override seam). Empty body — nothing is switched off."
-    },
-    {
-      "file": "src/modules/ai/core/projects-ai.controller.e2e-spec.ts",
-      "title": "503 on ensureLlm when LlmService.isConfigured() returns false (requires LlmService override)",
-      "kind": "it.todo",
-      "class": "PLACEHOLDER",
-      "blocker": "the assertion needs a source change first (a ParseIntPipe on the route, or an LlmService override seam). Empty body — nothing is switched off."
-    },
-    {
       "file": "src/modules/crm/core/crm-attribution-report.service.spec.ts",
       "title": "last-touch uses a subquery (.as()) to find max occurredAt per lead — mock chain depth makes this an integration-level test; cover in e2e",
       "kind": "it.todo",

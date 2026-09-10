@@ -74,8 +74,8 @@ const projectIdticketIdParams = z.object({ projectId: z.string().min(1), ticketI
 const projectIdmeetingIdParams = z.object({ projectId: z.string().min(1), meetingId: z.string().min(1) }).strict();
 
 function parsePositiveInt(raw: string, label: string): number {
-  const id = parseInt(raw, 10);
-  if (Number.isNaN(id) || id <= 0) throw new BadRequestException(`Invalid ${label}`);
+  const id = Number(raw);
+  if (!/^\d+$/.test(raw) || !Number.isSafeInteger(id) || id <= 0) throw new BadRequestException(`Invalid ${label}`);
   return id;
 }
 
