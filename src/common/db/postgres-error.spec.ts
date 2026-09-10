@@ -157,7 +157,7 @@ describe("the five HR readers of uniq_hr_people_org_person_link", () => {
    *     person`, not this unique index).
    *
    * Measured on three databases at head (streamline_inv, inv_cold_head,
-   * cornerstone_cold): the only uniques on hr_people are hr_people_pkey and
+   * streamline_cold): the only uniques on hr_people are hr_people_pkey and
    * uniq_hr_people_org_id (org_id, id). Nothing constrains
    * (org_id, organization_person_id), so a second hr_people row pointing at the
    * same organization_person is ACCEPTED — 23505 is never raised and those five

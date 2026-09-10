@@ -387,11 +387,11 @@ not a call this session should make on its own. A throwaway local database was
 built instead:
 
 ```
-createdb cornerstone_neo16
-psql -d cornerstone_neo16 -c "CREATE EXTENSION vector; CREATE EXTENSION pg_trgm;
+createdb streamline_neo16
+psql -d streamline_neo16 -c "CREATE EXTENSION vector; CREATE EXTENSION pg_trgm;
   CREATE EXTENSION btree_gist; CREATE EXTENSION pgcrypto; CREATE EXTENSION \"uuid-ossp\";"
 # then apply migrations/*.sql in journal order
-DATABASE_URL=postgres://<you>@localhost:5432/cornerstone_neo16 \
+DATABASE_URL=postgres://<you>@localhost:5432/streamline_neo16 \
   node --max-old-space-size=12288 ./node_modules/jest/bin/jest.js \
   --config ./jest-e2e-seeded.json --forceExit --runInBand \
   --testPathPattern=neo-golden-path
@@ -670,10 +670,10 @@ able to do that for as long as anything here records, and the previous revision
 of this section called it "the single biggest risk in this repository".
 
 ```
-createdb cornerstone_cold
-psql -d cornerstone_cold -c "CREATE EXTENSION vector; CREATE EXTENSION pg_trgm;
+createdb streamline_cold
+psql -d streamline_cold -c "CREATE EXTENSION vector; CREATE EXTENSION pg_trgm;
   CREATE EXTENSION btree_gist; CREATE EXTENSION pgcrypto; CREATE EXTENSION \"uuid-ossp\";"
-DATABASE_URL=postgres://<you>@localhost:5432/cornerstone_cold pnpm db:bootstrap
+DATABASE_URL=postgres://<you>@localhost:5432/streamline_cold pnpm db:bootstrap
 # RESULT: REACHED_HEAD 371/371
 ```
 

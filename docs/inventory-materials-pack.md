@@ -1,12 +1,18 @@
-# Buildmart — construction & interior materials inventory
+# Materials pack — construction & interior materials inventory
 
 > The `materials` pack: what it adds to StreamlineOS inventory, how to run it,
 > and which of its claims are proven by a test rather than by a screenshot.
 
-Buildmart holds construction and interior materials in four Hyderabad dark
-stores and delivers to customers and construction sites inside 60–120 minutes.
-This document covers the pack that makes the existing inventory module answer
-that business's questions.
+StreamlineOS inventory is a generic multi-tenant WMS. Any organisation that
+holds stock runs it — a kirana, a pharmacy, a distributor, a manufacturer, a
+warehouse operator. The `materials` pack is one optional, off-by-default layer
+on top of it, for tenants whose catalogue is construction and interior goods:
+grades, finishes and pack sizes on the product, a facility type and delivery
+zone on the warehouse, and construction projects as a demand source.
+
+No tenant, brand or city is special-cased anywhere in this module. Zones,
+facility types and delivery promises are per-tenant data, entered by the
+organisation that uses them.
 
 ## What this is not
 
@@ -58,17 +64,17 @@ must not end up holding data in it.
 loudly with the statement that broke.
 
 ```bash
-createdb buildmart_dev
-psql -d buildmart_dev -c 'CREATE EXTENSION vector; CREATE EXTENSION pg_trgm; CREATE EXTENSION "uuid-ossp"; CREATE EXTENSION pgcrypto; CREATE EXTENSION btree_gin;'
-psql -d buildmart_dev -c 'CREATE SCHEMA build; CREATE SCHEMA build_events;'
+createdb streamline_dev
+psql -d streamline_dev -c 'CREATE EXTENSION vector; CREATE EXTENSION pg_trgm; CREATE EXTENSION "uuid-ossp"; CREATE EXTENSION pgcrypto; CREATE EXTENSION btree_gin;'
+psql -d streamline_dev -c 'CREATE SCHEMA build; CREATE SCHEMA build_events;'
 psql -d postgres -c 'CREATE ROLE neondb_owner;'   # a migration GRANTs to it
 
-DATABASE_URL=postgresql://$USER@127.0.0.1:5432/buildmart_dev \
-DIRECT_DATABASE_URL=postgresql://$USER@127.0.0.1:5432/buildmart_dev \
+DATABASE_URL=postgresql://$USER@127.0.0.1:5432/streamline_dev \
+DIRECT_DATABASE_URL=postgresql://$USER@127.0.0.1:5432/streamline_dev \
   node src/scripts/db-bootstrap.mjs           # RESULT: REACHED_HEAD 528/528
 
-APP_DB_ROLE=buildmart_app APP_DB_PASSWORD=<pw> APP_DB_SCHEMA=public,build,build_events \
-DATABASE_URL=postgresql://$USER@127.0.0.1:5432/buildmart_dev \
+APP_DB_ROLE=streamline_app APP_DB_PASSWORD=<pw> APP_DB_SCHEMA=public,build,build_events \
+DATABASE_URL=postgresql://$USER@127.0.0.1:5432/streamline_dev \
   node src/scripts/db-bootstrap-app-role.mjs
 ```
 
@@ -77,26 +83,17 @@ owner has `BYPASSRLS` and hides every tenant-isolation bug.
 
 ### 2. Seed
 
-```bash
-pnpm seed:buildmart      # NODE_ENV must be development or test
-```
+No branded or tenant-specific seed ships with this module, by design: a seed
+that creates one named company's warehouses and catalogue is that company's
+data, not a fixture every other tenant has to step around. Create an
+organisation through the normal onboarding path and turn the pack on.
 
-Idempotent on the organisation id: a second run reports what already existed and
-writes nothing.
-
-It creates one organisation (`Buildmart Materials`), five people, the `materials`
-+ `warehouse` + `gst` packs, four dark stores, ten units of measure, eleven
-categories, five suppliers, twenty products with twenty-three variants, fifty
-stock rows **with the ledger movements that produced them**, four purchase
-orders, one transfer already in a van, three construction projects with ten
-requirements and six live reservations, and an audit trail.
-
-The seed writes the ledger rather than only the balances: `inv_stock_levels` is
-a cache of `inv_stock_transactions`, and a seed that wrote only balances produces
-a system whose movement history is empty and whose reconciliation report says
-everything is wrong. `chk_inv_stock_transactions_arithmetic` enforces
-`after = before + change`, so the file cannot write a balance the history cannot
-explain.
+If you write a local development seed, write the **ledger** rather than only the
+balances: `inv_stock_levels` is a cache of `inv_stock_transactions`, and a seed
+that wrote only balances produces a system whose movement history is empty and
+whose reconciliation report says everything is wrong.
+`chk_inv_stock_transactions_arithmetic` enforces `after = before + change`, so
+no seed can write a balance the history cannot explain.
 
 ### 3. Servers
 
@@ -179,11 +176,11 @@ request is `422`, and a concurrent duplicate is `409`.
 | --- | --- | --- | --- |
 | GET | `/inventory/ops/summary` | `inventory:stock:read` | Seven buckets, SKU count, stock value, facility counts |
 | GET | `/inventory/ops/attention` | `inventory:stock:read` | The exceptions board — count, severity, deep link, next verb |
-| GET | `/inventory/ops/zones` | `inventory:stock:read` | Per dark store: buckets, value, stockouts, promise |
+| GET | `/inventory/ops/zones` | `inventory:stock:read` | Per facility: buckets, value, stockouts, promise |
 
 All three are `inventory:stock:read`, not `inventory:reports:read`. Reports carry
 cost and margin and are a finance surface; this is what is on the shelf and what
-is wrong with it — exactly what a dark-store operator holds stock-read for.
+is wrong with it — exactly what a floor operator holds stock-read for.
 
 ### Projects
 
@@ -216,7 +213,7 @@ Two rules that are not obvious:
   `uniq_inv_reservations_org_source_active`. Reserving again on a line that
   already holds stock *replaces* the hold with a larger one, inside one
   transaction, rather than failing with a uniqueness error nobody can act on.
-- **A hold names a bin, not a store.** A site engineer names a dark store; the
+- **A hold names a bin, not a store.** A site engineer names a facility; the
   service resolves the single pickable bin with the most available that can cover
   the whole quantity — crediting back what this same line is already sitting on,
   since the top-up releases it in the same transaction. When no single bin covers
@@ -231,7 +228,7 @@ Refusals are named, not generic: `REQUIREMENT_FULLY_COVERED`,
 ## Reorder suggestions
 
 `GET /inventory/reports/reorder` is one row **per stock level** — a SKU low at
-two dark stores is two rows, and low in two bins of one store is two rows. Each
+two facilities is two rows, and low in two bins of one store is two rows. Each
 carries `locationId`/`warehouseId`, which is also its identity.
 
 The suggested quantity is the order policy, most specific first:
@@ -256,10 +253,10 @@ purchase order is raised by a person.
 
 | Key | Grants |
 | --- | --- |
-| `inventory:stock:read` | The operations board, dark stores, stock levels, movements |
+| `inventory:stock:read` | The operations board, facilities, stock levels, movements |
 | `inventory:stock:reserve` | Hold and release stock, including against a project |
 | `inventory:stock:adjust` | Adjustments and cycle-count postings |
-| `inventory:stock:transfer` | Dark-store transfers |
+| `inventory:stock:transfer` | Transfers between facilities |
 | `inventory:projects:read` | Projects, requirements, the at-risk feed |
 | `inventory:projects:manage` | Create and edit projects and requirements |
 | `inventory:products:create` / `:update` | The catalogue, including material attributes |
@@ -368,7 +365,7 @@ Product images use the existing storage module and its provider configuration �
 nothing new was added, and no third-party image URLs are used. `imageUrl` is
 nullable throughout; every surface that shows an image renders a package glyph
 when there is none, and images are lazily loaded and constrained by their
-container. The seed ships **no** image URLs: bundling copyrighted product
+container. Ship **no** image URLs in any fixture: bundling copyrighted product
 photography would be worse than a placeholder.
 
 ## Tests
@@ -377,7 +374,7 @@ photography would be worse than a placeholder.
 # backend
 NODE_OPTIONS=--max-old-space-size=8192 pnpm typecheck
 pnpm jest src/modules/inventory src/common/outbox src/modules/rbac
-node .scratch/buildmart/e2e-api.mjs        # against a running API; see below
+node .scratch/inventory/e2e-api.mjs       # against a running API; see below
 
 # frontend
 pnpm type-check
@@ -388,20 +385,20 @@ pnpm lint
 The API walk needs a token and a running server:
 
 ```bash
-API_BASE=http://localhost:1500 API_TOKEN=<jwt> node .scratch/buildmart/e2e-api.mjs
+API_BASE=http://localhost:1500 API_TOKEN=<jwt> node .scratch/inventory/e2e-api.mjs
 ```
 
 It creates a product with material attributes, opens stock, searches for it,
 raises a project requirement, reserves and tops up a hold, proves availability
 moves by exactly the reserved amount, releases it, adjusts stock, reads the
-movement history and audit trail, creates/dispatches/receives a dark-store
+movement history and audit trail, creates/dispatches/receives a
 transfer, proves org-wide on-hand is conserved across it, drives the SKU below
 its reorder point and reads the suggestion back — and checks that an
 unauthenticated read is 401 and an unknown id is 404 rather than 403.
 
 ## Deployment
 
-Nothing new is required. The migration (`0580_buildmart_materials_pack`) is
+Nothing new is required. The migration (`0820_materials_pack`) is
 additive: every column is nullable or defaulted, both new tables are new, every
 foreign key is added `NOT VALID` then validated separately, and `lock_timeout` is
 set so a contended statement fails fast rather than queueing behind a table.
@@ -415,8 +412,8 @@ material history of every site, so prefer the flag.
 ## Assumptions
 
 1. **Zones are the tenant's own carve-up of a city**, so `zone` is free text with
-   an uppercase-token format, not an enum. Hyderabad's four are seeded, not baked
-   into the type system; a second city needs no migration.
+   an uppercase-token format, not an enum. A tenant names its own zones; a
+   second city, or a country with different ones, needs no migration.
 2. **A grade is not a variant axis.** Two grades of cement are two products with
    two reorder points; two finishes of one tile are two SKUs a picker must not
    confuse. Variants stay for genuine size/colour splits of one item.
@@ -424,19 +421,21 @@ material history of every site, so prefer the flag.
    already holds real millimetres for the packer; a picker matching a printed
    carton needs the trade's own string ("600x600 mm", "8 ft x 4 ft").
 4. **A project is a demand source, not a stock location.** Material for a site is
-   reserved out of the dark store that will serve it and leaves the ledger only
+   reserved out of the facility that will serve it and leaves the ledger only
    when dispatched, so there is no site-level balance to reconcile.
-5. **Money is rupees.** Costs are `numeric` in rupees throughout and are carried
-   over the wire as text; the UI formats with `en-IN`. There are no minor units
-   in this path.
-6. **The delivery promise is a property of the facility**, not of an order. It is
-   what makes a stockout at a dark store urgent rather than merely noteworthy.
+5. **Costs are `numeric`** throughout and are carried over the wire as text;
+   the UI formats to the tenant's locale. There are no minor units in this path.
+6. **The delivery promise is a property of the facility**, not of an order, and
+   it is optional. Where a tenant sets one, it is what makes a stockout at that
+   facility urgent rather than merely noteworthy; where none is set nothing is
+   ranked by it.
 
 ## Known limitations
 
-- **The promise is descriptive, not enforced.** `delivery_promise_minutes` ranks
-  and labels; nothing routes an order to the nearest store or measures whether the
-  promise was kept. There is no courier integration.
+- **The promise is descriptive, not enforced.** `delivery_promise_minutes` is
+  tenant-entered and optional; it ranks and labels, and nothing routes an order
+  to the nearest store or measures whether the promise was kept. There is no
+  courier integration.
 - **No geospatial matching.** A site and the stores that can serve it are matched
   on the `zone` string. Latitude and longitude are stored and displayed but no
   distance query uses them.

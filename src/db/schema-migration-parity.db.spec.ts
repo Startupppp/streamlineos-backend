@@ -17,11 +17,11 @@ import { dbSpecClient, dbSpecSuite, dbSpecUrl } from "../test/db-spec-gate";
  * else. Run against a `push`-touched database it proves nothing, because push
  * is what hides the gap.
  *
- *   createdb cornerstone_cold
- *   psql -d cornerstone_cold -c "CREATE EXTENSION vector; CREATE EXTENSION pg_trgm;
+ *   createdb streamline_cold
+ *   psql -d streamline_cold -c "CREATE EXTENSION vector; CREATE EXTENSION pg_trgm;
  *     CREATE EXTENSION btree_gist; CREATE EXTENSION pgcrypto; CREATE EXTENSION \"uuid-ossp\";"
- *   DATABASE_URL=postgres://<you>@localhost:5432/cornerstone_cold pnpm db:bootstrap
- *   DATABASE_URL=postgres://<you>@localhost:5432/cornerstone_cold \
+ *   DATABASE_URL=postgres://<you>@localhost:5432/streamline_cold pnpm db:bootstrap
+ *   DATABASE_URL=postgres://<you>@localhost:5432/streamline_cold \
  *     npx jest --runInBand --testPathPattern=schema-migration-parity
  *
  * Runs whenever DATABASE_URL is in the environment and says so loudly when it
