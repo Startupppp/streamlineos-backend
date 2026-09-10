@@ -11,7 +11,7 @@
  *       PMS/Build, which nothing anywhere asserts;
  *   (b) the design decision the pack argued and rejected has not crept back in
  *       through a side door;
- *   (c) the artefact each P0 produced is still on disk and still carries
+ *   (c) the artefact each delivered ticket produced is still on disk and carries
  *       assertions — a deleted spec is a silently satisfied requirement, and
  *       this repo has been bitten by exactly that;
  *   (d) the contract those decisions live in is checked in beside the code.
@@ -33,14 +33,19 @@ const ACCOUNTING = join(SRC, "modules/accounting");
 const FENCED = ["modules/hr", "modules/payroll", "modules/build", "db/schema/hr", "db/schema/payroll", "db/schema/build"];
 
 /**
- * Each P0 and the artefact that proves it, with the least number of assertions
- * that artefact must still carry.
+ * Each delivered ticket and the artefact that proves it, with the least number
+ * of assertions that artefact must still carry.
  *
  * The count is a floor against erosion, not a target. A spec trimmed to one
  * assertion still passes CI and still reports the requirement as met, which is
  * the failure mode this list exists to catch.
+ *
+ * The P1s and the P2 are in here on the same terms as the P0s. A priority is a
+ * statement about what to do first, not about what may quietly rot afterwards,
+ * and the reconciliation reports and the compliance honesty rules are the parts
+ * of this pack a future change is most likely to erode without meaning to.
  */
-const P0_ARTEFACTS = [
+const PACK_ARTEFACTS = [
   { ticket: "ACC-01", path: "docs/inventory-gl-contract.md", minAssertions: 0 },
   { ticket: "ACC-02", path: "src/modules/accounting/setup/accounting-provisioning.spec.ts", minAssertions: 6 },
   { ticket: "ACC-03", path: "src/modules/accounting/kernel/system-tag-roles.spec.ts", minAssertions: 10 },
@@ -52,6 +57,11 @@ const P0_ARTEFACTS = [
   { ticket: "ACC-12", path: "src/modules/accounting/compliance/compliance-honesty.spec.ts", minAssertions: 8 },
   { ticket: "ACC-16", path: "src/modules/accounting/adapters/accounting-disabled-tenant.spec.ts", minAssertions: 5 },
   { ticket: "ACC-19", path: "src/modules/accounting/adapters/ledger-boundary.spec.ts", minAssertions: 8 },
+  { ticket: "ACC-09", path: "src/modules/accounting/adapters/reconciliation/stock-gl-reconciliation.spec.ts", minAssertions: 14 },
+  { ticket: "ACC-13", path: "src/modules/accounting/compliance/transport/compliance-transport.spec.ts", minAssertions: 30 },
+  { ticket: "ACC-15", path: "src/modules/accounting/adapters/posting-refusals.spec.ts", minAssertions: 14 },
+  { ticket: "ACC-17", path: "src/modules/accounting/adapters/document-series-fy.spec.ts", minAssertions: 10 },
+  { ticket: "ACC-18", path: "docs/adr-legacy-invoices-vs-ar.md", minAssertions: 0 },
 ];
 
 /** Headings the contract must still carry, because commits cite them by number. */
@@ -121,10 +131,10 @@ function checkRejectedDesign(files) {
     .map((file) => `${relative(SRC, file)} introduces a pending_accounting state`);
 }
 
-/** (c) Each P0's artefact is present and still carries assertions. */
+/** (c) Each delivered ticket's artefact is present and still carries assertions. */
 function checkArtefacts() {
   const violations = [];
-  for (const { ticket, path, minAssertions } of P0_ARTEFACTS) {
+  for (const { ticket, path, minAssertions } of PACK_ARTEFACTS) {
     const full = join(BACKEND_ROOT, path);
     if (!existsSync(full)) {
       violations.push(`${ticket}: ${path} is gone`);
@@ -229,7 +239,7 @@ const findings = [
 ];
 
 console.log(`Accounting source files scanned   ${accountingFiles.length}`);
-console.log(`P0 artefacts checked              ${P0_ARTEFACTS.length}`);
+console.log(`Pack artefacts checked            ${PACK_ARTEFACTS.length}`);
 console.log("");
 
 if (findings.length > 0) {
@@ -239,5 +249,5 @@ if (findings.length > 0) {
   process.exit(1);
 }
 
-console.log("OK — the fence holds, no rejected design has returned, and every P0 artefact stands.");
+console.log("OK — the fence holds, no rejected design has returned, and every artefact stands.");
 process.exit(0);

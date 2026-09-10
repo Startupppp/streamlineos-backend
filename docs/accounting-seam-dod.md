@@ -1,7 +1,7 @@
 # Accounting seam — definition of done
 
-ACC-20. What each P0 of the accounting-seam pack delivered, what proves it, and
-what is deliberately still open.
+ACC-20. What each ticket of the accounting-seam pack delivered, what proves it,
+and what is deliberately still open.
 
 Run the gate with:
 
@@ -10,8 +10,10 @@ pnpm check:accounting-seam
 ```
 
 It checks the four things no test can: the orchestrator's fence, the rejected
-design not returning, each P0's artefact still carrying assertions, and the
-contract still saying what the commits cite it as saying. Everything else is
+design not returning, each delivered ticket's artefact still carrying
+assertions, and the contract still saying what the commits cite it as saying.
+The P1s and the P2 sit in that floor on the same terms as the P0s — a priority
+says what to do first, not what may quietly rot afterwards. Everything else is
 proved by the specs named below, which run in the ordinary suite.
 
 ---
@@ -44,7 +46,7 @@ proved by the specs named below, which run in the ordinary suite.
 | ACC-15 Adapter idempotency and rejection paths | Done | `adapters/posting-refusals.spec.ts` |
 | ACC-18 ADR on legacy invoices vs AR | Done, **and a bug fixed** | `docs/adr-legacy-invoices-vs-ar.md` |
 | ACC-14 Live IRP provider | **Blocked** | No credentials. ACC-13's mock is the substitute. |
-| ACC-17 India FY edge cases for inventory-linked invoices | Not started (P2) | — |
+| ACC-17 India FY edge cases for inventory-linked invoices (P2) | Done, **and two findings** | `adapters/document-series-fy.spec.ts`, `setup/accounting-provisioning.spec.ts` |
 
 ---
 
@@ -70,6 +72,16 @@ Splitting it makes that net invisible on both the P&L and the trial balance.
 **Role validation runs when a tag is assigned, never when a journal is posted.**
 A tenant whose chart predates the rule keeps posting unchanged; validating at
 post time would turn a historical mapping choice into an outage.
+
+**The fiscal year is warned about, not extended automatically.** ACC-17 found
+that AP self-heals via `ensureFiscalYear` while AR and the inventory bridge
+reject, so an Indian tenant provisioned only for FY2026-27 stops being able to
+receive goods at midnight on 31 March — with a rejection that reads like a
+misconfiguration rather than a calendar. Provisioning now reports
+`fiscal_year_ending` 30 days out. Creating the next year automatically was the
+tempting fix and is the wrong one: the pattern, and whether a transition period
+is wanted, are the tenant's decisions, and a year silently created with guessed
+dates is harder to notice than a missing one.
 
 **The mock IRP gets its own transport enum member, not a flag.** An environment
 variable does not survive a database restore, a CSV export or a screenshot, and
@@ -145,6 +157,20 @@ original IRN, which should be recorded as `accepted`, not as an error); the
 24-hour cancellation window, after which a filed document can only be credited,
 not cancelled; and auth-token expiry, which needs a refresh rather than being
 surfaced as a rejection.
+
+**Legacy invoice numbers are derived from a row count.** ACC-17's second
+finding, in `modules/invoices` rather than in the seam: `INV-{calendarYear}-{count+1}`
+over every invoice row the organisation has, so the series skips whenever a
+sales order is invoiced (that path numbers from a different sequencer into the
+same table), the year in the label never resets, a deleted row lets a number be
+reissued, and only one of the two writers takes the numbering lock. There is no
+unique index on `invoice_number` — measured on the development database, 350
+rows, 25 distinct numbers, zero unique indexes covering the column. Those
+duplicates are a load fixture rather than real invoicing; the fixture only got
+there because nothing forbids it. The fix is a real sequence row, which is
+`modules/invoices`' change, and the index needs a repair pass plus an answer to
+what re-numbering does to a GST return already filed. The ADR carries the
+detail and `document-series-fy.spec.ts` fails the day it is fixed.
 
 **Invoices already posted under `sales_invoice:{id}:issue`** on a live database
 keep a key no future `:post` will match, so the ADR's round-trip can double-post
