@@ -118,12 +118,12 @@ describe("Object storage degraded — isConfigured and key validation do not tou
   });
 
   it.skip(
-    "unblocked by: a real S3/R2 storage endpoint configured in the test environment — once available, verify that an upload re-driven from the stored pre-generated key reaches the endpoint and the stored metadata row reflects completion without data loss",
+    "integration: retrying an upload from its stored pre-generated key completes the object and metadata without data loss — R2 settings exist but are unverified; the probe and authorized disposable storage/database acceptance are not available",
     () => {},
   );
 
   it.skip(
-    "unblocked by: a real storage endpoint and a virus-scanner seam (e.g. ClamAV sidecar) — verify the scan PENDING→CLEAN state machine under real conditions so that CLEAN is never set before the scanner confirms the result",
+    "integration: scan state changes from PENDING to CLEAN only after a real scanner confirms the result — R2 settings are unverified, no real scanner is configured, and the disposable storage/database probe is unimplemented",
     () => {},
   );
 });

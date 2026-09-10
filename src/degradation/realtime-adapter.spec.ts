@@ -169,7 +169,7 @@ describeWithDb("AblyService — realtime adapter present but publishing fails (f
   });
 
   it.skip(
-    "unblocked by: a real Ably account with a valid API key so a test client can subscribe to a channel and verify it receives messages from the DB lastReadAt watermark after reconnecting — the subscription and message history retrieval require Ably infrastructure that is not available in this environment",
+    "integration: a test client receives messages from the DB lastReadAt watermark after reconnecting — Ably configuration exists but is unverified; the subscription/history probe and authorized disposable Ably/database acceptance are not available",
     () => {},
   );
 });
