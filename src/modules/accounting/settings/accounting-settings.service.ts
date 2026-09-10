@@ -13,6 +13,7 @@ import {
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { SETTINGS_CACHE_KEY, SETUP_STATUS_CACHE_KEY, SEQUENCE_DEFAULTS } from "./accounting-settings.constants";
+import { systemAccountPurposeSchema } from "./dto/settings.schemas";
 import type { UpdateSettingsInput, UpdateSequenceInput, SequenceEntityType, UpsertPaymentTermsInput } from "./dto/settings.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
@@ -92,7 +93,21 @@ export class AccountingSettingsService {
   }
 
   private async fetchSetupStatus(orgId: string) {
-    const TOTAL_PURPOSES = 16;
+    /**
+     * INV-09 — counted from the schema, not typed out.
+     *
+     * This was the literal `16`. There were eighteen purposes when it was
+     * written and there are twenty-four now, so "Map system accounts" reported
+     * itself finished while a third of the list was unmapped — including all six
+     * inventory purposes, which is the exact state INV-09 exists to make
+     * visible. A hand-kept count of a list the compiler already knows the length
+     * of can only ever drift downwards, because nothing fails when it does.
+     *
+     * `.options` is the same tuple the controller validates its route param
+     * against and the same one `listSystemAccounts` renders, so the checklist
+     * now counts against the list the admin is actually shown.
+     */
+    const TOTAL_PURPOSES = systemAccountPurposeSchema.options.length;
 
     const [settings, [accountCount], [systemMappedCount], [openingBalanceEntry], [periodCount]] =
       await Promise.all([
@@ -136,6 +151,13 @@ export class AccountingSettingsService {
         key: "system_accounts",
         label: "Map system accounts",
         done: (systemMappedCount?.total ?? 0) >= TOTAL_PURPOSES,
+        /**
+         * Said out loud, because `done: false` on its own does not tell an
+         * admin whether they have two mappings left or twenty-two, and this is
+         * the only screen that knows.
+         */
+        mapped: systemMappedCount?.total ?? 0,
+        total: TOTAL_PURPOSES,
       },
       {
         key: "opening_balances",
