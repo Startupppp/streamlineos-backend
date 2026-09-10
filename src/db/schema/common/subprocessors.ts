@@ -1,5 +1,6 @@
 import { index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { users } from "./auth";
+import { sql } from "drizzle-orm";
 
 /**
  * Who else processes our customers' data, and what for.
@@ -91,5 +92,21 @@ export const subprocessorSubscribers = pgTable(
   (table) => [
     uniqueIndex("uniq_subprocessor_subscribers_email").on(table.email),
     index("idx_subprocessor_subscribers_active").on(table.unsubscribedAt),
+    /*
+     * Leads with the tenant column because this table carries RLS
+     * (`tenant_isolation: organization_id = current_org_id()`), so every read
+     * of it carries that predicate. Neither index above can serve it — they
+     * lead with `email` and `unsubscribed_at` — which left the policy to a
+     * sequential scan and made this the one tenant table of 744 that
+     * `check:tenant-indexes` reported. Section 7: the policy qual is not
+     * leakproof, so an index the planner will even consider has to supply
+     * `organization_id` itself.
+     *
+     * Partial on the live rows: every read here asks who should be notified,
+     * and an unsubscribed row is never part of that answer. Installed by 0674.
+     */
+    index("idx_subprocessor_subscribers_org_active")
+      .on(table.organizationId, table.email)
+      .where(sql`${table.unsubscribedAt} IS NULL`),
   ],
 );
