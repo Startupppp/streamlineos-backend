@@ -1,3 +1,4 @@
+import { makeAuthContextFactory } from "../../../test/helpers/module-guard-context";
 import { ForbiddenException, UnauthorizedException } from "@nestjs/common";
 import type { ExecutionContext } from "@nestjs/common";
 import type { Reflector } from "@nestjs/core";
@@ -83,9 +84,7 @@ function buildGuard(opts: {
     verifyToken: jest.fn().mockResolvedValue(CLAIMS),
   } as unknown as JwtKeyringService;
 
-  return new JwtAuthGuard(reflector, db, redis, membership, keyring, {
-    moduleAvailability: async () => ({ available: true }),
-  });
+  return new JwtAuthGuard(reflector, db, redis, membership, keyring, makeAuthContextFactory());
 }
 
 describe("JwtAuthGuard — revoked-session tombstone bite proofs", () => {

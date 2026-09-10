@@ -3,6 +3,7 @@ jest.mock("../../common/relocation/relocation-traffic-tracker", () => ({
   isRelocationTarget: jest.fn().mockReturnValue(false),
 }));
 
+import { makeMembershipStateStub } from "../../../test/helpers/membership-state-stub";
 import { AccessService } from "./access.service";
 import { AccessVersionCache } from "./access-version-cache";
 import type { Db } from "../../db/drizzle.module";
@@ -96,6 +97,7 @@ function buildService() {
     entitlements as unknown as EntitlementsService,
     makeMfaPolicyStub(),
     versionCacheSvc,
+    makeMembershipStateStub(),
   );
 
   (versionCacheSvc as unknown as Record<string, Map<string, { version: number; expiresAt: number }>>)["versionCache"].set(ORG_ID, { version: 1, expiresAt: Date.now() + 60_000 });

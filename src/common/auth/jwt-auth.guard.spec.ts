@@ -1,3 +1,4 @@
+import { makeAuthContextFactory } from "../../../test/helpers/module-guard-context";
 import { UnauthorizedException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { decodeJwt } from "jose";
@@ -41,7 +42,7 @@ function makeGuard(keyring: JwtKeyringService): JwtAuthGuard {
     null,
     { isAccountActive: jest.fn(), resolve: jest.fn() } as never,
     keyring,
-    { moduleAvailability: async () => ({ available: true }) },
+    makeAuthContextFactory(),
   );
 }
 
@@ -155,7 +156,7 @@ describe("JwtAuthGuard asymmetric JWT path", () => {
       null,
       { isAccountActive: jest.fn(), resolve: jest.fn() } as never,
       keyring,
-      { moduleAvailability: async () => ({ available: true }) },
+      makeAuthContextFactory(),
     );
 
     const context = {

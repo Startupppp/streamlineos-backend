@@ -1,3 +1,7 @@
+import {
+  makeMembershipStateStub,
+  stateFromRow,
+} from "../../../test/helpers/membership-state-stub";
 import { AccessService } from "./access.service";
 import { AccessVersionCache } from "./access-version-cache";
 import { accessVersionChannel } from "../../common/rbac/access-version-channel";
@@ -35,11 +39,6 @@ function makeInstance(
           .mockImplementation(() =>
             Promise.resolve({ permissionsVersion: durable.version }),
           ),
-      },
-      organizationMembers: {
-        findFirst: jest
-          .fn()
-          .mockImplementation(() => Promise.resolve({ ...membership })),
       },
     },
     execute: jest.fn().mockResolvedValue(undefined),
@@ -82,6 +81,7 @@ function makeInstance(
     entitlements as unknown as EntitlementsService,
     makeMfaPolicyStub(),
     new AccessVersionCache(db as unknown as Db, cache as unknown as CacheService),
+    makeMembershipStateStub(() => stateFromRow({ ...membership, id: 1 })),
   );
 }
 

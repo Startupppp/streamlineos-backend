@@ -1,9 +1,9 @@
+import { testAuthContext } from "../../../test/helpers/module-guard-context";
 import { ForbiddenException } from "@nestjs/common";
 import type { Request } from "express";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { GdprController } from "./gdpr.controller";
 import { authorize } from "../access/authorize";
-import { createAuthContext } from "../../common/auth/auth-context";
 
 jest.mock("../access/authorize");
 
@@ -12,7 +12,7 @@ const USER = {
   orgId: "org-1",
 } as CurrentUserContext;
 
-const AUTH_CTX = createAuthContext(USER, {
+const AUTH_CTX = testAuthContext(USER, {
   moduleAvailability: async () => ({ available: true }),
 });
 

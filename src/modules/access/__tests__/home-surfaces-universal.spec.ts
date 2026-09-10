@@ -1,3 +1,4 @@
+import { memberRowReader } from "../../../../test/helpers/membership-state-stub";
 import { EMPLOYEE_SELF_SERVICE_GRANTS } from "../access-policy";
 import { isOrgOnlyPermission } from "../../../common/rbac/grantability";
 import { AccessPermissionResolver } from "../access-permission.resolver";
@@ -26,15 +27,6 @@ const HOME_SURFACES: ReadonlyArray<[string, string]> = [
 function resolverForMemberWithNoRoles(): AccessPermissionResolver {
   const db = {
     query: {
-      organizationMembers: {
-        findFirst: () =>
-          Promise.resolve({
-            isOwner: false,
-            status: "ACTIVE",
-            id: 1,
-            role: "MEMBER",
-          }),
-      },
     },
     select: () => ({
       from: () => ({
@@ -60,6 +52,7 @@ function resolverForMemberWithNoRoles(): AccessPermissionResolver {
     new Set<string>(),
     new Map(),
     1000,
+    memberRowReader({ isOwner: false, status: "ACTIVE", id: 1, role: "MEMBER", }),
   );
 }
 
@@ -78,15 +71,6 @@ describe("Home surfaces are allowed to everyone", () => {
   it("gives a suspended member nothing, universal or otherwise", async () => {
     const db = {
       query: {
-        organizationMembers: {
-          findFirst: () =>
-            Promise.resolve({
-              isOwner: false,
-              status: "SUSPENDED",
-              id: 1,
-              role: "MEMBER",
-            }),
-        },
       },
       select: () => ({ from: () => ({ where: () => Promise.resolve([]) }) }),
     } as unknown as Db;
@@ -97,6 +81,7 @@ describe("Home surfaces are allowed to everyone", () => {
       new Set<string>(),
       new Map(),
       1000,
+      memberRowReader({ isOwner: false, status: "SUSPENDED", id: 1, role: "MEMBER", }),
     );
     const resolved = (await resolver.computeUserPermissions("org-1", "u-1", 1)).perms;
     expect(resolved).toEqual({});
@@ -135,15 +120,6 @@ describe("owning the Home module does not confer org-wide chat settings", () => 
   function resolverForHomeModuleOwner(): AccessPermissionResolver {
     const db = {
       query: {
-        organizationMembers: {
-          findFirst: () =>
-            Promise.resolve({
-              isOwner: false,
-              status: "ACTIVE",
-              id: 1,
-              role: "MEMBER",
-            }),
-        },
       },
       select: () => ({
         from: (table: unknown) => {
@@ -174,6 +150,7 @@ describe("owning the Home module does not confer org-wide chat settings", () => 
       new Set<string>(),
       new Map(),
       1000,
+      memberRowReader({ isOwner: false, status: "ACTIVE", id: 1, role: "MEMBER", }),
     );
   }
 

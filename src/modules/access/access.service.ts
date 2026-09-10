@@ -10,6 +10,8 @@ import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transa
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import type { AuthContext } from "../../common/auth/auth-context";
+import { MembershipStateService } from "../../common/auth/membership-state.service";
 import { subscribeVersionBump } from "../../common/rbac/access-invalidate";
 import type {
   AccessSnapshot,
@@ -33,6 +35,7 @@ import {
   AccessPermissionResolver,
   membershipCacheKey,
   type MembershipAccessState,
+  type MembershipReader,
 } from "./access-permission.resolver";
 import {
   type Clock,
@@ -50,7 +53,6 @@ import { AccessVersionCache } from "./access-version-cache";
 
 export {
   broadest,
-  evaluateMembershipGate,
   isActiveAssignment,
   isActiveDelegation,
   isPlanGatedModule,
@@ -82,6 +84,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     private readonly entitlements: EntitlementsService,
     private readonly mfaPolicy: MfaPolicyService,
     private readonly accessVersionCache: AccessVersionCache,
+    private readonly membershipState: MembershipStateService,
   ) {
     const readAccessTable = <Result>(
       read: () => PromiseLike<Result>,
@@ -92,6 +95,8 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       this.warnedUnknownKeys,
       this.membershipAccessCache,
       MEMBERSHIP_CACHE_TTL_MS,
+      (organizationId, memberUserId) =>
+        this.membershipState.resolve(memberUserId, organizationId),
       this.clock,
     );
     this.deniedModulesResolver = new DeniedModulesResolver(
@@ -112,12 +117,16 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       entitlements,
       mfaPolicy,
       (organizationId) => this.getPermissionsVersion(organizationId),
-      (organizationId, memberUserId) =>
-        this.resolveUserPermissions(organizationId, memberUserId),
+      (organizationId, memberUserId, authContext) =>
+        this.resolveUserPermissions(organizationId, memberUserId, authContext),
       (organizationId, memberUserId) =>
         this.getUserDeniedModules(organizationId, memberUserId),
-      (organizationId, memberUserId) =>
-        this.canManageOrganizationMembership(organizationId, memberUserId),
+      (organizationId, memberUserId, authContext) =>
+        this.canManageOrganizationMembership(
+          organizationId,
+          memberUserId,
+          authContext,
+        ),
       (getModuleMap, getDeniedModules) =>
         this.buildModuleAvailabilityResolver(getModuleMap, getDeniedModules),
     );
@@ -179,10 +188,32 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     return this.accessVersionCache.getVersion(orgId);
   }
 
+  /** Only a context bound to this exact actor and tenant may answer for them. */
+  private contextFor(
+    orgId: string,
+    userId: string,
+    ctx?: AuthContext,
+  ): AuthContext | undefined {
+    if (!ctx || ctx.actor.orgId !== orgId || ctx.actor.userId !== userId)
+      return undefined;
+    return ctx;
+  }
+
+  private membershipFrom(
+    orgId: string,
+    userId: string,
+    ctx?: AuthContext,
+  ): MembershipReader | undefined {
+    const bound = this.contextFor(orgId, userId, ctx);
+    return bound ? () => bound.membership() : undefined;
+  }
+
   async resolveUserPermissions(
     orgId: string,
     userId: string,
+    ctx?: AuthContext,
   ): Promise<Map<string, DataScope>> {
+    const membership = this.membershipFrom(orgId, userId, ctx);
     const version = await this.getPermissionsVersion(orgId);
     const permsKey = `${orgId}:${userId}:${version}`;
     const cachedPerms = this.permsCache.get(permsKey);
@@ -220,7 +251,12 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
         if (local && local.expiresAt > this.clock.now().getTime()) {
           map = new Map(Object.entries(local.perms));
         } else {
-          const resolved = await this.resolveWithValidity(orgId, userId, version);
+          const resolved = await this.resolveWithValidity(
+            orgId,
+            userId,
+            version,
+            membership,
+          );
           this.permsCache.set(txPermsKey, {
             perms: resolved.perms,
             expiresAt: resolved.validUntil,
@@ -233,14 +269,15 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
           }
           map = new Map(Object.entries(resolved.perms));
         }
-        const membership = await this.permissionResolver.getMembershipAccessState(
+        const state = await this.permissionResolver.getMembershipAccessState(
           orgId,
           userId,
           version,
+          membership,
         );
-        if (!membership.active) return new Map();
+        if (!state.active) return new Map();
         applyUniversalGrants(map);
-        if (membership.isOwnerOrAdmin) return map;
+        if (state.isOwnerOrAdmin) return map;
         const denied = await this.deniedModulesResolver.resolve(orgId, userId);
         stripDeniedModules(map, denied);
         return map;
@@ -259,6 +296,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
   async canManageOrganizationMembership(
     orgId: string,
     userId: string,
+    ctx?: AuthContext,
   ): Promise<boolean> {
     const version = await this.getPermissionsVersion(orgId);
     const cached = this.membershipAccessCache.get(
@@ -266,6 +304,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     );
     if (cached && cached.expiresAt > Date.now()) return cached.isOwnerOrAdmin;
 
+    const membership = this.membershipFrom(orgId, userId, ctx);
     return runInTenantTransaction(
       this.db,
       async () =>
@@ -274,6 +313,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
             orgId,
             userId,
             version,
+            membership,
           )
         ).isOwnerOrAdmin,
       { orgId },
@@ -348,7 +388,9 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     orgId: string,
     userId: string,
     currentUserContext: CurrentUserContext,
+    ctx?: AuthContext,
   ): Promise<AccessSnapshot> {
+    const bound = this.contextFor(orgId, userId, ctx);
     const compute = (): Promise<AccessSnapshot> =>
       runInTenantTransaction(
         this.db,
@@ -357,6 +399,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
             orgId,
             userId,
             currentUserContext,
+            bound,
           ),
         { orgId },
       );
@@ -386,6 +429,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     orgId: string,
     userId: string,
     version: number,
+    membership?: MembershipReader,
   ): Promise<CachedPermissions> {
     const localKey = `access:perms:${userId}:v${version}`;
     const fill = async (): Promise<CachedPermissions> => {
@@ -394,6 +438,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
         orgId,
         userId,
         version,
+        membership,
       );
       return {
         perms: resolved.perms,
@@ -439,9 +484,13 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  async scopeFor(user: CurrentUserContext, key: string): Promise<DataScope> {
+  async scopeFor(
+    user: CurrentUserContext,
+    key: string,
+    ctx?: AuthContext,
+  ): Promise<DataScope> {
     return resolvePrincipalScope(user.principal, key, (isOrgOwner) =>
-      this.membershipCapability(user, isOrgOwner, key),
+      this.membershipCapability(user, isOrgOwner, key, ctx),
     );
   }
 
@@ -449,9 +498,14 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     user: CurrentUserContext,
     isOrgOwner: boolean,
     key: string,
+    ctx?: AuthContext,
   ): Promise<DataScope> {
     if (isOrgOwner) return "all";
-    const resolved = await this.resolveUserPermissions(user.orgId, user.userId);
+    const resolved = await this.resolveUserPermissions(
+      user.orgId,
+      user.userId,
+      ctx,
+    );
     return resolved.get(key) ?? "none";
   }
 

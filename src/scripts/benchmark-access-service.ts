@@ -30,6 +30,7 @@ import { membershipCacheKey } from "../modules/access/access-permission.resolver
 import type { CacheService } from "../common/cache/cache.service";
 import type { EntitlementsService } from "../modules/access/entitlements.service";
 import type { MfaPolicyService } from "../modules/access/mfa-policy.service";
+import type { MembershipStateService } from "../common/auth/membership-state.service";
 import type { Db } from "../db/drizzle.module";
 
 const OUT = resolve(process.cwd(), ".auth-benchmark-results.json");
@@ -87,6 +88,11 @@ const mockMfa: MfaPolicyService = {
   isMfaRequired: () => never("mfa.isMfaRequired"),
 } as unknown as MfaPolicyService;
 
+const mockMembershipState: MembershipStateService = {
+  resolve: () => never("membershipState.resolve"),
+  isAccountActive: () => never("membershipState.isAccountActive"),
+} as unknown as MembershipStateService;
+
 function percentile(sorted: number[], p: number): number | null {
   if (!sorted.length) return null;
   if (p <= 0) return sorted[0];
@@ -121,6 +127,7 @@ async function run() {
     mockEntitlements,
     mockMfa,
     mockVersionCache,
+    mockMembershipState,
   ) as AccessService & Record<string, unknown>;
 
   const orgId = "bench-org-a1b2c3d4";

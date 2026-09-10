@@ -1,3 +1,4 @@
+import { makeMembershipStateStub } from "../../../../test/helpers/membership-state-stub";
 import { AccessService } from "../access.service";
 import { AccessVersionCache } from "../access-version-cache";
 import type { Db } from "../../../db/drizzle.module";
@@ -77,6 +78,7 @@ function buildService(roleGrants: { permissionKey: string; scope: string }[]) {
     entitlements as never,
     mfaPolicy as never,
     new AccessVersionCache(db, cache as never),
+    makeMembershipStateStub(),
   );
 }
 

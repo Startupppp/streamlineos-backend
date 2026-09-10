@@ -5,7 +5,11 @@ import type { AuthResult, DataScope } from "./access.types";
 import type { ModuleAvailabilityResolver } from "../../common/rbac/module-availability";
 
 export interface AccessScopeResolver {
-  scopeFor(user: CurrentUserContext, key: string): Promise<DataScope>;
+  scopeFor(
+    user: CurrentUserContext,
+    key: string,
+    ctx?: AuthContext,
+  ): Promise<DataScope>;
 }
 
 export interface AccessResolver extends AccessScopeResolver {
@@ -23,10 +27,11 @@ export async function authorize(
 ): Promise<AuthResult> {
   if (!ctx) return { allow: false, scope: "none", reason: "UNAUTHENTICATED" };
 
+  // namespaceOf, never administeringModuleOf: Home administers `chat:*` and is always enabled, so that swap would keep `chat:*` live for an org with Chat disabled.
   const avail = await ctx.moduleAvailable(namespaceOf(permissionKey));
   if (!avail.available) return { allow: false, scope: "none", reason: "NO_MODULE" };
 
-  const scope = await access.scopeFor(ctx.actor, permissionKey);
+  const scope = await access.scopeFor(ctx.actor, permissionKey, ctx);
   if (scope === "none") return { allow: false, scope: "none", reason: "FORBIDDEN" };
 
   return { allow: true, scope };

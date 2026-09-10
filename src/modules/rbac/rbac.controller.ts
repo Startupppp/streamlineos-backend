@@ -11,6 +11,8 @@ import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { Universal } from "../../common/auth/universal.decorator";
 import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
+import { AuthCtx } from "../../common/auth/auth-context.decorator";
+import type { AuthContext } from "../../common/auth/auth-context";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
@@ -81,8 +83,11 @@ export class RbacController {
   @Get("access-snapshot")
   @Universal()
   @ResponseSchema(accessSnapshotResponseSchema)
-  getAccessSnapshot(@CurrentUser() u: CurrentUserContext) {
-    return this.access.getAccessSnapshot(u.orgId, u.userId, u);
+  getAccessSnapshot(
+    @CurrentUser() u: CurrentUserContext,
+    @AuthCtx() authCtx: AuthContext,
+  ) {
+    return this.access.getAccessSnapshot(u.orgId, u.userId, u, authCtx);
   }
 
   @Get("discovery/permissions")

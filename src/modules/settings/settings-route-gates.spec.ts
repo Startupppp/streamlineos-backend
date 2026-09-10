@@ -1,3 +1,4 @@
+import { testAuthContext } from "../../../test/helpers/module-guard-context";
 import { ForbiddenException, type ExecutionContext } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { REQUIRE_PERMISSION } from "../access/require-permission.decorator";
@@ -5,7 +6,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import type { AccessService } from "../access/access.service";
 import type { AccessResolver } from "../access/authorize";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { createAuthContext } from "../../common/auth/auth-context";
 import { humanSessionPrincipal } from "../../common/auth/principal";
 import { GitConnectionsController } from "../integrations/git/git-connections.controller";
 import {
@@ -176,7 +176,7 @@ function canActivate(
   handler: Handler,
   keys: readonly string[],
 ): Promise<boolean> {
-  const authContext = createAuthContext(actor, {
+  const authContext = testAuthContext(actor, {
     moduleAvailability: async () => ({ available: true }),
   });
   const context = {

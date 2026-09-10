@@ -126,3 +126,108 @@ describe("MembershipStateService resolves the acting membership per organization
     expect(state.active).toBe(false);
   });
 });
+
+interface MembershipRow {
+  membershipId: number;
+  status: string;
+  isOwner: boolean;
+  role: string;
+  userIsActive: boolean;
+  userDeletedAt: Date | null;
+  orgStatus: string;
+  orgDeletedAt: Date | null;
+}
+
+const LIVE_ROW: MembershipRow = {
+  membershipId: 11,
+  status: "ACTIVE",
+  isOwner: false,
+  role: "MEMBER",
+  userIsActive: true,
+  userDeletedAt: null,
+  orgStatus: "ACTIVE",
+  orgDeletedAt: null,
+};
+
+function buildDbReturning(rows: MembershipRow[]): Db {
+  const chain: Record<string, unknown> = {};
+  for (const method of ["from", "innerJoin", "where", "orderBy"])
+    chain[method] = () => chain;
+  chain["limit"] = () => Promise.resolve(rows);
+  const tx = { execute: async () => undefined, select: () => chain };
+  return {
+    transaction: async (fn: (t: unknown) => Promise<unknown>) => fn(tx),
+    execute: async () => undefined,
+  } as unknown as Db;
+}
+
+async function resolveWithRow(partial: Partial<MembershipRow>) {
+  const { cache } = buildCache();
+  const service = new MembershipStateService(
+    buildDbReturning([{ ...LIVE_ROW, ...partial }]),
+    cache,
+  );
+  return service.resolve(USER, ORG_A);
+}
+
+describe("MembershipStateService is the one definition of a live membership", () => {
+  it("reports an active member of a live organization as active", async () => {
+    const state = await resolveWithRow({});
+    expect(state).toEqual({
+      active: true,
+      isOwner: false,
+      role: "MEMBER",
+      membershipId: 11,
+    });
+  });
+
+  it.each([
+    ["a suspended membership", { status: "SUSPENDED" }],
+    ["a membership that has left", { status: "LEFT" }],
+    ["an invited-but-not-active membership", { status: "INVITED" }],
+    ["a deactivated user account", { userIsActive: false }],
+    ["a soft-deleted user account", { userDeletedAt: new Date() }],
+    ["an organization that is not active", { orgStatus: "SUSPENDED" }],
+    ["a soft-deleted organization", { orgDeletedAt: new Date() }],
+  ] as const)("denies %s", async (_label, partial) => {
+    const state = await resolveWithRow(partial);
+    expect(state.active).toBe(false);
+  });
+
+  it("denies an owner whose membership is suspended, owner flag notwithstanding", async () => {
+    const state = await resolveWithRow({ status: "SUSPENDED", isOwner: true });
+    expect(state.active).toBe(false);
+    expect(state.isOwner).toBe(true);
+  });
+
+  it("denies when there is no membership row at all", async () => {
+    const { cache } = buildCache();
+    const service = new MembershipStateService(buildDbReturning([]), cache);
+
+    await expect(service.resolve(USER, ORG_B)).resolves.toEqual({
+      active: false,
+      isOwner: false,
+      role: "",
+      membershipId: null,
+    });
+  });
+
+  it("denies, rather than throws, when the read fails", async () => {
+    const { cache } = buildCache();
+    const db = {
+      transaction: async () => {
+        throw new Error("connection reset");
+      },
+      execute: async () => undefined,
+    } as unknown as Db;
+
+    await expect(
+      new MembershipStateService(db, cache).resolve(USER, ORG_A),
+    ).resolves.toEqual({
+      active: false,
+      isOwner: false,
+      role: "",
+      membershipId: null,
+    });
+  });
+});

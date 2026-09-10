@@ -1,3 +1,4 @@
+import { makeMembershipStateStub } from "../../../../test/helpers/membership-state-stub";
 import { AccessService } from "../access.service";
 import { AccessVersionCache } from "../access-version-cache";
 import type { DataScope } from "../access.types";
@@ -60,7 +61,7 @@ function buildService(resolved: Map<string, DataScope>): {
     isCoreModule: jest.fn().mockReturnValue(false),
   } as unknown as EntitlementsService;
 
-  const service = new AccessService(db, cache, entitlements, makeMfaPolicyStub(), new AccessVersionCache(db, cache));
+  const service = new AccessService(db, cache, entitlements, makeMfaPolicyStub(), new AccessVersionCache(db, cache), makeMembershipStateStub());
   const resolveSpy = jest
     .spyOn(service, "resolveUserPermissions")
     .mockResolvedValue(resolved);

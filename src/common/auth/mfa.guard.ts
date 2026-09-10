@@ -10,6 +10,7 @@ import type { Request } from "express";
 import { IS_PUBLIC } from "./public.decorator";
 import { ALLOW_WITHOUT_MFA } from "./allow-without-mfa.decorator";
 import type { CurrentUserContext } from "./backend-claims";
+import type { AuthContext } from "./auth-context";
 import { MFA_POLICY, type IMfaPolicy } from "./mfa-policy.token";
 
 @Injectable()
@@ -36,14 +37,21 @@ export class MfaGuard implements CanActivate {
 
     const req = context
       .switchToHttp()
-      .getRequest<Request & { user?: CurrentUserContext }>();
+      .getRequest<
+        Request & { user?: CurrentUserContext; authContext?: AuthContext }
+      >();
     const user = req.user;
     if (!user?.userId || !user.orgId) return true;
 
-    const { enforced, satisfied } = await this.mfaPolicy.resolve(
-      user.orgId,
-      user.userId,
-    );
+    const ctx = req.authContext;
+    // No context, or one bound to another actor, asks the policy directly.
+    const shared =
+      ctx && ctx.actor.userId === user.userId && ctx.actor.orgId === user.orgId
+        ? ctx
+        : null;
+    const { enforced, satisfied } = shared
+      ? await shared.mfa()
+      : await this.mfaPolicy.resolve(user.orgId, user.userId);
     if (enforced && !satisfied) {
       throw new ForbiddenException({
         code: "MFA_REQUIRED",

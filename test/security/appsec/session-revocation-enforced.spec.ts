@@ -1,3 +1,4 @@
+import { makeAuthContextFactory } from "../../../test/helpers/module-guard-context";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { resolve, relative, join } from "node:path";
 import { UnauthorizedException } from "@nestjs/common";
@@ -156,7 +157,7 @@ function makeGuard(
       isOwner: false,
     }),
   } as unknown as MembershipStateService;
-  return new JwtAuthGuard(reflector, db, redis as unknown as Redis | null, membership, keyring, { moduleAvailability: async () => ({ available: true }) });
+  return new JwtAuthGuard(reflector, db, redis as unknown as Redis | null, membership, keyring, makeAuthContextFactory());
 }
 
 function contextFor(token: string): ExecutionContext {

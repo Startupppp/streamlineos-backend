@@ -3,6 +3,7 @@ jest.mock("../../../common/relocation/relocation-traffic-tracker", () => ({
   isRelocationTarget: jest.fn().mockReturnValue(false),
 }));
 
+import { membershipStubFromDb } from "../../../../test/helpers/membership-state-stub";
 import { ForbiddenException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 
@@ -154,6 +155,7 @@ function buildService(db: unknown): AccessService {
     entitlements as unknown as EntitlementsService,
     makeMfaPolicyStub(),
     new AccessVersionCache(wrappedDb, cache as unknown as CacheService),
+    membershipStubFromDb(db),
   );
 }
 

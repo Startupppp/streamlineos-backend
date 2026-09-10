@@ -21,6 +21,7 @@ jest.mock("../../../common/relocation/relocation-traffic-tracker", () => ({
   isRelocationTarget: jest.fn().mockReturnValue(false),
 }));
 
+import { makeMembershipStateStub } from "../../../../test/helpers/membership-state-stub";
 import { AccessService } from "../access.service";
 import { AccessVersionCache } from "../access-version-cache";
 import { DeniedModulesResolver } from "../denied-modules.resolver";
@@ -85,6 +86,7 @@ function buildService(db: unknown): AccessService {
     entitlements as unknown as EntitlementsService,
     makeMfaPolicyStub(),
     new AccessVersionCache(wrappedDb, cache as unknown as CacheService),
+    makeMembershipStateStub(),
   );
 }
 

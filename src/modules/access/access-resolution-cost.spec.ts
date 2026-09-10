@@ -1,3 +1,4 @@
+import { makeMembershipStateStub } from "../../../test/helpers/membership-state-stub";
 import { AccessService } from "./access.service";
 import { AccessVersionCache } from "./access-version-cache";
 import { poolTelemetry } from "../../db/pool-telemetry";
@@ -95,6 +96,7 @@ function buildFixture(): CostFixture {
       entitlements as unknown as EntitlementsService,
       makeMfaPolicyStub(),
       new AccessVersionCache(db as unknown as Db, cache as unknown as CacheService),
+      makeMembershipStateStub(),
     ),
   };
 }

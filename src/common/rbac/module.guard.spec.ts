@@ -1,10 +1,10 @@
+import { testAuthContext } from "../../../test/helpers/module-guard-context";
 import { ExecutionContext } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { ModuleGuard } from "./module.guard";
 import { REQUIRE_MODULE } from "./require-module.decorator";
 import { IS_PUBLIC } from "../auth/public.decorator";
 import { ModuleDisabledException } from "../http/api-exceptions";
-import { createAuthContext } from "../auth/auth-context";
 import type { ModuleAvailabilityLookup } from "../auth/auth-context";
 import { humanSessionPrincipal } from "../auth/principal";
 import type { CurrentUserContext } from "../auth/backend-claims";
@@ -45,7 +45,7 @@ function ctx(user: Partial<CurrentUserContext>): ExecutionContext {
     principal: humanSessionPrincipal(1, false),
     ...user,
   };
-  const req = { user: actor, authContext: createAuthContext(actor, lookup) };
+  const req = { user: actor, authContext: testAuthContext(actor, lookup) };
   return {
     switchToHttp: () => ({ getRequest: () => req }),
     getHandler: () => ({}),

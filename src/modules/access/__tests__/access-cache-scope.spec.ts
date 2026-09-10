@@ -1,3 +1,4 @@
+import { membershipStubFromDb } from "../../../../test/helpers/membership-state-stub";
 import { AccessService } from "../access.service";
 import { AccessVersionCache } from "../access-version-cache";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
@@ -153,6 +154,7 @@ function buildService(
     entitlements,
     makeMfaPolicyStub(),
     new AccessVersionCache(wrappedDb, cache),
+    membershipStubFromDb(defaultDb),
   );
 }
 
@@ -203,6 +205,7 @@ describe("AccessService.resolveUserPermissions - org-scoped Redis cache key", ()
       entitlements,
       makeMfaPolicyStub(),
       new AccessVersionCache(wrappedDb2, cache as unknown as CacheService),
+      membershipStubFromDb(db),
     );
 
     await svc.resolveUserPermissions("org-alpha", "user-1");
@@ -265,6 +268,7 @@ describe("AccessService.resolveUserPermissions - org-scoped Redis cache key", ()
       entitlements,
       makeMfaPolicyStub(),
       new AccessVersionCache(dbForA, cache as unknown as CacheService),
+      membershipStubFromDb(dbForA),
     );
     const svcB = new AccessService(
       dbForB,
@@ -272,6 +276,7 @@ describe("AccessService.resolveUserPermissions - org-scoped Redis cache key", ()
       entitlements,
       makeMfaPolicyStub(),
       new AccessVersionCache(dbForB, cache as unknown as CacheService),
+      membershipStubFromDb(dbForB),
     );
 
     await svcA.resolveUserPermissions("org-a", "user-shared");

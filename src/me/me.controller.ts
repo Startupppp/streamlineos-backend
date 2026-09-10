@@ -1,5 +1,7 @@
 import { Body, Controller, Get, Patch, Query } from "@nestjs/common";
 import { CurrentUser } from "../common/auth/current-user.decorator";
+import { AuthCtx } from "../common/auth/auth-context.decorator";
+import type { AuthContext } from "../common/auth/auth-context";
 import { Universal } from "../common/auth/universal.decorator";
 import { AllowWithoutMfa } from "../common/auth/allow-without-mfa.decorator";
 import type { CurrentUserContext } from "../common/auth/backend-claims";
@@ -44,8 +46,11 @@ export class MeController {
   @Universal()
   @AllowWithoutMfa()
   @ResponseSchema(accessSnapshotSchema)
-  getAccess(@CurrentUser() u: CurrentUserContext): Promise<AccessSnapshot> {
-    return this.access.getAccessSnapshot(u.orgId, u.userId, u);
+  getAccess(
+    @CurrentUser() u: CurrentUserContext,
+    @AuthCtx() authCtx: AuthContext,
+  ): Promise<AccessSnapshot> {
+    return this.access.getAccessSnapshot(u.orgId, u.userId, u, authCtx);
   }
 
   @Get("org-display")

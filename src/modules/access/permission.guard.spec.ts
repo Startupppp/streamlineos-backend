@@ -1,3 +1,4 @@
+import { testAuthContext } from "../../../test/helpers/module-guard-context";
 import { ForbiddenException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { ExecutionContextHost } from "@nestjs/core/helpers/execution-context-host";
@@ -5,7 +6,6 @@ import { Test, type TestingModule } from "@nestjs/testing";
 import { Public } from "../../common/auth/public.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
-import { createAuthContext } from "../../common/auth/auth-context";
 import { AccessService } from "./access.service";
 import { PermissionGuard } from "./permission.guard";
 import { RequirePermission } from "./require-permission.decorator";
@@ -85,7 +85,7 @@ describe("PermissionGuard", () => {
     currentUser: CurrentUserContext = user,
   ): ExecutionContextHost {
     const actor = { ...currentUser };
-    const authContext = createAuthContext(actor, {
+    const authContext = testAuthContext(actor, {
       moduleAvailability: async (_actor, moduleKey) =>
         (await getModuleState(actor.orgId, moduleKey)) === false
           ? { available: false, reason: "org-disabled" }

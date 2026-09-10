@@ -5,6 +5,7 @@ import type { StorageService } from "src/modules/storage/storage.service";
 import type { AccessService } from "src/modules/access/access.service";
 import type { Db } from "src/db/drizzle.module";
 import { MembershipStateService } from "src/common/auth/membership-state.service";
+import type { AuthContextFactory } from "src/common/auth/auth-context.factory";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (
@@ -54,6 +55,7 @@ const auditStub = {
 
 const accessStub = {} as unknown as AccessService;
 const membershipStub = {} as unknown as MembershipStateService;
+const authContextStub = {} as unknown as AuthContextFactory;
 
 describe("HrExportJobsService — cross-tenant export isolation (BOLA)", () => {
   beforeEach(() => jest.clearAllMocks());
@@ -61,7 +63,7 @@ describe("HrExportJobsService — cross-tenant export isolation (BOLA)", () => {
   it("CROSS-TENANT-READ: org-B actor addressing org-A export job receives NotFoundException (404 semantics, not 403)", async () => {
     const { db } = makeSelectDb([]);
     const storage = {} as unknown as StorageService;
-    const svc = new HrExportJobsService(db, storage, auditStub, accessStub, membershipStub);
+    const svc = new HrExportJobsService(db, storage, auditStub, accessStub, membershipStub, authContextStub);
     await expect(
       svc.getForRequester(ORG_ATTACKER, REQUESTER_ID, JOB_ID),
     ).rejects.toThrow(NotFoundException);
@@ -70,7 +72,7 @@ describe("HrExportJobsService — cross-tenant export isolation (BOLA)", () => {
   it("EXISTENCE-ORACLE-GUARD: cross-tenant miss is NotFoundException not ForbiddenException", async () => {
     const { db } = makeSelectDb([]);
     const storage = {} as unknown as StorageService;
-    const svc = new HrExportJobsService(db, storage, auditStub, accessStub, membershipStub);
+    const svc = new HrExportJobsService(db, storage, auditStub, accessStub, membershipStub, authContextStub);
     const thrown = await svc
       .getForRequester(ORG_ATTACKER, REQUESTER_ID, JOB_ID)
       .catch((e: unknown) => e);
@@ -81,7 +83,7 @@ describe("HrExportJobsService — cross-tenant export isolation (BOLA)", () => {
   it("PREDICATE-SCOPE: caller's orgId AND requestedBy are both bound in the WHERE predicate", async () => {
     const { db, capturedWhere } = makeSelectDb([]);
     const storage = {} as unknown as StorageService;
-    const svc = new HrExportJobsService(db, storage, auditStub, accessStub, membershipStub);
+    const svc = new HrExportJobsService(db, storage, auditStub, accessStub, membershipStub, authContextStub);
     await svc.getForRequester(ORG_ATTACKER, REQUESTER_ID, JOB_ID).catch(() => {});
     const vals = capturedWhere.flatMap((w) => sqlValues(w));
     expect(vals).toContain(ORG_ATTACKER);
@@ -92,7 +94,7 @@ describe("HrExportJobsService — cross-tenant export isolation (BOLA)", () => {
   it("PREDICATE-SCOPE: victim org value does not appear in an attacker org lookup", async () => {
     const { db, capturedWhere } = makeSelectDb([]);
     const storage = {} as unknown as StorageService;
-    const svc = new HrExportJobsService(db, storage, auditStub, accessStub, membershipStub);
+    const svc = new HrExportJobsService(db, storage, auditStub, accessStub, membershipStub, authContextStub);
     await svc.getForRequester(ORG_ATTACKER, REQUESTER_ID, JOB_ID).catch(() => {});
     const vals = capturedWhere.flatMap((w) => sqlValues(w));
     expect(vals).not.toContain(ORG_OWNER);
@@ -102,7 +104,7 @@ describe("HrExportJobsService — cross-tenant export isolation (BOLA)", () => {
     const { db } = makeSelectDb([]);
     const getFileStream = jest.fn().mockResolvedValue({ body: null, contentType: "text/csv" });
     const storage = { getFileStream, isConfigured: jest.fn().mockReturnValue(true) } as unknown as StorageService;
-    const svc = new HrExportJobsService(db, storage, auditStub, accessStub, membershipStub);
+    const svc = new HrExportJobsService(db, storage, auditStub, accessStub, membershipStub, authContextStub);
     await expect(
       svc.getDownload(ORG_ATTACKER, REQUESTER_ID, JOB_ID),
     ).rejects.toThrow(NotFoundException);

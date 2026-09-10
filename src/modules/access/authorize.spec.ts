@@ -1,8 +1,9 @@
+import { testAuthContext } from "../../../test/helpers/module-guard-context";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
 import { authorize } from "./authorize";
 import type { DataScope } from "./access.types";
-import { createAuthContext, type AuthContext } from "../../common/auth/auth-context";
+import type { AuthContext } from "../../common/auth/auth-context";
 import { isCoreModuleKey } from "./entitlements.service";
 
 function makeCtx(partial: Partial<CurrentUserContext> = {}): CurrentUserContext {
@@ -39,7 +40,7 @@ type CtxOptions =
     };
 
 function ctxFor(actor: CurrentUserContext, options: CtxOptions = true): AuthContext {
-  return createAuthContext(actor, {
+  return testAuthContext(actor, {
     moduleAvailability: async (_user, moduleKey) => {
       if (isCoreModuleKey(moduleKey)) return { available: true };
 

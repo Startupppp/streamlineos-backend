@@ -1,3 +1,4 @@
+import { memberRowReader } from "../../../../test/helpers/membership-state-stub";
 import { AccessPermissionResolver } from "../access-permission.resolver";
 import type { MembershipAccessState } from "../access-permission.resolver";
 import type { Db } from "../../../db/drizzle.module";
@@ -88,15 +89,6 @@ function makeDb(delegatedRows: DelegatedRow[]): {
 
   const db = {
     query: {
-      organizationMembers: {
-        findFirst: () =>
-          Promise.resolve({
-            isOwner: false,
-            status: "ACTIVE",
-            id: 1,
-            role: "MEMBER",
-          }),
-      },
     },
     select: (projection?: Record<string, unknown>) => {
       const columns = new Set(Object.keys(projection ?? {}));
@@ -144,6 +136,7 @@ function makeResolver(db: Db): AccessPermissionResolver {
     new Set<string>(),
     new Map<string, MembershipAccessState>(),
     15_000,
+    memberRowReader({ isOwner: false, status: "ACTIVE", id: 1, role: "MEMBER", }),
   );
 }
 

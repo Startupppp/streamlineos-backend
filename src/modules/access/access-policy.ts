@@ -78,20 +78,6 @@ export function isActiveAssignment(
   return assignment.expiresAt === null || assignment.expiresAt > currentTime;
 }
 
-export interface MembershipGateResult {
-  active: boolean;
-  isOwner: boolean;
-}
-
-export function evaluateMembershipGate(
-  membership: { status: string; isOwner: boolean } | null | undefined,
-): MembershipGateResult {
-  if (!membership || membership.status !== "ACTIVE") {
-    return { active: false, isOwner: false };
-  }
-  return { active: true, isOwner: membership.isOwner };
-}
-
 export const CATALOG_MODULES = Array.from(
   new Set(PERMISSIONS.map((permission) => namespaceOf(permission.name))),
 );

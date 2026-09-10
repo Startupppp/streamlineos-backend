@@ -18,7 +18,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { createAuthContext } from "../../../common/auth/auth-context";
+import { AuthContextFactory } from "../../../common/auth/auth-context.factory";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { AuditService } from "../../../common/audit/audit.service";
 import { withTenant } from "../../../common/tenant";
@@ -27,6 +27,7 @@ import { StorageService } from "../../storage/storage.service";
 import { AccessService, SCOPE_RANK } from "../../access/access.service";
 import { MembershipStateService } from "../../../common/auth/membership-state.service";
 import type { DataScope } from "../../access/access.types";
+import { ScopedRead } from "../../access/scoped-read";
 import { authorize } from "../../access/authorize";
 import type { CreateEmployeeExportJobInput } from "./dto/export-job.dto";
 import { hrExportUnavailable, isMissingHrExportTable } from "./hr-export-errors";
@@ -85,6 +86,7 @@ export class HrExportJobsService {
     private readonly audit: AuditService,
     private readonly access: AccessService,
     private readonly membershipState: MembershipStateService,
+    private readonly authContexts: AuthContextFactory,
   ) {}
 
   async create(
@@ -193,7 +195,7 @@ export class HrExportJobsService {
     });
   }
 
-  async resolveExecutionScope(job: HrExportJobRow): Promise<DataScope> {
+  async resolveExecutionScope(job: HrExportJobRow): Promise<ScopedRead> {
     // No guard ran for this job, so liveness comes from the same resolver JwtAuthGuard uses.
     const member = await this.membershipState.resolve(job.requestedBy, job.orgId);
     if (!member.active || member.membershipId === null) {
@@ -212,7 +214,7 @@ export class HrExportJobsService {
       tokenScopes: null,
       principal: humanSessionPrincipal(member.membershipId, member.isOwner),
     };
-    const authCtx = createAuthContext(context, this.access);
+    const authCtx = this.authContexts.create(context);
     const [exportAccess, employeeAccess] = await Promise.all([
       authorize(this.access, authCtx, "hr:export:manage"),
       authorize(this.access, authCtx, "hr:employees:view"),
@@ -231,7 +233,7 @@ export class HrExportJobsService {
         "No employee records are available in your current access scope.",
       );
     }
-    return scope;
+    return ScopedRead.of(job.orgId, job.requestedBy, scope);
   }
 
   async claimForOrg(orgId: string): Promise<HrExportJobRow | null> {
@@ -412,7 +414,10 @@ export class HrExportJobsService {
       const currentScope = await this.resolveExecutionScope(row);
       if (
         row.status === "completed" &&
-        !isExportScopeStillAllowed(row.requestedScope, currentScope)
+        !isExportScopeStillAllowed(
+          row.requestedScope,
+          currentScope.rawScope("compares the resolved export scope rank against the persisted requested scope"),
+        )
       ) {
         throw new ForbiddenException(
           "Your employee access scope changed. Create a new export for your current scope.",

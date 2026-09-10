@@ -1,3 +1,4 @@
+import { memberRowReader } from "../../../../test/helpers/membership-state-stub";
 import { AccessPermissionResolver } from "../access-permission.resolver";
 import type { Db } from "../../../db/drizzle.module";
 
@@ -40,15 +41,6 @@ function buildResolver(options: Options) {
 
   const db = {
     query: {
-      organizationMembers: {
-        findFirst: () =>
-          Promise.resolve({
-            isOwner: false,
-            status: "ACTIVE",
-            id: 42,
-            role: options.memberRole ?? "MEMBER",
-          }),
-      },
     },
     select: () => chain(),
   } as unknown as Db;
@@ -59,6 +51,7 @@ function buildResolver(options: Options) {
     new Set<string>(),
     new Map(),
     1000,
+    memberRowReader({ isOwner: false, status: "ACTIVE", id: 42, role: options.memberRole ?? "MEMBER", }),
   );
 }
 
@@ -113,15 +106,6 @@ describe("per-person grants fold into the resolved permission set", () => {
   it("gives an inactive member nothing, personal grant or not", async () => {
     const db = {
       query: {
-        organizationMembers: {
-          findFirst: () =>
-            Promise.resolve({
-              isOwner: false,
-              status: "SUSPENDED",
-              id: 42,
-              role: "MEMBER",
-            }),
-        },
       },
       select: () => ({ from: () => ({ where: () => Promise.resolve([]) }) }),
     } as unknown as Db;
@@ -132,6 +116,7 @@ describe("per-person grants fold into the resolved permission set", () => {
       new Set<string>(),
       new Map(),
       1000,
+      memberRowReader({ isOwner: false, status: "SUSPENDED", id: 42, role: "MEMBER", }),
     );
     expect((await resolver.computeUserPermissions(ORG, USER, 1)).perms).toEqual({});
   });

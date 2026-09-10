@@ -1,3 +1,4 @@
+import { testAuthContext } from "../../../test/helpers/module-guard-context";
 import { Reflector } from "@nestjs/core";
 import { ModuleGuard } from "../../common/rbac/module.guard";
 import { REQUIRE_MODULE } from "../../common/rbac/require-module.decorator";
@@ -17,7 +18,7 @@ import { CalendarSourceRegistry } from "../calendar/calendar-source.registry";
 import type { CalendarEventSource } from "../calendar/calendar-event-source";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
-import { createAuthContext, type AuthContext } from "../../common/auth/auth-context";
+import type { AuthContext } from "../../common/auth/auth-context";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -125,7 +126,7 @@ describe("c4 production access wiring", () => {
 
   it("routes ModuleGuard and PermissionGuard/authorize through the canonical resolver", async () => {
     const wiring = makeCanonicalWiring();
-    const authCtx = createAuthContext(user, wiring.access);
+    const authCtx = testAuthContext(user, wiring.access);
 
     const moduleContext = executionContext("build", user, authCtx);
     const moduleGuard = new ModuleGuard(moduleContext.reflector);
@@ -141,12 +142,16 @@ describe("c4 production access wiring", () => {
 
     expect(wiring.buildModuleAvailabilityResolver).toHaveBeenCalledTimes(2);
     expect(wiring.getModuleMap).toHaveBeenCalledWith("org-1");
-    expect(wiring.access.scopeFor).toHaveBeenCalledWith(user, "settings:rbac:manage");
+    expect(wiring.access.scopeFor).toHaveBeenCalledWith(
+      user,
+      "settings:rbac:manage",
+      expect.objectContaining({ actor: user }),
+    );
   });
 
   it("keeps authorize on the same AccessService/Entitlements seam", async () => {
     const wiring = makeCanonicalWiring();
-    const ctx = createAuthContext(user, wiring.access);
+    const ctx = testAuthContext(user, wiring.access);
 
     await expect(
       authorize(wiring.access, ctx, "settings:rbac:manage"),
@@ -154,7 +159,11 @@ describe("c4 production access wiring", () => {
 
     expect(wiring.access.moduleAvailability).toHaveBeenCalledWith(user, "settings");
     expect(wiring.buildModuleAvailabilityResolver).toHaveBeenCalledTimes(1);
-    expect(wiring.access.scopeFor).toHaveBeenCalledWith(user, "settings:rbac:manage");
+    expect(wiring.access.scopeFor).toHaveBeenCalledWith(
+      user,
+      "settings:rbac:manage",
+      expect.objectContaining({ actor: user }),
+    );
   });
 
   it("invokes the moduleAvailability lookup exactly once when a shared context spans ModuleGuard and authorize for the same module", async () => {
@@ -162,7 +171,7 @@ describe("c4 production access wiring", () => {
       (_u: CurrentUserContext, _k: string): Promise<ModuleAvailabilityResult> =>
         Promise.resolve({ available: true }),
     );
-    const sharedCtx = createAuthContext(user, { moduleAvailability: moduleAvailabilityFn });
+    const sharedCtx = testAuthContext(user, { moduleAvailability: moduleAvailabilityFn });
 
     const reflector = new Reflector();
     const handler = function handler(): void {};

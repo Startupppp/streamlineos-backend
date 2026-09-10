@@ -39,14 +39,13 @@ import {
   userApiTokens,
   userSessions,
 } from "../../db/schema";
-import { MembershipStateService } from "./membership-state.service";
-import { JwtKeyringService } from "./jwt-keyring.service";
 import {
-  createAuthContext,
-  type AuthContext,
-  type ModuleAvailabilityLookup,
-} from "./auth-context";
-import { MODULE_AVAILABILITY_LOOKUP } from "./module-availability-lookup.token";
+  MembershipStateService,
+  type MembershipState,
+} from "./membership-state.service";
+import { JwtKeyringService } from "./jwt-keyring.service";
+import { type AuthContext } from "./auth-context";
+import { AuthContextFactory } from "./auth-context.factory";
 
 interface OrgContext {
   orgId: string;
@@ -72,16 +71,16 @@ export class JwtAuthGuard implements CanActivate {
     @Inject(REDIS) private readonly redis: Redis | null,
     private readonly membership: MembershipStateService,
     private readonly keyring: JwtKeyringService,
-    @Inject(MODULE_AVAILABILITY_LOOKUP)
-    private readonly moduleAccess: ModuleAvailabilityLookup,
+    private readonly authContexts: AuthContextFactory,
   ) {}
 
   private attach(
     req: Request & { user?: CurrentUserContext; authContext?: AuthContext },
     actor: CurrentUserContext,
+    membership?: MembershipState,
   ): void {
     req.user = actor;
-    req.authContext = createAuthContext(actor, this.moduleAccess);
+    req.authContext = this.authContexts.create(actor, membership);
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -194,9 +193,11 @@ export class JwtAuthGuard implements CanActivate {
       let isOrgOwner = false;
       let resolvedOrgId = orgId ?? "";
       let principal: Principal = ACCOUNT_ONLY_PRINCIPAL;
+      let membership: MembershipState | undefined;
 
       if (orgId) {
         const state = await this.membership.resolve(claims.sub, orgId);
+        membership = state;
         if (!state.active || state.membershipId === null) {
           if (!allowNoOrg) {
             // The login is still valid; only this organization membership is
@@ -217,21 +218,25 @@ export class JwtAuthGuard implements CanActivate {
         }
       }
 
-      this.attach(req, {
-        userId: claims.sub,
-        orgId: resolvedOrgId,
-        role,
-        isOrgOwner,
-        sessionId: claims.sessionId,
-        tokenScopes: null,
-        principal,
-      });
+      this.attach(
+        req,
+        {
+          userId: claims.sub,
+          orgId: resolvedOrgId,
+          role,
+          isOrgOwner,
+          sessionId: claims.sessionId,
+          tokenScopes: null,
+          principal,
+        },
+        membership,
+      );
       return true;
     }
 
-    const userCtx = await this.tryPatAuth(token);
-    if (userCtx) {
-      this.attach(req, userCtx);
+    const personalToken = await this.tryPatAuth(token);
+    if (personalToken) {
+      this.attach(req, personalToken.actor, personalToken.membership);
       return true;
     }
 
@@ -324,7 +329,7 @@ export class JwtAuthGuard implements CanActivate {
 
   private async tryPatAuth(
     rawToken: string,
-  ): Promise<CurrentUserContext | null> {
+  ): Promise<{ actor: CurrentUserContext; membership: MembershipState } | null> {
     const matched = await this.findApiToken(rawToken);
     if (!matched) return null;
 
@@ -344,18 +349,21 @@ export class JwtAuthGuard implements CanActivate {
       .catch(() => undefined);
 
     return {
-      userId: matched.userId,
-      orgId: resolved.orgId,
-      role: state.role,
-      isOrgOwner: state.isOwner,
-      sessionId: `pat:${matched.id}`,
-      tokenScopes: matched.scopes,
-      principal: personalTokenPrincipal(
-        state.membershipId,
-        state.isOwner,
-        matched.id,
-        matched.scopes,
-      ),
+      actor: {
+        userId: matched.userId,
+        orgId: resolved.orgId,
+        role: state.role,
+        isOrgOwner: state.isOwner,
+        sessionId: `pat:${matched.id}`,
+        tokenScopes: matched.scopes,
+        principal: personalTokenPrincipal(
+          state.membershipId,
+          state.isOwner,
+          matched.id,
+          matched.scopes,
+        ),
+      },
+      membership: state,
     };
   }
 
