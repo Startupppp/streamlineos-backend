@@ -1,50 +1,29 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { invWebhookEvents, invWebhooks } from "../../../db/schema";
-import { forEachOrg } from "../../../common/tenant";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
-import type { TenantTx } from "../../../common/tenant/with-tenant";
 import { AccessService } from "../../access/access.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import { WebhookTransportService } from "./webhook-transport.service";
 import {
-  WEBHOOK_DELIVERY_BATCH_SIZE,
-  WEBHOOK_DELIVERY_LEASE_MS,
   WEBHOOK_DISABLE_AFTER_DEAD_LETTERS,
   WEBHOOK_RETRY_WINDOW_MS,
   planWebhookAttempt,
   planWebhookHealth,
   type WebhookAttemptPlan,
 } from "./webhook-delivery-policy";
+import {
+  claim,
+  type ClaimedDelivery,
+  type WebhookDeliverySweepResult,
+} from "./lib/webhook-claim";
 
-export interface WebhookDeliverySweepResult {
-  claimed: number;
-  delivered: number;
-  retried: number;
-  dead: number;
-  alerted: number;
-  disabled: number;
-  fenced: number;
-  orphaned: number;
-}
+export type { WebhookDeliverySweepResult };
 
-interface ClaimedDelivery {
-  readonly orgId: string;
-  readonly lease: Date;
-  readonly event: {
-    readonly id: number;
-    readonly eventType: string;
-    readonly payload: unknown;
-    readonly attempts: number;
-    readonly createdAt: Date;
-  };
-  readonly webhook:
-    | { readonly id: number; readonly url: string; readonly secret: string; readonly isActive: boolean }
-    | null;
-}
+
 
 /**
  * E7 — the retry/dead-letter half of durable outbound webhooks.
@@ -99,7 +78,7 @@ export class InventoryWebhookDeliveryWorker {
       orphaned: 0,
     };
 
-    const claimed = await this.claim(result);
+    const claimed = await claim(this.db, result);
     result.claimed = claimed.length;
 
     for (const item of claimed) {
@@ -115,118 +94,6 @@ export class InventoryWebhookDeliveryWorker {
     return result;
   }
 
-  /**
-   * One tenant transaction per organisation. `forEachOrg` is the only way a
-   * background sweep can read `inv_webhook_events` at all: the table is under RLS
-   * and the sweep has no ambient GUC, so a cross-org discovery query is denied
-   * `42501`. It also isolates failures — one tenant's claim rolling back leaves
-   * the rest of the sweep running.
-   */
-  private async claim(result: WebhookDeliverySweepResult): Promise<ClaimedDelivery[]> {
-    const now = new Date();
-    const lease = new Date(now.getTime() + WEBHOOK_DELIVERY_LEASE_MS);
-    const claimed: ClaimedDelivery[] = [];
-
-    await forEachOrg(this.db, "inventory-webhook-delivery", async (tx, orgId) => {
-      result.orphaned += await this.terminateOrphans(tx, orgId, now);
-
-      const remaining = WEBHOOK_DELIVERY_BATCH_SIZE - claimed.length;
-      if (remaining <= 0) return;
-
-      const nowIso = now.toISOString();
-      const rows = await tx
-        .update(invWebhookEvents)
-        .set({ leaseExpiresAt: lease })
-        .where(
-          sql`${invWebhookEvents.id} in (
-            select id from ${invWebhookEvents}
-            where org_id = ${orgId}
-              and status = 'PENDING'
-              and dead_lettered_at is null
-              and webhook_id is not null
-              and next_attempt_at is not null
-              and next_attempt_at <= ${nowIso}::timestamp
-              and (lease_expires_at is null or lease_expires_at <= ${nowIso}::timestamp)
-            order by next_attempt_at
-            limit ${remaining}
-            for update skip locked
-          )`,
-        )
-        .returning({
-          id: invWebhookEvents.id,
-          webhookId: invWebhookEvents.webhookId,
-          eventType: invWebhookEvents.eventType,
-          payload: invWebhookEvents.payload,
-          attempts: invWebhookEvents.attempts,
-          createdAt: invWebhookEvents.createdAt,
-        });
-
-      if (rows.length === 0) return;
-
-      const webhookIds = Array.from(
-        new Set(rows.map((row) => row.webhookId).filter((id): id is number => id !== null)),
-      );
-      const webhooks =
-        webhookIds.length === 0
-          ? []
-          : await tx
-              .select({
-                id: invWebhooks.id,
-                url: invWebhooks.url,
-                secret: invWebhooks.secret,
-                isActive: invWebhooks.isActive,
-              })
-              .from(invWebhooks)
-              .where(and(eq(invWebhooks.orgId, orgId), inArray(invWebhooks.id, webhookIds)));
-      const byId = new Map(webhooks.map((webhook) => [webhook.id, webhook]));
-
-      for (const row of rows) {
-        claimed.push({
-          orgId,
-          lease,
-          event: {
-            id: row.id,
-            eventType: row.eventType,
-            payload: row.payload,
-            attempts: row.attempts,
-            createdAt: row.createdAt,
-          },
-          webhook: row.webhookId === null ? null : (byId.get(row.webhookId) ?? null),
-        });
-      }
-    });
-
-    return claimed;
-  }
-
-  /**
-   * `inv_webhook_events.webhook_id` is `ON DELETE SET NULL`, so deleting a webhook
-   * leaves its queued events pointing at nothing. They can never be delivered and
-   * the claim above skips them, which without this would leave a permanently
-   * PENDING row per event for the life of the table — indistinguishable, to
-   * anyone reading the events list, from work that is still going to happen.
-   */
-  private async terminateOrphans(tx: TenantTx, orgId: string, now: Date): Promise<number> {
-    const rows = await tx
-      .update(invWebhookEvents)
-      .set({
-        status: "FAILED",
-        deadLetteredAt: now,
-        nextAttemptAt: null,
-        leaseExpiresAt: null,
-        lastError: "webhook-deleted",
-      })
-      .where(
-        and(
-          eq(invWebhookEvents.orgId, orgId),
-          eq(invWebhookEvents.status, "PENDING"),
-          sql`${invWebhookEvents.webhookId} is null`,
-          sql`${invWebhookEvents.deadLetteredAt} is null`,
-        ),
-      )
-      .returning({ id: invWebhookEvents.id });
-    return rows.length;
-  }
 
   private async attempt(item: ClaimedDelivery): Promise<{
     state: "DELIVERED" | "PENDING" | "FAILED";
