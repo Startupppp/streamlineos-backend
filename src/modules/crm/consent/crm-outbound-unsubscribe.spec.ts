@@ -7,6 +7,7 @@ import type { AutomationEmailService } from "../../automation/automation-email.s
 import { verifyUnsubscribeToken } from "./unsubscribe-token.util";
 
 const API_ORIGIN = "https://api.example.test";
+const APP_ORIGIN = "https://app.example.test";
 const CONTACT_EMAIL = "lead@example.test";
 
 function makeService(contactEmail: string | null = CONTACT_EMAIL) {
@@ -33,6 +34,13 @@ function linkFrom(send: jest.Mock): string {
   return header!.replace(/^<|>$/g, "");
 }
 
+/** The href a PERSON clicks, pulled out of the footer this service appends. */
+function footerLinkFrom(send: jest.Mock): string {
+  const match = /href="([^"]+)"/.exec(sentOptions(send).html);
+  expect(match).not.toBeNull();
+  return match![1]!;
+}
+
 const message = { to: CONTACT_EMAIL, subject: "Hello", html: "<p>Body</p>" };
 
 /**
@@ -46,15 +54,21 @@ const message = { to: CONTACT_EMAIL, subject: "Hello", html: "<p>Body</p>" };
  * to make.
  */
 describe("CRM outbound mail carries a working opt-out", () => {
-  const saved = { api: process.env.PUBLIC_API_URL, secret: process.env.ENCRYPTION_KEY };
+  const saved = {
+    api: process.env.PUBLIC_API_URL,
+    app: process.env.APP_URL,
+    secret: process.env.ENCRYPTION_KEY,
+  };
 
   beforeEach(() => {
     process.env.PUBLIC_API_URL = API_ORIGIN;
+    process.env.APP_URL = APP_ORIGIN;
     process.env.ENCRYPTION_KEY = "k".repeat(48);
   });
 
   afterAll(() => {
     process.env.PUBLIC_API_URL = saved.api;
+    process.env.APP_URL = saved.app;
     process.env.ENCRYPTION_KEY = saved.secret;
   });
 
@@ -99,11 +113,48 @@ describe("CRM outbound mail carries a working opt-out", () => {
     expect(options.html).toBe("<p>Body</p>");
   });
 
-  it("sends no link rather than a broken one when the API origin is unset", async () => {
+  /**
+   * The two links serve two readers and must not be the same URL.
+   *
+   * The footer link used to point at the API alongside the header, so a person
+   * who clicked "Unsubscribe" was opted out and shown the literal text
+   * `{"success":true}` -- the endpoint answers JSON, because the other two verbs
+   * on it are for mail clients. The opt-out worked and the recipient had no way
+   * to know it, which is the one thing an unsubscribe must never leave in doubt.
+   */
+  it("points the person at a page and the mail client at the API", async () => {
+    const { service, send } = makeService();
+    await service.send("org-1", message, { contactId: 42, channel: "EMAIL" });
+
+    const footer = footerLinkFrom(send);
+    const header = linkFrom(send);
+
+    expect(footer.startsWith(`${APP_ORIGIN}/unsubscribe/`)).toBe(true);
+    expect(header.startsWith(`${API_ORIGIN}/crm/consent/unsubscribe/`)).toBe(true);
+    expect(footer).not.toBe(header);
+
+    /* One token, two addresses -- or the two links would opt out different people. */
+    const footerToken = footer.slice(`${APP_ORIGIN}/unsubscribe/`.length);
+    const headerToken = header.slice(`${API_ORIGIN}/crm/consent/unsubscribe/`.length);
+    expect(footerToken).toBe(headerToken);
+    expect(verifyUnsubscribeToken(footerToken)?.contactId).toBe(42);
+  });
+
+  /**
+   * `PUBLIC_API_URL` is optional and `APP_URL` is required, so the halves fail
+   * independently. This used to return `{}` -- no header AND no footer -- which
+   * meant a deployment that had simply not set an optional variable sent
+   * marketing mail with no opt-out at all. Omitting a native Unsubscribe button
+   * is a degradation; omitting every way out is the defect the whole file exists
+   * to close.
+   */
+  it("keeps the visible link when the API origin is unset, and drops only the header", async () => {
     delete process.env.PUBLIC_API_URL;
     const { service, send } = makeService();
     await service.send("org-1", message, { contactId: 42, channel: "EMAIL" });
+
     expect(sentOptions(send).headers).toBeUndefined();
+    expect(footerLinkFrom(send).startsWith(`${APP_ORIGIN}/unsubscribe/`)).toBe(true);
   });
 
   it("refuses to attach one contact's link to a message sent to several people", async () => {

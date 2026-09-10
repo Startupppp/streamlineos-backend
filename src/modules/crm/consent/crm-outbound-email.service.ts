@@ -56,6 +56,25 @@ function apiOrigin(): string | null {
   return raw && raw.length > 0 ? raw : null;
 }
 
+/**
+ * Where a PERSON goes, which is the web app and not this API.
+ *
+ * The footer link used to point at `apiOrigin()` alongside the header, and the
+ * two readers are not the same. A mail client POSTs the header URL and reads a
+ * status code; a person clicks the footer link in a browser and reads whatever
+ * comes back — which, on the API route, is the literal text `{"success":true}`.
+ * The opt-out was honoured and the recipient had no way to know it, which is
+ * the one thing an unsubscribe must never leave in doubt.
+ *
+ * `APP_URL` is required by `env.validation.ts`, so unlike the header this link
+ * always exists. That matters more than the tidiness: with `PUBLIC_API_URL`
+ * unset the old code returned `{}` and marketing mail went out with **no
+ * opt-out at all**, header or footer.
+ */
+function appOrigin(): string {
+  return (process.env.APP_URL ?? "").trim().replace(/\/$/, "");
+}
+
 function unsubscribeFooterHtml(url: string): string {
   return (
     `<div style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;` +
@@ -165,32 +184,47 @@ export class CrmOutboundEmailService {
       return {};
     }
 
-    const origin = apiOrigin();
-    if (!origin) {
-      logger.warn("crm.outbound.unsubscribe-unconfigured", {
-        contactId: unsubscribe.contactId,
-        hint: "Set PUBLIC_API_URL so marketing mail can carry a working opt-out.",
-      });
-      return {};
-    }
-
     const token = buildUnsubscribeToken({
       orgId,
       contactId: unsubscribe.contactId,
       channel: unsubscribe.channel,
     });
-    const url = `${origin}/crm/consent/unsubscribe/${token}`;
+
+    /*
+      Two URLs for two readers, carrying the same token.
+
+      The footer is what a person clicks, so it goes to a page that can say what
+      happened. The header is what a mail client POSTs under RFC 8058, so it
+      must reach a route on this API — and it is omitted entirely when
+      `PUBLIC_API_URL` is unset, because a `List-Unsubscribe` that fails is read
+      as a sender refusing opt-outs. The footer does not depend on that variable
+      and is never dropped: a message a person cannot opt out of is worse than a
+      message with no native Unsubscribe button.
+    */
+    const pageUrl = `${appOrigin()}/unsubscribe/${token}`;
+    const apiUrl = apiOrigin();
+    if (!apiUrl) {
+      logger.warn("crm.outbound.unsubscribe-header-omitted", {
+        contactId: unsubscribe.contactId,
+        hint: "Set PUBLIC_API_URL to add RFC 8058 one-click headers; the footer link works regardless.",
+      });
+    }
+    const oneClickUrl = apiUrl ? `${apiUrl}/crm/consent/unsubscribe/${token}` : null;
 
     return {
-      html: `${options.html}${unsubscribeFooterHtml(url)}`,
+      html: `${options.html}${unsubscribeFooterHtml(pageUrl)}`,
       ...(options.text === undefined
         ? {}
-        : { text: `${options.text}\n\nUnsubscribe: ${url}` }),
-      headers: {
-        ...options.headers,
-        "List-Unsubscribe": `<${url}>`,
-        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-      },
+        : { text: `${options.text}\n\nUnsubscribe: ${pageUrl}` }),
+      ...(oneClickUrl === null
+        ? {}
+        : {
+            headers: {
+              ...options.headers,
+              "List-Unsubscribe": `<${oneClickUrl}>`,
+              "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+            },
+          }),
     };
   }
 }
