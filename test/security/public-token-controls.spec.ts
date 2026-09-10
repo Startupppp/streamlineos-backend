@@ -16,13 +16,50 @@
  *   Requires WIRING: "roots" in jest config must include "<rootDir>/test".
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const BACKEND_ROOT = join(__dirname, "../..");
 
 function src(rel: string): string {
   return readFileSync(join(BACKEND_ROOT, rel), "utf8");
+}
+
+/**
+ * Every `@UseRateLimit("…")` key this tree actually declares.
+ *
+ * Derived rather than listed, because the list this replaced could only ever go
+ * stale in the direction it did. It named `sign:public-form-submit` — a key
+ * belonging to a route that is not in this repository at all, since this
+ * worktree's `e-sign` is a snapshot — so the assertion outlived the thing it
+ * described and failed for a reason that had nothing to do with a rate limit
+ * being wrong.
+ *
+ * The derived direction is also the one that matters. A key with no `TIERS`
+ * entry does not error: `@UseRateLimit` on an unknown tier **silently disables
+ * the limit**, so the dangerous state is a route that declares a key nothing
+ * defines. Retiring a route AND its tier together is fine and this now ignores
+ * it, as it should.
+ */
+function declaredRateLimitKeys(root: string): Set<string> {
+  const keys = new Set<string>();
+  const re = /@UseRateLimit\(\s*["']([^"']+)["']/g;
+
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) walk(full);
+      else if (entry.endsWith(".ts") && !entry.includes(".spec.")) {
+        const text = readFileSync(full, "utf8");
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(text)) !== null) keys.add(m[1]);
+        re.lastIndex = 0;
+      }
+    }
+  };
+
+  walk(root);
+  return keys;
 }
 
 function parseTiersFromSource(rateLimitSrc: string): Set<string> {
@@ -101,40 +138,22 @@ describe("TIERS coverage for known @Public() @UseRateLimit keys", () => {
     expect(tiers.size).toBeGreaterThanOrEqual(20);
   });
 
-  const knownPublicRateLimitKeys = [
-    "sign:public-session",
-    "sign:public-otp-request",
-    "sign:public-auth",
-    "sign:public-complete",
-    "sign:public-form-submit",
-    "hr-form:public-view",
-    "hr-form:public-submit",
-    "platform-visit",
-    "public:contact",
-    "public:waitlist",
-    "public:kb",
-    "public:kb-article",
-    "public:roadmap",
-    "public:roadmap-vote",
-    "public:roadmap-feedback",
-    "crm:public-unsubscribe",
-    "notifications:unsubscribe",
-    "invite:validate",
-    "invite:accept",
-    "survey:public-view",
-    "survey:public-start",
-    "survey:public-submit",
-    "whiteboard:public-view",
-    "whiteboard:public-edit",
-    "ai:public-kb-ask",
-  ];
+  const declared = declaredRateLimitKeys(join(BACKEND_ROOT, "src"));
 
-  it.each(knownPublicRateLimitKeys)(
-    "TIERS entry exists for @Public() rate-limit key: %s",
-    (key) => {
-      expect(tiers.has(key)).toBe(true);
-    },
-  );
+  /**
+   * The floor is what stops this passing by finding nothing. A regex that stops
+   * matching — a decorator rename, a move to a constant — would otherwise turn
+   * the whole check green while covering zero routes, which is the exact failure
+   * mode this file exists to prevent one layer down.
+   */
+  it("found the rate-limit declarations it is meant to be checking", () => {
+    expect(declared.size).toBeGreaterThanOrEqual(20);
+  });
+
+  it("every declared @UseRateLimit key has a TIERS entry, or its limit is silently off", () => {
+    const undefinedKeys = [...declared].filter((key) => !tiers.has(key)).sort();
+    expect(undefinedKeys).toEqual([]);
+  });
 });
 
 describe("SEC-004 regression — unknown tier key denies", () => {
