@@ -117,7 +117,23 @@ describe("InvStockService — cross-tenant isolation", () => {
   });
 
   it("returns stock levels for the owning org (isolation — control)", async () => {
-    const ROW = { id: 1, org_id: OWNER, on_hand: "100", available: "100" };
+    /*
+     * The joined row `listStockLevels` now projects. It used to be the driver's
+     * raw `{ on_hand, org_id }` -- the snake_case payload that reached the
+     * browser as `NaN` in every quantity column and a dash for every name.
+     */
+    const ROW = {
+      id: 1,
+      onHand: "100",
+      committed: "0",
+      onOrder: "0",
+      available: "100",
+      blockedQty: "0",
+      qualityHoldQty: "0",
+      averageCost: null,
+      productVariant: { id: 5, name: "V", sku: "SKU-1", productId: 9, productName: "P", productSku: "P-1", reorderPoint: "0" },
+      location: { id: 3, name: "Bin", code: "B-1", warehouseId: 2, warehouseName: "WH" },
+    };
     const { db } = makeDb([ROW]);
     const svc = await Test.createTestingModule({
       providers: [
