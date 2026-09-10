@@ -455,6 +455,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm check:owner-authority:self-test && pnpm check:owner-authority
 
+      - name: Membership writes go through their one owner
+        if: ${{ !cancelled() }}
+        run: pnpm check:membership-writes:self-test && pnpm check:membership-writes
+
       - name: Controllers gate on their own module
         if: ${{ !cancelled() }}
         run: pnpm check:module-gate:self-test && pnpm check:module-gate
