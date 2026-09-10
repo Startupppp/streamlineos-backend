@@ -33,6 +33,33 @@ function hostOf(value: unknown): string | undefined {
 }
 
 /**
+ * The live tripwire, or null while disarmed.
+ *
+ * Process-wide rather than per-call because `jest-e2e-seeded.json` arms it once
+ * for every seeded file through `setupFiles`, and a spec that wants to read
+ * `attempts` must see that same instance rather than install a second layer of
+ * patches over the first.
+ */
+let armed: MailEgressTripwire | null = null;
+
+/**
+ * The tripwire armed for this test file.
+ *
+ * Throws rather than returning null when nothing is armed: a spec asserting
+ * "no provider was reached" against an absent tripwire would pass for the one
+ * reason that makes the assertion worthless.
+ */
+export function mailEgressTripwire(): MailEgressTripwire {
+  if (!armed) {
+    throw new Error(
+      "mail egress tripwire is not armed — `test/helpers/arm-mail-egress.setup.ts` " +
+        "should be in `setupFiles` in jest-e2e-seeded.json.",
+    );
+  }
+  return armed;
+}
+
+/**
  * Fail loudly if anything tries to reach a mail provider.
  *
  * The seeded harness overrides `EmailProviderService`, so nothing should. This
@@ -48,6 +75,9 @@ function hostOf(value: unknown): string | undefined {
  * are intercepted; every other request is passed straight through untouched.
  */
 export function armMailEgressTripwire(): MailEgressTripwire {
+  /** Idempotent: arming twice would patch the patches and leak the originals. */
+  if (armed) return armed;
+
   const attempts: string[] = [];
 
   const trip = (host: string): Error => {
@@ -92,7 +122,7 @@ export function armMailEgressTripwire(): MailEgressTripwire {
   https.get = wrap(realHttpsGet);
   http.get = wrap(realHttpGet);
 
-  return {
+  armed = {
     attempts,
     disarm() {
       globalThis.fetch = realFetch;
@@ -100,6 +130,8 @@ export function armMailEgressTripwire(): MailEgressTripwire {
       http.request = realHttpRequest;
       https.get = realHttpsGet;
       http.get = realHttpGet;
+      armed = null;
     },
   };
+  return armed;
 }

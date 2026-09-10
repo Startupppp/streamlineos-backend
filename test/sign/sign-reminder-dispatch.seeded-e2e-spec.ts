@@ -14,10 +14,7 @@ import {
   type SeededE2eApp,
 } from "test/helpers/seeded-e2e-app";
 import { seedOrg, type SeededFixture } from "test/helpers/seed-builder";
-import {
-  armMailEgressTripwire,
-  type MailEgressTripwire,
-} from "test/helpers/mail-egress-tripwire";
+import { mailEgressTripwire } from "test/helpers/mail-egress-tripwire";
 
 /**
  * SIGN-P1-05 and SIGN-P1-07.
@@ -73,9 +70,6 @@ describe(`${SEEDED_HARNESS} a reminder reaches the signer with a link that works
   /** What the dry run said would happen, to be held against what did. */
   let predictedAffected = -1;
 
-  /** Armed for the whole run; see the no-egress test below for what it buys. */
-  let egress: MailEgressTripwire;
-
   const seedEnvelope = async (opts: {
     title: string;
     sentAt: Date;
@@ -119,7 +113,6 @@ describe(`${SEEDED_HARNESS} a reminder reaches the signer with a link that works
   };
 
   beforeAll(async () => {
-    egress = armMailEgressTripwire();
     seeded = await createSeededE2eApp();
     fixture = await seedOrg(seeded.seedDb).addMember("sender", { permissionKeys: [] }).build();
     await seeded.seedDb
@@ -147,7 +140,6 @@ describe(`${SEEDED_HARNESS} a reminder reaches the signer with a link that works
       await fixture.teardown();
     }
     await seeded?.close();
-    egress?.disarm();
   }, 60_000);
 
   const runReminderSweep = async (query = "") => {
@@ -270,6 +262,9 @@ describe(`${SEEDED_HARNESS} a reminder reaches the signer with a link that works
    * requires the tripwire to actually fire at a provider host first.
    */
   it("hands the reminder to a transport that never leaves the process", async () => {
+    /** Armed process-wide by `arm-mail-egress.setup.ts`, not by this file. */
+    const egress = mailEgressTripwire();
+
     const captured = seeded.mail.to(dueEmail);
     expect(captured).toHaveLength(1);
     expect(captured[0]!.subject).toBe(

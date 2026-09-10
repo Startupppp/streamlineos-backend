@@ -13,6 +13,6 @@
     "/node_modules/(?!(?:\\.pnpm/)?(?:@scure|otplib|@otplib|@noble|@composio|@openrouter|@ai-sdk|@workflow|@standard-schema|eventsource-parser|ai)[@/+])"
   ],
   "moduleNameMapper": { "^src/(.*)$": "<rootDir>/src/$1", "^test/(.*)$": "<rootDir>/test/$1" },
-  "setupFiles": ["dotenv/config"],
+  "setupFiles": ["dotenv/config", "<rootDir>/test/helpers/arm-mail-egress.setup.ts"],
   "maxWorkers": 1
 }
