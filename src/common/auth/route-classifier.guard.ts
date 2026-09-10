@@ -2,6 +2,7 @@ import {
   CanActivate,
   ExecutionContext,
   ForbiddenException,
+  Inject,
   Injectable,
   Logger,
   OnApplicationBootstrap,
@@ -12,6 +13,8 @@ import { AUTHORIZED_IN_SERVICE } from "./authorized-in-service.decorator";
 import { IS_PUBLIC } from "./public.decorator";
 import { IS_UNIVERSAL } from "./universal.decorator";
 import { REQUIRE_PERMISSION } from "../../modules/access/require-permission.decorator";
+import { APP_CONFIG } from "../../config/config.module";
+import type { AppConfig } from "../../config/env.validation";
 
 /**
  * Every HTTP route must carry exactly one classification:
@@ -32,10 +35,9 @@ import { REQUIRE_PERMISSION } from "../../modules/access/require-permission.deco
  * and at request time. REQUIRE_ROUTE_CLASSIFICATION=false is the escape hatch,
  * and turning it off is a deliberate line in a deployment config.
  */
-const ENFORCE = () => process.env.REQUIRE_ROUTE_CLASSIFICATION !== "false";
 
 /**
- * Reads one metadata key off a single route, its handler overriding its
+ * Reads one metadata key off a single route, the handler overriding its
  * controller class.
  *
  * `isDeclared` used to take `(handler: Function, classRef: Function)` and build
@@ -64,7 +66,30 @@ export class RouteClassifierGuard implements CanActivate, OnApplicationBootstrap
     private readonly reflector: Reflector,
     private readonly discovery: DiscoveryService,
     private readonly scanner: MetadataScanner,
+    /**
+     * The escape hatch arrives through the config token, not `process.env`.
+     *
+     * It used to be a module-level `ENFORCE()` closure reading the variable on
+     * every route, every request. `no-restricted-syntax` bans that, and this
+     * switch is the one it should least tolerate: it decides whether an
+     * undeclared route is denied, and it was readable and writable by anything
+     * in the process at any moment, from a source no test could set through the
+     * constructor.
+     *
+     * Going through the schema also narrows it. `env.validation.ts` types it
+     * `"true" | "false" | undefined`, so a deployment that misspells the value
+     * now fails validation at boot instead of quietly falling through to
+     * "enforce" — the case the old `!== "false"` had to be careful about is no
+     * longer representable here.
+     */
+    @Inject(APP_CONFIG)
+    private readonly config: Pick<AppConfig, "REQUIRE_ROUTE_CLASSIFICATION">,
   ) {}
+
+  /** Absence enforces; only an explicit `false` turns it off. */
+  private get enforce(): boolean {
+    return this.config.REQUIRE_ROUTE_CLASSIFICATION !== "false";
+  }
 
   private isDeclared(read: MetadataReader): boolean {
     if (read(IS_PUBLIC) === true) return true;
@@ -102,7 +127,7 @@ export class RouteClassifierGuard implements CanActivate, OnApplicationBootstrap
     const list = [...this.undeclared].sort().join("\n  ");
     const msg = `RouteClassifierGuard: ${this.undeclared.size} route(s) carry no exposure declaration (@Public / @Universal / @RequirePermission / @AuthorizedInService):\n  ${list}`;
 
-    if (ENFORCE()) throw new Error(msg);
+    if (this.enforce) throw new Error(msg);
     this.logger.warn(msg);
   }
 
@@ -116,7 +141,7 @@ export class RouteClassifierGuard implements CanActivate, OnApplicationBootstrap
     if (declared) return true;
 
     const label = `${context.getClass().name}#${context.getHandler().name}`;
-    if (!ENFORCE()) {
+    if (!this.enforce) {
       this.logger.warn(`Undeclared route allowed (classification not enforced): ${label}`);
       return true;
     }

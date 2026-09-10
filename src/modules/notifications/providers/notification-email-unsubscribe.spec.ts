@@ -18,13 +18,28 @@ function input(overrides: Partial<ProviderSendInput> = {}): ProviderSendInput {
   };
 }
 
-function makeProvider() {
+/**
+ * The API origin arrives through `APP_CONFIG`, not `process.env`.
+ *
+ * That is the point of the injection, and the same move
+ * `crm/consent/crm-outbound-unsubscribe.spec.ts` made in c87a673c3: jest hands
+ * every test file its own copy of `process.env`, so a value a spec sets is
+ * invisible to anything reading it outside the module graph — and the old
+ * helper read it on every send. Passing config here means each test states the
+ * deployment it is describing, in the test.
+ */
+function makeProvider(
+  config: { PUBLIC_API_URL?: string } = { PUBLIC_API_URL: API_ORIGIN },
+) {
   const dispatchEmail = jest.fn().mockResolvedValue(undefined);
   const emailProvider = {
     dispatchEmail,
     getEmailProvider: () => "resend",
   } as unknown as EmailProviderService;
-  return { provider: new NotificationEmailProvider(emailProvider), dispatchEmail };
+  return {
+    provider: new NotificationEmailProvider(emailProvider, config),
+    dispatchEmail,
+  };
 }
 
 function headersOf(dispatchEmail: jest.Mock): Record<string, string> | undefined {
@@ -43,16 +58,15 @@ function headersOf(dispatchEmail: jest.Mock): Record<string, string> | undefined
  * a bulk sender on, so it is worse than sending none.
  */
 describe("one-click unsubscribe headers", () => {
-  const saved = { secret: process.env.UNSUBSCRIBE_TOKEN_SECRET, api: process.env.PUBLIC_API_URL };
+  /* The token signer still reads its key from the environment. */
+  const saved = { secret: process.env.UNSUBSCRIBE_TOKEN_SECRET };
 
   beforeEach(() => {
     process.env.UNSUBSCRIBE_TOKEN_SECRET = "a".repeat(48);
-    process.env.PUBLIC_API_URL = API_ORIGIN;
   });
 
   afterAll(() => {
     process.env.UNSUBSCRIBE_TOKEN_SECRET = saved.secret;
-    process.env.PUBLIC_API_URL = saved.api;
   });
 
   it("points at the API, which is the only host that answers that path", async () => {
@@ -74,8 +88,7 @@ describe("one-click unsubscribe headers", () => {
   });
 
   it("sends no header at all when the API origin is not configured", async () => {
-    delete process.env.PUBLIC_API_URL;
-    const { provider, dispatchEmail } = makeProvider();
+    const { provider, dispatchEmail } = makeProvider({});
     await provider.send(input());
 
     /*
@@ -100,8 +113,7 @@ describe("one-click unsubscribe headers", () => {
   });
 
   it("trims a trailing slash so the path is not doubled", async () => {
-    process.env.PUBLIC_API_URL = `${API_ORIGIN}/`;
-    const { provider, dispatchEmail } = makeProvider();
+    const { provider, dispatchEmail } = makeProvider({ PUBLIC_API_URL: `${API_ORIGIN}/` });
     await provider.send(input());
 
     const url = headersOf(dispatchEmail)!["List-Unsubscribe"]!;

@@ -1,4 +1,6 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
+import { APP_CONFIG } from "../../../config/config.module";
+import type { AppConfig } from "../../../config/env.validation";
 import type { NotificationChannelProvider } from "./notification-provider.interface";
 import type { NotificationChannel, ProviderSendInput, ProviderSendResult, ProviderValidationResult } from "../notification.types";
 import { EmailProviderService, isTransientError } from "../../email/email.provider";
@@ -30,11 +32,14 @@ import { createUnsubscribeToken } from "../../email/unsubscribe-token";
  * `PUBLIC_API_URL` unset means no header at all, which is honest and is exactly
  * what the rule above already says about mandatory mail.
  */
-function unsubscribeHeaders(input: ProviderSendInput): Record<string, string> | undefined {
+function unsubscribeHeaders(
+  input: ProviderSendInput,
+  publicApiUrl: string | undefined,
+): Record<string, string> | undefined {
   if (input.mandatory) return undefined;
   if (!input.recipientAddress) return undefined;
 
-  const apiOrigin = process.env.PUBLIC_API_URL?.trim().replace(/\/$/, "");
+  const apiOrigin = publicApiUrl?.trim().replace(/\/$/, "");
   if (!apiOrigin) return undefined;
 
   const token = createUnsubscribeToken({
@@ -67,7 +72,26 @@ export class NotificationEmailProvider implements NotificationChannelProvider {
   readonly channel: NotificationChannel = "EMAIL";
   private readonly logger = new Logger(NotificationEmailProvider.name);
 
-  constructor(private readonly emailProvider: EmailProviderService) {}
+  constructor(
+    private readonly emailProvider: EmailProviderService,
+    /**
+     * The API's own origin arrives through the config token, not `process.env`.
+     *
+     * `unsubscribeHeaders` used to read `PUBLIC_API_URL` on every send, from a
+     * module-level helper — the same shape `crm/consent/crm-outbound-email`
+     * carried until c87a673c3, and this file is the one its comment pointed at
+     * as precedent. `no-restricted-syntax` bans it for the reason both files
+     * demonstrate: the value is unreachable from a constructor, so the spec had
+     * to reach around the object and mutate the environment to describe a
+     * deployment.
+     *
+     * `PUBLIC_API_URL` stays optional on purpose. Unset means the header is
+     * omitted entirely rather than pointed at a host that cannot answer it,
+     * which is what the comment above spells out.
+     */
+    @Inject(APP_CONFIG)
+    private readonly config: Pick<AppConfig, "PUBLIC_API_URL">,
+  ) {}
 
   async send(input: ProviderSendInput): Promise<ProviderSendResult> {
     if (input.sandbox) {
@@ -86,7 +110,7 @@ export class NotificationEmailProvider implements NotificationChannelProvider {
         subject: input.title,
         html: buildHtml(input),
         organizationId: input.orgId,
-        headers: unsubscribeHeaders(input),
+        headers: unsubscribeHeaders(input, this.config.PUBLIC_API_URL),
         attachments: Array.isArray(input.metadata?.attachments)
           ? (input.metadata.attachments as Array<{ filename: string; contentBase64: string; type: string }>).map((a) => ({
               filename: a.filename,
