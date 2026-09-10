@@ -6,8 +6,8 @@ dotenv.config({ path: resolve(process.cwd(), ".env") });
 
 const url = process.env.APP_DATABASE_URL;
 if (!url) {
-  console.error("APP_DATABASE_URL is required (the non-BYPASSRLS app role).");
-  process.exit(1);
+  console.error("PREREQUISITE MISSING: APP_DATABASE_URL is required (the non-BYPASSRLS app role).");
+  process.exit(2);
 }
 
 const ORG = process.env.SEED_ORG_ID ?? "aa5627a2-a7de-4dca-97d2-135f3a5f801b";
