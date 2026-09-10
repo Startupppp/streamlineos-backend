@@ -9,9 +9,9 @@ import {
   isActiveDelegation,
   isActiveAssignment,
   isPlanGatedModule,
-  moduleOf,
   type DelegationRow,
-} from "./access.service";
+} from "./access-policy";
+import { namespaceOf } from "../../common/rbac/module-vocabulary";
 import type { DataScope } from "./access.types";
 
 describe("broadest", () => {
@@ -33,14 +33,14 @@ describe("broadest", () => {
   });
 });
 
-describe("moduleOf", () => {
+describe("namespaceOf", () => {
   it("extracts the part before the first colon", () => {
-    expect(moduleOf("hr:employees:view")).toBe("hr");
-    expect(moduleOf("settings:rbac:manage")).toBe("settings");
+    expect(namespaceOf("hr:employees:view")).toBe("hr");
+    expect(namespaceOf("settings:rbac:manage")).toBe("settings");
   });
 
   it("returns the whole key when there is no colon", () => {
-    expect(moduleOf("accounting")).toBe("accounting");
+    expect(namespaceOf("accounting")).toBe("accounting");
   });
 });
 

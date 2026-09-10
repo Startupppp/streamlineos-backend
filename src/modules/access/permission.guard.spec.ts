@@ -5,6 +5,7 @@ import { Test, type TestingModule } from "@nestjs/testing";
 import { Public } from "../../common/auth/public.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
+import { createAuthContext } from "../../common/auth/auth-context";
 import { AccessService } from "./access.service";
 import { PermissionGuard } from "./permission.guard";
 import { RequirePermission } from "./require-permission.decorator";
@@ -83,8 +84,15 @@ describe("PermissionGuard", () => {
     handler: GuardTestController[keyof GuardTestController],
     currentUser: CurrentUserContext = user,
   ): ExecutionContextHost {
+    const actor = { ...currentUser };
+    const authContext = createAuthContext(actor, {
+      moduleAvailability: async (_actor, moduleKey) =>
+        (await getModuleState(actor.orgId, moduleKey)) === false
+          ? { available: false, reason: "org-disabled" }
+          : { available: true },
+    });
     return new ExecutionContextHost(
-      [{ user: { ...currentUser } }],
+      [{ user: actor, authContext }],
       GuardTestController,
       handler,
     );

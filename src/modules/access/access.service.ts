@@ -22,7 +22,6 @@ import { MfaPolicyService } from "./mfa-policy.service";
 import {
   applyUniversalGrants,
   broadest,
-  moduleOf,
   stripDeniedModules,
 } from "./access-policy";
 import {
@@ -55,7 +54,6 @@ export {
   isActiveAssignment,
   isActiveDelegation,
   isPlanGatedModule,
-  moduleOf,
   SCOPE_RANK,
 } from "./access-policy";
 export type {

@@ -5,9 +5,9 @@ jest.mock("../../common/relocation/relocation-traffic-tracker", () => ({
 
 import {
   AccessService,
-  moduleOf,
 } from "./access.service";
 import { AccessVersionCache } from "./access-version-cache";
+import { namespaceOf } from "../../common/rbac/module-vocabulary";
 import type { DataScope } from "./access.types";
 import type { Db } from "../../db/drizzle.module";
 import type { CacheService } from "../../common/cache/cache.service";
@@ -317,7 +317,7 @@ describe("AccessService.resolveUserPermissions — module ownership grants", () 
     const result = await buildService(db).resolveUserPermissions("org-owner", "user-owner");
 
     for (const permissionKey of ACTIVE_MEMBER_BASELINE_PERMISSIONS) {
-      if (moduleOf(permissionKey) === "hr") {
+      if (namespaceOf(permissionKey) === "hr") {
         expect(result.has(permissionKey)).toBe(false);
       } else {
         expect(result.has(permissionKey)).toBe(true);

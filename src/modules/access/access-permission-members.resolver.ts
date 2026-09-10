@@ -13,7 +13,8 @@ import {
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { ROLE_DEFAULT_PERMISSIONS } from "../rbac/permissions";
-import { isPlanGatedModule, moduleOf } from "./access-policy";
+import { isPlanGatedModule } from "./access-policy";
+import { namespaceOf } from "../../common/rbac/module-vocabulary";
 import type { ReadAccessTable } from "./access-permission.resolver";
 
 const MEMBERS_WITH_PERMISSION_PAGE_SIZE = 100;
@@ -46,7 +47,7 @@ export class AccessPermissionMembersResolver {
     permissionKey: string,
     options?: { limit?: number },
   ): Promise<PermissionMember[]> {
-    const permModule = moduleOf(permissionKey);
+    const permModule = namespaceOf(permissionKey);
 
     if (isPlanGatedModule(permModule)) {
       const enabled = await this.isModuleEnabled(orgId, permModule);
@@ -85,7 +86,7 @@ export class AccessPermissionMembersResolver {
     afterMembershipId: number,
     limit: number,
   ): Promise<PermissionMemberPage> {
-    const permModule = moduleOf(permissionKey);
+    const permModule = namespaceOf(permissionKey);
     const now = new Date();
 
     const slugsWithPermInDefaults = Object.entries(ROLE_DEFAULT_PERMISSIONS)

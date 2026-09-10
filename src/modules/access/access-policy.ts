@@ -5,7 +5,7 @@ import {
   ROLE_DEFAULT_PERMISSIONS,
   UNIVERSAL_MEMBER_PERMISSION_GRANTS,
 } from "../rbac/permissions";
-import { isPlanGatedModule } from "../../common/rbac/module-vocabulary";
+import { isPlanGatedModule, namespaceOf } from "../../common/rbac/module-vocabulary";
 import {
   isPlatformOnlyPermission,
   PLATFORM_ONLY_PERMISSION_KEYS,
@@ -78,13 +78,6 @@ export function isActiveAssignment(
   return assignment.expiresAt === null || assignment.expiresAt > currentTime;
 }
 
-export function moduleOf(permissionKey: string): string {
-  const separatorIndex = permissionKey.indexOf(":");
-  return separatorIndex === -1
-    ? permissionKey
-    : permissionKey.slice(0, separatorIndex);
-}
-
 export interface MembershipGateResult {
   active: boolean;
   isOwner: boolean;
@@ -100,7 +93,7 @@ export function evaluateMembershipGate(
 }
 
 export const CATALOG_MODULES = Array.from(
-  new Set(PERMISSIONS.map((permission) => moduleOf(permission.name))),
+  new Set(PERMISSIONS.map((permission) => namespaceOf(permission.name))),
 );
 
 export const EMPTY_DENIED_MODULES: ReadonlySet<string> = new Set<string>();
@@ -180,6 +173,6 @@ export function stripDeniedModules(
 ): void {
   if (denied.size === 0) return;
   for (const key of Array.from(map.keys())) {
-    if (denied.has(moduleOf(key))) map.delete(key);
+    if (denied.has(namespaceOf(key))) map.delete(key);
   }
 }

@@ -12,8 +12,9 @@
  * tenant. 73 tables sit in the same expanded state; that one is the only one whose
  * declaration dropped the legacy column, which is why it is the only one failing.
  *
- * Report 07b (`reports/07b-declaration-drift.md`) scanned two populations and this
- * fell between them:
+ * An earlier declaration-drift scan (report 07b — a prior session's working note,
+ * never committed to either repo, so do not go looking for the file) covered two
+ * populations and this fell between them:
  *
  *   Population A — live TABLES with no declaration. Table granularity.
  *                  `support_ticket_watchers` IS declared, so it was never a row.

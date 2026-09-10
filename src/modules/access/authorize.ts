@@ -1,6 +1,6 @@
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { AuthContext } from "../../common/auth/auth-context";
-import { moduleOf } from "./access.service";
+import { namespaceOf } from "../../common/rbac/module-vocabulary";
 import type { AuthResult, DataScope } from "./access.types";
 import type { ModuleAvailabilityResolver } from "../../common/rbac/module-availability";
 
@@ -23,7 +23,7 @@ export async function authorize(
 ): Promise<AuthResult> {
   if (!ctx) return { allow: false, scope: "none", reason: "UNAUTHENTICATED" };
 
-  const avail = await ctx.moduleAvailable(moduleOf(permissionKey));
+  const avail = await ctx.moduleAvailable(namespaceOf(permissionKey));
   if (!avail.available) return { allow: false, scope: "none", reason: "NO_MODULE" };
 
   const scope = await access.scopeFor(ctx.actor, permissionKey);

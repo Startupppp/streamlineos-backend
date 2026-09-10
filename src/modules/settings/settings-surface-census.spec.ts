@@ -96,7 +96,12 @@ const GLOBAL_SETTINGS_SURFACE: Readonly<Record<string, SurfaceEntry>> = {
    * on AutomationController in modules/automation and this census is what found
    * it. 48 triggers across HR 27 / CRM 8 / Support 7 / Accounting 6 plus four
    * support-only actions, so no single module rung fits and one was not
-   * invented. Four costed options in reports/19b-automations-rung-decision.md.
+   * invented. (An earlier revision cited reports/19b-automations-rung-decision.md
+   * for four costed options. No such file exists anywhere in either repo — it was
+   * a prior session's working note that was never committed, as is
+   * reports/07b-declaration-drift.md cited by check-declaration-column-drift.ts.
+   * The reference is dropped rather than reconstructed; everything load-bearing is
+   * stated here.)
    * The frontend pages ALREADY live in module trees
    * (/crm|/support|/accounting|/hr .../settings/automations); it is only the
    * backend path and the settings:automations:* key that are global.
@@ -117,8 +122,8 @@ const GLOBAL_SETTINGS_SURFACE: Readonly<Record<string, SurfaceEntry>> = {
    * What is still a product decision is the RUNG, and one input to it: five
    * triggers have a contested owner, listed with their evidence in
    * AUTOMATION_TRIGGER_OWNERSHIP_DECISIONS. The measured owners are crm 8,
-   * support 7, finance 2, hr 31, sign 7 — note finance 2, not the 6 report 19b's
-   * name-family grouping assumed: expense.* dispatches from modules/expenses,
+   * support 7, finance 2, hr 31, sign 7 — note finance 2, not the 6 a
+   * name-family grouping would assume: expense.* dispatches from modules/expenses,
    * which mounts at hr/expenses on hr:expenses:*, and reimbursement.* from
    * payroll/hr-payroll on hr:payroll:view.
    */

@@ -32,13 +32,20 @@ export function namespacesForModule(moduleKey: string): readonly string[] {
   return additional ? [moduleKey, ...additional] : [moduleKey];
 }
 
-export function administeringModuleOf(permissionKey: string): string {
+/**
+ * The key's own namespace — which module's ENTITLEMENT gates it. Not the same
+ * question as `administeringModuleOf`, which answers which module's admin ladder
+ * owns it: Home administers `chat:*`, but `chat` is what must be enabled.
+ */
+export function namespaceOf(permissionKey: string): string {
   const separatorIndex = permissionKey.indexOf(":");
-  return moduleOwningNamespace(
-    separatorIndex === -1
-      ? permissionKey
-      : permissionKey.slice(0, separatorIndex),
-  );
+  return separatorIndex === -1
+    ? permissionKey
+    : permissionKey.slice(0, separatorIndex);
+}
+
+export function administeringModuleOf(permissionKey: string): string {
+  return moduleOwningNamespace(namespaceOf(permissionKey));
 }
 
 export function moduleOwningNamespace(namespace: string): string {

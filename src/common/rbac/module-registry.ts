@@ -473,7 +473,7 @@ export function coreModuleIds(): string[] {
  * The argument is a PERMISSION NAMESPACE, not necessarily a module. Thirteen
  * live namespaces own permissions without being modules (ai, audit-log, branch,
  * dashboard, integrations, onboarding, ownership, payments, reports, sales,
- * self, storage, and party via CRM), and `moduleOf` hands this function the raw
+ * self, storage, and party via CRM), and `namespaceOf` hands this function the raw
  * segment before the first colon, so refusing an unknown key would answer
  * NO_MODULE for every permission in all of them. Unknown-is-core is therefore
  * deliberate and load-bearing; `administering-module-exists.spec.ts` pins the
