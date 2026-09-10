@@ -5,6 +5,7 @@ import {
   crmContactChannelConsent,
   crmContactConsentEvents,
   crmSuppressionHashes,
+  users,
 } from "../../../db/schema";
 import { businessParties, contactPartyMap } from "../../../db/schema/party";
 import { PARTY_OF_CONTACT } from "../crm-party-reads";
@@ -412,9 +413,22 @@ export class CrmConsentService {
         source: crmContactConsentEvents.source,
         sourceDetail: crmContactConsentEvents.sourceDetail,
         recordedByUserId: crmContactConsentEvents.recordedByUserId,
+        /**
+         * The actor as a name, not only as an id -- a screen may never render a
+         * raw user id, and this is the only place the trail names a person.
+         *
+         * One projected column off a LEFT JOIN, because `users` is the global
+         * identity table and still carries authentication secrets, so an
+         * unprojected relation to it is banned (§3). LEFT twice over: the
+         * column is nullable by design -- an unsubscribe-link event has no
+         * actor at all -- and somebody who has since left the organisation must
+         * not drop their own entries out of an audit trail.
+         */
+        recordedByName: users.name,
         createdAt: crmContactConsentEvents.createdAt,
       })
       .from(crmContactConsentEvents)
+      .leftJoin(users, eq(crmContactConsentEvents.recordedByUserId, users.id))
       .where(
         and(
           eq(crmContactConsentEvents.orgId, orgId),

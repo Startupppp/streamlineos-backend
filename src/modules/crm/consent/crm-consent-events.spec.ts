@@ -25,6 +25,7 @@ function makeDb(rows: unknown[]) {
   };
   const chain = {
     from: jest.fn().mockImplementation(() => chain),
+    leftJoin: jest.fn().mockImplementation(() => chain),
     where: jest.fn().mockImplementation((w: unknown) => {
       captured.where = w;
       return chain;
@@ -79,9 +80,13 @@ describe("consent evidence trail read", () => {
       and forgetting the projection is invisible -- the endpoint silently stops
       returning it and the test above still passes.
     */
-    const expected = Object.keys(getTableColumns(crmContactConsentEvents)).filter(
-      (c) => c !== "orgId" && c !== "contactPartyId",
-    );
+    const expected = [
+      ...Object.keys(getTableColumns(crmContactConsentEvents)).filter(
+        (c) => c !== "orgId" && c !== "contactPartyId",
+      ),
+      /* Joined, not stored: the actor's name, because a screen may never render a raw id. */
+      "recordedByName",
+    ];
     expect(projected.sort()).toEqual(expected.sort());
   });
 
