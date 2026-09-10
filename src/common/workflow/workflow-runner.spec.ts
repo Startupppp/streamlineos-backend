@@ -1,3 +1,4 @@
+import { DrizzleQueryError } from "drizzle-orm";
 import { executeRun, type RunLifecycleStore, type RunRecord } from "./workflow-runner";
 import { WorkflowRegistry } from "./workflow-registry";
 import type { JsonValue, RecordedStep, StepContext, WorkflowStepStore } from "./workflow.types";
@@ -394,5 +395,77 @@ describe("a workflow's return value", () => {
     await executeRun({ run, registry, steps: stepStore(), lifecycle, now });
 
     expect(lifecycle.detail[0]).toMatchObject({ output: { created: "party-9" } });
+  });
+});
+
+/**
+ * What a dead-lettered run says about itself.
+ *
+ * `describe()` recorded `error.stack`, and Drizzle wraps a driver error in
+ * `DrizzleQueryError` whose message is `Failed query: <the whole statement>`
+ * followed by the bound parameters. So a failing 60-column insert wrote sixty
+ * column names, sixty values and NO REASON -- the SQLSTATE, the constraint and
+ * PostgreSQL's own sentence all sit one level down on `.cause`, which nothing
+ * walked. A real dead-letter in `crm-whatsapp-ingress` named the row it refused
+ * and never why.
+ */
+describe("a dead-lettered run records the driver's cause", () => {
+  function failingWith(error: unknown) {
+    const registry = new WorkflowRegistry();
+    registry.register({
+      name: "onboard",
+      handler: async () => {
+        throw error;
+      },
+    });
+    return registry;
+  }
+
+  async function lastErrorFor(error: unknown): Promise<string> {
+    const lifecycle = lifecycleSpy();
+    await executeRun({
+      run: { ...run, attempt: run.maxAttempts },
+      registry: failingWith(error),
+      steps: stepStore(),
+      lifecycle,
+      now: () => new Date("2026-01-01T00:00:00.000Z"),
+    });
+    expect(lifecycle.calls).toContain("deadLetter");
+    const [call] = lifecycle.detail as Array<{ error: string }>;
+    return call!.error;
+  }
+
+  it("carries the SQLSTATE and PostgreSQL's own sentence", async () => {
+    const driver = Object.assign(
+      new Error('null value in column "party_kind" of relation "business_parties" violates not-null constraint'),
+      { code: "23502", column: "party_kind", table: "business_parties" },
+    );
+    const text = await lastErrorFor(
+      new DrizzleQueryError('insert into "business_parties" (...)', [], driver),
+    );
+
+    expect(text).toContain("sqlstate 23502");
+    expect(text).toContain("violates not-null constraint");
+    expect(text).toContain("column: party_kind");
+  });
+
+  it("keeps the statement as well, because that is how you find the call site", async () => {
+    /*
+      Appended, not substituted. The wrapper's text says WHICH query; the cause
+      says what to do about it. Losing either would trade one blind spot for
+      another.
+    */
+    const driver = Object.assign(new Error("fk"), { code: "23503" });
+    const text = await lastErrorFor(
+      new DrizzleQueryError('insert into "business_parties" (...)', [], driver),
+    );
+    expect(text).toContain("business_parties");
+    expect(text).toContain("caused by:");
+  });
+
+  it("leaves an ordinary failure's text exactly as it was", async () => {
+    const text = await lastErrorFor(new Error("the handler threw"));
+    expect(text).toContain("the handler threw");
+    expect(text).not.toContain("caused by:");
   });
 });

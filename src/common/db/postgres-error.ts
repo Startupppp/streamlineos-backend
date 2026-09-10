@@ -62,3 +62,54 @@ export function getPostgresErrorDetails(
 export function getPostgresErrorCode(error: unknown): string | undefined {
   return getPostgresErrorDetails(error).code;
 }
+
+/**
+ * The driver's own account of a failure, for an OPERATOR-FACING log or record.
+ *
+ * `getPostgresErrorDetails` above answers "which constraint, so I can pick an
+ * HTTP status". This answers "what actually went wrong", which is a different
+ * question and needs different fields: the wrapper's message says
+ * `Failed query: insert into "business_parties" (…60 columns…)` and names no
+ * cause at all, because the SQLSTATE, the constraint and PostgreSQL's own
+ * sentence are all one level down on `.cause`.
+ *
+ * **`detail` is deliberately not read.** On a unique violation PostgreSQL puts
+ * the offending row in it -- `Key (email)=(someone@example.com) already exists`
+ * -- and this string is persisted. `message`, `code`, `constraint`, `table` and
+ * `column` name the FAULT; `detail` names the ROW, and an operator diagnosing a
+ * dead-lettered run needs the first and not the second.
+ *
+ * Returns null when nothing beneath the wrapper looks like a driver error, so a
+ * caller can leave an ordinary failure's text exactly as it was.
+ */
+export function describeDatabaseCause(error: unknown): string | null {
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+
+  for (
+    let depth = 0;
+    current !== null && typeof current === "object" && depth < 6 && !seen.has(current);
+    depth += 1
+  ) {
+    seen.add(current);
+    const candidate = current as Record<string, unknown>;
+
+    // A driver error is the one carrying a SQLSTATE. The wrapper has none, which
+    // is exactly why reading `.code` off it has been dead everywhere.
+    if (typeof candidate["code"] === "string" && /^[0-9A-Z]{5}$/.test(candidate["code"])) {
+      const parts = [`sqlstate ${candidate["code"]}`];
+      for (const field of ["message", "constraint", "constraint_name", "table", "column", "routine"]) {
+        const value = candidate[field];
+        if (typeof value === "string" && value.length > 0) {
+          /* `constraint_name` is postgres-js's spelling of `pg`'s `constraint`; report one name. */
+          parts.push(`${field === "constraint_name" ? "constraint" : field}: ${value}`);
+        }
+      }
+      return parts.join(" | ");
+    }
+
+    current = candidate["cause"];
+  }
+
+  return null;
+}
