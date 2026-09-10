@@ -34,6 +34,18 @@ proved by the specs named below, which run in the ordinary suite.
 | ACC-19 Ratchet on direct ledger writes | Done | `accounting/adapters/ledger-boundary.spec.ts` |
 | ACC-20 This checklist and its gate | Done | `src/scripts/check-accounting-seam.mjs` |
 
+## P1 status
+
+| Ticket | State | Evidence |
+|---|---|---|
+| ACC-09 Stock ledger vs GL reconciliation | Done, **narrowed** | `adapters/reconciliation/stock-gl-reconciliation.spec.ts` |
+| ACC-11 AR/AP party resolution | Done, **structural not e2e** | `accounting/parties/accounting-party-only.spec.ts` |
+| ACC-13 Transport interface + mock IRP | Done | `compliance/transport/compliance-transport.spec.ts`, migration `0673` |
+| ACC-15 Adapter idempotency and rejection paths | Done | `adapters/posting-refusals.spec.ts` |
+| ACC-18 ADR on legacy invoices vs AR | Done, **and a bug fixed** | `docs/adr-legacy-invoices-vs-ar.md` |
+| ACC-14 Live IRP provider | **Blocked** | No credentials. ACC-13's mock is the substitute. |
+| ACC-17 India FY edge cases for inventory-linked invoices | Not started (P2) | — |
+
 ---
 
 ## Decisions, so they are not rediscovered as questions
@@ -58,6 +70,24 @@ Splitting it makes that net invisible on both the P&L and the trial balance.
 **Role validation runs when a tag is assigned, never when a journal is posted.**
 A tenant whose chart predates the rule keeps posting unchanged; validating at
 post time would turn a historical mapping choice into an outage.
+
+**The mock IRP gets its own transport enum member, not a flag.** An environment
+variable does not survive a database restore, a CSV export or a screenshot, and
+`document_compliance` rows are kept as evidence that an obligation was met.
+Evidence has to carry its own provenance, so a mock's rows read `mock_irp`
+forever. The registry refuses to boot a production node configured for it.
+
+**ACC-09 compares the bridge, not a re-derived valuation.** Valuing stock inside
+accounting would mean copying inventory's FIFO, standard and average costing
+branches, and a duplicated costing rule drifts until the report finds
+differences it invented itself. What it compares instead — the inventory
+account's movement from `stock_move` journals against the value of the
+movements that produced them — must agree exactly, so any difference is a
+bridge defect.
+
+**Every writer into the legacy `invoices` table posts as
+`sales_invoice:{invoices.id}:post`.** Two purposes for one id space made a
+double-post reachable through a status round-trip; see the ADR.
 
 ---
 
@@ -84,7 +114,20 @@ partially shipped order one posted shipment makes the whole order look posted.
 The report says so in its own payload.
 
 **ACC-14 live IRP transport is blocked.** No provider credentials. ACC-13's mock
-is the next step and is not blocked.
+transport is in and is the substitute until they exist; no adapter may declare
+`isReal = true` until then, which is asserted.
+
+**Invoices already posted under `sales_invoice:{id}:issue`** on a live database
+keep a key no future `:post` will match, so the ADR's round-trip can double-post
+those rows once. Repairing them is a data migration with real blast radius and
+needs its own ticket.
+
+**Payroll still swallows its paid-posting failures.** `payroll-posting.service.ts`
+catches every rejection on the paid disbursement and logs it, so a locked period
+leaves the run looking posted. Payroll business logic is outside this pack's
+fence; ACC-15 makes the refusal survive independently by auditing it in the
+adapter, and a test in `posting-refusals.spec.ts` fails the day payroll stops
+swallowing so the gap is not forgotten.
 
 ---
 
@@ -103,4 +146,6 @@ prefixes, and a watermark ahead of the journal — `0672` is not implicated),
 for existing clients and belongs to ACC-15).
 
 Seeded e2e was **not** run. It needs a database this session did not stand up,
-so nothing here claims an end-to-end pass.
+so nothing here claims an end-to-end pass. The three SQL queries added by ACC-08
+and ACC-09 were `EXPLAIN`ed against the real schema, which proves they are valid
+and nothing more.
