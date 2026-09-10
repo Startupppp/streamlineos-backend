@@ -1,17 +1,14 @@
 import { Inject, Injectable, Logger, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
-import { and, eq, inArray, isNull, ne, or, sql, type SQL } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { KbEventsService } from "../core/kb-events.service";
 import { KbSearchService } from "./kb-search.service";
 import { KbAccessService } from "../core/kb-access.service";
 import { KbCitationVisibilityService } from "./kb-citation-visibility.service";
 import { AiGatewayService, type AiTextStream } from "../../ai/core/gateway/ai-gateway.service";
-import { kbArticles, kbPages, kbSources } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
-import { pageVisibleTo } from "./kb-page-visibility";
-import { getAccessibleProjectIds } from "./kb-project-access.util";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import type { AskInput } from "./dto/kb-ai.schemas";

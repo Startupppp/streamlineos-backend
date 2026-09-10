@@ -36,7 +36,6 @@ const ids = (from: number, count: number): { id: number }[] =>
   Array.from({ length: count }, (_, i) => ({ id: from + i }));
 
 const isCount = (q: Rendered): boolean => q.sql.includes("chunk_count");
-const isSetLocal = (q: Rendered): boolean => q.sql.includes("SET LOCAL");
 const isAnn = (q: Rendered): boolean => q.sql.includes("ORDER BY embedding <=>");
 const isExact = (q: Rendered): boolean => q.sql.includes("OFFSET") && q.sql.includes("scoped");
 

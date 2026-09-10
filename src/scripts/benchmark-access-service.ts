@@ -11,6 +11,7 @@ import type { EntitlementsService } from "../modules/access/entitlements.service
 import type { MfaPolicyService } from "../modules/access/mfa-policy.service";
 import { MembershipStateService } from "../common/auth/membership-state.service";
 import type { Db } from "../db/drizzle.module";
+import { benchmarkOutcome, measureCpuClockGranularityUs, percentile } from "./benchmark-statistics";
 
 const OUT = resolve(process.cwd(), ".auth-benchmark-results.json");
 const ITERATIONS = 50_000;
@@ -18,21 +19,6 @@ const WARMUP = 5_000;
 const BATCH_SIZE = 2_000;
 const BATCHES = 100;
 const WALL_SAMPLES = 20_000;
-
-function measureCpuClockGranularityUs(): number {
-  const deltas: number[] = [];
-  for (let attempt = 0; attempt < 20; attempt++) {
-    const before = process.cpuUsage();
-    let delta = 0;
-    while (delta === 0) {
-      const after = process.cpuUsage(before);
-      delta = after.user + after.system;
-    }
-    deltas.push(delta);
-  }
-  deltas.sort((a, b) => a - b);
-  return deltas[Math.floor(deltas.length / 2)] ?? 0;
-}
 
 const argv = process.argv.slice(2);
 const SELF_TEST = argv.includes("--self-test");
@@ -68,17 +54,6 @@ const mockMfa: MfaPolicyService = {
 } as unknown as MfaPolicyService;
 
 const mockMembershipState = new MembershipStateService(mockDb, mockCache);
-
-function percentile(sorted: number[], p: number): number | null {
-  if (!sorted.length) return null;
-  if (p <= 0) return sorted[0];
-  if (p >= 100) return sorted[sorted.length - 1];
-  const rank = (p / 100) * (sorted.length - 1);
-  const lo = Math.floor(rank);
-  const hi = Math.ceil(rank);
-  if (lo === hi) return sorted[lo];
-  return sorted[lo] + (sorted[hi] - sorted[lo]) * (rank - lo);
-}
 
 async function run() {
   if (SELF_TEST) {
@@ -222,10 +197,7 @@ async function run() {
   const wallP50 = percentile(wallSamples, 50);
 
   const target = 100;
-  const verdict =
-    p99 !== null && wallP99 !== null && p99 <= target && wallP99 <= target
-      ? "MET"
-      : "BREACHED";
+  const { verdict, exitCode } = benchmarkOutcome(p99, wallP99, target);
 
   console.log("\nIn-process authorization benchmark results\n");
   console.log(
@@ -306,7 +278,7 @@ async function run() {
   writeFileSync(OUT, JSON.stringify(out, null, 2), "utf8");
   console.log(`\nresults: ${OUT}`);
 
-  if (p99 !== null && p99 > target) process.exitCode = 1;
+  process.exitCode = exitCode;
 }
 
 run().catch((e) => {

@@ -232,4 +232,3 @@ async function coverImageKeys(
     .limit(PURGE_BOOKKEEPING_CHUNK);
   return new Set(rows.map((r) => r.coverKey));
 }
-
