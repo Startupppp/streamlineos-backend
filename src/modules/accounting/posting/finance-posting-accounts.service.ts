@@ -82,6 +82,64 @@ export class FinancePostingAccountsService {
     return account[0].id;
   }
 
+  /**
+   * INV-09 — the account **code** each purpose posts to for one organisation.
+   *
+   * `resolveSystemAccount` and `resolveLineAccountIds` above answer the same
+   * question in account *ids*, and both of them write: an unmapped purpose whose
+   * default code exists is inserted into `acc_system_account_map` as a side
+   * effect, and an unmapped purpose whose default code does **not** exist raises
+   * a `BadRequestException`. Neither behaviour is usable from inventory.
+   *
+   *   - Codes, not ids, because inventory reaches the ledger through
+   *     `JournalPostingService.persistJournalEntry`, whose `DraftLine` carries
+   *     an `accountCode`.
+   *   - Read-only, because a goods receipt must not silently create a tenant's
+   *     accounting configuration as a side effect of moving a box.
+   *   - Never throws, because the caller is `InventoryAccountingBridge`, whose
+   *     whole contract is that a receipt is a physical fact that happened and a
+   *     missing account may not stop it being recorded. An unmapped purpose
+   *     resolves to `PURPOSE_DEFAULT_CODE` — which is what every inventory call
+   *     site named as a literal before this existed, so resolving through the
+   *     map is behaviour-preserving for a tenant that has mapped nothing.
+   *
+   * The join is on `(id, org_id)` rather than `id` alone: the map row and the
+   * account it points at must belong to the same tenant, and asserting it here
+   * costs nothing while `ledger_accounts` and `acc_system_account_map` both
+   * carry `org_id`.
+   */
+  async resolveAccountCodes<P extends SystemAccountPurpose>(
+    orgId: string,
+    purposes: readonly P[],
+    executor: DbOrTxForAccounts = this.db,
+  ): Promise<Record<P, string>> {
+    const distinct = [...new Set(purposes)];
+    const resolved = Object.fromEntries(
+      distinct.map((purpose) => [purpose, PURPOSE_DEFAULT_CODE[purpose]]),
+    ) as Record<P, string>;
+    if (distinct.length === 0) return resolved;
+
+    const rows = await executor
+      .select({ purpose: accSystemAccountMap.purpose, code: ledgerAccounts.code })
+      .from(accSystemAccountMap)
+      .innerJoin(
+        ledgerAccounts,
+        and(
+          eq(ledgerAccounts.id, accSystemAccountMap.accountId),
+          eq(ledgerAccounts.orgId, accSystemAccountMap.orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(accSystemAccountMap.orgId, orgId),
+          inArray(accSystemAccountMap.purpose, distinct),
+        ),
+      );
+
+    for (const row of rows) resolved[row.purpose as P] = row.code;
+    return resolved;
+  }
+
   async resolveLineAccountIds(
     orgId: string,
     lines: PostJournalLine[],
