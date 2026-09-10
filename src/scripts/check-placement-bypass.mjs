@@ -151,7 +151,7 @@ export const WITH_IDENTITY_ALLOWLIST = new Map([
   // helper that sets the GUC this table's policy actually reads.
   [
     "src/modules/auth/auth.service.ts",
-    "registration projects the new membership into account_organization_index before any org is current, and resolvePreferredOrg reads it to decide WHICH org to enter — both necessarily precede a tenant context, and the table is keyed and policed by user, not org",
+    "registration projects the new membership into account_organization_index before any org is current, so it necessarily precedes a tenant context, and the table is keyed and policed by user, not org",
   ],
   [
     "src/modules/organization/core/invitation-acceptance.service.ts",

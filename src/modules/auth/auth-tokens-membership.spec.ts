@@ -23,6 +23,7 @@ function buildService(rows: Record<string, unknown>[]) {
     {} as never,
     {} as never,
     {} as never,
+    { resolvePreferredOrg: jest.fn().mockResolvedValue(null) } as never,
   );
   return { service, db, tx };
 }

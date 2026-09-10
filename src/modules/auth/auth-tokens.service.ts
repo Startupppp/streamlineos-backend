@@ -13,7 +13,6 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import {
-  accountOrganizationIndex,
   accounts,
   emailOtpCodes,
   loginHistory,
@@ -31,6 +30,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { EmailService } from "../email/email.service";
 import { SessionsService } from "../sessions/sessions.service";
+import { AccountOrganizationIndexService } from "../organization/core/account-organization-index.service";
 import { hashToken } from "../../common/security/token.util";
 import { getTenantContext, withIdentity, withTenant } from "../../common/tenant";
 import { logger } from "../../common/logger/logger.service";
@@ -78,21 +78,12 @@ export class AuthTokensService {
     private readonly audit: AuditService,
     private readonly email: EmailService,
     private readonly sessions: SessionsService,
+    private readonly accountOrgIndex: AccountOrganizationIndexService,
   ) {}
 
   private async resolvePreferredOrgId(userId: string): Promise<string | null> {
-    const rows = await withIdentity(this.db, userId, (tx) =>
-      tx
-        .select({ orgId: accountOrganizationIndex.orgId })
-        .from(accountOrganizationIndex)
-        .where(eq(accountOrganizationIndex.userId, userId))
-        .orderBy(
-          sql`${accountOrganizationIndex.lastActivatedAt} DESC NULLS LAST`,
-          desc(accountOrganizationIndex.joinedAt),
-        )
-        .limit(1),
-    );
-    return rows[0]?.orgId ?? null;
+    const preferred = await this.accountOrgIndex.resolvePreferredOrg(userId);
+    return preferred?.orgId ?? null;
   }
 
   async resolveActiveMembership(

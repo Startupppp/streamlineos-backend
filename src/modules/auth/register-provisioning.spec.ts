@@ -166,6 +166,7 @@ function buildService(options: {
     {} as never,
     {} as never,
     {} as never,
+    { resolvePreferredOrg: jest.fn().mockResolvedValue(null) } as never,
   );
 
   return { service, db, inserted, updates };

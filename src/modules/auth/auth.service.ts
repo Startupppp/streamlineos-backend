@@ -13,7 +13,7 @@ import {
 } from "../../common/org/provision-org-modules";
 import { EntitlementsService } from "../access/entitlements.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import {
   accountOrganizationIndex,
@@ -34,6 +34,7 @@ import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { seedDemoDataset } from "../onboarding-activation/seed-demo-dataset";
 import { SessionsService } from "../sessions/sessions.service";
 import { AuthTokensService } from "./auth-tokens.service";
+import { AccountOrganizationIndexService } from "../organization/core/account-organization-index.service";
 import { addDays } from "date-fns";
 import type { RegisterInput } from "./dto/auth.schemas";
 import {
@@ -67,6 +68,7 @@ export class AuthService {
     private readonly entitlements: EntitlementsService,
     private readonly authTokens: AuthTokensService,
     private readonly dispatch: NotificationDispatchService,
+    private readonly accountOrgIndex: AccountOrganizationIndexService,
   ) {}
 
   async register(input: RegisterInput): Promise<{ success: true }> {
@@ -257,28 +259,6 @@ export class AuthService {
     this.audit.log({ action: "auth.logout_all", userId });
   }
 
-  private async resolvePreferredOrg(
-    userId: string,
-  ): Promise<{ orgId: string; cellId: string } | null> {
-    const rows = await withIdentity(this.db, userId, (tx) =>
-      tx
-        .select({
-          orgId: accountOrganizationIndex.orgId,
-          cellId: accountOrganizationIndex.cellId,
-        })
-        .from(accountOrganizationIndex)
-        .where(eq(accountOrganizationIndex.userId, userId))
-        .orderBy(
-          sql`${accountOrganizationIndex.lastActivatedAt} DESC NULLS LAST`,
-          desc(accountOrganizationIndex.joinedAt),
-        )
-        .limit(1),
-    );
-    const row = rows[0];
-    if (!row) return null;
-    return { orgId: row.orgId, cellId: row.cellId };
-  }
-
   async getSessionData(userId: string): Promise<{
     userId: string;
     email: string;
@@ -323,7 +303,7 @@ export class AuthService {
                 HttpStatus.SERVICE_UNAVAILABLE,
               );
             }),
-          this.resolvePreferredOrg(userId).catch(() => null),
+          this.accountOrgIndex.resolvePreferredOrg(userId).catch(() => null),
         ]);
 
         if (!user) throw new NotFoundException("User not found");

@@ -4,6 +4,7 @@ describe("AuthService organization access session state", () => {
   function buildService(options?: {
     activeMembership?: Record<string, unknown> | null;
     suspendedMembership?: Record<string, unknown> | null;
+    preferredOrg?: { orgId: string; cellId: string } | null;
   }) {
     const db = {
       query: {
@@ -36,6 +37,12 @@ describe("AuthService organization access session state", () => {
         .mockResolvedValue(options?.suspendedMembership ?? null),
     };
 
+    const accountOrgIndex = {
+      resolvePreferredOrg: jest
+        .fn()
+        .mockResolvedValue(options?.preferredOrg ?? null),
+    };
+
     const service = new AuthService(
       db as never,
       {} as never,
@@ -44,9 +51,10 @@ describe("AuthService organization access session state", () => {
       {} as never,
       authTokens as never,
       {} as never,
+      accountOrgIndex as never,
     );
 
-    return { service, authTokens };
+    return { service, authTokens, accountOrgIndex };
   }
 
   it("reports suspended membership instead of presenting the user as unconfigured", async () => {
@@ -66,6 +74,21 @@ describe("AuthService organization access session state", () => {
     expect(authTokens.resolveActiveMembership).toHaveBeenCalledWith(
       "user-1",
       "org-original",
+      { honorSuspendedPreference: true },
+    );
+  });
+
+  it("lands the user in the org the index prefers, not the last one they used", async () => {
+    const { service, authTokens, accountOrgIndex } = buildService({
+      preferredOrg: { orgId: "org-preferred", cellId: "cell-1" },
+    });
+
+    await service.getSessionData("user-1");
+
+    expect(accountOrgIndex.resolvePreferredOrg).toHaveBeenCalledWith("user-1");
+    expect(authTokens.resolveActiveMembership).toHaveBeenCalledWith(
+      "user-1",
+      "org-preferred",
       { honorSuspendedPreference: true },
     );
   });
