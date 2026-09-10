@@ -456,6 +456,11 @@
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain - do not fix in this lane",
       "justification": "Classified 2026-09-10. Same code, new path: getSuggestions moved verbatim out of inv-replenishment.service.ts when that file was split for check:file-sizes. The parent entry carries the same EXCLUDED-MODULE verdict and still matches on its own remaining queries, so this is not a reclassification, it is the lane exclusion following the code."
+    },
+    "/inventory/replenishment/lib/replenishment-forecast.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "CRM/Inventory excluded product domain - do not fix in this lane",
+      "justification": "Classified 2026-09-10. Same code, new path for the second time: getForecasting moved out of inv-replenishment.service.ts into lib/replenishment-reads.ts, then out of that into lib/replenishment-forecast.ts when the first lib file itself crossed the 300-line ratchet. Both ancestors carry EXCLUDED-MODULE; the lane exclusion is following the code, not being newly granted."
     }
   },
   "unbounded": {

@@ -21,10 +21,10 @@ import { addDec, mulDec } from "../stock-engine/decimal";
 import { isPositiveExact, toExact } from "./forecast/exact";
 import { assertMayCreatePurchaseOrder } from "./forecast/purchase-order-authority";
 import {
-  getForecasting,
   getSuggestionForVariant,
   getSuggestions,
 } from "./lib/replenishment-reads";
+import { getForecasting } from "./lib/replenishment-forecast";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 

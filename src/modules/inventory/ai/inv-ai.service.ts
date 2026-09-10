@@ -13,11 +13,13 @@ import type { ListInsightsInput, UpdateInsightStatusInput, InsightCandidate } fr
 import {
   detectStockoutRisk,
   detectDeadStock,
-  detectVendorDelay,
   detectNegativeStock,
-  detectUnusualAdjustments,
   detectExpiryRisk,
 } from "./lib/insight-detectors";
+import {
+  detectUnusualAdjustments,
+  detectVendorDelay,
+} from "./lib/insight-detectors-activity";
 
 
 export type OpsBriefSeverity = "high" | "medium" | "low" | "none";
