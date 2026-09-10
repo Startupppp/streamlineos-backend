@@ -80,13 +80,38 @@ export class ChannelPoolService {
   async availability(
     executor: Tx | Db,
     orgId: string,
-    params: { productVariantId: number; warehouseId?: number | null; forChannelId?: number | null },
+    params: {
+      productVariantId: number;
+      warehouseId?: number | null;
+      forChannelId?: number | null;
+      /**
+       * The caller's warehouses, when this is answering a person rather than the
+       * promise path. `undefined` is unrestricted, which is what the internal
+       * callers want: `assertPromisable` is deciding whether the ORGANISATION
+       * can promise these units, not whether the requester may look at them.
+       */
+      scope?: number[] | null;
+    },
   ): Promise<ChannelAvailability> {
     const warehouseId = params.warehouseId ?? null;
     const forChannelId = params.forChannelId ?? null;
+    const scope = params.scope;
 
+    /*
+     * A NAMED warehouse filters to it. An OMITTED one used to mean `TRUE` — every
+     * building in the organisation — and now means every building the caller
+     * holds, when a caller was supplied. A default that widens is the half of
+     * this that reads as correct: the explicit parameter looks like the whole
+     * surface, and it is the missing one that opens the estate.
+     */
     const warehouseGate =
-      warehouseId == null ? sql`TRUE` : sql`loc.warehouse_id = ${warehouseId}`;
+      warehouseId != null
+        ? sql`loc.warehouse_id = ${warehouseId}`
+        : scope === undefined || scope === null
+          ? sql`TRUE`
+          : scope.length === 0
+            ? sql`FALSE`
+            : sql`loc.warehouse_id IN (${sql.join(scope.map((id) => sql`${id}`), sql`, `)})`;
 
     const [physical] = await executor.execute<{ available: string }>(sql`
       SELECT ${availableQtySumSql("sl")} AS available
@@ -134,11 +159,29 @@ export class ChannelPoolService {
   }
 
   /** The same question from a request, outside any transaction the caller owns. */
+  /**
+   * The person-facing entry point, scoped the way `listForChannel` below is.
+   *
+   * A named warehouse is asserted visible — the same rule, in the same words, as
+   * the allocation path at the `assertWarehouseVisible` call further down. An
+   * omitted one now narrows to the caller's own warehouses instead of summing
+   * the estate.
+   *
+   * `availability` itself stays unscoped by default because `assertPromisable`
+   * calls it to decide whether the ORGANISATION can promise these units, which
+   * is a different question from whether the requester may see them.
+   */
   async availabilityFor(
     orgId: string,
+    userId: string,
     params: { productVariantId: number; warehouseId?: number | null; forChannelId?: number | null },
   ): Promise<ChannelAvailability> {
-    return this.availability(this.db, orgId, params);
+    if (params.warehouseId != null) {
+      await this.warehouseScope.assertWarehouseVisible(orgId, userId, params.warehouseId);
+      return this.availability(this.db, orgId, params);
+    }
+    const scope = await this.warehouseScope.resolve(orgId, userId);
+    return this.availability(this.db, orgId, { ...params, scope });
   }
 
   /**
@@ -393,8 +436,16 @@ export class ChannelPoolService {
    * two differ by six units, which is the question a warehouse manager actually
    * asks when a marketplace order they can see refuses to fill.
    */
+  /**
+   * Scoped exactly as `listForChannel` is, including its treatment of a pool
+   * that names NO warehouse: an org-wide pool has nothing to scope by and stays
+   * visible to everyone. That rule is this module's, taken from its own sibling
+   * rather than from a house default — elsewhere in inventory an unattributed
+   * row is excluded.
+   */
   async listForVariant(
     orgId: string,
+    userId: string,
     productVariantId: number,
     warehouseId?: number | null,
   ): Promise<ChannelPoolRow[]> {
@@ -413,9 +464,14 @@ export class ChannelPoolService {
       .innerJoin(invChannels, and(eq(invChannels.orgId, invChannelPools.orgId), eq(invChannels.id, invChannelPools.channelId)))
       .where(and(eq(invChannelPools.orgId, orgId), eq(invChannelPools.productVariantId, productVariantId)));
 
+    const scope = await this.warehouseScope.resolve(orgId, userId);
+    const inScope = rows.filter(
+      (r) => scope === null || r.warehouseId === null || scope.includes(r.warehouseId),
+    );
+
     return warehouseId == null
-      ? rows
-      : rows.filter((r) => r.warehouseId === null || r.warehouseId === warehouseId);
+      ? inScope
+      : inScope.filter((r) => r.warehouseId === null || r.warehouseId === warehouseId);
   }
 
   /** Bulk read for a stock list: variant → total reserved across all channels. */

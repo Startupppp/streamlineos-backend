@@ -605,7 +605,7 @@ describe("[seeded-e2e] NEO-16 the world-class path", () => {
     );
 
     const direct = await asTenant(() =>
-      app.app.get(ChannelPoolService).availabilityFor(scene.orgId, {
+      app.app.get(ChannelPoolService).availabilityFor(scene.orgId, scene.userId, {
         productVariantId: scene.variantId,
         warehouseId: scene.warehouseId,
       }),
@@ -615,7 +615,7 @@ describe("[seeded-e2e] NEO-16 the world-class path", () => {
     expect(Number(direct.netAvailable)).toBe(40);
 
     const forChannel = await asTenant(() =>
-      app.app.get(ChannelPoolService).availabilityFor(scene.orgId, {
+      app.app.get(ChannelPoolService).availabilityFor(scene.orgId, scene.userId, {
         productVariantId: scene.variantId,
         warehouseId: scene.warehouseId,
         forChannelId: scene.channelId,
@@ -658,7 +658,7 @@ describe("[seeded-e2e] NEO-16 the world-class path", () => {
     expect(await onHandAt(scene.variantId, scene.goldBinId)).toBe(40);
 
     const after = await asTenant(() =>
-      app.app.get(ChannelPoolService).availabilityFor(scene.orgId, {
+      app.app.get(ChannelPoolService).availabilityFor(scene.orgId, scene.userId, {
         productVariantId: scene.variantId,
         warehouseId: scene.warehouseId,
       }),

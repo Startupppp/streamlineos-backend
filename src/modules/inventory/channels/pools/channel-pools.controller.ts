@@ -51,7 +51,7 @@ export class ChannelPoolsController {
     @Query(new ZodValidationPipe(channelPoolAvailabilityQuerySchema)) q: ChannelPoolAvailabilityQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.availabilityFor(u.orgId, {
+    return this.svc.availabilityFor(u.orgId, u.userId, {
       productVariantId: q.productVariantId,
       warehouseId: q.warehouseId ?? null,
       forChannelId: q.forChannelId ?? null,
@@ -65,7 +65,7 @@ export class ChannelPoolsController {
     @Query(new ZodValidationPipe(variantChannelPoolsQuerySchema)) q: VariantChannelPoolsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listForVariant(u.orgId, q.productVariantId, q.warehouseId ?? null);
+    return this.svc.listForVariant(u.orgId, u.userId, q.productVariantId, q.warehouseId ?? null);
   }
 
   @Get("channel/:channelId")
