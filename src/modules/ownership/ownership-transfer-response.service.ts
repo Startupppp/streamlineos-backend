@@ -17,7 +17,7 @@ import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
-import { scheduleMembershipBust } from "../../common/org/membership-bust";
+import { bustMembershipAfterOwnershipChange } from "../../common/org/membership-bust";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { isNull } from "drizzle-orm";
 import {
@@ -46,11 +46,6 @@ export class OwnershipTransferResponseService {
     private readonly dispatch: NotificationDispatchService,
     private readonly saga: OrganizationSagaService,
   ) {}
-
-  private async invalidateUserAccess(orgId: string, userId: string): Promise<void> {
-    await this.cache.invalidate(CACHE_KEYS.userSession(userId));
-    await scheduleMembershipBust(this.cache, userId, orgId);
-  }
 
   private invalidateTransferCaches(orgId: string, moduleKey: string | null): Promise<unknown[]> {
     return Promise.all([
@@ -159,7 +154,7 @@ export class OwnershipTransferResponseService {
           fromUserId = await this.saga.runStep(
             sagaCtx.saga.sagaId,
             "transfer-ownership",
-            () => applyOrgTransfer(this.db, orgId, transferId, transfer.fromMembershipId, transfer.toMembershipId),
+            () => applyOrgTransfer(this.db, this.cache, orgId, transferId, transfer.fromMembershipId, transfer.toMembershipId),
           );
 
         await this.saga.complete(sagaCtx.saga.sagaId);
@@ -169,8 +164,8 @@ export class OwnershipTransferResponseService {
       }
 
       if (fromUserId !== undefined) {
-        await this.invalidateUserAccess(orgId, actorUserId);
-        await this.invalidateUserAccess(orgId, fromUserId);
+        await this.cache.invalidate(CACHE_KEYS.userSession(actorUserId));
+        await this.cache.invalidate(CACHE_KEYS.userSession(fromUserId));
         await Promise.all([
           this.cache.invalidateForOrg(orgId, "ownership:modules"),
           this.invalidateTransferCaches(orgId, null),
@@ -222,8 +217,8 @@ export class OwnershipTransferResponseService {
       transfer.toMembershipId,
     );
 
-    await this.invalidateUserAccess(orgId, actorUserId);
-    await this.invalidateUserAccess(orgId, fromUserId);
+    await bustMembershipAfterOwnershipChange(this.cache, orgId, actorUserId);
+    await bustMembershipAfterOwnershipChange(this.cache, orgId, fromUserId);
 
     const moduleKeyForAccept = transfer.moduleKey;
     await Promise.all([

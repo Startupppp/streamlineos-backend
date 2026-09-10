@@ -6,7 +6,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { logger } from "../../../common/logger/logger.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { scheduleMembershipBustMany } from "../../../common/org/membership-bust";
+import { withMembershipMutations } from "../../../common/org/membership-mutations";
 import { assertMayGrantRole } from "../../../common/rbac/assert-may-grant-role";
 import { OrgHierarchyCacheService } from "../../../common/cache/org-hierarchy-cache.service";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
@@ -91,15 +91,18 @@ export class EmployeeBulkOnboardingService {
     let outcome: BulkOnboardWriteOutcome = { createdUserIds: [], welcomeEmails: [] };
     const results: BulkOnboardRowResult[] = [...plan.rejected];
     if (plan.accepted.length > 0) {
-      outcome = await runInTenantTransaction(
-        this.db,
-        (tx) =>
-          writeBulkOnboarding(tx, actor, plan.accepted, {
-            planLimits: this.planLimits,
-            seatLedger: this.seatLedger,
-            personEmploymentSync: this.personEmploymentSync,
-          }),
-        { orgId: actor.orgId },
+      outcome = await withMembershipMutations(this.cache, (membership) =>
+        runInTenantTransaction(
+          this.db,
+          (tx) =>
+            writeBulkOnboarding(tx, actor, plan.accepted, {
+              planLimits: this.planLimits,
+              seatLedger: this.seatLedger,
+              personEmploymentSync: this.personEmploymentSync,
+              membership,
+            }),
+          { orgId: actor.orgId },
+        ),
       );
       for (const employee of plan.accepted)
         results.push({
@@ -161,7 +164,6 @@ export class EmployeeBulkOnboardingService {
     outcome: BulkOnboardWriteOutcome,
     hierarchyChanged: boolean,
   ): Promise<void> {
-    await scheduleMembershipBustMany(this.cache, outcome.createdUserIds);
     await this.invalidateHrDashboardCache(actor.orgId);
     if (hierarchyChanged) await this.hierarchyCache.invalidateAfterMutation(actor.orgId);
 

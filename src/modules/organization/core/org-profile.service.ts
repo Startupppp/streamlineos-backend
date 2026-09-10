@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import {
   organizationMembers,
   organizations,
@@ -17,6 +17,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { seedSystemRolesForOrg } from "../../rbac/seed-system-roles";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { withMembershipMutations } from "../../../common/org/membership-mutations";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -319,57 +320,51 @@ export class OrgProfileService {
     billingEmail: string | null,
     input: CreateOrganizationInput,
   ): Promise<void> {
-    await runInNewTenantTransaction(this.db, orgId, async (tx) => {
-      const [already] = await tx
-        .select({ id: organizations.id })
-        .from(organizations)
-        .where(eq(organizations.id, orgId))
-        .limit(1);
-      if (already) return;
+    await withMembershipMutations(this.cache, (membership) =>
+      runInNewTenantTransaction(this.db, orgId, async (tx) => {
+        const [already] = await tx
+          .select({ id: organizations.id })
+          .from(organizations)
+          .where(eq(organizations.id, orgId))
+          .limit(1);
+        if (already) return;
 
-      const seqRows = await tx.execute(
-        sql`SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id`,
-      );
-      const ownerMembershipId = Number(seqRows[0]?.id);
-      if (!Number.isInteger(ownerMembershipId)) {
-        throw new Error("Failed to allocate owner membership id");
-      }
-      await tx.insert(organizations).values({
-        id: orgId,
-        region,
-        name: input.name,
-        slug: input.slug,
-        billingEmail,
-        ownerMembershipId,
-        onboardingCompletedAt: new Date(),
-      });
-      await tx.insert(organizationMembers).values({
-        id: ownerMembershipId,
-        userId,
-        orgId,
-        role: "OWNER",
-        isOwner: true,
-        status: "ACTIVE",
-        activatedAt: new Date(),
-      });
-      const trialDays = getTrialDays();
-      await tx.insert(subscriptions).values({
-        orgId,
-        plan: TRIAL_PLAN,
-        status: "TRIAL",
-        trialEndsAt: addDays(new Date(), trialDays),
-        currentPeriodStart: new Date(),
-        currentPeriodEnd: addDays(new Date(), trialDays),
-      });
-      await provisionEmployeeSelfService(tx, orgId);
-      await bumpPermissionsVersion(tx, orgId);
-      await seedSystemRolesForOrg(this.db, orgId);
-      await provisionOrgModules(tx, orgId, DEFAULT_SKIP_MODULES, userId);
-      await tx
-        .update(users)
-        .set({ lastActiveOrgId: orgId })
-        .where(eq(users.id, userId));
-    });
+        const ownerMembershipId = await membership.allocateMembershipId(tx);
+        await tx.insert(organizations).values({
+          id: orgId,
+          region,
+          name: input.name,
+          slug: input.slug,
+          billingEmail,
+          ownerMembershipId,
+          onboardingCompletedAt: new Date(),
+        });
+        await membership.createOwnerMembership(tx, {
+          orgId,
+          userId,
+          membershipId: ownerMembershipId,
+          role: "OWNER",
+          activatedAt: new Date(),
+        });
+        const trialDays = getTrialDays();
+        await tx.insert(subscriptions).values({
+          orgId,
+          plan: TRIAL_PLAN,
+          status: "TRIAL",
+          trialEndsAt: addDays(new Date(), trialDays),
+          currentPeriodStart: new Date(),
+          currentPeriodEnd: addDays(new Date(), trialDays),
+        });
+        await provisionEmployeeSelfService(tx, orgId);
+        await bumpPermissionsVersion(tx, orgId);
+        await seedSystemRolesForOrg(this.db, orgId);
+        await provisionOrgModules(tx, orgId, DEFAULT_SKIP_MODULES, userId);
+        await tx
+          .update(users)
+          .set({ lastActiveOrgId: orgId })
+          .where(eq(users.id, userId));
+      }),
+    );
   }
 
   async getProfile(userId: string, orgId: string) {

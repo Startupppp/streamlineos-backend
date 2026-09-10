@@ -18,8 +18,8 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
-import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { withMembershipMutations } from "../../../common/org/membership-mutations";
 import { getOrgAdminUserIds } from "../../../common/tenant/org-admin-recipients";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { SessionsService } from "../../sessions/sessions.service";
@@ -75,102 +75,95 @@ export class OrgMemberDepartureService {
 
   async removeMember(orgId: string, actorUserId: string, memberUserId: string) {
     try {
-      await runInTenantTransaction(
-        this.db,
-        async (tx) => {
-          const [member] = await tx
-            .select({
-              isOwner: organizationMembers.isOwner,
-              id: organizationMembers.id,
-            })
-            .from(organizationMembers)
-            .where(
-              and(
-                eq(organizationMembers.userId, memberUserId),
-                eq(organizationMembers.orgId, orgId),
-              ),
-            )
-            .for("update")
-            .limit(1);
-
-          if (!member) throw new NotFoundException("Member not found");
-          if (member.isOwner) {
-            throw new BadRequestException(
-              "Cannot remove the organization owner. Transfer ownership first.",
-            );
-          }
-
-          const ownedModuleKeys = await queryOwnedModuleKeys(tx, orgId, member.id);
-          if (ownedModuleKeys.length > 0) {
-            throw new BadRequestException(
-              `Transfer module ownership before removing this member. Owned modules: ${ownedModuleKeys.join(", ")}.`,
-            );
-          }
-
-          const privilegedRoles = await queryPrivilegedRoleNames(tx, orgId, member.id);
-          if (privilegedRoles.length > 0) {
-            throw new BadRequestException(
-              `Remove administrative role(s) before removing this member: ${privilegedRoles.join(", ")}.`,
-            );
-          }
-
-          const soleAdminSpaces = await querySoleAdminSpaceNames(tx, orgId, member.id);
-          if (soleAdminSpaces.length > 0) {
-            throw new BadRequestException(
-              `Assign another knowledge space admin before removing this member. Sole admin of: ${soleAdminSpaces.join(", ")}.`,
-            );
-          }
-
-          const removalNow = new Date();
-
-          await tx
-            .delete(ownershipTransfers)
-            .where(
-              and(
-                eq(ownershipTransfers.orgId, orgId),
-                or(
-                  eq(ownershipTransfers.fromMembershipId, member.id),
-                  eq(ownershipTransfers.toMembershipId, member.id),
-                  eq(ownershipTransfers.initiatedByMembershipId, member.id),
+      await withMembershipMutations(this.cache, (mutations) =>
+        runInTenantTransaction(
+          this.db,
+          async (tx) => {
+            const [member] = await tx
+              .select({
+                isOwner: organizationMembers.isOwner,
+                id: organizationMembers.id,
+              })
+              .from(organizationMembers)
+              .where(
+                and(
+                  eq(organizationMembers.userId, memberUserId),
+                  eq(organizationMembers.orgId, orgId),
                 ),
-              ),
-            );
+              )
+              .for("update")
+              .limit(1);
 
-          await tx
-            .update(userDelegations)
-            .set({ status: "REVOKED", revokedAt: removalNow })
-            .where(
-              and(
-                eq(userDelegations.orgId, orgId),
-                eq(userDelegations.status, "ACTIVE"),
-                or(
-                  eq(userDelegations.delegatorMembershipId, member.id),
-                  eq(userDelegations.delegateeMembershipId, member.id),
+            if (!member) throw new NotFoundException("Member not found");
+            if (member.isOwner) {
+              throw new BadRequestException(
+                "Cannot remove the organization owner. Transfer ownership first.",
+              );
+            }
+
+            const ownedModuleKeys = await queryOwnedModuleKeys(tx, orgId, member.id);
+            if (ownedModuleKeys.length > 0) {
+              throw new BadRequestException(
+                `Transfer module ownership before removing this member. Owned modules: ${ownedModuleKeys.join(", ")}.`,
+              );
+            }
+
+            const privilegedRoles = await queryPrivilegedRoleNames(tx, orgId, member.id);
+            if (privilegedRoles.length > 0) {
+              throw new BadRequestException(
+                `Remove administrative role(s) before removing this member: ${privilegedRoles.join(", ")}.`,
+              );
+            }
+
+            const soleAdminSpaces = await querySoleAdminSpaceNames(tx, orgId, member.id);
+            if (soleAdminSpaces.length > 0) {
+              throw new BadRequestException(
+                `Assign another knowledge space admin before removing this member. Sole admin of: ${soleAdminSpaces.join(", ")}.`,
+              );
+            }
+
+            const removalNow = new Date();
+
+            await tx
+              .delete(ownershipTransfers)
+              .where(
+                and(
+                  eq(ownershipTransfers.orgId, orgId),
+                  or(
+                    eq(ownershipTransfers.fromMembershipId, member.id),
+                    eq(ownershipTransfers.toMembershipId, member.id),
+                    eq(ownershipTransfers.initiatedByMembershipId, member.id),
+                  ),
                 ),
-              ),
-            );
+              );
 
-          await tx
-            .delete(orgUnitMembers)
-            .where(
-              and(
-                eq(orgUnitMembers.membershipId, member.id),
-                eq(orgUnitMembers.orgId, orgId),
-              ),
-            );
+            await tx
+              .update(userDelegations)
+              .set({ status: "REVOKED", revokedAt: removalNow })
+              .where(
+                and(
+                  eq(userDelegations.orgId, orgId),
+                  eq(userDelegations.status, "ACTIVE"),
+                  or(
+                    eq(userDelegations.delegatorMembershipId, member.id),
+                    eq(userDelegations.delegateeMembershipId, member.id),
+                  ),
+                ),
+              );
 
-          await tx
-            .delete(organizationMembers)
-            .where(
-              and(
-                eq(organizationMembers.userId, memberUserId),
-                eq(organizationMembers.orgId, orgId),
-              ),
-            );
+            await tx
+              .delete(orgUnitMembers)
+              .where(
+                and(
+                  eq(orgUnitMembers.membershipId, member.id),
+                  eq(orgUnitMembers.orgId, orgId),
+                ),
+              );
 
-          await bumpPermissionsVersion(tx, orgId);
-        },
-        { orgId },
+            await mutations.deleteMembership(tx, { orgId, userId: memberUserId });
+          },
+          { orgId },
+        ),
       );
     } catch (err) {
       if (
@@ -238,97 +231,90 @@ export class OrgMemberDepartureService {
     }
 
     try {
-      const nextOrgId = await runInTenantTransaction(
-        this.db,
-        async (tx) => {
-          const ownedModuleKeys = await queryOwnedModuleKeys(tx, orgId, membership.id);
-          if (ownedModuleKeys.length > 0) {
-            throw new BadRequestException(
-              `Transfer module ownership before leaving this organization. Owned modules: ${ownedModuleKeys.join(", ")}.`,
-            );
-          }
+      const nextOrgId = await withMembershipMutations(this.cache, (mutations) =>
+        runInTenantTransaction(
+          this.db,
+          async (tx) => {
+            const ownedModuleKeys = await queryOwnedModuleKeys(tx, orgId, membership.id);
+            if (ownedModuleKeys.length > 0) {
+              throw new BadRequestException(
+                `Transfer module ownership before leaving this organization. Owned modules: ${ownedModuleKeys.join(", ")}.`,
+              );
+            }
 
-          const soleAdminSpaces = await querySoleAdminSpaceNames(tx, orgId, membership.id);
-          if (soleAdminSpaces.length > 0) {
-            throw new BadRequestException(
-              `Assign another knowledge space admin before leaving this organization. Sole admin of: ${soleAdminSpaces.join(", ")}.`,
-            );
-          }
+            const soleAdminSpaces = await querySoleAdminSpaceNames(tx, orgId, membership.id);
+            if (soleAdminSpaces.length > 0) {
+              throw new BadRequestException(
+                `Assign another knowledge space admin before leaving this organization. Sole admin of: ${soleAdminSpaces.join(", ")}.`,
+              );
+            }
 
-          const leaveNow = new Date();
+            const leaveNow = new Date();
 
-          await tx
-            .delete(ownershipTransfers)
-            .where(
-              and(
-                eq(ownershipTransfers.orgId, orgId),
-                or(
-                  eq(ownershipTransfers.fromMembershipId, membership.id),
-                  eq(ownershipTransfers.toMembershipId, membership.id),
-                  eq(ownershipTransfers.initiatedByMembershipId, membership.id),
+            await tx
+              .delete(ownershipTransfers)
+              .where(
+                and(
+                  eq(ownershipTransfers.orgId, orgId),
+                  or(
+                    eq(ownershipTransfers.fromMembershipId, membership.id),
+                    eq(ownershipTransfers.toMembershipId, membership.id),
+                    eq(ownershipTransfers.initiatedByMembershipId, membership.id),
+                  ),
                 ),
-              ),
-            );
+              );
 
-          await tx
-            .update(userDelegations)
-            .set({ status: "REVOKED", revokedAt: leaveNow })
-            .where(
-              and(
-                eq(userDelegations.orgId, orgId),
-                eq(userDelegations.status, "ACTIVE"),
-                or(
-                  eq(userDelegations.delegatorMembershipId, membership.id),
-                  eq(userDelegations.delegateeMembershipId, membership.id),
+            await tx
+              .update(userDelegations)
+              .set({ status: "REVOKED", revokedAt: leaveNow })
+              .where(
+                and(
+                  eq(userDelegations.orgId, orgId),
+                  eq(userDelegations.status, "ACTIVE"),
+                  or(
+                    eq(userDelegations.delegatorMembershipId, membership.id),
+                    eq(userDelegations.delegateeMembershipId, membership.id),
+                  ),
                 ),
-              ),
-            );
+              );
 
-          await tx
-            .delete(orgUnitMembers)
-            .where(
-              and(
-                eq(orgUnitMembers.membershipId, membership.id),
-                eq(orgUnitMembers.orgId, orgId),
-              ),
-            );
+            await tx
+              .delete(orgUnitMembers)
+              .where(
+                and(
+                  eq(orgUnitMembers.membershipId, membership.id),
+                  eq(orgUnitMembers.orgId, orgId),
+                ),
+              );
 
-          await tx
-            .delete(organizationMembers)
-            .where(
-              and(
-                eq(organizationMembers.orgId, orgId),
-                eq(organizationMembers.userId, userId),
-              ),
-            );
+            await mutations.deleteMembership(tx, { orgId, userId });
 
-          await bumpPermissionsVersion(tx, orgId);
-
-          const [remaining] = await tx
-            .select({ orgId: organizationMembers.orgId })
-            .from(organizationMembers)
-            .innerJoin(
-              organizations,
-              eq(organizations.id, organizationMembers.orgId),
-            )
-            .where(
-              and(
-                eq(organizationMembers.userId, userId),
-                eq(organizationMembers.status, "ACTIVE"),
-                eq(organizations.status, "ACTIVE"),
-                isNull(organizations.deletedAt),
-              ),
-            )
-            .orderBy(desc(organizationMembers.joinedAt))
-            .limit(1);
-          const fallbackOrgId = remaining?.orgId ?? null;
-          await tx
-            .update(users)
-            .set({ lastActiveOrgId: fallbackOrgId })
-            .where(and(eq(users.id, userId), eq(users.lastActiveOrgId, orgId)));
-          return fallbackOrgId;
-        },
-        { orgId },
+            const [remaining] = await tx
+              .select({ orgId: organizationMembers.orgId })
+              .from(organizationMembers)
+              .innerJoin(
+                organizations,
+                eq(organizations.id, organizationMembers.orgId),
+              )
+              .where(
+                and(
+                  eq(organizationMembers.userId, userId),
+                  eq(organizationMembers.status, "ACTIVE"),
+                  eq(organizations.status, "ACTIVE"),
+                  isNull(organizations.deletedAt),
+                ),
+              )
+              .orderBy(desc(organizationMembers.joinedAt))
+              .limit(1);
+            const fallbackOrgId = remaining?.orgId ?? null;
+            await tx
+              .update(users)
+              .set({ lastActiveOrgId: fallbackOrgId })
+              .where(and(eq(users.id, userId), eq(users.lastActiveOrgId, orgId)));
+            return fallbackOrgId;
+          },
+          { orgId },
+        ),
       );
 
       await Promise.all([

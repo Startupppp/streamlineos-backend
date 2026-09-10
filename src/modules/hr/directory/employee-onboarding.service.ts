@@ -37,7 +37,6 @@ import { formatDateOnly } from "../../../common/date";
 import { seedEmployeeSalaryProfile } from "./salary-profile-seed.helper";
 import type { OnboardEmployeeInput } from "./dto/hr-directory.schemas";
 import { ORG_MEMBER_ROLES } from "../../../common/rbac/org-roles";
-import { syncStructuralRoleAssignment } from "../../../common/rbac/sync-structural-role";
 import { assertMayGrantRole } from "../../../common/rbac/assert-may-grant-role";
 import { AccessService } from "../../access/access.service";
 import { syncOrgUnitPlacement } from "../../../common/org/sync-org-unit-placement";
@@ -45,7 +44,7 @@ import {
   liveEmployment,
   livePersonOfEmployment,
 } from "../../directory/employment-query";
-import { scheduleMembershipBust } from "../../../common/org/membership-bust";
+import { withMembershipMutations } from "../../../common/org/membership-mutations";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
@@ -128,7 +127,8 @@ export class EmployeeOnboardingService {
     await assertMayGrantRole(this.access, actor.orgId, actor, role);
 
     if (existingUser) {
-      const linkedUser = await runInTenantTransaction(this.db, async (tx) => {
+      const linkedUser = await withMembershipMutations(this.cache, (membership) =>
+        runInTenantTransaction(this.db, async (tx) => {
         await this.reserveMemberSeat(tx, actor.orgId);
         const updateData: Partial<typeof users.$inferInsert> = {
           dateOfBirth: body.dateOfBirth ? formatDateOnly(body.dateOfBirth) : undefined,
@@ -137,13 +137,7 @@ export class EmployeeOnboardingService {
 
         await tx.update(users).set(updateData).where(eq(users.id, existingUser.id));
         await syncOrgUnitPlacement(tx, actor.orgId, existingUser.id, { DEPARTMENT: body.departmentId });
-        const insertedMembership = await tx
-          .insert(organizationMembers)
-          .values({ orgId: actor.orgId, userId: existingUser.id, role })
-          .returning({ id: organizationMembers.id });
-        if (insertedMembership[0]) {
-          await syncStructuralRoleAssignment(tx, actor.orgId, insertedMembership[0].id, role);
-        }
+        await membership.createMembership(tx, { orgId: actor.orgId, userId: existingUser.id, role });
 
         await this.seatLedger.recordSeatEvent(
           {
@@ -177,9 +171,8 @@ export class EmployeeOnboardingService {
         });
         if (!updated) throw new InternalServerErrorException("Failed to link user record.");
         return updated;
-      }, { orgId: actor.orgId });
+      }, { orgId: actor.orgId }));
 
-      await scheduleMembershipBust(this.cache, linkedUser.id, actor.orgId);
       await this.invalidateHrDashboardCache(actor.orgId);
 
       void this.automation
@@ -253,7 +246,8 @@ export class EmployeeOnboardingService {
 
     const userId = randomUUID();
 
-    const newUser = await runInTenantTransaction(this.db, async (tx) => {
+    const newUser = await withMembershipMutations(this.cache, (membership) =>
+      runInTenantTransaction(this.db, async (tx) => {
       await this.reserveMemberSeat(tx, actor.orgId);
       const [created] = await tx
         .insert(users)
@@ -273,13 +267,7 @@ export class EmployeeOnboardingService {
 
       if (!created) throw new InternalServerErrorException("Failed to create user record.");
       await syncOrgUnitPlacement(tx, actor.orgId, created.id, { DEPARTMENT: body.departmentId });
-
-      const createdMembership = await tx
-        .insert(organizationMembers)
-        .values({ orgId: actor.orgId, userId: created.id, role })
-        .returning({ id: organizationMembers.id });
-      if (createdMembership[0]) 
-        await syncStructuralRoleAssignment(tx, actor.orgId, createdMembership[0].id, role);
+      await membership.createMembership(tx, { orgId: actor.orgId, userId: created.id, role });
 
       await this.seatLedger.recordSeatEvent(
         {
@@ -309,9 +297,8 @@ export class EmployeeOnboardingService {
       }
 
       return created;
-    }, { orgId: actor.orgId });
+    }, { orgId: actor.orgId }));
 
-    await scheduleMembershipBust(this.cache, newUser.id, actor.orgId);
     await this.invalidateHrDashboardCache(actor.orgId);
 
     void this.automation

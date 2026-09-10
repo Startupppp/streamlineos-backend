@@ -24,6 +24,11 @@ import {
   type AfterCommitHook,
 } from "../../../common/tenant/tenant-context";
 
+jest.mock("../../../common/auth/membership-state.service", () => ({
+  bustMembershipStatusCache: jest.fn().mockResolvedValue(undefined),
+  bustMembershipStatusCacheMany: jest.fn().mockResolvedValue(undefined),
+}));
+
 const ORG_ID = "org-1";
 const ACTOR_ID = "actor-1";
 const MEMBER_ID = "member-1";
@@ -551,7 +556,7 @@ describe("OrgMembershipService — module-ownership guards", () => {
       expect(tx.update).not.toHaveBeenCalledWith(users);
       expect(afterCommit.length).toBeGreaterThanOrEqual(1);
 
-      await afterCommit[0]?.();
+      for (const hook of afterCommit) await hook();
       expect(
         cacheInvalidate.mock.calls.filter(
           ([key]) => key === CACHE_KEYS.userSession(MEMBER_ID),

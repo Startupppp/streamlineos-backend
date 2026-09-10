@@ -19,7 +19,6 @@ import { randomUUID } from "node:crypto";
 import {
   accountOrganizationIndex,
   accounts,
-  organizationMembers,
   organizations,
   subscriptions,
   users,
@@ -28,6 +27,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { runWithTenantContext, withTenant } from "../../common/tenant";
+import { withMembershipMutations } from "../../common/org/membership-mutations";
 import { withIdentity } from "../../common/tenant/with-identity";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { CacheService } from "../../common/cache/cache.service";
@@ -88,55 +88,49 @@ export class AuthService {
     const region = (await chooseRegionForNewOrg(this.db, { organizationId: orgId })).region;
     await placeOrganization(this.db, { orgId, region });
 
-    await withTenant(this.db, { orgId, audience: "INTERNAL" }, async (tx) => {
-      const seqRows = await tx.execute(
-        sql`SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id`,
-      );
+    await withMembershipMutations(this.cache, (membership) =>
+      withTenant(this.db, { orgId, audience: "INTERNAL" }, async (tx) => {
+        const ownerMembershipId = await membership.allocateMembershipId(tx);
 
-      const ownerMembershipId = Number(seqRows[0]?.id);
+        await tx.insert(organizations).values({
+          id: orgId,
+          region,
+          ownerMembershipId,
+          name: input.companyName,
+          slug: slugify(input.companyName),
+        });
 
-      if (!Number.isInteger(ownerMembershipId))
-        throw new Error("Failed to allocate owner membership id");
+        await tx.insert(users).values({
+          id: userId,
+          isActive: true,
+          email: normalizedEmail,
+          lastActiveOrgId: orgId,
+          emailVerified: new Date(),
+          firstName: input.firstName,
+          lastName: input.lastName ?? "",
+          name: input.lastName
+            ? `${input.firstName} ${input.lastName}`
+            : input.firstName,
+        });
 
-      await tx.insert(organizations).values({
-        id: orgId,
-        region,
-        ownerMembershipId,
-        name: input.companyName,
-        slug: slugify(input.companyName),
-      });
+        await membership.createOwnerMembership(tx, {
+          orgId,
+          userId,
+          membershipId: ownerMembershipId,
+          role: ORG_MEMBER_ROLES.OWNER,
+        });
 
-      await tx.insert(users).values({
-        id: userId,
-        isActive: true,
-        email: normalizedEmail,
-        lastActiveOrgId: orgId,
-        emailVerified: new Date(),
-        firstName: input.firstName,
-        lastName: input.lastName ?? "",
-        name: input.lastName
-          ? `${input.firstName} ${input.lastName}`
-          : input.firstName,
-      });
-
-      await tx.insert(organizationMembers).values({
-        orgId,
-        userId,
-        isOwner: true,
-        id: ownerMembershipId,
-        role: ORG_MEMBER_ROLES.OWNER,
-      });
-
-      const trialDays = getTrialDays();
-      await tx.insert(subscriptions).values({
-        orgId,
-        plan: TRIAL_PLAN,
-        status: "TRIAL",
-        trialEndsAt: addDays(new Date(), trialDays),
-        currentPeriodStart: new Date(),
-        currentPeriodEnd: addDays(new Date(), trialDays),
-      });
-    });
+        const trialDays = getTrialDays();
+        await tx.insert(subscriptions).values({
+          orgId,
+          plan: TRIAL_PLAN,
+          status: "TRIAL",
+          trialEndsAt: addDays(new Date(), trialDays),
+          currentPeriodStart: new Date(),
+          currentPeriodEnd: addDays(new Date(), trialDays),
+        });
+      }),
+    );
 
     await withTenant(this.db, { orgId, audience: "INTERNAL" }, async (tx) =>
       runWithTenantContext({ orgId, audience: "INTERNAL", tx }, async () => {

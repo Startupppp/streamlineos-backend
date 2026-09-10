@@ -1,19 +1,15 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { inArray, sql } from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
 import { addDays } from "date-fns";
 import {
   hrEmployeeSensitiveFields,
   magicLinkTokens,
   orgUnitMembers,
-  organizationMembers,
-  roleAssignments,
-  roles,
   users,
 } from "../../../../db/schema";
 import type { DbOrTx } from "../../../../common/rbac/access-invalidate";
-import { bumpPermissionsVersion } from "../../../../common/rbac/access-invalidate";
-import { ORG_MEMBER_ROLES } from "../../../../common/rbac/org-roles";
 import { hashToken } from "../../../../common/security/token.util";
+import type { MembershipMutations } from "../../../../common/org/membership-mutations";
 import { sealSensitive } from "../../../../common/security/sensitive-field";
 import { sealBankDetails } from "../../../../common/hr/canonical-bank-details";
 import { monthlyAmountToCents } from "../../../../common/hr/sync-canonical-sensitive-fields";
@@ -32,6 +28,7 @@ export interface BulkOnboardWriteDeps {
   planLimits: PlanLimitsService;
   seatLedger: SeatLedgerService;
   personEmploymentSync: PersonEmploymentSyncService;
+  membership: MembershipMutations;
 }
 
 async function insertUsers(tx: DbOrTx, accepted: readonly PlannedEmployee[]): Promise<void> {
@@ -71,38 +68,6 @@ async function insertUsers(tx: DbOrTx, accepted: readonly PlannedEmployee[]): Pr
   await tx.execute(
     sql`UPDATE users AS u SET date_of_birth = v.date_of_birth FROM (VALUES ${pairs}) AS v(id, date_of_birth) WHERE u.id = v.id`,
   );
-}
-
-async function assignStructuralRoles(
-  tx: DbOrTx,
-  orgId: string,
-  membershipIdByUserId: Map<string, number>,
-  accepted: readonly PlannedEmployee[],
-): Promise<void> {
-  const structuralSlugs = [ORG_MEMBER_ROLES.ORG_ADMIN, ORG_MEMBER_ROLES.MEMBER];
-  const roleRows = await tx
-    .select({ id: roles.id, slug: roles.slug })
-    .from(roles)
-    .where(and(eq(roles.orgId, orgId), inArray(roles.slug, structuralSlugs)))
-    .limit(structuralSlugs.length);
-  const roleIdBySlug = new Map(roleRows.map((role) => [role.slug, role.id]));
-
-  const assignments: Array<typeof roleAssignments.$inferInsert> = [];
-  for (const employee of accepted) {
-    const roleId = roleIdBySlug.get(employee.role);
-    const membershipId = membershipIdByUserId.get(employee.userId);
-    if (roleId === undefined || membershipId === undefined) continue;
-    assignments.push({
-      orgId,
-      organizationMembershipId: membershipId,
-      roleId,
-      assignedByMembershipId: null,
-    });
-  }
-
-  if (assignments.length > 0)
-    await tx.insert(roleAssignments).values(assignments).onConflictDoNothing();
-  await bumpPermissionsVersion(tx, orgId);
 }
 
 async function writeSensitiveFields(
@@ -164,17 +129,10 @@ export async function writeBulkOnboarding(
 
   await insertUsers(tx, accepted);
 
-  const memberships = await tx
-    .insert(organizationMembers)
-    .values(
-      accepted.map((employee) => ({ orgId, userId: employee.userId, role: employee.role })),
-    )
-    .returning({ id: organizationMembers.id, userId: organizationMembers.userId });
-  const membershipIdByUserId = new Map(
-    memberships.map((membership) => [membership.userId, membership.id]),
-  );
-
-  await assignStructuralRoles(tx, orgId, membershipIdByUserId, accepted);
+  const membershipIdByUserId = await deps.membership.createMemberships(tx, {
+    orgId,
+    members: accepted.map((employee) => ({ userId: employee.userId, role: employee.role })),
+  });
 
   const placements = accepted
     .filter((employee) => employee.departmentId !== null)

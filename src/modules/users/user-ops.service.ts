@@ -35,13 +35,12 @@ import {
 } from "../../db/schema";
 import type { BulkUpdateUsersInput, ImportUsersRow } from "./dto/users.schemas";
 import { UsersService } from "./users.service";
-import { syncStructuralRoleAssignments } from "../../common/rbac/sync-structural-role";
 import {
   assertMayGrantRole,
   assertMayManageOrganizationMembership,
 } from "../../common/rbac/assert-may-grant-role";
 import { assertNoOwnerAmongTargets } from "../../common/rbac/assert-target-not-owner";
-import { scheduleMembershipBustMany } from "../../common/org/membership-bust";
+import { withMembershipMutations } from "../../common/org/membership-mutations";
 import { UserOperationsReporter } from "./user-operations.reporter";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
 import { syncCanonicalReportingLines } from "../../common/hr/sync-canonical-reporting-line";
@@ -153,7 +152,7 @@ export class UserOpsService {
 
     if (role) await this.assertMayGrantRole(orgId, actor, role);
 
-    const scopedIds = await this.db.transaction(async (tx) => {
+    const scopedIds = await withMembershipMutations(this.cache, (membership) => this.db.transaction(async (tx) => {
       if (managerUserId) {
         const manager = await tx.query.organizationMembers.findFirst({
           where: and(
@@ -178,9 +177,7 @@ export class UserOpsService {
           inArray(organizationMembers.userId, userIds),
         ),
       );
-      const tenantUserIds = memberRows.map(
-        (membership) => membership.userId,
-      );
+      const tenantUserIds = memberRows.map((row) => row.userId);
 
       if (tenantUserIds.length === 0) return [];
 
@@ -254,7 +251,7 @@ export class UserOpsService {
               inArray(organizationMembers.userId, tenantUserIds),
             ),
           );
-        const membershipIds = memberRows.map((membership) => membership.id);
+        const membershipIds = memberRows.map((row) => row.id);
 
         if (membershipIds.length > 0) {
           const movedKinds = unitMoves.map((move) => move.kind);
@@ -294,30 +291,13 @@ export class UserOpsService {
 
       if (role) {
         await assertNoOwnerAmongTargets(tx, orgId, tenantUserIds);
-        const rows = await tx
-          .update(organizationMembers)
-          .set({ role })
-          .where(
-            and(
-              eq(organizationMembers.orgId, orgId),
-              inArray(organizationMembers.userId, tenantUserIds),
-            ),
-          )
-          .returning({ id: organizationMembers.id });
-        await syncStructuralRoleAssignments(
-          tx,
-          orgId,
-          rows.map((row) => row.id),
-          role,
-        );
+        await membership.changeRoles(tx, { orgId, userIds: tenantUserIds, role });
       }
 
       return tenantUserIds;
-    });
+    }));
 
     if (scopedIds.length === 0) return { success: true, updated: 0 };
-
-    if (role) await scheduleMembershipBustMany(this.cache, scopedIds);
 
     this.audit.log({
       action: "user.bulk_updated",

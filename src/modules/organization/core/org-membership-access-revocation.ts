@@ -20,9 +20,7 @@ import {
 } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../../common/cache/cache-keys";
-import { bustMembershipNowAndAfterCommit } from "../../../common/org/membership-bust";
-import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
+import { revokeMembershipAccessCaches } from "../../../common/org/membership-bust";
 import { SessionsService } from "../../sessions/sessions.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { withIdentity } from "../../../common/tenant/with-identity";
@@ -345,11 +343,6 @@ export class OrgMembershipAccessRevocation {
     orgId: string,
     memberUserId: string,
   ): Promise<void> {
-    await bustMembershipNowAndAfterCommit(() =>
-      Promise.all([
-        this.cache.invalidate(CACHE_KEYS.userSession(memberUserId)),
-        bustMembershipStatusCache(this.cache, memberUserId, orgId),
-      ]).then(() => undefined),
-    );
+    return revokeMembershipAccessCaches(this.cache, orgId, memberUserId);
   }
 }

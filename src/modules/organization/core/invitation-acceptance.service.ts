@@ -18,8 +18,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
-import { scheduleMembershipBust } from "../../../common/org/membership-bust";
-import { syncStructuralRoleAssignment } from "../../../common/rbac/sync-structural-role";
+import { withMembershipMutations } from "../../../common/org/membership-mutations";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
 import { lockMembersQuota } from "../../billing/core/seat-definition";
@@ -175,7 +174,6 @@ export class InvitationAcceptanceService {
       this.cache.invalidateForOrg(orgId, "rbac:members"),
       this.cache.invalidateForOrg(orgId, "module-access:candidates"),
       this.cache.invalidateForOrg(orgId, "users:stats"),
-      scheduleMembershipBust(this.cache, userId, orgId),
     ]);
   }
 
@@ -276,47 +274,39 @@ export class InvitationAcceptanceService {
     userId: string,
     autoLoginToken: string,
   ): Promise<string> {
-    await runInTenantTransaction(
-      this.db,
-      async (tx) => {
-        const lockedInvitation = await lockPendingInvitation(
-          tx,
-          invitationId,
-          tokenHash,
-        );
-        await this.assertSeatAvailable(tx, orgId);
-
-        const inserted = await tx
-          .insert(organizationMembers)
-          .values({
-            userId,
-            orgId: lockedInvitation.orgId,
-            role: lockedInvitation.role,
-          })
-          .onConflictDoNothing()
-          .returning({ id: organizationMembers.id });
-        const membershipId = inserted[0]?.id;
-        if (membershipId === undefined) {
-          throw new ConflictException(
-            "You are already a member of this organization",
+    await withMembershipMutations(this.cache, (membership) =>
+      runInTenantTransaction(
+        this.db,
+        async (tx) => {
+          const lockedInvitation = await lockPendingInvitation(
+            tx,
+            invitationId,
+            tokenHash,
           );
-        }
-        await syncStructuralRoleAssignment(
-          tx,
-          lockedInvitation.orgId,
-          membershipId,
-          lockedInvitation.role,
-        );
+          await this.assertSeatAvailable(tx, orgId);
 
-        await tx
-          .update(users)
-          .set({ lastActiveOrgId: lockedInvitation.orgId })
-          .where(eq(users.id, userId));
+          const membershipId = await membership.createMembership(tx, {
+            orgId: lockedInvitation.orgId,
+            userId,
+            role: lockedInvitation.role,
+            onConflict: "skip",
+          });
+          if (membershipId === null) {
+            throw new ConflictException(
+              "You are already a member of this organization",
+            );
+          }
 
-        await this.claimInvitation(tx, invitationId, orgId, membershipId);
-        await this.issueMagicLink(tx, userId, autoLoginToken);
-      },
-      { orgId },
+          await tx
+            .update(users)
+            .set({ lastActiveOrgId: lockedInvitation.orgId })
+            .where(eq(users.id, userId));
+
+          await this.claimInvitation(tx, invitationId, orgId, membershipId);
+          await this.issueMagicLink(tx, userId, autoLoginToken);
+        },
+        { orgId },
+      ),
     );
     return userId;
   }
@@ -333,56 +323,48 @@ export class InvitationAcceptanceService {
     const lastName = input.lastName?.trim() || null;
 
     try {
-      await runInTenantTransaction(
-        this.db,
-        async (tx) => {
-          const lockedInvitation = await lockPendingInvitation(
-            tx,
-            invitationId,
-            tokenHash,
-          );
-          await this.assertSeatAvailable(tx, orgId);
-
-          const fromNames =
-            [firstName, lastName].filter(Boolean).join(" ") || null;
-          const emailLocal =
-            lockedInvitation.email.split("@")[0]?.trim() || null;
-
-          await tx.insert(users).values({
-            id: userId,
-            email: lockedInvitation.email,
-            name: fromNames ?? emailLocal,
-            firstName,
-            lastName,
-            emailVerified: new Date(),
-            lastActiveOrgId: lockedInvitation.orgId,
-          });
-          const inserted = await tx
-            .insert(organizationMembers)
-            .values({
-              userId,
-              orgId: lockedInvitation.orgId,
-              role: lockedInvitation.role,
-            })
-            .onConflictDoNothing()
-            .returning({ id: organizationMembers.id });
-          const membershipId = inserted[0]?.id;
-          if (membershipId === undefined) {
-            throw new ConflictException(
-              "You are already a member of this organization",
+      await withMembershipMutations(this.cache, (membership) =>
+        runInTenantTransaction(
+          this.db,
+          async (tx) => {
+            const lockedInvitation = await lockPendingInvitation(
+              tx,
+              invitationId,
+              tokenHash,
             );
-          }
-          await syncStructuralRoleAssignment(
-            tx,
-            lockedInvitation.orgId,
-            membershipId,
-            lockedInvitation.role,
-          );
+            await this.assertSeatAvailable(tx, orgId);
 
-          await this.claimInvitation(tx, invitationId, orgId, membershipId);
-          await this.issueMagicLink(tx, userId, autoLoginToken);
-        },
-        { orgId },
+            const fromNames =
+              [firstName, lastName].filter(Boolean).join(" ") || null;
+            const emailLocal =
+              lockedInvitation.email.split("@")[0]?.trim() || null;
+
+            await tx.insert(users).values({
+              id: userId,
+              email: lockedInvitation.email,
+              name: fromNames ?? emailLocal,
+              firstName,
+              lastName,
+              emailVerified: new Date(),
+              lastActiveOrgId: lockedInvitation.orgId,
+            });
+            const membershipId = await membership.createMembership(tx, {
+              orgId: lockedInvitation.orgId,
+              userId,
+              role: lockedInvitation.role,
+              onConflict: "skip",
+            });
+            if (membershipId === null) {
+              throw new ConflictException(
+                "You are already a member of this organization",
+              );
+            }
+
+            await this.claimInvitation(tx, invitationId, orgId, membershipId);
+            await this.issueMagicLink(tx, userId, autoLoginToken);
+          },
+          { orgId },
+        ),
       );
     } catch (err) {
       if (isUniqueViolation(err)) {

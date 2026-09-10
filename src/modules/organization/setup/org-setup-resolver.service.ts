@@ -1,6 +1,6 @@
 import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { ORG_MEMBER_ROLES } from "../../../common/rbac/org-roles";
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import {
   organizations,
   organizationMembers,
@@ -12,7 +12,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { SetupInput } from "./dto/org.schemas";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
-import { scheduleMembershipBust } from "../../../common/org/membership-bust";
+import { withMembershipMutations } from "../../../common/org/membership-mutations";
 import { randomUUID } from "node:crypto";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
@@ -194,16 +194,15 @@ export class OrgSetupResolverService {
     }
     for (const [orphanOrgId, ids] of orphansByOrg) {
       try {
-        await runInTenantTransaction(
-          this.db,
-          async (tx) => {
-            await tx
-              .delete(organizationMembers)
-              .where(inArray(organizationMembers.id, ids));
-          },
-          { orgId: orphanOrgId },
+        await withMembershipMutations(this.cache, (membership) =>
+          runInTenantTransaction(
+            this.db,
+            async (tx) => {
+              await membership.deleteMembershipsById(tx, { orgId: orphanOrgId, userId: u.userId, membershipIds: ids });
+            },
+            { orgId: orphanOrgId },
+          ),
         );
-        await scheduleMembershipBust(this.cache, u.userId, orphanOrgId);
       } catch (error) {
         logger.warn("Orphan membership cleanup failed", {
           userId: u.userId,
@@ -218,40 +217,35 @@ export class OrgSetupResolverService {
     const region = (await chooseRegionForNewOrg(this.db, { organizationId: orgId })).region;
     await placeOrganization(this.db, { orgId, region });
 
-    await runInNewTenantTransaction(this.db, orgId, async (tx) => {
-      const seqRows = await tx.execute(
-        sql`SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id`,
-      );
-      const ownerMembershipId = Number(seqRows[0]?.id);
-      if (!Number.isInteger(ownerMembershipId)) {
-        throw new Error("Failed to allocate owner membership id");
-      }
-      await tx.insert(organizations).values({
-        id: orgId,
-        region,
-        name: orgName,
-        slug: this.slugify(orgName),
-        ownerMembershipId,
-      });
-      await tx.insert(organizationMembers).values({
-        id: ownerMembershipId,
-        orgId,
-        userId: u.userId,
-        role: ORG_MEMBER_ROLES.OWNER,
-        isOwner: true,
-      });
-      const trialDays = getTrialDays();
-      await tx.insert(subscriptions).values({
-        orgId,
-        plan: TRIAL_PLAN,
-        status: "TRIAL",
-        trialEndsAt: addDays(new Date(), trialDays),
-        currentPeriodStart: new Date(),
-        currentPeriodEnd: addDays(new Date(), trialDays),
-      });
-      await provisionEmployeeSelfService(tx, orgId);
-      await bumpPermissionsVersion(tx, orgId);
-    });
+    await withMembershipMutations(this.cache, (membership) =>
+      runInNewTenantTransaction(this.db, orgId, async (tx) => {
+        const ownerMembershipId = await membership.allocateMembershipId(tx);
+        await tx.insert(organizations).values({
+          id: orgId,
+          region,
+          name: orgName,
+          slug: this.slugify(orgName),
+          ownerMembershipId,
+        });
+        await membership.createOwnerMembership(tx, {
+          orgId,
+          userId: u.userId,
+          membershipId: ownerMembershipId,
+          role: ORG_MEMBER_ROLES.OWNER,
+        });
+        const trialDays = getTrialDays();
+        await tx.insert(subscriptions).values({
+          orgId,
+          plan: TRIAL_PLAN,
+          status: "TRIAL",
+          trialEndsAt: addDays(new Date(), trialDays),
+          currentPeriodStart: new Date(),
+          currentPeriodEnd: addDays(new Date(), trialDays),
+        });
+        await provisionEmployeeSelfService(tx, orgId);
+        await bumpPermissionsVersion(tx, orgId);
+      }),
+    );
 
     this.audit.log({
       action: "org.created",
