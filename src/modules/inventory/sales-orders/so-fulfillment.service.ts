@@ -439,52 +439,61 @@ export class SoFulfillmentService {
         occurredAt: new Date(),
       });
 
+      // COGS, on the SAME transaction as the shipment it values, so a ledger
+      // refusal unwinds the shipment instead of leaving it valued nowhere.
+      // Passing `tx` is what makes that this seam's guarantee rather than one
+      // borrowed from the request interceptor — see
+      // `docs/inventory-gl-contract.md` §3.3/§4.
+      const cogsTotal = so.lines.reduce((sum, l) => {
+        const shippedQty = lineShippedQtyMap.get(l.id) ?? 0;
+        return sum + shippedQty * parseFloat(l.costAtTime);
+      }, 0);
+
+      if (cogsTotal > 0) {
+        // Keyed on the shipment, not the sales order: a partially shipped SO
+        // ships more than once, and keying on the SO would make every shipment
+        // after the first an idempotent replay that silently posted no COGS.
+        const cogsMinor = Math.round(cogsTotal * 100);
+        try {
+          await this.posting.submit(
+            orgId,
+            userId,
+            {
+              sourceType: "stock_move",
+              sourceId: String(ship.id),
+              purpose: "ship",
+              journalDate: data.shipDate,
+              memo: `COGS: ${so.soNumber} (${shipmentNumber})`,
+              lines: [
+                {
+                  accountTag: "cogs",
+                  debitMinor: cogsMinor,
+                  description: `COGS - SO ${so.soNumber}`,
+                },
+                {
+                  accountTag: "inventory",
+                  creditMinor: cogsMinor,
+                  description: `Inventory deducted - ${so.soNumber}`,
+                },
+              ],
+            },
+            tx,
+          );
+        } catch (error) {
+          // Accounting is opt-in; an org without a book has nowhere to post and
+          // must still be able to ship. Anything else is a real failure, and
+          // rethrowing it inside the transaction is what rolls the shipment
+          // back with it. Catching and logging here would commit the shipment
+          // and lose the journal, silently.
+          if (!(error instanceof AdapterRejection && error.code === "BOOK_NOT_ENABLED")) throw error;
+          this.logger.debug(`Accounting is not enabled for org ${orgId}; COGS for ${shipmentNumber} was not posted`);
+        }
+      }
+
       return ship;
     });
 
     await this.engine.invalidateCaches(orgId);
-
-    const cogsTotal = so.lines.reduce((sum, l) => {
-      const shippedQty = lineShippedQtyMap.get(l.id) ?? 0;
-      return sum + shippedQty * parseFloat(l.costAtTime);
-    }, 0);
-
-    if (cogsTotal > 0) {
-      // Keyed on the shipment, not the sales order: a partially shipped SO
-      // ships more than once, and keying on the SO would make every shipment
-      // after the first an idempotent replay that silently posted no COGS.
-      const cogsMinor = Math.round(cogsTotal * 100);
-      try {
-        await this.posting.submit(orgId, userId, {
-          sourceType: "stock_move",
-          sourceId: String(shipment.id),
-          purpose: "ship",
-          journalDate: data.shipDate,
-          memo: `COGS: ${so.soNumber} (${shipmentNumber})`,
-          lines: [
-            {
-              accountTag: "cogs",
-              debitMinor: cogsMinor,
-              description: `COGS - SO ${so.soNumber}`,
-            },
-            {
-              accountTag: "inventory",
-              creditMinor: cogsMinor,
-              description: `Inventory deducted - ${so.soNumber}`,
-            },
-          ],
-        });
-      } catch (error) {
-        // Accounting is opt-in; an org without a book has nowhere to post and
-        // must still be able to ship. Anything else is a real failure.
-        // Contract: docs/inventory-gl-contract.md. Rethrowing is what keeps the
-        // shipment and the journal atomic — but only because the error reaches
-        // the tenant interceptor untouched (§3.3). Catching and logging here
-        // would commit the shipment and lose the journal, silently.
-        if (!(error instanceof AdapterRejection && error.code === "BOOK_NOT_ENABLED")) throw error;
-        this.logger.debug(`Accounting is not enabled for org ${orgId}; COGS for ${shipmentNumber} was not posted`);
-      }
-    }
 
     await this.cache.del(CACHE_KEYS.invSoDetail(orgId, soId));
     await this.cache.invalidateNamespace(CACHE_KEYS.invSoNamespace(orgId));

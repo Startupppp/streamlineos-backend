@@ -27,6 +27,7 @@ import { InventorySettingsService } from "../stock-engine/inventory-settings.ser
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { INV_ERRORS } from "../stock-engine/stock-engine.types";
 import { PostingCommandService } from "../../accounting/adapters/posting-command.service";
+import type { DbOrTx } from "../../accounting/kernel/sequence.service";
 import {
   AdapterRejection,
   type PostingCommand,
@@ -380,46 +381,54 @@ export class GrnService {
         occurredAt: new Date(),
       });
 
+      // Goods-received accrual, on the SAME transaction as the movement it
+      // values. Accounting resolves the accounts from the org's own chart via
+      // system tags; inventory never names a GL account, and a redelivered
+      // receipt is idempotent on the GRN id.
+      //
+      // Passing `tx` is the point rather than an optimisation. Without it the
+      // post still shared the request's transaction — but only because a global
+      // interceptor happens to open one, which is a guarantee this seam should
+      // make rather than borrow (`docs/inventory-gl-contract.md` §3.3/§4).
+      let totalValue = 0;
+      for (const line of data.lines) {
+        if (line.qualityStatus !== "ACCEPTED") continue;
+        const poLine = po.lines.find((l) => l.id === line.poLineId)!;
+        totalValue += line.quantityReceived * parseFloat(poLine.unitCost);
+      }
+
+      if (totalValue > 0) {
+        const totalMinor = Math.round(totalValue * 100);
+        await this.postToLedger(
+          orgId,
+          userId,
+          {
+            sourceType: "stock_move",
+            sourceId: String(grn.id),
+            purpose: "receive",
+            journalDate: data.receivedDate,
+            memo: `Goods received: ${grnNumber}`,
+            lines: [
+              {
+                accountTag: "inventory",
+                debitMinor: totalMinor,
+                description: `Inventory received - ${grnNumber}`,
+              },
+              {
+                accountTag: "ap_control",
+                creditMinor: totalMinor,
+                description: `AP - PO ${po.poNumber}`,
+              },
+            ],
+          },
+          tx,
+        );
+      }
+
       return grn.id;
     });
 
     await this.engine.invalidateCaches(orgId);
-
-    const acceptedLines = data.lines.filter(
-      (l) => l.qualityStatus === "ACCEPTED",
-    );
-
-    let totalValue = 0;
-    for (const line of acceptedLines) {
-      const poLine = po.lines.find((l) => l.id === line.poLineId)!;
-      totalValue += line.quantityReceived * parseFloat(poLine.unitCost);
-    }
-
-    if (totalValue > 0) {
-      // Goods-received accrual. Accounting resolves the accounts from the org's
-      // own chart via system tags; inventory never names a GL account, and a
-      // redelivered receipt is idempotent on the GRN id.
-      const totalMinor = Math.round(totalValue * 100);
-      await this.postToLedger(orgId, userId, {
-        sourceType: "stock_move",
-        sourceId: String(grnId),
-        purpose: "receive",
-        journalDate: data.receivedDate,
-        memo: `Goods received: ${grnNumber}`,
-        lines: [
-          {
-            accountTag: "inventory",
-            debitMinor: totalMinor,
-            description: `Inventory received - ${grnNumber}`,
-          },
-          {
-            accountTag: "ap_control",
-            creditMinor: totalMinor,
-            description: `AP - PO ${po.poNumber}`,
-          },
-        ],
-      });
-    }
 
     if (settings.inspectionOnReceipt) {
       const inspNumber = await this.numSeq.next(orgId, "INSPECTION");
@@ -633,9 +642,10 @@ export class GrnService {
     orgId: string,
     userId: string,
     command: PostingCommand,
+    tx: DbOrTx,
   ): Promise<void> {
     try {
-      await this.posting.submit(orgId, userId, command);
+      await this.posting.submit(orgId, userId, command, tx);
     } catch (error) {
       if (error instanceof AdapterRejection && error.code === "BOOK_NOT_ENABLED") {
         this.logger.debug(

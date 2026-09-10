@@ -150,6 +150,33 @@ replaced:
 So the fix is not to close a window. It is to stop depending on someone else's
 transaction for a guarantee this seam is supposed to make itself.
 
+### 3.3a The period guard and the ledger check different dates
+
+Measured, and a real defect this pack deliberately does **not** fix.
+
+`StockEngineService.assertPeriodOpen(orgId, resolvePostingDate(cmd))` guards the
+*movement's* posting date. `resolvePostingDate` falls back to **today** when the
+command carries none — and neither the goods receipt nor the shipment passes
+one. The journal, meanwhile, is posted on the *document's* date:
+`data.receivedDate`, `data.shipDate`, `today`.
+
+So the two can disagree in both directions:
+
+- A receipt **backdated into a locked period**: the guard sees today's open
+  period and passes; `LedgerService.resolvePeriod` sees the locked one and
+  refuses. The outcome is right — the whole request rolls back — but the message
+  comes from the kernel rather than from inventory.
+- A receipt **dated into an open period while today's is locked**: the guard
+  refuses a movement the ledger would have accepted.
+
+The correct fix is for the receipt and the shipment to pass their document date
+as the movement's `postingDate`, so the stock ledger, its costing layers and the
+GL all agree on when the event happened. That is not done here because
+`loadCostingContext` keys cost layers on that same date: changing it changes
+inventory valuation for backdated documents, which is an inventory decision and
+not a GL-contract one. It belongs to whoever owns `stock-engine`, and this
+paragraph exists so that it is a decision rather than a discovery.
+
 ### 3.4 The hole that is real: ten movements that post nothing
 
 This one is not subtle and nothing protects against it.
