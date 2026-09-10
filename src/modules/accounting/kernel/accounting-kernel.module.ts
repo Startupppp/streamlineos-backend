@@ -1,8 +1,6 @@
 import { Module } from "@nestjs/common";
-import { APP_FILTER } from "@nestjs/core";
 import { PackRegistry } from "../packs/pack.registry";
 import { AccountingKernelController } from "./kernel.controller";
-import { LedgerRejectionFilter } from "./ledger-rejection.filter";
 import { AccountsService } from "./accounts.service";
 import { BooksService } from "./books.service";
 import { FxService } from "./fx.service";
@@ -29,14 +27,17 @@ const KERNEL_PROVIDERS = [
 
 @Module({
   controllers: [AccountingKernelController],
-  providers: [
-    ...KERNEL_PROVIDERS,
-    // Registered here rather than at each controller: `APP_FILTER` is global in
-    // Nest wherever it is declared, and this filter only catches
-    // `LedgerRejection`, so every document layer gets the same 409 without
-    // having to remember to translate it.
-    { provide: APP_FILTER, useClass: LedgerRejectionFilter },
-  ],
+  /*
+    There used to be an `APP_FILTER` here mapping `LedgerRejection` onto 409/404,
+    and it never fired once. Nest tries global filters in REVERSE registration
+    order; `APP_FILTER` providers are registered during module init and
+    `main.ts` calls `useGlobalFilters(new AllExceptionsFilter())` afterwards, so
+    the catch-all was always last and always won. Every locked period and
+    unbalanced journal in AR, AP, banking and the inventory bridge answered
+    `500 INTERNAL_ERROR`. `LedgerRejection` now carries its own status as an
+    `HttpException`, which no filter ordering can undo — see `ledger.types.ts`.
+  */
+  providers: [...KERNEL_PROVIDERS],
   exports: KERNEL_PROVIDERS,
 })
 export class AccountingKernelModule {}

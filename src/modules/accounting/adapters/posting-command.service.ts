@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from "@nestjs/common";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { glParties, type GlSystemTag } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { reportError } from "../../../common/observability";
 import type { Db } from "../../../db/drizzle.module";
 import { BooksService } from "../kernel/books.service";
 import { LedgerService } from "../kernel/ledger.service";
@@ -227,6 +228,18 @@ export class PostingCommandService {
     const debit = lines.reduce((a, l) => a + (l.debitMinor ?? 0), 0);
     const credit = lines.reduce((a, l) => a + (l.creditMinor ?? 0), 0);
     if (debit !== credit) {
+      /*
+        Reported, not merely thrown. This is a defect in the sending module —
+        payroll or billing computed totals that do not add up — and it answers
+        500 for exactly that reason, so it must reach the error tracker rather
+        than sitting in a 409 that looks like somebody's configuration.
+      */
+      reportError(new Error(`Unbalanced posting command from ${command.sourceType}`), {
+        sourceType: command.sourceType,
+        sourceId: command.sourceId,
+        debit,
+        credit,
+      });
       throw new AdapterRejection(
         "UNBALANCED_COMMAND",
         `${command.sourceType} ${command.sourceId} does not balance: debits ${debit}, credits ${credit}, ` +
