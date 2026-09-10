@@ -9,10 +9,8 @@ export async function resolvePayrollRunsViewScope(
   access: AccessService,
   u: CurrentUserContext,
 ): Promise<ScopedRead> {
-  const scope = u.isOrgOwner
-    ? "all"
-    : !isScopable(PAYROLL_RUNS_VIEW_PERMISSION)
-      ? "all"
-      : (await access.resolveUserPermissions(u.orgId, u.userId)).get(PAYROLL_RUNS_VIEW_PERMISSION) ?? "none";
-  return ScopedRead.of(u.orgId, u.userId, scope);
+  if (u.isOrgOwner) return ScopedRead.of(u.orgId, u.userId, "all");
+  if (!isScopable(PAYROLL_RUNS_VIEW_PERMISSION)) return ScopedRead.of(u.orgId, u.userId, "all");
+  const resolved = await access.resolveUserPermissions(u.orgId, u.userId);
+  return ScopedRead.of(u.orgId, u.userId, resolved.get(PAYROLL_RUNS_VIEW_PERMISSION) ?? "none");
 }

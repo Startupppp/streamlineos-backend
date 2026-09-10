@@ -12,9 +12,9 @@ import { buildSourceIndex, resolveInjectedType, type SourceIndex } from "./tenan
  * the key is the thing the caller actually holds.
  */
 
-/** A handler consults the caller's DataScope. */
+// A handler consults the caller's DataScope. ADR 0005 added the ScopedRead vocabulary and removed `viewAll`.
 const SCOPE_RESOLUTION_RE =
-  /\b(?:resolve[A-Za-z0-9_$]*Scope|readRequestScope|rbacScope|applyScope|DataScope|viewAll|scopeToUserId)\b/;
+  /\b(?:resolve[A-Za-z0-9_$]*Scope|readRequestScope|readRequestScopedRead|rbacScope|applyScope|DataScope|ScopedRead|scopeToUserId)\b/;
 
 /** Reading a scope and never spending it is not applying it; `check:scope-boundary` owns that half. */
 export function resolvesScope(text: string): boolean {

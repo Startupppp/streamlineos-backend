@@ -141,7 +141,8 @@ describe("the surface, enumerated from the committed contract", () => {
     // This census tracks `openapi.json`, so it has to be re-read after the release's final
     // `pnpm openapi:generate` rather than assumed.
     // Descriptive, re-read after `pnpm openapi:generate`; the sweeps below are what bite.
-    expect(counts.operations).toBe(3667);
+    // 3667 -> 3666: `48c612a8d refactor(branches)` retired one operation. Descriptive only; the sweeps below are what bite.
+    expect(counts.operations).toBe(3666);
     expect(counts.bodyFields).toBe(814);
     expect(counts.queryFields).toBe(245);
     expect(counts.idFields).toBe(1059);

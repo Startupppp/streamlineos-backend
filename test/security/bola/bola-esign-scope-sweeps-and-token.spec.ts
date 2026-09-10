@@ -19,6 +19,7 @@
  * and that the session dies on `tokenExpiresAt` and on revocation.
  */
 
+import { ScopedRead } from "../../../src/modules/access/scoped-read";
 import { ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
@@ -100,13 +101,21 @@ describe("E1 · POST /sign/envelopes/:envelopeId/ai/summarize resolves the envel
       execute: jest.fn(() => Promise.resolve([])),
       query: {
         signEnvelopes: {
-          findFirst: jest.fn(() =>
-            Promise.resolve(
-              visibleEnvelopeId === OWN_ENVELOPE_ID
-                ? { id: OWN_ENVELOPE_ID, orgId: CALLER_ORG, senderMembershipId: CALLER_MEMBERSHIP }
-                : undefined,
-            ),
-          ),
+          // Sender visibility is in the WHERE clause now, so the double must read it or a leak would read as a pass.
+          findFirst: jest.fn((args: { where: SQL }) => {
+            if (visibleEnvelopeId !== OWN_ENVELOPE_ID) return Promise.resolve(undefined);
+            const rendered = new PgDialect().sqlToQuery(args.where);
+            if (
+              rendered.sql.includes("sender_membership_id") &&
+              !rendered.params.includes(CALLER_MEMBERSHIP)
+            )
+              return Promise.resolve(undefined);
+            return Promise.resolve({
+              id: OWN_ENVELOPE_ID,
+              orgId: CALLER_ORG,
+              senderMembershipId: CALLER_MEMBERSHIP,
+            });
+          }),
         },
         signDocuments: { findMany: documentFindMany },
       },
@@ -125,12 +134,12 @@ describe("E1 · POST /sign/envelopes/:envelopeId/ai/summarize resolves the envel
     return { service, documentFindMany, getFileStream, invokeText };
   }
 
-  const ALL_SCOPE = { membershipId: CALLER_MEMBERSHIP, viewAll: true };
-  const OWN_SCOPE = { membershipId: OTHER_MEMBERSHIP, viewAll: false };
+  const allRead = () => ScopedRead.of(CALLER_ORG, "u1", "all");
+  const ownRead = () => ScopedRead.of(CALLER_ORG, "u1", "own");
 
   it("summarizes an envelope the caller can see", async () => {
     const h = makeAi(OWN_ENVELOPE_ID);
-    await expect(h.service.summarizeDocument(CALLER_ORG, OWN_ENVELOPE_ID, "u1", ALL_SCOPE)).resolves.toEqual({
+    await expect(h.service.summarizeDocument(CALLER_ORG, OWN_ENVELOPE_ID, "u1", allRead(), CALLER_MEMBERSHIP)).resolves.toEqual({
       summary: "No documents attached to this envelope.",
     });
     expect(h.documentFindMany).toHaveBeenCalledTimes(1);
@@ -139,7 +148,7 @@ describe("E1 · POST /sign/envelopes/:envelopeId/ai/summarize resolves the envel
   it("throws NotFoundException — never Forbidden — for another organisation's envelope id", async () => {
     const h = makeAi(CROSS_TENANT_ENVELOPE_ID);
     const error = await h.service
-      .summarizeDocument(CALLER_ORG, CROSS_TENANT_ENVELOPE_ID, "u1", ALL_SCOPE)
+      .summarizeDocument(CALLER_ORG, CROSS_TENANT_ENVELOPE_ID, "u1", allRead(), CALLER_MEMBERSHIP)
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(NotFoundException);
     expect(error).not.toBeInstanceOf(ForbiddenException);
@@ -148,14 +157,14 @@ describe("E1 · POST /sign/envelopes/:envelopeId/ai/summarize resolves the envel
   it("refuses an in-org envelope the caller's sign:envelope:view scope excludes — the escalation the fix closes", async () => {
     const h = makeAi(OWN_ENVELOPE_ID);
     await expect(
-      h.service.summarizeDocument(CALLER_ORG, OWN_ENVELOPE_ID, "u1", OWN_SCOPE),
+      h.service.summarizeDocument(CALLER_ORG, OWN_ENVELOPE_ID, "u1", ownRead(), OTHER_MEMBERSHIP),
     ).rejects.toThrow(NotFoundException);
   });
 
   it("never reads a document, never opens the object store and never spends an AI credit on a refusal", async () => {
     const h = makeAi(OWN_ENVELOPE_ID);
     await expect(
-      h.service.summarizeDocument(CALLER_ORG, OWN_ENVELOPE_ID, "u1", OWN_SCOPE),
+      h.service.summarizeDocument(CALLER_ORG, OWN_ENVELOPE_ID, "u1", ownRead(), OTHER_MEMBERSHIP),
     ).rejects.toThrow(NotFoundException);
     expect(h.documentFindMany).not.toHaveBeenCalled();
     expect(h.getFileStream).not.toHaveBeenCalled();
@@ -164,16 +173,16 @@ describe("E1 · POST /sign/envelopes/:envelopeId/ai/summarize resolves the envel
 
   it("answers a cross-tenant id and an absent id identically, so the refusal is not an existence oracle", async () => {
     const cross = await makeAi(CROSS_TENANT_ENVELOPE_ID)
-      .service.summarizeDocument(CALLER_ORG, CROSS_TENANT_ENVELOPE_ID, "u1", ALL_SCOPE)
+      .service.summarizeDocument(CALLER_ORG, CROSS_TENANT_ENVELOPE_ID, "u1", allRead(), CALLER_MEMBERSHIP)
       .catch((e: unknown) => e);
     const absent = await makeAi(ABSENT_ENVELOPE_ID)
-      .service.summarizeDocument(CALLER_ORG, ABSENT_ENVELOPE_ID, "u1", ALL_SCOPE)
+      .service.summarizeDocument(CALLER_ORG, ABSENT_ENVELOPE_ID, "u1", allRead(), CALLER_MEMBERSHIP)
       .catch((e: unknown) => e);
     expect((cross as NotFoundException).getResponse()).toEqual((absent as NotFoundException).getResponse());
   });
 
   it("takes the scope as a required argument, so an unscoped summarize is unrepresentable", () => {
-    expect(SignAiService.prototype.summarizeDocument.length).toBe(4);
+    expect(SignAiService.prototype.summarizeDocument.length).toBe(5);
   });
 
   it("the controller resolves sign:envelope:view — the route's own key is the same one, but the scope must be read, not assumed", async () => {
@@ -189,12 +198,13 @@ describe("E1 · POST /sign/envelopes/:envelopeId/ai/summarize resolves the envel
     await new SignAiController(service, access).summarize(OWN_ENVELOPE_ID, user);
 
     expect(access.scopeFor).toHaveBeenCalledWith(expect.anything(), "sign:envelope:view");
-    expect(service.summarizeDocument).toHaveBeenCalledWith(
-      CALLER_ORG,
-      OWN_ENVELOPE_ID,
-      "user-other",
-      expect.objectContaining({ viewAll: false, membershipId: OTHER_MEMBERSHIP }),
-    );
+    const [orgId, envelopeId, userId, read, membershipId] =
+      (service.summarizeDocument as jest.Mock).mock.calls[0];
+    expect(orgId).toBe(CALLER_ORG);
+    expect(envelopeId).toBe(OWN_ENVELOPE_ID);
+    expect(userId).toBe("user-other");
+    expect(read.unrestricted).toBe(false);
+    expect(membershipId).toBe(OTHER_MEMBERSHIP);
   });
 });
 

@@ -50,8 +50,8 @@ export async function resolveRatePreviewSubject(
   requestedUserId: string | undefined,
 ): Promise<string | undefined> {
   if (!requestedUserId || requestedUserId === u.userId) return requestedUserId;
-  const scope = await access.scopeFor(u, TS_TEAM_VIEW_PERMISSION);
-  return scope === "all" ? requestedUserId : u.userId;
+  const read = await resolveEntriesScope(access, u);
+  return read.unrestricted ? requestedUserId : u.userId;
 }
 
 export function membershipScope(membershipId: number | null, ownerColumn: PgColumn): OwnershipScope {

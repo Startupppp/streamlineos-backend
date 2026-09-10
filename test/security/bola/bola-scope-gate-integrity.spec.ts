@@ -18,7 +18,8 @@ import { BACKEND_ROOT, loadRouteSurface } from "./route-surface";
 const SCOPE_HELPER_DIRS = join(BACKEND_ROOT, "src", "modules");
 
 /** `if (!isScopable(SOME_PERMISSION)) return "all";` — and the key it names. */
-const FAIL_OPEN_RE = /if\s*\(\s*!\s*isScopable\s*\(\s*([\w.]+)\s*\)\s*\)\s*return\s*["']all["']/g;
+// ADR 0005: a resolver returns `ScopedRead.of(..., "all")` now, not the bare word.
+const FAIL_OPEN_RE = /if\s*\(\s*!\s*isScopable\s*\(\s*([\w.]+)\s*\)\s*\)\s*return\s+[^;]*["']all["']/g;
 const CONST_KEY_RE = /(?:export\s+)?const\s+([A-Z][A-Z0-9_]*)\s*=\s*["'`]([^"'`]+)["'`]/g;
 
 /**
@@ -149,9 +150,15 @@ describe("BOLA sweep — a widening filter is gated on DataScope, not on holding
     );
     expect(isScopable("crm:tasks:view")).toBe(true);
     expect(scope).toContain('resolved.get(TASKS_VIEW_PERMISSION) ?? "none"');
-    expect(service).toContain('scope === "all"');
+    /*
+     * ADR 0005 replaced the `if (!canViewAll)` branch with an AND: the requested
+     * assignee filter goes into the same scoped spec as the owner predicate, so at
+     * `own` the WHERE is `assignee = requested AND assignee = actor` and the
+     * widening cannot take effect. `tasks-assignee-widening.spec.ts` proves it runs.
+     */
+    expect(service).toContain("resolvedAssigneeId ? eq(tasks.assigneeId, resolvedAssigneeId) : undefined");
+    expect(service).toContain("scope: { columns: { ownerColumn: tasks.assigneeId } }");
     expect(service).not.toContain('!== "none"');
-    expect(service).toContain("if (!canViewAll) conditions.push(eq(tasks.assigneeId, userId));");
   });
 
   /**
@@ -176,7 +183,7 @@ describe("BOLA sweep — a widening filter is gated on DataScope, not on holding
     expect(isScopable("timesheets:team:view")).toBe(true);
     expect(scope).toContain("resolveRatePreviewSubject");
     expect(scope).toContain("resolveEntriesScope(access, u)");
-    expect(scope).toContain('return scope === "all" ? requestedUserId : u.userId;');
+    expect(scope).toContain("return read.unrestricted ? requestedUserId : u.userId;");
     expect(controller).toContain("resolveRatePreviewSubject(this.access, u, query.userId)");
     expect(service).not.toContain("query.userId");
   });
@@ -216,8 +223,9 @@ describe("BOLA sweep — realtime capability is tenant-checked at grant time", (
   it("support: the grant is built from the caller's DataScope and an org-bound query", () => {
     const source = read("src/modules/support/core/support-realtime.service.ts");
     expect(source).toContain("resolveSupportTicketsViewScope(this.access, u)");
-    expect(source).toContain("eq(supportTickets.orgId, u.orgId)");
-    expect(source).toMatch(/scope === "none"[\s\S]{0,200}ticketIds: \[\]/);
+    // ADR 0005: the tenant predicate is a required field of the scoped read, and `none` returns [] without querying.
+    expect(source).toContain("tenant: supportTickets.orgId");
+    expect(source).toMatch(/read\.read\([\s\S]{0,400}\(\) => \[\]/);
     expect(source).toContain("MAX_SCOPED_CHANNELS");
   });
 
