@@ -292,7 +292,7 @@
     "helmet": "^8.0.0",
     "jose": "^5.9.6",
     "mammoth": "^1.12.0",
-    "multer": "^2.2.0",
+    "multer": "^2.3.0",
     "otplib": "^13.4.1",
     "pdf-lib": "^1.17.1",
     "pdf-parse": "^1.1.4",
@@ -303,7 +303,7 @@
     "resend": "^6.16.0",
     "rrule": "^2.8.1",
     "rxjs": "^7.8.1",
-    "sharp": "^0.35.3",
+    "sharp": "^0.35.4",
     "ua-parser-js": "^1.0.40",
     "web-push": "^3.6.7",
     "zeptomail": "^8.0.1",
@@ -402,6 +402,19 @@
     "workerIdleMemoryLimit": "1GB",
     "moduleNameMapper": {
       "^src/(.*)$": "<rootDir>/src/$1"
+    }
+  },
+  "pnpm": {
+    "overrides": {
+      "@xmldom/xmldom": "^0.8.15",
+      "multer": "^2.3.0",
+      "js-yaml": "^4.3.2",
+      "browserslist": "^4.28.9",
+      "uuid": "^11.1.1",
+      "hono": "^4.13.5",
+      "esbuild": "^0.25.0",
+      "file-type": "^21.3.2",
+      "qs": "^6.16.0"
     }
   }
 }
