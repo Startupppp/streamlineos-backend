@@ -1,5 +1,5 @@
 import { SignEnvelopeDispatchService } from "../sign-envelope-dispatch.service";
-import { SignPublicService } from "../sign-public.service";
+import { withRecipientSession } from "../lib/recipient-session";
 import {
   registerAfterCommit,
   runWithTenantContext,
@@ -389,32 +389,26 @@ describe("the transaction seams decide whether a hook can be held at all", () =>
       },
     };
 
-    const service = new SignPublicService(
-      db as unknown as Db,
-      {} as never,
-      {} as never,
-      { hash: jest.fn(() => "hash-of-tok") } as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-    );
-
     let deferred: boolean | null = null;
-    const withRecipientSession = (
-      service as unknown as {
-        withRecipientSession: <T>(token: string, fn: () => Promise<T>) => Promise<T>;
-      }
-    ).withRecipientSession.bind(service);
 
-    await withRecipientSession("tok", async () => {
-      log.push("body");
-      deferred = registerAfterCommit(async () => {
-        log.push("hook");
-      });
-      return null;
-    });
+    // `withRecipientSession` moved to lib/recipient-session.ts when
+    // sign-public.service.ts was split, so this calls it directly instead of
+    // casting a constructed service to reach a private method. Same function,
+    // same seam — and the cast this used to need was itself a hint that the
+    // behaviour under test never depended on the class.
+    await withRecipientSession(
+      db as unknown as Db,
+      { hash: jest.fn(() => "hash-of-tok") } as never,
+      { error: jest.fn(), warn: jest.fn(), log: jest.fn() } as never,
+      "tok",
+      async () => {
+        log.push("body");
+        deferred = registerAfterCommit(async () => {
+          log.push("hook");
+        });
+        return null;
+      },
+    );
 
     expect(deferred).toBe(true);
     expect(log).toEqual([
