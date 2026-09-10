@@ -1,4 +1,4 @@
-import { boolean, decimal, foreignKey, index, integer, pgEnum, text, timestamp, type AnyPgColumn, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, decimal, foreignKey, index, integer, pgEnum, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { build } from "./namespaces";
 import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
@@ -66,7 +66,7 @@ export const feedbackPosts = build.table("feedback_posts", {
   crmOrganizationId: integer("crm_organization_id").references(() => crmOrganizations.id, { onDelete: "set null" }),
   accountValueSnapshot: decimal("account_value_snapshot", { precision: 15, scale: 2 }),
   linkedRoadmapItemId: integer("linked_roadmap_item_id"),
-  duplicateOfId: integer("duplicate_of_id").references((): AnyPgColumn => feedbackPosts.id, { onDelete: "set null" }),
+  duplicateOfId: integer("duplicate_of_id"),
   mergedAt: timestamp("merged_at", { withTimezone: true }),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),

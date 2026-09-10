@@ -12,7 +12,6 @@ import {
   uniqueIndex,
   unique,
   foreignKey,
-  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users, organizationMembers } from "../common/auth";
@@ -57,10 +56,7 @@ export const payrollJournalBatches = pgTable(
     reconciliationStatus: payrollJournalReconStatusEnum("reconciliation_status")
       .default("UNRECONCILED")
       .notNull(),
-    reversalOfBatchId: integer("reversal_of_batch_id").references(
-      (): AnyPgColumn => payrollJournalBatches.id,
-      { onDelete: "set null" },
-    ),
+    reversalOfBatchId: integer("reversal_of_batch_id"),
     reversalReason: text("reversal_reason"),
     provisional: boolean("provisional").default(false).notNull(),
     sourceHash: text("source_hash").notNull(),

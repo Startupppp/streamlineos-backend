@@ -8,7 +8,6 @@ import {
   uniqueIndex,
   jsonb,
   foreignKey,
-  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
@@ -27,7 +26,7 @@ export const testSuites = build.table("test_suites", {
   projectId: integer("project_id").notNull(),
   name: text("name").notNull(),
   description: text("description"),
-  parentId: integer("parent_id").references((): AnyPgColumn => testSuites.id, { onDelete: "set null" }),
+  parentId: integer("parent_id"),
   position: integer("position").default(0).notNull(),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -114,7 +113,7 @@ export const testRunResults = build.table("test_run_results", {
   notes: text("notes"),
   executedBy: text("executed_by").references(() => users.id, { onDelete: "set null" }),
   executedAt: timestamp("executed_at"),
-  linkedBugId: integer("linked_bug_id").references((): AnyPgColumn => bugs.id, { onDelete: "set null" }),
+  linkedBugId: integer("linked_bug_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
@@ -154,7 +153,7 @@ export const bugs = build.table("bugs", {
   qaOwnerMembershipId: integer("qa_owner_membership_id"),
   reopenCount: integer("reopen_count").default(0).notNull(),
   linkedTicketId: integer("linked_ticket_id"),
-  linkedTestCaseId: integer("linked_test_case_id").references((): AnyPgColumn => testCases.id, { onDelete: "set null" }),
+  linkedTestCaseId: integer("linked_test_case_id"),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),

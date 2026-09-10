@@ -1,4 +1,4 @@
-import { boolean, date, foreignKey, index, jsonb, pgTable, text, timestamp, type AnyPgColumn, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, date, foreignKey, index, jsonb, pgTable, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql, relations } from "drizzle-orm";
 import { organizations, users } from "./auth";
 import { orgUnits } from "./organization";
@@ -44,10 +44,7 @@ export const legalEntities = pgTable(
     effectiveTo: date("effective_to")
       .notNull()
       .default(sql`'infinity'::date`),
-    parentLegalEntityId: text("parent_legal_entity_id").references(
-      (): AnyPgColumn => legalEntities.id,
-      { onDelete: "set null" },
-    ),
+    parentLegalEntityId: text("parent_legal_entity_id"),
     orgUnitId: text("org_unit_id"),
     createdBy: text("created_by").references(() => users.id, {
       onDelete: "set null",

@@ -53,13 +53,7 @@ import { AccessVersionCache } from "./access-version-cache";
 
 export {
   broadest,
-  isActiveAssignment,
-  isActiveDelegation,
-  isPlanGatedModule,
   SCOPE_RANK,
-} from "./access-policy";
-export type {
-  DelegationRow,
 } from "./access-policy";
 
 const PERMS_CACHE_TTL_MS = 30_000;

@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, unique, uniqueIndex, check, foreignKey, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, unique, uniqueIndex, check, foreignKey } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { candidateStatusEnum, applicationStatusEnum } from "../common/enums";
 import { organizationMembers, organizations, users } from "../common/auth";
@@ -24,7 +24,7 @@ export const candidates = pgTable("candidates", {
   rating: integer("rating"),
   referredBy: text("referred_by").references(() => users.id),
   externalId: text("external_id"),
-  duplicateOfId: integer("duplicate_of_id").references((): AnyPgColumn => candidates.id, { onDelete: "set null" }),
+  duplicateOfId: integer("duplicate_of_id"),
   aiScore: integer("ai_score"),
   aiScoreBreakdown: jsonb("ai_score_breakdown").$type<Record<string, number>>(),
   aiScoreGeneratedAt: timestamp("ai_score_generated_at"),
