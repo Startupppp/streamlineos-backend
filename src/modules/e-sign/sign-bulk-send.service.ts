@@ -10,6 +10,7 @@ import { SignNotificationsService } from "./sign-notifications.service";
 import { SignIntegrationsService } from "./sign-integrations.service";
 import { SignTemplatesService, parseTemplateSnapshot } from "./sign-templates.service";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
+import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 
 /** The one event name, so producer and consumer cannot disagree. */
 export const SIGN_BULK_SEND_QUEUED = "sign.bulk_send.queued";
@@ -239,10 +240,12 @@ export class SignBulkSendService {
     const roleName = signingRoles[0]?.roleName;
     if (!roleName) throw new BadRequestException("Template no longer has a single signer role");
 
-    await this.db
-      .update(signBulkSendJobs)
-      .set({ status: "running" })
-      .where(eq(signBulkSendJobs.id, jobId));
+    await this.commitRow(orgId, () =>
+      this.db
+        .update(signBulkSendJobs)
+        .set({ status: "running" })
+        .where(eq(signBulkSendJobs.id, jobId)),
+    );
 
     const pending = await this.db
       .select()
@@ -262,20 +265,29 @@ export class SignBulkSendService {
        * exactly the row most likely to keep killing the worker.
        */
       const attempts = stored.attempts + 1;
-      await this.db
-        .update(signBulkSendRows)
-        .set({ attempts, updatedAt: new Date() })
-        .where(eq(signBulkSendRows.id, stored.id));
+      /*
+        Its own committed transaction, which is what makes the budget real.
+        Counting before the attempt only protects the worker if the count
+        SURVIVES the pass -- see `commitRow`.
+      */
+      await this.commitRow(orgId, () =>
+        this.db
+          .update(signBulkSendRows)
+          .set({ attempts, updatedAt: new Date() })
+          .where(eq(signBulkSendRows.id, stored.id)),
+      );
 
       if (attempts > MAX_ROW_ATTEMPTS) {
-        await this.db
-          .update(signBulkSendRows)
-          .set({
-            status: "failed",
-            errorMessage: `Gave up after ${MAX_ROW_ATTEMPTS} attempts`,
-            updatedAt: new Date(),
-          })
-          .where(eq(signBulkSendRows.id, stored.id));
+        await this.commitRow(orgId, () =>
+          this.db
+            .update(signBulkSendRows)
+            .set({
+              status: "failed",
+              errorMessage: `Gave up after ${MAX_ROW_ATTEMPTS} attempts`,
+              updatedAt: new Date(),
+            })
+            .where(eq(signBulkSendRows.id, stored.id)),
+        );
         failed++;
         continue;
       }
@@ -286,23 +298,27 @@ export class SignBulkSendService {
         stored.rowNumber,
       );
       if (row.error) {
-        await this.db
-          .update(signBulkSendRows)
-          .set({ status: "failed", errorMessage: row.error, updatedAt: new Date() })
-          .where(eq(signBulkSendRows.id, stored.id));
+        await this.commitRow(orgId, () =>
+          this.db
+            .update(signBulkSendRows)
+            .set({ status: "failed", errorMessage: row.error, updatedAt: new Date() })
+            .where(eq(signBulkSendRows.id, stored.id)),
+        );
         failed++;
         continue;
       }
 
       try {
-        const envelope = await this.templates.instantiate(orgId, job.senderUserId, job.templateId, {
-          recipients: [{ roleName, name: row.name!, email: row.email, phone: row.phone }],
+        await this.commitRow(orgId, async () => {
+          const envelope = await this.templates.instantiate(orgId, job.senderUserId, job.templateId, {
+            recipients: [{ roleName, name: row.name!, email: row.email, phone: row.phone }],
+          });
+          await this.envelopes.send(orgId, envelope.id, { orgId, userId: job.senderUserId });
+          await this.db
+            .update(signBulkSendRows)
+            .set({ status: "success", envelopeId: envelope.id, errorMessage: null, updatedAt: new Date() })
+            .where(eq(signBulkSendRows.id, stored.id));
         });
-        await this.envelopes.send(orgId, envelope.id, { orgId, userId: job.senderUserId });
-        await this.db
-          .update(signBulkSendRows)
-          .set({ status: "success", envelopeId: envelope.id, errorMessage: null, updatedAt: new Date() })
-          .where(eq(signBulkSendRows.id, stored.id));
         succeeded++;
       } catch (error) {
         const message = error instanceof Error ? error.message : "Failed to create envelope";
@@ -313,19 +329,52 @@ export class SignBulkSendService {
          * which is the opposite failure and just as silent.
          */
         const exhausted = attempts >= MAX_ROW_ATTEMPTS;
-        await this.db
-          .update(signBulkSendRows)
-          .set({
-            status: exhausted ? "failed" : "pending",
-            errorMessage: message,
-            updatedAt: new Date(),
-          })
-          .where(eq(signBulkSendRows.id, stored.id));
+        await this.commitRow(orgId, () =>
+          this.db
+            .update(signBulkSendRows)
+            .set({
+              status: exhausted ? "failed" : "pending",
+              errorMessage: message,
+              updatedAt: new Date(),
+            })
+            .where(eq(signBulkSendRows.id, stored.id)),
+        );
         if (exhausted) failed++;
       }
     }
 
     return this.finishJob(orgId, jobId, succeeded, failed, pending.length);
+  }
+
+  /**
+   * One row's durable state, committed on its own rather than with the pass.
+   *
+   * **The pass is a transaction, and it is thrown out of on purpose.**
+   * `OutboxPublisherService.deliver` wraps `consumer.handle(event)` in
+   * `runInNewTenantTransaction`, so everything this job writes joins ONE
+   * transaction -- and `finishJob` below ends a partly-done job by THROWING,
+   * which is how the outbox is asked to bring the event back. That throw rolls
+   * the transaction back.
+   *
+   * So before this, a pass that sent 400 invitations and had rows left over
+   * discarded all 400 `success` rows, all 400 `envelope_id`s and every
+   * `attempts` increment -- while the 400 emails stayed sent, because email is
+   * not transactional. The retry then re-read the same rows as `pending` with
+   * `attempts` unchanged and **sent every one of them again**, forever. The
+   * budget that exists to stop a poison row killing the worker could never
+   * advance past one, for the same reason.
+   *
+   * `runInNewTenantTransaction` is the seam that fixes it: it calls
+   * `runOutsideTenantContext` first, so this is a genuinely independent
+   * transaction on its own connection and not a SAVEPOINT inside the pass. A
+   * nested `db.transaction` would have looked identical here and changed
+   * nothing.
+   *
+   * The asymmetry this is all about: emails are irreversible and rows are not,
+   * so the row must be at least as durable as the email it describes.
+   */
+  private async commitRow<T>(orgId: string, work: () => Promise<T>): Promise<T> {
+    return runInNewTenantTransaction(this.db, orgId, () => work());
   }
 
   /** Counts recomputed from the rows, not accumulated, so a resumed job still totals correctly. */
@@ -345,15 +394,22 @@ export class SignBulkSendService {
     const failedCount = rows.filter((r) => r.status === "failed").length;
     const stillPending = rows.filter((r) => r.status === "pending").length;
 
-    await this.db
-      .update(signBulkSendJobs)
-      .set({
-        status: stillPending > 0 ? "running" : "completed",
-        completedAt: stillPending > 0 ? null : new Date(),
-        successCount,
-        failedCount,
-      })
-      .where(eq(signBulkSendJobs.id, jobId));
+    /*
+      Committed before the throw below, not with it. The counts are what an
+      operator watches a long job through, and rolling them back would leave the
+      job reading 0 sent after a pass that sent hundreds.
+    */
+    await this.commitRow(orgId, () =>
+      this.db
+        .update(signBulkSendJobs)
+        .set({
+          status: stillPending > 0 ? "running" : "completed",
+          completedAt: stillPending > 0 ? null : new Date(),
+          successCount,
+          failedCount,
+        })
+        .where(eq(signBulkSendJobs.id, jobId)),
+    );
 
     if (stillPending > 0) {
       /** Rows left to try means the event must come back; throwing is how the outbox retries. */
