@@ -461,6 +461,11 @@
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain - do not fix in this lane",
       "justification": "Classified 2026-09-10. Same code, new path for the second time: getForecasting moved out of inv-replenishment.service.ts into lib/replenishment-reads.ts, then out of that into lib/replenishment-forecast.ts when the first lib file itself crossed the 300-line ratchet. Both ancestors carry EXCLUDED-MODULE; the lane exclusion is following the code, not being newly granted."
+    },
+    "/inventory/projects/lib/project-list.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Offset pagination; needs keyset migration or proven depth bound",
+      "justification": "Classified 2026-09-10. Same code, new path: listProjects moved verbatim out of inv-projects.service.ts when that 912-line file was decomposed for check:file-sizes. Inherits the parent's verdict - the offset paging it was classified ACTIONABLE for is the same paging, at a new path."
     }
   },
   "unbounded": {
@@ -3218,6 +3223,16 @@
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain - do not fix in this lane",
       "justification": "Classified 2026-09-10. Same code, new path: the dispatch command moved verbatim out of inv-stock-transfers.service.ts when that 927-line file was decomposed for check:file-sizes. The parent entry carries the same EXCLUDED-MODULE verdict and still matches on the queries left behind, so the lane exclusion is following the code rather than being newly granted."
+    },
+    "/inventory/projects/lib/project-reads.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-10. Same code, new path: the requirement reads and coverage calculation moved verbatim out of inv-projects.service.ts. The parent's justification was re-read against what moved and holds: requirement rows of ONE project, and the reservation/stock reads filtered inArray on those requirement ids."
+    },
+    "/inventory/projects/lib/project-reservation.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-10. Same code, new path: reserveRequirement and releaseRequirement moved verbatim out of inv-projects.service.ts when that 912-line file was decomposed for check:file-sizes. Read against the moved queries rather than copied from the parent: both matches select the existing reservation rows for ONE requirement, filtered on (org_id, source, source_id) - the holds a single project requirement already has, which is the same shape the parent entry was classified FALSE-POSITIVE for. FALSE-POSITIVE rather than BOUNDED because BOUNDED is a FIXED verdict asserting the scanner no longer matches, and it still does."
     }
   }
 }
