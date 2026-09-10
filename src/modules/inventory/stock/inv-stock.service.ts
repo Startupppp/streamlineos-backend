@@ -14,12 +14,13 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { buildCursorPage, decodeTimestampCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeMicros, microsecondCursorValue } from "../../../common/pagination/keyset";
-import { WarehouseScopeService, type WarehouseScope } from "../stock-engine/warehouse-scope.service";
+import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { CostVisibilityService, stripCostFields } from "../stock-engine/cost-visibility";
 import { availableQtySql, availableQtySumSql } from "../stock-engine/available-sql";
 import type {
   ListStockLevelsInput, ListTransactionsInput, AvailabilityQueryInput,
 } from "./dto/inv-stock.schemas";
+import { scopeFragment, scopePredicate } from "./lib/stock-scope-sql";
 
 /**
  * Ceiling on matching variants a text search resolves.
@@ -195,35 +196,6 @@ export class InvStockService {
     private readonly costVisibility: CostVisibilityService,
   ) {}
 
-  /**
-   * Warehouse scope as a SQL fragment plus a cache discriminator. The
-   * discriminator is mandatory: this list is cached per org, so a per-user
-   * predicate without it would serve one operator's warehouses to the next.
-   */
-  private scopeFragment(scope: WarehouseScope, orgId: string): { sql: SQL; key: string } {
-    if (scope === null) return { sql: sql``, key: "all" };
-    if (scope.length === 0) return { sql: sql`AND FALSE`, key: "none" };
-    return {
-      sql: sql`AND ${this.scopePredicate(scope, orgId, sql.raw("sl.location_id"))}`,
-      key: [...scope].sort((a, b) => a - b).join("."),
-    };
-  }
-
-  /**
-   * The same scope as a bare predicate over a location column the caller names.
-   *
-   * `scopeFragment` above splices into hand-written SQL that aliases
-   * `inv_stock_levels` as `sl`; `listStockLevels` builds its `WHERE` out of
-   * Drizzle conditions over the unaliased table. One of them has to say which
-   * column it means, so both go through this and the subquery -- which is the
-   * part that decides who may see which building -- exists once.
-   */
-  private scopePredicate(scope: WarehouseScope, orgId: string, locationColumn: SQL): SQL {
-    if (scope === null) return sql`TRUE`;
-    if (scope.length === 0) return sql`FALSE`;
-    const ids = sql.join(scope.map((id) => sql`${id}`), sql`, `);
-    return sql`${locationColumn} IN (SELECT id FROM inv_locations WHERE org_id = ${orgId} AND warehouse_id IN (${ids}))`;
-  }
 
   async listStockLevels(orgId: string, userId: string, filters: ListStockLevelsInput) {
     const { warehouseId, locationId, productId, variantId, lotId, serialId, lowStock, negative, search, page, limit } = filters;
@@ -242,7 +214,7 @@ export class InvStockService {
        */
       const conditions: SQL[] = [
         eq(invStockLevels.orgId, orgId),
-        this.scopePredicate(scope, orgId, sql`${invStockLevels.locationId}`),
+        scopePredicate(scope, orgId, sql`${invStockLevels.locationId}`),
       ];
       if (locationId) conditions.push(eq(invStockLevels.locationId, locationId));
       if (variantId) conditions.push(eq(invStockLevels.productVariantId, variantId));
@@ -428,7 +400,7 @@ export class InvStockService {
 
   async getAvailability(orgId: string, userId: string, filters: AvailabilityQueryInput) {
     const { variantId, warehouseId } = filters;
-    const scope = this.scopeFragment(await this.warehouseScope.resolve(orgId, userId), orgId);
+    const scope = scopeFragment(await this.warehouseScope.resolve(orgId, userId), orgId);
 
     // [B1-09] stockRow, incomingRow, outgoingRow are fully independent — run in parallel.
     // [B1-23] No typed generic on db.execute; fields read via String()/Number() converters below.
