@@ -61,7 +61,7 @@ export class LoadsController {
     @Param("loadId", ParseIntPipe) loadId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.findOne(u.orgId, loadId);
+    return this.svc.findOne(u.orgId, u.userId, loadId);
   }
 
   @Post()
