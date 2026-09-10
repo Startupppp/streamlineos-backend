@@ -5,7 +5,6 @@ import { EmailProviderService, isTransientError } from "../../email/email.provid
 import { getEmailTemplate, escapeHtml } from "../../email/templates/base";
 import { renderButton } from "../../email/templates/components";
 import { createUnsubscribeToken } from "../../email/unsubscribe-token";
-import { appUrl } from "../../email/app-url";
 
 /**
  * COMP-002. RFC 8058 one-click unsubscribe headers, so a mail client can offer the
@@ -14,10 +13,30 @@ import { appUrl } from "../../email/app-url";
  * Returned only for non-mandatory events. A payslip or a security alert must not
  * advertise an opt-out that suppression would ignore — offering one and not honouring
  * it is worse than offering none.
+ *
+ * **The URL was built from `appUrl()` and that was wrong.** `APP_URL` is the WEB
+ * APP origin — its own comment says so, and every other `appUrl()` caller builds
+ * a page there — while `UnsubscribeController` lives on this API at
+ * `notifications/unsubscribe/:token`. The web app has no route at that path and
+ * no rewrite to here, so the header on every non-mandatory notification email
+ * pointed at a 404. Confirmed by looking: no `unsubscribe` segment anywhere
+ * under the web app's `app/`, no dynamic segment under its `/notifications`,
+ * and no `rewrites` in its Next config.
+ *
+ * That is worse than sending nothing. One-click is what a mailbox provider tests
+ * for on a bulk sender, and a `List-Unsubscribe` that fails is read as a sender
+ * refusing to honour opt-outs — so the fix is not to point it somewhere prettier
+ * but to send the header ONLY when this API's own public origin is configured.
+ * `PUBLIC_API_URL` unset means no header at all, which is honest and is exactly
+ * what the rule above already says about mandatory mail.
  */
 function unsubscribeHeaders(input: ProviderSendInput): Record<string, string> | undefined {
   if (input.mandatory) return undefined;
   if (!input.recipientAddress) return undefined;
+
+  const apiOrigin = process.env.PUBLIC_API_URL?.trim().replace(/\/$/, "");
+  if (!apiOrigin) return undefined;
+
   const token = createUnsubscribeToken({
     userId: input.userId,
     orgId: input.orgId,
@@ -26,7 +45,7 @@ function unsubscribeHeaders(input: ProviderSendInput): Record<string, string> | 
     scopeKey: "",
   });
   if (!token) return undefined;
-  const url = `${appUrl()}/notifications/unsubscribe/${token}`;
+  const url = `${apiOrigin}/notifications/unsubscribe/${token}`;
   return {
     "List-Unsubscribe": `<${url}>`,
     "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",

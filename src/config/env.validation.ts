@@ -68,6 +68,17 @@ const baseSchema = z
       ),
     CORS_ORIGINS: z.string().min(1, "CORS_ORIGINS is required"),
     APP_URL: z.string().url("APP_URL must be a valid URL"),
+    /**
+     * This API's own public origin, for links a MAIL CLIENT must call rather
+     * than a browser.
+     *
+     * `APP_URL` is the web app, and every other email link is a page there. RFC
+     * 8058 one-click unsubscribe is the exception: the mail client POSTs the
+     * URL itself, so it has to reach a route that exists on the API. Optional,
+     * and when it is unset the `List-Unsubscribe` headers are omitted entirely
+     * rather than pointed somewhere that cannot answer.
+     */
+    PUBLIC_API_URL: optionalUrl,
     CRON_SECRET: deploymentSecret,
     INTERNAL_API_SECRET: deploymentSecret,
     CONTACT_NOTIFICATION_EMAIL: optionalEmail,
