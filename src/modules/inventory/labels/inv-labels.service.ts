@@ -78,6 +78,7 @@ export class InvLabelsService {
 
     const poLines = new Map(po.lines.map((line) => [line.id, line]));
     const baseUoms = await this.baseUomByProduct(
+      orgId,
       po.lines.map((line) => line.productVariant.product.id),
     );
 
@@ -216,15 +217,32 @@ export class InvLabelsService {
    * unit's abbreviation beside a base-unit figure would label a quantity of 24
    * eaches as 24 cases.
    */
-  private async baseUomByProduct(productIds: readonly number[]): Promise<Map<number, string>> {
+  /**
+   * Scoped by org as well as by id.
+   *
+   * It filtered on `inArray(invProducts.id, ids)` alone. That was not a live
+   * cross-tenant read — `inv_products` and `inv_uom` both carry RLS with a
+   * policy, so the app role never saw another org's row, and the ids are
+   * derived from a PO already fetched org-scoped. It was still wrong twice
+   * over. RLS was the ONLY barrier, so the correctness of this query depended
+   * on a table-level setting it never mentions; and §7 is explicit that an
+   * RLS-table query which does not supply `org_id` itself cannot use the
+   * `(org_id, …)` index, because the policy qual is not leakproof and gets
+   * evaluated against heap tuples — the planner refuses the index and the read
+   * degrades exactly where a label print fans out over every line of a receipt.
+   */
+  private async baseUomByProduct(
+    orgId: string,
+    productIds: readonly number[],
+  ): Promise<Map<number, string>> {
     const ids = [...new Set(productIds)];
     if (ids.length === 0) return new Map();
 
     const rows = await this.db
       .select({ productId: invProducts.id, abbreviation: invUom.abbreviation })
       .from(invProducts)
-      .leftJoin(invUom, eq(invUom.id, invProducts.uomId))
-      .where(inArray(invProducts.id, ids));
+      .leftJoin(invUom, and(eq(invUom.id, invProducts.uomId), eq(invUom.orgId, orgId)))
+      .where(and(eq(invProducts.orgId, orgId), inArray(invProducts.id, ids)));
 
     return new Map(
       rows

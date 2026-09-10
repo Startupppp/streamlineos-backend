@@ -34,10 +34,21 @@ export function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (Array.isArray(value)) return value.flatMap((item) => sqlValues(item, seen));
   if (typeof value !== "object" || seen.has(value)) return [];
   seen.add(value);
-  const record = value as { queryChunks?: unknown[]; value?: unknown };
+  const record = value as { queryChunks?: unknown[]; value?: unknown; where?: unknown };
   return [
     ...(record.queryChunks ? sqlValues(record.queryChunks, seen) : []),
     ...(Object.prototype.hasOwnProperty.call(record, "value") ? sqlValues(record.value, seen) : []),
+    /**
+     * `where` too, because Drizzle's relational API does not hand the predicate
+     * over directly — `db.query.x.findFirst({ where, columns })` passes an
+     * OPTIONS OBJECT, and descending only queryChunks/value stops at its
+     * surface and returns nothing. Every service using the relational reader
+     * therefore looked like it bound no org at all, which is a false NEGATIVE:
+     * the test fails loudly, so it cost time rather than safety, but the same
+     * blindness written the other way round (asserting `not.toContain(victim)`
+     * alone) would have passed every one of them for the same reason.
+     */
+    ...(Object.prototype.hasOwnProperty.call(record, "where") ? sqlValues(record.where, seen) : []),
   ];
 }
 
@@ -123,11 +134,35 @@ export function makeIsolationDb(rows: unknown[] = []): IsolationDb {
   return { db: db as unknown as Db, findMany, findFirst, selectWhere, execute };
 }
 
+/**
+ * Every caching entry point runs its producer straight through, so the service's
+ * real query still executes and its predicate is still recorded.
+ *
+ * `cachedVersionedForOrg` is the one that matters and it was missing: a service
+ * reading through it (InvOpsService.zoneBoard) died on "not a function" and, in
+ * a test that tolerates throws, that reads as "bound no org" — a false negative
+ * indistinguishable from a service with no tenant predicate at all.
+ */
 export const cacheStub = () => ({
   cached: jest.fn().mockImplementation(async (_k: string, fn: () => unknown) => fn()),
   cachedVersioned: jest.fn().mockImplementation(async (_ns: string, _h: string, fn: () => unknown) => fn()),
+  cachedVersionedForOrg: jest
+    .fn()
+    .mockImplementation(async (_org: string, _ns: string, _h: string, fn: () => unknown) => fn()),
+  cachedForOrg: jest
+    .fn()
+    .mockImplementation(async (_org: string, _k: string, fn: () => unknown) => fn()),
+  cachedForOrgWith: jest
+    .fn()
+    .mockImplementation(async (_org: string, _k: string, _o: unknown, fn: () => unknown) => fn()),
+  orgScopedKey: jest.fn().mockImplementation((org: string, key: string) => `${org}:${key}`),
+  get: jest.fn().mockResolvedValue(null),
+  set: jest.fn().mockResolvedValue(undefined),
+  del: jest.fn().mockResolvedValue(undefined),
   invalidate: jest.fn(),
   invalidateNamespace: jest.fn(),
+  invalidateNamespaceForOrg: jest.fn(),
+  invalidateForOrg: jest.fn(),
 });
 
 /** An unrestricted warehouse scope, so a leak cannot be masked by scoping. */
