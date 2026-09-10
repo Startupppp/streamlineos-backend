@@ -22,6 +22,30 @@ import { ReservationService } from "./stock-engine/reservation.service";
 import { JournalPostingService } from "../accounting/posting/journal-posting.service";
 import { INVENTORY_ISOLATION_STUBS } from "./__tests__/isolation-stubs";
 
+/**
+ * The three methods `InvStockTransfersService` actually calls on
+ * `ReservationService` — createReservationInTx (reserve), consumeReservationsBatch
+ * (complete) and releaseReservationInTx (cancel).
+ *
+ * It used to name `releaseReservation`, which does not exist on the real class,
+ * and omitted `consumeReservationsBatch`, which does. Neither showed up as a
+ * failure because these tests only exercise the LIST paths, so the reserve /
+ * consume / release branches are never reached — a stub can name anything at all
+ * as long as nobody calls it. The moment one of those tests grew to cover a
+ * cancel, it would have died on `releaseReservationInTx is not a function` and
+ * looked like a bug in the service rather than in its double.
+ *
+ * Keep this list matching the real surface, not the calls a given test happens
+ * to make. `check:mock-surface` compares the two and fails on a name the real
+ * class does not have.
+ */
+const RESERVATION_STUB = {
+  createReservationInTx: jest.fn(),
+  consumeReservationsBatch: jest.fn(),
+  releaseReservationInTx: jest.fn(),
+};
+
+
 const USER = "user-1";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -210,7 +234,7 @@ describe("InvStockTransfersService — cross-tenant isolation", () => {
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
         { provide: StockEngineService, useValue: { execute: jest.fn() } },
-        { provide: ReservationService, useValue: { createReservationInTx: jest.fn(), releaseReservation: jest.fn() } },
+        { provide: ReservationService, useValue: RESERVATION_STUB },
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
         { provide: WarehouseScopeService, useValue: warehouseScope },
       ],
@@ -232,7 +256,7 @@ describe("InvStockTransfersService — cross-tenant isolation", () => {
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
         { provide: StockEngineService, useValue: { execute: jest.fn() } },
-        { provide: ReservationService, useValue: { createReservationInTx: jest.fn(), releaseReservation: jest.fn() } },
+        { provide: ReservationService, useValue: RESERVATION_STUB },
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
         { provide: WarehouseScopeService, useValue: warehouseScope },
       ],
@@ -255,7 +279,7 @@ describe("InvStockReservationsService — cross-tenant isolation", () => {
         InvStockReservationsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
-        { provide: ReservationService, useValue: { createReservationInTx: jest.fn(), releaseReservation: jest.fn() } },
+        { provide: ReservationService, useValue: RESERVATION_STUB },
         { provide: StockEngineService, useValue: { execute: jest.fn() } },
       ],
     }).compile().then((m) => m.get(InvStockReservationsService));
@@ -275,7 +299,7 @@ describe("InvStockReservationsService — cross-tenant isolation", () => {
         InvStockReservationsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
-        { provide: ReservationService, useValue: { createReservationInTx: jest.fn(), releaseReservation: jest.fn() } },
+        { provide: ReservationService, useValue: RESERVATION_STUB },
         { provide: StockEngineService, useValue: { execute: jest.fn() } },
       ],
     }).compile().then((m) => m.get(InvStockReservationsService));

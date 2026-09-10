@@ -14,7 +14,6 @@ import { CacheService } from "../../common/cache/cache.service";
 import { InventoryAuditService } from "./stock-engine/inventory-audit.service";
 import { AccessService } from "../access/access.service";
 import { ValuationService } from "./stock-engine/valuation.service";
-import { MovementCostingService } from "./stock-engine/movement-costing.service";
 import { PeriodsService } from "../accounting/gl/periods.service";
 import { INVENTORY_ISOLATION_STUBS } from "./__tests__/isolation-stubs";
 
@@ -241,7 +240,6 @@ describe("StockEngineService — cross-tenant isolation", () => {
         { provide: ValuationService, useValue: { recordReceipt: jest.fn(), recordIssue: jest.fn() } },
         { provide: WarehouseScopeService, useValue: { resolve: jest.fn().mockResolvedValue(null), warehousePredicate: jest.fn().mockReturnValue({ queryChunks: [] }), locationPredicate: jest.fn().mockReturnValue({ queryChunks: [] }) } },
         { provide: PeriodsService, useValue: { assertPeriodOpen: jest.fn() } },
-        { provide: MovementCostingService, useValue: { applyCosting: jest.fn() } },
       ],
     }).compile().then((m) => m.get(StockEngineService));
 
@@ -268,7 +266,6 @@ describe("StockEngineService — cross-tenant isolation", () => {
         { provide: ValuationService, useValue: { recordReceipt: jest.fn(), recordIssue: jest.fn() } },
         { provide: WarehouseScopeService, useValue: { resolve: jest.fn().mockResolvedValue(null), warehousePredicate: jest.fn().mockReturnValue({ queryChunks: [] }), locationPredicate: jest.fn().mockReturnValue({ queryChunks: [] }) } },
         { provide: PeriodsService, useValue: { assertPeriodOpen: jest.fn() } },
-        { provide: MovementCostingService, useValue: { applyCosting: jest.fn() } },
       ],
     }).compile().then((m) => m.get(StockEngineService));
 
