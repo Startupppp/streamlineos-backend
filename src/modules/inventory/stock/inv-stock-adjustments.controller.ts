@@ -111,6 +111,6 @@ export class InvStockAdjustmentsController {
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.adjustments.cancelAdjustment(u.orgId, adjustmentId);
+    return this.adjustments.cancelAdjustment(u.orgId, u.userId, adjustmentId);
   }
 }

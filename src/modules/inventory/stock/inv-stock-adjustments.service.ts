@@ -56,7 +56,7 @@ export class InvStockAdjustmentsService {
     private readonly costVisibility: CostVisibilityService,
   ) {}
 
-  async listAdjustments(orgId: string, filters: ListAdjustmentsInput, scope: DataScope = "all", userId?: string) {
+  async listAdjustments(orgId: string, filters: ListAdjustmentsInput, scope: DataScope = "all", userId: string) {
     if (scope === "none") return { items: [], total: 0, page: filters.page, totalPages: 0 };
 
     const { status, reason, writeOffsOnly, page, limit } = filters;
@@ -70,7 +70,7 @@ export class InvStockAdjustmentsService {
     if (scope !== "all" && userId) {
       conditions.push(applyScope(scope, orgId, userId, { ownerColumn: invStockAdjustments.createdBy }));
     }
-    if (userId) {
+    {
       // Locations live on the lines, not the header, so scope via EXISTS.
       const warehouses = await this.warehouseScope.resolve(orgId, userId);
       if (warehouses !== null) {
@@ -100,7 +100,7 @@ export class InvStockAdjustmentsService {
       this.db.select({ count: sql<number>`count(*)::int` }).from(invStockAdjustments).where(where),
     ]);
 
-    const showCost = userId !== undefined && (await this.costVisibility.canSeeCost(orgId, userId));
+    const showCost = await this.costVisibility.canSeeCost(orgId, userId);
     return {
       items: showCost ? items : items.map(withoutWriteOffValue),
       total: countResult[0]?.count ?? 0,
@@ -109,7 +109,55 @@ export class InvStockAdjustmentsService {
     };
   }
 
-  async getAdjustment(orgId: string, adjustmentId: number, userId?: string) {
+  /**
+   * The warehouse gate every id-taking method here goes through.
+   *
+   * `listAdjustments` scopes -- an adjustment is in scope when any of its lines
+   * sits in a location in one of the caller's warehouses -- and `getAdjustment`,
+   * `approveAdjustment`, `postAdjustment` and `cancelAdjustment` all reached the
+   * row on `org_id` and the id alone. The controller had `@CurrentUser()` in
+   * hand for three of them and spent it only on cost visibility; the fourth was
+   * never given it at all.
+   *
+   * **The stock was never at risk and that is exactly why this survived.**
+   * `StockEngineService.executeInTx` calls `assertLocationsInScope` on every
+   * movement, so posting an out-of-scope adjustment is refused there. What was
+   * unguarded is the DOCUMENT: reading another building's write-off with its
+   * lines, locations and value; approving one, which satisfies maker-checker for
+   * a warehouse you have no standing in and leaves an in-scope poster free to
+   * post it; and cancelling one, which is tamper rather than theft but is still
+   * somebody else's queue.
+   *
+   * Deliberately the SAME predicate as the list rather than a house rule. An
+   * adjustment all of whose lines sit in location rows with no warehouse matches
+   * neither, so the detail and the aggregate agree about it -- which is the
+   * property that matters, since they disagree per table on purpose.
+   *
+   * 404 and not 403: a 403 on an id the caller may not see confirms it exists.
+   */
+  private async requireAdjustment(orgId: string, userId: string, adjustmentId: number): Promise<void> {
+    const scope = await this.warehouseScope.resolve(orgId, userId);
+    if (scope === null) return;
+
+    const ids = this.warehouseScope.warehouseIdList(scope);
+    const [visible] = await this.db
+      .select({ id: invStockAdjustments.id })
+      .from(invStockAdjustments)
+      .where(and(
+        eq(invStockAdjustments.orgId, orgId),
+        eq(invStockAdjustments.id, adjustmentId),
+        ids === null ? sql`FALSE` : sql`EXISTS (
+          SELECT 1 FROM inv_stock_adjustment_lines l
+          JOIN inv_locations loc ON loc.id = l.location_id
+          WHERE l.adjustment_id = ${invStockAdjustments.id} AND loc.warehouse_id IN (${ids})
+        )`,
+      ))
+      .limit(1);
+    if (!visible) throw new NotFoundException("Adjustment not found");
+  }
+
+  async getAdjustment(orgId: string, adjustmentId: number, userId: string) {
+    await this.requireAdjustment(orgId, userId, adjustmentId);
     const adj = await this.db.query.invStockAdjustments.findFirst({
       where: and(eq(invStockAdjustments.orgId, orgId), eq(invStockAdjustments.id, adjustmentId)),
       with: {
@@ -126,7 +174,7 @@ export class InvStockAdjustmentsService {
       },
     });
     if (!adj) throw new NotFoundException("Adjustment not found");
-    const showCost = userId !== undefined && (await this.costVisibility.canSeeCost(orgId, userId));
+    const showCost = await this.costVisibility.canSeeCost(orgId, userId);
     return showCost ? adj : withoutWriteOffValue(adj);
   }
 
@@ -171,8 +219,20 @@ export class InvStockAdjustmentsService {
       variants,
     );
 
-    const adjustmentId = await this.db.transaction(async (tx) =>
-      runIdempotent(
+    const adjustmentId = await this.db.transaction(async (tx) => {
+      /*
+        The locations arrive in the BODY, so they are the caller's claim and not
+        something already checked. The engine refuses an out-of-scope MOVEMENT,
+        which is why nothing was ever moved -- but over the approval threshold
+        this command stops at PENDING_APPROVAL and posts nothing, so the engine
+        never sees it and the document simply exists, naming another building's
+        locations and sitting in that building's queue. Same reasoning as
+        `createCycleCount`, which documents the body-is-a-claim rule.
+      */
+      await this.warehouseScope.assertLocationsInScope(
+        tx, orgId, userId, data.lines.map((line) => line.locationId),
+      );
+      return runIdempotent(
         tx,
         orgId,
         idempotencyKey,
@@ -244,8 +304,8 @@ export class InvStockAdjustmentsService {
             throw new ConflictException("The stored result for this key is unreadable");
           return id;
         },
-      ),
-    );
+      );
+    });
 
     if (!needsApproval) await this.engine.invalidateCaches(orgId);
 
@@ -266,6 +326,7 @@ export class InvStockAdjustmentsService {
     adjustmentId: number,
     idempotencyKey: string,
   ) {
+    await this.requireAdjustment(orgId, userId, adjustmentId);
     const adj = await this.db.query.invStockAdjustments.findFirst({
       where: and(eq(invStockAdjustments.orgId, orgId), eq(invStockAdjustments.id, adjustmentId)),
     });
@@ -321,6 +382,7 @@ export class InvStockAdjustmentsService {
   }
 
   async postAdjustment(orgId: string, userId: string, adjustmentId: number, idempotencyKey: string) {
+    await this.requireAdjustment(orgId, userId, adjustmentId);
     const adj = await this.db.query.invStockAdjustments.findFirst({
       where: and(eq(invStockAdjustments.orgId, orgId), eq(invStockAdjustments.id, adjustmentId)),
       with: { lines: true },
@@ -338,7 +400,8 @@ export class InvStockAdjustmentsService {
     return this.getAdjustment(orgId, adjustmentId, userId);
   }
 
-  async cancelAdjustment(orgId: string, adjustmentId: number) {
+  async cancelAdjustment(orgId: string, userId: string, adjustmentId: number) {
+    await this.requireAdjustment(orgId, userId, adjustmentId);
     const adj = await this.db.query.invStockAdjustments.findFirst({
       where: and(eq(invStockAdjustments.orgId, orgId), eq(invStockAdjustments.id, adjustmentId)),
       columns: { id: true, status: true },

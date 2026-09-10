@@ -232,7 +232,7 @@ describe("InvStockAdjustmentsService — threshold routing", () => {
         mockWarehouseScope as never,
         mockCostVisibility as never,
       );
-      await expect(svc.getAdjustment("org1", 999)).rejects.toThrow(NotFoundException);
+      await expect(svc.getAdjustment("org1", 999, "user-1")).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -268,13 +268,13 @@ describe("InvStockAdjustmentsService — threshold routing", () => {
   describe("cancel", () => {
     it("throws when trying to cancel a POSTED adjustment", async () => {
       const { svc } = buildService("5", { id: 1, status: "POSTED" });
-      await expect(svc.cancelAdjustment("org1", 1)).rejects.toThrow(BadRequestException);
+      await expect(svc.cancelAdjustment("org1", "user-1", 1)).rejects.toThrow(BadRequestException);
     });
 
     it("cancels a PENDING_APPROVAL adjustment without error", async () => {
       const { svc, db } = buildService("5");
       db.query.invStockAdjustments.findFirst = jest.fn().mockResolvedValue({ id: 1, status: "PENDING_APPROVAL" });
-      await expect(svc.cancelAdjustment("org1", 1)).resolves.not.toThrow();
+      await expect(svc.cancelAdjustment("org1", "user-1", 1)).resolves.not.toThrow();
     });
   });
 });

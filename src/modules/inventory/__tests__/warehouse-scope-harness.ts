@@ -97,6 +97,7 @@ const RQB_TABLES = [
   "invPurchaseOrders",
   "invGrns",
   "invStockReservations",
+  "invStockAdjustments",
 ] as const;
 
 /**
@@ -172,6 +173,14 @@ export function dbWith(opts: {
   const transaction = jest.fn((cb: (tx: unknown) => unknown) =>
     Promise.resolve(
       cb({
+        /*
+          A gate may legitimately run INSIDE the transaction --
+          `assertLocationsInScope` takes a `tx` by design, so a create that
+          validates its claimed locations before writing has to be able to read
+          through this handle. It answers from the same `reads` queue as the
+          top-level chain, so a suite decides what it finds.
+        */
+        select: () => readChain,
         execute: () => {
           throw new Error("the gate let this reach the locking statement");
         },
@@ -206,6 +215,8 @@ export function cacheWith() {
       return fetcher();
     },
     invalidateNamespace: jest.fn(() => Promise.resolve()),
+    /* The adjustments service busts single keys as well as namespaces. */
+    invalidate: jest.fn(() => Promise.resolve()),
     del: jest.fn(() => Promise.resolve()),
   };
   return { cache: cache as never, keys };

@@ -154,7 +154,7 @@ describe("InvStockAdjustmentsService — cross-tenant isolation", () => {
       ],
     }).compile().then((m) => m.get(InvStockAdjustmentsService));
 
-    const result = await svc.listAdjustments(ATTACKER, { page: 1, limit: 20 });
+    const result = await svc.listAdjustments(ATTACKER, { page: 1, limit: 20 }, "all", "user-1");
     expect(result.items).toHaveLength(0);
     const whereArg = selectWhere.mock.calls[0]?.[0] as unknown;
     expect(sqlValues(whereArg)).toContain(ATTACKER);
@@ -176,7 +176,7 @@ describe("InvStockAdjustmentsService — cross-tenant isolation", () => {
       ],
     }).compile().then((m) => m.get(InvStockAdjustmentsService));
 
-    const result = await svc.listAdjustments(OWNER, { page: 1, limit: 20 });
+    const result = await svc.listAdjustments(OWNER, { page: 1, limit: 20 }, "all", "user-1");
     expect(result.items).toHaveLength(1);
   });
 });
