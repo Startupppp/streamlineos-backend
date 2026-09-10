@@ -14,7 +14,7 @@ import { ChannelPoolService } from "../stock-engine/channel-pool.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { INV_ERRORS } from "../stock-engine/stock-engine.types";
-import { JournalPostingService } from "../../accounting/posting/journal-posting.service";
+import { InventoryAccountingBridge } from "../stock-engine/accounting-bridge";
 import { SoCoreService } from "./so-core.service";
 import { clientBehindSource, resolveShelfLifeFloor } from "../settings/min-shelf-life";
 import type { ReserveSoInput, PickSoInput, PackSoInput, ShipSoInput } from "./dto/inv-sales-orders.schemas";
@@ -57,7 +57,7 @@ export class SoFulfillmentService {
     private readonly channelPools: ChannelPoolService,
     private readonly settingsService: InventorySettingsService,
     private readonly numSeq: NumberSequenceService,
-    private readonly journalPosting: JournalPostingService,
+    private readonly journalPosting: InventoryAccountingBridge,
     private readonly soCore: SoCoreService,
     private readonly projection: StockProjectionService,
     private readonly compliance: IndiaComplianceService,
@@ -496,7 +496,19 @@ export class SoFulfillmentService {
     // commit, so a rolled-back shipment leaves no entry behind.
     const cogsTotal = Number(cogs.total);
     if (cogsTotal > 0) {
-      await this.journalPosting.persistJournalEntry({
+      // INV-09 — through the bridge, not `JournalPostingService` directly.
+      //
+      // This call site was one of two that reached past the bridge, and both
+      // consequences were real. `persistJournalEntry` raises "Seed COA first"
+      // when the tenant has no account 5000, and it raises `42P01` when
+      // `journal_entries` is absent from the database entirely — which is the
+      // whole reason the bridge exists. Both throws land *after* `runIdempotent`
+      // has committed, so the shipment is already durable and the operator gets
+      // a 500 for a dispatch that happened, then retries into the same throw.
+      // The bridge warns and skips instead, which is what every docblock in this
+      // module already says shipping does, and what `gl-recon`'s MISSING_COA
+      // status already assumes.
+      await this.journalPosting.postJournalEntry({
         orgId,
         entryDate: data.shipDate,
         description: `COGS: ${cogs.soNumber}`,
@@ -506,8 +518,8 @@ export class SoFulfillmentService {
         status: "POSTED",
         createdBy: userId,
         lines: [
-          { accountCode: "5000", debit: cogsTotal, credit: 0, description: `COGS - SO ${cogs.soNumber}` },
-          { accountCode: "1300", debit: 0, credit: cogsTotal, description: `Inventory deducted - ${cogs.soNumber}` },
+          { purpose: "INVENTORY_COGS", debit: cogsTotal, credit: 0, description: `COGS - SO ${cogs.soNumber}` },
+          { purpose: "INVENTORY_ASSET", debit: 0, credit: cogsTotal, description: `Inventory deducted - ${cogs.soNumber}` },
         ],
       });
     }

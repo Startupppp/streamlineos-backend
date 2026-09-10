@@ -323,14 +323,20 @@ export class SoLifecycleService {
       status: "POSTED",
       createdBy: userId,
       lines: [
+        // INV-09. Not inventory's own purposes — this entry books revenue off a
+        // sales order and touches no stock, which is also why `gl-posting-rules`
+        // deliberately does not reconcile it. But 1200 and 4000 are AR and sales
+        // income, both of which `acc_system_account_map` already carries, so
+        // there is no reason for this entry to be the one that ignores an
+        // organisation's chart.
         {
-          accountCode: "1200",
+          purpose: "AR",
           debit: Number(so.total),
           credit: 0,
           description: `AR - ${invoiceNumber}`,
         },
         {
-          accountCode: "4000",
+          purpose: "SALES_INCOME",
           debit: 0,
           credit: Number(so.total),
           description: `Sales Revenue - ${so.soNumber}`,

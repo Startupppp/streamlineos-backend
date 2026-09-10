@@ -1,5 +1,5 @@
 import { sql, type SQL } from "drizzle-orm";
-import { GL_POSTING_RULES } from "../gl-posting-rules";
+import { GL_POSTING_RULES, type ResolvedGlPostingRule } from "../gl-posting-rules";
 
 export interface GlReconSqlParams {
   orgId: string;
@@ -10,6 +10,16 @@ export interface GlReconSqlParams {
   warehouseId?: number;
   /** False when `journal_entries` is absent from this database. */
   journalsInstalled: boolean;
+  /**
+   * INV-09 — the posting contract as *this organisation's* account codes.
+   *
+   * Passed in rather than read from `GL_POSTING_RULES` here, because the rules
+   * are stated in system-account purposes and only the caller has resolved them
+   * against `acc_system_account_map`. A tenant that has mapped INVENTORY_ASSET
+   * to its own account posts there, so the report's expectation has to look
+   * there too or every receipt reads MISSING_COA.
+   */
+  rules: readonly ResolvedGlPostingRule[];
   status?: string;
   limit: number;
   offset: number;
@@ -19,8 +29,8 @@ export interface GlReconSqlParams {
  * The posting contract as a table, so the join is a join rather than a loop of
  * per-rule queries.
  */
-function rulesCte(): SQL {
-  const rows = GL_POSTING_RULES.map(
+function rulesCte(rules: readonly ResolvedGlPostingRule[]): SQL {
+  const rows = rules.map(
     (rule) => sql`(
       ${rule.sourceType}::text,
       ${rule.sourceEvent}::text,
@@ -111,13 +121,13 @@ function missingCodesExpr(orgId: string, installed: boolean): SQL {
  * a missing input.
  */
 export function glReconRowsSql(params: GlReconSqlParams): SQL {
-  const { orgId, fromDate, toDate, locationScope, warehouseId, journalsInstalled } = params;
+  const { orgId, fromDate, toDate, locationScope, warehouseId, journalsInstalled, rules } = params;
   const installedFlag = journalsInstalled ? sql`TRUE` : sql`FALSE`;
   const statusFilter =
     params.status == null ? sql`TRUE` : sql`classified.status = ${params.status}`;
 
   return sql`
-    WITH ${rulesCte()},
+    WITH ${rulesCte(rules)},
     movements AS (
       SELECT t.reference_type,
              t.reference_id,
@@ -199,11 +209,11 @@ export function glReconRowsSql(params: GlReconSqlParams): SQL {
  * question anyone asks a reconciliation is how much of the period is green.
  */
 export function glReconSummarySql(params: Omit<GlReconSqlParams, "limit" | "offset" | "status">): SQL {
-  const { orgId, fromDate, toDate, locationScope, warehouseId, journalsInstalled } = params;
+  const { orgId, fromDate, toDate, locationScope, warehouseId, journalsInstalled, rules } = params;
   const installedFlag = journalsInstalled ? sql`TRUE` : sql`FALSE`;
 
   return sql`
-    WITH ${rulesCte()},
+    WITH ${rulesCte(rules)},
     movements AS (
       SELECT t.reference_type,
              t.reference_id,
@@ -257,7 +267,7 @@ export function glReconSummarySql(params: Omit<GlReconSqlParams, "limit" | "offs
  * nowhere would leave the reader thinking a green reconciliation means stock and
  * the ledger agree, which is a different and larger claim.
  */
-export function glUnpostedByDesignSql(params: Omit<GlReconSqlParams, "limit" | "offset" | "status" | "journalsInstalled">): SQL {
+export function glUnpostedByDesignSql(params: Omit<GlReconSqlParams, "limit" | "offset" | "status" | "journalsInstalled" | "rules">): SQL {
   const { orgId, fromDate, toDate, locationScope, warehouseId } = params;
   const covered = sql.join(
     GL_POSTING_RULES.map((rule) => sql`${rule.sourceType}`),

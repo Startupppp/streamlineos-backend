@@ -6,15 +6,39 @@ import {
   glReconSummarySql,
   glUnpostedByDesignSql,
 } from "../lib/gl-recon-sql";
+import { resolveGlPostingRules } from "../gl-posting-rules";
+import { PURPOSE_DEFAULT_CODE } from "../../../../accounting/posting/finance-posting-accounts.service";
+import {
+  INVENTORY_JOURNAL_PURPOSES,
+  type InventoryAccountCodes,
+} from "../../../stock-engine/accounting-bridge";
 
 const dialect = new PgDialect();
 const render = (statement: SQL) => dialect.sqlToQuery(statement);
+
+/**
+ * INV-09 — the account codes the rules resolve against.
+ *
+ * Built from `PURPOSE_DEFAULT_CODE` rather than typed out, so these are exactly
+ * what an organisation that has mapped nothing gets, and the "unmapped org still
+ * sees 1300" assertions below are checking the real fallback rather than a
+ * constant this file invented.
+ */
+function codesFor(overrides: Partial<InventoryAccountCodes> = {}): InventoryAccountCodes {
+  return {
+    ...(Object.fromEntries(
+      INVENTORY_JOURNAL_PURPOSES.map((purpose) => [purpose, PURPOSE_DEFAULT_CODE[purpose]]),
+    ) as InventoryAccountCodes),
+    ...overrides,
+  };
+}
 
 const window = {
   orgId: "org-1",
   fromDate: "2026-08-01",
   toDate: "2026-08-31",
   locationScope: () => sql`TRUE`,
+  rules: resolveGlPostingRules(codesFor()),
 };
 const page = { limit: 50, offset: 0 };
 
@@ -135,6 +159,52 @@ describe("inventory-to-GL reconciliation SQL", () => {
     expect(query.sql.match(/LIMIT/g) ?? []).toHaveLength(1);
     expect(query.sql).toContain("LIMIT 1");
     expect(query.params).not.toContain(page.limit);
+  });
+
+  /**
+   * INV-09 — the trap the whole change turns on.
+   *
+   * Posting resolves INVENTORY_ASSET through `acc_system_account_map`. If this
+   * table did not, a tenant that mapped INVENTORY_ASSET to 1355 would post to
+   * 1355 and have the report look for 1300 — which the tenant does not have —
+   * so every goods receipt in the period would come back MISSING_COA. The report
+   * would be reporting its own stale expectation as a broken ledger.
+   */
+  it("expects the organisation's mapped account, not the default", () => {
+    const mapped = render(
+      glReconRowsSql({
+        ...window,
+        ...page,
+        journalsInstalled: true,
+        rules: resolveGlPostingRules(codesFor({ INVENTORY_ASSET: "1355" })),
+      }),
+    );
+
+    expect(mapped.params).toContain("1355");
+    expect(mapped.params).not.toContain("1300");
+  });
+
+  it("expects the default account for an organisation that mapped nothing", () => {
+    const unmapped = render(glReconRowsSql({ ...window, ...page, journalsInstalled: true }));
+
+    expect(unmapped.params).toContain("1300");
+    expect(unmapped.params).not.toContain("1355");
+  });
+
+  it("carries a mapped account into the summary as well as the page", () => {
+    // Two statements build the rules CTE and both had to be changed. A summary
+    // still counting against 1300 while the page counts against 1355 would give
+    // a report whose totals contradict its own rows.
+    const query = render(
+      glReconSummarySql({
+        ...window,
+        journalsInstalled: true,
+        rules: resolveGlPostingRules(codesFor({ INVENTORY_ASSET: "1355" })),
+      }),
+    );
+
+    expect(query.params).toContain("1355");
+    expect(query.params).not.toContain("1300");
   });
 
   it("counts what no posting rule covers instead of calling it unmatched", () => {

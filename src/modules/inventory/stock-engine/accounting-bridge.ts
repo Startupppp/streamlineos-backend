@@ -5,6 +5,72 @@ import type { Db } from "../../../db/drizzle.module";
 import { ledgerAccounts } from "../../../db/schema";
 import { PeriodsService } from "../../accounting/gl/periods.service";
 import { JournalPostingService } from "../../accounting/posting/journal-posting.service";
+import {
+  FinancePostingAccountsService,
+  PURPOSE_DEFAULT_CODE,
+} from "../../accounting/posting/finance-posting-accounts.service";
+import type { SystemAccountPurpose } from "../../accounting/core/finance-posting.types";
+
+/**
+ * INV-09 — every system-account purpose inventory posts against, and nothing
+ * else.
+ *
+ * Written as a list rather than as the whole `SystemAccountPurpose` union so
+ * one resolution round-trip answers for every call site, and so a reader can
+ * see inventory's entire footprint in the chart of accounts in six lines.
+ *
+ * Two of the six inventory purposes are deliberately absent:
+ *
+ *   INVENTORY_WRITE_OFF, INVENTORY_ADJUSTMENT_GAIN_LOSS
+ *     Nothing in inventory posts a journal for an adjustment, a write-off or a
+ *     cycle count — `gl-recon`'s "unposted by design" list is exactly that set.
+ *     Naming them here would claim a posting that does not exist.
+ *
+ *   INVENTORY_LANDED_COST_CLEARING
+ *     A landed-cost voucher credits the payable, not a clearing account, and
+ *     `PAYABLE_ACCOUNT` in `landed-cost-apply.service.ts` argues at length why:
+ *     the voucher is one event, nothing in AP would ever drain a clearing
+ *     account, and crediting one would book a balance that grows forever. That
+ *     is INV-38's decision to take, not this change's. Resolving the credit
+ *     through `AP` keeps the semantics the code already documents while still
+ *     honouring an admin's AP mapping.
+ *
+ * `AR` and `SALES_INCOME` are here because the sales-order invoice entry names
+ * 1200 and 4000, which are those two purposes' defaults; they are not
+ * inventory's purposes, but they are accounts inventory posts to.
+ */
+export const INVENTORY_JOURNAL_PURPOSES = [
+  "INVENTORY_ASSET",
+  "INVENTORY_COGS",
+  "INVENTORY_GRNI",
+  "AP",
+  "AR",
+  "SALES_INCOME",
+] as const satisfies readonly SystemAccountPurpose[];
+
+export type InventoryJournalPurpose = (typeof INVENTORY_JOURNAL_PURPOSES)[number];
+
+export type InventoryAccountCodes = Record<InventoryJournalPurpose, string>;
+
+type JournalDraft = Parameters<JournalPostingService["persistJournalEntry"]>[0];
+type JournalDraftLine = JournalDraft["lines"][number];
+
+/**
+ * A journal inventory wants written, named in purposes rather than in codes.
+ *
+ * The purpose is resolved to a code inside `postJournalEntry`, deliberately and
+ * not at the call site: resolution reads `acc_system_account_map`, that table is
+ * one of the accounting tables that does not exist in every database, and a
+ * caller resolving before the install probe would issue the very query the
+ * `to_regclass` design exists to avoid.
+ */
+export interface InventoryJournalLine extends Omit<JournalDraftLine, "accountCode"> {
+  purpose: InventoryJournalPurpose;
+}
+
+export interface InventoryJournalDraft extends Omit<JournalDraft, "lines"> {
+  lines: InventoryJournalLine[];
+}
 
 /**
  * Everything inventory asks of accounting, as dependencies it can survive
@@ -42,6 +108,7 @@ export class InventoryAccountingBridge {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly periods: PeriodsService,
     private readonly journals: JournalPostingService,
+    private readonly accounts: FinancePostingAccountsService,
   ) {}
 
   private installed(table: string, consequence: string): Promise<boolean> {
@@ -83,6 +150,40 @@ export class InventoryAccountingBridge {
     );
   }
 
+  /**
+   * INV-09 — the account code each purpose posts to for this organisation.
+   *
+   * Its own probe rather than leaning on `hasJournals()`. The two tables are
+   * created by the same migration today, so the second probe is expected to
+   * agree with the first every time; it exists because "expected to agree" is
+   * not a property Postgres enforces, and a wrong guess here is not a wrong
+   * answer but a `42P01` that poisons the caller's whole transaction — which is
+   * the exact failure the memoised `to_regclass` design was built to stop. One
+   * extra probe, once per process, buys that away.
+   *
+   * With the map absent every purpose falls back to `PURPOSE_DEFAULT_CODE`,
+   * which is the literal the call site used to carry, so a database without
+   * accounting posts exactly what it posted before.
+   *
+   * Read on every post rather than cached. The mapping changes when an admin
+   * saves the settings screen and never otherwise, so a cache would be almost
+   * always right — and the cost of being briefly wrong is a journal entry
+   * against the wrong account, which is an append-only row in someone's ledger.
+   * One indexed lookup on `(org_id)` per posted document is not the expensive
+   * part of receiving goods.
+   */
+  async resolveAccountCodes(orgId: string): Promise<InventoryAccountCodes> {
+    if (!(await this.hasSystemAccountMap())) return defaultInventoryAccountCodes();
+    return this.accounts.resolveAccountCodes(orgId, INVENTORY_JOURNAL_PURPOSES);
+  }
+
+  private hasSystemAccountMap(): Promise<boolean> {
+    return this.installed(
+      "acc_system_account_map",
+      "inventory will post to its default account codes; no per-organisation mapping can be read",
+    );
+  }
+
   /** Refuses a movement into a closed or locked period, where periods exist. */
   async assertOpen(orgId: string, postingDate: string): Promise<void> {
     if (!(await this.hasPeriods())) return;
@@ -107,13 +208,23 @@ export class InventoryAccountingBridge {
    * So it is skipped and said out loud rather than swallowed. The gap between
    * stock and the general ledger is exactly what INV-408's reconciliation is for;
    * a silent skip is what would make that reconciliation lie.
+   *
+   * INV-09 — the draft names purposes and this method turns them into codes,
+   * through `acc_system_account_map`. Resolution happens here, after the install
+   * probe and before anything is written, because it is a query against a table
+   * that may not exist; a call site that resolved for itself would have to repeat
+   * the probe or risk the `42P01` this class exists to prevent.
    */
-  async postJournalEntry(
-    draft: Parameters<JournalPostingService["persistJournalEntry"]>[0],
-  ): Promise<void> {
+  async postJournalEntry(draft: InventoryJournalDraft): Promise<void> {
     if (!(await this.hasJournals())) return;
 
-    const codes = [...new Set(draft.lines.map((line) => line.accountCode))];
+    const accountCodes = await this.resolveAccountCodes(draft.orgId);
+    const lines: JournalDraftLine[] = draft.lines.map(({ purpose, ...line }) => ({
+      ...line,
+      accountCode: accountCodes[purpose],
+    }));
+
+    const codes = [...new Set(lines.map((line) => line.accountCode))];
     const found = await this.db
       .select({ code: ledgerAccounts.code })
       .from(ledgerAccounts)
@@ -131,6 +242,20 @@ export class InventoryAccountingBridge {
       return;
     }
 
-    await this.journals.persistJournalEntry(draft);
+    await this.journals.persistJournalEntry({ ...draft, lines });
   }
+}
+
+/**
+ * What inventory posts to where no per-organisation mapping can be read.
+ *
+ * Built from `PURPOSE_DEFAULT_CODE` rather than retyped, so the fallback and the
+ * fallback the accounting resolver uses cannot drift apart — a second copy of
+ * these six numbers is exactly how "the settings screen offers one account and
+ * posting uses another" happens.
+ */
+function defaultInventoryAccountCodes(): InventoryAccountCodes {
+  return Object.fromEntries(
+    INVENTORY_JOURNAL_PURPOSES.map((purpose) => [purpose, PURPOSE_DEFAULT_CODE[purpose]]),
+  ) as InventoryAccountCodes;
 }

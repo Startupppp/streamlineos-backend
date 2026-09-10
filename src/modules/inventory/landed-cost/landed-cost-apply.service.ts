@@ -18,7 +18,10 @@ import { type Db } from "../../../db/drizzle.module";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
-import { InventoryAccountingBridge } from "../stock-engine/accounting-bridge";
+import {
+  InventoryAccountingBridge,
+  type InventoryJournalLine,
+} from "../stock-engine/accounting-bridge";
 import { addDec, cmpDec, isDecimalString, isPositive } from "../stock-engine/decimal";
 import { runIdempotent } from "../stock-engine/idempotency";
 import { centsToDecimal } from "./lib/apportion";
@@ -53,14 +56,14 @@ interface LayerRow extends Record<string, unknown> {
 }
 
 /** Inventory. The receipt already debited it; landed cost adds to it. */
-const INVENTORY_ACCOUNT = "1300";
+const INVENTORY_ACCOUNT = "INVENTORY_ASSET";
 /**
  * Cost of goods sold. Freight on units that have already been issued belongs
  * here and not in inventory: those units are gone, their sale is already booked
  * at the old cost, and the append-only ledger means that sale's COGS cannot be
  * restated. The difference lands in the period the carrier's invoice did.
  */
-const COGS_ACCOUNT = "5000";
+const COGS_ACCOUNT = "INVENTORY_COGS";
 /**
  * Accounts payable, the same credit side the receipt itself used.
  *
@@ -75,14 +78,18 @@ const COGS_ACCOUNT = "5000";
  *
  * Crediting a clearing account today would therefore book a balance that grows
  * forever and that no process can ever drain — further from the truth than
- * crediting the payable the money is actually owed on, not closer. The account
- * belongs to INV-09, which is where the six inventory mappings get a per-tenant
- * home (`acc_system_account_map` already carries eighteen such purposes and
- * inventory uses none of them), and it only becomes meaningful alongside an AP
- * counterpart that clears it. Until both exist, INV-38's "clearing account
- * correct" is not satisfied here and is not claimed to be.
+ * crediting the payable the money is actually owed on, not closer.
+ *
+ * INV-09 has since made inventory resolve its accounts through
+ * `acc_system_account_map`, and `INVENTORY_LANDED_COST_CLEARING` is one of the
+ * six purposes an admin can now map. This line still does not use it, for the
+ * reason above: an admin pointing that purpose at a real clearing account would
+ * get exactly the un-drainable balance the paragraph above refuses to create.
+ * `AP` is the honest purpose for a credit that is a payable, and resolving
+ * through it means an organisation's own AP account is honoured. The purpose
+ * becomes usable here when INV-38's AP counterpart exists, and not before.
  */
-const PAYABLE_ACCOUNT = "2000";
+const PAYABLE_ACCOUNT = "AP";
 
 /**
  * The one place a landed-cost figure stops being a decimal string.
@@ -443,15 +450,10 @@ export class LandedCostApplyService {
   ): Promise<void> {
     if (!isPositive(chargeTotal)) return;
 
-    const lines: Array<{
-      accountCode: string;
-      debit: number;
-      credit: number;
-      description: string;
-    }> = [];
+    const lines: InventoryJournalLine[] = [];
     if (isPositive(plan.capitalisedTotal)) {
       lines.push({
-        accountCode: INVENTORY_ACCOUNT,
+        purpose: INVENTORY_ACCOUNT,
         debit: toJournalAmount(plan.capitalisedTotal),
         credit: 0,
         description: `Landed cost capitalised - ${grnNumber}`,
@@ -459,14 +461,14 @@ export class LandedCostApplyService {
     }
     if (isPositive(plan.expensedTotal)) {
       lines.push({
-        accountCode: COGS_ACCOUNT,
+        purpose: COGS_ACCOUNT,
         debit: toJournalAmount(plan.expensedTotal),
         credit: 0,
         description: `Landed cost on goods already issued - ${grnNumber}`,
       });
     }
     lines.push({
-      accountCode: PAYABLE_ACCOUNT,
+      purpose: PAYABLE_ACCOUNT,
       debit: 0,
       credit: toJournalAmount(chargeTotal),
       description: `Landed cost payable - ${grnNumber}`,

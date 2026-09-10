@@ -23,7 +23,7 @@ import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { INV_ERRORS } from "../stock-engine/stock-engine.types";
-import { JournalPostingService } from "../../accounting/posting/journal-posting.service";
+import { InventoryAccountingBridge } from "../stock-engine/accounting-bridge";
 import type { CreateGrnInput } from "./dto/inv-purchase-orders.schemas";
 import { PoService } from "./po.service";
 
@@ -35,7 +35,7 @@ export class GrnReceiveService {
     private readonly engine: StockEngineService,
     private readonly settingsService: InventorySettingsService,
     private readonly numSeq: NumberSequenceService,
-    private readonly journalPosting: JournalPostingService,
+    private readonly journalPosting: InventoryAccountingBridge,
     private readonly poService: PoService,
   ) {}
 
@@ -366,7 +366,16 @@ export class GrnReceiveService {
     }
 
     if (totalValue > 0) {
-      await this.journalPosting.persistJournalEntry({
+      // INV-09 — through the bridge, and naming purposes rather than codes.
+      //
+      // `POST /inventory/purchase-orders/:poId/receive` is a second, older
+      // receiving path beside `GrnPostingService`, and it reached past the
+      // bridge straight to `persistJournalEntry`. That meant a tenant with no
+      // account 1300 — or a database without the accounting module — got a 500
+      // for a delivery whose GRN and stock rows had already committed one
+      // statement earlier. `postReceiptJournal`, the other receiving path's
+      // version of this entry, has always skipped instead; both paths now do.
+      await this.journalPosting.postJournalEntry({
         orgId,
         entryDate: data.receivedDate,
         description: `Goods received: ${grnNumber}`,
@@ -379,14 +388,14 @@ export class GrnReceiveService {
           {
             credit: 0,
             debit: totalValue,
-            accountCode: "1300",
+            purpose: "INVENTORY_ASSET",
             description: `Inventory received - ${grnNumber}`,
           },
           {
-            accountCode: "2000",
+            purpose: "INVENTORY_GRNI",
             debit: 0,
             credit: totalValue,
-            description: `AP - PO ${po.poNumber}`,
+            description: `GRNI - PO ${po.poNumber}`,
           },
         ],
       });

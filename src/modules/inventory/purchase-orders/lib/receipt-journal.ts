@@ -74,14 +74,20 @@ export async function postReceiptJournal(
       {
         credit: 0,
         debit: totalValue,
-        accountCode: "1300",
+        purpose: "INVENTORY_ASSET",
         description: `Inventory received - ${grn.grnNumber}`,
       },
       {
-        accountCode: "2000",
+        // GRNI rather than AP. This has credited 2000 since the entry was
+        // written and still does by default — `PURPOSE_DEFAULT_CODE` for
+        // INVENTORY_GRNI is "2000" for exactly that reason — but what the credit
+        // *means* on a goods receipt is goods received not yet invoiced, and
+        // naming it lets a tenant that keeps a separate GRNI account point this
+        // line at it without touching code.
+        purpose: "INVENTORY_GRNI",
         debit: 0,
         credit: totalValue,
-        description: `AP - PO ${po.poNumber}`,
+        description: `GRNI - PO ${po.poNumber}`,
       },
     ],
   });

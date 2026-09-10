@@ -5,7 +5,7 @@ import { type Db } from "../../../../db/drizzle.module";
 import { WarehouseScopeService } from "../../stock-engine/warehouse-scope.service";
 import { InventoryAccountingBridge } from "../../stock-engine/accounting-bridge";
 import { InventoryPeriodService } from "../../valuation/inventory-period.service";
-import { GL_POSTING_RULES, type GlReconStatus } from "./gl-posting-rules";
+import { resolveGlPostingRules, type GlReconStatus } from "./gl-posting-rules";
 import {
   glOrphanJournalsSql,
   glReconRowsSql,
@@ -98,6 +98,17 @@ export class InvGlReconService {
     const { page, limit, warehouseId, status } = query;
     const window = await this.periods.resolveWindow(orgId, query);
     const journalsInstalled = await this.bridge.hasJournals();
+    /**
+     * INV-09 — resolved once, through the bridge, which is the same call the
+     * posting path makes.
+     *
+     * Not a convenience: if the report resolved independently of posting, or
+     * kept the literals it used to, then the first organisation to map
+     * INVENTORY_ASSET somewhere else would see every goods receipt reported as
+     * MISSING_COA against an account it never posted to. The report and the
+     * ledger have to be looking at the same chart.
+     */
+    const rules = resolveGlPostingRules(await this.bridge.resolveAccountCodes(orgId));
     const scope = await this.warehouseScope.resolve(orgId, userId);
     const locationScope = (column: string): SQL =>
       this.warehouseScope.locationPredicate(scope, column);
@@ -109,6 +120,7 @@ export class InvGlReconService {
       locationScope,
       warehouseId,
       journalsInstalled,
+      rules,
     };
 
     const [rows, summaryRows, unposted, orphans] = await Promise.all([
@@ -151,7 +163,7 @@ export class InvGlReconService {
           ? null
           : "The accounting module is not installed in this workspace, so no inventory movement has produced a journal entry.",
       },
-      rules: GL_POSTING_RULES,
+      rules,
       summary,
       unpostedByDesign: unposted,
       orphanJournals: orphans,
