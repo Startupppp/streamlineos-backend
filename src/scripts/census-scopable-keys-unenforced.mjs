@@ -28,6 +28,12 @@
  *    unenforced. Timesheets applies `applyScope` in `entries-read.service.ts`,
  *    not in `entries.controller.ts`.
  *
+ * 3. Its signal list knew only the DataScope vocabulary, so it was blind to
+ *    inventory, which scopes by WAREHOUSE — `warehouseScope.forUser`,
+ *    `assertWarehouseVisible`, `assertLocationVisible`. Every inventory number
+ *    it produced was meaningless, including for modules that had just been
+ *    fixed.
+ *
  * It now searches the controller's whole DIRECTORY, which is coarse in a stated
  * way: a module where one route scopes and another does not reads as clean. It
  * answers "does this module know about scoping at all". Anything it flags still
@@ -82,7 +88,8 @@ for (const f of CODE) {
  * census has produced an alarming answer I was ready to act on, and the fifth
  * time verifying one entry by hand was what saved it.
  */
-const SCOPE_SIGNAL = /applyScope|DataScope|scopeFor\(|resolve\w*Scope|readRequestScope|rbacScope|viewAll/;
+const SCOPE_SIGNAL =
+  /applyScope|DataScope|scopeFor\(|resolve\w*Scope|readRequestScope|rbacScope|viewAll|warehouseScope|assertWarehouseVisible|assertLocationVisible|assertLocationsInScope/;
 
 /**
  * Does the controller's own DIRECTORY apply a scope anywhere?
