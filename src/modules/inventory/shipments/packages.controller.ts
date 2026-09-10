@@ -134,7 +134,6 @@ export class PackagesController {
   }
 
   @Post(":packageId/close")
-  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:packages:manage")
   @Idempotent("inventory.package.close")
