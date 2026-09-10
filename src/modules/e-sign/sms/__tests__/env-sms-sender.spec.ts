@@ -9,21 +9,29 @@ import { EnvSmsSender } from "../env-sms-sender";
  * menu entry it replaces, because it would look like it worked.
  */
 describe("EnvSmsSender", () => {
-  const ORIGINAL = { ...process.env };
-  afterEach(() => {
-    process.env = { ...ORIGINAL };
-  });
-
-  const withEnv = (env: Record<string, string | undefined>) => {
-    for (const [k, v] of Object.entries(env)) {
-      if (v === undefined) delete process.env[k];
-      else process.env[k] = v;
-    }
-    return new EnvSmsSender();
-  };
+  /**
+   * The credential pair is handed in, not set in the environment.
+   *
+   * It used to be `process.env`, and that made the spec quietly weaker than it
+   * looked: jest gives each test file its own copy of `process.env`, so the
+   * value a test set was never the one a booted server would read, and the test
+   * could only ever describe a deployment nobody runs. Constructing with the
+   * config states the deployment being described, in the test.
+   */
+  const withEnv = (env: {
+    SIGN_SMS_PROVIDER_URL?: string;
+    SIGN_SMS_PROVIDER_TOKEN?: string;
+  }) =>
+    new EnvSmsSender({
+      SIGN_SMS_PROVIDER_URL: env.SIGN_SMS_PROVIDER_URL,
+      SIGN_SMS_PROVIDER_TOKEN: env.SIGN_SMS_PROVIDER_TOKEN,
+    } as Pick<
+      import("../../../../config/env.validation").AppConfig,
+      "SIGN_SMS_PROVIDER_URL" | "SIGN_SMS_PROVIDER_TOKEN"
+    >);
 
   it("reports itself unconfigured when no provider is set", () => {
-    const sender = withEnv({ SIGN_SMS_PROVIDER_URL: undefined, SIGN_SMS_PROVIDER_TOKEN: undefined });
+    const sender = withEnv({});
     expect(sender.isConfigured()).toBe(false);
   });
 
@@ -37,7 +45,7 @@ describe("EnvSmsSender", () => {
   });
 
   it("throws rather than silently succeeding when asked to send unconfigured", async () => {
-    const sender = withEnv({ SIGN_SMS_PROVIDER_URL: undefined, SIGN_SMS_PROVIDER_TOKEN: undefined });
+    const sender = withEnv({});
     await expect(sender.send("+15550100", "code")).rejects.toThrow(/not configured/i);
   });
 
@@ -61,7 +69,7 @@ describe("EnvSmsSender", () => {
    * signed, a recipient set up on Monday would become unsignable on Tuesday.
    */
   it("does not change its answer when the environment moves underneath it", () => {
-    const sender = withEnv({ SIGN_SMS_PROVIDER_URL: undefined, SIGN_SMS_PROVIDER_TOKEN: undefined });
+    const sender = withEnv({});
     expect(sender.isConfigured()).toBe(false);
 
     process.env.SIGN_SMS_PROVIDER_URL = "https://example.invalid";

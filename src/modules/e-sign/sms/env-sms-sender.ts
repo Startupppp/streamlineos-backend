@@ -1,4 +1,6 @@
-import { Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
+import { Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
+import { APP_CONFIG } from "../../../config/config.module";
+import type { AppConfig } from "../../../config/env.validation";
 import type { SmsSenderPort } from "./sms-sender.port";
 
 /**
@@ -23,9 +25,25 @@ export class EnvSmsSender implements SmsSenderPort {
    * between the check at envelope-configuration time and the send at signing
    * time. A recipient configured for SMS on Monday must not become unsignable
    * because an environment variable moved on Tuesday.
+   *
+   * Through `APP_CONFIG` rather than `process.env`, which `no-restricted-syntax`
+   * bans and which was the wrong source here for a reason the class name hides:
+   * the pair is validated at boot — `SIGN_SMS_PROVIDER_URL` must parse as a URL
+   * — so a mistyped value used to reach this constructor, satisfy `Boolean()`,
+   * and advertise `otp_sms` as available all the way to a signer waiting for a
+   * code that could never be dispatched. Now it fails validation at startup.
+   * The name stays `EnvSmsSender` because the *decision* is still an
+   * environment one; only the reading moved.
    */
-  private readonly configured =
-    Boolean(process.env.SIGN_SMS_PROVIDER_URL) && Boolean(process.env.SIGN_SMS_PROVIDER_TOKEN);
+  private readonly configured: boolean;
+
+  constructor(
+    @Inject(APP_CONFIG)
+    config: Pick<AppConfig, "SIGN_SMS_PROVIDER_URL" | "SIGN_SMS_PROVIDER_TOKEN">,
+  ) {
+    this.configured =
+      Boolean(config.SIGN_SMS_PROVIDER_URL) && Boolean(config.SIGN_SMS_PROVIDER_TOKEN);
+  }
 
   isConfigured(): boolean {
     return this.configured;
