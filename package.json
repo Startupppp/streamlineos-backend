@@ -14,7 +14,7 @@
     "start:prod": "node --max-old-space-size=8192 --env-file-if-exists=.env dist/main.js",
     "db:push": "node scripts/guard-db-push.mjs",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
-    "db:migrate": "drizzle-kit migrate --config drizzle.config.ts",
+    "db:migrate": "node --env-file=.env src/scripts/run-pending-migrations.mjs",
     "db:migrate:regions": "node src/scripts/migrate-all-regions.mjs",
     "db:migrate:regions:self-test": "node src/scripts/migrate-all-regions.mjs --self-test",
     "db:bootstrap": "node src/scripts/db-bootstrap.mjs",
