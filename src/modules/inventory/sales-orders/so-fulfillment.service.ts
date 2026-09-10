@@ -477,9 +477,10 @@ export class SoFulfillmentService {
       } catch (error) {
         // Accounting is opt-in; an org without a book has nowhere to post and
         // must still be able to ship. Anything else is a real failure.
-        // Contract: docs/inventory-gl-contract.md. Note §3.3 — this post runs
-        // after the shipment has committed, so a real failure here diverges
-        // stock from the GL rather than refusing the shipment.
+        // Contract: docs/inventory-gl-contract.md. Rethrowing is what keeps the
+        // shipment and the journal atomic — but only because the error reaches
+        // the tenant interceptor untouched (§3.3). Catching and logging here
+        // would commit the shipment and lose the journal, silently.
         if (!(error instanceof AdapterRejection && error.code === "BOOK_NOT_ENABLED")) throw error;
         this.logger.debug(`Accounting is not enabled for org ${orgId}; COGS for ${shipmentNumber} was not posted`);
       }

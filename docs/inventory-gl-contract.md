@@ -104,41 +104,82 @@ mistake the operator can fix in a minute once they are told; swallowing it
 converts a one-minute fix into a silent, permanent divergence between stock and
 the GL that is discovered at audit.
 
-### 3.3 The divergence window — the defect this contract exists to close
+### 3.3 Atomicity is inherited, not declared
 
-All three call sites post **after** their stock transaction has already
-committed:
+**Corrected 2026-09-10.** The first version of this document said all three call
+sites post after their stock transaction has committed, and therefore that a
+rejected post leaves stock moved with no journal and a 500 to the caller. The
+shape of the code does read that way:
 
 ```
-await this.db.transaction(...)   // stock rows written, committed
-await this.engine.invalidateCaches(orgId)
-await this.postToLedger(...)     // may now throw
+const grnId = await this.db.transaction(...)   // stock written
+await this.postToLedger(...)                   // may throw
 ```
 
-So on an accounting-enabled tenant, a missing `inventory` tag or a locked
-period today produces: **stock moved, no journal, and a 500 to the caller.**
-The client sees a failure, retries, and moves the stock a second time. This is
-strictly worse than a silent skip, because a silent skip at least does not
-double the stock.
+**It is not a divergence window, and that claim was wrong.** `TenantContextInterceptor`
+opens `withTenant` — a real `transaction()` — around the *entire* HTTP handler,
+and `createTenantAwareDb` proxies the injected `DRIZZLE` so that inside a request
+`this.db` resolves to that transaction. So `this.db.transaction(...)` above is a
+**savepoint inside the request's transaction**, the post afterwards runs on the
+same transaction, and a throw propagates out of the handler and rolls the whole
+thing back — the stock movement with it. Checked: all three call sites are
+reachable only from HTTP controllers, none of them carries
+`@NoTenantTransaction()`, and no cron, queue or AI path calls them.
 
-`stock-engine.service.ts` has an `assertPeriodOpen` pre-check, which helps and
-does not close this. It refuses only when a period exists **and** is `LOCKED`;
-a date no fiscal year covers passes the pre-check and is then refused by the
-ledger — after the commit. It also guards the *movement's* posting date, while
-the journal is posted on the document's date (`receivedDate`, `shipDate`,
-`today`), which are not required to be the same day.
+What is actually wrong with it is quieter, and worth more than the thing it
+replaced:
 
----
+1. **Nothing declares the guarantee and nothing tests it.** No test asserts that
+   a rejected journal unwinds the stock. The property that makes this seam safe
+   is a side effect of a global interceptor two layers away, discoverable only by
+   reading `tenant-db.ts` and knowing a proxy is involved.
 
-## 4. The decision: fail closed, atomically
+2. **It holds only for an HTTP caller under that interceptor.** A handler marked
+   `@NoTenantTransaction()` has no ambient transaction, so `this.db.transaction`
+   opens a real one, commits it, and the post that follows runs on its own — and
+   *there* the window is genuine. So is a cron sweep, an outbox relay, or a
+   `registerAfterCommit` hook. Fifteen controllers in this codebase already carry
+   that decorator. Nothing stops the sixteenth being a bulk goods receipt.
+
+3. **One `catch` erases it silently.** The guarantee depends on the error
+   reaching the interceptor untouched. `so-lifecycle.confirmSo` already catches an
+   auto-reserve failure and logs a warning; a call site that did the same to a
+   posting failure would commit the stock and lose the journal with no error
+   anywhere. That is one plausible line of code away, and no test would fail.
+
+So the fix is not to close a window. It is to stop depending on someone else's
+transaction for a guarantee this seam is supposed to make itself.
+
+### 3.4 The hole that is real: ten movements that post nothing
+
+This one is not subtle and nothing protects against it.
+
+Of the thirteen services that move stock, the ten in §2.1 never reach the ledger
+at all. On an accounting-enabled tenant a scrap, a cycle-count loss, a write-off
+and a customer return each change the value of stock on hand and leave the
+inventory GL account exactly as it was. No error, no log, no failed request —
+the movement succeeds, because nothing ever tried to post it.
+
+That is a permanent, silent divergence between the stock valuation report and
+the balance sheet, and it is what ACC-06 and ACC-08 exist for.
+
+## 4. The decision: fail closed, and say so in the code
 
 > **When accounting is enabled, the GL post rides the same database
-> transaction as the stock movement it values. If the ledger refuses, the stock
-> movement rolls back with it. There is no `pending_accounting` state.**
+> transaction as the stock movement it values, passed explicitly. If the ledger
+> refuses, the stock movement rolls back with it. There is no
+> `pending_accounting` state.**
 
 `PostingCommandService.submit(orgId, userId, command, tx?)` already takes a
 transaction and threads it all the way to `LedgerService.post`. It was built for
-this. None of the three inventory call sites passes one. That is the whole fix.
+this. None of the three inventory call sites passes one.
+
+Passing it changes little about what happens today over HTTP (§3.3) and changes
+everything about *why* it happens: the journal shares the stock movement's own
+transaction rather than borrowing the request's. The guarantee then survives a
+caller that is not an HTTP request, a handler that opts out of the tenant
+transaction, and — because a rolled-back savepoint takes the stock with it — a
+call site that later decides to catch and log.
 
 ### Why not `pending_accounting`
 
@@ -219,8 +260,8 @@ history is untouched, which is the point of tagging roles rather than codes.
 |---|---|
 | ACC-02 | Refuse enabling accounting when the reference data it needs is absent, naming what is missing |
 | ACC-03 | The four missing roles + mapping CRUD + validation |
-| ACC-05 | Period enforcement moves inside the transaction; §3.3 window closes |
-| ACC-06 | Missing role refuses deterministically on an enabled tenant; disabled tenant unaffected |
+| ACC-05 | The post takes the stock movement's own transaction; the period guard stops passing dates no period covers |
+| ACC-06 | Missing role refuses deterministically on an enabled tenant; disabled tenant unaffected; the §3.4 movements stop being silent |
 | ACC-07 | All posts through `PostingCommandService` only; `ledger-boundary.spec.ts` still green |
 | ACC-08 | Report every valued movement with no journal on an enabled tenant |
 | ACC-09 | Stock valuation vs GL inventory balance, with per-SKU exceptions |
@@ -232,7 +273,14 @@ history is untouched, which is the point of tagging roles rather than codes.
 ## 8. Provenance
 
 Everything in §2 and §3 was read out of the branch, not inferred: the three
-call sites and their exact source keys, the twelve stock-moving services, the
-`gl_system_tag` enum values, `LedgerService.resolvePeriod`'s two refusals, and
-the post-commit ordering at each call site. §4 is a product decision and is
-argued rather than measured.
+call sites and their exact source keys, the thirteen stock-moving services, the
+`gl_system_tag` enum values, `LedgerService.resolvePeriod`'s two refusals, the
+post-commit ordering at each call site, and — for §3.3 — `TenantContextInterceptor`,
+`withTenantOn`'s `regional.transaction(...)`, and the `createTenantAwareDb`
+proxy that makes `this.db` resolve to it. §4 is a product decision and is argued
+rather than measured.
+
+§3.3 previously asserted a divergence window that does not exist over HTTP. It
+was written from the shape of the call sites without reading the interceptor.
+The correction is left visible above rather than quietly rewritten, because
+three commits and a piece of user-facing copy were built on the wrong version.

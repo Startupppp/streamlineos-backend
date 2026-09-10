@@ -100,15 +100,17 @@ describe("accounting provisioning", () => {
     ]);
   });
 
-  it("warns that a missing role is discovered after the stock has moved", async () => {
+  it("says what a missing role costs, not merely that one is missing", async () => {
     /*
-      This sentence is the difference between a setup nag and an actionable one.
-      The rejection is not "your next receipt will fail" — it is "your next
-      receipt will half-happen", because the post runs after the commit.
+      The difference between a setup nag and an actionable one. "Some roles are
+      unmapped" is true and tells nobody that the consequence is a goods receipt
+      that will not go through.
     */
     const service = serviceWith({ book: { id: "book-1" }, taggedAccounts: [] });
     const verdict = await service.provisioning("org-1");
-    expect(verdict.state === "incomplete" && verdict.message).toMatch(/after the stock has already moved/);
+    expect(verdict.state === "incomplete" && verdict.message).toMatch(
+      /refused outright — the goods receipt or shipment does not happen/,
+    );
   });
 
   it("ignores an untagged account rather than counting it as a role", async () => {

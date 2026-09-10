@@ -623,11 +623,11 @@ export class GrnService {
    * into, and that must not fail a goods receipt — every other rejection
    * (a missing account role, an unbalanced total) still surfaces loudly.
    *
-   * The contract this obeys is `docs/inventory-gl-contract.md`, which also
-   * records the two things this call site does not do yet: the post runs
-   * *after* the stock transaction commits, so a rejection here leaves stock
-   * moved and no journal (§3.3); and the receipt credits `ap_control` where it
-   * owes a goods-received-not-invoiced accrual (§2.2).
+   * The contract this obeys is `docs/inventory-gl-contract.md`. Two things this
+   * call site still owes it: the post does not take the stock movement's own
+   * transaction, so its atomicity is borrowed from the request rather than
+   * declared here (§3.3); and the receipt credits `ap_control` where it owes a
+   * goods-received-not-invoiced accrual (§2.2).
    */
   private async postToLedger(
     orgId: string,

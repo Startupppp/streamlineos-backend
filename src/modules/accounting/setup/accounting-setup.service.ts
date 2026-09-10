@@ -275,8 +275,9 @@ export class AccountingSetupService {
         missingRoles,
         message:
           `This book has no account tagged ${missingRoles.map((r) => `"${r}"`).join(", ")}. ` +
-          "Inventory resolves accounts by role, so the first movement needing one of these will " +
-          "be refused — after the stock has already moved. Re-run the chart of accounts setup.",
+          "Inventory resolves accounts by role, so the first movement needing one of these is " +
+          "refused outright — the goods receipt or shipment does not happen. Re-run the chart " +
+          "of accounts setup.",
       };
     }
 

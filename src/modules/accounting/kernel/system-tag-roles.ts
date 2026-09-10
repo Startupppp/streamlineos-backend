@@ -84,8 +84,8 @@ export const SYSTEM_TAG_ACCOUNT_TYPES: Record<GlSystemTag, readonly GlAccountTyp
 /**
  * The roles the inventory bridge resolves **today**, from the three call sites
  * `docs/inventory-gl-contract.md` §2 enumerates. A book missing one of these
- * has a real, dated problem: its next goods receipt or shipment throws
- * `UNKNOWN_ACCOUNT_TAG`, and throws it after the stock has already moved (§3.3).
+ * has a real, dated problem: its next goods receipt or shipment is refused
+ * outright with `UNKNOWN_ACCOUNT_TAG`.
  */
 export const INVENTORY_SEAM_ROLES = [
   "inventory",
