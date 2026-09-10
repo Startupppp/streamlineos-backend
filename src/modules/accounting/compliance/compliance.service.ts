@@ -10,6 +10,11 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import type { DbOrTx } from "../kernel/sequence.service";
+import type {
+  CompliancePayload,
+  ComplianceTransportAdapter,
+  TransportResult,
+} from "./transport/compliance-transport.port";
 
 export interface ComplianceDecision {
   transport: ComplianceTransport;
@@ -138,6 +143,105 @@ export class ComplianceService {
     const decision = await this.decide(bookId, { documentType, ...input }, tx);
     await this.record(orgId, bookId, documentType, documentId, decision, tx);
     return decision;
+  }
+
+  /**
+   * Hand a document to whatever transport this deployment has, and record what
+   * came back — the *only* route from `pending` to any success state.
+   *
+   * Written on a row of the adapter's own transport, which for a mock is
+   * `mock_irp` (0673) and therefore a different row from the `irp` decision
+   * that recorded the obligation. Both survive, and together they say the true
+   * thing: the IRP wants this document, and a mock pretended to file it.
+   * Collapsing them would lose one half or the other.
+   *
+   * Nothing here decides anything. It cannot report a filing that an adapter
+   * did not return, and it cannot invent an acknowledgement, because both come
+   * out of the `TransportResult` and neither is written from a literal.
+   */
+  async submitToTransport(
+    orgId: string,
+    bookId: string,
+    documentType: string,
+    documentId: string,
+    adapter: ComplianceTransportAdapter,
+    payload: CompliancePayload,
+    tx: DbOrTx = this.db,
+  ): Promise<TransportResult> {
+    const result = await adapter.submit(payload);
+    const now = new Date();
+
+    const row = {
+      orgId,
+      bookId,
+      documentType,
+      documentId,
+      transport: adapter.transport,
+      enforcementAtPost: "off" as const,
+      lastAttemptAt: now,
+      ...this.columnsFor(result),
+    };
+
+    await tx
+      .insert(documentCompliance)
+      .values(row)
+      .onConflictDoUpdate({
+        target: [
+          documentCompliance.bookId,
+          documentCompliance.documentType,
+          documentCompliance.documentId,
+          documentCompliance.transport,
+        ],
+        /*
+          A resubmission overwrites the previous attempt's outcome rather than
+          accumulating rows. The unique index is on exactly this tuple, so the
+          alternative is a conflict, not a history — and a history of attempts
+          belongs in `attempt_count` and the audit log, not in duplicated
+          evidence rows that a reader would have to rank.
+        */
+        set: this.columnsFor(result),
+      });
+
+    return result;
+  }
+
+  /**
+   * The result, as columns. Split out so `submitToTransport`'s insert and its
+   * conflict update cannot drift — two copies of this is how one of them stops
+   * clearing `errors` on a retry that finally succeeded.
+   */
+  private columnsFor(result: TransportResult) {
+    switch (result.outcome) {
+      case "accepted":
+        return {
+          status: "accepted" as const,
+          authorityId: result.authorityId,
+          ackNo: result.ackNo,
+          ackAt: result.ackAt,
+          errors: null,
+        };
+      case "rejected":
+        return {
+          status: "rejected" as const,
+          authorityId: null,
+          ackNo: null,
+          ackAt: null,
+          errors: result.errors,
+        };
+      case "unavailable":
+        /*
+          Stays `pending`, not `rejected`. The authority never saw the document,
+          so nothing about it has been judged; marking it rejected would tell
+          somebody to correct an invoice that may be perfectly correct.
+        */
+        return {
+          status: "pending" as const,
+          authorityId: null,
+          ackNo: null,
+          ackAt: null,
+          errors: [{ code: "TRANSPORT_UNAVAILABLE", message: result.reason }],
+        };
+    }
   }
 
   async get(orgId: string, bookId: string, documentType: string, documentId: string) {

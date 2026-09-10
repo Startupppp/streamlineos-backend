@@ -54,6 +54,14 @@ export class ComplianceController {
   }
 }
 
+/**
+ * Transports that produce an acknowledgement and file nothing.
+ *
+ * Membership here is the difference between a test fixture and a fabricated
+ * statutory record, so it is a list rather than a naming convention.
+ */
+const SYNTHETIC_TRANSPORTS = new Set(["mock_irp"]);
+
 export interface ComplianceNarrative {
   /** One line, in the words the person raising the invoice would use. */
   headline: string;
@@ -79,6 +87,23 @@ export function describe(state: {
   ackNo: string | null;
 }): ComplianceNarrative {
   const acknowledged = Boolean(state.authorityId ?? state.ackNo);
+
+  /*
+    A synthetic transport can reach `accepted` with an acknowledgement in hand
+    and has still filed nothing — that is the entire risk of shipping ACC-13's
+    mock before ACC-14's provider. Checked before the switch rather than inside
+    the `accepted` branch, so a future synthetic transport cannot be added and
+    quietly inherit the flattering answer from a branch nobody re-read.
+  */
+  if (SYNTHETIC_TRANSPORTS.has(state.transport)) {
+    return {
+      headline:
+        "Handled by a mock e-invoice transport. Nothing was sent to any authority and this " +
+        "document is not filed.",
+      filed: false,
+      action: "File it directly with the authority, outside this product.",
+    };
+  }
 
   switch (state.status) {
     case "not_required":

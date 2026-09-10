@@ -2,6 +2,8 @@ import { Module } from "@nestjs/common";
 import { AccountingKernelModule } from "../kernel/accounting-kernel.module";
 import { ComplianceController } from "./compliance.controller";
 import { ComplianceService } from "./compliance.service";
+import { ComplianceTransportRegistry } from "./transport/compliance-transport.registry";
+import { MockIrpAdapter } from "./transport/mock-irp.adapter";
 
 /**
  * E-invoicing state (PRD 13). Fields and status only in v1 — no connector.
@@ -13,7 +15,7 @@ import { ComplianceService } from "./compliance.service";
 @Module({
   imports: [AccountingKernelModule],
   controllers: [ComplianceController],
-  providers: [ComplianceService],
-  exports: [ComplianceService],
+  providers: [ComplianceService, ComplianceTransportRegistry, MockIrpAdapter],
+  exports: [ComplianceService, ComplianceTransportRegistry],
 })
 export class AccountingComplianceModule {}

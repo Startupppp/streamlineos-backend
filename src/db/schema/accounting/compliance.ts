@@ -24,6 +24,12 @@ import { glBooks } from "./gl-kernel";
 export const complianceTransportEnum = pgEnum("compliance_transport", [
   "none",
   "irp",
+  /**
+   * A mock transport, with its own member so a row it wrote can never be read
+   * as a real filing. See 0673: evidence has to carry its own provenance,
+   * because an environment variable does not survive a database restore.
+   */
+  "mock_irp",
   "peppol",
   "fatoora",
   "sdi",

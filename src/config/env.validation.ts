@@ -232,6 +232,24 @@ const baseSchema = z
       emptyToUndefined,
       z.enum(["true", "false"]).optional(),
     ),
+    /**
+     * Which e-invoice transport is wired up.
+     *
+     * `none` is the default and the only honest value until a provider exists:
+     * a reportable document is recorded as `pending` and nobody sends it.
+     * `mock` exercises the whole submit path against an adapter that invents
+     * nothing — it stamps the row `mock_irp` and returns a visibly fake
+     * acknowledgement, so a mock filing can never be mistaken for a real one,
+     * in a database or in a screenshot.
+     *
+     * There is deliberately no `irp` member yet. Adding one is ACC-14 and needs
+     * real credentials; leaving the name unclaimed means nobody can set it and
+     * believe something is being filed.
+     */
+    COMPLIANCE_TRANSPORT: z.preprocess(
+      emptyToUndefined,
+      z.enum(["none", "mock"]).optional(),
+    ),
     HR_EXPORT_WORKER_ENABLED: z.preprocess(
       emptyToUndefined,
       z.enum(["true", "false"]).optional(),
