@@ -153,8 +153,12 @@
       "as": 1,
       "nonNull": 0
     },
+    "src/modules/automation/automation-action-executor.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
     "src/modules/automation/automation.service.ts": {
-      "as": 2,
+      "as": 1,
       "nonNull": 0
     },
     "src/modules/automation/shared-condition-evaluator.ts": {

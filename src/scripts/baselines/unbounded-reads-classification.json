@@ -603,10 +603,15 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "0 violations detected in current scan; webhook service reads are bounded by inArray or single-record lookups 2026-09-01"
     },
-    "/automation/automation.service.ts": {
+    "/automation/automation-action-executor.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "L79 reads org members with roles for automation audience selection; bounded by org membership count within single org context; required for automation fan-out 2026-09-01"
+      "justification": "notifyMembers reads org members with roles for automation audience selection; bounded by org membership count within single org context; required for automation fan-out. Existing AutomationService classification relocated with unchanged query in ARCH-003 on 2026-09-11."
+    },
+    "/automation/automation.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "The existing rule fan-out remains after action execution was extracted in ARCH-003.",
+      "justification": "runAutomationsForEvent selects enabled rules for one org and one trigger; every matching rule must execute, and createRule enforces the organization's automations plan limit before insertion. This is the remaining original read, not a newly suppressed query; notifyMembers and its classification moved to automation-action-executor.service.ts on 2026-09-11."
     },
     "/autonomy/autonomy-actions.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -928,6 +933,11 @@
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "listMemberChannels has .limit(PAGE_SIZE+1); listPublicChannels uses keyset pagination with limit(PAGE_SIZE+1); unread/lastMessage aggregates bounded by channelIds inArray; listMemberChannelIds bounded by single membership 2026-09-02"
+    },
+    "/chat/chat-channel-activity.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Existing chat-channel-list.service.ts sidebar activity classification follows its unchanged query extraction.",
+      "justification": "loadChannelActivity receives only channelIds from the capped channel-list page (at most PAGE_SIZE_CAP=100); unread counts are grouped by that set, and latest messages use one LIMIT 1 lateral probe per channel with tenant predicates on messages, channels and sender memberships. ARCH-003 relocation, not a new unbounded read, 2026-09-11."
     },
     "/chat/chat-channel-member-preview.ts": {
       "verdict": "FALSE-POSITIVE",

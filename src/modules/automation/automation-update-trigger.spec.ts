@@ -1,6 +1,7 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import { updateAutomationRuleSchema } from "./dto/automation.schemas";
+import { AutomationActionExecutor } from "./automation-action-executor.service";
 import { AutomationService } from "./automation.service";
 import type { Db } from "../../db/drizzle.module";
 
@@ -22,11 +23,14 @@ function makeDb(captured: { set?: Record<string, unknown>; where?: unknown }) {
 function serviceWith(db: Db) {
   return new AutomationService(
     db,
-    { create: jest.fn() } as never,
-    { send: jest.fn() } as never,
-    { dispatchWebhook: jest.fn() } as never,
+    new AutomationActionExecutor(
+      db,
+      { create: jest.fn() } as never,
+      { send: jest.fn() } as never,
+      { dispatchWebhook: jest.fn() } as never,
+      { executeNode: jest.fn() } as never,
+    ),
     { assertWithinLimit: jest.fn() } as never,
-    { executeNode: jest.fn() } as never,
   );
 }
 

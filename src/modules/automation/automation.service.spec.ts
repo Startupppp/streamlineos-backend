@@ -1,5 +1,6 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
+import { AutomationActionExecutor } from "./automation-action-executor.service";
 import { AutomationService } from "./automation.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { AutomationEmailService } from "./automation-email.service";
@@ -54,6 +55,7 @@ describe("AutomationService — support_* actions", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AutomationService,
+        AutomationActionExecutor,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: NotificationsService, useValue: mockNotifications },
         { provide: AutomationEmailService, useValue: mockEmail },
@@ -158,6 +160,7 @@ describe("AutomationService — rule CRUD", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AutomationService,
+        AutomationActionExecutor,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: NotificationsService, useValue: mockNotifications },
         { provide: AutomationEmailService, useValue: mockEmail },
@@ -294,6 +297,7 @@ describe("AutomationService.runAutomationsForEvent() — batch writes", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AutomationService,
+        AutomationActionExecutor,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: NotificationsService, useValue: mockNotifications },
         { provide: AutomationEmailService, useValue: mockEmail },
@@ -391,8 +395,10 @@ describe("AutomationService.runAutomationsForEvent() — batch writes", () => {
   });
 });
 
-describe("AutomationService — support_add_tag org-scoping", () => {
-  let service: AutomationService;
+// Isolation proof for src/modules/automation/automation-action-executor.service.ts:
+// these tests execute the extracted owner, rejecting a foreign tag and inactive assignees.
+describe("AutomationActionExecutor — support_add_tag org-scoping", () => {
+  let service: AutomationActionExecutor;
 
   function makeModule(tagLookupResult: Array<{ id: number }>) {
     jest.clearAllMocks();
@@ -422,7 +428,7 @@ describe("AutomationService — support_add_tag org-scoping", () => {
   async function buildService(localDb: unknown) {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        AutomationService,
+        AutomationActionExecutor,
         { provide: DRIZZLE, useValue: localDb },
         { provide: NotificationsService, useValue: { create: jest.fn() } },
         { provide: AutomationEmailService, useValue: { send: jest.fn() } },
@@ -431,7 +437,7 @@ describe("AutomationService — support_add_tag org-scoping", () => {
         { provide: AiNodeExecutorService, useValue: { executeNode: jest.fn() } },
       ],
     }).compile();
-    return module.get(AutomationService);
+    return module.get(AutomationActionExecutor);
   }
 
   it("proof — skipping the tag lookup (always inserts) lets a foreign tag be applied", async () => {
@@ -477,7 +483,7 @@ describe("AutomationService — support_add_tag org-scoping", () => {
   });
 });
 
-describe("AutomationService — W-6: live membership check on assigneeId", () => {
+describe("AutomationActionExecutor — W-6: live membership check on assigneeId", () => {
   async function buildServiceWithMemberLookup(memberRow: { status: string } | null) {
     jest.clearAllMocks();
 
@@ -504,7 +510,7 @@ describe("AutomationService — W-6: live membership check on assigneeId", () =>
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        AutomationService,
+        AutomationActionExecutor,
         { provide: DRIZZLE, useValue: localDb },
         { provide: NotificationsService, useValue: { create: jest.fn() } },
         { provide: AutomationEmailService, useValue: { send: jest.fn() } },
@@ -514,7 +520,7 @@ describe("AutomationService — W-6: live membership check on assigneeId", () =>
       ],
     }).compile();
 
-    return { service: module.get(AutomationService), localDb };
+    return { service: module.get(AutomationActionExecutor), localDb };
   }
 
   it("proof — skipping the membership check (active member) lets support_assign_ticket succeed", async () => {
@@ -599,7 +605,7 @@ describe("AutomationService — W-6: live membership check on assigneeId", () =>
     };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        AutomationService,
+        AutomationActionExecutor,
         { provide: DRIZZLE, useValue: localDb },
         { provide: NotificationsService, useValue: { create: jest.fn() } },
         { provide: AutomationEmailService, useValue: { send: jest.fn() } },
@@ -608,7 +614,7 @@ describe("AutomationService — W-6: live membership check on assigneeId", () =>
         { provide: AiNodeExecutorService, useValue: { executeNode: jest.fn() } },
       ],
     }).compile();
-    const service = module.get(AutomationService);
+    const service = module.get(AutomationActionExecutor);
 
     const result = await service.executeAction(
       "org-a",

@@ -5,6 +5,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { AutomationActionExecutor } from "../../automation/automation-action-executor.service";
 import { AutomationService } from "../../automation/automation.service";
 import type { AutomationAction } from "../../automation/dto/automation.schemas";
 import { AutomationEmailService } from "../../automation/automation-email.service";
@@ -88,6 +89,7 @@ async function harness(actions: AutomationAction[] = []) {
   const module = await Test.createTestingModule({
     providers: [
       AutomationService,
+      AutomationActionExecutor,
       { provide: DRIZZLE, useValue: db },
       { provide: SupportSettingsAuditService, useValue: audit },
       { provide: NotificationsService, useValue: { create: jest.fn() } },

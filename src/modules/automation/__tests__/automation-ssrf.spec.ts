@@ -1,4 +1,4 @@
-import { AutomationService } from "../automation.service";
+import { AutomationActionExecutor } from "../automation-action-executor.service";
 import { AutomationWebhookService } from "../automation-webhook.service";
 import type { AutomationAction } from "../../../db/schema";
 
@@ -33,16 +33,14 @@ function makeDb(endpoints: typeof ACTIVE_ENDPOINT[]) {
 
 const mockNotifications = { create: jest.fn() } as never;
 const mockEmail = { send: jest.fn() } as never;
-const mockPlanLimits = { assertWithinLimit: jest.fn() } as never;
 const mockAiNodeExecutor = { executeNode: jest.fn() } as never;
 
 function makeSvc(db: ReturnType<typeof makeDb>["db"]) {
-  return new AutomationService(
+  return new AutomationActionExecutor(
     db,
     mockNotifications,
     mockEmail,
     new AutomationWebhookService(db),
-    mockPlanLimits,
     mockAiNodeExecutor,
   );
 }
@@ -59,7 +57,7 @@ beforeEach(() => {
   globalThis.fetch = jest.fn();
 });
 
-describe("AutomationService — deliverWebhook SSRF guard", () => {
+describe("AutomationActionExecutor — deliverWebhook SSRF guard", () => {
   it("blocks an internal endpoint URL and does not call fetch", async () => {
     mockCheckWebhookUrl.mockResolvedValue({ allowed: false, reason: "blocked-address" });
     const { db } = makeDb([ACTIVE_ENDPOINT]);

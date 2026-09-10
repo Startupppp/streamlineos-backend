@@ -4,7 +4,7 @@ import type { Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import type { EntityReferenceService } from "../../entity-reference/entity-reference.service";
 import type { EntityActor } from "../../entity-reference/entity-reference.types";
-import { ChatChannelMembersImplementation } from "../chat-channel-members-implementation";
+import { ChatChannelMembersService } from "../chat-channel-members.service";
 import { ChatChannelListService } from "../chat-channel-list.service";
 import { ChatPresenceService } from "../chat-presence.service";
 
@@ -70,7 +70,7 @@ function harness() {
         },
       },
     );
-  const impl = new ChatChannelMembersImplementation(
+  const impl = new ChatChannelMembersService(
     db as unknown as Db,
     cache as unknown as CacheService,
     unusedCollaborator("EntityReferenceService") as never,

@@ -121,9 +121,7 @@ function previewRow(userId: string, id: number) {
 function build(db: Db) {
   return new ChatChannelMembersImplementation(
     db,
-    { invalidateNamespace: jest.fn() } as never,
     { resolve: jest.fn() } as never,
-    {} as never,
   );
 }
 

@@ -1,5 +1,6 @@
 import { NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import { AutomationActionExecutor } from "./automation-action-executor.service";
 import { AutomationService } from "./automation.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { AutomationEmailService } from "./automation-email.service";
@@ -34,6 +35,7 @@ describe("AutomationService — cross-tenant isolation", () => {
     const mod = await Test.createTestingModule({
       providers: [
         AutomationService,
+        AutomationActionExecutor,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: NotificationsService, useValue: { create: jest.fn() } },
         { provide: AutomationEmailService, useValue: { send: jest.fn() } },

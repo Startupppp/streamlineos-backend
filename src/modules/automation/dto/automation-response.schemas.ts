@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-/** `ActionResult` — `automation.service.ts`. */
+/** `ActionResult` — `automation-action-executor.service.ts`. */
 const actionResultSchema = z.object({
   type: z.string(),
   ok: z.boolean(),

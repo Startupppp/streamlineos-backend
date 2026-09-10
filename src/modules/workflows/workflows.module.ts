@@ -30,7 +30,7 @@ import { WorkflowLoopExecutor } from "./engine/executors/loop.executor";
 import { WorkflowScriptExecutor } from "./engine/executors/script.executor";
 import { AccessModule } from "../access/access.module";
 import { AutomationModule } from "../automation/automation.module";
-import { AutomationService } from "../automation/automation.service";
+import { AutomationActionExecutor } from "../automation/automation-action-executor.service";
 import { AiGatewayModule } from "../ai/core/gateway/ai-gateway.module";
 import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 import { IntegrationsModule } from "../integrations/core/integrations.module";
@@ -58,7 +58,7 @@ import { ComposioGateway } from "../integrations/core/composio.gateway";
     WorkflowLoopExecutor,
     WorkflowScriptExecutor,
     { provide: NODE_DISPATCH_PORT, useExisting: WorkflowNodeDispatcher },
-    { provide: AUTOMATION_ACTION_RUNNER, useExisting: AutomationService },
+    { provide: AUTOMATION_ACTION_RUNNER, useExisting: AutomationActionExecutor },
     { provide: AI_TEXT_GATEWAY, useExisting: AiGatewayService },
     { provide: INTEGRATION_LOOKUP, useExisting: IntegrationsService },
     { provide: COMPOSIO_TOOL_CALLER, useExisting: ComposioGateway },

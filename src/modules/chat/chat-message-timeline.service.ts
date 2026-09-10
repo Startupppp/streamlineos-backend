@@ -15,40 +15,14 @@ import type { Db } from "../../db/drizzle.module";
 import { buildIdCursorPage } from "../../common/pagination/cursor";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import type { EntityActor } from "../entity-reference/entity-reference.types";
-import {
-  resolvePeopleIdentities,
-  subjectKey,
-  type PersonIdentity,
-} from "../directory/person-seam";
-import { liftSenderId, SENDER_MEMBERSHIP_ID_ONLY } from "./chat-message-sender-shape";
-import {
-  MESSAGE_REACTIONS_WITH,
-  foldReactions,
-  type ReactionRow,
-} from "./chat-message-reaction-shape";
+import { SENDER_MEMBERSHIP_ID_ONLY } from "./chat-message-sender-shape";
+import { MESSAGE_REACTIONS_WITH } from "./chat-message-reaction-shape";
+import { hydrateTimelineMessages } from "./chat-timeline-hydration";
 
 const REPLY_PREVIEW_WITH = {
   columns: { id: true, content: true },
   with: { senderMembership: SENDER_MEMBERSHIP_ID_ONLY },
 } as const;
-
-type ChatSender = {
-  id: string | null;
-  name: string | null;
-  image: string | null;
-};
-
-function senderFromIdentity(identity: PersonIdentity | undefined): ChatSender {
-  const parts = [identity?.firstName, identity?.lastName]
-    .filter(Boolean)
-    .join(" ");
-  const name = identity?.displayName ?? (parts || null);
-  return {
-    id: identity?.userId ?? null,
-    name: name ?? null,
-    image: identity?.avatarUrl ?? null,
-  };
-}
 
 @Injectable()
 export class ChatMessageTimelineService {
@@ -72,67 +46,6 @@ export class ChatMessageTimelineService {
       columns: { id: true },
     });
     return Boolean(m);
-  }
-
-  private withResolvedReferences<
-    T extends { metadata: Record<string, unknown> | null },
-  >(actor: EntityActor, messages: T[]): Promise<T[]> {
-    return this.entities.withResolvedReferences(actor, messages);
-  }
-
-  private async resolveIdentities(
-    orgId: string,
-    senderIds: Set<string>,
-  ): Promise<Map<string, PersonIdentity>> {
-    if (senderIds.size === 0) return new Map();
-    const subjects = [...senderIds].map((userId) => ({
-      kind: "user" as const,
-      userId,
-    }));
-    return resolvePeopleIdentities(this.db, orgId, subjects);
-  }
-
-  private enrich<
-    M extends {
-      senderMembership: { userId: string } | null;
-      reactions: ReactionRow[];
-      replyTo:
-        | ({ senderMembership: { userId: string } | null } & Record<
-            string,
-            unknown
-          >)
-        | null;
-    },
-  >(msg: M, identities: Map<string, PersonIdentity>) {
-    return {
-      ...liftSenderId(msg),
-      // Folded here rather than left as join rows: the wire shape is the same
-      // `emoji -> userId[]` map the reaction mutation and the realtime event carry, so a
-      // refetch and a live event agree about what the bubble should render.
-      reactions: foldReactions(msg.reactions),
-      sender: senderFromIdentity(
-        msg.senderMembership
-          ? identities.get(
-              subjectKey({ kind: "user", userId: msg.senderMembership.userId }),
-            )
-          : undefined,
-      ),
-      replyTo: msg.replyTo
-        ? {
-            ...liftSenderId(msg.replyTo),
-            sender: senderFromIdentity(
-              msg.replyTo.senderMembership
-                ? identities.get(
-                    subjectKey({
-                      kind: "user",
-                      userId: msg.replyTo.senderMembership.userId,
-                    }),
-                  )
-                : undefined,
-            ),
-          }
-        : null,
-    };
   }
 
   async list(
@@ -180,17 +93,12 @@ export class ChatMessageTimelineService {
       safeLimit,
       (m) => m.channelPosition,
     );
-    const senderIds = new Set<string>();
-    for (const m of page.data) {
-      if (m.senderMembership?.userId) senderIds.add(m.senderMembership.userId);
-      if (m.replyTo?.senderMembership?.userId)
-        senderIds.add(m.replyTo.senderMembership.userId);
-    }
-    const identities = await this.resolveIdentities(actor.orgId, senderIds);
-    const enriched = page.data.reverse().map((m) => this.enrich(m, identities));
+    const messages = await hydrateTimelineMessages(
+      this.db, this.entities, actor, page.data.reverse(),
+    );
 
     return {
-      messages: await this.withResolvedReferences(actor, enriched),
+      messages,
       nextCursor: page.nextCursor,
     };
   }
@@ -264,17 +172,12 @@ export class ChatMessageTimelineService {
     });
 
     const page = buildIdCursorPage(rawMessages, safeLimit, (m) => m.channelPosition);
-    const senderIds = new Set<string>();
-    for (const m of page.data) {
-      if (m.senderMembership?.userId) senderIds.add(m.senderMembership.userId);
-      if (m.replyTo?.senderMembership?.userId)
-        senderIds.add(m.replyTo.senderMembership.userId);
-    }
-    const identities = await this.resolveIdentities(actor.orgId, senderIds);
-    const enriched = page.data.map((m) => this.enrich(m, identities));
+    const messages = await hydrateTimelineMessages(
+      this.db, this.entities, actor, page.data,
+    );
 
     return {
-      messages: await this.withResolvedReferences(actor, enriched),
+      messages,
       nextCursor: page.nextCursor,
       hasMore: page.hasMore,
     };
@@ -339,34 +242,18 @@ export class ChatMessageTimelineService {
       },
     });
 
-    const senderIds = new Set<string>();
-    if (rawParent.senderMembership?.userId)
-      senderIds.add(rawParent.senderMembership.userId);
-    if (rawParent.replyTo?.senderMembership?.userId)
-      senderIds.add(rawParent.replyTo.senderMembership.userId);
     const page = buildIdCursorPage(
       rawReplies,
       safeLimit,
       (r) => r.channelPosition,
     );
-    for (const r of page.data) {
-      if (r.senderMembership?.userId) senderIds.add(r.senderMembership.userId);
-      if (r.replyTo?.senderMembership?.userId)
-        senderIds.add(r.replyTo.senderMembership.userId);
-    }
+    const [parentMessage, ...replies] = await hydrateTimelineMessages(
+      this.db, this.entities, actor, [rawParent, ...page.data.reverse()],
+    );
 
-    const identities = await this.resolveIdentities(actor.orgId, senderIds);
-    const parentMessage = this.enrich(rawParent, identities);
-    const enrichedReplies = page.data
-      .reverse()
-      .map((r) => this.enrich(r, identities));
-
-    const [resolvedParent] = await this.withResolvedReferences(actor, [
-      parentMessage,
-    ]);
     return {
-      parentMessage: resolvedParent ?? parentMessage,
-      replies: await this.withResolvedReferences(actor, enrichedReplies),
+      parentMessage,
+      replies,
       nextCursor: page.nextCursor,
     };
   }
