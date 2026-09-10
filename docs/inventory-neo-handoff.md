@@ -1236,6 +1236,57 @@ which the contract section above accepts — that a physical movement should not
 be refused for a bookkeeping gap. If INV-09 is built, the blocking decision
 should be revisited deliberately rather than inherited from the ticket line.
 
+## INV-38: the journal is now asserted, and the clearing account is a deliberate no
+
+Two findings, one of them wider than landed cost.
+
+**Nothing in `test/` had ever looked at a posted journal.** `grep -rn
+"ledger_accounts\|journal_entries" test/` returned nothing before this ticket.
+`landed-cost.seeded-e2e-spec` was 718 lines of genuinely good costing coverage —
+apportionment, layer maths, the audit trail, the capitalise/expense split, the
+refusals — and made no assertion about accounting at all. So did every other
+inventory spec, `gl-recon.seeded-e2e-spec` included: it seeds *no* chart of
+accounts on purpose, because the state it tests is the unposted one. The posted
+half of the accounting bridge was unmeasured across the whole module.
+
+It now has a block at the end of the landed-cost spec that seeds the real COA
+through `seedChartOfAccountsForOrg` and asserts the rows in `journal_entries`
+and `journal_lines` — the account codes, the two-line and three-line shapes, and
+debits equal to credits — plus the documented skip, which was the more important
+gap: the bridge's "no chart of accounts, so no journal, but the goods still
+move" bargain is the argument the whole contract section above rests on, and
+nobody had checked it holds. That test asserts both preconditions first
+(`hasJournals()` is true, `ledger_accounts` is empty) so a missing entry cannot
+pass for the wrong reason.
+
+It runs **last in the file on purpose**: the chart of accounts is per-tenant and
+the spec is one tenant, so seeding it is a one-way door for every `apply` after
+it.
+
+**There is no landed-cost clearing account, and adding one now would be wrong.**
+INV-38's acceptance line is "clearing account correct" and `postJournal` credits
+`2000` directly. That looks like the gap INV-09 describes, and it is not quite:
+
+A clearing account earns its place between two events — an accrual and the bill
+that settles it. This voucher is one event. `inv_landed_cost_charges` carries
+the carrier's own `vendor_id` and `reference`, the status enum runs only
+`DRAFT → APPLIED`, and there is no estimated-freight posting before `apply` or
+actualisation after it. `grep -rn "landed_cost" src/modules/finance/
+src/modules/accounting/` returns nothing, so no vendor bill would ever debit the
+other side. Crediting a clearing account today would open a balance that grows
+forever and that no process can drain — further from the truth than crediting
+the payable the money is actually owed on.
+
+So the credit stays `2000` and the reason is written down at `PAYABLE_ACCOUNT`
+in `landed-cost-apply.service.ts`. **INV-38's acceptance criterion is not met and
+is not claimed to be.** The account belongs to INV-09, and only alongside an AP
+counterpart that clears it — which is a new cross-module seam and its own
+ticket. Worth noting that `acc_system_account_map` already carries eighteen
+system-account purposes with a service, a controller and validation behind them;
+INV-09 is closer to "add six inventory purposes to a mechanism that exists" than
+to "build a mapping layer", which is not what the ticket estimate implies.
+
+
 ## The ON CONFLICT class, and why a mocked database cannot see it
 
 INV-29 was not a webhook bug. It was one instance of a defect that the

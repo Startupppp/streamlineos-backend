@@ -17,6 +17,8 @@ import { LandedCostController } from "src/modules/inventory/landed-cost/landed-c
 import { InvLabelsService } from "src/modules/inventory/labels/inv-labels.service";
 import { InvLabelsController } from "src/modules/inventory/labels/inv-labels.controller";
 import { InvBarcodeService } from "src/modules/inventory/barcode/inv-barcode.service";
+import { InventoryAccountingBridge } from "src/modules/inventory/stock-engine/accounting-bridge";
+import { JournalPostingService } from "src/modules/accounting/posting/journal-posting.service";
 import { REQUIRE_PERMISSION } from "src/modules/access/require-permission.decorator";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
 import { seedOrg } from "test/helpers/seed-builder";
@@ -64,6 +66,14 @@ const OPERATOR = [
   "inventory:labels:print",
 ] as const;
 
+/** One posted journal line, named by the account code rather than its id. */
+type JournalLineRow = {
+  account_code: string;
+  debit: string;
+  credit: string;
+  description: string | null;
+};
+
 interface Scene {
   orgId: string;
   userId: string;
@@ -81,6 +91,14 @@ interface Scene {
   batchedSku: string;
   /** Weighted average, which landed cost refuses rather than mis-costs. */
   averagedId: number;
+  /**
+   * FIFO, untracked. The three receipts the accounting block costs, kept apart
+   * from the ones above so a journal assertion cannot be satisfied by a layer
+   * another test moved.
+   */
+  glSkipId: number;
+  glOnHandId: number;
+  glShippedId: number;
   vendorName: string;
   orgName: string;
 }
@@ -256,6 +274,50 @@ describe("[seeded-e2e] landing freight onto a receipt's cost layers", () => {
         .applyVoucher(scene.orgId, scene.userId, voucherId, key),
     );
 
+  /**
+   * The journal `apply` posted for a voucher, read back out of the database.
+   *
+   * Joined to `ledger_accounts` so the assertion names the account *code* — that
+   * is what `postJournal` writes, what a reader of the ledger recognises, and
+   * what INV-38 is about. Asserting `account_id` instead would make the test
+   * pass or fail on the order `seedChartOfAccountsForOrg` happened to insert in,
+   * which is not a fact about landed cost.
+   */
+  const journalFor = (voucherId: number) =>
+    asTenant(async () => {
+      const [entry] = await db().execute<{
+        id: number;
+        entry_date: string;
+        description: string | null;
+        source_event: string | null;
+        status: string;
+      }>(sql`
+        SELECT id, entry_date::text AS entry_date, description, source_event, status
+        FROM journal_entries
+        WHERE org_id = ${scene.orgId}
+          AND source_type = 'inv_landed_cost'
+          AND source_id = ${String(voucherId)}`);
+      if (!entry) return { entry: null, lines: [] as JournalLineRow[] };
+      const lines = await db().execute<JournalLineRow>(sql`
+        SELECT a.code AS account_code, l.debit::text AS debit,
+               l.credit::text AS credit, l.description
+        FROM journal_lines l
+        JOIN ledger_accounts a ON a.id = l.account_id
+        WHERE l.org_id = ${scene.orgId} AND l.entry_id = ${entry.id}
+        ORDER BY l.line_order, l.id`);
+      return { entry, lines };
+    });
+
+  const ledgerAccountCount = () =>
+    asTenant(async () => {
+      const [row] = await db().execute<{ n: number }>(sql`
+        SELECT count(*)::int AS n FROM ledger_accounts WHERE org_id = ${scene.orgId}`);
+      return row!.n;
+    });
+
+  /** Exactly what `postJournal` uses, rather than a date this file invents. */
+  const today = () => new Date().toISOString().slice(0, 10);
+
   beforeAll(async () => {
     app = await createSeededE2eApp();
     const seeded = await seedOrg(app.seedDb)
@@ -331,6 +393,9 @@ describe("[seeded-e2e] landing freight onto a receipt's cost layers", () => {
         batchedId: batched.id,
         batchedSku: batched.sku,
         averagedId: (await variant("AVERAGED", "WEIGHTED_AVERAGE", "NONE", null)).id,
+        glSkipId: (await variant("GLSKIP", "FIFO", "NONE", null)).id,
+        glOnHandId: (await variant("GLONHAND", "FIFO", "NONE", null)).id,
+        glShippedId: (await variant("GLSHIPPED", "FIFO", "NONE", null)).id,
         vendorName,
         orgName: org.name,
       };
@@ -713,6 +778,190 @@ describe("[seeded-e2e] landing freight onto a receipt's cost layers", () => {
       expect(keyOf("variantLabel")).toBe("inventory:labels:print");
       expect(keyOf("grnNote")).toBe("inventory:labels:print");
       expect(keyOf("pickList")).toBe("inventory:labels:print");
+    });
+  });
+
+  /**
+   * INV-38 — the half of "apply + accounting contract" that nothing asserted.
+   *
+   * Everything above this point proves the costing: the apportionment, the
+   * layers, the audit trail, the split when freight lands after the goods have
+   * moved. None of it looks at `journal_entries`, and until this block no test
+   * anywhere in `test/` did — `grep -rn "ledger_accounts\|journal_entries" test/`
+   * returned nothing, so the *posted* side of the accounting bridge was
+   * unmeasured across the whole module, not only for landed cost.
+   *
+   * Two behaviours, and the second is the one a reader would assume was covered:
+   *
+   *   1. With no chart of accounts, `postJournalEntry` skips with a warning and
+   *      the freight still reaches the layers. That is a deliberate decision —
+   *      a receipt is a physical fact and a bookkeeping gap must not refuse it —
+   *      and a decision nobody had checked holds.
+   *   2. With one, the entry is actually written, names 1300 / 5000 / 2000, and
+   *      balances.
+   *
+   * **This block runs last on purpose.** The chart of accounts is per-tenant and
+   * the scene is one tenant, so seeding it is a one-way door for every `apply`
+   * after it. The blocks above are written against the no-accounts state and
+   * would start posting journals if this ran first.
+   *
+   * The credit is the payable, not a clearing account. INV-38's acceptance line
+   * says "clearing account correct" and this asserts 2000 instead: a clearing
+   * account sits between an accrual and the bill that settles it, and this
+   * voucher *is* the bill — its charges carry the carrier's own vendor and
+   * reference, and nothing in finance or accounting would ever debit the other
+   * side. See `PAYABLE_ACCOUNT` in `landed-cost-apply.service.ts`. The test
+   * therefore records what the code does and why, rather than asserting an
+   * account that does not exist.
+   */
+  describe("INV-38 — the journal the apply claims to post", () => {
+    describe("before the tenant has a chart of accounts", () => {
+      it("lands the freight on the layers and writes no journal at all", async () => {
+        // The two preconditions, asserted rather than assumed. Without them a
+        // missing entry proves nothing: it would also be missing if accounting
+        // were not migrated into this database, and that is a different answer
+        // the bridge gives for a different reason.
+        expect(await ledgerAccountCount()).toBe(0);
+        expect(
+          await asTenant(() => app.app.get(InventoryAccountingBridge).hasJournals()),
+        ).toBe(true);
+
+        const order = await sentOrder([
+          { variantId: scene.glSkipId, quantity: 20, unitCost: "5.0000" },
+        ]);
+        const grn = (await receive(order.poId, [
+          { poLineId: order.poLineIds[0], quantityReceived: "20" },
+        ])) as { id: number };
+
+        // 100.00 of goods, 20.00 of freight, nothing issued: 120.00 over 20.
+        const voucherId = (await createVoucher(grn.id, 2_000)).id;
+        expect(await applyVoucher(voucherId)).toMatchObject({
+          status: "APPLIED",
+          chargeTotal: "20.0000",
+          capitalisedValue: "20.0000",
+          expensedValue: "0.0000",
+        });
+
+        // The stock side happened in full...
+        const layers = await layersFor(grn.id);
+        expect(layers[0]).toMatchObject({
+          unit_cost: "6.0000",
+          total_value: "120.0000",
+          remaining_value: "120.0000",
+        });
+
+        // ...and the ledger side did not, which is the documented bargain.
+        expect((await journalFor(voucherId)).entry).toBeNull();
+      }, 180_000);
+    });
+
+    describe("once the tenant has one", () => {
+      beforeAll(async () => {
+        await asTenant(() =>
+          app.app.get(JournalPostingService).seedChartOfAccountsForOrg(scene.orgId),
+        );
+      }, 120_000);
+
+      it("seeds the codes the inventory posting rules name", async () => {
+        // The block below is only meaningful if these three exist; a journal
+        // missing because 1300 was never seeded looks exactly like a journal
+        // missing because the posting broke.
+        const codes = await asTenant(() =>
+          db().execute<{ code: string }>(sql`
+            SELECT code FROM ledger_accounts
+            WHERE org_id = ${scene.orgId} AND code IN ('1300', '2000', '5000')
+            ORDER BY code`),
+        );
+        expect(codes.map((row) => row.code)).toEqual(["1300", "2000", "5000"]);
+      });
+
+      it("debits inventory and credits the payable when nothing has shipped", async () => {
+        // 400.00 of goods, 50.00 of freight, all 40 units still on the shelf.
+        // 450.00 over 40 is 11.25, so the whole charge capitalises.
+        const order = await sentOrder([
+          { variantId: scene.glOnHandId, quantity: 40, unitCost: "10.0000" },
+        ]);
+        const grn = (await receive(order.poId, [
+          { poLineId: order.poLineIds[0], quantityReceived: "40" },
+        ])) as { id: number };
+
+        const voucherId = (await createVoucher(grn.id, 5_000)).id;
+        expect(await applyVoucher(voucherId)).toMatchObject({
+          capitalisedValue: "50.0000",
+          expensedValue: "0.0000",
+        });
+        expect((await layersFor(grn.id))[0]).toMatchObject({
+          unit_cost: "11.2500",
+          total_value: "450.0000",
+        });
+
+        const { entry, lines } = await journalFor(voucherId);
+        expect(entry).toMatchObject({
+          source_event: "apply",
+          status: "POSTED",
+          entry_date: today(),
+        });
+
+        // Two lines, not three. A zero COGS line is omitted rather than posted,
+        // so the common case reads as the two-line entry it is.
+        expect(lines).toEqual([
+          expect.objectContaining({ account_code: "1300", debit: "50.0000", credit: "0.0000" }),
+          expect.objectContaining({ account_code: "2000", debit: "0.0000", credit: "50.0000" }),
+        ]);
+      }, 180_000);
+
+      it("splits the debit across inventory and cost of sales when some has, and still balances", async () => {
+        // 400.00 of goods over 100 units, 60 of them shipped before the carrier
+        // invoiced, then 100.00 of freight.
+        //
+        //   capitalisable  100.00 x 40/100        =  40.00
+        //   layer          160.00 held + 40.00    = 200.00 over 40 = 5.0000
+        //   expensed       100.00 - 40.00         =  60.00
+        //
+        // The 60.00 can never reach stock: those units are gone and their sale
+        // is already on the books at 4.00 in an append-only ledger. It is a cost
+        // of the period the freight bill landed in, and 5000 is where it goes.
+        const order = await sentOrder([
+          { variantId: scene.glShippedId, quantity: 100, unitCost: "4.0000" },
+        ]);
+        const grn = (await receive(order.poId, [
+          { poLineId: order.poLineIds[0], quantityReceived: "100" },
+        ])) as { id: number };
+
+        const shipped = `gl-shipped-${randomUUID().slice(0, 8)}`;
+        await issue(scene.glShippedId, "60.0000", shipped);
+        expect((await issueCost(shipped)).movement.total_cost).toBe("240.0000");
+
+        const voucherId = (await createVoucher(grn.id, 10_000)).id;
+        expect(await applyVoucher(voucherId)).toMatchObject({
+          chargeTotal: "100.0000",
+          capitalisedValue: "40.0000",
+          expensedValue: "60.0000",
+        });
+
+        const { entry, lines } = await journalFor(voucherId);
+        expect(entry).not.toBeNull();
+        expect(lines).toEqual([
+          expect.objectContaining({ account_code: "1300", debit: "40.0000", credit: "0.0000" }),
+          expect.objectContaining({ account_code: "5000", debit: "60.0000", credit: "0.0000" }),
+          expect.objectContaining({ account_code: "2000", debit: "0.0000", credit: "100.0000" }),
+        ]);
+
+        // The identity the whole feature rests on, asserted on the ledger rows
+        // themselves rather than on what `apply` said it did. Summed in integer
+        // ten-thousandths: these columns are numeric(18,4) and comparing them as
+        // floats is the arithmetic this module bans everywhere else.
+        const scaled = (v: string) => Math.round(Number(v) * 10_000);
+        const debits = lines.reduce((sum, line) => sum + scaled(line.debit), 0);
+        const credits = lines.reduce((sum, line) => sum + scaled(line.credit), 0);
+        expect(debits).toBe(credits);
+        expect(debits).toBe(1_000_000); // 100.0000, the voucher's charge total
+
+        // And what the freight did reach is what the next issue draws at.
+        const after = `gl-after-${randomUUID().slice(0, 8)}`;
+        await issue(scene.glShippedId, "40.0000", after);
+        expect((await issueCost(after)).movement.total_cost).toBe("200.0000");
+      }, 180_000);
     });
   });
 });
