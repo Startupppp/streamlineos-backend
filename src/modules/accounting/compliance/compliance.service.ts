@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import {
+  arDocuments,
   documentCompliance,
   glBooks,
   taxRegistrations,
@@ -244,6 +245,81 @@ export class ComplianceService {
     }
   }
 
+  /**
+   * The facts an authority is offered about an AR document.
+   *
+   * Read here, from the posted document, rather than accepted from the caller.
+   * A `POST .../submit` that took totals in its body would let whoever calls it
+   * send a tax authority a different figure from the one in the ledger, and the
+   * discrepancy would surface as a notice months later with the product's own
+   * submission as the evidence against the tenant.
+   *
+   * Returns null for a document type this cannot resolve — today, anything that
+   * is not an AR document. The legacy `invoices` table has its own numbering
+   * and its deprecation is the subject of `docs/adr-legacy-invoices-vs-ar.md`;
+   * offering to file from it would deepen a dependency that is being retired.
+   */
+  async payloadForDocument(
+    orgId: string,
+    bookId: string,
+    documentType: string,
+    documentId: string,
+    tx: DbOrTx = this.db,
+  ): Promise<CompliancePayload | null> {
+    const [doc] = await tx
+      .select({
+        documentNumber: arDocuments.documentNumber,
+        issueDate: arDocuments.issueDate,
+        currency: arDocuments.currency,
+        grossMinor: arDocuments.grossMinor,
+        partyId: arDocuments.partyId,
+      })
+      .from(arDocuments)
+      .where(
+        and(
+          eq(arDocuments.orgId, orgId),
+          eq(arDocuments.bookId, bookId),
+          eq(arDocuments.id, documentId),
+        ),
+      )
+      .limit(1);
+
+    if (!doc) return null;
+
+    const [seller] = await tx
+      .select({ number: taxRegistrations.number })
+      .from(taxRegistrations)
+      .where(and(eq(taxRegistrations.bookId, bookId), eq(taxRegistrations.ownerType, "book")))
+      .limit(1);
+
+    const [buyer] = await tx
+      .select({ number: taxRegistrations.number })
+      .from(taxRegistrations)
+      .where(
+        and(eq(taxRegistrations.partyId, doc.partyId), eq(taxRegistrations.ownerType, "party")),
+      )
+      .limit(1);
+
+    /*
+      No seller registration means the document was never reportable in the
+      first place — `decide` already returns `not_required` for it — so a
+      submit reaching here without one is a caller bug, not something to paper
+      over with an empty string.
+    */
+    if (!seller) return null;
+
+    return {
+      documentType,
+      documentId,
+      documentNumber: doc.documentNumber ?? documentId,
+      documentDate: doc.issueDate,
+      sellerTaxId: seller.number,
+      buyerTaxId: buyer?.number ?? null,
+      currency: doc.currency,
+      totalMinor: doc.grossMinor,
+    };
+  }
+
   async get(orgId: string, bookId: string, documentType: string, documentId: string) {
     return this.db
       .select({
@@ -263,7 +339,15 @@ export class ComplianceService {
           eq(documentCompliance.documentType, documentType),
           eq(documentCompliance.documentId, documentId),
         ),
-      );
+      )
+      /*
+        Ordered, because there is now more than one row per document: the
+        decision is recorded against the transport that WANTS the document
+        (`irp`) and a submission is recorded against the transport that HANDLED
+        it (`mock_irp`). Callers that took `rows[0]` from an unordered query
+        would read a different row run to run.
+      */
+      .orderBy(asc(documentCompliance.transport));
   }
 
   /** Does this book carry a tax identity the engine and IRP would recognise? */

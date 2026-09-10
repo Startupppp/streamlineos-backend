@@ -165,6 +165,67 @@ describe("a mock filing is never reported as a filing", () => {
   });
 });
 
+describe("the submit path is reachable", () => {
+  /*
+    Written after shipping it unreachable. `submitToTransport` had no caller
+    anywhere — the same defect this pack has now found three times in other
+    people's code (`PATCH accounts/:id/system-tag`, `ComplianceService.get`,
+    the certificate route), and I built a fourth.
+
+    A mechanism nothing routes to is not half-done; it is untested in the only
+    way that counts, because the parts nobody reaches are the parts that turn
+    out not to fit together.
+  */
+  const CONTROLLER = readFileSync(join(__dirname, "../compliance.controller.ts"), "utf8");
+
+  it("has a route that offers a document to the transport", () => {
+    expect(CONTROLLER).toContain('@Post("documents/:documentType/:documentId/submit")');
+    expect(CONTROLLER).toContain("this.compliance.submitToTransport(");
+  });
+
+  it("gates filing behind manage, not read", () => {
+    /*
+      Sending a document to a tax authority is not a read. The GET beside it
+      carries `receivables:read`; this one must not.
+    */
+    const route = CONTROLLER.slice(CONTROLLER.indexOf("submitDocument"));
+    const decorators = CONTROLLER.slice(0, CONTROLLER.indexOf("async submitDocument"));
+    expect(decorators).toContain('@RequirePermission("accounting:receivables:manage")');
+    expect(route.slice(0, 400)).not.toContain("receivables:read");
+  });
+
+  it("reads the figures from the posted document, never from the request", () => {
+    /*
+      A submit that accepted totals in its body would let a caller send a tax
+      authority a figure that differs from the ledger, and the discrepancy
+      would surface months later as a notice with this product's own
+      submission as the evidence against the tenant.
+    */
+    expect(CONTROLLER).toContain("this.compliance.payloadForDocument(");
+    const route = CONTROLLER.slice(CONTROLLER.indexOf("async submitDocument"));
+    expect(route.slice(0, 900)).not.toContain("@Body");
+  });
+
+  it("refuses honestly when no transport is configured", () => {
+    const route = CONTROLLER.slice(CONTROLLER.indexOf("async submitDocument"));
+    expect(route).toContain("No e-invoice transport is configured");
+    expect(route).toContain("nothing was sent");
+  });
+
+  it("is not wired into posting", () => {
+    /*
+      Enforcement is `off` so that a founder does not lose the ability to
+      invoice when a government portal is down, and reaching an external
+      authority inside the posting transaction would hold a pooled connection
+      for the length of that outage. Filing is a separate act with its own
+      request, and the AR posting path must not acquire a call to it.
+    */
+    const ar = readFileSync(join(__dirname, "../../ar/ar-documents.service.ts"), "utf8");
+    expect(ar).toContain("recordForDocument");
+    expect(ar).not.toContain("submitToTransport");
+  });
+});
+
 describe("the rules that replace ACC-12's blanket ban", () => {
   const TRANSPORT_DIR = __dirname;
   const adapters = readdirSync(TRANSPORT_DIR).filter(
