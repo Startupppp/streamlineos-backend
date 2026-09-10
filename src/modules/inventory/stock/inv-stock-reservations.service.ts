@@ -20,6 +20,12 @@ import { StockEngineService } from "../stock-engine/stock-engine.service";
 import type { ListReservationsInput, CreateReservationInput, ReleaseReservationInput, OpeningStockInput } from "./dto/inv-stock.schemas";
 import { loadOrderableVariants, loadCorrectableVariants } from "../products/lib/orderable-variants";
 import { AccessService } from "../../access/access.service";
+import {
+  assertLotChoiceAllowed,
+  type LotChoiceOutcome,
+  type OverrideFacts,
+} from "./lib/lot-choice";
+export type { LotChoiceOutcome, OverrideFacts } from "./lib/lot-choice";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import {
@@ -37,31 +43,6 @@ import {
 import { clientBehindSource, resolveShelfLifeFloor } from "../settings/min-shelf-life";
 import { invAllocationOverrides } from "../../../db/schema";
 
-/**
- * D2 — what an override record has to say, decided by asking what a reviewer
- * needs six months later to answer "who shipped the short-dated stock, and why".
- *
- * Everything here is a snapshot rather than a join. The lot may have been
- * consumed and purged, and the settings certainly may have been edited — a row
- * that has to join `inv_settings` to explain itself explains itself differently
- * every time somebody changes a setting, which is the opposite of a trail.
- */
-interface OverrideFacts {
-  /** Which rule was set aside: the org's near-expiry block, or a customer floor. */
-  readonly rule: OverriddenRule;
-  readonly reason: string;
-  readonly lotId: number;
-  readonly lotNumber: string;
-  readonly lotExpiryDate: string;
-  readonly daysRemaining: number;
-  readonly nearExpiryPolicy: string;
-  readonly nearExpiryWindowDays: number;
-  readonly minShelfLifeDays: number;
-  /** Who receives it — null when the reservation names no customer document. */
-  readonly clientId: number | null;
-}
-
-type LotChoiceOutcome = { overridden: false } | { overridden: true; facts: OverrideFacts };
 
 @Injectable()
 export class InvStockReservationsService {
@@ -75,106 +56,6 @@ export class InvStockReservationsService {
     private readonly settingsService: InventorySettingsService,
     private readonly audit: InventoryAuditService,
   ) {}
-
-  /**
-   * D2 — the gate on choosing a lot the allocator would not have.
-   *
-   * Runs before the reservation is opened, and answers three ways:
-   *
-   *   * the lot is fine → nothing happens, and an `overrideReason` on a lot that
-   *     needed no override is refused rather than silently recorded, because a
-   *     row saying "overridden" about an ordinary allocation is a false trail
-   *     through the audit log;
-   *   * the lot is short-dated, or below the shelf life this customer contracted
-   *     for → needs `inventory:allocation:override` **and** a reason, and the
-   *     pair is recorded;
-   *   * the lot is expired, recalled, blocked or consumed → refused outright.
-   *     No permission reaches it: making those overridable would turn
-   *     `expiryReservationPolicy: BLOCK` into a suggestion.
-   */
-  private async assertLotChoiceAllowed(
-    orgId: string,
-    userId: string,
-    input: CreateReservationInput,
-  ): Promise<LotChoiceOutcome> {
-    if (input.lotId === undefined) {
-      if (input.overrideReason !== undefined) {
-        throw new BadRequestException(
-          "An override reason was given for a reservation that names no lot — there is nothing to override.",
-        );
-      }
-      return { overridden: false };
-    }
-
-    const settings = await this.settingsService.get(orgId);
-    const lot = await this.db.query.invLots.findFirst({
-      where: and(eq(invLots.orgId, orgId), eq(invLots.id, input.lotId)),
-      columns: { id: true, lotNumber: true, expiryDate: true, status: true },
-    });
-    // A lot id from another tenant resolves to nothing here, and 404 is the
-    // answer §4 requires — a 403 would confirm the row exists.
-    if (!lot) throw new NotFoundException("Lot not found");
-
-    // D2. The same floor `autoReserve` applied, resolved through the same helper
-    // so a hand-raised reservation and an automatic one cannot hold two opinions
-    // about what this customer agreed to accept.
-    const clientId = await clientBehindSource(this.db, orgId, input.sourceType, input.sourceId);
-    const floor = await resolveShelfLifeFloor(this.db, orgId, clientId);
-
-    const lotById: ReadonlyMap<number, LotFacts> = new Map([[lot.id, lot]]);
-    const policy: EligibilityPolicy = {
-      expiryPolicy: settings.expiryReservationPolicy,
-      nearExpiryPolicy: settings.nearExpiryPolicy,
-      nearExpiryWindowDays: settings.nearExpiryWindowDays,
-      minShelfLifeDays: floor.days,
-    };
-    const today = todayIso();
-    const verdict = verdictFor(lot.id, lotById, policy, today);
-
-    if (verdict.kind === "ELIGIBLE") {
-      if (input.overrideReason !== undefined) {
-        throw new BadRequestException(
-          "That lot needs no override — the allocator would have chosen it.",
-        );
-      }
-      return { overridden: false };
-    }
-
-    if (!overridable(verdict)) throw new BadRequestException(refusalMessage(verdict));
-
-    if (!input.overrideReason) {
-      throw new BadRequestException(
-        `${refusalMessage(verdict)} Supply overrideReason to take it deliberately.`,
-      );
-    }
-
-    await assertMayOverrideAllocation(this.access, orgId, userId);
-
-    // Both are guaranteed by the branches above — `overridable` is only ever
-    // true for a dated lot under one of the two judgement-call rules — but the
-    // types do not know that, and a cast here would be a cast in the one place
-    // the trail is written.
-    const rule = overriddenRule(verdict);
-    if (rule === null || lot.expiryDate === null) {
-      throw new BadRequestException(refusalMessage(verdict));
-    }
-
-    return {
-      overridden: true,
-      facts: {
-        rule,
-        reason: input.overrideReason,
-        lotId: lot.id,
-        lotNumber: lot.lotNumber,
-        lotExpiryDate: lot.expiryDate,
-        daysRemaining: daysRemaining(lot.expiryDate, today),
-        nearExpiryPolicy: settings.nearExpiryPolicy,
-        nearExpiryWindowDays: settings.nearExpiryWindowDays,
-        minShelfLifeDays: floor.days,
-        clientId,
-      },
-    };
-  }
 
   /**
    * Which reservations this caller may see — the list's rule, now the only copy.
@@ -316,7 +197,7 @@ export class InvStockReservationsService {
     // D2. Before the claim, so a request that is going to be refused never
     // consumes its idempotency key — a caller fixing a missing reason and
     // retrying with the same key must not replay a stored refusal.
-    const choice = await this.assertLotChoiceAllowed(orgId, userId, input);
+    const choice = await assertLotChoiceAllowed(this.db, this.settingsService, this.access, orgId, userId, input);
 
     const reservationId = await this.db.transaction((tx) =>
       runIdempotent(
