@@ -56,6 +56,40 @@ function checkPermission(
 }
 
 /**
+ * The shape `executeTool` casts each injected service to so it can probe it for
+ * a method name.
+ *
+ * It was `Record<string, Function>`, which `no-unsafe-function-type` bans and
+ * should: `Function` carries no call signature at all, so every probed call
+ * took `any[]` and handed back `any`. Nothing below was checked. A real
+ * signature restores the only two things the probe can honestly promise — the
+ * value is callable, and what comes back is `unknown` and must be narrowed
+ * before it is used. It is also what removes the `as any` that sat on the
+ * report query: that cast existed only to satisfy a parameter `Function` had
+ * already erased.
+ *
+ * **What this does NOT fix, recorded here rather than in a commit message so
+ * the next reader of the switch sees it.** `list`, `findOne` and `preview`
+ * exist on none of the four services — `PartyService` has
+ * `listParties`/`getParty`, `DealsService` `listDeals`/`getDeal`,
+ * `ActivitiesService` `timeline`, `ReportingService` `runAdHoc` — so every
+ * first branch below is dead and only the fallback beneath it ever runs. The
+ * fallbacks are unchecked too: `getDeal` really takes `(orgId, dealId)`, and
+ * the call below passes `(orgId, userId, dealId, "global")`, so the deal id it
+ * reads is the caller's user id. `crm-mcp.service.spec.ts` builds its doubles
+ * from the dead names, which is why the suite is green over a branch
+ * production never enters — a double shaped from the caller can only confirm
+ * the caller.
+ *
+ * The fix is to call the injected services directly with their real types,
+ * which turns each of the above into a compile error. That was done on
+ * `crm/phase-2-3-consolidated` in `f6d572780`, along with the spec rewrite it
+ * requires; it is a behaviour change across six tools and does not belong in a
+ * lint pass on this branch.
+ */
+type ProbedService = Record<string, (...args: unknown[]) => unknown>;
+
+/**
  * CRM MCP Server.
  *
  * Exposes CRM capabilities as MCP tools calling the same Nest services as HTTP,
@@ -197,10 +231,10 @@ export class CrmMcpService {
     const args = call.arguments || {};
     let result: unknown;
 
-    const anyPartyService = this.partyService as unknown as Record<string, Function>;
-    const anyDealsService = this.dealsService as unknown as Record<string, Function>;
-    const anyActivitiesService = this.activitiesService as unknown as Record<string, Function>;
-    const anyReportingService = this.reportingService as unknown as Record<string, Function>;
+    const probedPartyService = this.partyService as unknown as ProbedService;
+    const probedDealsService = this.dealsService as unknown as ProbedService;
+    const probedActivitiesService = this.activitiesService as unknown as ProbedService;
+    const probedReportingService = this.reportingService as unknown as ProbedService;
 
     switch (tool.name) {
       case "crm_list_parties": {
@@ -209,10 +243,10 @@ export class CrmMcpService {
           limit: Math.min(typeof args.limit === "number" ? args.limit : 20, 100),
           query: typeof args.search === "string" ? args.search : undefined,
         };
-        if (typeof anyPartyService.list === "function") {
-          result = await anyPartyService.list(context.orgId, query);
-        } else if (typeof anyPartyService.listParties === "function") {
-          result = await anyPartyService.listParties(context.orgId, query);
+        if (typeof probedPartyService.list === "function") {
+          result = await probedPartyService.list(context.orgId, query);
+        } else if (typeof probedPartyService.listParties === "function") {
+          result = await probedPartyService.listParties(context.orgId, query);
         }
         break;
       }
@@ -220,10 +254,10 @@ export class CrmMcpService {
       case "crm_get_party": {
         const partyId = String(args.partyId);
         if (!partyId) throw new BadRequestException("partyId is required");
-        if (typeof anyPartyService.findOne === "function") {
-          result = await anyPartyService.findOne(context.orgId, partyId);
-        } else if (typeof anyPartyService.getParty === "function") {
-          result = await anyPartyService.getParty(context.orgId, partyId);
+        if (typeof probedPartyService.findOne === "function") {
+          result = await probedPartyService.findOne(context.orgId, partyId);
+        } else if (typeof probedPartyService.getParty === "function") {
+          result = await probedPartyService.getParty(context.orgId, partyId);
         }
         break;
       }
@@ -235,10 +269,10 @@ export class CrmMcpService {
           pipelineId: typeof args.pipelineId === "number" ? args.pipelineId : undefined,
           stageId: typeof args.stageId === "number" ? args.stageId : undefined,
         };
-        if (typeof anyDealsService.list === "function") {
-          result = await anyDealsService.list(context.orgId, query);
-        } else if (typeof anyDealsService.listDeals === "function") {
-          result = await anyDealsService.listDeals(context.orgId, context.userId, query, "global");
+        if (typeof probedDealsService.list === "function") {
+          result = await probedDealsService.list(context.orgId, query);
+        } else if (typeof probedDealsService.listDeals === "function") {
+          result = await probedDealsService.listDeals(context.orgId, context.userId, query, "global");
         }
         break;
       }
@@ -246,10 +280,10 @@ export class CrmMcpService {
       case "crm_get_deal": {
         const dealId = Number(args.dealId);
         if (Number.isNaN(dealId)) throw new BadRequestException("Valid dealId is required");
-        if (typeof anyDealsService.findOne === "function") {
-          result = await anyDealsService.findOne(context.orgId, dealId);
-        } else if (typeof anyDealsService.getDeal === "function") {
-          result = await anyDealsService.getDeal(context.orgId, context.userId, dealId, "global");
+        if (typeof probedDealsService.findOne === "function") {
+          result = await probedDealsService.findOne(context.orgId, dealId);
+        } else if (typeof probedDealsService.getDeal === "function") {
+          result = await probedDealsService.getDeal(context.orgId, context.userId, dealId, "global");
         }
         break;
       }
@@ -260,27 +294,27 @@ export class CrmMcpService {
           limit: Math.min(typeof args.limit === "number" ? args.limit : 20, 100),
           dealId: typeof args.dealId === "number" ? args.dealId : undefined,
         };
-        if (typeof anyActivitiesService.list === "function") {
-          result = await anyActivitiesService.list(context.orgId, query);
-        } else if (typeof anyActivitiesService.timeline === "function") {
-          result = await anyActivitiesService.timeline(context.orgId, query);
+        if (typeof probedActivitiesService.list === "function") {
+          result = await probedActivitiesService.list(context.orgId, query);
+        } else if (typeof probedActivitiesService.timeline === "function") {
+          result = await probedActivitiesService.timeline(context.orgId, query);
         }
         break;
       }
 
       case "crm_run_report": {
         const source = String(args.source || "deals");
-        if (typeof anyReportingService.preview === "function") {
-          result = await anyReportingService.preview(context.orgId, context.userId, {
+        if (typeof probedReportingService.preview === "function") {
+          result = await probedReportingService.preview(context.orgId, context.userId, {
             source,
             fields: ["id", "name", "value"],
             limit: 50,
           });
-        } else if (typeof anyReportingService.runAdHoc === "function") {
-          result = await anyReportingService.runAdHoc(context.orgId, context.userId, {
+        } else if (typeof probedReportingService.runAdHoc === "function") {
+          result = await probedReportingService.runAdHoc(context.orgId, context.userId, {
             source,
             fields: ["id", "name", "value"],
-          } as any);
+          });
         }
         break;
       }
