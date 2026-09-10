@@ -65,6 +65,7 @@ function makeMockDb(): Db {
 
 describe("DealsService – blueprint transition enforcement", () => {
   let service: DealsService;
+  let mockWebhooksDispatch: { dispatch: jest.Mock };
   let mockDb: Db;
   let mockBlueprints: jest.Mocked<Pick<CrmBlueprintsService, "assertTransitionAllowed">>;
   let mockCrmMetadata: jest.Mocked<Pick<CrmMetadataService, "getAggregate">>;
@@ -90,13 +91,15 @@ describe("DealsService – blueprint transition enforcement", () => {
       }),
     };
 
+    mockWebhooksDispatch = { dispatch: jest.fn().mockResolvedValue(undefined) };
+
     service = new DealsService(
       mockDb,
       { cached: jest.fn().mockImplementation((_k: unknown, fn: () => unknown) => fn()), invalidate: jest.fn(), invalidatePattern: jest.fn().mockResolvedValue(undefined), invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as unknown as CacheService,
       { log: jest.fn() } as unknown as AuditService,
       { emit: jest.fn().mockResolvedValue(undefined) } as unknown as NotificationDispatchService,
       { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) } as unknown as AutomationService,
-      { dispatch: jest.fn().mockResolvedValue(undefined) } as unknown as WebhooksDispatchService,
+      mockWebhooksDispatch as unknown as WebhooksDispatchService,
       mockBlueprints as unknown as CrmBlueprintsService,
       mockCrmMetadata as unknown as CrmMetadataService,
       { evaluate: jest.fn().mockResolvedValue({ valid: true, errors: [] }) } as unknown as import("../crm/metadata/crm-validation.service").CrmValidationService,
@@ -256,5 +259,79 @@ describe("DealsService – blueprint transition enforcement", () => {
     );
 
     await expect(service.updateDeal("org1", "user1", 1, { stage: "WON" })).rejects.toThrow(BadRequestException);
+  });
+  /**
+   * `deal.won` leaving the process, which nothing asserted.
+   *
+   * `deals.service.ts:415` has dispatched `deal.won` since outbound webhooks
+   * shipped, and the seeded webhook e2e reaches `WebhooksDispatchService.dispatch`
+   * off the Nest container rather than through a stage change -- deliberately, so
+   * it can test the post-transaction condition, but it means the PRODUCER wiring
+   * was covered by nothing. Delete line 415 and the whole suite stayed green.
+   *
+   * That is the exact half of CRM-P0-04/05 the handoff calls out as the original
+   * bug: "deal.won has been wired the whole time and never left the process."
+   * A dispatcher proven to sign and log correctly is worth nothing if the event
+   * never reaches it.
+   */
+  describe("a deal reaching a terminal stage tells the outside world", () => {
+    it("dispatches deal.won with the deal's identity and value", async () => {
+      (mockDb.query.deals.findFirst as jest.Mock).mockResolvedValueOnce({
+        id: 1,
+        orgId: "org1",
+        stage: "PROPOSAL",
+        pipelineId: null,
+        version: null,
+        name: "Test Deal",
+        assignedToId: null,
+      });
+
+      await service.updateDeal("org1", "user1", 1, { stage: "WON" });
+
+      expect(mockWebhooksDispatch.dispatch).toHaveBeenCalledWith(
+        "org1",
+        "deal.won",
+        expect.objectContaining({ id: 1 }),
+      );
+    });
+
+    it("dispatches deal.lost, not deal.won, when the deal is lost", async () => {
+      (mockDb.query.deals.findFirst as jest.Mock).mockResolvedValueOnce({
+        id: 1,
+        orgId: "org1",
+        stage: "PROPOSAL",
+        pipelineId: null,
+        version: null,
+        name: "Test Deal",
+        assignedToId: null,
+      });
+
+      await service.updateDeal("org1", "user1", 1, { stage: "LOST" });
+
+      const events = mockWebhooksDispatch.dispatch.mock.calls.map((call) => call[1]);
+      /*
+        Both halves. Asserting only that `deal.lost` fired would pass on an
+        implementation that fired both, and a subscriber told a deal was won AND
+        lost is worse off than one told nothing.
+      */
+      expect(events).toContain("deal.lost");
+      expect(events).not.toContain("deal.won");
+    });
+
+    it("dispatches nothing for a move between open stages", async () => {
+      (mockDb.query.deals.findFirst as jest.Mock).mockResolvedValueOnce({
+        id: 1,
+        orgId: "org1",
+        stage: "LEAD",
+        pipelineId: null,
+        version: null,
+        name: "Test Deal",
+        assignedToId: null,
+      });
+
+      await service.updateDeal("org1", "user1", 1, { stage: "PROPOSAL" });
+
+      expect(mockWebhooksDispatch.dispatch).not.toHaveBeenCalled();
+    });
   });
 });
