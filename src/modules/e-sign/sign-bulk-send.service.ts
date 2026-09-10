@@ -133,7 +133,42 @@ export class SignBulkSendService {
       return { job: updated, preview, dryRun: true };
     }
 
-    // Synchronous processing: acceptable for an admin-triggered, bounded-size (maxRows) job.
+    /*
+     * Synchronous, inside the request's transaction — and the bound this used to
+     * cite as reassurance does not say what it sounds like.
+     *
+     * The comment here read "acceptable for an admin-triggered, bounded-size
+     * (maxRows) job". There is no `maxRows` anywhere in this module; the real
+     * bound is `.max(5000)` on `createBulkSendJobSchema.rows`. Five thousand
+     * envelopes is not a small synchronous job.
+     *
+     * MEASURED, because the shape of the failure is not obvious:
+     *  - `TenantContextInterceptor` wraps the whole request in ONE transaction
+     *    and this route does not carry `@NoTenantTransaction()` (17 others do).
+     *  - `dispatch.send` opens `this.db.transaction(...)`, which nested inside
+     *    that request transaction is a SAVEPOINT, not an independent commit. So
+     *    nothing here commits until the request itself commits, at the end.
+     *  - Each row still sends its invitation email over the network, after its
+     *    savepoint but inside the outer transaction, so the session sits
+     *    idle-in-transaction for the duration of every send.
+     *  - `idle_in_transaction_session_timeout` defaults to 60s and
+     *    `statement_timeout` to 30s (`pool.config.ts`).
+     *
+     * The asymmetry is the bug: the emails are irreversible and the rows are
+     * not. One slow provider, one gateway timeout, or simply enough rows, and
+     * the transaction is torn down — rolling back every envelope row while the
+     * invitations already sent stay in their recipients' inboxes, each linking
+     * to an envelope that no longer exists. It also holds a pooled connection
+     * for the whole run, which backend §4 forbids for exactly this reason.
+     *
+     * NOT FIXED HERE, deliberately. The fix is per-row transaction boundaries
+     * (`@NoTenantTransaction()` plus `runInNewTenantTransaction` per row, since
+     * opting out drops the tenant context entirely and every query would be
+     * denied under RLS). That converts a bulk send from all-or-nothing to
+     * partial-success, which is a product decision about what an operator sees
+     * when row 3,000 fails — not a refactor to make quietly. Raised rather than
+     * guessed.
+     */
     await this.process(orgId, userId, job.id, input.templateId, signingRoles[0].roleName, mapped);
     const finalJob = await this.getJob(orgId, job.id);
     return { job: finalJob.job, dryRun: false };
