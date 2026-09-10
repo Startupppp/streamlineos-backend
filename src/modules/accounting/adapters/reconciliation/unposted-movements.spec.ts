@@ -1,4 +1,6 @@
 import { readFileSync } from "node:fs";
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { join } from "node:path";
 import { UnpostedMovementsService } from "./unposted-movements.service";
 import { unpostedMovementsQuerySchema } from "./reconciliation.controller";
@@ -203,6 +205,61 @@ describe("the query it accepts", () => {
     expect(
       unpostedMovementsQuerySchema.safeParse({ from: "2026-09-01", to: "2026-09-30" }).success,
     ).toBe(true);
+  });
+});
+
+describe("cross-tenant isolation of the raw query", () => {
+  /*
+    This service reaches the database through a raw `sql` template rather than
+    the query builder, so no `eq(table.orgId, orgId)` guards it and RLS is the
+    only other line of defence. RLS is real but is not the argument here: the
+    query joins `inv_shipments` on nothing but `s.id::text = p.source_id`, and
+    without its own `s.org_id` predicate another organisation's shipment could
+    mark THIS organisation's movement as posted — a reconciliation that
+    UNDER-reports, which is the one direction of error that makes it worse than
+    having none.
+
+    Asserted on the parameters the driver would actually receive, compiled
+    through the real dialect, so this also pins that the values are bound rather
+    than interpolated.
+  */
+  async function compiledQuery(orgId: string) {
+    let built: { sql: string; params: unknown[] } | null = null;
+    const db = {
+      execute: async (query: SQL) => {
+        built = new PgDialect().sqlToQuery(query);
+        return [];
+      },
+    } as never;
+    const books = { findDefault: async () => ({ id: "book-1" }) } as never;
+
+    await new UnpostedMovementsService(db, books).report(orgId, "2026-09-01", "2026-09-30");
+    if (built === null) throw new Error("the service never issued a query");
+    return built as { sql: string; params: unknown[] };
+  }
+
+  it("binds the caller's org to the movements, the journals and the shipment join", async () => {
+    const built = await compiledQuery("org-a");
+
+    /* Three, not one: dropping any of them opens a different-org read. */
+    expect(built.params.filter((v) => v === "org-a")).toHaveLength(3);
+    /* And the book, so another org's journals cannot satisfy this org's movements. */
+    expect(built.params).toContain("book-1");
+  });
+
+  it("binds every value rather than interpolating it into the statement", async () => {
+    /*
+      The window arrives from a query string. It is regex-validated at the
+      controller, but a raw template that inlined it would make that validation
+      the only thing standing between a URL and the ledger.
+    */
+    const built = await compiledQuery("org-a");
+
+    expect(built.sql).not.toContain("org-a");
+    expect(built.sql).not.toContain("2026-09-01");
+    expect(built.params).toEqual(
+      expect.arrayContaining(["org-a", "2026-09-01", "2026-09-30", "book-1"]),
+    );
   });
 });
 
