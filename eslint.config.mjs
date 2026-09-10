@@ -73,6 +73,44 @@ export default tseslint.config(
     },
   },
   {
+    /**
+     * Reads that genuinely precede the injector, or that no schema can express.
+     *
+     * Separate from the ratchet below on purpose. The ratchet is a list that is
+     * supposed to shrink; these are not migrations waiting to happen, and each
+     * one carries the reason it cannot be an `APP_CONFIG` injection. If a
+     * future change makes one of them injectable, it moves out — but it does
+     * not belong in a queue of things we simply have not got to yet.
+     */
+    files: [
+      // Default `= process.env` on the resolver that `admission.module.ts`'s
+      // `useFactory` calls to build the AdmissionService provider itself.
+      "src/common/admission/admission.config.ts",
+      // A module-level `const`, evaluated at import — before any injector exists.
+      "src/common/cell-resources/cell-id.ts",
+      // `LogErrorReporter` is hand-constructed in `main.ts`, outside the
+      // container, and must keep stamping the release when the container is
+      // the thing that failed.
+      "src/common/observability/release.ts",
+      // The three reads are the @Module factories that build the region
+      // providers, and `resolveRegionTopology` composes variable names at
+      // runtime (`REGION_<KEY>_APP_DATABASE_URL`) from `REGION_KEYS`, which a
+      // static AppConfig schema cannot enumerate.
+      "src/common/region/region.module.ts",
+      // `EnvKeyProvider` discovers key versions by scanning every env name for
+      // `ENCRYPTION_KEY_V<n>` — again a set no static schema can declare.
+      "src/common/security/envelope-encryption.ts",
+      // `forEachOrg` is a plain function with 75 call sites and no injector
+      // handle (CLAUDE.md §4 makes it *the* background-sweep iterator, and a
+      // sweep has no ambient context); `CELL_ID` names the process, not a
+      // tenant, and the read must stay call-time because it selects the
+      // enumeration database per sweep — `for-each-org.spec.ts` sets and
+      // deletes the variable between tests to prove exactly that.
+      "src/common/tenant/for-each-org.ts",
+    ],
+    rules: { "no-restricted-syntax": "off" },
+  },
+  {
     // Ratchet, not an exemption: these predate the config seam and shrink as they migrate.
     files: [
       "src/common/audit/internal-audit.controller.ts",
@@ -101,7 +139,10 @@ export default tseslint.config(
       "src/modules/hr/import/hr-export-jobs.service.ts",
       "src/modules/hr/interviews/hr-interview-scheduling.service.ts",
       "src/modules/hr/onboarding/core/crypto.helpers.ts",
-      "src/modules/hr/payroll/lib/encryption.ts",
+      // Was `src/modules/hr/payroll/lib/encryption.ts`. Payroll became its own
+      // top-level module (CLAUDE.md §1) and this entry was never moved with it,
+      // so the file has been failing the rule under its real path ever since.
+      "src/modules/payroll/hr-payroll/lib/encryption.ts",
       "src/modules/hr/recruitment/recruitment-jobs.service.ts",
       "src/modules/mfa/mfa.service.ts",
       "src/modules/organization/setup/org-setup.service.ts",
