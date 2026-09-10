@@ -203,8 +203,16 @@ describe("the commands that take a transfer id", () => {
     ).rejects.toBeInstanceOf(NotFoundException);
 
     expect(harness.transaction).not.toHaveBeenCalled();
-    // Exactly one read — the gate's own. The header was never fetched, so its
-    // status was never in a position to be described back.
+    /*
+     * The gate's OWN read, identified by its predicate rather than by counting.
+     * `dispatchTransfer` fetches the header first thing, so a bare count of one
+     * read passes against the ungated code too — measured, by removing the gate
+     * and watching this case survive. An empty scope compiles the source end to
+     * FALSE, which the header read has no reason to contain.
+     */
+    expect(sqlText(harness.wheres[0] as SQL)).toContain("FALSE");
+    // And exactly one: the header was never fetched, so its status was never in
+    // a position to be described back.
     expect(harness.wheres).toHaveLength(1);
   });
 

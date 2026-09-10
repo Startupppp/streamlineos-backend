@@ -183,6 +183,15 @@ describe("platform purchase orders, where neither half asked", () => {
       platformPoWith(harness, scope).detail(ORG, "picker-1", 42),
     ).rejects.toBeInstanceOf(NotFoundException);
 
+    /*
+     * The PREDICATE, not the throw. The harness answers with no row whichever
+     * way the service is written, so `rejects` alone passes against the unscoped
+     * code this was written to reject — measured, by removing the gate and
+     * watching this case survive.
+     */
+    expect(sqlText(harness.wheres[0] as SQL)).toContain(
+      '"inv_platform_purchase_orders"."warehouse_id" IN (',
+    );
     // One read. A gate that threw after loading the header would still satisfy
     // `rejects` while having put the header on the wire, and the lines after it.
     expect(harness.wheres).toHaveLength(1);
