@@ -438,6 +438,20 @@
         "direction": "floor"
       }
     },
+    "check-membership-writes.mjs": {
+      "MIN_FILES": {
+        "value": 500,
+        "direction": "floor",
+        "owner": "backend authorization owner",
+        "reason": "Register the existing anti-vacuity scan floor on 2026-09-10. The gate source and value are unchanged; fewer scanned files must never make membership-write ownership appear clean."
+      },
+      "MIN_OWNER_WRITES": {
+        "value": 8,
+        "direction": "floor",
+        "owner": "backend authorization owner",
+        "reason": "Register the existing minimum owner-write census on 2026-09-10. This is a detector coverage floor, not a permitted-violation budget; the source threshold and zero outside-owner policy are unchanged."
+      }
+    },
     "check-module-di.mjs": {
       "MIN_MODULE_FILES": {
         "value": 100,
