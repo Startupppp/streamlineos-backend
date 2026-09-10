@@ -3011,6 +3011,13 @@
       "when": 1787941808254,
       "tag": "0669_crm_deal_competitor_suggestions",
       "breakpoints": true
+    },
+    {
+      "idx": 430,
+      "version": "7",
+      "when": 1787941928254,
+      "tag": "0670_crm_contacts_view_not_scopable",
+      "breakpoints": true
     }
   ]
 }
