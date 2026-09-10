@@ -214,7 +214,19 @@ export class SoLifecycleService {
           {
             sourceType: "sales_invoice",
             sourceId: String(created.id),
-            purpose: "issue",
+            /*
+              `post`, matching `invoices-posting.service.ts`, and not `issue`.
+              Both write into the same `invoices` table and the same serial id
+              space, so two purposes meant two idempotency keys for one
+              document — and `invoices-update.service.ts` posts whenever a
+              status moves TO `ISSUED` from anything else. An invoice this path
+              created (already `ISSUED`) could be patched to `VOIDED` and back,
+              and the second journal would go through: AR control and sales
+              revenue counted twice, with no error anywhere. One purpose makes
+              the idempotency key do the deduplication it exists for. See
+              `docs/adr-legacy-invoices-vs-ar.md`.
+            */
+            purpose: "post",
             journalDate: today,
             memo: `Invoice: ${invoiceNumber}`,
             lines: [

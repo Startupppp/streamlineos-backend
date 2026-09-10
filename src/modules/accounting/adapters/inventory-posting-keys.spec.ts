@@ -80,7 +80,13 @@ const POSTS: Post[] = [
     file: "inventory/sales-orders/so-lifecycle.service.ts",
     call: "this.posting.submit(",
     sourceType: "sales_invoice",
-    purpose: "issue",
+    /*
+      Shared with `modules/invoices`, deliberately. Both write into the same
+      `invoices` table and the same serial id space; two purposes gave one
+      document two idempotency keys and made a double-post reachable through a
+      status round-trip. See `docs/adr-legacy-invoices-vs-ar.md`.
+    */
+    purpose: "post",
     sourceId: "created.id",
     wrongIds: ["soId", "so.id"],
   },
@@ -110,6 +116,60 @@ describe.each(POSTS)("$file", ({ file, call, sourceType, purpose, sourceId, wron
     */
     expect(source).not.toContain("LedgerService");
     expect(source).not.toContain("glJournal");
+  });
+});
+
+describe("every writer into the legacy invoices table shares one key", () => {
+  /*
+    ACC-18. `modules/invoices` and `inventory/sales-orders/so-lifecycle` both
+    insert into the same `invoices` table and the same serial id space. They
+    posted under different purposes — `post` and `issue` — so one document had
+    two possible idempotency keys and the key could not deduplicate between
+    them.
+
+    It was reachable: `invoices-update.service.ts` posts whenever a status
+    moves to ISSUED from anything else, and an invoice the sales-order path
+    created is born ISSUED. A PATCH to VOIDED and back satisfies that
+    condition, posts under the other key, and the ledger accepts it as a
+    different document — AR control and sales revenue counted twice, with no
+    error anywhere.
+
+    See `docs/adr-legacy-invoices-vs-ar.md`.
+  */
+  const LEGACY_INVOICE_WRITERS = [
+    "inventory/sales-orders/so-lifecycle.service.ts",
+    "invoices/invoices-posting.service.ts",
+  ];
+
+  it("uses exactly one purpose across every writer", () => {
+    const purposes = new Set<string>();
+    for (const file of LEGACY_INVOICE_WRITERS) {
+      const source = readFileSync(join(MODULES, file), "utf8");
+      const at = source.indexOf('sourceType: "sales_invoice"');
+      expect(at).toBeGreaterThan(-1);
+      /*
+        A symmetric window, because `purpose` may sit either side of
+        `sourceType` and one of these call sites now carries a long comment
+        between them. Narrower and this passes by finding nothing.
+      */
+      const nearby = source.slice(Math.max(0, at - 1200), at + 2400);
+      const purpose = /purpose:\s*"([a-z_]+)"/.exec(nearby)?.[1];
+      expect(purpose).toBeDefined();
+      purposes.add(purpose!);
+    }
+
+    /* Anti-vacuity: both files were read, and both named a purpose. */
+    expect(LEGACY_INVOICE_WRITERS).toHaveLength(2);
+    expect([...purposes]).toEqual(["post"]);
+  });
+
+  it("keeps the rule written down where the next writer will look", () => {
+    const adr = readFileSync(
+      join(__dirname, "../../../..", "docs/adr-legacy-invoices-vs-ar.md"),
+      "utf8",
+    );
+    expect(adr).toContain("sales_invoice:{invoices.id}:post");
+    expect(adr).toContain("One document, one key.");
   });
 });
 
