@@ -2,6 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
+import { MOVEMENT_GL_TREATMENT, type InvTxnType } from "../stock-movement-treatment";
 import { BooksService } from "../../kernel/books.service";
 
 /**
@@ -19,13 +20,44 @@ import { BooksService } from "../../kernel/books.service";
  * the movement's reference is the SALES ORDER — those have to be joined through
  * `inv_shipments`, and the join is why the report carries a caveat.
  */
-const POSTING_REFERENCE_TYPES = ["inv_grn", "inv_sales_order"] as const;
+/**
+ * Which document kind each reference type posts under, so a movement can be
+ * matched to its own journal.
+ *
+ * Matching on `source_id` alone was enough while only receipts and shipments
+ * posted. It is not any more: ACC-21 gave seven document kinds a posting path
+ * and their ids come from seven different tables, so adjustment 5 and cycle
+ * count 5 both answer to `source_id = '5'`. The idempotency key carries the
+ * purpose — `stock_move:{id}:{kind}` — and is unique per book, so matching on
+ * it is exact.
+ */
+const POSTING_PURPOSE_BY_REFERENCE: Readonly<Record<string, string>> = {
+  inv_grn: "receive",
+  inv_adjustment: "adjustment",
+  inv_cycle_count: "cycle_count",
+  inv_physical_audit: "physical_audit",
+  INSPECTION_DISPOSE: "quality_inspection",
+  inv_customer_return: "customer_return",
+  inv_vendor_return: "vendor_return",
+  inv_transfer: "transfer",
+};
+
+/** Posts through the shipment rather than its own id; joined separately. */
+const SHIPMENT_REFERENCE = "inv_sales_order";
 
 export type UnpostedReason =
   /** No bridge call site posts for this kind of movement at all. */
   | "no_posting_path"
   /** A kind that does post, where the journal is missing. */
-  | "post_missing";
+  | "post_missing"
+  /**
+   * A movement that is deliberately not posted, per the treatment map: a
+   * quarantine, a reservation, an opening-stock import. Reported so the number
+   * can be seen and dismissed, never counted as a gap — a report that called
+   * these a hole would cry wolf, and the next real gap would be ignored with
+   * them.
+   */
+  | "not_applicable";
 
 export interface UnpostedMovement {
   transactionId: number;
@@ -115,7 +147,17 @@ export class UnpostedMovementsService {
           t.transaction_type,
           t.reference_type,
           t.reference_id,
-          t.total_cost
+          t.total_cost,
+          CASE t.reference_type
+            ${sql.join(
+              Object.entries(POSTING_PURPOSE_BY_REFERENCE).map(
+                ([reference, purpose]) =>
+                  sql`WHEN ${reference} THEN 'stock_move:' || t.reference_id || ':' || ${purpose}`,
+              ),
+              sql` `,
+            )}
+            ELSE NULL
+          END AS expected_key
         FROM inv_stock_transactions t
         WHERE t.org_id = ${orgId}
           AND t.posting_date >= ${from}
@@ -124,7 +166,7 @@ export class UnpostedMovementsService {
           AND t.total_cost <> 0
       ),
       posted AS (
-        SELECT j.source_id
+        SELECT j.source_id, j.idempotency_key
         FROM gl_journals j
         WHERE j.org_id = ${orgId}
           AND j.book_id = ${book.id}
@@ -138,15 +180,16 @@ export class UnpostedMovementsService {
         m.reference_type,
         m.reference_id,
         m.total_cost,
+        m.expected_key,
         CASE
-          WHEN m.reference_type = 'inv_grn' THEN EXISTS (
-            SELECT 1 FROM posted p WHERE p.source_id = m.reference_id
-          )
-          WHEN m.reference_type = 'inv_sales_order' THEN EXISTS (
+          WHEN m.reference_type = ${SHIPMENT_REFERENCE} THEN EXISTS (
             SELECT 1
             FROM posted p
             JOIN inv_shipments s ON s.id::text = p.source_id
             WHERE s.org_id = ${orgId} AND s.so_id::text = m.reference_id
+          )
+          WHEN m.expected_key IS NOT NULL THEN EXISTS (
+            SELECT 1 FROM posted p WHERE p.idempotency_key = m.expected_key
           )
           ELSE false
         END AS has_journal
@@ -159,15 +202,20 @@ export class UnpostedMovementsService {
       reference_type: string | null;
       reference_id: string | null;
       total_cost: string;
+      expected_key: string | null;
       has_journal: boolean;
     }>;
 
     const unposted: UnpostedMovement[] = [];
     for (const row of rows) {
       if (row.has_journal) continue;
-      const posts =
-        row.reference_type !== null &&
-        (POSTING_REFERENCE_TYPES as readonly string[]).includes(row.reference_type);
+      const treatment = MOVEMENT_GL_TREATMENT[row.transaction_type as InvTxnType];
+      const reason: UnpostedReason =
+        treatment && treatment.kind === "none"
+          ? "not_applicable"
+          : row.expected_key !== null || row.reference_type === SHIPMENT_REFERENCE
+            ? "post_missing"
+            : "no_posting_path";
       unposted.push({
         transactionId: row.id,
         postingDate: row.posting_date,
@@ -176,16 +224,26 @@ export class UnpostedMovementsService {
         referenceId: row.reference_id,
         // Stored as a decimal string; the ledger counts in minor units.
         valueMinor: Math.round(Math.abs(Number(row.total_cost)) * 100),
-        reason: posts ? "post_missing" : "no_posting_path",
+        reason,
       });
     }
+
+    const gap = unposted.filter((m) => m.reason !== "not_applicable");
 
     return {
       enabled: true,
       from,
       to,
-      movements: unposted.length,
-      valueMinor: unposted.reduce((a, m) => a + m.valueMinor, 0),
+      /*
+        The headline counts the GAP, not every movement without a journal.
+        Quarantines and opening-stock imports are deliberately unposted, and
+        folding them into the total would report a permanent, growing number
+        that no one can ever drive to zero — which is how a report stops being
+        read. They are still in `byReason` under `not_applicable`, so the
+        decision is visible rather than hidden.
+      */
+      movements: gap.length,
+      valueMinor: gap.reduce((a, m) => a + m.valueMinor, 0),
       byReason: group(unposted, (m) => m.reason).map(([reason, rowsInGroup]) => ({
         reason: reason as UnpostedReason,
         movements: rowsInGroup.length,
@@ -229,10 +287,20 @@ export function notesFor(unposted: UnpostedMovement[]): string[] {
 
   if (unposted.some((m) => m.reason === "no_posting_path")) {
     notes.push(
-      "Movements marked no_posting_path are not a fault of this organisation's setup: " +
-        "adjustments, transfers, counts, quality write-offs and returns have no journal " +
-        "posting path in the product yet, so their value is missing from the inventory GL " +
-        "account by construction.",
+      "Movements marked no_posting_path reach the stock ledger through a document type " +
+        "accounting does not know how to post. Adjustments, transfers, counts, quality " +
+        "write-offs and both kinds of return all have a posting path now (ACC-21), so " +
+        "anything left under this reason is a document type added since — a gap to close, " +
+        "not a setting to change.",
+    );
+  }
+  if (unposted.some((m) => m.reason === "not_applicable")) {
+    notes.push(
+      "Movements marked not_applicable are deliberately unposted and are excluded from the " +
+        "totals above. A quality hold moves stock between buckets and a reservation promises " +
+        "it, and in both cases the business owns the goods throughout, so there is no journal " +
+        "to be missing; opening-stock imports are answered by the opening trial balance " +
+        "entered in accounting rather than here.",
     );
   }
   if (unposted.some((m) => m.reason === "post_missing")) {

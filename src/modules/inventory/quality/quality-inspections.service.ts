@@ -12,6 +12,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
+import { StockMovementBridgeService } from "../../accounting/adapters/stock-movement-bridge.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import type { StockMovement } from "../stock-engine/stock-engine.types";
@@ -30,6 +31,7 @@ export class InspectionsService {
     private readonly engine: StockEngineService,
     private readonly numSeq: NumberSequenceService,
     private readonly audit: InventoryAuditService,
+    private readonly glBridge: StockMovementBridgeService,
   ) {}
 
   async list(orgId: string, query: ListInspectionsQueryInput) {
@@ -218,7 +220,30 @@ export class InspectionsService {
       await this.engine.execute(orgId, userId, { idempotencyKey: `${idempotencyKey}:Q`, sourceType: "INSPECTION_DISPOSE", sourceId: String(id), movements: quarantineMoves });
     }
     if (scrapMoves.length > 0) {
-      await this.engine.execute(orgId, userId, { idempotencyKey: `${idempotencyKey}:S`, sourceType: "INSPECTION_DISPOSE", sourceId: String(id), movements: scrapMoves });
+      /*
+        ACC-21. Scrap is the only disposition here that reaches the ledger.
+        Quarantining moves stock between buckets and releasing moves it back,
+        and in both cases the business still owns the goods at the same cost —
+        so the balance sheet must not move. Destroying them is different, and
+        it lands in inventory_write_off rather than in the adjustment account,
+        because a write-off is a decision somebody made.
+      */
+      await this.db.transaction(async (tx) => {
+        const moved = await this.engine.executeInTx(tx, orgId, userId, { idempotencyKey: `${idempotencyKey}:S`, sourceType: "INSPECTION_DISPOSE", sourceId: String(id), movements: scrapMoves });
+
+        await this.glBridge.post(
+          orgId,
+          userId,
+          {
+            kind: "quality_inspection",
+            documentId: String(id),
+            transactionIds: moved.transactionIds,
+            journalDate: new Date().toISOString().slice(0, 10),
+            memo: `Quality inspection ${id}: scrapped`,
+          },
+          tx,
+        );
+      });
     }
     if (releaseMoves.length > 0) {
       await this.engine.execute(orgId, userId, { idempotencyKey: `${idempotencyKey}:R`, sourceType: "INSPECTION_DISPOSE", sourceId: String(id), movements: releaseMoves });

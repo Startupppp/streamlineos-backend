@@ -6,6 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
+import { StockMovementBridgeService } from "../../accounting/adapters/stock-movement-bridge.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import type { ListCountsInput, CreateAuditInput, UpdateCountLinesInput } from "./dto/inv-counts.schemas";
 
@@ -19,6 +20,7 @@ export class InvPhysicalAuditsService {
     private readonly cache: CacheService,
     private readonly engine: StockEngineService,
     private readonly numSeq: NumberSequenceService,
+    private readonly glBridge: StockMovementBridgeService,
   ) {}
 
   async listAudits(orgId: string, filters: ListCountsInput) {
@@ -177,19 +179,44 @@ export class InvPhysicalAuditsService {
         };
       });
 
-    if (movements.length > 0) {
-      await this.engine.execute(orgId, userId, {
-        idempotencyKey,
-        sourceType: "inv_physical_audit",
-        sourceId: auditId.toString(),
-        reason: `Physical audit ${audit.auditNumber}`,
-        movements,
-      });
-    }
+    /*
+      One transaction for the movements, the ledger and the status.
 
-    await this.db.update(invPhysicalAudits)
-      .set({ status: "POSTED", postedAt: new Date(), approvedBy: userId })
-      .where(and(eq(invPhysicalAudits.orgId, orgId), eq(invPhysicalAudits.id, auditId)));
+      It was three separate statements: `engine.execute` opened its own
+      transaction and the status update ran after it, so a crash in between
+      left stock moved with the audit still at REVIEW — the same defect
+      B1-05/B1-11 fixed for adjustments, still present here. ACC-21 needs the
+      GL post to ride the movement's transaction anyway (contract §3.3/§4), and
+      declaring it here rather than borrowing the request's is the point.
+    */
+    await this.db.transaction(async (tx) => {
+      if (movements.length > 0) {
+        const moved = await this.engine.executeInTx(tx, orgId, userId, {
+          idempotencyKey,
+          sourceType: "inv_physical_audit",
+          sourceId: auditId.toString(),
+          reason: `Physical audit ${audit.auditNumber}`,
+          movements,
+        });
+
+        await this.glBridge.post(
+          orgId,
+          userId,
+          {
+            kind: "physical_audit",
+            documentId: String(auditId),
+            transactionIds: moved.transactionIds,
+            journalDate: new Date().toISOString().slice(0, 10),
+            memo: `Physical audit ${audit.auditNumber}`,
+          },
+          tx,
+        );
+      }
+
+      await tx.update(invPhysicalAudits)
+        .set({ status: "POSTED", postedAt: new Date(), approvedBy: userId })
+        .where(and(eq(invPhysicalAudits.orgId, orgId), eq(invPhysicalAudits.id, auditId)));
+    });
 
     await this.cache.invalidate(PA_DETAIL_KEY(orgId, auditId));
     await this.cache.invalidateNamespace(PA_LIST_NAMESPACE(orgId));

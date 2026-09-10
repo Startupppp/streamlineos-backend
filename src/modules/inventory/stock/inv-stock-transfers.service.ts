@@ -8,6 +8,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
+import { StockMovementBridgeService } from "../../accounting/adapters/stock-movement-bridge.service";
 import { ReservationService } from "../stock-engine/reservation.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
@@ -24,6 +25,7 @@ export class InvStockTransfersService {
     private readonly reservationService: ReservationService,
     private readonly numSeq: NumberSequenceService,
     private readonly warehouseScope: WarehouseScopeService,
+    private readonly glBridge: StockMovementBridgeService,
   ) {}
 
   async listTransfers(orgId: string, filters: ListTransfersInput, scope: DataScope = "all", userId?: string) {
@@ -327,6 +329,46 @@ export class InvStockTransfersService {
         reason: `Complete transfer ${transfer.referenceNumber}`,
         movements,
       });
+
+      /*
+        ACC-21. A transfer reaches the ledger once, here, and over BOTH of its
+        legs — not once per leg.
+
+        Nothing posts at dispatch on purpose. The general ledger has a single
+        inventory account with no location dimension, so goods in transit are
+        still inventory and the balance sheet is already right while they move.
+        Posting the outbound leg on its own would credit inventory against the
+        adjustment account and park in-transit goods on the P&L until they
+        arrived.
+
+        Netting both legs here leaves exactly one number: the difference
+        between what was dispatched and what turned up. An intact transfer
+        nets to zero and writes no journal at all; a short one writes its
+        shrinkage. `completeTransfer` runs once per transfer — it sets
+        COMPLETED unconditionally and the guard above refuses a second call —
+        so this cannot post twice.
+      */
+      const documentRows = await tx
+        .select({ id: invStockTransactions.id })
+        .from(invStockTransactions)
+        .where(and(
+          eq(invStockTransactions.orgId, orgId),
+          eq(invStockTransactions.referenceType, "inv_transfer"),
+          eq(invStockTransactions.referenceId, transferId.toString()),
+        ));
+
+      await this.glBridge.post(
+        orgId,
+        userId,
+        {
+          kind: "transfer",
+          documentId: String(transferId),
+          transactionIds: documentRows.map((row) => row.id),
+          journalDate: new Date().toISOString().slice(0, 10),
+          memo: `Transfer ${transfer.referenceNumber}: shrinkage in transit`,
+        },
+        tx,
+      );
 
       for (const completion of data.lines) {
         const line = transfer.lines.find((l) => l.id === completion.transferLineId);

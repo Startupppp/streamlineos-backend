@@ -11,6 +11,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
+import { StockMovementBridgeService } from "../../accounting/adapters/stock-movement-bridge.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
@@ -28,6 +29,7 @@ export class InvStockAdjustmentsService {
     private readonly numSeq: NumberSequenceService,
     private readonly settings: InventorySettingsService,
     private readonly warehouseScope: WarehouseScopeService,
+    private readonly glBridge: StockMovementBridgeService,
   ) {}
 
   async listAdjustments(orgId: string, filters: ListAdjustmentsInput, scope: DataScope = "all", userId?: string) {
@@ -254,7 +256,7 @@ export class InvStockAdjustmentsService {
     idempotencyKey: string,
   ) {
     await this.db.transaction(async (tx: Tx) => {
-      await this.engine.executeInTx(tx, orgId, userId, {
+      const moved = await this.engine.executeInTx(tx, orgId, userId, {
         idempotencyKey,
         sourceType: "inv_adjustment",
         sourceId: adj.id.toString(),
@@ -266,6 +268,23 @@ export class InvStockAdjustmentsService {
           quantityDelta: line.quantityChange,
         })),
       });
+
+      // ACC-21. An adjustment changes what the business owns, so it belongs in
+      // the ledger — on this transaction, so a refusal takes the stock change
+      // with it rather than leaving the two disagreeing. The bridge reads the
+      // value from the rows just written; nothing here says what it is worth.
+      await this.glBridge.post(
+        orgId,
+        userId,
+        {
+          kind: "adjustment",
+          documentId: String(adj.id),
+          transactionIds: moved.transactionIds,
+          journalDate: new Date().toISOString().slice(0, 10),
+          memo: `Stock adjustment ${adj.referenceNumber}`,
+        },
+        tx,
+      );
 
       await tx.update(invStockAdjustments)
         .set({ status: "POSTED", postedBy: userId, postedAt: new Date() })

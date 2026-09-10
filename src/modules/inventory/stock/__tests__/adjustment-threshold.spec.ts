@@ -70,6 +70,14 @@ function makeCache() {
   };
 }
 
+/*
+  ACC-21 posts an adjustment to the ledger on the same transaction. These cases
+  are about the approval threshold, not about accounting, so the bridge is a
+  spy — but a real one rather than a cast, so a call with the wrong shape still
+  shows up here instead of being erased by `as never`.
+*/
+const glBridge = { post: jest.fn().mockResolvedValue(undefined) };
+
 function buildService(threshold: string | null, adjRowOverride?: Partial<{ id: number; status: string; referenceNumber: string; reason: string; notes: string | null; lines: unknown[] }>) {
   const db = makeDb(adjRowOverride);
   const engine = makeEngine();
@@ -83,6 +91,7 @@ function buildService(threshold: string | null, adjRowOverride?: Partial<{ id: n
     numSeq as never,
     settings as never,
     mockWarehouseScope as never,
+    glBridge as never,
   );
   return { svc, db, engine, settings };
 }
@@ -156,6 +165,7 @@ describe("InvStockAdjustmentsService — threshold routing", () => {
         makeNumSeq() as never,
         makeSettings(null) as never,
         mockWarehouseScope as never,
+    glBridge as never,
   );
       await expect(svc.getAdjustment("org1", 999)).rejects.toThrow(NotFoundException);
     });

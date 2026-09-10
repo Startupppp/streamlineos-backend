@@ -9,6 +9,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
+import { StockMovementBridgeService } from "../../accounting/adapters/stock-movement-bridge.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import type { ListReturnsInput, CreateVendorReturnInput, PostVendorReturnInput } from "./dto/inv-returns.schemas";
 
@@ -19,6 +20,7 @@ export class VendorReturnsService {
     private readonly cache: CacheService,
     private readonly engine: StockEngineService,
     private readonly numSeq: NumberSequenceService,
+    private readonly glBridge: StockMovementBridgeService,
   ) {}
 
   async list(orgId: string, filters: ListReturnsInput) {
@@ -160,13 +162,33 @@ export class VendorReturnsService {
     );
 
     await this.db.transaction(async (tx) => {
-      await this.engine.executeInTx(tx, orgId, userId, {
+      const moved = await this.engine.executeInTx(tx, orgId, userId, {
         idempotencyKey,
         sourceType: "inv_vendor_return",
         sourceId: String(returnId),
         reason: data.reason,
         movements: resolvedMovements,
       });
+
+      /*
+        ACC-21. Goods going back to a supplier reverse the receipt accrual, so
+        they land on GRNI — where the receipt did — and not on ap_control.
+        Debiting AP directly would leave GRNI still holding an accrual for
+        goods the business no longer has, which is §2.2's defect arrived at
+        from the other end.
+      */
+      await this.glBridge.post(
+        orgId,
+        userId,
+        {
+          kind: "vendor_return",
+          documentId: String(returnId),
+          transactionIds: moved.transactionIds,
+          journalDate: new Date().toISOString().slice(0, 10),
+          memo: `Vendor return ${returnId}`,
+        },
+        tx,
+      );
 
       if (serialLines.length > 0) {
         await tx.update(invSerialNumbers)

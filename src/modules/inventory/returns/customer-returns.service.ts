@@ -10,6 +10,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
+import { StockMovementBridgeService } from "../../accounting/adapters/stock-movement-bridge.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import type { ListReturnsInput, CreateCustomerReturnInput, PostCustomerReturnInput } from "./dto/inv-returns.schemas";
 
@@ -20,6 +21,7 @@ export class CustomerReturnsService {
     private readonly cache: CacheService,
     private readonly engine: StockEngineService,
     private readonly numSeq: NumberSequenceService,
+    private readonly glBridge: StockMovementBridgeService,
   ) {}
 
   async list(orgId: string, filters: ListReturnsInput) {
@@ -207,13 +209,33 @@ export class CustomerReturnsService {
 
     await this.db.transaction(async (tx) => {
       if (engineMovements.length > 0) {
-        await this.engine.executeInTx(tx, orgId, userId, {
+        const moved = await this.engine.executeInTx(tx, orgId, userId, {
           idempotencyKey,
           sourceType: "inv_customer_return",
           sourceId: String(returnId),
           reason: data.reason,
           movements: engineMovements,
         });
+
+        /*
+          ACC-21. Goods coming back into stock reverse the cost of the sale
+          that shipped them, so the counterpart is COGS rather than an
+          adjustment — that is what puts the margin back in the period the
+          return lands in. A line quarantined instead of restocked posts
+          nothing, because the business owned those goods either way.
+        */
+        await this.glBridge.post(
+          orgId,
+          userId,
+          {
+            kind: "customer_return",
+            documentId: String(returnId),
+            transactionIds: moved.transactionIds,
+            journalDate: new Date().toISOString().slice(0, 10),
+            memo: `Customer return ${returnId}`,
+          },
+          tx,
+        );
       }
 
       for (const [serialStatus, ids] of byStatus) {

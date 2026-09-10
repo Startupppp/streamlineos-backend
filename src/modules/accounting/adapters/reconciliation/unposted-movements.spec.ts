@@ -31,6 +31,8 @@ interface Row {
   reference_type: string | null;
   reference_id: string | null;
   total_cost: string;
+  /** `stock_move:{id}:{kind}` when the movement's document has a posting path. */
+  expected_key: string | null;
   has_journal: boolean;
 }
 
@@ -48,6 +50,8 @@ function row(over: Partial<Row>): Row {
     reference_type: "inv_adjustment",
     reference_id: "77",
     total_cost: "100.0000",
+    /* What the query computes: `stock_move:{id}:{kind}` for a kind that posts. */
+    expected_key: "stock_move:77:adjustment",
     has_journal: false,
     ...over,
   };
@@ -68,7 +72,14 @@ describe("stock that moved and never reached the ledger", () => {
     expect(report.notes[0]).toMatch(/no stock movement is expected to post/);
   });
 
-  it("counts a scrap that no call site would ever have posted", async () => {
+  it("counts a movement whose journal is simply missing", async () => {
+    /*
+      This case used to read "a scrap that no call site would ever have
+      posted", and ACC-21 made that premise false: an adjustment scrap now has
+      a posting path, so its absence from the ledger is a bug rather than a
+      hole in the product. The number is the same; what the report says about
+      it is not, and that distinction is the whole value of the reason field.
+    */
     const service = serviceReturning([
       row({ id: 1, total_cost: "100.0000" }),
       row({ id: 2, total_cost: "250.5000" }),
@@ -78,18 +89,40 @@ describe("stock that moved and never reached the ledger", () => {
     expect(report.movements).toBe(2);
     expect(report.valueMinor).toBe(35050);
     expect(report.byReason).toEqual([
-      { reason: "no_posting_path", movements: 2, valueMinor: 35050 },
+      { reason: "post_missing", movements: 2, valueMinor: 35050 },
     ]);
+  });
+
+  it("does not count a quarantine as a gap, and still shows it", async () => {
+    /*
+      The deliberate silences. A quality hold moves stock between buckets and
+      the business owns it throughout, so there is no journal to be missing.
+      Folding these into the headline would report a permanent, growing number
+      nobody can drive to zero — which is how a report stops being read — so
+      they are excluded from the total and kept in the breakdown.
+    */
+    const service = serviceReturning([
+      row({ id: 1, transaction_type: "QUARANTINE_IN", reference_type: "QUALITY_HOLD", expected_key: null, total_cost: "500.0000" }),
+      row({ id: 2, transaction_type: "ADJUSTMENT_OUT", total_cost: "100.0000" }),
+    ]);
+    const report = await service.report("org-1", "2026-09-01", "2026-09-30");
+
+    expect(report.movements).toBe(1);
+    expect(report.valueMinor).toBe(10000);
+
+    const reasons = Object.fromEntries(report.byReason.map((r) => [r.reason, r.movements]));
+    expect(reasons).toEqual({ not_applicable: 1, post_missing: 1 });
   });
 
   it("distinguishes a missing post from a missing posting path", async () => {
     const service = serviceReturning([
-      row({ id: 1, transaction_type: "SCRAP", reference_type: "inv_adjustment" }),
+      row({ id: 1, transaction_type: "SCRAP", reference_type: "inv_unknown_future", expected_key: null }),
       row({
         id: 2,
         transaction_type: "GRN",
         reference_type: "inv_grn",
         reference_id: "9",
+        expected_key: "stock_move:9:receive",
         total_cost: "500.0000",
       }),
     ]);
@@ -99,7 +132,7 @@ describe("stock that moved and never reached the ledger", () => {
     expect(reasons).toEqual({ no_posting_path: 1, post_missing: 1 });
 
     /* And each one is told what to do about it, in the payload. */
-    expect(report.notes.join(" ")).toMatch(/not a fault of this organisation's setup/);
+    expect(report.notes.join(" ")).toMatch(/a document type accounting does not know how to post/);
     expect(report.notes.join(" ")).toMatch(/bug to investigate rather than a setting/);
   });
 
@@ -144,7 +177,7 @@ describe("stock that moved and never reached the ledger", () => {
 
     expect(report.byTransactionType[0]).toEqual({
       transactionType: "CYCLE_COUNT_LOSS",
-      reason: "no_posting_path",
+      reason: "post_missing",
       movements: 2,
       valueMinor: 100000,
     });
