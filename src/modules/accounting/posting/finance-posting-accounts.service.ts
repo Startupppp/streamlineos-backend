@@ -24,6 +24,15 @@ export const PURPOSE_DEFAULT_CODE: Record<SystemAccountPurpose, string> = {
   ACCUM_DEPRECIATION: "1590",
   SALARY_EXPENSE: "5100",
   ASSET_DISPOSAL_GAIN_LOSS: "4900",
+  // INV-09. Kept identical to `PURPOSE_SUGGESTED_CODE`; the parity spec holds
+  // the two together, because a suggestion and a posting fallback that disagree
+  // would show an admin one account and post to another.
+  INVENTORY_ASSET: "1300",
+  INVENTORY_COGS: "5000",
+  INVENTORY_GRNI: "2000",
+  INVENTORY_LANDED_COST_CLEARING: "2000",
+  INVENTORY_WRITE_OFF: "5990",
+  INVENTORY_ADJUSTMENT_GAIN_LOSS: "4900",
 };
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];

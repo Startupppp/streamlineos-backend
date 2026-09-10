@@ -72,6 +72,16 @@ export const systemAccountPurposeSchema = z.enum([
   "ACCUM_DEPRECIATION",
   "SALARY_EXPENSE",
   "ASSET_DISPOSAL_GAIN_LOSS",
+  // INV-09 — inventory's six. `INVENTORY_GRNI` and
+  // `INVENTORY_LANDED_COST_CLEARING` default to the same account the receipt
+  // and the landed-cost voucher already credit (2000), so adding them changes
+  // no posting; what they add is the ability for a tenant to separate them.
+  "INVENTORY_ASSET",
+  "INVENTORY_COGS",
+  "INVENTORY_GRNI",
+  "INVENTORY_LANDED_COST_CLEARING",
+  "INVENTORY_WRITE_OFF",
+  "INVENTORY_ADJUSTMENT_GAIN_LOSS",
 ]);
 
 export type SystemAccountPurpose = z.infer<typeof systemAccountPurposeSchema>;

@@ -82,7 +82,7 @@ export interface PostVendorPaymentInput {
   createdBy: string;
 }
 
-interface SeedAccount {
+export interface SeedAccount {
   code: string;
   name: string;
   accountType: "ASSET" | "LIABILITY" | "EQUITY" | "INCOME" | "EXPENSE";
@@ -93,7 +93,13 @@ const INPUT_CGST = "1410";
 const INPUT_SGST = "1411";
 const INPUT_IGST = "1412";
 
-const DEFAULT_COA: ReadonlyArray<SeedAccount> = [
+/**
+ * Exported so `system-account-purposes.spec` can check that every code a system
+ * purpose points at is an account this seeder actually creates. A purpose whose
+ * default code is not in here resolves to "Seed COA first" at posting time —
+ * the failure it was supposed to prevent.
+ */
+export const DEFAULT_COA: ReadonlyArray<SeedAccount> = [
   { code: "1000", name: "Cash", accountType: "ASSET" },
   { code: "1100", name: "Bank Account", accountType: "ASSET" },
   { code: "1200", name: "Accounts Receivable", accountType: "ASSET" },

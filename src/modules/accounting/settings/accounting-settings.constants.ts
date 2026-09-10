@@ -24,6 +24,18 @@ export const PURPOSE_ALLOWED_TYPES: Record<SystemAccountPurpose, string[]> = {
   ACCUM_DEPRECIATION: ["ASSET"],
   SALARY_EXPENSE: ["EXPENSE"],
   ASSET_DISPOSAL_GAIN_LOSS: ["INCOME", "EXPENSE"],
+  // INV-09. GRNI and landed-cost clearing are liabilities: both sit on the
+  // credit side of a receipt, and both are what the tenant owes for goods or
+  // freight it has taken delivery of but not yet been billed for.
+  INVENTORY_ASSET: ["ASSET"],
+  INVENTORY_COGS: ["EXPENSE"],
+  INVENTORY_GRNI: ["LIABILITY"],
+  INVENTORY_LANDED_COST_CLEARING: ["LIABILITY"],
+  INVENTORY_WRITE_OFF: ["EXPENSE"],
+  // Either side, like FX_GAIN_LOSS and ASSET_DISPOSAL_GAIN_LOSS above: a count
+  // variance is a gain as often as a loss, and which one it is is not a
+  // property of the mapping.
+  INVENTORY_ADJUSTMENT_GAIN_LOSS: ["INCOME", "EXPENSE"],
 };
 
 export const PURPOSE_SUGGESTED_CODE: Record<SystemAccountPurpose, string> = {
@@ -45,6 +57,22 @@ export const PURPOSE_SUGGESTED_CODE: Record<SystemAccountPurpose, string> = {
   ACCUM_DEPRECIATION: "1590",
   SALARY_EXPENSE: "5100",
   ASSET_DISPOSAL_GAIN_LOSS: "4900",
+  // Every one of these is a code that already exists in `DEFAULT_COA`, and the
+  // first four are the codes inventory's journal builders already name as
+  // literals. None is invented: a suggestion pointing at an account the tenant
+  // does not have is just a blank suggestion, and a *default* pointing at one
+  // would fail the posting it was supposed to rescue.
+  INVENTORY_ASSET: "1300",
+  INVENTORY_COGS: "5000",
+  // 2000 rather than a dedicated GRNI account, because 2000 is what
+  // `receipt-journal.ts` credits on a goods receipt today. The mapping makes
+  // that visible and separable; it does not silently move it.
+  INVENTORY_GRNI: "2000",
+  // Likewise 2000 — see `PAYABLE_ACCOUNT` in `landed-cost-apply.service.ts` for
+  // why landed cost credits the payable and not a clearing account today.
+  INVENTORY_LANDED_COST_CLEARING: "2000",
+  INVENTORY_WRITE_OFF: "5990",
+  INVENTORY_ADJUSTMENT_GAIN_LOSS: "4900",
 };
 
 export const SEQUENCE_DEFAULTS: Record<string, { prefix: string; padding: number }> = {

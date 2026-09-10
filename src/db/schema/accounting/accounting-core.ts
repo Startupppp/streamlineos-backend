@@ -11,6 +11,12 @@ export const accSystemPurposeEnum = pgEnum("acc_system_purpose", [
   "RETAINED_EARNINGS", "OWNER_EQUITY", "PAYMENT_FEES", "REIMBURSEMENT_PAYABLE",
   "FX_GAIN_LOSS", "DEPRECIATION_EXPENSE", "ACCUM_DEPRECIATION",
   "SALARY_EXPENSE", "ASSET_DISPOSAL_GAIN_LOSS",
+  // INV-09 (migration 0914). Appended, because an enum label cannot be
+  // reordered and nothing sorts on this type. `system-account-purposes.spec`
+  // holds this list, the zod enum and the two code maps to the same set.
+  "INVENTORY_ASSET", "INVENTORY_COGS", "INVENTORY_GRNI",
+  "INVENTORY_LANDED_COST_CLEARING", "INVENTORY_WRITE_OFF",
+  "INVENTORY_ADJUSTMENT_GAIN_LOSS",
 ]);
 export const finRecurFrequencyEnum = pgEnum("fin_recur_frequency", ["DAILY", "WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"]);
 export const finApprovalRecordTypeEnum = pgEnum("fin_approval_record_type", [

@@ -6,16 +6,27 @@ import { accSystemAccountMap, ledgerAccounts } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { SETTINGS_CACHE_KEY, PURPOSE_ALLOWED_TYPES, PURPOSE_SUGGESTED_CODE } from "./accounting-settings.constants";
+import { systemAccountPurposeSchema } from "./dto/settings.schemas";
 import type { SystemAccountPurpose, UpsertSystemAccountInput } from "./dto/settings.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
-const ALL_PURPOSES: SystemAccountPurpose[] = [
-  "AR", "AP", "BANK_CLEARING", "SALES_INCOME", "DISCOUNT_GIVEN",
-  "TAX_PAYABLE", "TAX_RECEIVABLE", "PAYROLL_PAYABLE", "EXPENSE_CLEARING",
-  "RETAINED_EARNINGS", "OWNER_EQUITY", "PAYMENT_FEES", "REIMBURSEMENT_PAYABLE",
-  "FX_GAIN_LOSS", "DEPRECIATION_EXPENSE", "ACCUM_DEPRECIATION",
-  "SALARY_EXPENSE", "ASSET_DISPOSAL_GAIN_LOSS",
-];
+/**
+ * Every purpose the settings screen offers, taken from the schema rather than
+ * retyped beside it.
+ *
+ * This was a hand-kept copy of `systemAccountPurposeSchema`'s list, and it is
+ * the one copy of the four that the compiler could not check.
+ * `PURPOSE_ALLOWED_TYPES` and `PURPOSE_SUGGESTED_CODE` are
+ * `Record<SystemAccountPurpose, …>`, so a new purpose breaks the build until
+ * they are updated; the pgEnum is held to the schema by
+ * `system-account-purposes.spec`. A plain array is neither. Omitting a purpose
+ * here compiled cleanly and simply removed it from the admin's list — the
+ * mapping would still be honoured everywhere it was read, so the account would
+ * go on working with no way left to change it.
+ *
+ * `.options` is the schema's own tuple, so the list cannot fall behind again.
+ */
+const ALL_PURPOSES: readonly SystemAccountPurpose[] = systemAccountPurposeSchema.options;
 
 @Injectable()
 export class SystemAccountsService {
