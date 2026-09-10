@@ -2,8 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { InvPharmacyService } from "../products/inv-pharmacy.service";
 import QRCode from "qrcode";
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull, sql } from "drizzle-orm";
-import { invProducts, invProductVariants, invLots, invSerialNumbers, invLocations, invStockLevels, invIdempotencyKeys, invUom, organizations } from "../../../db/schema";
+import { and, eq, isNull } from "drizzle-orm";
+import { invProducts, invProductVariants, invLots, invSerialNumbers, invLocations, invIdempotencyKeys, invUom, organizations } from "../../../db/schema";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { claimIdempotencyKey } from "../stock-engine/idempotency";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -11,6 +11,7 @@ import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { type Db } from "../../../db/drizzle.module";
 import type { BarcodeLookupResult, LabelPayload, ScanResult } from "./dto/inv-barcode.schemas";
 import { formatGs1, parseGs1 } from "./gs1";
+import { productStock, variantStock } from "./lib/barcode-stock";
 
 @Injectable()
 export class InvBarcodeService {
@@ -102,16 +103,16 @@ export class InvBarcodeService {
     ]);
 
     if (productByBarcode) {
-      return { type: "product", productId: productByBarcode.id, name: productByBarcode.name, sku: productByBarcode.sku, status: productByBarcode.status, totalOnHand: await this.productStock(orgId, userId, productByBarcode.id) };
+      return { type: "product", productId: productByBarcode.id, name: productByBarcode.name, sku: productByBarcode.sku, status: productByBarcode.status, totalOnHand: await productStock(this.db, this.warehouseScope, orgId, userId, productByBarcode.id) };
     }
     if (variantByBarcode) {
-      return { type: "variant", variantId: variantByBarcode.id, productId: variantByBarcode.productId, name: variantByBarcode.name, sku: variantByBarcode.sku, isActive: variantByBarcode.isActive, totalOnHand: await this.variantStock(orgId, userId, variantByBarcode.id) };
+      return { type: "variant", variantId: variantByBarcode.id, productId: variantByBarcode.productId, name: variantByBarcode.name, sku: variantByBarcode.sku, isActive: variantByBarcode.isActive, totalOnHand: await variantStock(this.db, this.warehouseScope, orgId, userId, variantByBarcode.id) };
     }
     if (variantBySku) {
-      return { type: "variant", variantId: variantBySku.id, productId: variantBySku.productId, name: variantBySku.name, sku: variantBySku.sku, isActive: variantBySku.isActive, totalOnHand: await this.variantStock(orgId, userId, variantBySku.id) };
+      return { type: "variant", variantId: variantBySku.id, productId: variantBySku.productId, name: variantBySku.name, sku: variantBySku.sku, isActive: variantBySku.isActive, totalOnHand: await variantStock(this.db, this.warehouseScope, orgId, userId, variantBySku.id) };
     }
     if (productBySku) {
-      return { type: "product", productId: productBySku.id, name: productBySku.name, sku: productBySku.sku, status: productBySku.status, totalOnHand: await this.productStock(orgId, userId, productBySku.id) };
+      return { type: "product", productId: productBySku.id, name: productBySku.name, sku: productBySku.sku, status: productBySku.status, totalOnHand: await productStock(this.db, this.warehouseScope, orgId, userId, productBySku.id) };
     }
     if (lot) {
       return { type: "lot", lotId: lot.id, variantId: lot.productVariantId, lotNumber: lot.lotNumber, status: lot.status };
@@ -470,78 +471,4 @@ export class InvBarcodeService {
     };
   }
 
-  /**
-   * On hand, **in the buildings this caller holds** — not across the estate.
-   *
-   * Both helpers below sum `inv_stock_levels`, which is keyed on a location, so
-   * neither can be scoped without joining `inv_locations` for its
-   * `warehouse_id`. That join is the whole mechanism, and it is the same one
-   * `KitService.availableByComponent` uses; if either helper ever loses it, the
-   * number silently goes organisation-wide again and nothing fails.
-   *
-   * `inventory:warehouses:scope-all` (`SCOPE_ALL_PERMISSION`) resolves the
-   * scope to `null` — unrestricted — so the org-wide total is still available
-   * to whoever the org has granted it to. That is the cross-building enquiry,
-   * and it is a grant, not a default.
-   *
-   * A caller assigned to no warehouse at all gets "0" without the query
-   * running, matching `KitService.buildable`.
-   *
-   * On the product that this is a worse answer for a picker hunting stock: the
-   * org-wide number never answered that question either. "4 on hand" with no
-   * building attached, to someone who then cannot find them on their own
-   * shelves, is a number that misleads in exactly the case that matters. "0
-   * here" is true. Where it is in the estate is a different screen's answer,
-   * and it needs the warehouse named alongside the quantity to be worth
-   * anything — which is why widening *this* field was never the fix for it.
-   */
-  private async productStock(orgId: string, userId: string, productId: number): Promise<string> {
-    const scope = await this.warehouseScope.resolve(orgId, userId);
-    if (scope !== null && scope.length === 0) return "0";
-
-    const result = await this.db
-      .select({ total: sql<string>`COALESCE(SUM(${invStockLevels.onHand}), '0')` })
-      .from(invStockLevels)
-      .innerJoin(invProductVariants, eq(invStockLevels.productVariantId, invProductVariants.id))
-      .innerJoin(
-        invLocations,
-        and(
-          eq(invLocations.id, invStockLevels.locationId),
-          eq(invLocations.orgId, invStockLevels.orgId),
-        ),
-      )
-      .where(
-        and(
-          eq(invProductVariants.orgId, orgId),
-          eq(invProductVariants.productId, productId),
-          this.warehouseScope.warehousePredicate(scope, sql`${invLocations.warehouseId}`),
-        ),
-      );
-    return result[0]?.total ?? "0";
-  }
-
-  /** Scoped for the reasons on `productStock` above. */
-  private async variantStock(orgId: string, userId: string, variantId: number): Promise<string> {
-    const scope = await this.warehouseScope.resolve(orgId, userId);
-    if (scope !== null && scope.length === 0) return "0";
-
-    const result = await this.db
-      .select({ total: sql<string>`COALESCE(SUM(${invStockLevels.onHand}), '0')` })
-      .from(invStockLevels)
-      .innerJoin(
-        invLocations,
-        and(
-          eq(invLocations.id, invStockLevels.locationId),
-          eq(invLocations.orgId, invStockLevels.orgId),
-        ),
-      )
-      .where(
-        and(
-          eq(invStockLevels.orgId, orgId),
-          eq(invStockLevels.productVariantId, variantId),
-          this.warehouseScope.warehousePredicate(scope, sql`${invLocations.warehouseId}`),
-        ),
-      );
-    return result[0]?.total ?? "0";
-  }
 }
