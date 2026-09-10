@@ -76,6 +76,25 @@ const TICKET_ROW = {
   projectKey: "WEB",
 };
 
+const CHANNEL_ROW = {
+  id: 1,
+  orgId: "org_1",
+  name: "Test Channel",
+  type: "GROUP",
+  description: null,
+  avatarUrl: null,
+  isArchived: false,
+  entityType: null,
+  entityId: null,
+  isPinned: false,
+  isPrivate: true,
+  messageCount: 0,
+  lastMessageAt: new Date("2026-09-10T00:00:00.000Z"),
+  createdAt: new Date("2026-09-10T00:00:00.000Z"),
+  updatedAt: new Date("2026-09-10T00:00:00.000Z"),
+  members: [],
+};
+
 const mockDb = {
   query: {
     chatChannels: { findFirst: jest.fn().mockResolvedValue(null) },
@@ -152,24 +171,7 @@ describeWithMockedDb("Chat entity channel access (e2e, mocked)", () => {
     jest.clearAllMocks();
     mockAccess.isModuleEnabled.mockResolvedValue(true);
     const now = new Date();
-    mockDb.query.chatChannels.findFirst.mockResolvedValue({
-      id: 1,
-      orgId: "org_1",
-      name: "Test Channel",
-      type: "GROUP",
-      description: null,
-      avatarUrl: null,
-      isArchived: false,
-      entityType: null,
-      entityId: null,
-      isPinned: false,
-      isPrivate: true,
-      messageCount: 0,
-      lastMessageAt: now,
-      createdAt: now,
-      updatedAt: now,
-      members: [],
-    });
+    mockDb.query.chatChannels.findFirst.mockResolvedValue(CHANNEL_ROW);
     mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ id: 1 });
     mockDb.query.chatMessages.findMany.mockResolvedValue([]);
     mockDb.query.chatMessages.findFirst.mockResolvedValue({
@@ -322,11 +324,26 @@ describeWithMockedDb("Chat entity channel access (e2e, mocked)", () => {
   it("does not join the caller to an existing channel as a side effect of opening it", async () => {
     grant("chat:channels:read", "build:tickets:view");
     mockDb.query.chatChannels.findFirst.mockResolvedValue({
+      ...CHANNEL_ROW,
       id: 4,
       name: TICKET_ROW.title,
       entityType: "task",
       entityId: "7",
-      members: [{ userId: "someone_else", user: { id: "someone_else" } }],
+      members: [{
+        id: 2,
+        channelId: 4,
+        role: "MEMBER",
+        lastReadAt: null,
+        joinedAt: CHANNEL_ROW.createdAt,
+        mutedUntil: null,
+        archivedAt: null,
+        isFavorite: false,
+        notificationPreference: "all",
+        membership: {
+          userId: "someone_else",
+          user: { id: "someone_else", name: "Other member", email: "other@example.test", image: null },
+        },
+      }],
     });
     const token = await signToken({
       sub: "member_1",
@@ -334,10 +351,11 @@ describeWithMockedDb("Chat entity channel access (e2e, mocked)", () => {
       enabledModules: ALL_MODULES,
     });
 
-    await request(app.getHttpServer())
+    const res = await request(app.getHttpServer())
       .get("/chat/channels/entity/task/7")
       .set("Authorization", `Bearer ${token}`);
 
+    expect(res.status).toBe(200);
     expect(mockDb.insert).not.toHaveBeenCalled();
   });
 

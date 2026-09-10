@@ -30,6 +30,7 @@ const mockDb = {
   select: jest.fn().mockReturnThis(),
   from: jest.fn().mockReturnThis(),
   innerJoin: jest.fn().mockReturnThis(),
+  execute: jest.fn().mockResolvedValue([]),
   transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(mockDb)),
 };
 
@@ -118,12 +119,18 @@ describe("ChatMessagesService", () => {
       mockDb.query.users.findFirst.mockResolvedValue({ id: "user1", name: "Alice" });
 
       const maliciousContent = "<script>alert('xss')</script>hello";
-      await service.send(1, "user1", "org1", { content: maliciousContent, attachments: [] }).catch(() => {});
+      await expect(
+        service.send(1, "user1", "org1", { content: maliciousContent, attachments: [] }),
+      ).resolves.toBeDefined();
 
-      const insertValues = mockDb.values.mock.calls[0]?.[0] as { content?: string } | undefined;
-      if (insertValues?.content) {
-        expect(insertValues.content).not.toContain("<script>");
-      }
+      expect(mockDb.values).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ content: expect.stringContaining("hello") }),
+      );
+      expect(mockDb.values).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ content: expect.not.stringMatching(/<\/?script/i) }),
+      );
     });
 
     it("rejects an attachment larger than the org's configured max size", async () => {

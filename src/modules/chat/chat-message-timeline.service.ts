@@ -20,7 +20,7 @@ import {
   subjectKey,
   type PersonIdentity,
 } from "../directory/person-seam";
-import { liftSenderId } from "./chat-message-sender-shape";
+import { liftSenderId, SENDER_MEMBERSHIP_ID_ONLY } from "./chat-message-sender-shape";
 import {
   MESSAGE_REACTIONS_WITH,
   foldReactions,
@@ -29,7 +29,7 @@ import {
 
 const REPLY_PREVIEW_WITH = {
   columns: { id: true, content: true },
-  with: { senderMembership: { columns: { userId: true } } },
+  with: { senderMembership: SENDER_MEMBERSHIP_ID_ONLY },
 } as const;
 
 type ChatSender = {
@@ -169,7 +169,7 @@ export class ChatMessageTimelineService {
       limit: safeLimit + 1,
       with: {
         attachments: { columns: { id: true, fileName: true, fileUrl: true, fileKey: true, fileSize: true, mimeType: true } },
-        senderMembership: { columns: { userId: true } },
+        senderMembership: SENDER_MEMBERSHIP_ID_ONLY,
         reactions: MESSAGE_REACTIONS_WITH,
         replyTo: REPLY_PREVIEW_WITH,
       },
@@ -257,7 +257,7 @@ export class ChatMessageTimelineService {
       limit: safeLimit + 1,
       with: {
         attachments: { columns: { id: true, fileName: true, fileUrl: true, fileKey: true, fileSize: true, mimeType: true } },
-        senderMembership: { columns: { userId: true } },
+        senderMembership: SENDER_MEMBERSHIP_ID_ONLY,
         reactions: MESSAGE_REACTIONS_WITH,
         replyTo: REPLY_PREVIEW_WITH,
       },
@@ -293,7 +293,7 @@ export class ChatMessageTimelineService {
       ),
       with: {
         attachments: { columns: { id: true, fileName: true, fileUrl: true, fileKey: true, fileSize: true, mimeType: true } },
-        senderMembership: { columns: { userId: true } },
+        senderMembership: SENDER_MEMBERSHIP_ID_ONLY,
         reactions: MESSAGE_REACTIONS_WITH,
         replyTo: REPLY_PREVIEW_WITH,
       },
@@ -333,7 +333,7 @@ export class ChatMessageTimelineService {
       limit: safeLimit + 1,
       with: {
         attachments: { columns: { id: true, fileName: true, fileUrl: true, fileKey: true, fileSize: true, mimeType: true } },
-        senderMembership: { columns: { userId: true } },
+        senderMembership: SENDER_MEMBERSHIP_ID_ONLY,
         reactions: MESSAGE_REACTIONS_WITH,
         replyTo: REPLY_PREVIEW_WITH,
       },

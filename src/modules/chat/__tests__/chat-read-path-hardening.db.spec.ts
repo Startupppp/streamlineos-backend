@@ -83,15 +83,49 @@ describe("chat read-path indexes — live catalog", () => {
   });
 
   it("the due-reminder cron is index-served rather than seq-scanning every tenant's history", async () => {
-    const plan = await client.unsafe(`
-      EXPLAIN (COSTS OFF)
-      SELECT id FROM chat_reply_reminders
-       WHERE org_id = 'probe-org' AND remind_at <= now()
-         AND sent_at IS NULL AND cancelled_at IS NULL
-       LIMIT 100`);
-    const text = plan.map((r) => String(Object.values(r)[0])).join("\n");
-    expect(text).toContain("idx_chat_reply_reminders_pending");
-    expect(text).not.toContain("Seq Scan");
+    const indexes = await client<Array<{ definition: string }>>`
+      SELECT pg_get_indexdef(indexrelid) AS definition
+        FROM pg_index
+       WHERE indrelid = 'public.chat_reply_reminders'::regclass`;
+    await client.unsafe("BEGIN");
+    try {
+      await client.unsafe(`
+        CREATE TEMP TABLE chat_reply_reminders
+          (LIKE public.chat_reply_reminders INCLUDING DEFAULTS INCLUDING CONSTRAINTS)
+          ON COMMIT DROP`);
+      for (const { definition } of indexes) {
+        expect(definition).toContain(" ON public.chat_reply_reminders ");
+        await client.unsafe(
+          definition.replace(" ON public.chat_reply_reminders ", " ON pg_temp.chat_reply_reminders "),
+        );
+      }
+      await client.unsafe(`
+        INSERT INTO pg_temp.chat_reply_reminders
+          (id, org_id, channel_id, message_id, remind_at, sent_at, cancelled_at)
+        SELECT g, 'probe-org-' || (g % 4), 1, g,
+               now() + CASE WHEN g % 2000 < 1000 THEN interval '-1 hour' ELSE interval '1 hour' END,
+               CASE WHEN g % 1000 >= 8 THEN now() END,
+               CASE WHEN g % 1000 BETWEEN 4 AND 7 THEN now() END
+          FROM generate_series(1, 40000) g`);
+      await client.unsafe("ANALYZE pg_temp.chat_reply_reminders");
+      const rows = await client.unsafe(`
+        SELECT id FROM pg_temp.chat_reply_reminders
+         WHERE org_id = 'probe-org-0' AND remind_at <= now()
+           AND sent_at IS NULL AND cancelled_at IS NULL
+         LIMIT 100`);
+      expect(rows).toHaveLength(20);
+      const plan = await client.unsafe(`
+        EXPLAIN (ANALYZE, BUFFERS, COSTS OFF)
+        SELECT id FROM pg_temp.chat_reply_reminders
+         WHERE org_id = 'probe-org-0' AND remind_at <= now()
+           AND sent_at IS NULL AND cancelled_at IS NULL
+         LIMIT 100`);
+      const text = plan.map((r) => String(Object.values(r)[0])).join("\n");
+      expect(text).toContain("idx_chat_reply_reminders_pending");
+      expect(text).not.toContain("Seq Scan");
+    } finally {
+      await client.unsafe("ROLLBACK");
+    }
   });
 
   it("the thread read is index-served on reply_to_id", async () => {

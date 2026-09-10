@@ -41,6 +41,7 @@ function makeDb(overrides: { replayed?: unknown; inserted?: unknown[] } = {}) {
   for (const m of ["insert", "values", "update", "set", "where", "from", "select", "delete", "onConflictDoNothing", "orderBy", "innerJoin"])
     chain[m] = jest.fn(() => chain);
   chain.returning = jest.fn().mockResolvedValue(inserted);
+  chain.execute = jest.fn().mockResolvedValue([]);
   chain.limit = jest.fn().mockResolvedValue([{ membershipId: 10, id: CHANNEL, type: "GROUP", name: "A" }]);
   chain.query = {
     organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 10 }) },

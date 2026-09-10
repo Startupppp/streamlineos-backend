@@ -14,6 +14,7 @@ import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import {
   GDPR_EXPORT_REQUESTED_EVENT,
   GDPR_EXPORT_AGGREGATE_TYPE,
+  type GdprExportRequestedPayload,
 } from "./dto/gdpr-export-outbox.schemas";
 
 export type GdprExportJobRow = typeof gdprExportJobs.$inferSelect;
@@ -86,7 +87,7 @@ export class GdprExportService {
           aggregateId: job.id,
           aggregateVersion: 1,
           eventType: GDPR_EXPORT_REQUESTED_EVENT,
-          payload: { jobId: job.id, orgId },
+          payload: { jobId: job.id, orgId } satisfies GdprExportRequestedPayload,
           occurredAt: new Date(),
         });
       }

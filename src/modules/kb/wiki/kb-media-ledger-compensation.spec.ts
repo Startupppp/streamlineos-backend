@@ -15,7 +15,7 @@ const KB_BUCKET = "kb-files";
 const ORG = "org-42";
 
 const baseConfig = validateEnv({
-  DATABASE_URL: "postgres://test",
+  DATABASE_URL: "postgres://test@localhost/kb_media_test",
   BACKEND_JWT_SECRET: "x".repeat(44),
   PORTAL_JWT_SECRET: "x".repeat(44),
   CORS_ORIGINS: "http://localhost",
