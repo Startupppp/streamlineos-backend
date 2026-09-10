@@ -124,6 +124,48 @@ function membersOf(body: string): string[] {
   return keys;
 }
 
+/**
+ * A file-level `const X = { … } as const` projection, by name.
+ *
+ * A service that reads one shape from three places names the columns once and
+ * spreads the constant, which is the right thing to do — `export.service.ts`
+ * drifted from its own frontend type precisely because it did not. But a spread
+ * is opaque to a key scanner, so without this the DRY version of a projection
+ * reads as an *empty* one and its pair silently covers nothing. Resolving it is
+ * what lets this gate reward the better code instead of punishing it.
+ *
+ * One level, same file, no chained spreads: enough for the idiom in use, and it
+ * stops here rather than growing into a resolver that quietly guesses.
+ */
+function constProjection(source: string, name: string): string[] | null {
+  const declared = new RegExp(`const ${name}\\s*(?::[^=]+)?=\\s*\\{`).exec(source);
+  if (declared === null) return null;
+  const open = source.indexOf("{", declared.index);
+  const close = closingBrace(source, open);
+  if (close === -1) return null;
+  return membersOf(source.slice(open, close + 1));
+}
+
+/**
+ * Keys selected as a window function, which never reach the wire.
+ *
+ * `count(*) OVER ()` is how a paginated list gets its total in one pass, and
+ * every such list strips the column before returning — `export.service.ts` does
+ * it with `rows.map(({ windowTotal: _, ...rest }) => rest)`. Counting it as a
+ * response field makes a list projection disagree with the detail projection of
+ * the same shape by exactly one key, which reads as an ambiguous anchor and
+ * fails for a reason that has nothing to do with drift. Four services here use
+ * the idiom.
+ */
+function windowColumns(body: string): Set<string> {
+  const names = new Set<string>();
+  for (const line of body.split("\n")) {
+    const member = /^([A-Za-z_$][\w$]*)\s*:/.exec(line.trim());
+    if (member && /\bOVER\s*\(/.test(line)) names.add(member[1]!);
+  }
+  return names;
+}
+
 /** Every `.select({ … }).from(table)` in a service, with the table it reads. */
 function projectionsIn(source: string): Projection[] {
   const found: Projection[] = [];
@@ -135,8 +177,59 @@ function projectionsIn(source: string): Projection[] {
     if (close === -1) continue;
     const from = /^\s*\)\s*\.from\(\s*([A-Za-z_$][\w$]*)/.exec(source.slice(close + 1, close + 200));
     if (from === null) continue;
-    found.push({ table: from[1]!, keys: membersOf(source.slice(open, close + 1)) });
+    const body = source.slice(open, close + 1);
+    const keys = membersOf(body);
+    /* `...SOME_CONST` inside the literal contributes that constant's own keys. */
+    for (const spread of body.matchAll(/\.\.\.([A-Z][A-Z0-9_]*)\b/g)) {
+      const resolved = constProjection(source, spread[1]!);
+      if (resolved !== null) keys.push(...resolved);
+    }
+    found.push({ table: from[1]!, keys: keys.filter((key) => !windowColumns(body).has(key)) });
   }
+
+  /**
+   * `.returning({ … })` is a response shape too — a write path returns what it
+   * just wrote, and nothing else here was reading those.
+   *
+   * **What this does not catch, stated plainly.** The defect that put the
+   * export-jobs pair on this table was a *bare* `.returning()` — no object
+   * literal — whose row was spread into the response. A bare call declares no
+   * keys, so there is nothing here to compare and the pair silently falls back
+   * to the `.select()` projections beside it, which were correct all along. I
+   * added the pair, reverted the fix to check, and **the gate stayed green
+   * twice**: once before this function existed and once after. Both times are
+   * recorded because the second is the useful one — extending a gate is not the
+   * same as extending its reach, and only trying to fool it tells you which you
+   * did.
+   *
+   * So this catches a projection that has DRIFTED, never one that is ABSENT.
+   * Absent is a different defect — a raw ORM row on the wire, which backend
+   * §1 forbids outright — and it wants its own ratchet: there are 80 bare
+   * `.returning()` calls under `src/modules/inventory` today, most of them
+   * internal reads that are perfectly fine, so that gate is a triage job and not
+   * a one-line rule.
+   *
+   * The table comes from the `.insert(x)` or `.update(x)` that opened the chain,
+   * scanning backwards to the nearest one.
+   */
+  const returning = /\.returning\(\s*\{/g;
+  let ret: RegExpExecArray | null;
+  while ((ret = returning.exec(source)) !== null) {
+    const open = source.indexOf("{", ret.index);
+    const close = closingBrace(source, open);
+    if (close === -1) continue;
+    const before = source.slice(0, ret.index);
+    const chain = /\.(?:insert|update)\(\s*([A-Za-z_$][\w$]*)\s*\)(?![\s\S]*\.(?:insert|update)\()/.exec(before);
+    if (chain === null) continue;
+    const body = source.slice(open, close + 1);
+    const keys = membersOf(body);
+    for (const spread of body.matchAll(/\.\.\.([A-Z][A-Z0-9_]*)\b/g)) {
+      const resolved = constProjection(source, spread[1]!);
+      if (resolved !== null) keys.push(...resolved);
+    }
+    found.push({ table: chain[1]!, keys: keys.filter((key) => !windowColumns(body).has(key)) });
+  }
+
   return found;
 }
 
@@ -206,6 +299,16 @@ const PAIRS: readonly Pair[] = [
   { controller: "valuation/inv-valuation.controller.ts", prefix: "inventory/valuation", verb: "Get", route: "periods", service: "valuation/inventory-period.service.ts", table: "accountingPeriods", anchor: "periodId", hook: "valuation.ts", type: "InventoryPeriod" },
   { controller: "warehouses/inv-warehouses.controller.ts", prefix: "inventory/warehouses", verb: "Get", route: ":warehouseId/users", service: "warehouses/warehouse-assignments.service.ts", table: "invUserWarehouses", anchor: "grantedByName", hook: "warehouses.ts", type: "WarehouseAssignee" },
   { controller: "warehouses/inv-warehouses.controller.ts", prefix: "inventory/warehouses", verb: "Get", route: ":warehouseId/assignable-users", service: "warehouses/warehouse-assignments.service.ts", table: "organizationMembers", anchor: "email", hook: "warehouses.ts", type: "AssignableWarehouseUser" },
+  /*
+    Added once the mismatch it would have reported was fixed. `createExportJob`
+    returned `{ ...result, resultUrl: undefined }` — the whole ORM row with one
+    column blanked — while `admin.ts` typed the response as the 12-key
+    `ExportJob`. The pair was left out of this table rather than papered over
+    with a contrived anchor; now that all three reads share one named projection
+    it belongs here, and the shared constant is why the parser above learned to
+    follow a spread.
+  */
+  { controller: "import-export/export.controller.ts", prefix: "inventory/export", verb: "Get", route: "jobs", service: "import-export/export.service.ts", table: "invExportJobs", anchor: "errorRows", hook: "admin.ts", type: "ExportJob" },
 ];
 
 function endpointOf(pair: Pair): string {
