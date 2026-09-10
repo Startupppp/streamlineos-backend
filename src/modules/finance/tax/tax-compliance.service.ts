@@ -72,7 +72,26 @@ export class TaxComplianceService {
       await this.dispatch.emit({
         eventKey: "accounting.tax.due",
         orgId: oid,
-        actorUserId: "system",
+        /*
+         * null, not "system". `notifications.actor_user_id` is a foreign key to
+         * `users(id)` — declared in the schema and created by 0000 as
+         * `notifications_actor_user_id_users_id_fk` — and there is no user row
+         * with id 'system', so this insert is refused wherever that key exists.
+         *
+         * It has not been failing loudly: the emit ends in
+         * `.catch(logSideEffectFailure(...))`, so every tax-due notification
+         * this sweep tried to raise died in a log line. And it does not
+         * reproduce on the shared Neon branch, because 0421 is one of the
+         * migrations unapplied there and that database currently has no such
+         * FK at all — so a cold build is the environment where it bites.
+         *
+         * The column is nullable for exactly this case. A sweep running under
+         * `forEachOrg` has no actor, and saying so is both true and what the
+         * dispatcher expects: `actorUserId?: string | null`, and the
+         * self-notification filter below is skipped rather than comparing every
+         * recipient against a sentinel that can never match one.
+         */
+        actorUserId: null,
         targetUserIds: [],
         entityType: "tax_compliance",
         entityId: oid,
