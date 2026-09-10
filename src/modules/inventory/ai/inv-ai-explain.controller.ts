@@ -29,15 +29,16 @@ import {
   confirmReorderProposalResponseSchema,
   supplierDelayBriefingResponseSchema,
 } from "./dto/ai-response.schemas";
+import {
+  reorderProposalBodySchema,
+  confirmProposalBodySchema,
+  digestQuerySchema,
+  supplierDelayQuerySchema,
+  type DigestQueryInput,
+  type SupplierDelayQueryInput,
+} from "./dto/ai-insights.schemas";
 
 const insightIdParams = z.object({ insightId: z.coerce.number().int().positive() }).strict();
-
-const reorderProposalBodySchema = z.object({ variantId: z.number().int().positive(), warehouseId: z.number().int().positive().optional() });
-const confirmProposalBodySchema = z.object({ proposalId: z.number().int().positive(), token: z.string().min(1) });
-const digestQuerySchema = z.object({ narrate: z.enum(["true", "false"]).optional() });
-const supplierDelayQuerySchema = z.object({ vendorId: z.coerce.number().int().positive().optional() });
-type DigestQueryInput = z.infer<typeof digestQuerySchema>;
-type SupplierDelayQueryInput = z.infer<typeof supplierDelayQuerySchema>;
 
 @RequireModule("inventory")
 @Controller("inventory/ai")

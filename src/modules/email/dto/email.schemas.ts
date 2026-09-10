@@ -21,3 +21,14 @@ export const emailTemplateTestSchema = z.object({
 }).strict();
 
 export type EmailTemplateTestInput = z.infer<typeof emailTemplateTestSchema>;
+
+export const sendEmailSchema = z.object({
+  to: z.string().email(),
+  subject: z.string().min(1).max(200),
+  body: z.string().min(1).max(10000),
+  templateId: z.number().int().positive().optional(),
+  candidateId: z.number().int().positive().optional(),
+  variables: z.record(z.string(), z.string()).optional(),
+});
+
+export type SendEmailInput = z.infer<typeof sendEmailSchema>;

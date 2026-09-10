@@ -5,6 +5,7 @@ import type { TenantTx } from "../../../db/drizzle.types";
 import { HrAuditService } from "../core/hr-audit.service";
 import { PersonEmploymentSyncService } from "../core/person-employment-sync.service";
 import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
+import { MembershipAdmissionService } from "../../organization/core/membership-admission.service";
 import { EmployeeBulkOnboardingService } from "./employee-bulk-onboarding.service";
 import type { BulkOnboardEmployeeRow } from "./dto/hr-directory.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -92,6 +93,7 @@ function harness(count: number): Harness {
   const counting = makeCountingDb({
     select: [
       [],
+      [],
       existingUsers,
       [],
       [{ id: 7, slug: "MEMBER" }],
@@ -126,8 +128,7 @@ function harness(count: number): Harness {
     deps.hierarchyCache as never,
     deps.cache as never,
     deps.access as never,
-    deps.planLimits as never,
-    new SeatLedgerService(db),
+    new MembershipAdmissionService(deps.planLimits as never, new SeatLedgerService(db)),
     deps.email as never,
     deps.automation as never,
     deps.webhooks as never,
@@ -170,7 +171,7 @@ describe("EmployeeBulkOnboardingService.onboardEmployeesBulk — statement count
     const fiftyRows = fifty.statements();
 
     expect(fiftyRows).toBe(oneRow);
-    expect([oneRow, fiftyRows]).toEqual([23, 23]);
+    expect([oneRow, fiftyRows]).toEqual([24, 24]);
     expect(fifty.countOf("select")).toBe(one.countOf("select"));
     expect(fifty.countOf("insert")).toBe(one.countOf("insert"));
     expect(fifty.countOf("update")).toBe(one.countOf("update"));
@@ -197,7 +198,7 @@ describe("EmployeeBulkOnboardingService.onboardEmployeesBulk — statement count
       { ...rows[0], email: "ADA.LOVELACE1@example.com" },
     ];
     const counting = makeCountingDb({
-      select: [[], [], [], [{ id: 7, slug: "MEMBER" }], [], [], [], [], [{ id: 42 }]],
+      select: [[], [], [], [], [{ id: 7, slug: "MEMBER" }], [], [], [], [], [{ id: 42 }]],
       insert: [
         [{ id: DEPARTMENT_ID, name: "Engineering", code: "ENGINEERING" }],
         [{ id: 1, userId: "created-1" }],
@@ -220,8 +221,7 @@ describe("EmployeeBulkOnboardingService.onboardEmployeesBulk — statement count
       deps.hierarchyCache as never,
       deps.cache as never,
       deps.access as never,
-      deps.planLimits as never,
-      new SeatLedgerService(db),
+      new MembershipAdmissionService(deps.planLimits as never, new SeatLedgerService(db)),
       deps.email as never,
       deps.automation as never,
       deps.webhooks as never,

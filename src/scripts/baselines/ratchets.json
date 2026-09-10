@@ -4,10 +4,10 @@
   "entries": {
     "baselines/authz-deny.json": {
       "uncoveredRatchet": {
-        "value": 2231,
+        "value": 2221,
         "direction": "ratchet",
         "owner": "backend platform owner",
-        "reason": "Authorization-gated handlers with no deny test. Set at the measured committed number 2453 by 204aca63 and LOWERED to 2443, 2441, then 2231 as deny specs landed; never raised. The 2026-09-08 drop of 210 is 51 handlers newly covered by three real specs (billing 30, payroll ESS 14, payroll module 13) plus attribution the refreshed handler list picked up; each spec drives the real PermissionGuard through supertest with an AccessService whose scopeFor returns none, so removing @UseGuards(PermissionGuard) turns 403 into 200 and the spec fails -- bite-proved on EssController. Coverage is still only 1018/3249 (31%); this ratchet is a floor to walk down, not a score."
+        "reason": "Authorization-gated handlers with no deny test. Set at the measured committed number 2453 by 204aca63 and LOWERED to 2443, 2441, 2231, then 2221 as deny specs landed; never raised. RECONCILED 2231 -> 2221 on 2026-09-11: the baseline file (baselines/authz-deny.json) had already been hand-edited to 2221 while this registry still read 2231; this entry now matches the committed baseline. The true measured value at the time of this reconciliation is 2199 (a further 22 bankable) -- deliberately NOT banked here, since lowering further is a separate decision from reconciling a stale registration. The 2026-09-08 drop of 210 is 51 handlers newly covered by three real specs (billing 30, payroll ESS 14, payroll module 13) plus attribution the refreshed handler list picked up; each spec drives the real PermissionGuard through supertest with an AccessService whose scopeFor returns none, so removing @UseGuards(PermissionGuard) turns 403 into 200 and the spec fails -- bite-proved on EssController. Coverage is still only 1018/3249 (31%); this ratchet is a floor to walk down, not a score."
       }
     },
     "baselines/bare-throw.json": {
@@ -786,8 +786,10 @@
         "direction": "floor"
       },
       "RATCHET": {
-        "value": 159,
-        "direction": "floor"
+        "value": 150,
+        "direction": "floor",
+        "owner": "backend platform owner",
+        "reason": "LOWERED 159 -> 150 on 2026-09-11 after candidate C3 removed six DELETE and four PATCH .../move org-hierarchy routes (archiving is now PATCH with status: \"ARCHIVED\") and org-hierarchy-moves.controller.ts was deleted. Measured after repointing the permission-fence and archive-http specs at the surviving routes: 150 routes derived from the 12 in-scope controllers, 150 covered (100%). Per PRD-ORG-ACCESS-REMEDIATION-2026-09-10 the gate was already RED at 159 before C3 (reported 156/156, a pre-existing 4-route CONTROLLER_PATHS gap unrelated to this change) -- not independently re-measured against the pre-C3 tree here. This is a genuine shrink of the covered corpus, not a coverage regression. Never lower this to paper over missing coverage; only to match a route count that actually fell."
       },
       "MIN_CONTROLLERS": {
         "value": 12,

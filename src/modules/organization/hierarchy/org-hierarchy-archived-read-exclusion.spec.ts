@@ -7,7 +7,6 @@ import { OrgHierarchyTeamsService } from "./org-hierarchy-teams.service";
 
 const ORG = "org-1";
 
-const cache = () => ({ invalidateForOrg: jest.fn() });
 const audit = () => ({ logCritical: jest.fn() });
 
 function unit(overrides: Record<string, unknown>) {
@@ -41,7 +40,7 @@ describe("organization hierarchy reads exclude archived and deleted rows", () =>
       head_member: [],
       branch_business_units: [],
     });
-    const service = new OrgHierarchyBranchesService(db as unknown as Db, cache() as never, audit() as never);
+    const service = new OrgHierarchyBranchesService(db as unknown as Db, audit() as never);
 
     const page = await service.listOrgBranches(ORG, { limit: 20 });
 
@@ -56,7 +55,7 @@ describe("organization hierarchy reads exclude archived and deleted rows", () =>
         unit({ id: "bu1", kind: "BUSINESS_UNIT", name: "Retired BU", code: "BU1", deleted_at: new Date() }),
       ],
     });
-    const service = new OrgHierarchyBranchesService(db as unknown as Db, cache() as never, audit() as never);
+    const service = new OrgHierarchyBranchesService(db as unknown as Db, audit() as never);
 
     const page = await service.listOrgBranches(ORG, { limit: 20 });
 
@@ -72,7 +71,7 @@ describe("organization hierarchy reads exclude archived and deleted rows", () =>
         unit({ id: "br1", kind: "BRANCH", name: "Retired branch", code: "BR1", deleted_at: new Date() }),
       ],
     });
-    const service = new OrgHierarchyDepartmentsService(db as unknown as Db, cache() as never, audit() as never);
+    const service = new OrgHierarchyDepartmentsService(db as unknown as Db, audit() as never);
 
     const page = await service.listDepartments(ORG, { limit: 20 });
 
@@ -88,7 +87,7 @@ describe("organization hierarchy reads exclude archived and deleted rows", () =>
         unit({ id: "dp1", kind: "DEPARTMENT", name: "Retired dept", code: "DP1", deleted_at: new Date() }),
       ],
     });
-    const service = new OrgHierarchyTeamsService(db as unknown as Db, cache() as never, audit() as never);
+    const service = new OrgHierarchyTeamsService(db as unknown as Db, audit() as never);
 
     const page = await service.listTeams(ORG, { limit: 20 });
 
@@ -96,11 +95,11 @@ describe("organization hierarchy reads exclude archived and deleted rows", () =>
     expect(page.data[0]?.departmentName).toBeNull();
   });
 
-  it("moveTeam refuses an ARCHIVED department as the new parent", async () => {
+  // Ported from the deleted moveTeam path: createTeam is where the parent guard still bites.
+  it("createTeam refuses an ARCHIVED department as the parent", async () => {
     const db = makeFakeDb(
       {
         org_units: [
-          unit({ id: "t1", kind: "TEAM", name: "Team", code: "T1", parent_id: null }),
           unit({ id: "dp1", kind: "DEPARTMENT", name: "Archived dept", code: "DP1", status: "ARCHIVED" }),
         ],
         head_member: [],
@@ -108,18 +107,17 @@ describe("organization hierarchy reads exclude archived and deleted rows", () =>
       },
       { orgUnits },
     );
-    const service = new OrgHierarchyTeamsService(db as unknown as Db, cache() as never, audit() as never);
+    const service = new OrgHierarchyTeamsService(db as unknown as Db, audit() as never);
 
-    await expect(service.moveTeam(ORG, "t1", "dp1")).rejects.toThrow(
-      "Select an active department from this organization",
-    );
+    await expect(
+      service.createTeam(ORG, "user-1", { name: "Team", code: "T1", departmentId: "dp1" }),
+    ).rejects.toThrow("Select an active department from this organization");
   });
 
-  it("moveTeam accepts an ACTIVE department as the new parent", async () => {
+  it("createTeam accepts an ACTIVE department as the parent", async () => {
     const db = makeFakeDb(
       {
         org_units: [
-          unit({ id: "t1", kind: "TEAM", name: "Team", code: "T1", parent_id: null }),
           unit({ id: "dp2", kind: "DEPARTMENT", name: "Live dept", code: "DP2" }),
         ],
         head_member: [],
@@ -127,8 +125,10 @@ describe("organization hierarchy reads exclude archived and deleted rows", () =>
       },
       { orgUnits },
     );
-    const service = new OrgHierarchyTeamsService(db as unknown as Db, cache() as never, audit() as never);
+    const service = new OrgHierarchyTeamsService(db as unknown as Db, audit() as never);
 
-    await expect(service.moveTeam(ORG, "t1", "dp2")).resolves.toEqual({ success: true });
+    await expect(
+      service.createTeam(ORG, "user-1", { name: "Team", code: "T2", departmentId: "dp2" }),
+    ).resolves.toEqual(expect.objectContaining({ id: 1 }));
   });
 });

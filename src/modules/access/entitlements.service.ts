@@ -26,8 +26,6 @@ import { moduleAvailabilityResolver, type ModuleAvailabilityResolver } from "../
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { ACCESS_MANAGED_MODULES } from "../rbac/permissions";
 import { assignModuleOwnerRole } from "../ownership/module-owner-role.helper";
-import { APP_CONFIG } from "../../config/config.module";
-import type { AppConfig } from "../../config/env.validation";
 import { isUndefinedTable } from "../../common/db/postgres-error";
 
 export { MODULE_CATALOG };
@@ -68,14 +66,11 @@ const MODULE_MAP_LOCAL_TTL_MS = 15_000;
 @Injectable()
 export class EntitlementsService implements OnModuleInit {
   private missingTableLogged = false;
-  private moduleTableUnavailable = false;
   private readonly moduleMapCache = new Map<string, ModuleMapEntry>();
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly planLimits: PlanLimitsService,
-    @Inject(APP_CONFIG)
-    private readonly config: Pick<AppConfig, "RBAC_MIGRATION_MODE">,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -104,13 +99,10 @@ export class EntitlementsService implements OnModuleInit {
       return await read();
     } catch (error: unknown) {
       if (!isMissingRelationError(error)) throw error;
-      this.moduleTableUnavailable = true;
       if (!this.missingTableLogged) {
         this.missingTableLogged = true;
         logger.warn(
-          this.config.RBAC_MIGRATION_MODE === "degrade"
-            ? "entitlements: org_modules table missing, migration mode permits temporary access"
-            : "entitlements: org_modules table missing, denying gated module access",
+          "entitlements: org_modules table missing, denying gated module access",
           {
             error: error instanceof Error ? error.message : String(error),
           },
@@ -159,14 +151,7 @@ export class EntitlementsService implements OnModuleInit {
     const moduleKey = moduleIdFromStored(rawModuleKey);
     if (isCoreModuleKey(moduleKey)) return true;
     const map = await this.getModuleMap(orgId);
-    const enabled = map[moduleKey];
-    if (enabled === undefined) {
-      return (
-        this.moduleTableUnavailable &&
-        this.config.RBAC_MIGRATION_MODE === "degrade"
-      );
-    }
-    return enabled;
+    return map[moduleKey] ?? false;
   }
 
   /** Absent stays `undefined` so availability can tell "no row" from "disabled" and reach the plan check. */
@@ -177,13 +162,7 @@ export class EntitlementsService implements OnModuleInit {
     const moduleKey = moduleIdFromStored(rawModuleKey);
     if (isCoreModuleKey(moduleKey)) return true;
     const map = await this.getModuleMap(orgId);
-    const enabled = map[moduleKey];
-    if (enabled === undefined)
-      return this.moduleTableUnavailable &&
-        this.config.RBAC_MIGRATION_MODE === "degrade"
-        ? true
-        : undefined;
-    return enabled;
+    return map[moduleKey];
   }
 
   isCoreModule(moduleKey: string): boolean {
@@ -373,9 +352,7 @@ export class EntitlementsService implements OnModuleInit {
     for (const moduleKey of ADMINISTRABLE_MODULES) {
       effective[moduleKey] = this.isCoreModule(moduleKey)
         ? true
-        : (map[moduleKey] ??
-          (this.moduleTableUnavailable &&
-            this.config.RBAC_MIGRATION_MODE === "degrade"));
+        : (map[moduleKey] ?? false);
     }
     return effective;
   }

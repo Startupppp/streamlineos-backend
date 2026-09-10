@@ -19,10 +19,12 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { HrPoliciesService } from "./hr-policies.service";
 import {
+  activatePolicySchema,
   createPolicySchema,
-  HR_POLICY_TYPES,
+  orgConflictsQuerySchema,
   policiesListQuerySchema,
   previewQuerySchema,
+  simulatePolicySchema,
   updatePolicySchema,
   type CreatePolicyInput,
   type PoliciesListQuery,
@@ -43,21 +45,6 @@ import {
 } from "./dto/policies-response.schemas";
 
 const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
-
-const activatePolicySchema = z.object({
-  force: z.boolean().optional().default(false),
-});
-
-const simulatePolicySchema = z.object({
-  employeeId: z.string().min(1),
-  policyType: z.enum(HR_POLICY_TYPES),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  rules: z.record(z.string(), z.unknown()).optional(),
-});
-
-const orgConflictsQuerySchema = z.object({
-  type: z.enum(HR_POLICY_TYPES).optional(),
-});
 
 @RequireModule("hr")
 @Controller("hr/policies")

@@ -1,6 +1,6 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
-import { randomBytes, randomUUID } from "node:crypto";
-import { hrEmployments, hrPeople, organizationMembers, users } from "../../../../db/schema";
+import { and, eq, inArray } from "drizzle-orm";
+import { randomBytes } from "node:crypto";
+import { hrEmployments, hrPeople } from "../../../../db/schema";
 import type { DbOrTx } from "../../../../common/rbac/access-invalidate";
 import {
   liveEmployment,
@@ -8,9 +8,14 @@ import {
 } from "../../../directory/employment-query";
 import { ORG_MEMBER_ROLES } from "../../../../common/rbac/org-roles";
 import { formatDateOnly } from "../../../../common/date";
+import {
+  admissionRefusalMessage,
+  canonicalAdmissionEmail,
+  type AdmissionScreen,
+} from "../../../organization/core/membership-admission.service";
 import type { BulkOnboardEmployeeRow } from "../dto/hr-directory.schemas";
 import type { DepartmentCatalog } from "./bulk-onboarding-departments";
-import type { BulkOnboardPlan, PlannedEmployee } from "./bulk-onboarding.types";
+import type { BulkOnboardPlan } from "./bulk-onboarding.types";
 
 const EMP_CODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
@@ -21,72 +26,33 @@ function randomEmployeeCode(length: number): string {
   return out;
 }
 
-export interface IdentitySnapshot {
-  userIdByEmail: Map<string, string>;
-  memberUserIds: Set<string>;
-  employeeNumberOwner: Map<string, string | null>;
-}
-
-// Three org-scoped inArray queries taken before the loop instead of three per row.
-export async function preloadIdentities(
+/** Who already holds each requested employee number, as one org-scoped query for the whole upload. */
+export async function preloadEmployeeNumbers(
   db: DbOrTx,
   orgId: string,
-  emails: readonly string[],
   employeeNumbers: readonly string[],
-): Promise<IdentitySnapshot> {
-  const snapshot: IdentitySnapshot = {
-    userIdByEmail: new Map(),
-    memberUserIds: new Set(),
-    employeeNumberOwner: new Map(),
-  };
-  if (emails.length === 0) return snapshot;
+): Promise<Map<string, string | null>> {
+  const owners = new Map<string, string | null>();
+  if (employeeNumbers.length === 0) return owners;
 
-  const existingUsers = await db
-    .select({ id: users.id, email: users.email })
-    .from(users)
-    .where(inArray(sql`lower(${users.email})`, [...emails]))
-    .limit(emails.length);
-  for (const user of existingUsers) snapshot.userIdByEmail.set(user.email.toLowerCase(), user.id);
+  const taken = await db
+    .select({
+      employeeNumber: hrEmployments.employeeNumber,
+      userId: hrPeople.userId,
+    })
+    .from(hrEmployments)
+    .innerJoin(hrPeople, livePersonOfEmployment(orgId))
+    .where(
+      and(
+        liveEmployment(orgId),
+        eq(hrEmployments.isPrimary, true),
+        inArray(hrEmployments.employeeNumber, [...employeeNumbers]),
+      ),
+    )
+    .limit(employeeNumbers.length);
+  for (const row of taken) owners.set(row.employeeNumber, row.userId);
 
-  const userIds = [...snapshot.userIdByEmail.values()];
-  if (userIds.length > 0) {
-    const memberships = await db
-      .select({ userId: organizationMembers.userId })
-      .from(organizationMembers)
-      .where(
-        and(
-          eq(organizationMembers.orgId, orgId),
-          inArray(organizationMembers.userId, userIds),
-        ),
-      )
-      .limit(userIds.length);
-    for (const membership of memberships) snapshot.memberUserIds.add(membership.userId);
-  }
-
-  if (employeeNumbers.length > 0) {
-    const taken = await db
-      .select({
-        employeeNumber: hrEmployments.employeeNumber,
-        userId: hrPeople.userId,
-      })
-      .from(hrEmployments)
-      .innerJoin(hrPeople, livePersonOfEmployment(orgId))
-      .where(
-        and(
-          liveEmployment(orgId),
-          eq(hrEmployments.isPrimary, true),
-          inArray(hrEmployments.employeeNumber, [...employeeNumbers]),
-        ),
-      )
-      .limit(employeeNumbers.length);
-    for (const row of taken) snapshot.employeeNumberOwner.set(row.employeeNumber, row.userId);
-  }
-
-  return snapshot;
-}
-
-export function canonicalizeEmail(value: string): string {
-  return value.trim().toLowerCase();
+  return owners;
 }
 
 export function distinctRoles(rows: readonly BulkOnboardEmployeeRow[]): string[] {
@@ -115,17 +81,18 @@ function resolveDepartment(
 export function planBulkOnboarding(
   rows: readonly BulkOnboardEmployeeRow[],
   catalog: DepartmentCatalog,
-  identities: IdentitySnapshot,
+  screens: ReadonlyMap<string, AdmissionScreen>,
+  employeeNumberOwner: ReadonlyMap<string, string | null>,
   roleErrors: Map<string, string>,
 ): BulkOnboardPlan {
   const plan: BulkOnboardPlan = { accepted: [], rejected: [] };
   const seenEmails = new Set<string>();
-  const claimedNumbers = new Set(identities.employeeNumberOwner.keys());
+  const claimedNumbers = new Set(employeeNumberOwner.keys());
 
   for (let index = 0; index < rows.length; index += 1) {
     const source = rows[index];
     const row = index + 1;
-    const email = canonicalizeEmail(source.email);
+    const email = canonicalAdmissionEmail(source.email);
 
     if (seenEmails.has(email)) {
       plan.rejected.push({ row, email, success: false, error: "Duplicate email in this upload" });
@@ -146,20 +113,25 @@ export function planBulkOnboarding(
       continue;
     }
 
-    const existingUserId = identities.userIdByEmail.get(email);
-    if (existingUserId && identities.memberUserIds.has(existingUserId)) {
+    const screen = screens.get(email);
+    if (!screen) {
       plan.rejected.push({
         row,
         email,
         success: false,
-        error: "This email already belongs to an employee in your organization.",
+        error: "This email could not be checked against the organization's admission rules.",
       });
       continue;
     }
+    if (screen.kind !== "clear") {
+      plan.rejected.push({ row, email, success: false, error: admissionRefusalMessage(screen) });
+      continue;
+    }
 
+    const existingUserId = screen.userId ?? undefined;
     const requestedNumber = source.employeeId?.trim();
     if (requestedNumber) {
-      const owner = identities.employeeNumberOwner.get(requestedNumber);
+      const owner = employeeNumberOwner.get(requestedNumber);
       if (owner !== undefined && owner !== existingUserId) {
         plan.rejected.push({
           row,
@@ -180,8 +152,7 @@ export function planBulkOnboarding(
       row,
       email,
       source,
-      userId: existingUserId ?? randomUUID(),
-      isNewUser: existingUserId === undefined,
+      clearance: screen,
       role,
       departmentId: department.departmentId,
       employeeNumber,

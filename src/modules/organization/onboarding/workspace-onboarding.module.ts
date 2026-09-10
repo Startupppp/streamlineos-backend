@@ -7,5 +7,6 @@ import { OnboardingFlowModule } from "../../hr/onboarding/flow/onboarding-flow.m
   imports: [OnboardingFlowModule],
   controllers: [WorkspaceOnboardingController],
   providers: [WorkspaceOnboardingService],
+  exports: [WorkspaceOnboardingService],
 })
 export class WorkspaceOnboardingModule {}

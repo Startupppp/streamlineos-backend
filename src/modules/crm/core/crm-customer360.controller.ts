@@ -21,14 +21,10 @@ import {
   customer360Schema,
   customer360TimelineSchema,
 } from "./dto/crm-customer360-response.schemas";
+import { timelineQuerySchema, type TimelineQuery } from "./dto/customer360.schemas";
 
 const companyIdParams = z.object({ companyId: z.coerce.number().int().positive() }).strict();
 const clientIdParams = z.object({ clientId: z.coerce.number().int().positive() }).strict();
-
-const timelineQuerySchema = z.object({
-  cursor: z.string().optional(),
-});
-type TimelineQuery = z.infer<typeof timelineQuerySchema>;
 
 @RequireModule("crm")
 @Controller("crm/customer-360")

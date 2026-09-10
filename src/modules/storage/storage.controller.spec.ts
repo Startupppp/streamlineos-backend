@@ -9,7 +9,6 @@ import type { AppConfig } from "../../config/env.validation";
 function makeStorageConfig(publicUrl?: string): AppConfig {
   return {
     NODE_ENV: "test",
-    RBAC_MIGRATION_MODE: "off",
     PORT: 1500,
     DATABASE_URL: "postgres://test",
     BACKEND_JWT_SECRET: "x".repeat(44),

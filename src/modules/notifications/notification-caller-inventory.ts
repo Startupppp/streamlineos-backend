@@ -44,7 +44,7 @@ export const DIRECT_EMAIL_CALLER_INVENTORY: DirectEmailCallerInventoryEntry[] =
       "credential and account-recovery mail has no tenant-member notification recipient",
     ),
     EXEMPT(
-      "modules/automation/automation.service.ts",
+      "modules/automation/automation-action-executor.service.ts",
       DeliveryClass.WORKFLOW_EXTERNAL,
       "automation-supplied recipient and workflow-owned provider semantics",
     ),

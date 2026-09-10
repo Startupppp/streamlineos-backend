@@ -41,32 +41,22 @@ const stubHierarchy = {
   listBusinessUnits: jest.fn().mockResolvedValue(ORG_UNIT_LIST),
   createBusinessUnit: jest.fn().mockResolvedValue(buRow(BU_ID)),
   updateBusinessUnit: jest.fn().mockResolvedValue(buRow(BU_ID)),
-  deleteBusinessUnit: jest.fn().mockResolvedValue(undefined),
-  moveBusinessUnit: jest.fn().mockResolvedValue({ success: true as const }),
   listOrgBranches: jest.fn().mockResolvedValue(ORG_UNIT_LIST),
   listOrgBranchOptions: jest.fn().mockResolvedValue(ORG_UNIT_LIST),
   createOrgBranch: jest.fn().mockResolvedValue(brRow(BR_ID)),
   updateOrgBranch: jest.fn().mockResolvedValue(brRow(BR_ID)),
-  deleteOrgBranch: jest.fn().mockResolvedValue(undefined),
-  moveBranch: jest.fn().mockResolvedValue({ success: true as const }),
   listDepartments: jest.fn().mockResolvedValue(ORG_UNIT_LIST),
   createDepartment: jest.fn().mockResolvedValue(deptRow(DEPT_ID)),
   updateDepartment: jest.fn().mockResolvedValue(deptRow(DEPT_ID)),
-  deleteDepartment: jest.fn().mockResolvedValue(undefined),
-  moveDepartment: jest.fn().mockResolvedValue({ success: true as const }),
   listTeams: jest.fn().mockResolvedValue(ORG_UNIT_LIST),
   createTeam: jest.fn().mockResolvedValue(teamRow(TEAM_ID)),
   updateTeam: jest.fn().mockResolvedValue(teamRow(TEAM_ID)),
-  deleteTeam: jest.fn().mockResolvedValue(undefined),
-  moveTeam: jest.fn().mockResolvedValue({ success: true as const }),
   listLocations: jest.fn().mockResolvedValue(ORG_UNIT_LIST),
   createLocation: jest.fn().mockResolvedValue(locRow(LOC_ID)),
   updateLocation: jest.fn().mockResolvedValue(locRow(LOC_ID)),
-  deleteLocation: jest.fn().mockResolvedValue(undefined),
   listCostCenters: jest.fn().mockResolvedValue(ORG_UNIT_LIST),
   createCostCenter: jest.fn().mockResolvedValue(ccRow(CC_ID)),
   updateCostCenter: jest.fn().mockResolvedValue(ccRow(CC_ID)),
-  deleteCostCenter: jest.fn().mockResolvedValue(undefined),
 };
 
 const SERVICE_OVERRIDES = [{ provide: OrgHierarchyService, useValue: stubHierarchy }];
@@ -80,32 +70,22 @@ const HIERARCHY_CASES: ReadonlyArray<FenceCase> = [
   ["GET",   "/org-hierarchy/business-units",                     "settings:view",                {}, 200],
   ["POST",  "/org-hierarchy/business-units",                     "settings:organization:manage",  { name: "Test BU", code: "TB1" }, 201],
   ["PATCH", `/org-hierarchy/business-units/${BU_ID}`,            "settings:organization:manage",  { name: "Updated BU" }, 200],
-  ["DELETE",`/org-hierarchy/business-units/${BU_ID}`,            "settings:organization:manage",  {}, 200],
-  ["PATCH", `/org-hierarchy/business-units/${BU_ID}/move`,       "settings:organization:manage",  { parentId: null }, 200],
   ["GET",   "/org-hierarchy/branches",                           "settings:view",                {}, 200],
   ["GET",   "/org-hierarchy/branches/options",                   "branch:view",                  {}, 200],
   ["POST",  "/org-hierarchy/branches",                           "settings:organization:manage",  { name: "Test Branch", code: "BR1" }, 201],
   ["PATCH", `/org-hierarchy/branches/${BR_ID}`,                  "settings:organization:manage",  { name: "Updated Branch" }, 200],
-  ["DELETE",`/org-hierarchy/branches/${BR_ID}`,                  "settings:organization:manage",  {}, 200],
-  ["PATCH", `/org-hierarchy/branches/${BR_ID}/move`,             "settings:organization:manage",  { businessUnitId: null }, 200],
   ["GET",   "/org-hierarchy/departments",                        "settings:view",                {}, 200],
   ["POST",  "/org-hierarchy/departments",                        "settings:organization:manage",  { name: "Test Dept", code: "DP1" }, 201],
   ["PATCH", `/org-hierarchy/departments/${DEPT_ID}`,             "settings:organization:manage",  { name: "Updated Dept" }, 200],
-  ["DELETE",`/org-hierarchy/departments/${DEPT_ID}`,             "settings:organization:manage",  {}, 200],
-  ["PATCH", `/org-hierarchy/departments/${DEPT_ID}/move`,        "settings:organization:manage",  { branchId: null }, 200],
   ["GET",   "/org-hierarchy/teams",                              "settings:view",                {}, 200],
   ["POST",  "/org-hierarchy/teams",                              "settings:organization:manage",  { name: "Test Team", code: "TM1", departmentId: "00000000-0000-4000-8000-000000000003" }, 201],
   ["PATCH", `/org-hierarchy/teams/${TEAM_ID}`,                   "settings:organization:manage",  { name: "Updated Team" }, 200],
-  ["DELETE",`/org-hierarchy/teams/${TEAM_ID}`,                   "settings:organization:manage",  {}, 200],
-  ["PATCH", `/org-hierarchy/teams/${TEAM_ID}/move`,              "settings:organization:manage",  { departmentId: "00000000-0000-4000-8000-000000000003" }, 200],
   ["GET",   "/org-hierarchy/locations",                          "settings:view",                {}, 200],
   ["POST",  "/org-hierarchy/locations",                          "settings:organization:manage",  { name: "Test Location" }, 201],
   ["PATCH", `/org-hierarchy/locations/${LOC_ID}`,                "settings:organization:manage",  { name: "Updated Location" }, 200],
-  ["DELETE",`/org-hierarchy/locations/${LOC_ID}`,                "settings:organization:manage",  {}, 200],
   ["GET",   "/org-hierarchy/cost-centers",                       "settings:view",                {}, 200],
   ["POST",  "/org-hierarchy/cost-centers",                       "settings:organization:manage",  { name: "Test CC", code: "CC1" }, 201],
   ["PATCH", `/org-hierarchy/cost-centers/${CC_ID}`,              "settings:organization:manage",  { name: "Updated CC" }, 200],
-  ["DELETE",`/org-hierarchy/cost-centers/${CC_ID}`,              "settings:organization:manage",  {}, 200],
 ] as const;
 
 describe("Org hierarchy permission fence — HTTP boundary", () => {
@@ -258,31 +238,21 @@ describe("Org hierarchy route coverage index — literal calls for gate script",
     await expect((await s.get("/org-hierarchy/business-units")).status).toBe(401);
     await expect((await s.post("/org-hierarchy/business-units")).status).toBe(401);
     await expect((await s.patch("/org-hierarchy/business-units/00000000-0000-0000-0000-000000000001")).status).toBe(401);
-    await expect((await s.delete("/org-hierarchy/business-units/00000000-0000-0000-0000-000000000001")).status).toBe(401);
-    await expect((await s.patch("/org-hierarchy/business-units/00000000-0000-0000-0000-000000000001/move")).status).toBe(401);
     await expect((await s.get("/org-hierarchy/branches")).status).toBe(401);
     await expect((await s.get("/org-hierarchy/branches/options")).status).toBe(401);
     await expect((await s.post("/org-hierarchy/branches")).status).toBe(401);
     await expect((await s.patch("/org-hierarchy/branches/00000000-0000-0000-0000-000000000002")).status).toBe(401);
-    await expect((await s.delete("/org-hierarchy/branches/00000000-0000-0000-0000-000000000002")).status).toBe(401);
-    await expect((await s.patch("/org-hierarchy/branches/00000000-0000-0000-0000-000000000002/move")).status).toBe(401);
     await expect((await s.get("/org-hierarchy/departments")).status).toBe(401);
     await expect((await s.post("/org-hierarchy/departments")).status).toBe(401);
     await expect((await s.patch("/org-hierarchy/departments/00000000-0000-0000-0000-000000000003")).status).toBe(401);
-    await expect((await s.delete("/org-hierarchy/departments/00000000-0000-0000-0000-000000000003")).status).toBe(401);
-    await expect((await s.patch("/org-hierarchy/departments/00000000-0000-0000-0000-000000000003/move")).status).toBe(401);
     await expect((await s.get("/org-hierarchy/teams")).status).toBe(401);
     await expect((await s.post("/org-hierarchy/teams")).status).toBe(401);
     await expect((await s.patch("/org-hierarchy/teams/00000000-0000-0000-0000-000000000004")).status).toBe(401);
-    await expect((await s.delete("/org-hierarchy/teams/00000000-0000-0000-0000-000000000004")).status).toBe(401);
-    await expect((await s.patch("/org-hierarchy/teams/00000000-0000-0000-0000-000000000004/move")).status).toBe(401);
     await expect((await s.get("/org-hierarchy/locations")).status).toBe(401);
     await expect((await s.post("/org-hierarchy/locations")).status).toBe(401);
     await expect((await s.patch("/org-hierarchy/locations/00000000-0000-0000-0000-000000000005")).status).toBe(401);
-    await expect((await s.delete("/org-hierarchy/locations/00000000-0000-0000-0000-000000000005")).status).toBe(401);
     await expect((await s.get("/org-hierarchy/cost-centers")).status).toBe(401);
     await expect((await s.post("/org-hierarchy/cost-centers")).status).toBe(401);
     await expect((await s.patch("/org-hierarchy/cost-centers/00000000-0000-0000-0000-000000000006")).status).toBe(401);
-    await expect((await s.delete("/org-hierarchy/cost-centers/00000000-0000-0000-0000-000000000006")).status).toBe(401);
   });
 });

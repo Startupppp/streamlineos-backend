@@ -28,56 +28,15 @@ import {
   jobLevelRowSchema,
   headcountItemSchema,
 } from "./dto/core-response.schemas";
+import {
+  createCatalogSchema,
+  updateCatalogSchema,
+  type CreateCatalogInput,
+  type UpdateCatalogInput,
+} from "./dto/hr-core.schemas";
 
 const roleIdParams = z.object({ roleId: z.coerce.number().int().positive() }).strict();
 const levelIdParams = z.object({ levelId: z.coerce.number().int().positive() }).strict();
-
-const catalogNameSchema = z
-  .string()
-  .trim()
-  .transform((v) => v.replace(/\s+/g, " "))
-  .pipe(
-    z
-      .string()
-      .min(2, "Name must be at least 2 characters")
-      .max(100, "Name must be at most 100 characters")
-      .refine((v) => /[a-zA-Z]/.test(v), "Name must contain at least one letter")
-      .refine(
-        (v) => !/[^\p{L}\p{N}\s]{2,}/u.test(v),
-        "Name cannot have consecutive special characters",
-      ),
-  );
-
-const catalogCodeSchema = z
-  .union([
-    z.literal("").transform(() => undefined),
-    z
-      .string()
-      .trim()
-      .transform((v) => v.toUpperCase())
-      .pipe(
-        z
-          .string()
-          .min(1, "Code must be at least 1 character")
-          .max(20, "Code must be at most 20 characters")
-          .regex(
-            /^[A-Z0-9][A-Z0-9_-]*$/,
-            "Code can only use letters, numbers, hyphens, and underscores",
-          ),
-      ),
-  ])
-  .optional();
-
-const createCatalogSchema = z.object({
-  name: catalogNameSchema,
-  code: catalogCodeSchema,
-  description: z.string().trim().max(500).optional(),
-});
-
-const updateCatalogSchema = createCatalogSchema.partial();
-
-type CreateCatalogInput = z.infer<typeof createCatalogSchema>;
-type UpdateCatalogInput = z.infer<typeof updateCatalogSchema>;
 
 @RequireModule("hr")
 @Controller("hr/org")

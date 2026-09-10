@@ -17,77 +17,39 @@ import {
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { EntitlementsService } from "./entitlements.service";
 import { MANAGEABLE_MODULE_SET } from "./access-policy";
-
-const DENIED_MODULES_TTL_MS = 15_000;
+import { AccessVersionCache } from "./access-version-cache";
+import { DeniedModulesResolver } from "./denied-modules.resolver";
+import type { ReadAccessTable } from "./access-permission.resolver";
 
 @Injectable()
 export class UserModuleAccessService {
-  private readonly deniedModulesCache = new Map<
-    string,
-    { modules: Set<string>; expiresAt: number }
-  >();
+  private readonly deniedModulesResolver: DeniedModulesResolver;
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly entitlements: EntitlementsService,
     private readonly cache: CacheService,
-  ) {}
-
-  clearCacheForOrg(orgId: string): void {
-    const prefix = `${orgId}:`;
-    for (const key of this.deniedModulesCache.keys()) {
-      if (key.startsWith(prefix)) this.deniedModulesCache.delete(key);
-    }
+    private readonly accessVersionCache: AccessVersionCache,
+  ) {
+    const readAccessTable: ReadAccessTable = <Result>(
+      read: () => PromiseLike<Result>,
+    ): Promise<Result> => Promise.resolve(read());
+    this.deniedModulesResolver = new DeniedModulesResolver(
+      () => this.db,
+      readAccessTable,
+      (orgId) => this.accessVersionCache.getVersion(orgId),
+      (moduleKey) => this.entitlements.isCoreModule(moduleKey),
+    );
   }
 
+  /**
+   * No error fallback: an unreadable denial list must not resolve to "nothing
+   * is denied". That empty set fails OPEN — it restores every module the org
+   * took away from this user — and `DeniedModulesResolver.resolve` throws
+   * rather than swallowing, same invariant as `AccessService.readAccessTable`.
+   */
   async getUserDeniedModules(orgId: string, userId: string): Promise<Set<string>> {
-    const cacheKey = `${orgId}:${userId}`;
-    const cached = this.deniedModulesCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) return cached.modules;
-
-    /**
-     * No error fallback: an unreadable denial list must not resolve to "nothing
-     * is denied". That empty set fails OPEN — it restores every module the org
-     * took away from this user — and it was then cached for the TTL. Findings
-     * register #48, same defect as `AccessService.readAccessTable`.
-     */
-    const rows = await runInTenantTransaction(
-      this.db,
-      () =>
-        this.db
-          .select({ moduleKey: userModuleAccess.moduleKey })
-          .from(userModuleAccess)
-          .innerJoin(
-            organizationMembers,
-            and(
-              eq(organizationMembers.orgId, userModuleAccess.orgId),
-              eq(
-                organizationMembers.id,
-                userModuleAccess.organizationMembershipId,
-              ),
-            ),
-          )
-          .where(
-            and(
-              eq(userModuleAccess.orgId, orgId),
-              eq(organizationMembers.userId, userId),
-              eq(userModuleAccess.enabled, false),
-            ),
-          )
-          .limit(100),
-      { orgId },
-    );
-
-    const modules = new Set(
-      rows
-        .map((row) => row.moduleKey)
-        .filter((moduleKey) => !this.entitlements.isCoreModule(moduleKey)),
-    );
-    this.deniedModulesCache.set(cacheKey, {
-      modules,
-      expiresAt: Date.now() + DENIED_MODULES_TTL_MS,
-    });
-    return modules;
+    return this.deniedModulesResolver.resolve(orgId, userId);
   }
 
   async getUserModuleAccess(
@@ -152,7 +114,6 @@ export class UserModuleAccessService {
         throw new BadRequestException(
           `Module "${moduleKey}" is always available to organization members`,
         );
-      this.clearCacheForMember(orgId, userId);
       return this.getUserModuleAccess(orgId, userId);
     }
 
@@ -198,10 +159,5 @@ export class UserModuleAccessService {
 
     await this.cache.invalidate(CACHE_KEYS.userSession(userId));
     return this.getUserModuleAccess(orgId, userId);
-  }
-
-  private clearCacheForMember(orgId: string, userId: string): void {
-    const key = `${orgId}:${userId}`;
-    this.deniedModulesCache.delete(key);
   }
 }

@@ -1,13 +1,7 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Inject,
-  Injectable,
-} from "@nestjs/common";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import type { InviteActor } from "../organization/core/invitations.helpers";
 import { AccessService } from "../access/access.service";
 import { and, count, eq } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import {
@@ -17,6 +11,10 @@ import {
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { InvitationCreateService } from "../organization/core/invitation-create.service";
+import {
+  MembershipAdmissionService,
+  admissionFailure,
+} from "../organization/core/membership-admission.service";
 import {
   OrgMembershipService,
   type MemberLifecycleStatus,
@@ -37,9 +35,6 @@ import { withIdentity } from "../../common/tenant/with-identity";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { syncCanonicalEmploymentFields } from "../../common/hr/sync-canonical-employment-fields";
 import { syncCanonicalReportingLine } from "../../common/hr/sync-canonical-reporting-line";
-import { PlanLimitsService } from "../billing/core/plan-limits.service";
-import { SeatLedgerService } from "../billing/core/seat-ledger.service";
-import { lockMembersQuota } from "../billing/core/seat-definition";
 import { OrganizationUsersReader } from "./organization-users.reader";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
 
@@ -66,8 +61,7 @@ export class UsersService {
     private readonly audit: AuditService,
     private readonly cache: CacheService,
     private readonly access: AccessService,
-    private readonly planLimits: PlanLimitsService,
-    private readonly seatLedger: SeatLedgerService,
+    private readonly admission: MembershipAdmissionService,
     private readonly invitationsSvc: InvitationCreateService,
     private readonly orgMembership: OrgMembershipService,
     private readonly employment: EmploymentFactsService,
@@ -89,7 +83,6 @@ export class UsersService {
       firstName,
       lastName,
       role,
-      designation,
       phone,
       departmentId,
       branchId,
@@ -102,100 +95,39 @@ export class UsersService {
 
     await this.assertMayGrantRole(orgId, actor, role);
 
-    const existing = await this.db.query.users.findFirst({
-      where: eq(users.email, email),
-      columns: { id: true },
-    });
-    if (existing) {
-      const existingMembership = await this.db.query.organizationMembers.findFirst({
-        where: and(
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.userId, existing.id),
-        ),
-        columns: { status: true },
-      });
-      if (existingMembership) {
-        if (existingMembership.status === "SUSPENDED" || existingMembership.status === "LEFT") {
-          throw new ConflictException(
-            "This person was archived/suspended in this organization. Restore them from Users instead of inviting again.",
-          );
-        }
-        throw new ConflictException(
-          "User is already a member of this organization",
-        );
-      }
-      await withMembershipMutations(this.cache, (membership) =>
-        runInTenantTransaction(
-          this.db,
-          async (tx) => {
-            await tx.execute(lockMembersQuota(orgId));
-            await this.planLimits.assertWithinLimit(orgId, "members", 1, tx);
-            await membership.createMembership(tx, { orgId, userId: existing.id, role, onConflict: "skip" });
-            await syncOrgUnitPlacement(tx, orgId, existing.id, {
-              DEPARTMENT: departmentId ?? null,
-              BRANCH: branchId ?? null,
-            });
-            await this.seatLedger.recordSeatEvent(
-              {
-                orgId,
-                eventType: "INVITE_ACCEPTED",
-                subjectId: existing.id,
-                actorId: actorUserId,
-                reason: "existing user added to organisation",
-                idempotencyKey: `member-added:${orgId}:${existing.id}`,
-              },
-              tx,
-            );
-          },
-          { orgId },
-        )
-      );
-      await this.invalidateMembershipCaches(orgId);
-      return { userId: existing.id, created: false };
-    }
-
-    const userId = randomUUID();
     const trimmedFirst = firstName?.trim() || null;
     const trimmedLast = lastName?.trim() || null;
     const fromNames =
       [trimmedFirst, trimmedLast].filter(Boolean).join(" ") || null;
     const emailLocal = email.split("@")[0]?.trim() || null;
-    const fullName = fromNames ?? emailLocal;
 
-    await withMembershipMutations(this.cache, (membership) =>
+    const outcome = await withMembershipMutations(this.cache, (membership) =>
       runInTenantTransaction(
         this.db,
         async (tx) => {
-          await tx.execute(lockMembersQuota(orgId));
-          await this.planLimits.assertWithinLimit(orgId, "members", 1, tx);
-          await tx.insert(users).values({
-            id: userId,
+          const admitted = await this.admission.admitOne(tx, {
+            orgId,
             email,
-            name: fullName,
-            firstName: trimmedFirst,
-            lastName: trimmedLast,
-            emailVerified: new Date(),
-            phone: phone ?? null,
-            userStatus: "active",
-            activatedAt: new Date(),
-            isActive: true,
+            role,
+            actor,
+            membership,
+            seatReason: "user created directly",
+            createUserIfMissing: {
+              name: fromNames ?? emailLocal,
+              firstName: trimmedFirst,
+              lastName: trimmedLast,
+              phone: phone ?? null,
+              userStatus: "active",
+              activatedAt: new Date(),
+              isActive: true,
+            },
           });
-          await membership.createMembership(tx, { orgId, userId, role, onConflict: "skip" });
-          await syncOrgUnitPlacement(tx, orgId, userId, {
+          if (admitted.kind !== "admitted") throw admissionFailure(admitted);
+          await syncOrgUnitPlacement(tx, orgId, admitted.userId, {
             DEPARTMENT: departmentId ?? null,
             BRANCH: branchId ?? null,
           });
-          await this.seatLedger.recordSeatEvent(
-            {
-              orgId,
-              eventType: "INVITE_ACCEPTED",
-              subjectId: userId,
-              actorId: actorUserId,
-              reason: "user created directly",
-              idempotencyKey: `member-added:${orgId}:${userId}`,
-            },
-            tx,
-          );
+          return admitted;
         },
         { orgId },
       )
@@ -203,19 +135,21 @@ export class UsersService {
 
     await this.invalidateMembershipCaches(orgId);
 
+    if (!outcome.createdUser) return { userId: outcome.userId, created: false };
+
     this.audit.log({
       action: "user.created",
       userId: actorUserId,
       orgId,
-      targetId: userId,
+      targetId: outcome.userId,
       targetType: "user",
       actorUserId,
       resourceType: "user",
-      resourceId: userId,
+      resourceId: outcome.userId,
       metadata: { email, role },
     });
 
-    return { userId, created: true };
+    return { userId: outcome.userId, created: true };
   }
 
   async listUsers(orgId: string, params: ListUsersInput) {

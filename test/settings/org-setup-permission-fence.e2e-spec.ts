@@ -30,7 +30,6 @@ const ANNOUNCEMENT_ROW = {
 
 const stubOnboarding = {
   generateWorkspace: jest.fn().mockResolvedValue({ businessUnits: [], branches: [], departments: [], teams: [] }),
-  completeOnboarding: jest.fn().mockResolvedValue({ completedAt: NOW }),
 };
 
 const stubAnnouncements = {
@@ -48,6 +47,7 @@ const stubOrgMembers = {
 
 const stubOrgSetup = {
   getSetupSession: jest.fn().mockResolvedValue({ id: 1, type: "SETUP", status: "PENDING", currentStep: null, completedSteps: [], skippedSteps: [], data: {} }),
+  getSetupStatus: jest.fn().mockResolvedValue({ orgId: "org_1", onboardingCompletedAt: NOW, provisioning: "completed" as const, lastError: null }),
   completeSetup: jest.fn().mockResolvedValue({ success: true as const, orgId: "org_1" }),
   skipSetup: jest.fn().mockResolvedValue({ success: true as const, orgId: "org_1" }),
 };
@@ -63,7 +63,6 @@ type FenceCase = readonly [method: string, path: string, key: string, body: Reco
 
 const PERM_CASES: ReadonlyArray<FenceCase> = [
   ["POST", "/workspace-onboarding/generate",  "settings:organization:manage", { industry: "Technology" }, 200],
-  ["POST", "/workspace-onboarding/complete",   "settings:organization:manage", {}, 200],
   ["GET",  "/org/announcements/all",           "hr:announcements:manage",      {}, 200],
   ["POST", "/org/announcements",               "hr:announcements:manage",      { title: "Important Announcement", content: "This is the announcement content text." }, 201],
   ["PATCH","/org/announcements/1",             "hr:announcements:manage",      { title: "Updated Announcement" }, 200],
@@ -75,6 +74,7 @@ const UNIVERSAL_CASES: ReadonlyArray<[method: string, path: string, body: Record
   ["GET",  "/org/announcements",      {}, 200],
   ["POST", "/org/announcements/1/read", {}, 201],
   ["GET",  "/org/setup/session",      {}, 200],
+  ["GET",  "/org/setup/status",       {}, 200],
   ["POST", "/org/setup/complete",     { industry: "Technology", companySize: "50-200", enabledModules: ["hr"] }, 201],
   ["POST", "/org/setup/skip",         { reason: "Later" }, 201],
 ] as const;
@@ -147,7 +147,6 @@ describe("Org setup route coverage index — literal calls for gate script", () 
   it("all org setup routes reject unauthenticated requests", async () => {
     const s = request(app.getHttpServer());
     await expect((await s.post("/workspace-onboarding/generate").set("Idempotency-Key", randomUUID())).status).toBe(401);
-    await expect((await s.post("/workspace-onboarding/complete").set("Idempotency-Key", randomUUID())).status).toBe(401);
     await expect((await s.get("/org/announcements/all")).status).toBe(401);
     await expect((await s.get("/org/announcements")).status).toBe(401);
     await expect((await s.post("/org/announcements").set("Idempotency-Key", randomUUID())).status).toBe(401);
@@ -156,6 +155,7 @@ describe("Org setup route coverage index — literal calls for gate script", () 
     await expect((await s.post("/org/announcements/1/read").set("Idempotency-Key", randomUUID())).status).toBe(401);
     await expect((await s.get("/org/members")).status).toBe(401);
     await expect((await s.get("/org/setup/session")).status).toBe(401);
+    await expect((await s.get("/org/setup/status")).status).toBe(401);
     await expect((await s.post("/org/setup/complete").set("Idempotency-Key", randomUUID())).status).toBe(401);
     await expect((await s.post("/org/setup/skip").set("Idempotency-Key", randomUUID())).status).toBe(401);
   });

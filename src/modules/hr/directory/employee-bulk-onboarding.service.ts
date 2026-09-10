@@ -15,8 +15,10 @@ import {
   runInTenantTransaction,
 } from "../../../common/tenant/run-in-tenant-transaction";
 import { AccessService } from "../../access/access.service";
-import { PlanLimitsService } from "../../billing/core/plan-limits.service";
-import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
+import {
+  MembershipAdmissionService,
+  canonicalAdmissionEmail,
+} from "../../organization/core/membership-admission.service";
 import { EmailService } from "../../email/email.service";
 import { AutomationService } from "../../automation/automation.service";
 import { WebhooksDispatchService } from "../../webhooks/webhooks-dispatch.service";
@@ -27,16 +29,14 @@ import {
   loadDepartmentCatalog,
 } from "./bulk-onboarding/bulk-onboarding-departments";
 import {
-  canonicalizeEmail,
   distinctRoles,
   planBulkOnboarding,
-  preloadIdentities,
+  preloadEmployeeNumbers,
 } from "./bulk-onboarding/bulk-onboarding-plan";
 import { writeBulkOnboarding } from "./bulk-onboarding/bulk-onboarding-writes";
 import type {
   BulkOnboardRowResult,
   BulkOnboardWriteOutcome,
-  PlannedEmployee,
 } from "./bulk-onboarding/bulk-onboarding.types";
 
 @Injectable()
@@ -47,8 +47,7 @@ export class EmployeeBulkOnboardingService {
     private readonly hierarchyCache: OrgHierarchyCacheService,
     private readonly cache: CacheService,
     private readonly access: AccessService,
-    private readonly planLimits: PlanLimitsService,
-    private readonly seatLedger: SeatLedgerService,
+    private readonly admission: MembershipAdmissionService,
     private readonly email: EmailService,
     private readonly automation: AutomationService,
     private readonly webhooks: WebhooksDispatchService,
@@ -75,10 +74,9 @@ export class EmployeeBulkOnboardingService {
       rows.flatMap((row) => (row.departmentId == null && row.department ? [row.department] : [])),
     );
 
-    const identities = await preloadIdentities(
+    const employeeNumberOwner = await preloadEmployeeNumbers(
       this.db,
       actor.orgId,
-      [...new Set(rows.map((row) => canonicalizeEmail(row.email)))],
       [
         ...new Set(
           rows.flatMap((row) => (row.employeeId?.trim() ? [row.employeeId.trim()] : [])),
@@ -86,9 +84,14 @@ export class EmployeeBulkOnboardingService {
       ],
     );
 
-    const plan = planBulkOnboarding(rows, catalog, identities, roleErrors);
+    const screens = await this.admission.screenMany(this.db, {
+      orgId: actor.orgId,
+      emails: [...new Set(rows.map((row) => canonicalAdmissionEmail(row.email)))],
+    });
 
-    let outcome: BulkOnboardWriteOutcome = { createdUserIds: [], welcomeEmails: [] };
+    const plan = planBulkOnboarding(rows, catalog, screens, employeeNumberOwner, roleErrors);
+
+    let outcome: BulkOnboardWriteOutcome = { admitted: [], welcomeEmails: [] };
     const results: BulkOnboardRowResult[] = [...plan.rejected];
     if (plan.accepted.length > 0) {
       outcome = await withMembershipMutations(this.cache, (membership) =>
@@ -96,15 +99,14 @@ export class EmployeeBulkOnboardingService {
           this.db,
           (tx) =>
             writeBulkOnboarding(tx, actor, plan.accepted, {
-              planLimits: this.planLimits,
-              seatLedger: this.seatLedger,
+              admission: this.admission,
               personEmploymentSync: this.personEmploymentSync,
               membership,
             }),
           { orgId: actor.orgId },
         ),
       );
-      for (const employee of plan.accepted)
+      for (const employee of outcome.admitted)
         results.push({
           row: employee.row,
           email: employee.email,
@@ -113,7 +115,7 @@ export class EmployeeBulkOnboardingService {
         });
     }
 
-    this.deferDelivery(actor, plan.accepted, outcome, catalog.created);
+    this.deferDelivery(actor, outcome, catalog.created);
 
     await this.audit.logCritical({
       action: "hr.employees_bulk_onboarded",
@@ -138,14 +140,13 @@ export class EmployeeBulkOnboardingService {
 
   private deferDelivery(
     actor: CurrentUserContext,
-    accepted: readonly PlannedEmployee[],
     outcome: BulkOnboardWriteOutcome,
     hierarchyChanged: boolean,
   ): void {
-    if (accepted.length === 0 && !hierarchyChanged) return;
+    if (outcome.admitted.length === 0 && !hierarchyChanged) return;
 
-    for (const employee of accepted)
-      if (employee.isNewUser)
+    for (const employee of outcome.admitted)
+      if (employee.createdUser)
         this.webhooks.dispatch(actor.orgId, "employee.hired", {
           userId: employee.userId,
           email: employee.email,
@@ -154,13 +155,12 @@ export class EmployeeBulkOnboardingService {
           joiningDate: employee.joiningDate,
         });
 
-    const deliver = () => this.runDelivery(actor, accepted, outcome, hierarchyChanged);
+    const deliver = () => this.runDelivery(actor, outcome, hierarchyChanged);
     if (!registerAfterCommit(deliver)) void deliver();
   }
 
   private async runDelivery(
     actor: CurrentUserContext,
-    accepted: readonly PlannedEmployee[],
     outcome: BulkOnboardWriteOutcome,
     hierarchyChanged: boolean,
   ): Promise<void> {
@@ -175,10 +175,10 @@ export class EmployeeBulkOnboardingService {
       }
     }
 
-    if (accepted.length === 0) return;
+    if (outcome.admitted.length === 0) return;
     try {
       await runInNewTenantTransaction(this.db, actor.orgId, async () => {
-        for (const employee of accepted)
+        for (const employee of outcome.admitted)
           await this.automation.runAutomationsForEvent(actor.orgId, "onboarding.started", {
             userId: employee.userId,
             employeeName: `${employee.firstName} ${employee.lastName}`,

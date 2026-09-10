@@ -142,11 +142,29 @@ describe("the surface, enumerated from the committed contract", () => {
     // `pnpm openapi:generate` rather than assumed.
     // Descriptive, re-read after `pnpm openapi:generate`; the sweeps below are what bite.
     // 3667 -> 3666: `48c612a8d refactor(branches)` retired one operation. Descriptive only; the sweeps below are what bite.
-    expect(counts.operations).toBe(3666);
-    expect(counts.bodyFields).toBe(814);
+    // 3666 -> 3654, re-pinned 2026-09-11 after the org-access remediation regenerated the
+    // contract. The whole delta is accounted for route by route, and it has to be, because a
+    // count that moved further than the deleted routes explain is a signal, not a rebase:
+    //   -13 deleted: the six `DELETE /org-hierarchy/<kind>/{id}` (D4), the four
+    //       `PATCH /org-hierarchy/<kind>/{id}/move` (D3), `POST /workspace-onboarding/complete`
+    //       (D17, folded into the setup-completed outbox consumer), and the two compat deletes
+    //       `DELETE /hr/org/locations/{locationId}` and `DELETE /hr/org/teams/{teamId}`.
+    //   +1 added: `GET /org/setup/status`.
+    //   3666 - 13 + 1 = 3654.
+    // bodyFields 814 -> 810 and operationsWithIdFields 674 -> 670 are the SAME four operations:
+    // only the four move routes carried a request body at all, each declaring exactly one
+    // id-shaped field — businessUnitId, parentId, branchId, departmentId, read off the
+    // pre-deletion contract. The eight DELETEs and `POST /workspace-onboarding/complete`
+    // declared no request body and no query parameter; `GET /org/setup/status` declares
+    // neither; and the `invitees` array `POST /org/setup/complete` gained holds `email` and
+    // `role`, so it adds no id-shaped field. idFields is bodyFields + queryFields, hence -4.
+    // queryFields is unmoved at 245, which is the control: nothing on either side of the
+    // change declared a query parameter.
+    expect(counts.operations).toBe(3654);
+    expect(counts.bodyFields).toBe(810);
     expect(counts.queryFields).toBe(245);
-    expect(counts.idFields).toBe(1059);
-    expect(counts.operationsWithIdFields).toBe(674);
+    expect(counts.idFields).toBe(1055);
+    expect(counts.operationsWithIdFields).toBe(670);
   });
 
   /**

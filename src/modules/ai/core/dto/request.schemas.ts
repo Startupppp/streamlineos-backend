@@ -199,3 +199,63 @@ export const acceptCandidateScoreSchema = z.object({
   aiScore: z.number().int().min(0).max(100),
 }).strict();
 export type AcceptCandidateScoreInput = z.infer<typeof acceptCandidateScoreSchema>;
+
+export const nextBestActionsSchema = z.object({
+  limit: z.number().int().min(1).max(20).default(10),
+  withEvidence: z.boolean().optional().default(true),
+});
+export type NextBestActionsInput = z.infer<typeof nextBestActionsSchema>;
+
+export const emailDraftSchema = z.object({
+  entityType: z.enum(["lead", "deal"]),
+  entityId: z.number().int().positive(),
+  intent: z.string().min(1).max(1000),
+  tone: z.enum(["formal", "friendly", "urgent"]).default("friendly"),
+});
+export type EmailDraftInput = z.infer<typeof emailDraftSchema>;
+
+export const summarizeNotesSchema = z.object({
+  text: z.string().min(10).max(8000),
+});
+export type SummarizeNotesInput = z.infer<typeof summarizeNotesSchema>;
+
+export const objectionHelpSchema = z.object({
+  objection: z.string().min(1).max(2000),
+  context: z.string().max(1000).optional(),
+});
+export type ObjectionHelpInput = z.infer<typeof objectionHelpSchema>;
+
+export const meetingFollowUpSchema = z.object({
+  meetingTitle: z.string().min(1).max(200),
+  attendeeType: z.enum(["lead", "client"]),
+  attendeeId: z.number().int().positive(),
+  outcome: z.string().min(1).max(3000),
+  actionItems: z.array(z.string().max(500)).max(20).optional(),
+  scheduledAt: z.string(),
+  notes: z.string().max(2000).optional(),
+});
+export type MeetingFollowUpBodyInput = z.infer<typeof meetingFollowUpSchema>;
+
+export const accountSummaryWithCitationsSchema = z.object({
+  clientId: z.number().int().positive(),
+});
+export type AccountSummaryWithCitationsInput = z.infer<typeof accountSummaryWithCitationsSchema>;
+
+export const stalePipelineQuerySchema = z.object({
+  inactiveDays: z.coerce.number().int().min(1).max(90).default(14),
+});
+export type StalePipelineQuery = z.infer<typeof stalePipelineQuerySchema>;
+
+export const confirmActionBodySchema = z.object({ token: z.string().min(1) });
+export type ConfirmActionBodyInput = z.infer<typeof confirmActionBodySchema>;
+
+export const blogImproveWritingSchema = z.object({ content: z.string().min(1).max(10000) });
+export type BlogImproveWritingInput = z.infer<typeof blogImproveWritingSchema>;
+
+export const blogSuggestTitleSchema = z.object({
+  content: z.string().max(10000).optional(),
+});
+export type BlogSuggestTitleInput = z.infer<typeof blogSuggestTitleSchema>;
+
+export const blogSummarizeSchema = z.object({ content: z.string().max(10000).optional() });
+export type BlogSummarizeInput = z.infer<typeof blogSummarizeSchema>;

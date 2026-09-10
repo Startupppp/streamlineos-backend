@@ -1,3 +1,4 @@
+import type { AdmissionClearance } from "../../../organization/core/membership-admission.service";
 import type { BulkOnboardEmployeeRow } from "../dto/hr-directory.schemas";
 
 export interface BulkOnboardRowResult {
@@ -13,8 +14,7 @@ export interface PlannedEmployee {
   row: number;
   email: string;
   source: BulkOnboardEmployeeRow;
-  userId: string;
-  isNewUser: boolean;
+  clearance: AdmissionClearance;
   role: string;
   departmentId: string | null;
   employeeNumber: string;
@@ -25,12 +25,19 @@ export interface PlannedEmployee {
   dateOfBirth: string | null;
 }
 
+/** A planned row after admission has resolved its account and membership. */
+export interface AdmittedEmployee extends PlannedEmployee {
+  userId: string;
+  membershipId: number | null;
+  createdUser: boolean;
+}
+
 export interface BulkOnboardPlan {
   accepted: PlannedEmployee[];
   rejected: BulkOnboardRowResult[];
 }
 
 export interface BulkOnboardWriteOutcome {
-  createdUserIds: string[];
+  admitted: AdmittedEmployee[];
   welcomeEmails: Array<{ email: string; name: string; signInUrl: string }>;
 }

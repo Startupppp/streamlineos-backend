@@ -5,6 +5,8 @@ import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { OnboardingSessionService } from "../../../hr/onboarding/flow/onboarding-session.service";
 import { ModuleChecklistService } from "../../../hr/onboarding/flow/module-checklist.service";
 import { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
+import { WorkspaceOnboardingService } from "../../onboarding/workspace-onboarding.service";
+import { InvitationCreateService } from "../../core/invitation-create.service";
 import {
   OutboxConsumerRegistry,
   type OutboxEventRow,
@@ -79,7 +81,17 @@ function payloadFor(orgId: string): Record<string, unknown> {
     sessionAction: "complete",
     skipReason: null,
     sendWelcome: true,
+    industry: "IT Services",
+    invitees: [{ email: "new@alpha.test", role: "MEMBER" }],
   };
+}
+
+function membershipSelect() {
+  const chain: Record<string, jest.Mock> = {};
+  chain.from = jest.fn().mockReturnValue(chain);
+  chain.where = jest.fn().mockReturnValue(chain);
+  chain.limit = jest.fn().mockResolvedValue([{ isOwner: true }]);
+  return jest.fn().mockReturnValue(chain);
 }
 
 async function build() {
@@ -88,6 +100,13 @@ async function build() {
   const ensureChecklistsForModules = jest.fn().mockResolvedValue(undefined);
   const emit = jest.fn().mockResolvedValue(undefined);
   const register = jest.fn();
+  const generateWorkspace = jest.fn().mockResolvedValue({
+    businessUnits: 1,
+    branches: 1,
+    departments: 4,
+    teams: 4,
+  });
+  const bulkInvite = jest.fn().mockResolvedValue({ results: [] });
   const findFirst = jest
     .fn()
     .mockResolvedValue({ email: "owner@alpha.test", name: "Alpha Owner", firstName: null });
@@ -95,11 +114,16 @@ async function build() {
   const moduleRef = await Test.createTestingModule({
     providers: [
       OrgSetupCompletedConsumerService,
-      { provide: DRIZZLE, useValue: { query: { users: { findFirst } } } },
+      {
+        provide: DRIZZLE,
+        useValue: { query: { users: { findFirst } }, select: membershipSelect() },
+      },
       { provide: OnboardingSessionService, useValue: { completeSession, skipSession } },
       { provide: ModuleChecklistService, useValue: { ensureChecklistsForModules } },
       { provide: NotificationDispatchService, useValue: { emit } },
       { provide: OutboxConsumerRegistry, useValue: { register } },
+      { provide: WorkspaceOnboardingService, useValue: { generateWorkspace } },
+      { provide: InvitationCreateService, useValue: { bulkInvite } },
     ],
   }).compile();
 
@@ -110,6 +134,8 @@ async function build() {
     ensureChecklistsForModules,
     emit,
     findFirst,
+    generateWorkspace,
+    bulkInvite,
   };
 }
 
@@ -118,13 +144,17 @@ function provisioningCallCount(mocks: {
   skipSession: jest.Mock;
   ensureChecklistsForModules: jest.Mock;
   emit: jest.Mock;
+  generateWorkspace: jest.Mock;
+  bulkInvite: jest.Mock;
 }): number {
   return (
     seedSystemRolesForOrg.mock.calls.length +
     mocks.completeSession.mock.calls.length +
     mocks.skipSession.mock.calls.length +
     mocks.ensureChecklistsForModules.mock.calls.length +
-    mocks.emit.mock.calls.length
+    mocks.emit.mock.calls.length +
+    mocks.generateWorkspace.mock.calls.length +
+    mocks.bulkInvite.mock.calls.length
   );
 }
 
@@ -174,6 +204,8 @@ describe("OrgSetupCompletedConsumerService — cross-tenant isolation", () => {
       mocks.completeSession.mock.calls,
       mocks.skipSession.mock.calls,
       mocks.emit.mock.calls,
+      mocks.generateWorkspace.mock.calls,
+      mocks.bulkInvite.mock.calls,
     ]);
     expect(everyArgument).not.toContain(ORG_B);
     expect(everyArgument).not.toContain(ORG_A);

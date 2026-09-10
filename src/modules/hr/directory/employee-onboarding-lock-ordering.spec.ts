@@ -30,6 +30,7 @@ import { AutomationService } from "../../automation/automation.service";
 import { WebhooksDispatchService } from "../../webhooks/webhooks-dispatch.service";
 import { PersonEmploymentSyncService } from "../core/person-employment-sync.service";
 import { AccessService } from "../../access/access.service";
+import { MembershipAdmissionService } from "../../organization/core/membership-admission.service";
 
 const ORG_ID = "org-limit-test";
 const ACTOR = {
@@ -93,12 +94,14 @@ describe("EmployeeOnboardingService.onboardEmployee — seat-limit ordering", ()
         users: { findFirst: jest.fn().mockResolvedValue(null) },
         organizationMembers: { findFirst: jest.fn().mockResolvedValue(null) },
       },
-      select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({
-          innerJoin: jest.fn().mockReturnValue({
-            where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
-          }),
-        }),
+      select: jest.fn().mockImplementation(() => {
+        const chain: Record<string, unknown> = {};
+        const passthrough = () => chain;
+        chain["from"] = passthrough;
+        chain["innerJoin"] = passthrough;
+        chain["where"] = passthrough;
+        chain["limit"] = () => Promise.resolve([]);
+        return chain;
       }),
       transaction: jest.fn().mockImplementation(
         (fn: (t: ReturnType<typeof buildTx>) => Promise<unknown>) => fn(tx),
@@ -108,11 +111,12 @@ describe("EmployeeOnboardingService.onboardEmployee — seat-limit ordering", ()
     const module = await Test.createTestingModule({
       providers: [
         EmployeeOnboardingService,
+        MembershipAdmissionService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: PlanLimitsService, useValue: mockPlanLimits },
         {
           provide: SeatLedgerService,
-          useValue: { recordSeatEvent: jest.fn().mockResolvedValue(undefined) },
+          useValue: { recordSeatEvents: jest.fn().mockResolvedValue(undefined) },
         },
         {
           provide: CacheService,

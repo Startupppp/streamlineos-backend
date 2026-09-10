@@ -17,6 +17,7 @@ jest.mock("../../../common/region/cell-admission", () => ({
 }));
 jest.mock("../../../common/region/placement-lookup", () => ({
   placeOrganization: jest.fn().mockResolvedValue(undefined),
+  unplaceOrganization: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock("../../rbac/seed-system-roles", () => ({
   seedSystemRolesForOrg: jest.fn().mockResolvedValue(undefined),

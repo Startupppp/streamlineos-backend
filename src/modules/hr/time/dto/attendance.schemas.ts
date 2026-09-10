@@ -265,3 +265,18 @@ export type TeamStatusQuery = z.infer<typeof teamStatusQuerySchema>;
 export type AttendanceEmailReportInput = z.infer<typeof attendanceEmailReportSchema>;
 export type CreateOrgHolidayInput = z.infer<typeof createOrgHolidaySchema>;
 export type UpdateOrgHolidayInput = z.infer<typeof updateOrgHolidaySchema>;
+
+export const listRegularizationsSchema = z.object({
+  userId: z.string().optional(),
+  status: z.enum(["PENDING", "APPROVED", "REJECTED"]).optional(),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  cursor: z.string().min(1).max(512).optional(),
+  limit: pageSizeField(20, 100),
+});
+export type ListRegularizationsInput = z.infer<typeof listRegularizationsSchema>;
+
+export const rejectRegularizationSchema = z.object({
+  rejectionReason: z.string().min(1).max(500),
+});
+export type RejectRegularizationInput = z.infer<typeof rejectRegularizationSchema>;

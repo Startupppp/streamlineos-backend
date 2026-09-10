@@ -14,7 +14,7 @@ import { organizations, users, organizationMembers } from "./auth";
 // Deliberately named "onboarding_flow_*" (not "onboarding_*") to avoid colliding
 // with the pre-existing HR employee onboarding tables (onboarding_templates,
 // onboarding_template_steps, onboarding_tasks, onboarding_steps) which live in
-// hr/offboarding.ts and auth.ts and continue to serve that flow unchanged.
+// hr/onboarding.ts and auth.ts and continue to serve that flow unchanged.
 
 export const onboardingFlowSessions = pgTable("onboarding_flow_sessions", {
   id: serial("id").primaryKey(),

@@ -21,6 +21,23 @@ export const sprintListItemSchema = z.object({
   tickets: z.array(sprintTicketItemSchema),
 });
 
+export const activeSprintSchema = z
+  .object({
+    id: z.number().int(),
+    name: z.string(),
+    projectName: z.string(),
+    projectId: z.number().int().optional(),
+    progress: z.number().int(),
+    daysRemaining: z.number().int(),
+    totalTickets: z.number().int(),
+    doneTickets: z.number().int(),
+    inProgressTickets: z.number().int(),
+    todoTickets: z.number().int(),
+    totalPoints: z.number().int(),
+    completedPoints: z.number().int(),
+  })
+  .nullable();
+
 export const sprintRowSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),

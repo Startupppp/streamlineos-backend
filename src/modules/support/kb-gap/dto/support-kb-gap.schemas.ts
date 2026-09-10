@@ -11,3 +11,6 @@ export const listGapsQuerySchema = z
   .strict();
 
 export type ListGapsQuery = z.infer<typeof listGapsQuerySchema>;
+
+export const dismissGapPatchSchema = z.object({ action: z.literal("dismiss") });
+export type DismissGapPatchInput = z.infer<typeof dismissGapPatchSchema>;

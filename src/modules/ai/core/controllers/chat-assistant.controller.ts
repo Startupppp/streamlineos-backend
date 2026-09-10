@@ -45,6 +45,7 @@ import type { CreateRecognitionInput } from "../../../hr/performance/dto/engagem
 import {
   chatHistoryQuerySchema,
   chatRequestSchema,
+  confirmActionBodySchema,
   conversationCreateSchema,
   conversationMessagesQuerySchema,
   conversationRenameSchema,
@@ -150,8 +151,6 @@ const ticketStatusUpdatePayload = z.object({
 function isConfirmableAction(s: string): s is ConfirmableAction {
   return CONFIRMABLE_ACTIONS.some((action) => action === s);
 }
-
-const confirmActionBodySchema = z.object({ token: z.string().min(1) });
 
 @Controller("chat")
 @UseGuards(JwtAuthGuard, PermissionGuard)

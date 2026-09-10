@@ -13,6 +13,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { EmailService } from "../../email/email.service";
 import { InvitationCreateService } from "./invitation-create.service";
 import { InvitationLifecycleService } from "./invitation-lifecycle.service";
+import { MembershipAdmissionService } from "./membership-admission.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 
 describe("Invitation sub-services state transitions", () => {
@@ -62,6 +63,7 @@ describe("Invitation sub-services state transitions", () => {
       providers: [
         InvitationCreateService,
         InvitationLifecycleService,
+        MembershipAdmissionService,
         { provide: DRIZZLE, useValue: db },
         { provide: AuditService, useValue: { log: jest.fn() } },
         {

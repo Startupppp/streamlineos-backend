@@ -94,3 +94,6 @@ export const postOpeningBalancesSchema = z.object({
 }).strict();
 
 export type PostOpeningBalancesInput = z.infer<typeof postOpeningBalancesSchema>;
+
+export const applyTemplateSchema = z.object({ templateKey: z.string() });
+export type ApplyTemplateInput = z.infer<typeof applyTemplateSchema>;

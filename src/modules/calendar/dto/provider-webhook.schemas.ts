@@ -9,3 +9,5 @@ export const providerWebhookBodySchema = z
   .strict();
 
 export type ProviderWebhookBody = z.infer<typeof providerWebhookBodySchema>;
+
+export const webhookHandleResponseSchema = z.object({ action: z.string() });

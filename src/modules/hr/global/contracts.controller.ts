@@ -25,6 +25,7 @@ import {
   listContractsSchema,
   endContractSchema,
   convertToEmployeeSchema,
+  daysQuerySchema,
   type CreateContractInput,
   type UpdateContractInput,
   type ListContractsInput,
@@ -36,8 +37,6 @@ import { ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-o
 import { listContractsResponseSchema, listExpiringContractsResponseSchema, getContractResponseSchema, createContractResponseSchema, updateContractResponseSchema, endContractResponseSchema, convertToEmployeeResponseSchema, internshipCertificateResponseSchema, renewContractResponseSchema } from "./dto/global-response.schemas"
 
 const contractIdParams = z.object({ contractId: z.coerce.number().int().positive() }).strict();
-
-const daysQuerySchema = z.object({ days: z.coerce.number().int().min(1).max(3650).default(30) });
 
 @RequireModule("hr")
 @Controller("hr/global/contracts")

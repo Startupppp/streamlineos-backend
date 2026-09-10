@@ -116,7 +116,6 @@ function buildMockCache(
 function buildService(
   db: Db,
   cache: CacheService,
-  migrationMode: "off" | "degrade" = "off",
   tier: PlanTier = "ENTERPRISE",
 ) {
   const resolveTier = jest.fn().mockResolvedValue({ tier, plan: tier });
@@ -125,7 +124,6 @@ function buildService(
     db,
     cache,
     planLimits as unknown as PlanLimitsService,
-    { RBAC_MIGRATION_MODE: migrationMode },
   );
 }
 
@@ -186,7 +184,7 @@ describe("EntitlementsService", () => {
       expect(result).toBe(true);
     });
 
-    it("fails closed on 42P01 when migration mode is off", async () => {
+    it("fails closed on 42P01 (missing org_modules table)", async () => {
       const { db, mocks } = buildMockDb();
       mocks.findMany.mockRejectedValue({ code: "42P01" });
       const { cache } = buildMockCache();
@@ -204,20 +202,6 @@ describe("EntitlementsService", () => {
       const result = await buildService(db, cache).isModuleEnabled("org-1", "hr");
 
       expect(result).toBe(false);
-    });
-
-    it("degrades only when migration mode is explicitly enabled", async () => {
-      const { db, mocks } = buildMockDb();
-      mocks.findMany.mockRejectedValue({ code: "42P01" });
-      const { cache } = buildMockCache();
-
-      const result = await buildService(
-        db,
-        cache,
-        "degrade",
-      ).isModuleEnabled("org-1", "hr");
-
-      expect(result).toBe(true);
     });
 
     it("returns false when the row has enabled=false", async () => {
@@ -269,7 +253,7 @@ describe("EntitlementsService", () => {
         const { cache } = buildMockCache();
 
         await expect(
-          buildService(db, cache, "off", "FREE").setModuleEnabled(
+          buildService(db, cache, "FREE").setModuleEnabled(
             "org-1",
             moduleKey,
             true,
@@ -288,7 +272,7 @@ describe("EntitlementsService", () => {
         const { db, mocks } = buildMockDb();
         const { cache } = buildMockCache();
 
-        await buildService(db, cache, "off", "PAID").setModuleEnabled(
+        await buildService(db, cache, "PAID").setModuleEnabled(
           "org-1",
           moduleKey,
           true,
@@ -308,7 +292,7 @@ describe("EntitlementsService", () => {
       const { db, mocks } = buildMockDb();
       const { cache } = buildMockCache();
 
-      await buildService(db, cache, "off", "FREE").setModuleEnabled(
+      await buildService(db, cache, "FREE").setModuleEnabled(
         "org-1",
         "payroll",
         false,
@@ -327,7 +311,7 @@ describe("EntitlementsService", () => {
       const { db } = buildMockDb();
       const { cache } = buildMockCache(async () => ({ payroll: true }));
 
-      const service = buildService(db, cache, "off", "FREE");
+      const service = buildService(db, cache, "FREE");
 
       await expect(service.isModuleEnabled("org-1", "payroll")).resolves.toBe(true);
       await expect(

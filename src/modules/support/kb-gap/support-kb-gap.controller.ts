@@ -30,12 +30,14 @@ import {
   proposeDraftResponseSchema,
   dismissGapResponseSchema,
 } from "./dto/support-kb-gap-response.schemas";
-import { listGapsQuerySchema, type ListGapsQuery } from "./dto/support-kb-gap.schemas";
+import {
+  listGapsQuerySchema,
+  dismissGapPatchSchema,
+  type ListGapsQuery,
+  type DismissGapPatchInput,
+} from "./dto/support-kb-gap.schemas";
 
 const gapIdParams = z.object({ gapId: z.coerce.number().int().positive() }).strict();
-
-const patchSchema = z.object({ action: z.literal("dismiss") });
-type PatchInput = z.infer<typeof patchSchema>;
 
 @RequireModule("support")
 @Controller("support/knowledge-gaps")
@@ -91,12 +93,12 @@ export class SupportKbGapController {
 
   @Patch(":gapId")
   @RequirePermission("support:knowledge-gaps:manage")
-  @Validate({ params: gapIdParams, body: patchSchema })
+  @Validate({ params: gapIdParams, body: dismissGapPatchSchema })
   @ResponseSchema(dismissGapResponseSchema)
   patchGap(
     @Param("gapId", ParseIntPipe) gapId: number,
     @CurrentUser() u: CurrentUserContext,
-    @Body() body: PatchInput,
+    @Body() body: DismissGapPatchInput,
   ) {
     if (body.action === "dismiss") {
       return this.service.dismissGap(u.orgId, gapId);

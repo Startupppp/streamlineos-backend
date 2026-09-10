@@ -129,30 +129,6 @@ export const updateOrgTeamSchema = z
 
 export type UpdateOrgTeamInput = z.infer<typeof updateOrgTeamSchema>;
 
-export const moveOrgTeamSchema = z
-  .object({ departmentId: z.string().uuid() })
-  .strict();
-
-export type MoveOrgTeamInput = z.infer<typeof moveOrgTeamSchema>;
-
-export const moveBusinessUnitSchema = z
-  .object({ parentId: z.string().uuid().nullable() })
-  .strict();
-
-export type MoveBusinessUnitInput = z.infer<typeof moveBusinessUnitSchema>;
-
-export const moveOrgBranchSchema = z
-  .object({ businessUnitId: z.string().uuid().nullable() })
-  .strict();
-
-export type MoveOrgBranchInput = z.infer<typeof moveOrgBranchSchema>;
-
-export const moveOrgDepartmentSchema = z
-  .object({ branchId: z.string().uuid().nullable() })
-  .strict();
-
-export type MoveOrgDepartmentInput = z.infer<typeof moveOrgDepartmentSchema>;
-
 export const createOrgLocationSchema = z
   .object({
     name: orgNodeName,

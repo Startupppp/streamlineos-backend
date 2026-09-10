@@ -1,16 +1,9 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from "@nestjs/common";
-import { and, asc, eq, ilike, isNull, or } from "drizzle-orm";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { asc } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { orgUnits } from "../../../db/schema/common/organization";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import type {
   CreateBusinessUnitInput,
@@ -18,11 +11,19 @@ import type {
   ListQueryInput,
 } from "./dto/org-hierarchy.schemas";
 import {
-  getOrgUnitCursorFilter,
-  getOrgUnitStatusFilter,
   orgUnitNormalizedName,
   toOrgUnitCursorPage,
 } from "./org-hierarchy-list-filters";
+import {
+  assertOrgUnitCodeAvailable,
+  getOrgUnitListFilter,
+  getOrgUnitRowFilter,
+  getOrgUnitWriteFilter,
+  recordOrgUnitAudit,
+} from "./org-unit-crud";
+
+const KIND = "BUSINESS_UNIT";
+const LABEL = "Business unit";
 
 const ORG_BU_COLUMNS = {
   id: orgUnits.id,
@@ -70,75 +71,58 @@ export function toOrgBusinessUnit(row: OrgBusinessUnitRow) {
 export class OrgHierarchyBusinessUnitsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly cache: CacheService,
     private readonly audit: AuditService,
   ) {}
 
   async listBusinessUnits(orgId: string, query: ListQueryInput) {
-    const { cursor, limit, search, status } = query;
-    const statusFilter = getOrgUnitStatusFilter(status);
-    const cursorFilter = getOrgUnitCursorFilter(cursor);
-    const filters = and(
-      eq(orgUnits.orgId, orgId),
-      eq(orgUnits.kind, "BUSINESS_UNIT"),
-      isNull(orgUnits.deletedAt),
-      ...(search ? [or(ilike(orgUnits.name, `%${search}%`), ilike(orgUnits.code, `%${search}%`))] : []),
-      ...(statusFilter ? [statusFilter] : []),
-      ...(cursorFilter ? [cursorFilter] : []),
-    );
     const rows = await this.db
       .select(ORG_BU_COLUMNS)
       .from(orgUnits)
-      .where(filters)
+      .where(getOrgUnitListFilter({ orgId, kind: KIND, query }))
       .orderBy(asc(orgUnitNormalizedName), asc(orgUnits.id))
-      .limit(limit + 1);
-    return toOrgUnitCursorPage(rows, limit, toOrgBusinessUnit);
+      .limit(query.limit + 1);
+    return toOrgUnitCursorPage(rows, query.limit, toOrgBusinessUnit);
   }
 
   async getBusinessUnit(orgId: string, id: string) {
     const [row] = await this.db
       .select(ORG_BU_COLUMNS)
       .from(orgUnits)
-      .where(
-        and(
-          eq(orgUnits.id, id),
-          eq(orgUnits.orgId, orgId),
-          eq(orgUnits.kind, "BUSINESS_UNIT"),
-          isNull(orgUnits.deletedAt),
-        ),
-      )
+      .where(getOrgUnitRowFilter(orgId, KIND, id))
       .limit(1);
     return row ? toOrgBusinessUnit(row) : null;
   }
 
   async createBusinessUnit(orgId: string, userId: string, body: CreateBusinessUnitInput) {
-    const existing = await this.db.query.orgUnits.findFirst({
-      columns: { id: true },
-      where: and(
-        eq(orgUnits.orgId, orgId),
-        eq(orgUnits.kind, "BUSINESS_UNIT"),
-        eq(orgUnits.code, body.code.toUpperCase()),
-        isNull(orgUnits.deletedAt),
-      ),
+    const code = body.code.toUpperCase();
+    await assertOrgUnitCodeAvailable({
+      db: this.db,
+      orgId,
+      kind: KIND,
+      code,
+      label: LABEL,
     });
-    if (existing) throw new ConflictException("Business unit code already exists");
 
     const [row] = await this.db
       .insert(orgUnits)
       .values({
         id: randomUUID(),
         orgId,
-        kind: "BUSINESS_UNIT",
+        kind: KIND,
         name: body.name,
-        code: body.code.toUpperCase(),
+        code,
         description: body.description,
       })
       .returning(ORG_BU_COLUMNS);
 
     if (!row) throw new Error("Failed to create business unit");
 
-    await this.cache.invalidateForOrg(orgId, "org:units:BUSINESS_UNIT");
-    await this.audit.logCritical({ action: "org.businessUnit.created", userId, orgId, targetId: row.id, targetType: "org_unit" });
+    await recordOrgUnitAudit(this.audit, {
+      action: "org.businessUnit.created",
+      userId,
+      orgId,
+      targetId: row.id,
+    });
 
     return toOrgBusinessUnit(row);
   }
@@ -148,65 +132,30 @@ export class OrgHierarchyBusinessUnitsService {
     if (!existing) throw new NotFoundException("Business unit not found");
 
     if (body.code && body.code !== existing.code) {
-      const conflict = await this.db.query.orgUnits.findFirst({
-        columns: { id: true },
-        where: and(
-          eq(orgUnits.orgId, orgId),
-          eq(orgUnits.kind, "BUSINESS_UNIT"),
-          eq(orgUnits.code, body.code.toUpperCase()),
-          isNull(orgUnits.deletedAt),
-        ),
+      await assertOrgUnitCodeAvailable({
+        db: this.db,
+        orgId,
+        kind: KIND,
+        code: body.code.toUpperCase(),
+        label: LABEL,
       });
-      if (conflict) throw new ConflictException("Business unit code already exists");
     }
 
     const [row] = await this.db
       .update(orgUnits)
       .set({ ...body, ...(body.code !== undefined && { code: body.code.toUpperCase() }) })
-      .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "BUSINESS_UNIT")))
+      .where(getOrgUnitWriteFilter(orgId, KIND, id))
       .returning(ORG_BU_COLUMNS);
 
     if (!row) throw new NotFoundException("Business unit not found");
 
-    await this.cache.invalidateForOrg(orgId, "org:units:BUSINESS_UNIT");
-    await this.audit.logCritical({ action: "org.businessUnit.updated", userId, orgId, targetId: id, targetType: "org_unit" });
+    await recordOrgUnitAudit(this.audit, {
+      action: "org.businessUnit.updated",
+      userId,
+      orgId,
+      targetId: id,
+    });
 
     return toOrgBusinessUnit(row);
-  }
-
-  async deleteBusinessUnit(orgId: string, userId: string, id: string) {
-    const existing = await this.getBusinessUnit(orgId, id);
-    if (!existing) throw new NotFoundException("Business unit not found");
-
-    await this.db
-      .update(orgUnits)
-      .set({ deletedAt: new Date() })
-      .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "BUSINESS_UNIT")));
-
-    await this.cache.invalidateForOrg(orgId, "org:units:BUSINESS_UNIT");
-    await this.audit.logCritical({ action: "org.businessUnit.deleted", userId, orgId, targetId: id, targetType: "org_unit" });
-  }
-
-  async moveBusinessUnit(orgId: string, buId: string, newParentId: string | null) {
-    const bu = await this.db.query.orgUnits.findFirst({
-      columns: { id: true },
-      where: and(
-        eq(orgUnits.id, buId),
-        eq(orgUnits.orgId, orgId),
-        eq(orgUnits.kind, "BUSINESS_UNIT"),
-        isNull(orgUnits.deletedAt),
-      ),
-    });
-    if (!bu) throw new NotFoundException("Business unit not found");
-    if (newParentId !== null && newParentId === buId) {
-      throw new BadRequestException("A unit cannot be its own parent");
-    }
-
-    await this.db
-      .update(orgUnits)
-      .set({ parentId: newParentId, updatedAt: new Date() })
-      .where(and(eq(orgUnits.id, buId), eq(orgUnits.orgId, orgId)));
-
-    return { success: true };
   }
 }

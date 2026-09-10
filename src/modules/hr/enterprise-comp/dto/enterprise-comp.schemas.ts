@@ -222,3 +222,12 @@ export type UpdateEquityGrantInput = z.infer<typeof updateEquityGrantSchema>;
 export type ListEquityGrantsInput = z.infer<typeof listEquityGrantsSchema>;
 export type CreateExerciseInput = z.infer<typeof createExerciseSchema>;
 export type ExitTreatmentQuery = z.infer<typeof exitTreatmentQuerySchema>;
+
+export const costByDeptSchema = z.object({ periodKey: z.string().min(7) });
+export type CostByDeptQuery = z.infer<typeof costByDeptSchema>;
+
+export const forecastedCostQuerySchema = z.object({ cycleId: z.coerce.number().int().positive() });
+export type ForecastedCostQuery = z.infer<typeof forecastedCostQuerySchema>;
+
+export const seedPresetsSchema = z.object({ countryCode: z.string().length(2), periodKey: z.string().min(7) }).strict();
+export type SeedPresetsInput = z.infer<typeof seedPresetsSchema>;

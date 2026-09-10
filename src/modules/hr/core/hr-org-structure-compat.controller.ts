@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  Delete,
   Get,
   HttpCode,
   Param,
@@ -28,7 +27,7 @@ import {
 import { HrOrgCatalogService } from "./hr-org-catalog.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { successSchema } from "../../../common/openapi/response-envelopes";
 import { orgLocationSchema, orgTeamSchema } from "./dto/core-response.schemas";
 
@@ -76,18 +75,6 @@ export class HrOrgStructureCompatController {
     );
   }
 
-  @Delete("locations/:locationId")
-  @HttpCode(204)
-  @NoContentResponse()
-  @RequirePermission("settings:organization:manage")
-  @Validate({ params: locationIdParams })
-  deleteLocation(
-    @Param("locationId") locationId: string,
-    @CurrentUser() user: CurrentUserContext,
-  ) {
-    return this.catalog.deleteLocation(user.orgId, user.userId, locationId);
-  }
-
   @Get("teams")
   @ResponseSchema(z.array(orgTeamSchema))
   @RequirePermission("settings:view")
@@ -117,17 +104,5 @@ export class HrOrgStructureCompatController {
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.catalog.updateTeam(user.orgId, user.userId, teamId, body);
-  }
-
-  @Delete("teams/:teamId")
-  @HttpCode(204)
-  @NoContentResponse()
-  @RequirePermission("settings:organization:manage")
-  @Validate({ params: teamIdParams })
-  deleteTeam(
-    @Param("teamId") teamId: string,
-    @CurrentUser() user: CurrentUserContext,
-  ) {
-    return this.catalog.deleteTeam(user.orgId, user.userId, teamId);
   }
 }

@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { asc, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import {
   orgUnits,
@@ -7,7 +7,6 @@ import {
 } from "../../../db/schema/common/organization";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import type {
   CreateOrgLocationInput,
@@ -15,11 +14,17 @@ import type {
   UpdateOrgLocationInput,
 } from "./dto/org-hierarchy.schemas";
 import {
-  getOrgUnitCursorFilter,
-  getOrgUnitStatusFilter,
   orgUnitNormalizedName,
   toOrgUnitCursorPage,
 } from "./org-hierarchy-list-filters";
+import {
+  getOrgUnitListFilter,
+  getOrgUnitRowFilter,
+  getOrgUnitWriteFilter,
+  recordOrgUnitAudit,
+} from "./org-unit-crud";
+
+const KIND = "LOCATION";
 
 const ORG_LOCATION_COLUMNS = {
   id: orgUnits.id,
@@ -31,6 +36,14 @@ const ORG_LOCATION_COLUMNS = {
   updatedAt: orgUnits.updatedAt,
   deletedAt: orgUnits.deletedAt,
 };
+
+const locationAddressSearch = (pattern: string) =>
+  sql<boolean>`coalesce(${orgUnits.metadata}->>'address', '') ilike ${pattern}`;
+
+/** Locations carry no user-supplied code; it is derived from the name. */
+function toLocationCode(name: string) {
+  return name.substring(0, 8).toUpperCase().replace(/\s/g, "");
+}
 
 type OrgLocationRow = Pick<
   typeof orgUnits.$inferSelect,
@@ -66,37 +79,24 @@ export function toOrgLocation(row: OrgLocationRow) {
 export class OrgHierarchyLocationsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly cache: CacheService,
     private readonly audit: AuditService,
   ) {}
 
   async listLocations(orgId: string, query: ListQueryInput) {
-    const { cursor, limit, search, status } = query;
-    const statusFilter = getOrgUnitStatusFilter(status);
-    const cursorFilter = getOrgUnitCursorFilter(cursor);
-    const filters = and(
-      eq(orgUnits.orgId, orgId),
-      eq(orgUnits.kind, "LOCATION"),
-      isNull(orgUnits.deletedAt),
-      ...(search
-        ? [
-            or(
-              ilike(orgUnits.name, `%${search}%`),
-              ilike(orgUnits.code, `%${search}%`),
-              sql<boolean>`coalesce(${orgUnits.metadata}->>'address', '') ilike ${`%${search}%`}`,
-            ),
-          ]
-        : []),
-      ...(statusFilter ? [statusFilter] : []),
-      ...(cursorFilter ? [cursorFilter] : []),
-    );
     const rows = await this.db
       .select(ORG_LOCATION_COLUMNS)
       .from(orgUnits)
-      .where(filters)
+      .where(
+        getOrgUnitListFilter({
+          orgId,
+          kind: KIND,
+          query,
+          searchExtension: locationAddressSearch,
+        }),
+      )
       .orderBy(asc(orgUnitNormalizedName), asc(orgUnits.id))
-      .limit(limit + 1);
-    return toOrgUnitCursorPage(rows, limit, toOrgLocation);
+      .limit(query.limit + 1);
+    return toOrgUnitCursorPage(rows, query.limit, toOrgLocation);
   }
 
   private async getLocationRow(
@@ -106,14 +106,7 @@ export class OrgHierarchyLocationsService {
     const [row] = await this.db
       .select(ORG_LOCATION_COLUMNS)
       .from(orgUnits)
-      .where(
-        and(
-          eq(orgUnits.id, id),
-          eq(orgUnits.orgId, orgId),
-          eq(orgUnits.kind, "LOCATION"),
-          isNull(orgUnits.deletedAt),
-        ),
-      )
+      .where(getOrgUnitRowFilter(orgId, KIND, id))
       .limit(1);
     return row ?? null;
   }
@@ -133,9 +126,9 @@ export class OrgHierarchyLocationsService {
       .values({
         id: randomUUID(),
         orgId,
-        kind: "LOCATION",
+        kind: KIND,
         name: body.name,
-        code: body.name.substring(0, 8).toUpperCase().replace(/\s/g, ""),
+        code: toLocationCode(body.name),
         metadata: {
           locationType: body.type ?? "OFFICE",
           ...(body.address !== undefined
@@ -153,13 +146,11 @@ export class OrgHierarchyLocationsService {
 
     if (!row) throw new Error("Failed to create location");
 
-    await this.cache.invalidateForOrg(orgId, "org:units:LOCATION");
-    await this.audit.logCritical({
+    await recordOrgUnitAudit(this.audit, {
+      action: "org.location.created",
       userId,
       orgId,
       targetId: row.id,
-      targetType: "org_unit",
-      action: "org.location.created",
     });
 
     return toOrgLocation(row);
@@ -198,51 +189,18 @@ export class OrgHierarchyLocationsService {
             : {}),
         },
       })
-      .where(
-        and(
-          eq(orgUnits.id, id),
-          eq(orgUnits.orgId, orgId),
-          eq(orgUnits.kind, "LOCATION"),
-        ),
-      )
+      .where(getOrgUnitWriteFilter(orgId, KIND, id))
       .returning(ORG_LOCATION_COLUMNS);
 
     if (!row) throw new NotFoundException("Location not found");
 
-    await this.cache.invalidateForOrg(orgId, "org:units:LOCATION");
-    await this.audit.logCritical({
+    await recordOrgUnitAudit(this.audit, {
       action: "org.location.updated",
       userId,
       orgId,
       targetId: id,
-      targetType: "org_unit",
     });
 
     return toOrgLocation(row);
-  }
-
-  async deleteLocation(orgId: string, userId: string, id: string) {
-    const existing = await this.getLocation(orgId, id);
-    if (!existing) throw new NotFoundException("Location not found");
-
-    await this.db
-      .update(orgUnits)
-      .set({ deletedAt: new Date() })
-      .where(
-        and(
-          eq(orgUnits.id, id),
-          eq(orgUnits.orgId, orgId),
-          eq(orgUnits.kind, "LOCATION"),
-        ),
-      );
-
-    await this.cache.invalidateForOrg(orgId, "org:units:LOCATION");
-    await this.audit.logCritical({
-      action: "org.location.deleted",
-      userId,
-      orgId,
-      targetId: id,
-      targetType: "org_unit",
-    });
   }
 }

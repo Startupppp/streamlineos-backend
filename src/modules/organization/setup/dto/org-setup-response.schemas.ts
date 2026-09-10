@@ -79,7 +79,25 @@ export const generateWorkspaceResponseSchema = z.object({
   teams: z.array(z.string()),
 });
 
-/** `WorkspaceOnboardingService.completeOnboarding` */
-export const completeOnboardingResponseSchema = z.object({
-  completedAt: wireDate(),
+/**
+ * `OrgSetupService.getSetupStatus` — what the wizard polls once it has fired
+ * `POST /org/setup/complete`.
+ *
+ * `onboardingCompletedAt` is the durable stamp: once it is non-null the wizard is finished and
+ * replaying it is a no-op. `provisioning` reports the asynchronous half that the setup-completed
+ * outbox consumer owns (roles, checklists, workspace structure, invitations, welcome), read from
+ * that consumer's inbox row — `pending` means the row has committed but the relay has not picked
+ * the event up yet, which is not the same as nothing having happened.
+ */
+export const orgSetupStatusResponseSchema = z.object({
+  orgId: z.string().nullable(),
+  onboardingCompletedAt: nullableWireDate(),
+  provisioning: z.enum([
+    "not-started",
+    "pending",
+    "in-progress",
+    "completed",
+    "failed",
+  ]),
+  lastError: z.string().nullable(),
 });

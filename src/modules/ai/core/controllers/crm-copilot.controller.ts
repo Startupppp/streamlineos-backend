@@ -45,51 +45,21 @@ import {
   dealSummaryWithCitationsResponseSchema,
   accountSummaryWithCitationsResponseSchema,
 } from "../dto/ai-response.schemas";
+import {
+  nextBestActionsSchema,
+  emailDraftSchema,
+  summarizeNotesSchema,
+  objectionHelpSchema,
+  meetingFollowUpSchema,
+  accountSummaryWithCitationsSchema,
+  stalePipelineQuerySchema,
+  type MeetingFollowUpBodyInput,
+  type AccountSummaryWithCitationsInput,
+  type StalePipelineQuery,
+} from "../dto/request.schemas";
 
 const leadIdParams = z.object({ leadId: z.coerce.number().int().positive() }).strict();
 const dealIdParams = z.object({ dealId: z.coerce.number().int().positive() }).strict();
-
-const nextBestActionsSchema = z.object({
-  limit: z.number().int().min(1).max(20).default(10),
-  withEvidence: z.boolean().optional().default(true),
-});
-
-const emailDraftSchema = z.object({
-  entityType: z.enum(["lead", "deal"]),
-  entityId: z.number().int().positive(),
-  intent: z.string().min(1).max(1000),
-  tone: z.enum(["formal", "friendly", "urgent"]).default("friendly"),
-});
-
-const summarizeNotesSchema = z.object({
-  text: z.string().min(10).max(8000),
-});
-
-const objectionHelpSchema = z.object({
-  objection: z.string().min(1).max(2000),
-  context: z.string().max(1000).optional(),
-});
-
-const meetingFollowUpSchema = z.object({
-  meetingTitle: z.string().min(1).max(200),
-  attendeeType: z.enum(["lead", "client"]),
-  attendeeId: z.number().int().positive(),
-  outcome: z.string().min(1).max(3000),
-  actionItems: z.array(z.string().max(500)).max(20).optional(),
-  scheduledAt: z.string(),
-  notes: z.string().max(2000).optional(),
-});
-type MeetingFollowUpBodyInput = z.infer<typeof meetingFollowUpSchema>;
-
-const accountSummaryWithCitationsSchema = z.object({
-  clientId: z.number().int().positive(),
-});
-type AccountSummaryWithCitationsInput = z.infer<typeof accountSummaryWithCitationsSchema>;
-
-const stalePipelineQuerySchema = z.object({
-  inactiveDays: z.coerce.number().int().min(1).max(90).default(14),
-});
-type StalePipelineQuery = z.infer<typeof stalePipelineQuerySchema>;
 
 @Controller("ai/crm")
 @UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)

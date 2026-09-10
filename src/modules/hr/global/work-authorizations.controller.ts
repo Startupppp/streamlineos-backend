@@ -23,6 +23,7 @@ import {
   createWorkAuthSchema,
   updateWorkAuthSchema,
   listWorkAuthSchema,
+  daysQuerySchema,
   type CreateWorkAuthInput,
   type UpdateWorkAuthInput,
   type ListWorkAuthInput,
@@ -32,8 +33,6 @@ import { ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-o
 import { listWorkAuthsResponseSchema, listExpiringWorkAuthsResponseSchema, getWorkAuthResponseSchema, createWorkAuthResponseSchema, updateWorkAuthResponseSchema, removeWorkAuthResponseSchema } from "./dto/global-response.schemas"
 
 const authIdParams = z.object({ authId: z.coerce.number().int().positive() }).strict();
-
-const daysQuerySchema = z.object({ days: z.coerce.number().int().min(1).max(3650).default(30) });
 
 @RequireModule("hr")
 @Controller("hr/global/work-authorizations")

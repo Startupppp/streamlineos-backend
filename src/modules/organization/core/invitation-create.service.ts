@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -20,13 +19,7 @@ import { EmailService } from "../../email/email.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
 import { lockMembersQuota } from "../../billing/core/seat-definition";
-import {
-  invitationEvents,
-  invitations,
-  organizationAllowedEmailDomains,
-  organizationMembers,
-  users,
-} from "../../../db/schema";
+import { invitationEvents, invitations } from "../../../db/schema";
 import {
   findActorMembershipId,
   recordDeliveryFailure,
@@ -34,6 +27,10 @@ import {
   type InviteActor,
 } from "./invitations.helpers";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
+import {
+  MembershipAdmissionService,
+  admissionFailure,
+} from "./membership-admission.service";
 
 interface InvitationMutationResult {
   success: true;
@@ -52,6 +49,7 @@ export class InvitationCreateService {
     private readonly planLimits: PlanLimitsService,
     private readonly seatLedger: SeatLedgerService,
     private readonly access: AccessService,
+    private readonly admission: MembershipAdmissionService,
   ) {}
 
   private readonly logger = new Logger(InvitationCreateService.name);
@@ -122,47 +120,8 @@ export class InvitationCreateService {
   ): Promise<InvitationMutationResult> {
     const org = await requireActiveOrg(this.db, orgId);
 
-    const existingUser = await this.db.query.users.findFirst({
-      where: eq(users.email, email),
-      columns: { id: true },
-    });
-
-    if (existingUser) {
-      const existingMember = await this.db.query.organizationMembers.findFirst({
-        where: and(
-          eq(organizationMembers.userId, existingUser.id),
-          eq(organizationMembers.orgId, orgId),
-        ),
-        columns: { status: true },
-      });
-      if (existingMember) {
-        if (
-          existingMember.status === "SUSPENDED" ||
-          existingMember.status === "LEFT"
-        ) {
-          throw new ConflictException(
-            "This person was archived/suspended in this organization. Restore them from Users instead of inviting again.",
-          );
-        }
-        throw new ConflictException("User is already a member");
-      }
-    }
-
-    const allowedDomainRows = await this.db
-      .select({ domain: organizationAllowedEmailDomains.domain })
-      .from(organizationAllowedEmailDomains)
-      .where(eq(organizationAllowedEmailDomains.orgId, orgId))
-      .limit(100);
-
-    if (allowedDomainRows.length > 0) {
-      const emailDomain = email.split("@")[1]?.toLowerCase();
-      const allowed = allowedDomainRows.map((r) => r.domain);
-      if (!emailDomain || !allowed.includes(emailDomain)) {
-        throw new BadRequestException(
-          `Email domain not allowed. Permitted: ${allowed.join(", ")}`,
-        );
-      }
-    }
+    const screen = await this.admission.screen(this.db, { orgId, email });
+    if (screen.kind !== "clear") throw admissionFailure(screen);
 
     const now = new Date();
     const actorMembership = await findActorMembershipId(this.db, orgId, actorUserId);

@@ -185,7 +185,7 @@ export class OrganizationController {
   @ResponseSchema(createOrgResponseSchema)
   @HttpCode(201)
   @UseGuards(RateLimitGuard)
-  @AuthorizedInService("any authenticated user may create a new organisation; plan limits enforced in OrgProfileService.createOrganization")
+  @AuthorizedInService("any authenticated user may create a new organisation; an organisation is a tenant, not a metered resource, so there is deliberately NO count cap — @UseRateLimit(\"organization:create\") is the abuse control")
   @UseRateLimit("organization:create")
   @Idempotent("organization.create")
   @Validate({ body: createOrganizationSchema })

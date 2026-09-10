@@ -12,7 +12,6 @@ import {
   UseInterceptors,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
-import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
@@ -28,11 +27,9 @@ import { StorageService } from "./storage.service";
 import { MediaTransformRunner } from "./media-transform.runner";
 import { AvScanner } from "../../common/security/av-scan";
 import { validateMagicBytes } from "./file-signatures";
-import { onboardingDocTypeSchema } from "./dto/storage.schemas";
+import { onboardingDocTypeSchema, uploadBodySchema } from "./dto/storage.schemas";
 import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { onboardingDocumentResponseSchema } from "./dto/storage-response.schemas";
-
-const uploadBodySchema = z.object({ type: onboardingDocTypeSchema });
 
 const ALLOWED_TYPES = [
   "application/pdf",

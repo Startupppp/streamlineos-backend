@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const HR_WORKFLOW_OBJECT_TYPES = [
   "leave_request", "attendance_regularization", "overtime_request", "comp_off_request",
@@ -115,3 +115,10 @@ export const SimulateWorkflowSchema = z.object({
 
 export type SimulateWorkflowDto = z.infer<typeof SimulateWorkflowSchema>;
 export type UpdateDelegationDto = z.infer<typeof UpdateDelegationSchema>;
+
+export const PaginationSchema = z.object({
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
+});
+
+export type PaginationDto = z.infer<typeof PaginationSchema>;

@@ -2,18 +2,16 @@ import { Body, Controller, Headers, HttpCode, Post } from "@nestjs/common";
 import { Public } from "../../common/auth/public.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
-import { z } from "zod";
 import { CalendarProviderWebhookService } from "./calendar-provider-webhook.service";
 import {
   providerWebhookBodySchema,
+  webhookHandleResponseSchema,
   type ProviderWebhookBody,
 } from "./dto/provider-webhook.schemas";
 import {
   assertCalendarWebhookSecret,
   CALENDAR_WEBHOOK_SECRET_HEADER,
 } from "./calendar-webhook-secret";
-
-const webhookHandleResponseSchema = z.object({ action: z.string() });
 
 @Public()
 @Controller("webhooks/calendar")

@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
-import { eq } from "drizzle-orm";
-import { users } from "../../../db/schema";
+import { and, eq } from "drizzle-orm";
+import { organizationMembers, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { InboxConsumer } from "../../../common/outbox/inbox-consumer";
@@ -14,9 +14,15 @@ import { NotificationDispatchService } from "../../notifications/notification-di
 import { OnboardingSessionService } from "../../hr/onboarding/flow/onboarding-session.service";
 import { ModuleChecklistService } from "../../hr/onboarding/flow/module-checklist.service";
 import { seedSystemRolesForOrg } from "../../rbac/seed-system-roles";
+import {
+  WorkspaceOnboardingService,
+  hasStructureTemplate,
+} from "../onboarding/workspace-onboarding.service";
+import { InvitationCreateService } from "../core/invitation-create.service";
 import { orgSetupCompletedPayloadSchema } from "./dto/org-setup-completed-payload.schema";
+import type { SetupInvitee } from "./dto/org.schemas";
 
-const CONSUMER_NAME = "organization:setup-completed";
+export const ORG_SETUP_COMPLETED_CONSUMER = "organization:setup-completed";
 
 /**
  * Finishes provisioning an organisation after its setup row has committed.
@@ -28,6 +34,11 @@ const CONSUMER_NAME = "organization:setup-completed";
  * one task throwing, left a brand-new organisation permanently half-provisioned: no roles, so its
  * owner could not open the screens they owned, and nothing anywhere recorded that it had happened.
  *
+ * Two more steps have since moved in from an even weaker place. The industry workspace structure
+ * and the wizard's invitations were sequenced by the BROWSER after the setup response returned, so
+ * closing the tab — or a failed fetch the user never saw — dropped them with no record and no
+ * retry. They are the same class of work as the other four and now run in the same place.
+ *
  * backend/CLAUDE.md §4 names three mechanisms for a side effect and picks between them by what a
  * crash costs. `registerAfterCommit` is the one for work that is recoverable from state already
  * stored; that is not this. Losing the role seed is a correctness bug with no other record, and
@@ -37,8 +48,9 @@ const CONSUMER_NAME = "organization:setup-completed";
  *
  * The steps run in sequence rather than through `Promise.allSettled`, so the first failure names
  * itself, aborts the handler and is retried by the publisher. Every step is idempotent under
- * redelivery: `seedSystemRolesForOrg` never rewrites an existing role's grants, the checklist and
- * session calls are ensure-shaped, and the welcome notification carries the outbox effect key.
+ * redelivery: `seedSystemRolesForOrg` never rewrites an existing role's grants, the checklist,
+ * session and workspace-generation calls are ensure-shaped, invitations converge on one pending
+ * row per email, and the welcome notification carries the outbox effect key.
  */
 @Injectable()
 export class OrgSetupCompletedConsumerService
@@ -53,6 +65,8 @@ export class OrgSetupCompletedConsumerService
     private readonly checklists: ModuleChecklistService,
     private readonly dispatch: NotificationDispatchService,
     private readonly registry: OutboxConsumerRegistry,
+    private readonly workspace: WorkspaceOnboardingService,
+    private readonly invitations: InvitationCreateService,
   ) {}
 
   onModuleInit(): void {
@@ -86,10 +100,88 @@ export class OrgSetupCompletedConsumerService
     });
   }
 
+  /**
+   * The industry template is a fixed catalogue, so an industry with no template is a permanent
+   * precondition miss, not a transient failure: retrying it would dead-letter an event whose other
+   * five steps all succeeded. Skipped and logged rather than thrown; every other failure inside
+   * `generateWorkspace` still propagates.
+   */
+  private async generateStructure(
+    orgId: string,
+    industry: string | null,
+    moduleKeys: readonly string[],
+  ): Promise<void> {
+    if (industry === null || !hasStructureTemplate(industry)) {
+      this.logger.warn(
+        `organization.setup.completed: org ${orgId} has no structure template for industry ` +
+          `'${industry ?? "(none)"}' — skipping workspace generation`,
+      );
+      return;
+    }
+    await this.workspace.generateWorkspace(orgId, industry, [...moduleKeys]);
+  }
+
+  /**
+   * Standing is re-derived from the membership row rather than trusted from the payload: an event
+   * is data, and `bulkInvite` grants a role. A payload that named a non-owner would otherwise
+   * invite on their behalf with an authority the event asserted about itself.
+   */
+  private async sendInvitations(
+    orgId: string,
+    actorUserId: string,
+    invitees: readonly SetupInvitee[],
+  ): Promise<void> {
+    if (invitees.length === 0) return;
+
+    const [actor] = await this.db
+      .select({ isOwner: organizationMembers.isOwner })
+      .from(organizationMembers)
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.userId, actorUserId),
+          eq(organizationMembers.status, "ACTIVE"),
+        ),
+      )
+      .limit(1);
+
+    if (!actor) {
+      this.logger.warn(
+        `organization.setup.completed: org ${orgId} has no active membership for ${actorUserId} — ` +
+          `skipping ${invitees.length} setup invitation(s)`,
+      );
+      return;
+    }
+
+    const emailsByRole = new Map<string, string[]>();
+    for (const invitee of invitees)
+      emailsByRole.set(invitee.role, [
+        ...(emailsByRole.get(invitee.role) ?? []),
+        invitee.email,
+      ]);
+
+    for (const [role, emails] of emailsByRole) {
+      const { results } = await this.invitations.bulkInvite(
+        orgId,
+        { userId: actorUserId, isOrgOwner: actor.isOwner },
+        emails,
+        role,
+      );
+      const failed = results.filter((result) => !result.success);
+      if (failed.length > 0)
+        this.logger.warn(
+          `organization.setup.completed: org ${orgId} could not invite ${failed.length} of ` +
+            `${emails.length} ${role} address(es): ${failed
+              .map((result) => `${result.email} (${result.error ?? "unknown"})`)
+              .join(", ")}`,
+        );
+    }
+  }
+
   async handle(event: OutboxEventRow): Promise<void> {
     const inbox = new InboxConsumer(this.db);
 
-    const claimed = await inbox.claim(CONSUMER_NAME, {
+    const claimed = await inbox.claim(ORG_SETUP_COMPLETED_CONSUMER, {
       eventId: event.eventId,
       organizationId: event.organizationId,
       aggregateType: event.aggregateType,
@@ -98,7 +190,7 @@ export class OrgSetupCompletedConsumerService
     });
     if (!claimed) {
       this.logger.debug(
-        `organization.setup.completed ${event.eventId} already processed by ${CONSUMER_NAME} — skipping`,
+        `organization.setup.completed ${event.eventId} already processed by ${ORG_SETUP_COMPLETED_CONSUMER} — skipping`,
       );
       return;
     }
@@ -109,7 +201,7 @@ export class OrgSetupCompletedConsumerService
         `organization.setup.completed ${event.eventId} has invalid payload: ${parseResult.error.message}`,
       );
       await inbox.markProcessed(
-        CONSUMER_NAME,
+        ORG_SETUP_COMPLETED_CONSUMER,
         event.eventId,
         "FAILED",
         parseResult.error.message,
@@ -117,8 +209,16 @@ export class OrgSetupCompletedConsumerService
       return;
     }
 
-    const { orgId, userId, moduleKeys, sessionAction, skipReason, sendWelcome } =
-      parseResult.data;
+    const {
+      orgId,
+      userId,
+      moduleKeys,
+      sessionAction,
+      skipReason,
+      sendWelcome,
+      industry,
+      invitees,
+    } = parseResult.data;
 
     // Every step below writes into `orgId` taken from the payload, while the inbox fence, the
     // relay's lease and the audit trail are all bound to `event.organizationId`. The producer
@@ -131,7 +231,12 @@ export class OrgSetupCompletedConsumerService
       this.logger.error(
         `organization.setup.completed ${event.eventId}: ${message} — refusing to provision`,
       );
-      await inbox.markProcessed(CONSUMER_NAME, event.eventId, "FAILED", message);
+      await inbox.markProcessed(
+        ORG_SETUP_COMPLETED_CONSUMER,
+        event.eventId,
+        "FAILED",
+        message,
+      );
       throw new Error(
         `organization.setup.completed ${event.eventId}: ${message}`,
       );
@@ -143,6 +248,8 @@ export class OrgSetupCompletedConsumerService
     try {
       await seedSystemRolesForOrg(this.db, orgId);
       await this.checklists.ensureChecklistsForModules(orgId, moduleKeys);
+      await this.generateStructure(orgId, industry, moduleKeys);
+      await this.sendInvitations(orgId, userId, invitees);
       if (sessionAction === "complete")
         await this.sessions.completeSession(orgId, userId, "org_setup");
       else
@@ -156,17 +263,28 @@ export class OrgSetupCompletedConsumerService
         await this.sendWelcome(
           orgId,
           userId,
-          outboxEffectIdempotencyKey(event, CONSUMER_NAME),
+          outboxEffectIdempotencyKey(event, ORG_SETUP_COMPLETED_CONSUMER),
         );
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      await inbox.markProcessed(CONSUMER_NAME, event.eventId, "FAILED", message);
+      await inbox.markProcessed(
+        ORG_SETUP_COMPLETED_CONSUMER,
+        event.eventId,
+        "FAILED",
+        message,
+      );
       throw error;
     }
 
-    await inbox.markProcessed(CONSUMER_NAME, event.eventId, "COMPLETED", null);
+    await inbox.markProcessed(
+      ORG_SETUP_COMPLETED_CONSUMER,
+      event.eventId,
+      "COMPLETED",
+      null,
+    );
     this.logger.log(
-      `organization.setup.completed ${event.eventId}: provisioned org ${orgId} (${moduleKeys.length} module(s), session ${sessionAction})`,
+      `organization.setup.completed ${event.eventId}: provisioned org ${orgId} ` +
+        `(${moduleKeys.length} module(s), ${invitees.length} invitation(s), session ${sessionAction})`,
     );
   }
 }

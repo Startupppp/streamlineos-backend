@@ -239,10 +239,22 @@ describe("BOLA sweep — the RAG predicate is the direct read's predicate", () =
 });
 
 describe("BOLA sweep — the RAG fix keeps the measured retrieval shape", () => {
-  const candidates = readFileSync(
-    join(BACKEND_ROOT, "src/modules/kb/retrieval/kb-candidate.service.ts"),
-    "utf8",
-  );
+  const CANDIDATE_SERVICE = "src/modules/kb/retrieval/kb-candidate.service.ts";
+  const candidates = readFileSync(join(BACKEND_ROOT, CANDIDATE_SERVICE), "utf8");
+
+  /**
+   * The vector query moved out of the service into `kb-vector-candidate-query.ts`,
+   * and a scan of the service's own text alone stopped seeing the guard entirely —
+   * reporting a missing correctness guard where the behavioural test below proves
+   * it still executes. So the scan follows the service's own relative imports one
+   * hop, in import order, which is where an extraction can put it.
+   */
+  const retrievalSource = [
+    candidates,
+    ...[...candidates.matchAll(/from\s+"(\.\/[\w./-]+)"/g)].map((match) =>
+      readFileSync(join(BACKEND_ROOT, "src/modules/kb/retrieval", `${match[1] ?? ""}.ts`), "utf8"),
+    ),
+  ].join("\n");
 
   /**
    * Ticket 12 measured this on a 49,000-chunk corpus: without it the majority
@@ -250,9 +262,9 @@ describe("BOLA sweep — the RAG fix keeps the measured retrieval shape", () => 
    * guard and not a tuning knob.
    */
   it("the HNSW iterative-scan guard is still set before the ANN query", () => {
-    expect(candidates).toContain("SET LOCAL hnsw.iterative_scan = relaxed_order");
-    const guardAt = candidates.indexOf("hnsw.iterative_scan");
-    const annAt = candidates.indexOf("ORDER BY embedding <=>");
+    expect(retrievalSource).toContain("SET LOCAL hnsw.iterative_scan = relaxed_order");
+    const guardAt = retrievalSource.indexOf("hnsw.iterative_scan");
+    const annAt = retrievalSource.indexOf("ORDER BY embedding <=>");
     expect(guardAt).toBeGreaterThan(-1);
     expect(annAt).toBeGreaterThan(guardAt);
   });

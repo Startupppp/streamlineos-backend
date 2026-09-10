@@ -240,6 +240,13 @@ export class MembershipMutations {
       .update(organizationMembers)
       .set({ isOwner: true, role: input.ownerRole, status: "ACTIVE" })
       .where(eq(organizationMembers.id, input.to.membershipId));
+    // Both sides of a transfer change role, so both structural assignments must follow it.
+    await syncStructuralRoleAssignment(
+      tx,
+      input.orgId,
+      input.to.membershipId,
+      input.ownerRole,
+    );
     this.record(input.from.userId, input.orgId);
     this.record(input.to.userId, input.orgId);
   }

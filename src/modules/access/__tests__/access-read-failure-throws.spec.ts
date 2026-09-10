@@ -159,14 +159,19 @@ describe("UserModuleAccessService.getUserDeniedModules — the same twin swallow
       select,
       execute: jest.fn().mockResolvedValue([]),
       transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(innerTx)),
+      query: {
+        accessVersions: { findFirst: jest.fn().mockResolvedValue({ permissionsVersion: 1 }) },
+      },
     } as unknown as Db;
   }
 
   it("rejects rather than resolving to an empty denied set, which would restore every module the org took away", async () => {
+    const db = rejectingDb({ code: "42P01", message: 'relation "user_module_access" does not exist' });
     const service = new UserModuleAccessService(
-      rejectingDb({ code: "42P01", message: 'relation "user_module_access" does not exist' }),
+      db,
       { isCoreModule: jest.fn().mockReturnValue(false) } as unknown as EntitlementsService,
       {} as unknown as CacheService,
+      new AccessVersionCache(db, {} as unknown as CacheService),
     );
 
     await expect(service.getUserDeniedModules("org-1", "user-1")).rejects.toBeDefined();

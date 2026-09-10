@@ -42,6 +42,11 @@ const MODULE_STRUCTURE_TEMPLATES: Record<
   ],
 };
 
+export function hasStructureTemplate(industry: string | null | undefined): boolean {
+  if (!industry) return false;
+  return INDUSTRY_TEMPLATES[normalizeIndustrySlug(industry)] !== undefined;
+}
+
 export function resolveStructureTemplate(
   industry: string,
   enabledModules: readonly string[] = [],
@@ -278,12 +283,4 @@ export class WorkspaceOnboardingService {
     };
   }
 
-  async completeOnboarding(orgId: string): Promise<{ completedAt: Date }> {
-    const completedAt = new Date();
-    await this.db
-      .update(organizations)
-      .set({ onboardingCompletedAt: completedAt })
-      .where(eq(organizations.id, orgId));
-    return { completedAt };
-  }
 }

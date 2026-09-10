@@ -74,14 +74,8 @@ describe("OrgHierarchyLocationsService — cross-tenant isolation", () => {
       select: jest.fn().mockReturnValue(makeSelectChain(rows, captured)),
       update: jest.fn().mockReturnValue(updateBuilder),
     } as unknown as Db;
-    const cache = {
-      get: jest.fn().mockResolvedValue(null),
-      set: jest.fn(),
-      del: jest.fn(),
-      invalidateForOrg: jest.fn(),
-    };
     const audit = { log: jest.fn(), logCritical: jest.fn() };
-    const svc = new OrgHierarchyLocationsService(db, cache as never, audit as never);
+    const svc = new OrgHierarchyLocationsService(db, audit as never);
     return { svc, captured };
   }
 
@@ -147,21 +141,22 @@ describe("OrgHierarchyLocationsService — cross-tenant isolation", () => {
     });
   });
 
-  describe("deleteLocation", () => {
+  // Ported from the deleted hard-delete route: the archive write now carries its cross-tenant assertion.
+  describe("archive via updateLocation", () => {
     it("refuses a foreign location id with NotFound and writes nothing", async () => {
       const { svc, captured } = makeService([]);
 
       await expect(
-        svc.deleteLocation(ATTACKER, "user-1", LOCATION_ID),
+        svc.updateLocation(ATTACKER, "user-1", LOCATION_ID, { status: "ARCHIVED" }),
       ).rejects.toBeInstanceOf(NotFoundException);
 
       expect(captured.updateWheres).toHaveLength(0);
     });
 
-    it("scopes the soft delete to the caller org", async () => {
+    it("scopes the archive write to the caller org", async () => {
       const { svc, captured } = makeService([LOCATION]);
 
-      await svc.deleteLocation(OWNER, "user-1", LOCATION_ID);
+      await svc.updateLocation(OWNER, "user-1", LOCATION_ID, { status: "ARCHIVED" });
 
       const { sql, params } = render(captured.updateWheres[0]);
       expect(sql).toContain('"org_units"."org_id" = $');

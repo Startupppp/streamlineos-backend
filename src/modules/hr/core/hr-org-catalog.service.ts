@@ -51,11 +51,6 @@ export class HrOrgCatalogService {
     return this.hierarchy.updateLocation(orgId, userId, locationId, input);
   }
 
-  async deleteLocation(orgId: string, userId: string, locationId: string) {
-    await this.hierarchy.deleteLocation(orgId, userId, locationId);
-    return { success: true };
-  }
-
   listJobRoles(orgId: string) {
     return this.db.query.hrJobRoles.findMany({
       where: and(eq(hrJobRoles.orgId, orgId), eq(hrJobRoles.isActive, true)),
@@ -171,11 +166,6 @@ export class HrOrgCatalogService {
     input: UpdateOrgTeamInput,
   ) {
     return this.hierarchy.updateTeam(orgId, userId, teamId, input);
-  }
-
-  async deleteTeam(orgId: string, userId: string, teamId: string) {
-    await this.hierarchy.deleteTeam(orgId, userId, teamId);
-    return { success: true };
   }
 
   async getHeadcount(orgId: string, groupBy: string) {

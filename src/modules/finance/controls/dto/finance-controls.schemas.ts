@@ -69,3 +69,9 @@ export type ApprovalDecisionInput = z.infer<typeof approvalDecisionSchema>;
 export type ListAuditQuery = z.infer<typeof listAuditSchema>;
 export type UpsertExchangeRateInput = z.infer<typeof upsertExchangeRateSchema>;
 export type ListExchangeRatesQuery = z.infer<typeof listExchangeRatesSchema>;
+
+export const listPoliciesSchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
+});
+export type ListPoliciesQuery = z.infer<typeof listPoliciesSchema>;

@@ -227,11 +227,3 @@ export const dependencyPreviewResponseSchema = z.object({
   })),
   totalDependencies: z.number().int(),
 });
-
-// ─── Shared mutation results ───────────────────────────────────────────────
-
-/** Retire / archive delete operations. */
-export const hierarchyDeleteResponseSchema = z.object({ message: z.string() });
-
-/** Move operations. */
-export const hierarchyMoveResponseSchema = z.object({ success: z.literal(true) });

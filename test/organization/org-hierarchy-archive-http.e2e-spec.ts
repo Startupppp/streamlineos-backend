@@ -28,18 +28,20 @@ describe("org-hierarchy archive HTTP protection", () => {
 
   afterAll(async () => app.close());
 
-  it("403 when in-tenant member lacks settings:organization:manage on DELETE /org-hierarchy/business-units/:id", async () => {
+  it("403 when in-tenant member lacks settings:organization:manage on PATCH /org-hierarchy/business-units/:id (archive)", async () => {
     const res = await request(app.getHttpServer())
-      .delete(`/org-hierarchy/business-units/${NONEXISTENT_UNIT}`)
-      .set("Authorization", `Bearer ${memberTokenNoManage}`);
+      .patch(`/org-hierarchy/business-units/${NONEXISTENT_UNIT}`)
+      .set("Authorization", `Bearer ${memberTokenNoManage}`)
+      .send({ status: "ARCHIVED" });
 
     expect(res.status).toBe(403);
   });
 
-  it("404 (not 403) when org owner targets a unit that does not exist in their org on DELETE /org-hierarchy/business-units/:id", async () => {
+  it("404 (not 403) when org owner targets a unit that does not exist in their org on PATCH /org-hierarchy/business-units/:id (archive)", async () => {
     const res = await request(app.getHttpServer())
-      .delete(`/org-hierarchy/business-units/${NONEXISTENT_UNIT}`)
-      .set("Authorization", `Bearer ${ownerTokenOrgB}`);
+      .patch(`/org-hierarchy/business-units/${NONEXISTENT_UNIT}`)
+      .set("Authorization", `Bearer ${ownerTokenOrgB}`)
+      .send({ status: "ARCHIVED" });
 
     expect(res.status).toBe(404);
     expect(res.status).not.toBe(403);

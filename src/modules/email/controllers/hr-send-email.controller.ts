@@ -8,7 +8,6 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { z } from "zod";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
@@ -20,22 +19,12 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { hrSendEmailResponseSchema } from "../dto/email-response.schemas";
+import { sendEmailSchema, type SendEmailInput } from "../dto/email.schemas";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { candidates, emailTemplates } from "../../../db/schema";
 import { EmailService } from "../email.service";
 import { EmailProviderService } from "../email.provider";
-
-const sendEmailSchema = z.object({
-  to: z.string().email(),
-  subject: z.string().min(1).max(200),
-  body: z.string().min(1).max(10000),
-  templateId: z.number().int().positive().optional(),
-  candidateId: z.number().int().positive().optional(),
-  variables: z.record(z.string(), z.string()).optional(),
-});
-
-type SendEmailInput = z.infer<typeof sendEmailSchema>;
 
 function replaceVariables(text: string, vars: Record<string, string>): string {
   let result = text;

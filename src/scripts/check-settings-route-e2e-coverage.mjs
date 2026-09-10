@@ -65,7 +65,7 @@ const MIN_ROUTES = 100;
  * Set to the honest number reached after writing the permission-fence specs.
  * Do not lower this to make a failing suite pass.
  */
-const RATCHET = 159;
+const RATCHET = 150;
 
 const CONTROLLER_PATHS = [
   "src/modules/settings/settings.controller.ts",

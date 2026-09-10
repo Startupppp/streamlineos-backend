@@ -26,6 +26,7 @@ import {
   addMemberSchema,
   channelListQuerySchema,
   createChannelSchema,
+  memberRoleSchema,
   muteChannelSchema,
   notificationPreferenceSchema,
   updateChannelSchema,
@@ -57,7 +58,6 @@ import {
 const entityTypeentityIdParams = z.object({ entityType: z.string().min(1), entityId: z.string().min(1) }).strict();
 const channelIdParams = z.object({ channelId: z.coerce.number().int().positive() }).strict();
 const channelIduserIdParams = z.object({ channelId: z.coerce.number().int().positive(), userId: z.string().min(1) }).strict();
-const memberRoleSchema = z.object({ role: z.enum(["ADMIN", "MEMBER"]) }).strict();
 
 @ApiTags("Chat Channels")
 @ApiBearerAuth()

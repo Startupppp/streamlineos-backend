@@ -26,10 +26,13 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
-import { runWithTenantContext, withTenant } from "../../common/tenant";
 import { withMembershipMutations } from "../../common/org/membership-mutations";
 import { withIdentity } from "../../common/tenant/with-identity";
-import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import {
+  runInNewTenantTransaction,
+  runInTenantTransaction,
+} from "../../common/tenant/run-in-tenant-transaction";
+import { generateOrgSlug } from "../organization/core/bootstrap-cell-organization";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { SessionsService } from "../sessions/sessions.service";
@@ -43,21 +46,13 @@ import {
   TRIAL_PLAN,
   type EffectivePlan,
 } from "../billing/core/plan-entitlements.constants";
-import { placeOrganization } from "../../common/region/placement-lookup";
+import {
+  placeOrganization,
+  unplaceOrganization,
+} from "../../common/region/placement-lookup";
+import { logger } from "../../common/logger/logger.service";
 import { LEGACY_CELL_ID } from "../../common/region/placement";
 import { chooseRegionForNewOrg } from "../../common/region/cell-admission";
-
-function slugify(name: string): string {
-  return (
-    name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "")
-      .substring(0, 50) +
-    "-" +
-    Date.now().toString(36)
-  );
-}
 
 @Injectable()
 export class AuthService {
@@ -72,6 +67,21 @@ export class AuthService {
     private readonly analytics: AuthAnalyticsService,
   ) {}
 
+  /**
+   * Signup keeps its own transaction instead of the organisation-creation saga: it is
+   * latency-sensitive, and the global `users` row has to be inserted atomically with the
+   * organisation that references it.
+   *
+   * What it must not keep is a *second* transaction. `seedSystemRolesForOrg` and
+   * `provisionOrgModules` used to run in a block opened after the first one committed, which is
+   * exactly the half-provisioned organisation the setup outbox consumer exists to prevent: a
+   * crash in between left an owner who could not open the screens they owned, with nothing
+   * anywhere recording it. `runInNewTenantTransaction` publishes the ambient tenant context, so
+   * `seedSystemRolesForOrg(this.db, …)` resolves to this transaction rather than a second one.
+   *
+   * Placement is reserved before the transaction and released when it throws — an organisation
+   * that is placed but holds no rows answers 401 to every request, forever.
+   */
   async register(input: RegisterInput): Promise<{ success: true }> {
     const normalizedEmail = input.email.toLowerCase().trim();
 
@@ -84,60 +94,70 @@ export class AuthService {
 
     const userId = randomUUID();
     const orgId = randomUUID();
+    const orgSlug = generateOrgSlug(input.companyName);
 
     const region = (await chooseRegionForNewOrg(this.db, { organizationId: orgId })).region;
     await placeOrganization(this.db, { orgId, region });
 
-    await withMembershipMutations(this.cache, (membership) =>
-      withTenant(this.db, { orgId, audience: "INTERNAL" }, async (tx) => {
-        const ownerMembershipId = await membership.allocateMembershipId(tx);
+    try {
+      await withMembershipMutations(this.cache, (membership) =>
+        runInNewTenantTransaction(this.db, orgId, async (tx) => {
+          const ownerMembershipId = await membership.allocateMembershipId(tx);
 
-        await tx.insert(organizations).values({
-          id: orgId,
-          region,
-          ownerMembershipId,
-          name: input.companyName,
-          slug: slugify(input.companyName),
-        });
+          await tx.insert(organizations).values({
+            id: orgId,
+            region,
+            ownerMembershipId,
+            name: input.companyName,
+            slug: orgSlug,
+          });
 
-        await tx.insert(users).values({
-          id: userId,
-          isActive: true,
-          email: normalizedEmail,
-          lastActiveOrgId: orgId,
-          emailVerified: new Date(),
-          firstName: input.firstName,
-          lastName: input.lastName ?? "",
-          name: input.lastName
-            ? `${input.firstName} ${input.lastName}`
-            : input.firstName,
-        });
+          await tx.insert(users).values({
+            id: userId,
+            isActive: true,
+            email: normalizedEmail,
+            lastActiveOrgId: orgId,
+            emailVerified: new Date(),
+            firstName: input.firstName,
+            lastName: input.lastName ?? "",
+            name: input.lastName
+              ? `${input.firstName} ${input.lastName}`
+              : input.firstName,
+          });
 
-        await membership.createOwnerMembership(tx, {
+          await membership.createOwnerMembership(tx, {
+            orgId,
+            userId,
+            membershipId: ownerMembershipId,
+            role: ORG_MEMBER_ROLES.OWNER,
+          });
+
+          const trialDays = getTrialDays();
+          await tx.insert(subscriptions).values({
+            orgId,
+            plan: TRIAL_PLAN,
+            status: "TRIAL",
+            trialEndsAt: addDays(new Date(), trialDays),
+            currentPeriodStart: new Date(),
+            currentPeriodEnd: addDays(new Date(), trialDays),
+          });
+
+          await seedSystemRolesForOrg(this.db, orgId);
+          await provisionOrgModules(tx, orgId, DEFAULT_SKIP_MODULES, userId);
+        }),
+      );
+    } catch (error) {
+      await unplaceOrganization(this.db, orgId).catch((compensationError: unknown) => {
+        logger.error("[register] placement compensation failed", {
           orgId,
-          userId,
-          membershipId: ownerMembershipId,
-          role: ORG_MEMBER_ROLES.OWNER,
+          error:
+            compensationError instanceof Error
+              ? compensationError.message
+              : String(compensationError),
         });
-
-        const trialDays = getTrialDays();
-        await tx.insert(subscriptions).values({
-          orgId,
-          plan: TRIAL_PLAN,
-          status: "TRIAL",
-          trialEndsAt: addDays(new Date(), trialDays),
-          currentPeriodStart: new Date(),
-          currentPeriodEnd: addDays(new Date(), trialDays),
-        });
-      }),
-    );
-
-    await withTenant(this.db, { orgId, audience: "INTERNAL" }, async (tx) =>
-      runWithTenantContext({ orgId, audience: "INTERNAL", tx }, async () => {
-        await seedSystemRolesForOrg(this.db, orgId);
-        await provisionOrgModules(tx, orgId, DEFAULT_SKIP_MODULES, userId);
-      }),
-    );
+      });
+      throw error;
+    }
 
     await withIdentity(this.db, userId, (tx) =>
       tx
@@ -148,7 +168,7 @@ export class AuthService {
           cellId: LEGACY_CELL_ID,
           region,
           organizationName: input.companyName,
-          organizationSlug: slugify(input.companyName),
+          organizationSlug: orgSlug,
           membershipRole: ORG_MEMBER_ROLES.OWNER,
           membershipStatus: "ACTIVE",
           organizationStatus: "ACTIVE",

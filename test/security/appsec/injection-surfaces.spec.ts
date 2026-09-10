@@ -263,8 +263,14 @@ describe("SQL injection — every value reaches Postgres as a bind parameter", (
         "src/modules/inventory/stock-engine/warehouse-scope.service.ts",
         // SET LOCAL hnsw.ef_search — Postgres does not accept a bind parameter in
         // SET, and the value is kbAnnEfSearch(cap), a bounded integer derived from
-        // named constants with no caller-supplied input on the path.
-        "src/modules/kb/retrieval/kb-candidate.service.ts",
+        // named constants with no caller-supplied input on the path. Extracted out
+        // of kb-candidate.service.ts into this file with the vector query itself;
+        // re-reviewed there, and the argument is unchanged: queryVectorChunkIds
+        // returns early unless `cap` is finite and positive, decideKbRetrievalStrategy
+        // answers "exact" (no sql.raw at all) whenever cap > KB_ANN_EF_SEARCH_MAX, and
+        // kbAnnEfSearch clamps through Math.trunc/Math.min into [cap, 1000] — so the
+        // interpolated text is always an integer literal, never caller text.
+        "src/modules/kb/retrieval/kb-vector-candidate-query.ts",
         "src/modules/rbac/permission-catalog-sync.service.ts",
         "src/modules/record-layouts/record-layouts.service.ts",
         "src/modules/storage/storage-key-catalog.ts",

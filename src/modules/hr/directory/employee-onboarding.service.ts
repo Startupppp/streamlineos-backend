@@ -4,7 +4,7 @@ import {
   Injectable,
   InternalServerErrorException,
 } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
 import { addDays } from "date-fns";
 import {
@@ -12,7 +12,6 @@ import {
   hrEmployments,
   hrPeople,
   magicLinkTokens,
-  organizationMembers,
   users,
 } from "../../../db/schema";
 import { hashToken } from "../../../common/security/token.util";
@@ -45,10 +44,11 @@ import {
   livePersonOfEmployment,
 } from "../../directory/employment-query";
 import { withMembershipMutations } from "../../../common/org/membership-mutations";
-import { PlanLimitsService } from "../../billing/core/plan-limits.service";
-import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
+import {
+  MembershipAdmissionService,
+  admissionFailure,
+} from "../../organization/core/membership-admission.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
-import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 
 const EMP_CODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
@@ -70,38 +70,16 @@ export class EmployeeOnboardingService {
     private readonly webhooks: WebhooksDispatchService,
     private readonly personEmploymentSync: PersonEmploymentSyncService,
     private readonly access: AccessService,
-    private readonly planLimits: PlanLimitsService,
-    private readonly seatLedger: SeatLedgerService,
+    private readonly admission: MembershipAdmissionService,
   ) {}
 
-  private async reserveMemberSeat(
-    tx: DbOrTx,
-    orgId: string,
-  ): Promise<void> {
-    await tx.execute(
-      sql`SELECT pg_advisory_xact_lock(hashtextextended(${`quota:${orgId}:members`}, 0))`,
-    );
-    await this.planLimits.assertWithinLimit(orgId, "members", 1, tx);
-  }
-
   async onboardEmployee(actor: CurrentUserContext, body: OnboardEmployeeInput) {
-    const existingUser = await this.db.query.users.findFirst({
-      where: eq(users.email, body.email),
-      columns: { id: true },
+    const screen = await this.admission.screen(this.db, {
+      orgId: actor.orgId,
+      email: body.email,
     });
-
-    if (existingUser) {
-      const alreadyMember = await this.db.query.organizationMembers.findFirst({
-        where: and(
-          eq(organizationMembers.orgId, actor.orgId),
-          eq(organizationMembers.userId, existingUser.id),
-        ),
-        columns: { userId: true },
-      });
-      if (alreadyMember) {
-        throw new ConflictException("This email already belongs to an employee in your organization.");
-      }
-    }
+    if (screen.kind !== "clear") throw admissionFailure(screen);
+    const existingUserId = screen.userId ?? undefined;
 
     const resolvedEmployeeId = body.employeeId?.trim() || `EMP-${randomEmployeeCode(6)}`;
 
@@ -118,7 +96,7 @@ export class EmployeeOnboardingService {
           ),
         )
         .limit(1);
-      if (duplicate && duplicate.userId !== existingUser?.id) {
+      if (duplicate && duplicate.userId !== existingUserId) {
         throw new ConflictException(`Employee ID "${resolvedEmployeeId}" is already in use in your organization.`);
       }
     }
@@ -126,185 +104,75 @@ export class EmployeeOnboardingService {
     const role = body.role || ORG_MEMBER_ROLES.MEMBER;
     await assertMayGrantRole(this.access, actor.orgId, actor, role);
 
-    if (existingUser) {
-      const linkedUser = await withMembershipMutations(this.cache, (membership) =>
-        runInTenantTransaction(this.db, async (tx) => {
-        await this.reserveMemberSeat(tx, actor.orgId);
-        const updateData: Partial<typeof users.$inferInsert> = {
-          dateOfBirth: body.dateOfBirth ? formatDateOnly(body.dateOfBirth) : undefined,
-          isActive: true,
-        };
+    const dateOfBirth = body.dateOfBirth ? formatDateOnly(body.dateOfBirth) : undefined;
+    const joiningDate = body.joiningDate ? formatDateOnly(body.joiningDate) : null;
+    const fullName = `${body.firstName} ${body.lastName}`;
 
-        await tx.update(users).set(updateData).where(eq(users.id, existingUser.id));
-        await syncOrgUnitPlacement(tx, actor.orgId, existingUser.id, { DEPARTMENT: body.departmentId });
-        await membership.createMembership(tx, { orgId: actor.orgId, userId: existingUser.id, role });
-
-        await this.seatLedger.recordSeatEvent(
-          {
+    const admitted = await withMembershipMutations(this.cache, (membership) =>
+      runInTenantTransaction(
+        this.db,
+        async (tx) => {
+          const [outcome] = await this.admission.admitMany(tx, {
             orgId: actor.orgId,
-            eventType: "INVITE_ACCEPTED",
-            subjectId: existingUser.id,
-            actorId: actor.userId,
-            reason: "employee onboarded",
-            idempotencyKey: `member-added:${actor.orgId}:${existingUser.id}`,
-          },
-          tx,
-        );
-
-        if (body.monthlySalary && body.monthlySalary > 0) {
-          const effectiveFrom = body.joiningDate
-            ? formatDateOnly(body.joiningDate)
-            : formatDateOnly(new Date());
-          await seedEmployeeSalaryProfile(tx, {
-            orgId: actor.orgId,
-            userId: existingUser.id,
-            actorId: actor.userId,
-            monthlySalary: body.monthlySalary,
-            effectiveFrom,
-            salaryStructureTemplateId: body.salaryStructureTemplateId,
+            actor,
+            membership,
+            seatReason: "employee onboarded",
+            candidates: [
+              {
+                email: body.email,
+                role,
+                screen,
+                createUserIfMissing: {
+                  name: fullName,
+                  firstName: body.firstName,
+                  lastName: body.lastName,
+                  phone: body.phone,
+                  whatsappNumber: body.whatsappSameAsPhone
+                    ? body.phone
+                    : body.whatsappNumber,
+                  gender: body.gender,
+                  dateOfBirth,
+                  isActive: true,
+                },
+              },
+            ],
           });
-        }
+          if (!outcome)
+            throw new InternalServerErrorException("Failed to admit the employee.");
+          if (outcome.kind !== "admitted") throw admissionFailure(outcome);
 
-        const updated = await tx.query.users.findFirst({
-          where: eq(users.id, existingUser.id),
-          columns: { id: true, email: true, firstName: true, lastName: true },
-        });
-        if (!updated) throw new InternalServerErrorException("Failed to link user record.");
-        return updated;
-      }, { orgId: actor.orgId }));
+          if (!outcome.createdUser)
+            await tx
+              .update(users)
+              .set({ dateOfBirth, isActive: true })
+              .where(eq(users.id, outcome.userId));
 
-      await this.invalidateHrDashboardCache(actor.orgId);
-
-      void this.automation
-        .runAutomationsForEvent(actor.orgId, "onboarding.started", {
-          userId: linkedUser.id,
-          employeeName: `${linkedUser.firstName ?? ""} ${linkedUser.lastName ?? ""}`.trim(),
-          employeeEmail: linkedUser.email,
-          departmentId: body.departmentId ?? null,
-          joiningDate: body.joiningDate ?? null,
-          startedAt: new Date().toISOString(),
-        })
-        .catch(() => undefined);
-
-      await this.audit.logCritical({
-        action: "hr.employee_onboarded",
-        userId: actor.userId,
-        orgId: actor.orgId,
-        targetId: linkedUser.id,
-        targetType: "employee",
-        metadata: {
-          email: body.email,
-          name: `${body.firstName} ${body.lastName}`,
-          role: body.role,
-          designation: body.designation,
-          linked: true,
-        },
-      });
-
-      const ensuredExisting = await this.personEmploymentSync.ensureFromUser(actor.orgId, actor.userId, {
-        userId: linkedUser.id,
-        firstName: body.firstName,
-        lastName: body.lastName,
-        workEmail: body.email,
-        employeeNumber: resolvedEmployeeId,
-        joiningDate: body.joiningDate
-          ? formatDateOnly(body.joiningDate)
-          : null,
-        designation: body.designation ?? null,
-        phone: body.phone ?? null,
-        lifecycleStatus: "ONBOARDING",
-      });
-
-      if (body.departmentId) {
-        await syncCanonicalEmploymentFields(this.db, actor.orgId, linkedUser.id, {
-          departmentId: body.departmentId,
-        });
-      }
-
-      if (body.taxId || body.bankDetails?.accountNumber || body.monthlySalary !== undefined) {
-        const sensitiveSet: Partial<typeof hrEmployeeSensitiveFields.$inferInsert> = {};
-        if (body.monthlySalary !== undefined) {
-          sensitiveSet.salaryAmountCents = monthlyAmountToCents(body.monthlySalary);
-          sensitiveSet.salaryCurrency = "INR";
-          sensitiveSet.salaryFrequency = "MONTHLY";
-        }
-        if (body.taxId) sensitiveSet.taxId = sealSensitive(body.taxId);
-        if (body.bankDetails?.accountNumber)
-          sensitiveSet.bankDetails = sealBankDetails(toBankDetails(body.bankDetails));
-
-        await this.db
-          .insert(hrEmployeeSensitiveFields)
-          .values({ orgId: actor.orgId, employmentId: ensuredExisting.employmentId, ...sensitiveSet })
-          .onConflictDoUpdate({
-            target: hrEmployeeSensitiveFields.employmentId,
-            set: { ...sensitiveSet, updatedAt: new Date() },
+          await syncOrgUnitPlacement(tx, actor.orgId, outcome.userId, {
+            DEPARTMENT: body.departmentId,
           });
-      }
 
-      return { success: true, userId: linkedUser.id };
-    }
+          if (body.monthlySalary && body.monthlySalary > 0)
+            await seedEmployeeSalaryProfile(tx, {
+              orgId: actor.orgId,
+              userId: outcome.userId,
+              actorId: actor.userId,
+              monthlySalary: body.monthlySalary,
+              effectiveFrom: joiningDate ?? formatDateOnly(new Date()),
+              salaryStructureTemplateId: body.salaryStructureTemplateId,
+            });
 
-    const userId = randomUUID();
-
-    const newUser = await withMembershipMutations(this.cache, (membership) =>
-      runInTenantTransaction(this.db, async (tx) => {
-      await this.reserveMemberSeat(tx, actor.orgId);
-      const [created] = await tx
-        .insert(users)
-        .values({
-          id: userId,
-          email: body.email,
-          name: `${body.firstName} ${body.lastName}`,
-          firstName: body.firstName,
-          lastName: body.lastName,
-          phone: body.phone,
-          whatsappNumber: body.whatsappSameAsPhone ? body.phone : body.whatsappNumber,
-          gender: body.gender,
-          dateOfBirth: body.dateOfBirth ? formatDateOnly(body.dateOfBirth) : undefined,
-          isActive: true,
-        })
-        .returning();
-
-      if (!created) throw new InternalServerErrorException("Failed to create user record.");
-      await syncOrgUnitPlacement(tx, actor.orgId, created.id, { DEPARTMENT: body.departmentId });
-      await membership.createMembership(tx, { orgId: actor.orgId, userId: created.id, role });
-
-      await this.seatLedger.recordSeatEvent(
-        {
-          orgId: actor.orgId,
-          eventType: "INVITE_ACCEPTED",
-          subjectId: created.id,
-          actorId: actor.userId,
-          reason: "employee onboarded",
-          idempotencyKey: `member-added:${actor.orgId}:${created.id}`,
+          return outcome;
         },
-        tx,
-      );
-      
-
-      if (body.monthlySalary && body.monthlySalary > 0) {
-        const effectiveFrom = body.joiningDate
-          ? formatDateOnly(body.joiningDate)
-          : formatDateOnly(new Date());
-        await seedEmployeeSalaryProfile(tx, {
-          orgId: actor.orgId,
-          userId: created.id,
-          actorId: actor.userId,
-          monthlySalary: body.monthlySalary,
-          effectiveFrom,
-          salaryStructureTemplateId: body.salaryStructureTemplateId,
-        });
-      }
-
-      return created;
-    }, { orgId: actor.orgId }));
+        { orgId: actor.orgId },
+      ),
+    );
 
     await this.invalidateHrDashboardCache(actor.orgId);
 
     void this.automation
       .runAutomationsForEvent(actor.orgId, "onboarding.started", {
-        userId: newUser.id,
-        employeeName: `${body.firstName} ${body.lastName}`,
+        userId: admitted.userId,
+        employeeName: fullName.trim(),
         employeeEmail: body.email,
         departmentId: body.departmentId ?? null,
         joiningDate: body.joiningDate ?? null,
@@ -312,44 +180,44 @@ export class EmployeeOnboardingService {
       })
       .catch(() => undefined);
 
-    this.webhooks.dispatch(actor.orgId, "employee.hired", {
-      userId: newUser.id,
-      email: newUser.email,
-      firstName: newUser.firstName,
-      lastName: newUser.lastName,
-      joiningDate: body.joiningDate ?? null,
-    });
+    if (admitted.createdUser)
+      this.webhooks.dispatch(actor.orgId, "employee.hired", {
+        userId: admitted.userId,
+        email: body.email,
+        firstName: body.firstName,
+        lastName: body.lastName,
+        joiningDate: body.joiningDate ?? null,
+      });
 
     await this.audit.logCritical({
       action: "hr.employee_onboarded",
       userId: actor.userId,
       orgId: actor.orgId,
-      targetId: newUser.id,
+      targetId: admitted.userId,
       targetType: "employee",
       metadata: {
         email: body.email,
-        name: `${body.firstName} ${body.lastName}`,
+        name: fullName,
         role: body.role,
         designation: body.designation,
+        ...(admitted.createdUser ? {} : { linked: true }),
       },
     });
 
-    const ensuredNew = await this.personEmploymentSync.ensureFromUser(actor.orgId, actor.userId, {
-      userId: newUser.id,
+    const ensured = await this.personEmploymentSync.ensureFromUser(actor.orgId, actor.userId, {
+      userId: admitted.userId,
       firstName: body.firstName,
       lastName: body.lastName,
       workEmail: body.email,
       employeeNumber: resolvedEmployeeId,
-      joiningDate: body.joiningDate
-        ? formatDateOnly(body.joiningDate)
-        : null,
+      joiningDate,
       designation: body.designation ?? null,
       phone: body.phone ?? null,
       lifecycleStatus: "ONBOARDING",
     });
 
     if (body.departmentId) {
-      await syncCanonicalEmploymentFields(this.db, actor.orgId, newUser.id, {
+      await syncCanonicalEmploymentFields(this.db, actor.orgId, admitted.userId, {
         departmentId: body.departmentId,
       });
     }
@@ -367,31 +235,30 @@ export class EmployeeOnboardingService {
 
       await this.db
         .insert(hrEmployeeSensitiveFields)
-        .values({ orgId: actor.orgId, employmentId: ensuredNew.employmentId, ...sensitiveSet })
+        .values({ orgId: actor.orgId, employmentId: ensured.employmentId, ...sensitiveSet })
         .onConflictDoUpdate({
           target: hrEmployeeSensitiveFields.employmentId,
           set: { ...sensitiveSet, updatedAt: new Date() },
         });
     }
 
-    if (newUser.email) {
+    if (admitted.createdUser) {
       try {
         const rawToken = randomBytes(32).toString("hex");
-        const tokenHash = hashToken(rawToken);
         await this.db.insert(magicLinkTokens).values({
           id: randomUUID(),
-          userId: newUser.id,
-          tokenHash,
+          userId: admitted.userId,
+          tokenHash: hashToken(rawToken),
           expiresAt: addDays(new Date(), 7),
         });
         const signInUrl = `${appUrl()}/magic-link?token=${rawToken}`;
-        await this.email.sendWelcomeEmail(newUser.email, `${body.firstName} ${body.lastName}`, signInUrl);
+        await this.email.sendWelcomeEmail(body.email, fullName, signInUrl);
       } catch (emailErr) {
-        logger.error("Failed to send welcome email", { email: newUser.email, error: emailErr });
+        logger.error("Failed to send welcome email", { email: body.email, error: emailErr });
       }
     }
 
-    return { success: true, userId: newUser.id };
+    return { success: true, userId: admitted.userId };
   }
 
   private async invalidateHrDashboardCache(orgId: string): Promise<void> {

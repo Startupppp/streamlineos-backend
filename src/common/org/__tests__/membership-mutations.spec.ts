@@ -273,6 +273,11 @@ describe("transferOrgOwnership", () => {
     expect(updates[0]?.params).toEqual(expect.arrayContaining([false, "ORG_ADMIN", 1]));
     expect(updates[1]?.params).toEqual(expect.arrayContaining([true, "OWNER", "ACTIVE", 2]));
     expect(syncStructuralRoleAssignment).toHaveBeenCalledWith(tx, ORG, 1, "ORG_ADMIN");
+    // Both sides change role. Only the demoted one used to be re-synced, so the promoted owner
+    // kept the `role_assignments` row of the role they no longer hold and the role-members view
+    // still listed them under it.
+    expect(syncStructuralRoleAssignment).toHaveBeenCalledWith(tx, ORG, 2, "OWNER");
+    expect(syncStructuralRoleAssignment).toHaveBeenCalledTimes(2);
     expect(bustMembershipStatusCache).not.toHaveBeenCalled();
     expect(bustMembershipStatusCacheMany).toHaveBeenCalledTimes(1);
     expect(bustMembershipStatusCacheMany).toHaveBeenCalledWith(cache, [

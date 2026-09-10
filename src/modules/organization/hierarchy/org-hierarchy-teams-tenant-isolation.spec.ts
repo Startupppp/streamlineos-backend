@@ -79,14 +79,8 @@ describe("OrgHierarchyTeamsService — cross-tenant isolation", () => {
       select: jest.fn().mockReturnValue(makeSelectChain(rows, captured)),
       update: jest.fn().mockReturnValue(updateBuilder),
     } as unknown as Db;
-    const cache = {
-      get: jest.fn().mockResolvedValue(null),
-      set: jest.fn(),
-      del: jest.fn(),
-      invalidateForOrg: jest.fn(),
-    };
     const audit = { log: jest.fn(), logCritical: jest.fn() };
-    const svc = new OrgHierarchyTeamsService(db, cache as never, audit as never);
+    const svc = new OrgHierarchyTeamsService(db, audit as never);
     return { svc, captured };
   }
 
@@ -152,21 +146,22 @@ describe("OrgHierarchyTeamsService — cross-tenant isolation", () => {
     });
   });
 
-  describe("deleteTeam", () => {
+  // Ported from the deleted hard-delete route: the archive write now carries its cross-tenant assertion.
+  describe("archive via updateTeam", () => {
     it("refuses a foreign team id with NotFound and writes nothing", async () => {
       const { svc, captured } = makeService([]);
 
       await expect(
-        svc.deleteTeam(ATTACKER, "user-1", TEAM_ID),
+        svc.updateTeam(ATTACKER, "user-1", TEAM_ID, { status: "ARCHIVED" }),
       ).rejects.toBeInstanceOf(NotFoundException);
 
       expect(captured.updateWheres).toHaveLength(0);
     });
 
-    it("scopes the soft delete to the caller org", async () => {
+    it("scopes the archive write to the caller org", async () => {
       const { svc, captured } = makeService([TEAM]);
 
-      await svc.deleteTeam(OWNER, "user-1", TEAM_ID);
+      await svc.updateTeam(OWNER, "user-1", TEAM_ID, { status: "ARCHIVED" });
 
       const { sql, params } = render(captured.updateWheres[0]);
       expect(sql).toContain('"org_units"."org_id" = $');

@@ -7,9 +7,9 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
 import {
   ActOnInstanceSchema,
+  PaginationSchema,
   RejectInstanceSchema,
   WorkflowActedQuerySchema,
   WorkflowInstanceQuerySchema,
@@ -32,11 +32,6 @@ import {
 } from "./dto/workflow-response.schemas";
 
 const instanceIdParams = z.object({ instanceId: z.coerce.number().int().positive() }).strict();
-
-const PaginationSchema = z.object({
-  page: pageNumberField,
-  limit: pageSizeField(50, 100),
-});
 
 @RequireModule("hr")
 @UseGuards(JwtAuthGuard)

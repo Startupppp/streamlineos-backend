@@ -119,14 +119,8 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
   },
   {
     namespace: "org:units:<orgId>",
-    description: "Org unit list by kind (cachedForOrg; actual key: <orgId>:org:units:<kind>). The canonical key is owned by cachedForOrg; no parallel factory exists.",
-    invalidation: {
-      kind: "write",
-      events: [
-        "OrgHierarchyBranchesService (invalidateForOrg(orgId,'org:units:BRANCH'))",
-        "OrgHierarchyCacheService.invalidateAfterMutation (any hierarchy mutation)",
-      ],
-    },
+    description: "Org unit list by kind. Never populated: no hierarchy read ever called cachedForOrg/cachedVersioned on it, and the 18 invalidateForOrg(orgId,'org:units:<KIND>') writes that suggested otherwise were removed. The live hierarchy cache is org:hierarchy:<orgId>, owned by OrgHierarchyCacheService.",
+    invalidation: { kind: "ttl-only", reason: "Dead namespace — key never produced or consumed; document to trigger removal" },
   },
   {
     namespace: "tasks:list:<orgId>",

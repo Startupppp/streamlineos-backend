@@ -19,14 +19,11 @@ describe("OrgHierarchyService integrity boundaries", () => {
   let parentRows: unknown[];
   let businessUnits: {
     createBusinessUnit: jest.Mock;
-    deleteBusinessUnit: jest.Mock;
     getBusinessUnit: jest.Mock;
-    moveBusinessUnit: jest.Mock;
     updateBusinessUnit: jest.Mock;
   };
   let branches: {
     createOrgBranch: jest.Mock;
-    deleteOrgBranch: jest.Mock;
     updateOrgBranch: jest.Mock;
     getOrgBranch: jest.Mock;
   };
@@ -35,28 +32,22 @@ describe("OrgHierarchyService integrity boundaries", () => {
   };
   let departments: {
     createDepartment: jest.Mock;
-    deleteDepartment: jest.Mock;
     getDepartment: jest.Mock;
-    moveDepartment: jest.Mock;
     updateDepartment: jest.Mock;
   };
   let teams: {
     createTeam: jest.Mock;
-    deleteTeam: jest.Mock;
     getTeam: jest.Mock;
-    moveTeam: jest.Mock;
     updateTeam: jest.Mock;
   };
   let commands: { run: jest.Mock };
   let locations: {
     createLocation: jest.Mock;
-    deleteLocation: jest.Mock;
     listLocations: jest.Mock;
     updateLocation: jest.Mock;
   };
   let costCenters: {
     createCostCenter: jest.Mock;
-    deleteCostCenter: jest.Mock;
     listCostCenters: jest.Mock;
     updateCostCenter: jest.Mock;
   };
@@ -76,29 +67,22 @@ describe("OrgHierarchyService integrity boundaries", () => {
     } as unknown as Db;
     businessUnits = {
       createBusinessUnit: jest.fn(),
-      deleteBusinessUnit: jest.fn(),
       getBusinessUnit: jest.fn(),
-      moveBusinessUnit: jest.fn(),
       updateBusinessUnit: jest.fn(),
     };
     branches = {
       createOrgBranch: jest.fn(),
-      deleteOrgBranch: jest.fn(),
       updateOrgBranch: jest.fn(),
       getOrgBranch: jest.fn(),
     };
     departments = {
       createDepartment: jest.fn(),
-      deleteDepartment: jest.fn(),
       getDepartment: jest.fn(),
-      moveDepartment: jest.fn(),
       updateDepartment: jest.fn(),
     };
     teams = {
       createTeam: jest.fn(),
-      deleteTeam: jest.fn(),
       getTeam: jest.fn(),
-      moveTeam: jest.fn(),
       updateTeam: jest.fn(),
     };
     dependencies = {
@@ -119,13 +103,11 @@ describe("OrgHierarchyService integrity boundaries", () => {
     };
     locations = {
       createLocation: jest.fn(),
-      deleteLocation: jest.fn(),
       listLocations: jest.fn(),
       updateLocation: jest.fn(),
     };
     costCenters = {
       createCostCenter: jest.fn(),
-      deleteCostCenter: jest.fn(),
       listCostCenters: jest.fn(),
       updateCostCenter: jest.fn(),
     };
@@ -247,14 +229,6 @@ describe("OrgHierarchyService integrity boundaries", () => {
     expect(branches.createOrgBranch).toHaveBeenCalledTimes(1);
   });
 
-  it("rejects moving a business unit under an unavailable parent", async () => {
-    await expect(
-      service.moveBusinessUnit(orgId, unitId, "00000000-0000-0000-0000-000000000002"),
-    ).rejects.toBeInstanceOf(BadRequestException);
-
-    expect(businessUnits.moveBusinessUnit).not.toHaveBeenCalled();
-  });
-
   it("prevents restoring a nested business unit beneath an unavailable parent", async () => {
     businessUnits.getBusinessUnit.mockResolvedValue({ parentId: unitId });
 
@@ -279,35 +253,12 @@ describe("OrgHierarchyService integrity boundaries", () => {
     expect(branches.updateOrgBranch).not.toHaveBeenCalled();
   });
 
-  it("guards the legacy remove endpoint before applying its soft removal", async () => {
-    commands.run.mockRejectedValue(
-      new ConflictException("Historical dependencies remain"),
-    );
-
-    await expect(
-      service.deleteOrgBranch(orgId, userId, unitId),
-    ).rejects.toBeInstanceOf(ConflictException);
-
-    expect(commands.run).toHaveBeenCalledWith(
-      orgId,
-      unitId,
-      "BRANCH",
-      "retire",
-      expect.any(Function),
-    );
-    expect(branches.deleteOrgBranch).not.toHaveBeenCalled();
-    expect(hierarchyCache.invalidateAfterMutation).not.toHaveBeenCalled();
-  });
-
-  it("invalidates after successful create, update, archive, restore, retire, and move mutations", async () => {
+  it("invalidates after successful create, update, archive and restore mutations", async () => {
     businessUnits.createBusinessUnit.mockResolvedValue({ id: "bu-created" });
     locations.updateLocation.mockResolvedValue({ id: "location-updated" });
     costCenters.updateCostCenter.mockResolvedValue({ id: "cost-center-archived" });
     businessUnits.getBusinessUnit.mockResolvedValue({ parentId: null });
     businessUnits.updateBusinessUnit.mockResolvedValue({ id: "bu-restored" });
-    teams.deleteTeam.mockResolvedValue({ success: true });
-    teams.moveTeam.mockResolvedValue({ id: "team-moved" });
-    parentRows = [{ id: "department-active" }];
 
     await service.createBusinessUnit(orgId, userId, {
       name: "Operations",
@@ -322,10 +273,8 @@ describe("OrgHierarchyService integrity boundaries", () => {
     await service.updateBusinessUnit(orgId, userId, unitId, {
       status: "ACTIVE",
     });
-    await service.deleteTeam(orgId, userId, unitId);
-    await service.moveTeam(orgId, unitId, "department-active");
 
-    expect(hierarchyCache.invalidateAfterMutation).toHaveBeenCalledTimes(6);
+    expect(hierarchyCache.invalidateAfterMutation).toHaveBeenCalledTimes(4);
     expect(hierarchyCache.invalidateAfterMutation).toHaveBeenCalledWith(orgId);
   });
 });

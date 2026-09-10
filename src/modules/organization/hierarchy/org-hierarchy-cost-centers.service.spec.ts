@@ -1,10 +1,9 @@
 import type { AuditService } from "../../../common/audit/audit.service";
-import type { CacheService } from "../../../common/cache/cache.service";
 import type { Db } from "../../../db/drizzle.module";
 import { OrgHierarchyCostCentersService } from "./org-hierarchy-cost-centers.service";
 
 describe("OrgHierarchyCostCentersService", () => {
-  it("soft-removes a cost center and never hard-deletes the row", async () => {
+  it("archives a cost center and never hard-deletes the row", async () => {
     const costCenter = {
       id: "00000000-0000-0000-0000-000000000001",
       orgId: "org-1",
@@ -22,7 +21,10 @@ describe("OrgHierarchyCostCentersService", () => {
         where: jest.fn().mockReturnValue({ limit }),
       }),
     });
-    const where = jest.fn().mockResolvedValue(undefined);
+    const returning = jest
+      .fn()
+      .mockResolvedValue([{ ...costCenter, status: "ARCHIVED" as const }]);
+    const where = jest.fn().mockReturnValue({ returning });
     const set = jest.fn().mockReturnValue({ where });
     const update = jest.fn().mockReturnValue({ set });
     const hardDelete = jest.fn();
@@ -31,25 +33,21 @@ describe("OrgHierarchyCostCentersService", () => {
       update,
       delete: hardDelete,
     } as unknown as Db;
-    const invalidate = jest.fn().mockResolvedValue(undefined);
-    const cache = {
-      invalidate,
-      invalidateForOrg: (o: string, k: string) => invalidate(`${o}:${k}`),
-      invalidateNamespaceForOrg: (o: string, n: string) => invalidate(`${o}:${n}`),
-    } as unknown as CacheService;
     const audit = {
       logCritical: jest.fn().mockResolvedValue(undefined),
     } as unknown as AuditService;
-    const service = new OrgHierarchyCostCentersService(db, cache, audit);
+    const service = new OrgHierarchyCostCentersService(db, audit);
 
-    await service.deleteCostCenter("org-1", "user-1", costCenter.id);
+    const result = await service.updateCostCenter("org-1", "user-1", costCenter.id, {
+      status: "ARCHIVED",
+    });
 
+    expect(result.status).toBe("ARCHIVED");
     expect(update).toHaveBeenCalledTimes(1);
-    expect(set).toHaveBeenCalledWith({ deletedAt: expect.any(Date) });
+    expect(set).toHaveBeenCalledWith({ status: "ARCHIVED" });
     expect(hardDelete).not.toHaveBeenCalled();
-    expect(cache.invalidate).toHaveBeenCalled();
     expect(audit.logCritical).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "org.costCenter.deleted" }),
+      expect.objectContaining({ action: "org.costCenter.updated" }),
     );
   });
 });

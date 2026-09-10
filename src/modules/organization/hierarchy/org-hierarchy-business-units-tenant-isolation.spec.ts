@@ -79,14 +79,8 @@ describe("OrgHierarchyBusinessUnitsService — cross-tenant isolation", () => {
       update: jest.fn().mockReturnValue(updateBuilder),
       query: { orgUnits: { findFirst: jest.fn().mockResolvedValue(undefined) } },
     } as unknown as Db;
-    const cache = {
-      get: jest.fn().mockResolvedValue(null),
-      set: jest.fn(),
-      del: jest.fn(),
-      invalidateForOrg: jest.fn(),
-    };
     const audit = { log: jest.fn(), logCritical: jest.fn() };
-    const svc = new OrgHierarchyBusinessUnitsService(db, cache as never, audit as never);
+    const svc = new OrgHierarchyBusinessUnitsService(db, audit as never);
     return { svc, captured };
   }
 
@@ -150,21 +144,22 @@ describe("OrgHierarchyBusinessUnitsService — cross-tenant isolation", () => {
     });
   });
 
-  describe("deleteBusinessUnit", () => {
-    it("refuses a foreign unit id with NotFound and writes nothing", async () => {
+  // Ported from the deleted hard-delete route: the archive write now carries its cross-tenant assertion.
+  describe("archive via updateBusinessUnit", () => {
+    it("refuses a foreign business unit id with NotFound and writes nothing", async () => {
       const { svc, captured } = makeService([]);
 
       await expect(
-        svc.deleteBusinessUnit(ATTACKER, "user-1", BU_ID),
+        svc.updateBusinessUnit(ATTACKER, "user-1", BU_ID, { status: "ARCHIVED" }),
       ).rejects.toBeInstanceOf(NotFoundException);
 
       expect(captured.updateWheres).toHaveLength(0);
     });
 
-    it("scopes the soft delete to the caller org", async () => {
+    it("scopes the archive write to the caller org", async () => {
       const { svc, captured } = makeService([BU]);
 
-      await svc.deleteBusinessUnit(OWNER, "user-1", BU_ID);
+      await svc.updateBusinessUnit(OWNER, "user-1", BU_ID, { status: "ARCHIVED" });
 
       const { sql, params } = render(captured.updateWheres[0]);
       expect(sql).toContain('"org_units"."org_id" = $');

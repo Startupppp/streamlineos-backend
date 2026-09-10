@@ -5,11 +5,9 @@ describe("HrOrgCatalogService structure compatibility", () => {
     listLocations: jest.fn(),
     createLocation: jest.fn(),
     updateLocation: jest.fn(),
-    deleteLocation: jest.fn(),
     listTeams: jest.fn(),
     createTeam: jest.fn(),
     updateTeam: jest.fn(),
-    deleteTeam: jest.fn(),
   };
   const service = new HrOrgCatalogService({} as never, hierarchy as never);
 
@@ -47,12 +45,10 @@ describe("HrOrgCatalogService structure compatibility", () => {
     await service.updateLocation("org-1", "user-1", "location-1", {
       status: "ARCHIVED",
     });
-    await service.deleteLocation("org-1", "user-1", "location-1");
     await service.createTeam("org-1", "user-1", team);
     await service.updateTeam("org-1", "user-1", "team-1", {
       status: "ARCHIVED",
     });
-    await service.deleteTeam("org-1", "user-1", "team-1");
 
     expect(hierarchy.createLocation).toHaveBeenCalledWith(
       "org-1",
@@ -65,11 +61,6 @@ describe("HrOrgCatalogService structure compatibility", () => {
       "location-1",
       { status: "ARCHIVED" },
     );
-    expect(hierarchy.deleteLocation).toHaveBeenCalledWith(
-      "org-1",
-      "user-1",
-      "location-1",
-    );
     expect(hierarchy.createTeam).toHaveBeenCalledWith(
       "org-1",
       "user-1",
@@ -80,11 +71,6 @@ describe("HrOrgCatalogService structure compatibility", () => {
       "user-1",
       "team-1",
       { status: "ARCHIVED" },
-    );
-    expect(hierarchy.deleteTeam).toHaveBeenCalledWith(
-      "org-1",
-      "user-1",
-      "team-1",
     );
   });
 });

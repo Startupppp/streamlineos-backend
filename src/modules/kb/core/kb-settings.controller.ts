@@ -1,5 +1,4 @@
 import { Body, Controller, Get, Patch, UseGuards } from "@nestjs/common";
-import { z } from "zod";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -9,12 +8,7 @@ import { KbSettingsService } from "./kb-settings.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { kbSettingsSchema } from "./dto/kb-core-response.schemas";
-
-const updateKbSettingsSchema = z.object({
-  trashRetentionDays: z.number().int().min(1).max(365),
-});
-
-type UpdateKbSettingsInput = z.infer<typeof updateKbSettingsSchema>;
+import { updateKbSettingsSchema, type UpdateKbSettingsInput } from "./dto/kb.schemas";
 
 @Controller("kb/settings")
 @UseGuards(JwtAuthGuard, PermissionGuard)

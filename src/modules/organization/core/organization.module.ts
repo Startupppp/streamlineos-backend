@@ -25,9 +25,18 @@ import { OrgMembershipReadService } from "./org-membership-read.service";
 import { OrgMembershipStatusService } from "./org-membership-status.service";
 import { OrgMemberDepartureService } from "./org-member-departure.service";
 import { IntegrationConnectionDisconnectedConsumer } from "./integration-connection-disconnected-consumer.service";
+import { MembershipAdmissionModule } from "./membership-admission.module";
 
 @Module({
-  imports: [BillingModule, SessionsModule, NotificationsModule, RealtimeModule, OutboxModule, IntegrationsModule],
+  imports: [
+    BillingModule,
+    SessionsModule,
+    NotificationsModule,
+    RealtimeModule,
+    OutboxModule,
+    IntegrationsModule,
+    MembershipAdmissionModule,
+  ],
   controllers: [OrganizationController],
   providers: [
     OrgProfileService,

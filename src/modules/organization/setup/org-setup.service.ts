@@ -1,7 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import {
   accountOrganizationIndex,
+  inboxRecords,
   users,
   organizations,
   magicLinkTokens,
@@ -9,7 +10,7 @@ import {
 import { addMinutes } from "date-fns";
 import { type Db } from "../../../db/drizzle.module";
 import { DRIZZLE } from "../../../db/drizzle.constants";
-import { type SetupInput } from "./dto/org.schemas";
+import { type SetupInput, type SetupInvitee } from "./dto/org.schemas";
 import { OnboardingSessionService } from "../../hr/onboarding/flow/onboarding-session.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { logger } from "../../../common/logger/logger.service";
@@ -28,9 +29,27 @@ import {
 } from "../../../common/org/provision-org-modules";
 import { provisionEmployeeSelfService } from "../../../common/org/provision-employee-self-service";
 import { OrgSetupResolverService } from "./org-setup-resolver.service";
+import { ORG_SETUP_COMPLETED_CONSUMER } from "./org-setup-completed-consumer.service";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 
 export { DEFAULT_SKIP_MODULES, provisionOrgModules };
+
+export type OrgSetupProvisioningState =
+  | "not-started"
+  | "pending"
+  | "in-progress"
+  | "completed"
+  | "failed";
+
+export interface OrgSetupStatus {
+  orgId: string | null;
+  onboardingCompletedAt: Date | null;
+  provisioning: OrgSetupProvisioningState;
+  lastError: string | null;
+}
+
+const SKIP_INDUSTRY = "IT Services";
+const SKIP_COMPANY_SIZE = "1-10";
 
 @Injectable()
 export class OrgSetupService {
@@ -43,14 +62,17 @@ export class OrgSetupService {
   ) {}
 
   /**
-   * The setup work that must outlive the request: RBAC role seeding, module checklists, closing
-   * the setup session and the welcome notification.
+   * The setup work that must outlive the request: RBAC role seeding, module checklists, the
+   * industry workspace structure, the wizard's invitations, closing the setup session and the
+   * welcome notification.
    *
    * It used to run in a bare `setImmediate` whose only failure handler was a log line, so a crash
    * or a single throwing step left a new organisation half-provisioned with nothing to retry it.
-   * Emitting inside the caller's transaction makes the intent commit atomically with
-   * `onboarding_completed_at`; `OrgSetupCompletedConsumerService` performs it, and the outbox
-   * relay retries until it succeeds or dead-letters visibly.
+   * The structure generation and the invitations were worse still: the BROWSER sequenced them
+   * after the response, so closing the tab dropped them. Emitting inside the caller's transaction
+   * makes the intent commit atomically with `onboarding_completed_at`;
+   * `OrgSetupCompletedConsumerService` performs it, and the outbox relay retries until it succeeds
+   * or dead-letters visibly.
    */
   private emitSetupCompleted(
     tx: TenantTx,
@@ -62,6 +84,8 @@ export class OrgSetupService {
       sessionAction: "complete" | "skip";
       skipReason?: string;
       sendWelcome: boolean;
+      industry: string | null;
+      invitees: readonly SetupInvitee[];
     },
   ): Promise<void> {
     return OutboxWriter.emit(tx, {
@@ -78,6 +102,8 @@ export class OrgSetupService {
         sessionAction: input.sessionAction,
         skipReason: input.skipReason ?? null,
         sendWelcome: input.sendWelcome,
+        industry: input.industry,
+        invitees: input.invitees.map((invitee) => ({ ...invitee })),
       },
       occurredAt: now,
     });
@@ -131,6 +157,35 @@ export class OrgSetupService {
     return provisionOrgModules(tx, orgId, moduleKeys, enabledBy);
   }
 
+  /**
+   * The wizard's natural idempotency (no `@Idempotent`, which would 400 every caller that sends
+   * no `Idempotency-Key`).
+   *
+   * The stamp is claimed by a conditional UPDATE rather than a read-then-write, so two concurrent
+   * replays cannot both see a null and both proceed. A replay that loses the race writes nothing:
+   * no second `organization.setup.completed` with `sendWelcome: true`, and no second
+   * `magic_link_tokens` row — that row is a login credential, and minting a fresh one per retry
+   * hands out a new one on every double-submit.
+   */
+  private async claimOnboardingStamp(
+    tx: TenantTx,
+    orgId: string,
+    now: Date,
+    profile: Partial<typeof organizations.$inferInsert>,
+  ): Promise<boolean> {
+    const claimed = await tx
+      .update(organizations)
+      .set({ ...profile, onboardingCompletedAt: now })
+      .where(
+        and(
+          eq(organizations.id, orgId),
+          isNull(organizations.onboardingCompletedAt),
+        ),
+      )
+      .returning({ id: organizations.id });
+    return claimed.length > 0;
+  }
+
   async completeSetup(u: CurrentUserContext, input: SetupInput) {
     const target = await this.resolver.resolveOrCreateOrg(u, input);
     const { orgId } = target;
@@ -139,20 +194,17 @@ export class OrgSetupService {
     const autoLoginToken = randomBytes(32).toString("hex");
     const now = new Date();
 
-    await runInTenantTransaction(
+    const claimed = await runInTenantTransaction(
       this.db,
       async (tx) => {
-        await tx
-          .update(organizations)
-          .set({
-            industry: input.industry,
-            companySize: input.companySize,
-            ...(input.country ? { country: input.country } : {}),
-            ...(input.timezone ? { timezone: input.timezone } : {}),
-            ...(input.companyName ? { name: input.companyName } : {}),
-            onboardingCompletedAt: now,
-          })
-          .where(eq(organizations.id, orgId));
+        const stamped = await this.claimOnboardingStamp(tx, orgId, now, {
+          industry: input.industry,
+          companySize: input.companySize,
+          ...(input.country ? { country: input.country } : {}),
+          ...(input.timezone ? { timezone: input.timezone } : {}),
+          ...(input.companyName ? { name: input.companyName } : {}),
+        });
+        if (!stamped) return false;
 
         await this.provisionOrgModules(
           tx,
@@ -183,10 +235,15 @@ export class OrgSetupService {
           moduleKeys: input.enabledModules,
           sessionAction: "complete",
           sendWelcome: true,
+          industry: input.industry,
+          invitees: input.invitees ?? [],
         });
+        return true;
       },
       { orgId },
     );
+
+    if (!claimed) return { success: true, orgId };
 
     await this.cache.invalidate(CACHE_KEYS.userSession(u.userId));
     await this.touchAccountOrgIndex(u.userId, orgId);
@@ -224,6 +281,77 @@ export class OrgSetupService {
     );
   }
 
+  /**
+   * What the wizard polls instead of sequencing provisioning from the browser.
+   *
+   * `onboarding_completed_at` answers "is the wizard finished"; the setup-completed consumer's
+   * inbox row answers "has the asynchronous half landed". A stamped organisation with no inbox row
+   * is `pending` — the relay has not claimed the event yet — which is deliberately distinct from
+   * `not-started`, so a client cannot read "nothing has happened" from work that is merely queued.
+   */
+  async getSetupStatus(u: CurrentUserContext): Promise<OrgSetupStatus> {
+    const target =
+      (await this.resolver.resolveCurrentSetupTarget(u)) ??
+      this.resolver.resolveExistingSetupTarget(
+        u,
+        await this.resolver.listSetupMemberships(u.userId),
+      );
+
+    if (!target)
+      return {
+        orgId: null,
+        onboardingCompletedAt: null,
+        provisioning: "not-started",
+        lastError: null,
+      };
+
+    const { orgId } = target;
+    return runInTenantTransaction(
+      this.db,
+      async (tx): Promise<OrgSetupStatus> => {
+        const [org] = await tx
+          .select({ onboardingCompletedAt: organizations.onboardingCompletedAt })
+          .from(organizations)
+          .where(eq(organizations.id, orgId))
+          .limit(1);
+
+        const onboardingCompletedAt = org?.onboardingCompletedAt ?? null;
+        if (!onboardingCompletedAt)
+          return {
+            orgId,
+            onboardingCompletedAt: null,
+            provisioning: "not-started",
+            lastError: null,
+          };
+
+        const [record] = await tx
+          .select({
+            status: inboxRecords.status,
+            lastError: inboxRecords.lastError,
+          })
+          .from(inboxRecords)
+          .where(
+            and(
+              eq(inboxRecords.organizationId, orgId),
+              eq(inboxRecords.consumerName, ORG_SETUP_COMPLETED_CONSUMER),
+              eq(inboxRecords.aggregateType, "organization"),
+              eq(inboxRecords.aggregateId, orgId),
+            ),
+          )
+          .orderBy(desc(inboxRecords.aggregateVersion))
+          .limit(1);
+
+        return {
+          orgId,
+          onboardingCompletedAt,
+          provisioning: resolveProvisioningState(record?.status ?? null),
+          lastError: record?.lastError ?? null,
+        };
+      },
+      { orgId },
+    );
+  }
+
   async skipSetup(u: CurrentUserContext, reason?: string) {
     const target = await this.resolver.resolveOrCreateOrg(u, {});
     const { orgId } = target;
@@ -240,17 +368,14 @@ export class OrgSetupService {
     const autoLoginToken = randomBytes(32).toString("hex");
     const now = new Date();
 
-    await runInTenantTransaction(
+    const claimed = await runInTenantTransaction(
       this.db,
       async (tx) => {
-        await tx
-          .update(organizations)
-          .set({
-            industry: "IT Services",
-            companySize: "1-10",
-            onboardingCompletedAt: now,
-          })
-          .where(eq(organizations.id, orgId));
+        const stamped = await this.claimOnboardingStamp(tx, orgId, now, {
+          industry: SKIP_INDUSTRY,
+          companySize: SKIP_COMPANY_SIZE,
+        });
+        if (!stamped) return false;
 
         await this.provisionOrgModules(
           tx,
@@ -279,10 +404,15 @@ export class OrgSetupService {
           sessionAction: "skip",
           skipReason: reason,
           sendWelcome: false,
+          industry: SKIP_INDUSTRY,
+          invitees: [],
         });
+        return true;
       },
       { orgId },
     );
+
+    if (!claimed) return { success: true, orgId };
 
     await this.cache.invalidate(CACHE_KEYS.userSession(u.userId));
     await this.touchAccountOrgIndex(u.userId, orgId);
@@ -297,4 +427,13 @@ export class OrgSetupService {
 
     return { success: true, orgId, autoLoginToken };
   }
+}
+
+function resolveProvisioningState(
+  inboxStatus: string | null,
+): OrgSetupProvisioningState {
+  if (inboxStatus === null) return "pending";
+  if (inboxStatus === "COMPLETED" || inboxStatus === "SKIPPED") return "completed";
+  if (inboxStatus === "FAILED") return "failed";
+  return "in-progress";
 }

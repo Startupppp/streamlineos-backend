@@ -88,3 +88,8 @@ export const voteArticleSchema = z.object({
   comment: z.string().trim().max(1000).optional(),
 }).strict();
 export type VoteArticleInput = z.infer<typeof voteArticleSchema>;
+
+export const updateKbSettingsSchema = z.object({
+  trashRetentionDays: z.number().int().min(1).max(365),
+});
+export type UpdateKbSettingsInput = z.infer<typeof updateKbSettingsSchema>;

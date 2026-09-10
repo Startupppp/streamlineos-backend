@@ -19,7 +19,6 @@ const ORG_B = "22222222-2222-4222-8222-222222222222";
 function storageConfig(): AppConfig {
   return {
     NODE_ENV: "test",
-    RBAC_MIGRATION_MODE: "off",
     PORT: 1500,
     DATABASE_URL: "postgres://test",
     BACKEND_JWT_SECRET: "x".repeat(44),

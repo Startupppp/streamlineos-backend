@@ -156,14 +156,14 @@ describe("HrOrgCatalogService — cross-tenant isolation (isolation)", () => {
   const OWNER = "org-owner";
 
   it("delegates location list with attacker orgId (cross-tenant isolation)", async () => {
-    const mockHierarchy = { listLocations: jest.fn().mockResolvedValue({ data: [] }), listTeams: jest.fn().mockResolvedValue({ data: [] }), createLocation: jest.fn(), createTeam: jest.fn(), updateLocation: jest.fn(), updateTeam: jest.fn(), deleteLocation: jest.fn(), deleteTeam: jest.fn() };
+    const mockHierarchy = { listLocations: jest.fn().mockResolvedValue({ data: [] }), listTeams: jest.fn().mockResolvedValue({ data: [] }), createLocation: jest.fn(), createTeam: jest.fn(), updateLocation: jest.fn(), updateTeam: jest.fn() };
     const svc = new HrOrgCatalogService({} as Db, mockHierarchy as never);
     await svc.listLocations(ATTACKER);
     expect(mockHierarchy.listLocations).toHaveBeenCalledWith(ATTACKER, expect.any(Object));
   });
 
   it("delegates location list with owner orgId (control)", async () => {
-    const mockHierarchy = { listLocations: jest.fn().mockResolvedValue({ data: [{ id: "loc-1" }] }), listTeams: jest.fn().mockResolvedValue({ data: [] }), createLocation: jest.fn(), createTeam: jest.fn(), updateLocation: jest.fn(), updateTeam: jest.fn(), deleteLocation: jest.fn(), deleteTeam: jest.fn() };
+    const mockHierarchy = { listLocations: jest.fn().mockResolvedValue({ data: [{ id: "loc-1" }] }), listTeams: jest.fn().mockResolvedValue({ data: [] }), createLocation: jest.fn(), createTeam: jest.fn(), updateLocation: jest.fn(), updateTeam: jest.fn() };
     const svc = new HrOrgCatalogService({} as Db, mockHierarchy as never);
     const result = await svc.listLocations(OWNER);
     expect(mockHierarchy.listLocations).toHaveBeenCalledWith(OWNER, expect.any(Object));

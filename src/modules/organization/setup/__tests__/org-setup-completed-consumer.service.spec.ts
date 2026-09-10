@@ -4,6 +4,8 @@ import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { OnboardingSessionService } from "../../../hr/onboarding/flow/onboarding-session.service";
 import { ModuleChecklistService } from "../../../hr/onboarding/flow/module-checklist.service";
 import { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
+import { WorkspaceOnboardingService } from "../../onboarding/workspace-onboarding.service";
+import { InvitationCreateService } from "../../core/invitation-create.service";
 import {
   OutboxConsumerRegistry,
   type OutboxEventRow,
@@ -40,11 +42,26 @@ const COMPLETE_PAYLOAD = {
   sessionAction: "complete",
   skipReason: null,
   sendWelcome: true,
+  industry: "IT Services",
+  invitees: [{ email: "new@acme.test", role: "MEMBER" }],
 };
+
+/**
+ * `sendInvitations` re-derives the actor's standing from `organization_members` rather than
+ * trusting the payload, so the double has to answer the select chain as well as the users lookup.
+ */
+function membershipSelect(rows: unknown[]) {
+  const chain: Record<string, jest.Mock> = {};
+  chain.from = jest.fn().mockReturnValue(chain);
+  chain.where = jest.fn().mockReturnValue(chain);
+  chain.limit = jest.fn().mockResolvedValue(rows);
+  return jest.fn().mockReturnValue(chain);
+}
 
 async function build(overrides: {
   completeSession?: jest.Mock;
   ensureChecklistsForModules?: jest.Mock;
+  actorRows?: unknown[];
 } = {}) {
   const completeSession = overrides.completeSession ?? jest.fn().mockResolvedValue(undefined);
   const skipSession = jest.fn().mockResolvedValue(undefined);
@@ -52,6 +69,13 @@ async function build(overrides: {
     overrides.ensureChecklistsForModules ?? jest.fn().mockResolvedValue(undefined);
   const emit = jest.fn().mockResolvedValue(undefined);
   const register = jest.fn();
+  const generateWorkspace = jest.fn().mockResolvedValue({
+    businessUnits: 1,
+    branches: 1,
+    departments: 4,
+    teams: 4,
+  });
+  const bulkInvite = jest.fn().mockResolvedValue({ results: [] });
   const findFirst = jest
     .fn()
     .mockResolvedValue({ email: "owner@acme.test", name: "Acme Owner", firstName: null });
@@ -59,7 +83,13 @@ async function build(overrides: {
   const moduleRef = await Test.createTestingModule({
     providers: [
       OrgSetupCompletedConsumerService,
-      { provide: DRIZZLE, useValue: { query: { users: { findFirst } } } },
+      {
+        provide: DRIZZLE,
+        useValue: {
+          query: { users: { findFirst } },
+          select: membershipSelect(overrides.actorRows ?? [{ isOwner: true }]),
+        },
+      },
       {
         provide: OnboardingSessionService,
         useValue: { completeSession, skipSession },
@@ -67,6 +97,8 @@ async function build(overrides: {
       { provide: ModuleChecklistService, useValue: { ensureChecklistsForModules } },
       { provide: NotificationDispatchService, useValue: { emit } },
       { provide: OutboxConsumerRegistry, useValue: { register } },
+      { provide: WorkspaceOnboardingService, useValue: { generateWorkspace } },
+      { provide: InvitationCreateService, useValue: { bulkInvite } },
     ],
   }).compile();
 
@@ -77,6 +109,8 @@ async function build(overrides: {
     ensureChecklistsForModules,
     emit,
     register,
+    generateWorkspace,
+    bulkInvite,
   };
 }
 
@@ -119,6 +153,92 @@ describe("OrgSetupCompletedConsumerService", () => {
       "COMPLETED",
       null,
     );
+  });
+
+  // Decision D17 — these two used to be sequenced by the browser after the response returned.
+  it("generates the industry workspace structure and sends the wizard's invitations", async () => {
+    const { svc, generateWorkspace, bulkInvite } = await build();
+
+    await svc.handle(event(COMPLETE_PAYLOAD));
+
+    expect(generateWorkspace).toHaveBeenCalledWith("org-1", "IT Services", ["hr", "crm"]);
+    expect(bulkInvite).toHaveBeenCalledWith(
+      "org-1",
+      { userId: "user-1", isOrgOwner: true },
+      ["new@acme.test"],
+      "MEMBER",
+    );
+  });
+
+  it("groups invitations by role so one bulk call is made per role", async () => {
+    const { svc, bulkInvite } = await build();
+
+    await svc.handle(
+      event({
+        ...COMPLETE_PAYLOAD,
+        invitees: [
+          { email: "a@acme.test", role: "MEMBER" },
+          { email: "b@acme.test", role: "ORG_ADMIN" },
+          { email: "c@acme.test", role: "MEMBER" },
+        ],
+      }),
+    );
+
+    expect(bulkInvite).toHaveBeenCalledTimes(2);
+    expect(bulkInvite).toHaveBeenCalledWith(
+      "org-1",
+      expect.anything(),
+      ["a@acme.test", "c@acme.test"],
+      "MEMBER",
+    );
+    expect(bulkInvite).toHaveBeenCalledWith(
+      "org-1",
+      expect.anything(),
+      ["b@acme.test"],
+      "ORG_ADMIN",
+    );
+  });
+
+  // The payload is data, not an authority claim: `bulkInvite` grants a role, so the actor's
+  // standing is re-read from the membership row.
+  it("does not invite when the payload's user holds no active membership", async () => {
+    const { svc, bulkInvite } = await build({ actorRows: [] });
+
+    await svc.handle(event(COMPLETE_PAYLOAD));
+
+    expect(bulkInvite).not.toHaveBeenCalled();
+  });
+
+  // A missing industry template is a permanent precondition miss, not a transient failure:
+  // dead-lettering the event would discard five successful steps.
+  it("skips workspace generation for an industry with no template instead of failing the event", async () => {
+    const { svc, generateWorkspace, completeSession } = await build();
+
+    await svc.handle(event({ ...COMPLETE_PAYLOAD, industry: "Cryptozoology" }));
+
+    expect(generateWorkspace).not.toHaveBeenCalled();
+    expect(completeSession).toHaveBeenCalled();
+    expect(markProcessed).toHaveBeenCalledWith(
+      "organization:setup-completed",
+      expect.any(String),
+      "COMPLETED",
+      null,
+    );
+  });
+
+  // An event emitted by the previous release carries neither field; requiring them would mark
+  // every one of those FAILED at boot instead of provisioning it.
+  it("provisions an event that predates the industry and invitees fields", async () => {
+    const { svc, generateWorkspace, bulkInvite, completeSession } = await build();
+    const legacy: Record<string, unknown> = { ...COMPLETE_PAYLOAD };
+    delete legacy["industry"];
+    delete legacy["invitees"];
+
+    await svc.handle(event(legacy));
+
+    expect(completeSession).toHaveBeenCalled();
+    expect(generateWorkspace).not.toHaveBeenCalled();
+    expect(bulkInvite).not.toHaveBeenCalled();
   });
 
   it("skips the session and sends no welcome for a skipped setup", async () => {

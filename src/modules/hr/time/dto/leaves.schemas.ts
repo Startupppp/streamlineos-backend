@@ -101,3 +101,25 @@ export const updateLeaveTypeSchema = z
   }).strict()
   .refine((v) => Object.keys(v).length > 0, "Nothing to update");
 export type UpdateLeaveTypeInput = z.infer<typeof updateLeaveTypeSchema>;
+
+export const createLeavePolicySchema = z.object({
+  leaveTypeId: z.number().int().positive(),
+  name: z.string().min(1).max(200),
+  accrualType: z.string().optional(),
+  accrualRate: z.string().min(1),
+  maxBalance: z.string().optional(),
+  carryForwardDays: z.string().optional(),
+  carryForwardExpiryMonths: z.number().int().positive().optional(),
+  encashable: z.boolean().optional(),
+  probationRestricted: z.boolean().optional(),
+  genderRestriction: z.string().optional(),
+  appliesTo: z.string().optional(),
+  effectiveFrom: z.string().min(1),
+  effectiveTo: z.string().optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const updateLeavePolicySchema = createLeavePolicySchema.partial();
+
+export type CreateLeavePolicyBody = z.infer<typeof createLeavePolicySchema>;
+export type UpdateLeavePolicyBody = z.infer<typeof updateLeavePolicySchema>;

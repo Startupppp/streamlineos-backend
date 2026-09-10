@@ -141,34 +141,6 @@ export class OrgHierarchyService {
     );
   }
 
-  async deleteBusinessUnit(orgId: string, userId: string, businessUnitId: string) {
-    return this.mutateHierarchy(orgId, () =>
-      this.commands.run(orgId, businessUnitId, "BUSINESS_UNIT", "retire", () =>
-        this.businessUnits.deleteBusinessUnit(orgId, userId, businessUnitId),
-      ),
-    );
-  }
-
-  async moveBusinessUnit(
-    orgId: string,
-    businessUnitId: string,
-    newParentBusinessUnitId: string | null,
-  ) {
-    await this.assertActiveParent(
-      orgId,
-      newParentBusinessUnitId,
-      "BUSINESS_UNIT",
-      "business unit",
-    );
-    return this.mutateHierarchy(orgId, () =>
-      this.businessUnits.moveBusinessUnit(
-        orgId,
-        businessUnitId,
-        newParentBusinessUnitId,
-      ),
-    );
-  }
-
   async listOrgBranches(orgId: string, query: ListQueryInput) {
     return this.branches.listOrgBranches(orgId, query);
   }
@@ -220,26 +192,6 @@ export class OrgHierarchyService {
     );
   }
 
-  async deleteOrgBranch(orgId: string, userId: string, branchId: string) {
-    return this.mutateHierarchy(orgId, () =>
-      this.commands.run(orgId, branchId, "BRANCH", "retire", () =>
-        this.branches.deleteOrgBranch(orgId, userId, branchId),
-      ),
-    );
-  }
-
-  async moveBranch(orgId: string, branchId: string, newBusinessUnitId: string | null) {
-    await this.assertActiveParent(
-      orgId,
-      newBusinessUnitId,
-      "BUSINESS_UNIT",
-      "business unit",
-    );
-    return this.mutateHierarchy(orgId, () =>
-      this.branches.moveBranch(orgId, branchId, newBusinessUnitId),
-    );
-  }
-
   async listDepartments(orgId: string, query: ListQueryInput) {
     return this.departments.listDepartments(orgId, query);
   }
@@ -282,26 +234,6 @@ export class OrgHierarchyService {
     }
     return this.mutateHierarchy(orgId, () =>
       this.departments.updateDepartment(orgId, userId, departmentId, body),
-    );
-  }
-
-  async deleteDepartment(orgId: string, userId: string, departmentId: string) {
-    return this.mutateHierarchy(orgId, () =>
-      this.commands.run(orgId, departmentId, "DEPARTMENT", "retire", () =>
-        this.departments.deleteDepartment(orgId, userId, departmentId),
-      ),
-    );
-  }
-
-  async moveDepartment(orgId: string, departmentId: string, newBranchId: string | null) {
-    await this.assertActiveParent(
-      orgId,
-      newBranchId,
-      "BRANCH",
-      "branch",
-    );
-    return this.mutateHierarchy(orgId, () =>
-      this.departments.moveDepartment(orgId, departmentId, newBranchId),
     );
   }
 
@@ -352,27 +284,6 @@ export class OrgHierarchyService {
     );
   }
 
-  async deleteTeam(orgId: string, userId: string, teamId: string) {
-    return this.mutateHierarchy(orgId, () =>
-      this.commands.run(orgId, teamId, "TEAM", "retire", () =>
-        this.teams.deleteTeam(orgId, userId, teamId),
-      ),
-    );
-  }
-
-  async moveTeam(orgId: string, teamId: string, newDepartmentId: string) {
-    await this.assertActiveParent(
-      orgId,
-      newDepartmentId,
-      "DEPARTMENT",
-      "department",
-      true,
-    );
-    return this.mutateHierarchy(orgId, () =>
-      this.teams.moveTeam(orgId, teamId, newDepartmentId),
-    );
-  }
-
   listLocations(orgId: string, query: ListQueryInput) {
     return this.locations.listLocations(orgId, query);
   }
@@ -400,14 +311,6 @@ export class OrgHierarchyService {
     );
   }
 
-  async deleteLocation(orgId: string, userId: string, locationId: string) {
-    return this.mutateHierarchy(orgId, () =>
-      this.commands.run(orgId, locationId, "LOCATION", "retire", () =>
-        this.locations.deleteLocation(orgId, userId, locationId),
-      ),
-    );
-  }
-
   listCostCenters(orgId: string, query: ListQueryInput) {
     return this.costCenters.listCostCenters(orgId, query);
   }
@@ -432,14 +335,6 @@ export class OrgHierarchyService {
     }
     return this.mutateHierarchy(orgId, () =>
       this.costCenters.updateCostCenter(orgId, userId, costCenterId, body),
-    );
-  }
-
-  async deleteCostCenter(orgId: string, userId: string, costCenterId: string) {
-    return this.mutateHierarchy(orgId, () =>
-      this.commands.run(orgId, costCenterId, "COST_CENTER", "retire", () =>
-        this.costCenters.deleteCostCenter(orgId, userId, costCenterId),
-      ),
     );
   }
 

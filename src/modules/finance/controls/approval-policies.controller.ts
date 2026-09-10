@@ -21,11 +21,11 @@ import { ApprovalPoliciesService } from "./approval-policies.service";
 import {
   createApprovalPolicySchema,
   updateApprovalPolicySchema,
+  listPoliciesSchema,
   type CreateApprovalPolicyInput,
   type UpdateApprovalPolicyInput,
 } from "./dto/finance-controls.schemas";
 import { z } from "zod";
-import { pageSizeField } from "../../../common/pagination/list-query.schema";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
@@ -35,11 +35,6 @@ import {
 } from "./dto/controls-response.schemas";
 
 const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
-
-const listPoliciesSchema = z.object({
-  cursor: z.string().optional(),
-  limit: pageSizeField(20, 100),
-});
 
 @RequireModule("accounting")
 @Controller("accounting/approval-policies")

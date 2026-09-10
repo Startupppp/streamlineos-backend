@@ -263,3 +263,26 @@ export const allWorkPageSchema = z.object({
   hasMore: z.boolean(),
   total: z.number().int().optional(),
 });
+
+const myIssueItemSchema = z.object({
+  id: z.number().int(),
+  title: z.string(),
+  status: z.string().nullable(),
+  type: z.string().nullable(),
+  priority: z.string().nullable(),
+  ticketNumber: z.string(),
+  updatedAt: wireDate(),
+  projectName: z.string(),
+  projectId: z.number().int().optional(),
+  projectKey: z.string(),
+  assignee: z
+    .object({
+      id: z.number().int(),
+      firstName: z.string().nullable(),
+      lastName: z.string().nullable(),
+      image: z.string().nullable(),
+    })
+    .nullable(),
+});
+
+export const myIssuesSchema = z.array(myIssueItemSchema);

@@ -1,6 +1,5 @@
 import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, Query, UseGuards, HttpCode } from "@nestjs/common";
 import { z } from "zod";
-import { pageSizeField } from "../../../common/pagination/list-query.schema";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -9,7 +8,11 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 import { OvertimeService } from "./overtime.service";
-import { createOvertimeSchema, type CreateOvertimeInput } from "./dto/overtime.schemas";
+import {
+  createOvertimeSchema,
+  listQuerySchema,
+  type CreateOvertimeInput,
+} from "./dto/overtime.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
@@ -20,11 +23,6 @@ import {
 } from "./dto/time-wfh-shifts-response.schemas";
 
 const overtimeRequestIdParams = z.object({ overtimeRequestId: z.coerce.number().int().positive() }).strict();
-
-const listQuerySchema = z.object({
-  cursor: z.string().optional(),
-  pageSize: pageSizeField(20, 100),
-});
 
 @RequireModule("hr")
 @UseGuards(JwtAuthGuard, PermissionGuard)

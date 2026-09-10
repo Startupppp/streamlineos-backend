@@ -10,9 +10,7 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts"
 import { costSummaryResponseSchema, costByDepartmentResponseSchema, costByLocationResponseSchema, forecastedCostResponseSchema } from "./dto/enterprise-comp-response.schemas"
-
-const costByDeptSchema = z.object({ periodKey: z.string().min(7) });
-const forecastedCostQuerySchema = z.object({ cycleId: z.coerce.number().int().positive() });
+import { costByDeptSchema, forecastedCostQuerySchema } from "./dto/enterprise-comp.schemas"
 
 @RequireModule("hr")
 @Controller("hr/enterprise/comp/costing")

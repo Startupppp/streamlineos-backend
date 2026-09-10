@@ -15,6 +15,7 @@ import {
   createComplianceTaskSchema,
   updateComplianceTaskSchema,
   listComplianceTasksSchema,
+  seedPresetsSchema,
   type CreateVarianceApprovalInput,
   type ResolveVarianceInput,
   type ListVarianceApprovalsInput,
@@ -29,7 +30,6 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { listVarianceApprovalsResponseSchema, createVarianceApprovalResponseSchema, resolveVarianceApprovalResponseSchema, listArrearsResponseSchema, createArrearResponseSchema, applyArrearResponseSchema, listComplianceTasksResponseSchema, createComplianceTaskResponseSchema, completeComplianceTaskResponseSchema, seedCountryPresetsResponseSchema } from "./dto/enterprise-comp-response.schemas"
 
-const seedPresetsSchema = z.object({ countryCode: z.string().length(2), periodKey: z.string().min(7) }).strict();
 const varianceIdParams = z.object({ varianceId: z.coerce.number().int().positive() }).strict();
 const arrearIdParams = z.object({ arrearId: z.coerce.number().int().positive() }).strict();
 const taskIdParams = z.object({ taskId: z.coerce.number().int().positive() }).strict();

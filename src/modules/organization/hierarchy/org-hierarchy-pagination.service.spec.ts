@@ -1,5 +1,4 @@
 import type { AuditService } from "../../../common/audit/audit.service";
-import type { CacheService } from "../../../common/cache/cache.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { ListQueryInput } from "./dto/org-hierarchy.schemas";
 import { OrgHierarchyBranchesService } from "./org-hierarchy-branches.service";
@@ -86,7 +85,6 @@ function makeCursorDb(rows?: Array<Record<string, unknown>>) {
   };
 }
 
-const cache = {} as CacheService;
 const audit = {} as AuditService;
 
 const listCases: Array<{
@@ -98,7 +96,7 @@ const listCases: Array<{
     label: "business units",
     kind: "BUSINESS_UNIT",
     createList: (db) => {
-      const service = new OrgHierarchyBusinessUnitsService(db, cache, audit);
+      const service = new OrgHierarchyBusinessUnitsService(db, audit);
       return (orgId, query) => service.listBusinessUnits(orgId, query);
     },
   },
@@ -106,7 +104,7 @@ const listCases: Array<{
     label: "branches",
     kind: "BRANCH",
     createList: (db) => {
-      const service = new OrgHierarchyBranchesService(db, cache, audit);
+      const service = new OrgHierarchyBranchesService(db, audit);
       return (orgId, query) => service.listOrgBranches(orgId, query);
     },
   },
@@ -114,7 +112,7 @@ const listCases: Array<{
     label: "departments",
     kind: "DEPARTMENT",
     createList: (db) => {
-      const service = new OrgHierarchyDepartmentsService(db, cache, audit);
+      const service = new OrgHierarchyDepartmentsService(db, audit);
       return (orgId, query) => service.listDepartments(orgId, query);
     },
   },
@@ -122,7 +120,7 @@ const listCases: Array<{
     label: "teams",
     kind: "TEAM",
     createList: (db) => {
-      const service = new OrgHierarchyTeamsService(db, cache, audit);
+      const service = new OrgHierarchyTeamsService(db, audit);
       return (orgId, query) => service.listTeams(orgId, query);
     },
   },
@@ -130,7 +128,7 @@ const listCases: Array<{
     label: "locations",
     kind: "LOCATION",
     createList: (db) => {
-      const service = new OrgHierarchyLocationsService(db, cache, audit);
+      const service = new OrgHierarchyLocationsService(db, audit);
       return (orgId, query) => service.listLocations(orgId, query);
     },
   },
@@ -138,7 +136,7 @@ const listCases: Array<{
     label: "cost centers",
     kind: "COST_CENTER",
     createList: (db) => {
-      const service = new OrgHierarchyCostCentersService(db, cache, audit);
+      const service = new OrgHierarchyCostCentersService(db, audit);
       return (orgId, query) => service.listCostCenters(orgId, query);
     },
   },
@@ -189,7 +187,7 @@ describe("hierarchy cursor lists", () => {
 
   it("treats CURRENT as the non-archived lifecycle view", async () => {
     const { db, rowWhere } = makeCursorDb();
-    const service = new OrgHierarchyBusinessUnitsService(db, cache, audit);
+    const service = new OrgHierarchyBusinessUnitsService(db, audit);
 
     await service.listBusinessUnits(ORG_ID, {
       limit: 20,
@@ -215,7 +213,7 @@ describe("hierarchy cursor lists", () => {
       deletedAt: null,
     }));
     const { db, rowWhere } = makeCursorDb(rows);
-    const service = new OrgHierarchyBusinessUnitsService(db, cache, audit);
+    const service = new OrgHierarchyBusinessUnitsService(db, audit);
     const cursor = encodeOrgUnitCursor({ name: "Before", id: UNIT_ID });
 
     const result = await service.listBusinessUnits(ORG_ID, {

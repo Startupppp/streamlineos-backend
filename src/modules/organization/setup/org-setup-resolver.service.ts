@@ -1,12 +1,6 @@
 import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { ORG_MEMBER_ROLES } from "../../../common/rbac/org-roles";
 import { and, desc, eq, isNull } from "drizzle-orm";
-import {
-  organizations,
-  organizationMembers,
-  subscriptions,
-} from "../../../db/schema";
-import { addDays } from "date-fns";
+import { organizations, organizationMembers } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { SetupInput } from "./dto/org.schemas";
@@ -15,19 +9,17 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { withMembershipMutations } from "../../../common/org/membership-mutations";
 import { randomUUID } from "node:crypto";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
-import {
-  runInNewTenantTransaction,
-  runInTenantTransaction,
-} from "../../../common/tenant/run-in-tenant-transaction";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { withIdentity } from "../../../common/tenant/with-identity";
 import { logger } from "../../../common/logger/logger.service";
-import { provisionEmployeeSelfService } from "../../../common/org/provision-employee-self-service";
 import {
-  getTrialDays,
-  TRIAL_PLAN,
-} from "../../billing/core/plan-entitlements.constants";
-import { placeOrganization } from "../../../common/region/placement-lookup";
+  bootstrapCellOrganization,
+  generateOrgSlug,
+} from "../core/bootstrap-cell-organization";
+import {
+  placeOrganization,
+  unplaceOrganization,
+} from "../../../common/region/placement-lookup";
 import { chooseRegionForNewOrg } from "../../../common/region/cell-admission";
 
 export type SetupMembership = {
@@ -53,18 +45,6 @@ export class OrgSetupResolverService {
     private readonly cache: CacheService,
     private readonly audit: AuditService,
   ) {}
-
-  slugify(name: string): string {
-    return (
-      name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-|-$/g, "")
-        .substring(0, 50) +
-      "-" +
-      Date.now().toString(36)
-    );
-  }
 
   async listSetupMemberships(userId: string): Promise<SetupMembership[]> {
     return withIdentity(this.db, userId, (tx) =>
@@ -217,35 +197,28 @@ export class OrgSetupResolverService {
     const region = (await chooseRegionForNewOrg(this.db, { organizationId: orgId })).region;
     await placeOrganization(this.db, { orgId, region });
 
-    await withMembershipMutations(this.cache, (membership) =>
-      runInNewTenantTransaction(this.db, orgId, async (tx) => {
-        const ownerMembershipId = await membership.allocateMembershipId(tx);
-        await tx.insert(organizations).values({
-          id: orgId,
-          region,
-          name: orgName,
-          slug: this.slugify(orgName),
-          ownerMembershipId,
-        });
-        await membership.createOwnerMembership(tx, {
-          orgId,
+    // A placed organisation with no rows 401s every request, so placement must be compensated.
+    try {
+      await bootstrapCellOrganization(this.db, this.cache, {
+        orgId,
+        userId: u.userId,
+        region,
+        name: orgName,
+        slug: generateOrgSlug(orgName),
+        // The wizard chooses the modules; seeding a default set here would enable three the
+        // owner never picked and hand them ownership rows for modules they then switched off.
+        moduleKeys: [],
+      });
+    } catch (error) {
+      await unplaceOrganization(this.db, orgId).catch((compensationError: unknown) => {
+        logger.error("Placement compensation failed after org bootstrap error", {
           userId: u.userId,
-          membershipId: ownerMembershipId,
-          role: ORG_MEMBER_ROLES.OWNER,
-        });
-        const trialDays = getTrialDays();
-        await tx.insert(subscriptions).values({
           orgId,
-          plan: TRIAL_PLAN,
-          status: "TRIAL",
-          trialEndsAt: addDays(new Date(), trialDays),
-          currentPeriodStart: new Date(),
-          currentPeriodEnd: addDays(new Date(), trialDays),
+          error: compensationError,
         });
-        await provisionEmployeeSelfService(tx, orgId);
-        await bumpPermissionsVersion(tx, orgId);
-      }),
-    );
+      });
+      throw error;
+    }
 
     this.audit.log({
       action: "org.created",

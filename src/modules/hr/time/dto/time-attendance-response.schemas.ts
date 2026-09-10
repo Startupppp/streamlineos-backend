@@ -11,6 +11,15 @@ export const orgHolidayRowSchema = z.object({
   createdAt: wireDate(),
 });
 
+export const upcomingHolidaysSchema = z.array(
+  z.object({
+    id: z.number().int(),
+    name: z.string(),
+    date: z.string(),
+    message: z.string().nullable(),
+  }),
+);
+
 export const attendanceRowSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),

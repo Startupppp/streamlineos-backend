@@ -41,3 +41,18 @@ export type UpdateSupportAiSettingsInput = z.infer<typeof updateSupportAiSetting
 export type ResolveAiSuggestionInput = z.infer<typeof resolveAiSuggestionSchema>;
 export type TranslateMessageInput = z.infer<typeof translateMessageSchema>;
 export type SupportReportFiltersInput = z.infer<typeof supportReportFiltersSchema>;
+
+export const improveReplyBodySchema = z.object({
+  ticketId: z.number().int().positive(),
+  content: z.string().trim().min(1).max(10000),
+  macroId: z.number().int().positive().optional(),
+});
+
+export const translateDraftBodySchema = z.object({
+  ticketId: z.number().int().positive(),
+  language: z.string().trim().min(2).max(50),
+  content: z.string().trim().max(10000).optional(),
+});
+
+export type ImproveReplyBody = z.infer<typeof improveReplyBodySchema>;
+export type TranslateDraftBody = z.infer<typeof translateDraftBodySchema>;

@@ -65,7 +65,13 @@ function buildTxMock(ownerMembershipId: number | null) {
   const values = jest.fn().mockReturnValue({ onConflictDoUpdate, onConflictDoNothing });
   const insert = jest.fn().mockReturnValue({ values });
 
-  const whereUpdate = jest.fn().mockResolvedValue([]);
+  // `claimOnboardingStamp` reads `.returning()` off the same `update(...).set(...).where(...)`
+  // chain that the plain `users` update awaits directly, so the double has to be both.
+  const returningUpdate = jest.fn().mockResolvedValue([{ id: "org-1" }]);
+  const whereUpdate = jest.fn().mockReturnValue({
+    returning: returningUpdate,
+    then: (resolve: (rows: unknown[]) => unknown) => resolve([]),
+  });
   const set = jest.fn().mockReturnValue({ where: whereUpdate });
   const update = jest.fn().mockReturnValue({ set });
 
@@ -84,7 +90,7 @@ function buildTxMock(ownerMembershipId: number | null) {
 
   const execute = jest.fn().mockResolvedValue(undefined);
   const tx: TxMock = { execute, insert, update, select };
-  return { tx, mocks: { insert, values, onConflictDoUpdate, onConflictDoNothing, returning, update, select, limit } };
+  return { tx, mocks: { insert, values, onConflictDoUpdate, onConflictDoNothing, returning, returningUpdate, update, select, limit } };
 }
 
 function buildDb(ownerMembershipId: number | null) {
@@ -229,6 +235,54 @@ describe("OrgSetupService — provisionOrgModules ownership seeding", () => {
 
     expect(txMocks.onConflictDoNothing).toHaveBeenCalledTimes(2);
     expect(txMocks.onConflictDoUpdate).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * Decision D14: the setup routes are made naturally idempotent rather than decorated with
+ * `@Idempotent`, which 400s any caller that sends no `Idempotency-Key` header. The stamp is
+ * claimed by a conditional UPDATE, so a replay writes nothing at all — no second
+ * `organization.setup.completed` with `sendWelcome: true`, and no second `magic_link_tokens` row.
+ */
+describe("OrgSetupService — replay of a completed setup", () => {
+  it("control — the first call claims the stamp and writes the token and the event", async () => {
+    const { db, txMocks } = buildDb(99);
+    const svc = await buildService(db);
+
+    const result = await svc.skipSetup(ownerActor());
+
+    expect(result).toMatchObject({ success: true, orgId: "org-1" });
+    expect(result).toHaveProperty("autoLoginToken");
+    expect(txMocks.insert).toHaveBeenCalled();
+  });
+
+  it("writes nothing and mints no login token when the stamp was already claimed", async () => {
+    const { db, txMocks } = buildDb(99);
+    txMocks.returningUpdate.mockResolvedValue([]);
+    const svc = await buildService(db);
+
+    await expect(svc.skipSetup(ownerActor())).resolves.toEqual({
+      success: true,
+      orgId: "org-1",
+    });
+
+    expect(txMocks.insert).not.toHaveBeenCalled();
+  });
+
+  it("does not re-run completeSetup either", async () => {
+    const { db, txMocks } = buildDb(99);
+    txMocks.returningUpdate.mockResolvedValue([]);
+    const svc = await buildService(db);
+
+    await expect(
+      svc.completeSetup(ownerActor(), {
+        industry: "IT Services",
+        companySize: "1-10",
+        enabledModules: ["hr"],
+      } as Parameters<OrgSetupService["completeSetup"]>[1]),
+    ).resolves.toEqual({ success: true, orgId: "org-1" });
+
+    expect(txMocks.insert).not.toHaveBeenCalled();
   });
 });
 

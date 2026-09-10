@@ -4,6 +4,7 @@ import { AccessService } from "../../access/access.service";
 import { ForbiddenException, ConflictException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { InvitationCreateService } from "./invitation-create.service";
+import { MembershipAdmissionService } from "./membership-admission.service";
 import { InvitationLifecycleService } from "./invitation-lifecycle.service";
 import { InvitationAcceptanceService } from "./invitation-acceptance.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
@@ -124,6 +125,7 @@ describe("InvitationCreateService.invite — plan limit enforcement", () => {
     const module = await Test.createTestingModule({
       providers: [
         InvitationCreateService,
+        MembershipAdmissionService,
         InvitationLifecycleService,
         { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
         { provide: DRIZZLE, useValue: mockDb },

@@ -11,20 +11,14 @@ import { GeofencingService } from "./geofencing.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { geofenceRowSchema } from "./dto/time-attendance-response.schemas";
+import {
+  createZoneSchema,
+  updateZoneSchema,
+  type CreateZoneInput,
+  type UpdateZoneInput,
+} from "./dto/geofencing.schemas";
 
 const zoneIdParams = z.object({ zoneId: z.coerce.number().int().positive() }).strict();
-
-const createZoneSchema = z.object({
-  name: z.string().min(1).max(100),
-  lat: z.string().min(1),
-  lng: z.string().min(1),
-  radiusMeters: z.number().int().positive().optional(),
-});
-
-const updateZoneSchema = createZoneSchema.partial();
-
-type CreateZoneInput = z.infer<typeof createZoneSchema>;
-type UpdateZoneInput = z.infer<typeof updateZoneSchema>;
 
 @RequireModule("hr")
 @UseGuards(JwtAuthGuard)

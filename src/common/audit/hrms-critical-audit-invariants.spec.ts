@@ -1,5 +1,9 @@
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import {
+  awaitedAuditWrites,
+  scanServiceAuditAwaits,
+  totalAuditWrites,
+} from "../../../test/security/audit-await-scan";
 
 const SRC_ROOT = join(__dirname, "../..");
 
@@ -26,12 +30,10 @@ describe("HRMS critical audit boundaries", () => {
   it.each(HRMS_MUTATION_SERVICES)(
     "awaits durable audit writes in %s",
     (relativePath) => {
-      const source = readFileSync(join(SRC_ROOT, relativePath), "utf8");
-      const criticalCalls = source.match(/this\.audit\.logCritical\(/g) ?? [];
-      const awaitedCalls = source.match(/await this\.audit\.logCritical\(/g) ?? [];
-      expect(criticalCalls.length).toBeGreaterThan(0);
-      expect(awaitedCalls).toHaveLength(criticalCalls.length);
-      expect(source).not.toMatch(/\bthis\.audit\.log\(/);
+      const report = scanServiceAuditAwaits(join(SRC_ROOT, relativePath));
+      expect(totalAuditWrites(report)).toBeGreaterThan(0);
+      expect(awaitedAuditWrites(report)).toBe(totalAuditWrites(report));
+      expect(report.bestEffortLog).toBe(false);
     },
   );
 });

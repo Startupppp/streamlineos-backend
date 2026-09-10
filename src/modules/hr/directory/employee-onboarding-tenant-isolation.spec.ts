@@ -1,7 +1,15 @@
 import { ConflictException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
+import { MembershipAdmissionService } from "../../organization/core/membership-admission.service";
 import { EmployeeBulkOnboardingService } from "./employee-bulk-onboarding.service";
 import { EmployeeOnboardingService } from "./employee-onboarding.service";
+
+function admissionService(): MembershipAdmissionService {
+  return new MembershipAdmissionService(
+    { assertWithinLimit: jest.fn().mockResolvedValue(undefined) } as never,
+    { recordSeatEvents: jest.fn().mockResolvedValue(undefined) } as never,
+  );
+}
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -71,8 +79,7 @@ function bulkOnboardingCollaborators() {
     { invalidateAfterMutation: jest.fn() } as never,
     cache as never,
     { canManageOrganizationMembership: jest.fn().mockResolvedValue(true) } as never,
-    { assertWithinLimit: jest.fn() } as never,
-    { recordSeatEvents: jest.fn() } as never,
+    admissionService() as never,
     { sendWelcomeEmail: jest.fn() } as never,
     { runAutomationsForEvent: jest.fn() } as never,
     { dispatch: jest.fn() } as never,
@@ -147,13 +154,11 @@ describe("EmployeeOnboardingService — cross-tenant isolation", () => {
     const mockWebhooks = { dispatch: jest.fn() };
     const mockSync = { ensureFromUser: jest.fn().mockResolvedValue({ employmentId: 1 }) };
     const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Map()), membersWithPermission: jest.fn().mockResolvedValue([]) };
-    const mockPlanLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
-    const mockSeatLedger = { recordSeatEvent: jest.fn().mockResolvedValue(undefined) };
 
     const svc = new EmployeeOnboardingService(
       db, mockCache as never, mockAudit as never, mockEmail as never,
       mockAutomation as never, mockWebhooks as never, mockSync as never,
-      mockAccess as never, mockPlanLimits as never, mockSeatLedger as never,
+      mockAccess as never, admissionService(),
     );
 
     const actor = { orgId: ATTACKER, userId: "actor-1", isOrgOwner: true };
@@ -210,13 +215,11 @@ describe("EmployeeOnboardingService — cross-tenant isolation", () => {
     const mockWebhooks = { dispatch: jest.fn() };
     const mockSync = { ensureFromUser: jest.fn().mockResolvedValue({ employmentId: 1 }) };
     const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Map()), membersWithPermission: jest.fn().mockResolvedValue([]) };
-    const mockPlanLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
-    const mockSeatLedger = { recordSeatEvent: jest.fn().mockResolvedValue(undefined) };
 
     const svc = new EmployeeOnboardingService(
       db, mockCache as never, mockAudit as never, mockEmail as never,
       mockAutomation as never, mockWebhooks as never, mockSync as never,
-      mockAccess as never, mockPlanLimits as never, mockSeatLedger as never,
+      mockAccess as never, admissionService(),
     );
 
     const actor = { orgId: OWNER, userId: "actor-2", isOrgOwner: true };

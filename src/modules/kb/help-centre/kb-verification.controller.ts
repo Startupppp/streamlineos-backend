@@ -6,17 +6,9 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbVerificationService } from "./kb-verification.service";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { kbVerificationQueueSchema } from "./dto/kb-helpcenter-response.schemas";
-
-const verificationQueueSchema = z.object({
-  page: pageNumberField,
-  pageSize: pageSizeField(20, 100),
-});
-
-type VerificationQueueInput = z.infer<typeof verificationQueueSchema>;
+import { verificationQueueSchema, type VerificationQueueInput } from "./dto/kb-helpcenter.schemas";
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)

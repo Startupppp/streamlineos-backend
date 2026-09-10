@@ -266,3 +266,25 @@ export const linkManagedProductResultSchema = z.object({
   key: z.string(),
   managedProductId: z.number().int().nullable(),
 });
+
+const recentProjectManagerSchema = z.object({
+  id: z.number().int(),
+  user: z
+    .object({
+      id: z.string(),
+      name: z.string().nullable(),
+      firstName: z.string().nullable(),
+      lastName: z.string().nullable(),
+      image: z.string().nullable(),
+    })
+    .nullable(),
+});
+
+export const recentProjectsSchema = z.array(
+  z.object({
+    id: z.number().int(),
+    name: z.string(),
+    key: z.string(),
+    manager: recentProjectManagerSchema.nullable().optional(),
+  }),
+);

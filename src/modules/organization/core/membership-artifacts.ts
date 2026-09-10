@@ -1307,7 +1307,7 @@ export const MEMBERSHIP_ARTIFACTS = [
     onRemoval: "set-null",
     onSuspension: "retain",
     reason:
-      "Two composite FKs (fk_onboarding_tasks_created_actor, fk_onboarding_tasks_updated_actor) are currently RESTRICT in the Drizzle schema. Both are attribution columns; the task record survives. Pending migration to SET NULL (hrms-phase1 sweep). The hr/offboarding.ts file IS in the barrel.",
+      "Two composite FKs (fk_onboarding_tasks_created_actor, fk_onboarding_tasks_updated_actor) are currently RESTRICT in the Drizzle schema. Both are attribution columns; the task record survives. Pending migration to SET NULL (hrms-phase1 sweep). The hr/onboarding.ts file IS in the barrel.",
   },
   {
     id: "onboarding_documents_actors",
@@ -1317,7 +1317,7 @@ export const MEMBERSHIP_ARTIFACTS = [
     onRemoval: "set-null",
     onSuspension: "retain",
     reason:
-      "The composite FK fk_onboarding_documents_updated_actor is currently RESTRICT in the Drizzle schema. It is an attribution column; the document record survives. Pending migration to SET NULL (hrms-phase1 sweep). The hr/offboarding.ts file IS in the barrel.",
+      "The composite FK fk_onboarding_documents_updated_actor is currently RESTRICT in the Drizzle schema. It is an attribution column; the document record survives. Pending migration to SET NULL (hrms-phase1 sweep). The hr/onboarding.ts file IS in the barrel.",
   },
   {
     id: "workers_actors",

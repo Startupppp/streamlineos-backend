@@ -216,3 +216,50 @@ export type ListTimelineInput = z.infer<typeof listTimelineSchema>;
 export type UpdateSensitiveInput = z.infer<typeof updateSensitiveSchema>;
 export type ListAuditLogsInput = z.infer<typeof listAuditLogsSchema>;
 export type HistoryTypeInput = z.infer<typeof historyTypeSchema>;
+
+const catalogNameSchema = z
+  .string()
+  .trim()
+  .transform((v) => v.replace(/\s+/g, " "))
+  .pipe(
+    z
+      .string()
+      .min(2, "Name must be at least 2 characters")
+      .max(100, "Name must be at most 100 characters")
+      .refine((v) => /[a-zA-Z]/.test(v), "Name must contain at least one letter")
+      .refine(
+        (v) => !/[^\p{L}\p{N}\s]{2,}/u.test(v),
+        "Name cannot have consecutive special characters",
+      ),
+  );
+
+const catalogCodeSchema = z
+  .union([
+    z.literal("").transform(() => undefined),
+    z
+      .string()
+      .trim()
+      .transform((v) => v.toUpperCase())
+      .pipe(
+        z
+          .string()
+          .min(1, "Code must be at least 1 character")
+          .max(20, "Code must be at most 20 characters")
+          .regex(
+            /^[A-Z0-9][A-Z0-9_-]*$/,
+            "Code can only use letters, numbers, hyphens, and underscores",
+          ),
+      ),
+  ])
+  .optional();
+
+export const createCatalogSchema = z.object({
+  name: catalogNameSchema,
+  code: catalogCodeSchema,
+  description: z.string().trim().max(500).optional(),
+});
+
+export const updateCatalogSchema = createCatalogSchema.partial();
+
+export type CreateCatalogInput = z.infer<typeof createCatalogSchema>;
+export type UpdateCatalogInput = z.infer<typeof updateCatalogSchema>;

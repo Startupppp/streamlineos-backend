@@ -20,6 +20,7 @@ import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts"
 import {
   orgMemberListResponseSchema,
   orgSetupSessionResponseSchema,
+  orgSetupStatusResponseSchema,
   orgSetupCompleteResponseSchema,
   orgSetupSkipResponseSchema,
 } from "./dto/org-setup-response.schemas";
@@ -72,6 +73,14 @@ export class OrgController {
   @AllowNoOrg()
   getSetupSession(@CurrentUser() u: CurrentUserContext) {
     return this.setup.getSetupSession(u);
+  }
+
+  @Get("setup/status")
+  @ResponseSchema(orgSetupStatusResponseSchema)
+  @Universal()
+  @AllowNoOrg()
+  getSetupStatus(@CurrentUser() u: CurrentUserContext) {
+    return this.setup.getSetupStatus(u);
   }
 
   @Post("setup/complete")

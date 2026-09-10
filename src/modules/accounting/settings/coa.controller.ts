@@ -16,11 +16,9 @@ import {
   coaAccountStatusResponseSchema,
   coaDeleteAccountResponseSchema,
 } from "./dto/settings-response.schemas";
+import { applyTemplateSchema, type ApplyTemplateInput } from "./dto/settings.schemas";
 
 const accountIdParams = z.object({ accountId: z.coerce.number().int().positive() }).strict();
-
-const applyTemplateSchema = z.object({ templateKey: z.string() });
-type ApplyTemplateInput = z.infer<typeof applyTemplateSchema>;
 
 @RequireModule("accounting")
 @Controller("accounting/coa")

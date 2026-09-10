@@ -1,3 +1,4 @@
+import { InternalServerErrorException } from "@nestjs/common";
 import { inArray, sql } from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
 import { addDays } from "date-fns";
@@ -16,42 +17,28 @@ import { monthlyAmountToCents } from "../../../../common/hr/sync-canonical-sensi
 import { formatDateOnly } from "../../../../common/date";
 import { appUrl } from "../../../email/app-url";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import type { PlanLimitsService } from "../../../billing/core/plan-limits.service";
-import type { SeatLedgerService } from "../../../billing/core/seat-ledger.service";
 import type { PersonEmploymentSyncService } from "../../core/person-employment-sync.service";
-import { lockMembersQuota } from "../../../billing/core/seat-definition";
+import type { MembershipAdmissionService } from "../../../organization/core/membership-admission.service";
 import { toBankDetails } from "./bulk-onboarding-bank-details";
 import { seedSalaryProfiles, type SalarySeedEntry } from "./bulk-onboarding-salary";
-import type { BulkOnboardWriteOutcome, PlannedEmployee } from "./bulk-onboarding.types";
+import type {
+  AdmittedEmployee,
+  BulkOnboardWriteOutcome,
+  PlannedEmployee,
+} from "./bulk-onboarding.types";
 
 export interface BulkOnboardWriteDeps {
-  planLimits: PlanLimitsService;
-  seatLedger: SeatLedgerService;
+  admission: MembershipAdmissionService;
   personEmploymentSync: PersonEmploymentSyncService;
   membership: MembershipMutations;
 }
 
-async function insertUsers(tx: DbOrTx, accepted: readonly PlannedEmployee[]): Promise<void> {
-  const created = accepted.filter((employee) => employee.isNewUser);
-  if (created.length > 0)
-    await tx.insert(users).values(
-      created.map((employee) => ({
-        id: employee.userId,
-        email: employee.email,
-        name: `${employee.firstName} ${employee.lastName}`,
-        firstName: employee.firstName,
-        lastName: employee.lastName,
-        phone: employee.source.phone,
-        whatsappNumber: employee.source.whatsappSameAsPhone
-          ? employee.source.phone
-          : employee.source.whatsappNumber,
-        gender: employee.source.gender,
-        dateOfBirth: employee.dateOfBirth ?? undefined,
-        isActive: true,
-      })),
-    );
-
-  const relinked = accepted.filter((employee) => !employee.isNewUser);
+/** Accounts that already existed are re-activated here; brand-new accounts are written by admission. */
+async function refreshRelinkedUsers(
+  tx: DbOrTx,
+  admitted: readonly AdmittedEmployee[],
+): Promise<void> {
+  const relinked = admitted.filter((employee) => !employee.createdUser);
   if (relinked.length === 0) return;
 
   await tx
@@ -73,11 +60,11 @@ async function insertUsers(tx: DbOrTx, accepted: readonly PlannedEmployee[]): Pr
 async function writeSensitiveFields(
   tx: DbOrTx,
   orgId: string,
-  accepted: readonly PlannedEmployee[],
+  admitted: readonly AdmittedEmployee[],
   employmentIdByUserId: Map<string, number>,
 ): Promise<void> {
   const rows: Array<typeof hrEmployeeSensitiveFields.$inferInsert> = [];
-  for (const employee of accepted) {
+  for (const employee of admitted) {
     const { taxId, bankDetails, monthlySalary } = employee.source;
     if (!taxId && !bankDetails?.accountNumber && monthlySalary === undefined) continue;
     const employmentId = employmentIdByUserId.get(employee.userId);
@@ -116,7 +103,7 @@ async function writeSensitiveFields(
     });
 }
 
-// Quota is locked and asserted once for the whole batch, keeping the seat ceiling a serialized write invariant.
+// Admission locks the quota and asserts it once for the whole batch, keeping the seat ceiling a serialized write invariant.
 export async function writeBulkOnboarding(
   tx: DbOrTx,
   actor: CurrentUserContext,
@@ -124,45 +111,63 @@ export async function writeBulkOnboarding(
   deps: BulkOnboardWriteDeps,
 ): Promise<BulkOnboardWriteOutcome> {
   const orgId = actor.orgId;
-  await tx.execute(lockMembersQuota(orgId));
-  await deps.planLimits.assertWithinLimit(orgId, "members", accepted.length, tx);
 
-  await insertUsers(tx, accepted);
-
-  const membershipIdByUserId = await deps.membership.createMemberships(tx, {
+  const outcomes = await deps.admission.admitMany(tx, {
     orgId,
-    members: accepted.map((employee) => ({ userId: employee.userId, role: employee.role })),
+    actor,
+    membership: deps.membership,
+    seatReason: "employee onboarded",
+    candidates: accepted.map((employee) => ({
+      email: employee.email,
+      role: employee.role,
+      screen: employee.clearance,
+      createUserIfMissing: {
+        name: `${employee.firstName} ${employee.lastName}`,
+        firstName: employee.firstName,
+        lastName: employee.lastName,
+        phone: employee.source.phone,
+        whatsappNumber: employee.source.whatsappSameAsPhone
+          ? employee.source.phone
+          : employee.source.whatsappNumber,
+        gender: employee.source.gender,
+        dateOfBirth: employee.dateOfBirth ?? undefined,
+        isActive: true,
+      },
+    })),
   });
 
-  const placements = accepted
-    .filter((employee) => employee.departmentId !== null)
+  const admitted: AdmittedEmployee[] = accepted.map((employee, index) => {
+    const outcome = outcomes[index];
+    if (!outcome || outcome.kind !== "admitted")
+      throw new InternalServerErrorException(
+        `Admission did not complete for ${employee.email}.`,
+      );
+    return {
+      ...employee,
+      userId: outcome.userId,
+      membershipId: outcome.membershipId,
+      createdUser: outcome.createdUser,
+    };
+  });
+
+  await refreshRelinkedUsers(tx, admitted);
+
+  const placements = admitted
+    .filter((employee) => employee.departmentId !== null && employee.membershipId !== null)
     .map((employee) => ({
       id: randomUUID(),
       orgId,
       orgUnitId: employee.departmentId ?? "",
-      membershipId: membershipIdByUserId.get(employee.userId) ?? 0,
+      membershipId: employee.membershipId ?? 0,
       role: "member",
-    }))
-    .filter((placement) => placement.membershipId !== 0);
+    }));
   if (placements.length > 0)
     await tx.insert(orgUnitMembers).values(placements).onConflictDoNothing();
-
-  await deps.seatLedger.recordSeatEvents(
-    tx,
-    orgId,
-    accepted.map((employee) => ({
-      eventType: "INVITE_ACCEPTED" as const,
-      subjectId: employee.userId,
-      actorId: actor.userId,
-      reason: "employee onboarded",
-      idempotencyKey: `member-added:${orgId}:${employee.userId}`,
-    })),
-  );
 
   const employments = await deps.personEmploymentSync.ensureManyFromUsers(
     orgId,
     actor.userId,
-    accepted.map((employee) => ({
+    admitted.map((employee) => ({
       userId: employee.userId,
       firstName: employee.firstName,
       lastName: employee.lastName,
@@ -180,9 +185,9 @@ export async function writeBulkOnboarding(
     employments.map((employment) => [employment.userId, employment.employmentId]),
   );
 
-  await writeSensitiveFields(tx, orgId, accepted, employmentIdByUserId);
+  await writeSensitiveFields(tx, orgId, admitted, employmentIdByUserId);
 
-  const salarySeeds: SalarySeedEntry[] = accepted
+  const salarySeeds: SalarySeedEntry[] = admitted
     .filter((employee) => (employee.source.monthlySalary ?? 0) > 0)
     .map((employee) => ({
       userId: employee.userId,
@@ -192,7 +197,7 @@ export async function writeBulkOnboarding(
     }));
   await seedSalaryProfiles(tx, orgId, actor.userId, salarySeeds);
 
-  const invitees = accepted.filter((employee) => employee.isNewUser);
+  const invitees = admitted.filter((employee) => employee.createdUser);
   const welcomeEmails: BulkOnboardWriteOutcome["welcomeEmails"] = [];
   if (invitees.length > 0) {
     const expiresAt = addDays(new Date(), 7);
@@ -213,5 +218,5 @@ export async function writeBulkOnboarding(
     await tx.insert(magicLinkTokens).values(tokens);
   }
 
-  return { createdUserIds: accepted.map((employee) => employee.userId), welcomeEmails };
+  return { admitted, welcomeEmails };
 }

@@ -12,25 +12,14 @@ import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { rosterRowSchema, rosterEntryRowSchema } from "./dto/time-wfh-shifts-response.schemas";
+import {
+  createRosterSchema,
+  upsertRosterEntrySchema,
+  type CreateRosterInput,
+  type UpsertRosterEntryInput,
+} from "./dto/rosters.schemas";
 
 const rosterIdParams = z.object({ rosterId: z.coerce.number().int().positive() }).strict();
-
-const createRosterSchema = z.object({
-  name: z.string().min(1).max(100),
-  weekStart: z.string().min(1),
-  weekEnd: z.string().min(1),
-});
-
-const upsertRosterEntrySchema = z.object({
-  userId: z.string().min(1),
-  shiftId: z.number().int().positive().optional(),
-  date: z.string().min(1),
-  isDayOff: z.boolean().optional(),
-  notes: z.string().max(500).optional(),
-});
-
-type CreateRosterInput = z.infer<typeof createRosterSchema>;
-type UpsertRosterEntryInput = z.infer<typeof upsertRosterEntrySchema>;
 
 @RequireModule("hr")
 @UseGuards(JwtAuthGuard)

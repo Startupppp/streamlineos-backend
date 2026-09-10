@@ -272,7 +272,7 @@ export const payrollLoanAdjustmentTypeEnum = pgEnum("payroll_loan_adjustment_typ
 // Onboarding Flow (org setup / module checklists / guided tours) â€” see onboarding.ts.
 // Named "onboarding_flow_*" to avoid colliding with the pre-existing HR employee
 // onboarding tables (onboarding_templates, onboarding_template_steps, onboarding_tasks,
-// onboarding_steps) which remain in hr/offboarding.ts and auth.ts unchanged.
+// onboarding_steps) which remain in hr/onboarding.ts and auth.ts unchanged.
 export const onboardingFlowTypeEnum = pgEnum("onboarding_flow_type", [
   "org_setup",
   "member_setup",

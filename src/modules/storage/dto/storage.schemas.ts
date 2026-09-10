@@ -38,3 +38,6 @@ export const imageQuerySchema = z
   })
   .strict();
 export type ImageQueryInput = z.infer<typeof imageQuerySchema>;
+
+export const uploadBodySchema = z.object({ type: onboardingDocTypeSchema });
+export type UploadBodyInput = z.infer<typeof uploadBodySchema>;

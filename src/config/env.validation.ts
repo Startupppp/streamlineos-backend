@@ -75,7 +75,6 @@ const baseSchema = z
     NODE_ENV: z
       .enum(["development", "production", "test"])
       .default("development"),
-    RBAC_MIGRATION_MODE: z.enum(["off", "degrade"]).default("off"),
     PORT: z.coerce.number().int().positive().default(1500),
     DATABASE_URL: databaseUrl("DATABASE_URL"),
     /** The RLS-enforced application role. Falling back to DATABASE_URL bypasses every tenant policy. */
@@ -362,14 +361,6 @@ const schema = baseSchema
     }
 
     if (config.NODE_ENV !== "production") return;
-    if (config.RBAC_MIGRATION_MODE === "degrade") {
-      context.addIssue({
-        code: "custom",
-        path: ["RBAC_MIGRATION_MODE"],
-        message:
-          "RBAC_MIGRATION_MODE=degrade is forbidden in production because missing entitlement tables must fail closed",
-      });
-    }
     for (const variableName of [
       "CRON_SECRET",
       "INTERNAL_API_SECRET",

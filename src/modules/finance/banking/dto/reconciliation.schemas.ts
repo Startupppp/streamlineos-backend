@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const confirmMatchSchema = z.object({
   transactionId: z.number().int().positive(),
@@ -50,3 +51,9 @@ export type ConfirmMatchInput = z.infer<typeof confirmMatchSchema>;
 export type UnmatchInput = z.infer<typeof unmatchSchema>;
 export type IgnoreTransactionInput = z.infer<typeof ignoreTransactionSchema>;
 export type CreateReconciliationRuleInput = z.infer<typeof createReconciliationRuleSchema>;
+
+export const rulesQuerySchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
+});
+export type RulesQuery = z.infer<typeof rulesQuerySchema>;

@@ -8,9 +8,10 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { AttendanceRegularizationService } from "./attendance-regularization.service";
 import { z } from "zod";
-import { pageSizeField } from "../../../common/pagination/list-query.schema";
 import {
   createAttendanceRegularizationSchema,
+  listRegularizationsSchema,
+  rejectRegularizationSchema,
   type CreateAttendanceRegularizationInput,
 } from "./dto/attendance.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
@@ -24,19 +25,6 @@ import {
 } from "./dto/time-attendance-response.schemas";
 
 const regularizationIdParams = z.object({ regularizationId: z.coerce.number().int().positive() }).strict();
-
-const listRegularizationsSchema = z.object({
-  userId: z.string().optional(),
-  status: z.enum(["PENDING", "APPROVED", "REJECTED"]).optional(),
-  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  cursor: z.string().min(1).max(512).optional(),
-  limit: pageSizeField(20, 100),
-});
-
-const rejectRegularizationSchema = z.object({
-  rejectionReason: z.string().min(1).max(500),
-});
 
 @RequireModule("hr")
 @Controller("hr/attendance/regularizations")

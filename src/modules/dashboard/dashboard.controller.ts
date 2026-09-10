@@ -25,22 +25,21 @@ import {
   dashboardStatsResponseSchema,
 } from "./dto/dashboard-response-schema";
 import {
-  activeSprintSchema,
   announcementCreateSchema,
   announcementDeleteSchema,
   birthdayEntrySchema,
   executiveDashboardSchema,
-  leavesTodaySchema,
-  myIssuesSchema,
-  myLeaveBalanceSchema,
   pendingApprovalsSchema,
   recentActivitySchema,
-  recentProjectsSchema,
   teamAttendanceSchema,
   teamAvailabilitySchema,
   todayActivitiesSchema,
-  upcomingHolidaysSchema,
 } from "./dto/dashboard-misc-response.schemas";
+import { leavesTodaySchema, myLeaveBalanceSchema } from "../hr/time/dto/time-leave-response.schemas";
+import { upcomingHolidaysSchema } from "../hr/time/dto/time-attendance-response.schemas";
+import { myIssuesSchema } from "../build/core/dto/build-tickets-response.schemas";
+import { activeSprintSchema } from "../build/execution/dto/execution-response.schemas";
+import { recentProjectsSchema } from "../build/core/dto/build-core-response.schemas";
 import { DashboardStatsService } from "./dashboard-stats.service";
 import { DashboardAvailabilityService } from "./dashboard-availability.service";
 import { DashboardBirthdaysService } from "./dashboard-birthdays.service";

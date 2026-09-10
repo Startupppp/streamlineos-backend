@@ -24,13 +24,13 @@ import {
   unmatchSchema,
   ignoreTransactionSchema,
   createReconciliationRuleSchema,
+  rulesQuerySchema,
   type ConfirmMatchInput,
   type UnmatchInput,
   type IgnoreTransactionInput,
   type CreateReconciliationRuleInput,
 } from "./dto/reconciliation.schemas";
 import { z } from "zod";
-import { pageSizeField } from "../../../common/pagination/list-query.schema";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
@@ -42,11 +42,6 @@ import {
 
 const bankAccountIdParams = z.object({ bankAccountId: z.coerce.number().int().positive() }).strict();
 const bankAccountAndRuleIdParams = z.object({ bankAccountId: z.coerce.number().int().positive(), ruleId: z.coerce.number().int().positive() }).strict();
-
-const rulesQuerySchema = z.object({
-  cursor: z.string().optional(),
-  limit: pageSizeField(20, 100),
-});
 
 @RequireModule("accounting")
 @Controller("finance/reconciliation/:bankAccountId")

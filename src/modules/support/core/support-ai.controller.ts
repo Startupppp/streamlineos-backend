@@ -18,10 +18,14 @@ import {
   translateMessageSchema,
   supportAiReportFiltersSchema,
   updateSupportAiSettingsSchema,
+  improveReplyBodySchema,
+  translateDraftBodySchema,
   type ResolveAiSuggestionInput,
   type TranslateMessageInput,
   type SupportAiReportFiltersInput,
   type UpdateSupportAiSettingsInput,
+  type ImproveReplyBody,
+  type TranslateDraftBody,
 } from "./dto/support.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
@@ -37,21 +41,6 @@ import {
 
 const ticketIdParams = z.object({ ticketId: z.coerce.number().int().positive() }).strict();
 const suggestionIdParams = z.object({ suggestionId: z.coerce.number().int().positive() }).strict();
-
-const improveReplyBodySchema = z.object({
-  ticketId: z.number().int().positive(),
-  content: z.string().trim().min(1).max(10000),
-  macroId: z.number().int().positive().optional(),
-});
-
-const translateDraftBodySchema = z.object({
-  ticketId: z.number().int().positive(),
-  language: z.string().trim().min(2).max(50),
-  content: z.string().trim().max(10000).optional(),
-});
-
-type ImproveReplyBody = z.infer<typeof improveReplyBodySchema>;
-type TranslateDraftBody = z.infer<typeof translateDraftBodySchema>;
 
 @RequireModule("support")
 @Controller("support")

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const createOvertimeSchema = z.object({
   date: z
@@ -34,3 +35,9 @@ export const createOvertimeSchema = z.object({
 }).strict();
 
 export type CreateOvertimeInput = z.infer<typeof createOvertimeSchema>;
+
+export const listQuerySchema = z.object({
+  cursor: z.string().optional(),
+  pageSize: pageSizeField(20, 100),
+});
+export type ListQuery = z.infer<typeof listQuerySchema>;

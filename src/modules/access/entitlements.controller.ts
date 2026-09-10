@@ -9,16 +9,11 @@ import { EntitlementsService, ModuleStatus } from "./entitlements.service";
 import { Validate } from "../../common/validation/validate.decorator";
 import { ResponseSchema, NoContentResponse } from "../../common/openapi/zod-operation-contracts";
 import { orgModuleListResponseSchema } from "./dto/org-module-response-schema";
+import { toggleModuleSchema, type ToggleModuleInput } from "./dto/entitlements.schemas";
 
 const moduleKeyParamSchema = z.object({
   moduleKey: z.string().min(1).max(64).regex(/^[a-z][a-z0-9_-]*$/),
 }).strict();
-
-const toggleModuleSchema = z.object({
-  enabled: z.boolean(),
-}).strict();
-
-type ToggleModuleInput = z.infer<typeof toggleModuleSchema>;
 
 @Controller("access/org-modules")
 @UseGuards(JwtAuthGuard, PermissionGuard)

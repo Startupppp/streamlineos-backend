@@ -97,24 +97,26 @@ export type AckExportInput = z.infer<typeof ackExportSchema>;
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;
 export type PayrollMapping = z.infer<typeof payrollMappingSchema>;
 
-export interface PayrollSummaryRow {
-  userId: string;
-  userName: string;
-  userEmail: string;
-  regularHours: number;
-  overtimeHours: number;
-  holidayHours: number;
-  weekendHours: number;
-  breakHours: number;
-  leaveDays: number;
-  billableHours: number;
-  nonBillableHours: number;
-  totalPayableHours: number;
-  entryCount: number;
-  exportedHours: number;
-  hasPendingEntries: boolean;
-  pendingHours: number;
-}
+export const payrollSummaryRowSchema = z.object({
+  userId: z.string(),
+  userName: z.string(),
+  userEmail: z.string(),
+  regularHours: z.number(),
+  overtimeHours: z.number(),
+  holidayHours: z.number(),
+  weekendHours: z.number(),
+  breakHours: z.number(),
+  leaveDays: z.number(),
+  billableHours: z.number(),
+  nonBillableHours: z.number(),
+  totalPayableHours: z.number(),
+  entryCount: z.number(),
+  exportedHours: z.number(),
+  hasPendingEntries: z.boolean(),
+  pendingHours: z.number(),
+});
+
+export type PayrollSummaryRow = z.infer<typeof payrollSummaryRowSchema>;
 
 export const payrollExportRowSchema = z.object({
   userId: z.string(),
@@ -138,27 +140,31 @@ export const payrollSnapshotSchema = z.array(payrollExportRowSchema);
 
 export type PayrollExportRow = z.infer<typeof payrollExportRowSchema>;
 
-export interface TimesheetExportDto {
-  id: number;
-  exportType: string;
-  status: string;
-  dateRangeStart: string;
-  dateRangeEnd: string;
-  format: string;
-  entryCount: number;
-  totalHours: number;
-  note: string | null;
-  ackStatus: string | null;
-  ackAt: string | null;
-  createdBy: string | null;
-  createdByName: string | null;
-  createdAt: string;
-}
+export const timesheetExportSchema = z.object({
+  id: z.number(),
+  exportType: z.string(),
+  status: z.string(),
+  dateRangeStart: z.string(),
+  dateRangeEnd: z.string(),
+  format: z.string(),
+  entryCount: z.number(),
+  totalHours: z.number(),
+  note: z.string().nullable(),
+  ackStatus: z.string().nullable(),
+  ackAt: z.string().nullable(),
+  createdBy: z.string().nullable(),
+  createdByName: z.string().nullable(),
+  createdAt: z.string(),
+});
 
-export interface PayrollSettingsDto {
-  payPeriod: string;
-  overtimeDailyHours: number;
-  overtimeWeeklyHours: number;
-  includeNonBillable: boolean;
-  payrollMapping: PayrollMapping;
-}
+export type TimesheetExportDto = z.infer<typeof timesheetExportSchema>;
+
+export const payrollSettingsDtoSchema = z.object({
+  payPeriod: z.enum(["WEEKLY", "BIWEEKLY", "SEMIMONTHLY", "MONTHLY"]),
+  overtimeDailyHours: z.number(),
+  overtimeWeeklyHours: z.number(),
+  includeNonBillable: z.boolean(),
+  payrollMapping: payrollMappingSchema,
+});
+
+export type PayrollSettingsDto = z.infer<typeof payrollSettingsDtoSchema>;

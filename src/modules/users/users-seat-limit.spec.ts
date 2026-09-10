@@ -6,6 +6,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { SeatLedgerService } from "../billing/core/seat-ledger.service";
 import { InvitationCreateService } from "../organization/core/invitation-create.service";
+import { MembershipAdmissionService } from "../organization/core/membership-admission.service";
 import { OrgMembershipService } from "../organization/core/org-membership.service";
 import { UsersService } from "./users.service";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
@@ -21,6 +22,14 @@ describe("UsersService direct member creation", () => {
     const db = {
       query: { users: { findFirst: jest.fn() } },
       execute: jest.fn().mockResolvedValue(undefined),
+      select: jest.fn().mockImplementation(() => {
+        const chain: Record<string, unknown> = {};
+        const passthrough = () => chain;
+        chain["from"] = passthrough;
+        chain["where"] = passthrough;
+        chain["limit"] = () => Promise.resolve([]);
+        return chain;
+      }),
       transaction: jest.fn(),
     };
     db.transaction.mockImplementation(
@@ -29,6 +38,7 @@ describe("UsersService direct member creation", () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         UsersService,
+        MembershipAdmissionService,
         { provide: DRIZZLE, useValue: db },
         { provide: AuditService, useValue: { log: jest.fn() } },
         { provide: CacheService, useValue: { invalidate: jest.fn() } },
@@ -36,7 +46,7 @@ describe("UsersService direct member creation", () => {
         { provide: AccessService, useValue: {} },
         { provide: OrgMembershipService, useValue: {} },
         { provide: PlanLimitsService, useValue: { assertWithinLimit } },
-        { provide: SeatLedgerService, useValue: { recordSeatEvent: jest.fn() } },
+        { provide: SeatLedgerService, useValue: { recordSeatEvents: jest.fn() } },
         { provide: EmploymentFactsService, useValue: stubEmployment },
       ],
     }).compile();
@@ -64,7 +74,7 @@ describe("UsersService direct member creation", () => {
   });
 
   it("records a seat event in the same transaction as the membership write", async () => {
-    const recordSeatEvent = jest.fn().mockResolvedValue(undefined);
+    const recordSeatEvents = jest.fn().mockResolvedValue(undefined);
     const insertedInto: unknown[] = [];
     const db = {
       query: { users: { findFirst: jest.fn().mockResolvedValue(undefined) } },
@@ -107,6 +117,7 @@ describe("UsersService direct member creation", () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         UsersService,
+        MembershipAdmissionService,
         { provide: DRIZZLE, useValue: db },
         { provide: AuditService, useValue: { log: jest.fn() } },
         {
@@ -125,7 +136,7 @@ describe("UsersService direct member creation", () => {
         { provide: AccessService, useValue: {} },
         { provide: OrgMembershipService, useValue: {} },
         { provide: PlanLimitsService, useValue: { assertWithinLimit: jest.fn() } },
-        { provide: SeatLedgerService, useValue: { recordSeatEvent } },
+        { provide: SeatLedgerService, useValue: { recordSeatEvents } },
         { provide: EmploymentFactsService, useValue: stubEmployment },
       ],
     }).compile();
@@ -136,13 +147,16 @@ describe("UsersService direct member creation", () => {
       { userId: "owner-1", isOrgOwner: true },
     );
 
-    expect(recordSeatEvent).toHaveBeenCalledTimes(1);
-    const [event, executor] = recordSeatEvent.mock.calls[0] as [
-      Record<string, unknown>,
+    expect(recordSeatEvents).toHaveBeenCalledTimes(1);
+    const [executor, orgId, events] = recordSeatEvents.mock.calls[0] as [
       unknown,
+      string,
+      Array<Record<string, unknown>>,
     ];
-    expect(event).toMatchObject({ orgId: "org-1", eventType: "INVITE_ACCEPTED", actorId: "owner-1" });
-    expect(event["idempotencyKey"]).toMatch(/^member-added:org-1:/);
     expect(executor).toBe(db);
+    expect(orgId).toBe("org-1");
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ eventType: "INVITE_ACCEPTED", actorId: "owner-1" });
+    expect(events[0]["idempotencyKey"]).toMatch(/^member-added:org-1:/);
   });
 });

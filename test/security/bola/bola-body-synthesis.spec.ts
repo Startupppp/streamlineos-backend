@@ -326,8 +326,17 @@ describe("COVERAGE — the whole mutating surface, checked against its own schem
     result: synthesizeRequest(op.verb, op.path.replace(/\{([A-Za-z0-9_]+)\}/g, ":$1")),
   }));
 
-  it("ANTI-VACUITY: the contract really does carry the 1,393 mutating bodies the gate counts", () => {
-    expect(mutating.length).toBe(1393);
+  /**
+   * 1,393 -> 1,389, re-pinned 2026-09-11 with the org-access remediation's regenerated
+   * contract. Thirteen routes were deleted and one added, but this counts only POST/PUT/PATCH
+   * operations that declare a request body, so only four of the fourteen can move it: the four
+   * `PATCH /org-hierarchy/<kind>/{id}/move` routes. The six `DELETE /org-hierarchy/<kind>/{id}`
+   * and the two `DELETE /hr/org/...` compat routes are the wrong verb;
+   * `POST /workspace-onboarding/complete` was bodyless in the pre-deletion contract; and the
+   * added `GET /org/setup/status` is a GET. 1393 - 4 = 1389.
+   */
+  it("ANTI-VACUITY: the contract really does carry the 1,389 mutating bodies the gate counts", () => {
+    expect(mutating.length).toBe(1389);
   });
 
   it("derives a body for every operation that declares a JSON one", () => {

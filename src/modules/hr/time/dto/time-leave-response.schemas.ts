@@ -1,6 +1,35 @@
 import { z } from "zod";
 import { wireDate } from "../../../../common/openapi/wire-types";
 
+const boundedListSchema = <T extends z.ZodTypeAny>(item: T) =>
+  z.object({
+    data: z.array(item),
+    total: z.number().int(),
+    hasMore: z.boolean(),
+  });
+
+const leaveTodayItemSchema = z.object({
+  id: z.number().int(),
+  startDate: z.string(),
+  endDate: z.string(),
+  leaveTypeId: z.number().int(),
+  employeeName: z.string().nullable(),
+  employeeDesignation: z.string().nullable(),
+  employeeImage: z.string().nullable(),
+});
+
+export const leavesTodaySchema = boundedListSchema(leaveTodayItemSchema);
+
+const leaveBalanceItemSchema = z.object({
+  id: z.number().int(),
+  balance: z.number(),
+  year: z.number().int(),
+  leaveTypeName: z.string().nullable(),
+  daysPerYear: z.number().nullable(),
+});
+
+export const myLeaveBalanceSchema = z.array(leaveBalanceItemSchema);
+
 export const leaveTypeRowSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),

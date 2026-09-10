@@ -8,32 +8,15 @@ import {
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, isNull } from "drizzle-orm";
-import {
-  organizationMembers,
-  organizations,
-  subscriptions,
-  users,
-} from "../../../db/schema";
+import { organizationMembers, organizations, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
-import { seedSystemRolesForOrg } from "../../rbac/seed-system-roles";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
-import { withMembershipMutations } from "../../../common/org/membership-mutations";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import type { CreateOrganizationInput } from "./dto/organization.schemas";
-import { addDays } from "date-fns";
-import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
-import {
-  getTrialDays,
-  TRIAL_PLAN,
-} from "../../billing/core/plan-entitlements.constants";
-import {
-  provisionOrgModules,
-  DEFAULT_SKIP_MODULES,
-} from "../../../common/org/provision-org-modules";
-import { provisionEmployeeSelfService } from "../../../common/org/provision-employee-self-service";
+import { bootstrapCellOrganization } from "./bootstrap-cell-organization";
 import { withIdentity } from "../../../common/tenant/with-identity";
 import {
   getRegionRegistry,
@@ -265,7 +248,17 @@ export class OrgProfileService {
         await this.saga.runStep(
           saga.sagaId,
           "bootstrap-cell-organization",
-          () => this.bootstrapCellOrganization(orgId, userId, region, billingEmail, input),
+          () =>
+            bootstrapCellOrganization(this.db, this.cache, {
+              orgId,
+              userId,
+              region,
+              name: input.name,
+              slug: input.slug,
+              billingEmail,
+              onboardingCompletedAt: new Date(),
+              ownerActivatedAt: new Date(),
+            }),
         );
 
       if (!done.has("bootstrap-owner-membership"))
@@ -311,60 +304,6 @@ export class OrgProfileService {
     await this.cache.invalidate(CACHE_KEYS.userSession(userId));
 
     return { id: orgId, name: input.name, slug: input.slug };
-  }
-
-  private async bootstrapCellOrganization(
-    orgId: string,
-    userId: string,
-    region: string,
-    billingEmail: string | null,
-    input: CreateOrganizationInput,
-  ): Promise<void> {
-    await withMembershipMutations(this.cache, (membership) =>
-      runInNewTenantTransaction(this.db, orgId, async (tx) => {
-        const [already] = await tx
-          .select({ id: organizations.id })
-          .from(organizations)
-          .where(eq(organizations.id, orgId))
-          .limit(1);
-        if (already) return;
-
-        const ownerMembershipId = await membership.allocateMembershipId(tx);
-        await tx.insert(organizations).values({
-          id: orgId,
-          region,
-          name: input.name,
-          slug: input.slug,
-          billingEmail,
-          ownerMembershipId,
-          onboardingCompletedAt: new Date(),
-        });
-        await membership.createOwnerMembership(tx, {
-          orgId,
-          userId,
-          membershipId: ownerMembershipId,
-          role: "OWNER",
-          activatedAt: new Date(),
-        });
-        const trialDays = getTrialDays();
-        await tx.insert(subscriptions).values({
-          orgId,
-          plan: TRIAL_PLAN,
-          status: "TRIAL",
-          trialEndsAt: addDays(new Date(), trialDays),
-          currentPeriodStart: new Date(),
-          currentPeriodEnd: addDays(new Date(), trialDays),
-        });
-        await provisionEmployeeSelfService(tx, orgId);
-        await bumpPermissionsVersion(tx, orgId);
-        await seedSystemRolesForOrg(this.db, orgId);
-        await provisionOrgModules(tx, orgId, DEFAULT_SKIP_MODULES, userId);
-        await tx
-          .update(users)
-          .set({ lastActiveOrgId: orgId })
-          .where(eq(users.id, userId));
-      }),
-    );
   }
 
   async getProfile(userId: string, orgId: string) {

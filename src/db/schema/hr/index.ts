@@ -15,6 +15,8 @@ export * from "./performance";
 export * from "./documents";
 export * from "./document-tags";
 export * from "./offboarding";
+export * from "./onboarding";
+export * from "./document-catalog";
 export * from "./onboarding-task-dependencies";
 export * from "./termination-relational-records";
 export * from "./employee-sensitive-records";

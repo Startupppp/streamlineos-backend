@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  Delete,
   Get,
   HttpCode,
   Param,
@@ -61,7 +60,6 @@ import {
   dependencyPreviewResponseSchema,
   businessUnitListResponseSchema,
   businessUnitResponseSchema,
-  hierarchyDeleteResponseSchema,
   branchListResponseSchema,
   branchResponseSchema,
   departmentListResponseSchema,
@@ -170,18 +168,6 @@ export class OrgHierarchyController {
     );
   }
 
-  @Delete("business-units/:businessUnitId")
-  @ResponseSchema(hierarchyDeleteResponseSchema)
-  @RequirePermission("settings:organization:manage")
-  @Validate({ params: businessUnitIdParams })
-  async deleteBusinessUnit(
-    @Param("businessUnitId") businessUnitId: string,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    await this.service.deleteBusinessUnit(u.orgId, u.userId, businessUnitId);
-    return { message: "Business unit retired; its history was preserved" };
-  }
-
   // ─── Org Branches ───────────────────────────────────────────────────
 
   @RequirePermission("settings:view")
@@ -231,18 +217,6 @@ export class OrgHierarchyController {
     return this.service.updateOrgBranch(u.orgId, u.userId, branchId, body);
   }
 
-  @Delete("branches/:branchId")
-  @ResponseSchema(hierarchyDeleteResponseSchema)
-  @RequirePermission("settings:organization:manage")
-  @Validate({ params: branchIdParams })
-  async deleteOrgBranch(
-    @Param("branchId") branchId: string,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    await this.service.deleteOrgBranch(u.orgId, u.userId, branchId);
-    return { message: "Branch retired; its history was preserved" };
-  }
-
   // ─── Departments ────────────────────────────────────────────────────
 
   @RequirePermission("settings:view")
@@ -278,18 +252,6 @@ export class OrgHierarchyController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.updateDepartment(u.orgId, u.userId, departmentId, body);
-  }
-
-  @Delete("departments/:departmentId")
-  @ResponseSchema(hierarchyDeleteResponseSchema)
-  @RequirePermission("settings:organization:manage")
-  @Validate({ params: departmentIdParams })
-  async deleteDepartment(
-    @Param("departmentId") departmentId: string,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    await this.service.deleteDepartment(u.orgId, u.userId, departmentId);
-    return { message: "Department retired; its history was preserved" };
   }
 
   // ─── Teams ──────────────────────────────────────────────────────────
@@ -329,18 +291,6 @@ export class OrgHierarchyController {
     return this.service.updateTeam(u.orgId, u.userId, teamId, body);
   }
 
-  @Delete("teams/:teamId")
-  @ResponseSchema(hierarchyDeleteResponseSchema)
-  @RequirePermission("settings:organization:manage")
-  @Validate({ params: teamIdParams })
-  async deleteTeam(
-    @Param("teamId") teamId: string,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    await this.service.deleteTeam(u.orgId, u.userId, teamId);
-    return { message: "Team retired; its history was preserved" };
-  }
-
   // ─── Locations ──────────────────────────────────────────────────────
 
   @RequirePermission("settings:view")
@@ -378,18 +328,6 @@ export class OrgHierarchyController {
     return this.service.updateLocation(u.orgId, u.userId, locationId, body);
   }
 
-  @Delete("locations/:locationId")
-  @ResponseSchema(hierarchyDeleteResponseSchema)
-  @RequirePermission("settings:organization:manage")
-  @Validate({ params: locationIdParams })
-  async deleteLocation(
-    @Param("locationId") locationId: string,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    await this.service.deleteLocation(u.orgId, u.userId, locationId);
-    return { message: "Location retired; its history was preserved" };
-  }
-
   // ─── Cost Centers ────────────────────────────────────────────────────
 
   @RequirePermission("settings:view")
@@ -425,17 +363,5 @@ export class OrgHierarchyController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.updateCostCenter(u.orgId, u.userId, costCenterId, body);
-  }
-
-  @Delete("cost-centers/:costCenterId")
-  @ResponseSchema(hierarchyDeleteResponseSchema)
-  @RequirePermission("settings:organization:manage")
-  @Validate({ params: costCenterIdParams })
-  async deleteCostCenter(
-    @Param("costCenterId") costCenterId: string,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    await this.service.deleteCostCenter(u.orgId, u.userId, costCenterId);
-    return { message: "Cost center retired; its history was preserved" };
   }
 }

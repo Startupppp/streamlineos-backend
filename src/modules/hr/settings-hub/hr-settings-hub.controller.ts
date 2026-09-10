@@ -1,7 +1,5 @@
 import { Controller, Get, Query, UseGuards } from "@nestjs/common";
-import { z } from "zod";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
-import { wireDate } from "../../../common/openapi/wire-types";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -12,75 +10,7 @@ import { HrSettingsHubService } from "./hr-settings-hub.service";
 import { effectiveRulesQuerySchema, versionsQuerySchema } from "./dto/hr-settings-hub.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import type { EffectiveRulesQuery, VersionsQuery } from "./dto/hr-settings-hub.schemas";
-
-const policyEvaluationTraceSchema = z.object({
-  policyId: z.number().int(),
-  policyName: z.string(),
-  version: z.number().int(),
-  matchedScopes: z.array(z.object({ scopeType: z.string(), scopeValue: z.string(), specificity: z.number() })),
-  maxSpecificity: z.number(),
-  priority: z.number().int(),
-});
-
-const effectiveRulesItemSchema = z.object({
-  policyType: z.string(),
-  matchedPolicy: z.object({
-    id: z.number().int(),
-    name: z.string(),
-    policyType: z.string(),
-    version: z.number().int(),
-    status: z.string(),
-    effectiveFrom: z.string(),
-    effectiveTo: z.string().nullable(),
-    priority: z.number().int(),
-    rules: z.record(z.string(), z.unknown()),
-  }),
-  rules: z.record(z.string(), z.unknown()),
-  trace: policyEvaluationTraceSchema,
-});
-
-const effectiveRulesResponseSchema = z.array(effectiveRulesItemSchema);
-
-const policyVersionItemSchema = z.object({
-  id: z.number().int(),
-  name: z.string(),
-  version: z.number().int(),
-  status: z.string(),
-  effectiveFrom: z.string(),
-  effectiveTo: z.string().nullable(),
-  priority: z.number().int(),
-  parentPolicyId: z.number().int().nullable(),
-  createdAt: wireDate(),
-  updatedAt: wireDate(),
-});
-
-const templateVersionItemSchema = z.object({
-  id: z.number().int(),
-  name: z.string(),
-  version: z.number().int(),
-  status: z.string(),
-  kind: z.string(),
-  description: z.string().nullable(),
-  parentTemplateId: z.number().int().nullable(),
-  createdAt: wireDate(),
-  updatedAt: wireDate(),
-});
-
-const workflowVersionItemSchema = z.object({
-  id: z.number().int(),
-  name: z.string(),
-  version: z.number().int(),
-  status: z.string(),
-  objectType: z.string(),
-  createdAt: wireDate(),
-  updatedAt: wireDate(),
-});
-
-const versionsResponseSchema = z.discriminatedUnion("entity", [
-  z.object({ entity: z.literal("policy"), name: z.string(), items: z.array(policyVersionItemSchema) }),
-  z.object({ entity: z.literal("template"), name: z.string(), items: z.array(templateVersionItemSchema) }),
-  z.object({ entity: z.literal("workflow"), name: z.string(), items: z.array(workflowVersionItemSchema) }),
-]);
+import { effectiveRulesResponseSchema, versionsResponseSchema } from "./dto/hr-settings-hub-response.schemas";
 
 @RequireModule("hr")
 @Controller("hr/settings-hub")

@@ -63,7 +63,12 @@ function buildDb() {
       }),
     }));
 
-  const whereUpdate = jest.fn().mockResolvedValue([]);
+  // `claimOnboardingStamp` reads `.returning()` off the same chain the plain `users` update
+  // awaits directly, so the double has to be both awaitable and chainable.
+  const whereUpdate = jest.fn().mockReturnValue({
+    returning: jest.fn().mockResolvedValue([{ id: "org-1" }]),
+    then: (resolve: (rows: unknown[]) => unknown) => resolve([]),
+  });
   const set = jest.fn().mockReturnValue({ where: whereUpdate });
   const update = jest.fn().mockReturnValue({ set });
 
@@ -238,6 +243,13 @@ describe("org setup post-provisioning is durable, not fire-and-forget", () => {
       expect(CONSUMER_SOURCE).toContain("completeSession");
       expect(CONSUMER_SOURCE).toContain("skipSession");
       expect(CONSUMER_SOURCE).toContain("sendWelcome");
+    });
+
+    // Decision D17. These two used to be sequenced by the browser after the setup response
+    // returned, so closing the tab dropped them with no record and no retry.
+    it("also owns the workspace structure and the wizard's invitations", () => {
+      expect(CONSUMER_SOURCE).toContain("generateWorkspace");
+      expect(CONSUMER_SOURCE).toContain("bulkInvite");
     });
   });
 });
