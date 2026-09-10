@@ -26,7 +26,10 @@ Exit is non-zero when a resource that must be isolated is not.
 
 const SELF_TEST = argv.includes("--self-test");
 const JSON_OUT = argv.includes("--json");
-const topology = parseCellArgs(argv, env);
+/**
+ * Resolved inside main(), AFTER the self-test branch — see there for why.
+ */
+let topology;
 
 function connect(url) {
   return postgres(url, { max: 1, prepare: false, onnotice: () => {} });
@@ -404,7 +407,27 @@ function selfTest() {
 }
 
 async function main() {
+  /**
+   * The self-test runs FIRST and needs neither a database nor a cell topology —
+   * it exercises the verdict logic against fixed rows. It used to sit behind
+   * `parseCellArgs`, which throws when DATABASE_URL or APP_DATABASE_URL is
+   * absent, so `--self-test` could only run on a machine that did not need it.
+   */
   if (SELF_TEST) return selfTest();
+
+  /**
+   * Missing connection strings are a PREREQUISITE failure, not an isolation
+   * failure. Letting the throw escape exited 1 — the same code this gate uses
+   * to report that one cell can read another cell's data, so a sweep counted an
+   * unconfigured laptop as a tenancy breach. `compare-cell-schema.mjs` already
+   * handles it this way.
+   */
+  try {
+    topology = parseCellArgs(argv, env);
+  } catch (e) {
+    console.error("PREREQUISITE MISSING:", e instanceof Error ? e.message : e);
+    process.exit(2);
+  }
 
   console.log(`cell        : ${topology.cellId}`);
   console.log(`cell app url: ${redact(topology.cell.app)}`);
