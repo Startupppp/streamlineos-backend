@@ -291,7 +291,7 @@ describe("bulk send survives a failure partway through", () => {
        * row 3's invitation still leaves before that transaction dies,
        * describing an envelope that does not exist. `envelopes.send` is a
        * double here, so this pins the bound rather than dispatch's own
-       * behaviour; `send-defers-invitation.spec.ts` pins that.
+       * behaviour; `emails-leave-after-commit.spec.ts` pins that.
        *
        * Under a single request transaction this list was [1, 2, 3]: every
        * invitation already sent, orphaned at once.

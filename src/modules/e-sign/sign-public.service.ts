@@ -1,10 +1,19 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { signDocuments, signEnvelopes, signFields, signRecipients, signSignatureAssets, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { withPublicToken } from "../../common/tenant/with-public-token";
-import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import {
+  runInNewTenantTransaction,
+  runInTenantTransaction,
+} from "../../common/tenant/run-in-tenant-transaction";
+import {
+  getTenantContext,
+  runWithTenantContext,
+  type AfterCommitHook,
+} from "../../common/tenant/tenant-context";
+import { reportError } from "../../common/observability";
 import { StorageService } from "../storage/storage.service";
 import { SignAuditService } from "./sign-audit.service";
 import { SignTokensService } from "./sign-tokens.service";
@@ -43,6 +52,8 @@ type SessionState =
 
 @Injectable()
 export class SignPublicService {
+  private readonly logger = new Logger(SignPublicService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly storage: StorageService,
@@ -68,15 +79,62 @@ export class SignPublicService {
     );
     if (!recipient) throw new NotFoundException("This signing link is invalid.");
 
-    return runInTenantTransaction(
+    /*
+     * This session owns a transaction, so it owns an after-commit queue too.
+     *
+     * Every public signing route is `@Public()`, so `JwtAuthGuard` returns
+     * before setting `req.user`, `resolveTenant` finds no organisation and
+     * `TenantContextInterceptor` opens nothing. The transaction below is
+     * therefore the outermost one on this path, and the context
+     * `runInTenantTransaction` builds carries no `afterCommit` array — which
+     * means `registerAfterCommit` would return false for everything running
+     * inside it, including the auto-advance invitation in
+     * `applyRecipientOutcome`. Deferring there without this would have been
+     * decoration over an unchanged send.
+     *
+     * Installed only when we are the ones opening the transaction. If a caller
+     * above already holds a context, the queue is theirs and drains after
+     * *their* commit; shadowing it would drain these hooks while that
+     * transaction is still open, which is the whole failure being avoided.
+     */
+    const preexisting = getTenantContext();
+    const afterCommit: AfterCommitHook[] = [];
+
+    const result = await runInTenantTransaction(
       this.db,
       async (tx) => {
         const envelope = await tx.query.signEnvelopes.findFirst({ where: eq(signEnvelopes.id, recipient.envelopeId) });
         if (!envelope) throw new NotFoundException("This signing link is invalid.");
-        return fn({ recipient, envelope });
+        const body = () => fn({ recipient, envelope });
+        const opened = getTenantContext();
+        if (preexisting || !opened) return body();
+        return runWithTenantContext({ ...opened, afterCommit }, body);
       },
       { orgId: recipient.orgId },
     );
+
+    /*
+     * Awaited rather than fired and forgotten: the signer already waited on
+     * this email when it went out inside the transaction, so awaiting it out
+     * here costs them nothing and keeps a provider failure observable. Each
+     * hook gets its own transaction, and a failure is logged and reported
+     * rather than swallowed (§4) — the signing itself has committed, so it must
+     * not be failed now for a mail provider's sake.
+     */
+    for (const hook of afterCommit) {
+      try {
+        await runInNewTenantTransaction(this.db, recipient.orgId, async () => {
+          await hook();
+        });
+      } catch (error) {
+        this.logger.error(
+          `after-commit hook failed for org ${recipient.orgId}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+        );
+        reportError(error, { orgId: recipient.orgId, phase: "after-commit" });
+      }
+    }
+
+    return result;
   }
 
   private deriveState(recipient: typeof signRecipients.$inferSelect, envelope: typeof signEnvelopes.$inferSelect): SessionState {
