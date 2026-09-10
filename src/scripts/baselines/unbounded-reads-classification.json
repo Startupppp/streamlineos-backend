@@ -3193,6 +3193,11 @@
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "Classified 2026-09-10. Same code, new path: claim() moved verbatim out of webhook-delivery.worker.ts when that file was split for check:file-sizes. The parent's justification was re-read against the moved query rather than copied, and it holds exactly - webhooks are filtered inArray on the ids of the deliveries in the batch, behind a `webhookIds.length === 0 ? []` early return, so the select is bounded by the batch. FALSE-POSITIVE rather than BOUNDED because BOUNDED is a FIXED verdict that asserts the scanner no longer matches, and it still does."
+    },
+    "/inventory/sales-orders/lib/lot-selection.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "CRM/Inventory excluded product domain - do not fix in this lane",
+      "justification": "Classified 2026-09-10. Same code, new path: findAvailableLotForLine moved verbatim out of so-lifecycle.service.ts when that file was split for check:file-sizes. The parent entry carries the same EXCLUDED-MODULE verdict and still matches on its own remaining queries, so the lane exclusion is following the code rather than being newly granted."
     }
   }
 }
