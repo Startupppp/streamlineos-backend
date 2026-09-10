@@ -1,7 +1,7 @@
 import { ForbiddenException } from "@nestjs/common";
 import {
   assertPermissionsGrantable,
-  buildPermissionModuleMap,
+  buildPermissionAdministeringModuleMap,
   canGrantToRank,
   ROLE_RANK,
   toGrantableSet,
@@ -195,10 +195,10 @@ describe("assertPermissionsGrantable — Module Admin rank boundary", () => {
 
     const target = { rank: ROLE_RANK.MODULE_ADMIN, moduleKey: "hr" };
     const requestedKeys = HR_KEYS.slice(0, 2);
-    const permMeta = buildPermissionModuleMap(requestedKeys);
+    const administeringModules = buildPermissionAdministeringModuleMap(requestedKeys);
 
     expect(() =>
-      assertPermissionsGrantable(actor, requestedKeys, target, permMeta),
+      assertPermissionsGrantable(actor, requestedKeys, target, administeringModules),
     ).not.toThrow();
   });
 
@@ -213,10 +213,10 @@ describe("assertPermissionsGrantable — Module Admin rank boundary", () => {
 
     const target = { rank: ROLE_RANK.MODULE_ADMIN, moduleKey: "crm" };
     const crmSample = CRM_KEYS.slice(0, 2);
-    const permMeta = buildPermissionModuleMap(crmSample);
+    const administeringModules = buildPermissionAdministeringModuleMap(crmSample);
 
     expect(() =>
-      assertPermissionsGrantable(actor, crmSample, target, permMeta),
+      assertPermissionsGrantable(actor, crmSample, target, administeringModules),
     ).toThrow(ForbiddenException);
   });
 
@@ -231,10 +231,10 @@ describe("assertPermissionsGrantable — Module Admin rank boundary", () => {
 
     const target = { rank: ROLE_RANK.FUNCTIONAL, moduleKey: null };
     const crossModuleKeys = [CRM_KEYS[0] ?? "crm:leads:view"];
-    const permMeta = buildPermissionModuleMap(crossModuleKeys);
+    const administeringModules = buildPermissionAdministeringModuleMap(crossModuleKeys);
 
     expect(() =>
-      assertPermissionsGrantable(actor, crossModuleKeys, target, permMeta),
+      assertPermissionsGrantable(actor, crossModuleKeys, target, administeringModules),
     ).toThrow(ForbiddenException);
   });
 
@@ -250,10 +250,10 @@ describe("assertPermissionsGrantable — Module Admin rank boundary", () => {
 
     const target = { rank: ROLE_RANK.ORG_ADMIN, moduleKey: null };
     const requestedKeys = HR_KEYS.slice(0, 1);
-    const permMeta = buildPermissionModuleMap(requestedKeys);
+    const administeringModules = buildPermissionAdministeringModuleMap(requestedKeys);
 
     expect(() =>
-      assertPermissionsGrantable(actor, requestedKeys, target, permMeta),
+      assertPermissionsGrantable(actor, requestedKeys, target, administeringModules),
     ).toThrow(ForbiddenException);
   });
 });

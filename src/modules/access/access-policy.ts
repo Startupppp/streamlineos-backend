@@ -167,6 +167,7 @@ export function applyUniversalGrants(map: Map<string, DataScope>): Map<string, D
   return map;
 }
 
+// namespaceOf, never administeringModuleOf: a denial names `chat`, but Home administers `chat:*` and is never denied, so that swap would strip nothing.
 export function stripDeniedModules(
   map: Map<string, DataScope>,
   denied: ReadonlySet<string>,

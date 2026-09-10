@@ -22,7 +22,7 @@ import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import {
   assertPermissionsGrantable,
-  buildPermissionModuleMap,
+  buildPermissionAdministeringModuleMap,
   isImmutableSystemRole,
   toGrantableSet,
   type RoleGrantTarget,
@@ -96,7 +96,7 @@ export class RolePermissionService {
       this.access.resolveUserPermissions(actor.orgId, actor.userId),
       resolveActorRankContext(this.db, actor.orgId, actor.userId),
     ]);
-    const permMeta = buildPermissionModuleMap(requestedKeys);
+    const administeringModules = buildPermissionAdministeringModuleMap(requestedKeys);
     assertPermissionsGrantable(
       {
         isOrgOwner: false,
@@ -106,7 +106,7 @@ export class RolePermissionService {
       },
       requestedKeys,
       target,
-      permMeta,
+      administeringModules,
     );
   }
 

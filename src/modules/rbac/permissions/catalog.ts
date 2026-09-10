@@ -1,4 +1,4 @@
-import { namespacesForModule } from "../../../common/rbac/module-vocabulary";
+import { namespaceOf, namespacesForModule } from "../../../common/rbac/module-vocabulary";
 import type { Permission } from "./types";
 import { MODULE_ACCESS_PERMISSIONS } from "./module-access";
 import { SIGN_PERMISSIONS } from "./sign";
@@ -99,6 +99,6 @@ export const ALL_PERMISSION_NAMES: string[] = PERMISSIONS.map((p) => p.name);
 export const moduleScopedPermissions = (moduleKey: string): string[] => {
   const namespaces = namespacesForModule(moduleKey);
   return ALL_PERMISSION_NAMES.filter((name) =>
-    namespaces.includes(name.split(":")[0] ?? ""),
+    namespaces.includes(namespaceOf(name)),
   );
 };

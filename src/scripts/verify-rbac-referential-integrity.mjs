@@ -1,9 +1,8 @@
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { PROBE_SPECS, UNCATALOGUED_MODULE } from "./verify-rbac-probes.mjs";
-import { REQUIRED_CONSTRAINTS, administeringModuleOf, describeError, verdict } from "./verify-rbac-verdict.mjs";
-
-export { REQUIRED_CONSTRAINTS, administeringModuleOf, describeError, sqlErrorShape, verdict } from "./verify-rbac-verdict.mjs";
+import { REQUIRED_CONSTRAINTS, describeError, verdict } from "./verify-rbac-verdict.mjs";
+import { administeringModuleOf } from "./permission-key-extractors.mjs";
 
 class Rollback extends Error {}
 

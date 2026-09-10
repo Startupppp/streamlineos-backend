@@ -49,7 +49,7 @@ const NON_MODULE_NAMESPACES = [
   // makes that a decision rather than an accident.
 ];
 
-function namespaceOf(permissionKey: string): string {
+function naivePrefixNamespace(permissionKey: string): string {
   const separator = permissionKey.indexOf(":");
   return separator === -1 ? permissionKey : permissionKey.slice(0, separator);
 }
@@ -59,7 +59,7 @@ describe("every permission is administered by a module that exists", () => {
     const ghosts = new Map<string, string[]>();
 
     for (const permission of PERMISSIONS) {
-      const namespace = namespaceOf(permission.name);
+      const namespace = naivePrefixNamespace(permission.name);
       const administering = administeringModuleOf(permission.name);
       if (administering === namespace) continue;
       if (moduleDefinition(administering)) continue;
@@ -80,7 +80,7 @@ describe("every permission is administered by a module that exists", () => {
 
   it("only lets a registered module claim another namespace", () => {
     for (const permission of PERMISSIONS) {
-      const namespace = namespaceOf(permission.name);
+      const namespace = naivePrefixNamespace(permission.name);
       const administering = administeringModuleOf(permission.name);
       if (administering === namespace) continue;
       expect(moduleDefinition(administering)?.administersNamespaces).toContain(

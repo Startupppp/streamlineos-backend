@@ -12,7 +12,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 
-import { loadBackendCatalog } from "../permission-key-extractors.mjs";
+import { loadBackendCatalog, namespaceOf } from "../permission-key-extractors.mjs";
 import { walk } from "./corpus.mjs";
 
 export function operations(openapiPath) {
@@ -70,7 +70,7 @@ export function permissions(permissionsDir) {
     // `<module>:access:view` and `<module>:access:manage` are synthesised per
     // access-managed module and consumed through a template, never as a literal.
     // A literal search reports all 20 of them dead; they are not.
-    generated: /:access:(view|manage)$/.test(item) && accessManaged.has(item.split(":")[0] ?? ""),
+    generated: /:access:(view|manage)$/.test(item) && accessManaged.has(namespaceOf(item)),
   }));
 }
 

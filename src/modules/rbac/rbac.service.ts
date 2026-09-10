@@ -23,7 +23,7 @@ import { markRoleAdministered } from "./mark-role-administered";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import {
   assertPermissionsGrantable,
-  buildPermissionModuleMap,
+  buildPermissionAdministeringModuleMap,
   canGrantToRank,
   isDelegablePermission,
   isImmutableSystemRole,
@@ -143,7 +143,7 @@ export class RbacService {
         },
         [input.permissionKey],
         { rank: role.rank, moduleKey: role.moduleKey },
-        buildPermissionModuleMap([input.permissionKey]),
+        buildPermissionAdministeringModuleMap([input.permissionKey]),
       );
     }
 
@@ -216,7 +216,7 @@ export class RbacService {
         resource: p.resource,
         action: p.action,
         description: p.description,
-        moduleKey: p.name.indexOf(":") === -1 ? null : p.name.slice(0, p.name.indexOf(":")),
+        moduleKey: administeringModuleOf(p.name),
         scopable: isScopable(p.name),
       }));
     }
@@ -232,7 +232,7 @@ export class RbacService {
         resource: p.resource,
         action: p.action,
         description: p.description,
-        moduleKey: p.name.indexOf(":") === -1 ? null : p.name.slice(0, p.name.indexOf(":")),
+        moduleKey: administeringModuleOf(p.name),
         scopable: isScopable(p.name),
       }));
   }
@@ -255,7 +255,7 @@ export class RbacService {
 
     const grantable = toGrantableSet(resolved);
     const canPropagateReserved = grantable.has(ORG_ADMIN_PERMISSION_KEY);
-    const permMeta = buildPermissionModuleMap(PERMISSIONS.map((p) => p.name));
+    const administeringModules = buildPermissionAdministeringModuleMap(PERMISSIONS.map((p) => p.name));
 
     const grantableKeys = PERMISSIONS
       .map((p) => p.name)
@@ -266,8 +266,8 @@ export class RbacService {
           return false;
         }
         if (allowedModules !== null) {
-          const mod = permMeta.get(key);
-          if (!mod || !allowedModules.has(mod)) return false;
+          const administeringModule = administeringModules.get(key);
+          if (!administeringModule || !allowedModules.has(administeringModule)) return false;
         }
         return true;
       });

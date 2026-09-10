@@ -18,11 +18,11 @@ import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import {
   assertPermissionsGrantable,
-  buildPermissionModuleMap,
+  buildPermissionAdministeringModuleMap,
   isImmutableSystemRole,
   toGrantableSet,
 } from "../../common/rbac/grantability";
-import { administeringModuleOf } from "../../common/rbac/module-vocabulary";
+import { administeringModuleOf, impliedViewKey } from "../../common/rbac/module-vocabulary";
 import { isStructuralOrgAdmin } from "../../common/rbac/is-structural-org-admin";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
@@ -56,24 +56,6 @@ export async function invalidateRoleAssigneePages(
     if (!last) return;
     afterMembershipId = last.membershipId;
   }
-}
-
-const VIEW_ACTIONS = ["view", "read"] as const;
-
-export function impliedViewKey(
-  catalog: ReadonlySet<string>,
-  permissionKey: string,
-): string | null {
-  const parts = permissionKey.split(":");
-  if (parts.length < 2) return null;
-  const action = parts[parts.length - 1];
-  if (!action || VIEW_ACTIONS.some((verb) => verb === action)) return null;
-  const prefix = parts.slice(0, -1);
-  for (const verb of VIEW_ACTIONS) {
-    const candidate = [...prefix, verb].join(":");
-    if (catalog.has(candidate)) return candidate;
-  }
-  return null;
 }
 
 function normalizeModulePermissionItems(
@@ -146,7 +128,7 @@ export async function setModuleRolePermissions(
         },
         Array.from(deduped.keys()),
         { rank: role.rank, moduleKey: role.moduleKey },
-        buildPermissionModuleMap(Array.from(deduped.keys())),
+        buildPermissionAdministeringModuleMap(Array.from(deduped.keys())),
       );
       const widened = Array.from(deduped)
         .filter(([key, scope]) => {

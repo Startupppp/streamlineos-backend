@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException } from "@nestjs/common";
 import {
   assertKnownPermissionKeys,
   assertPermissionsGrantable,
-  buildPermissionModuleMap,
+  buildPermissionAdministeringModuleMap,
   ROLE_RANK,
   toGrantableSet,
 } from "./grantability";
@@ -16,9 +16,9 @@ const CATALOG = new Set([
   "billing:analytics:view",
 ]);
 
-const CRM_META = buildPermissionModuleMap(["crm:leads:view", "crm:leads:create"]);
-const HR_META = buildPermissionModuleMap(["hr:employees:view"]);
-const MIXED_META = buildPermissionModuleMap([
+const CRM_META = buildPermissionAdministeringModuleMap(["crm:leads:view", "crm:leads:create"]);
+const HR_META = buildPermissionAdministeringModuleMap(["hr:employees:view"]);
+const MIXED_META = buildPermissionAdministeringModuleMap([
   "crm:leads:view",
   "crm:leads:create",
   "hr:employees:view",
@@ -43,21 +43,21 @@ describe("toGrantableSet", () => {
   });
 });
 
-describe("buildPermissionModuleMap", () => {
+describe("buildPermissionAdministeringModuleMap", () => {
   it("extracts the module prefix from colon-delimited keys", () => {
-    const meta = buildPermissionModuleMap(["crm:leads:view", "hr:employees:view", "settings:manage"]);
+    const meta = buildPermissionAdministeringModuleMap(["crm:leads:view", "hr:employees:view", "settings:manage"]);
     expect(meta.get("crm:leads:view")).toBe("crm");
     expect(meta.get("hr:employees:view")).toBe("hr");
     expect(meta.get("settings:manage")).toBe("settings");
   });
 
   it("maps a key without a colon to null", () => {
-    const meta = buildPermissionModuleMap(["global"]);
+    const meta = buildPermissionAdministeringModuleMap(["global"]);
     expect(meta.get("global")).toBeNull();
   });
 
   it("returns an empty map for an empty input", () => {
-    expect(buildPermissionModuleMap([]).size).toBe(0);
+    expect(buildPermissionAdministeringModuleMap([]).size).toBe(0);
   });
 });
 

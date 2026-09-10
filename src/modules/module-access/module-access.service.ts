@@ -12,7 +12,7 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
-import { administeringModuleOf } from "../../common/rbac/module-vocabulary";
+import { administeringModuleOf, impliedViewKey } from "../../common/rbac/module-vocabulary";
 import { isStructuralOrgAdmin } from "../../common/rbac/is-structural-org-admin";
 import {
   assertManagedModule,
@@ -37,31 +37,6 @@ import { keysetBeforeId } from "../../common/pagination/keyset";
 import { setModuleRolePermissions } from "./module-role-permissions";
 
 export { invalidateRoleAssigneePages } from "./module-role-permissions";
-
-const VIEW_ACTIONS = ["view", "read"] as const;
-
-/**
- * The sibling read key for a write grant, at any arity. The catalog is not
- * uniformly `module:resource:action` — 53 keys are two-segment (`surveys:create`)
- * and some are four (`build:workspaces:members:manage`) — and it uses both `view`
- * and `read` as the read verb. Deriving from the last segment rather than a fixed
- * position covers every shape.
- */
-export function impliedViewKey(
-  catalog: ReadonlySet<string>,
-  permissionKey: string,
-): string | null {
-  const parts = permissionKey.split(":");
-  if (parts.length < 2) return null;
-  const action = parts[parts.length - 1];
-  if (!action || VIEW_ACTIONS.some((verb) => verb === action)) return null;
-  const prefix = parts.slice(0, -1);
-  for (const verb of VIEW_ACTIONS) {
-    const candidate = [...prefix, verb].join(":");
-    if (catalog.has(candidate)) return candidate;
-  }
-  return null;
-}
 
 export interface ModuleRoleView {
   roleId: number;

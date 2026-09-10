@@ -4,7 +4,7 @@ import type { Db } from "../../db/drizzle.module";
 import { rolePermissionGrants } from "../../db/schema";
 import {
   assertPermissionsGrantable,
-  buildPermissionModuleMap,
+  buildPermissionAdministeringModuleMap,
   ROLE_RANK,
   toGrantableSet,
 } from "../../common/rbac/grantability";
@@ -64,6 +64,6 @@ export async function assertMayAssignRole(
     },
     requestedKeys,
     { rank: role.rank, moduleKey: role.moduleKey },
-    buildPermissionModuleMap(requestedKeys),
+    buildPermissionAdministeringModuleMap(requestedKeys),
   );
 }

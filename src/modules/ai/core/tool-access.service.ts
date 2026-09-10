@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { AccessService } from "../../access/access.service";
+import { permissionAreaLabel } from "../../../common/rbac/module-vocabulary";
 import type { DataScope } from "../../access/access.types";
 
 @Injectable()
@@ -14,8 +15,7 @@ export class ToolAccessService {
   async denyReason(orgId: string, userId: string, key: string): Promise<string | null> {
     const s = await this.scope(orgId, userId, key);
     if (s === "none") {
-      const area = key.split(":").slice(0, 2).join(" ").replace(":", " ");
-      return `Permission denied: you do not have access to ${area} data.`;
+      return `Permission denied: you do not have access to ${permissionAreaLabel(key)} data.`;
     }
     return null;
   }

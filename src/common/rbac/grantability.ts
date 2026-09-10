@@ -1,4 +1,4 @@
-import { moduleOwningNamespace } from "./module-vocabulary";
+import { administeringModuleOf, namespaceOf } from "./module-vocabulary";
 import { BadRequestException, ForbiddenException } from "@nestjs/common";
 
 export const ROLE_RANK = {
@@ -36,7 +36,7 @@ export const PLATFORM_ONLY_PERMISSION_KEYS: ReadonlySet<string> = new Set([
 ]);
 
 function isOrgOnlyNamespace(key: string): boolean {
-  return ORG_ONLY_NAMESPACES.includes(key.split(":")[0] ?? "");
+  return ORG_ONLY_NAMESPACES.includes(namespaceOf(key));
 }
 
 export function isOrgOnlyPermission(key: string): boolean {
@@ -96,7 +96,7 @@ export interface RoleGrantTarget {
   moduleKey: string | null;
 }
 
-export type PermissionModuleMap = ReadonlyMap<string, string | null>;
+export type PermissionAdministeringModuleMap = ReadonlyMap<string, string | null>;
 
 export function toGrantableSet(
   resolved: ReadonlyMap<string, string>,
@@ -108,13 +108,14 @@ export function toGrantableSet(
   return set;
 }
 
-export function buildPermissionModuleMap(
+// A module admin's authority is measured against the ADMINISTERING module (a CRM admin may grant `party:*`); a key with no namespace segment is owned by nobody and `null` denies it.
+export function buildPermissionAdministeringModuleMap(
   keys: readonly string[],
-): PermissionModuleMap {
+): PermissionAdministeringModuleMap {
   const map = new Map<string, string | null>();
   for (const key of keys) {
-    const idx = key.indexOf(":");
-    map.set(key, idx === -1 ? null : moduleOwningNamespace(key.slice(0, idx)));
+    const hasNamespaceSegment = namespaceOf(key) !== key;
+    map.set(key, hasNamespaceSegment ? administeringModuleOf(key) : null);
   }
   return map;
 }
@@ -138,7 +139,7 @@ export function assertPermissionsGrantable(
   actor: GrantabilityActor,
   requestedKeys: readonly string[],
   target?: RoleGrantTarget,
-  permissionMeta?: PermissionModuleMap,
+  administeringModules?: PermissionAdministeringModuleMap,
 ): void {
   const orgOnly = requestedKeys.filter(isOrgOnlyNamespace);
   if (orgOnly.length > 0) {
@@ -198,15 +199,15 @@ export function assertPermissionsGrantable(
   if (
     allowedModules !== undefined &&
     allowedModules !== null &&
-    permissionMeta !== undefined &&
+    administeringModules !== undefined &&
     requestedKeys.length > 0
   ) {
     const crossModule = requestedKeys.filter((key) => {
-      const keyModule = permissionMeta.get(key);
+      const administeringModule = administeringModules.get(key);
       return (
-        keyModule === undefined ||
-        keyModule === null ||
-        !allowedModules.has(keyModule)
+        administeringModule === undefined ||
+        administeringModule === null ||
+        !allowedModules.has(administeringModule)
       );
     });
     if (crossModule.length > 0) {

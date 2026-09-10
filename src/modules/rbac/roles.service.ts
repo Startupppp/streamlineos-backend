@@ -29,7 +29,7 @@ import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transa
 import {
   assertKnownPermissionKeys,
   assertPermissionsGrantable,
-  buildPermissionModuleMap,
+  buildPermissionAdministeringModuleMap,
   isImmutableSystemRole,
   toGrantableSet,
   type RoleGrantTarget,
@@ -85,7 +85,7 @@ export class RolesService {
       this.access.resolveUserPermissions(actor.orgId, actor.userId),
       resolveActorRankContext(this.db, actor.orgId, actor.userId),
     ]);
-    const permMeta = buildPermissionModuleMap(requestedKeys);
+    const administeringModules = buildPermissionAdministeringModuleMap(requestedKeys);
     assertPermissionsGrantable(
       {
         isOrgOwner: false,
@@ -95,7 +95,7 @@ export class RolesService {
       },
       requestedKeys,
       target,
-      permMeta,
+      administeringModules,
     );
   }
 

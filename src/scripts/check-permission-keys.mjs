@@ -62,6 +62,7 @@ import {
 import {
   loadBackendCatalog,
   loadModuleManifest,
+  namespaceOf,
   parsePermissionConstants,
   parseRouteRefs,
   parseUnionKeys,
@@ -86,7 +87,7 @@ export function checkNamespacePilot(pilotEntry, routeRefs, modulesDir) {
     if (!ref.resolved || ref.key === null) return false;
     const filePath = ref.file.replace(/\\/g, "/");
     if (!filePath.includes(prefix)) return false;
-    const ns = ref.key.split(":")[0];
+    const ns = namespaceOf(ref.key);
     return !allowedNamespaces.includes(ns);
   });
   return { ok: violations.length === 0, violations };

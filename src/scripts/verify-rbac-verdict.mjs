@@ -1,18 +1,3 @@
-const NAMESPACE_TO_MODULE = new Map([
-  ["home", "home"],
-  ["chat", "home"],
-  ["mail", "home"],
-  ["calendar", "home"],
-  ["notifications", "home"],
-  ["crm", "crm"],
-  ["party", "crm"],
-]);
-
-export function administeringModuleOf(permissionKey) {
-  const namespace = permissionKey.split(":")[0] ?? "";
-  return NAMESPACE_TO_MODULE.get(namespace) ?? namespace;
-}
-
 export const REQUIRED_CONSTRAINTS = [
   "fk_permissions_administering_module",
   "fk_role_assignments_assigner_membership",

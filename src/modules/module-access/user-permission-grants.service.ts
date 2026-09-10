@@ -14,7 +14,7 @@ import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transa
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import {
   assertPermissionsGrantable,
-  buildPermissionModuleMap,
+  buildPermissionAdministeringModuleMap,
   toGrantableSet,
 } from "../../common/rbac/grantability";
 import { AuditService } from "../../common/audit/audit.service";
@@ -223,7 +223,7 @@ export class UserPermissionGrantsService {
       },
       keys,
       undefined,
-      buildPermissionModuleMap(keys),
+      buildPermissionAdministeringModuleMap(keys),
     );
 
     if (actor.isOrgOwner) return;

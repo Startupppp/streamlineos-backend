@@ -1,5 +1,6 @@
 import { PROBE_SPECS } from "./verify-rbac-probes.mjs";
-import { REQUIRED_CONSTRAINTS, administeringModuleOf, sqlErrorShape, verdict } from "./verify-rbac-verdict.mjs";
+import { REQUIRED_CONSTRAINTS, sqlErrorShape, verdict } from "./verify-rbac-verdict.mjs";
+import { administeringModuleOf } from "./permission-key-extractors.mjs";
 
 const FK = { expect: "REJECT", sqlstate: "23503", constraint: "fk_role_assignments_assigner_membership" };
 const ACCEPT = { expect: "ACCEPT" };

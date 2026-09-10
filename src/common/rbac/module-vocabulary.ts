@@ -32,11 +32,7 @@ export function namespacesForModule(moduleKey: string): readonly string[] {
   return additional ? [moduleKey, ...additional] : [moduleKey];
 }
 
-/**
- * The key's own namespace — which module's ENTITLEMENT gates it. Not the same
- * question as `administeringModuleOf`, which answers which module's admin ladder
- * owns it: Home administers `chat:*`, but `chat` is what must be enabled.
- */
+// RUNTIME ENTITLEMENT: which module must be enabled/undenied. Home administers `chat:*` and is always on, so never substitute `administeringModuleOf`.
 export function namespaceOf(permissionKey: string): string {
   const separatorIndex = permissionKey.indexOf(":");
   return separatorIndex === -1
@@ -44,6 +40,7 @@ export function namespaceOf(permissionKey: string): string {
     : permissionKey.slice(0, separatorIndex);
 }
 
+// ADMINISTRATION: whose admin ladder configures the key. Never decides entitlement — see `namespaceOf`.
 export function administeringModuleOf(permissionKey: string): string {
   return moduleOwningNamespace(namespaceOf(permissionKey));
 }
@@ -55,4 +52,28 @@ export function moduleOwningNamespace(namespace: string): string {
     if (namespaces.includes(namespace)) return moduleKey;
   }
   return namespace;
+}
+
+const VIEW_ACTIONS = ["view", "read"] as const;
+
+// Sibling read key at any arity: the catalog holds 2-, 3- and 4-segment keys and both `view` and `read`, so this reads the LAST segment, never a fixed position.
+export function impliedViewKey(
+  catalog: ReadonlySet<string>,
+  permissionKey: string,
+): string | null {
+  const parts = permissionKey.split(":");
+  if (parts.length < 2) return null;
+  const action = parts[parts.length - 1];
+  if (!action || VIEW_ACTIONS.some((verb) => verb === action)) return null;
+  const prefix = parts.slice(0, -1);
+  for (const verb of VIEW_ACTIONS) {
+    const candidate = [...prefix, verb].join(":");
+    if (catalog.has(candidate)) return candidate;
+  }
+  return null;
+}
+
+// DISPLAY ONLY: reads the leading segments verbatim and resolves no ownership.
+export function permissionAreaLabel(permissionKey: string): string {
+  return permissionKey.split(":").slice(0, 2).join(" ");
 }
