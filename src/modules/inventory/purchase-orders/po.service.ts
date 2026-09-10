@@ -5,9 +5,7 @@ import type { DataScope } from "../../access/access.types";
 import {
   invPurchaseOrders,
   invPoLines,
-  invProductVariants,
   invGrns,
-  invLocations,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -21,7 +19,7 @@ import { addDec, mulDec } from "../stock-engine/stock-engine.service";
 import type { ListPoInput, CreatePoInput, UpdatePoInput } from "./dto/inv-purchase-orders.schemas";
 import { StockProjectionService } from "../stock-engine/stock-projection.service";
 import { isPositive, subDec } from "../stock-engine/decimal";
-import { loadOrderableVariants } from "../products/lib/orderable-variants";
+import { resolveLines, resolveLocationId } from "./lib/po-lines";
 
 function computePoTotals(lines: Array<{ quantity: number; unitCost: string; taxRate: string }>) {
   let subtotal = "0.0000";
@@ -53,19 +51,9 @@ export class PoService {
     private readonly projection: StockProjectionService,
   ) {}
 
+  /** @see lib/po-lines.ts — grn-receive and grn call this through the service. */
   async resolveLocationId(orgId: string, warehouseId: number | null | undefined): Promise<number> {
-    if (!warehouseId) throw new BadRequestException("A warehouse is required for this operation");
-    const loc = await this.db.query.invLocations.findFirst({
-      where: and(
-        eq(invLocations.warehouseId, warehouseId),
-        eq(invLocations.orgId, orgId),
-        eq(invLocations.isActive, true),
-      ),
-      columns: { id: true },
-      orderBy: (t, { asc }) => [asc(t.id)],
-    });
-    if (!loc) throw new BadRequestException("Warehouse has no active locations");
-    return loc.id;
+    return resolveLocationId(this.db, orgId, warehouseId);
   }
 
   async listPos(orgId: string, filters: ListPoInput, scope: DataScope = "all", userId?: string) {
@@ -202,62 +190,12 @@ export class PoService {
       createdBy: userId,
     }).returning();
 
-    await this.db.insert(invPoLines).values(await this.resolveLines(orgId, po.id, data.lines));
+    await this.db.insert(invPoLines).values(await resolveLines(this.db, this.uom, orgId, po.id, data.lines));
 
     await this.cache.invalidateNamespace(CACHE_KEYS.invPoNamespace(orgId));
     return po;
   }
 
-  /**
-   * Turns entered quantities into base quantities, carrying the factor.
-   *
-   * The line keeps what was typed, the unit it was typed in and the factor
-   * applied, so a later correction to the conversion cannot rewrite what this
-   * order meant. `quantity` is always base UOM, because that is the only unit
-   * the ledger can add up across products.
-   */
-  private async resolveLines(
-    orgId: string,
-    poId: number,
-    lines: CreatePoInput["lines"],
-  ) {
-    // A4. The lifecycle gate, on buying as well as selling. A discontinued or
-    // archived SKU could be purchased freely — the status was checked when a
-    // customer ordered one and not when the warehouse ordered more of it, which
-    // is how a product nobody may sell keeps arriving on pallets.
-    //
-    // It also resolves the owning product, which this used to fetch with one
-    // query per line.
-    const orderable = await loadOrderableVariants(
-      this.db,
-      orgId,
-      lines.map((line) => line.productVariantId),
-    );
-
-    return Promise.all(
-      lines.map(async (line) => {
-        const variant = orderable.get(line.productVariantId);
-        if (!variant) throw new BadRequestException("Product variant not found");
-
-        const converted = await this.uom.convert(orgId, variant.productId, line.uomId ?? null, String(line.quantity));
-        return {
-          orgId,
-          poId,
-          productVariantId: line.productVariantId,
-          quantity: converted.quantity,
-          quantityEntered: converted.quantityEntered,
-          uomId: converted.uomId,
-          uomFactor: converted.uomFactor,
-          unitCost: line.unitCost,
-          taxRate: line.taxRate,
-          // Priced per entered unit, so the amount follows the entered quantity,
-          // not the converted one — a case costs a case price.
-          amount: mulDec(String(line.quantity), line.unitCost),
-          lineOrder: line.lineOrder,
-        };
-      }),
-    );
-  }
 
   async updatePo(orgId: string, poId: number, userId: string, data: UpdatePoInput) {
     /*
@@ -304,7 +242,7 @@ export class PoService {
       // Scoped by tenant as well as document: a delete keyed on poId alone leans
       // entirely on RLS for tenant correctness, where an explicit predicate belongs.
       await this.db.delete(invPoLines).where(and(eq(invPoLines.poId, poId), eq(invPoLines.orgId, orgId)));
-      await this.db.insert(invPoLines).values(await this.resolveLines(orgId, poId, data.lines));
+      await this.db.insert(invPoLines).values(await resolveLines(this.db, this.uom, orgId, poId, data.lines));
     }
 
     if (Object.keys(patch).length > 0) {
