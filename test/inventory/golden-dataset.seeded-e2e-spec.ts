@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { DRIZZLE } from "src/db/drizzle.constants";
 import type { Db } from "src/db/drizzle.module";
 import { runInNewTenantTransaction } from "src/common/tenant/run-in-tenant-transaction";
-import { InvStockService } from "src/modules/inventory/stock/inv-stock.service";
+import { InvStockService, type StockLevelItem } from "src/modules/inventory/stock/inv-stock.service";
 import { InvReconciliationService } from "src/modules/inventory/reconciliation/inv-reconciliation.service";
 import { InvTraceabilityService } from "src/modules/inventory/traceability/inv-traceability.service";
 import { PackagesService } from "src/modules/inventory/shipments/packages.service";
@@ -25,9 +25,17 @@ import { RecallsService } from "src/modules/inventory/quality/quality-recalls.se
  *   pnpm test:e2e:seeded --testPathPattern=golden-dataset
  */
 
-/** Stock rows come back as raw SQL rows: snake_case keys, unknown values. */
-function sumOnHand(rows: readonly Record<string, unknown>[]): number {
-  return rows.reduce((sum, row) => sum + Number(row.on_hand ?? 0), 0);
+/**
+ * Stock rows carry the camelCase keys the client parses, with each quantity a
+ * decimal string.
+ *
+ * This summed `row.on_hand` and said so in a comment: the read was a raw
+ * `db.execute`, so what reached the wire was the driver's own column names and
+ * the browser rendered `NaN` in every quantity column. The spec agreed with the
+ * defect. Reading `onHand` is now the assertion that it is gone.
+ */
+function sumOnHand(rows: readonly StockLevelItem[]): number {
+  return rows.reduce((sum, row) => sum + Number(row.onHand), 0);
 }
 
 const SCOPE_ALL = "inventory:warehouses:scope-all";
@@ -105,8 +113,6 @@ describe("[seeded-e2e] the golden inventory dataset", () => {
       const result = await asTenant(fixture.orgId, () =>
         stock.listStockLevels(fixture.orgId, fixture.userId, { page: 1, limit: 100 }),
       );
-      // These are raw SQL rows, so the keys are the column names and the values
-      // arrive as unknown — `row.onHand` would be undefined and sum to NaN.
       const total = sumOnHand(result.items);
       expect(total).toBe(Number(fixture.expected.totalOnHand));
     });
