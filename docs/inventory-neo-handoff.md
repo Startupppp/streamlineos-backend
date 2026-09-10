@@ -483,7 +483,7 @@ a root cause here and should not be read as understood.
 
 > **Corrected by the PEND pass.** Re-run on a database built cold by
 > `db:bootstrap` — where the party columns now exist, because
-> `0574_inventory_party_columns` creates them — the result is **46 pass, 4 fail**
+> `0574a_inventory_party_columns` creates them — the result is **46 pass, 4 fail**
 > (550 of 555 tests), with **zero** occurrences of `does not exist` anywhere in
 > the run. So the attribution above was wrong: the missing party columns
 > accounted for exactly **one** of the five, `landed-cost`, which now passes. The
@@ -526,7 +526,7 @@ tests green.
 | `0588_inventory_dock_waveless` | Dock doors and appointments with the exclusion constraint; two waveless settings; the `inventory:dock:manage` backfill. |
 | `0589_inventory_drop_reason_codes` | PEND-15. Drops `inv_reason_codes`, guarded on the table being empty. |
 
-`0574_inventory_party_columns` also belongs here in spirit: it adds the three
+`0574a_inventory_party_columns` also belongs here in spirit: it adds the three
 `client_party_id` columns `sales-orders.ts`, `operations.ts` and
 `purchase-orders.ts` have always declared and no migration ever created. It is
 numbered 0574 and journalled before `0575`, because a file that adds a column has
@@ -701,7 +701,7 @@ on their columns existing — the faithful completion of the guard those files
 already carried for tables and constraints. Three columns were the opposite case:
 `client_party_id` on `inv_sales_orders`, `inv_customer_returns` and `inv_vendors`
 are declared in drizzle **with named composite foreign keys** and no migration
-ever created them; `0574_inventory_party_columns` does. `0263`'s comment counts
+ever created them; `0574a_inventory_party_columns` does. `0263`'s comment counts
 three earlier appearances of this trap. This is the fourth, and the first where
 the missing object is a column rather than a constraint.
 
