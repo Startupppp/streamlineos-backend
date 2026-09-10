@@ -152,10 +152,42 @@ export class HoldsService {
         idempotencyKey,
         input,
         async () => {
+          // The hold document is written BEFORE its movement, and the order is
+          // load-bearing rather than incidental.
+          //
+          // Every hop of the lot-genealogy walk keys documents on
+          // `(reference_type, reference_id)` — `expandDocuments` in
+          // `traceability/lib/genealogy-queries.ts`. Posting first left nothing
+          // to name, so this passed `String(orgId)` and every manually-raised
+          // hold in the organisation collapsed into the one node
+          // `QUALITY_HOLD:<orgId>`; expanding it reached every lot and serial
+          // the tenant had ever held, and a trace from one quarantined batch
+          // arrived at unrelated ones. `release` below and the recall path both
+          // name their own aggregate, and this is the third.
+          //
+          // Nothing else moves. The claim, the transaction and the engine's
+          // `HOLD_EXCEEDS_ON_HAND` refusal are unchanged — that refusal reads
+          // the `inv_stock_levels` buckets and never this table, so the row
+          // cannot count against itself, and a refused hold still rolls the
+          // document back with the movement it could not post.
+          const [hold] = await tx.insert(invQualityHolds).values({
+            orgId,
+            productVariantId: input.productVariantId,
+            locationId: input.locationId,
+            lotId: input.lotId ?? null,
+            serialId: input.serialId ?? null,
+            handlingUnitId: input.handlingUnitId ?? null,
+            ownership: input.ownership ?? "OWNED",
+            quantity: input.quantity,
+            reason: input.reason,
+            createdBy: userId,
+          }).returning({ id: invQualityHolds.id });
+          if (!hold) throw new ConflictException("Could not record the hold");
+
           await this.engine.executeInTx(tx, orgId, userId, {
             idempotencyKey: `${idempotencyKey}:stock`,
             sourceType: "QUALITY_HOLD",
-            sourceId: String(orgId),
+            sourceId: String(hold.id),
             // One movement, not a transfer. `quality_hold_qty` is subtracted from
             // `on_hand` by the availability formula, so it is a subset of on_hand
             // and not a pool beside it — also decrementing ON_HAND would deduct the
@@ -174,19 +206,6 @@ export class HoldsService {
               },
             ],
           });
-          const [hold] = await tx.insert(invQualityHolds).values({
-            orgId,
-            productVariantId: input.productVariantId,
-            locationId: input.locationId,
-            lotId: input.lotId ?? null,
-            serialId: input.serialId ?? null,
-            handlingUnitId: input.handlingUnitId ?? null,
-            ownership: input.ownership ?? "OWNED",
-            quantity: input.quantity,
-            reason: input.reason,
-            createdBy: userId,
-          }).returning({ id: invQualityHolds.id });
-          if (!hold) throw new ConflictException("Could not record the hold");
           await this.audit.insert(tx, {
             orgId, actorUserId: userId, action: "quality_hold.created",
             resourceType: "quality_hold", resourceId: String(hold.id),

@@ -43,8 +43,11 @@ import { seedOrg } from "test/helpers/seed-builder";
  *      would share a graph node, and expanding it would walk from one recalled
  *      batch into an unrelated one. The recall path passes the recall's own id
  *      and is correct; the assertion exists because the neighbouring manual
- *      hold path passes `String(orgId)` instead, which is one copy-paste away
- *      from being true here too.
+ *      hold path passed `String(orgId)` instead, and was exactly this defect.
+ *      That one is fixed, and
+ *      `genealogy-after-quality-hold.seeded-e2e-spec.ts` now holds it fixed —
+ *      so this assertion is the pair to that one rather than a warning about
+ *      it.
  *
  * The central assertion is neither of those, though — it is set equality
  * between the edges the API returned and the rows the ledger holds, run after
@@ -358,9 +361,8 @@ describe(`${SEEDED_HARNESS} INV-42 — lot genealogy after a recall`, () => {
       // Every hop keys on (reference_type, reference_id). A recall that
       // referenced the organisation instead of itself would put every recalled
       // batch in the tenant behind one node — which is what the neighbouring
-      // manual hold path does at `quality-holds.service.ts:113`
-      // (`sourceId: String(orgId)`), so this is one copy-paste from being true
-      // here.
+      // manual hold path did until `HoldsService.create` was made to insert its
+      // document before posting the movement, so it had an id to name.
       const { body } = await lotGraph();
       const node = body.nodes.find((n) => n.referenceType === "RECALL");
       expect(node).toBeDefined();
