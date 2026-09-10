@@ -19,7 +19,7 @@ import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import { InventoryAccountingBridge } from "../stock-engine/accounting-bridge";
-import { addDec, cmpDec, isPositive } from "../stock-engine/decimal";
+import { addDec, cmpDec, isDecimalString, isPositive } from "../stock-engine/decimal";
 import { runIdempotent } from "../stock-engine/idempotency";
 import { centsToDecimal } from "./lib/apportion";
 import {
@@ -61,8 +61,61 @@ const INVENTORY_ACCOUNT = "1300";
  * restated. The difference lands in the period the carrier's invoice did.
  */
 const COGS_ACCOUNT = "5000";
-/** Accounts payable, the same credit side the receipt itself used. */
+/**
+ * Accounts payable, the same credit side the receipt itself used.
+ *
+ * INV-38 asks for a landed-cost *clearing* account here and this is deliberately
+ * not one, because there is nothing for it to clear. A clearing account earns
+ * its place between two events — an accrual and the bill that settles it — and
+ * this voucher is a single event: `inv_landed_cost_charges` carries the
+ * carrier's `vendor_id` and `reference`, the status enum runs only
+ * `DRAFT → APPLIED`, and there is no estimated-freight posting before it or
+ * actualisation after it. Nothing in `modules/finance` or `modules/accounting`
+ * mentions landed cost, so no vendor bill would ever debit the other side.
+ *
+ * Crediting a clearing account today would therefore book a balance that grows
+ * forever and that no process can ever drain — further from the truth than
+ * crediting the payable the money is actually owed on, not closer. The account
+ * belongs to INV-09, which is where the six inventory mappings get a per-tenant
+ * home (`acc_system_account_map` already carries eighteen such purposes and
+ * inventory uses none of them), and it only becomes meaningful alongside an AP
+ * counterpart that clears it. Until both exist, INV-38's "clearing account
+ * correct" is not satisfied here and is not claimed to be.
+ */
 const PAYABLE_ACCOUNT = "2000";
+
+/**
+ * The one place a landed-cost figure stops being a decimal string.
+ *
+ * `DraftLine.debit` and `.credit` are `number`, so something has to convert;
+ * every caller of `persistJournalEntry` does, and widening a signature the whole
+ * accounting module shares is not INV-38's to do. What is avoidable is
+ * converting *silently* — the denylist bans `Number()` on money precisely
+ * because it is the step where a figure can change with nothing saying so.
+ *
+ * So the conversion is checked rather than trusted. Four decimals are exact in a
+ * double up to 2^53 ten-thousandths, a little over 900 billion, and every figure
+ * here is bounded by one voucher's charge total, so the guard should never fire.
+ * Above that ceiling the two sides of the entry round independently and the
+ * ledger goes out by an amount `assertBalanced` may not catch, since it compares
+ * at two decimals while these columns hold four. Refusing is the honest answer:
+ * the entry cannot be written correctly, and an apply that fails loudly is worth
+ * more than a month-end that will not explain itself.
+ */
+function toJournalAmount(value: string): number {
+  const asNumber = Number(value);
+  // `toFixed` rather than a magnitude check, and `isDecimalString` before
+  // `cmpDec`: above 1e21 `toFixed` returns exponent notation, which the decimal
+  // parser cannot read and would raise a `SyntaxError` from inside the voucher's
+  // transaction instead of this exception.
+  const roundTripped = Number.isFinite(asNumber) ? asNumber.toFixed(4) : "";
+  if (!isDecimalString(roundTripped) || cmpDec(roundTripped, value) !== 0) {
+    throw new UnprocessableEntityException(
+      `Landed-cost amount ${value} cannot be posted to the general ledger without loss of precision`,
+    );
+  }
+  return asNumber;
+}
 
 /**
  * G5 — applying a landed-cost voucher.
@@ -372,7 +425,12 @@ export class LandedCostApplyService {
    * `postJournalEntry` skips with a warning when accounting is not migrated or
    * the tenant has no chart of accounts. That property is inherited deliberately:
    * a warehouse that has never configured account 1300 must still be able to land
-   * a freight cost on its stock.
+   * a freight cost on its stock. Both paths — the entry and the skip — are held
+   * by `landed-cost.seeded-e2e-spec`, which asserts the rows in `journal_entries`
+   * rather than only what `apply` returned.
+   *
+   * The credit is the payable and not a clearing account; see `PAYABLE_ACCOUNT`
+   * for why, and for what INV-09 would have to build before it could be one.
    */
   private async postJournal(
     orgId: string,
@@ -383,10 +441,7 @@ export class LandedCostApplyService {
     chargeTotal: string,
     plan: RevaluationPlan,
   ): Promise<void> {
-    const capitalised = Number(plan.capitalisedTotal);
-    const expensed = Number(plan.expensedTotal);
-    const total = Number(chargeTotal);
-    if (total <= 0) return;
+    if (!isPositive(chargeTotal)) return;
 
     const lines: Array<{
       accountCode: string;
@@ -394,18 +449,18 @@ export class LandedCostApplyService {
       credit: number;
       description: string;
     }> = [];
-    if (capitalised > 0) {
+    if (isPositive(plan.capitalisedTotal)) {
       lines.push({
         accountCode: INVENTORY_ACCOUNT,
-        debit: capitalised,
+        debit: toJournalAmount(plan.capitalisedTotal),
         credit: 0,
         description: `Landed cost capitalised - ${grnNumber}`,
       });
     }
-    if (expensed > 0) {
+    if (isPositive(plan.expensedTotal)) {
       lines.push({
         accountCode: COGS_ACCOUNT,
-        debit: expensed,
+        debit: toJournalAmount(plan.expensedTotal),
         credit: 0,
         description: `Landed cost on goods already issued - ${grnNumber}`,
       });
@@ -413,7 +468,7 @@ export class LandedCostApplyService {
     lines.push({
       accountCode: PAYABLE_ACCOUNT,
       debit: 0,
-      credit: total,
+      credit: toJournalAmount(chargeTotal),
       description: `Landed cost payable - ${grnNumber}`,
     });
 
