@@ -10,14 +10,37 @@ const API_ORIGIN = "https://api.example.test";
 const APP_ORIGIN = "https://app.example.test";
 const CONTACT_EMAIL = "lead@example.test";
 
-function makeService(contactEmail: string | null = CONTACT_EMAIL) {
+/**
+ * The two origins arrive through `APP_CONFIG`, not `process.env`.
+ *
+ * That is the point of the injection: jest hands every test file its own copy
+ * of `process.env`, so a value set in a spec is invisible to anything that
+ * reads it outside the module graph — and the old helpers read it on every
+ * send. Passing config here means the test states the deployment it is
+ * describing, in the test.
+ */
+function makeService(
+  contactEmail: string | null = CONTACT_EMAIL,
+  config: { APP_URL: string; PUBLIC_API_URL?: string } = {
+    APP_URL: APP_ORIGIN,
+    PUBLIC_API_URL: API_ORIGIN,
+  },
+) {
   const send = jest.fn().mockResolvedValue(undefined);
   const email = { send } as unknown as AutomationEmailService;
   const consent = {
     suppressedEmails: jest.fn().mockResolvedValue(new Set<string>()),
     contactEmail: jest.fn().mockResolvedValue(contactEmail),
   } as unknown as CrmConsentService;
-  return { service: new CrmOutboundEmailService(email, consent), send, consent };
+  return {
+    service: new CrmOutboundEmailService(
+      email,
+      consent,
+      config as { APP_URL: string; PUBLIC_API_URL?: string },
+    ),
+    send,
+    consent,
+  };
 }
 
 function sentOptions(send: jest.Mock) {
@@ -54,21 +77,14 @@ const message = { to: CONTACT_EMAIL, subject: "Hello", html: "<p>Body</p>" };
  * to make.
  */
 describe("CRM outbound mail carries a working opt-out", () => {
-  const saved = {
-    api: process.env.PUBLIC_API_URL,
-    app: process.env.APP_URL,
-    secret: process.env.ENCRYPTION_KEY,
-  };
+  /* The token signer still reads its key from the environment. */
+  const saved = { secret: process.env.ENCRYPTION_KEY };
 
   beforeEach(() => {
-    process.env.PUBLIC_API_URL = API_ORIGIN;
-    process.env.APP_URL = APP_ORIGIN;
     process.env.ENCRYPTION_KEY = "k".repeat(48);
   });
 
   afterAll(() => {
-    process.env.PUBLIC_API_URL = saved.api;
-    process.env.APP_URL = saved.app;
     process.env.ENCRYPTION_KEY = saved.secret;
   });
 
@@ -149,8 +165,7 @@ describe("CRM outbound mail carries a working opt-out", () => {
    * to close.
    */
   it("keeps the visible link when the API origin is unset, and drops only the header", async () => {
-    delete process.env.PUBLIC_API_URL;
-    const { service, send } = makeService();
+    const { service, send } = makeService(CONTACT_EMAIL, { APP_URL: APP_ORIGIN });
     await service.send("org-1", message, { contactId: 42, channel: "EMAIL" });
 
     expect(sentOptions(send).headers).toBeUndefined();

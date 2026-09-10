@@ -1,4 +1,6 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
+import { APP_CONFIG } from "../../../config/config.module";
+import type { AppConfig } from "../../../config/env.validation";
 import {
   AutomationEmailService,
   type AutomationEmailOptions,
@@ -45,34 +47,10 @@ export function contactUnsubscribe(
   return contactId > 0 ? { contactId, channel: "EMAIL" } : undefined;
 }
 
-/**
- * Where a mail client must POST to honour one-click, which is this API and not
- * the web app. Absent means we offer nothing rather than a link that 404s --
- * the same rule `notification-email.provider.ts` follows, and for the same
- * reason: a failing `List-Unsubscribe` is read as a sender refusing opt-outs.
- */
-function apiOrigin(): string | null {
-  const raw = process.env.PUBLIC_API_URL?.trim().replace(/\/$/, "");
-  return raw && raw.length > 0 ? raw : null;
-}
-
-/**
- * Where a PERSON goes, which is the web app and not this API.
- *
- * The footer link used to point at `apiOrigin()` alongside the header, and the
- * two readers are not the same. A mail client POSTs the header URL and reads a
- * status code; a person clicks the footer link in a browser and reads whatever
- * comes back — which, on the API route, is the literal text `{"success":true}`.
- * The opt-out was honoured and the recipient had no way to know it, which is
- * the one thing an unsubscribe must never leave in doubt.
- *
- * `APP_URL` is required by `env.validation.ts`, so unlike the header this link
- * always exists. That matters more than the tidiness: with `PUBLIC_API_URL`
- * unset the old code returned `{}` and marketing mail went out with **no
- * opt-out at all**, header or footer.
- */
-function appOrigin(): string {
-  return (process.env.APP_URL ?? "").trim().replace(/\/$/, "");
+/** Trailing slash off, empty treated as absent. */
+function origin(raw: string | undefined): string | null {
+  const trimmed = raw?.trim().replace(/\/$/, "");
+  return trimmed && trimmed.length > 0 ? trimmed : null;
 }
 
 function unsubscribeFooterHtml(url: string): string {
@@ -89,6 +67,19 @@ export class CrmOutboundEmailService {
   constructor(
     private readonly email: AutomationEmailService,
     private readonly consent: CrmConsentService,
+    /**
+     * Injected rather than read from `process.env` at call time.
+     *
+     * Both origins used to come from module-level `process.env` helpers, which
+     * `no-restricted-syntax` bans for a reason this file demonstrates: the
+     * value is then read on every send, from a source no test can set through
+     * the constructor and no boot-time validation covers. `APP_URL` is
+     * `.required()` in `env.validation.ts`, so through this token it is a
+     * string; through `process.env` it was `string | undefined` and the code
+     * had to invent a fallback for a case that cannot happen.
+     */
+    @Inject(APP_CONFIG)
+    private readonly config: Pick<AppConfig, "APP_URL" | "PUBLIC_API_URL">,
   ) {}
 
   /**
@@ -201,8 +192,12 @@ export class CrmOutboundEmailService {
       and is never dropped: a message a person cannot opt out of is worse than a
       message with no native Unsubscribe button.
     */
-    const pageUrl = `${appOrigin()}/unsubscribe/${token}`;
-    const apiUrl = apiOrigin();
+    /*
+      `APP_URL` is required by env validation, so the person's link always
+      exists. `PUBLIC_API_URL` is optional, so the mail client's may not.
+    */
+    const pageUrl = `${origin(this.config.APP_URL) ?? ""}/unsubscribe/${token}`;
+    const apiUrl = origin(this.config.PUBLIC_API_URL);
     if (!apiUrl) {
       logger.warn("crm.outbound.unsubscribe-header-omitted", {
         contactId: unsubscribe.contactId,
