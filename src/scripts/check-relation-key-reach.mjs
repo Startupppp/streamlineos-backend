@@ -112,13 +112,6 @@ const RELATION_BASELINE = new Map([
     },
   ],
   [
-    "headMember",
-    {
-      files: ["modules/branches/branches-read.service.ts"],
-      reason: "flattened to branchManager before it reaches the wire — the relation name never ships.",
-    },
-  ],
-  [
     "panelMembers",
     {
       files: ["modules/hr/interviews/hr-interviews.service.ts"],

@@ -15,6 +15,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type {
+  BranchOptionsQueryInput,
   CreateBusinessUnitInput,
   UpdateBusinessUnitInput,
   CreateOrgBranchInput,
@@ -170,6 +171,10 @@ export class OrgHierarchyService {
 
   async listOrgBranches(orgId: string, query: ListQueryInput) {
     return this.branches.listOrgBranches(orgId, query);
+  }
+
+  async listOrgBranchOptions(orgId: string, query: BranchOptionsQueryInput) {
+    return this.branches.listOrgBranchOptions(orgId, query);
   }
 
   async getOrgBranch(orgId: string, branchId: string) {

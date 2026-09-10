@@ -114,6 +114,42 @@ describe("OrgHierarchyBranchesService — cross-tenant isolation", () => {
     });
   });
 
+  describe("listOrgBranchOptions", () => {
+    it("constrains the query to the caller org and excludes soft-deleted rows", async () => {
+      const { svc, captured } = makeService([]);
+
+      const result = await svc.listOrgBranchOptions(ATTACKER, { limit: 20 });
+
+      expect(result.data).toHaveLength(0);
+      const { sql, params } = render(captured.selectWheres[0]);
+      expect(sql).toContain('"org_units"."org_id" = $');
+      expect(sql).toContain('"org_units"."deleted_at" is null');
+      expect(params).toContain(ATTACKER);
+      expect(params).not.toContain(OWNER);
+    });
+
+    it("pins status to ACTIVE, so archived and disabled branches never reach a dropdown", async () => {
+      const { svc, captured } = makeService([]);
+
+      await svc.listOrgBranchOptions(OWNER, { limit: 20 });
+
+      const { sql, params } = render(captured.selectWheres[0]);
+      expect(sql).toContain('"org_units"."status" = $');
+      expect(params).toContain("ACTIVE");
+      expect(params).not.toContain("ARCHIVED");
+      expect(params).not.toContain("DISABLED");
+    });
+
+    it("(negative control) the administrative list emits no status predicate without one", async () => {
+      const { svc, captured } = makeService([]);
+
+      await svc.listOrgBranches(OWNER, { limit: 20 });
+
+      const { sql } = render(captured.selectWheres[0]);
+      expect(sql).not.toContain('"org_units"."status" = $');
+    });
+  });
+
   describe("getOrgBranch", () => {
     it("binds both the branch id and the caller org, so a foreign id resolves to null", async () => {
       const { svc, captured } = makeService([]);

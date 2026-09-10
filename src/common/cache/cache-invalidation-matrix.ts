@@ -129,16 +129,6 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
     },
   },
   {
-    namespace: "branches:list:<orgId>",
-    description: "Branch list (cachedForOrg; actual key: <orgId>:branches:list). The canonical key is owned by cachedForOrg; no parallel factory exists.",
-    invalidation: {
-      kind: "write",
-      events: [
-        "OrgHierarchyBranchesService.create/update/archive (invalidateForOrg(orgId,'branches:list'))",
-      ],
-    },
-  },
-  {
     namespace: "tasks:list:<orgId>",
     description: "Task list. The list key is built at the owning read seam; no parallel factory exists.",
     invalidation: { kind: "ttl-only", reason: "Dead factory — key never produced or consumed" },

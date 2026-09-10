@@ -52,7 +52,6 @@ import { AccessModule } from "./modules/access/access.module";
 import { DealsModule } from "./modules/deals/deals.module";
 import { OrganizationRootModule } from "./modules/organization/organization.module";
 import { OwnershipModule } from "./modules/ownership/ownership.module";
-import { BranchesModule } from "./modules/branches/branches.module";
 import { CustomerExecutiveModule } from "./modules/customer-executive/customer-executive.module";
 import { OfferFulfillmentModule } from "./modules/offer-fulfillment/offer-fulfillment.module";
 import { SupportRootModule } from "./modules/support/support.module";
@@ -152,7 +151,6 @@ import { EmploymentFactsModule } from "./modules/directory/employment-facts.modu
     DealsModule,
     OrganizationRootModule,
     OwnershipModule,
-    BranchesModule,
     BuildModule,
     OfferFulfillmentModule,
     SupportRootModule,

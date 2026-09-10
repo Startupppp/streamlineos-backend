@@ -44,6 +44,7 @@ const stubHierarchy = {
   deleteBusinessUnit: jest.fn().mockResolvedValue(undefined),
   moveBusinessUnit: jest.fn().mockResolvedValue({ success: true as const }),
   listOrgBranches: jest.fn().mockResolvedValue(ORG_UNIT_LIST),
+  listOrgBranchOptions: jest.fn().mockResolvedValue(ORG_UNIT_LIST),
   createOrgBranch: jest.fn().mockResolvedValue(brRow(BR_ID)),
   updateOrgBranch: jest.fn().mockResolvedValue(brRow(BR_ID)),
   deleteOrgBranch: jest.fn().mockResolvedValue(undefined),
@@ -82,6 +83,7 @@ const HIERARCHY_CASES: ReadonlyArray<FenceCase> = [
   ["DELETE",`/org-hierarchy/business-units/${BU_ID}`,            "settings:organization:manage",  {}, 200],
   ["PATCH", `/org-hierarchy/business-units/${BU_ID}/move`,       "settings:organization:manage",  { parentId: null }, 200],
   ["GET",   "/org-hierarchy/branches",                           "settings:view",                {}, 200],
+  ["GET",   "/org-hierarchy/branches/options",                   "branch:view",                  {}, 200],
   ["POST",  "/org-hierarchy/branches",                           "settings:organization:manage",  { name: "Test Branch", code: "BR1" }, 201],
   ["PATCH", `/org-hierarchy/branches/${BR_ID}`,                  "settings:organization:manage",  { name: "Updated Branch" }, 200],
   ["DELETE",`/org-hierarchy/branches/${BR_ID}`,                  "settings:organization:manage",  {}, 200],
@@ -149,6 +151,94 @@ describe("Org hierarchy permission fence — HTTP boundary", () => {
   });
 });
 
+describe("Branch options — the non-administrative door", () => {
+  let app: INestApplication;
+
+  beforeAll(async () => {
+    app = await createE2eApp({ overrides: SERVICE_OVERRIDES });
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  beforeEach(() => {
+    stubHierarchy.listOrgBranchOptions.mockClear();
+    stubHierarchy.listOrgBranches.mockClear();
+  });
+
+  function optionsRequest(token: string): request.Test {
+    return request(app.getHttpServer())
+      .get("/org-hierarchy/branches/options")
+      .set("Authorization", `Bearer ${token}`);
+  }
+
+  it("serves a holder of branch:view who holds no organization-settings authority", async () => {
+    const token = await signToken({
+      permissions: ["branch:view"],
+      enabledModules: ALL_MODULES,
+    });
+    const res = await optionsRequest(token);
+    expect(res.status).toBe(200);
+    expect(stubHierarchy.listOrgBranchOptions).toHaveBeenCalledTimes(1);
+  });
+
+  it("denies a holder of settings:organization:manage who does not hold branch:view", async () => {
+    const token = await signToken({
+      permissions: ["settings:organization:manage"],
+      enabledModules: ALL_MODULES,
+    });
+    expect((await optionsRequest(token)).status).toBe(403);
+    expect(stubHierarchy.listOrgBranchOptions).not.toHaveBeenCalled();
+  });
+
+  it("does not let branch:view reach the administrative branch list", async () => {
+    const token = await signToken({
+      permissions: ["branch:view"],
+      enabledModules: ALL_MODULES,
+    });
+    const res = await request(app.getHttpServer())
+      .get("/org-hierarchy/branches")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(403);
+    expect(stubHierarchy.listOrgBranches).not.toHaveBeenCalled();
+  });
+
+  it("forwards no status of its own, leaving the pin to the service", async () => {
+    const token = await signToken({
+      permissions: ["branch:view"],
+      enabledModules: ALL_MODULES,
+    });
+    await optionsRequest(token);
+    expect(stubHierarchy.listOrgBranchOptions).toHaveBeenCalledWith(
+      "org_1",
+      expect.not.objectContaining({ status: expect.anything() }),
+    );
+  });
+
+  it("rejects a status filter rather than widening the list", async () => {
+    const token = await signToken({
+      permissions: ["branch:view"],
+      enabledModules: ALL_MODULES,
+    });
+    const res = await optionsRequest(token).query({ status: "ARCHIVED" });
+    expect(res.status).toBe(400);
+    expect(stubHierarchy.listOrgBranchOptions).not.toHaveBeenCalled();
+  });
+
+  it("clamps the page size to the platform cap", async () => {
+    const token = await signToken({
+      permissions: ["branch:view"],
+      enabledModules: ALL_MODULES,
+    });
+    await optionsRequest(token).query({ limit: "500" });
+    expect(stubHierarchy.listOrgBranchOptions).toHaveBeenCalledWith(
+      "org_1",
+      expect.objectContaining({ limit: 100 }),
+    );
+  });
+});
+
 describe("Org hierarchy route coverage index — literal calls for gate script", () => {
   let app: INestApplication;
 
@@ -171,6 +261,7 @@ describe("Org hierarchy route coverage index — literal calls for gate script",
     await expect((await s.delete("/org-hierarchy/business-units/00000000-0000-0000-0000-000000000001")).status).toBe(401);
     await expect((await s.patch("/org-hierarchy/business-units/00000000-0000-0000-0000-000000000001/move")).status).toBe(401);
     await expect((await s.get("/org-hierarchy/branches")).status).toBe(401);
+    await expect((await s.get("/org-hierarchy/branches/options")).status).toBe(401);
     await expect((await s.post("/org-hierarchy/branches")).status).toBe(401);
     await expect((await s.patch("/org-hierarchy/branches/00000000-0000-0000-0000-000000000002")).status).toBe(401);
     await expect((await s.delete("/org-hierarchy/branches/00000000-0000-0000-0000-000000000002")).status).toBe(401);

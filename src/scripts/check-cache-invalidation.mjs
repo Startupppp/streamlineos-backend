@@ -250,7 +250,6 @@ const KEY_TO_NAMESPACE_PREFIX = {
   externalCalendarEvents: "integrations:extevents:",
   targetsList: "targets:list:",
   targetLeaderboard: "targets:leaderboard:",
-  branchesList: "branches:list:",
   invProductsNamespace: "inv:products:list:",
   invProductDetail: "inv:products:detail:",
   invStockSummary: "inv:stock:summary:",

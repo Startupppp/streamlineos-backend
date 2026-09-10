@@ -37,6 +37,7 @@ import {
   createCostCenterSchema,
   updateCostCenterSchema,
   listQuerySchema,
+  branchOptionsQuerySchema,
   dependencyPreviewParamsSchema,
   dependencyPreviewQuerySchema,
   type CreateBusinessUnitInput,
@@ -56,6 +57,7 @@ import {
   type CreateCostCenterInput,
   type UpdateCostCenterInput,
   type ListQueryInput,
+  type BranchOptionsQueryInput,
   type DependencyPreviewParamsInput,
   type DependencyPreviewQueryInput,
 } from "./dto/org-hierarchy.schemas";
@@ -202,6 +204,18 @@ export class OrgHierarchyController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.listOrgBranches(u.orgId, query);
+  }
+
+  // The dropdown door onto the same rows. `branch:view` is an employee-self-service grant, so a form that only needs branch choices never has to hold `settings:view`.
+  @RequirePermission("branch:view")
+  @Get("branches/options")
+  @ResponseSchema(branchListResponseSchema)
+  @Validate({ query: branchOptionsQuerySchema })
+  listOrgBranchOptions(
+    @Query() query: BranchOptionsQueryInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.service.listOrgBranchOptions(u.orgId, query);
   }
 
   @Post("branches")

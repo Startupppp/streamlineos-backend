@@ -212,6 +212,13 @@ export const listQuerySchema = z
 
 export type ListQueryInput = z.infer<typeof listQuerySchema>;
 
+// `status` is omitted, not defaulted: the options read pins ACTIVE, so a holder of `branch:view` cannot widen a dropdown into the archived units the settings surface owns.
+export const branchOptionsQuerySchema = listQuerySchema
+  .omit({ status: true })
+  .strict();
+
+export type BranchOptionsQueryInput = z.infer<typeof branchOptionsQuerySchema>;
+
 export const dependencyPreviewParamsSchema = z
   .object({
     unitKind: z.enum([

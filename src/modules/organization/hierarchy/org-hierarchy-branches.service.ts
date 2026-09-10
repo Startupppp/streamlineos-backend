@@ -19,6 +19,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import type {
+  BranchOptionsQueryInput,
   CreateOrgBranchInput,
   UpdateOrgBranchInput,
   ListQueryInput,
@@ -148,6 +149,10 @@ export class OrgHierarchyBranchesService {
     return toOrgUnitCursorPage(rows, limit, toOrgBranchList);
   }
 
+  async listOrgBranchOptions(orgId: string, query: BranchOptionsQueryInput) {
+    return this.listOrgBranches(orgId, { ...query, status: "ACTIVE" });
+  }
+
   private async getOrgBranchRow(
     orgId: string,
     id: string,
@@ -243,7 +248,6 @@ export class OrgHierarchyBranchesService {
     if (!row) throw new Error("Failed to create branch");
 
     await this.cache.invalidateForOrg(orgId, "org:units:BRANCH");
-    await this.cache.invalidateForOrg(orgId, "branches:list");
     await this.audit.logCritical({
       action: "org.branch.created",
       userId,
@@ -353,7 +357,6 @@ export class OrgHierarchyBranchesService {
     if (!row) throw new NotFoundException("Branch not found");
 
     await this.cache.invalidateForOrg(orgId, "org:units:BRANCH");
-    await this.cache.invalidateForOrg(orgId, "branches:list");
     await this.audit.logCritical({
       action: "org.branch.updated",
       userId,
@@ -381,7 +384,6 @@ export class OrgHierarchyBranchesService {
       );
 
     await this.cache.invalidateForOrg(orgId, "org:units:BRANCH");
-    await this.cache.invalidateForOrg(orgId, "branches:list");
     await this.audit.logCritical({
       action: "org.branch.deleted",
       userId,
