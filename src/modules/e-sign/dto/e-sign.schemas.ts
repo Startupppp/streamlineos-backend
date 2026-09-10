@@ -285,14 +285,6 @@ export const declineSchema = z.object({
 });
 export type DeclineInput = z.infer<typeof declineSchema>;
 
-export const publicFormSubmitSchema = z.object({
-  name: z.string().trim().min(1).max(200),
-  email: z.string().trim().email(),
-  phone: z.string().trim().max(30).optional(),
-  accessCode: z.string().trim().max(50).optional(),
-});
-export type PublicFormESignSubmitInput = z.infer<typeof publicFormSubmitSchema>;
-
 // ---- Settings ----
 
 export const updateSignSettingsSchema = z.object({
