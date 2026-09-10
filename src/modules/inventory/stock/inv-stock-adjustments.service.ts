@@ -21,7 +21,6 @@ import type { ListAdjustmentsInput, CreateAdjustmentInput } from "./dto/inv-stoc
 import { loadCorrectableVariants } from "../products/lib/orderable-variants";
 import {
   WRITE_OFF_REASONS,
-  adjustmentMovementType,
   assertWriteOffRemovesStock,
   isWriteOffReason,
   withoutWriteOffValue,
@@ -30,19 +29,9 @@ import {
   needsApproval as adjustmentNeedsApproval,
   resolveScrapLocation,
 } from "./lib/adjustment-approval";
-import { sqlstateOf } from "../../../common/observability/error-classification";
+import { applyAdjustmentLinesInTx, type PostableAdjustment } from "./lib/adjustment-posting";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
-
-/** The document as the posting path needs it. */
-interface PostableAdjustment {
-  id: number;
-  referenceNumber: string;
-  reason: string;
-  notes: string | null;
-  scrapLocationId: number | null;
-  lines: Array<{ productVariantId: number; locationId: number; quantityChange: string }>;
-}
 
 @Injectable()
 export class InvStockAdjustmentsService {
@@ -267,7 +256,7 @@ export class InvStockAdjustmentsService {
               with: { lines: true },
             });
             if (stored) {
-              await this.applyAdjustmentLinesInTx(tx, orgId, userId, stored, `${idempotencyKey}:post`);
+              await applyAdjustmentLinesInTx(this.engine, tx, orgId, userId, stored, `${idempotencyKey}:post`);
             }
           } else {
             // G3. An adjustment that stops at PENDING_APPROVAL is waiting on a
@@ -428,7 +417,7 @@ export class InvStockAdjustmentsService {
     idempotencyKey: string,
   ) {
     await this.db.transaction((tx: Tx) =>
-      this.applyAdjustmentLinesInTx(tx, orgId, userId, adj, idempotencyKey),
+      applyAdjustmentLinesInTx(this.engine, tx, orgId, userId, adj, idempotencyKey),
     );
 
     await Promise.all([
@@ -436,86 +425,4 @@ export class InvStockAdjustmentsService {
     ]);
   }
 
-  /**
-   * The posting itself, on a transaction the caller owns.
-   *
-   * `createAdjustment` needs the posting to share the transaction that claimed
-   * its idempotency key, so that a claim can never commit over work that did
-   * not. Opening a second transaction here would have separated the two.
-   */
-  private async applyAdjustmentLinesInTx(
-    tx: Tx,
-    orgId: string,
-    userId: string,
-    adj: PostableAdjustment,
-    idempotencyKey: string,
-  ) {
-    const result = await this.engine.executeInTx(tx, orgId, userId, {
-      idempotencyKey,
-      sourceType: "inv_adjustment",
-      sourceId: adj.id.toString(),
-      reason: adj.reason,
-      movements: adj.lines.map((line) => ({
-        // `parseFloat` on an 18,4 numeric is banned here for the reason it is
-        // banned everywhere: 0.0001 of drift decides the sign of a movement.
-        transactionType: adjustmentMovementType(adj.reason, line.quantityChange),
-        productVariantId: line.productVariantId,
-        locationId: line.locationId,
-        quantityDelta: line.quantityChange,
-      })),
-    });
-
-    const writtenOffValue = await this.issuedValueOf(tx, orgId, result.transactionIds);
-
-    await tx.update(invStockAdjustments)
-      .set({ status: "POSTED", postedBy: userId, postedAt: new Date(), writtenOffValue })
-      .where(and(eq(invStockAdjustments.orgId, orgId), eq(invStockAdjustments.id, adj.id)));
-
-    await OutboxWriter.emit(tx, {
-      eventId: randomUUID(),
-      organizationId: orgId,
-      aggregateType: "inv_stock_adjustment",
-      aggregateId: String(adj.id),
-      aggregateVersion: Date.now(),
-      eventType: "inventory.stock.adjusted",
-      payload: {
-        adjustmentId: adj.id,
-        referenceNumber: adj.referenceNumber,
-        reason: adj.reason,
-        writeOff: isWriteOffReason(adj.reason),
-        scrapLocationId: adj.scrapLocationId,
-        writtenOffValue,
-        lineCount: adj.lines.length,
-        actorUserId: userId,
-      },
-      occurredAt: new Date(),
-    });
-  }
-
-  /**
-   * D8 — what the document actually cost, read back off the ledger it just
-   * wrote.
-   *
-   * `total_cost` on an issue row is whatever `planIssue` found the cost layers
-   * to be carrying, and every draw it made is recorded in
-   * `inv_valuation_consumptions`, so this figure is reproducible from the rows
-   * rather than being a second opinion about them. Estimating it instead —
-   * quantity times the variant's cost price — would have been wrong by the
-   * whole spread between the layers under FIFO, and wrong by every price change
-   * since the last receipt under weighted average.
-   *
-   * Negative movements only: on a mixed adjustment the value written off is
-   * what left, not what left netted against what arrived.
-   */
-  private async issuedValueOf(tx: Tx, orgId: string, transactionIds: readonly number[]): Promise<string | null> {
-    if (transactionIds.length === 0) return null;
-    const [row] = await tx.execute<{ value: string }>(sql`
-      SELECT COALESCE(SUM(total_cost), 0)::text AS value
-      FROM inv_stock_transactions
-      WHERE org_id = ${orgId}
-        AND quantity_change < 0
-        AND id IN (${sql.join(transactionIds.map((id) => sql`${id}`), sql`, `)})
-    `);
-    return row?.value ?? null;
-  }
 }
