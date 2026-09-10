@@ -165,4 +165,12 @@ Arity is not fixed at three: 53 keys are two-segment (`surveys:create`) and some
 - Unit-test services with mocked providers; e2e-test controllers (auth + RBAC + scope allow/deny, credit exhaustion, cross-tenant isolation). `*e2e-spec` runs only under `pnpm test:e2e`.
 - A `db.transaction` mock must invoke its callback — a bare `jest.fn()` silently voids every assertion inside the transaction.
 - `tsc --noEmit` needs a raised heap here: `NODE_OPTIONS=--max-old-space-size=8192`.
+- ⚠ **`test/security/**` and `test/perf/**` are RUN by jest but never TYPECHECKED.** `tsconfig.json`
+  includes only `src/**/*` and `evals/**/*`, while the jest `roots` add `<rootDir>/test/security` and
+  `<rootDir>/test/perf`. Typecheck is the only gate that sees an arity change, so a constructor that
+  gains a parameter breaks those specs invisibly: measured 2026-09-10, `JwtAuthGuard` went from 5 to 6
+  arguments, `tsc` reported 34 errors across `src/**` and **zero** for the three constructions under
+  `test/security/appsec/`, one of which then failed at runtime and two of which passed only because
+  the missing dependency was never reached. After any signature change, grep `test/` for the symbol by
+  hand — the typecheck will not do it for you.
 - **Typecheck and mocked tests are not proof the feature works.** For anything touching notifications, background sweeps, RLS or post-commit hooks, boot the API and exercise the real request — a swallowed `42501` passes every static check.

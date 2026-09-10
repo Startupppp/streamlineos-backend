@@ -17,7 +17,7 @@ import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
-import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
+import { scheduleMembershipBust } from "../../common/org/membership-bust";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { isNull } from "drizzle-orm";
 import {
@@ -49,7 +49,7 @@ export class OwnershipTransferResponseService {
 
   private async invalidateUserAccess(orgId: string, userId: string): Promise<void> {
     await this.cache.invalidate(CACHE_KEYS.userSession(userId));
-    await bustMembershipStatusCache(this.cache, userId, orgId);
+    await scheduleMembershipBust(this.cache, userId, orgId);
   }
 
   private invalidateTransferCaches(orgId: string, moduleKey: string | null): Promise<unknown[]> {

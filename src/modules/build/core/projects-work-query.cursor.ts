@@ -63,8 +63,8 @@ function cursorBoundary(
     return dir === "asc"
       ? sql`(${column} IS NULL AND ${idColumn} > ${id})`
       : sql`(${column} IS NOT NULL OR (${column} IS NULL AND ${idColumn} < ${id}))`;
-  const value = sql.param(position.sortValue);
-  if (dir === "desc") return sql`(${column}, ${idColumn}) < (${value}, ${id})`;
-  const tuple = sql`(${column}, ${idColumn}) > (${value}, ${id})`;
+  if (dir === "desc")
+    return sql`(${column}, ${idColumn}) < (${sql.param(position.sortValue)}, ${sql.param(Number(position.id))})`;
+  const tuple = sql`(${column}, ${idColumn}) > (${sql.param(position.sortValue)}, ${sql.param(Number(position.id))})`;
   return sortKey === "dueDate" ? sql`(${tuple} OR ${column} IS NULL)` : tuple;
 }

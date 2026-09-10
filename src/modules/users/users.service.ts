@@ -30,7 +30,7 @@ import type {
 import { assertMayGrantRole } from "../../common/rbac/assert-may-grant-role";
 import { syncOrgUnitPlacement } from "../../common/org/sync-org-unit-placement";
 import { assertTargetNotOwner } from "../../common/rbac/assert-target-not-owner";
-import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
+import { scheduleMembershipBust } from "../../common/org/membership-bust";
 import { withIdentity } from "../../common/tenant/with-identity";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { syncCanonicalEmploymentFields } from "../../common/hr/sync-canonical-employment-fields";
@@ -155,7 +155,7 @@ export class UsersService {
         },
         { orgId },
       );
-      await bustMembershipStatusCache(this.cache, existing.id, orgId);
+      await scheduleMembershipBust(this.cache, existing.id, orgId);
       await this.invalidateMembershipCaches(orgId);
       return { userId: existing.id, created: false };
     }
@@ -214,7 +214,7 @@ export class UsersService {
       { orgId },
     );
 
-    await bustMembershipStatusCache(this.cache, userId, orgId);
+    await scheduleMembershipBust(this.cache, userId, orgId);
     await this.invalidateMembershipCaches(orgId);
 
     this.audit.log({
@@ -361,7 +361,7 @@ export class UsersService {
         },
         { orgId },
       );
-      await bustMembershipStatusCache(this.cache, userId, orgId);
+      await scheduleMembershipBust(this.cache, userId, orgId);
     }
 
     this.audit.log({
@@ -428,7 +428,7 @@ export class UsersService {
       .set({ isActive: false, userStatus: "deleted", deletedAt: new Date() })
       .where(eq(users.id, userId));
 
-    await bustMembershipStatusCache(this.cache, userId);
+    await scheduleMembershipBust(this.cache, userId);
     await this.invalidateMembershipCaches(orgId);
 
     this.audit.log({

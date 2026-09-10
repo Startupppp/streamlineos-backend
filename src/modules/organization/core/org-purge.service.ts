@@ -20,7 +20,7 @@ import { assertTransitionAllowed } from "./lifecycle/organization-lifecycle-tran
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
-import { bustMembershipStatusCacheMany } from "../../../common/auth/membership-state.service";
+import { scheduleMembershipBustMany } from "../../../common/org/membership-bust";
 import { OrgMembershipService } from "./org-membership.service";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
@@ -90,7 +90,7 @@ export class OrgPurgeService {
   }
 
   private async bustMembersMembership(orgId: string, memberUserIds: string[]): Promise<void> {
-    await bustMembershipStatusCacheMany(this.cache, memberUserIds);
+    await scheduleMembershipBustMany(this.cache, memberUserIds);
     await this.cache.invalidateMany(memberUserIds.map(CACHE_KEYS.userSession));
   }
 

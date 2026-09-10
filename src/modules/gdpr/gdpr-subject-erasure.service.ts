@@ -9,7 +9,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
-import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
+import { scheduleMembershipBust } from "../../common/org/membership-bust";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { SessionsService } from "../sessions/sessions.service";
 import { anonymiseSubjectSupportTickets } from "../support/core/support-ticket-erasure";
@@ -223,7 +223,7 @@ export class GdprSubjectErasureService {
       await bumpPermissionsVersion(tx, orgId);
     });
 
-    await bustMembershipStatusCache(this.cache, subjectUserId);
+    await scheduleMembershipBust(this.cache, subjectUserId);
     await this.sessionsService.revokeAllForUser(subjectUserId);
 
     const purge = await this.storagePurge.purgeFromManifest(

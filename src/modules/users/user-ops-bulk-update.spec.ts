@@ -73,6 +73,8 @@ function buildService(
       invalidate: jest.fn(),
       invalidateForOrg: jest.fn(),
       invalidateNamespace: jest.fn(),
+      invalidateMany: jest.fn(),
+      invalidateNamespaceMany: jest.fn(),
     } as never,
     {} as never,
     {} as never,

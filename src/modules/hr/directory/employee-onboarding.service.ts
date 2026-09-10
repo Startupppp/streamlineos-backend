@@ -45,7 +45,7 @@ import {
   liveEmployment,
   livePersonOfEmployment,
 } from "../../directory/employment-query";
-import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
+import { scheduleMembershipBust } from "../../../common/org/membership-bust";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
@@ -179,7 +179,7 @@ export class EmployeeOnboardingService {
         return updated;
       }, { orgId: actor.orgId });
 
-      await bustMembershipStatusCache(this.cache, linkedUser.id, actor.orgId);
+      await scheduleMembershipBust(this.cache, linkedUser.id, actor.orgId);
       await this.invalidateHrDashboardCache(actor.orgId);
 
       void this.automation
@@ -311,7 +311,7 @@ export class EmployeeOnboardingService {
       return created;
     }, { orgId: actor.orgId });
 
-    await bustMembershipStatusCache(this.cache, newUser.id, actor.orgId);
+    await scheduleMembershipBust(this.cache, newUser.id, actor.orgId);
     await this.invalidateHrDashboardCache(actor.orgId);
 
     void this.automation

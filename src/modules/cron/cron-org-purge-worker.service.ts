@@ -7,7 +7,7 @@ import { logger } from "../../common/logger/logger.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
-import { bustMembershipStatusCacheMany } from "../../common/auth/membership-state.service";
+import { scheduleMembershipBustMany } from "../../common/org/membership-bust";
 import { OrgMembershipService } from "../organization/core/org-membership.service";
 import { StorageService } from "../storage/storage.service";
 import { APP_CONFIG } from "../../config/config.module";
@@ -122,7 +122,7 @@ export class CronOrgPurgeWorkerService {
     for (const memberUserId of memberUserIds) {
       await this.orgMembership.revokeOrgScopedAccess(orgId, memberUserId, "removed");
     }
-    await bustMembershipStatusCacheMany(this.cache, memberUserIds);
+    await scheduleMembershipBustMany(this.cache, memberUserIds);
     await this.cache.invalidateMany(memberUserIds.map(CACHE_KEYS.userSession));
   }
 

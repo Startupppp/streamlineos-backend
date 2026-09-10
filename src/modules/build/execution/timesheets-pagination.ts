@@ -10,7 +10,7 @@ export function timeEntryCursorPredicate(cursor: string | undefined) {
   if (!position || !z.iso.date().safeParse(position.sortValue).success ||
       !/^[1-9]\d*$/.test(position.id) || !Number.isSafeInteger(Number(position.id)) || Number(position.id) > 2147483647)
     throw new BadRequestException("Invalid time-entry cursor");
-  return sql`(${timesheets.date}, ${timesheets.id}) < (${position.sortValue}::date, ${Number(position.id)})`;
+  return sql`(${timesheets.date}, ${timesheets.id}) < (${sql.param(position.sortValue, timesheets.date)}, ${sql.param(Number(position.id), timesheets.id)})`;
 }
 
 export function timeEntryPage<T extends { id: number; date: string }>(rows: T[], total: number, limit: number, cursor?: string) {

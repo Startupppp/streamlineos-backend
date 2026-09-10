@@ -137,6 +137,50 @@ describe("BOLA sweep — bulk endpoints refuse a mixed-tenant id list", () => {
     expect(classifyBulkMethod(caller, siblings)).toBe("fail-whole");
   });
 
+  /**
+   * The hole this closes: before 2026-09-10 a bulk query moved into an exported
+   * module function vanished from the scan altogether, because the calling method
+   * no longer contained an `inArray` and answered "not-bulk". A guarded site went
+   * quiet and so would an unguarded one.
+   */
+  it("SELF-TEST: a bulk query delegated to a module-level function is still seen", () => {
+    const helpers = new Map([
+      [
+        "readMutationRows",
+        {
+          owner: "module",
+          file: "policy.ts",
+          name: "readMutationRows",
+          signature: "export async function readMutationRows(tx: Tx, orgId: string, ids: number[]) ",
+          body: "const rows = await tx.select().from(t).where(inArray(t.id, ids)); if (rows.length !== ids.length) throw new NotFoundException();",
+        },
+      ],
+      [
+        "readMutationRowsUnguarded",
+        {
+          owner: "module",
+          file: "policy.ts",
+          name: "readMutationRowsUnguarded",
+          signature: "export async function readMutationRowsUnguarded(tx: Tx, orgId: string, ids: number[]) ",
+          body: "return tx.select().from(t).where(inArray(t.id, ids));",
+        },
+      ],
+    ]);
+    const guarded = {
+      owner: "X",
+      file: "x.ts",
+      name: "bulkUpdate",
+      signature: "  async bulkUpdate(orgId: string, ticketIds: number[]) ",
+      body: "return readMutationRows(tx, orgId, ticketIds);",
+    };
+    const unguarded = { ...guarded, body: "return readMutationRowsUnguarded(tx, orgId, ticketIds);" };
+
+    // Without the helper index the site is invisible — that was the defect.
+    expect(classifyBulkMethod(guarded)).toBe("not-bulk");
+    expect(classifyBulkMethod(guarded, undefined, helpers)).toBe("fail-whole");
+    expect(classifyBulkMethod(unguarded, undefined, helpers)).toBe("no-count-check");
+  });
+
   it("SELF-TEST: a set-difference refusal counts as a guard", () => {
     const method = {
       signature: "  async f(orgId: string, input: { templateIds: number[] }) ",
@@ -173,10 +217,19 @@ describe("BOLA sweep — bulk endpoints refuse a mixed-tenant id list", () => {
   });
 
   it("REFERENCE: the correct shape exists and is the one to copy", () => {
-    const reference = source("src/modules/build/core/projects-tickets-query.service.ts");
-    expect(reference).toContain("found.length !== body.ticketIds.length");
+    // The check moved out of ProjectsTicketsQueryService when that file was split;
+    // readMutationTickets is now the single owner every bulk ticket mutation calls.
+    const reference = source("src/modules/build/core/build-ticket-mutation-policy.ts");
+    expect(reference).toContain("rows.length !== ids.length");
     expect(reference).toContain("One or more ticket IDs not found in this project");
-    expect(failWhole.map(name)).toContain("ProjectsTicketsQueryService.bulkUpdate");
+    expect(source("src/modules/build/core/projects-tickets-query.service.ts")).toContain(
+      "readMutationTickets(tx, actor, projectId, ticketIds, policy)",
+    );
+    // Deliberately asserted against the code path, not against the classifier's
+    // verdict: readMutationTickets is a module-level function, and the classifier
+    // only follows helpers inside the same class, so bulkUpdate no longer appears
+    // in failWhole even though it is guarded. See the RATCHET test below.
+    expect(reference).toContain("rows.some((row) => !row.allowed)");
   });
 
   it("RATCHET: no new bulk site appears without a count check", () => {

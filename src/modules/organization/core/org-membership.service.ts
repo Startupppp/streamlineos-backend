@@ -18,7 +18,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
-import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
+import { scheduleMembershipBust } from "../../../common/org/membership-bust";
 import { SessionsService } from "../../sessions/sessions.service";
 import { stableHash } from "../../../common/cache/cache-hash";
 import type { ListMembersInput } from "./dto/organization.schemas";
@@ -212,7 +212,7 @@ export class OrgMembershipService {
     await Promise.all([
       this.invalidateMemberListCaches(orgId),
       this.cache.invalidateNamespaceForOrg(orgId, "org:profile"),
-      bustMembershipStatusCache(this.cache, memberUserId, orgId),
+      scheduleMembershipBust(this.cache, memberUserId, orgId),
       this.cache.invalidate(CACHE_KEYS.userSession(memberUserId)),
     ]);
 

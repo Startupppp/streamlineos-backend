@@ -6,7 +6,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { logger } from "../../../common/logger/logger.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { bustMembershipStatusCacheMany } from "../../../common/auth/membership-state.service";
+import { scheduleMembershipBustMany } from "../../../common/org/membership-bust";
 import { assertMayGrantRole } from "../../../common/rbac/assert-may-grant-role";
 import { OrgHierarchyCacheService } from "../../../common/cache/org-hierarchy-cache.service";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
@@ -161,7 +161,7 @@ export class EmployeeBulkOnboardingService {
     outcome: BulkOnboardWriteOutcome,
     hierarchyChanged: boolean,
   ): Promise<void> {
-    await bustMembershipStatusCacheMany(this.cache, outcome.createdUserIds);
+    await scheduleMembershipBustMany(this.cache, outcome.createdUserIds);
     await this.invalidateHrDashboardCache(actor.orgId);
     if (hierarchyChanged) await this.hierarchyCache.invalidateAfterMutation(actor.orgId);
 

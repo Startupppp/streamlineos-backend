@@ -35,6 +35,21 @@ const ID_LOCAL_RE = /\b(?:const|let)\s+([A-Za-z_$][\w$]*[Ii]ds)\s*(?::[^=;]*)?=\
 /** `this.helper(` — an intra-class call whose callee may hold the count check. */
 const THIS_CALL_RE = /\bthis\.(\w+)\s*\(/g;
 
+/**
+ * `readMutationTickets(tx, actor, projectId, ticketIds, policy)` — a call to a
+ * MODULE-LEVEL function, with its arguments.
+ *
+ * Following one hop into these is not a nicety. Until 2026-09-10 the scan looked
+ * only at a method's own body and at `this.x()` siblings, so extracting a bulk
+ * query into an exported function removed the site from the scan **entirely** —
+ * `classifyBulkMethod` saw no `inArray` and answered "not-bulk". That is a hole in
+ * the gate, not in the code: any bulk endpoint, guarded or not, could be made
+ * invisible by a refactor nobody would think to flag. `ProjectsTicketsQueryService
+ * .bulkUpdate` is how it was found, when its guard moved to readMutationTickets in
+ * build-ticket-mutation-policy.ts and the ratchet dropped 21 -> 20.
+ */
+const FUNCTION_CALL_RE = /\b([a-z][\w$]*)\s*\(([^()]*)\)/g;
+
 const ID_LEAF_RE = /[Ii]ds$/;
 
 /**
@@ -122,11 +137,34 @@ function guardsInPlace(body: string): boolean {
   return LENGTH_GUARD_RE.test(body) || DIFFERENCE_GUARD_RE.test(body);
 }
 
+/**
+ * The module-level functions this method hands one of its own id lists to.
+ * Only those: a helper called with ids the method derived itself cannot receive a
+ * mixed-tenant list, so following it would add noise, not coverage.
+ */
+function delegatedHelpers(
+  method: { readonly signature: string; readonly body: string },
+  helpers: ReadonlyMap<string, SourceMethod> | undefined,
+  idCandidates: ReadonlySet<string>,
+): SourceMethod[] {
+  if (!helpers) return [];
+  const called: SourceMethod[] = [];
+  for (const m of method.body.matchAll(FUNCTION_CALL_RE)) {
+    const callee = helpers.get(m[1] as string);
+    if (!callee) continue;
+    const args = (m[2] ?? "").split(",").map((arg) => arg.trim());
+    if (args.some((arg) => idCandidates.has(arg))) called.push(callee);
+  }
+  return called;
+}
+
 function hasCountGuard(
   method: SourceMethod | { readonly body: string },
   siblings?: ReadonlyMap<string, SourceMethod>,
+  delegates: readonly SourceMethod[] = [],
 ): boolean {
   if (guardsInPlace(method.body)) return true;
+  if (delegates.some((callee) => guardsInPlace(callee.body))) return true;
   if (!siblings) return false;
   for (const m of method.body.matchAll(THIS_CALL_RE)) {
     const callee = siblings.get(m[1] as string);
@@ -138,18 +176,29 @@ function hasCountGuard(
 export function classifyBulkMethod(
   method: SourceMethod | { readonly signature: string; readonly body: string },
   siblings?: ReadonlyMap<string, SourceMethod>,
+  helpers?: ReadonlyMap<string, SourceMethod>,
 ): BulkVerdict {
-  const idVariables = [...method.body.matchAll(IN_ARRAY_RE)].map((m) => m[1] as string);
-  if (idVariables.length === 0) return "not-bulk";
-
   const params = parameterNames(method.signature);
   const derived = derivedIdLocals(method);
-  const reaching = idVariables.filter(
+  const callerSupplied = new Set(
+    [...params, ...derived].filter((name) => ID_LEAF_RE.test(name)),
+  );
+  const delegates = delegatedHelpers(method, helpers, callerSupplied);
+
+  const own = [...method.body.matchAll(IN_ARRAY_RE)].map((m) => m[1] as string);
+  const reaching = own.filter(
     (variable) => isParameterSupplied(variable, params) || derived.has(variable),
   );
-  if (reaching.length === 0) return "not-bulk";
 
-  return hasCountGuard(method, siblings) ? "fail-whole" : "no-count-check";
+  const delegatedBulk = delegates.some((callee) =>
+    [...callee.body.matchAll(IN_ARRAY_RE)].some((m) =>
+      isParameterSupplied(m[1] as string, parameterNames(callee.signature)),
+    ),
+  );
+
+  if (reaching.length === 0 && !delegatedBulk) return "not-bulk";
+
+  return hasCountGuard(method, siblings, delegates) ? "fail-whole" : "no-count-check";
 }
 
 /**
@@ -163,7 +212,7 @@ export function findBulkSites(): BulkSite[] {
   for (const [className, methods] of index.methodsByClass) {
     if (!className.endsWith("Service")) continue;
     for (const [methodName, method] of methods) {
-      const verdict = classifyBulkMethod(method, methods);
+      const verdict = classifyBulkMethod(method, methods, index.functions);
       if (verdict === "not-bulk") continue;
       sites.push({
         owner: className,

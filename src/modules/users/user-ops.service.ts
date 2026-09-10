@@ -41,7 +41,7 @@ import {
   assertMayManageOrganizationMembership,
 } from "../../common/rbac/assert-may-grant-role";
 import { assertNoOwnerAmongTargets } from "../../common/rbac/assert-target-not-owner";
-import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
+import { scheduleMembershipBustMany } from "../../common/org/membership-bust";
 import { UserOperationsReporter } from "./user-operations.reporter";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
 import { syncCanonicalReportingLines } from "../../common/hr/sync-canonical-reporting-line";
@@ -317,13 +317,7 @@ export class UserOpsService {
 
     if (scopedIds.length === 0) return { success: true, updated: 0 };
 
-    if (role) {
-      await Promise.all(
-        scopedIds.map((memberUserId) =>
-          bustMembershipStatusCache(this.cache, memberUserId, orgId),
-        ),
-      );
-    }
+    if (role) await scheduleMembershipBustMany(this.cache, scopedIds);
 
     this.audit.log({
       action: "user.bulk_updated",

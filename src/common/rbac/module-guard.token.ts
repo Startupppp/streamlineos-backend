@@ -1,1 +1,0 @@
-export const MODULE_GUARD_ACCESS = Symbol("MODULE_GUARD_ACCESS");

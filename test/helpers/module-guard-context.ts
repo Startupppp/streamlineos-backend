@@ -39,6 +39,22 @@ export function makeGuardRequest(
   };
 }
 
+/**
+ * For e2e specs that replace `JwtAuthGuard` with a fake. `PermissionGuard` reads
+ * `req.authContext`, so a fake that sets only `req.user` makes every gated route
+ * answer 401 instead of the 403 the spec is asserting — ADR 0004.
+ */
+export function attachTestAuthContext(
+  req: { user?: CurrentUserContext; authContext?: ReturnType<typeof createAuthContext> },
+  actor: CurrentUserContext,
+  availability: ModuleAvailabilityResult = MODULE_AVAILABLE,
+): void {
+  req.user = actor;
+  req.authContext = createAuthContext(actor, {
+    moduleAvailability: async () => availability,
+  });
+}
+
 export function makeGuardCtx(
   ctrl: Function,
   methodName: string,

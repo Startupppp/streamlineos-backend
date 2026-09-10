@@ -104,7 +104,7 @@ function guardFor(keyring: JwtKeyringService, authorization: string): {
     method: "GET",
   };
   return {
-    guard: new JwtAuthGuard(reflector, db, redis, membership, keyring),
+    guard: new JwtAuthGuard(reflector, db, redis, membership, keyring, { moduleAvailability: async () => ({ available: true }) }),
     context: {
       getHandler: () => ({}),
       getClass: () => ({}),
@@ -257,6 +257,7 @@ describe("CSRF — the API carries no ambient credential a cross-site request co
       null,
       {} as unknown as MembershipStateService,
       keyring,
+      { moduleAvailability: async () => ({ available: true }) },
     );
     const req = {
       headers: {

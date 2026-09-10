@@ -10,6 +10,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { moduleAvailabilityResolver } from "../../../common/rbac/module-availability";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { attachTestAuthContext } from "../../../../test/helpers/module-guard-context";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 const USER_CTX: CurrentUserContext = {
@@ -24,8 +25,7 @@ const USER_CTX: CurrentUserContext = {
 
 class HeaderAuthGuard implements CanActivate {
   canActivate(ctx: ExecutionContext): boolean {
-    const req = ctx.switchToHttp().getRequest<{ user?: CurrentUserContext }>();
-    req.user = USER_CTX;
+    attachTestAuthContext(ctx.switchToHttp().getRequest(), USER_CTX);
     return true;
   }
 }

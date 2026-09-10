@@ -18,7 +18,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
-import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
+import { scheduleMembershipBust } from "../../../common/org/membership-bust";
 import { syncStructuralRoleAssignment } from "../../../common/rbac/sync-structural-role";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
@@ -175,7 +175,7 @@ export class InvitationAcceptanceService {
       this.cache.invalidateForOrg(orgId, "rbac:members"),
       this.cache.invalidateForOrg(orgId, "module-access:candidates"),
       this.cache.invalidateForOrg(orgId, "users:stats"),
-      bustMembershipStatusCache(this.cache, userId, orgId),
+      scheduleMembershipBust(this.cache, userId, orgId),
     ]);
   }
 

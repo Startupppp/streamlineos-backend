@@ -261,6 +261,10 @@ describe("SQL injection — every value reaches Postgres as a bind parameter", (
         "src/modules/build/core/build-due-sweep.service.ts",
         "src/modules/build/core/projects-reports.service.ts",
         "src/modules/inventory/stock-engine/warehouse-scope.service.ts",
+        // SET LOCAL hnsw.ef_search — Postgres does not accept a bind parameter in
+        // SET, and the value is kbAnnEfSearch(cap), a bounded integer derived from
+        // named constants with no caller-supplied input on the path.
+        "src/modules/kb/retrieval/kb-candidate.service.ts",
         "src/modules/rbac/permission-catalog-sync.service.ts",
         "src/modules/record-layouts/record-layouts.service.ts",
         "src/modules/storage/storage-key-catalog.ts",

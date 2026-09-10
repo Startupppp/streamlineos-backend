@@ -156,7 +156,7 @@ function makeGuard(
       isOwner: false,
     }),
   } as unknown as MembershipStateService;
-  return new JwtAuthGuard(reflector, db, redis as unknown as Redis | null, membership, keyring);
+  return new JwtAuthGuard(reflector, db, redis as unknown as Redis | null, membership, keyring, { moduleAvailability: async () => ({ available: true }) });
 }
 
 function contextFor(token: string): ExecutionContext {

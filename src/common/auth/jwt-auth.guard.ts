@@ -46,7 +46,7 @@ import {
   type AuthContext,
   type ModuleAvailabilityLookup,
 } from "./auth-context";
-import { MODULE_GUARD_ACCESS } from "../rbac/module-guard.token";
+import { MODULE_AVAILABILITY_LOOKUP } from "./module-availability-lookup.token";
 
 interface OrgContext {
   orgId: string;
@@ -72,7 +72,7 @@ export class JwtAuthGuard implements CanActivate {
     @Inject(REDIS) private readonly redis: Redis | null,
     private readonly membership: MembershipStateService,
     private readonly keyring: JwtKeyringService,
-    @Inject(MODULE_GUARD_ACCESS)
+    @Inject(MODULE_AVAILABILITY_LOOKUP)
     private readonly moduleAccess: ModuleAvailabilityLookup,
   ) {}
 

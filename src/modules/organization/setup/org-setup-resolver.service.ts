@@ -12,7 +12,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { SetupInput } from "./dto/org.schemas";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
-import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
+import { scheduleMembershipBust } from "../../../common/org/membership-bust";
 import { randomUUID } from "node:crypto";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
@@ -203,7 +203,7 @@ export class OrgSetupResolverService {
           },
           { orgId: orphanOrgId },
         );
-        await bustMembershipStatusCache(this.cache, u.userId, orphanOrgId);
+        await scheduleMembershipBust(this.cache, u.userId, orphanOrgId);
       } catch (error) {
         logger.warn("Orphan membership cleanup failed", {
           userId: u.userId,
