@@ -78,9 +78,14 @@ describe("ProjectsQueryService.queryProjects — keyset matches the sort", () =>
     expect(sql).not.toMatch(/"id"\s*</);
   });
 
+  // The scope subqueries also call select(), so the projects selection is found by shape rather than by position.
   it("selects the nullable managed product id required by the list contract", async () => {
     const { selections } = await capture(undefined);
-    expect(selections[0]).toHaveProperty("managedProductId");
+    const projectSelection = selections.find(
+      (selection) => selection !== null && typeof selection === "object" && "name" in selection,
+    );
+    expect(projectSelection).toBeDefined();
+    expect(projectSelection).toHaveProperty("managedProductId");
   });
 
   it("requires managedProductId on every project list item", () => {

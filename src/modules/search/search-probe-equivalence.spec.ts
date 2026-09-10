@@ -296,13 +296,19 @@ async function run(options: RunOptions): Promise<Run> {
       }
       return Promise.resolve(rows);
     },
-    select: () => {
-      const index = selectIndex++;
+    /**
+     * The contact owner arm is an `exists(...)` subquery, which also goes through
+     * `select()`. Only the branch queries take a slot, or the subqueries would
+     * shift every branch's index and the columns assertion would read the wrong one.
+     */
+    select: (fields?: Record<string, unknown>) => {
+      const isSubquery = fields !== undefined && Object.keys(fields).length === 1 && "value" in fields;
+      const index = isSubquery ? -1 : selectIndex++;
       const builder = {
         from: () => builder,
         innerJoin: () => builder,
         where: (condition: SQL) => {
-          conditions[index] = condition;
+          if (index >= 0) conditions[index] = condition;
           return builder;
         },
         orderBy: () => builder,

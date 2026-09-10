@@ -1,3 +1,4 @@
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { ScopedRead } from "../../access/scoped-read";
 import { ForbiddenException } from "@nestjs/common";
 import { PgDialect } from "drizzle-orm/pg-core";
@@ -11,7 +12,7 @@ const ATTACKER_ORG = "org-attacker";
 const ARTICLE_ID = 4242;
 
 function actor(orgId: string): CurrentUserContext {
-  return { userId: "user-1", orgId } as CurrentUserContext;
+  return { userId: "user-1", orgId, principal: humanSessionPrincipal(1, false) } as CurrentUserContext;
 }
 
 function sqlValues(where: SQL | undefined): unknown[] {

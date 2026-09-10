@@ -2,6 +2,7 @@ jest.mock("../access/authorize", () => ({
   authorize: jest.fn().mockResolvedValue({ allow: false, scope: "none", reason: "FORBIDDEN" }),
 }));
 
+import { humanSessionPrincipal } from "../../common/auth/principal";
 import type { Db } from "../../db/drizzle.module";
 import { SearchService } from "./search.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -11,7 +12,7 @@ describe("SearchService — cross-tenant isolation", () => {
   const OWNER = "org-owner";
 
   const makeU = (orgId: string): CurrentUserContext =>
-    ({ orgId, userId: "user-1" }) as CurrentUserContext;
+    ({ orgId, userId: "user-1", principal: humanSessionPrincipal(1, false) }) as CurrentUserContext;
 
   function makeDb() {
     return {

@@ -1,3 +1,4 @@
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { ScopedRead } from "../../access/scoped-read";
 import type { Db } from "../../../db/drizzle.module";
 import { KbSpacesService } from "./kb-spaces.service";
@@ -27,7 +28,14 @@ function makeChain(rows: unknown[] = []): object {
 }
 
 function makeUser(orgId: string): CurrentUserContext {
-  return { orgId, userId: "user-1", membershipId: 1, role: "MEMBER", isOwner: false } as never;
+  return {
+    orgId,
+    userId: "user-1",
+    membershipId: 1,
+    role: "MEMBER",
+    isOwner: false,
+    principal: humanSessionPrincipal(1, false),
+  } as never;
 }
 
 function makeService(orgId: string, rows: unknown[]): { svc: KbSpacesService; allWhereArgs: unknown[] } {

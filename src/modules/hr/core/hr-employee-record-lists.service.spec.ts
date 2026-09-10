@@ -46,7 +46,7 @@ describe("HrEmployeeRecordListsService cursor contracts", () => {
       decodePeopleListCursor(result.pageInfo.nextCursor ?? "", {
         orgId: "org-1",
         actorUserId: "actor-1",
-        scope: "all",
+        scope: ScopedRead.of("org-1", "actor-1", "all").discriminator,
         search: null,
       }),
     ).toMatchObject({ personId: 12 });
@@ -68,7 +68,7 @@ describe("HrEmployeeRecordListsService cursor contracts", () => {
       decodeEmploymentListCursor(result.pageInfo.nextCursor ?? "", {
         orgId: "org-1",
         actorUserId: "actor-1",
-        scope: "own",
+        scope: ScopedRead.of("org-1", "actor-1", "own").discriminator,
       }),
     ).toMatchObject({ employmentId: 31 });
   });

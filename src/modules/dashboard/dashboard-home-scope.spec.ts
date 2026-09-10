@@ -165,12 +165,26 @@ describe("scoped dashboard cache key isolation", () => {
     expect(seen).toHaveLength(2);
   });
 
-  it("(c) different actors across different orgs produce different keys", async () => {
+  /**
+   * At `all` the rows do not depend on who is asking, so the local key is
+   * deliberately identical for two actors — the tenant segment is added by
+   * `cachedForOrg`, as the test above pins. The composed key is what must differ.
+   */
+  it("(c) different actors across different orgs produce different composed keys", async () => {
     const u1 = makeUser(ACTOR, ORG);
     const u2 = makeUser(ACTOR2, ORG2);
-    const [k1, k2] = await Promise.all([
+    const [local1, local2] = await Promise.all([
       buildScopedDashboardCacheKey(makeAccess(1), u1, "attendance", ScopedRead.of(ORG, ACTOR, "all")),
       buildScopedDashboardCacheKey(makeAccess(1), u2, "attendance", ScopedRead.of(ORG2, ACTOR2, "all")),
+    ]);
+    expect(local1).toBe(local2);
+    expect(await cacheKeyForOrg(ORG, local1)).not.toBe(await cacheKeyForOrg(ORG2, local2));
+  });
+
+  it("(c) two actors in one org at own scope differ before the org segment is added", async () => {
+    const [k1, k2] = await Promise.all([
+      buildScopedDashboardCacheKey(makeAccess(1), makeUser(ACTOR, ORG), "attendance", ScopedRead.of(ORG, ACTOR, "own")),
+      buildScopedDashboardCacheKey(makeAccess(1), makeUser(ACTOR2, ORG), "attendance", ScopedRead.of(ORG, ACTOR2, "own")),
     ]);
     expect(k1).not.toBe(k2);
   });

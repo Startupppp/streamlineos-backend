@@ -336,9 +336,9 @@ export class KbSearchService {
       this.articleOwnerFilterFor(user),
       this.articleRestrictionFilterFor(user),
     ]);
+    // The owner filter is a scoped read, so it already carries `kb_articles.org_id`.
     const conditions: SQL[] = [
       inArray(kbArticleChunks.articleId, articleIds),
-      eq(kbArticles.orgId, user.orgId),
       eq(kbArticles.status, "published"),
     ];
     if (ownerFilter) conditions.push(ownerFilter);

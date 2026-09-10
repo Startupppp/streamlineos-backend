@@ -1,3 +1,4 @@
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { ScopedRead } from "../../access/scoped-read";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
@@ -75,7 +76,7 @@ describe("KbArticleQueryService.list shares that plan", () => {
 
   const ORG = "org-1";
   const USER = "user-1";
-  const user = { orgId: ORG, userId: USER } as never;
+  const user = { orgId: ORG, userId: USER, principal: humanSessionPrincipal(1, false) } as never;
   const query = { limit: 20, search: "onboarding" } as never;
 
   it("routes ?search= through app.search_kb_article_ids rather than a leading-wildcard ilike", async () => {

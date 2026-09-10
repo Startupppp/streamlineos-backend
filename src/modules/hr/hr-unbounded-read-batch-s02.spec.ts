@@ -55,7 +55,7 @@ describe("S02 HR collection read caps", () => {
     ["core/hr-sensitive-record-compat.ts", "sourceOrdinal"],
     ["directory/employee-analytics.service.ts", "inArray(users.id, directReportIds)"],
     ["directory/bulk-onboarding/bulk-onboarding-departments.ts", "orgUnits.kind"],
-    ["directory/employee-mutations.service.ts", "targetUserId)))"],
+    ["directory/employee-mutations.service.ts", "eq(employeeSkills.userId, targetUserId)"],
     ["directory/employee-skills-page-query.ts", ".limit(Math.max(1, employeeUserIds.length"],
     ["directory/employees.service.ts", "projectMembers.orgId"],
     ["directory/org-structure.service.ts", "orgUnits.findMany"],

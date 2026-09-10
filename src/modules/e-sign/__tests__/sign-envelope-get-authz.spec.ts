@@ -109,45 +109,42 @@ describe("SignEnvelopesController.get — scope forwarded from request", () => {
       principal: { kind: "human-session", membershipId: OTHER_MEMBERSHIP, isOrgOwner: false },
     }) as unknown as CurrentUserContext;
 
-  it("passes viewAll:true to getFull when rbacScope is 'all'", async () => {
+  it("forwards an unrestricted read to getFull when rbacScope is 'all'", async () => {
     const svc = { getFull: jest.fn().mockResolvedValue({ envelope: {}, documents: [], recipients: [], fields: [] }) } as unknown as SignEnvelopesService;
     const ctrl = new SignEnvelopesController(svc);
     const req = { rbacScope: "all" } as Request;
 
     await ctrl.get(ENVELOPE_ID, makeUser(), req);
 
-    expect(svc.getFull).toHaveBeenCalledWith(
-      ORG,
-      ENVELOPE_ID,
-      expect.objectContaining({ viewAll: true, membershipId: OTHER_MEMBERSHIP }),
-    );
+    const [read, membershipId, envelopeId] = (svc.getFull as jest.Mock).mock.calls[0];
+    expect(read.unrestricted).toBe(true);
+    expect(membershipId).toBe(OTHER_MEMBERSHIP);
+    expect(envelopeId).toBe(ENVELOPE_ID);
   });
 
-  it("passes viewAll:false to getFull when rbacScope is 'own'", async () => {
+  it("forwards a narrowed read to getFull when rbacScope is 'own'", async () => {
     const svc = { getFull: jest.fn().mockResolvedValue({ envelope: {}, documents: [], recipients: [], fields: [] }) } as unknown as SignEnvelopesService;
     const ctrl = new SignEnvelopesController(svc);
     const req = { rbacScope: "own" } as Request;
 
     await ctrl.get(ENVELOPE_ID, makeUser(), req);
 
-    expect(svc.getFull).toHaveBeenCalledWith(
-      ORG,
-      ENVELOPE_ID,
-      expect.objectContaining({ viewAll: false, membershipId: OTHER_MEMBERSHIP }),
-    );
+    const [read, membershipId, envelopeId] = (svc.getFull as jest.Mock).mock.calls[0];
+    expect(read.unrestricted).toBe(false);
+    expect(read.denied).toBe(false);
+    expect(membershipId).toBe(OTHER_MEMBERSHIP);
+    expect(envelopeId).toBe(ENVELOPE_ID);
   });
 
-  it("passes viewAll:false to getFull when rbacScope is absent — fails closed", async () => {
+  it("forwards a denied read when rbacScope is absent — fails closed", async () => {
     const svc = { getFull: jest.fn().mockResolvedValue({ envelope: {}, documents: [], recipients: [], fields: [] }) } as unknown as SignEnvelopesService;
     const ctrl = new SignEnvelopesController(svc);
     const req = {} as Request;
 
     await ctrl.get(ENVELOPE_ID, makeUser(), req);
 
-    expect(svc.getFull).toHaveBeenCalledWith(
-      ORG,
-      ENVELOPE_ID,
-      expect.objectContaining({ viewAll: false }),
-    );
+    const [read] = (svc.getFull as jest.Mock).mock.calls[0];
+    expect(read.unrestricted).toBe(false);
+    expect(read.denied).toBe(true);
   });
 });

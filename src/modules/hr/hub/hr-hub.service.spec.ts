@@ -139,11 +139,10 @@ describe("HrHubService", () => {
     expect(harness.analytics.getCommandCenter).toHaveBeenCalledTimes(1);
     expect(harness.dashboard.metrics).toHaveBeenCalledTimes(1);
     expect(harness.dashboard.onboardingStatus).toHaveBeenCalledTimes(1);
-    expect(harness.documents.stats).toHaveBeenCalledWith(
-      "org-1",
-      "user-1",
-      "own",
-    );
+    const [documentsRead] = (harness.documents.stats as jest.Mock).mock.calls[0];
+    expect(documentsRead.orgId).toBe("org-1");
+    expect(documentsRead.actorId).toBe("user-1");
+    expect(documentsRead.rawScope("spec reads the resolved value")).toBe("own");
     expect(harness.interviews.list).toHaveBeenCalledTimes(1);
     expect(harness.recruitmentReports.stats).toHaveBeenCalledTimes(1);
     expect(harness.leaves.calendar).not.toHaveBeenCalled();

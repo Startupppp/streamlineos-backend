@@ -33,8 +33,9 @@ describe("ToolAccessService", () => {
   });
 
   it("scope returns 'none' for a missing key without throwing", async () => {
-    const s = await svc.scope("org1", "user1", "crm:leads:view");
-    expect(s).toBe("none");
+    const read = await svc.scope("org1", "user1", "crm:leads:view");
+    expect(read.denied).toBe(true);
+    expect(read.rawScope("spec reads the resolved value")).toBe("none");
   });
 
   it("scope returns 'own' for an own-scoped permission", async () => {
@@ -45,8 +46,9 @@ describe("ToolAccessService", () => {
         { provide: AccessService, useValue: mockAccess },
       ],
     }).compile();
-    const s = await m.get(ToolAccessService).scope("org1", "user1", "crm:leads:view");
-    expect(s).toBe("own");
+    const read = await m.get(ToolAccessService).scope("org1", "user1", "crm:leads:view");
+    expect(read.denied).toBe(false);
+    expect(read.rawScope("spec reads the resolved value")).toBe("own");
   });
 
   it("getPersonTicketStats own-scope denial for a different target — simulated at service level", async () => {

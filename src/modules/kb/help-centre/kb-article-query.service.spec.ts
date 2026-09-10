@@ -1,3 +1,4 @@
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { ScopedRead } from "../../access/scoped-read";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { decodeCursor, encodeCursor } from "../../../common/pagination/cursor";
@@ -60,6 +61,7 @@ const user = {
   userId: "user-1",
   membershipId: 1,
   isOwner: false,
+  principal: humanSessionPrincipal(1, false),
   role: "MEMBER" as const,
 };
 

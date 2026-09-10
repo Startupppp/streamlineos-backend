@@ -175,7 +175,8 @@ export class SearchService {
     const numericTicket = /^\d+$/.test(q) ? Number(q) : null;
     const needsTicketProbe = access.build !== null && keyMatch === null && numericTicket === null;
 
-    const contactOwnPredicate =
+    // Not built at all for a caller who may read no contacts: they should issue no query, not even a subquery.
+    const contactOwnPredicate = access.contacts === null ? sql`false` :
       or(
         exists(
           this.db
@@ -204,6 +205,7 @@ export class SearchService {
       ) ?? sql`false`;
 
     const buildOwnPredicate = (() => {
+      if (access.build === null) return sql`false`;
       const membershipId = actingMembershipId(user.principal);
       return membershipId === null ? sql`false` : eq(tickets.assigneeMembershipId, membershipId);
     })();

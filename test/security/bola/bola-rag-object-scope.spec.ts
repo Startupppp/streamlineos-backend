@@ -1,3 +1,4 @@
+import { ScopedRead } from "../../../src/modules/access/scoped-read";
 import { readFileSync } from "node:fs";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { join } from "node:path";
@@ -184,11 +185,14 @@ describe("BOLA sweep — RAG retrieval binds the direct read's object-level scop
 
   it("a principal with no acting membership resolves to a refusal, never to 'all'", () => {
     const agent = { ...asker(), principal: { kind: "agent-token" as const, tokenId: "t" } };
-    const filter = articleOwnerScopeFilter("own", agent as never);
+    const filter = articleOwnerScopeFilter(scopedRead(ORG, "own"), agent as never);
     expect(filter).not.toBeNull();
     expect(new PgDialect().sqlToQuery(filter as SQL).sql).toContain("false");
   });
 });
+
+const scopedRead = (orgId: string, scope: DataScope) =>
+  ScopedRead.of(orgId, "user-1", scope);
 
 describe("BOLA sweep — the RAG predicate is the direct read's predicate", () => {
   const dialect = new PgDialect();
@@ -197,17 +201,19 @@ describe("BOLA sweep — the RAG predicate is the direct read's predicate", () =
 
   it("retrieval and the direct read build the owner predicate from one function", () => {
     for (const scope of ["all", "team", "own", "none"] as DataScope[]) {
-      const directRead = articleOwnerScopeFilter(scope, asker());
-      const retrieval = articleOwnerScopeFilter(scope, asker());
+      const directRead = articleOwnerScopeFilter(scopedRead(ORG, scope), asker());
+      const retrieval = articleOwnerScopeFilter(scopedRead(ORG, scope), asker());
       expect(render(retrieval)).toBe(render(directRead));
     }
   });
 
   it("the predicate is the column the direct read narrows on", () => {
-    const filter = articleOwnerScopeFilter("own", asker());
+    const filter = articleOwnerScopeFilter(scopedRead(ORG, "own"), asker());
     const compiled = dialect.sqlToQuery(filter as SQL);
     expect(compiled.sql).toContain('"kb_articles"."owner_membership_id"');
-    expect(compiled.params).toEqual([ASKER_MEMBERSHIP]);
+    // The filter is a scoped read, so it binds the tenant alongside the owner.
+    expect(compiled.params).toEqual([ORG, ASKER_MEMBERSHIP]);
+    expect(compiled.sql).toContain('"kb_articles"."org_id"');
   });
 
   it("both `GET /kb/search` and retrieval spend the filter, not a post-filter", () => {
@@ -215,7 +221,7 @@ describe("BOLA sweep — the RAG predicate is the direct read's predicate", () =
       join(BACKEND_ROOT, "src/modules/kb/retrieval/kb-search.service.ts"),
       "utf8",
     );
-    expect(source).toContain("articleOwnerScopeFilter(scope, user)");
+    expect(source).toContain("articleOwnerScopeFilter(read, user)");
     expect(source).toContain("const ownerFilter = await this.articleOwnerFilterFor(user)");
     expect(source).toContain("principal, ownerFilter, spaceId)");
     expect(source).toContain("articleConditions.push(ownerFilter)");

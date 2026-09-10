@@ -232,16 +232,19 @@ export class BuildEntityReadsService {
     scope: ScopedRead,
   ): Promise<Map<number, EntityCard>> {
     const { orgId, userId } = actor;
-    const assigned = await this.db
-      .select({ ticketId: ticketAssignees.ticketId })
-      .from(ticketAssignees)
-      .where(
-        and(
-          eq(ticketAssignees.orgId, orgId),
-          eq(ticketAssignees.membershipId, actor.membershipId ?? -1),
-          inArray(ticketAssignees.ticketId, ids),
-        ),
-      );
+    // The own arm is discarded at `all`, so the participation lookup that feeds it is not worth a round trip there.
+    const assigned = scope.unrestricted
+      ? []
+      : await this.db
+          .select({ ticketId: ticketAssignees.ticketId })
+          .from(ticketAssignees)
+          .where(
+            and(
+              eq(ticketAssignees.orgId, orgId),
+              eq(ticketAssignees.membershipId, actor.membershipId ?? -1),
+              inArray(ticketAssignees.ticketId, ids),
+            ),
+          );
     const assignedIds = assigned.map((row) => row.ticketId);
     const own = sql`${or(
       sql`${tickets.assigneeMembershipId} = ${actor.membershipId ?? -1}`,
@@ -288,8 +291,11 @@ export class BuildEntityReadsService {
     scope: ScopedRead,
   ): Promise<Map<number, EntityCard>> {
     const { orgId, userId } = actor;
-    const reachable = await this.memberProjectIds(orgId, userId, ids);
-    const own = sql`${inArray(projects.id, [...reachable])}`;
+    // As in readTickets: the membership lookup only feeds the own arm, which `all` discards.
+    const reachable = scope.unrestricted
+      ? new Set<number>()
+      : await this.memberProjectIds(orgId, userId, ids);
+    const own = sql`${inArray(projects.id, [...reachable, -1])}`;
 
     return scope.read(
       {

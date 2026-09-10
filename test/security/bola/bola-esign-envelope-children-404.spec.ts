@@ -19,6 +19,8 @@
  */
 
 import { NotFoundException } from "@nestjs/common";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
 import type { Request } from "express";
 import type { Db } from "../../../src/db/drizzle.module";
 import type { CurrentUserContext } from "../../../src/common/auth/backend-claims";
@@ -29,7 +31,8 @@ import { SignRecipientsService } from "../../../src/modules/e-sign/sign-recipien
 import { SignRecipientsController } from "../../../src/modules/e-sign/sign-recipients.controller";
 import { SignDocumentsService } from "../../../src/modules/e-sign/sign-documents.service";
 import { SignDocumentsController } from "../../../src/modules/e-sign/sign-documents.controller";
-import { SYSTEM_ENVELOPE_SCOPE } from "../../../src/modules/e-sign/sign-envelope-scope";
+import { systemEnvelopeScope } from "../../../src/modules/e-sign/sign-envelope-scope";
+import { ScopedRead } from "../../../src/modules/access/scoped-read";
 
 const CALLER_ORG = "org-caller";
 const SENDER_MEMBERSHIP = 10;
@@ -80,11 +83,30 @@ function makeHarness(child: ChildTable): Harness {
   return { db, childFindMany, envelopeFindFirst };
 }
 
-/** Resolves the envelope only when the requested id is the caller's own. */
+/** The envelope row a scoped read would return: sender visibility is in the WHERE clause, so the double must read it. */
+function admitsSender(envelope: unknown) {
+  return (args: { where: SQL }) => {
+    if (envelope === undefined) return Promise.resolve(undefined);
+    const rendered = new PgDialect().sqlToQuery(args.where);
+    if (!rendered.sql.includes("sender_membership_id")) return Promise.resolve(envelope);
+    return Promise.resolve(rendered.params.includes(SENDER_MEMBERSHIP) ? envelope : undefined);
+  };
+}
+
+/**
+ * Resolves the envelope only when the requested id is the caller's own AND the
+ * predicate admits it. Sender visibility moved into the WHERE clause, so a double
+ * that ignores the predicate would report a leak as a pass.
+ */
 function seedEnvelopeLookup(h: Harness, visibleId: number): void {
-  h.envelopeFindFirst.mockImplementation(() =>
-    Promise.resolve(visibleId === OWN_ENVELOPE_ID ? ownEnvelope : undefined),
-  );
+  h.envelopeFindFirst.mockImplementation((args: { where: SQL }) => {
+    if (visibleId !== OWN_ENVELOPE_ID) return Promise.resolve(undefined);
+    const rendered = new PgDialect().sqlToQuery(args.where);
+    const narrowed = rendered.sql.includes("sender_membership_id");
+    if (narrowed && !rendered.params.includes(ownEnvelope.senderMembershipId))
+      return Promise.resolve(undefined);
+    return Promise.resolve(ownEnvelope);
+  });
 }
 
 function makeFields(h: Harness): SignFieldsService {
@@ -110,19 +132,19 @@ const ROUTES: RouteUnderTest[] = [
   {
     label: "GET /sign/envelopes/:envelopeId/fields",
     child: "signFields",
-    call: (h, id) => makeFields(h).listForEnvelope(CALLER_ORG, id, SYSTEM_ENVELOPE_SCOPE),
+    call: (h, id) => makeFields(h).listForEnvelope(systemEnvelopeScope(CALLER_ORG), null, id),
     arity: 3,
   },
   {
     label: "GET /sign/envelopes/:envelopeId/recipients",
     child: "signRecipients",
-    call: (h, id) => makeRecipients(h).listForEnvelope(CALLER_ORG, id, SYSTEM_ENVELOPE_SCOPE),
+    call: (h, id) => makeRecipients(h).listForEnvelope(systemEnvelopeScope(CALLER_ORG), null, id),
     arity: 3,
   },
   {
     label: "GET /sign/envelopes/:envelopeId/documents",
     child: "signDocuments",
-    call: (h, id) => makeDocuments(h).list(CALLER_ORG, id, SYSTEM_ENVELOPE_SCOPE),
+    call: (h, id) => makeDocuments(h).list(systemEnvelopeScope(CALLER_ORG), null, id),
     arity: 3,
   },
 ];
@@ -171,13 +193,13 @@ describe.each(ROUTES)("$label — cross-tenant envelope id", (route) => {
   it("throws NotFoundException for an in-org envelope the caller's sign:envelope:view scope excludes", async () => {
     const h = makeHarness(route.child);
     seedEnvelopeLookup(h, OWN_ENVELOPE_ID);
-    const ownScope = { membershipId: OTHER_MEMBERSHIP, viewAll: false };
+    const ownRead = ScopedRead.of(CALLER_ORG, "user-other", "own");
     const call =
       route.child === "signDocuments"
-        ? makeDocuments(h).list(CALLER_ORG, OWN_ENVELOPE_ID, ownScope)
+        ? makeDocuments(h).list(ownRead, OTHER_MEMBERSHIP, OWN_ENVELOPE_ID)
         : route.child === "signFields"
-          ? makeFields(h).listForEnvelope(CALLER_ORG, OWN_ENVELOPE_ID, ownScope)
-          : makeRecipients(h).listForEnvelope(CALLER_ORG, OWN_ENVELOPE_ID, ownScope);
+          ? makeFields(h).listForEnvelope(ownRead, OTHER_MEMBERSHIP, OWN_ENVELOPE_ID)
+          : makeRecipients(h).listForEnvelope(ownRead, OTHER_MEMBERSHIP, OWN_ENVELOPE_ID);
     await expect(call).rejects.toThrow(NotFoundException);
     expect(h.childFindMany).not.toHaveBeenCalled();
   });
@@ -211,11 +233,10 @@ describe("the child-list controllers resolve the caller's sign:envelope:view sco
     const access = makeAccess("all");
     await new SignFieldsController(service, access).list(OWN_ENVELOPE_ID, makeUser());
     expect(access.scopeFor).toHaveBeenCalledWith(expect.anything(), "sign:envelope:view");
-    expect(service.listForEnvelope).toHaveBeenCalledWith(
-      CALLER_ORG,
-      OWN_ENVELOPE_ID,
-      expect.objectContaining({ viewAll: true, membershipId: OTHER_MEMBERSHIP }),
-    );
+    const [read, membershipId, envelopeId] = (service.listForEnvelope as jest.Mock).mock.calls[0];
+    expect(read.unrestricted).toBe(true);
+    expect(membershipId).toBe(OTHER_MEMBERSHIP);
+    expect(envelopeId).toBe(OWN_ENVELOPE_ID);
   });
 
   it("recipients — forwards viewAll:false when sign:envelope:view resolves own", async () => {
@@ -223,11 +244,10 @@ describe("the child-list controllers resolve the caller's sign:envelope:view sco
     const access = makeAccess("own");
     await new SignRecipientsController(service, access).list(OWN_ENVELOPE_ID, makeUser());
     expect(access.scopeFor).toHaveBeenCalledWith(expect.anything(), "sign:envelope:view");
-    expect(service.listForEnvelope).toHaveBeenCalledWith(
-      CALLER_ORG,
-      OWN_ENVELOPE_ID,
-      expect.objectContaining({ viewAll: false, membershipId: OTHER_MEMBERSHIP }),
-    );
+    const [read, membershipId, envelopeId] = (service.listForEnvelope as jest.Mock).mock.calls[0];
+    expect(read.unrestricted).toBe(false);
+    expect(membershipId).toBe(OTHER_MEMBERSHIP);
+    expect(envelopeId).toBe(OWN_ENVELOPE_ID);
   });
 
   /**
@@ -241,27 +261,30 @@ describe("the child-list controllers resolve the caller's sign:envelope:view sco
     await new SignDocumentsController(service, access).list(OWN_ENVELOPE_ID, makeUser());
     expect(access.scopeFor).toHaveBeenCalledWith(expect.anything(), "sign:envelope:view");
     expect(access.scopeFor).not.toHaveBeenCalledWith(expect.anything(), "sign:documents:view");
-    expect(service.list).toHaveBeenCalledWith(
-      CALLER_ORG,
-      OWN_ENVELOPE_ID,
-      expect.objectContaining({ viewAll: false }),
-    );
+    const [read] = (service.list as jest.Mock).mock.calls[0];
+    expect(read.unrestricted).toBe(false);
   });
 });
 
 describe("the internal callers of these lists name their own scope", () => {
-  it("SYSTEM_ENVELOPE_SCOPE is the only unrestricted scope, and it is frozen", () => {
-    expect(SYSTEM_ENVELOPE_SCOPE).toEqual({ membershipId: null, viewAll: true });
-    expect(Object.isFrozen(SYSTEM_ENVELOPE_SCOPE)).toBe(true);
+  it("systemEnvelopeScope is the only unrestricted read, and it binds the tenant it was asked for", () => {
+    const read = systemEnvelopeScope(CALLER_ORG);
+    expect(read.unrestricted).toBe(true);
+    expect(read.orgId).toBe(CALLER_ORG);
+    expect(systemEnvelopeScope("org-other").orgId).toBe("org-other");
   });
 
-  it("fetchBuffers reads documents under SYSTEM_ENVELOPE_SCOPE rather than an unscoped read", async () => {
+  it("fetchBuffers reads documents under systemEnvelopeScope rather than an unscoped read", async () => {
     const h = makeHarness("signDocuments");
     seedEnvelopeLookup(h, OWN_ENVELOPE_ID);
     const service = makeDocuments(h);
     const listSpy = jest.spyOn(service, "list").mockResolvedValue([]);
     await service.fetchBuffers(CALLER_ORG, OWN_ENVELOPE_ID);
-    expect(listSpy).toHaveBeenCalledWith(CALLER_ORG, OWN_ENVELOPE_ID, SYSTEM_ENVELOPE_SCOPE);
+    const [read, membershipId, envelopeId] = listSpy.mock.calls[0] ?? [];
+    expect(read?.unrestricted).toBe(true);
+    expect(read?.orgId).toBe(CALLER_ORG);
+    expect(membershipId).toBeNull();
+    expect(envelopeId).toBe(OWN_ENVELOPE_ID);
   });
 });
 
@@ -280,7 +303,7 @@ describe("GET /sign/envelopes/:envelopeId/audit — already bound, asserted so i
     } as unknown as Db;
     const service = new SignAuditService(db);
     await expect(
-      service.listForEnvelope(CALLER_ORG, CROSS_TENANT_ENVELOPE_ID, SYSTEM_ENVELOPE_SCOPE),
+      service.listForEnvelope(systemEnvelopeScope(CALLER_ORG), null, CROSS_TENANT_ENVELOPE_ID),
     ).rejects.toThrow(NotFoundException);
     expect(db.select).not.toHaveBeenCalled();
   });
@@ -300,7 +323,7 @@ describe("GET /sign/documents/:documentId/preview — bound to the envelope's vi
     const db = {
       query: {
         signDocuments: { findFirst: jest.fn().mockResolvedValue(doc) },
-        signEnvelopes: { findFirst: jest.fn().mockResolvedValue(envelope) },
+        signEnvelopes: { findFirst: jest.fn().mockImplementation(admitsSender(envelope)) },
       },
     } as unknown as Db;
     const service = new SignDocumentsService(db, storage as never, {} as never, {} as never, { record: jest.fn() } as never);
@@ -310,14 +333,14 @@ describe("GET /sign/documents/:documentId/preview — bound to the envelope's vi
 
   it("returns the signed url when the caller's sign:envelope:view scope admits the envelope", async () => {
     const { service } = makePreviewService(doc, ownEnvelope);
-    const result = await service.getPreviewUrl(CALLER_ORG, DOCUMENT_ID, SYSTEM_ENVELOPE_SCOPE);
+    const result = await service.getPreviewUrl(systemEnvelopeScope(CALLER_ORG), null, DOCUMENT_ID);
     expect(result.url).toBe("https://signed.example/7");
   });
 
   it("throws NotFoundException, and mints no url, for a document whose envelope the scope withholds", async () => {
     const { service, storage } = makePreviewService(doc, ownEnvelope);
     await expect(
-      service.getPreviewUrl(CALLER_ORG, DOCUMENT_ID, { membershipId: OTHER_MEMBERSHIP, viewAll: false }),
+      service.getPreviewUrl(ScopedRead.of(CALLER_ORG, "user-other", "own"), OTHER_MEMBERSHIP, DOCUMENT_ID),
     ).rejects.toThrow(NotFoundException);
     expect(storage.getFileUrl).not.toHaveBeenCalled();
   });
@@ -326,10 +349,10 @@ describe("GET /sign/documents/:documentId/preview — bound to the envelope's vi
     const withheld = makePreviewService(doc, ownEnvelope);
     const missing = makePreviewService(undefined, undefined);
     const a = await withheld.service
-      .getPreviewUrl(CALLER_ORG, DOCUMENT_ID, { membershipId: OTHER_MEMBERSHIP, viewAll: false })
+      .getPreviewUrl(ScopedRead.of(CALLER_ORG, "user-other", "own"), OTHER_MEMBERSHIP, DOCUMENT_ID)
       .catch((e: unknown) => e);
     const b = await missing.service
-      .getPreviewUrl(CALLER_ORG, DOCUMENT_ID, SYSTEM_ENVELOPE_SCOPE)
+      .getPreviewUrl(systemEnvelopeScope(CALLER_ORG), null, DOCUMENT_ID)
       .catch((e: unknown) => e);
     expect((a as NotFoundException).getResponse()).toEqual((b as NotFoundException).getResponse());
   });
@@ -352,7 +375,7 @@ describe("no envelope-child list in e-sign reads its table before the envelope",
     const { join } = await import("node:path");
     const source = await readFile(join(__dirname, "../../..", relPath), "utf8");
     expect(source).toContain("mustGetVisibleEnvelope");
-    const listBody = source.slice(source.indexOf("envelopeId: number, scope: EnvelopeViewScope"));
+    const listBody = source.slice(source.indexOf("membershipId: number | null, envelopeId: number"));
     expect(listBody.indexOf("mustGetVisibleEnvelope")).toBeGreaterThan(-1);
     expect(listBody.indexOf("mustGetVisibleEnvelope")).toBeLessThan(listBody.indexOf("findMany"));
   });
