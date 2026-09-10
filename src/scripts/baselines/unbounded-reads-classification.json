@@ -451,6 +451,11 @@
       "verdict": "FALSE-POSITIVE",
       "note": "Offset pagination; needs keyset migration or proven depth bound",
       "justification": "Classified 2026-09-10. NOT CODE. The only match is line 53, inside a JSDoc block describing the test double: \"a chain ending in `.offset()`\". The scanner matched prose. There is no query in this file at all."
+    },
+    "/inventory/replenishment/lib/replenishment-reads.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "CRM/Inventory excluded product domain - do not fix in this lane",
+      "justification": "Classified 2026-09-10. Same code, new path: getSuggestions moved verbatim out of inv-replenishment.service.ts when that file was split for check:file-sizes. The parent entry carries the same EXCLUDED-MODULE verdict and still matches on its own remaining queries, so this is not a reclassification, it is the lane exclusion following the code."
     }
   },
   "unbounded": {
@@ -3178,6 +3183,16 @@
       "verdict": "ACTIONABLE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "Classified 2026-09-10. Extracted verbatim from inv-projects.service.ts in 8120b858d; the parent's FALSE-POSITIVE verdict does NOT cover this query and never did. That justification reads 'reservation and stock reads filtered inArray on those requirement ids', which describes the parent's OTHER selects. This one is filtered by org, ONE productVariantId, isPickable and the warehouse scope - never by requirement id - so its cardinality is 'every pickable bin holding this SKU in the caller's buildings', which has no structural cap. Splitting the file is what surfaced it; the match was always there. ACTIONABLE rather than FALSE-POSITIVE, and the bound is already worked out. The loop returns argmax of `effective = available + heldHere.get(location)`, so the winner is always in (the heldHere locations) UNION (the single top row by raw available among locations NOT in heldHere): a location with no credit has effective == available, so only the raw maximum of that group can win it. `best` is the same argmax and `bestLocation` is that argmax gated on >= qty, so both are decided by the same small candidate set. |heldHere| is the bins one requirement already holds. So the fix is a LIMIT plus an explicit fetch of the heldHere ids, NOT a keyset migration. One behavioural caveat to pin in a test before making that change: ties on `effective` currently resolve to whichever row came first under ORDER BY available DESC, and a bounded rewrite would have to preserve that or declare a new rule."
+    },
+    "/inventory/sales-orders/lib/atp.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "CRM/Inventory excluded product domain - do not fix in this lane",
+      "justification": "Classified 2026-09-10. Same code, new path: getAtp moved verbatim out of so-core.service.ts when that file was split for check:file-sizes. The parent entry carries the same EXCLUDED-MODULE verdict."
+    },
+    "/inventory/webhooks/lib/webhook-claim.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-10. Same code, new path: claim() moved verbatim out of webhook-delivery.worker.ts when that file was split for check:file-sizes. The parent's justification was re-read against the moved query rather than copied, and it holds exactly - webhooks are filtered inArray on the ids of the deliveries in the batch, behind a `webhookIds.length === 0 ? []` early return, so the select is bounded by the batch. FALSE-POSITIVE rather than BOUNDED because BOUNDED is a FIXED verdict that asserts the scanner no longer matches, and it still does."
     }
   }
 }
