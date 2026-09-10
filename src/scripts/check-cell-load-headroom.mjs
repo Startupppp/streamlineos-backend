@@ -130,7 +130,12 @@ function main() {
     console.error("  pnpm -C backend load:drive");
     console.error("Then assert headroom:");
     console.error("  pnpm -C backend cell:load");
-    process.exit(1);
+    // 2, not 1: this gate could not RUN. Exit 1 here is indistinguishable from
+    // "headroom is insufficient", which is the finding this script exists to
+    // report, and a sweep reading exit codes counts a missing results file as a
+    // capacity violation. Same convention as check:alert-ack and
+    // compare-cell-schema.
+    process.exit(2);
   }
 
   let results;
