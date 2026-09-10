@@ -386,4 +386,125 @@ describe("raising a package", () => {
     expect(sqlText(harness.wheres[0] as SQL)).not.toContain("warehouse_id IN");
     expect(harness.inserts).toHaveLength(0);
   });
+
+  /**
+   * The OTHER arm of the same predicate.
+   *
+   * Closing `shipmentId` closed one half of `packageInScope`. `soId` came off
+   * the same request body and kept an ORG-MEMBERSHIP check alone, so a carton
+   * could still be hung off an order in a building the caller has never stood
+   * in — and it counts for exactly the reason the shipment arm counts:
+   * `packedQuantities` reads every package standing for an order, so the carton
+   * takes room off the reconciliation the legitimate packer there is measured
+   * against and their next scan is refused for goods in their hand.
+   */
+  it("refuses a sales order the caller cannot see, and inserts nothing", async () => {
+    const harness = dbWith({ reads: [[]] });
+    const { cache } = cacheWith();
+    const { service: scope } = scopeOf([7]);
+
+    await expect(
+      serviceWith(harness, scope, cache).create(ORG, "packer-1", {
+        soId: 77,
+        lines: [],
+      } as never),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(sqlText(harness.wheres[0] as SQL)).toContain('"inv_sales_orders"."warehouse_id" IN');
+    expect(harness.inserts).toHaveLength(0);
+    expect(harness.transaction).not.toHaveBeenCalled();
+  });
+
+  it("refuses an out-of-scope order even when the shipment named beside it IS in scope", async () => {
+    /*
+     * The regression the shipment fix left behind, and the reason the case
+     * above is not enough on its own: with only that one, a service that gated
+     * NOTHING on `soId` and simply refused earlier on the shipment would still
+     * pass. Here the shipment read ANSWERS — the caller genuinely holds that
+     * despatch — so the only thing that can refuse is the order's own arm, and
+     * the refusal is named to prove which one spoke.
+     */
+    const harness = dbWith({ reads: [[{ id: 55 }], []] });
+    const { cache } = cacheWith();
+    const { service: scope } = scopeOf([7]);
+
+    await expect(
+      serviceWith(harness, scope, cache).create(ORG, "packer-1", {
+        shipmentId: 55,
+        soId: 77,
+        lines: [],
+      } as never),
+    ).rejects.toThrow(/Sales order not found/);
+
+    expect(sqlText(harness.wheres[1] as SQL)).toContain('"inv_sales_orders"."warehouse_id" IN');
+    expect(harness.inserts).toHaveLength(0);
+    expect(harness.transaction).not.toHaveBeenCalled();
+  });
+
+  it("lets an unrestricted caller name any of the org's orders", async () => {
+    // The pass-through, and it needs no branch of its own: `scope.warehouse`
+    // compiles to `TRUE`, leaving the organisation check that was always there.
+    const harness = dbWith({ reads: [[{ id: 77 }]] });
+    const { cache } = cacheWith();
+    const { service: scope, consulted } = scopeOf(null);
+    const numSeq = { next: () => Promise.reject(new Error("reached the number sequence")) };
+
+    await expect(
+      serviceWith(harness, scope, cache, numSeq).create(ORG, "auditor-1", {
+        soId: 77,
+        lines: [],
+      } as never),
+    ).rejects.toThrow(/reached the number sequence/);
+
+    expect(consulted).toHaveBeenCalledWith(ORG, "auditor-1");
+    const text = sqlText(harness.wheres[0] as SQL);
+    expect(text).toContain('"inv_sales_orders"."org_id"');
+    expect(text).not.toContain("warehouse_id IN");
+    expect(harness.inserts).toHaveLength(0);
+  });
+
+  it("measures the order by the same rule the list's own order arm applies", async () => {
+    /*
+     * The drift guard. Two hand-written readings of "which orders may this
+     * caller see" agreeing today is not the same as them being one rule — that
+     * is precisely how this arm was left behind when the shipment arm was
+     * closed. Compared as compiled SQL with placeholder numbers normalised
+     * away, since the list binds its own filters first.
+     */
+    const { service: scope } = scopeOf([7, 9]);
+
+    const list = dbWith();
+    const { cache: listCache } = cacheWith();
+    await serviceWith(list, scope, listCache).list(ORG, "packer-1", { page: 1, limit: 20 } as never);
+
+    const raise = dbWith({ reads: [[]] });
+    const { cache: raiseCache } = cacheWith();
+    await expect(
+      serviceWith(raise, scope, raiseCache).create(ORG, "packer-1", {
+        soId: 77,
+        lines: [],
+      } as never),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    const listArm = orderWarehouseClause(sqlText(list.wheres[0] as SQL));
+    const raiseArm = orderWarehouseClause(sqlText(raise.wheres[0] as SQL));
+    expect(listArm).toBe("warehouse_id IN ($?, $?)");
+    expect(raiseArm).toBe(listArm);
+  });
 });
+
+/**
+ * The warehouse test the two sites apply to a sales order, with placeholder
+ * NUMBERS normalised away.
+ *
+ * The list reaches the column through a subquery (`… WHERE org_id = $n AND
+ * warehouse_id IN (…)`) because it is filtering `inv_packages`, while the raise
+ * selects `inv_sales_orders` directly and so renders the column qualified. The
+ * TEST is the same either way, and that is what this pulls out.
+ */
+function orderWarehouseClause(text: string): string {
+  const match = /(?:"inv_sales_orders"\.)?"?warehouse_id"? IN \([^)]*\)/.exec(
+    text.slice(text.indexOf("inv_sales_orders")),
+  );
+  return (match?.[0] ?? "").replace(/"inv_sales_orders"\./g, "").replace(/"/g, "").replace(/\$\d+/g, "$?");
+}

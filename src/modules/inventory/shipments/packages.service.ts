@@ -161,9 +161,13 @@ export class PackagesService {
      * Measured by the SHIPMENT's own rule — its warehouse column — rather than
      * one invented here, and answered 404 so naming an id you cannot see does
      * not confirm it exists.
+     *
+     * `soId` is the OTHER arm of the same `anyOf` the list admits a package by,
+     * and it stayed on an org-membership check alone — so the same hole was
+     * still open through it. Both arms are now measured the same way.
      */
     if (input.shipmentId !== undefined) await this.assertShipmentInScope(orgId, userId, input.shipmentId);
-    if (input.soId !== undefined) await this.assertSalesOrder(orgId, input.soId);
+    if (input.soId !== undefined) await this.assertSalesOrderInScope(orgId, userId, input.soId);
     if (input.cartonTypeId !== undefined) await this.assertCartonType(orgId, input.cartonTypeId);
 
     if (input.soId !== undefined && input.lines.length > 0) {
@@ -505,11 +509,33 @@ export class PackagesService {
     if (!shipment) throw new NotFoundException("Shipment not found");
   }
 
-  private async assertSalesOrder(orgId: string, soId: number): Promise<void> {
+  /**
+   * The order a new carton may be packing: this org's, and out of a building the
+   * caller holds.
+   *
+   * The other arm of the same `anyOf` the list admits a package by, so it is
+   * gated by the same rule for the same reason. `shipmentId` was closed and this
+   * was left checking ORG MEMBERSHIP alone, which leaves the hole open through
+   * the second arm: `packedQuantities` reads every package standing for an
+   * order, so a carton hung off an out-of-scope order still counts toward that
+   * order's packed quantities and can refuse the legitimate packer's next scan.
+   *
+   * Measured with the ORDER's own rule — its warehouse column, as
+   * `SoCoreService` and `packageInScope` both read it — and answered 404 so
+   * naming an id you cannot see does not confirm it exists. Unrestricted needs
+   * no branch of its own: `scope.warehouse` compiles to `TRUE`, so the org check
+   * is all that remains.
+   */
+  private async assertSalesOrderInScope(orgId: string, userId: string, soId: number): Promise<void> {
+    const scope = await this.warehouseScope.forUser(orgId, userId);
     const [so] = await this.db
       .select({ id: invSalesOrders.id })
       .from(invSalesOrders)
-      .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)))
+      .where(and(
+        eq(invSalesOrders.id, soId),
+        eq(invSalesOrders.orgId, orgId),
+        scope.warehouse(sql`${invSalesOrders.warehouseId}`),
+      ))
       .limit(1);
     if (!so) throw new NotFoundException("Sales order not found");
   }
