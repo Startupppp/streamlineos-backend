@@ -622,6 +622,12 @@ export class GrnService {
    * Accounting is opt-in. An org that never enabled it has no book to post
    * into, and that must not fail a goods receipt — every other rejection
    * (a missing account role, an unbalanced total) still surfaces loudly.
+   *
+   * The contract this obeys is `docs/inventory-gl-contract.md`, which also
+   * records the two things this call site does not do yet: the post runs
+   * *after* the stock transaction commits, so a rejection here leaves stock
+   * moved and no journal (§3.3); and the receipt credits `ap_control` where it
+   * owes a goods-received-not-invoiced accrual (§2.2).
    */
   private async postToLedger(
     orgId: string,

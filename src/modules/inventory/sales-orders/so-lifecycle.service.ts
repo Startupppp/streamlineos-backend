@@ -221,6 +221,8 @@ export class SoLifecycleService {
     } catch (error) {
       // Accounting is opt-in; an org without a book has nowhere to post and
       // must still be able to invoice a sales order.
+      // Contract: docs/inventory-gl-contract.md (§3.3 for the post-commit
+      // ordering this shares with the other two bridge call sites).
       if (!(error instanceof AdapterRejection && error.code === "BOOK_NOT_ENABLED")) throw error;
       this.logger.debug(`Accounting is not enabled for org ${orgId}; ${invoiceNumber} was not posted`);
     }
