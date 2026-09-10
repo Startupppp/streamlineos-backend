@@ -1,5 +1,5 @@
 import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
-﻿import { z } from "zod";
+import { z } from "zod";
 
 const IMPORT_TYPES = ["products", "vendors", "categories", "uom", "locations", "opening-stock", "reorder-rules"] as const;
 export type ImportType = typeof IMPORT_TYPES[number];
