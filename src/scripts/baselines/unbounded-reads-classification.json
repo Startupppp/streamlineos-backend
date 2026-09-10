@@ -422,10 +422,10 @@
       "note": "Offset pagination; needs keyset migration or proven depth bound",
       "justification": "Classified 2026-09-10. `.limit(n).offset(n*(page-1))` beside a `count(*)`: the page size is capped but the DEPTH is not, so a deep page still scans and discards every row before it. Left ACTIONABLE deliberately \u2014 the keyset migration is real work and this is the backlog entry for it, not a dismissal."
     },
-    "/inventory/channels/channel-snapshot.service.ts": {
+    "/inventory/channels/lib/channel-snapshot-review.ts": {
       "verdict": "ACTIONABLE",
       "note": "Offset pagination; needs keyset migration or proven depth bound",
-      "justification": "Classified 2026-09-10. `.limit(n).offset(n*(page-1))` beside a `count(*)`: the page size is capped but the DEPTH is not, so a deep page still scans and discards every row before it. Left ACTIONABLE deliberately \u2014 the keyset migration is real work and this is the backlog entry for it, not a dismissal."
+      "justification": "Classified 2026-09-10, repointed 2026-09-11 when listDiffs moved out of channel-snapshot.service.ts unchanged \u2014 this gate keys on path, so a move forces a restatement. `.limit(n).offset(n*(page-1))` beside a `count(*)`: the page size is capped but the DEPTH is not, so a deep page still scans and discards every row before it. Left ACTIONABLE deliberately \u2014 the keyset migration is real work and this is the backlog entry for it, not a dismissal."
     },
     "/inventory/audit-export/audit-export.service.ts": {
       "verdict": "ACTIONABLE",
@@ -3009,10 +3009,15 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "listGlobalVariables capped at .limit(200); workflow variables are org config, typically <100 2026-09-01"
     },
-    "/inventory/channels/channel-snapshot.service.ts": {
+    "/inventory/channels/lib/channel-snapshot-context.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "Classified 2026-09-10 by reading the call site. FALSE-POSITIVE rather than BOUNDED because BOUNDED is a FIXED verdict here \u2014 it asserts the scanner no longer matches, and a continued match is reported as a regression. The pattern is still present and always will be; it is simply not a violation: locations read is guarded by `variantIds.length === 0 || warehouseIds.length === 0` and filtered `inArray` on both, so it is bounded by the caller's set; the other match (line 468) is a comment."
+      "justification": "Classified 2026-09-11 by reading the call site, when loadChannelContext moved out of channel-snapshot.service.ts unchanged. It reads every SKU published to ONE channel, which is precisely the unit of work the whole refetch is defined over \u2014 the adapter is then asked about exactly this set. A LIMIT here would not bound the reconciliation; it would silently reconcile a prefix and leave the rest reported as agreeing, which is a correctness bug rather than a fix. The real ceiling on a very large catalogue is the marketplace call, not this read. FALSE-POSITIVE rather than BOUNDED because BOUNDED is a FIXED verdict: it asserts the scanner no longer matches, and the pattern is still present and always will be."
+    },
+    "/inventory/channels/lib/channel-snapshot-diff.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-10 by reading the call site, repointed 2026-09-11 when internalAvailability moved out of channel-snapshot.service.ts unchanged \u2014 this gate keys on path, so a move forces a restatement. FALSE-POSITIVE rather than BOUNDED because BOUNDED is a FIXED verdict here \u2014 it asserts the scanner no longer matches, and a continued match is reported as a regression. The pattern is still present and always will be; it is simply not a violation: the locations read is guarded by `variantIds.length === 0 || context.warehouseIds.length === 0` and filtered `inArray` on both, so it is bounded by the caller's set."
     },
     "/inventory/channels/quick-commerce/fill-rate.service.ts": {
       "verdict": "FALSE-POSITIVE",

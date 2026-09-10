@@ -275,7 +275,7 @@ interface Pair {
  * ambiguous and that is a failure of its own.
  */
 const PAIRS: readonly Pair[] = [
-  { controller: "channels/channel-snapshot.controller.ts", prefix: "inventory/channels", verb: "Get", route: ":channelId/snapshot-differences", service: "channels/channel-snapshot.service.ts", table: "invChannelSnapshotDiffs", anchor: "externalSku", hook: "channels.ts", type: "ChannelSnapshotDiff" },
+  { controller: "channels/channel-snapshot.controller.ts", prefix: "inventory/channels", verb: "Get", route: ":channelId/snapshot-differences", service: "channels/lib/channel-snapshot-review.ts", table: "invChannelSnapshotDiffs", anchor: "externalSku", hook: "channels.ts", type: "ChannelSnapshotDiff" },
   { controller: "channels/quick-commerce/quick-commerce.controller.ts", prefix: "inventory/quick-commerce", verb: "Get", route: "purchase-orders", service: "channels/quick-commerce/quick-commerce-inbound.service.ts", table: "invPlatformPurchaseOrders", anchor: "providerPoNumber", hook: "quick-commerce.ts", type: "PlatformPoSummary" },
   { controller: "channels/quick-commerce/quick-commerce.controller.ts", prefix: "inventory/quick-commerce", verb: "Get", route: "asns", service: "channels/quick-commerce/quick-commerce-inbound.service.ts", table: "invAsns", anchor: "asnNumber", hook: "quick-commerce.ts", type: "AsnSummary" },
   { controller: "channels/pools/channel-pools.controller.ts", prefix: "inventory/channels/pools", verb: "Get", route: "channel/:channelId", service: "stock-engine/channel-pool.service.ts", table: "invChannelPools", anchor: "channelName", hook: "channel-pools.ts", type: "ChannelPool" },

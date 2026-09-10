@@ -105,7 +105,7 @@ Checked on this basis, all four retry families are wired — carrier
 (`runCarrierCall` → `carrier-status.service.ts:149`), webhook
 (`planWebhookAttempt` → `webhook-delivery.worker.ts:303`, `webhooks.service.ts`),
 channel (`withChannelTimeout` + `CHANNEL_CALL_TIMEOUT_MS` →
-`channel-snapshot.service.ts:518/525`) and compliance. The seven non-retry
+`channels/lib/channel-snapshot-worker.ts`, in `fetchSnapshot`) and compliance. The seven non-retry
 planners each have exactly one production call site: `planRevaluation` →
 landed-cost-apply, `planFromQuestion` → inv-copilot, `planReportFromQuestion` →
 inv-report-builder, `resolveSampleQuantity` → receipt-inspection,
