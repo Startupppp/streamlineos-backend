@@ -14,6 +14,7 @@ import { SignNotificationsService } from "./sign-notifications.service";
 import { SignIntegrationsService } from "./sign-integrations.service";
 import { SignTemplatesService, parseTemplateSnapshot } from "./sign-templates.service";
 import { SignSettingsService } from "./sign-settings.service";
+import { SELF_SERVE_AUTH_METHODS } from "./dto/e-sign.schemas";
 import type {
   PublicAuthInput,
   PublicConsentInput,
@@ -294,7 +295,14 @@ export class SignPublicService {
           Boolean(recipient.otpExpiresAt) &&
           recipient.otpExpiresAt!.getTime() > Date.now();
       } else {
-        throw new BadRequestException(`Authentication method "${recipient.authMethod}" is not yet supported for self-serve signing`);
+        /*
+         * Still the backstop, and still the only place that decides. The list it
+         * decides from is now `SELF_SERVE_AUTH_METHODS`, shared with the pre-send
+         * validator so an envelope can no longer pass validation and fail here.
+         */
+        throw new BadRequestException(
+          `Authentication method "${recipient.authMethod}" is not yet supported for self-serve signing. Supported: ${SELF_SERVE_AUTH_METHODS.join(", ")}.`,
+        );
       }
 
       if (!passed) {

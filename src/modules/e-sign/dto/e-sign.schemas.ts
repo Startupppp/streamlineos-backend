@@ -40,6 +40,27 @@ export const signAuthMethodSchema = z.enum([
   "id_verification",
 ]);
 
+/**
+ * The authentication methods the self-serve signing flow can actually execute.
+ *
+ * The enum above is the full product vocabulary; this is the part that works
+ * today. `SignPublicService.authenticate` refuses anything outside this set with
+ * "not yet supported for self-serve signing" — honest, but it says so to the
+ * SIGNER, at the end of a link, after the envelope has gone out. The sender had
+ * already chosen the method, been told a phone number was mandatory for it, and
+ * pressed send.
+ *
+ * Exported so the pre-send validator and the signing flow read the SAME list.
+ * Two hand-maintained copies would drift, and the direction they drift in is the
+ * one where an envelope passes validation and cannot be signed.
+ */
+export const SELF_SERVE_AUTH_METHODS = ["email_link", "access_code", "otp_email"] as const;
+export type SelfServeAuthMethod = (typeof SELF_SERVE_AUTH_METHODS)[number];
+
+export function isSelfServeAuthMethod(method: string): method is SelfServeAuthMethod {
+  return (SELF_SERVE_AUTH_METHODS as readonly string[]).includes(method);
+}
+
 export const signRoutingModeSchema = z.enum(["parallel", "sequential", "mixed"]);
 export const signCcTimingSchema = z.enum(["on_send", "on_complete"]);
 
