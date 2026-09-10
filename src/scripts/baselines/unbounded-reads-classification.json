@@ -1967,6 +1967,21 @@
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
     },
+    "/inventory/products/lib/product-archive.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane",
+      "justification": "Carried over 2026-09-11 from /inventory/products/inv-product-crud.service.ts, which this code moved out of unchanged \u2014 this gate keys on path, so a move forces a restatement. Same verdict as the entry it came from, deliberately: changing the verdict CLASS as a side effect of a file split would be a policy change made silently. Read while moving it, for the record: both reads are a single product's variants \u2014 deleted ones by (org, product_id), then an inArray on exactly those SKUs to find which have since been taken."
+    },
+    "/inventory/products/lib/product-assertions.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane",
+      "justification": "Carried over 2026-09-11 from /inventory/products/inv-product-crud.service.ts, which this code moved out of unchanged \u2014 this gate keys on path, so a move forces a restatement. Same verdict as the entry it came from, deliberately: changing the verdict CLASS as a side effect of a file split would be a policy change made silently. Read while moving it, for the record: one product's variants by (org, product_id), then a stock aggregate filtered inArray on those variant ids."
+    },
+    "/inventory/products/lib/product-delete.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane",
+      "justification": "Carried over 2026-09-11 from /inventory/products/inv-product-crud.service.ts, which this code moved out of unchanged \u2014 this gate keys on path, so a move forces a restatement. Same verdict as the entry it came from, deliberately: changing the verdict CLASS as a side effect of a file split would be a policy change made silently. Read while moving it, for the record: one product's live variants by (org, product_id), used to decide whether anything depends on them."
+    },
     "/inventory/products/inv-product-crud.service.ts": {
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
