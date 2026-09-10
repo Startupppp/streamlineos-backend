@@ -146,6 +146,57 @@ describe("accounting knows a counterparty only as a Party", () => {
     expect(adapter).toContain("resolvePartyByExternalRef");
   });
 
+  /*
+    ACC-11. AR and AP resolve a counterparty through the Party and use it for
+    identity and display only — nothing else about a customer or a vendor
+    reaches these documents.
+
+    Verified structurally rather than by e2e: the acceptance names an e2e that
+    creates an invoice and a bill, and this session had no database to run one
+    against. What is asserted here is the shape those e2e tests would exercise,
+    and it is stated plainly rather than implied, so nobody reads a green suite
+    as an end-to-end pass.
+  */
+  it("resolves an AR document's counterparty through the Party service", () => {
+    const ar = readFileSync(join(__dirname, "../ar/ar-documents.service.ts"), "utf8");
+
+    expect(ar).toContain("this.parties.requireForBook(");
+    /* Display comes off the resolved Party, never off a CRM row carried along. */
+    expect(ar).toContain("party.displayName");
+    expect(ar).not.toContain("clientName");
+  });
+
+  it("resolves an AP document's vendor the same way", () => {
+    const ap = readFileSync(join(__dirname, "../ap/ap-documents.service.ts"), "utf8");
+    const lookup = readFileSync(join(__dirname, "../ap/ap.vendor-lookup.ts"), "utf8");
+
+    expect(ap).toContain("requireVendor(");
+    /* Every vendor field AP reads comes off `gl_parties` and nowhere else. */
+    expect(lookup).toContain('from "../../../db/schema"');
+    expect(lookup).toContain("glParties.displayName");
+
+    const selected = [...lookup.matchAll(/^\s{2}\w+: (\w+)\./gm)].map((m) => m[1]);
+    expect(selected.length).toBeGreaterThan(5);
+    expect(new Set(selected)).toEqual(new Set(["glParties"]));
+  });
+
+  it("keeps create-on-miss out of the posting path", () => {
+    /*
+      `PartiesService.resolveOrCreateByExternalRef` exists and is right for its
+      one caller — the parties controller, where somebody is deliberately
+      importing a counterparty. On a posting path it would turn every typo'd
+      external reference into a new customer, and the duplicates would surface
+      at the first aged-receivables run rather than at the point of the typo.
+
+      Enumerated, so a second caller has to come here and argue for itself.
+    */
+    const callers = ["ar/ar-documents.service.ts", "ap/ap-documents.service.ts", "adapters/posting-command.service.ts"];
+    for (const caller of callers) {
+      const source = readFileSync(join(__dirname, "..", caller), "utf8");
+      expect(source).not.toContain("resolveOrCreateByExternalRef");
+    }
+  });
+
   it("never creates a party as a side effect of resolving one", () => {
     /*
       A resolver that inserted on miss would turn every typo'd external ref into
