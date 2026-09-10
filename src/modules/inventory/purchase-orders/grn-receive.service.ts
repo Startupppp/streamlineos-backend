@@ -166,6 +166,28 @@ export class GrnReceiveService {
           notes: data.notes,
           createdBy: userId,
           receivedDate: data.receivedDate,
+          /*
+           * POSTED at insert, because this path posts. It writes the stock
+           * movements through `engine.executeInTx` and the receipt journal
+           * below, in this same transaction -- the goods have landed by the
+           * time it commits.
+           *
+           * Leaving these to the column default wrote DRAFT onto a receipt
+           * whose stock had already moved, and `GrnPostingService.postInTx`
+           * refuses only POSTED and CANCELLED. So the workbench went on
+           * offering "Post to stock" on a delivery that was already in the
+           * building, and taking it moved the same goods a SECOND time and
+           * posted a second journal entry. Measured on GRN-00003/4/5, each
+           * carrying a GRN movement while sitting at DRAFT with a null
+           * posted_at.
+           *
+           * Same three columns the two-step path sets when it finishes
+           * (grn-post.service.ts), so both routes leave a receipt in one
+           * shape rather than two.
+           */
+          status: "POSTED",
+          postedBy: userId,
+          postedAt: new Date(),
         })
         .returning();
 
