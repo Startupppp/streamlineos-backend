@@ -1,7 +1,7 @@
 import { Inject, Injectable, BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import {
-  invVendorReturns, invVendorReturnLines, invSerialNumbers, invStockLevels,
+  invVendorReturns, invVendorReturnLines, invSerialNumbers,
   invVendors, invPurchaseOrders, invGrns,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -10,7 +10,6 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import {
   WarehouseScopeService,
-  type ResolvedWarehouseScope,
 } from "../stock-engine/warehouse-scope.service";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
@@ -26,9 +25,14 @@ import type {
   PostVendorReturnInput,
   ApproveReturnInput,
 } from "./dto/inv-returns.schemas";
+import {
+  assertReturnableInTx,
+  assertSourceInScope,
+  resolveLineLocation,
+  returnInScope,
+} from "./lib/vendor-return-scope";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
-type VendorReturnLineRow = typeof invVendorReturnLines.$inferSelect;
 
 @Injectable()
 export class VendorReturnsService {
@@ -40,26 +44,6 @@ export class VendorReturnsService {
     private readonly warehouseScope: WarehouseScopeService,
   ) {}
 
-  /**
-   * Which vendor returns this caller may see — the list's rule, now the only
-   * copy of it.
-   *
-   * Attributable through the receipt it is sending back, and through nothing
-   * else. The GRN names a LOCATION rather than a warehouse, so this goes through
-   * `scope.location`, which is a different predicate from the customer half's
-   * `scope.warehouse` — matching each aggregate rather than a house default.
-   *
-   * The NULL rule: a NULL `grn_id` makes `NULL IN (…)` NULL, so a vendor return
-   * raised against no receipt is **excluded** from a scoped caller's view. Not
-   * the ASN rule, where an unattributed row stays visible to everyone — there a
-   * null warehouse means "not known yet", here it means the return is anchored
-   * to no receipt and so to no warehouse.
-   */
-  private returnInScope(orgId: string, scope: ResolvedWarehouseScope): SQL {
-    return scope.anyOf(
-      sql`${invVendorReturns.grnId} IN (SELECT id FROM inv_grns WHERE org_id = ${orgId} AND ${scope.location(sql.raw("location_id"))})`,
-    );
-  }
 
   /**
    * The gate for the mutations that lock the row themselves.
@@ -76,7 +60,7 @@ export class VendorReturnsService {
       .where(and(
         eq(invVendorReturns.id, returnId),
         eq(invVendorReturns.orgId, orgId),
-        this.returnInScope(orgId, scope),
+        returnInScope(orgId, scope),
       ))
       .limit(1);
     if (!visible) throw new NotFoundException("Vendor return not found");
@@ -91,7 +75,7 @@ export class VendorReturnsService {
     return this.cache.cachedVersioned(CACHE_KEYS.invVendorReturnsNamespace(orgId), hash, async () => {
       const conditions = [
         eq(invVendorReturns.orgId, orgId),
-        this.returnInScope(orgId, scope),
+        returnInScope(orgId, scope),
       ];
       if (status) conditions.push(eq(invVendorReturns.status, status));
       const where = and(...conditions);
@@ -129,7 +113,7 @@ export class VendorReturnsService {
    */
   async get(orgId: string, userId: string, returnId: number) {
     const scope = await this.warehouseScope.forUser(orgId, userId);
-    return this.loadVendorReturn(orgId, returnId, this.returnInScope(orgId, scope));
+    return this.loadVendorReturn(orgId, returnId, returnInScope(orgId, scope));
   }
 
   /**
@@ -169,65 +153,6 @@ export class VendorReturnsService {
     return ret;
   }
 
-  /**
-   * You may send goods back only off a receipt taken into a warehouse you hold.
-   *
-   * `create` validated `grn_id` against the ORG and stopped there, so a scoped
-   * operator could anchor a DRAFT RMA to a receipt booked into another
-   * warehouse. Nothing moved — a DRAFT posts no stock — and every step after it
-   * is gated, so the document was invisible to its own author the moment it was
-   * saved: a write into a building they hold nothing in, leaving an orphaned
-   * draft behind. It also let them measure somebody else's intake, because
-   * `assertVendorReturnWithinReceived` below reads that GRN's lines on their
-   * behalf and the refusal names the quantity.
-   *
-   * Through the GRN's LOCATION, matching `returnInScope` above rather than the
-   * customer half's `scope.warehouse` — a receipt names the bin it landed in,
-   * not the building.
-   *
-   * `poId` IS DELIBERATELY NOT ASKED ABOUT, the way a transfer asks about its
-   * source and not its destination. A vendor return is attributable through the
-   * receipt and through nothing else — that is the list's rule and this is the
-   * same rule — and a purchase order is raised centrally, so requiring the
-   * warehouse operator sending faulty goods back to also hold whatever the PO
-   * was attributed to would refuse the ordinary case. `vendorId` is not asked
-   * about either: a supplier is not a building. If that is wrong it is wrong as
-   * a decision — a spec asserts the PO is not consulted, so tightening it later
-   * has to be deliberate rather than drifted into.
-   *
-   * The NULL rule falls out of the expression rather than being restated: a
-   * receipt with no location anchors this return to none of the caller's
-   * warehouses, exactly as it is excluded from their list.
-   *
-   * 404 (§4). The org check in front of it has already told this caller the id
-   * exists in their tenant, so the refusal adds nothing by explaining itself.
-   */
-  private async assertSourceInScope(
-    orgId: string,
-    userId: string,
-    grnId: number | null | undefined,
-  ): Promise<void> {
-    // An RMA raised against no receipt at all. `assertVendorReturnWithinReceived`
-    // makes the same exception: nothing to measure it against, nothing to
-    // attribute it to either.
-    if (grnId == null) return;
-
-    const scope = await this.warehouseScope.forUser(orgId, userId);
-    // Asked before the query rather than compiled to `TRUE` inside it: an
-    // org-wide caller is the common case on this path.
-    if (scope.unrestricted) return;
-
-    const [inScope] = await this.db
-      .select({ id: invGrns.id })
-      .from(invGrns)
-      .where(and(
-        eq(invGrns.id, grnId),
-        eq(invGrns.orgId, orgId),
-        scope.location(sql`${invGrns.locationId}`),
-      ))
-      .limit(1);
-    if (!inScope) throw new NotFoundException("GRN not found");
-  }
 
   async create(orgId: string, userId: string, data: CreateVendorReturnInput) {
     const vendor = await this.db.query.invVendors.findFirst({
@@ -260,7 +185,7 @@ export class VendorReturnsService {
 
     // The check above answers "is this id mine to name at all"; it never asked
     // which building the goods were received into. This does.
-    await this.assertSourceInScope(orgId, userId, data.grnId);
+    await assertSourceInScope(this.db, this.warehouseScope, orgId, userId, data.grnId);
 
     // B9, item 3, vendor half: an RMA cannot send back more of a receipt than
     // the receipt brought in. Refused at intake as well as at approval.
@@ -344,7 +269,7 @@ export class VendorReturnsService {
         );
       if (lines.length === 0)
         throw new BadRequestException("A vendor return with no lines cannot be approved");
-      await this.assertReturnableInTx(tx, orgId, locked.grn_id, lines);
+      await assertReturnableInTx(tx, orgId, locked.grn_id, lines);
 
       await tx
         .update(invVendorReturns)
@@ -436,11 +361,11 @@ export class VendorReturnsService {
       with: { lines: true },
     });
     if (!ret) throw new NotFoundException("Vendor return not found");
-    await this.assertReturnableInTx(tx, orgId, ret.grnId, ret.lines);
+    await assertReturnableInTx(tx, orgId, ret.grnId, ret.lines);
 
     const resolvedMovements = await Promise.all(
       ret.lines.map(async (line) => {
-        const locationId = await this.resolveLineLocation(tx, orgId, line);
+        const locationId = await resolveLineLocation(tx, orgId, line);
         return {
           transactionType: "VENDOR_RETURN",
           productVariantId: line.productVariantId,
@@ -514,49 +439,6 @@ export class VendorReturnsService {
     return returnId;
   }
 
-  private assertReturnableInTx(
-    tx: Tx,
-    orgId: string,
-    grnId: number | null,
-    lines: VendorReturnLineRow[],
-  ): Promise<void> {
-    return assertVendorReturnWithinReceived(
-      tx,
-      orgId,
-      grnId === null ? null : Number(grnId),
-      lines,
-    );
-  }
-
-  private async resolveLineLocation(
-    tx: Tx,
-    orgId: string,
-    line: VendorReturnLineRow,
-  ): Promise<number> {
-    if (line.serialId) {
-      const serial = await tx.query.invSerialNumbers.findFirst({
-        where: and(
-          eq(invSerialNumbers.id, line.serialId),
-          eq(invSerialNumbers.orgId, orgId),
-        ),
-        columns: { currentLocationId: true },
-      });
-      if (serial?.currentLocationId) return serial.currentLocationId;
-    }
-
-    const stockLevel = await tx.query.invStockLevels.findFirst({
-      where: and(
-        eq(invStockLevels.orgId, orgId),
-        eq(invStockLevels.productVariantId, line.productVariantId),
-        line.lotId ? eq(invStockLevels.lotId, line.lotId) : undefined,
-      ),
-      columns: { locationId: true },
-      orderBy: (t, { desc }) => [desc(t.onHand)],
-    });
-
-    if (stockLevel?.locationId) return stockLevel.locationId;
-    throw new BadRequestException(`Cannot determine location for variant ${line.productVariantId} in vendor return`);
-  }
 
   /**
    * B9. Cancellable from DRAFT and from APPROVED — an approval is reversible
@@ -573,7 +455,7 @@ export class VendorReturnsService {
       where: and(
         eq(invVendorReturns.id, returnId),
         eq(invVendorReturns.orgId, orgId),
-        this.returnInScope(orgId, scope),
+        returnInScope(orgId, scope),
       ),
     });
     if (!ret) throw new NotFoundException("Vendor return not found");

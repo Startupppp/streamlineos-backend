@@ -60,6 +60,21 @@ describe("inventory scoped lists", () => {
    * `anomalyVisibilityPredicate` (F3) was added after that reading: it returns
    * `FALSE` for an empty scope rather than `TRUE`, so a user scoped to no
    * warehouse sees nothing rather than everything.
+   *
+   * `returnInScope` was added when vendor-returns.service.ts was split for
+   * check:file-sizes and the builder moved to `lib/vendor-return-scope.ts`. Read
+   * before adding, as this comment requires: it is
+   * `scope.anyOf(grn_id IN (SELECT id FROM inv_grns WHERE org_id = ... AND
+   * scope.location(location_id)))` — the scope really is applied, through the
+   * GRN's location rather than its warehouse, because a receipt names the bin it
+   * landed in.
+   *
+   * ⚠ Note what this costs. The guard pairs "resolves a scope" with "applies a
+   * scope" WITHIN ONE FILE, and only walks `*.service.ts`. Once a builder lives
+   * in a sibling `lib/`, this test sees the call site's NAME and not the body, so
+   * it can no longer catch that builder being gutted. `scopeFragment` and
+   * `stockScope` above are already in that position. If more of these move, this
+   * test should walk `lib/*.ts` beside each service rather than growing the list.
    */
   it("never resolves a scope it then fails to apply to a query", () => {
     const unused: string[] = [];
@@ -68,7 +83,7 @@ describe("inventory scoped lists", () => {
       if (!RESOLVES_SCOPE.test(source)) continue;
       const applies =
         /\.(warehouse|location|anyOf)\(/.test(source) ||
-        /warehousePredicate|locationPredicate|warehouseIdList|assertLocationsInScope|assertWarehouseVisible|assertLocationVisible|scopeFragment|stockScope|anomalyVisibilityPredicate/.test(
+        /warehousePredicate|locationPredicate|warehouseIdList|assertLocationsInScope|assertWarehouseVisible|assertLocationVisible|scopeFragment|stockScope|anomalyVisibilityPredicate|returnInScope/.test(
           source,
         );
       if (!applies) unused.push(path.replace(MODULE_ROOT + "/", ""));
