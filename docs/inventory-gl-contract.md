@@ -48,21 +48,33 @@ COGS at all while reporting success.
 ### 2.1 What does not post, and should
 
 Thirteen services under `src/modules/inventory/**` call the stock engine. Two of
-them also post (`grn`, `so-fulfillment`). One — `stock/inv-stock-reservations` —
-only reserves and releases, changes no value, and correctly posts nothing. The
-remaining **ten never reach the ledger at all**:
+them posted from the start (`grn`, `so-fulfillment`). This section used to list
+the other ten as a single hole. **ACC-21 closed it, and found that the count was
+wrong** — not in size, but in kind. Of the ten:
 
-`stock/inv-stock-adjustments`, `stock/inv-stock-transfers`,
-`counts/inv-cycle-counts`, `counts/inv-physical-audits`,
-`quality/quality-holds`, `quality/quality-inspections`,
-`quality/quality-recalls`, `returns/customer-returns`,
-`returns/vendor-returns`, `import-export/import`.
+**Seven post now**, each on the movement's own transaction, through
+`StockMovementBridgeService`: `stock/inv-stock-adjustments`,
+`stock/inv-stock-transfers`, `counts/inv-cycle-counts`,
+`counts/inv-physical-audits`, `quality/quality-inspections` (the scrap
+disposition), `returns/customer-returns`, `returns/vendor-returns`.
 
-So on an accounting-enabled tenant today a scrap, a cycle-count loss, a
-write-off and a customer return all change the value of stock on hand and leave
-the inventory GL account untouched. The balance sheet and the stock valuation
-report disagree by construction, and nothing says so. ACC-08 makes that
-visible; ACC-03 gives those movements accounts to post to.
+**Three are correct to post nothing**, and saying so is more accurate than
+making them post:
+
+- `quality/quality-holds` and `quality/quality-recalls` move stock between
+  buckets. A hold blocks goods; it does not stop the business owning them, so
+  the balance sheet must not move. A journal here would be wrong, not merely
+  noisy.
+- `import-export/import` writes opening stock, whose ledger counterpart is the
+  opening trial balance the accountant enters at `/accounting/opening-balances`.
+  Every real migration does both, and posting here as well would double the
+  tenant's inventory figure.
+
+`stock/inv-stock-reservations` was always in the third group: it promises stock
+and changes no value.
+
+The remaining honest gap is narrower and named: a transfer posts only its
+shrinkage, and only at completion (see §3.4).
 
 ### 2.2 The GRNI defect, named
 
@@ -177,18 +189,34 @@ inventory valuation for backdated documents, which is an inventory decision and
 not a GL-contract one. It belongs to whoever owns `stock-engine`, and this
 paragraph exists so that it is a decision rather than a discovery.
 
-### 3.4 The hole that is real: ten movements that post nothing
+### 3.4 The hole that was real: ten movements that posted nothing
 
-This one is not subtle and nothing protects against it.
+**Closed by ACC-21.** Kept here, in the past tense, because several commits cite
+this section by number and because the shape of the mistake is worth keeping.
 
-Of the thirteen services that move stock, the ten in §2.1 never reach the ledger
-at all. On an accounting-enabled tenant a scrap, a cycle-count loss, a write-off
-and a customer return each change the value of stock on hand and leave the
-inventory GL account exactly as it was. No error, no log, no failed request —
-the movement succeeds, because nothing ever tried to post it.
+What it said: of the thirteen services that move stock, ten never reached the
+ledger, so on an accounting-enabled tenant a scrap, a cycle-count loss and a
+customer return each changed the value of stock on hand and left the inventory
+GL account exactly as it was — no error, no log, no failed request.
 
-That is a permanent, silent divergence between the stock valuation report and
-the balance sheet, and it is what ACC-06 and ACC-08 exist for.
+That was true, and the framing was not. Reading the ten one at a time, three of
+them *should* post nothing (§2.1), and treating the list as one undifferentiated
+hole would have produced three wrong journals — most obviously a quarantine,
+which would have moved a balance sheet for goods sitting in the next aisle.
+"Ten services must post" was the confident answer; the correct one was six, plus
+a seventh that posts only when a transfer goes short.
+
+Two things it did not cover, both now in the map beside their reasoning: value
+comes from the stock rows the engine just wrote rather than from each call site,
+so the two ledgers cannot disagree about a movement they both saw; and a
+transfer posts once, at completion, across both legs, because the ledger has one
+inventory account with no location dimension and goods in transit are still
+inventory.
+
+What remains open here is the transfer's own accounting during transit. It is
+correct today only because the GL cannot see locations. A product that grows a
+`stock_in_transit` role would want the outbound leg posted against it, and that
+is a ticket rather than a line.
 
 ## 4. The decision: fail closed, and say so in the code
 
@@ -270,10 +298,10 @@ requires. The other four do not exist:
 |---|---|---|---|
 | Inventory asset | `inventory` | yes | receipt, shipment, every adjustment |
 | COGS | `cogs` | yes | shipment, scrap-to-P&L |
-| Goods received not invoiced | `grni` | **no** | receipt (see §2.2) |
+| Goods received not invoiced | `grni` | yes (0672) | vendor return; the receipt still owes it (§2.2) |
 | Landed cost clearing | `landed_cost_clearing` | **no** | landed-cost apply |
-| Inventory write-off | `inventory_write_off` | **no** | scrap, quality write-off, recall |
-| Inventory adjustment gain/loss | `inventory_adjustment` | **no** | cycle-count gain/loss, physical audit, transfer variance |
+| Inventory write-off | `inventory_write_off` | yes (0672) | quality scrap |
+| Inventory adjustment gain/loss | `inventory_adjustment` | yes (0672) | adjustments, cycle counts, physical audits, transfer shrinkage |
 
 ACC-03 adds the four missing roles additively. `gl_system_tag` is a Postgres
 enum, so this is `ALTER TYPE ... ADD VALUE` and never a drop — existing posted

@@ -79,11 +79,29 @@ describe("the inventory seam's role lists", () => {
   });
 
   it("lists as pending exactly the roles no call site resolves yet", () => {
-    expect([...INVENTORY_SEAM_ROLES_PENDING]).toEqual([
-      "grni",
-      "inventory_write_off",
-      "inventory_adjustment",
-    ]);
+    /*
+      Empty since ACC-21, which gave all three a call site: a quality scrap
+      resolves `inventory_write_off`, adjustments and counts resolve
+      `inventory_adjustment`, and a vendor return resolves `grni`. They moved
+      into the required list in the same commit as those call sites, which is
+      the rule the list was created to enforce.
+
+      The list stays, empty, because the distinction still matters for the next
+      role seeded ahead of its call site.
+    */
+    expect([...INVENTORY_SEAM_ROLES_PENDING]).toEqual([]);
+  });
+
+  it("requires every role a call site can actually resolve", () => {
+    /*
+      The other half, and the one that bites: a role that reached a call site
+      without reaching this list would be demanded by a posting at runtime and
+      never mentioned by provisioning — the tenant would discover it as a
+      refused goods movement rather than as a setup step.
+    */
+    for (const role of ["grni", "inventory_write_off", "inventory_adjustment"] as const) {
+      expect([...INVENTORY_SEAM_ROLES]).toContain(role);
+    }
   });
 });
 

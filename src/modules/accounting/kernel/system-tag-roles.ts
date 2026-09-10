@@ -82,10 +82,15 @@ export const SYSTEM_TAG_ACCOUNT_TYPES: Record<GlSystemTag, readonly GlAccountTyp
 };
 
 /**
- * The roles the inventory bridge resolves **today**, from the three call sites
- * `docs/inventory-gl-contract.md` §2 enumerates. A book missing one of these
- * has a real, dated problem: its next goods receipt or shipment is refused
- * outright with `UNKNOWN_ACCOUNT_TAG`.
+ * The roles the inventory bridge resolves **today**. A book missing one of
+ * these has a real, dated problem: the next movement needing it is refused
+ * outright with `UNKNOWN_ACCOUNT_TAG`, and the stock change is refused with it.
+ *
+ * ACC-21 grew this list from five to eight. `inventory_write_off` is resolved
+ * by a quality scrap, `inventory_adjustment` by adjustments, cycle counts,
+ * physical audits and transfer shrinkage, and `grni` by a vendor return —
+ * which is why they moved out of the pending list below, in the same commit as
+ * the call sites that started resolving them, exactly as that list required.
  */
 export const INVENTORY_SEAM_ROLES = [
   "inventory",
@@ -93,26 +98,25 @@ export const INVENTORY_SEAM_ROLES = [
   "ap_control",
   "ar_control",
   "sales",
-] as const satisfies readonly GlSystemTag[];
-
-/**
- * Roles the chart now seeds and **no call site resolves yet**.
- *
- * Kept separate rather than folded into the list above, because the difference
- * is the difference between a warning that means something and one that cries
- * wolf. A book without `grni` is not currently broken — the goods receipt
- * credits `ap_control` instead, which is wrong (0672) but works. Reporting it
- * as missing alongside a genuinely missing `inventory` account would teach an
- * operator to ignore both.
- *
- * Each one moves into `INVENTORY_SEAM_ROLES` in the same commit as the call
- * site that starts resolving it, never before.
- */
-export const INVENTORY_SEAM_ROLES_PENDING = [
   "grni",
   "inventory_write_off",
   "inventory_adjustment",
 ] as const satisfies readonly GlSystemTag[];
+
+/**
+ * Roles the chart seeds and **no call site resolves yet**.
+ *
+ * Empty, and worth keeping empty rather than deleting. The distinction it
+ * draws is the difference between a warning that means something and one that
+ * cries wolf: reporting a role nothing resolves, alongside a genuinely missing
+ * `inventory` account, teaches an operator to ignore both. The next role added
+ * to the chart ahead of its call site belongs here, and moves across in the
+ * commit that starts resolving it.
+ *
+ * `landed_cost_clearing` is the one on the horizon, and it is not even seeded
+ * — there is no landed-cost feature to resolve it.
+ */
+export const INVENTORY_SEAM_ROLES_PENDING = [] as const satisfies readonly GlSystemTag[];
 
 /** Every role, in chart order, for the mapping screen. */
 export const ALL_SYSTEM_TAGS = Object.keys(SYSTEM_TAG_ACCOUNT_TYPES) as GlSystemTag[];

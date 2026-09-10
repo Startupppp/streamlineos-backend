@@ -67,7 +67,7 @@ const PACK_ARTEFACTS = [
 /** Headings the contract must still carry, because commits cite them by number. */
 const CONTRACT_ANCHORS = [
   "Atomicity is inherited, not declared",
-  "The hole that is real: ten movements that post nothing",
+  "The hole that was real: ten movements that posted nothing",
   "The decision: fail closed",
 ];
 

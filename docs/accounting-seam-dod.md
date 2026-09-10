@@ -48,6 +48,7 @@ proved by the specs named below, which run in the ordinary suite.
 | ACC-18 ADR on legacy invoices vs AR | Done, **and a bug fixed** | `docs/adr-legacy-invoices-vs-ar.md` |
 | ACC-14 Live IRP provider | **Blocked** | No credentials. ACC-13's mock is the substitute. |
 | ACC-17 India FY edge cases for inventory-linked invoices (P2) | Done, **and two findings** | `adapters/document-series-fy.spec.ts`, `setup/accounting-provisioning.spec.ts` |
+| ACC-21 Close the unposted stock movements | Done, **7 of 10, 3 by decision** | `adapters/stock-movement-bridge.spec.ts`, `adapters/stock-bridge-reachability.spec.ts` |
 
 ---
 
@@ -115,11 +116,13 @@ pass their document date as the movement's `postingDate` — but
 valuation for backdated documents. That is an inventory decision, not a
 GL-contract one.
 
-**§3.4 — ten stock-moving services still post nothing.** Adjustments,
-transfers, cycle counts, physical audits, three quality services, both returns
-and import all change the value of stock on hand and write no journal. ACC-08
-makes the gap countable; closing it needs each of those services to post, which
-is a larger piece of work than this pack.
+**§3.4 — closed by ACC-21, and the count was wrong.** Seven of the ten now post
+through one bridge; three are correct to post nothing and saying so is more
+accurate than making them post — a quarantine journal would move a balance
+sheet for goods sitting in the next aisle. What remains is narrower and named:
+a transfer's accounting during transit is correct today only because the ledger
+has no location dimension, and a product that grows a `stock_in_transit` role
+would want the outbound leg posted against it.
 
 **The shipment reconciliation is sales-order-level.** A stock transaction
 records the sales order as its reference and never the shipment, so on a
@@ -186,6 +189,15 @@ adapter, and a test in `posting-refusals.spec.ts` fails the day payroll stops
 swallowing so the gap is not forgotten.
 
 ---
+
+**A quarantine round-trip loses its cost layers.** Found while classifying the
+ten, and reported rather than fixed because it is inventory's costing, not the
+seam. Putting stock on hold issues it out of `ON_HAND`, which consumes cost
+layers and records the value; releasing it adds the quantity back with no
+`unitCost`, and `applyCosting` returns early without recording a layer. So the
+quantity returns and the value does not. The ledger is right to post nothing
+either way — the goods were owned throughout — which means that here, unusually,
+the GL is correct and the stock valuation report is the one that drifts.
 
 ## The reachability sweep, and what it found
 

@@ -113,9 +113,19 @@ describe("accounting provisioning", () => {
     const verdict = await service.provisioning("org-1");
 
     expect(verdict.state).toBe("incomplete");
+    /*
+      ACC-21 made this list longer, and that is the point of it: a vendor return
+      resolves `grni`, a scrap `inventory_write_off`, and adjustments, counts
+      and transfer shrinkage `inventory_adjustment`. Each is now a movement
+      this book would refuse, so each belongs in the warning a tenant sees
+      before they hit it.
+    */
     expect(verdict.state === "incomplete" && verdict.missingRoles).toEqual([
       "inventory",
       "ap_control",
+      "grni",
+      "inventory_write_off",
+      "inventory_adjustment",
     ]);
   });
 
