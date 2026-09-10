@@ -202,15 +202,31 @@ describe(`${SEEDED_HARNESS} inventory permission and warehouse scope matrix`, ()
         .get("/inventory/stock")
         .set("Authorization", await auth("manager"));
 
-      // Raw projection rows, so the key is snake_case.
-      const scopedItems = (scoped.body as { items: Array<{ location_id: number }> }).items;
-      const allItems = (all.body as { items: unknown[] }).items;
+      /*
+       * `location` is a nested object, not a flat `location_id`. The response
+       * shape is pinned by `stock-levels-response-shape.spec.ts`, whose
+       * top-level key list has no snake_case in it. Reading `row.location_id`
+       * here yielded `Number(undefined)` -> `NaN`, and `NaN === locationOne` is
+       * false however well the scope behaves -- so this assertion failed for
+       * every possible server, which is the one result that proves nothing.
+       */
+      type Row = { location: { id: number; warehouse: { id: number } | null } | null };
+      const scopedItems = (scoped.body as { items: Row[] }).items;
+      const allItems = (all.body as { items: Row[] }).items;
 
       expect(scopedItems).toHaveLength(1);
       expect(allItems).toHaveLength(2);
       // The aggregate must not quietly include a warehouse the reader does not
       // hold -- a total is a disclosure too.
-      expect(scopedItems.every((row) => Number(row.location_id) === locationOne)).toBe(true);
+      expect(scopedItems.map((row) => row.location?.id)).toEqual([locationOne]);
+      expect(scopedItems.map((row) => row.location?.warehouse?.id)).toEqual([warehouseOne]);
+      /*
+       * And the scope-all holder must genuinely span both, or "sees only its
+       * own" would pass against a server that served warehouse one to everyone.
+       */
+      expect([...new Set(allItems.map((row) => row.location?.warehouse?.id))].sort()).toEqual(
+        [warehouseOne, warehouseTwo].sort(),
+      );
     },
     60_000,
   );
