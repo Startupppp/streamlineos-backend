@@ -16,12 +16,14 @@ const SECRET = process.env.BACKEND_JWT_SECRET;
 const ABLY_KEY = process.env.ABLY_API_KEY;
 
 if (!DB_URL || !SECRET) {
-  console.error("DATABASE_URL and BACKEND_JWT_SECRET are required.");
-  process.exit(1);
+  console.error("PREREQUISITE MISSING: DATABASE_URL and BACKEND_JWT_SECRET are required.");
+  process.exit(2);
 }
 if (!ABLY_KEY) {
-  console.error("ABLY_API_KEY is not set. Mentions publish over Ably; without it this proves nothing.");
-  process.exit(1);
+  console.error(
+    "PREREQUISITE MISSING: ABLY_API_KEY is not set. Mentions publish over Ably; without it this proves nothing.",
+  );
+  process.exit(2);
 }
 
 const orgId = `mention-probe-${randomUUID().slice(0, 8)}`;
@@ -62,15 +64,23 @@ async function seed() {
 
     await tx`INSERT INTO organization_members (id, user_id, org_id, role, is_owner, status)
              VALUES (${ownerMembershipId}, ${sender}, ${orgId}, 'OWNER', true, 'ACTIVE')`;
-    for (const id of [alex, alexander])
-      await tx`INSERT INTO organization_members (user_id, org_id, role, is_owner, status)
-               VALUES (${id}, ${orgId}, 'MEMBER', false, 'ACTIVE')`;
+    // The chat actor contraction (0660) moved every chat table off `users.id` and
+    // onto `organization_members.id`, so the membership is what the rows below
+    // need — not the user id this script used to pass.
+    const membershipOf = new Map([[sender, ownerMembershipId]]);
+    for (const id of [alex, alexander]) {
+      const [member] = await tx`INSERT INTO organization_members (user_id, org_id, role, is_owner, status)
+               VALUES (${id}, ${orgId}, 'MEMBER', false, 'ACTIVE') RETURNING id`;
+      membershipOf.set(id, Number(member.id));
+    }
 
-    const [channel] = await tx`INSERT INTO chat_channels (org_id, name, type, created_by)
-                               VALUES (${orgId}, 'probe-channel', 'GROUP', ${sender}) RETURNING id`;
+    // `chk_chat_channels_privacy_matches_type` requires is_private = (type <> 'PUBLIC'),
+    // so a GROUP channel must say so explicitly; the column default of false fails it.
+    const [channel] = await tx`INSERT INTO chat_channels (org_id, name, type, is_private, created_by_membership_id)
+                               VALUES (${orgId}, 'probe-channel', 'GROUP', true, ${ownerMembershipId}) RETURNING id`;
     for (const id of [sender, alex, alexander])
-      await tx`INSERT INTO chat_channel_members (org_id, channel_id, user_id, role)
-               VALUES (${orgId}, ${Number(channel.id)}, ${id}, 'MEMBER')`;
+      await tx`INSERT INTO chat_channel_members (org_id, channel_id, membership_id, role)
+               VALUES (${orgId}, ${Number(channel.id)}, ${membershipOf.get(id)}, 'MEMBER')`;
 
     seed.channelId = Number(channel.id);
   });
@@ -110,6 +120,22 @@ async function main() {
     });
     const body = await res.text();
     console.log(`POST message -> ${res.status}`);
+    if (res.status === 401 || res.status === 403) {
+      // Nothing was measured. This probe seeds its org into DATABASE_URL and then
+      // talks to API_URL; a 401 on the very first send means the API on that port
+      // is serving a DIFFERENT database (a dev server another worktree started is
+      // the usual cause), so the seeded user does not exist as far as it is
+      // concerned. Every assertion after this would fail for that reason and read
+      // as "mentions are broken", which is the false report this exists to avoid.
+      console.error(`  body: ${body.slice(0, 400)}`);
+      console.error(
+        "\nPREREQUISITE MISSING: the API at " + API + " rejected the probe's token.\n" +
+          "  It must be booted against the SAME database as DATABASE_URL and share BACKEND_JWT_SECRET.\n" +
+          "  Nothing about mention delivery was observed, so no finding is reported.",
+      );
+      process.exitCode = 2;
+      return;
+    }
     if (res.status !== 201) {
       console.error(`  body: ${body.slice(0, 400)}`);
       failures += 1;
