@@ -46,11 +46,32 @@ const DELIBERATE_ALLOWLIST = new Set([
 ]);
 
 /**
- * Duplicate numeric prefixes that already exist in applied history. Renaming an
- * applied migration changes its hash and would re-propose it against every
- * database, so these are baselined rather than fixed. Recorded 2026-08-29 — the
- * set is closed, so a NEW collision still fails. Do not extend it to silence a
- * fresh duplicate; rename the new file instead.
+ * Duplicate numeric prefixes that already exist in applied history.
+ *
+ * The rule is unchanged and the set is still CLOSED: a NEW collision must fail,
+ * and the fix for one is to rename the new file, never to add a line here. What
+ * changed is the reason, because the reason recorded here until 2026-09-10 was
+ * false and pointed at the wrong fix.
+ *
+ * It said renaming an applied migration changes its hash and would re-propose it
+ * against every database. It does not. All four appliers in this repository —
+ * run-pending-migrations.mjs:45, apply-journalled-migration.mjs:44,
+ * apply-chain-cold.mjs:46 and db-bootstrap.mjs:22 — hash the FILE CONTENT and
+ * nothing else. The tag never enters the hash, and `drizzle.__drizzle_migrations`
+ * stores only (hash, created_at), so a renamed migration on a database that
+ * already has it matches by hash and is skipped. Renaming is hash-safe. (Editing
+ * a migration's BODY is not — including its comments — which is the neighbouring
+ * fact this one was probably confused with.)
+ *
+ * The true reason to baseline an old collision and rename a new one is reference,
+ * not hashing. A tag that has been applied somewhere is quoted in runbooks, in
+ * `db:apply-one --tag=`, in rollback manifests and in cross-session notes;
+ * renaming it silently invalidates all of them, and the numeric prefix decides
+ * nothing at runtime anyway — the journal array is the authoritative order. A
+ * collision caught before it is applied has none of those references yet, so
+ * renaming costs nothing. That asymmetry is the policy.
+ *
+ * Recorded 2026-08-29, rationale corrected 2026-09-10.
  */
 const HISTORICAL_DUPLICATE_PREFIXES = new Set([
   "0300",
