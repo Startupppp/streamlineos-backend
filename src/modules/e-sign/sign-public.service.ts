@@ -14,6 +14,7 @@ import { SignFinalizationService } from "./sign-finalization.service";
 import { SignNotificationsService } from "./sign-notifications.service";
 import { SignIntegrationsService } from "./sign-integrations.service";
 import { SignPublicFormService } from "./sign-public-form.service";
+import type { SignSessionState } from "./sign-state";
 import type { PublicRequestContext } from "./sign-public-form.service";
 import type {
   PublicAuthInput,
@@ -27,17 +28,7 @@ import type {
 const SIGNED_URL_EXPIRY_SECONDS = 900;
 const MAX_AUTH_ATTEMPTS = 5;
 
-type SessionState =
-  | "active"
-  | "not_your_turn"
-  | "expired"
-  | "revoked"
-  | "recipient_completed"
-  | "recipient_declined"
-  | "envelope_voided"
-  | "envelope_expired"
-  | "envelope_declined"
-  | "envelope_completed";
+type SessionRecipient = Pick<typeof signRecipients.$inferSelect, "status" | "tokenRevokedAt" | "tokenExpiresAt">;
 
 @Injectable()
 export class SignPublicService {
@@ -85,7 +76,7 @@ export class SignPublicService {
     );
   }
 
-  private deriveState(recipient: typeof signRecipients.$inferSelect, envelope: typeof signEnvelopes.$inferSelect): SessionState {
+  private deriveState(recipient: SessionRecipient, envelope: typeof signEnvelopes.$inferSelect): SignSessionState {
     if (envelope.status === "voided") return "envelope_voided";
     if (envelope.status === "expired") return "envelope_expired";
     if (envelope.status === "declined") return "envelope_declined";
@@ -185,11 +176,10 @@ export class SignPublicService {
     });
   }
 
-  private assertActive(recipient: typeof signRecipients.$inferSelect, envelope: typeof signEnvelopes.$inferSelect) {
+  private assertActive(recipient: SessionRecipient, envelope: typeof signEnvelopes.$inferSelect) {
     const state = this.deriveState(recipient, envelope);
-    if (state !== "active") {
+    if (state !== "active")
       throw new ForbiddenException(`This signing session is no longer active (${state}).`);
-    }
   }
 
   async requestOtp(token: string) {
@@ -210,13 +200,22 @@ export class SignPublicService {
   }
 
   async authenticate(token: string, input: PublicAuthInput, ctx: PublicRequestContext) {
-    return this.withRecipientSession(token, async ({ recipient, envelope }) => {
+    const authenticated = await this.withRecipientSession(token, async ({ recipient: sessionRecipient, envelope }) => {
+      const [recipient] = await this.db.select({
+        id: signRecipients.id, name: signRecipients.name, email: signRecipients.email,
+        status: signRecipients.status, authMethod: signRecipients.authMethod,
+        accessCodeHash: signRecipients.accessCodeHash, otpCodeHash: signRecipients.otpCodeHash,
+        otpExpiresAt: signRecipients.otpExpiresAt, failedAuthAttempts: signRecipients.failedAuthAttempts,
+        authLockedUntil: signRecipients.authLockedUntil, tokenRevokedAt: signRecipients.tokenRevokedAt,
+        tokenExpiresAt: signRecipients.tokenExpiresAt,
+      }).from(signRecipients).where(and(
+        eq(signRecipients.orgId, envelope.orgId), eq(signRecipients.id, sessionRecipient.id),
+        eq(signRecipients.signingTokenHash, this.tokens.hash(token)),
+      )).for("update");
+      if (!recipient) throw new NotFoundException("This signing link is invalid.");
       this.assertActive(recipient, envelope);
-
-      if (recipient.authLockedUntil && recipient.authLockedUntil.getTime() > Date.now()) {
+      if (recipient.authLockedUntil && recipient.authLockedUntil.getTime() > Date.now())
         throw new ForbiddenException("Too many failed attempts. Please try again later.");
-      }
-
       let passed: boolean;
       if (recipient.authMethod === "email_link") {
         passed = true;
@@ -231,7 +230,6 @@ export class SignPublicService {
       } else {
         throw new BadRequestException(`Authentication method "${recipient.authMethod}" is not yet supported for self-serve signing`);
       }
-
       if (!passed) {
         const attempts = recipient.failedAuthAttempts + 1;
         await this.db
@@ -240,8 +238,7 @@ export class SignPublicService {
             failedAuthAttempts: attempts,
             authLockedUntil: attempts >= MAX_AUTH_ATTEMPTS ? new Date(Date.now() + 15 * 60 * 1000) : recipient.authLockedUntil,
           })
-          .where(eq(signRecipients.id, recipient.id));
-
+          .where(and(eq(signRecipients.orgId, envelope.orgId), eq(signRecipients.id, recipient.id)));
         await this.audit.record({
           orgId: envelope.orgId,
           envelopeId: envelope.id,
@@ -253,14 +250,12 @@ export class SignPublicService {
           ipAddress: ctx.ipAddress,
           userAgent: ctx.userAgent,
         });
-        throw new ForbiddenException("Authentication failed");
+        return false;
       }
-
       await this.db
         .update(signRecipients)
         .set({ status: "authenticated", authenticatedAt: new Date(), failedAuthAttempts: 0, authLockedUntil: null })
-        .where(eq(signRecipients.id, recipient.id));
-
+        .where(and(eq(signRecipients.orgId, envelope.orgId), eq(signRecipients.id, recipient.id)));
       await this.audit.record({
         orgId: envelope.orgId,
         envelopeId: envelope.id,
@@ -272,9 +267,10 @@ export class SignPublicService {
         ipAddress: ctx.ipAddress,
         userAgent: ctx.userAgent,
       });
-
-      return { authenticated: true };
+      return true;
     });
+    if (!authenticated) throw new ForbiddenException("Authentication failed");
+    return { authenticated: true };
   }
 
   async acceptConsent(token: string, input: PublicConsentInput, ctx: PublicRequestContext) {
