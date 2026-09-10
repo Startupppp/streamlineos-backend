@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
 import { AccountingKernelModule } from "../kernel/accounting-kernel.module";
 import { PostingCommandService } from "./posting-command.service";
+import { ReconciliationController } from "./reconciliation/reconciliation.controller";
+import { UnpostedMovementsService } from "./reconciliation/unposted-movements.service";
 
 /**
  * Accounting-side adapters.
@@ -15,7 +17,8 @@ import { PostingCommandService } from "./posting-command.service";
  */
 @Module({
   imports: [AccountingKernelModule],
-  providers: [PostingCommandService],
-  exports: [PostingCommandService],
+  controllers: [ReconciliationController],
+  providers: [PostingCommandService, UnpostedMovementsService],
+  exports: [PostingCommandService, UnpostedMovementsService],
 })
 export class AccountingAdaptersModule {}
