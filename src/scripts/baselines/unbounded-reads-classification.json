@@ -3208,6 +3208,16 @@
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "Classified 2026-09-10. Same code, new path: the handling-unit tree readers moved verbatim out of handling-unit.service.ts when that file was split for check:file-sizes. The parent's justification was re-read against the two queries that actually moved rather than copied - it holds exactly: `const [row]` is a single-row lookup by (org_id, id), and `children` is the direct children of ONE handling unit by parent_hu_id. FALSE-POSITIVE and not BOUNDED because BOUNDED is a FIXED verdict asserting the scanner no longer matches, and it still does."
+    },
+    "/inventory/stock/lib/transfer-commands.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "CRM/Inventory excluded product domain - do not fix in this lane",
+      "justification": "Classified 2026-09-10. Same code, new path: the in-transaction command bodies moved verbatim out of inv-stock-transfers.service.ts when that 927-line file was decomposed for check:file-sizes. The parent entry carries the same EXCLUDED-MODULE verdict and still matches on the queries left behind, so the lane exclusion is following the code rather than being newly granted."
+    },
+    "/inventory/stock/lib/transfer-dispatch.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "CRM/Inventory excluded product domain - do not fix in this lane",
+      "justification": "Classified 2026-09-10. Same code, new path: the dispatch command moved verbatim out of inv-stock-transfers.service.ts when that 927-line file was decomposed for check:file-sizes. The parent entry carries the same EXCLUDED-MODULE verdict and still matches on the queries left behind, so the lane exclusion is following the code rather than being newly granted."
     }
   }
 }
