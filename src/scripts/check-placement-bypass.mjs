@@ -81,6 +81,33 @@ export const CONTEXT_EXIT_ALLOWLIST = new Map([
     "src/modules/organization/core/org-membership.service.ts",
     "exits the ambient admin transaction before opening a user-identity-scoped one so app.user_id cannot widen later RLS reads in the enclosing request",
   ],
+  // The three below are one class, and they are the CURE rather than the disease.
+  //
+  // Each is a side effect that outlives the request that raised it. The tenant
+  // context is async-local, so the continuation inherits whatever transaction
+  // was open at the call — which by then has committed and closed. A query
+  // issued against that dead handle does not throw: it never settles. The
+  // surrounding `.catch` therefore never runs, and the failure is invisible in
+  // a way no log, metric or test can see. Every one of these was found that
+  // way: zero rows written, nobody told.
+  //
+  // Detaching first is what lets the callee open a scope of its own from the
+  // orgId it is handed. Removing these calls does not restore tenant safety,
+  // it restores the hang — so if one of these files ever needs its entry
+  // removed, the fix is to make the effect durable (OutboxWriter) or deferred
+  // (registerAfterCommit), never to re-inherit the ambient.
+  [
+    "src/modules/notifications/notifications.service.ts",
+    "detached web-push fan-out: raised from outbox consumers and cron sweeps whose transaction has already committed, so the push_subscriptions read under tenant_isolation would hang on a closed handle instead of failing; runOutsideTenantContext lets sendToUser open its own scope from the orgId it is passed",
+  ],
+  [
+    "src/modules/chat/chat-huddles.service.ts",
+    "detached huddle-start push, same shape as the notifications fan-out one line up: the subscription lookup only won the race by microtask ordering and the 404/410 endpoint reap lost it outright, so expired endpoints were never reaped and real delivery failures were swallowed with them",
+  ],
+  [
+    "src/modules/webhooks/webhooks-dispatch.service.ts",
+    "detached outbound webhook dispatch: run() asks for runInNewTenantTransaction and that helper reuses any ambient it finds, so without exiting first the delivery insert was issued against the returned request's closed transaction and every dispatch silently wrote no delivery row",
+  ],
 ]);
 
 export const WITH_IDENTITY_ALLOWLIST = new Map([
@@ -115,6 +142,20 @@ export const WITH_IDENTITY_ALLOWLIST = new Map([
   [
     "src/modules/organization/core/org-profile.service.ts",
     "lists all orgs a user belongs to, which is a cross-org identity read that cannot run under a single org's tenant context",
+  ],
+  // Both below touch `account_organization_index`, the same cross-org discovery
+  // projection as the entry above. Its RLS policy admits rows by `app.user_id`,
+  // NOT by `app.current_org_id`, so a tenant transaction is not a stricter
+  // choice here — it is the wrong one: the policy would admit nothing and the
+  // read would come back empty rather than refused. `withIdentity` is the only
+  // helper that sets the GUC this table's policy actually reads.
+  [
+    "src/modules/auth/auth.service.ts",
+    "registration projects the new membership into account_organization_index before any org is current, and resolvePreferredOrg reads it to decide WHICH org to enter — both necessarily precede a tenant context, and the table is keyed and policed by user, not org",
+  ],
+  [
+    "src/modules/organization/core/invitation-acceptance.service.ts",
+    "an accepted invitation upserts the acceptor's row into the same user-policed discovery projection; the row may not exist yet, which is why this is an upsert rather than the service's touchLastActivated update",
   ],
 ]);
 
