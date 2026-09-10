@@ -41,6 +41,24 @@ describe("validateEnv", () => {
     );
   });
 
+  it("rejects non-PostgreSQL and incomplete database URLs", () => {
+    expect(() => validateEnv({ ...base, DATABASE_URL: "mysql://u:p@localhost/db" })).toThrow(
+      /postgres:\/\/ or postgresql:\/\//,
+    );
+    expect(() => validateEnv({ ...base, DATABASE_URL: "postgresql://u:p@localhost" })).toThrow(
+      /database name/,
+    );
+  });
+
+  it("requires encrypted URLs for AWS RDS and Aurora endpoints", () => {
+    expect(() =>
+      validateEnv({
+        ...base,
+        DATABASE_URL: "postgresql://admin:pw@streamlineos.cluster-abc.ap-south-1.rds.amazonaws.com:5432/streamlineos",
+      }),
+    ).toThrow(/sslmode=require/);
+  });
+
   it.each(["CRON_SECRET", "INTERNAL_API_SECRET"] as const)(
     "requires %s in production",
     (secretName) => {
@@ -83,7 +101,48 @@ describe("validateEnv", () => {
         CONTACT_NOTIFICATION_EMAIL: "contact@example.com",
         APP_DATABASE_URL: base.DATABASE_URL,
       }),
-    ).toThrow(/must not equal DATABASE_URL/);
+    ).toThrow(/different database user/);
+  });
+
+  it("rejects an application URL aimed at a different database", () => {
+    expect(() =>
+      validateEnv({
+        ...base,
+        APP_DATABASE_URL: "postgres://streamline_app:p@localhost:5432/other",
+      }),
+    ).toThrow(/same database and port/);
+  });
+
+  it("requires the application URL username to match APP_DB_ROLE", () => {
+    expect(() =>
+      validateEnv({
+        ...base,
+        APP_DB_ROLE: "runtime_app",
+        APP_DATABASE_URL: "postgres://streamline_app:p@localhost:5432/db",
+      }),
+    ).toThrow(/must match APP_DB_ROLE/);
+  });
+
+  it("accepts the matching Aurora reader endpoint and restricted application role", () => {
+    const writer = "streamlineos.cluster-abc.ap-south-1.rds.amazonaws.com";
+    const reader = "streamlineos.cluster-ro-abc.ap-south-1.rds.amazonaws.com";
+    const cfg = validateEnv({
+      ...base,
+      DATABASE_URL: `postgresql://admin:pw@${writer}/db?sslmode=require`,
+      APP_DATABASE_URL: `postgresql://streamline_app:pw@${writer}/db?sslmode=require`,
+      DB_REPLICA_URL: `postgresql://streamline_app:pw@${reader}/db?sslmode=require`,
+    });
+    expect(cfg.DB_REPLICA_URL).toContain("cluster-ro");
+  });
+
+  it("rejects a replica URL using owner credentials", () => {
+    expect(() =>
+      validateEnv({
+        ...base,
+        APP_DATABASE_URL: "postgres://streamline_app:p@localhost:5432/db",
+        DB_REPLICA_URL: "postgres://u:p@localhost:5432/db",
+      }),
+    ).toThrow(/same restricted application role/);
   });
 
   it("accepts a distinct APP_DATABASE_URL in production", () => {
@@ -97,6 +156,36 @@ describe("validateEnv", () => {
         APP_DATABASE_URL: "postgres://streamline_app:p@localhost:5432/db",
       }).APP_DATABASE_URL,
     ).toBe("postgres://streamline_app:p@localhost:5432/db");
+  });
+
+  it("accepts a password-authenticated TLS Aurora owner and application pair", () => {
+    const host = "streamlineos.cluster-abc.ap-south-1.rds.amazonaws.com";
+    const config = validateEnv({
+      ...base,
+      NODE_ENV: "production",
+      CRON_SECRET: "c".repeat(32),
+      INTERNAL_API_SECRET: "i".repeat(32),
+      CONTACT_NOTIFICATION_EMAIL: "contact@example.com",
+      DATABASE_URL: `postgresql://streamline_admin:owner-password@${host}:5432/streamlineos?sslmode=require`,
+      DIRECT_DATABASE_URL: `postgresql://streamline_admin:owner-password@${host}:5432/streamlineos?sslmode=require`,
+      APP_DATABASE_URL: `postgresql://streamline_app:application-password@${host}:5432/streamlineos?sslmode=require`,
+    });
+    expect(config.APP_DATABASE_URL).toContain("streamline_app");
+  });
+
+  it("rejects passwordless AWS URLs because the runtime does not mint IAM tokens", () => {
+    const host = "streamlineos.cluster-abc.ap-south-1.rds.amazonaws.com";
+    expect(() =>
+      validateEnv({
+        ...base,
+        NODE_ENV: "production",
+        CRON_SECRET: "c".repeat(32),
+        INTERNAL_API_SECRET: "i".repeat(32),
+        CONTACT_NOTIFICATION_EMAIL: "contact@example.com",
+        DATABASE_URL: `postgresql://streamline_admin@${host}:5432/streamlineos?sslmode=require`,
+        APP_DATABASE_URL: `postgresql://streamline_app@${host}:5432/streamlineos?sslmode=require`,
+      }),
+    ).toThrow(/IAM-only authentication is not supported/);
   });
 
   it("rejects entitlement degradation mode in production", () => {

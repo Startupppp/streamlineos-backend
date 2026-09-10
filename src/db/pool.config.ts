@@ -7,6 +7,8 @@ export type PoolOptions = NonNullable<Parameters<typeof postgres>[1]>;
 
 const NEON_HOST = /\.neon\.tech/i;
 const POOLED_HOST = /-pooler\./i;
+const AWS_RDS_HOST = /\.rds\.amazonaws\.com$/i;
+const AURORA_HOST = /\.(?:cluster|cluster-ro)-[a-z0-9-]+\.[a-z0-9-]+\.rds\.amazonaws\.com$/i;
 
 const DEFAULT_APPLICATION_NAME = "streamlineos-api";
 const PINNED_TIME_ZONE = "UTC";
@@ -31,6 +33,30 @@ const optionalBool = () =>
     z.boolean().optional(),
   );
 
+const optionalConnectionUrl = z.preprocess(
+  emptyToUndefined,
+  z
+    .string()
+    .trim()
+    .superRefine((value, context) => {
+      try {
+        const parsed = new URL(value);
+        if (!["postgres:", "postgresql:"].includes(parsed.protocol))
+          context.addIssue({ code: "custom", message: "must use postgres:// or postgresql://" });
+        if (!parsed.username || !parsed.hostname || !parsed.pathname || parsed.pathname === "/")
+          context.addIssue({ code: "custom", message: "must include a user, host and database name" });
+        if (AWS_RDS_HOST.test(parsed.hostname)) {
+          const sslMode = parsed.searchParams.get("sslmode")?.toLowerCase();
+          if (!sslMode || !["require", "verify-ca", "verify-full"].includes(sslMode))
+            context.addIssue({ code: "custom", message: "AWS RDS/Aurora URLs must enable sslmode" });
+        }
+      } catch {
+        context.addIssue({ code: "custom", message: "must be a valid PostgreSQL URL" });
+      }
+    })
+    .optional(),
+);
+
 export const poolEnvShape = {
   DB_POOL_MAX: optionalInt(1),
   DB_POOL_IDLE_TIMEOUT: optionalInt(1),
@@ -48,7 +74,7 @@ export const poolEnvShape = {
     emptyToUndefined,
     z.string().trim().min(1).max(63).optional(),
   ),
-  DB_REPLICA_URL: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
+  DB_REPLICA_URL: optionalConnectionUrl,
 } as const;
 
 const poolEnvSchema = z.object(poolEnvShape);
@@ -70,6 +96,8 @@ export interface ResolvedPoolConfig {
   role: "application" | "owner";
   host: string;
   isNeon: boolean;
+  isAwsRds: boolean;
+  isAurora: boolean;
   isPooled: boolean;
   max: number;
   slowAcquireMs: number;
@@ -103,7 +131,8 @@ export function normalizeDatabaseUrl(url: string): string {
 }
 
 export function requiresTls(url: string): boolean {
-  return NEON_HOST.test(url);
+  const host = hostOf(url);
+  return NEON_HOST.test(host || url) || AWS_RDS_HOST.test(host);
 }
 
 function hostOf(url: string): string {
@@ -173,17 +202,22 @@ export function resolvePoolConfig(
   const host = hostOf(connectionString);
   const probe = host || connectionString;
   const isNeon = NEON_HOST.test(probe);
+  const isAwsRds = AWS_RDS_HOST.test(host);
+  const isAurora = AURORA_HOST.test(host);
   const isPooled = POOLED_HOST.test(probe);
   const isProduction = env.NODE_ENV === "production";
   const isDevelopment = env.NODE_ENV === "development";
 
   const max =
-    tuning.DB_POOL_MAX ?? (isDevelopment ? 5 : isPooled || !isNeon ? 20 : 10);
+    tuning.DB_POOL_MAX ?? (isDevelopment ? 5 : isPooled ? 20 : isNeon || isAwsRds ? 10 : 20);
   const idleTimeout =
-    tuning.DB_POOL_IDLE_TIMEOUT ?? (isNeon ? 15 : isDevelopment ? 20 : 60);
-  const connectTimeout = tuning.DB_POOL_CONNECT_TIMEOUT ?? (isNeon ? 30 : 15);
+    tuning.DB_POOL_IDLE_TIMEOUT ?? (isNeon || isAwsRds ? 15 : isDevelopment ? 20 : 60);
+  // Aurora Serverless can take longer to accept a connection while resuming from
+  // zero ACUs. Keep the connect budget generous and release idle clients quickly
+  // enough that this process doesn't prevent an otherwise-idle cluster pausing.
+  const connectTimeout = tuning.DB_POOL_CONNECT_TIMEOUT ?? (isNeon || isAwsRds ? 30 : 15);
   const maxLifetime =
-    tuning.DB_POOL_MAX_LIFETIME ?? (isNeon ? 60 * 4 : 60 * 30);
+    tuning.DB_POOL_MAX_LIFETIME ?? (isNeon ? 60 * 4 : isAwsRds ? 60 * 15 : 60 * 30);
   const guards = resolveTransactionGuards(env);
 
   const connection: NonNullable<PoolOptions["connection"]> = {
@@ -198,7 +232,7 @@ export function resolvePoolConfig(
     connect_timeout: connectTimeout,
     max_lifetime: maxLifetime,
     connection,
-    ...(isNeon ? { ssl: "require" as const } : {}),
+    ...(requiresTls(connectionString) ? { ssl: "require" as const } : {}),
   };
 
   const replicaRaw = tuning.DB_REPLICA_URL;
@@ -208,6 +242,8 @@ export function resolvePoolConfig(
     host,
     guards,
     isNeon,
+    isAwsRds,
+    isAurora,
     options,
     isPooled,
     connectionString,
@@ -215,6 +251,8 @@ export function resolvePoolConfig(
     warnings: collectWarnings({
       max,
       isNeon,
+      isAwsRds,
+      isAurora,
       isPooled,
       isProduction,
       guards,
@@ -235,6 +273,8 @@ export function resolvePoolConfig(
 function collectWarnings(input: {
   isProduction: boolean;
   isNeon: boolean;
+  isAwsRds: boolean;
+  isAurora: boolean;
   isPooled: boolean;
   max: number;
   guards: TransactionGuards;
@@ -249,6 +289,16 @@ function collectWarnings(input: {
   if (input.isNeon && !input.isPooled && input.max > DIRECT_ENDPOINT_SAFE_MAX)
     warnings.push(
       `DB_POOL_MAX=${input.max} on a direct Neon endpoint: max_connections there is small and shared with migrations and scripts, so every extra instance multiplies the risk of exhaustion. Use the -pooler host or lower DB_POOL_MAX to ${DIRECT_ENDPOINT_SAFE_MAX}.`,
+    );
+
+  if (input.isAwsRds && input.max > 20)
+    warnings.push(
+      `DB_POOL_MAX=${input.max} on an AWS RDS endpoint. Every backend replica owns its own pool, so total possible connections are DB_POOL_MAX multiplied by the replica count. Keep it at 10 initially and raise it only from measured saturation data.`,
+    );
+
+  if (input.isAurora && input.isProduction && input.max > 10)
+    warnings.push(
+      "Aurora Serverless is configured above the conservative 10-connection application default; verify the cluster's minimum ACUs and total backend replica count before deploying.",
     );
 
   if (statementTimeoutMs === 0 && input.isProduction)

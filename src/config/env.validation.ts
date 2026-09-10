@@ -14,6 +14,62 @@ const optionalUrl = z.preprocess(
   z.string().trim().url().optional(),
 );
 
+const AWS_RDS_HOST = /\.rds\.amazonaws\.com$/i;
+const DATABASE_PROTOCOLS = new Set(["postgres:", "postgresql:"]);
+
+function parseDatabaseUrl(value: string): URL | null {
+  try {
+    return new URL(value);
+  } catch {
+    return null;
+  }
+}
+
+const databaseUrl = (name: string) =>
+  z.string().trim().superRefine((value, context) => {
+    const parsed = parseDatabaseUrl(value);
+    if (!parsed) {
+      context.addIssue({ code: "custom", message: `${name} must be a valid PostgreSQL URL` });
+      return;
+    }
+    if (!DATABASE_PROTOCOLS.has(parsed.protocol))
+      context.addIssue({ code: "custom", message: `${name} must use postgres:// or postgresql://` });
+    if (!parsed.username)
+      context.addIssue({ code: "custom", message: `${name} must include a database username` });
+    if (!parsed.hostname)
+      context.addIssue({ code: "custom", message: `${name} must include a database hostname` });
+    if (!parsed.pathname || parsed.pathname === "/")
+      context.addIssue({ code: "custom", message: `${name} must include a database name` });
+
+    if (AWS_RDS_HOST.test(parsed.hostname)) {
+      const sslMode = parsed.searchParams.get("sslmode")?.toLowerCase();
+      if (!sslMode || !["require", "verify-ca", "verify-full"].includes(sslMode))
+        context.addIssue({
+          code: "custom",
+          message: `${name} points at AWS RDS/Aurora and must set sslmode=require (or verify-ca/verify-full)`,
+        });
+    }
+  });
+
+const optionalDatabaseUrl = (name: string) =>
+  z.preprocess(emptyToUndefined, databaseUrl(name).optional());
+
+function endpointIdentity(url: URL): string {
+  const host = url.hostname
+    .replace(/-pooler(?=\.)/i, "")
+    .replace(/\.cluster-ro-(?=[a-z0-9-]+\.)/i, ".cluster-")
+    .toLowerCase();
+  return `${host}:${url.port || "5432"}${url.pathname}`;
+}
+
+function decodedUsername(url: URL): string {
+  try {
+    return decodeURIComponent(url.username);
+  } catch {
+    return url.username;
+  }
+}
+
 const baseSchema = z
   .object({
     NODE_ENV: z
@@ -21,11 +77,21 @@ const baseSchema = z
       .default("development"),
     RBAC_MIGRATION_MODE: z.enum(["off", "degrade"]).default("off"),
     PORT: z.coerce.number().int().positive().default(1500),
-    DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
+    DATABASE_URL: databaseUrl("DATABASE_URL"),
     /** The RLS-enforced application role. Falling back to DATABASE_URL bypasses every tenant policy. */
-    APP_DATABASE_URL: z.preprocess(emptyToUndefined, z.string().optional()),
+    APP_DATABASE_URL: optionalDatabaseUrl("APP_DATABASE_URL"),
     /** Session-mode connection for migrations and db:verify-rls; only Neon can be derived automatically. */
-    DIRECT_DATABASE_URL: z.preprocess(emptyToUndefined, z.string().optional()),
+    DIRECT_DATABASE_URL: optionalDatabaseUrl("DIRECT_DATABASE_URL"),
+    /** Setup-only inputs consumed by db:bootstrap-role; runtime traffic uses APP_DATABASE_URL. */
+    APP_DB_ROLE: z.preprocess(
+      emptyToUndefined,
+      z.string().regex(/^[a-z_][a-z0-9_]{0,62}$/i, "APP_DB_ROLE must be a PostgreSQL identifier").optional(),
+    ),
+    APP_DB_PASSWORD: z.preprocess(
+      emptyToUndefined,
+      z.string().min(16, "APP_DB_PASSWORD must be at least 16 characters").optional(),
+    ),
+    APP_DB_SCHEMA: z.preprocess(emptyToUndefined, z.string().trim().optional()),
     /** The region new organisations are placed in; the primary inherits the flat DATABASE_URL and R2_* vars. */
     PRIMARY_REGION: z.preprocess(
       emptyToUndefined,
@@ -238,6 +304,63 @@ export const CONFIG_VARIABLE_NAMES: string[] = Object.keys(baseSchema.shape);
 
 const schema = baseSchema
   .superRefine((config, context) => {
+    const owner = parseDatabaseUrl(config.DATABASE_URL);
+    const app = config.APP_DATABASE_URL ? parseDatabaseUrl(config.APP_DATABASE_URL) : null;
+    const direct = config.DIRECT_DATABASE_URL ? parseDatabaseUrl(config.DIRECT_DATABASE_URL) : null;
+
+    if (owner && app) {
+      if (owner.username === app.username) {
+        context.addIssue({
+          code: "custom",
+          path: ["APP_DATABASE_URL"],
+          message: "APP_DATABASE_URL must use a different database user from DATABASE_URL so RLS cannot be bypassed",
+        });
+      }
+      if (endpointIdentity(owner) !== endpointIdentity(app)) {
+        context.addIssue({
+          code: "custom",
+          path: ["APP_DATABASE_URL"],
+          message: "APP_DATABASE_URL must target the same database and port as DATABASE_URL",
+        });
+      }
+      const expectedRole = config.APP_DB_ROLE ?? "streamline_app";
+      if (decodedUsername(app) !== expectedRole) {
+        context.addIssue({
+          code: "custom",
+          path: ["APP_DATABASE_URL"],
+          message: `APP_DATABASE_URL username must match APP_DB_ROLE (${expectedRole})`,
+        });
+      }
+    }
+
+    const replica = config.DB_REPLICA_URL ? parseDatabaseUrl(config.DB_REPLICA_URL) : null;
+    if (app && replica) {
+      if (endpointIdentity(app) !== endpointIdentity(replica)) {
+        context.addIssue({
+          code: "custom",
+          path: ["DB_REPLICA_URL"],
+          message: "DB_REPLICA_URL must be a reader endpoint for the same database as APP_DATABASE_URL",
+        });
+      }
+      if (app.username !== replica.username) {
+        context.addIssue({
+          code: "custom",
+          path: ["DB_REPLICA_URL"],
+          message: "DB_REPLICA_URL must use the same restricted application role as APP_DATABASE_URL",
+        });
+      }
+    }
+
+    if (owner && direct) {
+      if (endpointIdentity(owner) !== endpointIdentity(direct) || owner.username !== direct.username) {
+        context.addIssue({
+          code: "custom",
+          path: ["DIRECT_DATABASE_URL"],
+          message: "DIRECT_DATABASE_URL must target the same database as DATABASE_URL using the owner user",
+        });
+      }
+    }
+
     if (config.NODE_ENV !== "production") return;
     if (config.RBAC_MIGRATION_MODE === "degrade") {
       context.addIssue({
@@ -269,14 +392,19 @@ const schema = baseSchema
       });
     }
 
-    if (config.APP_DATABASE_URL === config.DATABASE_URL) {
+    if (owner && AWS_RDS_HOST.test(owner.hostname) && !owner.password)
+      context.addIssue({
+        code: "custom",
+        path: ["DATABASE_URL"],
+        message: "DATABASE_URL must include the RDS password; IAM-only authentication is not supported by this runtime",
+      });
+
+    if (app && AWS_RDS_HOST.test(app.hostname) && !app.password)
       context.addIssue({
         code: "custom",
         path: ["APP_DATABASE_URL"],
-        message:
-          "APP_DATABASE_URL must not equal DATABASE_URL — they are the application role and the owner role, and pointing both at the owner defeats RLS.",
+        message: "APP_DATABASE_URL must include the application-role password; IAM-only authentication is not supported by this runtime",
       });
-    }
   });
 
 export type AppConfig = z.infer<typeof schema> & { corsOrigins: string[] };
