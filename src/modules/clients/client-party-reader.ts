@@ -1,6 +1,6 @@
 import { eq, sql, type SQL } from "drizzle-orm";
 import { businessParties, clientPartyMap } from "../../db/schema/party";
-import type { DataScope } from "../access/access.types";
+import type { DataScope, ScopePredicate } from "../access/access.types";
 import { applyScope } from "../access/apply-scope";
 
 /**
@@ -119,7 +119,7 @@ export function clientPartyScope(orgId: string): SQL[] {
  * `owner_user_id` is `clients.account_manager_id` under the merged model's name,
  * so "own" still means "the account I manage" and no scope changed meaning here.
  */
-export function clientPartyViewScope(orgId: string, userId: string, scope: DataScope): SQL {
+export function clientPartyViewScope(orgId: string, userId: string, scope: DataScope): ScopePredicate {
   return applyScope(scope, orgId, userId, { ownerColumn: businessParties.ownerUserId });
 }
 

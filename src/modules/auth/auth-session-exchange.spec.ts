@@ -4,7 +4,9 @@ import { SignJWT, exportJWK } from "jose";
 import { generateKeyPairSync } from "node:crypto";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
-import { AuthPasswordlessService } from "./auth-passwordless.service";
+import { AuthEmailVerificationService } from "./auth-email-verification.service";
+import { AuthMagicLinkService } from "./auth-magic-link.service";
+import { AuthEmailOtpService } from "./auth-email-otp.service";
 import { AuthAnalyticsService } from "./auth-analytics.service";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { JwtKeyringService } from "../../common/auth/jwt-keyring.service";
@@ -71,7 +73,9 @@ describe("AuthController — session-exchange endpoint", () => {
       controllers: [AuthController],
       providers: [
         { provide: AuthService, useValue: {} },
-        { provide: AuthPasswordlessService, useValue: {} },
+        { provide: AuthEmailVerificationService, useValue: {} },
+        { provide: AuthMagicLinkService, useValue: {} },
+        { provide: AuthEmailOtpService, useValue: {} },
         { provide: AuthAnalyticsService, useValue: {} },
         { provide: RateLimitService, useValue: { check: jest.fn().mockResolvedValue({ allowed: true }) } },
         { provide: JwtKeyringService, useValue: keyring },

@@ -37,9 +37,11 @@ import { AuthMembershipResolverService } from "./auth-membership-resolver.servic
 import { AuthAnalyticsService } from "./auth-analytics.service";
 import { addDays } from "date-fns";
 import type { RegisterInput, GoogleOAuthInput } from "./dto/auth.schemas";
+import type { AuthSessionData } from "./dto/auth-response.schemas";
 import {
   getTrialDays,
   TRIAL_PLAN,
+  type EffectivePlan,
 } from "../billing/core/plan-entitlements.constants";
 import { placeOrganization } from "../../common/region/placement-lookup";
 import { LEGACY_CELL_ID } from "../../common/region/placement";
@@ -337,25 +339,7 @@ export class AuthService {
     return { orgId: row.orgId, cellId: row.cellId };
   }
 
-  async getSessionData(userId: string): Promise<{
-    userId: string;
-    email: string;
-    firstName: string | null;
-    lastName: string | null;
-    name: string | null;
-    image: string | null;
-    role: string | null;
-    isActive: boolean;
-    orgId: string | null;
-    cellId: string | null;
-    isOrgOwner: boolean;
-    enabledModules: string[];
-    orgOnboardingCompletedAt: string | null;
-    userOnboardingCompletedAt: string | null;
-    plan: string | null;
-    organizationAccess: "active" | "suspended" | "none";
-    suspendedOrganizationName: string | null;
-  }> {
+  async getSessionData(userId: string): Promise<AuthSessionData> {
     return this.cache.cached(
       CACHE_KEYS.userSession(userId),
       async () => {
@@ -402,7 +386,7 @@ export class AuthService {
 
         let enabledModules: string[] = [];
         let orgOnboardingCompletedAt: string | null = null;
-        let plan: string | null = null;
+        let plan: EffectivePlan | null = null;
 
         const resolvedOrgId = membership?.orgId ?? null;
         const isOrgOwner = membership?.isOwner ?? false;

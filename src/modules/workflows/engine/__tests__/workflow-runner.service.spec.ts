@@ -18,6 +18,11 @@ import { WorkflowRunnerService, MAX_STEPS_PER_EXECUTION } from "../workflow-runn
 import { executeNode } from "../workflow-node-executors";
 import type { NodeDispatchPort } from "../node-outcome";
 import type { Db } from "../../../../db/drizzle.module";
+import { MembershipStateService } from "../../../../common/auth/membership-state.service";
+
+function liveMembership(): MembershipStateService {
+  return { resolve: jest.fn().mockResolvedValue({ active: true, isOwner: false, role: "MEMBER", membershipId: 1 }) } as unknown as MembershipStateService;
+}
 
 interface StepRow {
   nodeId: string;
@@ -103,7 +108,7 @@ function setup(definition: unknown, opts?: { claimed?: boolean; context?: unknow
   const dispatcher: NodeDispatchPort = {
     execute: (node, input, now) => Promise.resolve(executeNode(node, input, now)),
   };
-  const service = new WorkflowRunnerService({} as Db, dispatcher, {} as never);
+  const service = new WorkflowRunnerService({} as Db, dispatcher, {} as never, liveMembership());
   return { service, rec };
 }
 

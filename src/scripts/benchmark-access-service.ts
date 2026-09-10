@@ -151,7 +151,7 @@ async function run() {
 
   const memberKey = membershipCacheKey(orgId, userId, version);
   (svc as Record<string, unknown>).membershipAccessCache = new Map([
-    [memberKey, { exists: true, active: true, isOwnerOrAdmin: false, expiresAt }],
+    [memberKey, { active: true, isOwnerOrAdmin: false, expiresAt }],
   ]);
 
   (svc as Record<string, unknown>).deniedModulesCache = new Map([

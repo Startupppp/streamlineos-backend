@@ -35,7 +35,14 @@ export type AcceptOutcome =
 export class InboundIngressService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async accept(event: InboundCommunicationEvent): Promise<AcceptOutcome> {
+  // `callerOrgId` comes from the token; the body's organizationId selects nothing.
+  async accept(
+    event: InboundCommunicationEvent,
+    callerOrgId: string | null,
+  ): Promise<AcceptOutcome> {
+    if (!callerOrgId || event.organizationId !== callerOrgId)
+      throw new NotFoundException("Unknown organisation");
+
     const problems = validateInboundEvent(event);
     if (problems.length > 0)
       throw new BadRequestException({

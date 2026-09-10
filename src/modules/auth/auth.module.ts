@@ -1,7 +1,9 @@
 import { Module } from "@nestjs/common";
 import { AuthService } from "./auth.service";
 import { AuthController } from "./auth.controller";
-import { AuthPasswordlessService } from "./auth-passwordless.service";
+import { AuthEmailVerificationService } from "./auth-email-verification.service";
+import { AuthMagicLinkService } from "./auth-magic-link.service";
+import { AuthEmailOtpService } from "./auth-email-otp.service";
 import { AuthMembershipResolverService } from "./auth-membership-resolver.service";
 import { AuthAnalyticsService } from "./auth-analytics.service";
 import { RateLimitModule } from "../../common/ratelimit/rate-limit.module";
@@ -14,7 +16,9 @@ import { NotificationsModule } from "../notifications/notifications.module";
   exports: [AuthService],
   providers: [
     AuthService,
-    AuthPasswordlessService,
+    AuthEmailVerificationService,
+    AuthMagicLinkService,
+    AuthEmailOtpService,
     AuthMembershipResolverService,
     AuthAnalyticsService,
   ],

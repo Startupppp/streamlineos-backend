@@ -1,7 +1,7 @@
 import { eq, isNull, sql, type SQL } from "drizzle-orm";
 import { businessParties, contactPartyMap } from "../../db/schema/party";
 import { applyScope } from "../access/apply-scope";
-import type { DataScope } from "../access/access.types";
+import type { DataScope, ScopePredicate } from "../access/access.types";
 
 /**
  * Where this module's reads get their contacts.
@@ -113,6 +113,6 @@ export function contactPartyViewScope(
   orgId: string,
   userId: string,
   scope: DataScope,
-): SQL {
+): ScopePredicate {
   return applyScope(scope, orgId, userId, { ownerColumn: businessParties.ownerUserId });
 }

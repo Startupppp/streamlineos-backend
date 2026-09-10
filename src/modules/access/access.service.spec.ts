@@ -386,7 +386,6 @@ describe("AccessService.resolveUserPermissions — version bump invalidates loca
     await svc.resolveUserPermissions("org-bump", "user-bump");
     expect(db.query.accessVersions.findFirst).toHaveBeenCalledTimes(1);
     svc["membershipAccessCache"].set("org-bump:user-bump", {
-      exists: true,
       active: true,
       isOwnerOrAdmin: false,
       expiresAt: Date.now() + 30_000,

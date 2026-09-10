@@ -33,6 +33,7 @@ import {
 import { backoffMs } from "../../../common/workflow/retry-policy";
 import { OUTBOX_MAX_RETRIES } from "../../../common/outbox/outbox-envelope";
 import { AccessService } from "../../access/access.service";
+import { MembershipStateService } from "../../../common/auth/membership-state.service";
 
 export { MAX_STEPS_PER_EXECUTION };
 
@@ -106,6 +107,7 @@ export class WorkflowRunnerService {
     @Inject(DRIZZLE) private readonly db: Db,
     @Inject(NODE_DISPATCH_PORT) private readonly dispatcher: NodeDispatchPort,
     private readonly access: AccessService,
+    private readonly membershipState: MembershipStateService,
   ) {}
 
   async sweep(): Promise<WorkflowSweepResult> {
@@ -261,6 +263,18 @@ export class WorkflowRunnerService {
 
     if (execution.triggeredBy) {
       try {
+        // A cron sweep passes no guard, so the trigger's liveness is re-checked here.
+        const member = await this.membershipState.resolve(execution.triggeredBy, orgId);
+        if (!member.active) {
+          this.logger.warn(
+            `workflow execution ${executionId} triggered by ${execution.triggeredBy}, ` +
+            `whose access is no longer live — failing rather than running as them`,
+          );
+          await runInNewTenantTransaction(this.db, orgId, (tx) =>
+            finishExecution(tx, orgId, execution.id, "failed"),
+          );
+          return "failed";
+        }
         resolvedPermissions = await this.access.resolveUserPermissions(orgId, execution.triggeredBy);
       } catch (error) {
         const isTransient = isTransientInfraError(error);

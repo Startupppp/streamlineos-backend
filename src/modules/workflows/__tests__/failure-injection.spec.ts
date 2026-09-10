@@ -64,6 +64,10 @@ import { NotFoundException, ForbiddenException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import type { NodeDispatchPort } from "../engine/node-outcome";
 import type { AccessService } from "../../access/access.service";
+import { MembershipStateService } from "../../../common/auth/membership-state.service";
+function liveMembership(): MembershipStateService {
+  return { resolve: jest.fn().mockResolvedValue({ active: true, isOwner: false, role: "MEMBER", membershipId: 1 }) } as unknown as MembershipStateService;
+}
 
 const ORG = "org-failure-injection";
 
@@ -328,7 +332,7 @@ describe("S06 — Redis loss: isTransientInfraError classifies errors, WorkflowR
       const transientError = Object.assign(Object.create(null) as object, { code: "ECONNRESET", message: "connection reset" });
       const access = { resolveUserPermissions: jest.fn().mockRejectedValue(transientError) } as unknown as AccessService;
       const dispatcher = { execute: jest.fn() } as unknown as NodeDispatchPort;
-      const svc = new WorkflowRunnerService(db, dispatcher, access);
+      const svc = new WorkflowRunnerService(db, dispatcher, access, liveMembership());
 
       type Private = { runOne(orgId: string, id: string): Promise<string | null> };
       const result = await (svc as unknown as Private).runOne(ORG, "exec-s06-transient");
@@ -347,7 +351,7 @@ describe("S06 — Redis loss: isTransientInfraError classifies errors, WorkflowR
       const ioredisError = Object.assign(Object.create(null) as object, { name: "MaxRetriesPerRequestError" });
       const access = { resolveUserPermissions: jest.fn().mockRejectedValue(ioredisError) } as unknown as AccessService;
       const dispatcher = { execute: jest.fn() } as unknown as NodeDispatchPort;
-      const svc = new WorkflowRunnerService(db, dispatcher, access);
+      const svc = new WorkflowRunnerService(db, dispatcher, access, liveMembership());
 
       type Private = { runOne(orgId: string, id: string): Promise<string | null> };
       const result = await (svc as unknown as Private).runOne(ORG, "exec-s06-transient");
@@ -360,7 +364,7 @@ describe("S06 — Redis loss: isTransientInfraError classifies errors, WorkflowR
       const domainError = new Error("FORBIDDEN — user is not a member of this org");
       const access = { resolveUserPermissions: jest.fn().mockRejectedValue(domainError) } as unknown as AccessService;
       const dispatcher = { execute: jest.fn() } as unknown as NodeDispatchPort;
-      const svc = new WorkflowRunnerService(db, dispatcher, access);
+      const svc = new WorkflowRunnerService(db, dispatcher, access, liveMembership());
 
       type Private = { runOne(orgId: string, id: string): Promise<string | null> };
       const result = await (svc as unknown as Private).runOne(ORG, "exec-s06-transient");
@@ -385,7 +389,7 @@ describe("S06 — Redis loss: isTransientInfraError classifies errors, WorkflowR
       const transientError = Object.assign(Object.create(null) as object, { code: "ETIMEDOUT" });
       const access = { resolveUserPermissions: jest.fn().mockRejectedValue(transientError) } as unknown as AccessService;
       const dispatcher = { execute: jest.fn() } as unknown as NodeDispatchPort;
-      const svc = new WorkflowRunnerService(db, dispatcher, access);
+      const svc = new WorkflowRunnerService(db, dispatcher, access, liveMembership());
 
       type Private = { runOne(orgId: string, id: string): Promise<string | null> };
       const result = await (svc as unknown as Private).runOne(ORG, "exec-s06-transient");

@@ -326,8 +326,8 @@ describe("COVERAGE — the whole mutating surface, checked against its own schem
     result: synthesizeRequest(op.verb, op.path.replace(/\{([A-Za-z0-9_]+)\}/g, ":$1")),
   }));
 
-  it("ANTI-VACUITY: the contract really does carry the 1,396 mutating bodies the gate counts", () => {
-    expect(mutating.length).toBe(1396);
+  it("ANTI-VACUITY: the contract really does carry the 1,393 mutating bodies the gate counts", () => {
+    expect(mutating.length).toBe(1393);
   });
 
   it("derives a body for every operation that declares a JSON one", () => {

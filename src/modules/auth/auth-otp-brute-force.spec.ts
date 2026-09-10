@@ -1,5 +1,5 @@
 import { UnauthorizedException } from "@nestjs/common";
-import { AuthPasswordlessService } from "./auth-passwordless.service";
+import { AuthEmailOtpService } from "./auth-email-otp.service";
 import { hashToken } from "../../common/security/token.util";
 import type { Db } from "../../db/drizzle.module";
 
@@ -53,17 +53,11 @@ function buildDb(bumpedAttempts: number | null, succeeds: boolean): Db {
   } as unknown as Db;
 }
 
-function makeService(db: Db): AuthPasswordlessService {
-  return new AuthPasswordlessService(
-    db,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-  );
+function makeService(db: Db): AuthEmailOtpService {
+  return new AuthEmailOtpService(db, {} as never);
 }
 
-describe("AuthPasswordlessService.verifyEmailOtp — brute-force lockout bite proofs", () => {
+describe("AuthEmailOtpService.verifyEmailOtp — brute-force lockout bite proofs", () => {
   it("BITE: 6th attempt triggers lockout → UnauthorizedException before timing-safe check", async () => {
     const db = buildDb(6, true);
     const svc = makeService(db);

@@ -82,6 +82,7 @@ function serviceWith(existing: HrExportJobRow) {
     { isConfigured: () => true } as never,
     audit as never,
     {} as never,
+    {} as never,
   );
   return { service, audit };
 }

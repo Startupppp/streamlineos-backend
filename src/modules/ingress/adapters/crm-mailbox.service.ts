@@ -286,7 +286,7 @@ export class CrmMailboxService {
         });
 
         if (result.ok) {
-          await this.ingress.accept(result.event);
+          await this.ingress.accept(result.event, organizationId);
           delivered += 1;
         } else {
           skipped += 1;

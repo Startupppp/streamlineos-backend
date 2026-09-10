@@ -62,6 +62,10 @@ import { OUTBOX_MAX_RETRIES } from "../../../common/outbox/outbox-envelope";
 import type { Db } from "../../../db/drizzle.module";
 import type { NodeDispatchPort } from "../engine/node-outcome";
 import type { AccessService } from "../../access/access.service";
+import { MembershipStateService } from "../../../common/auth/membership-state.service";
+function liveMembership(): MembershipStateService {
+  return { resolve: jest.fn().mockResolvedValue({ active: true, isOwner: false, role: "MEMBER", membershipId: 1 }) } as unknown as MembershipStateService;
+}
 
 const ORG = "org-rdh-test";
 
@@ -109,7 +113,7 @@ function makeService(db: Db, opts: { accessError?: unknown } = {}): WorkflowRunn
       : jest.fn().mockResolvedValue({}),
   } as unknown as AccessService;
   const dispatcher = { execute: jest.fn() } as unknown as NodeDispatchPort;
-  return new WorkflowRunnerService(db, dispatcher, access);
+  return new WorkflowRunnerService(db, dispatcher, access, liveMembership());
 }
 
 type PrivateRunner = { runOne(orgId: string, id: string): Promise<string | null> };
@@ -311,6 +315,7 @@ describe("C — step history is bounded by the sweep pruning pass", () => {
       db,
       { execute: jest.fn() } as unknown as NodeDispatchPort,
       { resolveUserPermissions: jest.fn() } as unknown as AccessService,
+      liveMembership(),
     );
 
     const result = await svc.sweep();
@@ -340,6 +345,7 @@ describe("C — step history is bounded by the sweep pruning pass", () => {
       db,
       { execute: jest.fn() } as unknown as NodeDispatchPort,
       { resolveUserPermissions: jest.fn() } as unknown as AccessService,
+      liveMembership(),
     );
 
     const result = await svc.sweep();
@@ -369,6 +375,7 @@ describe("C — step history is bounded by the sweep pruning pass", () => {
       db,
       { execute: jest.fn() } as unknown as NodeDispatchPort,
       { resolveUserPermissions: jest.fn() } as unknown as AccessService,
+      liveMembership(),
     );
 
     await svc.sweep();
@@ -450,7 +457,7 @@ describe("D — expired lease reclaim: expireStuck re-queues crashed workers", (
     const db = {} as unknown as Db;
     const dispatcher = { execute: jest.fn() } as unknown as NodeDispatchPort;
     const access = { resolveUserPermissions: jest.fn() } as unknown as AccessService;
-    return new WorkflowRunnerService(db, dispatcher, access);
+    return new WorkflowRunnerService(db, dispatcher, access, liveMembership());
   }
 
   beforeEach(() => {

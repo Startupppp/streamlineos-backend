@@ -30,7 +30,9 @@ import { AllowWithoutMfa } from "../../common/auth/allow-without-mfa.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { AuthService } from "./auth.service";
-import { AuthPasswordlessService } from "./auth-passwordless.service";
+import { AuthEmailVerificationService } from "./auth-email-verification.service";
+import { AuthMagicLinkService } from "./auth-magic-link.service";
+import { AuthEmailOtpService } from "./auth-email-otp.service";
 import { AuthAnalyticsService } from "./auth-analytics.service";
 import { internalSecretMatches } from "./internal-secret";
 import {
@@ -79,7 +81,9 @@ export class AuthController {
 
   constructor(
     private readonly authService: AuthService,
-    private readonly passwordless: AuthPasswordlessService,
+    private readonly verifyEmailSvc: AuthEmailVerificationService,
+    private readonly magicLink: AuthMagicLinkService,
+    private readonly emailOtp: AuthEmailOtpService,
     private readonly analytics: AuthAnalyticsService,
     private readonly rateLimit: RateLimitService,
     private readonly keyring: JwtKeyringService,
@@ -186,7 +190,7 @@ export class AuthController {
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("auth:verify-email", this.getIp(req));
-    return this.passwordless.verifyEmail(body);
+    return this.verifyEmailSvc.verifyEmail(body);
   }
 
   @Post("resend-verification")
@@ -199,7 +203,7 @@ export class AuthController {
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("auth:resend-verification", this.getIp(req));
-    return this.passwordless.resendVerification(body.email).then(() => ({ message: "If an account exists, a verification email has been sent" }));
+    return this.verifyEmailSvc.resendVerification(body.email).then(() => ({ message: "If an account exists, a verification email has been sent" }));
   }
 
   @Get("audit/analytics")
@@ -236,7 +240,7 @@ export class AuthController {
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("auth:magic-link", this.getIp(req));
-    await this.passwordless.requestMagicLink(body);
+    await this.magicLink.requestMagicLink(body);
     return { message: "We've emailed you a sign-in link. Check your inbox." };
   }
 
@@ -250,7 +254,7 @@ export class AuthController {
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("auth:magic-link-verify", this.getIp(req));
-    return this.passwordless.verifyMagicLink(body.token, this.resolveClientContext(req, "untrusted"));
+    return this.magicLink.verifyMagicLink(body.token, this.resolveClientContext(req, "untrusted"));
   }
 
   @Post("google")
@@ -279,7 +283,7 @@ export class AuthController {
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("auth:email-otp", this.getIp(req));
-    await this.passwordless.requestEmailOtp(body.email);
+    await this.emailOtp.requestEmailOtp(body.email);
     return { message: "We've emailed you a 6-digit sign-in code." };
   }
 
@@ -293,7 +297,7 @@ export class AuthController {
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("auth:email-otp-verify", this.getIp(req));
-    return this.passwordless.verifyEmailOtp(body.email, body.code);
+    return this.emailOtp.verifyEmailOtp(body.email, body.code);
   }
 
   @Post("session-exchange")

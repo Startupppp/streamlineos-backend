@@ -18,7 +18,9 @@ import { validateEnv } from "../../../src/config/env.validation";
 import { PermissionGuard } from "../../../src/modules/access/permission.guard";
 import { AuthController } from "../../../src/modules/auth/auth.controller";
 import { AuthService } from "../../../src/modules/auth/auth.service";
-import { AuthPasswordlessService } from "../../../src/modules/auth/auth-passwordless.service";
+import { AuthEmailVerificationService } from "../../../src/modules/auth/auth-email-verification.service";
+import { AuthMagicLinkService } from "../../../src/modules/auth/auth-magic-link.service";
+import { AuthEmailOtpService } from "../../../src/modules/auth/auth-email-otp.service";
 import { AuthAnalyticsService } from "../../../src/modules/auth/auth-analytics.service";
 import { internalSecretMatches } from "../../../src/modules/auth/internal-secret";
 import type { Db } from "../../../src/db/drizzle.module";
@@ -350,7 +352,9 @@ describe("CSRF — the API carries no ambient credential a cross-site request co
         controllers: [AuthController],
         providers: [
           { provide: AuthService, useValue: authService },
-          { provide: AuthPasswordlessService, useValue: {} },
+          { provide: AuthEmailVerificationService, useValue: {} },
+          { provide: AuthMagicLinkService, useValue: {} },
+          { provide: AuthEmailOtpService, useValue: {} },
           { provide: AuthAnalyticsService, useValue: {} },
           { provide: RateLimitService, useValue: rateLimit },
           { provide: JwtKeyringService, useValue: keyring },

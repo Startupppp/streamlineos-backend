@@ -1,4 +1,6 @@
 import { Body, Controller, HttpCode, Post, UseGuards } from "@nestjs/common";
+import { CurrentUser } from "../../common/auth/current-user.decorator";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -29,7 +31,7 @@ export class InboundIngressController {
   @HttpCode(202)
   @ResponseSchema(inboundIngressAcceptResponseSchema)
   @Validate({ body: inboundEventSchema })
-  accept(@Body() body: InboundEventBody) {
-    return this.ingress.accept(body);
+  accept(@Body() body: InboundEventBody, @CurrentUser() user: CurrentUserContext) {
+    return this.ingress.accept(body, user.orgId);
   }
 }

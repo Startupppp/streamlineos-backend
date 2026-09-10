@@ -1,0 +1,12 @@
+[
+  "GET /platform/operator-access/grants query orgId",
+  "GET /platform/operator-access/logs query orgId",
+  "POST /auth/session-exchange body orgId",
+  "POST /crm/ingress/inbound body organizationId",
+  "POST /cron/outbox-events-replay-dead query organizationId",
+  "POST /internal/audit body orgId",
+  "POST /organization/restore body orgId",
+  "POST /organization/switch body orgId",
+  "POST /platform/operator-access/grants body orgId",
+  "POST /public/referrals/register body orgId"
+]

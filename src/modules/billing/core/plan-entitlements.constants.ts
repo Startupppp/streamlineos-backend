@@ -13,7 +13,10 @@
  */
 
 export type PlanTier = "FREE" | "PAID" | "ENTERPRISE";
-export type EffectivePlan = "FREE" | "STARTER" | "PROFESSIONAL" | "ENTERPRISE";
+
+// A tuple, so a response schema is `z.enum` of it rather than `z.string()`. FREE is wire-only.
+export const EFFECTIVE_PLANS = ["FREE", "STARTER", "PROFESSIONAL", "ENTERPRISE"] as const;
+export type EffectivePlan = (typeof EFFECTIVE_PLANS)[number];
 export type PaidPlan = "STARTER" | "PROFESSIONAL" | "ENTERPRISE";
 
 export type LimitKey =

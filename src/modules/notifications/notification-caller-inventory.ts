@@ -29,7 +29,17 @@ const EXEMPT = (
 export const DIRECT_EMAIL_CALLER_INVENTORY: DirectEmailCallerInventoryEntry[] =
   [
     EXEMPT(
-      "modules/auth/auth-passwordless.service.ts",
+      "modules/auth/auth-email-verification.service.ts",
+      DeliveryClass.OPERATOR_ALERT,
+      "credential and account-recovery mail has no tenant-member notification recipient",
+    ),
+    EXEMPT(
+      "modules/auth/auth-magic-link.service.ts",
+      DeliveryClass.OPERATOR_ALERT,
+      "credential and account-recovery mail has no tenant-member notification recipient",
+    ),
+    EXEMPT(
+      "modules/auth/auth-email-otp.service.ts",
       DeliveryClass.OPERATOR_ALERT,
       "credential and account-recovery mail has no tenant-member notification recipient",
     ),

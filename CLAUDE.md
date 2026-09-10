@@ -75,7 +75,14 @@
 - **Input/output:** Zod-validate all input; parameterized ORM queries only; sanitize rendered HTML; secure cookies (`httpOnly`, `Secure`, `SameSite`).
 - **Passwords: Argon2id** (m≥19456 KiB, t=2, p=1); scrypt/bcrypt (≥10, 72-byte limit) as fallback, unique salt. Never fast hashes.
 - **Secrets:** no hard-coded secrets, validated env vars only. Validate uploads. Log sensitive actions without exposing data.
-- **Session revocation needs the Redis tombstone** (`revoked:session:<id>`) — `JwtAuthGuard` reads only that, so a DB `isRevoked` flag alone logs nobody out.
+- **Session revocation writes the Redis tombstone** (`revoked:session:<id>`), and every revocation entry
+  point must still write it — it is the hot path, and `session-revocation-enforced.spec.ts` enumerates the
+  writers. ⚠ **CORRECTED 2026-09-10:** the old wording here ("`JwtAuthGuard` reads only that, so a DB
+  `isRevoked` flag alone logs nobody out") is now FALSE, and a spec was asserting the stale behaviour as a
+  DEFECT SHAPE. Since `d6ad7c4bd` the tombstone is a **cache, not the sole authority**: only a *positive*
+  tombstone short-circuits, while an absent one is a cache MISS that falls through to `user_sessions.is_revoked`
+  (`jwt-auth.guard.ts:147-166`). Both authorities failing denies. So a DB flag alone does log the session out —
+  but do not rely on that to skip the tombstone, because then every request pays a DB read.
 
 ## 5. RBAC Engine — server-resolved
 

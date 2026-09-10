@@ -75,7 +75,7 @@ describe("InboundIngressService.accept", () => {
 
   it("accepts a new delivery and starts a durable run for it", async () => {
     const db = makeDb({ organisation: true, receiptConflict: null });
-    const outcome = await new InboundIngressService(db).accept(FIXTURE);
+    const outcome = await new InboundIngressService(db).accept(FIXTURE, "org-1");
 
     expect(outcome).toMatchObject({ status: "accepted", inboundEventId: "receipt-1" });
     expect(startRun).toHaveBeenCalledTimes(1);
@@ -87,7 +87,7 @@ describe("InboundIngressService.accept", () => {
    */
   it("keys the run on the receipt so a restart resumes rather than duplicates", async () => {
     const db = makeDb({ organisation: true, receiptConflict: null });
-    await new InboundIngressService(db).accept(FIXTURE);
+    await new InboundIngressService(db).accept(FIXTURE, "org-1");
 
     expect(startRun).toHaveBeenCalledWith(
       expect.anything(),
@@ -99,7 +99,7 @@ describe("InboundIngressService.accept", () => {
     const db = makeDb({ organisation: true, receiptConflict: null });
     const service = new InboundIngressService(db);
 
-    await expect(service.accept({ ...FIXTURE, participants: [] })).rejects.toBeInstanceOf(
+    await expect(service.accept({ ...FIXTURE, participants: [] }, "org-1")).rejects.toBeInstanceOf(
       BadRequestException,
     );
     expect(db.inserted).toBe(false);
@@ -111,7 +111,26 @@ describe("InboundIngressService.accept", () => {
     const db = makeDb({ organisation: false, receiptConflict: null });
     const service = new InboundIngressService(db);
 
-    await expect(service.accept(FIXTURE)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.accept(FIXTURE, "org-1")).rejects.toBeInstanceOf(NotFoundException);
+    expect(db.inserted).toBe(false);
+    expect(startRun).not.toHaveBeenCalled();
+  });
+
+  // The organisation EXISTS here — that is the point; existence was the only check.
+  it("refuses an event naming another tenant, even one that exists", async () => {
+    const db = makeDb({ organisation: true, receiptConflict: null });
+    const service = new InboundIngressService(db);
+
+    await expect(service.accept(FIXTURE, "org-2")).rejects.toBeInstanceOf(NotFoundException);
+    expect(db.inserted).toBe(false);
+    expect(startRun).not.toHaveBeenCalled();
+  });
+
+  it("refuses an event from a caller with no organisation at all", async () => {
+    const db = makeDb({ organisation: true, receiptConflict: null });
+    const service = new InboundIngressService(db);
+
+    await expect(service.accept(FIXTURE, null)).rejects.toBeInstanceOf(NotFoundException);
     expect(db.inserted).toBe(false);
     expect(startRun).not.toHaveBeenCalled();
   });
@@ -127,7 +146,7 @@ describe("InboundIngressService.accept", () => {
       receiptConflict: { inboundEventId: "receipt-1", status: "RECEIVED" },
     });
 
-    await expect(new InboundIngressService(db).accept(FIXTURE)).rejects.toBeInstanceOf(
+    await expect(new InboundIngressService(db).accept(FIXTURE, "org-1")).rejects.toBeInstanceOf(
       ConflictException,
     );
     expect(startRun).not.toHaveBeenCalled();
@@ -139,7 +158,7 @@ describe("InboundIngressService.accept", () => {
       receiptConflict: { inboundEventId: "receipt-1", status: "PROCESSED" },
     });
 
-    const outcome = await new InboundIngressService(db).accept(FIXTURE);
+    const outcome = await new InboundIngressService(db).accept(FIXTURE, "org-1");
 
     expect(outcome).toEqual({ status: "duplicate", inboundEventId: "receipt-1" });
     expect(startRun).not.toHaveBeenCalled();

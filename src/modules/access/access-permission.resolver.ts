@@ -47,7 +47,6 @@ export interface ResolvedPermissions {
 }
 
 export interface MembershipAccessState {
-  exists: boolean;
   active: boolean;
   isOwnerOrAdmin: boolean;
   expiresAt: number;
@@ -106,7 +105,6 @@ export class AccessPermissionResolver {
     });
     const gate = evaluateMembershipGate(member);
     this.membershipAccessCache.set(membershipCacheKey(orgId, userId, version), {
-      exists: Boolean(member),
       active: gate.active,
       isOwnerOrAdmin:
         gate.active &&
@@ -357,7 +355,7 @@ export class AccessPermissionResolver {
     orgId: string,
     userId: string,
     version: number,
-  ): Promise<{ exists: boolean; active: boolean; isOwnerOrAdmin: boolean }> {
+  ): Promise<{ active: boolean; isOwnerOrAdmin: boolean }> {
     const cacheKey = membershipCacheKey(orgId, userId, version);
     const cached = this.membershipAccessCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) return cached;
@@ -368,17 +366,15 @@ export class AccessPermissionResolver {
       ),
       columns: { isOwner: true, role: true, status: true },
     });
-    const exists = Boolean(member);
     const active = member?.status === "ACTIVE";
     const isOwnerOrAdmin =
       active &&
       (member?.isOwner === true || member?.role === ORG_MEMBER_ROLES.ORG_ADMIN);
     this.membershipAccessCache.set(cacheKey, {
-      exists,
       active,
       isOwnerOrAdmin,
       expiresAt: Date.now() + this.deniedModulesTtlMs,
     });
-    return { exists, active, isOwnerOrAdmin };
+    return { active, isOwnerOrAdmin };
   }
 }

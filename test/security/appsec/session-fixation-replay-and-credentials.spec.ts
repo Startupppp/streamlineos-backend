@@ -8,7 +8,9 @@ import { randomUUID } from "node:crypto";
 import { AuthController } from "../../../src/modules/auth/auth.controller";
 import { AuthService } from "../../../src/modules/auth/auth.service";
 import { sessionExchangeSchema } from "../../../src/modules/auth/dto/auth.schemas";
-import { AuthPasswordlessService } from "../../../src/modules/auth/auth-passwordless.service";
+import { AuthEmailVerificationService } from "../../../src/modules/auth/auth-email-verification.service";
+import { AuthMagicLinkService } from "../../../src/modules/auth/auth-magic-link.service";
+import { AuthEmailOtpService } from "../../../src/modules/auth/auth-email-otp.service";
 import { AuthAnalyticsService } from "../../../src/modules/auth/auth-analytics.service";
 import { RateLimitService } from "../../../src/common/ratelimit/rate-limit.service";
 import { JwtKeyringService } from "../../../src/common/auth/jwt-keyring.service";
@@ -87,7 +89,9 @@ describe("Session fixation — the minted token's identity comes from the signed
       controllers: [AuthController],
       providers: [
         { provide: AuthService, useValue: {} },
-        { provide: AuthPasswordlessService, useValue: {} },
+        { provide: AuthEmailVerificationService, useValue: {} },
+        { provide: AuthMagicLinkService, useValue: {} },
+        { provide: AuthEmailOtpService, useValue: {} },
         { provide: AuthAnalyticsService, useValue: {} },
         {
           provide: RateLimitService,
@@ -195,7 +199,9 @@ describe("Session replay — a captured proof is spendable exactly once", () => 
       controllers: [AuthController],
       providers: [
         { provide: AuthService, useValue: {} },
-        { provide: AuthPasswordlessService, useValue: {} },
+        { provide: AuthEmailVerificationService, useValue: {} },
+        { provide: AuthMagicLinkService, useValue: {} },
+        { provide: AuthEmailOtpService, useValue: {} },
         { provide: AuthAnalyticsService, useValue: {} },
         {
           provide: RateLimitService,
@@ -310,8 +316,8 @@ function passwordlessDb(options: {
   return db;
 }
 
-function passwordlessService(db: ReturnType<typeof passwordlessDb>): AuthPasswordlessService {
-  return new AuthPasswordlessService(
+function passwordlessService(db: ReturnType<typeof passwordlessDb>): AuthMagicLinkService {
+  return new AuthMagicLinkService(
     db as unknown as Db,
     { invalidate: jest.fn().mockResolvedValue(undefined) } as never,
     {} as never,
@@ -404,7 +410,7 @@ describe("Magic link — a one-time credential, stored only as a hash", () => {
     expect(hashToken(`${RAW}x`)).not.toBe(digest);
 
     const service = readFileSync(
-      resolve(BACKEND_ROOT, "src/modules/auth/auth-passwordless.service.ts"),
+      resolve(BACKEND_ROOT, "src/modules/auth/auth-magic-link.service.ts"),
       "utf8",
     );
     expect(service).toMatch(/const tokenHash = hashToken\(/);
@@ -438,13 +444,7 @@ describe("Generic authentication failures are indistinguishable", () => {
   }
 
   async function failure(db: Db, code: string): Promise<{ status: number; body: unknown }> {
-    const service = new AuthPasswordlessService(
-      db,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-    );
+    const service = new AuthEmailOtpService(db, {} as never);
     const error = await service
       .verifyEmailOtp("someone@example.com", code)
       .catch((err: unknown) => err);
@@ -506,7 +506,7 @@ describe("Generic authentication failures are indistinguishable", () => {
     expect(controller).toContain("If an account exists, a verification email has been sent");
 
     const service = readFileSync(
-      resolve(BACKEND_ROOT, "src/modules/auth/auth-passwordless.service.ts"),
+      resolve(BACKEND_ROOT, "src/modules/auth/auth-email-verification.service.ts"),
       "utf8",
     );
     expect(service).toMatch(/if \(!user\) return;/);

@@ -25,10 +25,6 @@ function capture(): FinishedSpan[] {
   return spans;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 afterEach(() => resetSpanExporter());
 
 describe("AiCallMetrics — the metric actually reaches the exporter", () => {
@@ -69,59 +65,59 @@ describe("AiCallMetrics — the metric actually reaches the exporter", () => {
 });
 
 describe("AiCallMetrics — provider time is measured separately from ours", () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   it("keeps the queue wait, the provider call and our own work in three buckets", async () => {
     const call = AiCallMetrics.begin({ feature: "ai:chat" });
-    await call.queue(() => sleep(40));
-    await sleep(40);
-    await call.provider(() => sleep(60));
+    await call.queue(async () => { await jest.advanceTimersByTimeAsync(40); });
+    await jest.advanceTimersByTimeAsync(40);
+    await call.provider(async () => { await jest.advanceTimersByTimeAsync(60); });
     const timings = call.finish("ok");
 
-    expect(timings.queueMs).toBeGreaterThanOrEqual(30);
-    expect(timings.queueMs).toBeLessThan(60);
-    expect(timings.providerMs).toBeGreaterThanOrEqual(50);
-    expect(timings.providerMs).toBeLessThan(90);
-    expect(timings.overheadMs).toBeGreaterThanOrEqual(25);
-    expect(timings.overheadMs).toBeLessThan(60);
+    expect(timings.queueMs).toBe(40);
+    expect(timings.providerMs).toBe(60);
+    expect(timings.overheadMs).toBe(40);
   });
 
   it("BITE — a slow provider cannot be reported as application overhead", async () => {
     const call = AiCallMetrics.begin({ feature: "ai:chat" });
-    await call.provider(() => sleep(120));
+    await call.provider(async () => { await jest.advanceTimersByTimeAsync(120); });
     const timings = call.finish("ok");
 
-    expect(timings.providerMs).toBeGreaterThanOrEqual(100);
-    // Everything the process itself did was trivial; if `overheadMs` absorbed the
-    // provider it would be ~120 here instead of ~0.
-    expect(timings.overheadMs).toBeLessThan(40);
+    expect(timings.providerMs).toBe(120);
+    expect(timings.overheadMs).toBe(0);
   });
 
   it("time-to-first-token is measured from the provider call, not from the request", async () => {
     const call = AiCallMetrics.begin({ feature: "kb.public-ask" });
-    await call.queue(() => sleep(50));
-    await sleep(50);
+    await call.queue(async () => { await jest.advanceTimersByTimeAsync(50); });
+    await jest.advanceTimersByTimeAsync(50);
     call.providerOpened();
-    await sleep(40);
+    await jest.advanceTimersByTimeAsync(40);
     call.firstToken();
-    await sleep(40);
+    await jest.advanceTimersByTimeAsync(40);
     const timings = call.finish("ok");
 
-    expect(timings.ttftMs).toBeGreaterThanOrEqual(30);
-    // Would be ~140 if it were measured from `begin`.
-    expect(timings.ttftMs).toBeLessThan(80);
+    expect(timings.ttftMs).toBe(40);
   });
 
   it("only the first token counts, and a token before the provider opened counts for nothing", async () => {
     const call = AiCallMetrics.begin({ feature: "kb.public-ask" });
     call.firstToken();
     call.providerOpened();
-    await sleep(30);
+    await jest.advanceTimersByTimeAsync(30);
     call.firstToken();
-    await sleep(40);
+    await jest.advanceTimersByTimeAsync(40);
     call.firstToken();
     const timings = call.finish("ok");
 
-    expect(timings.ttftMs).toBeGreaterThanOrEqual(20);
-    expect(timings.ttftMs).toBeLessThan(70);
+    expect(timings.ttftMs).toBe(30);
   });
 });
 

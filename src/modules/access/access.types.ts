@@ -1,6 +1,6 @@
-import type { DataScope } from "../../common/rbac/data-scope";
+import type { DataScope, ScopePredicate } from "../../common/rbac/data-scope";
 
-export type { DataScope };
+export type { DataScope, ScopePredicate };
 
 export interface VersionEntry {
   version: number;

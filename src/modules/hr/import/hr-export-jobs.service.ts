@@ -25,6 +25,7 @@ import { withTenant } from "../../../common/tenant";
 import type { FileStreamResult } from "../../storage/storage.service";
 import { StorageService } from "../../storage/storage.service";
 import { AccessService, SCOPE_RANK } from "../../access/access.service";
+import { MembershipStateService } from "../../../common/auth/membership-state.service";
 import type { DataScope } from "../../access/access.types";
 import { authorize } from "../../access/authorize";
 import type { CreateEmployeeExportJobInput } from "./dto/export-job.dto";
@@ -83,6 +84,7 @@ export class HrExportJobsService {
     private readonly storage: StorageService,
     private readonly audit: AuditService,
     private readonly access: AccessService,
+    private readonly membershipState: MembershipStateService,
   ) {}
 
   async create(
@@ -192,29 +194,9 @@ export class HrExportJobsService {
   }
 
   async resolveExecutionScope(job: HrExportJobRow): Promise<DataScope> {
-    const member = await withTenant(
-      this.db,
-      { orgId: job.orgId, audience: "INTERNAL" },
-      async (tx) => {
-        const rows = await tx
-          .select({
-            membershipId: organizationMembers.id,
-            role: organizationMembers.role,
-            isOwner: organizationMembers.isOwner,
-            status: organizationMembers.status,
-          })
-          .from(organizationMembers)
-          .where(
-            and(
-              eq(organizationMembers.orgId, job.orgId),
-              eq(organizationMembers.userId, job.requestedBy),
-            ),
-          )
-          .limit(1);
-        return rows[0];
-      },
-    );
-    if (!member || member.status !== "ACTIVE") {
+    // No guard ran for this job, so liveness comes from the same resolver JwtAuthGuard uses.
+    const member = await this.membershipState.resolve(job.requestedBy, job.orgId);
+    if (!member.active || member.membershipId === null) {
       throw new HrExportProcessingError(
         "EXPORT_ACCESS_REVOKED",
         "Your access changed before the export ran. Create a new export after access is restored.",

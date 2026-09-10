@@ -174,7 +174,7 @@ export class TelephonyCallLogService {
          * no field on `InboundCommunicationEvent` and no column the workflow's
          * activity writer would fill from one. See `TelephonyCallFacts`.
          */
-        await this.ingress.accept(result.event);
+        await this.ingress.accept(result.event, organizationId);
         delivered += 1;
       }
 

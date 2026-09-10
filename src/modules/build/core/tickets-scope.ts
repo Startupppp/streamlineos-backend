@@ -1,7 +1,7 @@
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import type { DataScope } from "../../access/access.types";
+import type { DataScope, ScopePredicate } from "../../access/access.types";
 import { AccessService } from "../../access/access.service";
-import { eq, or, sql, type SQL } from "drizzle-orm";
+import { eq, or, sql } from "drizzle-orm";
 import { tickets, ticketAssignees } from "../../../db/schema";
 
 export const TICKETS_PERMISSION = "build:manage";
@@ -10,7 +10,7 @@ export function ticketScopePredicate(
   scope: DataScope,
   orgId: string,
   userId: string,
-): SQL | undefined {
+): ScopePredicate | undefined {
   if (scope === "none") return sql`false`;
   if (scope === "all") return undefined;
   return or(

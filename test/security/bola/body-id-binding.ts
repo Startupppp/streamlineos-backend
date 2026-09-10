@@ -89,9 +89,20 @@ export const ACTOR_SELECTOR_FIELDS = new Set([
 
 const ID_NAME_RE = /(?:^|[a-z0-9])(Id|Ids)$/;
 
+// A tenant or actor id is a UUID string; a numeric one is an ordinary FK sharing the name.
+function declaresNumericId(schema: unknown): boolean {
+  if (typeof schema !== "object" || schema === null) return false;
+  const node = schema as { type?: unknown; anyOf?: unknown; oneOf?: unknown };
+  if (node.type === "number" || node.type === "integer") return true;
+  for (const branch of [node.anyOf, node.oneOf])
+    if (Array.isArray(branch) && branch.some((option) => declaresNumericId(option)))
+      return true;
+  return false;
+}
+
 interface OpenApiOperation {
   operationId?: string;
-  parameters?: { name?: string; in?: string }[];
+  parameters?: { name?: string; in?: string; schema?: unknown }[];
   requestBody?: { content?: Record<string, { schema?: { properties?: Record<string, unknown> } }> };
 }
 
@@ -127,20 +138,21 @@ export function enumerateIdFieldSites(): { sites: IdFieldSite[]; counts: Surface
       if (!HTTP_METHODS.has(method)) continue;
       operations += 1;
       const operationId = operation.operationId ?? "";
-      const named: { location: FieldLocation; field: string }[] = [];
+      const named: { location: FieldLocation; field: string; declared: unknown }[] = [];
 
       const schema = operation.requestBody?.content?.["application/json"]?.schema;
-      for (const property of Object.keys(schema?.properties ?? {}))
-        named.push({ location: "body", field: property });
+      for (const [property, declared] of Object.entries(schema?.properties ?? {}))
+        named.push({ location: "body", field: property, declared });
       for (const parameter of operation.parameters ?? [])
         if (parameter.in === "query" && parameter.name)
-          named.push({ location: "query", field: parameter.name });
+          named.push({ location: "query", field: parameter.name, declared: parameter.schema });
 
-      for (const { location, field } of named) {
+      for (const { location, field, declared } of named) {
         if (!ID_NAME_RE.test(field)) continue;
         const site: IdFieldSite = { operationId, method: method.toUpperCase(), path, location, field };
-        if (TENANT_SELECTOR_FIELDS.has(field)) tenantSelectors.push(site);
-        else if (ACTOR_SELECTOR_FIELDS.has(field)) actorSelectors.push(site);
+        const selectorShaped = !declaresNumericId(declared);
+        if (selectorShaped && TENANT_SELECTOR_FIELDS.has(field)) tenantSelectors.push(site);
+        else if (selectorShaped && ACTOR_SELECTOR_FIELDS.has(field)) actorSelectors.push(site);
         else {
           sites.push(site);
           withFields.add(operationId);

@@ -311,7 +311,8 @@ describe("Revocation is enforced at token-check time, not by a database flag", (
     expect(await tokenAccepted(makeGuard(keyring, redis), token)).toBe(false);
   });
 
-  it("DEFECT SHAPE: a database flag alone revokes nothing — the guard reads the tombstone, so the token still works", async () => {
+  // Was a DEFECT SHAPE until d6ad7c4bd: an absent tombstone is a cache MISS, not an answer.
+  it("a database flag alone revokes the token even with Redis up and no tombstone written", async () => {
     const redis = makeRedis();
     const token = await keyring.signToken({
       sub: USER_ID,
@@ -319,9 +320,20 @@ describe("Revocation is enforced at token-check time, not by a database flag", (
       sessionId: "sess-db-only",
     });
 
-    const guard = makeGuard(keyring, redis, true);
     expect(redis.store.has("revoked:session:sess-db-only")).toBe(false);
-    expect(await tokenAccepted(guard, token)).toBe(true);
+    expect(await tokenAccepted(makeGuard(keyring, redis, true), token)).toBe(false);
+  });
+
+  it("and the deny came from the flag, not from the miss — an unrevoked session with the same miss is accepted", async () => {
+    const redis = makeRedis();
+    const token = await keyring.signToken({
+      sub: USER_ID,
+      orgId: ORG_ID,
+      sessionId: "sess-db-only",
+    });
+
+    expect(redis.store.has("revoked:session:sess-db-only")).toBe(false);
+    expect(await tokenAccepted(makeGuard(keyring, redis, false), token)).toBe(true);
   });
 
   it("the same flag DOES bite once Redis is unavailable — the database is the durable fallback, not the primary", async () => {

@@ -187,7 +187,7 @@ export class WhatsAppIngressService {
          * the overlap a retry produces costs nothing.
          */
         try {
-          const outcome = await this.ingress.accept(result.event);
+          const outcome = await this.ingress.accept(result.event, binding.organizationId);
           if (outcome.status === "duplicate") duplicate += 1;
           else delivered += 1;
         } catch (error) {

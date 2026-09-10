@@ -19,7 +19,7 @@ import {
 import type { DecisionKind } from "../../db/schema/crm/autonomous-decisions";
 import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
 import { applyScope } from "../access/apply-scope";
-import type { DataScope } from "../access/access.types";
+import type { DataScope, ScopePredicate } from "../access/access.types";
 import { AutonomyReversalService } from "./autonomy-reversal.service";
 import { AutonomyHoldService } from "./autonomy-hold.service";
 import { resolveSwitch, switchesFor, type SwitchRow } from "./kill-switch";
@@ -116,7 +116,7 @@ export class AutonomyReviewService {
     }));
   }
 
-  private scopePredicate(scope: DataScope, organizationId: string, userId: string): SQL | undefined {
+  private scopePredicate(scope: DataScope, organizationId: string, userId: string): ScopePredicate | undefined {
     if (scope === "all") return undefined;
     return applyScope(scope, organizationId, userId, { ownerColumn: deals.assignedToId });
   }

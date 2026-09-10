@@ -140,14 +140,12 @@ describe("the surface, enumerated from the committed contract", () => {
     // route with four org-scoping id filters is either swept or it is a blind spot.
     // This census tracks `openapi.json`, so it has to be re-read after the release's final
     // `pnpm openapi:generate` rather than assumed.
-    // 3666 -> 3669 on 2026-09-10: b20dca13b regenerated openapi.json and the census
-    // constants were not re-read with it. Descriptive count of the committed contract,
-    // not a security threshold — the sweep assertions below are what bite.
-    expect(counts.operations).toBe(3669);
-    expect(counts.bodyFields).toBe(816);
-    expect(counts.queryFields).toBe(244);
-    expect(counts.idFields).toBe(1060);
-    expect(counts.operationsWithIdFields).toBe(675);
+    // Descriptive, re-read after `pnpm openapi:generate`; the sweeps below are what bite.
+    expect(counts.operations).toBe(3667);
+    expect(counts.bodyFields).toBe(814);
+    expect(counts.queryFields).toBe(245);
+    expect(counts.idFields).toBe(1059);
+    expect(counts.operationsWithIdFields).toBe(674);
   });
 
   /**
@@ -168,9 +166,17 @@ describe("the surface, enumerated from the committed contract", () => {
       expect([field, verdict]).toEqual([field, expect.stringMatching(/^(?:org-predicate|filter-in-org-query)$/)]);
   });
 
+  // Pinned by name, not by count: a swapped-in selector must fail, not net to zero.
   it("splits out the tenant and actor selectors rather than analysing them as object references", () => {
     const { counts } = enumerateIdFieldSites();
-    expect(counts.tenantSelectors).toHaveLength(12);
+
+    const pinnedTenant: unknown = JSON.parse(
+      readFileSync(join(BACKEND_ROOT, "test/security/bola/tenant-selector-surface.json"), "utf8"),
+    );
+    const tenant = counts.tenantSelectors
+      .map((site) => `${site.method} ${site.path} ${site.location} ${site.field}`)
+      .sort();
+    expect(tenant).toEqual(pinnedTenant);
 
     const pinned: unknown = JSON.parse(
       readFileSync(join(BACKEND_ROOT, "test/security/bola/actor-selector-surface.json"), "utf8"),

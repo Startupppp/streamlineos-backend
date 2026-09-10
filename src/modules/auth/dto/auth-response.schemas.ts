@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { EFFECTIVE_PLANS } from "../../billing/core/plan-entitlements.constants";
 
 /**
  * Response contract for `AuthController` handlers.
@@ -18,7 +19,7 @@ export const authRegisterResponseSchema = z.object({
   success: z.literal(true),
 });
 
-/** `AuthPasswordlessService.verifyEmail` — issues a magic-link auto-login token. */
+/** `AuthEmailVerificationService.verifyEmail` — issues a magic-link auto-login token. */
 export const authAutoLoginTokenResponseSchema = z.object({
   autoLoginToken: z.string(),
 });
@@ -55,13 +56,15 @@ export const authSessionDataResponseSchema = z.object({
   enabledModules: z.array(z.string()),
   orgOnboardingCompletedAt: z.string().nullable(),
   userOnboardingCompletedAt: z.string().nullable(),
-  plan: z.string().nullable(),
+  plan: z.enum(EFFECTIVE_PLANS).nullable(),
   organizationAccess: z.enum(["active", "suspended", "none"]),
   suspendedOrganizationName: z.string().nullable(),
 });
 
+export type AuthSessionData = z.infer<typeof authSessionDataResponseSchema>;
+
 /**
- * `AuthPasswordlessService.verifyMagicLink` — session identity after a
+ * `AuthMagicLinkService.verifyMagicLink` — session identity after a
  * successful link click. NOT the full session data: the web tier performs a
  * second `session-data` fetch with these three values.
  */

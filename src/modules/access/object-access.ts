@@ -1,4 +1,4 @@
-import type { SQL } from "drizzle-orm";
+import type { ScopePredicate } from "./access.types";
 import { applyScope, type ScopeColumns } from "./apply-scope";
 import type { DataScope } from "./access.types";
 
@@ -55,7 +55,7 @@ export class ScopedRead {
   }
 
   /** The only way out. */
-  predicate(cols: ScopeColumns): SQL {
+  predicate(cols: ScopeColumns): ScopePredicate {
     return applyScope(this.#scope, this.orgId, this.actorId, cols);
   }
 

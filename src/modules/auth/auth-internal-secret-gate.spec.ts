@@ -21,7 +21,9 @@ import { Test, type TestingModule } from "@nestjs/testing";
 import { SignJWT } from "jose";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
-import { AuthPasswordlessService } from "./auth-passwordless.service";
+import { AuthEmailVerificationService } from "./auth-email-verification.service";
+import { AuthMagicLinkService } from "./auth-magic-link.service";
+import { AuthEmailOtpService } from "./auth-email-otp.service";
 import { AuthAnalyticsService } from "./auth-analytics.service";
 import { internalSecretMatches } from "./internal-secret";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
@@ -104,7 +106,9 @@ describe("AuthController — the INTERNAL_API_SECRET routes enforce a rate limit
       controllers: [AuthController],
       providers: [
         { provide: AuthService, useValue: authService },
-        { provide: AuthPasswordlessService, useValue: {} },
+        { provide: AuthEmailVerificationService, useValue: {} },
+        { provide: AuthMagicLinkService, useValue: {} },
+        { provide: AuthEmailOtpService, useValue: {} },
         { provide: AuthAnalyticsService, useValue: {} },
         { provide: RateLimitService, useValue: rateLimit },
         { provide: JwtKeyringService, useValue: keyring },
