@@ -644,7 +644,7 @@ describe("[seeded-e2e] landing freight onto a receipt's cost layers", () => {
 
       // The whole claim a label makes: scan it back and you get these goods.
       const resolved = await asTenant(() =>
-        app.app.get(InvBarcodeService).lookup(scene.orgId, label.code),
+        app.app.get(InvBarcodeService).lookup(scene.orgId, scene.userId, label.code),
       );
       expect(resolved).toMatchObject({ type: "variant", variantId: scene.batchedId });
     }, 120_000);
@@ -676,7 +676,7 @@ describe("[seeded-e2e] landing freight onto a receipt's cost layers", () => {
       expect(label.gs1).not.toBeNull();
 
       const scanned = await asTenant(() =>
-        app.app.get(InvBarcodeService).scan(scene.orgId, label.gs1!),
+        app.app.get(InvBarcodeService).scan(scene.orgId, scene.userId, label.gs1!),
       );
       expect(scanned.parsed.isGs1).toBe(true);
       expect(scanned.lot).toMatchObject({ lotNumber });

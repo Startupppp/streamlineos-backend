@@ -30,7 +30,7 @@ export class InvBarcodeController {
     @Query() query: BarcodeLookupInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.barcodeService.lookup(u.orgId, query.code);
+    return this.barcodeService.lookup(u.orgId, u.userId, query.code);
   }
 
   /**
@@ -49,7 +49,7 @@ export class InvBarcodeController {
     @Body() body: BarcodeScanInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.barcodeService.scan(u.orgId, body.payload);
+    return this.barcodeService.scan(u.orgId, u.userId, body.payload);
   }
 
   /**

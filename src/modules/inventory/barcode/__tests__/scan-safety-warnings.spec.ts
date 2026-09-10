@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { InvBarcodeService } from "../inv-barcode.service";
 
 /**
@@ -60,8 +61,16 @@ function buildService(opts: {
     })),
   };
 
+  // Unrestricted scope: these assert the safety warnings, not the warehouse
+  // narrowing, and an unrestricted scope leaves the on-hand sums exactly as
+  // they were before that narrowing existed.
+  const warehouseScope = {
+    resolve: jest.fn(async () => null),
+    warehousePredicate: () => sql`TRUE`,
+  };
+
   return {
-    service: new InvBarcodeService(db as never, pharmacy as never),
+    service: new InvBarcodeService(db as never, pharmacy as never, warehouseScope as never),
     pharmacy,
   };
 }
@@ -78,7 +87,7 @@ describe("E3 — a scan carries the pharmacy safety alerts", () => {
       ],
     });
 
-    const result = await service.scan("org1", "8901234567890");
+    const result = await service.scan("org1", "user1", "8901234567890");
 
     expect(result.warnings).toContain(
       "Look-alike/sound-alike: Amoxil is easily confused with Amoxil DT",
@@ -92,14 +101,14 @@ describe("E3 — a scan carries the pharmacy safety alerts", () => {
       alerts: [{ code: "HIGH_ALERT", disposition: "ACKNOWLEDGE", message: "High-alert medicine" }],
     });
 
-    const result = await service.scan("org1", "8901234567890");
+    const result = await service.scan("org1", "user1", "8901234567890");
 
     expect(result.warnings).toContain("Confirm before use: High-alert medicine");
   });
 
   it("adds nothing when the SKU has no alerts", async () => {
     const { service } = buildService({ alerts: [] });
-    const result = await service.scan("org1", "8901234567890");
+    const result = await service.scan("org1", "user1", "8901234567890");
     expect(result.warnings).toEqual([]);
   });
 
@@ -107,7 +116,7 @@ describe("E3 — a scan carries the pharmacy safety alerts", () => {
     // A scan of an unknown barcode has no SKU to be unsafe about, and asking
     // anyway would be a query per failed scan on the hottest path in the module.
     const { pharmacy, service } = buildService({ variant: null });
-    await service.scan("org1", "nonsense");
+    await service.scan("org1", "user1", "nonsense");
     expect(pharmacy.dispensingProfile).not.toHaveBeenCalled();
   });
 
@@ -117,6 +126,6 @@ describe("E3 — a scan carries the pharmacy safety alerts", () => {
     const { service } = buildService({
       alerts: [{ code: "HIGH_ALERT", disposition: "ACKNOWLEDGE", message: "High-alert medicine" }],
     });
-    await expect(service.scan("org1", "8901234567890")).resolves.toBeDefined();
+    await expect(service.scan("org1", "user1", "8901234567890")).resolves.toBeDefined();
   });
 });

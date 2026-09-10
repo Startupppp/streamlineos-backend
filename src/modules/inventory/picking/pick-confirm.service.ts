@@ -143,7 +143,7 @@ export class PickConfirmService {
     await this.completion.claimForConfirm(tx, orgId, userId, pickListId);
 
     const scanned = input.scannedPayload
-      ? await this.resolveScan(orgId, line, input.scannedPayload)
+      ? await this.resolveScan(orgId, userId, line, input.scannedPayload)
       : { lotId: line.lotId, serialId: line.serialId };
 
     const nextPicked = addDec(String(line.quantityPicked), input.quantityPicked);
@@ -392,10 +392,15 @@ export class PickConfirmService {
    */
   private async resolveScan(
     orgId: string,
+    userId: string,
     line: PickLineRow,
     payload: string,
   ): Promise<{ lotId: number | null; serialId: number | null }> {
-    const scan = await this.barcode.scan(orgId, payload);
+    // The caller is threaded through only so the scan can scope the on-hand
+    // totals it reports. Nothing below reads them -- identity resolution stays
+    // organisation-wide, so a box that arrived on a transfer still matches the
+    // line in hand.
+    const scan = await this.barcode.scan(orgId, userId, payload);
 
     const scannedVariantId =
       scan.variant?.id ??

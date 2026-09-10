@@ -1,4 +1,5 @@
 import { Test } from "@nestjs/testing";
+import { sql } from "drizzle-orm";
 import { NotFoundException } from "@nestjs/common";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -154,15 +155,25 @@ describe("InvAiExplainService — cross-tenant isolation", () => {
   });
 });
 
+/**
+ * Unrestricted: these pin the *tenant* boundary, and a warehouse scope that
+ * filtered as well would let a lookup return nothing for the right reason and
+ * still pass.
+ */
+const UNRESTRICTED_WAREHOUSE_SCOPE = {
+  resolve: async () => null,
+  warehousePredicate: () => sql`TRUE`,
+};
+
 describe("InvBarcodeService — cross-tenant isolation", () => {
   const OWNER = "org-owner";
   const ATTACKER = "org-attacker";
 
   it("returns empty lookup for a foreign org (isolation — deny)", async () => {
     const { db, findFirst } = makeDb([]);
-    const svc = new InvBarcodeService(db, { assertDispensable: jest.fn() } as never);
+    const svc = new InvBarcodeService(db, { assertDispensable: jest.fn() } as never, UNRESTRICTED_WAREHOUSE_SCOPE as never);
 
-    const result = await svc.lookup(ATTACKER, "BARCODE-123");
+    const result = await svc.lookup(ATTACKER, "user-attacker", "BARCODE-123");
     expect(result.type).toBe("not_found");
     expect(findFirst).toHaveBeenCalled();
     const arg = findFirst.mock.calls[0]?.[0] as { where?: unknown } | undefined;
@@ -172,9 +183,9 @@ describe("InvBarcodeService — cross-tenant isolation", () => {
   it("finds product for the owning org (isolation — control)", async () => {
     const PROD = { id: 1, orgId: OWNER, name: "Widget", sku: "W-001", status: "ACTIVE" };
     const { db } = makeDb([PROD]);
-    const svc = new InvBarcodeService(db, { assertDispensable: jest.fn() } as never);
+    const svc = new InvBarcodeService(db, { assertDispensable: jest.fn() } as never, UNRESTRICTED_WAREHOUSE_SCOPE as never);
 
-    const result = await svc.lookup(OWNER, "BARCODE-123");
+    const result = await svc.lookup(OWNER, "user-owner", "BARCODE-123");
     expect(result.type).toBe("product");
   });
 });

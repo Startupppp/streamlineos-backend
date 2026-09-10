@@ -7,6 +7,7 @@ import { invProducts, invProductVariants, invLots, invSerialNumbers, invLocation
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { claimIdempotencyKey } from "../stock-engine/idempotency";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { type Db } from "../../../db/drizzle.module";
 import type { BarcodeLookupResult, LabelPayload, ScanResult } from "./dto/inv-barcode.schemas";
 import { formatGs1, parseGs1 } from "./gs1";
@@ -16,9 +17,49 @@ export class InvBarcodeService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly pharmacy: InvPharmacyService,
+    private readonly warehouseScope: WarehouseScopeService,
   ) {}
 
-  async lookup(orgId: string, code: string): Promise<BarcodeLookupResult> {
+  /**
+   * Resolve one code.
+   *
+   * **This method answers two questions with two different scopes, and the
+   * split is the rule for this folder.** Nothing here scoped anything before,
+   * so read this before narrowing or widening either half.
+   *
+   * *What is this?* — a catalogue question, answered **organisation-wide**, and
+   * it must stay that way. Goods move between buildings; a GTIN, a SKU, a lot
+   * number and a serial are facts about the organisation's catalogue, not about
+   * a warehouse. Scoping identity would also break both internal callers —
+   * `PickConfirmService.resolveScan` and `PackagesService.resolveScan` match a
+   * scan against the line in hand by identity alone, and a picker holding a box
+   * that arrived on a transfer from another site would be told their own pick
+   * line does not match what is in their hand.
+   *
+   * *How much of it is there?* — a stock question, answered **only for the
+   * warehouses the caller holds**. `inventory:stock:read` gates this route, and
+   * every other surface carrying that same key is already scoped: `GET
+   * /inventory/stock`, `GET /inventory/stock/availability` and
+   * `KitService.buildable` all narrow through `WarehouseScopeService`. The rule
+   * was not invented here; barcode was the one surface that had not adopted it.
+   *
+   * The cross-building enquiry exists and is separately permissioned already:
+   * `inventory:warehouses:scope-all` ("See and transact in every warehouse,
+   * bypassing warehouse assignment") makes the scope unrestricted, so a
+   * caller holding it gets exactly the organisation-wide totals this returned
+   * before. **Do not "restore" the org-wide sum by deleting the scope call** —
+   * that is not restoring a feature, it is removing the gate from one that
+   * already ships.
+   *
+   * A bin is the one identity that *is* scoped, because a bin does not move. A
+   * location code resolves to a building, so resolving one for a caller who
+   * does not hold that building tells them a bin exists there and what it is
+   * called. That is the existence oracle `assertWarehouseVisible` refuses by
+   * answering NotFound rather than Forbidden, and this answers `not_found` for
+   * the same reason. No workflow is lost: an operator has to be standing in a
+   * building to scan a bin label in it.
+   */
+  async lookup(orgId: string, userId: string, code: string): Promise<BarcodeLookupResult> {
     const [
       productByBarcode,
       variantByBarcode,
@@ -61,16 +102,16 @@ export class InvBarcodeService {
     ]);
 
     if (productByBarcode) {
-      return { type: "product", productId: productByBarcode.id, name: productByBarcode.name, sku: productByBarcode.sku, status: productByBarcode.status, totalOnHand: await this.productStock(orgId, productByBarcode.id) };
+      return { type: "product", productId: productByBarcode.id, name: productByBarcode.name, sku: productByBarcode.sku, status: productByBarcode.status, totalOnHand: await this.productStock(orgId, userId, productByBarcode.id) };
     }
     if (variantByBarcode) {
-      return { type: "variant", variantId: variantByBarcode.id, productId: variantByBarcode.productId, name: variantByBarcode.name, sku: variantByBarcode.sku, isActive: variantByBarcode.isActive, totalOnHand: await this.variantStock(orgId, variantByBarcode.id) };
+      return { type: "variant", variantId: variantByBarcode.id, productId: variantByBarcode.productId, name: variantByBarcode.name, sku: variantByBarcode.sku, isActive: variantByBarcode.isActive, totalOnHand: await this.variantStock(orgId, userId, variantByBarcode.id) };
     }
     if (variantBySku) {
-      return { type: "variant", variantId: variantBySku.id, productId: variantBySku.productId, name: variantBySku.name, sku: variantBySku.sku, isActive: variantBySku.isActive, totalOnHand: await this.variantStock(orgId, variantBySku.id) };
+      return { type: "variant", variantId: variantBySku.id, productId: variantBySku.productId, name: variantBySku.name, sku: variantBySku.sku, isActive: variantBySku.isActive, totalOnHand: await this.variantStock(orgId, userId, variantBySku.id) };
     }
     if (productBySku) {
-      return { type: "product", productId: productBySku.id, name: productBySku.name, sku: productBySku.sku, status: productBySku.status, totalOnHand: await this.productStock(orgId, productBySku.id) };
+      return { type: "product", productId: productBySku.id, name: productBySku.name, sku: productBySku.sku, status: productBySku.status, totalOnHand: await this.productStock(orgId, userId, productBySku.id) };
     }
     if (lot) {
       return { type: "lot", lotId: lot.id, variantId: lot.productVariantId, lotNumber: lot.lotNumber, status: lot.status };
@@ -79,6 +120,11 @@ export class InvBarcodeService {
       return { type: "serial", serialId: serial.id, variantId: serial.productVariantId, serialNumber: serial.serialNumber, status: serial.status, currentLocationId: serial.currentLocationId };
     }
     if (location) {
+      // The one scoped identity — see the note on this method. A bin in a
+      // building the caller does not hold does not resolve, rather than
+      // resolving and naming that building back to them.
+      const scope = await this.warehouseScope.resolve(orgId, userId);
+      if (scope !== null && !scope.includes(location.warehouseId)) return { type: "not_found" };
       return { type: "location", locationId: location.id, warehouseId: location.warehouseId, name: location.name, code: location.code, locationType: location.locationType, isActive: location.isActive };
     }
 
@@ -134,7 +180,7 @@ export class InvBarcodeService {
     }
   }
 
-  async scan(orgId: string, payload: string): Promise<ScanResult> {
+  async scan(orgId: string, userId: string, payload: string): Promise<ScanResult> {
     const parsed = parseGs1(payload);
     const warnings: string[] = [];
 
@@ -145,7 +191,7 @@ export class InvBarcodeService {
       // E3. The safety alerts belong on this path too, and this is the *common*
       // one — a picker scanning a plain SKU barcode is the ordinary case, and a
       // LASA warning that only fired for GS1 labels would miss most scans.
-      const lookup = await this.lookup(orgId, parsed.raw);
+      const lookup = await this.lookup(orgId, userId, parsed.raw);
       const variantId =
         lookup.type === "variant"
           ? lookup.variantId
@@ -272,7 +318,7 @@ export class InvBarcodeService {
         return { ...(claim.stored as ScanResult), captured: false };
       }
 
-      const result = await this.scan(orgId, payload);
+      const result = await this.scan(orgId, userId, payload);
 
       await OutboxWriter.emit(tx, {
         eventId: randomUUID(),
@@ -424,20 +470,78 @@ export class InvBarcodeService {
     };
   }
 
-  private async productStock(orgId: string, productId: number): Promise<string> {
+  /**
+   * On hand, **in the buildings this caller holds** — not across the estate.
+   *
+   * Both helpers below sum `inv_stock_levels`, which is keyed on a location, so
+   * neither can be scoped without joining `inv_locations` for its
+   * `warehouse_id`. That join is the whole mechanism, and it is the same one
+   * `KitService.availableByComponent` uses; if either helper ever loses it, the
+   * number silently goes organisation-wide again and nothing fails.
+   *
+   * `inventory:warehouses:scope-all` (`SCOPE_ALL_PERMISSION`) resolves the
+   * scope to `null` — unrestricted — so the org-wide total is still available
+   * to whoever the org has granted it to. That is the cross-building enquiry,
+   * and it is a grant, not a default.
+   *
+   * A caller assigned to no warehouse at all gets "0" without the query
+   * running, matching `KitService.buildable`.
+   *
+   * On the product that this is a worse answer for a picker hunting stock: the
+   * org-wide number never answered that question either. "4 on hand" with no
+   * building attached, to someone who then cannot find them on their own
+   * shelves, is a number that misleads in exactly the case that matters. "0
+   * here" is true. Where it is in the estate is a different screen's answer,
+   * and it needs the warehouse named alongside the quantity to be worth
+   * anything — which is why widening *this* field was never the fix for it.
+   */
+  private async productStock(orgId: string, userId: string, productId: number): Promise<string> {
+    const scope = await this.warehouseScope.resolve(orgId, userId);
+    if (scope !== null && scope.length === 0) return "0";
+
     const result = await this.db
       .select({ total: sql<string>`COALESCE(SUM(${invStockLevels.onHand}), '0')` })
       .from(invStockLevels)
       .innerJoin(invProductVariants, eq(invStockLevels.productVariantId, invProductVariants.id))
-      .where(and(eq(invProductVariants.orgId, orgId), eq(invProductVariants.productId, productId)));
+      .innerJoin(
+        invLocations,
+        and(
+          eq(invLocations.id, invStockLevels.locationId),
+          eq(invLocations.orgId, invStockLevels.orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(invProductVariants.orgId, orgId),
+          eq(invProductVariants.productId, productId),
+          this.warehouseScope.warehousePredicate(scope, sql`${invLocations.warehouseId}`),
+        ),
+      );
     return result[0]?.total ?? "0";
   }
 
-  private async variantStock(orgId: string, variantId: number): Promise<string> {
+  /** Scoped for the reasons on `productStock` above. */
+  private async variantStock(orgId: string, userId: string, variantId: number): Promise<string> {
+    const scope = await this.warehouseScope.resolve(orgId, userId);
+    if (scope !== null && scope.length === 0) return "0";
+
     const result = await this.db
       .select({ total: sql<string>`COALESCE(SUM(${invStockLevels.onHand}), '0')` })
       .from(invStockLevels)
-      .where(and(eq(invStockLevels.orgId, orgId), eq(invStockLevels.productVariantId, variantId)));
+      .innerJoin(
+        invLocations,
+        and(
+          eq(invLocations.id, invStockLevels.locationId),
+          eq(invLocations.orgId, invStockLevels.orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(invStockLevels.orgId, orgId),
+          eq(invStockLevels.productVariantId, variantId),
+          this.warehouseScope.warehousePredicate(scope, sql`${invLocations.warehouseId}`),
+        ),
+      );
     return result[0]?.total ?? "0";
   }
 }

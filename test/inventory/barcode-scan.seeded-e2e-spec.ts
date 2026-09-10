@@ -29,7 +29,7 @@ describe("[seeded-e2e] barcode scan resolution", () => {
 
   const scan = (payload: string) =>
     runInNewTenantTransaction(app.app.get<Db>(DRIZZLE), orgId, () =>
-      app.app.get(InvBarcodeService).scan(orgId, payload),
+      app.app.get(InvBarcodeService).scan(orgId, userId, payload),
     );
 
   beforeAll(async () => {

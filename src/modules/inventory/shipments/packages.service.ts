@@ -202,7 +202,7 @@ export class PackagesService {
     // Outside the transaction because it reads the catalogue and nothing else,
     // and because a payload naming no product should be refused before a claim
     // is taken against it.
-    const resolved = await this.resolveScan(orgId, input);
+    const resolved = await this.resolveScan(orgId, userId, input);
 
     await this.db.transaction((tx) =>
       runIdempotent(
@@ -454,6 +454,7 @@ export class PackagesService {
    */
   private async resolveScan(
     orgId: string,
+    userId: string,
     input: ScanIntoPackageInput,
   ): Promise<{ productVariantId: number; lotId: number | null; serialId: number | null }> {
     const { scannedPayload, productVariantId } = input;
@@ -464,7 +465,10 @@ export class PackagesService {
       return { productVariantId, lotId: null, serialId: null };
     }
 
-    const scan = await this.barcode.scan(orgId, scannedPayload);
+    // `userId` only scopes the on-hand totals the scan reports; the packer
+    // reads none of them. Identity stays organisation-wide, or a carton packed
+    // from transferred stock would refuse its own goods.
+    const scan = await this.barcode.scan(orgId, userId, scannedPayload);
     const variantId =
       scan.variant?.id ??
       (scan.lookup?.type === "variant" ? scan.lookup.variantId : null) ??
