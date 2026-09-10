@@ -62,7 +62,7 @@ export class ShipmentsController {
     @Param("shipmentId", ParseIntPipe) shipmentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.findOne(u.orgId, shipmentId);
+    return this.svc.findOne(u.orgId, u.userId, shipmentId);
   }
 
   @Post()
