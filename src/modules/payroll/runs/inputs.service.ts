@@ -2,12 +2,20 @@ import { Injectable, Inject, ForbiddenException } from "@nestjs/common";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { organizationMembers, payrollInputs, payrollRuns, payrollRunEvents } from "../../../db/schema";
+import {
+  organizationMembers,
+  payrollInputs,
+  payrollRuns,
+  payrollRunEvents,
+} from "../../../db/schema";
 import { users } from "../../../db/schema";
 import type { PatchInputInput, InputsQuery } from "./dto/runs.schemas";
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
 import { pullAttendanceInputsByUser } from "./lib/input-puller";
-import { PAYROLL_READ_CAP, requirePayrollReadWithinCap } from "../lib/query-bounds";
+import {
+  PAYROLL_READ_CAP,
+  requirePayrollReadWithinCap,
+} from "../lib/query-bounds";
 import type { ScopedRead } from "../../access/scoped-read";
 import { buildCursorPage } from "../../../common/pagination/cursor";
 import {
@@ -36,11 +44,18 @@ export class InputsService {
 
     if (!runCheck[0]) return null;
 
-    if (query.userId && query.userId !== read.actorId && read.discriminator !== "all") {
-      throw new ForbiddenException("Not authorized to filter payroll inputs for another payee");
+    if (
+      query.userId &&
+      query.userId !== read.actorId &&
+      read.discriminator !== "all"
+    ) {
+      throw new ForbiddenException(
+        "Not authorized to filter payroll inputs for another payee",
+      );
     }
 
-    if (actorMembershipId == null) throw new ForbiddenException("Organization membership required");
+    if (actorMembershipId == null)
+      throw new ForbiddenException("Organization membership required");
 
     const limit = Math.min(query.limit ?? 50, 100);
     const cursorScope = [
@@ -54,11 +69,22 @@ export class InputsService {
     const position = decodePayrollTextCursor(query.cursor, cursorScope);
 
     type InputRow = {
-      id: number; userId: string; source: string;
-      scheduledDays: string; paidDays: string; lopDays: string; halfDays: string;
-      overtimeHours: string; shiftAllowanceUnits: string; holidayWorkDays: string; billableHours: string;
-      isOverride: boolean; overrideReason: string | null; createdAt: Date;
-      userName: string | null; userEmail: string;
+      id: number;
+      userId: string;
+      source: string;
+      scheduledDays: string;
+      paidDays: string;
+      lopDays: string;
+      halfDays: string;
+      overtimeHours: string;
+      shiftAllowanceUnits: string;
+      holidayWorkDays: string;
+      billableHours: string;
+      isOverride: boolean;
+      overrideReason: string | null;
+      createdAt: Date;
+      userName: string | null;
+      userEmail: string;
     };
 
     return read.read(
@@ -67,7 +93,9 @@ export class InputsService {
         scope: { own: eq(payrollInputs.userMembershipId, actorMembershipId) },
         and: [
           eq(payrollInputs.runId, runId),
-          query.userId ? eq(payrollInputs.userMembershipId, actorMembershipId) : undefined,
+          query.userId
+            ? eq(payrollInputs.userMembershipId, actorMembershipId)
+            : undefined,
           position
             ? sql`(${inputSortName}, ${payrollInputs.id}) > (${sql.param(position.value)}, ${sql.param(position.id, payrollInputs.id)})`
             : undefined,
@@ -100,12 +128,20 @@ export class InputsService {
           .limit(limit + 1);
 
         return buildCursorPage(rows, limit, (row) =>
-          payrollCursorPosition(cursorScope, [row.userName ?? row.userEmail], row.id),
+          payrollCursorPosition(
+            cursorScope,
+            [row.userName ?? row.userEmail],
+            row.id,
+          ),
         );
       },
       () =>
-        buildCursorPage([] as InputRow[], limit, (row) =>
-          payrollCursorPosition(cursorScope, [row.userName ?? row.userEmail], row.id),
+        buildCursorPage<InputRow>([], limit, (row) =>
+          payrollCursorPosition(
+            cursorScope,
+            [row.userName ?? row.userEmail],
+            row.id,
+          ),
         ),
     );
   }
@@ -124,12 +160,19 @@ export class InputsService {
       .limit(1);
 
     if (!runCheck[0]) return { ok: false, reason: "not_found" };
-    if (PAYROLL_LOCKED_STATUSES.includes(runCheck[0].status)) return { ok: false, reason: "locked" };
+    if (PAYROLL_LOCKED_STATUSES.includes(runCheck[0].status))
+      return { ok: false, reason: "locked" };
 
     const input = await this.db
       .select({ id: payrollInputs.id })
       .from(payrollInputs)
-      .where(and(eq(payrollInputs.id, inputId), eq(payrollInputs.runId, runId), eq(payrollInputs.orgId, orgId)))
+      .where(
+        and(
+          eq(payrollInputs.id, inputId),
+          eq(payrollInputs.runId, runId),
+          eq(payrollInputs.orgId, orgId),
+        ),
+      )
       .limit(1);
 
     if (!input[0]) return { ok: false, reason: "input_not_found" };
@@ -139,13 +182,21 @@ export class InputsService {
       overriddenBy: actorId,
       overrideReason: body.reason,
     };
-    if (body.scheduledDays !== undefined) updateData.scheduledDays = body.scheduledDays;
+    if (body.scheduledDays !== undefined)
+      updateData.scheduledDays = body.scheduledDays;
     if (body.paidDays !== undefined) updateData.paidDays = body.paidDays;
     if (body.lopDays !== undefined) updateData.lopDays = body.lopDays;
-    if (body.overtimeHours !== undefined) updateData.overtimeHours = body.overtimeHours;
-    if (body.billableHours !== undefined) updateData.billableHours = body.billableHours;
+    if (body.overtimeHours !== undefined)
+      updateData.overtimeHours = body.overtimeHours;
+    if (body.billableHours !== undefined)
+      updateData.billableHours = body.billableHours;
 
-    await this.db.update(payrollInputs).set(updateData).where(and(eq(payrollInputs.id, inputId), eq(payrollInputs.orgId, orgId)));
+    await this.db
+      .update(payrollInputs)
+      .set(updateData)
+      .where(
+        and(eq(payrollInputs.id, inputId), eq(payrollInputs.orgId, orgId)),
+      );
 
     await this.db.insert(payrollRunEvents).values({
       orgId,
@@ -165,13 +216,18 @@ export class InputsService {
     targetUserId?: string,
   ): Promise<{ ok: true; count: number } | { ok: false; reason: string }> {
     const runCheck = await this.db
-      .select({ id: payrollRuns.id, status: payrollRuns.status, month: payrollRuns.month })
+      .select({
+        id: payrollRuns.id,
+        status: payrollRuns.status,
+        month: payrollRuns.month,
+      })
       .from(payrollRuns)
       .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)))
       .limit(1);
 
     if (!runCheck[0]) return { ok: false, reason: "not_found" };
-    if (PAYROLL_LOCKED_STATUSES.includes(runCheck[0].status)) return { ok: false, reason: "locked" };
+    if (PAYROLL_LOCKED_STATUSES.includes(runCheck[0].status))
+      return { ok: false, reason: "locked" };
 
     const month = runCheck[0].month;
 
@@ -193,7 +249,7 @@ export class InputsService {
 
     if (toReset.length === 0) return { ok: true, count: 0 };
 
-    const idsToDelete = toReset.map(r => r.id);
+    const idsToDelete = toReset.map((r) => r.id);
 
     const pulledByUser = await pullAttendanceInputsByUser(
       this.db,
@@ -207,15 +263,26 @@ export class InputsService {
     });
 
     const uniqueUserIds = [...new Set(pulledInputs.map((p) => p.userId))];
-    const membershipRows = uniqueUserIds.length > 0
-      ? await this.db
-          .select({ userId: organizationMembers.userId, id: organizationMembers.id })
-          .from(organizationMembers)
-          .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, uniqueUserIds)))
-          .limit(uniqueUserIds.length + 1)
-      : [];
+    const membershipRows =
+      uniqueUserIds.length > 0
+        ? await this.db
+            .select({
+              userId: organizationMembers.userId,
+              id: organizationMembers.id,
+            })
+            .from(organizationMembers)
+            .where(
+              and(
+                eq(organizationMembers.orgId, orgId),
+                inArray(organizationMembers.userId, uniqueUserIds),
+              ),
+            )
+            .limit(uniqueUserIds.length + 1)
+        : [];
     const memberIdByUserId = new Map<string, number>(
-      membershipRows.flatMap((r) => r.userId != null ? [[r.userId, r.id]] : []),
+      membershipRows.flatMap((r) =>
+        r.userId != null ? [[r.userId, r.id]] : [],
+      ),
     );
 
     const insertRows = pulledInputs.map(({ userId, pulled }) => ({
@@ -238,7 +305,12 @@ export class InputsService {
     await this.db.transaction(async (tx) => {
       await tx
         .delete(payrollInputs)
-        .where(and(eq(payrollInputs.orgId, orgId), inArray(payrollInputs.id, idsToDelete)));
+        .where(
+          and(
+            eq(payrollInputs.orgId, orgId),
+            inArray(payrollInputs.id, idsToDelete),
+          ),
+        );
 
       // One statement: PAYROLL_READ_CAP rows x 15 columns stays far under the
       // 65535 bind-parameter ceiling, so raising that cap needs chunking here.

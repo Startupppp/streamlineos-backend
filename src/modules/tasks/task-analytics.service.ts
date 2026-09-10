@@ -15,27 +15,43 @@ type PerRep = {
   completionRate: number;
 };
 
-const EMPTY_TASK_ANALYTICS = {
+type TaskAnalyticsReport = {
+  period: number;
+  total: number;
+  completed: number;
+  overdue: number;
+  completionRate: number;
+  perRep: PerRep[];
+};
+
+const EMPTY_TASK_ANALYTICS: TaskAnalyticsReport = {
   period: 0,
   total: 0,
   completed: 0,
   overdue: 0,
   completionRate: 0,
-  perRep: [] as PerRep[],
+  perRep: [],
 };
 
 @Injectable()
 export class TaskAnalyticsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async analytics(read: ScopedRead, input: AnalyticsInput) {
+  async analytics(
+    read: ScopedRead,
+    input: AnalyticsInput,
+  ): Promise<TaskAnalyticsReport> {
     // `perRep` is a per-person leaderboard of every assignee, which an `own`-scoped member may not read.
     const visible = read.compose(
-      { tenant: tasks.orgId, scope: { columns: { ownerColumn: tasks.assigneeId } } },
+      {
+        tenant: tasks.orgId,
+        scope: { columns: { ownerColumn: tasks.assigneeId } },
+      },
       (where) => where.sql,
       () => null,
     );
-    if (visible === null) return { ...EMPTY_TASK_ANALYTICS, period: input.days };
+    if (visible === null)
+      return { ...EMPTY_TASK_ANALYTICS, period: input.days };
     const days = input.days;
     const now = new Date();
     const periodStart = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
@@ -49,7 +65,11 @@ export class TaskAnalyticsService {
       .select({ completed: count() })
       .from(tasks)
       .where(
-        and(visible, eq(tasks.status, "completed"), gte(tasks.createdAt, periodStart)),
+        and(
+          visible,
+          eq(tasks.status, "completed"),
+          gte(tasks.createdAt, periodStart),
+        ),
       );
 
     const [overdueRow] = await this.db
@@ -77,10 +97,16 @@ export class TaskAnalyticsService {
       .from(tasks)
       .leftJoin(users, eq(tasks.assigneeId, users.id))
       .where(
-        and(visible, isNotNull(tasks.assigneeId), gte(tasks.createdAt, periodStart)),
+        and(
+          visible,
+          isNotNull(tasks.assigneeId),
+          gte(tasks.createdAt, periodStart),
+        ),
       )
       .groupBy(tasks.assigneeId, users.firstName, users.lastName, users.name)
-      .orderBy(sql`SUM(CASE WHEN ${tasks.status} = 'completed' THEN 1 ELSE 0 END) DESC`)
+      .orderBy(
+        sql`SUM(CASE WHEN ${tasks.status} = 'completed' THEN 1 ELSE 0 END) DESC`,
+      )
       .limit(20);
 
     const totalNum = Number(totalRow?.total ?? 0);
@@ -92,7 +118,8 @@ export class TaskAnalyticsService {
       total: totalNum,
       completed: completedNum,
       overdue: overdueNum,
-      completionRate: totalNum > 0 ? Math.round((completedNum / totalNum) * 100) : 0,
+      completionRate:
+        totalNum > 0 ? Math.round((completedNum / totalNum) * 100) : 0,
       perRep: perRep.map((r) => ({
         assigneeId: r.assigneeId,
         name:

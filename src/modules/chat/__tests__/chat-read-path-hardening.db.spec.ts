@@ -21,7 +21,6 @@
  */
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import * as schema from "../../../db/schema";
 import { chatChannels } from "../../../db/schema";
 import { CHAT_ENTITY_CHANNEL_CONFLICT } from "../chat-entity-channel-conflict-target";
 
@@ -142,12 +141,12 @@ describe("chat read-path indexes — live catalog", () => {
 
 describe("entity channel — one record cannot get two channels", () => {
   let client: postgres.Sql;
-  let db: ReturnType<typeof drizzle<typeof schema>>;
+  let db: ReturnType<typeof drizzle>;
   let orgId: string;
 
   beforeAll(async () => {
     client = postgres(DB_URL, { max: 1, prepare: false, onnotice: () => undefined });
-    db = drizzle(client, { schema });
+    db = drizzle(client);
     const [org] = await client<Array<{ id: string }>>`SELECT id FROM organizations LIMIT 1`;
     if (!org) throw new Error("this suite needs a database with at least one organizations row");
     orgId = org.id;

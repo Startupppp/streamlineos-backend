@@ -1,6 +1,5 @@
-import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
+import { join, posix, resolve } from "node:path";
 
 /**
  * PRD-C048 — every path parameter reaches a handler through a validation boundary.
@@ -25,14 +24,17 @@ import { join, resolve } from "node:path";
 
 const BACKEND_ROOT = resolve(__dirname, "..", "..", "..", "..");
 
-function controllerFiles(): string[] {
-  return execFileSync("find", ["src", "-name", "*.controller.ts", "-not", "-name", "*.spec.ts"], {
-    cwd: BACKEND_ROOT,
-    encoding: "utf8",
-  })
-    .trim()
-    .split("\n")
-    .filter((line) => line.length > 0);
+function controllerFiles(directory = "src"): string[] {
+  const files: string[] = [];
+  for (const entry of readdirSync(join(BACKEND_ROOT, directory), { withFileTypes: true })) {
+    const file = posix.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...controllerFiles(file));
+    } else if (entry.name.endsWith(".controller.ts") && !entry.name.endsWith(".spec.ts")) {
+      files.push(file);
+    }
+  }
+  return files;
 }
 
 /**
@@ -75,8 +77,12 @@ describe("PRD-C048 — path parameters cross a validation boundary", () => {
   const files = controllerFiles();
 
   it("scans a real controller corpus", () => {
-    // Anti-vacuity: a broken find or a moved root would make every assertion below pass.
+    // Anti-vacuity: a broken walk or a moved root would make every assertion below pass.
     expect(files.length).toBeGreaterThan(400);
+    expect(new Set(files).size).toBe(files.length);
+    expect(files.every((file) => file.startsWith("src/") && file.endsWith(".controller.ts"))).toBe(true);
+    expect(files.some((file) => file.includes("\\") || file.endsWith(".spec.ts"))).toBe(false);
+    expect(controllerFiles()).toEqual(files);
   });
 
   it("no @Param binding lacks both a pipe and @Validate({ params })", () => {

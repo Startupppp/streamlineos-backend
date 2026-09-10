@@ -237,10 +237,6 @@
       "as": 1,
       "nonNull": 0
     },
-    "src/modules/clients/client-accounts.service.ts": {
-      "as": 0,
-      "nonNull": 1
-    },
     "src/modules/clients/clients-email.service.ts": {
       "as": 1,
       "nonNull": 0
@@ -408,10 +404,6 @@
     "src/modules/hr/directory/dto/hr-directory.schemas.ts": {
       "as": 1,
       "nonNull": 0
-    },
-    "src/modules/hr/directory/employee-skills.service.ts": {
-      "as": 0,
-      "nonNull": 1
     },
     "src/modules/hr/directory/org-chart.service.ts": {
       "as": 0,
@@ -588,10 +580,6 @@
     "src/modules/inventory/import-export/import.service.ts": {
       "as": 0,
       "nonNull": 3
-    },
-    "src/modules/inventory/products/inv-product-crud.service.ts": {
-      "as": 0,
-      "nonNull": 1
     },
     "src/modules/inventory/purchase-orders/grn-receive.service.ts": {
       "as": 0,

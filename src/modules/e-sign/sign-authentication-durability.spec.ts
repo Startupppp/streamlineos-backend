@@ -35,7 +35,7 @@ function recipientFixture(): Partial<typeof signRecipients.$inferSelect> {
 
 async function build() {
   let recipient = recipientFixture();
-  let events: Record<string, unknown>[] = [];
+  const events: Record<string, unknown>[] = [];
   let pendingRowLock = Promise.resolve();
   const envelope = { id: 1, orgId: "sign-auth-test", status: "sent" };
 
