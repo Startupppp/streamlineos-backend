@@ -16,6 +16,7 @@ import { ComplianceService } from "./compliance.service";
 import { DocumentsService } from "./documents.service";
 import { LettersService } from "./letters.service";
 import type { AuditService } from "../../../common/audit/audit.service";
+import { ScopedRead } from "../../access/scoped-read";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (
@@ -264,7 +265,7 @@ describe("HR Performance services — cross-tenant isolation", () => {
     it("scopes PIPs to the requesting org (DENY — cross-tenant isolation)", async () => {
       const { db, findMany } = makeDb([]);
       const svc = new PerformancePipsService(db);
-      const result = await svc.listPips(ATTACKER, "user-1", "all");
+      const result = await svc.listPips(ScopedRead.of(ATTACKER, "user-1", "all"));
       expect(result).toHaveLength(0);
       expect(findMany).toHaveBeenCalled();
       const call = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
@@ -274,7 +275,7 @@ describe("HR Performance services — cross-tenant isolation", () => {
     it("returns PIPs for the owning org (CONTROL)", async () => {
       const { db } = makeDb([{ id: 1, orgId: OWNER }]);
       const svc = new PerformancePipsService(db);
-      const result = await svc.listPips(OWNER, "user-1", "all");
+      const result = await svc.listPips(ScopedRead.of(OWNER, "user-1", "all"));
       expect(result).toHaveLength(1);
     });
   });
@@ -338,7 +339,7 @@ describe("HR Performance services — cross-tenant isolation", () => {
     it("hides acknowledgments for a different org (DENY — cross-tenant isolation)", async () => {
       const { db, findMany } = makeDb([]);
       const svc = new ComplianceService(db);
-      const result = await svc.listAcknowledgments(ATTACKER, "user-1", "all");
+      const result = await svc.listAcknowledgments(ScopedRead.of(ATTACKER, "user-1", "all"));
       expect(result).toHaveLength(0);
       expect(findMany).toHaveBeenCalled();
       const call = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
@@ -348,7 +349,7 @@ describe("HR Performance services — cross-tenant isolation", () => {
     it("returns acknowledgments for the owning org (CONTROL)", async () => {
       const { db } = makeDb([{ id: 1, orgId: OWNER }]);
       const svc = new ComplianceService(db);
-      const result = await svc.listAcknowledgments(OWNER, "user-1", "all");
+      const result = await svc.listAcknowledgments(ScopedRead.of(OWNER, "user-1", "all"));
       expect(result).toHaveLength(1);
     });
   });
@@ -358,7 +359,7 @@ describe("HR Performance services — cross-tenant isolation", () => {
       const mockAudit = {} as unknown as AuditService;
       const { db, where } = makeDb([]);
       const svc = new DocumentsService(db, mockAudit);
-      const result = await svc.listDocuments(ATTACKER, "user-1", "all", { limit: 10 });
+      const result = await svc.listDocuments(ScopedRead.of(ATTACKER, "user-1", "all"), { limit: 10 });
       expect(result.data).toHaveLength(0);
       expect(where).toHaveBeenCalled();
       expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
@@ -368,7 +369,7 @@ describe("HR Performance services — cross-tenant isolation", () => {
       const mockAudit = {} as unknown as AuditService;
       const { db } = makeDb([{ id: 1, orgId: OWNER }]);
       const svc = new DocumentsService(db, mockAudit);
-      const result = await svc.listDocuments(OWNER, "user-1", "all", { limit: 10 });
+      const result = await svc.listDocuments(ScopedRead.of(OWNER, "user-1", "all"), { limit: 10 });
       expect(result.data).toHaveLength(1);
     });
   });

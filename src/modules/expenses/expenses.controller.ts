@@ -23,13 +23,13 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
+import { readRequestScopedRead } from "../organization/core/read-request-scope";
 import {
   canReadOthersExpenses,
   resolveExpenseReadScope,
-  type ExpenseReadScope,
+  type ExpenseRead,
 } from "./expenses-scope";
 import { ExpensesService } from "./expenses.service";
 import { ExpensesWriteService } from "./expenses-write.service";
@@ -86,7 +86,7 @@ export class ExpensesController {
     private readonly exportJobs: ExpenseExportService,
   ) {}
 
-  private readScope(u: CurrentUserContext): Promise<ExpenseReadScope> {
+  private readScope(u: CurrentUserContext): Promise<ExpenseRead> {
     return resolveExpenseReadScope(this.access, this.employment, u);
   }
 
@@ -102,7 +102,7 @@ export class ExpensesController {
     @Query() filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.expenses.list(u.orgId, u.userId, await this.readScope(u), filters);
+    return this.expenses.list(await this.readScope(u), filters);
   }
 
   @Post()
@@ -139,10 +139,15 @@ export class ExpensesController {
     @Body() filters: ExportInput,
     @Headers("idempotency-key") idempotencyKey: string,
     @CurrentUser() u: CurrentUserContext,
-    @Req() req: Request & { rbacScope?: DataScope },
+    @Req() req: Request,
   ) {
-    const scope: DataScope = req.rbacScope ?? "none";
-    return this.exportJobs.create(u, filters, idempotencyKey, scope);
+    const read = readRequestScopedRead(req, u);
+    return this.exportJobs.create(
+      u,
+      filters,
+      idempotencyKey,
+      read.rawScope("export filters are persisted on the job row for a background worker to replay outside the request"),
+    );
   }
 
   @Get("page-data")
@@ -153,7 +158,7 @@ export class ExpensesController {
     @Query() filters: PageDataInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.expenses.getPageData(u.orgId, u.userId, await this.readScope(u), filters);
+    return this.expenses.getPageData(await this.readScope(u), filters);
   }
 
   @Get("report")
@@ -164,7 +169,7 @@ export class ExpensesController {
     @Query() filters: ReportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.expenses.getReport(u.orgId, u.userId, await this.readScope(u), filters);
+    return this.expenses.getReport(await this.readScope(u), filters);
   }
 
   @Post("export/jobs")
@@ -177,10 +182,15 @@ export class ExpensesController {
     @Body() filters: ExportInput,
     @Headers("idempotency-key") idempotencyKey: string,
     @CurrentUser() u: CurrentUserContext,
-    @Req() req: Request & { rbacScope?: DataScope },
+    @Req() req: Request,
   ) {
-    const scope: DataScope = req.rbacScope ?? "none";
-    return this.exportJobs.create(u, filters, idempotencyKey, scope);
+    const read = readRequestScopedRead(req, u);
+    return this.exportJobs.create(
+      u,
+      filters,
+      idempotencyKey,
+      read.rawScope("export filters are persisted on the job row for a background worker to replay outside the request"),
+    );
   }
 
   @Get("export/jobs/:jobId")

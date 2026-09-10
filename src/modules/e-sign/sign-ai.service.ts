@@ -8,7 +8,8 @@ import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 import { unwrapAiResult } from "../ai/core/services/gateway-result.util";
 import { extractAttachmentText } from "../kb/retrieval/kb-attachment-extract.util";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
-import { mustGetVisibleEnvelope, type EnvelopeViewScope } from "./sign-envelope-scope";
+import { mustGetVisibleEnvelope } from "./sign-envelope-scope";
+import type { ScopedRead } from "../access/scoped-read";
 
 const SIGN_SUMMARIZE_FEATURE = "sign.summarize-document";
 const MAX_DOCS = 2;
@@ -34,7 +35,8 @@ export class SignAiService {
     orgId: string,
     envelopeId: number,
     userId: string,
-    scope: EnvelopeViewScope,
+    read: ScopedRead,
+    membershipId: number | null,
   ): Promise<{ summary: string }> {
     // Both reads happen inside ONE short tenant transaction that commits before
     // the object-store fetch, the text extraction and the provider call below.
@@ -49,7 +51,7 @@ export class SignAiService {
     const docs = await runInTenantTransaction(
       this.db,
       async () => {
-        await mustGetVisibleEnvelope(this.db, orgId, envelopeId, scope, "Envelope not found");
+        await mustGetVisibleEnvelope(this.db, read, membershipId, envelopeId, "Envelope not found");
         return this.db.query.signDocuments.findMany({
           where: and(eq(signDocuments.orgId, orgId), eq(signDocuments.envelopeId, envelopeId)),
           orderBy: (d, { asc }) => [asc(d.orderIndex)],

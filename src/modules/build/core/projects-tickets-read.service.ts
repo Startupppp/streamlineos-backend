@@ -28,7 +28,7 @@ import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor
 import { keysetAfterValue } from "../../../common/pagination/keyset";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { resolveTicketsScope, ticketScopePredicate } from "./tickets-scope";
+import { resolveTicketsScope, ticketScope } from "./tickets-scope";
 import type { TicketsListQuery } from "./dto/projects.schemas";
 import { queryTickets } from "./projects-tickets-read.query";
 
@@ -207,7 +207,7 @@ export class ProjectsTicketsReadService {
     );
     if (!hasAccess) throw new NotFoundException("Not found");
 
-    const scope = await resolveTicketsScope(this.access, u);
+    const read = await resolveTicketsScope(this.access, u);
 
     const {
       limit,
@@ -228,13 +228,11 @@ export class ProjectsTicketsReadService {
       orderDir,
     } = query;
 
-    if (scope === "none")
+    if (read.denied)
       return {
         data: [],
         pagination: { limit, nextCursor: null, hasMore: false },
       };
-
-    const scopeClause = ticketScopePredicate(scope, u.orgId, u.userId);
 
     const filterConditions: SQL<unknown>[] = [];
 
@@ -312,12 +310,14 @@ export class ProjectsTicketsReadService {
     if (dueDateFrom) filterConditions.push(gte(tickets.dueDate, dueDateFrom));
     if (dueDateTo) filterConditions.push(lte(tickets.dueDate, dueDateTo));
 
-    const where = and(
-      eq(tickets.orgId, u.orgId),
-      eq(tickets.projectId, projectId),
-      isNull(tickets.deletedAt),
-      ...(scopeClause ? [scopeClause] : []),
-      ...filterConditions,
+    const where = read.compose(
+      {
+        tenant: tickets.orgId,
+        scope: ticketScope(read.orgId, read.actorId),
+        and: [eq(tickets.projectId, projectId), isNull(tickets.deletedAt), ...filterConditions],
+      },
+      ({ sql: where }) => where,
+      () => sql`false`,
     );
 
     const col = TICKET_ORDERBY_COLUMNS[orderBy];
@@ -412,23 +412,22 @@ export class ProjectsTicketsReadService {
     );
     if (!hasAccess) throw new NotFoundException("Not found");
 
-    const scope = await resolveTicketsScope(this.access, u);
-    if (scope === "none") return {};
+    const read = await resolveTicketsScope(this.access, u);
+    if (read.denied) return {};
 
-    const scopeClause = ticketScopePredicate(scope, u.orgId, u.userId);
-
-    const rows = await this.db
-      .select({ status: tickets.status, cnt: sql<string>`count(*)` })
-      .from(tickets)
-      .where(
-        and(
-          eq(tickets.orgId, u.orgId),
-          eq(tickets.projectId, projectId),
-          isNull(tickets.deletedAt),
-          scopeClause,
-        ),
-      )
-      .groupBy(tickets.status);
+    const rows = await read.read(
+      {
+        tenant: tickets.orgId,
+        scope: ticketScope(read.orgId, read.actorId),
+        and: [eq(tickets.projectId, projectId), isNull(tickets.deletedAt)],
+      },
+      ({ sql: where }) => this.db
+        .select({ status: tickets.status, cnt: sql<string>`count(*)` })
+        .from(tickets)
+        .where(where)
+        .groupBy(tickets.status),
+      () => [],
+    );
     const result: Record<string, number> = {};
     for (const row of rows) {
       if (row.status) result[row.status] = Number(row.cnt);

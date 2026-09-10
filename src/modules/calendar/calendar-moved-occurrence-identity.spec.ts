@@ -276,7 +276,6 @@ function projectionsFor(window: { start: Date; end: Date }, exceptions: Calendar
     userId: USER,
     start: window.start,
     end: window.end,
-    scope: "all",
   };
   return source.load(ctx);
 }

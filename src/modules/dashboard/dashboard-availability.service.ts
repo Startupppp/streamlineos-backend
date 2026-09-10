@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, countDistinct, desc, eq, sql } from "drizzle-orm";
+import { asc, countDistinct, desc, eq, sql } from "drizzle-orm";
 import {
   attendance,
   hrEmployments,
@@ -13,9 +13,8 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
-import { applyScope } from "../access/apply-scope";
+import type { ScopedRead } from "../access/scoped-read";
 import { formatInTimeZone } from "date-fns-tz";
 import { getTodayString } from "../../common/date";
 import { resolveAttendanceReadScope } from "../hr/time/attendance-scope";
@@ -35,9 +34,9 @@ export class DashboardAvailabilityService {
   ) {}
 
   async getTeamAvailability(u: CurrentUserContext) {
-    const { orgId, userId } = u;
-    const scope = await resolveAttendanceReadScope(this.access, u);
-    if (scope === "none") return [];
+    const { orgId } = u;
+    const read = await resolveAttendanceReadScope(this.access, u);
+    if (read.denied) return [];
     const org = await this.db.query.organizations.findFirst({
       where: eq(organizations.id, orgId),
       columns: { timezone: true },
@@ -48,84 +47,84 @@ export class DashboardAvailabilityService {
       this.access,
       u,
       "team-availability",
-      scope,
+      read,
       `${orgTz}:${today}`,
     );
     return this.cache.cachedForOrg(
       orgId,
       key,
-      async () => {
-        const scopePredicate = applyScope(scope, orgId, userId, {
-          ownerColumn: attendance.userId,
-        });
-        const todayAttendance = await this.db
-          .select({
-            userId: attendance.userId,
-            checkIn: attendance.checkIn,
-            checkOut: attendance.checkOut,
-            createdAt: attendance.createdAt,
-            userName: users.name,
-            firstName: users.firstName,
-            lastName: users.lastName,
-            userImage: users.image,
-          })
-          .from(attendance)
-          .innerJoin(users, eq(attendance.userId, users.id))
-          .where(
-            and(
-              eq(attendance.orgId, orgId),
-              eq(attendance.date, today),
-              scopePredicate,
-            ),
-          )
-          .orderBy(asc(attendance.userId), desc(attendance.createdAt))
-          .limit(DASHBOARD_ATTENDANCE_ROW_CAP);
+      () =>
+        read.read(
+          {
+            tenant: attendance.orgId,
+            scope: { columns: { ownerColumn: attendance.userId } },
+            and: [eq(attendance.date, today)],
+          },
+          async ({ sql: where }) => {
+            const todayAttendance = await this.db
+              .select({
+                userId: attendance.userId,
+                checkIn: attendance.checkIn,
+                checkOut: attendance.checkOut,
+                createdAt: attendance.createdAt,
+                userName: users.name,
+                firstName: users.firstName,
+                lastName: users.lastName,
+                userImage: users.image,
+              })
+              .from(attendance)
+              .innerJoin(users, eq(attendance.userId, users.id))
+              .where(where)
+              .orderBy(asc(attendance.userId), desc(attendance.createdAt))
+              .limit(DASHBOARD_ATTENDANCE_ROW_CAP);
 
-        const byUser = new Map<string, (typeof todayAttendance)[number]>();
-        for (const record of todayAttendance) {
-          const existing = byUser.get(record.userId);
-          if (!existing) {
-            byUser.set(record.userId, record);
-            continue;
-          }
-          const recordOpen = Boolean(record.checkIn) && !record.checkOut;
-          const existingOpen = Boolean(existing.checkIn) && !existing.checkOut;
-          if (recordOpen && !existingOpen) {
-            byUser.set(record.userId, record);
-            continue;
-          }
-          if (recordOpen === existingOpen) {
-            const recordCreated = record.createdAt
-              ? new Date(record.createdAt).getTime()
-              : 0;
-            const existingCreated = existing.createdAt
-              ? new Date(existing.createdAt).getTime()
-              : 0;
-            if (recordCreated > existingCreated)
-              byUser.set(record.userId, record);
-          }
-        }
+            const byUser = new Map<string, (typeof todayAttendance)[number]>();
+            for (const record of todayAttendance) {
+              const existing = byUser.get(record.userId);
+              if (!existing) {
+                byUser.set(record.userId, record);
+                continue;
+              }
+              const recordOpen = Boolean(record.checkIn) && !record.checkOut;
+              const existingOpen = Boolean(existing.checkIn) && !existing.checkOut;
+              if (recordOpen && !existingOpen) {
+                byUser.set(record.userId, record);
+                continue;
+              }
+              if (recordOpen === existingOpen) {
+                const recordCreated = record.createdAt
+                  ? new Date(record.createdAt).getTime()
+                  : 0;
+                const existingCreated = existing.createdAt
+                  ? new Date(existing.createdAt).getTime()
+                  : 0;
+                if (recordCreated > existingCreated)
+                  byUser.set(record.userId, record);
+              }
+            }
 
-        return [...byUser.values()].map((record) => ({
-          userId: record.userId,
-          name:
-            record.firstName && record.lastName
-              ? `${record.firstName} ${record.lastName}`
-              : record.userName || "Unknown",
-          image: record.userImage,
-          checkIn: record.checkIn,
-          checkOut: record.checkOut,
-          isOnline: Boolean(record.checkIn) && !record.checkOut,
-        }));
-      },
+            return [...byUser.values()].map((record) => ({
+              userId: record.userId,
+              name:
+                record.firstName && record.lastName
+                  ? `${record.firstName} ${record.lastName}`
+                  : record.userName || "Unknown",
+              image: record.userImage,
+              checkIn: record.checkIn,
+              checkOut: record.checkOut,
+              isOnline: Boolean(record.checkIn) && !record.checkOut,
+            }));
+          },
+          () => [],
+        ),
       CACHE_TTL.SHORT,
     );
   }
 
   async getTeamAttendance(u: CurrentUserContext) {
     const { orgId } = u;
-    const scope = await resolveAttendanceReadScope(this.access, u);
-    if (scope === "none")
+    const read = await resolveAttendanceReadScope(this.access, u);
+    if (read.denied)
       return {
         total: 0,
         present: 0,
@@ -139,34 +138,36 @@ export class DashboardAvailabilityService {
       this.access,
       u,
       "team-attendance",
-      scope,
+      read,
       today,
     );
     return this.cache.cachedForOrg(
       orgId,
       key,
-      () => this.buildTeamAttendance(orgId, today, scope, u),
+      () => this.buildTeamAttendance(today, read),
       CACHE_TTL.SHORT,
     );
   }
 
-  private async buildTeamAttendance(
-    orgId: string,
-    today: string,
-    scope: DataScope,
-    u: CurrentUserContext,
-  ) {
-    const memberScopePredicate = applyScope(scope, orgId, u.userId, {
-      ownerColumn: organizationMembers.userId,
-    });
-    const attendanceScopePredicate = applyScope(scope, orgId, u.userId, {
-      ownerColumn: attendance.userId,
-    });
-
-    const presentToday = and(
-      eq(attendance.orgId, orgId),
-      eq(attendance.date, today),
-      attendanceScopePredicate,
+  private async buildTeamAttendance(today: string, read: ScopedRead) {
+    const orgId = read.orgId;
+    const memberWhere = read.compose(
+      {
+        tenant: organizationMembers.orgId,
+        scope: { columns: { ownerColumn: organizationMembers.userId } },
+        and: [eq(organizationMembers.status, "ACTIVE")],
+      },
+      ({ sql: where }) => where,
+      () => sql`false`,
+    );
+    const presentToday = read.compose(
+      {
+        tenant: attendance.orgId,
+        scope: { columns: { ownerColumn: attendance.userId } },
+        and: [eq(attendance.date, today)],
+      },
+      ({ sql: where }) => where,
+      () => sql`false`,
     );
 
     const [totalMembersResult, todayAttendance, presenceCounts] =
@@ -174,13 +175,7 @@ export class DashboardAvailabilityService {
         this.db
           .select({ count: sql<number>`count(*)::int` })
           .from(organizationMembers)
-          .where(
-            and(
-              eq(organizationMembers.orgId, orgId),
-              eq(organizationMembers.status, "ACTIVE"),
-              memberScopePredicate,
-            ),
-          ),
+          .where(memberWhere),
         this.db
           .select({
             userId: attendance.userId,

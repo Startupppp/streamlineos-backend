@@ -4,7 +4,7 @@ import { systemJobCovers } from "../../../common/auth/principal";
 import type { Db } from "../../../db/drizzle.types";
 import type { AccessService } from "../../access/access.service";
 import { assertProjectInOrg, resolveProjectAccess } from "./project-access";
-import { resolveTicketsScope } from "./tickets-scope";
+import { ticketsScopeIsUnrestricted } from "./tickets-scope";
 
 export async function assertProjectAggregateAccess(db: Db, access: AccessService, actor: CurrentUserContext, projectId: number): Promise<void> {
   if (actor.principal.kind === "system-job") {
@@ -14,6 +14,6 @@ export async function assertProjectAggregateAccess(db: Db, access: AccessService
   }
   const project = await resolveProjectAccess(db, access, actor, projectId);
   if (!project.hasAccess) throw new ForbiddenException("Not authorized to view this project");
-  if (await resolveTicketsScope(access, actor) !== "all")
+  if (!(await ticketsScopeIsUnrestricted(access, actor)))
     throw new ForbiddenException("Project-wide reports require access to all project tickets");
 }

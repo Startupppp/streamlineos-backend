@@ -1,6 +1,5 @@
 import { BadRequestException } from "@nestjs/common";
 import { z } from "zod";
-import type { DataScope } from "../../access/access.types";
 
 const CURSOR_VERSION = 1;
 
@@ -10,7 +9,7 @@ const peopleCursorSchema = z
     personId: z.number().int().positive(),
     orgId: z.string().min(1),
     actorUserId: z.string().min(1),
-    scope: z.enum(["all", "own", "team", "none"]),
+    scope: z.string().min(1),
     search: z.string().nullable(),
   })
   .strict();
@@ -21,7 +20,7 @@ const employmentCursorSchema = z
     employmentId: z.number().int().positive(),
     orgId: z.string().min(1),
     actorUserId: z.string().min(1),
-    scope: z.enum(["all", "own", "team", "none"]),
+    scope: z.string().min(1),
   })
   .strict();
 
@@ -39,7 +38,7 @@ const timelineCursorSchema = z
     orgId: z.string().min(1),
     actorUserId: z.string().min(1),
     employmentId: z.number().int().positive(),
-    scope: z.enum(["all", "own", "team", "none"]),
+    scope: z.string().min(1),
     positions: z
       .object({
         history: timelinePositionSchema.optional(),
@@ -54,7 +53,7 @@ export type PeopleListCursor = {
   personId: number;
   orgId: string;
   actorUserId: string;
-  scope: DataScope;
+  scope: string;
   search: string | null;
 };
 
@@ -62,7 +61,7 @@ export type EmploymentListCursor = {
   employmentId: number;
   orgId: string;
   actorUserId: string;
-  scope: DataScope;
+  scope: string;
 };
 
 export type TimelinePosition = z.infer<typeof timelinePositionSchema>;

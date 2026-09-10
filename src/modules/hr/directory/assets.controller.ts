@@ -55,8 +55,8 @@ export class HrAssetsController {
   @ResponseSchema(z.array(assetReturnRowSchema))
   @RequirePermission("hr:assets:view")
   async listAssetReturns(@CurrentUser() u: CurrentUserContext) {
-    const scope = await resolveAssetsScope(this.access, u);
-    return this.assets.listAssetReturns(u.orgId, u.userId, scope);
+    const read = await resolveAssetsScope(this.access, u);
+    return this.assets.listAssetReturns(read);
   }
 
   @Post("asset-returns")

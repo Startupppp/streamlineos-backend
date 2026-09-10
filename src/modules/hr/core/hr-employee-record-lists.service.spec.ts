@@ -5,6 +5,7 @@ import {
   decodePeopleListCursor,
 } from "./hr-core-list-cursors";
 import { HrEmployeeRecordListsService } from "./hr-employee-record-lists.service";
+import { ScopedRead } from "../../access/scoped-read";
 
 function cursorQueryDb(records: Array<{ id: number }>) {
   const query = {
@@ -33,10 +34,8 @@ describe("HrEmployeeRecordListsService cursor contracts", () => {
     const service = new HrEmployeeRecordListsService(db as never);
 
     const result = await service.listPeopleCursor(
-      "org-1",
-      "actor-1",
+      ScopedRead.of("org-1", "actor-1", "all"),
       { limit: 2 },
-      "all",
     );
 
     expect(db.select).toHaveBeenCalledTimes(1);
@@ -58,10 +57,8 @@ describe("HrEmployeeRecordListsService cursor contracts", () => {
     const service = new HrEmployeeRecordListsService(db as never);
 
     const result = await service.listEmploymentsCursor(
-      "org-1",
-      "actor-1",
+      ScopedRead.of("org-1", "actor-1", "own"),
       { limit: 1 },
-      "own",
     );
 
     expect(db.select).toHaveBeenCalledTimes(1);
@@ -81,36 +78,44 @@ describe("HrEmployeeRecordListsService cursor contracts", () => {
     const service = new HrEmployeeRecordListsService(db as never);
 
     const result = await service.listPeopleCursor(
-      "org-1",
-      "actor-1",
+      ScopedRead.of("org-1", "actor-1", "all"),
       { limit: 500 },
-      "none",
     );
 
     expect(query.limit).toHaveBeenCalledWith(101);
     expect(result.pageInfo.limit).toBe(100);
   });
 
+  it("denies before touching the database when scope=none, still reporting the bounded limit", async () => {
+    const { db, query } = cursorQueryDb([]);
+    const service = new HrEmployeeRecordListsService(db as never);
+
+    const result = await service.listPeopleCursor(
+      ScopedRead.of("org-1", "actor-1", "none"),
+      { limit: 500 },
+    );
+
+    expect(db.select).not.toHaveBeenCalled();
+    expect(query.limit).not.toHaveBeenCalled();
+    expect(result.pageInfo).toEqual({ limit: 100, hasMore: false, nextCursor: null });
+  });
+
   it("rejects a people cursor after its search scope changes", async () => {
     const { db } = cursorQueryDb([{ id: 11 }, { id: 12 }]);
     const service = new HrEmployeeRecordListsService(db as never);
     const firstPage = await service.listPeopleCursor(
-      "org-1",
-      "actor-1",
+      ScopedRead.of("org-1", "actor-1", "all"),
       { limit: 1, search: "Ada" },
-      "all",
     );
 
     await expect(
       service.listPeopleCursor(
-        "org-1",
-        "actor-1",
+        ScopedRead.of("org-1", "actor-1", "all"),
         {
           cursor: firstPage.pageInfo.nextCursor ?? undefined,
           limit: 1,
           search: "Grace",
         },
-        "all",
       ),
     ).rejects.toMatchObject({ response: { code: "INVALID_PEOPLE_CURSOR" } });
     expect(db.select).toHaveBeenCalledTimes(1);

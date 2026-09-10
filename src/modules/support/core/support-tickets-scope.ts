@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ScopedRead, type ScopeShape } from "../../access/scoped-read";
+import { ScopedRead, type OwnershipScope } from "../../access/scoped-read";
 import { AccessService } from "../../access/access.service";
 import { supportTickets } from "../../../db/schema";
 import { isScopable } from "../../rbac/permissions";
@@ -18,7 +18,7 @@ export async function resolveSupportTicketsViewScope(
 }
 
 // Ownership here is the assignee membership, not a user column, so it is a domain predicate rather than a ScopeColumns pair.
-export function supportTicketScope(orgId: string, userId: string): ScopeShape {
+export function supportTicketScope(orgId: string, userId: string): OwnershipScope {
   return {
     own: sql`${supportTickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${userId} AND status = 'ACTIVE')`,
   };

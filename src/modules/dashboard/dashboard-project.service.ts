@@ -8,6 +8,9 @@ import { AccessService } from "../access/access.service";
 import { resolveBuildDashboardScope } from "./dashboard-scope";
 import { DASHBOARD_PROJECT_ID_CAP } from "./dashboard-read-limits";
 
+const PROJECT_MEMBERSHIP_QUERY_SHAPE_REASON =
+  "all vs own/team picks an entirely different project-membership query shape, not a row predicate";
+
 @Injectable()
 export class DashboardProjectService {
   constructor(
@@ -40,10 +43,11 @@ export class DashboardProjectService {
   }
 
   async getRecentProjects(orgId: string, u: CurrentUserContext) {
-    const scope = await resolveBuildDashboardScope(this.access, u);
-    if (scope === "none") return [];
+    const read = await resolveBuildDashboardScope(this.access, u);
+    if (read.denied) return [];
+    const isAll = read.rawScope(PROJECT_MEMBERSHIP_QUERY_SHAPE_REASON) === "all";
 
-    if (scope === "all") {
+    if (isAll) {
       return this.db.query.projects.findMany({
         where: and(eq(projects.orgId, orgId), isNull(projects.deletedAt)),
         orderBy: [desc(projects.id)],
@@ -122,9 +126,10 @@ export class DashboardProjectService {
   }
 
   async getActiveSprintSummary(orgId: string, u: CurrentUserContext) {
-    const scope = await resolveBuildDashboardScope(this.access, u);
-    if (scope === "none") return null;
-    const projectIds = await this.resolveProjectIds(orgId, u.userId, scope === "all");
+    const read = await resolveBuildDashboardScope(this.access, u);
+    if (read.denied) return null;
+    const isAll = read.rawScope(PROJECT_MEMBERSHIP_QUERY_SHAPE_REASON) === "all";
+    const projectIds = await this.resolveProjectIds(orgId, u.userId, isAll);
     if (projectIds.length === 0) return null;
 
     const activeSprint = await this.db.query.sprints.findFirst({
@@ -197,10 +202,11 @@ export class DashboardProjectService {
   }
 
   async getRecentActivity(orgId: string, u: CurrentUserContext) {
-    const scope = await resolveBuildDashboardScope(this.access, u);
-    if (scope === "none") return [];
+    const read = await resolveBuildDashboardScope(this.access, u);
+    if (read.denied) return [];
+    const isAll = read.rawScope(PROJECT_MEMBERSHIP_QUERY_SHAPE_REASON) === "all";
     const [projectIds, managerMember] = await Promise.all([
-      this.resolveProjectIds(orgId, u.userId, scope === "all"),
+      this.resolveProjectIds(orgId, u.userId, isAll),
       this.db.query.organizationMembers.findFirst({ where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, u.userId)), columns: { id: true } }),
     ]);
     if (projectIds.length === 0) return [];
@@ -211,7 +217,7 @@ export class DashboardProjectService {
       isNull(tickets.deletedAt),
     ];
 
-    if (scope !== "all") {
+    if (!isAll) {
       const ownerFilter = or(
         eq(tickets.assigneeMembershipId, managerMember?.id ?? -1),
         eq(tickets.reporterId, u.userId),

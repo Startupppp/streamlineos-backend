@@ -4,7 +4,7 @@ import { applyScope } from "../modules/access/apply-scope";
 import { connectForProbe, requiredDatabase } from "./degraded-db";
 import { tickets, projects } from "../db/schema";
 import { and, eq, isNull, ilike, sql } from "drizzle-orm";
-import { resolveSearchAccess } from "../modules/search/search.service";
+import { resolveSearchAccess } from "../modules/search/search-scope";
 import type { AccessResolver } from "../modules/access/authorize";
 import type { CurrentUserContext } from "../common/auth/backend-claims";
 

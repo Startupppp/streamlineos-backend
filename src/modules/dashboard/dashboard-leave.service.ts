@@ -22,17 +22,13 @@ import { type DashboardForbidden } from "./dashboard.errors";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { actingMembershipId } from "../../common/auth/principal";
 import { AccessService } from "../access/access.service";
-import { resolveLeavesDashboardScope } from "./dashboard-scope";
+import { ownDashboardScope, resolveLeavesDashboardScope, resolveLeavesTodayScope } from "./dashboard-scope";
 import { resignationApprovalScope } from "./resignation-approval-scope";
 import {
   livePersonOfUser,
   primaryEmploymentOfPerson,
 } from "../directory/employment-query";
-import {
-  leaveApprovalScope,
-  resolveLeavesViewScope,
-} from "../hr/time/leaves-scope";
-import { applyScope } from "../access/apply-scope";
+import { leaveApprovalScope } from "../hr/time/leaves-scope";
 import {
   buildOrgSectionCacheKey,
   buildScopedSectionCacheKey,
@@ -52,17 +48,20 @@ export class DashboardLeaveService {
 
   async getLeavesToday(u: CurrentUserContext) {
     const { orgId } = u;
-    const approvalScope = await resolveLeavesViewScope(this.access, u);
-    const scope = approvalScope === "none" ? "own" : approvalScope;
+    const read = await resolveLeavesTodayScope(this.access, u);
     const today = getTodayString();
-    const visible = and(
-      eq(leaveRequests.orgId, orgId),
-      eq(leaveRequests.status, "APPROVED"),
-      lte(leaveRequests.startDate, today),
-      gte(leaveRequests.endDate, today),
-      applyScope(scope, orgId, u.userId, {
-        ownerColumn: leaveRequests.userId,
-      }),
+    const visible = read.compose(
+      {
+        tenant: leaveRequests.orgId,
+        scope: { columns: { ownerColumn: leaveRequests.userId } },
+        and: [
+          eq(leaveRequests.status, "APPROVED"),
+          lte(leaveRequests.startDate, today),
+          gte(leaveRequests.endDate, today),
+        ],
+      },
+      ({ sql: where }) => where,
+      () => sql`false`,
     );
 
     const [rows, totalRows] = await Promise.all([
@@ -99,7 +98,7 @@ export class DashboardLeaveService {
       this.access,
       u,
       "leave-balance",
-      "own",
+      ownDashboardScope(u),
       String(currentYear),
     );
     return this.cache.cachedForOrg(
@@ -128,8 +127,8 @@ export class DashboardLeaveService {
   }
 
   async getPendingApprovals(orgId: string, u: CurrentUserContext) {
-    const scope = await resolveLeavesDashboardScope(this.access, u);
-    if (scope === "none") {
+    const read = await resolveLeavesDashboardScope(this.access, u);
+    if (read.denied) {
       return { error: "forbidden", message: "Forbidden" } as DashboardForbidden;
     }
 
@@ -138,38 +137,43 @@ export class DashboardLeaveService {
       this.access,
       u,
       "pending-approvals",
-      scope,
+      read,
       isApprover ? "approver" : "self",
     );
-    const visible = leaveApprovalScope(scope, u.principal ? actingMembershipId(u.principal) : null);
+    const membershipId = u.principal ? actingMembershipId(u.principal) : null;
 
     return this.cache.cachedVersionedForOrg(
       orgId,
       DASHBOARD_PENDING_APPROVALS_NAMESPACE,
       key,
       async () => {
-        const [leaveCount] = await this.db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(leaveRequests)
-          .where(
-            and(eq(leaveRequests.orgId, orgId), eq(leaveRequests.status, "PENDING"), visible),
-          );
-
         const resignationStatuses = isApprover ? ["SUBMITTED", "PENDING_HR"] : ["HR_APPROVED"];
 
-        const [resignationCount] = await this.db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(resignations)
-          .where(
-            and(
-              eq(resignations.orgId, orgId),
-              inArray(
-                resignations.status,
-                resignationStatuses as ("SUBMITTED" | "PENDING_HR" | "HR_APPROVED")[],
-              ),
-                resignationApprovalScope(scope, orgId, u.userId),
-            ),
-          );
+        const [[leaveCount], [resignationCount]] = await Promise.all([
+          read.read(
+            {
+              tenant: leaveRequests.orgId,
+              scope: leaveApprovalScope(membershipId),
+              and: [eq(leaveRequests.status, "PENDING")],
+            },
+            ({ sql: where }) => this.db.select({ count: sql<number>`count(*)::int` }).from(leaveRequests).where(where),
+            () => [],
+          ),
+          read.read(
+            {
+              tenant: resignations.orgId,
+              scope: resignationApprovalScope(orgId, u.userId),
+              and: [
+                inArray(
+                  resignations.status,
+                  resignationStatuses as ("SUBMITTED" | "PENDING_HR" | "HR_APPROVED")[],
+                ),
+              ],
+            },
+            ({ sql: where }) => this.db.select({ count: sql<number>`count(*)::int` }).from(resignations).where(where),
+            () => [],
+          ),
+        ]);
 
         const pendingLeaves = leaveCount?.count ?? 0;
         const pendingResignations = resignationCount?.count ?? 0;

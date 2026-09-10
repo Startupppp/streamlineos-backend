@@ -1,5 +1,6 @@
 import type { Db } from "../../../db/drizzle.module";
 import { InputsService } from "./inputs.service";
+import { ScopedRead } from "../../access/scoped-read";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -41,7 +42,7 @@ describe("InputsService — cross-tenant isolation", () => {
   it("returns null for listInputs when run belongs to a different org (cross-tenant isolation)", async () => {
     const { db, runWhere } = makeDb([]);
     const svc = new InputsService(db);
-    const result = await svc.listInputs(ATTACKER_ORG, 99, { limit: 50 }, "all", "u1", 1);
+    const result = await svc.listInputs(ScopedRead.of(ATTACKER_ORG, "u1", "all"), 99, { limit: 50 }, 1);
     expect(result).toBeNull();
     expect(sqlValues(runWhere.mock.calls[0]?.[0])).toContain(ATTACKER_ORG);
   });
@@ -51,7 +52,7 @@ describe("InputsService — cross-tenant isolation", () => {
     const input = { id: 1, orgId: OWNER_ORG, runId: 1, userId: "u1" };
     const { db } = makeDb([run], [input]);
     const svc = new InputsService(db);
-    const result = await svc.listInputs(OWNER_ORG, 1, { limit: 50 }, "all", "u1", 1);
+    const result = await svc.listInputs(ScopedRead.of(OWNER_ORG, "u1", "all"), 1, { limit: 50 }, 1);
     expect(result).not.toBeNull();
   });
 });

@@ -27,7 +27,7 @@ import type {
 import {
   canReadOthersExpenses,
   expenseOwnerPredicate,
-  type ExpenseReadScope,
+  type ExpenseRead,
 } from "./expenses-scope";
 
 const ALL_EXPENSE_STATUSES_SET = new Set<string>([
@@ -51,23 +51,24 @@ export class ExpensesService {
     private readonly audit: AuditService,
   ) {}
 
-  list(orgId: string, userId: string, read: ExpenseReadScope, filters: ListInput) {
-    const key = `${userId}:${read.scope}:${read.teamUserIds.join("|")}:${filters.userId ?? ""}:${filters.status ?? ""}:${filters.page ?? ""}:${filters.limit ?? ""}:${filters.startDate ?? ""}:${filters.endDate ?? ""}`;
+  list(er: ExpenseRead, filters: ListInput) {
+    const key = `${er.read.discriminator}:${er.teamUserIds.join("|")}:${filters.userId ?? ""}:${filters.status ?? ""}:${filters.page ?? ""}:${filters.limit ?? ""}:${filters.startDate ?? ""}:${filters.endDate ?? ""}`;
     return this.cache.cachedVersioned(
-      CACHE_KEYS.expensesListNamespace(orgId),
+      CACHE_KEYS.expensesListNamespace(er.read.orgId),
       key,
-      () => this.getExpenses(orgId, userId, read, filters),
+      () => this.getExpenses(er, filters),
       CACHE_TTL.SHORT,
     );
   }
 
-  private async getExpenses(orgId: string, userId: string, read: ExpenseReadScope, filters: ListInput) {
+  private async getExpenses(er: ExpenseRead, filters: ListInput) {
+    const orgId = er.read.orgId;
     const page = filters.page ?? 1;
     const limit = filters.limit ?? 20;
     const offset = (page - 1) * limit;
 
     const conditions = [eq(expenses.orgId, orgId)];
-    const ownerPredicate = expenseOwnerPredicate(read, userId, filters.userId);
+    const ownerPredicate = expenseOwnerPredicate(er, filters.userId);
     if (ownerPredicate) conditions.push(ownerPredicate);
     if (filters.status) conditions.push(eq(expenses.status, filters.status));
     if (filters.startDate) conditions.push(gte(expenses.expenseDate, filters.startDate));
@@ -182,10 +183,10 @@ export class ExpensesService {
     return category;
   }
 
-  private buildPageConditions(orgId: string, userId: string, read: ExpenseReadScope, filters: PageDataInput) {
-    const conditions = [eq(expenses.orgId, orgId)];
+  private buildPageConditions(er: ExpenseRead, filters: PageDataInput) {
+    const conditions = [eq(expenses.orgId, er.read.orgId)];
 
-    const ownerPredicate = expenseOwnerPredicate(read, userId, filters.userId);
+    const ownerPredicate = expenseOwnerPredicate(er, filters.userId);
     if (ownerPredicate) conditions.push(ownerPredicate);
 
     if (filters.month) {
@@ -230,21 +231,22 @@ export class ExpensesService {
     return conditions;
   }
 
-  async getPageData(orgId: string, userId: string, read: ExpenseReadScope, filters: PageDataInput) {
-    const isAdmin = canReadOthersExpenses(read);
-    const pendingOwnerPredicate = expenseOwnerPredicate(read, userId);
+  async getPageData(er: ExpenseRead, filters: PageDataInput) {
+    const orgId = er.read.orgId;
+    const isAdmin = canReadOthersExpenses(er);
+    const pendingOwnerPredicate = expenseOwnerPredicate(er);
     const page = filters.page;
     const pageSize = filters.pageSize;
     const offset = (page - 1) * pageSize;
 
-    const conditions = this.buildPageConditions(orgId, userId, read, filters);
+    const conditions = this.buildPageConditions(er, filters);
     const baseFilters: PageDataInput = {
       page,
       pageSize,
       sortBy: filters.sortBy,
       sortOrder: filters.sortOrder,
     };
-    const baseConditions = this.buildPageConditions(orgId, userId, read, baseFilters);
+    const baseConditions = this.buildPageConditions(er, baseFilters);
 
     const sortColumns = {
       date: expenses.expenseDate,
@@ -341,15 +343,16 @@ export class ExpensesService {
     };
   }
 
-  async getReport(orgId: string, userId: string, read: ExpenseReadScope, filters: ReportInput) {
-    const isAdmin = canReadOthersExpenses(read);
+  async getReport(er: ExpenseRead, filters: ReportInput) {
+    const orgId = er.read.orgId;
+    const isAdmin = canReadOthersExpenses(er);
     const conditions = [
       eq(expenses.orgId, orgId),
       gte(expenses.expenseDate, filters.startDate),
       lte(expenses.expenseDate, filters.endDate),
     ];
 
-    const ownerPredicate = expenseOwnerPredicate(read, userId);
+    const ownerPredicate = expenseOwnerPredicate(er);
     if (ownerPredicate) conditions.push(ownerPredicate);
 
     const [allExpenses, byCategory, byMonth, byStatus, topExpenses, byEmployee] = await Promise.all([

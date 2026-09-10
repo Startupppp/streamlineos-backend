@@ -4,7 +4,7 @@ import { signDocuments, signEnvelopes, signFields } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { SignRecipientsService } from "./sign-recipients.service";
-import { SYSTEM_ENVELOPE_SCOPE } from "./sign-envelope-scope";
+import { systemEnvelopeScope } from "./sign-envelope-scope";
 
 const SIGNING_RECIPIENT_TYPES = [
   "signer",
@@ -50,7 +50,7 @@ export class SignEnvelopeValidationService {
     });
     if (documents.length === 0) errors.push("Envelope has no document");
 
-    const recipientRows = await this.recipients.listForEnvelope(orgId, envelopeId, SYSTEM_ENVELOPE_SCOPE);
+    const recipientRows = await this.recipients.listForEnvelope(systemEnvelopeScope(orgId), null, envelopeId);
     const signingRecipients = recipientRows.filter((r) => isSigningType(r.recipientType));
     if (signingRecipients.length === 0) errors.push("Envelope has no signer");
 

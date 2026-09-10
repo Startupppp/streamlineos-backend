@@ -9,7 +9,7 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 
 export interface Trend {
   value: number;
@@ -87,10 +87,10 @@ function computePersonStats(
 export class CrmPeopleService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async getAllPeopleSlugs(orgId: string, scope: DataScope): Promise<Record<string, string>> {
-    if (scope === "none") throw new ForbiddenException("Not authorized to view contacts");
+  async getAllPeopleSlugs(read: ScopedRead): Promise<Record<string, string>> {
+    if (read.denied) throw new ForbiddenException("Not authorized to view contacts");
     const people = await this.db.query.crmPeople.findMany({
-      where: eq(crmPeople.orgId, orgId),
+      where: eq(crmPeople.orgId, read.orgId),
       columns: { slug: true, name: true },
       limit: 1000,
     });
@@ -105,8 +105,9 @@ export class CrmPeopleService {
     return slugMap;
   }
 
-  async getPersonBySlug(orgId: string, slug: string, scope: DataScope) {
-    if (scope === "none") throw new ForbiddenException("Not authorized to view contacts");
+  async getPersonBySlug(read: ScopedRead, slug: string) {
+    if (read.denied) throw new ForbiddenException("Not authorized to view contacts");
+    const orgId = read.orgId;
     const person = await this.db.query.crmPeople.findFirst({
       where: and(eq(crmPeople.orgId, orgId), eq(crmPeople.slug, slug)),
     });

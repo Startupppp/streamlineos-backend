@@ -61,8 +61,8 @@ export class ProfilesController {
     @Query() query: ListProfilesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolvePayrollRunsViewScope(this.access, u);
-    return this.profilesService.listProfiles(u.orgId, query, scope, u.userId);
+    const read = await resolvePayrollRunsViewScope(this.access, u);
+    return this.profilesService.listProfiles(read, query);
   }
 
   @Get(":employeeUserId")

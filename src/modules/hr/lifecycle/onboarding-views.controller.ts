@@ -15,7 +15,8 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import type { DataScope } from "../../access/access.types";
+import { ScopedRead } from "../../access/scoped-read";
+import { selfOnboardingRead } from "./onboarding-scope";
 import { AuditService } from "../../../common/audit/audit.service";
 import { StorageService } from "../../storage/storage.service";
 import { parseStorageKey } from "../../storage/storage-key";
@@ -54,7 +55,7 @@ export class OnboardingViewsController {
     @Query() query: ListOnboardingDocsQueryInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.onboardingViews.list(currentUser.orgId, currentUser.userId, false, query, "own");
+    return this.onboardingViews.list(selfOnboardingRead(currentUser), false, query);
   }
 
   @Post("me")
@@ -67,7 +68,7 @@ export class OnboardingViewsController {
     body: CreateOwnOnboardingDocInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.onboardingViews.create(currentUser.orgId, currentUser.userId, false, body, "own");
+    return this.onboardingViews.create(selfOnboardingRead(currentUser), false, body);
   }
 
   @Get("me/:docId/file")
@@ -78,20 +79,15 @@ export class OnboardingViewsController {
     @Param("docId", ParseIntPipe) docId: number,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.signFile(currentUser, docId, "own");
+    return this.signFile(currentUser, docId, selfOnboardingRead(currentUser));
   }
 
   private async signFile(
     currentUser: CurrentUserContext,
     docId: number,
-    scope: DataScope,
+    read: ScopedRead,
   ): Promise<{ url: string; fileName: string; expiresIn: number }> {
-    const document = await this.onboardingViews.getFileReference(
-      currentUser.orgId,
-      currentUser.userId,
-      docId,
-      scope,
-    );
+    const document = await this.onboardingViews.getFileReference(read, docId);
     const fileKey = this.storage.getFileKeyFromUrl(document.fileUrl);
     if (!this.storage.isValidFileKey(fileKey)) {
       throw new NotFoundException("Document file is unavailable.");

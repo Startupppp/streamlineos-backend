@@ -14,8 +14,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { AutomationService } from "../../automation/automation.service";
-import { applyScope } from "../../access/apply-scope";
-import type { DataScope } from "../../access/access.types";
+import { ScopedRead } from "../../access/scoped-read";
 import type {
   CreateOnboardingDocInput,
   ListOnboardingDocsQueryInput,
@@ -60,10 +59,15 @@ export class OnboardingViewsService {
     private readonly automation: AutomationService,
   ) {}
 
-  async summary(orgId: string, query: OnboardingDocsSummaryQueryInput, scope: DataScope, actorUserId: string) {
+  async summary(read: ScopedRead, query: OnboardingDocsSummaryQueryInput) {
+    const orgId = read.orgId;
     const conditions: SQL[] = [
       eq(users.isActive, true),
-      applyScope(scope, orgId, actorUserId, { ownerColumn: users.id }),
+      read.compose(
+        { tenant: organizationMembers.orgId, scope: { columns: { ownerColumn: users.id } } },
+        ({ sql: where }) => where,
+        () => sql`false`,
+      ),
     ];
     if (query.search) conditions.push(await this.onboardingSearchCondition(query.search));
 
@@ -199,18 +203,25 @@ export class OnboardingViewsService {
   }
 
   async list(
-    orgId: string,
-    actorUserId: string,
+    read: ScopedRead,
     isAdmin: boolean,
     query: ListOnboardingDocsQueryInput,
-    scope: DataScope,
   ) {
-    const conditions: SQL<unknown>[] = [eq(onboardingDocuments.orgId, orgId)];
+    const conditions: SQL<unknown>[] = [];
     if (isAdmin) {
-      conditions.push(applyScope(scope, orgId, actorUserId, { ownerColumn: onboardingDocuments.userId }));
-      if (query.userId) conditions.push(eq(onboardingDocuments.userId, query.userId));
+      conditions.push(
+        read.compose(
+          {
+            tenant: onboardingDocuments.orgId,
+            scope: { columns: { ownerColumn: onboardingDocuments.userId } },
+            and: query.userId ? [eq(onboardingDocuments.userId, query.userId)] : [],
+          },
+          ({ sql: where }) => where,
+          () => sql`false`,
+        ),
+      );
     } else {
-      conditions.push(eq(onboardingDocuments.userId, actorUserId));
+      conditions.push(eq(onboardingDocuments.orgId, read.orgId), eq(onboardingDocuments.userId, read.actorId));
     }
     if (query.status) conditions.push(eq(onboardingDocuments.status, query.status));
     const position = decodeCursor(query.cursor);
@@ -264,40 +275,39 @@ export class OnboardingViewsService {
   }
 
   async getFileReference(
-    orgId: string,
-    actorUserId: string,
+    read: ScopedRead,
     docId: number,
-    scope: DataScope,
   ): Promise<{ id: number; fileUrl: string; fileName: string }> {
-    const [document] = await this.db
-      .select({
-        id: onboardingDocuments.id,
-        fileUrl: onboardingDocuments.fileUrl,
-        fileName: onboardingDocuments.fileName,
-      })
-      .from(onboardingDocuments)
-      .where(
-        and(
-          eq(onboardingDocuments.id, docId),
-          eq(onboardingDocuments.orgId, orgId),
-          applyScope(scope, orgId, actorUserId, {
-            ownerColumn: onboardingDocuments.userId,
-          }),
-        ),
-      )
-      .limit(1);
+    const [document] = await read.read(
+      {
+        tenant: onboardingDocuments.orgId,
+        scope: { columns: { ownerColumn: onboardingDocuments.userId } },
+        and: [eq(onboardingDocuments.id, docId)],
+      },
+      ({ sql: where }) =>
+        this.db
+          .select({
+            id: onboardingDocuments.id,
+            fileUrl: onboardingDocuments.fileUrl,
+            fileName: onboardingDocuments.fileName,
+          })
+          .from(onboardingDocuments)
+          .where(where)
+          .limit(1),
+      () => [],
+    );
 
     if (!document) throw new NotFoundException("Document not found.");
     return document;
   }
 
   async create(
-    orgId: string,
-    actorUserId: string,
+    read: ScopedRead,
     isAdmin: boolean,
     body: CreateOnboardingDocInput,
-    scope: DataScope,
   ) {
+    const orgId = read.orgId;
+    const actorUserId = read.actorId;
     let targetUserId = actorUserId;
     if (body.targetUserId && body.targetUserId !== actorUserId) {
       if (!isAdmin) {
@@ -311,13 +321,14 @@ export class OnboardingViewsService {
         .select({ userId: organizationMembers.userId })
         .from(organizationMembers)
         .where(
-          and(
-            eq(organizationMembers.orgId, orgId),
-            eq(organizationMembers.userId, targetUserId),
-            ne(organizationMembers.status, "INVITED"),
-            applyScope(scope, orgId, actorUserId, {
-              ownerColumn: organizationMembers.userId,
-            }),
+          read.compose(
+            {
+              tenant: organizationMembers.orgId,
+              scope: { columns: { ownerColumn: organizationMembers.userId } },
+              and: [eq(organizationMembers.userId, targetUserId), ne(organizationMembers.status, "INVITED")],
+            },
+            ({ sql: where }) => where,
+            () => sql`false`,
           ),
         )
         .limit(1);
@@ -414,12 +425,12 @@ export class OnboardingViewsService {
   }
 
   async review(
-    orgId: string,
-    actorUserId: string,
+    read: ScopedRead,
     docId: number,
     body: ReviewOnboardingDocInput,
-    scope: DataScope,
   ) {
+    const orgId = read.orgId;
+    const actorUserId = read.actorId;
     return this.db.transaction(async (tx) => {
       const [existing] = await tx
         .select({
@@ -437,12 +448,14 @@ export class OnboardingViewsService {
           ),
         )
         .where(
-          and(
-            eq(onboardingDocuments.id, docId),
-            eq(onboardingDocuments.orgId, orgId),
-            applyScope(scope, orgId, actorUserId, {
-              ownerColumn: onboardingDocuments.userId,
-            }),
+          read.compose(
+            {
+              tenant: onboardingDocuments.orgId,
+              scope: { columns: { ownerColumn: onboardingDocuments.userId } },
+              and: [eq(onboardingDocuments.id, docId)],
+            },
+            ({ sql: where }) => where,
+            () => sql`false`,
           ),
         )
         .limit(1);

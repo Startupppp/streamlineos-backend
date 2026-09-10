@@ -3,6 +3,7 @@ process.env.APP_URL ??= "http://localhost:1000";
 import { EmployeesService } from "./employees.service";
 import { EmployeeAnalyticsService } from "./employee-analytics.service";
 import * as applyScopeMod from "../../access/apply-scope";
+import { ScopedRead } from "../../access/scoped-read";
 
 describe("EmployeeAnalyticsService.getStats — SQL aggregates, no row fetch", () => {
   function buildService() {
@@ -115,7 +116,7 @@ describe("EmployeesService.listEmployees — DataScope wiring", () => {
   it("calls applyScope with scope=own and the caller userId", async () => {
     const db = buildDb();
     const svc = buildService(db);
-    await svc.listEmployees(ORG, USER, {}, "own");
+    await svc.listEmployees(ScopedRead.of(ORG, USER, "own"), {});
     expect(applyScopeSpy).toHaveBeenCalledWith(
       "own",
       ORG,
@@ -127,21 +128,9 @@ describe("EmployeesService.listEmployees — DataScope wiring", () => {
   it("calls applyScope with scope=all and the caller userId", async () => {
     const db = buildDb();
     const svc = buildService(db);
-    await svc.listEmployees(ORG, USER, {}, "all");
+    await svc.listEmployees(ScopedRead.of(ORG, USER, "all"), {});
     expect(applyScopeSpy).toHaveBeenCalledWith(
       "all",
-      ORG,
-      USER,
-      expect.objectContaining({ ownerColumn: expect.anything() }),
-    );
-  });
-
-  it("calls applyScope with scope=none and the caller userId", async () => {
-    const db = buildDb();
-    const svc = buildService(db);
-    await svc.listEmployees(ORG, USER, {}, "none");
-    expect(applyScopeSpy).toHaveBeenCalledWith(
-      "none",
       ORG,
       USER,
       expect.objectContaining({ ownerColumn: expect.anything() }),
@@ -151,7 +140,7 @@ describe("EmployeesService.listEmployees — DataScope wiring", () => {
   it("returns a bounded cursor envelope without an exact count", async () => {
     const db = buildDb();
     const svc = buildService(db);
-    const result = await svc.listEmployees(ORG, USER, { limit: 5 }, "all");
+    const result = await svc.listEmployees(ScopedRead.of(ORG, USER, "all"), { limit: 5 });
     expect(result).toMatchObject({
       data: [],
       pageInfo: { limit: 5, hasMore: false, nextCursor: null },
@@ -160,17 +149,22 @@ describe("EmployeesService.listEmployees — DataScope wiring", () => {
     expect(db.dataChain.limit).toHaveBeenCalledWith(6);
   });
 
-  it("queries the DB even when scope=none (DB filter from applyScope handles the deny)", async () => {
+  it("denies without calling applyScope or the database when scope=none (ScopedRead short-circuits)", async () => {
     const db = buildDb();
     const svc = buildService(db);
-    await svc.listEmployees(ORG, USER, {}, "none");
-    expect(db.select).toHaveBeenCalled();
+    const result = await svc.listEmployees(ScopedRead.of(ORG, USER, "none"), {});
+    expect(applyScopeSpy).not.toHaveBeenCalled();
+    expect(db.select).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      data: [],
+      pageInfo: { limit: 20, hasMore: false, nextCursor: null },
+    });
   });
 
   it("never selects salary in the standard employee-list DTO", async () => {
     const db = buildDb();
     const svc = buildService(db);
-    await svc.listEmployees(ORG, USER, {}, "all");
+    await svc.listEmployees(ScopedRead.of(ORG, USER, "all"), {});
 
     const selectedFields = db.select.mock.calls[0]?.[0];
     expect(selectedFields).not.toHaveProperty("monthlySalary");

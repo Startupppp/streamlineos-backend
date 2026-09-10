@@ -16,7 +16,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import type { Request, Response } from "express";
-import type { DataScope } from "../access/access.types";
+import { readRequestScopedRead } from "../organization/core/read-request-scope";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { Universal } from "../../common/auth/universal.decorator";
 import { PermissionGuard } from "../access/permission.guard";
@@ -319,14 +319,14 @@ export class CalendarController {
   async exportEvents(
     @Query() query: ExportInput,
     @CurrentUser() u: CurrentUserContext,
-    @Req() req: Request & { rbacScope?: DataScope },
+    @Req() req: Request,
     @Res() res: Response,
   ) {
     const fromDate = new Date(query.from);
     const toDate = new Date(query.to);
-    const scope: DataScope = req.rbacScope ?? "none";
+    const read = readRequestScopedRead(req, u);
 
-    const events = await this.calendar.exportEvents(u.orgId, u.userId, fromDate, toDate, scope);
+    const events = await this.calendar.exportEvents(read, fromDate, toDate);
 
     const headers = [
       "Title",
@@ -371,7 +371,6 @@ export class CalendarController {
       userId: u.userId,
       start: now,
       end: now,
-      scope: "all",
     };
     return this.registry.getToggleList(ctx);
   }

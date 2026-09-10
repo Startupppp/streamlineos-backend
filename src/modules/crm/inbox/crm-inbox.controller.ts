@@ -15,7 +15,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { readRequestScope } from "../../organization/core/read-request-scope";
+import { readRequestScopedRead } from "../../organization/core/read-request-scope";
 import { CrmInboxService } from "./crm-inbox.service";
 import { snoozeTaskSchema, type SnoozeTaskInput } from "./crm-inbox.dto";
 import { Validate } from "../../../common/validation/validate.decorator";
@@ -35,14 +35,14 @@ export class CrmInboxController {
   @RequirePermission("crm:leads:view")
   @ResponseSchema(inboxResponseSchema)
   async getInbox(@Req() req: Request, @CurrentUser() user: CurrentUserContext) {
-    return this.svc.getInbox(user.orgId, user.userId, readRequestScope(req));
+    return this.svc.getInbox(readRequestScopedRead(req, user));
   }
 
   @Get("counts")
   @RequirePermission("crm:leads:view")
   @ResponseSchema(inboxCountsSchema)
   async getCounts(@Req() req: Request, @CurrentUser() user: CurrentUserContext) {
-    return this.svc.getCounts(user.orgId, user.userId, readRequestScope(req));
+    return this.svc.getCounts(readRequestScopedRead(req, user));
   }
 
   @Post("tasks/:taskId/snooze")
@@ -55,7 +55,7 @@ export class CrmInboxController {
     @Req() req: Request,
     @CurrentUser() user: CurrentUserContext,
   ) {
-    await this.svc.snoozeTask(user.orgId, taskId, user.userId, body, readRequestScope(req));
+    await this.svc.snoozeTask(readRequestScopedRead(req, user), taskId, body);
     return { success: true };
   }
 
@@ -69,7 +69,7 @@ export class CrmInboxController {
     @Req() req: Request,
     @CurrentUser() user: CurrentUserContext,
   ) {
-    await this.svc.completeTask(user.orgId, taskId, user.userId, readRequestScope(req));
+    await this.svc.completeTask(readRequestScopedRead(req, user), taskId);
     return { success: true };
   }
 }

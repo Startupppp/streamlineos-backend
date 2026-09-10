@@ -6,8 +6,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { AccessService } from "../access/access.service";
-import { isScopable } from "../rbac/permissions";
-import type { DataScope } from "../access/access.types";
+import { REVIEW_PERMISSION, resolveAutonomyReviewScope } from "./autonomy-review-scope";
 import { AutonomyReviewService } from "./autonomy-review.service";
 import { AutonomyScoringService } from "./autonomy-scoring.service";
 import { AutonomyHoldService } from "./autonomy-hold.service";
@@ -47,8 +46,6 @@ const decisionIdParams = z.object({ decisionId: z.string().min(1) }).strict();
 const shadowScoreIdParams = z.object({ shadowScoreId: z.string().min(1) }).strict();
 const holdIdParams = z.object({ holdId: z.string().min(1) }).strict();
 
-const REVIEW_PERMISSION = "crm:autonomy:view";
-
 @Controller("crm/autonomy")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class AutonomyReviewController {
@@ -67,7 +64,7 @@ export class AutonomyReviewController {
     @Query() query: ListDecisionsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listDecisions(u.orgId, u.userId, query, await this.readScope(u));
+    return this.svc.listDecisions(await resolveAutonomyReviewScope(this.access, u), query);
   }
 
   @Get("decisions/:decisionId")
@@ -208,18 +205,5 @@ export class AutonomyReviewController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.scoring.updateSettings(u.orgId, body);
-  }
-
-  /**
-   * The same narrowing the deals list applies, resolved from the review key.
-   *
-   * A rep restricted to their own deals must not see, in the feed, the actions
-   * the system took on everybody else's.
-   */
-  private async readScope(u: CurrentUserContext): Promise<DataScope> {
-    if (u.isOrgOwner) return "all";
-    if (!isScopable(REVIEW_PERMISSION)) return "all";
-    const resolved = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    return resolved.get(REVIEW_PERMISSION) ?? "none";
   }
 }

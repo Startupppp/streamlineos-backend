@@ -8,7 +8,7 @@ import { ForecastService } from "../../modules/finance/planning/forecast.service
 import { OverviewService } from "../../modules/finance/reports/overview.service";
 import { StatementReportsService } from "../../modules/finance/reports/statement-reports.service";
 import { AnalyticsReportsService } from "../../modules/finance/reports/analytics-reports.service";
-import { SELF_ONLY_SCOPE } from "../../modules/expenses/expenses-scope";
+import { selfOnlyRead } from "../../modules/expenses/expenses-scope";
 
 describe("finance and expense versioned cache contracts", () => {
   const cachedVersioned = jest.fn().mockResolvedValue({ cached: true });
@@ -18,11 +18,11 @@ describe("finance and expense versioned cache contracts", () => {
 
   it("tenant-namespaces expense list reads", async () => {
     const service = new ExpensesService({} as never, cache as never, {} as never);
-    await service.list("org-1", "user-1", SELF_ONLY_SCOPE, {} as never);
+    await service.list(selfOnlyRead("org-1", "user-1"), {} as never);
 
     expect(cachedVersioned).toHaveBeenCalledWith(
       CACHE_KEYS.expensesListNamespace("org-1"),
-      expect.stringContaining("user-1:own"),
+      expect.stringContaining("own:user-1"),
       expect.any(Function),
       expect.any(Number),
     );

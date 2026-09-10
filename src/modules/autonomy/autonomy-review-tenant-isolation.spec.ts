@@ -10,7 +10,7 @@ import type { Db } from "../../db/drizzle.types";
 import { AutonomyReviewService } from "./autonomy-review.service";
 import { AutonomyReversalService } from "./autonomy-reversal.service";
 import type { ListDecisionsQuery } from "./dto/autonomy-review.schemas";
-import type { DataScope } from "../access/access.types";
+import { ScopedRead } from "../access/scoped-read";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (
@@ -40,7 +40,7 @@ const QUERY: ListDecisionsQuery = {
   includeRoutine: false,
 };
 
-const SCOPE: DataScope = "all";
+const readFor = (orgId: string, userId: string) => ScopedRead.of(orgId, userId, "all");
 
 function makeDb(rows: unknown[]) {
   const where = jest.fn();
@@ -67,7 +67,7 @@ describe("AutonomyReviewService — cross-tenant isolation", () => {
     const { db, where } = makeDb([]);
     const svc = new AutonomyReviewService(db, makeReversalService());
 
-    const result = await svc.listDecisions(ATTACKER_ORG, "user-x", QUERY, SCOPE);
+    const result = await svc.listDecisions(readFor(ATTACKER_ORG, "user-x"), QUERY);
 
     expect(result.data).toHaveLength(0);
     expect(where).toHaveBeenCalled();
@@ -100,7 +100,7 @@ describe("AutonomyReviewService — cross-tenant isolation", () => {
     const { db } = makeDb([row, row]);
     const svc = new AutonomyReviewService(db, makeReversalService());
 
-    const result = await svc.listDecisions(OWNER_ORG, "user-1", QUERY, SCOPE);
+    const result = await svc.listDecisions(readFor(OWNER_ORG, "user-1"), QUERY);
 
     expect(result.data.length).toBeGreaterThan(0);
   });

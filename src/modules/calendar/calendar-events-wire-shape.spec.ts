@@ -68,7 +68,6 @@ async function readEvents(rows: VisibleEventRow[]) {
     userId: USER,
     start: START,
     end: END,
-    scope: "all",
   });
   return aggregateOver(projections).getEvents(ORG, USER, START, END);
 }

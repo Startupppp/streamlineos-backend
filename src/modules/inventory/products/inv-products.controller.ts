@@ -57,8 +57,8 @@ export class InvProductsController {
     @Query() filters: ListProductsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveInvProductsScope(this.access, u);
-    return this.crud.listProducts(u.orgId, filters, scope, u.userId);
+    const read = await resolveInvProductsScope(this.access, u);
+    return this.crud.listProducts(read, filters);
   }
 
   @Get("categories")

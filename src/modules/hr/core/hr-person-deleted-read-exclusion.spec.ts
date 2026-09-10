@@ -1,6 +1,7 @@
 import { makeFakeDb } from "../../../test/fake-select-db";
 import type { Db } from "../../../db/drizzle.module";
 import { HrEmployeeRecordListsService } from "./hr-employee-record-lists.service";
+import { ScopedRead } from "../../access/scoped-read";
 
 const ORG = "org-1";
 
@@ -45,7 +46,7 @@ describe("HR people list excludes directory-deleted persons", () => {
     });
     const service = new HrEmployeeRecordListsService(db as unknown as Db);
 
-    const page = await service.listPeopleCursor(ORG, "actor", { limit: 20 }, "all");
+    const page = await service.listPeopleCursor(ScopedRead.of(ORG, "actor", "all"), { limit: 20 });
 
     expect(page.data.map((row) => row.id)).toEqual([1]);
   });
@@ -57,7 +58,7 @@ describe("HR people list excludes directory-deleted persons", () => {
     });
     const service = new HrEmployeeRecordListsService(db as unknown as Db);
 
-    const page = await service.listPeopleCursor(ORG, "actor", { limit: 20 }, "all");
+    const page = await service.listPeopleCursor(ScopedRead.of(ORG, "actor", "all"), { limit: 20 });
 
     expect(page.data.map((row) => row.id)).toEqual([1]);
   });

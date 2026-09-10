@@ -1,13 +1,8 @@
-import { sql, type SQL } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { hrEmployments, hrPeople, hrReportingLines, resignations } from "../../db/schema";
-import type { DataScope } from "../access/access.types";
-import { applyScope } from "../access/apply-scope";
+import type { OwnershipScope } from "../access/scoped-read";
 
-export function resignationApprovalScope(
-  scope: DataScope,
-  orgId: string,
-  actorUserId: string,
-): SQL {
+export function resignationApprovalScope(orgId: string, actorUserId: string): OwnershipScope {
   const canonicalDirectReport = sql`EXISTS (
     SELECT 1
     FROM ${hrReportingLines} rl
@@ -23,22 +18,8 @@ export function resignationApprovalScope(
       AND rl.line_type = 'primary'
       AND rl.effective_from <= CURRENT_DATE AND rl.effective_to >= CURRENT_DATE
   )`;
-  switch (scope) {
-    case "all":
-      return sql`true`;
-    case "team": {
-      const teammates = applyScope(scope, orgId, actorUserId, {
-        ownerColumn: resignations.userId,
-      });
-      return sql`(${canonicalDirectReport} AND ${teammates})`;
-    }
-    case "own":
-      return canonicalDirectReport;
-    case "none":
-      return sql`false`;
-    default: {
-      void (scope satisfies never);
-      return sql`false`;
-    }
-  }
+  return {
+    own: canonicalDirectReport,
+    team: and(canonicalDirectReport, eq(resignations.userId, actorUserId)) ?? sql`false`,
+  };
 }

@@ -34,7 +34,8 @@ describe("resolveAssetsScope", () => {
       access,
       makeUser({ isOrgOwner: true }),
     );
-    expect(result).toBe("all");
+    expect(result.rawScope("spec reads the resolved value")).toBe("all");
+    expect(result.denied).toBe(false);
     expect(access.resolveUserPermissions).not.toHaveBeenCalled();
   });
 
@@ -49,7 +50,7 @@ describe("resolveAssetsScope", () => {
     expect(isScopable(ASSETS_PERMISSION)).toBe(false);
     const access = makeAccess(new Map());
     const result = await resolveAssetsScope(access, makeUser());
-    expect(result).toBe("none");
+    expect(result.denied).toBe(true);
     expect(access.resolveUserPermissions).toHaveBeenCalledWith("org-1", "user-1");
   });
 
@@ -57,19 +58,19 @@ describe("resolveAssetsScope", () => {
     const scopeMap = new Map<string, DataScope>([[ASSETS_PERMISSION, "all"]]);
     const access = makeAccess(scopeMap);
     const result = await resolveAssetsScope(access, makeUser());
-    expect(result).toBe("all");
+    expect(result.rawScope("spec reads the resolved value")).toBe("all");
   });
 
   it("returns own when scope map contains own for the permission", async () => {
     const scopeMap = new Map<string, DataScope>([[ASSETS_PERMISSION, "own"]]);
     const access = makeAccess(scopeMap);
     const result = await resolveAssetsScope(access, makeUser());
-    expect(result).toBe("own");
+    expect(result.rawScope("spec reads the resolved value")).toBe("own");
   });
 
   it("returns none when permission is not present in the scope map", async () => {
     const access = makeAccess(new Map());
     const result = await resolveAssetsScope(access, makeUser());
-    expect(result).toBe("none");
+    expect(result.denied).toBe(true);
   });
 });

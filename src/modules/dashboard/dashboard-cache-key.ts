@@ -1,6 +1,6 @@
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import type { DataScope } from "../access/access.types";
 import type { AccessService } from "../access/access.service";
+import type { ScopedRead } from "../access/scoped-read";
 import {
   cacheNamespaceOf,
   type OrgCachedSectionKey,
@@ -11,12 +11,12 @@ export async function buildScopedDashboardCacheKey(
   access: AccessService,
   u: CurrentUserContext,
   resource: string,
-  scope: DataScope,
+  read: ScopedRead,
   dimension?: string,
   locale?: string,
 ): Promise<string> {
   const version = await access.getPermissionsVersion(u.orgId);
-  const base = `dashboard-home:u${u.userId}:v${version}:${resource}:${scope}`;
+  const base = `dashboard-home:v${version}:${resource}:${read.discriminator}`;
   const withDim = dimension ? `${base}:${dimension}` : base;
   return locale ? `${withDim}:${locale}` : withDim;
 }
@@ -41,7 +41,7 @@ export async function buildScopedSectionCacheKey(
   access: AccessService,
   u: CurrentUserContext,
   section: ScopedCachedSectionKey,
-  scope: DataScope,
+  read: ScopedRead,
   dimension?: string,
   locale?: string,
 ): Promise<string> {
@@ -49,7 +49,7 @@ export async function buildScopedSectionCacheKey(
     access,
     u,
     cacheNamespaceOf(section),
-    scope,
+    read,
     dimension,
     locale,
   );

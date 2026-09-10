@@ -13,6 +13,7 @@ import { HrOrgCatalogService } from "./hr-org-catalog.service";
 import { HrPeopleService } from "./hr-people.service";
 import { HrTimelineService } from "./hr-timeline.service";
 import { PersonEmploymentBackfillService } from "./person-employment-backfill.service";
+import { ScopedRead } from "../../access/scoped-read";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -115,14 +116,14 @@ describe("HrEmployeeRecordListsService — cross-tenant isolation", () => {
   it("hides employee records from different org (cross-tenant isolation)", async () => {
     const { db, where, findMany } = makeDb([]);
     const svc = new HrEmployeeRecordListsService(db);
-    await svc.listPeopleCursor(ATTACKER, "actor-1", { limit: 10 }, "all");
+    await svc.listPeopleCursor(ScopedRead.of(ATTACKER, "actor-1", "all"), { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
 
   it("returns employee records for owning org (control)", async () => {
     const { db, where, findMany } = makeDb([ROW, ROW]);
     const svc = new HrEmployeeRecordListsService(db);
-    const result = await svc.listPeopleCursor(OWNER, "actor-1", { limit: 10 }, "all");
+    const result = await svc.listPeopleCursor(ScopedRead.of(OWNER, "actor-1", "all"), { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
     expect(result.data).toBeDefined();
   });
@@ -137,14 +138,14 @@ describe("HrEmploymentsService — cross-tenant isolation", () => {
     const { db } = makeDb([]);
     const mockAudit = { log: jest.fn(), logMany: jest.fn() };
     const svc = new HrEmploymentsService(db, mockAudit as never);
-    await expect(svc.getOne(ATTACKER, "actor-1", 999, "all")).rejects.toThrow(NotFoundException);
+    await expect(svc.getOne(ScopedRead.of(ATTACKER, "actor-1", "all"), 999)).rejects.toThrow(NotFoundException);
   });
 
   it("returns employment for owning org (control)", async () => {
     const { db, where } = makeDb([ROW]);
     const mockAudit = { log: jest.fn(), logMany: jest.fn() };
     const svc = new HrEmploymentsService(db, mockAudit as never);
-    const result = await svc.getOne(OWNER, "actor-1", 1, "all");
+    const result = await svc.getOne(ScopedRead.of(OWNER, "actor-1", "all"), 1);
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
     expect(result).toMatchObject({ id: 1 });
   });
@@ -179,14 +180,14 @@ describe("HrPeopleService — cross-tenant isolation", () => {
     const { db } = makeDb([]);
     const mockAudit = { log: jest.fn(), logMany: jest.fn() };
     const svc = new HrPeopleService(db, mockAudit as never);
-    await expect(svc.getOne(ATTACKER, "actor-1", 999, "all")).rejects.toThrow(NotFoundException);
+    await expect(svc.getOne(ScopedRead.of(ATTACKER, "actor-1", "all"), 999)).rejects.toThrow(NotFoundException);
   });
 
   it("returns person for owning org (control)", async () => {
     const { db, where } = makeDb([ROW]);
     const mockAudit = { log: jest.fn(), logMany: jest.fn() };
     const svc = new HrPeopleService(db, mockAudit as never);
-    const result = await svc.getOne(OWNER, "actor-1", 1, "all");
+    const result = await svc.getOne(ScopedRead.of(OWNER, "actor-1", "all"), 1);
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
     expect(result).toMatchObject({ id: 1 });
   });
@@ -199,7 +200,7 @@ describe("HrTimelineService — cross-tenant isolation", () => {
   it("scopes employment visibility query to attacker org (cross-tenant isolation)", async () => {
     const { db, where } = makeDb([]);
     const svc = new HrTimelineService(db);
-    await expect(svc.getTimeline(ATTACKER, "actor-1", 1, "all", { limit: 10 })).rejects.toThrow(NotFoundException);
+    await expect(svc.getTimeline(ScopedRead.of(ATTACKER, "actor-1", "all"), 1, { limit: 10 })).rejects.toThrow(NotFoundException);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
   });
@@ -207,7 +208,7 @@ describe("HrTimelineService — cross-tenant isolation", () => {
   it("employment visibility query uses owning org (control)", async () => {
     const { db, where } = makeDb([]);
     const svc = new HrTimelineService(db);
-    await expect(svc.getTimeline(OWNER, "actor-1", 1, "all", { limit: 10 })).rejects.toThrow(NotFoundException);
+    await expect(svc.getTimeline(ScopedRead.of(OWNER, "actor-1", "all"), 1, { limit: 10 })).rejects.toThrow(NotFoundException);
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
   });
 });

@@ -1,5 +1,6 @@
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { DataScope } from "../../access/access.types";
+import { ScopedRead } from "../../access/scoped-read";
 import { AccessService } from "../../access/access.service";
 import { isScopable } from "../../rbac/permissions";
 
@@ -19,30 +20,30 @@ async function resolveInventoryScope(
   return resolved.get(permission) ?? "none";
 }
 
-export function resolveInvProductsScope(
+export async function resolveInvProductsScope(
   access: AccessService,
   u: CurrentUserContext,
-): Promise<DataScope> {
-  return resolveInventoryScope(INV_PRODUCTS_READ, access, u);
+): Promise<ScopedRead> {
+  return ScopedRead.of(u.orgId, u.userId, await resolveInventoryScope(INV_PRODUCTS_READ, access, u));
 }
 
-export function resolveInvPoScope(
+export async function resolveInvPoScope(
   access: AccessService,
   u: CurrentUserContext,
-): Promise<DataScope> {
-  return resolveInventoryScope(INV_PO_READ, access, u);
+): Promise<ScopedRead> {
+  return ScopedRead.of(u.orgId, u.userId, await resolveInventoryScope(INV_PO_READ, access, u));
 }
 
-export function resolveInvSoScope(
+export async function resolveInvSoScope(
   access: AccessService,
   u: CurrentUserContext,
-): Promise<DataScope> {
-  return resolveInventoryScope(INV_SO_READ, access, u);
+): Promise<ScopedRead> {
+  return ScopedRead.of(u.orgId, u.userId, await resolveInventoryScope(INV_SO_READ, access, u));
 }
 
-export function resolveInvStockScope(
+export async function resolveInvStockScope(
   access: AccessService,
   u: CurrentUserContext,
-): Promise<DataScope> {
-  return resolveInventoryScope(INV_STOCK_READ, access, u);
+): Promise<ScopedRead> {
+  return ScopedRead.of(u.orgId, u.userId, await resolveInventoryScope(INV_STOCK_READ, access, u));
 }

@@ -51,6 +51,17 @@ function isolationArg(where: jest.Mock, findMany: jest.Mock): unknown {
   return (findMany.mock.calls[0]?.[0] as Record<string, unknown> | undefined)?.["where"];
 }
 
+function stubAuthContexts() {
+  return {
+    create: (actor: { orgId: string; userId: string }) => ({
+      actor,
+      moduleAvailable: async () => ({ available: true }),
+      membership: async () => ({ active: true, isOwner: false, role: "MEMBER", membershipId: 1 }),
+      mfa: async () => ({ enforced: false, satisfied: true }),
+    }),
+  } as never;
+}
+
 describe("HrImportService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
   const OWNER = "org-owner";
@@ -85,7 +96,7 @@ describe("HrExportJobsService — cross-tenant isolation", () => {
     const mockStorage = { getFileStream: jest.fn(), storeFile: jest.fn() };
     const mockAuditSvc = { log: jest.fn() };
     const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()) };
-    const svc = new HrExportJobsService(db, mockStorage as never, mockAuditSvc as never, mockAccess as never, liveMembership());
+    const svc = new HrExportJobsService(db, mockStorage as never, mockAuditSvc as never, mockAccess as never, liveMembership(), stubAuthContexts());
     const result = await svc.claimForOrg(ATTACKER);
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
     expect(result).toBeNull();
@@ -106,7 +117,7 @@ describe("HrExportJobsService — cross-tenant isolation", () => {
     const mockStorage = { getFileStream: jest.fn(), storeFile: jest.fn() };
     const mockAuditSvc = { log: jest.fn() };
     const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()) };
-    const svc = new HrExportJobsService(db, mockStorage as never, mockAuditSvc as never, mockAccess as never, liveMembership());
+    const svc = new HrExportJobsService(db, mockStorage as never, mockAuditSvc as never, mockAccess as never, liveMembership(), stubAuthContexts());
     await svc.claimForOrg(OWNER);
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
   });

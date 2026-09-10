@@ -13,7 +13,7 @@ import { SignAuditService } from "./sign-audit.service";
 import { SignTokensService } from "./sign-tokens.service";
 import { SignNotificationsService } from "./sign-notifications.service";
 import { SignRecipientsService } from "./sign-recipients.service";
-import { SYSTEM_ENVELOPE_SCOPE } from "./sign-envelope-scope";
+import { systemEnvelopeScope } from "./sign-envelope-scope";
 import { SignIntegrationsService } from "./sign-integrations.service";
 import { isSigningType } from "./sign-envelope-validation.service";
 import { isEnvelopeSignable } from "./sign-state";
@@ -80,9 +80,9 @@ export class SignEnvelopeSweepsService {
   ): Promise<number> {
     const now = new Date();
     const recipientRows = await this.recipients.listForEnvelope(
-      envelope.orgId,
+      systemEnvelopeScope(envelope.orgId),
+      null,
       envelope.id,
-      SYSTEM_ENVELOPE_SCOPE,
     );
     const remindable: RemindableRecipient[] = [];
     for (const r of recipientRows) {

@@ -1,6 +1,8 @@
 jest.mock("../timesheets-core-scope", () => ({
   ...jest.requireActual("../timesheets-core-scope"),
-  resolveEntriesScope: jest.fn().mockResolvedValue("all"),
+  resolveEntriesScope: jest
+    .fn()
+    .mockResolvedValue(require("../../../access/scoped-read").ScopedRead.of("org-1", "user-1", "all")),
 }));
 
 jest.mock("../lib/entry-shape", () => ({

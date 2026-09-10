@@ -1,3 +1,4 @@
+import { ScopedRead } from "../../access/scoped-read";
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { AlumniService } from "./alumni.service";
@@ -409,7 +410,7 @@ describe("HR Lifecycle services — cross-tenant isolation", () => {
     it("scopes onboarding document list to the requesting org (DENY — cross-tenant isolation)", async () => {
       const { db, where } = makeDb([]);
       const svc = new OnboardingViewsService(db, {} as never);
-      const result = await svc.list(ATTACKER, "user-1", true, { limit: 10 }, "all");
+      const result = await svc.list(ScopedRead.of(ATTACKER, "user-1", "all"), true, { limit: 10 });
       expect(result.data).toHaveLength(0);
       expect(where).toHaveBeenCalled();
       const allValues = where.mock.calls.flatMap((call: unknown[]) => call).flatMap((arg) => sqlValues(arg));
@@ -419,7 +420,7 @@ describe("HR Lifecycle services — cross-tenant isolation", () => {
     it("returns onboarding documents for the owning org (CONTROL)", async () => {
       const { db } = makeDb([{ id: 1, orgId: OWNER, userId: "user-1" }]);
       const svc = new OnboardingViewsService(db, {} as never);
-      const result = await svc.list(OWNER, "user-1", true, { limit: 10 }, "all");
+      const result = await svc.list(ScopedRead.of(OWNER, "user-1", "all"), true, { limit: 10 });
       expect(result.data).toHaveLength(1);
     });
   });

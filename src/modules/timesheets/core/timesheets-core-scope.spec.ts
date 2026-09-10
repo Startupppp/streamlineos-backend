@@ -40,47 +40,55 @@ beforeEach(() => {
 describe("resolveEntriesScope", () => {
   it("returns none when team permission is absent", async () => {
     (mockAccess.scopeFor as jest.Mock).mockResolvedValue("none");
-    await expect(resolveEntriesScope(mockAccess, makeUser())).resolves.toBe("none");
+    const read = await resolveEntriesScope(mockAccess, makeUser());
+    expect(read.denied).toBe(true);
   });
 
   it("returns none when permission is not scopable", async () => {
     (mockAccess.scopeFor as jest.Mock).mockResolvedValue("none");
-    await expect(resolveEntriesScope(mockAccess, makeUser())).resolves.toBe("none");
+    const read = await resolveEntriesScope(mockAccess, makeUser());
+    expect(read.denied).toBe(true);
   });
 });
 
 describe("resolveReportsScope", () => {
   it("returns none when reports permission is absent", async () => {
     (mockAccess.scopeFor as jest.Mock).mockResolvedValue("none");
-    await expect(resolveReportsScope(mockAccess, makeUser())).resolves.toBe("none");
+    const read = await resolveReportsScope(mockAccess, makeUser());
+    expect(read.denied).toBe(true);
   });
 
   it("does not fall back to own when permission is missing", async () => {
     (mockAccess.scopeFor as jest.Mock).mockResolvedValue("team");
-    await expect(resolveReportsScope(mockAccess, makeUser())).resolves.toBe("team");
+    const read = await resolveReportsScope(mockAccess, makeUser());
+    expect(read.rawScope("spec reads the resolved scope")).toBe("team");
   });
 });
 
 describe("resolveApprovalScope", () => {
   it("returns none when permission is not scopable", async () => {
     (mockAccess.scopeFor as jest.Mock).mockResolvedValue("none");
-    await expect(resolveApprovalScope(mockAccess, makeUser())).resolves.toBe("none");
+    const read = await resolveApprovalScope(mockAccess, makeUser());
+    expect(read.denied).toBe(true);
   });
 
   it("returns none when approvals permission is absent", async () => {
     (mockAccess.scopeFor as jest.Mock).mockResolvedValue("none");
-    await expect(resolveApprovalScope(mockAccess, makeUser())).resolves.toBe("none");
+    const read = await resolveApprovalScope(mockAccess, makeUser());
+    expect(read.denied).toBe(true);
   });
 });
 
 describe("resolvePayrollScope", () => {
   it("returns none when payroll permission is absent", async () => {
     (mockAccess.scopeFor as jest.Mock).mockResolvedValue("none");
-    await expect(resolvePayrollScope(mockAccess, makeUser())).resolves.toBe("none");
+    const read = await resolvePayrollScope(mockAccess, makeUser());
+    expect(read.denied).toBe(true);
   });
 
   it("returns resolved scope when payroll permission is present", async () => {
     (mockAccess.scopeFor as jest.Mock).mockResolvedValue("team");
-    await expect(resolvePayrollScope(mockAccess, makeUser())).resolves.toBe("team");
+    const read = await resolvePayrollScope(mockAccess, makeUser());
+    expect(read.rawScope("spec reads the resolved scope")).toBe("team");
   });
 });

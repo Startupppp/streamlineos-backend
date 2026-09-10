@@ -1,7 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, desc, eq, gt, ilike, inArray, lt, or, sql, type SQL } from "drizzle-orm";
-import type { DataScope } from "../../access/access.types";
-import { applyScope } from "../../access/apply-scope";
+import type { ScopedRead } from "../../access/scoped-read";
 import {
   clients,
   purchaseBills,
@@ -67,41 +66,40 @@ export class AccountingPayablesQueryService {
     private readonly vendorQuery: AccountingVendorQueryService,
   ) {}
 
-  async listPurchaseBills(orgId: string, query: ListPurchaseBillsQuery, scope: DataScope, membershipId: number | null) {
+  async listPurchaseBills(read: ScopedRead, query: ListPurchaseBillsQuery, membershipId: number | null) {
     const { cursor, limit, q, status, vendorId } = query;
-    const conds = [eq(purchaseBills.orgId, orgId)];
-    if (status) {
-      if (Array.isArray(status)) {
-        conds.push(inArray(purchaseBills.status, status));
-      } else {
-        conds.push(eq(purchaseBills.status, status));
-      }
-    }
-    if (vendorId) conds.push(eq(purchaseBills.vendorId, vendorId));
-    if (q) conds.push(ilike(purchaseBills.billNumber, `%${escapeLike(q)}%`));
-    conds.push(
-      scope === "all"
-        ? sql`true`
-        : scope === "none" || membershipId === null
-          ? sql`false`
-          : applyScope(scope, orgId, String(membershipId), { ownerColumn: purchaseBills.createdByMembershipId }),
-    );
     const pos = decodeCursor(cursor);
-    if (pos) {
-      const cursorId = Number(pos.id);
-      conds.push(
-        afterCursor(
-          lt(purchaseBills.billDate, pos.sortValue),
-          eq(purchaseBills.billDate, pos.sortValue),
-          gt(purchaseBills.id, cursorId),
-        ),
-      );
-    }
+    const where = read.compose(
+      {
+        tenant: purchaseBills.orgId,
+        scope: {
+          own: membershipId === null ? sql`false` : eq(purchaseBills.createdByMembershipId, membershipId),
+        },
+        and: [
+          status
+            ? Array.isArray(status)
+              ? inArray(purchaseBills.status, status)
+              : eq(purchaseBills.status, status)
+            : undefined,
+          vendorId ? eq(purchaseBills.vendorId, vendorId) : undefined,
+          q ? ilike(purchaseBills.billNumber, `%${escapeLike(q)}%`) : undefined,
+          pos
+            ? afterCursor(
+                lt(purchaseBills.billDate, pos.sortValue),
+                eq(purchaseBills.billDate, pos.sortValue),
+                gt(purchaseBills.id, Number(pos.id)),
+              )
+            : undefined,
+        ],
+      },
+      ({ sql: w }) => w,
+      () => sql`false`,
+    );
     const rows = await this.db
       .select(BILL_COLUMNS)
       .from(purchaseBills)
       .leftJoin(clients, eq(clients.id, purchaseBills.vendorId))
-      .where(and(...conds))
+      .where(where)
       .orderBy(desc(purchaseBills.billDate), asc(purchaseBills.id))
       .limit(limit + 1);
     return buildCursorPage(rows, limit, (row) => ({

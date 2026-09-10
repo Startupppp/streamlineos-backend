@@ -64,7 +64,10 @@ export class HrExportController {
     @Headers("idempotency-key") idempotencyKey: string,
     @CurrentUser() user: CurrentUserContext,
   ): Promise<HrExportJobView> {
-    const scope = await resolveEmployeesScope(this.access, user);
+    const read = await resolveEmployeesScope(this.access, user);
+    const scope = read.rawScope(
+      "HrExportJobsService.create persists and later narrows the requested DataScope for a background export job — not a row predicate, and outside this migration's lane",
+    );
     const job = await this.jobs.create(user, body, scope, idempotencyKey);
     this.worker.wake();
     return job;

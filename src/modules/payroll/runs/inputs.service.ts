@@ -8,7 +8,7 @@ import type { PatchInputInput, InputsQuery } from "./dto/runs.schemas";
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
 import { pullAttendanceInputsByUser } from "./lib/input-puller";
 import { PAYROLL_READ_CAP, requirePayrollReadWithinCap } from "../lib/query-bounds";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import { buildCursorPage } from "../../../common/pagination/cursor";
 import {
   decodePayrollTextCursor,
@@ -22,13 +22,12 @@ export class InputsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listInputs(
-    orgId: string,
+    read: ScopedRead,
     runId: number,
     query: InputsQuery,
-    scope: DataScope,
-    actorUserId: string,
     actorMembershipId: number | null,
   ) {
+    const orgId = read.orgId;
     const runCheck = await this.db
       .select({ id: payrollRuns.id, status: payrollRuns.status })
       .from(payrollRuns)
@@ -37,17 +36,11 @@ export class InputsService {
 
     if (!runCheck[0]) return null;
 
-    if (query.userId && query.userId !== actorUserId && scope !== "all") {
+    if (query.userId && query.userId !== read.actorId && read.discriminator !== "all") {
       throw new ForbiddenException("Not authorized to filter payroll inputs for another payee");
     }
 
     if (actorMembershipId == null) throw new ForbiddenException("Organization membership required");
-    const conditions = [
-      eq(payrollInputs.runId, runId),
-      eq(payrollInputs.orgId, orgId),
-      scope === "all" ? eq(payrollInputs.orgId, orgId) : eq(payrollInputs.userMembershipId, actorMembershipId),
-    ];
-    if (query.userId) conditions.push(eq(payrollInputs.userMembershipId, actorMembershipId));
 
     const limit = Math.min(query.limit ?? 50, 100);
     const cursorScope = [
@@ -55,47 +48,65 @@ export class InputsService {
       orgId,
       runId,
       query.userId ?? null,
-      scope,
+      read.discriminator,
       actorMembershipId,
     ] as const;
     const position = decodePayrollTextCursor(query.cursor, cursorScope);
-    if (position) {
-      conditions.push(
-        sql`(${inputSortName}, ${payrollInputs.id}) > (${sql.param(position.value)}, ${sql.param(position.id, payrollInputs.id)})`,
-      );
-    }
 
-    const rows = await this.db
-      .select({
-        id: payrollInputs.id,
-        userId: payrollInputs.userId,
-        source: payrollInputs.source,
-        scheduledDays: payrollInputs.scheduledDays,
-        paidDays: payrollInputs.paidDays,
-        lopDays: payrollInputs.lopDays,
-        halfDays: payrollInputs.halfDays,
-        overtimeHours: payrollInputs.overtimeHours,
-        shiftAllowanceUnits: payrollInputs.shiftAllowanceUnits,
-        holidayWorkDays: payrollInputs.holidayWorkDays,
-        billableHours: payrollInputs.billableHours,
-        isOverride: payrollInputs.isOverride,
-        overrideReason: payrollInputs.overrideReason,
-        createdAt: payrollInputs.createdAt,
-        userName: users.name,
-        userEmail: users.email,
-      })
-      .from(payrollInputs)
-      .innerJoin(users, eq(users.id, payrollInputs.userId))
-      .where(and(...conditions))
-      .orderBy(asc(inputSortName), asc(payrollInputs.id))
-      .limit(limit + 1);
+    type InputRow = {
+      id: number; userId: string; source: string;
+      scheduledDays: string; paidDays: string; lopDays: string; halfDays: string;
+      overtimeHours: string; shiftAllowanceUnits: string; holidayWorkDays: string; billableHours: string;
+      isOverride: boolean; overrideReason: string | null; createdAt: Date;
+      userName: string | null; userEmail: string;
+    };
 
-    return buildCursorPage(rows, limit, (row) =>
-      payrollCursorPosition(
-        cursorScope,
-        [row.userName ?? row.userEmail],
-        row.id,
-      ),
+    return read.read(
+      {
+        tenant: payrollInputs.orgId,
+        scope: { own: eq(payrollInputs.userMembershipId, actorMembershipId) },
+        and: [
+          eq(payrollInputs.runId, runId),
+          query.userId ? eq(payrollInputs.userMembershipId, actorMembershipId) : undefined,
+          position
+            ? sql`(${inputSortName}, ${payrollInputs.id}) > (${sql.param(position.value)}, ${sql.param(position.id, payrollInputs.id)})`
+            : undefined,
+        ],
+      },
+      async ({ sql: where }) => {
+        const rows: InputRow[] = await this.db
+          .select({
+            id: payrollInputs.id,
+            userId: payrollInputs.userId,
+            source: payrollInputs.source,
+            scheduledDays: payrollInputs.scheduledDays,
+            paidDays: payrollInputs.paidDays,
+            lopDays: payrollInputs.lopDays,
+            halfDays: payrollInputs.halfDays,
+            overtimeHours: payrollInputs.overtimeHours,
+            shiftAllowanceUnits: payrollInputs.shiftAllowanceUnits,
+            holidayWorkDays: payrollInputs.holidayWorkDays,
+            billableHours: payrollInputs.billableHours,
+            isOverride: payrollInputs.isOverride,
+            overrideReason: payrollInputs.overrideReason,
+            createdAt: payrollInputs.createdAt,
+            userName: users.name,
+            userEmail: users.email,
+          })
+          .from(payrollInputs)
+          .innerJoin(users, eq(users.id, payrollInputs.userId))
+          .where(where)
+          .orderBy(asc(inputSortName), asc(payrollInputs.id))
+          .limit(limit + 1);
+
+        return buildCursorPage(rows, limit, (row) =>
+          payrollCursorPosition(cursorScope, [row.userName ?? row.userEmail], row.id),
+        );
+      },
+      () =>
+        buildCursorPage([] as InputRow[], limit, (row) =>
+          payrollCursorPosition(cursorScope, [row.userName ?? row.userEmail], row.id),
+        ),
     );
   }
 

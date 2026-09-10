@@ -9,6 +9,7 @@
  * when viewAll is false and the envelope belongs to a different sender.
  */
 
+import { ScopedRead } from "../../access/scoped-read";
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { SignEnvelopesService } from "../sign-envelopes.service";
@@ -70,27 +71,27 @@ function makeService(envelope: ReturnType<typeof makeEnvelope> | null) {
 describe("SignEnvelopesService.getFull — scope gate", () => {
   it("returns the envelope when viewAll is true regardless of sender", async () => {
     const svc = makeService(makeEnvelope(SENDER_MEMBERSHIP));
-    const result = await svc.getFull(ORG, ENVELOPE_ID, { membershipId: OTHER_MEMBERSHIP, viewAll: true });
+    const result = await svc.getFull(ScopedRead.of(ORG, "u-other", "all"), OTHER_MEMBERSHIP, ENVELOPE_ID);
     expect(result.envelope.id).toBe(ENVELOPE_ID);
   });
 
   it("returns the envelope when viewAll is false and the caller is the sender", async () => {
     const svc = makeService(makeEnvelope(SENDER_MEMBERSHIP));
-    const result = await svc.getFull(ORG, ENVELOPE_ID, { membershipId: SENDER_MEMBERSHIP, viewAll: false });
+    const result = await svc.getFull(ScopedRead.of(ORG, "u-sender", "own"), SENDER_MEMBERSHIP, ENVELOPE_ID);
     expect(result.envelope.id).toBe(ENVELOPE_ID);
   });
 
   it("throws ForbiddenException when viewAll is false and caller is NOT the sender — BOLA gate bites", async () => {
     const svc = makeService(makeEnvelope(SENDER_MEMBERSHIP));
     await expect(
-      svc.getFull(ORG, ENVELOPE_ID, { membershipId: OTHER_MEMBERSHIP, viewAll: false }),
+      svc.getFull(ScopedRead.of(ORG, "u-other", "own"), OTHER_MEMBERSHIP, ENVELOPE_ID),
     ).rejects.toThrow(ForbiddenException);
   });
 
   it("throws NotFoundException when the envelope does not exist in the org", async () => {
     const svc = makeService(null);
     await expect(
-      svc.getFull(ORG, ENVELOPE_ID, { membershipId: SENDER_MEMBERSHIP, viewAll: false }),
+      svc.getFull(ScopedRead.of(ORG, "u-sender", "own"), SENDER_MEMBERSHIP, ENVELOPE_ID),
     ).rejects.toThrow(NotFoundException);
   });
 

@@ -143,6 +143,40 @@ describe("none terminates before the database", () => {
   });
 });
 
+describe("the two standing decisions are typed, not stringly", () => {
+  it("reports unrestricted for all and only all", () => {
+    expect(ScopedRead.of("org-1", "u-1", "all").unrestricted).toBe(true);
+    for (const scope of ["team", "own", "none"] as const)
+      expect(ScopedRead.of("org-1", "u-1", scope).unrestricted).toBe(false);
+  });
+
+  it("never reports a caller both denied and unrestricted", () => {
+    for (const scope of SCOPES) {
+      const read = ScopedRead.of("org-1", "u-1", scope);
+      expect(read.denied && read.unrestricted).toBe(false);
+    }
+  });
+
+  it("picks the broader of two resolved scopes", () => {
+    const order: DataScope[] = ["none", "own", "team", "all"];
+    for (const a of order)
+      for (const b of order) {
+        const winner = ScopedRead.broadest(
+          ScopedRead.of("org-1", "u-1", a),
+          ScopedRead.of("org-1", "u-1", b),
+        );
+        const expected = order.indexOf(a) >= order.indexOf(b) ? a : b;
+        expect(winner.rawScope("spec reads the resolved value")).toBe(expected);
+      }
+  });
+
+  it("keeps the winner's own identity, not a rebuilt one", () => {
+    const wide = ScopedRead.of("org-1", "u-9", "all");
+    const narrow = ScopedRead.of("org-1", "u-9", "own");
+    expect(ScopedRead.broadest(narrow, wide)).toBe(wide);
+  });
+});
+
 describe("the cache discriminator cannot collide", () => {
   it("gives every scope a distinct fragment for one actor", () => {
     const fragments = SCOPES.map((s) => ScopedRead.of("org-1", "u-1", s).discriminator);

@@ -47,8 +47,8 @@ export class HrEmployeeSubroutesController {
     @Param("userId") userId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveEmployeesScope(this.access, u);
-    return this.timeline.getEmploymentByUserId(u.orgId, u.userId, userId, scope);
+    const read = await resolveEmployeesScope(this.access, u);
+    return this.timeline.getEmploymentByUserId(read, userId);
   }
 
   @Get(":employeeId/timeline")
@@ -61,8 +61,8 @@ export class HrEmployeeSubroutesController {
     @Query() query: ListTimelineInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveEmployeesScope(this.access, u);
-    return this.timeline.getTimeline(u.orgId, u.userId, employeeId, scope, {
+    const read = await resolveEmployeesScope(this.access, u);
+    return this.timeline.getTimeline(read, employeeId, {
       cursor: query.cursor,
       limit: query.limit,
     });
@@ -78,8 +78,8 @@ export class HrEmployeeSubroutesController {
     @Query() query: HistoryTypeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveEmployeesScope(this.access, u);
-    return this.timeline.getHistory(u.orgId, u.userId, employeeId, scope, query.type, {
+    const read = await resolveEmployeesScope(this.access, u);
+    return this.timeline.getHistory(read, employeeId, query.type, {
       cursor: query.cursor,
       limit: query.limit,
     });

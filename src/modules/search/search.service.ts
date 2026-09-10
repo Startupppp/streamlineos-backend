@@ -14,13 +14,10 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { applyScope } from "../access/apply-scope";
-import { type AccessResolver } from "../access/authorize";
-import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
 import { logger } from "../../common/logger/logger.service";
 import { actingMembershipId } from "../../common/auth/principal";
-import { moduleAvailability } from "../../common/rbac/module-availability";
+import { resolveSearchAccess, type SearchAccess } from "./search-scope";
 
 const UNDEFINED_FUNCTION = "42883";
 
@@ -50,55 +47,6 @@ export interface SearchResult {
 export interface SearchResponse {
   results: SearchResult[];
   total: number;
-}
-
-export interface SearchAccess {
-  leads: DataScope | null;
-  deals: DataScope | null;
-  contacts: DataScope | null;
-  clients: DataScope | null;
-  build: DataScope | null;
-}
-
-export async function resolveSearchAccess(
-  access: AccessResolver,
-  user: CurrentUserContext,
-): Promise<SearchAccess> {
-  let moduleMapPromise: Promise<Record<string, boolean>> | undefined;
-  const memoGetModuleMap = (orgId: string): Promise<Record<string, boolean>> => {
-    if (!moduleMapPromise) {
-      moduleMapPromise = (async () => {
-        const crmState = await access.getModuleState(orgId, "crm");
-        const buildState = await access.getModuleState(orgId, "build");
-        return { crm: crmState ?? false, build: buildState ?? false };
-      })();
-    }
-    return moduleMapPromise;
-  };
-
-  const resolver = access.buildModuleAvailabilityResolver(memoGetModuleMap);
-  const [[crmAvail, buildAvail], [leadScope, dealScope, contactScope, clientScope, buildScope]] =
-    await Promise.all([
-      Promise.all([
-        moduleAvailability(resolver, user.orgId, user.userId, "crm"),
-        moduleAvailability(resolver, user.orgId, user.userId, "build"),
-      ]),
-      Promise.all([
-        access.scopeFor(user, "crm:leads:view"),
-        access.scopeFor(user, "crm:deals:read"),
-        access.scopeFor(user, "crm:contacts:view"),
-        access.scopeFor(user, "crm:clients:read"),
-        access.scopeFor(user, "build:tickets:view"),
-      ]),
-    ]);
-
-  return {
-    leads: crmAvail.available && leadScope !== "none" ? leadScope : null,
-    deals: crmAvail.available && dealScope !== "none" ? dealScope : null,
-    contacts: crmAvail.available && contactScope !== "none" ? contactScope : null,
-    clients: crmAvail.available && clientScope !== "none" ? clientScope : null,
-    build: buildAvail.available && buildScope !== "none" ? buildScope : null,
-  };
 }
 
 // Kinds that have a SECURITY DEFINER id-probe SDF.
@@ -227,42 +175,38 @@ export class SearchService {
     const numericTicket = /^\d+$/.test(q) ? Number(q) : null;
     const needsTicketProbe = access.build !== null && keyMatch === null && numericTicket === null;
 
-    const contactAccess = access.contacts;
-    const contactScope =
-      contactAccess === "all"
-        ? sql`true`
-        : contactAccess
-          ? or(
-              exists(
-                this.db
-                  .select({ value: sql`1` })
-                  .from(leadOwnerParty)
-                  .where(
-                    and(
-                      eq(leadOwnerParty.organizationId, orgId),
-                      eq(leadOwnerParty.partyId, businessParties.convertedFromPartyId),
-                      applyScope(contactAccess, orgId, userId, {
-                        ownerColumn: leadOwnerParty.ownerUserId,
-                      }),
-                    ),
-                  ),
+    const contactOwnPredicate =
+      or(
+        exists(
+          this.db
+            .select({ value: sql`1` })
+            .from(leadOwnerParty)
+            .where(
+              and(
+                eq(leadOwnerParty.organizationId, orgId),
+                eq(leadOwnerParty.partyId, businessParties.convertedFromPartyId),
+                eq(leadOwnerParty.ownerUserId, userId),
               ),
-              exists(
-                this.db
-                  .select({ value: sql`1` })
-                  .from(deals)
-                  .where(
-                    and(
-                      eq(deals.orgId, orgId), isNull(deals.deletedAt),
-                      eq(deals.id, businessParties.primaryDealId),
-                      applyScope(contactAccess, orgId, userId, {
-                        ownerColumn: deals.assignedToId,
-                      }),
-                    ),
-                  ),
+            ),
+        ),
+        exists(
+          this.db
+            .select({ value: sql`1` })
+            .from(deals)
+            .where(
+              and(
+                eq(deals.orgId, orgId), isNull(deals.deletedAt),
+                eq(deals.id, businessParties.primaryDealId),
+                eq(deals.assignedToId, userId),
               ),
-            )
-          : sql`false`;
+            ),
+        ),
+      ) ?? sql`false`;
+
+    const buildOwnPredicate = (() => {
+      const membershipId = actingMembershipId(user.principal);
+      return membershipId === null ? sql`false` : eq(tickets.assigneeMembershipId, membershipId);
+    })();
 
     const probes = await this.probeAllIds(access, q, needsTicketProbe);
 
@@ -287,124 +231,118 @@ export class SearchService {
 
     const [leadResults, dealResults, contactResults, clientResults, ticketResults] = await Promise.all([
       access.leads !== null && leadCond !== null
-        ? this.db
-        .select({
-          id: leadPartyMap.leadId,
-          name: businessParties.name,
-          email: businessParties.email,
-          company: businessParties.companyName,
-          status: leadStatus,
-        })
-        .from(leadPartyMap)
-        .innerJoin(businessParties, PARTY_OF_LEAD)
-        .where(
-          and(
-            eq(leadPartyMap.organizationId, orgId),
-            eq(businessParties.organizationId, orgId),
-            isNull(businessParties.deletedAt),
-            applyScope(access.leads, orgId, userId, {
-              ownerColumn: businessParties.ownerUserId,
-            }),
-            leadCond,
-          ),
-        )
-        .orderBy(desc(businessParties.updatedAt), desc(leadPartyMap.leadId))
-        .limit(maxPer)
+        ? access.leads.read(
+            {
+              tenant: businessParties.organizationId,
+              scope: { columns: { ownerColumn: businessParties.ownerUserId } },
+              and: [eq(leadPartyMap.organizationId, orgId), isNull(businessParties.deletedAt), leadCond],
+            },
+            async ({ sql: where }) =>
+              this.db
+                .select({
+                  id: leadPartyMap.leadId,
+                  name: businessParties.name,
+                  email: businessParties.email,
+                  company: businessParties.companyName,
+                  status: leadStatus,
+                })
+                .from(leadPartyMap)
+                .innerJoin(businessParties, PARTY_OF_LEAD)
+                .where(where)
+                .orderBy(desc(businessParties.updatedAt), desc(leadPartyMap.leadId))
+                .limit(maxPer),
+            () => [],
+          )
         : Promise.resolve([]),
 
       access.deals !== null && dealCond !== null
-        ? this.db
-        .select({ id: deals.id, name: deals.name, value: deals.value, stage: deals.stage, contactPerson: deals.contactPerson })
-        .from(deals)
-        .where(
-          and(
-            eq(deals.orgId, orgId), isNull(deals.deletedAt),
-            applyScope(access.deals, orgId, userId, {
-              ownerColumn: deals.assignedToId,
-            }),
-            dealCond,
-          ),
-        )
-        .limit(maxPer)
+        ? access.deals.read(
+            {
+              tenant: deals.orgId,
+              scope: { columns: { ownerColumn: deals.assignedToId } },
+              and: [isNull(deals.deletedAt), dealCond],
+            },
+            async ({ sql: where }) =>
+              this.db
+                .select({ id: deals.id, name: deals.name, value: deals.value, stage: deals.stage, contactPerson: deals.contactPerson })
+                .from(deals)
+                .where(where)
+                .limit(maxPer),
+            () => [],
+          )
         : Promise.resolve([]),
 
       access.contacts !== null && contactCond !== null
-        ? this.db
-        .select({
-          id: contactPartyMap.contactId,
-          name: businessParties.name,
-          email: businessParties.email,
-          company: businessParties.companyName,
-        })
-        .from(contactPartyMap)
-        .innerJoin(businessParties, PARTY_OF_CONTACT)
-        .where(
-          and(
-            eq(contactPartyMap.organizationId, orgId),
-            eq(businessParties.organizationId, orgId),
-            isNull(businessParties.deletedAt),
-            contactScope,
-            contactCond,
-          ),
-        )
-        .orderBy(desc(businessParties.updatedAt), desc(contactPartyMap.contactId))
-        .limit(maxPer)
+        ? access.contacts.read(
+            {
+              tenant: businessParties.organizationId,
+              scope: { own: contactOwnPredicate },
+              and: [eq(contactPartyMap.organizationId, orgId), isNull(businessParties.deletedAt), contactCond],
+            },
+            async ({ sql: where }) =>
+              this.db
+                .select({
+                  id: contactPartyMap.contactId,
+                  name: businessParties.name,
+                  email: businessParties.email,
+                  company: businessParties.companyName,
+                })
+                .from(contactPartyMap)
+                .innerJoin(businessParties, PARTY_OF_CONTACT)
+                .where(where)
+                .orderBy(desc(businessParties.updatedAt), desc(contactPartyMap.contactId))
+                .limit(maxPer),
+            () => [],
+          )
         : Promise.resolve([]),
 
       access.clients !== null && clientCond !== null
-        ? this.db
-        .select({
-          id: clientPartyMap.clientId,
-          name: businessParties.name,
-          company: businessParties.companyName,
-          status: businessParties.status,
-        })
-        .from(clientPartyMap)
-        .innerJoin(businessParties, PARTY_OF_CLIENT)
-        .where(
-          and(
-            eq(clientPartyMap.organizationId, orgId),
-            eq(businessParties.organizationId, orgId),
-            isNull(businessParties.deletedAt),
-            applyScope(access.clients, orgId, userId, {
-              ownerColumn: businessParties.ownerUserId,
-            }),
-            clientCond,
-          ),
-        )
-        .orderBy(desc(businessParties.updatedAt), desc(clientPartyMap.clientId))
-        .limit(maxPer)
+        ? access.clients.read(
+            {
+              tenant: businessParties.organizationId,
+              scope: { columns: { ownerColumn: businessParties.ownerUserId } },
+              and: [eq(clientPartyMap.organizationId, orgId), isNull(businessParties.deletedAt), clientCond],
+            },
+            async ({ sql: where }) =>
+              this.db
+                .select({
+                  id: clientPartyMap.clientId,
+                  name: businessParties.name,
+                  company: businessParties.companyName,
+                  status: businessParties.status,
+                })
+                .from(clientPartyMap)
+                .innerJoin(businessParties, PARTY_OF_CLIENT)
+                .where(where)
+                .orderBy(desc(businessParties.updatedAt), desc(clientPartyMap.clientId))
+                .limit(maxPer),
+            () => [],
+          )
         : Promise.resolve([]),
 
       access.build !== null && ticketWhere !== null
-        ? this.db
-        .select({
-          id: tickets.id,
-          title: tickets.title,
-          status: tickets.status,
-          projectId: tickets.projectId,
-          ticketNumber: tickets.ticketNumber,
-          projectKey: projects.key,
-        })
-        .from(tickets)
-        .innerJoin(projects, eq(projects.id, tickets.projectId))
-        .where(
-          and(
-            eq(tickets.orgId, orgId),
-            eq(projects.orgId, orgId),
-            isNull(tickets.deletedAt),
-            access.build === "all"
-              ? sql`true`
-              : (() => {
-                  const membershipId = actingMembershipId(user.principal);
-                  return membershipId === null
-                    ? sql`false`
-                    : eq(tickets.assigneeMembershipId, membershipId);
-                })(),
-            ticketWhere,
-          ),
-        )
-        .limit(maxPer)
+        ? access.build.read(
+            {
+              tenant: tickets.orgId,
+              scope: { own: buildOwnPredicate },
+              and: [eq(projects.orgId, orgId), isNull(tickets.deletedAt), ticketWhere],
+            },
+            async ({ sql: where }) =>
+              this.db
+                .select({
+                  id: tickets.id,
+                  title: tickets.title,
+                  status: tickets.status,
+                  projectId: tickets.projectId,
+                  ticketNumber: tickets.ticketNumber,
+                  projectKey: projects.key,
+                })
+                .from(tickets)
+                .innerJoin(projects, eq(projects.id, tickets.projectId))
+                .where(where)
+                .limit(maxPer),
+            () => [],
+          )
         : Promise.resolve([]),
     ]);
 

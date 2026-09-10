@@ -21,6 +21,9 @@ export function shouldDenyTeamPayrollCopilot(scope: DataScope): boolean {
   return scope === "team";
 }
 
+const PAYROLL_COPILOT_BRANCH =
+  "the payroll copilot answers a different shape per scope — self rows, a team refusal, or an org summary — rather than filtering one query";
+
 export interface OpsCopilotContext {
   actor: CurrentUserContext;
 }
@@ -32,7 +35,12 @@ export class OpsCopilotTools {
     private readonly toolAccess: ToolAccessService,
   ) {}
 
-  private async selfPayrollRows(orgId: string, userId: string, month?: string, year?: string) {
+  private async selfPayrollRows(
+    orgId: string,
+    userId: string,
+    month?: string,
+    year?: string,
+  ) {
     return this.db
       .select({
         month: payrollRuns.month,
@@ -61,33 +69,61 @@ export class OpsCopilotTools {
         description:
           "Search for inventory products by name and show their current stock availability. Returns up to 5 matching products with on-hand, committed, and available quantities.",
         inputSchema: z.object({
-          productQuery: z.string().min(1).describe("Partial product name to search for"),
+          productQuery: z
+            .string()
+            .min(1)
+            .describe("Partial product name to search for"),
         }),
         execute: async ({ productQuery }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "inventory:products:read");
+          const deny = await this.toolAccess.denyReason(
+            orgId,
+            userId,
+            "inventory:products:read",
+          );
           if (deny) return { denied: true, reason: deny };
 
-          const stockDeny = await this.toolAccess.denyReason(orgId, userId, "inventory:stock:read");
+          const stockDeny = await this.toolAccess.denyReason(
+            orgId,
+            userId,
+            "inventory:stock:read",
+          );
           if (stockDeny) return { denied: true, reason: stockDeny };
 
           const q = `%${productQuery.trim()}%`;
           const matched = await this.db
-            .select({ id: invProducts.id, name: invProducts.name, sku: invProducts.sku, status: invProducts.status })
+            .select({
+              id: invProducts.id,
+              name: invProducts.name,
+              sku: invProducts.sku,
+              status: invProducts.status,
+            })
             .from(invProducts)
-            .where(and(eq(invProducts.orgId, orgId), ilike(invProducts.name, q)))
+            .where(
+              and(eq(invProducts.orgId, orgId), ilike(invProducts.name, q)),
+            )
             .limit(5);
 
           if (matched.length === 0) {
-            return { results: [], message: `No products found matching "${productQuery}".` };
+            return {
+              results: [],
+              message: `No products found matching "${productQuery}".`,
+            };
           }
 
           const productIds = matched.map((p) => p.id);
           const allVariants = await this.db
-            .select({ id: invProductVariants.id, name: invProductVariants.name, productId: invProductVariants.productId })
+            .select({
+              id: invProductVariants.id,
+              name: invProductVariants.name,
+              productId: invProductVariants.productId,
+            })
             .from(invProductVariants)
             .where(inArray(invProductVariants.productId, productIds));
 
-          const variantsByProduct = new Map<number, Array<{ id: number; name: string }>>();
+          const variantsByProduct = new Map<
+            number,
+            Array<{ id: number; name: string }>
+          >();
           for (const v of allVariants) {
             const list = variantsByProduct.get(v.productId) ?? [];
             list.push({ id: v.id, name: v.name });
@@ -95,7 +131,10 @@ export class OpsCopilotTools {
           }
 
           const allVariantIds = allVariants.map((v) => v.id);
-          const stockByVariant = new Map<number, { onHand: number; committed: number }>();
+          const stockByVariant = new Map<
+            number,
+            { onHand: number; committed: number }
+          >();
           if (allVariantIds.length > 0) {
             const stockRows = await this.db.execute<{
               variant_id: number;
@@ -108,20 +147,32 @@ export class OpsCopilotTools {
                 COALESCE(SUM(committed::numeric), 0)::text AS committed
               FROM ${invStockLevels}
               WHERE org_id = ${orgId}
-                AND product_variant_id = ANY(ARRAY[${sql.join(allVariantIds.map((id) => sql`${id}`), sql`, `)}]::int[])
+                AND product_variant_id = ANY(ARRAY[${sql.join(
+                  allVariantIds.map((id) => sql`${id}`),
+                  sql`, `,
+                )}]::int[])
               GROUP BY product_variant_id
             `);
             for (const r of stockRows)
-              stockByVariant.set(Number(r.variant_id), { onHand: Number(r.on_hand), committed: Number(r.committed) });
+              stockByVariant.set(Number(r.variant_id), {
+                onHand: Number(r.on_hand),
+                committed: Number(r.committed),
+              });
           }
 
           const results = matched.map((product) => {
-            const variants = (variantsByProduct.get(product.id) ?? []).slice(0, 10);
+            const variants = (variantsByProduct.get(product.id) ?? []).slice(
+              0,
+              10,
+            );
             if (variants.length === 0) return { ...product, stock: [] };
             return {
               ...product,
               stock: variants.map((v) => {
-                const s = stockByVariant.get(v.id) ?? { onHand: 0, committed: 0 };
+                const s = stockByVariant.get(v.id) ?? {
+                  onHand: 0,
+                  committed: 0,
+                };
                 return {
                   variantId: v.id,
                   variantName: v.name,
@@ -141,20 +192,41 @@ export class OpsCopilotTools {
         description:
           "Get a payroll summary (counts and net totals by status). Never returns bank details or individual salaries when the user only has own-scope access. Use month (YYYY-MM) and/or year (YYYY) to filter.",
         inputSchema: z.object({
-          month: z.string().optional().describe("Filter to a specific month, format YYYY-MM"),
-          year: z.string().optional().describe("Filter to a specific year, format YYYY"),
+          month: z
+            .string()
+            .optional()
+            .describe("Filter to a specific month, format YYYY-MM"),
+          year: z
+            .string()
+            .optional()
+            .describe("Filter to a specific year, format YYYY"),
         }),
         execute: async ({ month, year }) => {
-          const scope = await this.toolAccess.scope(orgId, userId, "hr:payroll:view");
+          const read = await this.toolAccess.scope(
+            orgId,
+            userId,
+            "hr:payroll:view",
+          );
+          const scope = read.rawScope(PAYROLL_COPILOT_BRANCH);
 
-          if (scope === "none") {
-            const selfDeny = await this.toolAccess.denyReason(orgId, userId, "self:payslips");
+          if (read.denied) {
+            const selfDeny = await this.toolAccess.denyReason(
+              orgId,
+              userId,
+              "self:payslips",
+            );
             if (selfDeny) return { denied: true, reason: selfDeny };
-            return { scope: "self", records: await this.selfPayrollRows(orgId, userId, month, year) };
+            return {
+              scope: "self",
+              records: await this.selfPayrollRows(orgId, userId, month, year),
+            };
           }
 
           if (scope === "own") {
-            return { scope: "self", records: await this.selfPayrollRows(orgId, userId, month, year) };
+            return {
+              scope: "self",
+              records: await this.selfPayrollRows(orgId, userId, month, year),
+            };
           }
 
           if (shouldDenyTeamPayrollCopilot(scope)) {
@@ -218,7 +290,10 @@ export class OpsCopilotTools {
             );
 
           if (rows.length === 0) {
-            return { balances: [], message: "No leave balances found for the current year." };
+            return {
+              balances: [],
+              message: "No leave balances found for the current year.",
+            };
           }
 
           return {

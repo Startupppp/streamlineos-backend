@@ -19,7 +19,8 @@ import { SignPdfService, type StampField, type CertificateData } from "./sign-pd
 import { SignAuditService } from "./sign-audit.service";
 import { SignNotificationsService } from "./sign-notifications.service";
 import { SignIntegrationsService } from "./sign-integrations.service";
-import { mustGetVisibleEnvelope, SYSTEM_ENVELOPE_SCOPE, type EnvelopeViewScope } from "./sign-envelope-scope";
+import { mustGetVisibleEnvelope, systemEnvelopeScope } from "./sign-envelope-scope";
+import type { ScopedRead } from "../access/scoped-read";
 
 const SIGNING_RECIPIENT_TYPES = ["signer", "approver", "in_person_host", "internal_reviewer"];
 const SIGNED_URL_EXPIRY_SECONDS = 900;
@@ -219,7 +220,7 @@ export class SignFinalizationService {
       documentHash: finalPdfHash,
     });
 
-    const events = await this.audit.listForEnvelope(orgId, envelopeId, SYSTEM_ENVELOPE_SCOPE);
+    const events = await this.audit.listForEnvelope(systemEnvelopeScope(orgId), null, envelopeId);
     const certificateNumber = `SGN-${envelopeId}-${randomBytes(4).toString("hex").toUpperCase()}`;
     const completedAt = new Date().toISOString();
 
@@ -301,8 +302,9 @@ export class SignFinalizationService {
     return cert;
   }
 
-  async getFinalPdfUrl(orgId: string, envelopeId: number, actor: { userId?: string; ipAddress?: string }, scope: EnvelopeViewScope) {
-    const envelope = await mustGetVisibleEnvelope(this.db, orgId, envelopeId, scope, "Final PDF is not available yet");
+  async getFinalPdfUrl(read: ScopedRead, membershipId: number | null, envelopeId: number, actor: { userId?: string; ipAddress?: string }) {
+    const orgId = read.orgId;
+    const envelope = await mustGetVisibleEnvelope(this.db, read, membershipId, envelopeId, "Final PDF is not available yet");
     if (!envelope.finalPdfFileKey) throw new NotFoundException("Final PDF is not available yet");
 
     const url = await this.storage.getFileUrl(orgId, envelope.finalPdfFileKey, SIGNED_URL_EXPIRY_SECONDS, undefined, {
@@ -320,8 +322,9 @@ export class SignFinalizationService {
     return { url, expiresInSeconds: SIGNED_URL_EXPIRY_SECONDS, hash: envelope.finalPdfHash };
   }
 
-  async getCertificateUrl(orgId: string, envelopeId: number, scope: EnvelopeViewScope) {
-    await mustGetVisibleEnvelope(this.db, orgId, envelopeId, scope, "This envelope has not been completed yet");
+  async getCertificateUrl(read: ScopedRead, membershipId: number | null, envelopeId: number) {
+    const orgId = read.orgId;
+    await mustGetVisibleEnvelope(this.db, read, membershipId, envelopeId, "This envelope has not been completed yet");
     const cert = await this.getCertificate(orgId, envelopeId);
     const url = await this.storage.getFileUrl(orgId, cert.certificateFileKey, SIGNED_URL_EXPIRY_SECONDS, undefined, {
       preauthorized: true,
@@ -332,7 +335,7 @@ export class SignFinalizationService {
   /** Explicit admin/legal recovery path — creates a new certificate row, never mutates the old one. */
   async regenerateCertificate(orgId: string, envelopeId: number, actor: { userId: string; ipAddress?: string }) {
     const previous = await this.getCertificate(orgId, envelopeId);
-    const events = await this.audit.listForEnvelope(orgId, envelopeId, SYSTEM_ENVELOPE_SCOPE);
+    const events = await this.audit.listForEnvelope(systemEnvelopeScope(orgId), null, envelopeId);
     const certificateNumber = `SGN-${envelopeId}-${randomBytes(4).toString("hex").toUpperCase()}-R`;
 
     const prevJson = previous.certificateJson;

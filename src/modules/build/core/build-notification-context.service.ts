@@ -8,7 +8,7 @@ import { accountableMembershipId, humanSessionPrincipal, type Principal } from "
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { AccessService } from "../../access/access.service";
 import type { NotificationTicketContext } from "../../notifications/notifications.types";
-import { resolveTicketsScope, ticketScopePredicate } from "./tickets-scope";
+import { resolveTicketsScope, ticketScope } from "./tickets-scope";
 
 @Injectable()
 export class BuildNotificationContextService {
@@ -36,35 +36,40 @@ export class BuildNotificationContextService {
         ? { ...requestPrincipal, isOrgOwner: state.isOwner }
         : requestPrincipal
       : humanSessionPrincipal(state.membershipId, state.isOwner);
-    const scope = await resolveTicketsScope(this.access, {
+    const read = await resolveTicketsScope(this.access, {
       userId, orgId, role: state.role, isOrgOwner: state.isOwner,
       sessionId: `notify:${userId}`, tokenScopes: null,
       principal,
     });
-    if (scope === "none") return new Map();
+    if (read.denied) return new Map();
 
-    const rows = await runInTenantTransaction(this.db, async (tx) => tx
-      .select({
-        id: tickets.id, ticketNumber: tickets.ticketNumber, priority: tickets.priority,
-        status: tickets.status, type: tickets.type, projectKey: projects.key,
-        assigneeId: organizationMembers.userId, assigneeName: users.name,
-        assigneeFirstName: users.firstName, assigneeLastName: users.lastName,
-        assigneeImage: users.image,
-      })
-      .from(tickets)
-      .innerJoin(projects, and(
-        eq(projects.id, tickets.projectId), eq(projects.orgId, tickets.orgId), isNull(projects.deletedAt),
-      ))
-      .leftJoin(organizationMembers, and(
-        eq(organizationMembers.orgId, tickets.orgId),
-        eq(organizationMembers.id, tickets.assigneeMembershipId),
-      ))
-      .leftJoin(users, eq(users.id, organizationMembers.userId))
-      .where(and(
-        eq(tickets.orgId, orgId), isNull(tickets.deletedAt), inArray(tickets.id, ids),
-        ticketScopePredicate(scope, orgId, userId),
-      ))
-      .limit(ids.length), { orgId });
+    const rows = await read.read(
+      {
+        tenant: tickets.orgId,
+        scope: ticketScope(read.orgId, read.actorId),
+        and: [isNull(tickets.deletedAt), inArray(tickets.id, ids)],
+      },
+      ({ sql: where }) => runInTenantTransaction(this.db, async (tx) => tx
+        .select({
+          id: tickets.id, ticketNumber: tickets.ticketNumber, priority: tickets.priority,
+          status: tickets.status, type: tickets.type, projectKey: projects.key,
+          assigneeId: organizationMembers.userId, assigneeName: users.name,
+          assigneeFirstName: users.firstName, assigneeLastName: users.lastName,
+          assigneeImage: users.image,
+        })
+        .from(tickets)
+        .innerJoin(projects, and(
+          eq(projects.id, tickets.projectId), eq(projects.orgId, tickets.orgId), isNull(projects.deletedAt),
+        ))
+        .leftJoin(organizationMembers, and(
+          eq(organizationMembers.orgId, tickets.orgId),
+          eq(organizationMembers.id, tickets.assigneeMembershipId),
+        ))
+        .leftJoin(users, eq(users.id, organizationMembers.userId))
+        .where(where)
+        .limit(ids.length), { orgId }),
+      () => [],
+    );
 
     return new Map(rows.map((ticket) => [ticket.id, {
       ticketId: ticket.id,

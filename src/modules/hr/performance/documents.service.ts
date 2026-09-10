@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { SQL, and, count, desc, eq, gte, lte, or, sql } from "drizzle-orm";
 import {
   certifications,
@@ -7,7 +7,7 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import { AuditService } from "../../../common/audit/audit.service";
 import { resolveCompatibleList } from "../../../common/db/expand-contract-compat";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
@@ -22,10 +22,10 @@ import {
 } from "./document-list-cursor";
 import { loadDocumentTags, syncDocumentTags } from "./document-tag-compat";
 import {
-  applyScope,
   documentCategoryCondition,
   documentListSelection,
-  documentOwnerPredicate,
+  documentOwnerScope,
+  documentReadableScope,
   formatDateString,
 } from "./documents-helpers";
 
@@ -36,19 +36,34 @@ export class DocumentsService {
     private readonly audit: AuditService,
   ) {}
 
+  // Below `all`, every document a caller may reach is reached through their membership row; without one there is nothing to scope to.
+  private assertMembershipForScope(read: ScopedRead, membershipId?: number | null): void {
+    if (!read.unrestricted && membershipId == null)
+      throw new ForbiddenException("Organization membership required.");
+  }
+
+  private scopedWhere(
+    read: ScopedRead,
+    membershipId: number | null | undefined,
+    and: (SQL | undefined)[],
+  ): SQL | null {
+    this.assertMembershipForScope(read, membershipId);
+    return read.compose(
+      { tenant: documents.orgId, scope: documentOwnerScope(read.actorId, membershipId), and },
+      (where) => where.sql,
+      () => null,
+    );
+  }
+
   async listDocuments(
-    orgId: string,
-    userId: string,
-    scope: DataScope,
+    read: ScopedRead,
     filters: ListDocumentsInput,
     membershipId?: number | null,
   ) {
-    const conditions: SQL[] = [
-      eq(documents.orgId, orgId),
-      eq(documents.isActive, true),
-    ];
-    conditions.push(documentOwnerPredicate(scope, orgId, userId, membershipId));
-    if (filters.userId && scope === "all") {
+    const orgId = read.orgId;
+    this.assertMembershipForScope(read, membershipId);
+    const conditions: SQL[] = [eq(documents.isActive, true)];
+    if (filters.userId && read.unrestricted) {
       conditions.push(eq(documents.userId, filters.userId));
     }
     if (filters.type) {
@@ -81,13 +96,20 @@ export class DocumentsService {
       );
     }
 
-    const whereClause = and(...conditions);
-    const rows = await this.db
-      .select(documentListSelection)
-      .from(documents)
-      .where(whereClause)
-      .orderBy(desc(documents.createdAt), desc(documents.id))
-      .limit(filters.limit + 1);
+    const rows = await read.read(
+      {
+        tenant: documents.orgId,
+        scope: documentOwnerScope(read.actorId, membershipId),
+        and: conditions,
+      },
+      ({ sql: whereClause }) => this.db
+        .select(documentListSelection)
+        .from(documents)
+        .where(whereClause)
+        .orderBy(desc(documents.createdAt), desc(documents.id))
+        .limit(filters.limit + 1),
+      () => [],
+    );
     const hasMore = rows.length > filters.limit;
     const data = rows.slice(0, filters.limit);
     const tagsByDocumentId = await loadDocumentTags(
@@ -121,54 +143,54 @@ export class DocumentsService {
   }
 
   async getFileReference(
-    orgId: string,
-    userId: string,
-    scope: DataScope,
+    read: ScopedRead,
     documentId: number,
     membershipId?: number | null,
   ): Promise<{ documentId: number; fileUrl: string; fileName: string }> {
-    const [document] = await this.db
-      .select({
-        documentId: documents.id,
-        fileUrl: documents.fileUrl,
-        fileName: sql<string>`coalesce(${documents.fileName}, ${documents.name})`,
-      })
-      .from(documents)
-      .where(
-        and(
-          eq(documents.id, documentId),
-          eq(documents.orgId, orgId),
-          eq(documents.isActive, true),
-          or(
-            eq(documents.isPublic, true),
-            documentOwnerPredicate(scope, orgId, userId, membershipId),
-          ),
-        ),
-      )
-      .limit(1);
+    this.assertMembershipForScope(read, membershipId);
+    const [document] = await read.read(
+      {
+        tenant: documents.orgId,
+        scope: documentReadableScope(read.actorId, membershipId),
+        and: [eq(documents.id, documentId), eq(documents.isActive, true)],
+      },
+      ({ sql: where }) => this.db
+        .select({
+          documentId: documents.id,
+          fileUrl: documents.fileUrl,
+          fileName: sql<string>`coalesce(${documents.fileName}, ${documents.name})`,
+        })
+        .from(documents)
+        .where(where)
+        .limit(1),
+      () => [],
+    );
 
     if (!document) throw new NotFoundException("Document not found.");
     return document;
   }
 
   async createDocument(
-    orgId: string,
-    userId: string,
-    scope: DataScope,
+    read: ScopedRead,
     input: CreateDocumentInput,
     membershipId?: number | null,
   ) {
+    const orgId = read.orgId;
+    const userId = read.actorId;
     const targetUserId = input.userId ?? userId;
-    const targetMember = await this.db.query.organizationMembers.findFirst({
-      where: and(
-        eq(organizationMembers.userId, targetUserId),
-        eq(organizationMembers.orgId, orgId),
-        applyScope(scope, orgId, userId, {
-          ownerColumn: organizationMembers.userId,
+    const targetMember = await read.read(
+      {
+        tenant: organizationMembers.orgId,
+        scope: { columns: { ownerColumn: organizationMembers.userId } },
+        and: [eq(organizationMembers.userId, targetUserId)],
+      },
+      ({ sql: where }) =>
+        this.db.query.organizationMembers.findFirst({
+          where,
+          columns: { id: true },
         }),
-      ),
-      columns: { id: true },
-    });
+      () => undefined,
+    );
     if (!targetMember) {
       throw new NotFoundException(
         "Target user not found in your organization.",
@@ -225,19 +247,14 @@ export class DocumentsService {
   }
 
   async updateDocument(
-    orgId: string,
-    userId: string,
-    scope: DataScope,
+    read: ScopedRead,
     documentId: number,
     input: UpdateDocumentInput,
     membershipId?: number | null,
   ) {
+    const orgId = read.orgId;
     const doc = await this.db.query.documents.findFirst({
-      where: and(
-        eq(documents.id, documentId),
-        eq(documents.orgId, orgId),
-        documentOwnerPredicate(scope, orgId, userId, membershipId),
-      ),
+      where: this.scopedWhere(read, membershipId, [eq(documents.id, documentId)]) ?? sql`false`,
       columns: { id: true, userId: true, name: true },
     });
     if (!doc) throw new NotFoundException("Document not found.");
@@ -246,15 +263,15 @@ export class DocumentsService {
     const targetMember =
       requestedUserId == null
         ? null
-        : await this.db.query.organizationMembers.findFirst({
-            where: and(
-              eq(organizationMembers.orgId, orgId),
-              eq(organizationMembers.userId, requestedUserId),
-              applyScope(scope, orgId, userId, {
-                ownerColumn: organizationMembers.userId,
-              }),
-            ),
-          });
+        : await read.read(
+            {
+              tenant: organizationMembers.orgId,
+              scope: { columns: { ownerColumn: organizationMembers.userId } },
+              and: [eq(organizationMembers.userId, requestedUserId)],
+            },
+            ({ sql: where }) => this.db.query.organizationMembers.findFirst({ where }),
+            () => undefined,
+          );
     if (requestedUserId != null) {
       if (!targetMember) {
         throw new NotFoundException(
@@ -292,13 +309,7 @@ export class DocumentsService {
               : {}),
             updatedAt: new Date(),
           })
-          .where(
-            and(
-              eq(documents.id, documentId),
-              eq(documents.orgId, orgId),
-              documentOwnerPredicate(scope, orgId, userId, membershipId),
-            ),
-          )
+          .where(this.scopedWhere(read, membershipId, [eq(documents.id, documentId)]) ?? sql`false`)
           .returning();
         if (!updatedDocument)
           throw new NotFoundException("Document not found.");
@@ -313,18 +324,13 @@ export class DocumentsService {
   }
 
   async deleteDocument(
-    orgId: string,
-    userId: string,
-    scope: DataScope,
+    read: ScopedRead,
     documentId: number,
     membershipId?: number | null,
   ) {
+    const orgId = read.orgId;
     const doc = await this.db.query.documents.findFirst({
-      where: and(
-        eq(documents.id, documentId),
-        eq(documents.orgId, orgId),
-        documentOwnerPredicate(scope, orgId, userId, membershipId),
-      ),
+      where: this.scopedWhere(read, membershipId, [eq(documents.id, documentId)]) ?? sql`false`,
       columns: { id: true, userId: true, name: true },
     });
     if (!doc) throw new NotFoundException("Document not found.");
@@ -332,17 +338,11 @@ export class DocumentsService {
     await this.db
       .update(documents)
       .set({ isActive: false })
-      .where(
-        and(
-          eq(documents.id, documentId),
-          eq(documents.orgId, orgId),
-          documentOwnerPredicate(scope, orgId, userId, membershipId),
-        ),
-      );
+      .where(this.scopedWhere(read, membershipId, [eq(documents.id, documentId)]) ?? sql`false`);
 
     await this.audit.logCritical({
       action: "hr.document_deleted",
-      userId,
+      userId: read.actorId,
       orgId,
       targetId: String(documentId),
       targetType: "document",
@@ -353,16 +353,12 @@ export class DocumentsService {
   }
 
   async stats(
-    orgId: string,
-    userId: string,
-    scope: DataScope,
+    read: ScopedRead,
     membershipId?: number | null,
   ) {
-    const baseWhere = and(
-      eq(documents.orgId, orgId),
-      eq(documents.isActive, true),
-      documentOwnerPredicate(scope, orgId, userId, membershipId),
-    );
+    const orgId = read.orgId;
+    const baseWhere =
+      this.scopedWhere(read, membershipId, [eq(documents.isActive, true)]) ?? sql`false`;
 
     const horizon = formatDateString(
       new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
@@ -399,12 +395,11 @@ export class DocumentsService {
   }
 
   async expiry(
-    orgId: string,
-    userId: string,
-    scope: DataScope,
+    read: ScopedRead,
     daysAhead: number,
     membershipId?: number | null,
   ) {
+    const orgId = read.orgId;
     const now = new Date();
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + daysAhead);
@@ -412,18 +407,11 @@ export class DocumentsService {
     const futureStr = formatDateString(futureDate);
 
     const docConditions = [
-      eq(documents.orgId, orgId),
-      eq(documents.isActive, true),
-      documentOwnerPredicate(scope, orgId, userId, membershipId),
-      gte(documents.expiryDate, todayStr),
-      lte(documents.expiryDate, futureStr),
-    ];
-
-    const certConditions = [
-      eq(certifications.orgId, orgId),
-      applyScope(scope, orgId, userId, { ownerColumn: certifications.userId }),
-      gte(certifications.expiryDate, todayStr),
-      lte(certifications.expiryDate, futureStr),
+      this.scopedWhere(read, membershipId, [
+        eq(documents.isActive, true),
+        gte(documents.expiryDate, todayStr),
+        lte(documents.expiryDate, futureStr),
+      ]) ?? sql`false`,
     ];
 
     const [expiringDocs, expiringCerts] = await Promise.all([
@@ -433,12 +421,21 @@ export class DocumentsService {
         .where(and(...docConditions))
         .orderBy(documents.expiryDate, documents.id)
         .limit(100),
-      this.db.query.certifications.findMany({
-        where: and(...certConditions),
-        with: { user: { columns: { id: true, name: true } } },
-        orderBy: [certifications.expiryDate, certifications.id],
-        limit: 100,
-      }),
+      read.read(
+        {
+          tenant: certifications.orgId,
+          scope: { columns: { ownerColumn: certifications.userId } },
+          and: [gte(certifications.expiryDate, todayStr), lte(certifications.expiryDate, futureStr)],
+        },
+        ({ sql: where }) =>
+          this.db.query.certifications.findMany({
+            where,
+            with: { user: { columns: { id: true, name: true } } },
+            orderBy: [certifications.expiryDate, certifications.id],
+            limit: 100,
+          }),
+        () => [],
+      ),
     ]);
 
     const tagsByDocumentId = await loadDocumentTags(

@@ -7,6 +7,7 @@ import { CalendarRecurrenceService } from "./calendar-recurrence.service";
 import { CalendarExportService } from "./calendar-export.service";
 import { updateAttendeesInTx } from "./calendar-attendee-sync";
 import type { Db } from "../../db/drizzle.module";
+import { ScopedRead } from "../access/scoped-read";
 
 const dialect = new PgDialect();
 
@@ -514,7 +515,7 @@ describe("exportEvents — visibility filter applied to export query", () => {
     };
 
     const svc = makeService(db);
-    await svc.exportEvents(ORG, USER, new Date("2024-06-01"), new Date("2024-06-30"));
+    await svc.exportEvents(ScopedRead.of(ORG, USER, "all"), new Date("2024-06-01"), new Date("2024-06-30"));
 
     expect(capturedWhereArgs.length).toBeGreaterThan(0);
     const { params, sql: sqlStr } = renderCond(capturedWhereArgs[0]);
@@ -544,7 +545,7 @@ describe("exportEvents — visibility filter applied to export query", () => {
     };
 
     const svc = makeService(db);
-    await svc.exportEvents(ORG, USER, new Date("2024-06-01"), new Date("2024-06-30"));
+    await svc.exportEvents(ScopedRead.of(ORG, USER, "all"), new Date("2024-06-01"), new Date("2024-06-30"));
 
     const call = memberFindFirst.mock.calls[0]?.[0] as { where?: unknown; columns?: unknown };
     expect(call).toBeDefined();

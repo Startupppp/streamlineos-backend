@@ -12,8 +12,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { OrgChartQueryInput } from "./dto/hr-directory.schemas";
-import { applyScope } from "../../access/apply-scope";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import { decodeOrgChartCursor, encodeOrgChartCursor } from "./org-chart-cursor";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
@@ -78,11 +77,10 @@ export class OrgChartService {
   ) {}
 
   async getOrgChart(
-    orgId: string,
-    actorUserId: string,
-    scope: DataScope,
+    read: ScopedRead,
     query: OrgChartQueryInput,
   ): Promise<OrgChartPage> {
+    const orgId = read.orgId;
     const cursor = query.cursor
       ? decodeOrgChartCursor(query.cursor)
       : undefined;
@@ -92,9 +90,32 @@ export class OrgChartService {
       ${users.email}
     )`;
     const normalizedName = sql<string>`lower(${displayName})`;
-    const visibleScope = applyScope(scope, orgId, actorUserId, {
-      ownerColumn: organizationMembers.userId,
-    });
+    const visibleScope = read.compose(
+      {
+        tenant: organizationMembers.orgId,
+        scope: { columns: { ownerColumn: organizationMembers.userId } },
+      },
+      ({ sql: where }) => where,
+      () => sql<boolean>`false`,
+    );
+    const managerVisibleScope = read.compose(
+      {
+        tenant: orgChartManagerMembers.orgId,
+        scope: { columns: { ownerColumn: orgChartManagerMembers.userId } },
+        and: [eq(orgChartManagerMembers.status, "ACTIVE")],
+      },
+      ({ sql: where }) => where,
+      () => sql<boolean>`false`,
+    );
+    const childVisibleScope = read.compose(
+      {
+        tenant: orgChartChildMembers.orgId,
+        scope: { columns: { ownerColumn: orgChartChildMembers.userId } },
+        and: [eq(orgChartChildMembers.status, "ACTIVE")],
+      },
+      ({ sql: where }) => where,
+      () => sql<boolean>`false`,
+    );
     const visibleManager = sql<boolean>`exists (
       select 1
       from ${rlVis}
@@ -125,12 +146,8 @@ export class OrgChartService {
         eq(rlVisEmpPpl.userId, users.id),
         sql`${rlVis.effectiveFrom} <= CURRENT_DATE`,
         sql`${rlVis.effectiveTo} >= CURRENT_DATE`,
-        eq(orgChartManagerMembers.orgId, orgId),
-        eq(orgChartManagerMembers.status, "ACTIVE"),
         eq(orgChartManagerUsers.isActive, true),
-        applyScope(scope, orgId, actorUserId, {
-          ownerColumn: orgChartManagerMembers.userId,
-        }),
+        managerVisibleScope,
       )}
     )`;
     const hasDirectReports = sql<boolean>`exists (
@@ -163,36 +180,36 @@ export class OrgChartService {
         eq(rlChildMgrPpl.userId, users.id),
         sql`${rlChild.effectiveFrom} <= CURRENT_DATE`,
         sql`${rlChild.effectiveTo} >= CURRENT_DATE`,
-        eq(orgChartChildMembers.orgId, orgId),
-        eq(orgChartChildMembers.status, "ACTIVE"),
         eq(orgChartChildUsers.isActive, true),
-        applyScope(scope, orgId, actorUserId, {
-          ownerColumn: orgChartChildMembers.userId,
-        }),
+        childVisibleScope,
       )}
     )`;
 
     const conditions: SQL[] = [
-      eq(organizationMembers.orgId, orgId),
       eq(organizationMembers.status, "ACTIVE"),
       eq(users.isActive, true),
       visibleScope,
     ];
 
     if (query.parentId) {
+      const parentVisibleScope = read.compose(
+        {
+          tenant: orgChartManagerMembers.orgId,
+          scope: { columns: { ownerColumn: orgChartManagerMembers.userId } },
+          and: [eq(orgChartManagerMembers.status, "ACTIVE")],
+        },
+        ({ sql: where }) => where,
+        () => sql<boolean>`false`,
+      );
       const visibleParent = sql<boolean>`exists (
         select 1
         from ${orgChartManagerMembers}
         inner join ${orgChartManagerUsers}
           on ${eq(orgChartManagerUsers.id, orgChartManagerMembers.userId)}
         where ${and(
-          eq(orgChartManagerMembers.orgId, orgId),
-          eq(orgChartManagerMembers.status, "ACTIVE"),
           eq(orgChartManagerUsers.id, query.parentId),
           eq(orgChartManagerUsers.isActive, true),
-          applyScope(scope, orgId, actorUserId, {
-            ownerColumn: orgChartManagerMembers.userId,
-          }),
+          parentVisibleScope,
         )}
       )`;
       const directReportIds = await this.employment.getDirectReportUserIds(orgId, query.parentId);

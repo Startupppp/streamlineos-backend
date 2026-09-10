@@ -17,7 +17,7 @@ import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { leaveApprovalScope, resolveLeavesViewScope } from "./leaves-scope";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import { LeaveLedgerService } from "./leave-ledger.service";
 import { requireOrganizationMembershipId } from "./organization-membership";
 import { HR_SCAN_MAX_PAGES, HR_SCAN_PAGE } from "../hr-read-limits";
@@ -104,18 +104,22 @@ export class LeavesService {
   async team(u: CurrentUserContext) {
     const scope = await resolveLeavesViewScope(this.access, u);
 
-    if (scope === "none") {
+    if (scope.denied) {
       throw new ForbiddenException("You do not have permission to view team leave requests.");
     }
 
     const orgId = u.orgId;
     const userId = u.userId;
     const userMembershipId = await requireOrganizationMembershipId(this.db, orgId, userId);
-    const isAll = scope === "all";
+    const isAll = scope.unrestricted;
 
-    const baseConditions: SQL[] = isAll
-      ? [eq(leaveRequests.orgId, orgId)]
-      : [eq(leaveRequests.orgId, orgId), eq(leaveRequests.approverMembershipId, userMembershipId)];
+    const baseConditions: SQL[] = [
+      scope.compose(
+        { tenant: leaveRequests.orgId, scope: leaveApprovalScope(userMembershipId) },
+        ({ sql: where }) => where,
+        () => sql`false`,
+      ),
+    ];
 
     const pendingConditions: SQL[] = [...baseConditions, eq(leaveRequests.status, "PENDING")];
 
@@ -225,26 +229,29 @@ export class LeavesService {
 
   async analytics(u: CurrentUserContext, year: number) {
     const scope = await resolveLeavesViewScope(this.access, u);
-    if (scope === "none") throw new ForbiddenException("Forbidden");
+    if (scope.denied) throw new ForbiddenException("Forbidden");
 
     const actorMembershipId = await requireOrganizationMembershipId(this.db, u.orgId, u.userId);
     return this.cache.cachedVersioned(
       CACHE_KEYS.leaveAnalyticsNamespace(u.orgId),
-      scope === "all" ? `${scope}:${year}` : `${scope}:${actorMembershipId}:${year}`,
-      () => this.queryAnalytics(u.orgId, actorMembershipId, scope, year),
+      `${scope.discriminator}:${year}`,
+      () => this.queryAnalytics(scope, actorMembershipId, year),
       CACHE_TTL.MEDIUM,
     );
   }
 
   private async queryAnalytics(
-    orgId: string,
+    scope: ScopedRead,
     actorMembershipId: number,
-    scope: DataScope,
     year: number,
   ) {
     const yearStart = `${year}-01-01`;
     const yearEnd = `${year}-12-31`;
-    const visible = leaveApprovalScope(scope, actorMembershipId);
+    const visible = scope.compose(
+      { tenant: leaveRequests.orgId, scope: leaveApprovalScope(actorMembershipId) },
+      ({ sql: where }) => where,
+      () => sql`false`,
+    );
 
     const [byDept, monthly, byType, deptAvgDays] = await Promise.all([
       this.db
@@ -261,7 +268,6 @@ export class LeavesService {
         .innerJoin(orgUnits, eq(orgUnits.id, orgUnitMembers.orgUnitId))
         .where(
           and(
-            eq(leaveRequests.orgId, orgId),
             visible,
             gte(leaveRequests.startDate, yearStart),
             lte(leaveRequests.startDate, yearEnd),
@@ -279,7 +285,6 @@ export class LeavesService {
         .from(leaveRequests)
         .where(
           and(
-            eq(leaveRequests.orgId, orgId),
             visible,
             eq(leaveRequests.status, "APPROVED"),
             gte(leaveRequests.startDate, yearStart),
@@ -301,7 +306,6 @@ export class LeavesService {
         .innerJoin(leaveTypes, eq(leaveTypes.id, leaveRequests.leaveTypeId))
         .where(
           and(
-            eq(leaveRequests.orgId, orgId),
             visible,
             eq(leaveRequests.status, "APPROVED"),
             gte(leaveRequests.startDate, yearStart),
@@ -323,7 +327,6 @@ export class LeavesService {
         .innerJoin(orgUnits, eq(orgUnits.id, orgUnitMembers.orgUnitId))
         .where(
           and(
-            eq(leaveRequests.orgId, orgId),
             visible,
             eq(leaveRequests.status, "APPROVED"),
             gte(leaveRequests.startDate, yearStart),

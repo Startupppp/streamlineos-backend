@@ -22,8 +22,7 @@ import { organizationMembers } from "../../../db/schema/common/auth";
 import { organizationPeople } from "../../../db/schema/directory/organization-people";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { applyScope } from "../../access/apply-scope";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import { primaryEmploymentOfPerson } from "../../directory/employment-query";
 import {
   decodeTimelineCursor,
@@ -76,7 +75,7 @@ type HistoryCursorScope = {
   orgId: string;
   actorUserId: string;
   employmentId: number;
-  scope: DataScope;
+  scope: string;
   type: "manager" | "department";
 };
 
@@ -131,44 +130,44 @@ export class HrTimelineService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   private async assertEmploymentVisible(
-    orgId: string,
-    actorUserId: string,
+    read: ScopedRead,
     employmentId: number,
-    scope: DataScope,
   ): Promise<void> {
-    const [visible] = await this.db
-      .select({ id: hrEmployments.id })
-      .from(hrEmployments)
-      .innerJoin(
-        hrPeople,
-        and(
-          eq(hrPeople.id, hrEmployments.personId),
-          eq(hrPeople.orgId, orgId),
-          isNull(hrPeople.deletedAt),
-        ),
-      )
-      .where(
-        and(
-          eq(hrEmployments.id, employmentId),
-          eq(hrEmployments.orgId, orgId),
-          isNull(hrEmployments.deletedAt),
-          applyScope(scope, orgId, actorUserId, {
-            ownerColumn: hrPeople.userId,
-          }),
-        ),
-      )
-      .limit(1);
+    const orgId = read.orgId;
+    const [visible] = await read.read(
+      {
+        tenant: hrEmployments.orgId,
+        scope: { columns: { ownerColumn: hrPeople.userId } },
+        and: [eq(hrEmployments.id, employmentId), isNull(hrEmployments.deletedAt)],
+      },
+      ({ sql: where }) =>
+        this.db
+          .select({ id: hrEmployments.id })
+          .from(hrEmployments)
+          .innerJoin(
+            hrPeople,
+            and(
+              eq(hrPeople.id, hrEmployments.personId),
+              eq(hrPeople.orgId, orgId),
+              isNull(hrPeople.deletedAt),
+            ),
+          )
+          .where(where)
+          .limit(1),
+      () => [],
+    );
 
     if (!visible) throw new NotFoundException("Employment not found");
   }
 
   async getTimeline(
-    orgId: string,
-    actorUserId: string,
+    read: ScopedRead,
     employmentId: number,
-    scope: DataScope,
     opts: { cursor?: string; limit: number },
   ) {
+    const orgId = read.orgId;
+    const actorUserId = read.actorId;
+    const scope = read.discriminator;
     const cappedLimit = Math.min(opts.limit, 100);
     const cursor = decodeTimelineCursor(opts.cursor, {
       orgId,
@@ -176,7 +175,7 @@ export class HrTimelineService {
       employmentId,
       scope,
     });
-    await this.assertEmploymentVisible(orgId, actorUserId, employmentId, scope);
+    await this.assertEmploymentVisible(read, employmentId);
     const asOf = new Date(cursor.asOf);
     const fetchLimit = cappedLimit + 1;
 
@@ -344,59 +343,55 @@ export class HrTimelineService {
     };
   }
 
-  async getEmploymentByUserId(
-    orgId: string,
-    actorUserId: string,
-    userId: string,
-    scope: DataScope,
-  ) {
-    const [row] = await this.db
-      .select({
-        id: hrEmployments.id,
-        personId: hrEmployments.personId,
-        employeeNumber: hrEmployments.employeeNumber,
-        lifecycleStatus: hrEmployments.lifecycleStatus,
-        workerType: hrEmployments.workerType,
-        departmentId: hrEmployments.departmentId,
-        designation: hrEmployments.designation,
-        joiningDate: hrEmployments.joiningDate,
-        probationEndDate: hrEmployments.probationEndDate,
-        confirmationDate: hrEmployments.confirmationDate,
-        isPrimary: hrEmployments.isPrimary,
-        personFirstName: organizationPeople.firstName,
-        personLastName: organizationPeople.lastName,
-        personWorkEmail: organizationPeople.workEmail,
-      })
-      .from(hrPeople)
-      .innerJoin(
-        organizationPeople,
-        and(
-          eq(organizationPeople.organizationId, hrPeople.orgId),
-          eq(
-            organizationPeople.organizationPersonId,
-            hrPeople.organizationPersonId,
-          ),
-        ),
-      )
-      .innerJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
-      .innerJoin(
-        organizationMembers,
-        and(
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.userId, hrPeople.userId),
-        ),
-      )
-      .where(
-        and(
-          eq(hrPeople.orgId, orgId),
-          eq(hrPeople.userId, userId),
-          isNull(hrPeople.deletedAt),
-          applyScope(scope, orgId, actorUserId, {
-            ownerColumn: organizationMembers.userId,
-          }),
-        ),
-      )
-      .limit(1);
+  async getEmploymentByUserId(read: ScopedRead, userId: string) {
+    const orgId = read.orgId;
+    const [row] = await read.read(
+      {
+        tenant: hrPeople.orgId,
+        scope: { columns: { ownerColumn: organizationMembers.userId } },
+        and: [eq(hrPeople.userId, userId), isNull(hrPeople.deletedAt)],
+      },
+      ({ sql: where }) =>
+        this.db
+          .select({
+            id: hrEmployments.id,
+            personId: hrEmployments.personId,
+            employeeNumber: hrEmployments.employeeNumber,
+            lifecycleStatus: hrEmployments.lifecycleStatus,
+            workerType: hrEmployments.workerType,
+            departmentId: hrEmployments.departmentId,
+            designation: hrEmployments.designation,
+            joiningDate: hrEmployments.joiningDate,
+            probationEndDate: hrEmployments.probationEndDate,
+            confirmationDate: hrEmployments.confirmationDate,
+            isPrimary: hrEmployments.isPrimary,
+            personFirstName: organizationPeople.firstName,
+            personLastName: organizationPeople.lastName,
+            personWorkEmail: organizationPeople.workEmail,
+          })
+          .from(hrPeople)
+          .innerJoin(
+            organizationPeople,
+            and(
+              eq(organizationPeople.organizationId, hrPeople.orgId),
+              eq(
+                organizationPeople.organizationPersonId,
+                hrPeople.organizationPersonId,
+              ),
+            ),
+          )
+          .innerJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+          .innerJoin(
+            organizationMembers,
+            and(
+              eq(organizationMembers.orgId, orgId),
+              eq(organizationMembers.userId, hrPeople.userId),
+            ),
+          )
+          .where(where)
+          .limit(1),
+      () => [],
+    );
 
     if (!row) throw new NotFoundException("Employee not found");
 
@@ -404,16 +399,17 @@ export class HrTimelineService {
   }
 
   async getHistory(
-    orgId: string,
-    actorUserId: string,
+    read: ScopedRead,
     employmentId: number,
-    scope: DataScope,
     type: "manager" | "department",
     opts: { cursor?: string; limit: number },
   ) {
+    const orgId = read.orgId;
+    const actorUserId = read.actorId;
+    const scope = read.discriminator;
     const cursorScope = { orgId, actorUserId, employmentId, scope, type };
     const cursor = decodeHistoryCursor(opts.cursor, cursorScope);
-    await this.assertEmploymentVisible(orgId, actorUserId, employmentId, scope);
+    await this.assertEmploymentVisible(read, employmentId);
     const limit = Math.min(opts.limit, 100);
     const changeType = type === "manager" ? "manager" : "department";
     const conditions = [

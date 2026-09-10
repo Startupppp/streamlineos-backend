@@ -1,10 +1,13 @@
 import { ForbiddenException } from "@nestjs/common";
 import type { DataScope } from "../../../access/access.types";
+import { ScopedRead } from "../../../access/scoped-read";
 import { CrmPeopleService } from "../crm-people.service";
 import type { Db } from "../../../../db/drizzle.module";
 
 const ORG = "org-crm-test";
+const USER = "user-crm-test";
 const SLUG = "alice-s";
+const readAs = (scope: DataScope) => ScopedRead.of(ORG, USER, scope);
 
 function makeDb(person: { id: number; slug: string; name: string; role: string; initials: string; title: string; department: string; email: string; phone?: string; location?: string; joinDate?: string; bio?: string; skills?: string[]; createdAt: Date } | null) {
   return {
@@ -48,14 +51,14 @@ describe("CrmPeopleService scope gate", () => {
       "returns slug map when scope is '%s'",
       async (scope) => {
         const svc = makeService(PERSON);
-        const result = await svc.getAllPeopleSlugs(ORG, scope);
+        const result = await svc.getAllPeopleSlugs(readAs(scope));
         expect(Object.keys(result).length).toBeGreaterThan(0);
       },
     );
 
     it("throws ForbiddenException when scope is 'none' — BOLA gate bites", async () => {
       const svc = makeService(PERSON);
-      await expect(svc.getAllPeopleSlugs(ORG, "none")).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(svc.getAllPeopleSlugs(readAs("none"))).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
 
@@ -64,7 +67,7 @@ describe("CrmPeopleService scope gate", () => {
       "returns the person when scope is '%s'",
       async (scope) => {
         const svc = makeService(PERSON);
-        const result = await svc.getPersonBySlug(ORG, SLUG, scope);
+        const result = await svc.getPersonBySlug(readAs(scope), SLUG);
         expect(result).not.toBeNull();
         expect(result?.slug).toBe(SLUG);
       },
@@ -72,12 +75,12 @@ describe("CrmPeopleService scope gate", () => {
 
     it("throws ForbiddenException when scope is 'none' — BOLA gate bites", async () => {
       const svc = makeService(PERSON);
-      await expect(svc.getPersonBySlug(ORG, SLUG, "none")).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(svc.getPersonBySlug(readAs("none"), SLUG)).rejects.toBeInstanceOf(ForbiddenException);
     });
 
     it("returns null (→ 404) when person does not exist in the org", async () => {
       const svc = makeService(null);
-      const result = await svc.getPersonBySlug(ORG, "no-such-slug", "all");
+      const result = await svc.getPersonBySlug(readAs("all"), "no-such-slug");
       expect(result).toBeNull();
     });
   });
@@ -87,13 +90,13 @@ describe("CrmPeopleService scope gate — bite proof", () => {
   it("test goes RED when the 'none' guard is neutered (mock skips the guard)", async () => {
     const svc = makeService(PERSON);
     jest.spyOn(svc, "getPersonBySlug").mockResolvedValue({ slug: SLUG } as never);
-    const result = await svc.getPersonBySlug(ORG, SLUG, "none");
+    const result = await svc.getPersonBySlug(readAs("none"), SLUG);
     expect(result).not.toBeNull();
   });
 
   it("test goes GREEN when the real guard is in place (scope 'all' allowed)", async () => {
     const svc = makeService(PERSON);
-    const result = await svc.getPersonBySlug(ORG, SLUG, "all");
+    const result = await svc.getPersonBySlug(readAs("all"), SLUG);
     expect(result).not.toBeNull();
   });
 });

@@ -50,12 +50,12 @@ describe("resolveBuildDashboardScope", () => {
   it("denies rather than admits when the caller holds nothing", async () => {
     expect(isScopable(DASHBOARD_BUILD_PERMISSION)).toBe(false);
     const result = await resolveBuildDashboardScope(makeAccess("none"), makeUser(USER, ORG));
-    expect(result).toBe("none");
+    expect(result.denied).toBe(true);
   });
 
   it("returns all when the user has all scope", async () => {
     const result = await resolveBuildDashboardScope(makeAccess("all"), makeUser(USER, ORG));
-    expect(result).toBe("all");
+    expect(result.rawScope("spec reads the resolved value")).toBe("all");
   });
 
   it("asks the access service for this key rather than short-circuiting past it", async () => {
@@ -68,7 +68,7 @@ describe("resolveBuildDashboardScope", () => {
     } as unknown as AccessService;
     const result = await resolveBuildDashboardScope(access, makeUser(USER, ORG));
     expect(keysSeen).toEqual([DASHBOARD_BUILD_PERMISSION]);
-    expect(result).toBe("own");
+    expect(result.rawScope("spec reads the resolved value")).toBe("own");
   });
 });
 

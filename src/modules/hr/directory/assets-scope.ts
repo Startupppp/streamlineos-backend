@@ -1,5 +1,6 @@
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { DataScope } from "../../access/access.types";
+import { ScopedRead } from "../../access/scoped-read";
 
 export const ASSETS_PERMISSION = "hr:assets:manage";
 
@@ -16,8 +17,8 @@ interface PermissionResolver {
 export async function resolveAssetsScope(
   access: PermissionResolver,
   u: CurrentUserContext,
-): Promise<DataScope> {
-  if (u.isOrgOwner) return "all";
+): Promise<ScopedRead> {
+  if (u.isOrgOwner) return ScopedRead.of(u.orgId, u.userId, "all");
   const resolved = await access.resolveUserPermissions(u.orgId, u.userId);
-  return resolved.get(ASSETS_PERMISSION) ?? "none";
+  return ScopedRead.of(u.orgId, u.userId, resolved.get(ASSETS_PERMISSION) ?? "none");
 }

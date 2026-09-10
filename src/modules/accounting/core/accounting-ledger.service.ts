@@ -1,7 +1,7 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, desc, eq, getTableColumns, gt, gte, ilike, lt, lte, or, sql, type SQL } from "drizzle-orm";
 import { ledgerAccounts, journalEntries, journalLines, users } from "../../../db/schema";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
@@ -104,35 +104,38 @@ export class AccountingLedgerService {
     return updated[0];
   }
 
-  async listJournal(orgId: string, query: ListJournalQuery, scope: DataScope, userId: string, membershipId: number) {
+  async listJournal(read: ScopedRead, query: ListJournalQuery, membershipId: number) {
     const { cursor, limit, from, to, sourceType, status } = query;
     const fromStr = from ? from.toISOString().slice(0, 10) : undefined;
     const toStr = to ? to.toISOString().slice(0, 10) : undefined;
-
-    const conds = [eq(journalEntries.orgId, orgId)];
-    if (fromStr) conds.push(gte(journalEntries.entryDate, fromStr));
-    if (toStr) conds.push(lte(journalEntries.entryDate, toStr));
-    if (sourceType) conds.push(eq(journalEntries.sourceType, sourceType));
-    if (status) conds.push(eq(journalEntries.status, status));
-    if (scope === "own" || scope === "team") conds.push(eq(journalEntries.createdByMembershipId, membershipId));
-    else if (scope === "none") conds.push(sql`false`);
-
     const pos = decodeCursor(cursor);
-    if (pos) {
-      const cursorId = Number(pos.id);
-      conds.push(
-        afterCursor(
-          lt(journalEntries.entryDate, pos.sortValue),
-          eq(journalEntries.entryDate, pos.sortValue),
-          gt(journalEntries.id, cursorId),
-        ),
-      );
-    }
+
+    const where = read.compose(
+      {
+        tenant: journalEntries.orgId,
+        scope: { own: eq(journalEntries.createdByMembershipId, membershipId) },
+        and: [
+          fromStr ? gte(journalEntries.entryDate, fromStr) : undefined,
+          toStr ? lte(journalEntries.entryDate, toStr) : undefined,
+          sourceType ? eq(journalEntries.sourceType, sourceType) : undefined,
+          status ? eq(journalEntries.status, status) : undefined,
+          pos
+            ? afterCursor(
+                lt(journalEntries.entryDate, pos.sortValue),
+                eq(journalEntries.entryDate, pos.sortValue),
+                gt(journalEntries.id, Number(pos.id)),
+              )
+            : undefined,
+        ],
+      },
+      ({ sql: w }) => w,
+      () => sql`false`,
+    );
 
     const rows = await this.db
       .select(getTableColumns(journalEntries))
       .from(journalEntries)
-      .where(and(...conds))
+      .where(where)
       .orderBy(desc(journalEntries.entryDate), asc(journalEntries.id))
       .limit(limit + 1);
 

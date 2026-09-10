@@ -1,7 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, desc, eq, gte, lte, sql } from "drizzle-orm";
-import { applyScope } from "../../access/apply-scope";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import {
   backgroundVerifications,
   certifications,
@@ -27,18 +26,21 @@ interface CalendarEvent {
 export class ComplianceService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listAcknowledgments(orgId: string, userId: string, scope: DataScope) {
-    const conditions = [
-      eq(policyAcknowledgments.orgId, orgId),
-      applyScope(scope, orgId, userId, { ownerColumn: policyAcknowledgments.userId }),
-    ];
-
-    return this.db.query.policyAcknowledgments.findMany({
-      where: and(...conditions),
-      with: { document: true, user: { columns: { id: true, name: true } } },
-      orderBy: [desc(policyAcknowledgments.createdAt)],
-      limit: 100,
-    });
+  listAcknowledgments(read: ScopedRead) {
+    return read.read(
+      {
+        tenant: policyAcknowledgments.orgId,
+        scope: { columns: { ownerColumn: policyAcknowledgments.userId } },
+      },
+      ({ sql: where }) =>
+        this.db.query.policyAcknowledgments.findMany({
+          where,
+          with: { document: true, user: { columns: { id: true, name: true } } },
+          orderBy: [desc(policyAcknowledgments.createdAt)],
+          limit: 100,
+        }),
+      () => [],
+    );
   }
 
   async sendAcknowledgments(orgId: string, input: SendAckInput) {

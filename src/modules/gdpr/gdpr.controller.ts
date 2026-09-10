@@ -21,9 +21,10 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { PermissionGuard } from "../access/permission.guard";
 import { Validate } from "../../common/validation/validate.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
 import { authorize } from "../access/authorize";
+import { readRequestScopedRead } from "../organization/core/read-request-scope";
+import { selfSubjectScope } from "./gdpr-scope";
 import { GdprService } from "./gdpr.service";
 import { GdprExportService } from "./gdpr-export.service";
 import { exportRequestBodySchema, type ExportRequestBody } from "./dto/gdpr.schemas";
@@ -82,12 +83,7 @@ export class GdprController {
     @Body() body: ExportRequestBody,
   ) {
     if (!user.orgId) throw new ForbiddenException("An active organization is required");
-    const result = await this.gdpr.exportSubjectData(
-      user.userId,
-      user.userId,
-      user.orgId,
-      "all",
-    );
+    const result = await this.gdpr.exportSubjectData(selfSubjectScope(user), user.userId);
     await this.gdpr.recordExportRequest(user.orgId, user.userId, user.userId, body.reason, result.exportIncomplete);
     return result;
   }
@@ -117,11 +113,11 @@ export class GdprController {
     @Param("personId") personId: string,
     @CurrentUser() user: CurrentUserContext,
     @Body() body: ExportRequestBody,
-    @Req() req: Request & { rbacScope?: DataScope },
+    @Req() req: Request,
   ) {
     if (!user.orgId) throw new ForbiddenException("An active organization is required");
-    const scope: DataScope = req.rbacScope ?? "none";
-    const result = await this.gdpr.exportSubjectData(personId, user.userId, user.orgId, scope);
+    const read = readRequestScopedRead(req, user);
+    const result = await this.gdpr.exportSubjectData(read, personId);
     await this.gdpr.recordExportRequest(user.orgId, personId, user.userId, body.reason, result.exportIncomplete);
     return result;
   }
@@ -149,12 +145,14 @@ export class GdprController {
     @Param("personId") personId: string,
     @CurrentUser() user: CurrentUserContext,
     @Body() body: GdprAsyncExportBody,
-    @Req() req: Request & { rbacScope?: DataScope },
+    @Req() req: Request,
   ) {
     if (!user.orgId) throw new ForbiddenException("An active organization is required");
-    const scope: DataScope = req.rbacScope ?? "none";
-    if (scope === "none") throw new ForbiddenException("Export scope denies access");
-    if (personId !== user.userId && scope !== "all")
+    const read = readRequestScopedRead(req, user);
+    if (read.denied) throw new ForbiddenException("Export scope denies access");
+    const isAll =
+      read.rawScope("async export to another subject requires organisation-wide scope, an authorization gate not a row predicate") === "all";
+    if (personId !== user.userId && !isAll)
       throw new ForbiddenException("Exporting another person's data requires organisation-wide scope");
     return this.gdprExport.create(user.userId, user.orgId, personId, body.idempotencyKey);
   }

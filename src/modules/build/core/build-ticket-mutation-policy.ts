@@ -5,7 +5,7 @@ import type { Db } from "../../../db/drizzle.types";
 import { tickets } from "../../../db/schema";
 import type { AccessService } from "../../access/access.service";
 import { resolveProjectAccess } from "./project-access";
-import { resolveTicketsScope, ticketScopePredicate } from "./tickets-scope";
+import { resolveTicketsScope, ticketScope } from "./tickets-scope";
 
 export async function lockProjectTicketMutation(db: Db, orgId: string, projectId: number) {
   await db.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`build:tickets:${orgId}:${projectId}`}, 0))`);
@@ -14,8 +14,13 @@ export async function lockProjectTicketMutation(db: Db, orgId: string, projectId
 export async function authorizeTicketMutation(db: Db, access: AccessService, actor: CurrentUserContext, projectId: number) {
   const projectAccess = await resolveProjectAccess(db, access, actor, projectId);
   if (!projectAccess.hasAccess) throw new ForbiddenException("Not authorized to update this project");
-  const scope = await resolveTicketsScope(access, actor);
-  return { role: projectAccess.role, predicate: ticketScopePredicate(scope, actor.orgId, actor.userId) };
+  const read = await resolveTicketsScope(access, actor);
+  const predicate = read.compose(
+    { tenant: tickets.orgId, scope: ticketScope(read.orgId, read.actorId) },
+    ({ sql: where }) => where,
+    () => sql`false`,
+  );
+  return { role: projectAccess.role, predicate };
 }
 
 export async function readMutationTickets(
@@ -27,7 +32,7 @@ export async function readMutationTickets(
     createdAtCursor: sql<string>`${tickets.createdAt}::text`, version: tickets.version,
     assigneeMembershipId: tickets.assigneeMembershipId, dueDate: tickets.dueDate,
     priority: tickets.priority, points: tickets.points, epicId: tickets.epicId, sprintId: tickets.sprintId,
-    allowed: sql<boolean>`${policy.predicate ?? sql`true`}`,
+    allowed: sql<boolean>`${policy.predicate}`,
   }).from(tickets).where(and(
     eq(tickets.orgId, actor.orgId), eq(tickets.projectId, projectId),
     inArray(tickets.id, ids), isNull(tickets.deletedAt),

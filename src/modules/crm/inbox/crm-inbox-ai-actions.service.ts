@@ -5,8 +5,7 @@ import { businessParties, leadPartyMap } from "../../../db/schema/party";
 import { PARTY_OF_LEAD, leadStatus } from "../crm-party-reads";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import type { DataScope } from "../../access/access.types";
-import { applyScope } from "../../access/apply-scope";
+import type { ScopedRead } from "../../access/scoped-read";
 import { resolveLeadStatusSemantics } from "../../leads/lead-status-semantics";
 
 export interface AiAction {
@@ -49,26 +48,22 @@ export class CrmInboxAiActionsService {
   }
 
   async computeAiActions(
-    orgId: string,
-    userId: string,
-    scope: DataScope,
+    read: ScopedRead,
     terminalLeadKeys: string[],
     openStageKeys: string[],
   ): Promise<AiAction[]> {
+    const orgId = read.orgId;
     const now = new Date();
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const todayString = now.toISOString().slice(0, 10);
     const threeDaysFromNow = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-    const leadScopeFilter = applyScope(scope, orgId, userId, { ownerColumn: businessParties.ownerUserId });
-
     const [hotLeads, slaDeals, expiringQuotes] = await Promise.all([
-      this.db
-        .select({ id: leadPartyMap.leadId, name: businessParties.name })
-        .from(leadPartyMap)
-        .innerJoin(businessParties, PARTY_OF_LEAD)
-        .where(
-          and(
+      read.read(
+        {
+          tenant: businessParties.organizationId,
+          scope: { columns: { ownerColumn: businessParties.ownerUserId } },
+          and: [
             eq(leadPartyMap.organizationId, orgId),
             not(inArray(leadStatus, terminalLeadKeys)),
             isNull(businessParties.deletedAt),
@@ -77,11 +72,18 @@ export class CrmInboxAiActionsService {
             // they carry the same instant -- and 0241 carried the legacy value
             // across, so this is not a clock that restarted at the backfill.
             lte(businessParties.updatedAt, sevenDaysAgo),
-            leadScopeFilter,
-          ),
-        )
-        .orderBy(businessParties.nextFollowUpAt)
-        .limit(3),
+          ],
+        },
+        async ({ sql: where }) =>
+          this.db
+            .select({ id: leadPartyMap.leadId, name: businessParties.name })
+            .from(leadPartyMap)
+            .innerJoin(businessParties, PARTY_OF_LEAD)
+            .where(where)
+            .orderBy(businessParties.nextFollowUpAt)
+            .limit(3),
+        () => [],
+      ),
 
       openStageKeys.length > 0
         ? this.db

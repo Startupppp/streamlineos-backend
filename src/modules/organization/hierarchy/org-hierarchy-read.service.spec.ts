@@ -1,3 +1,4 @@
+import { ScopedRead } from "../../access/scoped-read";
 import type { OrgHierarchyCacheService } from "../../../common/cache/org-hierarchy-cache.service";
 import type { Db } from "../../../db/drizzle.module";
 import { OrgHierarchyReadService } from "./org-hierarchy-read.service";
@@ -5,7 +6,7 @@ import type { OrgHierarchyTreeSourceService } from "./org-hierarchy-tree-source.
 
 describe("OrgHierarchyReadService", () => {
   const orgId = "org-1";
-  const accessContext = { actorUserId: "user-1", scope: "all" as const };
+  const accessContext = { discriminator: ScopedRead.of("org-any", "user-1", "all").discriminator };
   let selectQuery: jest.Mock;
   let hierarchyCache: { read: jest.Mock };
   let treeSource: {

@@ -18,12 +18,12 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
-import type { DataScope } from "../../access/access.types";
+import { ScopedRead } from "../../access/scoped-read";
 import { AuditService } from "../../../common/audit/audit.service";
 import { StorageService } from "../../storage/storage.service";
 import { parseStorageKey } from "../../storage/storage-key";
 import { OnboardingViewsService } from "./onboarding-views.service";
-import { resolveOnboardingManageScope } from "./onboarding-scope";
+import { resolveOnboardingManageScope, selfOnboardingRead } from "./onboarding-scope";
 import {
   createOnboardingDocSchema,
   listOnboardingDocsQuerySchema,
@@ -72,7 +72,7 @@ export class HrOnboardingDocsAdminController {
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const scope = await resolveOnboardingManageScope(this.access, currentUser);
-    return this.onboardingViews.summary(currentUser.orgId, query, scope, currentUser.userId);
+    return this.onboardingViews.summary(scope, query);
   }
 
   @Get()
@@ -84,8 +84,10 @@ export class HrOnboardingDocsAdminController {
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const isAdmin = await this.canManageOnboarding(currentUser);
-    const scope = isAdmin ? await resolveOnboardingManageScope(this.access, currentUser) : "own";
-    return this.onboardingViews.list(currentUser.orgId, currentUser.userId, isAdmin, query, scope);
+    const scope = isAdmin
+      ? await resolveOnboardingManageScope(this.access, currentUser)
+      : selfOnboardingRead(currentUser);
+    return this.onboardingViews.list(scope, isAdmin, query);
   }
 
   @Post()
@@ -98,8 +100,10 @@ export class HrOnboardingDocsAdminController {
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const canManage = await this.canManageOnboarding(currentUser);
-    const scope = canManage ? await resolveOnboardingManageScope(this.access, currentUser) : "own";
-    return this.onboardingViews.create(currentUser.orgId, currentUser.userId, canManage, body, scope);
+    const scope = canManage
+      ? await resolveOnboardingManageScope(this.access, currentUser)
+      : selfOnboardingRead(currentUser);
+    return this.onboardingViews.create(scope, canManage, body);
   }
 
   @Get(":docId/file")
@@ -124,20 +128,15 @@ export class HrOnboardingDocsAdminController {
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const scope = await resolveOnboardingManageScope(this.access, currentUser);
-    return this.onboardingViews.review(currentUser.orgId, currentUser.userId, docId, body, scope);
+    return this.onboardingViews.review(scope, docId, body);
   }
 
   private async signFile(
     currentUser: CurrentUserContext,
     docId: number,
-    scope: DataScope,
+    read: ScopedRead,
   ): Promise<{ url: string; fileName: string; expiresIn: number }> {
-    const document = await this.onboardingViews.getFileReference(
-      currentUser.orgId,
-      currentUser.userId,
-      docId,
-      scope,
-    );
+    const document = await this.onboardingViews.getFileReference(read, docId);
     const fileKey = this.storage.getFileKeyFromUrl(document.fileUrl);
     if (!this.storage.isValidFileKey(fileKey)) {
       throw new NotFoundException("Document file is unavailable.");

@@ -3,7 +3,7 @@ import {
   ProjectsForbiddenProjectException,
   ProjectsNotFoundException,
 } from "../../../common/http/api-exceptions";
-import { and, asc, count, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 import {
   projectMembers,
   projectStatuses,
@@ -19,11 +19,11 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { resolveProjectsScope } from "./projects-scope";
-import { resolveTicketsScope, ticketScopePredicate } from "./tickets-scope";
+import { resolveTicketsScope, ticketScope } from "./tickets-scope";
 import type { ListProjectsInput } from "./dto/projects.schemas";
 
 @Injectable()
@@ -35,74 +35,75 @@ export class ProjectsQueryService {
   ) {}
 
   async listProjects(u: CurrentUserContext, input: ListProjectsInput) {
-    const scope = await resolveProjectsScope(this.access, u);
-    if (scope === "none") return { data: [], hasMore: false, nextCursor: null };
-    const ticketScope = await resolveTicketsScope(this.access, u);
+    const read = await resolveProjectsScope(this.access, u);
+    if (read.denied) return { data: [], hasMore: false, nextCursor: null };
+    const ticketRead = await resolveTicketsScope(this.access, u);
     const orgId = u.orgId;
     const userId = u.userId;
     const membershipId = actingMembershipId(u.principal);
-    return this.queryProjects(orgId, userId, membershipId, scope, ticketScope, input);
+    return this.queryProjects(orgId, userId, membershipId, read, ticketRead, input);
   }
 
   private async queryProjects(
     orgId: string,
     userId: string,
     membershipId: number | null,
-    scope: DataScope,
-    ticketScope: DataScope,
+    read: ScopedRead,
+    ticketRead: ScopedRead,
     input: ListProjectsInput,
   ) {
     const { search, status, afterId, limit, pmWorkspaceId } = input;
 
-    const conditions = [eq(projects.orgId, orgId), isNull(projects.deletedAt)];
+    const domain: (SQL | undefined)[] = [isNull(projects.deletedAt)];
 
     if (pmWorkspaceId) {
-      conditions.push(eq(projects.pmWorkspaceId, pmWorkspaceId));
+      domain.push(eq(projects.pmWorkspaceId, pmWorkspaceId));
     }
 
-    if (scope !== "all") {
-      const memberOf = this.db
-          .select({ projectId: projectMembers.projectId })
-          .from(projectMembers)
-          .where(and(eq(projectMembers.orgId, orgId), eq(projectMembers.membershipId, membershipId ?? -1)));
-      const teamProjectsOf = this.db
-          .select({ projectId: projectTeamAssignments.projectId })
-          .from(projectTeamAssignments)
-          .innerJoin(
-            projectTeamMembers,
-            and(eq(projectTeamMembers.orgId, projectTeamAssignments.orgId), eq(projectTeamMembers.teamId, projectTeamAssignments.teamId)),
-          )
-          .where(
-            and(
-              eq(projectTeamAssignments.orgId, orgId),
-              eq(projectTeamMembers.membershipId, membershipId ?? -1),
-            ),
-          );
-      const memberScopeCondition = or(
-        membershipId !== null ? eq(projects.managerMembershipId, membershipId) : undefined,
-        inArray(projects.id, memberOf),
-        inArray(projects.id, teamProjectsOf),
+    const memberOf = this.db
+      .select({ projectId: projectMembers.projectId })
+      .from(projectMembers)
+      .where(and(eq(projectMembers.orgId, orgId), eq(projectMembers.membershipId, membershipId ?? -1)));
+    const teamProjectsOf = this.db
+      .select({ projectId: projectTeamAssignments.projectId })
+      .from(projectTeamAssignments)
+      .innerJoin(
+        projectTeamMembers,
+        and(eq(projectTeamMembers.orgId, projectTeamAssignments.orgId), eq(projectTeamMembers.teamId, projectTeamAssignments.teamId)),
+      )
+      .where(
+        and(
+          eq(projectTeamAssignments.orgId, orgId),
+          eq(projectTeamMembers.membershipId, membershipId ?? -1),
+        ),
       );
-      if (memberScopeCondition) conditions.push(memberScopeCondition);
-    }
+    const ownProjects = sql`${or(
+      membershipId !== null ? eq(projects.managerMembershipId, membershipId) : sql`false`,
+      inArray(projects.id, memberOf),
+      inArray(projects.id, teamProjectsOf),
+    )}`;
 
     if (search?.trim()) {
       const match = or(
         sql`${projects.name} ILIKE ${"%" + search + "%"}`,
         sql`${projects.key} ILIKE ${"%" + search + "%"}`,
       );
-      if (match) conditions.push(match);
+      if (match) domain.push(match);
     }
 
     if (status !== "ALL") {
-      conditions.push(eq(projects.status, status));
+      domain.push(eq(projects.status, status));
     }
 
     if (afterId !== undefined) {
-      conditions.push(lt(projects.id, afterId));
+      domain.push(lt(projects.id, afterId));
     }
 
-    const whereClause = and(...conditions);
+    const whereClause = read.compose(
+      { tenant: projects.orgId, scope: { own: ownProjects }, and: domain },
+      ({ sql: where }) => where,
+      () => sql`false`,
+    );
 
     const projectCols = {
       id: projects.id,
@@ -148,6 +149,15 @@ export class ProjectsQueryService {
       .where(and(eq(projectMembers.orgId, orgId), eq(projectMembers.projectId, projects.id)))
       .orderBy(asc(projectMembers.membershipId)).limit(5).as("member_preview");
 
+    const ticketProgressWhere = ticketRead.compose(
+      {
+        tenant: tickets.orgId,
+        scope: ticketScope(ticketRead.orgId, ticketRead.actorId),
+        and: [inArray(tickets.projectId, projectIds), isNull(tickets.deletedAt)],
+      },
+      ({ sql: where }) => where,
+      () => sql`false`,
+    );
     const [progressRows, memberRows, teamRows] = await Promise.all([
       this.db
         .select({
@@ -159,7 +169,7 @@ export class ProjectsQueryService {
         })
         .from(tickets)
         .leftJoin(projectStatuses, and(eq(projectStatuses.orgId, tickets.orgId), eq(projectStatuses.projectId, tickets.projectId), eq(projectStatuses.name, tickets.status)))
-        .where(and(eq(tickets.orgId, orgId), inArray(tickets.projectId, projectIds), isNull(tickets.deletedAt), ticketScopePredicate(ticketScope, orgId, userId)))
+        .where(ticketProgressWhere)
         .groupBy(tickets.projectId),
       this.db
         .select({

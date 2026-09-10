@@ -54,8 +54,8 @@ export class InvPurchaseOrdersController {
     @Query() filters: ListPoInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveInvPoScope(this.access, u);
-    return this.pos.listPos(u.orgId, filters, scope, u.userId);
+    const read = await resolveInvPoScope(this.access, u);
+    return this.pos.listPos(read, filters);
   }
 
   @Get(":poId")

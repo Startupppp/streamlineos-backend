@@ -1,7 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { kbArticles, kbArticleVersions } from "../../../db/schema";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { KbAccessService } from "../core/kb-access.service";
@@ -11,6 +11,7 @@ import type { ListArticlesInput } from "../core/dto/kb.schemas";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { actingMembershipId } from "../../../common/auth/principal";
+import { articleOwnerScope } from "../retrieval/kb-article-owner-scope";
 
 const ARTICLE_KEYWORD_ID_CAP = 500;
 
@@ -47,35 +48,36 @@ export class KbArticleQueryService {
     private readonly access: KbAccessService,
   ) {}
 
-  async list(user: CurrentUserContext, query: ListArticlesInput, scope?: DataScope): Promise<ArticleListResult> {
-    if (scope === "none")
+  async list(user: CurrentUserContext, query: ListArticlesInput, scope: ScopedRead): Promise<ArticleListResult> {
+    if (scope.denied)
       return { items: [], nextCursor: null, hasMore: false, limit: query.limit };
 
     const ids = await this.access.getAccessibleSpaceIds(user);
     if (ids.length === 0)
       return { items: [], nextCursor: null, hasMore: false, limit: query.limit };
 
-    const conditions: SQL[] = [eq(kbArticles.orgId, user.orgId), inArray(kbArticles.spaceId, ids)];
-    if (scope && scope !== "all") {
-      const membershipId = actingMembershipId(user.principal);
-      conditions.push(
-        membershipId === null
-          ? sql`false`
-          : eq(kbArticles.ownerMembershipId, membershipId),
-      );
-    }
-    if (query.spaceId) conditions.push(eq(kbArticles.spaceId, query.spaceId));
-    if (query.categoryId) conditions.push(eq(kbArticles.categoryId, query.categoryId));
-    if (query.status) conditions.push(eq(kbArticles.status, query.status));
+    const domain: SQL[] = [inArray(kbArticles.spaceId, ids)];
+    if (query.spaceId) domain.push(eq(kbArticles.spaceId, query.spaceId));
+    if (query.categoryId) domain.push(eq(kbArticles.categoryId, query.categoryId));
+    if (query.status) domain.push(eq(kbArticles.status, query.status));
     if (query.search) {
       const tsquery = articleTsquery(query.search);
-      conditions.push(
+      domain.push(
         await resolveArticleKeywordSql(this.db, query.search, tsquery, ARTICLE_KEYWORD_ID_CAP),
       );
     }
 
     const position = decodeCursor(query.cursor);
-    if (position) conditions.push(keysetBeforeId(kbArticles.updatedAt, kbArticles.id, position));
+    if (position) domain.push(keysetBeforeId(kbArticles.updatedAt, kbArticles.id, position));
+
+    const membershipId = actingMembershipId(user.principal);
+    const where = scope
+      ? scope.compose(
+          { tenant: kbArticles.orgId, scope: articleOwnerScope(membershipId), and: domain },
+          ({ sql: composed }) => composed,
+          () => sql`false`,
+        )
+      : and(eq(kbArticles.orgId, user.orgId), ...domain);
 
     const rows = await this.db
       .select({
@@ -100,7 +102,7 @@ export class KbArticleQueryService {
         updatedAt: kbArticles.updatedAt,
       })
       .from(kbArticles)
-      .where(and(...conditions))
+      .where(where)
       .orderBy(desc(kbArticles.updatedAt), desc(kbArticles.id))
       .limit(query.limit + 1);
 

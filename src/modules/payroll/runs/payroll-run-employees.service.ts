@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable } from "@nestjs/common";
-import { and, asc, count, eq, gt, ilike, or, type SQL } from "drizzle-orm";
+import { and, asc, count, eq, gt, ilike, or } from "drizzle-orm";
 import { buildCursorPage, decodeCursor, type CursorPage } from "../../../common/pagination/cursor";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -11,8 +11,7 @@ import {
   payrollBankBatchItems,
 } from "../../../db/schema";
 import { users } from "../../../db/schema";
-import type { DataScope } from "../../access/access.types";
-import { applyScope } from "../../access/apply-scope";
+import type { ScopedRead } from "../../access/scoped-read";
 import type { ListRunEmployeesQuery, AddRunAdjustmentInput } from "./dto/runs.schemas";
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
 import { toPaise, fromPaise } from "./lib/money";
@@ -154,16 +153,15 @@ export class PayrollRunEmployeesService {
   }
 
   async listRunEmployees(
-    orgId: string,
+    read: ScopedRead,
     runId: number,
     query: ListRunEmployeesQuery,
-    scope: DataScope,
-    userId: string,
   ): Promise<CursorPage<{
     id: number; userId: string | null; workerType: string; currency: string;
     gross: string; totalDeductions: string; net: string; status: string;
     holdReason: string | null; userName: string | null; userEmail: string;
   }> | null> {
+    const orgId = read.orgId;
     const runCheck = await this.db
       .select({ id: payrollRuns.id })
       .from(payrollRuns)
@@ -174,55 +172,51 @@ export class PayrollRunEmployeesService {
 
     const pageLimit = Math.min(query.limit, 100);
     const pos = decodeCursor(query.cursor);
-    const scopeCondition = applyScope(scope, orgId, userId, { ownerColumn: payrollRunEmployees.userId });
 
-    const conditions: SQL[] = [
-      eq(payrollRunEmployees.orgId, orgId),
-      eq(payrollRunEmployees.runId, runId),
-      scopeCondition,
-    ];
+    return read.read(
+      {
+        tenant: payrollRunEmployees.orgId,
+        scope: { columns: { ownerColumn: payrollRunEmployees.userId } },
+        and: [
+          eq(payrollRunEmployees.runId, runId),
+          query.status ? eq(payrollRunEmployees.status, query.status) : undefined,
+          query.workerType ? eq(payrollRunEmployees.workerType, query.workerType) : undefined,
+          query.search
+            ? or(ilike(users.name, `%${query.search}%`), ilike(users.email, `%${query.search}%`))
+            : undefined,
+          pos
+            ? or(
+                gt(users.name, pos.sortValue),
+                and(eq(users.name, pos.sortValue), gt(payrollRunEmployees.id, Number(pos.id))),
+              )
+            : undefined,
+        ],
+      },
+      async ({ sql: where }) => {
+        const rows = await this.db
+          .select({
+            id: payrollRunEmployees.id,
+            userId: payrollRunEmployees.userId,
+            workerType: payrollRunEmployees.workerType,
+            currency: payrollRunEmployees.currency,
+            gross: payrollRunEmployees.gross,
+            totalDeductions: payrollRunEmployees.totalDeductions,
+            net: payrollRunEmployees.net,
+            status: payrollRunEmployees.status,
+            holdReason: payrollRunEmployees.holdReason,
+            userName: users.name,
+            userEmail: users.email,
+          })
+          .from(payrollRunEmployees)
+          .innerJoin(users, eq(users.id, payrollRunEmployees.userId))
+          .where(where)
+          .orderBy(asc(users.name), asc(payrollRunEmployees.id))
+          .limit(pageLimit + 1);
 
-    if (query.status) conditions.push(eq(payrollRunEmployees.status, query.status));
-    if (query.workerType) {
-      conditions.push(eq(payrollRunEmployees.workerType, query.workerType));
-    }
-
-    const searchCondition = query.search
-      ? or(ilike(users.name, `%${query.search}%`), ilike(users.email, `%${query.search}%`))
-      : undefined;
-
-    if (searchCondition) conditions.push(searchCondition);
-
-    const cursorCondition = pos
-      ? or(
-          gt(users.name, pos.sortValue),
-          and(eq(users.name, pos.sortValue), gt(payrollRunEmployees.id, Number(pos.id))),
-        )
-      : undefined;
-
-    if (cursorCondition) conditions.push(cursorCondition);
-
-    const rows = await this.db
-      .select({
-        id: payrollRunEmployees.id,
-        userId: payrollRunEmployees.userId,
-        workerType: payrollRunEmployees.workerType,
-        currency: payrollRunEmployees.currency,
-        gross: payrollRunEmployees.gross,
-        totalDeductions: payrollRunEmployees.totalDeductions,
-        net: payrollRunEmployees.net,
-        status: payrollRunEmployees.status,
-        holdReason: payrollRunEmployees.holdReason,
-        userName: users.name,
-        userEmail: users.email,
-      })
-      .from(payrollRunEmployees)
-      .innerJoin(users, eq(users.id, payrollRunEmployees.userId))
-      .where(and(...conditions))
-      .orderBy(asc(users.name), asc(payrollRunEmployees.id))
-      .limit(pageLimit + 1);
-
-    return buildCursorPage(rows, pageLimit, (row) => ({ sortValue: row.userName ?? "", id: String(row.id) }));
+        return buildCursorPage(rows, pageLimit, (row) => ({ sortValue: row.userName ?? "", id: String(row.id) }));
+      },
+      () => buildCursorPage([], pageLimit, () => ({ sortValue: "", id: "" })),
+    );
   }
 
   async getRunEmployee(orgId: string, runId: number, runEmployeeId: number) {

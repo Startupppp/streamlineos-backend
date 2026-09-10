@@ -128,16 +128,16 @@ export class EmployeesController {
     @Query() query: ListEmployeesInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const scope = await resolveEmployeesScope(this.access, currentUser);
+    const read = await resolveEmployeesScope(this.access, currentUser);
     const search = query.search ?? query.q;
-    return this.employees.listEmployees(currentUser.orgId, currentUser.userId, {
+    return this.employees.listEmployees(read, {
       cursor: query.cursor,
       limit: query.limit,
       search,
       departmentId: query.departmentId,
       isActive: query.isActive,
       role: query.role,
-    }, scope);
+    });
   }
 
   private async resolveTargetUserId(
@@ -145,13 +145,8 @@ export class EmployeesController {
     requested: string | undefined,
   ): Promise<string> {
     const targetUserId = requested ?? currentUser.userId;
-    const scope = await resolveEmployeesScope(this.access, currentUser);
-    await this.employees.assertEmployeeVisible(
-      currentUser.orgId,
-      currentUser.userId,
-      targetUserId,
-      scope,
-    );
+    const read = await resolveEmployeesScope(this.access, currentUser);
+    await this.employees.assertEmployeeVisible(read, targetUserId);
     return targetUserId;
   }
 
@@ -171,8 +166,8 @@ export class EmployeesController {
   @ResponseSchema(anniversaryFeedSchema)
   @RequirePermission("hr:employees:view")
   async anniversaryFeed(@CurrentUser() currentUser: CurrentUserContext) {
-    const scope = await resolveEmployeesScope(this.access, currentUser);
-    return this.celebrations.getAnniversaryFeed(currentUser.orgId, currentUser.userId, scope);
+    const read = await resolveEmployeesScope(this.access, currentUser);
+    return this.celebrations.getAnniversaryFeed(read);
   }
 
   @Get("availability")
@@ -183,13 +178,8 @@ export class EmployeesController {
     @Query() query: AvailabilityInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const scope = await resolveEmployeesScope(this.access, currentUser);
-    return this.celebrations.getAvailability(
-      currentUser.orgId,
-      currentUser.userId,
-      query.userIds,
-      scope,
-    );
+    const read = await resolveEmployeesScope(this.access, currentUser);
+    return this.celebrations.getAvailability(read, query.userIds);
   }
 
   @Get("check-email")
@@ -211,8 +201,8 @@ export class EmployeesController {
     @Query() query: FindExpertInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const scope = await resolveEmployeesScope(this.access, currentUser);
-    return this.skills.findExpert(currentUser.orgId, currentUser.userId, query, scope);
+    const read = await resolveEmployeesScope(this.access, currentUser);
+    return this.skills.findExpert(read, query);
   }
 
   @Get("skills-matrix")
@@ -223,8 +213,8 @@ export class EmployeesController {
     @Query() query: SkillsMatrixQueryInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const scope = await resolveEmployeesScope(this.access, currentUser);
-    return this.skills.getSkillsMatrix(currentUser.orgId, currentUser.userId, scope, query);
+    const read = await resolveEmployeesScope(this.access, currentUser);
+    return this.skills.getSkillsMatrix(read, query);
   }
 
   @Get("projects")
@@ -286,13 +276,8 @@ export class EmployeesController {
     @CurrentUser() currentUser: CurrentUserContext,
     @Res() res: Response,
   ) {
-    const scope = await resolveEmployeesManageScope(this.access, currentUser);
-    const employee = await this.mutations.getEmployeeDetail(
-      currentUser.orgId,
-      currentUser.userId,
-      employeeId,
-      scope,
-    );
+    const read = await resolveEmployeesManageScope(this.access, currentUser);
+    const employee = await this.mutations.getEmployeeDetail(read, employeeId);
     if (!employee) throw new NotFoundException("Employee not found");
 
     const { skills, ...employeeData } = employee;
@@ -313,13 +298,8 @@ export class EmployeesController {
     @Param("employeeId") employeeId: string,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const scope = await resolveEmployeesScope(this.access, currentUser);
-    const employee = await this.mutations.getEmployeeDetail(
-      currentUser.orgId,
-      currentUser.userId,
-      employeeId,
-      scope,
-    );
+    const read = await resolveEmployeesScope(this.access, currentUser);
+    const employee = await this.mutations.getEmployeeDetail(read, employeeId);
     if (!employee) throw new NotFoundException("Employee not found.");
     return employee;
   }

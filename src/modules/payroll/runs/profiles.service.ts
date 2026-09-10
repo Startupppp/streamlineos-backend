@@ -14,7 +14,7 @@ import {
   assertPayrollWorkerPayeeEligible,
 } from "../lib/payroll-payee-eligibility";
 import { workerBelongsToOrg } from "../../directory/person-seam";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import type { ListProfilesQuery, CreateProfileInput, PatchProfileInput } from "./dto/runs.schemas";
 import { AuditService } from "../../../common/audit/audit.service";
 import { SalaryProfilesRepository } from "./salary-profiles.repository";
@@ -27,8 +27,8 @@ export class ProfilesService {
     private readonly profiles: SalaryProfilesRepository,
   ) {}
 
-  async listProfiles(orgId: string, query: ListProfilesQuery, scope: DataScope, userId: string) {
-    return this.profiles.list(orgId, query, scope, userId);
+  async listProfiles(read: ScopedRead, query: ListProfilesQuery) {
+    return this.profiles.list(read, query);
   }
 
   /**

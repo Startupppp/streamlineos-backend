@@ -10,7 +10,8 @@
  *   1. applyScope is internal to the access module.
  *   2. ScopedRead.of is confined to the resolver layer.
  *   3. Every rawScope() call site is declared here with a reason.
- *   4. No production file outside the resolver layer declares a DataScope-typed value.
+ *   4. No production file outside the resolver or grant-authoring layers declares a
+ *      DataScope-typed value.
  *
  * Usage:  node src/scripts/check-scope-boundary.mjs [--self-test]
  * Exit:   0 clean · 1 a boundary is crossed · 2 the check itself is broken
@@ -39,6 +40,25 @@ const isResolverLayer = (path) =>
   /(^|\/)[a-z0-9-]*scope\.ts$/.test(path) || path.startsWith("src/modules/access/");
 
 /**
+ * Where a DataScope is DATA rather than a filter.
+ *
+ * A grant row carries a scope column; RBAC administration reads, writes, validates
+ * and renders that value, and none of those are a read to be scoped. The rule this
+ * gate enforces is about *spending* a scope on a query, so the authoring surface is
+ * outside it — and `express.d.ts` declares the field `PermissionGuard` writes, which
+ * is where the value legitimately enters the process at all.
+ */
+const SCOPE_AUTHORING = [
+  "src/@types/express.d.ts",
+  "src/common/rbac/",
+  "src/modules/rbac/",
+  "src/modules/module-access/",
+  "src/modules/delegations/",
+];
+
+const isScopeAuthoring = (path) => SCOPE_AUTHORING.some((prefix) => path.startsWith(prefix));
+
+/**
  * Callers that branch on the scope VALUE because the thing they produce is not a
  * row predicate. Each is named, reasoned, and covered by a test. An unlisted
  * rawScope() call fails this gate.
@@ -51,6 +71,54 @@ export const DECLARED_RAW_SCOPE = new Map([
   [
     "src/modules/support/core/support-reports.controller.ts",
     "The agent-performance report narrows its GROUP BY subject, not its row set.",
+  ],
+  [
+    "src/modules/dashboard/dashboard-project.service.ts",
+    "all vs own/team picks an entirely different project-membership query shape (org-wide fetch vs member/manager lookup), not a row predicate.",
+  ],
+  [
+    "src/modules/dashboard/dashboard-scope.ts",
+    "Dashboard stats collapse attendance visibility to a boolean flag for the caller, not a row predicate.",
+  ],
+  [
+    "src/modules/gdpr/gdpr.controller.ts",
+    "Exporting another subject's data requires organisation-wide scope — an authorization gate on which subject may be read, not a row predicate.",
+  ],
+  [
+    "src/modules/gdpr/gdpr.service.ts",
+    "Exporting another subject's data requires organisation-wide scope — an authorization gate on which subject may be read, not a row predicate.",
+  ],
+  [
+    "src/modules/hr/import/hr-export.controller.ts",
+    "The requested export scope is persisted on the job row for a worker to replay later; it is stored data, not a filter.",
+  ],
+  [
+    "src/modules/hr/import/hr-export-jobs.service.ts",
+    "Compares the scope the requester still holds against the one persisted on the job, by rank.",
+  ],
+  [
+    "src/modules/hr/import/hr-export-worker.service.ts",
+    "Persists and audits the execution scope the worker ran under.",
+  ],
+  [
+    "src/modules/hr/time/attendance-email-report.service.ts",
+    "The audit trail records which scope produced the report; the report's own rows are scoped by predicate.",
+  ],
+  [
+    "src/modules/timesheets/core/periods-read.service.ts",
+    "Authorises one already-fetched period row in process, and treats team as a bypass where every list treats it as own — a pre-existing difference this migration preserved rather than silently unified.",
+  ],
+  [
+    "src/modules/expenses/expenses.controller.ts",
+    "Export filters are persisted on the job row for a background worker to replay outside the request.",
+  ],
+  [
+    "src/modules/ai/core/ops-copilot-tools.ts",
+    "The payroll copilot answers a different shape per scope — self rows, a team refusal, or an org summary — rather than filtering one query.",
+  ],
+  [
+    "src/modules/ai/core/workspace-copilot-tools.ts",
+    "An own-scoped member asking about another member's ticket stats is refused with a message, not narrowed to an empty result.",
   ],
 ]);
 
@@ -69,8 +137,14 @@ export function walkTs(dir) {
 const IMPORTS_APPLY_SCOPE = /from\s+["'][^"']*\/apply-scope["']/;
 const SCOPED_READ_OF = /\bScopedRead\.of\s*\(/;
 const RAW_SCOPE = /\.rawScope\s*\(/;
-// `scope: DataScope`, `scope?: DataScope`, `Promise<DataScope>`, `Map<string, DataScope>`
-const DECLARES_DATA_SCOPE = /:\s*DataScope\b|<\s*DataScope\s*>|,\s*DataScope\s*>/;
+/**
+ * A single scope carried as a value: `scope: DataScope`, `Promise<DataScope>`.
+ *
+ * `Map<string, DataScope>` is deliberately NOT matched. That is the permission
+ * catalogue a resolver reads FROM, not a resolved scope on its way to a query, and
+ * every `PermissionScopeReader` in the codebase names it.
+ */
+const DECLARES_DATA_SCOPE = /:\s*DataScope\b|<\s*DataScope\s*>/;
 
 export function analyseSource(src, path) {
   const findings = [];
@@ -89,7 +163,13 @@ export function analyseSource(src, path) {
     if (RAW_SCOPE.test(line) && !DECLARED_RAW_SCOPE.has(path))
       findings.push({ ...at, kind: "undeclared-raw-scope", detail: "add this file to DECLARED_RAW_SCOPE with a reason" });
 
-    if (DECLARES_DATA_SCOPE.test(line) && !isResolverLayer(path))
+    // A file already declared as reading the raw value may also name its type; that follows from the declaration rather than being a second violation.
+    if (
+      DECLARES_DATA_SCOPE.test(line) &&
+      !isResolverLayer(path) &&
+      !isScopeAuthoring(path) &&
+      !DECLARED_RAW_SCOPE.has(path)
+    )
       findings.push({ ...at, kind: "data-scope-type", detail: "carry a ScopedRead, not a DataScope" });
   });
 
@@ -123,6 +203,21 @@ if (args.includes("--self-test")) {
         .some((f) => f.kind === "data-scope-type"),
     allowsADataScopeReturnInAResolver:
       analyseSource(`): Promise<DataScope> {`, "src/modules/hr/time/attendance-scope.ts").length === 0,
+    allowsADataScopeOnAGrantRow:
+      analyseSource(`  scope: DataScope;`, "src/modules/rbac/roles.service.ts").length === 0,
+    allowsThePermissionCatalogueMap:
+      analyseSource(
+        `  resolveUserPermissions(orgId: string): Promise<ReadonlyMap<string, DataScope>>;`,
+        "src/modules/hr/hub/hr-hub-capabilities.ts",
+      ).length === 0,
+    allowsADataScopeTypeInADeclaredRawFile:
+      analyseSource(
+        `export function shouldDeny(scope: DataScope): boolean {`,
+        "src/modules/ai/core/ops-copilot-tools.ts",
+      ).length === 0,
+    stillFlagsADataScopeInAnOrdinaryService:
+      analyseSource(`  scope: DataScope;`, "src/modules/hr/hub/hr-hub-capabilities.ts")
+        .some((f) => f.kind === "data-scope-type"),
     ignoresACommentedMention:
       analyseSource(`  // scope: DataScope used to live here`, "src/modules/deals/deals.service.ts").length === 0,
   };

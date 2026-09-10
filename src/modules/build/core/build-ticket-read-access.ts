@@ -5,7 +5,7 @@ import type { Db } from "../../../db/drizzle.types";
 import { tickets } from "../../../db/schema";
 import type { AccessService } from "../../access/access.service";
 import { resolveProjectAccess } from "./project-access";
-import { resolveTicketsScope, ticketScopePredicate } from "./tickets-scope";
+import { resolveTicketsScope, ticketScope } from "./tickets-scope";
 
 export type TicketReadAccess = Pick<
   AccessService,
@@ -19,12 +19,16 @@ export async function assertTicketReadAccess(
   projectId: number,
   ticketId: number,
 ) {
-  const scope = await resolveTicketsScope(access, actor);
-  const predicate = ticketScopePredicate(scope, actor.orgId, actor.userId);
+  const read = await resolveTicketsScope(access, actor);
+  const allowed = read.compose(
+    { tenant: tickets.orgId, scope: ticketScope(read.orgId, read.actorId) },
+    ({ sql: where }) => where,
+    () => sql`false`,
+  );
   const [ticket] = await db
     .select({
       id: tickets.id,
-      allowed: sql<boolean>`${predicate ?? sql`true`}`,
+      allowed: sql<boolean>`${allowed}`,
     })
     .from(tickets)
     .where(

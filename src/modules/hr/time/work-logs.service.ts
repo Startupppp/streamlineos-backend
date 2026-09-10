@@ -29,7 +29,7 @@ export class WorkLogsService {
 
   async list(u: CurrentUserContext, query: ListWorkLogsQuery) {
     const scope = await resolveWorkLogsScope(this.access, u);
-    if (scope !== "all" && query.userId && query.userId !== u.userId) {
+    if (!scope.unrestricted && query.userId && query.userId !== u.userId) {
       throw new ForbiddenException("Not authorized to view other users' work logs.");
     }
 

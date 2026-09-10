@@ -106,8 +106,8 @@ export class AccountingLedgerController {
     @Query() query: ListJournalQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveAccountingJournalViewScope(this.access, u);
-    return this.ledger.listJournal(u.orgId, query, scope, u.userId, actingMembershipId(u.principal) ?? 0);
+    const read = await resolveAccountingJournalViewScope(this.access, u);
+    return this.ledger.listJournal(read, query, actingMembershipId(u.principal) ?? 0);
   }
 
   @Post("journal")

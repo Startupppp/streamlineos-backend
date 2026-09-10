@@ -1,3 +1,4 @@
+import { organizationWideCelebrationsRead } from "../directory/celebrations-scope";
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { and, asc, gt, gte, lte, eq } from "drizzle-orm";
 import {
@@ -151,7 +152,7 @@ export class HrCalendarService {
     if (types.includes("BIRTHDAY") || types.includes("ANNIVERSARY")) {
       fetches.push(
         this.celebrations
-          .getAnniversaryFeed(user.orgId, user.userId, "all")
+          .getAnniversaryFeed(organizationWideCelebrationsRead(user))
           .then((feed) => {
           for (const item of feed) {
             if (

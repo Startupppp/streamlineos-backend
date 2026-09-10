@@ -26,7 +26,7 @@ import {
 } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { resolveApprovalScope, applyMembershipScope } from "./timesheets-core-scope";
+import { resolveApprovalScope, membershipScope } from "./timesheets-core-scope";
 import {
   buildCursorPage,
   decodeCursor,
@@ -121,18 +121,13 @@ export class ApprovalsService {
   }
 
   async listApprovals(u: CurrentUserContext, query: ApprovalsQuery) {
-    const scope = await resolveApprovalScope(this.access, u);
+    const read = await resolveApprovalScope(this.access, u);
     const limit = Math.min(query.limit, 100);
     const pos = decodeCursor(query.cursor);
     const membershipId = actingMembershipId(u.principal);
 
-    const conditions = [
-      eq(timesheetPeriods.orgId, u.orgId),
-      eq(timesheetPeriods.status, query.status),
-      applyMembershipScope(scope, membershipId, timesheetPeriods.userMembershipId),
-    ];
-
-    if (query.userId && (scope === "all" || u.isOrgOwner)) {
+    let requestedMembershipId: number | undefined;
+    if (query.userId && (read.discriminator === "all" || u.isOrgOwner)) {
       const [qMember] = await this.db
         .select({ id: organizationMembers.id })
         .from(organizationMembers)
@@ -143,76 +138,84 @@ export class ApprovalsService {
           ),
         )
         .limit(1);
-      if (qMember) conditions.push(eq(timesheetPeriods.userMembershipId, qMember.id));
+      if (qMember) requestedMembershipId = qMember.id;
     }
-    if (query.startDate)
-      conditions.push(gte(timesheetPeriods.periodStart, query.startDate));
-    if (query.endDate)
-      conditions.push(lte(timesheetPeriods.periodEnd, query.endDate));
-    if (pos)
-      conditions.push(
-        keysetBeforeId(timesheetPeriods.submittedAt, timesheetPeriods.id, pos),
-      );
 
     const approverMember = alias(organizationMembers, "approver_member");
     const ownerMember = alias(organizationMembers, "owner_member");
 
-    const rows = await this.db
-      .select({
-        id: timesheetPeriods.id,
-        orgId: timesheetPeriods.orgId,
-        userMembershipId: timesheetPeriods.userMembershipId,
-        periodStart: timesheetPeriods.periodStart,
-        periodEnd: timesheetPeriods.periodEnd,
-        status: timesheetPeriods.status,
-        totalHours: timesheetPeriods.totalHours,
-        billableHours: timesheetPeriods.billableHours,
-        nonBillableHours: timesheetPeriods.nonBillableHours,
-        submittedAt: timesheetPeriods.submittedAt,
-        approvedAt: timesheetPeriods.approvedAt,
-        rejectedAt: timesheetPeriods.rejectedAt,
-        lockedAt: timesheetPeriods.lockedAt,
-        currentApproverMembershipId: timesheetPeriods.currentApproverMembershipId,
-        approvedBy: approverMember.userId,
-        rejectionReason: timesheetPeriods.rejectionReason,
-        createdAt: timesheetPeriods.createdAt,
-        updatedAt: timesheetPeriods.updatedAt,
-        userEmail: users.email,
-        userName: users.name,
-      })
-      .from(timesheetPeriods)
-      .leftJoin(ownerMember, and(
-        eq(timesheetPeriods.orgId, ownerMember.orgId),
-        eq(timesheetPeriods.userMembershipId, ownerMember.id),
-      ))
-      .leftJoin(users, eq(ownerMember.userId, users.id))
-      .leftJoin(
-        approverMember,
-        and(
-          eq(timesheetPeriods.orgId, approverMember.orgId),
-          eq(timesheetPeriods.approvedByMembershipId, approverMember.id),
-        ),
-      )
-      .where(and(...conditions))
-      .orderBy(desc(timesheetPeriods.submittedAt), desc(timesheetPeriods.id))
-      .limit(limit + 1);
+    return read.read(
+      {
+        tenant: timesheetPeriods.orgId,
+        scope: membershipScope(membershipId, timesheetPeriods.userMembershipId),
+        and: [
+          eq(timesheetPeriods.status, query.status),
+          requestedMembershipId !== undefined ? eq(timesheetPeriods.userMembershipId, requestedMembershipId) : undefined,
+          query.startDate ? gte(timesheetPeriods.periodStart, query.startDate) : undefined,
+          query.endDate ? lte(timesheetPeriods.periodEnd, query.endDate) : undefined,
+          pos ? keysetBeforeId(timesheetPeriods.submittedAt, timesheetPeriods.id, pos) : undefined,
+        ],
+      },
+      async ({ sql: where }) => {
+        const rows = await this.db
+          .select({
+            id: timesheetPeriods.id,
+            orgId: timesheetPeriods.orgId,
+            userMembershipId: timesheetPeriods.userMembershipId,
+            periodStart: timesheetPeriods.periodStart,
+            periodEnd: timesheetPeriods.periodEnd,
+            status: timesheetPeriods.status,
+            totalHours: timesheetPeriods.totalHours,
+            billableHours: timesheetPeriods.billableHours,
+            nonBillableHours: timesheetPeriods.nonBillableHours,
+            submittedAt: timesheetPeriods.submittedAt,
+            approvedAt: timesheetPeriods.approvedAt,
+            rejectedAt: timesheetPeriods.rejectedAt,
+            lockedAt: timesheetPeriods.lockedAt,
+            currentApproverMembershipId: timesheetPeriods.currentApproverMembershipId,
+            approvedBy: approverMember.userId,
+            rejectionReason: timesheetPeriods.rejectionReason,
+            createdAt: timesheetPeriods.createdAt,
+            updatedAt: timesheetPeriods.updatedAt,
+            userEmail: users.email,
+            userName: users.name,
+          })
+          .from(timesheetPeriods)
+          .leftJoin(ownerMember, and(
+            eq(timesheetPeriods.orgId, ownerMember.orgId),
+            eq(timesheetPeriods.userMembershipId, ownerMember.id),
+          ))
+          .leftJoin(users, eq(ownerMember.userId, users.id))
+          .leftJoin(
+            approverMember,
+            and(
+              eq(timesheetPeriods.orgId, approverMember.orgId),
+              eq(timesheetPeriods.approvedByMembershipId, approverMember.id),
+            ),
+          )
+          .where(where)
+          .orderBy(desc(timesheetPeriods.submittedAt), desc(timesheetPeriods.id))
+          .limit(limit + 1);
 
-    const page = buildCursorPage(rows, limit, (r) => ({
-      sortValue: (r.submittedAt ?? r.createdAt).toISOString(),
-      id: String(r.id),
-    }));
+        const page = buildCursorPage(rows, limit, (r) => ({
+          sortValue: (r.submittedAt ?? r.createdAt).toISOString(),
+          id: String(r.id),
+        }));
 
-    return {
-      data: page.data.map((r) => ({
-        ...r,
-        user: {
-          membershipId: r.userMembershipId,
-          name: r.userName ?? r.userEmail,
-          email: r.userEmail,
-        },
-      })),
-      pagination: page.pagination,
-    };
+        return {
+          data: page.data.map((r) => ({
+            ...r,
+            user: {
+              membershipId: r.userMembershipId,
+              name: r.userName ?? r.userEmail,
+              email: r.userEmail,
+            },
+          })),
+          pagination: page.pagination,
+        };
+      },
+      () => ({ data: [], pagination: { limit, hasMore: false, nextCursor: null } }),
+    );
   }
 
   async approveSinglePeriod(u: CurrentUserContext, periodId: number) {

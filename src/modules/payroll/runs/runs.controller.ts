@@ -232,8 +232,8 @@ export class RunsController {
     @Query() query: ListRunEmployeesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolvePayrollRunsViewScope(this.access, u);
-    const result = await this.runsService.listRunEmployees(u.orgId, runId, query, scope, u.userId);
+    const read = await resolvePayrollRunsViewScope(this.access, u);
+    const result = await this.runsService.listRunEmployees(read, runId, query);
     if (!result) throw new NotFoundException("Payroll run not found");
     return result;
   }

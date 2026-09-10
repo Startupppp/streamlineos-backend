@@ -1,9 +1,12 @@
 import { CalendarExportService } from "./calendar-export.service";
 import { EXPORT_MAX_SPAN_DAYS, exportSchema } from "./dto/calendar.schemas";
 import type { Db } from "../../db/drizzle.module";
+import { ScopedRead } from "../access/scoped-read";
 
 const ATTACKER_ORG = "org-attacker";
 const ATTACKER_USER = "user-attacker";
+const readAs = (orgId: string, userId: string, scope: "none" | "own" | "team" | "all" = "all") =>
+  ScopedRead.of(orgId, userId, scope);
 
 function sqlValues(val: unknown, seen = new Set<object>()): unknown[] {
   if (val === null || val === undefined || typeof val === "string" || typeof val === "number" || typeof val === "boolean") return [val];
@@ -101,7 +104,7 @@ describe("CalendarExportService — scalar subquery visibility (no LEFT JOIN)", 
     const svc = new CalendarExportService(db);
     const from = new Date("2026-01-01");
     const to = new Date("2026-06-30");
-    await expect(svc.exportEvents("org-1", "user-1", from, to, "all")).resolves.toBeDefined();
+    await expect(svc.exportEvents(readAs("org-1", "user-1"), from, to)).resolves.toBeDefined();
   });
 });
 
@@ -111,7 +114,7 @@ describe("CalendarExportService — cross-tenant isolation (BOLA)", () => {
     const svc = new CalendarExportService(db);
     const from = new Date("2026-01-01");
     const to = new Date("2026-12-31");
-    const result = await svc.exportEvents(ATTACKER_ORG, ATTACKER_USER, from, to);
+    const result = await svc.exportEvents(readAs(ATTACKER_ORG, ATTACKER_USER), from, to);
     expect(result).toHaveLength(0);
   });
 
@@ -121,7 +124,7 @@ describe("CalendarExportService — cross-tenant isolation (BOLA)", () => {
     const svc = new CalendarExportService(db);
     const from = new Date("2026-01-01");
     const to = new Date("2026-12-31");
-    await svc.exportEvents(ATTACKER_ORG, ATTACKER_USER, from, to);
+    await svc.exportEvents(readAs(ATTACKER_ORG, ATTACKER_USER), from, to);
     expect(whereCalls.length).toBeGreaterThan(0);
     const allValues = whereCalls.flatMap((w) => sqlValues(w));
     expect(allValues).toContain(ATTACKER_ORG);
@@ -132,7 +135,7 @@ describe("CalendarExportService — cross-tenant isolation (BOLA)", () => {
     const svc = new CalendarExportService(db);
     const from = new Date("2026-01-01");
     const to = new Date("2026-12-31");
-    await svc.exportEvents(ATTACKER_ORG, ATTACKER_USER, from, to);
+    await svc.exportEvents(readAs(ATTACKER_ORG, ATTACKER_USER), from, to);
     const findFirstCalls = (db.query.organizationMembers.findFirst as jest.Mock).mock.calls;
     expect(findFirstCalls.length).toBe(1);
     const arg = findFirstCalls[0]?.[0] as { where?: unknown };

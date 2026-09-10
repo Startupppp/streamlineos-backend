@@ -10,13 +10,13 @@ import { pageVisibleTo } from "./kb-page-visibility";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { SearchInput } from "./dto/kb-ai.schemas";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { KbCandidateService } from "./kb-candidate.service";
 import { AccessService } from "../../access/access.service";
 import { resolveKbArticlesViewScope } from "../core/kb-scope";
-import { articleOwnerScopeFilter } from "./kb-article-owner-scope";
+import { articleOwnerScope, articleOwnerScopeFilter } from "./kb-article-owner-scope";
 
 const KB_SEARCH_FEATURE = "kb.search";
 
@@ -43,9 +43,9 @@ export class KbSearchService {
    * any future one — can reach the vector index without the predicate the direct
    * read endpoint applies.
    */
-  async articleOwnerFilterFor(user: CurrentUserContext): Promise<SQL | null> {
-    const articleScope = await resolveKbArticlesViewScope(this.scopes, user);
-    return articleOwnerScopeFilter(articleScope, user);
+  async articleOwnerFilterFor(user: CurrentUserContext): Promise<SQL> {
+    const read = await resolveKbArticlesViewScope(this.scopes, user);
+    return articleOwnerScopeFilter(read, user);
   }
 
   /**
@@ -83,7 +83,7 @@ export class KbSearchService {
   async search(
     user: CurrentUserContext,
     input: SearchInput,
-    scope: DataScope,
+    scope: ScopedRead,
   ): Promise<{
     items: {
       id: number;
@@ -101,7 +101,7 @@ export class KbSearchService {
     pageSize: number;
     totalPages: number;
   }> {
-    if (scope === "none")
+    if (scope.denied)
       return { items: [], total: 0, page: input.page, pageSize: input.pageSize, totalPages: 0 };
 
     const ids = await this.access.getAccessibleSpaceIds(user);
@@ -114,19 +114,21 @@ export class KbSearchService {
 
     const tsquery = sql`websearch_to_tsquery('english', ${input.q})`;
     const keywordCond = await this.candidates.resolveArticleKeywordCondition(input.q, tsquery, 500);
-    const conditions: SQL[] = [
-      eq(kbArticles.orgId, user.orgId),
+    const domain: SQL[] = [
       inArray(kbArticles.spaceId, ids),
       ne(kbArticles.status, "archived"),
       keywordCond,
     ];
-    if (!isAdmin) conditions.push(this.candidates.articleRestrictionFilter(user.orgId, principal));
+    if (!isAdmin) domain.push(this.candidates.articleRestrictionFilter(user.orgId, principal));
+    if (input.spaceId) domain.push(eq(kbArticles.spaceId, input.spaceId));
     // The same narrowing `GET /kb/articles` applies, in the predicate rather than
     // downstream: these rows carry article text and are what retrieval hands on.
-    const ownerFilter = articleOwnerScopeFilter(scope, user);
-    if (ownerFilter) conditions.push(ownerFilter);
-    if (input.spaceId) conditions.push(eq(kbArticles.spaceId, input.spaceId));
-    const where = and(...conditions);
+    const membershipId = user.principal === undefined ? null : actingMembershipId(user.principal);
+    const where = scope.compose(
+      { tenant: kbArticles.orgId, scope: articleOwnerScope(membershipId), and: domain },
+      ({ sql: composed }) => composed,
+      () => sql`false`,
+    );
 
     const offset = (input.page - 1) * input.pageSize;
 

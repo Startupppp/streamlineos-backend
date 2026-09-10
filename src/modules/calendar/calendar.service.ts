@@ -23,7 +23,7 @@ import { CalendarAttendeesService } from "./calendar-attendees.service";
 import { CalendarRecurrenceService } from "./calendar-recurrence.service";
 import { CalendarExportService } from "./calendar-export.service";
 import type { RsvpInput } from "./dto/calendar.schemas";
-import type { DataScope } from "../access/access.types";
+import type { ScopedRead } from "../access/scoped-read";
 import {
   calendarEventUpdateReturning,
   calendarEventWireColumns,
@@ -378,8 +378,8 @@ export class CalendarService {
     return this.recurrence.cancelOccurrence(orgId, userId, eventId, occurrenceStartIso);
   }
 
-  exportEvents(orgId: string, userId: string, from: Date, to: Date, scope: DataScope = "all") {
-    return this.calendarExport.exportEvents(orgId, userId, from, to, scope);
+  exportEvents(read: ScopedRead, from: Date, to: Date) {
+    return this.calendarExport.exportEvents(read, from, to);
   }
 
   getEvent(

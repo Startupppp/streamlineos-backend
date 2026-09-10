@@ -1,19 +1,29 @@
 import { PgDialect } from "drizzle-orm/pg-core";
-import { ticketScopePredicate } from "./tickets-scope";
+import { sql } from "drizzle-orm";
+import { tickets } from "../../../db/schema";
+import { ScopedRead } from "../../access/scoped-read";
+import { ticketScope } from "./tickets-scope";
 
 describe("canonical ticket read scope predicate", () => {
   const dialect = new PgDialect();
 
+  function whereFor(scope: "all" | "own" | "team" | "none", orgId: string, actorId: string) {
+    const read = ScopedRead.of(orgId, actorId, scope);
+    return read.compose(
+      { tenant: tickets.orgId, scope: ticketScope(orgId, actorId) },
+      ({ sql: where }) => where,
+      () => sql`false`,
+    );
+  }
+
   it("denies absent permissions even for a historical assignee", () => {
-    const predicate = ticketScopePredicate("none", "tenant", "actor");
-    if (!predicate) throw new Error("none must produce a denying SQL predicate");
-    expect(dialect.sqlToQuery(predicate).sql).toBe("false");
+    const where = whereFor("none", "tenant", "actor");
+    expect(dialect.sqlToQuery(where).sql).toBe("false");
   });
 
   it.each(["own", "team"] as const)("%s scope uses tenant-scoped assignment and reporter edges", (scope) => {
-    const predicate = ticketScopePredicate(scope, "tenant-a", "actor-b");
-    if (!predicate) throw new Error("Restricted scope must produce a SQL predicate");
-    const query = dialect.sqlToQuery(predicate);
+    const where = whereFor(scope, "tenant-a", "actor-b");
+    const query = dialect.sqlToQuery(where);
     expect(query.params).toContain("tenant-a");
     expect(query.params).toContain("actor-b");
     expect(query.sql).toContain("assignee_membership_id");
@@ -22,7 +32,10 @@ describe("canonical ticket read scope predicate", () => {
     expect(query.sql).toContain("ta.ticket_id");
   });
 
-  it("does not add a restriction to a verified all scope", () => {
-    expect(ticketScopePredicate("all", "tenant", "actor")).toBeUndefined();
+  it("adds no restriction beyond tenant for a verified all scope", () => {
+    const where = whereFor("all", "tenant", "actor");
+    const query = dialect.sqlToQuery(where);
+    expect(query.sql).not.toContain("assignee_membership_id");
+    expect(query.sql).not.toContain("reporter_id");
   });
 });

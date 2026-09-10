@@ -8,7 +8,7 @@ import { ALL_MODULES, signToken } from "test/helpers/sign-token";
 import { AccessService } from "src/modules/access/access.service";
 import { ExpensesService } from "src/modules/expenses/expenses.service";
 import { ExpensesWriteService } from "src/modules/expenses/expenses-write.service";
-import { SELF_ONLY_SCOPE } from "src/modules/expenses/expenses-scope";
+import type { ExpenseRead } from "src/modules/expenses/expenses-scope";
 
 /**
  * PRD-C115 — representative E2E for `/me/expenses`.
@@ -189,10 +189,11 @@ describe("EmployeeExpensesController — /me/expenses (e2e)", () => {
 
     expect(res.status).toBe(200);
     expect(getPageData).toHaveBeenCalledTimes(1);
-    const [orgId, userId, scope] = getPageData.mock.calls[0] as unknown[];
-    expect(orgId).toBe("org_1");
-    expect(userId).toBe(SELF);
-    expect(scope).toEqual(SELF_ONLY_SCOPE);
+    const [er] = getPageData.mock.calls[0] as [ExpenseRead, unknown];
+    expect(er.read.orgId).toBe("org_1");
+    expect(er.read.actorId).toBe(SELF);
+    expect(er.isAll).toBe(false);
+    expect(er.teamUserIds).toEqual([]);
   });
 
   it("PRIVACY: a client-supplied userId cannot widen the read to another member", async () => {
@@ -206,11 +207,10 @@ describe("EmployeeExpensesController — /me/expenses (e2e)", () => {
 
     expect([200, 400]).toContain(res.status);
     if (res.status === 200) {
-      const [orgId, userId, scope, filters] = getPageData.mock
-        .calls[0] as unknown[];
-      expect(orgId).toBe("org_1");
-      expect(userId).toBe(SELF);
-      expect(scope).toEqual(SELF_ONLY_SCOPE);
+      const [er, filters] = getPageData.mock.calls[0] as [ExpenseRead, unknown];
+      expect(er.read.orgId).toBe("org_1");
+      expect(er.read.actorId).toBe(SELF);
+      expect(er.isAll).toBe(false);
       expect(JSON.stringify(filters)).not.toContain(VICTIM);
     }
   });
@@ -263,18 +263,12 @@ describe("EmployeeExpensesController — /me/expenses (e2e)", () => {
       .set("Authorization", `Bearer ${token}`);
 
     expect(res.status).toBe(200);
-    expect(getPageData).toHaveBeenCalledWith(
-      "org_alien",
-      "user_alien",
-      SELF_ONLY_SCOPE,
-      expect.any(Object),
-    );
-    expect(getPageData).not.toHaveBeenCalledWith(
-      "org_1",
-      expect.anything(),
-      expect.anything(),
-      expect.anything(),
-    );
+    expect(getPageData).toHaveBeenCalledTimes(1);
+    const [er] = getPageData.mock.calls[0] as [ExpenseRead, unknown];
+    expect(er.read.orgId).toBe("org_alien");
+    expect(er.read.actorId).toBe("user_alien");
+    expect(er.isAll).toBe(false);
+    expect(er.read.orgId).not.toBe("org_1");
   });
 });
 

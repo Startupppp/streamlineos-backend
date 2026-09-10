@@ -1,3 +1,4 @@
+import { ScopedRead } from "../../access/scoped-read";
 import type { Db } from "../../../db/drizzle.module";
 import { KbSpacesService } from "./kb-spaces.service";
 import type { KbAccessService } from "../core/kb-access.service";
@@ -61,7 +62,7 @@ describe("KbSpacesService — cross-tenant isolation", () => {
   it("scopes space list to the requesting org (tenant isolation)", async () => {
     const { svc, allWhereArgs } = makeService(ATTACKER_ORG, []);
 
-    await svc.list(makeUser(ATTACKER_ORG));
+    await svc.list(makeUser(ATTACKER_ORG), ScopedRead.of(ATTACKER_ORG, "u-1", "all"));
 
     expect(allWhereArgs.length).toBeGreaterThan(0);
     const allVals = allWhereArgs.flatMap(w => sqlValues(w));
@@ -72,7 +73,7 @@ describe("KbSpacesService — cross-tenant isolation", () => {
     const space = { id: 1, orgId: OWNER_ORG, name: "General", slug: "general", articleCount: 0 };
     const { svc } = makeService(OWNER_ORG, [space]);
 
-    const result = await svc.list(makeUser(OWNER_ORG));
+    const result = await svc.list(makeUser(OWNER_ORG), ScopedRead.of(OWNER_ORG, "u-1", "all"));
 
     expect(result).toBeDefined();
   });

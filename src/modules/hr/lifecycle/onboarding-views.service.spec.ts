@@ -2,6 +2,7 @@ process.env.APP_URL ??= "http://localhost:1000";
 
 import { NotFoundException } from "@nestjs/common";
 import * as applyScopeModule from "../../access/apply-scope";
+import { ScopedRead } from "../../access/scoped-read";
 import {
   runWithTenantContext,
   type AfterCommitHook,
@@ -55,11 +56,9 @@ describe("OnboardingViewsService scope and atomic writes", () => {
 
     await expect(
       service.list(
-        "org-1",
-        "actor-1",
+        ScopedRead.of("org-1", "actor-1", "team"),
         true,
         { limit: 20, userId: "other-user" },
-        "team",
       ),
     ).resolves.toMatchObject({
       data: [],
@@ -88,7 +87,7 @@ describe("OnboardingViewsService scope and atomic writes", () => {
     );
 
     await expect(
-      service.getFileReference("org-1", "actor-1", 7, "own"),
+      service.getFileReference(ScopedRead.of("org-1", "actor-1", "own"), 7),
     ).resolves.toEqual({
       id: 7,
       fileUrl: "onboarding-docs/private.pdf",
@@ -121,8 +120,7 @@ describe("OnboardingViewsService scope and atomic writes", () => {
 
     await expect(
       service.create(
-        "org-1",
-        "actor-1",
+        ScopedRead.of("org-1", "actor-1", "team"),
         true,
         {
           documentTypeId: 1,
@@ -130,7 +128,6 @@ describe("OnboardingViewsService scope and atomic writes", () => {
           fileName: "doc.pdf",
           targetUserId: "other-user",
         },
-        "team",
       ),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(scopeSpy).toHaveBeenCalledWith(
@@ -161,11 +158,9 @@ describe("OnboardingViewsService scope and atomic writes", () => {
 
     await expect(
       service.review(
-        "org-1",
-        "actor-1",
+        ScopedRead.of("org-1", "actor-1", "own"),
         9,
         { status: "APPROVED" },
-        "own",
       ),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(tx.update).not.toHaveBeenCalled();
@@ -221,15 +216,13 @@ describe("OnboardingViewsService scope and atomic writes", () => {
     await expect(
       runWithTenantContext(context, () =>
         service.create(
-          "org-1",
-          "employee-1",
+          ScopedRead.of("org-1", "employee-1", "own"),
           false,
           {
             documentTypeId: 1,
             fileUrl: "https://example.com/doc.pdf",
             fileName: "doc.pdf",
           },
-          "own",
         ),
       ),
     ).resolves.toEqual(document);
@@ -276,11 +269,9 @@ describe("OnboardingViewsService scope and atomic writes", () => {
 
     await expect(
       service.review(
-        "org-1",
-        "reviewer-1",
+        ScopedRead.of("org-1", "reviewer-1", "all"),
         9,
         { status: "APPROVED", remarks: "Verified" },
-        "all",
       ),
     ).resolves.toEqual({ id: 9, status: "APPROVED" });
 

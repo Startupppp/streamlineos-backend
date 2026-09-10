@@ -18,7 +18,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbAccessService } from "../core/kb-access.service";
 import { KbIndexingService } from "../retrieval/kb-indexing.service";
 import { actingMembershipId } from "../../../common/auth/principal";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
+import { kbSpaceOwnerScope } from "../core/kb-scope";
 import { kbSlugify } from "../core/kb.util";
 import { randomUUID } from "node:crypto";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
@@ -53,24 +54,19 @@ export class KbSpacesService {
     private readonly indexing: KbIndexingService,
   ) {}
 
-  async list(
-    user: CurrentUserContext,
-    scope?: DataScope,
-  ): Promise<SpaceListItem[]> {
-    if (scope === "none") return [];
+  async list(user: CurrentUserContext, scope: ScopedRead): Promise<SpaceListItem[]> {
+    if (scope.denied) return [];
 
     const ids = await this.access.getAccessibleSpaceIds(user);
     if (ids.length === 0) return [];
 
-    const baseConditions = [
-      eq(kbSpaces.orgId, user.orgId),
-      inArray(kbSpaces.id, ids),
-      isNull(kbSpaces.deletedAt),
-    ];
-    if (scope === "own" || scope === "team") {
-      const membershipId = actingMembershipId(user.principal) ?? 0;
-      baseConditions.push(eq(kbSpaces.createdByMembershipId, membershipId));
-    }
+    const domain = [inArray(kbSpaces.id, ids), isNull(kbSpaces.deletedAt)];
+    const membershipId = actingMembershipId(user.principal) ?? 0;
+    const where = scope.compose(
+      { tenant: kbSpaces.orgId, scope: kbSpaceOwnerScope(membershipId), and: domain },
+      ({ sql: composed }) => composed,
+      () => sql`false`,
+    );
 
     const spaces = await this.db
       .select({
@@ -85,7 +81,7 @@ export class KbSpacesService {
         updatedAt: kbSpaces.updatedAt,
       })
       .from(kbSpaces)
-      .where(and(...baseConditions))
+      .where(where)
       .orderBy(desc(kbSpaces.updatedAt));
     const counts = await this.db
       .select({

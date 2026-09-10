@@ -1,12 +1,11 @@
 import { Injectable } from "@nestjs/common";
-import type { DataScope } from "../rbac/data-scope";
 import { registerAfterCommit } from "../tenant";
 import { CACHE_TTL } from "./cache-keys";
 import { CacheService } from "./cache.service";
 
 export interface OrgHierarchyCacheContext {
-  actorUserId: string;
-  scope: DataScope;
+  /** `ScopedRead.discriminator` — already actor-qualified for the scopes that need it. */
+  discriminator: string;
 }
 
 export type OrgHierarchyCacheResource =
@@ -46,7 +45,6 @@ export class OrgHierarchyCacheService {
   }
 
   private viewerKey(context: OrgHierarchyCacheContext): string {
-    if (context.scope === "all") return "scope:all";
-    return `scope:${context.scope}:actor:${context.actorUserId}`;
+    return `scope:${context.discriminator}`;
   }
 }

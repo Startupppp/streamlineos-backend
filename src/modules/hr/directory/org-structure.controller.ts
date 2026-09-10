@@ -46,16 +46,16 @@ export class OrgStructureController {
   @ResponseSchema(directoryListSchema)
   @RequirePermission("hr:employees:view")
   async directory(@CurrentUser() currentUser: CurrentUserContext) {
-    const scope = await resolveEmployeesScope(this.access, currentUser);
-    return this.orgStructure.getDirectory(currentUser.orgId, currentUser.userId, scope);
+    const read = await resolveEmployeesScope(this.access, currentUser);
+    return this.orgStructure.getDirectory(read);
   }
 
   @Get("celebrations")
   @ResponseSchema(celebrationsResponseSchema)
   @RequirePermission("hr:employees:view")
   async celebrationsList(@CurrentUser() currentUser: CurrentUserContext) {
-    const scope = await resolveEmployeesScope(this.access, currentUser);
-    return this.celebrations.getCelebrations(currentUser.orgId, currentUser.userId, scope);
+    const read = await resolveEmployeesScope(this.access, currentUser);
+    return this.celebrations.getCelebrations(read);
   }
 
   @Get("org-chart")
@@ -66,8 +66,8 @@ export class OrgStructureController {
     @Query() query: OrgChartQueryInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ): Promise<OrgChartPage> {
-    const scope = await resolveEmployeesScope(this.access, currentUser);
-    return this.orgStructure.getOrgChart(currentUser.orgId, currentUser.userId, scope, query);
+    const read = await resolveEmployeesScope(this.access, currentUser);
+    return this.orgStructure.getOrgChart(read, query);
   }
 
   @Get("headcount")
@@ -89,7 +89,7 @@ export class OrgStructureController {
     @Param("teamId") teamId: string,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const scope = await resolveEmployeesScope(this.access, currentUser);
-    return this.orgStructure.getTeam(currentUser.orgId, currentUser.userId, teamId, scope);
+    const read = await resolveEmployeesScope(this.access, currentUser);
+    return this.orgStructure.getTeam(read, teamId);
   }
 }

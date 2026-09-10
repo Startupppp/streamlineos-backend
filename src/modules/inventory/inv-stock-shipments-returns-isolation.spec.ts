@@ -1,6 +1,7 @@
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { ScopedRead } from "../access/scoped-read";
 import { InvStockService } from "./stock/inv-stock.service";
 import { InvStockAdjustmentsService } from "./stock/inv-stock-adjustments.service";
 import { InvStockTransfersService } from "./stock/inv-stock-transfers.service";
@@ -139,7 +140,7 @@ describe("InvStockAdjustmentsService — cross-tenant isolation", () => {
       ],
     }).compile().then((m) => m.get(InvStockAdjustmentsService));
 
-    const result = await svc.listAdjustments(ATTACKER, { page: 1, limit: 20 });
+    const result = await svc.listAdjustments(ScopedRead.of(ATTACKER, "user-1", "all"), { page: 1, limit: 20 });
     expect(result.items).toHaveLength(0);
     const whereArg = selectWhere.mock.calls[0]?.[0] as unknown;
     expect(sqlValues(whereArg)).toContain(ATTACKER);
@@ -160,7 +161,7 @@ describe("InvStockAdjustmentsService — cross-tenant isolation", () => {
       ],
     }).compile().then((m) => m.get(InvStockAdjustmentsService));
 
-    const result = await svc.listAdjustments(OWNER, { page: 1, limit: 20 });
+    const result = await svc.listAdjustments(ScopedRead.of(OWNER, "user-1", "all"), { page: 1, limit: 20 });
     expect(result.items).toHaveLength(1);
   });
 });
@@ -183,7 +184,7 @@ describe("InvStockTransfersService — cross-tenant isolation", () => {
       ],
     }).compile().then((m) => m.get(InvStockTransfersService));
 
-    const result = await svc.listTransfers(ATTACKER, { page: 1, limit: 20 });
+    const result = await svc.listTransfers(ScopedRead.of(ATTACKER, "user-1", "all"), { page: 1, limit: 20 });
     expect(result.items).toHaveLength(0);
     const arg = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
     expect(sqlValues(arg?.where)).toContain(ATTACKER);
@@ -204,7 +205,7 @@ describe("InvStockTransfersService — cross-tenant isolation", () => {
       ],
     }).compile().then((m) => m.get(InvStockTransfersService));
 
-    const result = await svc.listTransfers(OWNER, { page: 1, limit: 20 });
+    const result = await svc.listTransfers(ScopedRead.of(OWNER, "user-1", "all"), { page: 1, limit: 20 });
     expect(result.items).toHaveLength(1);
   });
 });

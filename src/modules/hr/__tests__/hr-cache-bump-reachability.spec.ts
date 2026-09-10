@@ -3,6 +3,7 @@ import path from "node:path";
 import { CelebrationsService } from "../directory/celebrations.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { CacheService } from "../../../common/cache/cache.service";
+import { ScopedRead } from "../../access/scoped-read";
 
 /**
  * A cache bump nobody reads, and a cached read no bump reaches, are the same
@@ -236,7 +237,7 @@ describe("hr — the anniversary feed sits in the namespace its invalidators bum
     const { cache, cached, cachedVersionedForOrg } = recordingCache();
     const service = new CelebrationsService({} as unknown as Db, cache);
 
-    await service.getAnniversaryFeed(ORG, ACTOR, "all");
+    await service.getAnniversaryFeed(ScopedRead.of(ORG, ACTOR, "all"));
 
     expect(cached).not.toHaveBeenCalled();
     expect(cachedVersionedForOrg).toHaveBeenCalledTimes(1);
@@ -248,8 +249,8 @@ describe("hr — the anniversary feed sits in the namespace its invalidators bum
     const { cache, cachedVersionedForOrg } = recordingCache();
     const service = new CelebrationsService({} as unknown as Db, cache);
 
-    await service.getAnniversaryFeed(ORG, ACTOR, "all");
-    await service.getCelebrations(ORG, ACTOR, "all");
+    await service.getAnniversaryFeed(ScopedRead.of(ORG, ACTOR, "all"));
+    await service.getCelebrations(ScopedRead.of(ORG, ACTOR, "all"));
 
     const subKeys = cachedVersionedForOrg.mock.calls.map((call) => call[2]);
     expect(subKeys).toHaveLength(2);

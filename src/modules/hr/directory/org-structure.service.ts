@@ -13,8 +13,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import type { HeadcountInput, OrgChartQueryInput } from "./dto/hr-directory.schemas";
-import { applyScope } from "../../access/apply-scope";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
 import { OrgChartService } from "./org-chart.service";
@@ -35,47 +34,46 @@ export class OrgStructureService {
     private readonly orgChart: OrgChartService,
   ) {}
 
-  async getDirectory(orgId: string, actorUserId: string, scope: DataScope) {
+  async getDirectory(read: ScopedRead) {
     return this.cache.cachedVersionedForOrg(
-      orgId,
+      read.orgId,
       "hr:directory",
-      `${actorUserId}:${scope}`,
-      () => this.buildDirectory(orgId, actorUserId, scope),
+      read.discriminator,
+      () => this.buildDirectory(read),
       CACHE_TTL.MEDIUM,
     );
   }
 
-  private async buildDirectory(
-    orgId: string,
-    actorUserId: string,
-    scope: DataScope,
-  ) {
-    const members = await this.db
-      .select({
-        id: users.id,
-        name: users.name,
-        firstName: users.firstName,
-        lastName: users.lastName,
-        email: users.email,
-        image: users.image,
-        role: organizationMembers.role,
-        phone: users.phone,
-        isActive: users.isActive,
-      })
-      .from(users)
-      .innerJoin(
-        organizationMembers,
-        and(eq(organizationMembers.userId, users.id), eq(organizationMembers.orgId, orgId)),
-      )
-      .where(
-        and(
-          eq(users.isActive, true),
-          applyScope(scope, orgId, actorUserId, {
-            ownerColumn: organizationMembers.userId,
-          }),
-        ),
-      )
-      .limit(1000);
+  private async buildDirectory(read: ScopedRead) {
+    const orgId = read.orgId;
+    const members = await read.read(
+      {
+        tenant: organizationMembers.orgId,
+        scope: { columns: { ownerColumn: organizationMembers.userId } },
+        and: [eq(users.isActive, true)],
+      },
+      ({ sql: where }) =>
+        this.db
+          .select({
+            id: users.id,
+            name: users.name,
+            firstName: users.firstName,
+            lastName: users.lastName,
+            email: users.email,
+            image: users.image,
+            role: organizationMembers.role,
+            phone: users.phone,
+            isActive: users.isActive,
+          })
+          .from(users)
+          .innerJoin(
+            organizationMembers,
+            and(eq(organizationMembers.userId, users.id), eq(organizationMembers.orgId, orgId)),
+          )
+          .where(where)
+          .limit(1000),
+      () => [],
+    );
 
     const memberIds = members.map((m) => m.id);
     const [orgDepts, factsMap] = await Promise.all([
@@ -114,13 +112,8 @@ export class OrgStructureService {
     });
   }
 
-  getOrgChart(
-    orgId: string,
-    actorUserId: string,
-    scope: DataScope,
-    query: OrgChartQueryInput,
-  ) {
-    return this.orgChart.getOrgChart(orgId, actorUserId, scope, query);
+  getOrgChart(read: ScopedRead, query: OrgChartQueryInput) {
+    return this.orgChart.getOrgChart(read, query);
   }
 
   getHeadcount(orgId: string, query: HeadcountInput) {
@@ -219,12 +212,8 @@ export class OrgStructureService {
     return groups;
   }
 
-  async getTeam(
-    orgId: string,
-    actorUserId: string,
-    teamId: string,
-    scope: DataScope,
-  ) {
+  async getTeam(read: ScopedRead, teamId: string) {
+    const orgId = read.orgId;
     const [[deptRow], memberships] = await Promise.all([
       this.db
         .select({
@@ -236,27 +225,28 @@ export class OrgStructureService {
         .leftJoin(organizationMembers, eq(organizationMembers.id, orgUnits.headMembershipId))
         .where(and(eq(orgUnits.id, teamId), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "DEPARTMENT"), isNull(orgUnits.deletedAt)))
         .limit(1),
-      this.db
-        .select({
-          id: users.id,
-          name: users.name,
-          image: users.image,
-          email: users.email,
-          role: organizationMembers.role,
-        })
-        .from(users)
-        .innerJoin(organizationMembers, and(eq(organizationMembers.userId, users.id), eq(organizationMembers.orgId, orgId)))
-        .innerJoin(orgUnitMembers, and(eq(orgUnitMembers.membershipId, organizationMembers.id), eq(orgUnitMembers.orgUnitId, teamId)))
-        .where(
-          and(
-            eq(orgUnitMembers.orgId, orgId),
-            eq(users.isActive, true),
-            applyScope(scope, orgId, actorUserId, {
-              ownerColumn: organizationMembers.userId,
-            }),
-          ),
-        )
-        .limit(HR_SCAN_PAGE + 1),
+      read.read(
+        {
+          tenant: orgUnitMembers.orgId,
+          scope: { columns: { ownerColumn: organizationMembers.userId } },
+          and: [eq(orgUnitMembers.orgUnitId, teamId), eq(users.isActive, true)],
+        },
+        ({ sql: where }) =>
+          this.db
+            .select({
+              id: users.id,
+              name: users.name,
+              image: users.image,
+              email: users.email,
+              role: organizationMembers.role,
+            })
+            .from(users)
+            .innerJoin(organizationMembers, and(eq(organizationMembers.userId, users.id), eq(organizationMembers.orgId, orgId)))
+            .innerJoin(orgUnitMembers, eq(orgUnitMembers.membershipId, organizationMembers.id))
+            .where(where)
+            .limit(HR_SCAN_PAGE + 1),
+        () => [],
+      ),
     ]);
 
     if (!deptRow) throw new NotFoundException("Team not found");

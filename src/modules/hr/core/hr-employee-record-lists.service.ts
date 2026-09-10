@@ -15,8 +15,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { hrEmployments, hrPeople } from "../../../db/schema/hr/core-people";
 import { organizationPeople } from "../../../db/schema/directory/organization-people";
-import { applyScope } from "../../access/apply-scope";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import type {
   ListEmploymentsInput,
   ListPeopleInput,
@@ -108,119 +107,142 @@ export class HrEmployeeRecordListsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listPeopleCursor(
-    orgId: string,
-    actorUserId: string,
+    read: ScopedRead,
     query: Pick<ListPeopleInput, "cursor" | "limit" | "search">,
-    scope: DataScope,
   ): Promise<CursorListResponse<PersonListRecord>> {
     const pageLimit = boundPageLimit(query.limit);
-    const conditions = this.peopleConditions(orgId, actorUserId, scope);
+    const emptyPage: CursorListResponse<PersonListRecord> = {
+      data: [],
+      pageInfo: { limit: pageLimit, hasMore: false, nextCursor: null },
+    };
+    if (read.denied) return emptyPage;
+
+    const orgId = read.orgId;
+    const actorUserId = read.actorId;
+    const cursorScope = read.discriminator;
+    const extraConditions: (SQL | undefined)[] = [];
     if (query.cursor) {
       const cursor = decodePeopleListCursor(query.cursor, {
         orgId,
         actorUserId,
-        scope,
+        scope: cursorScope,
         search: query.search ?? null,
       });
-      conditions.push(gt(hrPeople.id, cursor.personId));
+      extraConditions.push(gt(hrPeople.id, cursor.personId));
     }
     if (query.search)
-      conditions.push(await this.personSearchCondition(query.search));
+      extraConditions.push(await this.personSearchCondition(query.search));
 
-    const result = await this.db
-      .select(PERSON_VIEW_COLUMNS)
-      .from(hrPeople)
-      .innerJoin(organizationPeople, PERSON_JOIN_COND)
-      .where(and(...conditions))
-      .orderBy(asc(hrPeople.id))
-      .limit(pageLimit + 1);
-    const hasMore = result.length > pageLimit;
-    const data = result.slice(0, pageLimit);
-    const lastPerson = data.at(-1);
-
-    return {
-      data,
-      pageInfo: {
-        limit: pageLimit,
-        hasMore,
-        nextCursor:
-          hasMore && lastPerson
-            ? encodePeopleListCursor({
-                personId: lastPerson.id,
-                orgId,
-                actorUserId,
-                scope,
-                search: query.search ?? null,
-              })
-            : null,
+    return read.read(
+      {
+        tenant: hrPeople.orgId,
+        scope: { columns: { ownerColumn: hrPeople.userId } },
+        and: [isNull(hrPeople.deletedAt), ...extraConditions],
       },
-    };
+      async ({ sql: where }) => {
+        const result = await this.db
+          .select(PERSON_VIEW_COLUMNS)
+          .from(hrPeople)
+          .innerJoin(organizationPeople, PERSON_JOIN_COND)
+          .where(where)
+          .orderBy(asc(hrPeople.id))
+          .limit(pageLimit + 1);
+        const hasMore = result.length > pageLimit;
+        const data = result.slice(0, pageLimit);
+        const lastPerson = data.at(-1);
+
+        return {
+          data,
+          pageInfo: {
+            limit: pageLimit,
+            hasMore,
+            nextCursor:
+              hasMore && lastPerson
+                ? encodePeopleListCursor({
+                    personId: lastPerson.id,
+                    orgId,
+                    actorUserId,
+                    scope: cursorScope,
+                    search: query.search ?? null,
+                  })
+                : null,
+          },
+        };
+      },
+      () => emptyPage,
+    );
   }
 
   async listEmploymentsCursor(
-    orgId: string,
-    actorUserId: string,
+    read: ScopedRead,
     query: Pick<ListEmploymentsInput, "cursor" | "limit">,
-    scope: DataScope,
   ): Promise<CursorListResponse<EmploymentListRecord>> {
     const pageLimit = boundPageLimit(query.limit);
-    const conditions = this.employmentConditions(orgId, actorUserId, scope);
+    const emptyPage: CursorListResponse<EmploymentListRecord> = {
+      data: [],
+      pageInfo: { limit: pageLimit, hasMore: false, nextCursor: null },
+    };
+    if (read.denied) return emptyPage;
+
+    const orgId = read.orgId;
+    const actorUserId = read.actorId;
+    const cursorScope = read.discriminator;
+    const extraConditions: (SQL | undefined)[] = [
+      eq(hrPeople.orgId, orgId),
+      isNull(hrPeople.deletedAt),
+    ];
     if (query.cursor) {
       const cursor = decodeEmploymentListCursor(query.cursor, {
         orgId,
         actorUserId,
-        scope,
+        scope: cursorScope,
       });
-      conditions.push(gt(hrEmployments.id, cursor.employmentId));
+      extraConditions.push(gt(hrEmployments.id, cursor.employmentId));
     }
 
-    const result = await this.db
-      .select(EMPLOYMENT_VIEW_COLUMNS)
-      .from(hrEmployments)
-      .innerJoin(
-        hrPeople,
-        and(
-          eq(hrPeople.orgId, hrEmployments.orgId),
-          eq(hrPeople.id, hrEmployments.personId),
-        ),
-      )
-      .where(and(...conditions))
-      .orderBy(asc(hrEmployments.id))
-      .limit(pageLimit + 1);
-    const hasMore = result.length > pageLimit;
-    const data = result.slice(0, pageLimit);
-    const lastEmployment = data.at(-1);
-
-    return {
-      data,
-      pageInfo: {
-        limit: pageLimit,
-        hasMore,
-        nextCursor:
-          hasMore && lastEmployment
-            ? encodeEmploymentListCursor({
-                employmentId: lastEmployment.id,
-                orgId,
-                actorUserId,
-                scope,
-              })
-            : null,
+    return read.read(
+      {
+        tenant: hrEmployments.orgId,
+        scope: { columns: { ownerColumn: hrPeople.userId } },
+        and: [isNull(hrEmployments.deletedAt), ...extraConditions],
       },
-    };
-  }
+      async ({ sql: where }) => {
+        const result = await this.db
+          .select(EMPLOYMENT_VIEW_COLUMNS)
+          .from(hrEmployments)
+          .innerJoin(
+            hrPeople,
+            and(
+              eq(hrPeople.orgId, hrEmployments.orgId),
+              eq(hrPeople.id, hrEmployments.personId),
+            ),
+          )
+          .where(where)
+          .orderBy(asc(hrEmployments.id))
+          .limit(pageLimit + 1);
+        const hasMore = result.length > pageLimit;
+        const data = result.slice(0, pageLimit);
+        const lastEmployment = data.at(-1);
 
-  private peopleConditions(
-    orgId: string,
-    actorUserId: string,
-    scope: DataScope,
-  ): SQL[] {
-    return [
-      eq(hrPeople.orgId, orgId),
-      isNull(hrPeople.deletedAt),
-      applyScope(scope, orgId, actorUserId, {
-        ownerColumn: hrPeople.userId,
-      }),
-    ];
+        return {
+          data,
+          pageInfo: {
+            limit: pageLimit,
+            hasMore,
+            nextCursor:
+              hasMore && lastEmployment
+                ? encodeEmploymentListCursor({
+                    employmentId: lastEmployment.id,
+                    orgId,
+                    actorUserId,
+                    scope: cursorScope,
+                  })
+                : null,
+          },
+        };
+      },
+      () => emptyPage,
+    );
   }
 
   private async personSearchCondition(search: string): Promise<SQL> {
@@ -236,21 +258,5 @@ export class HrEmployeeRecordListsService {
     if (rows.length > PERSON_SEARCH_CAP) return fallback;
     const ids = rows.map((r) => Number(r["id"]));
     return inArray(hrPeople.id, ids);
-  }
-
-  private employmentConditions(
-    orgId: string,
-    actorUserId: string,
-    scope: DataScope,
-  ): SQL[] {
-    return [
-      eq(hrEmployments.orgId, orgId),
-      isNull(hrEmployments.deletedAt),
-      eq(hrPeople.orgId, orgId),
-      isNull(hrPeople.deletedAt),
-      applyScope(scope, orgId, actorUserId, {
-        ownerColumn: hrPeople.userId,
-      }),
-    ];
   }
 }

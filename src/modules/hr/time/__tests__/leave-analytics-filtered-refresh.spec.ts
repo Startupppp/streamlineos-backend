@@ -225,7 +225,7 @@ describe("leave analytics filtered read-after-write", () => {
     expect(viewKeys.sort()).toEqual([
       `${namespace}:v0:all:2025`,
       `${namespace}:v0:all:2026`,
-      `${namespace}:v0:team:11:2026`,
+      `${namespace}:v0:team:hr-1:2026`,
     ]);
     expect(viewKeys.every((key) => key.includes(ORG_ID))).toBe(true);
   });
@@ -244,8 +244,8 @@ describe("leave analytics filtered read-after-write", () => {
     const resultB = await readerB.analytics(managerB, 2026);
 
     const namespace = CACHE_KEYS.leaveAnalyticsNamespace(ORG_ID);
-    const keyA = `${namespace}:v0:own:21:2026`;
-    const keyB = `${namespace}:v0:own:22:2026`;
+    const keyA = `${namespace}:v0:own:manager-a:2026`;
+    const keyB = `${namespace}:v0:own:manager-b:2026`;
 
     expect(keyA).not.toBe(keyB);
     expect(redis.store.has(keyA)).toBe(true);

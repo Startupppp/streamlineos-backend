@@ -44,8 +44,8 @@ export class InvStockTransfersController {
     @Query() filters: ListTransfersInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveInvStockScope(this.access, u);
-    return this.transfers.listTransfers(u.orgId, filters, scope, u.userId);
+    const read = await resolveInvStockScope(this.access, u);
+    return this.transfers.listTransfers(read, filters);
   }
 
   @Get(":transferId")

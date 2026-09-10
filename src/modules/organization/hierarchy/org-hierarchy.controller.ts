@@ -13,7 +13,7 @@ import {
 } from "@nestjs/common";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
-import { readRequestScope } from "../core/read-request-scope";
+import { readRequestScopedRead } from "../core/read-request-scope";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
@@ -104,8 +104,7 @@ export class OrgHierarchyController {
     @Req() request: Request,
   ) {
     return this.service.getHierarchy(currentUser.orgId, {
-      actorUserId: currentUser.userId,
-      scope: readRequestScope(request),
+      discriminator: readRequestScopedRead(request, currentUser).discriminator,
     });
   }
 
@@ -117,8 +116,7 @@ export class OrgHierarchyController {
     @Req() request: Request,
   ) {
     return this.service.getTree(currentUser.orgId, {
-      actorUserId: currentUser.userId,
-      scope: readRequestScope(request),
+      discriminator: readRequestScopedRead(request, currentUser).discriminator,
     });
   }
 

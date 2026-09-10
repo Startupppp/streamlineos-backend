@@ -22,8 +22,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
-import { applyScope } from "../../access/apply-scope";
-import type { DataScope } from "../../access/access.types";
+import { ScopedRead } from "../../access/scoped-read";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import { CostVisibilityService, stripCostFields } from "../stock-engine/cost-visibility";
 import type {
@@ -105,73 +104,64 @@ export class InvProductCrudService {
       );
   }
 
-  async listProducts(
-    orgId: string,
-    filters: ListProductsInput,
-    scope: DataScope = "all",
-    userId?: string,
-  ) {
-    if (scope === "none")
-      return { items: [], total: 0, page: filters.page, totalPages: 0 };
-
+  async listProducts(read: ScopedRead, filters: ListProductsInput) {
+    const orgId = read.orgId;
     const { status, productType, categoryId, search, page, limit } = filters;
     const offset = (page - 1) * limit;
     // Cost visibility is part of the key: this list is cached per org, so a
     // masked payload must not be served to a cost-permitted caller or vice versa.
-    const showCost = userId ? await this.costVisibility.canSeeCost(orgId, userId) : false;
-    const scopeSuffix = scope !== "all" ? `:${scope}:${userId ?? ""}` : "";
-    const hash = `${showCost ? "cost" : "nocost"}:${status ?? ""}:${productType ?? ""}:${categoryId ?? ""}:${search ?? ""}:${limit}:${offset}${scopeSuffix}`;
+    const showCost = await this.costVisibility.canSeeCost(orgId, read.actorId);
+    const hash = `${showCost ? "cost" : "nocost"}:${status ?? ""}:${productType ?? ""}:${categoryId ?? ""}:${search ?? ""}:${limit}:${offset}:${read.discriminator}`;
     return this.cache.cachedVersioned(
       CACHE_KEYS.invProductsNamespace(orgId),
       hash,
-      async () => {
-        const conditions = [eq(invProducts.orgId, orgId)];
-        if (status) conditions.push(eq(invProducts.status, status));
-        if (productType)
-          conditions.push(eq(invProducts.productType, productType));
-        if (categoryId) conditions.push(eq(invProducts.categoryId, categoryId));
-        if (search) {
-          conditions.push(
-            or(
-              ilike(invProducts.name, `%${search}%`),
-              ilike(invProducts.sku, `%${search}%`),
-            )!,
-          );
-        }
-        if (scope !== "all" && userId) {
-          conditions.push(
-            applyScope(scope, orgId, userId, { ownerColumn: invProducts.createdBy }),
-          );
-        }
-        const where = and(...conditions);
+      () =>
+        read.read(
+          {
+            tenant: invProducts.orgId,
+            scope: { columns: { ownerColumn: invProducts.createdBy } },
+            and: [
+              status ? eq(invProducts.status, status) : undefined,
+              productType ? eq(invProducts.productType, productType) : undefined,
+              categoryId ? eq(invProducts.categoryId, categoryId) : undefined,
+              search
+                ? or(
+                    ilike(invProducts.name, `%${search}%`),
+                    ilike(invProducts.sku, `%${search}%`),
+                  )
+                : undefined,
+            ],
+          },
+          async ({ sql: where }) => {
+            const [items, countResult] = await Promise.all([
+              this.db.query.invProducts.findMany({
+                where,
+                orderBy: [desc(invProducts.createdAt)],
+                limit,
+                offset,
+                with: {
+                  category: { columns: { id: true, name: true } },
+                  uom: { columns: { id: true, name: true, abbreviation: true } },
+                  variants: {
+                    columns: { id: true, sku: true, name: true, isActive: true },
+                  },
+                },
+              }),
+              this.db
+                .select({ count: sql<number>`count(*)::int` })
+                .from(invProducts)
+                .where(where),
+            ]);
 
-        const [items, countResult] = await Promise.all([
-          this.db.query.invProducts.findMany({
-            where,
-            orderBy: [desc(invProducts.createdAt)],
-            limit,
-            offset,
-            with: {
-              category: { columns: { id: true, name: true } },
-              uom: { columns: { id: true, name: true, abbreviation: true } },
-              variants: {
-                columns: { id: true, sku: true, name: true, isActive: true },
-              },
-            },
-          }),
-          this.db
-            .select({ count: sql<number>`count(*)::int` })
-            .from(invProducts)
-            .where(where),
-        ]);
-
-        return {
-          items: showCost ? items : stripCostFields(items),
-          total: countResult[0]?.count ?? 0,
-          page,
-          totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit),
-        };
-      },
+            return {
+              items: showCost ? items : stripCostFields(items),
+              total: countResult[0]?.count ?? 0,
+              page,
+              totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit),
+            };
+          },
+          () => ({ items: [], total: 0, page, totalPages: 0 }),
+        ),
       CACHE_TTL.SHORT,
     );
   }

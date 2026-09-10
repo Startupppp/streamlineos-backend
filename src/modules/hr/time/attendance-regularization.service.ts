@@ -134,9 +134,10 @@ export class AttendanceRegularizationService {
 
   async list(u: CurrentUserContext, query: ListRegularizationsQuery) {
     const scope = await resolveAttendanceScope(this.access, u);
-    const targetUserId = query.userId ?? (scope !== "all" ? u.userId : undefined);
+    const isAll = scope.unrestricted;
+    const targetUserId = query.userId ?? (isAll ? undefined : u.userId);
 
-    if (scope !== "all" && targetUserId !== u.userId) {
+    if (!isAll && targetUserId !== u.userId) {
       throw new ForbiddenException("Not authorized to view other users' regularizations.");
     }
 
@@ -180,7 +181,7 @@ export class AttendanceRegularizationService {
 
   async apply(u: CurrentUserContext, regularizationId: number) {
     const scope = await resolveAttendanceScope(this.access, u);
-    if (scope !== "all") throw new ForbiddenException("Only managers can apply regularizations.");
+    if (!scope.unrestricted) throw new ForbiddenException("Only managers can apply regularizations.");
     const membershipId = actingMembershipId(u.principal);
     if (membershipId == null) throw new ForbiddenException("Organization membership required.");
 
@@ -297,7 +298,7 @@ export class AttendanceRegularizationService {
 
   async reject(u: CurrentUserContext, regularizationId: number, rejectionReason: string) {
     const scope = await resolveAttendanceScope(this.access, u);
-    if (scope !== "all") throw new ForbiddenException("Only managers can reject regularizations.");
+    if (!scope.unrestricted) throw new ForbiddenException("Only managers can reject regularizations.");
     const membershipId = actingMembershipId(u.principal);
     if (membershipId == null) throw new ForbiddenException("Organization membership required.");
 

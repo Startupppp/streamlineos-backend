@@ -13,6 +13,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { SignSettingsService } from "./sign-settings.service";
+import type { ScopedRead } from "../access/scoped-read";
 
 const OPEN_STATUSES = ["sent", "delivered", "partially_completed"] as const;
 const RECIPIENT_ACTIONABLE_STATUSES = ["invited", "viewed", "authenticated", "signing"] as const;
@@ -25,10 +26,10 @@ export class SignReportsService {
   ) {}
 
   async getDashboard(
-    orgId: string,
+    read: ScopedRead,
     membershipId: number | null,
-    scope: { viewAll: boolean },
   ) {
+    const orgId = read.orgId;
     if (membershipId == null) {
       return { awaitingMe: 0, sentPending: 0, completedThisMonth: 0, expiringSoon: 0, failedOrBounced: 0, recentActivity: [] };
     }
@@ -103,12 +104,11 @@ export class SignReportsService {
           ),
         )
         .where(
-          scope.viewAll
-            ? eq(signAuditEvents.orgId, orgId)
-            : and(
-                eq(signAuditEvents.orgId, orgId),
-                eq(signEnvelopes.senderMembershipId, membershipId),
-              ),
+          read.compose(
+            { tenant: signAuditEvents.orgId, scope: { own: eq(signEnvelopes.senderMembershipId, membershipId) } },
+            ({ sql: where }) => where,
+            () => sql`false`,
+          ),
         )
         .orderBy(desc(signAuditEvents.createdAt))
         .limit(10),

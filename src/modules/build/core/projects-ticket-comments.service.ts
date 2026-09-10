@@ -41,8 +41,8 @@ export class ProjectsTicketCommentsService {
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
 
-    const scope = await resolveTicketsScope(this.access, u);
-    if (scope !== "all") {
+    const read = await resolveTicketsScope(this.access, u);
+    if (!read.unrestricted) {
       const isAssignee = ticket.assignee?.user?.id === u.userId || ticket.assignees.some((a) => a.user.userId === u.userId);
       const isReporter = ticket.reporterId === u.userId;
       if (!isAssignee && !isReporter) throw new ProjectsForbiddenTicketException();

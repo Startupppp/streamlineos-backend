@@ -19,7 +19,7 @@ export async function exportWorkLogsCsv(
 
   const conditions: SQL[] = [eq(timesheets.orgId, u.orgId)];
 
-  if (scope !== "all") {
+  if (!scope.unrestricted) {
     const [selfMember] = await db
       .select({ id: organizationMembers.id })
       .from(organizationMembers)

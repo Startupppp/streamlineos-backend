@@ -149,7 +149,7 @@ export class AttendanceService {
 
   async teamStatus(u: CurrentUserContext, query: TeamStatusQuery) {
     const scope = await resolveAttendanceScope(this.access, u);
-    if (scope !== "all")
+    if (!scope.unrestricted)
       throw new ForbiddenException("Only admins can view team attendance.");
 
     const today = getTodayString();

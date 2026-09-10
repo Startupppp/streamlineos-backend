@@ -21,8 +21,7 @@ import type {
   TransitionStatusInput,
 } from "./dto/hr-core.schemas";
 import { HrAuditService } from "./hr-audit.service";
-import { applyScope } from "../../access/apply-scope";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import { hrJobLevels, hrJobRoles } from "../../../db/schema/hr/core-org";
 import { assertActiveOrgUnit } from "../../../common/org/sync-org-unit-placement";
 
@@ -157,35 +156,34 @@ export class HrEmploymentsService {
     if (!jobLevel) throw new BadRequestException("Invalid job level selection.");
   }
 
-  async getOne(
-    orgId: string,
-    actorUserId: string,
-    employmentId: number,
-    scope: DataScope,
-  ) {
-    const [employment] = await this.db
-      .select(EMPLOYMENT_VIEW_COLUMNS)
-      .from(hrEmployments)
-      .innerJoin(
-        hrPeople,
-        and(
-          eq(hrPeople.orgId, hrEmployments.orgId),
-          eq(hrPeople.id, hrEmployments.personId),
-        ),
-      )
-      .where(
-        and(
+  async getOne(read: ScopedRead, employmentId: number) {
+    const orgId = read.orgId;
+    const [employment] = await read.read(
+      {
+        tenant: hrEmployments.orgId,
+        scope: { columns: { ownerColumn: hrPeople.userId } },
+        and: [
           eq(hrEmployments.id, employmentId),
-          eq(hrEmployments.orgId, orgId),
           isNull(hrEmployments.deletedAt),
           eq(hrPeople.orgId, orgId),
           isNull(hrPeople.deletedAt),
-          applyScope(scope, orgId, actorUserId, {
-            ownerColumn: hrPeople.userId,
-          }),
-        ),
-      )
-      .limit(1);
+        ],
+      },
+      ({ sql: where }) =>
+        this.db
+          .select(EMPLOYMENT_VIEW_COLUMNS)
+          .from(hrEmployments)
+          .innerJoin(
+            hrPeople,
+            and(
+              eq(hrPeople.orgId, hrEmployments.orgId),
+              eq(hrPeople.id, hrEmployments.personId),
+            ),
+          )
+          .where(where)
+          .limit(1),
+      () => [],
+    );
     if (!employment) throw new NotFoundException("Employment not found");
     return employment;
   }

@@ -6,7 +6,7 @@ import type { Db } from "../../../db/drizzle.types";
 import { AccessService } from "../../access/access.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { resolveTicketsScope, ticketScopePredicate } from "./tickets-scope";
+import { resolveTicketsScope, ticketScope } from "./tickets-scope";
 import {
   ProjectsForbiddenTicketException,
   ProjectsTicketNotFoundException,
@@ -33,8 +33,8 @@ export class ProjectsTicketsDetailService {
   }
 
   private async readTicket(u: CurrentUserContext, selector: SQL<unknown> | undefined) {
-    const scope = await resolveTicketsScope(this.access, u);
-    if (scope === "none") throw new ProjectsForbiddenTicketException();
+    const read = await resolveTicketsScope(this.access, u);
+    if (read.denied) throw new ProjectsForbiddenTicketException();
     const ticket = await this.db.query.tickets.findFirst({
       where: and(eq(tickets.orgId, u.orgId), isNull(tickets.deletedAt), selector),
       with: {
@@ -55,7 +55,7 @@ export class ProjectsTicketsDetailService {
       },
     });
     if (!ticket) throw new ProjectsTicketNotFoundException();
-    if (scope !== "all") {
+    if (!read.unrestricted) {
       const isAssignee = ticket.assignee?.user?.id === u.userId ||
         ticket.assignees.some((assignment) => assignment.user?.userId === u.userId);
       if (!isAssignee && ticket.reporterId !== u.userId) {
@@ -68,10 +68,11 @@ export class ProjectsTicketsDetailService {
         throw new ProjectsForbiddenTicketException();
       }
     }
-    const epic = ticket.epicId ? await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticket.epicId), eq(tickets.orgId, u.orgId), isNull(tickets.deletedAt), ticketScopePredicate(scope, u.orgId, u.userId)),
-      columns: { id: true, title: true },
-    }) : null;
+    const epic = ticket.epicId ? await read.read(
+      { tenant: tickets.orgId, scope: ticketScope(read.orgId, read.actorId), and: [eq(tickets.id, ticket.epicId), isNull(tickets.deletedAt)] },
+      ({ sql: where }) => this.db.query.tickets.findFirst({ where, columns: { id: true, title: true } }),
+      () => undefined,
+    ) : null;
     return {
       ...ticket,
       epic: epic ? { id: epic.id, name: epic.title } : null,

@@ -1,11 +1,10 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull, or, sql } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import {
   projectMembers,
   organizationMembers,
   projects,
   projectStatuses,
-  ticketAssignees,
   tickets,
   users,
 } from "../../../db/schema";
@@ -17,7 +16,7 @@ import { NotificationsService } from "../../notifications/notifications.service"
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { AccessService } from "../../access/access.service";
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
-import { resolveTicketsScope } from "./tickets-scope";
+import { resolveTicketsScope, ticketScope } from "./tickets-scope";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { ImportTicketsInput, UpdateTicketInput } from "./dto/projects.schemas";
 import { resolveAssigneeId } from "./tickets-helpers";
@@ -37,49 +36,41 @@ export class ProjectsTicketsTransferService {
   ) {}
 
   async exportTickets(u: CurrentUserContext, projectId: number) {
-    const [{ hasAccess }, scope] = await Promise.all([
+    const [{ hasAccess }, read] = await Promise.all([
       this.read.checkProjectAccess(u.orgId, u.userId, projectId),
       resolveTicketsScope(this.access, u),
     ]);
     if (!hasAccess) throw new NotFoundException("Not found");
-    if (scope === "none") return { rows: [], truncated: false };
+    if (read.denied) return { rows: [], truncated: false };
 
-    const scopeClause =
-      scope !== "all"
-        ? or(
-            sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id = ${u.userId} AND status = 'ACTIVE')`,
-            eq(tickets.reporterId, u.userId),
-            sql`EXISTS (SELECT 1 FROM ${ticketAssignees} ta JOIN organization_members om ON om.org_id = ta.org_id AND om.id = ta.membership_id WHERE ta.org_id = ${u.orgId} AND om.user_id = ${u.userId} AND ta.ticket_id = ${tickets.id})`,
-          )
-        : undefined;
-
-    const fetched = await this.db
-      .select({
-        number: tickets.ticketNumber,
-        title: tickets.title,
-        type: tickets.type,
-        status: tickets.status,
-        priority: tickets.priority,
-        points: tickets.points,
-        dueDate: tickets.dueDate,
-        assigneeName: users.name,
-        assigneeFirstName: users.firstName,
-        assigneeLastName: users.lastName,
-        assigneeEmail: users.email,
-      })
-      .from(tickets)
-      .leftJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
-      .leftJoin(users, eq(organizationMembers.userId, users.id))
-      .where(
-        and(
-          eq(tickets.orgId, u.orgId),
-          eq(tickets.projectId, projectId),
-          isNull(tickets.deletedAt),
-          ...(scopeClause ? [scopeClause] : []),
-        ),
-      )
-      .orderBy(tickets.ticketNumber)
-      .limit(EXPORT_ROW_CAP + 1);
+    const fetched = await read.read(
+      {
+        tenant: tickets.orgId,
+        scope: ticketScope(read.orgId, read.actorId),
+        and: [eq(tickets.projectId, projectId), isNull(tickets.deletedAt)],
+      },
+      ({ sql: where }) => this.db
+        .select({
+          number: tickets.ticketNumber,
+          title: tickets.title,
+          type: tickets.type,
+          status: tickets.status,
+          priority: tickets.priority,
+          points: tickets.points,
+          dueDate: tickets.dueDate,
+          assigneeName: users.name,
+          assigneeFirstName: users.firstName,
+          assigneeLastName: users.lastName,
+          assigneeEmail: users.email,
+        })
+        .from(tickets)
+        .leftJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
+        .leftJoin(users, eq(organizationMembers.userId, users.id))
+        .where(where)
+        .orderBy(tickets.ticketNumber)
+        .limit(EXPORT_ROW_CAP + 1),
+      () => [],
+    );
 
     const truncated = fetched.length > EXPORT_ROW_CAP;
     const slice = truncated ? fetched.slice(0, EXPORT_ROW_CAP) : fetched;

@@ -3,7 +3,8 @@ import type { Db } from "../../db/drizzle.module";
 import { ExpenseLifecycleService } from "./expense-lifecycle.service";
 import { ExpensesWriteService } from "./expenses-write.service";
 import { ExpensesService } from "./expenses.service";
-import { expenseOwnerPredicate, SELF_ONLY_SCOPE, type ExpenseReadScope } from "./expenses-scope";
+import { expenseOwnerPredicate, selfOnlyRead, type ExpenseRead } from "./expenses-scope";
+import { ScopedRead } from "../access/scoped-read";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
 
@@ -133,14 +134,18 @@ describe("the expense read scope is applied at the data layer, not discarded", (
   }
 
   it("an approver scoped to own cannot widen to another employee via the userId filter", () => {
-    const predicate = expenseOwnerPredicate(SELF_ONLY_SCOPE, "me", "someone-else");
+    const predicate = expenseOwnerPredicate(selfOnlyRead(ORG, "me"), "someone-else");
     expect(values(predicate)).toContain("me");
     expect(values(predicate)).not.toContain("someone-else");
   });
 
   it("an approver scoped to team sees themselves and their direct reports only", () => {
-    const team: ExpenseReadScope = { scope: "team", teamUserIds: ["report-a", "report-b"] };
-    const predicate = expenseOwnerPredicate(team, "manager");
+    const team: ExpenseRead = {
+      read: ScopedRead.of(ORG, "manager", "team"),
+      isAll: false,
+      teamUserIds: ["report-a", "report-b"],
+    };
+    const predicate = expenseOwnerPredicate(team);
     const seen = values(predicate);
     expect(seen).toContain("manager");
     expect(seen).toContain("report-a");
@@ -148,13 +153,18 @@ describe("the expense read scope is applied at the data layer, not discarded", (
   });
 
   it("a team-scoped approver is still refused an employee outside their reports", () => {
-    const team: ExpenseReadScope = { scope: "team", teamUserIds: ["report-a"] };
-    const predicate = expenseOwnerPredicate(team, "manager", "outsider");
+    const team: ExpenseRead = {
+      read: ScopedRead.of(ORG, "manager", "team"),
+      isAll: false,
+      teamUserIds: ["report-a"],
+    };
+    const predicate = expenseOwnerPredicate(team, "outsider");
     expect(values(predicate)).not.toContain("outsider");
   });
 
   it("only an all-scoped approver reads the whole organization", () => {
-    expect(expenseOwnerPredicate({ scope: "all", teamUserIds: [] }, "me")).toBeUndefined();
+    const all: ExpenseRead = { read: ScopedRead.of(ORG, "me", "all"), isAll: true, teamUserIds: [] };
+    expect(expenseOwnerPredicate(all)).toBeUndefined();
   });
 
   it("list keeps the resolved scope in its cache key so scopes cannot share a cached page", () => {
@@ -165,8 +175,9 @@ describe("the expense read scope is applied at the data layer, not discarded", (
       { log: jest.fn() } as never,
     );
 
-    void svc.list(ORG, "me", SELF_ONLY_SCOPE, { page: 1, limit: 20 } as never);
-    void svc.list(ORG, "me", { scope: "all", teamUserIds: [] }, { page: 1, limit: 20 } as never);
+    const all: ExpenseRead = { read: ScopedRead.of(ORG, "me", "all"), isAll: true, teamUserIds: [] };
+    void svc.list(selfOnlyRead(ORG, "me"), { page: 1, limit: 20 } as never);
+    void svc.list(all, { page: 1, limit: 20 } as never);
 
     const firstKey = cachedVersioned.mock.calls[0]?.[1] as string;
     const secondKey = cachedVersioned.mock.calls[1]?.[1] as string;

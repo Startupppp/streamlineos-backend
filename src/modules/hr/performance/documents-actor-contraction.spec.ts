@@ -10,6 +10,7 @@
 
 import { DocumentsService } from "./documents.service";
 import { AuditService } from "../../../common/audit/audit.service";
+import { ScopedRead } from "../../access/scoped-read";
 
 const ORG_ID = "org-docs-test";
 const USER_ID = "user-docs";
@@ -41,9 +42,7 @@ describe("DocumentsService – actor contraction dual-read", () => {
       const service = new DocumentsService(mockDb as never, mockAudit);
 
       const result = await service.listDocuments(
-        ORG_ID,
-        USER_ID,
-        "own",
+        ScopedRead.of(ORG_ID, USER_ID, "own"),
         { limit: 20, cursor: undefined, userId: undefined, type: undefined, search: undefined, category: undefined },
         ACTIVE_MEMBERSHIP_ID,
       );
@@ -62,9 +61,7 @@ describe("DocumentsService – actor contraction dual-read", () => {
       const service = new DocumentsService(mockDb as never, mockAudit);
 
       await expect(service.listDocuments(
-        ORG_ID,
-        USER_ID,
-        "own",
+        ScopedRead.of(ORG_ID, USER_ID, "own"),
         { limit: 20, cursor: undefined, userId: undefined, type: undefined, search: undefined, category: undefined },
         null,
       )).rejects.toThrow("Organization membership required.");
@@ -80,9 +77,7 @@ describe("DocumentsService – actor contraction dual-read", () => {
       const service = new DocumentsService(mockDb as never, mockAudit);
 
       const result = await service.listDocuments(
-        ORG_ID,
-        USER_ID,
-        "all",
+        ScopedRead.of(ORG_ID, USER_ID, "all"),
         { limit: 20, cursor: undefined, userId: undefined, type: undefined, search: undefined, category: undefined },
         ACTIVE_MEMBERSHIP_ID,
       );

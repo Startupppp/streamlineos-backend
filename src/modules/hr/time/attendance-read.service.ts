@@ -117,7 +117,7 @@ export class AttendanceReadService {
   ) {
     const userId = requestedUserId ?? u.userId;
     const scope = await resolveAttendanceScope(this.access, u);
-    if (scope !== "all" && userId !== u.userId) {
+    if (!scope.unrestricted && userId !== u.userId) {
       throw new ForbiddenException(
         "Not authorized to view other users' logs.",
       );
@@ -201,7 +201,7 @@ export class AttendanceReadService {
     month: number,
   ) {
     const scope = await resolveAttendanceScope(this.access, u);
-    if (scope !== "all" && targetUserId !== u.userId) {
+    if (!scope.unrestricted && targetUserId !== u.userId) {
       throw new ForbiddenException(
         "Not authorized to view other users' attendance.",
       );
@@ -227,7 +227,7 @@ export class AttendanceReadService {
 
   async heatmap(u: CurrentUserContext, targetUserId: string, year: number) {
     const scope = await resolveAttendanceScope(this.access, u);
-    if (scope !== "all" && targetUserId !== u.userId) {
+    if (!scope.unrestricted && targetUserId !== u.userId) {
       throw new ForbiddenException(
         "Not authorized to view other users' attendance.",
       );

@@ -17,7 +17,10 @@ export interface ScopeActor {
   userId: string;
 }
 
-export type ScopeShape = { columns: ScopeColumns } | { own: SQL; team?: SQL };
+/** How a table expresses "mine" when it is not a plain owner-column equality. */
+export type OwnershipScope = { own: SQL; team?: SQL };
+
+export type ScopeShape = { columns: ScopeColumns } | OwnershipScope;
 
 export interface ScopedWhereSpec {
   tenant: PgColumn;
@@ -54,6 +57,17 @@ export class ScopedRead {
 
   get denied(): boolean {
     return this.#scope === "none";
+  }
+
+  // The other standing decision: may this caller see past themselves at all? Gates an optional `userId` widening filter without leaking the value.
+  get unrestricted(): boolean {
+    return this.#scope === "all";
+  }
+
+  /** The broader of two independently resolved scopes, for a surface two keys can unlock. */
+  static broadest(a: ScopedRead, b: ScopedRead): ScopedRead {
+    const rank: Record<DataScope, number> = { none: 0, own: 1, team: 2, all: 3 };
+    return rank[a.#scope] >= rank[b.#scope] ? a : b;
   }
 
   // own and team select different rows per person, so the actor is part of the cache discriminator.

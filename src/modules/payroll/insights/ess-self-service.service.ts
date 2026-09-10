@@ -9,6 +9,7 @@ import {
 } from "../../../db/schema";
 import { LoansService } from "../hr-payroll/loans.service";
 import { ReimbursementsService } from "../hr-payroll/reimbursements.service";
+import { selfOnlyReimbursementsRead } from "../hr-payroll/reimbursements-scope";
 import { TaxService } from "../hr-payroll/tax.service";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import { type BankDetails } from "../../hr/onboarding/core/crypto.helpers";
@@ -49,7 +50,7 @@ export class EssSelfServiceService {
   async listReimbursements(orgId: string, userId: string, membershipId: number | null, page = 1, limit = 50) {
     const toggles = await this.ess.getActiveToggles(orgId);
     if (!toggles.essAllowReimbursements) throw new ForbiddenException("Reimbursements are disabled");
-    return this.reimbursementsService.listReimbursements(orgId, userId, membershipId, "own", page, Math.min(limit, 100));
+    return this.reimbursementsService.listReimbursements(selfOnlyReimbursementsRead(orgId, userId), membershipId, page, Math.min(limit, 100));
   }
 
   async listLoans(orgId: string, userId: string, membershipId: number | null) {

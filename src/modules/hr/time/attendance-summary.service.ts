@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { and, asc, eq, gt, gte, inArray, isNotNull, isNull, lte, or } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { toWallClockUtc } from "../../../common/date/zoned-wall-clock";
 import { attendance, employeeShiftAssignments, hrAttendanceRegularizations, organizationMembers, organizations, rosterEntries, rosters, shiftTemplates, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -154,14 +154,22 @@ export class AttendanceSummaryService {
       const pageSize = Math.min(params.limit ?? 50, 100);
 
       const memberConditions = [
-        eq(organizationMembers.orgId, orgId),
         eq(organizationMembers.status, "ACTIVE"),
         eq(users.isActive, true),
       ];
+      memberConditions.push(
+        scope
+          ? scope.dataScope.compose(
+              {
+                tenant: organizationMembers.orgId,
+                scope: attendanceMemberScope(scope.actorMembershipId, organizationMembers.id),
+              },
+              ({ sql: where }) => where,
+              () => sql`false`,
+            )
+          : eq(organizationMembers.orgId, orgId),
+      );
       if (employeeId) memberConditions.push(eq(organizationMembers.userId, employeeId));
-      if (scope) {
-        memberConditions.push(attendanceMemberScope(scope.dataScope, scope.actorMembershipId, organizationMembers.id));
-      }
       const cursorPosition = decodeMemberCursor(params.cursor);
       if (cursorPosition) {
         const cursorCondition = cursorPosition.name === null

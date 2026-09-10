@@ -4,6 +4,7 @@ import { CalendarSourceRegistry } from "./calendar-source.registry";
 import { CALENDAR_EVENTS_CAP } from "./dto/calendar.schemas";
 import type { Db } from "../../db/drizzle.module";
 import type { CalendarSourceContext } from "./calendar-event-source";
+import { ScopedRead } from "../access/scoped-read";
 
 function sqlValues(val: unknown, seen = new Set<object>()): unknown[] {
   if (val === null || val === undefined || typeof val === "string" || typeof val === "number" || typeof val === "boolean") return [val];
@@ -27,7 +28,7 @@ const BASE_START = new Date("2026-03-02T09:00:00Z");
 const BASE_END = new Date("2026-03-02T09:30:00Z");
 const FIRST_SEP_MONDAY = new Date("2026-09-07T09:00:00Z");
 
-const ctx: CalendarSourceContext = { orgId: ORG, userId: USER, start: WIN_START, end: WIN_END, scope: "all" };
+const ctx: CalendarSourceContext = { orgId: ORG, userId: USER, start: WIN_START, end: WIN_END};
 
 function makeEventRow(overrides: {
   id?: number;
@@ -232,7 +233,7 @@ describe("CalendarExportService — recurring series starting before from (P1)",
     const exportTo = new Date("2026-09-30T23:59:59Z");
     const db = makeExportDb([makeEventRow({ rrule: WEEKLY_MONDAY_RRULE })]);
     const svc = new CalendarExportService(db);
-    const result = await svc.exportEvents(ORG, USER, exportFrom, exportTo);
+    const result = await svc.exportEvents(ScopedRead.of(ORG, USER, "all"), exportFrom, exportTo);
     expect(result.length).toBeGreaterThanOrEqual(1);
     expect(result[0]).toHaveProperty("title");
     expect(result[0]).toHaveProperty("startDate");
@@ -254,7 +255,7 @@ describe("CalendarExportService — recurring series starting before from (P1)",
     } as unknown as Db;
 
     const svc = new CalendarExportService(db);
-    await svc.exportEvents(ORG, USER, new Date("2026-09-01"), new Date("2026-09-30"));
+    await svc.exportEvents(ScopedRead.of(ORG, USER, "all"), new Date("2026-09-01"), new Date("2026-09-30"));
 
     expect(capturedWhere).toBeDefined();
     const vals = sqlValues(capturedWhere);
@@ -314,7 +315,7 @@ describe("Second-pass rescheduled occurrences — nominal outside window, modifi
     }
     const db = makeExportDb2([makeEventRow({ rrule: WEEKLY_MONDAY_RRULE })], exceptions);
     const svc = new CalendarExportService(db);
-    const result = await svc.exportEvents(ORG, USER, WIN_START, WIN_END);
+    const result = await svc.exportEvents(ScopedRead.of(ORG, USER, "all"), WIN_START, WIN_END);
     const rescheduled = result.find((r) => r.startDate.toISOString() === SEPT5_SATURDAY.toISOString());
     expect(rescheduled).toBeDefined();
     expect(rescheduled?.title).toBe("Export rescheduled");

@@ -47,7 +47,6 @@ const ctx: CalendarSourceContext = {
   userId: "user-1",
   start: new Date("2026-08-01T00:00:00.000Z"),
   end: new Date("2026-08-31T00:00:00.000Z"),
-  scope: "all",
 };
 
 describe("a calendar source whose module the registry does not hold", () => {

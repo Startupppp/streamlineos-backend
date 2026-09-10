@@ -43,8 +43,8 @@ export class InvStockAdjustmentsController {
     @Query() filters: ListAdjustmentsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveInvStockScope(this.access, u);
-    return this.adjustments.listAdjustments(u.orgId, filters, scope, u.userId);
+    const read = await resolveInvStockScope(this.access, u);
+    return this.adjustments.listAdjustments(read, filters);
   }
 
   @Post()

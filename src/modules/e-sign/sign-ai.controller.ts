@@ -10,6 +10,7 @@ import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { actingMembershipId } from "../../common/auth/principal";
 import { Validate } from "../../common/validation/validate.decorator";
 import { NoTenantTransaction } from "../../common/tenant/no-tenant-transaction.decorator";
 import { AccessService } from "../access/access.service";
@@ -60,6 +61,6 @@ export class SignAiController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolveEnvelopeViewScope(this.access, u);
-    return this.signAi.summarizeDocument(u.orgId, envelopeId, u.userId, scope);
+    return this.signAi.summarizeDocument(u.orgId, envelopeId, u.userId, scope, actingMembershipId(u.principal));
   }
 }

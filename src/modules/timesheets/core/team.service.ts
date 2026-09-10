@@ -5,7 +5,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { timesheets, timesheetPeriods, organizationMembers } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { resolveReportsScope, applyMembershipScope } from "./timesheets-core-scope";
+import { resolveReportsScope, membershipScope } from "./timesheets-core-scope";
 import type { TeamWeekSummaryQuery } from "./dto/team.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
@@ -24,7 +24,7 @@ export class TeamService {
     const ids = query.userIds.slice(0, 100);
     if (ids.length === 0) return { summaries: [] };
 
-    const scope = await resolveReportsScope(this.access, u);
+    const read = await resolveReportsScope(this.access, u);
     const actorMembId = actingMembershipId(u.principal);
 
     const memberRows = await this.db
@@ -40,6 +40,34 @@ export class TeamService {
     if (membershipIds.length === 0) {
       return { summaries: ids.map((userId) => ({ userId, period: null, dailyHours: {}, totalHours: 0 })) };
     }
+
+    const periodsWhere = read.compose(
+      {
+        tenant: timesheetPeriods.orgId,
+        scope: membershipScope(actorMembId, timesheetPeriods.userMembershipId),
+        and: [
+          inArray(timesheetPeriods.userMembershipId, membershipIds),
+          lte(timesheetPeriods.periodStart, query.endDate),
+          gte(timesheetPeriods.periodEnd, query.startDate),
+        ],
+      },
+      ({ sql: w }) => w,
+      () => sql`false`,
+    );
+    const timesheetsWhere = read.compose(
+      {
+        tenant: timesheets.orgId,
+        scope: membershipScope(actorMembId, timesheets.userMembershipId),
+        and: [
+          inArray(timesheets.userMembershipId, membershipIds),
+          isNull(timesheets.voidedAt),
+          gte(timesheets.date, query.startDate),
+          lte(timesheets.date, query.endDate),
+        ],
+      },
+      ({ sql: w }) => w,
+      () => sql`false`,
+    );
 
     const [periods, dailyRows] = await Promise.all([
       this.db
@@ -63,15 +91,7 @@ export class TeamService {
           updatedAt: timesheetPeriods.updatedAt,
         })
         .from(timesheetPeriods)
-        .where(
-          and(
-            eq(timesheetPeriods.orgId, u.orgId),
-            inArray(timesheetPeriods.userMembershipId, membershipIds),
-            lte(timesheetPeriods.periodStart, query.endDate),
-            gte(timesheetPeriods.periodEnd, query.startDate),
-            applyMembershipScope(scope, actorMembId, timesheetPeriods.userMembershipId),
-          ),
-        ),
+        .where(periodsWhere),
       this.db
         .select({
           userMembershipId: timesheets.userMembershipId,
@@ -79,16 +99,7 @@ export class TeamService {
           hours: sql<string>`COALESCE(SUM(${timesheets.hours}::numeric), 0)::text`,
         })
         .from(timesheets)
-        .where(
-          and(
-            eq(timesheets.orgId, u.orgId),
-            inArray(timesheets.userMembershipId, membershipIds),
-            isNull(timesheets.voidedAt),
-            gte(timesheets.date, query.startDate),
-            lte(timesheets.date, query.endDate),
-            applyMembershipScope(scope, actorMembId, timesheets.userMembershipId),
-          ),
-        )
+        .where(timesheetsWhere)
         .groupBy(timesheets.userMembershipId, timesheets.date),
     ]);
 

@@ -79,7 +79,7 @@ export class PerformanceController {
   @RequirePermission("hr:performance:view")
   async listGoals(@Query("userId") userId: string | undefined, @CurrentUser() u: CurrentUserContext) {
     const scope = await resolvePerformanceScope(this.access, u);
-    return this.goalsService.listGoals(u.orgId, u.userId, scope, userId);
+    return this.goalsService.listGoals(scope, userId);
   }
 
   @ResponseSchema(createGoalResponseSchema)
@@ -215,7 +215,7 @@ export class PerformanceController {
   @RequirePermission("hr:performance:view")
   async listPips(@CurrentUser() u: CurrentUserContext) {
     const scope = await resolvePerformanceScope(this.access, u);
-    return this.reviewsService.listPips(u.orgId, u.userId, scope);
+    return this.reviewsService.listPips(scope);
   }
 
   @ResponseSchema(createPipResponseSchema)
@@ -251,7 +251,7 @@ export class PerformanceController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolvePerformanceScope(this.access, u);
-    return this.reviewsService.listReviews(u.orgId, u.userId, scope, query);
+    return this.reviewsService.listReviews(scope, query);
   }
 
   @ResponseSchema(createReviewResponseSchema)

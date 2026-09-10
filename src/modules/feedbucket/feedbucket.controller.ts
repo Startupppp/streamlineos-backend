@@ -14,7 +14,7 @@ import {
 } from "@nestjs/common";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { readRequestScope } from "../organization/core/read-request-scope";
+import { readRequestScopedRead } from "../organization/core/read-request-scope";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
@@ -144,8 +144,8 @@ export class FeedbucketController {
     @Query() query: ListSubmissionsQuery,
     @Req() req: Request,
   ) {
-    const scope = readRequestScope(req);
-    return this.submissions.list(user.orgId, user.userId, query, scope, actingMembershipId(user.principal));
+    const read = readRequestScopedRead(req, user);
+    return this.submissions.list(read, query, actingMembershipId(user.principal));
   }
 
   @Get("submissions/:submissionId")
@@ -226,7 +226,7 @@ export class FeedbucketController {
   @RequirePermission("feedbucket:submissions:view")
   @ResponseSchema(feedbucketStatsSchema)
   getStats(@CurrentUser() user: CurrentUserContext, @Req() req: Request) {
-    const scope = readRequestScope(req);
-    return this.submissions.stats(user.orgId, user.userId, scope, actingMembershipId(user.principal));
+    const read = readRequestScopedRead(req, user);
+    return this.submissions.stats(read, actingMembershipId(user.principal));
   }
 }

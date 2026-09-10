@@ -7,7 +7,7 @@ import { SignEnvelopeValidationService } from "../sign-envelope-validation.servi
 import { SignBulkSendService } from "../sign-bulk-send.service";
 import { SignEnvelopeDispatchService } from "../sign-envelope-dispatch.service";
 import { SignEnvelopeSweepsService } from "../sign-envelope-sweeps.service";
-import { SYSTEM_ENVELOPE_SCOPE } from "../sign-envelope-scope";
+import { systemEnvelopeScope } from "../sign-envelope-scope";
 import { runWithTenantContext } from "../../../common/tenant/tenant-context";
 import { stubService } from "../../../test/service-stub.spec-fixtures";
 import type { PlanLimitsService } from "../../billing/core/plan-limits.service";
@@ -168,7 +168,7 @@ describe("SignAiService — cross-tenant isolation", () => {
     await expect(
       runWithTenantContext(
         { orgId: ATTACKER_ORG, audience: "INTERNAL", tx: db as never },
-        () => svc.summarizeDocument(ATTACKER_ORG, 999, "user-x", SYSTEM_ENVELOPE_SCOPE),
+        () => svc.summarizeDocument(ATTACKER_ORG, 999, "user-x", systemEnvelopeScope(ATTACKER_ORG), null),
       ),
     ).rejects.toBeDefined();
     expect(findFirst).toHaveBeenCalled();
@@ -185,7 +185,7 @@ describe("SignAiService — cross-tenant isolation", () => {
     await expect(
       runWithTenantContext(
         { orgId: OWNER_ORG, audience: "INTERNAL", tx: db as never },
-        () => svc.summarizeDocument(OWNER_ORG, 999, "user-y", SYSTEM_ENVELOPE_SCOPE),
+        () => svc.summarizeDocument(OWNER_ORG, 999, "user-y", systemEnvelopeScope(OWNER_ORG), null),
       ),
     ).rejects.toBeDefined();
     const callArg = findFirst.mock.calls[0]?.[0];

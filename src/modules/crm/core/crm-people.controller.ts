@@ -8,7 +8,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { CrmPeopleService } from "./crm-people.service";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { readRequestScope } from "../../organization/core/read-request-scope";
+import { readRequestScopedRead } from "../../organization/core/read-request-scope";
 import { z } from "zod";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
@@ -28,7 +28,7 @@ export class CrmPeopleController {
   @RequirePermission("crm:contacts:view")
   @ResponseSchema(crmPeopleSlugsSchema)
   slugs(@CurrentUser() u: CurrentUserContext, @Req() req: Request) {
-    return this.people.getAllPeopleSlugs(u.orgId, readRequestScope(req));
+    return this.people.getAllPeopleSlugs(readRequestScopedRead(req, u));
   }
 
   @Get("people/:entityId")
@@ -36,7 +36,7 @@ export class CrmPeopleController {
   @ResponseSchema(crmPersonDetailSchema)
   @Validate({ params: entityIdParams })
   async person(@Param("entityId") entityId: string, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
-    const data = await this.people.getPersonBySlug(u.orgId, entityId, readRequestScope(req));
+    const data = await this.people.getPersonBySlug(readRequestScopedRead(req, u), entityId);
     if (!data) throw new NotFoundException("Person not found");
     return data;
   }

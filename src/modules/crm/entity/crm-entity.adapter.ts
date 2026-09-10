@@ -1,17 +1,14 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { inArray, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { deals } from "../../../db/schema";
 import { businessParties, clientPartyMap } from "../../../db/schema/party";
 import { PARTY_OF_CLIENT } from "../crm-party-reads";
 import { AccessService } from "../../access/access.service";
-import type { DataScope } from "../../access/access.types";
-import { applyScope } from "../../access/apply-scope";
-import {
-  scopeFor,
-  type Permissions,
-} from "../../entity-reference/entity-scope";
+import type { ScopedRead } from "../../access/scoped-read";
+import { crmEntityReadScope } from "./crm-entity-scope";
+import type { Permissions } from "../../entity-reference/entity-scope";
 import {
   unresolved,
   type EntityAction,
@@ -53,17 +50,17 @@ export class CrmEntityAdapter implements EntityAdapter {
     const results = references.map(unresolved);
     const wanted = new Map<
       string,
-      { scope: DataScope; entries: { id: number; index: number }[] }
+      { read: ScopedRead; entries: { id: number; index: number }[] }
     >();
 
     references.forEach((reference, index) => {
       const readKey = READ_KEY[reference.type];
       if (!readKey) return;
-      const scope = scopeFor(actor, permissions, readKey);
-      if (scope === "none") return;
+      const read = crmEntityReadScope(actor, permissions, readKey);
+      if (read.denied) return;
       const id = Number(reference.id);
       if (!Number.isInteger(id) || id <= 0) return;
-      const batch = wanted.get(reference.type) ?? { scope, entries: [] };
+      const batch = wanted.get(reference.type) ?? { read, entries: [] };
       batch.entries.push({ id, index });
       wanted.set(reference.type, batch);
     });
@@ -73,8 +70,8 @@ export class CrmEntityAdapter implements EntityAdapter {
         const ids = batch.entries.map((entry) => entry.id);
         const cards =
           type === "client"
-            ? await this.readClients(actor, ids, batch.scope)
-            : await this.readDeals(actor, ids, batch.scope);
+            ? await this.readClients(batch.read, ids)
+            : await this.readDeals(batch.read, ids);
         for (const entry of batch.entries) {
           const card = cards.get(entry.id);
           if (card) results[entry.index] = { status: "resolved", card };
@@ -96,82 +93,75 @@ export class CrmEntityAdapter implements EntityAdapter {
     return { ok: false, reason: "invalid" };
   }
 
-  private async readClients(
-    actor: EntityActor,
-    ids: number[],
-    scope: DataScope,
-  ) {
-    const { orgId, userId } = actor;
+  private async readClients(read: ScopedRead, ids: number[]) {
     // No `deleted_at` predicate, because `clients` has none to inherit: a
     // soft-deleted party still answers here exactly as its client row did.
-    const rows = await this.db
-      .select({
-        id: clientPartyMap.clientId,
-        name: businessParties.name,
-        company: businessParties.companyName,
-        status: businessParties.status,
-      })
-      .from(clientPartyMap)
-      .innerJoin(businessParties, PARTY_OF_CLIENT)
-      .where(
-        and(
-          eq(clientPartyMap.organizationId, orgId),
-          inArray(clientPartyMap.clientId, ids),
-          applyScope(scope, orgId, userId, {
-            ownerColumn: businessParties.ownerUserId,
-          }),
-        ),
-      )
-      .limit(ids.length);
+    return read.read(
+      {
+        tenant: clientPartyMap.organizationId,
+        scope: { columns: { ownerColumn: businessParties.ownerUserId } },
+        and: [inArray(clientPartyMap.clientId, ids)],
+      },
+      async ({ sql: where }) => {
+        const rows = await this.db
+          .select({
+            id: clientPartyMap.clientId,
+            name: businessParties.name,
+            company: businessParties.companyName,
+            status: businessParties.status,
+          })
+          .from(clientPartyMap)
+          .innerJoin(businessParties, PARTY_OF_CLIENT)
+          .where(where)
+          .limit(ids.length);
 
-    const byId = new Map<number, EntityCard>();
-    for (const row of rows)
-      byId.set(row.id, {
-        type: "client",
-        id: String(row.id),
-        title: row.name,
-        subtitle: row.company,
-        status: row.status,
-        href: `/crm/contacts/${row.id}`,
-      });
-    return byId;
+        const byId = new Map<number, EntityCard>();
+        for (const row of rows)
+          byId.set(row.id, {
+            type: "client",
+            id: String(row.id),
+            title: row.name,
+            subtitle: row.company,
+            status: row.status,
+            href: `/crm/contacts/${row.id}`,
+          });
+        return byId;
+      },
+      () => new Map<number, EntityCard>(),
+    );
   }
 
-  private async readDeals(
-    actor: EntityActor,
-    ids: number[],
-    scope: DataScope,
-  ) {
-    const { orgId, userId } = actor;
-    const rows = await this.db
-      .select({
-        id: deals.id,
-        name: deals.name,
-        stage: deals.stage,
-      })
-      .from(deals)
-      .where(
-        and(
-          eq(deals.orgId, orgId),
-          inArray(deals.id, ids),
-          isNull(deals.deletedAt),
-          applyScope(scope, orgId, userId, {
-            ownerColumn: deals.assignedToId,
-          }),
-        ),
-      )
-      .limit(ids.length);
+  private async readDeals(read: ScopedRead, ids: number[]) {
+    return read.read(
+      {
+        tenant: deals.orgId,
+        scope: { columns: { ownerColumn: deals.assignedToId } },
+        and: [inArray(deals.id, ids), isNull(deals.deletedAt)],
+      },
+      async ({ sql: where }) => {
+        const rows = await this.db
+          .select({
+            id: deals.id,
+            name: deals.name,
+            stage: deals.stage,
+          })
+          .from(deals)
+          .where(where)
+          .limit(ids.length);
 
-    const byId = new Map<number, EntityCard>();
-    for (const row of rows)
-      byId.set(row.id, {
-        type: "deal",
-        id: String(row.id),
-        title: row.name,
-        subtitle: null,
-        status: row.stage,
-        href: `/crm/deals/${row.id}`,
-      });
-    return byId;
+        const byId = new Map<number, EntityCard>();
+        for (const row of rows)
+          byId.set(row.id, {
+            type: "deal",
+            id: String(row.id),
+            title: row.name,
+            subtitle: null,
+            status: row.stage,
+            href: `/crm/deals/${row.id}`,
+          });
+        return byId;
+      },
+      () => new Map<number, EntityCard>(),
+    );
   }
 }

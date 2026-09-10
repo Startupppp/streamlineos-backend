@@ -1,3 +1,4 @@
+import { ScopedRead } from "../../access/scoped-read";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { DocumentsService } from "../performance/documents.service";
@@ -28,9 +29,7 @@ describe("S01 HR actor-contract negative regressions", () => {
     );
 
     await expect(service.listDocuments(
-      "org-a",
-      "account-only-user",
-      "own",
+      ScopedRead.of("org-a", "account-only-user", "own"),
       { limit: 20, cursor: undefined, userId: undefined, type: undefined, category: undefined, search: undefined },
       null,
     )).rejects.toThrow("Organization membership required.");

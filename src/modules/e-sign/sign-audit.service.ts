@@ -3,7 +3,8 @@ import { and, desc, eq } from "drizzle-orm";
 import { signAuditEvents } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { mustGetVisibleEnvelope, type EnvelopeViewScope } from "./sign-envelope-scope";
+import { mustGetVisibleEnvelope } from "./sign-envelope-scope";
+import type { ScopedRead } from "../access/scoped-read";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -134,12 +135,12 @@ export class SignAuditService {
    * to the caller's `sign:envelope:view` scope for the same reason the final PDF
    * is: an envelope you may not see has no readable history.
    */
-  async listForEnvelope(orgId: string, envelopeId: number, scope: EnvelopeViewScope) {
-    await mustGetVisibleEnvelope(this.db, orgId, envelopeId, scope, "Envelope not found");
+  async listForEnvelope(read: ScopedRead, membershipId: number | null, envelopeId: number) {
+    await mustGetVisibleEnvelope(this.db, read, membershipId, envelopeId, "Envelope not found");
     return this.db
       .select()
       .from(signAuditEvents)
-      .where(and(eq(signAuditEvents.orgId, orgId), eq(signAuditEvents.envelopeId, envelopeId)))
+      .where(and(eq(signAuditEvents.orgId, read.orgId), eq(signAuditEvents.envelopeId, envelopeId)))
       .orderBy(desc(signAuditEvents.createdAt))
       .limit(100);
   }

@@ -1,6 +1,6 @@
 import type { Db } from "../../db/drizzle.module";
 import { ExpensesService } from "./expenses.service";
-import { SELF_ONLY_SCOPE } from "./expenses-scope";
+import { selfOnlyRead } from "./expenses-scope";
 import { ExpenseLifecycleService } from "./expense-lifecycle.service";
 import { TravelService } from "./travel.service";
 
@@ -82,7 +82,7 @@ describe("ExpensesService — cross-tenant isolation", () => {
     });
     (db.query.expenses.findMany as jest.Mock).mockResolvedValue([]);
     const svc = new ExpensesService(db, mockCache as never, mockAudit as never);
-    const result = await svc.list(ATTACKER_ORG, "user-x", SELF_ONLY_SCOPE, { page: 1, limit: 20 } as never);
+    const result = await svc.list(selfOnlyRead(ATTACKER_ORG, "user-x"), { page: 1, limit: 20 } as never);
     expect((result as { data: unknown[] }).data).toHaveLength(0);
     void where;
   });
@@ -95,7 +95,7 @@ describe("ExpensesService — cross-tenant isolation", () => {
     });
     (db.query.expenses.findMany as jest.Mock).mockResolvedValue([row]);
     const svc = new ExpensesService(db, mockCache as never, mockAudit as never);
-    const result = await svc.list(OWNER_ORG, "u", SELF_ONLY_SCOPE, { page: 1, limit: 20 } as never);
+    const result = await svc.list(selfOnlyRead(OWNER_ORG, "u"), { page: 1, limit: 20 } as never);
     expect((result as { data: unknown[] }).data).toHaveLength(1);
   });
 });

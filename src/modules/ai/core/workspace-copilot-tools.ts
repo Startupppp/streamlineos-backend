@@ -83,7 +83,10 @@ export class WorkspaceCopilotTools {
           const deny = await this.toolAccess.denyReason(orgId, userId, "build:tickets:view");
           if (deny) return { denied: true, reason: deny };
 
-          const scope = await this.toolAccess.scope(orgId, userId, "build:tickets:view");
+          const read = await this.toolAccess.scope(orgId, userId, "build:tickets:view");
+          const scope = read.rawScope(
+            "an own-scoped member asking about another member's ticket stats is refused with a message, not narrowed to an empty result",
+          );
           if (scope === "own" && targetUserId !== userId) {
             return { denied: true, reason: "Permission denied: you can only view your own ticket stats." };
           }

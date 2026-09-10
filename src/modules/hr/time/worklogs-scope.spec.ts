@@ -37,14 +37,14 @@ describe("resolveWorkLogsScope", () => {
 
   it("returns all when isOrgOwner is true", async () => {
     const result = await resolveWorkLogsScope(mockAccess, makeUser({ isOrgOwner: true }));
-    expect(result).toBe("all");
+    expect(result.rawScope("spec reads the resolved value")).toBe("all");
     expect(mockAccess.resolveUserPermissions).not.toHaveBeenCalled();
   });
 
   it("returns all when the permission is not scopable", async () => {
     (isScopable as jest.Mock).mockReturnValue(false);
     const result = await resolveWorkLogsScope(mockAccess, makeUser());
-    expect(result).toBe("all");
+    expect(result.rawScope("spec reads the resolved value")).toBe("all");
     expect(mockAccess.resolveUserPermissions).not.toHaveBeenCalled();
   });
 
@@ -52,19 +52,19 @@ describe("resolveWorkLogsScope", () => {
     const scopeMap = new Map<string, DataScope>([[WORKLOGS_PERMISSION, "all"]]);
     (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(scopeMap);
     const result = await resolveWorkLogsScope(mockAccess, makeUser());
-    expect(result).toBe("all");
+    expect(result.rawScope("spec reads the resolved value")).toBe("all");
   });
 
   it("returns own when the resolved permission scope is own", async () => {
     const scopeMap = new Map<string, DataScope>([[WORKLOGS_PERMISSION, "own"]]);
     (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(scopeMap);
     const result = await resolveWorkLogsScope(mockAccess, makeUser());
-    expect(result).toBe("own");
+    expect(result.rawScope("spec reads the resolved value")).toBe("own");
   });
 
   it("returns none when the permission is not in the resolved map", async () => {
     (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Map<string, DataScope>());
     const result = await resolveWorkLogsScope(mockAccess, makeUser());
-    expect(result).toBe("none");
+    expect(result.denied).toBe(true);
   });
 });

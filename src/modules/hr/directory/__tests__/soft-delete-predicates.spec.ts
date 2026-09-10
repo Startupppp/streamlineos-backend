@@ -3,6 +3,7 @@ import type { Db } from "../../../../db/drizzle.module";
 import { OrgStructureService } from "../org-structure.service";
 import type { CacheService } from "../../../../common/cache/cache.service";
 import type { EmploymentFactsService } from "../../../directory/employment-facts.service";
+import { ScopedRead } from "../../../access/scoped-read";
 
 function makeSelectChain(rows: unknown[]) {
   const where = jest.fn();
@@ -40,13 +41,13 @@ describe("OrgStructureService.getTeam — soft-delete predicate", () => {
 
   it("throws NotFoundException when the team is soft-deleted (DB returns no row)", async () => {
     const svc = makeService([], []);
-    await expect(svc.getTeam(ORG, ACTOR, TEAM_ID, "all")).rejects.toThrow(NotFoundException);
+    await expect(svc.getTeam(ScopedRead.of(ORG, ACTOR, "all"), TEAM_ID)).rejects.toThrow(NotFoundException);
   });
 
   it("returns team data when the team is live (DB returns a row)", async () => {
     const DEPT_ROW = { id: TEAM_ID, name: "Engineering", headUserId: null };
     const svc = makeService([DEPT_ROW], []);
-    const result = await svc.getTeam(ORG, ACTOR, TEAM_ID, "all");
+    const result = await svc.getTeam(ScopedRead.of(ORG, ACTOR, "all"), TEAM_ID);
     expect(result.id).toBe(TEAM_ID);
     expect(result.name).toBe("Engineering");
   });

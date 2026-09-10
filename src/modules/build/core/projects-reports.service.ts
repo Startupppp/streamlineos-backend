@@ -15,7 +15,7 @@ import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { assertProjectAggregateAccess } from "./build-project-aggregate-access";
-import { resolveTicketsScope } from "./tickets-scope";
+import { ticketsScopeIsUnrestricted } from "./tickets-scope";
 import {
   computeBurnupFromEvents,
   type BurnupPoint,
@@ -39,7 +39,7 @@ export class ProjectsReportsService {
   }
 
   async authorizeOrganization(actor: CurrentUserContext): Promise<void> {
-    if (await resolveTicketsScope(this.access, actor) !== "all")
+    if (!(await ticketsScopeIsUnrestricted(this.access, actor)))
       throw new ForbiddenException("Organization-wide reports require access to all tickets");
   }
 

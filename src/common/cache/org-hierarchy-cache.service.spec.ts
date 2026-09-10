@@ -10,6 +10,7 @@
  * stateful Redis double and asserts what a second read returns.
  */
 
+import { ScopedRead } from "../../modules/access/scoped-read";
 import type { Redis } from "@upstash/redis";
 import { CacheService } from "./cache.service";
 import { InMemoryRedis } from "./in-memory-redis.test-double";
@@ -44,21 +45,25 @@ function readNamespace(
   );
 }
 
+const viewer = (actorUserId: string, scope: "all" | "team" | "own" | "none") => ({
+  discriminator: ScopedRead.of("org-any", actorUserId, scope).discriminator,
+});
+
 describe("OrgHierarchyCacheService", () => {
   it("partitions versioned entries by tenant and permission-derived viewer scope", async () => {
     const { service } = build();
 
     const [allScope, viewerOne, viewerTwo, otherOrg] = await Promise.all([
-      service.read(ORG, TREE, { actorUserId: "user-all", scope: "all" }, () =>
+      service.read(ORG, TREE, viewer("user-all", "all"), () =>
         Promise.resolve("everything"),
       ),
-      service.read(ORG, TREE, { actorUserId: "user-1", scope: "team" }, () =>
+      service.read(ORG, TREE, viewer("user-1", "team"), () =>
         Promise.resolve("team-of-user-1"),
       ),
-      service.read(ORG, TREE, { actorUserId: "user-2", scope: "team" }, () =>
+      service.read(ORG, TREE, viewer("user-2", "team"), () =>
         Promise.resolve("team-of-user-2"),
       ),
-      service.read("org-2", TREE, { actorUserId: "user-1", scope: "team" }, () =>
+      service.read("org-2", TREE, viewer("user-1", "team"), () =>
         Promise.resolve("other-tenant"),
       ),
     ]);
@@ -74,13 +79,13 @@ describe("OrgHierarchyCacheService", () => {
   it("a viewer never inherits another viewer's cached tree", async () => {
     const { service } = build();
 
-    await service.read(ORG, TREE, { actorUserId: "user-1", scope: "team" }, () =>
+    await service.read(ORG, TREE, viewer("user-1", "team"), () =>
       Promise.resolve("team-of-user-1"),
     );
     const second = await service.read(
       ORG,
       TREE,
-      { actorUserId: "user-2", scope: "team" },
+      viewer("user-2", "team"),
       () => Promise.resolve("team-of-user-2"),
     );
 
@@ -92,7 +97,7 @@ describe("OrgHierarchyCacheService", () => {
     let generation = 1;
     const current = (): string => `generation-${String(generation)}`;
 
-    await service.read(ORG, TREE, { actorUserId: "u", scope: "all" }, () =>
+    await service.read(ORG, TREE, viewer("u", "all"), () =>
       Promise.resolve(current()),
     );
     await readNamespace(cache, "hr:headcount", "group:department", current);
@@ -101,7 +106,7 @@ describe("OrgHierarchyCacheService", () => {
     generation = 2;
 
     await expect(
-      service.read(ORG, TREE, { actorUserId: "u", scope: "all" }, () =>
+      service.read(ORG, TREE, viewer("u", "all"), () =>
         Promise.resolve(current()),
       ),
     ).resolves.toBe("generation-1");
@@ -109,7 +114,7 @@ describe("OrgHierarchyCacheService", () => {
     await service.invalidateAfterMutation(ORG);
 
     await expect(
-      service.read(ORG, TREE, { actorUserId: "u", scope: "all" }, () =>
+      service.read(ORG, TREE, viewer("u", "all"), () =>
         Promise.resolve(current()),
       ),
     ).resolves.toBe("generation-2");
@@ -126,7 +131,7 @@ describe("OrgHierarchyCacheService", () => {
     let generation = 1;
     const current = (): string => `generation-${String(generation)}`;
 
-    await service.read(ORG, TREE, { actorUserId: "u", scope: "all" }, () =>
+    await service.read(ORG, TREE, viewer("u", "all"), () =>
       Promise.resolve(current()),
     );
     await readNamespace(cache, "hr:headcount", "group:department", current);
@@ -136,7 +141,7 @@ describe("OrgHierarchyCacheService", () => {
     await service.invalidateAfterMutation(ORG);
 
     await expect(
-      service.read(ORG, TREE, { actorUserId: "u", scope: "all" }, () =>
+      service.read(ORG, TREE, viewer("u", "all"), () =>
         Promise.resolve(current()),
       ),
     ).resolves.toBe("generation-1");

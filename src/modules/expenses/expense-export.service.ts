@@ -9,7 +9,6 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { accountableMembershipId } from "../../common/auth/principal";
 import { StorageService, type FileStreamResult } from "../storage/storage.service";
 import type { ExportInput } from "./dto/expense.schemas";
-import type { DataScope } from "../access/access.types";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import {
   EXPENSE_EXPORT_REQUESTED_EVENT,
@@ -25,7 +24,12 @@ export const EXPORT_BATCH_SIZE = 500;
 export class ExpenseExportService {
   constructor(@Inject(DRIZZLE) private readonly db: Db, private readonly storage: StorageService) {}
 
-  async create(user: CurrentUserContext, filters: ExportInput, idempotencyKey: string, scope: DataScope) {
+  async create(
+    user: CurrentUserContext,
+    filters: ExportInput,
+    idempotencyKey: string,
+    scope: NonNullable<ExpenseExportFilters["scope"]>,
+  ) {
     if (scope === "none") throw new ForbiddenException("Export scope denies access");
     const requesterMembershipId = accountableMembershipId(user.principal);
     if (requesterMembershipId === null) throw new ForbiddenException("A member identity is required to export expenses");

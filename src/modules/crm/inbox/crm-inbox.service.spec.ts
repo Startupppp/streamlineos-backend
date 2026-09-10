@@ -2,6 +2,9 @@ import { NotFoundException } from "@nestjs/common";
 import { CrmInboxService } from "./crm-inbox.service";
 import { CrmInboxQueriesService } from "./crm-inbox-queries.service";
 import type { CrmInboxAiActionsService } from "./crm-inbox-ai-actions.service";
+import { ScopedRead } from "../../access/scoped-read";
+
+const readAs = (scope: "none" | "own" | "team" | "all") => ScopedRead.of("org1", "user1", scope);
 
 function makeQueryChain(resolvedValue: unknown) {
   const chain = {
@@ -45,7 +48,7 @@ describe("CrmInboxQueriesService", () => {
   });
 
   it("getInbox returns 8 sections", async () => {
-    const result = await querySvc.getInbox("org1", "user1", "all");
+    const result = await querySvc.getInbox(readAs("all"));
     expect(result.sections).toHaveLength(8);
     const keys = result.sections.map((s) => s.key);
     expect(keys).toContain("dueTasks");
@@ -57,7 +60,7 @@ describe("CrmInboxQueriesService", () => {
   it("getCounts returns all 8 keys as numbers", async () => {
     const countChain = makeQueryChain([{ n: "5" }]);
     mockDb.select = jest.fn().mockReturnValue(countChain);
-    const result = await querySvc.getCounts("org1", "user1", "own");
+    const result = await querySvc.getCounts(readAs("own"));
     expect(Object.keys(result)).toHaveLength(8);
     Object.values(result).forEach((v) => expect(typeof v).toBe("number"));
   });
@@ -83,13 +86,13 @@ describe("CrmInboxService", () => {
   it("snoozeTask throws NotFoundException for unknown task", async () => {
     mockDb.limit = jest.fn().mockResolvedValue([]);
     await expect(
-      service.snoozeTask("org1", 9999, "user1", { until: new Date().toISOString() }, "all"),
+      service.snoozeTask(readAs("all"), 9999, { until: new Date().toISOString() }),
     ).rejects.toThrow(NotFoundException);
   });
 
   it("completeTask throws NotFoundException for unknown task", async () => {
     mockDb.limit = jest.fn().mockResolvedValue([]);
-    await expect(service.completeTask("org1", 9999, "user1", "all")).rejects.toThrow(
+    await expect(service.completeTask(readAs("all"), 9999)).rejects.toThrow(
       NotFoundException,
     );
   });
@@ -97,13 +100,13 @@ describe("CrmInboxService", () => {
   it("snoozeTask under own scope cannot reach a task assigned to someone else", async () => {
     mockDb.limit = jest.fn().mockResolvedValue([]);
     await expect(
-      service.snoozeTask("org1", 4242, "user1", { until: new Date().toISOString() }, "own"),
+      service.snoozeTask(readAs("own"), 4242, { until: new Date().toISOString() }),
     ).rejects.toThrow(NotFoundException);
   });
 
   it("completeTask under own scope cannot reach a task assigned to someone else", async () => {
     mockDb.limit = jest.fn().mockResolvedValue([]);
-    await expect(service.completeTask("org1", 4242, "user1", "own")).rejects.toThrow(
+    await expect(service.completeTask(readAs("own"), 4242)).rejects.toThrow(
       NotFoundException,
     );
   });

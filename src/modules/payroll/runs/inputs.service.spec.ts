@@ -1,5 +1,6 @@
 import { ForbiddenException } from "@nestjs/common";
 import { InputsService } from "./inputs.service";
+import { ScopedRead } from "../../access/scoped-read";
 
 describe("InputsService.listInputs scope gate", () => {
   const orgId = "org-1";
@@ -37,14 +38,14 @@ describe("InputsService.listInputs scope gate", () => {
   it("rejects cross-user filter when scope is not all", async () => {
     const service = createService({ run: { id: runId, status: "PREPARING" } });
     await expect(
-      service.listInputs(orgId, runId, { limit: 50, userId: "other-user" }, "own", actorUserId, 1),
+      service.listInputs(ScopedRead.of(orgId, actorUserId, "own"), runId, { limit: 50, userId: "other-user" }, 1),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it("allows cross-user filter when scope is all", async () => {
     const service = createService({ run: { id: runId, status: "PREPARING" }, rows: [] });
     await expect(
-      service.listInputs(orgId, runId, { limit: 50, userId: "other-user" }, "all", actorUserId, 1),
+      service.listInputs(ScopedRead.of(orgId, actorUserId, "all"), runId, { limit: 50, userId: "other-user" }, 1),
     ).resolves.toMatchObject({ data: [], pagination: { hasMore: false } });
   });
 });

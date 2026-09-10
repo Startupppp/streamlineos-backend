@@ -4,8 +4,7 @@ import { reimbursements, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AutomationService } from "../../automation/automation.service";
-import { applyScope } from "../../access/apply-scope";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import type { CreateReimbursementInput, PatchReimbursementInput } from "./dto/payroll.schemas";
 import {
   assertOrganizationActor,
@@ -26,29 +25,36 @@ export class ReimbursementsService {
     private readonly automation: AutomationService,
   ) {}
 
-  async listReimbursements(orgId: string, userId: string, membershipId: number | null, scope: DataScope, page = 1, limit = 100) {
-    if (scope === "own" && membershipId === null) throw new ForbiddenException("Organization membership required");
-    const ownerPredicate = scope === "own"
-      ? eq(reimbursements.userMembershipId, membershipId ?? -1)
-      : applyScope(scope, orgId, userId, { ownerColumn: reimbursements.userId });
-    const where = and(eq(reimbursements.orgId, orgId), ownerPredicate);
+  async listReimbursements(read: ScopedRead, membershipId: number | null, page = 1, limit = 100) {
+    if (read.discriminator !== "all" && membershipId === null) {
+      throw new ForbiddenException("Organization membership required");
+    }
 
-    const [rows, [totalRow]] = await Promise.all([
-      this.db.query.reimbursements.findMany({
-        where,
-        with: {
-          user: {
-            columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true },
-          },
-        },
-        orderBy: [desc(reimbursements.createdAt)],
-        limit,
-        offset: (page - 1) * limit,
-      }),
-      this.db.select({ total: count() }).from(reimbursements).where(where),
-    ]);
+    return read.read(
+      {
+        tenant: reimbursements.orgId,
+        scope: { own: eq(reimbursements.userMembershipId, membershipId ?? -1) },
+      },
+      async ({ sql: where }) => {
+        const [rows, [totalRow]] = await Promise.all([
+          this.db.query.reimbursements.findMany({
+            where,
+            with: {
+              user: {
+                columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true },
+              },
+            },
+            orderBy: [desc(reimbursements.createdAt)],
+            limit,
+            offset: (page - 1) * limit,
+          }),
+          this.db.select({ total: count() }).from(reimbursements).where(where),
+        ]);
 
-    return buildListResponse(rows, Number(totalRow?.total ?? 0), { page, pageSize: limit });
+        return buildListResponse(rows, Number(totalRow?.total ?? 0), { page, pageSize: limit });
+      },
+      () => buildListResponse([], 0, { page, pageSize: limit }),
+    );
   }
 
   async createReimbursement(orgId: string, userId: string, membershipId: number | null, body: CreateReimbursementInput) {

@@ -22,7 +22,7 @@ import { ExchangeRateNotFoundError, RateResolverService } from "../../finance/co
 import { FxService } from "../../finance/controls/fx.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { systemActor } from "../../../common/auth/system-actor";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import type {
   AgedReceivablesQuery,
   CreatePurchaseBillInput,
@@ -62,8 +62,8 @@ export class AccountingPayablesService {
     private readonly fx: FxService,
   ) {}
 
-  listPurchaseBills(orgId: string, q: ListPurchaseBillsQuery, scope: DataScope, membershipId: number | null) {
-    return this.query.listPurchaseBills(orgId, q, scope, membershipId);
+  listPurchaseBills(read: ScopedRead, q: ListPurchaseBillsQuery, membershipId: number | null) {
+    return this.query.listPurchaseBills(read, q, membershipId);
   }
 
   getPurchaseBill(orgId: string, billId: number) {

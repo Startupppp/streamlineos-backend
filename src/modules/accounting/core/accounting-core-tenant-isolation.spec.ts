@@ -1,5 +1,6 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
+import { ScopedRead } from "../../access/scoped-read";
 import { AccountingGstService } from "./accounting-gst.service";
 import { AccountingLedgerService } from "./accounting-ledger.service";
 import { AccountingStatementsService } from "./accounting-statements.service";
@@ -146,7 +147,7 @@ describe("accounting core services — cross-tenant isolation", () => {
       const { db, where } = makeSelectDb([]);
       const svc = new AccountingLedgerService(db, posting, finPosting, audit, cache, journalEntry);
 
-      await svc.listJournal("org-owner", { limit: 10 }, "own", "user-1", MEMBERSHIP_ID);
+      await svc.listJournal(ScopedRead.of("org-owner", "user-1", "own"), { limit: 10 }, MEMBERSHIP_ID);
 
       const predicateValues = sqlValues(where.mock.calls[0]?.[0]);
       expect(predicateValues).toContain(MEMBERSHIP_ID);
@@ -156,7 +157,7 @@ describe("accounting core services — cross-tenant isolation", () => {
       const { db } = makeSelectDb([]);
       const svc = new AccountingLedgerService(db, posting, finPosting, audit, cache, journalEntry);
 
-      const result = await svc.listJournal("org-attacker", { limit: 10 }, "none", "user-1", 0);
+      const result = await svc.listJournal(ScopedRead.of("org-attacker", "user-1", "none"), { limit: 10 }, 0);
 
       expect(result.data).toHaveLength(0);
     });

@@ -1,10 +1,10 @@
 import { NotFoundException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { actingMembershipId } from "../../common/auth/principal";
 import { signEnvelopes } from "../../db/schema";
 import { type Db } from "../../db/drizzle.module";
 import { AccessService } from "../access/access.service";
+import { ScopedRead, type OwnershipScope } from "../access/scoped-read";
 
 /**
  * Neither `sign:certificate:download` nor `sign:audit:view` is scopable, so their
@@ -16,31 +16,25 @@ import { AccessService } from "../access/access.service";
  */
 export const SIGN_ENVELOPE_VIEW_PERMISSION = "sign:envelope:view";
 
-export interface EnvelopeViewScope {
-  membershipId: number | null;
-  viewAll: boolean;
-}
-
-/** For reads the finalization pipeline makes on its own behalf, never for a request. */
-export const SYSTEM_ENVELOPE_SCOPE: EnvelopeViewScope = Object.freeze({
-  membershipId: null,
-  viewAll: true,
-});
-
-export function envelopeIsVisible(
-  senderMembershipId: number | null,
-  scope: EnvelopeViewScope,
-): boolean {
-  if (scope.viewAll) return true;
-  return scope.membershipId != null && senderMembershipId === scope.membershipId;
+export function envelopeSenderScope(membershipId: number | null): OwnershipScope {
+  return { own: membershipId === null ? sql`false` : eq(signEnvelopes.senderMembershipId, membershipId) };
 }
 
 export async function resolveEnvelopeViewScope(
   access: AccessService,
   u: CurrentUserContext,
-): Promise<EnvelopeViewScope> {
-  const scope = await access.scopeFor(u, SIGN_ENVELOPE_VIEW_PERMISSION);
-  return { membershipId: actingMembershipId(u.principal), viewAll: scope === "all" };
+): Promise<ScopedRead> {
+  return ScopedRead.for(access, u, SIGN_ENVELOPE_VIEW_PERMISSION);
+}
+
+/**
+ * For reads the finalization pipeline makes on its own behalf, never for a
+ * request. `ScopedRead` binds `orgId` at construction and these reads span many
+ * orgs, so this is a per-call factory rather than the frozen constant it used to
+ * be — the name stays the same so it is still greppable as one thing.
+ */
+export function systemEnvelopeScope(orgId: string): ScopedRead {
+  return ScopedRead.of(orgId, "system", "all");
 }
 
 /**
@@ -49,15 +43,20 @@ export async function resolveEnvelopeViewScope(
  */
 export async function mustGetVisibleEnvelope(
   db: Db,
-  orgId: string,
+  read: ScopedRead,
+  membershipId: number | null,
   envelopeId: number,
-  scope: EnvelopeViewScope,
   notFoundMessage: string,
 ) {
-  const envelope = await db.query.signEnvelopes.findFirst({
-    where: and(eq(signEnvelopes.id, envelopeId), eq(signEnvelopes.orgId, orgId)),
-  });
-  if (!envelope || !envelopeIsVisible(envelope.senderMembershipId, scope))
-    throw new NotFoundException(notFoundMessage);
-  return envelope;
+  return read.read(
+    { tenant: signEnvelopes.orgId, scope: envelopeSenderScope(membershipId), and: [eq(signEnvelopes.id, envelopeId)] },
+    async ({ sql: where }) => {
+      const envelope = await db.query.signEnvelopes.findFirst({ where });
+      if (!envelope) throw new NotFoundException(notFoundMessage);
+      return envelope;
+    },
+    () => {
+      throw new NotFoundException(notFoundMessage);
+    },
+  );
 }

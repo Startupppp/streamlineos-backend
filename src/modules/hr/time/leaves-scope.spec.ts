@@ -47,14 +47,14 @@ describe("resolveLeavesViewScope", () => {
       new Map<string, DataScope>([[LEAVES_PERMISSION, "all"]]),
     );
     const result = await resolveLeavesViewScope(mockAccess, makeUser({ isOrgOwner: true }));
-    expect(result).toBe("all");
+    expect(result.rawScope("spec reads the resolved value")).toBe("all");
     expect(mockAccess.resolveUserPermissions).toHaveBeenCalledWith("o1", "u1");
   });
 
   it("fails closed when the permission catalog is unexpectedly not scopable", async () => {
     (isScopable as jest.Mock).mockReturnValue(false);
     const result = await resolveLeavesViewScope(mockAccess, makeUser());
-    expect(result).toBe("none");
+    expect(result.denied).toBe(true);
     expect(mockAccess.resolveUserPermissions).not.toHaveBeenCalled();
   });
 
@@ -62,50 +62,58 @@ describe("resolveLeavesViewScope", () => {
     const scopeMap = new Map<string, DataScope>([[LEAVES_PERMISSION, "all"]]);
     (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(scopeMap);
     const result = await resolveLeavesViewScope(mockAccess, makeUser());
-    expect(result).toBe("all");
+    expect(result.rawScope("spec reads the resolved value")).toBe("all");
   });
 
   it("returns own when the resolved permission scope is own", async () => {
     const scopeMap = new Map<string, DataScope>([[LEAVES_PERMISSION, "own"]]);
     (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(scopeMap);
     const result = await resolveLeavesViewScope(mockAccess, makeUser());
-    expect(result).toBe("own");
+    expect(result.rawScope("spec reads the resolved value")).toBe("own");
   });
 
   it("returns none when the permission is not in the resolved map", async () => {
     (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Map<string, DataScope>());
     const result = await resolveLeavesViewScope(mockAccess, makeUser());
-    expect(result).toBe("none");
+    expect(result.denied).toBe(true);
   });
 
   it("binds own-scope decisions to the server-assigned approver", () => {
-    const compiled = new PgDialect().sqlToQuery(
-      leaveApprovalScope("own", 7),
-    );
+    const shape = leaveApprovalScope(7);
+    if (!("own" in shape)) throw new Error("expected an own-shaped scope");
+    const compiled = new PgDialect().sqlToQuery(shape.own);
     expect(compiled.params).toEqual([7]);
   });
 
-  it("lets a team-scope approver decide the requests assigned to them", () => {
-    const compiled = new PgDialect().sqlToQuery(leaveApprovalScope("team", 7));
+  it("uses the approver_membership_id column, not the legacy approver_id", () => {
+    const shape = leaveApprovalScope(7);
+    if (!("own" in shape)) throw new Error("expected an own-shaped scope");
+    const compiled = new PgDialect().sqlToQuery(shape.own);
     expect(compiled.sql).toContain('"approver_membership_id" = ');
     expect(compiled.params).toEqual([7]);
   });
 
   it("never additionally requires the approver to be the requester, which the self-approval guard would always deny", () => {
-    for (const scope of ["own", "team"] as const) {
-      const compiled = new PgDialect().sqlToQuery(leaveApprovalScope(scope, 7));
-      expect(compiled.sql).not.toContain('"user_membership_id"');
-    }
+    const shape = leaveApprovalScope(7);
+    if (!("own" in shape)) throw new Error("expected an own-shaped scope");
+    const compiled = new PgDialect().sqlToQuery(shape.own);
+    expect(compiled.sql).not.toContain('"user_membership_id"');
   });
 
   it("matches the predicate the pending-approvals roster lists, so a listed request is decidable", () => {
     const listed = new PgDialect().sqlToQuery(
       eq(leaveRequests.approverMembershipId, 7),
     );
-    for (const scope of ["own", "team"] as const) {
-      const decidable = new PgDialect().sqlToQuery(leaveApprovalScope(scope, 7));
-      expect(decidable.sql).toBe(listed.sql);
-      expect(decidable.params).toEqual(listed.params);
-    }
+    const shape = leaveApprovalScope(7);
+    if (!("own" in shape)) throw new Error("expected an own-shaped scope");
+    const decidable = new PgDialect().sqlToQuery(shape.own);
+    expect(decidable.sql).toBe(listed.sql);
+    expect(decidable.params).toEqual(listed.params);
+  });
+
+  it("falls closed to false when no approver membership is resolved", () => {
+    const shape = leaveApprovalScope(null);
+    if (!("own" in shape)) throw new Error("expected an own-shaped scope");
+    expect(new PgDialect().sqlToQuery(shape.own).sql).toContain("false");
   });
 });

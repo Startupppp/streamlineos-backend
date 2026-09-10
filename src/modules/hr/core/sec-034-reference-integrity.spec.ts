@@ -5,6 +5,7 @@ import { HrEmploymentsService } from "./hr-employments.service";
 import { WorkerEngagementsService } from "../../directory/worker-engagements.service";
 import { assertActiveOrgUnit } from "../../../common/org/sync-org-unit-placement";
 import { PgDialect } from "drizzle-orm/pg-core";
+import { ScopedRead } from "../../access/scoped-read";
 
 function selectChain(rows: unknown[]) {
   const chain = {
@@ -99,7 +100,7 @@ describe("SEC-034 reference integrity", () => {
     const service = new HrCustomFieldsService(db as never);
 
     await expect(
-      service.getEntityValues("org-1", "actor-1", "own", "employee", "7", false),
+      service.getEntityValues(ScopedRead.of("org-1", "actor-1", "own"), "employee", "7", false),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -133,9 +134,7 @@ describe("SEC-034 reference integrity", () => {
 
     await expect(
       service.upsertEntityValues(
-        "org-1",
-        "actor-1",
-        "all",
+        ScopedRead.of("org-1", "actor-1", "all"),
         "employee",
         "7",
         {

@@ -89,7 +89,7 @@ export class DocumentsController {
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const scope = await resolveDocumentsScope(this.access, currentUser);
-    return this.documents.listDocuments(currentUser.orgId, currentUser.userId, scope, filters, actingMembershipId(currentUser.principal));
+    return this.documents.listDocuments(scope, filters, actingMembershipId(currentUser.principal));
   }
 
   @ResponseSchema(createDocumentResponseSchema)
@@ -102,7 +102,7 @@ export class DocumentsController {
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const scope = await resolveDocumentsManageScope(this.access, currentUser);
-    return this.documents.createDocument(currentUser.orgId, currentUser.userId, scope, body, actingMembershipId(currentUser.principal));
+    return this.documents.createDocument(scope, body, actingMembershipId(currentUser.principal));
   }
 
   @ResponseSchema(getDocumentFileResponseSchema)
@@ -115,8 +115,6 @@ export class DocumentsController {
   ): Promise<{ url: string; fileName: string; expiresIn: number }> {
     const scope = await resolveDocumentsScope(this.access, currentUser);
     const document = await this.documents.getFileReference(
-      currentUser.orgId,
-      currentUser.userId,
       scope,
       documentId,
       actingMembershipId(currentUser.principal),
@@ -150,7 +148,7 @@ export class DocumentsController {
   @RequirePermission("hr:documents:view")
   async documentStats(@CurrentUser() currentUser: CurrentUserContext) {
     const scope = await resolveDocumentsScope(this.access, currentUser);
-    return this.documents.stats(currentUser.orgId, currentUser.userId, scope, actingMembershipId(currentUser.principal));
+    return this.documents.stats(scope, actingMembershipId(currentUser.principal));
   }
 
   @ResponseSchema(updateDocumentResponseSchema)
@@ -164,8 +162,6 @@ export class DocumentsController {
   ) {
     const scope = await resolveDocumentsManageScope(this.access, currentUser);
     return this.documents.updateDocument(
-      currentUser.orgId,
-      currentUser.userId,
       scope,
       documentId,
       body,
@@ -183,7 +179,7 @@ export class DocumentsController {
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const scope = await resolveDocumentsManageScope(this.access, currentUser);
-    await this.documents.deleteDocument(currentUser.orgId, currentUser.userId, scope, documentId, actingMembershipId(currentUser.principal));
+    await this.documents.deleteDocument(scope, documentId, actingMembershipId(currentUser.principal));
   }
 
   @ResponseSchema(documentExpiryResponseSchema)
@@ -196,7 +192,7 @@ export class DocumentsController {
   ) {
     const daysAhead = Math.min(Math.max(query.days ?? 30, 1), 365);
     const scope = await resolveDocumentsScope(this.access, currentUser);
-    return this.documents.expiry(currentUser.orgId, currentUser.userId, scope, daysAhead, actingMembershipId(currentUser.principal));
+    return this.documents.expiry(scope, daysAhead, actingMembershipId(currentUser.principal));
   }
 
   @ResponseSchema(listComplianceResponseSchema)
@@ -204,7 +200,7 @@ export class DocumentsController {
   @RequirePermission("hr:documents:view")
   async listCompliance(@CurrentUser() currentUser: CurrentUserContext) {
     const scope = await resolveDocumentsScope(this.access, currentUser);
-    return this.compliance.listAcknowledgments(currentUser.orgId, currentUser.userId, scope);
+    return this.compliance.listAcknowledgments(scope);
   }
 
   @ResponseSchema(sendComplianceResponseSchema)

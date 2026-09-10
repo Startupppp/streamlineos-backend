@@ -16,14 +16,14 @@ describe("EssSelfServiceService.listReimbursements — pagination cap", () => {
     const listReimbursements = jest.fn().mockResolvedValue([]);
     const svc = makeSvc(listReimbursements);
     await svc.listReimbursements("org-1", "u1", null, 1, 200);
-    expect(listReimbursements.mock.calls[0]?.[5]).toBeLessThanOrEqual(100);
+    expect(listReimbursements.mock.calls[0]?.[3]).toBeLessThanOrEqual(100);
   });
 
   it("passes page and capped limit to reimbursementsService", async () => {
     const listReimbursements = jest.fn().mockResolvedValue([]);
     const svc = makeSvc(listReimbursements);
     await svc.listReimbursements("org-1", "u1", null, 2, 25);
-    expect(listReimbursements.mock.calls[0]?.[4]).toBe(2);
-    expect(listReimbursements.mock.calls[0]?.[5]).toBe(25);
+    expect(listReimbursements.mock.calls[0]?.[2]).toBe(2);
+    expect(listReimbursements.mock.calls[0]?.[3]).toBe(25);
   });
 });

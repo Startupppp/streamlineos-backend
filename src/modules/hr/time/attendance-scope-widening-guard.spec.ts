@@ -3,8 +3,8 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { AccessService } from "../../access/access.service";
-import type { DataScope } from "../../access/access.types";
 import { applyScope } from "../../access/apply-scope";
+import { ScopedRead } from "../../access/scoped-read";
 import { attendance } from "../../../db/schema";
 
 jest.mock("../../rbac/permissions", () => ({
@@ -53,19 +53,19 @@ describe("AttendanceReadService scope-widening guard", () => {
   });
 
   it("monthly() blocks own-scope caller from reading another user", async () => {
-    (resolveAttendanceScope as jest.Mock).mockResolvedValue("own" satisfies DataScope);
+    (resolveAttendanceScope as jest.Mock).mockResolvedValue(ScopedRead.of("org-1", "actor-1", "own"));
     const actor = makeUser("actor-1");
     await expect(svc.monthly(actor, "other-user", 2026, 7)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it("heatmap() blocks own-scope caller from reading another user", async () => {
-    (resolveAttendanceScope as jest.Mock).mockResolvedValue("own" satisfies DataScope);
+    (resolveAttendanceScope as jest.Mock).mockResolvedValue(ScopedRead.of("org-1", "actor-1", "own"));
     const actor = makeUser("actor-1");
     await expect(svc.heatmap(actor, "other-user", 2026)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it("monthly() allows own-scope caller to read their own data", async () => {
-    (resolveAttendanceScope as jest.Mock).mockResolvedValue("own" satisfies DataScope);
+    (resolveAttendanceScope as jest.Mock).mockResolvedValue(ScopedRead.of("org-1", "actor-1", "own"));
     const actor = makeUser("actor-1");
     const mockQuery = { findMany: jest.fn().mockResolvedValue([]) };
     (svc as unknown as Record<string, unknown>)["db"] = { query: { attendance: mockQuery } };
@@ -83,7 +83,7 @@ describe("AttendanceRegularizationService scope-widening guard", () => {
   });
 
   it("list() blocks own-scope caller from widening to another userId", async () => {
-    (resolveAttendanceScope as jest.Mock).mockResolvedValue("own" satisfies DataScope);
+    (resolveAttendanceScope as jest.Mock).mockResolvedValue(ScopedRead.of("org-1", "actor-1", "own"));
     const actor = makeUser("actor-1");
     await expect(
       svc.list(actor, { userId: "other-user", limit: 20 }),
@@ -91,7 +91,7 @@ describe("AttendanceRegularizationService scope-widening guard", () => {
   });
 
   it("list() blocks none-scope caller entirely even without userId filter", async () => {
-    (resolveAttendanceScope as jest.Mock).mockResolvedValue("none" satisfies DataScope);
+    (resolveAttendanceScope as jest.Mock).mockResolvedValue(ScopedRead.of("org-1", "actor-1", "none"));
     const actor = makeUser("actor-1");
     await expect(
       svc.list(actor, { userId: "other-user", limit: 20 }),

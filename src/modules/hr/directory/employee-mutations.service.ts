@@ -26,9 +26,9 @@ import { assertUsersInOrg } from "../../../common/tenant/org-membership";
 import { syncOrgUnitPlacement } from "../../../common/org/sync-org-unit-placement";
 import { syncCanonicalEmploymentFields } from "../../../common/hr/sync-canonical-employment-fields";
 import { syncCanonicalReportingLine } from "../../../common/hr/sync-canonical-reporting-line";
-import { applyScope } from "../../access/apply-scope";
 import { AccessService } from "../../access/access.service";
-import type { DataScope } from "../../access/access.types";
+import { ScopedRead } from "../../access/scoped-read";
+import { selfEmployeeRead } from "./employees-scope";
 import { resolveEmployeesManageScope } from "./employees-scope";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import {
@@ -47,41 +47,40 @@ export class EmployeeMutationsService {
     private readonly employment: EmploymentFactsService,
   ) {}
 
-  async getEmployeeDetail(
-    orgId: string,
-    actorUserId: string,
-    targetUserId: string,
-    scope: DataScope,
-  ) {
-    const member = await this.db.query.organizationMembers.findFirst({
-      where: and(
-        eq(organizationMembers.orgId, orgId),
-        eq(organizationMembers.userId, targetUserId),
-        applyScope(scope, orgId, actorUserId, {
-          ownerColumn: organizationMembers.userId,
-        }),
-      ),
-      columns: { userId: true, role: true },
-      with: {
-        user: {
-          columns: {
-            id: true,
-            name: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            image: true,
-            isActive: true,
-            bio: true,
-            linkedinUrl: true,
-            twitterUrl: true,
-            githubUrl: true,
-            websiteUrl: true,
-            phone: true,
-          },
-        },
+  async getEmployeeDetail(read: ScopedRead, targetUserId: string) {
+    const orgId = read.orgId;
+    const member = await read.read(
+      {
+        tenant: organizationMembers.orgId,
+        scope: { columns: { ownerColumn: organizationMembers.userId } },
+        and: [eq(organizationMembers.userId, targetUserId)],
       },
-    });
+      ({ sql: where }) =>
+        this.db.query.organizationMembers.findFirst({
+          where,
+          columns: { userId: true, role: true },
+          with: {
+            user: {
+              columns: {
+                id: true,
+                name: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                image: true,
+                isActive: true,
+                bio: true,
+                linkedinUrl: true,
+                twitterUrl: true,
+                githubUrl: true,
+                websiteUrl: true,
+                phone: true,
+              },
+            },
+          },
+        }),
+      () => undefined,
+    );
 
     if (!member?.user) return null;
     const u = member.user;
@@ -90,10 +89,12 @@ export class EmployeeMutationsService {
       this.db
         .select({ name: employeeSkills.skillName, level: employeeSkills.level })
         .from(employeeSkills)
-        .where(and(
-          eq(employeeSkills.orgId, orgId),
-          eq(employeeSkills.userId, targetUserId),
-        ))
+        .where(
+          and(
+            eq(employeeSkills.orgId, orgId),
+            eq(employeeSkills.userId, targetUserId),
+          ),
+        )
         .limit(100),
       this.db
         .select({
@@ -154,26 +155,38 @@ export class EmployeeMutationsService {
     };
   }
 
-  async updateEmployee(actor: CurrentUserContext, targetUserId: string, body: UpdateEmployeeInput) {
+  async updateEmployee(
+    actor: CurrentUserContext,
+    targetUserId: string,
+    body: UpdateEmployeeInput,
+  ) {
     const isSelf = actor.userId === targetUserId;
-    const manageScope = await resolveEmployeesManageScope(this.access, actor);
-    if (!isSelf && manageScope === "none") {
-      throw new ForbiddenException("You do not have permission to update this employee.");
+    const manageRead = await resolveEmployeesManageScope(this.access, actor);
+    if (!isSelf && manageRead.denied) {
+      throw new ForbiddenException(
+        "You do not have permission to update this employee.",
+      );
     }
 
-    const effectiveScope: DataScope = isSelf && manageScope === "none" ? "own" : manageScope;
-    const targetMember = await this.db.query.organizationMembers.findFirst({
-      columns: { id: true },
-      where: and(
-        eq(organizationMembers.userId, targetUserId),
-        eq(organizationMembers.orgId, actor.orgId),
-        applyScope(effectiveScope, actor.orgId, actor.userId, {
-          ownerColumn: organizationMembers.userId,
+    const effectiveRead =
+      isSelf && manageRead.denied ? selfEmployeeRead(actor) : manageRead;
+    const targetMember = await effectiveRead.read(
+      {
+        tenant: organizationMembers.orgId,
+        scope: { columns: { ownerColumn: organizationMembers.userId } },
+        and: [eq(organizationMembers.userId, targetUserId)],
+      },
+      ({ sql: where }) =>
+        this.db.query.organizationMembers.findFirst({
+          columns: { id: true },
+          where,
         }),
-      ),
-    });
+      () => undefined,
+    );
     if (!targetMember) {
-      throw new ForbiddenException("You do not have permission to update this employee.");
+      throw new ForbiddenException(
+        "You do not have permission to update this employee.",
+      );
     }
 
     const currentUser = await this.db.query.users.findFirst({
@@ -192,7 +205,9 @@ export class EmployeeMutationsService {
 
     if (body.reportingTo !== undefined && body.reportingTo !== null) {
       if (body.reportingTo === targetUserId) {
-        throw new BadRequestException("An employee cannot report to themselves.");
+        throw new BadRequestException(
+          "An employee cannot report to themselves.",
+        );
       }
       await assertUsersInOrg(this.db, actor.orgId, [body.reportingTo]);
       const [cycle] = await this.db.execute<{ creates_cycle: boolean }>(sql`
@@ -261,10 +276,14 @@ export class EmployeeMutationsService {
     if (body.image !== undefined) updateData.image = body.image;
     if (body.isActive !== undefined) updateData.isActive = body.isActive;
     if (body.bio !== undefined) updateData.bio = body.bio;
-    if (body.linkedinUrl !== undefined) updateData.linkedinUrl = body.linkedinUrl || null;
-    if (body.twitterUrl !== undefined) updateData.twitterUrl = body.twitterUrl || null;
-    if (body.githubUrl !== undefined) updateData.githubUrl = body.githubUrl || null;
-    if (body.websiteUrl !== undefined) updateData.websiteUrl = body.websiteUrl || null;
+    if (body.linkedinUrl !== undefined)
+      updateData.linkedinUrl = body.linkedinUrl || null;
+    if (body.twitterUrl !== undefined)
+      updateData.twitterUrl = body.twitterUrl || null;
+    if (body.githubUrl !== undefined)
+      updateData.githubUrl = body.githubUrl || null;
+    if (body.websiteUrl !== undefined)
+      updateData.websiteUrl = body.websiteUrl || null;
 
     let canonicalSynced: boolean | null = null;
     let oldJoiningDate: string | null = null;
@@ -275,9 +294,14 @@ export class EmployeeMutationsService {
 
     await this.db.transaction(async (tx) => {
       if (Object.keys(updateData).length > 0) {
-        await tx.update(users).set(updateData).where(eq(users.id, targetUserId));
+        await tx
+          .update(users)
+          .set(updateData)
+          .where(eq(users.id, targetUserId));
       }
-      await syncOrgUnitPlacement(tx, actor.orgId, targetUserId, { DEPARTMENT: body.departmentId });
+      await syncOrgUnitPlacement(tx, actor.orgId, targetUserId, {
+        DEPARTMENT: body.departmentId,
+      });
       if (
         body.designation !== undefined ||
         body.departmentId !== undefined ||
@@ -296,46 +320,69 @@ export class EmployeeMutationsService {
       }
       if (body.reportingTo !== undefined) {
         const today = new Date().toISOString().slice(0, 10);
-        await syncCanonicalReportingLine(tx, actor.orgId, targetUserId, body.reportingTo ?? null, today, actor.userId);
+        await syncCanonicalReportingLine(
+          tx,
+          actor.orgId,
+          targetUserId,
+          body.reportingTo ?? null,
+          today,
+          actor.userId,
+        );
       }
 
       if (body.skills !== undefined) {
         const existing = await tx
           .select({ skillName: employeeSkills.skillName })
           .from(employeeSkills)
-          .where(and(eq(employeeSkills.orgId, actor.orgId), eq(employeeSkills.userId, targetUserId)))
+          .where(
+            and(
+              eq(employeeSkills.orgId, actor.orgId),
+              eq(employeeSkills.userId, targetUserId),
+            ),
+          )
           .limit(100);
 
         const existingNames = new Set(existing.map((s) => s.skillName));
         const newNames = new Set(body.skills);
 
-        const toDelete = existing.filter((s) => !newNames.has(s.skillName)).map((s) => s.skillName);
+        const toDelete = existing
+          .filter((s) => !newNames.has(s.skillName))
+          .map((s) => s.skillName);
         if (toDelete.length > 0) {
-          await tx.delete(employeeSkills).where(
-            and(
-              eq(employeeSkills.orgId, actor.orgId),
-              eq(employeeSkills.userId, targetUserId),
-              inArray(employeeSkills.skillName, toDelete),
-            ),
-          );
+          await tx
+            .delete(employeeSkills)
+            .where(
+              and(
+                eq(employeeSkills.orgId, actor.orgId),
+                eq(employeeSkills.userId, targetUserId),
+                inArray(employeeSkills.skillName, toDelete),
+              ),
+            );
         }
 
         const toInsert = body.skills.filter((name) => !existingNames.has(name));
         if (toInsert.length > 0) {
           await tx.insert(employeeSkills).values(
-            toInsert.map((skillName) => ({ orgId: actor.orgId, userId: targetUserId, skillName, level: 1 })),
+            toInsert.map((skillName) => ({
+              orgId: actor.orgId,
+              userId: targetUserId,
+              skillName,
+              level: 1,
+            })),
           );
         }
       }
 
-      if (body.joiningDate && manageScope !== "none") {
+      if (body.joiningDate && !manageRead.denied) {
         const oldDate = oldJoiningDate ? new Date(oldJoiningDate) : null;
         const newDate = new Date(body.joiningDate);
         if (oldDate && oldDate.getTime() !== newDate.getTime()) {
           const dayDiff = differenceInDays(newDate, oldDate);
           await tx
             .update(onboardingTasks)
-            .set({ dueDate: sql<Date>`${onboardingTasks.dueDate} + (${dayDiff} * interval '1 day')` })
+            .set({
+              dueDate: sql<Date>`${onboardingTasks.dueDate} + (${dayDiff} * interval '1 day')`,
+            })
             .where(
               and(
                 eq(onboardingTasks.userId, targetUserId),

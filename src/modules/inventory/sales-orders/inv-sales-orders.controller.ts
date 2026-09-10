@@ -57,8 +57,8 @@ export class InvSalesOrdersController {
     @Query() filters: ListSoInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveInvSoScope(this.access, u);
-    return this.soCore.listSos(u.orgId, filters, scope, u.userId);
+    const read = await resolveInvSoScope(this.access, u);
+    return this.soCore.listSos(read, filters);
   }
 
   @Get(":soId")

@@ -89,12 +89,12 @@ describe("the reimbursements list scope comes from the key that gates the route"
       principal: humanSessionPrincipal(1, false),
     };
 
-    const scope = await resolveReimbursementsScope(
+    const read = await resolveReimbursementsScope(
       { resolveUserPermissions } as unknown as AccessService,
       user,
     );
 
     expect(isScopable(routeKey)).toBe(true);
-    expect(scope).toBe("own");
+    expect(read.rawScope("spec reads the resolved scope")).toBe("own");
   });
 });

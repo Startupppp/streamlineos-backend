@@ -114,15 +114,8 @@ export class HrCustomFieldsController {
     @Param("entityId") entityId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveEmployeesScope(this.access, u);
-    return this.svc.getEntityValues(
-      u.orgId,
-      u.userId,
-      scope,
-      entityType,
-      entityId,
-      false,
-    );
+    const read = await resolveEmployeesScope(this.access, u);
+    return this.svc.getEntityValues(read, entityType, entityId, false);
   }
 
   @Get(":entityType/:entityId/values/sensitive")
@@ -134,15 +127,8 @@ export class HrCustomFieldsController {
     @Param("entityId") entityId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveEmployeesScope(this.access, u);
-    return this.svc.getEntityValues(
-      u.orgId,
-      u.userId,
-      scope,
-      entityType,
-      entityId,
-      true,
-    );
+    const read = await resolveEmployeesScope(this.access, u);
+    return this.svc.getEntityValues(read, entityType, entityId, true);
   }
 
   @Put(":entityType/:entityId/values")
@@ -155,16 +141,8 @@ export class HrCustomFieldsController {
     @Body() body: UpsertCustomFieldValuesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveEmployeesManageScope(this.access, u);
-    return this.svc.upsertEntityValues(
-      u.orgId,
-      u.userId,
-      scope,
-      entityType,
-      entityId,
-      body,
-      false,
-    );
+    const read = await resolveEmployeesManageScope(this.access, u);
+    return this.svc.upsertEntityValues(read, entityType, entityId, body, false);
   }
 
   @Put(":entityType/:entityId/values/sensitive")
@@ -177,16 +155,8 @@ export class HrCustomFieldsController {
     @Body() body: UpsertCustomFieldValuesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveEmployeesManageScope(this.access, u);
-    return this.svc.upsertEntityValues(
-      u.orgId,
-      u.userId,
-      scope,
-      entityType,
-      entityId,
-      body,
-      true,
-    );
+    const read = await resolveEmployeesManageScope(this.access, u);
+    return this.svc.upsertEntityValues(read, entityType, entityId, body, true);
   }
 
   @Get(":entityType/filter")
@@ -198,7 +168,7 @@ export class HrCustomFieldsController {
     @Query() query: FilterByCustomFieldQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveEmployeesScope(this.access, u);
+    const read = await resolveEmployeesScope(this.access, u);
     let value: unknown = undefined;
     if (query.value !== undefined) {
       try {
@@ -208,9 +178,7 @@ export class HrCustomFieldsController {
       }
     }
     const ids = await this.svc.filterByCustomField(
-      u.orgId,
-      u.userId,
-      scope,
+      read,
       entityType,
       query.fieldKey,
       value,

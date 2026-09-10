@@ -62,12 +62,10 @@ export class HrPayrollReimbursementsController {
     @CurrentUser() u: CurrentUserContext,
     @Query() query: ListPageQueryInput,
   ) {
-    const scope = await resolveReimbursementsScope(this.access, u);
+    const read = await resolveReimbursementsScope(this.access, u);
     return this.reimbursements.listReimbursements(
-      u.orgId,
-      u.userId,
+      read,
       actingMembershipId(u.principal),
-      scope,
       query.page ?? 1,
       query.limit ?? 100,
     );

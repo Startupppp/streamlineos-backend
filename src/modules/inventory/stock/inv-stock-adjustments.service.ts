@@ -1,7 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, sql } from "drizzle-orm";
-import { applyScope } from "../../access/apply-scope";
-import type { DataScope } from "../../access/access.types";
+import { ScopedRead } from "../../access/scoped-read";
 import {
   invStockAdjustments, invStockAdjustmentLines,
 } from "../../../db/schema";
@@ -29,47 +28,52 @@ export class InvStockAdjustmentsService {
     private readonly warehouseScope: WarehouseScopeService,
   ) {}
 
-  async listAdjustments(orgId: string, filters: ListAdjustmentsInput, scope: DataScope = "all", userId?: string) {
-    if (scope === "none") return { items: [], total: 0, page: filters.page, totalPages: 0 };
-
+  async listAdjustments(read: ScopedRead, filters: ListAdjustmentsInput) {
+    const orgId = read.orgId;
     const { status, page, limit } = filters;
     const offset = (page - 1) * limit;
-    const conditions = [eq(invStockAdjustments.orgId, orgId)];
-    if (status) conditions.push(eq(invStockAdjustments.status, status));
-    if (scope !== "all" && userId) {
-      conditions.push(applyScope(scope, orgId, userId, { ownerColumn: invStockAdjustments.createdBy }));
-    }
-    if (userId) {
-      // Locations live on the lines, not the header, so scope via EXISTS.
-      const warehouses = await this.warehouseScope.resolve(orgId, userId);
-      if (warehouses !== null) {
-        const ids = this.warehouseScope.warehouseIdList(warehouses);
-        conditions.push(ids === null ? sql`FALSE` : sql`EXISTS (
-          SELECT 1 FROM inv_stock_adjustment_lines l
-          JOIN inv_locations loc ON loc.id = l.location_id
-          WHERE l.adjustment_id = ${invStockAdjustments.id} AND loc.warehouse_id IN (${ids})
-        )`);
-      }
-    }
-    const where = and(...conditions);
 
-    const [items, countResult] = await Promise.all([
-      this.db.query.invStockAdjustments.findMany({
-        where,
-        orderBy: [desc(invStockAdjustments.createdAt)],
-        limit,
-        offset,
-        with: {
-          creator: { columns: { id: true, name: true } },
-          approver: { columns: { id: true, name: true } },
-          poster: { columns: { id: true, name: true } },
-          lines: true,
-        },
-      }),
-      this.db.select({ count: sql<number>`count(*)::int` }).from(invStockAdjustments).where(where),
-    ]);
+    // Locations live on the lines, not the header, so scope via EXISTS.
+    const warehouses = await this.warehouseScope.resolve(orgId, read.actorId);
+    const warehouseIds = warehouses !== null ? this.warehouseScope.warehouseIdList(warehouses) : undefined;
+    const warehousePredicate =
+      warehouses === null
+        ? undefined
+        : warehouseIds === null
+          ? sql`FALSE`
+          : sql`EXISTS (
+              SELECT 1 FROM inv_stock_adjustment_lines l
+              JOIN inv_locations loc ON loc.id = l.location_id
+              WHERE l.adjustment_id = ${invStockAdjustments.id} AND loc.warehouse_id IN (${warehouseIds})
+            )`;
 
-    return { items, total: countResult[0]?.count ?? 0, page, totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit) };
+    return read.read(
+      {
+        tenant: invStockAdjustments.orgId,
+        scope: { columns: { ownerColumn: invStockAdjustments.createdBy } },
+        and: [status ? eq(invStockAdjustments.status, status) : undefined, warehousePredicate],
+      },
+      async ({ sql: where }) => {
+        const [items, countResult] = await Promise.all([
+          this.db.query.invStockAdjustments.findMany({
+            where,
+            orderBy: [desc(invStockAdjustments.createdAt)],
+            limit,
+            offset,
+            with: {
+              creator: { columns: { id: true, name: true } },
+              approver: { columns: { id: true, name: true } },
+              poster: { columns: { id: true, name: true } },
+              lines: true,
+            },
+          }),
+          this.db.select({ count: sql<number>`count(*)::int` }).from(invStockAdjustments).where(where),
+        ]);
+
+        return { items, total: countResult[0]?.count ?? 0, page, totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit) };
+      },
+      () => ({ items: [], total: 0, page, totalPages: 0 }),
+    );
   }
 
   async getAdjustment(orgId: string, adjustmentId: number) {

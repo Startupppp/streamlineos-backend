@@ -13,7 +13,7 @@ import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { resolveEntriesScope, applyMembershipScope } from "./timesheets-core-scope";
+import { resolveEntriesScope, membershipScope } from "./timesheets-core-scope";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import type {
   DismissExceptionInput,
@@ -31,18 +31,14 @@ export class ExceptionsService {
   ) {}
 
   async listExceptions(u: CurrentUserContext, query: ExceptionsQuery) {
-    const scope = await resolveEntriesScope(this.access, u);
+    const read = await resolveEntriesScope(this.access, u);
     const limit = Math.min(query.limit, 100);
     const pos = decodeCursor(query.cursor);
 
     const membershipId = actingMembershipId(u.principal);
 
-    const conditions = [
-      eq(timesheetExceptions.orgId, u.orgId),
-      applyMembershipScope(scope, membershipId, timesheetExceptions.userMembershipId),
-    ];
-
-    if (query.userId && scope === "all") {
+    let requestedMembershipId: number | undefined;
+    if (query.userId && read.discriminator === "all") {
       const [qMember] = await this.db
         .select({ id: organizationMembers.id })
         .from(organizationMembers)
@@ -53,44 +49,55 @@ export class ExceptionsService {
           ),
         )
         .limit(1);
-      if (qMember) conditions.push(eq(timesheetExceptions.userMembershipId, qMember.id));
+      if (qMember) requestedMembershipId = qMember.id;
     }
-    if (query.status) conditions.push(eq(timesheetExceptions.status, query.status));
-    if (query.severity) conditions.push(eq(timesheetExceptions.severity, query.severity));
-    if (query.rule) conditions.push(eq(timesheetExceptions.rule, query.rule));
-    if (pos)
-      conditions.push(keysetBeforeId(timesheetExceptions.createdAt, timesheetExceptions.id, pos));
 
     const ownerMember = alias(organizationMembers, "owner_member");
 
-    const rawRows = await this.db
-      .select({
-        e: timesheetExceptions,
-        userName: users.name,
-        userEmail: users.email,
-      })
-      .from(timesheetExceptions)
-      .leftJoin(ownerMember, and(
-        eq(timesheetExceptions.orgId, ownerMember.orgId),
-        eq(timesheetExceptions.userMembershipId, ownerMember.id),
-      ))
-      .leftJoin(users, eq(ownerMember.userId, users.id))
-      .where(and(...conditions))
-      .orderBy(desc(timesheetExceptions.createdAt), desc(timesheetExceptions.id))
-      .limit(limit + 1);
+    return read.read(
+      {
+        tenant: timesheetExceptions.orgId,
+        scope: membershipScope(membershipId, timesheetExceptions.userMembershipId),
+        and: [
+          requestedMembershipId !== undefined ? eq(timesheetExceptions.userMembershipId, requestedMembershipId) : undefined,
+          query.status ? eq(timesheetExceptions.status, query.status) : undefined,
+          query.severity ? eq(timesheetExceptions.severity, query.severity) : undefined,
+          query.rule ? eq(timesheetExceptions.rule, query.rule) : undefined,
+          pos ? keysetBeforeId(timesheetExceptions.createdAt, timesheetExceptions.id, pos) : undefined,
+        ],
+      },
+      async ({ sql: where }) => {
+        const rawRows = await this.db
+          .select({
+            e: timesheetExceptions,
+            userName: users.name,
+            userEmail: users.email,
+          })
+          .from(timesheetExceptions)
+          .leftJoin(ownerMember, and(
+            eq(timesheetExceptions.orgId, ownerMember.orgId),
+            eq(timesheetExceptions.userMembershipId, ownerMember.id),
+          ))
+          .leftJoin(users, eq(ownerMember.userId, users.id))
+          .where(where)
+          .orderBy(desc(timesheetExceptions.createdAt), desc(timesheetExceptions.id))
+          .limit(limit + 1);
 
-    const page = buildCursorPage(rawRows, limit, (r) => ({
-      sortValue: r.e.createdAt.toISOString(),
-      id: String(r.e.id),
-    }));
+        const page = buildCursorPage(rawRows, limit, (r) => ({
+          sortValue: r.e.createdAt.toISOString(),
+          id: String(r.e.id),
+        }));
 
-    return {
-      data: page.data.map((r) => ({
-        ...r.e,
-        user: { membershipId: r.e.userMembershipId, name: r.userName, email: r.userEmail },
-      })),
-      pagination: page.pagination,
-    };
+        return {
+          data: page.data.map((r) => ({
+            ...r.e,
+            user: { membershipId: r.e.userMembershipId, name: r.userName, email: r.userEmail },
+          })),
+          pagination: page.pagination,
+        };
+      },
+      () => ({ data: [], pagination: { limit, hasMore: false, nextCursor: null } }),
+    );
   }
 
   private async transition(

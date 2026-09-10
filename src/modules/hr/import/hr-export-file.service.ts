@@ -16,8 +16,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { withTenant } from "../../../common/tenant";
 import { StorageService } from "../../storage/storage.service";
-import { applyScope } from "../../access/apply-scope";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import {
   serializeEmployeeExportHeader,
   serializeEmployeeExportRow,
@@ -55,14 +54,13 @@ export class HrExportFileService {
   async generate(
     input: {
       exportJobId: string;
-      orgId: string;
-      actorUserId: string;
-      scope: DataScope;
+      read: ScopedRead;
       filters: HrEmployeeExportFilters;
       createdAt: Date;
     },
     onProgress: (processedRows: number) => Promise<void>,
   ): Promise<GeneratedEmployeeExport> {
+    const orgId = input.read.orgId;
     const fileName = `employee-directory-${input.createdAt.toISOString().slice(0, 10)}-${input.exportJobId.slice(0, 8)}.csv`;
     const tempPath = join(
       tmpdir(),
@@ -88,10 +86,10 @@ export class HrExportFileService {
       await file.close();
       const fileStat = await stat(tempPath);
       const uploaded = await this.storage.uploadFileStream(
-        input.orgId,
+        orgId,
         createReadStream(tempPath),
         fileStat.size,
-        `hr-exports/${input.orgId}`,
+        `hr-exports/${orgId}`,
         fileName,
         "text/csv; charset=utf-8",
       );
@@ -114,24 +112,18 @@ export class HrExportFileService {
 
   private async fetchBatch(
     input: {
-      orgId: string;
-      actorUserId: string;
-      scope: DataScope;
+      read: ScopedRead;
       filters: HrEmployeeExportFilters;
     },
     cursor: EmployeeExportCursor | null,
   ): Promise<EmployeeExportBatch> {
+    const orgId = input.read.orgId;
     return withTenant(
       this.db,
-      { orgId: input.orgId, audience: "INTERNAL" },
+      { orgId, audience: "INTERNAL" },
       async (tx) => {
         const normalizedName = sql<string>`lower(coalesce(${users.name}, ''))`;
-        const conditions: SQL[] = [
-          eq(organizationMembers.orgId, input.orgId),
-          applyScope(input.scope, input.orgId, input.actorUserId, {
-            ownerColumn: organizationMembers.userId,
-          }),
-        ];
+        const conditions: SQL[] = [];
 
         if (input.filters.isActive === "true") conditions.push(eq(users.isActive, true));
         if (input.filters.isActive === "false") conditions.push(eq(users.isActive, false));
@@ -180,17 +172,27 @@ export class HrExportFileService {
           })
           .from(organizationMembers)
           .innerJoin(users, eq(organizationMembers.userId, users.id))
-          .leftJoin(hrPeople, livePersonOfUser(input.orgId, users.id))
-          .leftJoin(hrEmployments, primaryEmploymentOfPerson(input.orgId, hrPeople, hrEmployments))
+          .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+          .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId, hrPeople, hrEmployments))
           .leftJoin(
             orgUnits,
             and(
               eq(orgUnits.id, hrEmployments.departmentId),
-              eq(orgUnits.orgId, input.orgId),
+              eq(orgUnits.orgId, orgId),
               eq(orgUnits.kind, "DEPARTMENT"),
             ),
           )
-          .where(and(...conditions))
+          .where(
+            input.read.compose(
+              {
+                tenant: organizationMembers.orgId,
+                scope: { columns: { ownerColumn: organizationMembers.userId } },
+                and: conditions,
+              },
+              ({ sql: where }) => where,
+              () => sql`false`,
+            ),
+          )
           .orderBy(asc(normalizedName), asc(users.id))
           .limit(BATCH_SIZE);
 

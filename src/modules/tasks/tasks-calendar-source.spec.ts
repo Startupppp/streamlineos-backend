@@ -9,7 +9,6 @@ const ctx: CalendarSourceContext = {
   userId: "user-1",
   start: new Date("2026-08-01"),
   end: new Date("2026-08-31"),
-  scope: "all",
 };
 
 function buildDb(tasks: unknown[]): unknown {

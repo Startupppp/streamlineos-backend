@@ -1,3 +1,4 @@
+import { ScopedRead } from "../../access/scoped-read";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
@@ -72,12 +73,14 @@ describe("KbArticleQueryService.list shares that plan", () => {
     return { svc: new KbArticleQueryService(db, access), captured, execute };
   }
 
-  const user = { orgId: "org-1", userId: "user-1" } as never;
+  const ORG = "org-1";
+  const USER = "user-1";
+  const user = { orgId: ORG, userId: USER } as never;
   const query = { limit: 20, search: "onboarding" } as never;
 
   it("routes ?search= through app.search_kb_article_ids rather than a leading-wildcard ilike", async () => {
     const { svc, captured, execute } = makeService([{ id: 7 }]);
-    await svc.list(user, query);
+    await svc.list(user, query, ScopedRead.of(ORG, USER, "all"));
 
     expect(execute).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(execute.mock.calls[0])).toContain("app.search_kb_article_ids");
@@ -89,7 +92,7 @@ describe("KbArticleQueryService.list shares that plan", () => {
 
   it("agrees with the search endpoint's condition for the same term and cap", async () => {
     const { svc, captured } = makeService([{ id: 7 }, { id: 12 }]);
-    await svc.list(user, query);
+    await svc.list(user, query, ScopedRead.of(ORG, USER, "all"));
     const listText = dialect.sqlToQuery(captured.where as SQL).sql;
 
     const searchCond = await resolveArticleKeywordSql(

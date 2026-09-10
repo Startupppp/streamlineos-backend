@@ -5,7 +5,8 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { SignAuditService } from "./sign-audit.service";
 import { SignTokensService } from "./sign-tokens.service";
-import { mustGetVisibleEnvelope, type EnvelopeViewScope } from "./sign-envelope-scope";
+import { mustGetVisibleEnvelope } from "./sign-envelope-scope";
+import type { ScopedRead } from "../access/scoped-read";
 import { isEnvelopeEditable, isEnvelopeTerminal } from "./sign-state";
 import type { CreateRecipientInput, UpdateRecipientInput } from "./dto/e-sign.schemas";
 import type { RequestActorContext } from "../../common/audit/actor-context";
@@ -153,10 +154,10 @@ export class SignRecipientsService {
    * organization answers 404 rather than an empty 200 — an empty list would still
    * separate "this envelope has no recipients" from "this envelope is not yours".
    */
-  async listForEnvelope(orgId: string, envelopeId: number, scope: EnvelopeViewScope) {
-    await mustGetVisibleEnvelope(this.db, orgId, envelopeId, scope, "Envelope not found");
+  async listForEnvelope(read: ScopedRead, membershipId: number | null, envelopeId: number) {
+    await mustGetVisibleEnvelope(this.db, read, membershipId, envelopeId, "Envelope not found");
     return this.db.query.signRecipients.findMany({
-      where: and(eq(signRecipients.orgId, orgId), eq(signRecipients.envelopeId, envelopeId)),
+      where: and(eq(signRecipients.orgId, read.orgId), eq(signRecipients.envelopeId, envelopeId)),
       orderBy: (r, { asc }) => [asc(r.routingOrder), asc(r.id)],
       limit: 100,
     });

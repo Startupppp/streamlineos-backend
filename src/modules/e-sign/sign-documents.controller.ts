@@ -80,7 +80,7 @@ export class SignDocumentsController {
   @Validate({ params: envelopeIdParams })
   async list(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
     const scope = await resolveEnvelopeViewScope(this.access, u);
-    return this.documents.list(u.orgId, envelopeId, scope);
+    return this.documents.list(scope, actingMembershipId(u.principal), envelopeId);
   }
 
   @Get("documents/:documentId/preview")
@@ -89,7 +89,7 @@ export class SignDocumentsController {
   @Validate({ params: documentIdParams })
   async preview(@Param("documentId", ParseIntPipe) documentId: number, @CurrentUser() u: CurrentUserContext) {
     const scope = await resolveEnvelopeViewScope(this.access, u);
-    return this.documents.getPreviewUrl(u.orgId, documentId, scope);
+    return this.documents.getPreviewUrl(scope, actingMembershipId(u.principal), documentId);
   }
 
   @Delete("documents/:documentId")

@@ -1,17 +1,13 @@
-import type { DataScope } from "../access/access.types";
-import { eq, sql, type SQL } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
+import type { PgColumn } from "drizzle-orm/pg-core";
 import { feedbucketSubmissions } from "../../db/schema";
-import { applyScope } from "../access/apply-scope";
+import type { OwnershipScope } from "../access/scoped-read";
 
-export function applyFeedbucketScope(
-  scope: DataScope,
-  orgId: string,
-  userId: string,
-  membershipId: number | null,
-): SQL {
-  if (scope === "own")
-    return membershipId !== null
-      ? eq(feedbucketSubmissions.assigneeMembershipId, membershipId)
-      : sql`false`;
-  return applyScope(scope, orgId, userId, { ownerColumn: feedbucketSubmissions.assigneeMembershipId });
+/** `team` compares the membership column to the actor's USER id, a pre-existing mismatch inherited from the DataScope-era fallback; preserved as-is. */
+export function feedbucketScope(userId: string, membershipId: number | null): OwnershipScope {
+  const teamOwnerColumn: PgColumn = feedbucketSubmissions.assigneeMembershipId;
+  return {
+    own: membershipId !== null ? eq(feedbucketSubmissions.assigneeMembershipId, membershipId) : sql`false`,
+    team: eq(teamOwnerColumn, userId),
+  };
 }

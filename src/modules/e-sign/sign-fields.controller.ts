@@ -8,6 +8,7 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { actingMembershipId } from "../../common/auth/principal";
 import { Validate } from "../../common/validation/validate.decorator";
 import { AccessService } from "../access/access.service";
 import { SignFieldsService } from "./sign-fields.service";
@@ -51,7 +52,7 @@ export class SignFieldsController {
   @Validate({ params: envelopeIdParams })
   async list(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
     const scope = await resolveEnvelopeViewScope(this.access, u);
-    return this.fields.listForEnvelope(u.orgId, envelopeId, scope);
+    return this.fields.listForEnvelope(scope, actingMembershipId(u.principal), envelopeId);
   }
 
   @Patch("fields/:fieldId")

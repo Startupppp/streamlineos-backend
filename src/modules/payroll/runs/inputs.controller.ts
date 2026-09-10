@@ -56,8 +56,8 @@ export class InputsController {
     @Query() query: InputsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolvePayrollRunsViewScope(this.access, u);
-    const result = await this.inputsService.listInputs(u.orgId, runId, query, scope, u.userId, actingMembershipId(u.principal));
+    const read = await resolvePayrollRunsViewScope(this.access, u);
+    const result = await this.inputsService.listInputs(read, runId, query, actingMembershipId(u.principal));
     if (!result) throw new NotFoundException("Payroll run not found");
     return result;
   }

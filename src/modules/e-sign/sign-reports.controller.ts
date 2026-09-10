@@ -8,7 +8,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { actingMembershipId } from "../../common/auth/principal";
-import { readRequestScope } from "../organization/core/read-request-scope";
+import { readRequestScopedRead } from "../organization/core/read-request-scope";
 import { SignReportsService } from "./sign-reports.service";
 import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { signDashboardResponseSchema, signSummaryResponseSchema } from "./dto/e-sign-response.schemas";
@@ -23,9 +23,8 @@ export class SignReportsController {
   @RequirePermission("sign:envelope:view")
   @ResponseSchema(signDashboardResponseSchema)
   getDashboard(@CurrentUser() u: CurrentUserContext, @Req() req: Request) {
-    return this.reports.getDashboard(u.orgId, actingMembershipId(u.principal), {
-      viewAll: readRequestScope(req) === "all",
-    });
+    const read = readRequestScopedRead(req, u);
+    return this.reports.getDashboard(read, actingMembershipId(u.principal));
   }
 
   @Get("summary")

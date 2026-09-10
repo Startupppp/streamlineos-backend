@@ -10,8 +10,7 @@ import {
   users,
   workers,
 } from "../../../db/schema";
-import type { DataScope } from "../../access/access.types";
-import { applyScope } from "../../access/apply-scope";
+import type { ScopedRead } from "../../access/scoped-read";
 import type { ListProfilesQuery } from "./dto/runs.schemas";
 import { buildCursorPage } from "../../../common/pagination/cursor";
 import {
@@ -46,19 +45,12 @@ const SALARY_PROFILE_COLUMNS = {
 export class SalaryProfilesRepository {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async list(orgId: string, query: ListProfilesQuery, scope: DataScope, userId: string) {
-    const conditions = [
-      eq(employeeSalaryProfiles.orgId, orgId),
-      applyScope(scope, orgId, userId, { ownerColumn: employeeSalaryProfiles.userId }),
-      eq(employeeSalaryProfiles.status, query.status ?? "ACTIVE"),
-    ];
-    if (query.workerType) conditions.push(eq(employeeSalaryProfiles.workerType, query.workerType));
-    if (query.costCenter) conditions.push(eq(employeeSalaryProfiles.costCenter, query.costCenter));
+  async list(read: ScopedRead, query: ListProfilesQuery) {
+    const orgId = read.orgId;
     const cursorScope = [
       "salary-profiles",
       orgId,
-      scope,
-      userId,
+      read.discriminator,
       query.search ?? null,
       query.workerType ?? null,
       query.status ?? "ACTIVE",
@@ -76,12 +68,25 @@ export class SalaryProfilesRepository {
           ilike(organizationPeople.workEmail, `%${query.search}%`),
         )
       : undefined;
-    const finalConditions = search ? [...conditions, search] : conditions;
-    if (position) {
-      finalConditions.push(
-        sql`(${profileSortName}, ${employeeSalaryProfiles.id}) > (${sql.param(position.value)}, ${sql.param(position.id, employeeSalaryProfiles.id)})`,
-      );
-    }
+
+    const where = read.compose(
+      {
+        tenant: employeeSalaryProfiles.orgId,
+        scope: { columns: { ownerColumn: employeeSalaryProfiles.userId } },
+        and: [
+          eq(employeeSalaryProfiles.status, query.status ?? "ACTIVE"),
+          query.workerType ? eq(employeeSalaryProfiles.workerType, query.workerType) : undefined,
+          query.costCenter ? eq(employeeSalaryProfiles.costCenter, query.costCenter) : undefined,
+          search,
+          position
+            ? sql`(${profileSortName}, ${employeeSalaryProfiles.id}) > (${sql.param(position.value)}, ${sql.param(position.id, employeeSalaryProfiles.id)})`
+            : undefined,
+        ],
+      },
+      ({ sql: w }) => w,
+      () => sql`false`,
+    );
+
     const joins = (queryBuilder: ReturnType<Db["select"]>) =>
       queryBuilder
         .from(employeeSalaryProfiles)
@@ -106,7 +111,7 @@ export class SalaryProfilesRepository {
         sortName: profileSortName,
       }),
     )
-      .where(and(...finalConditions))
+      .where(where)
       .orderBy(asc(profileSortName), asc(employeeSalaryProfiles.id))
       .limit(query.limit + 1);
 

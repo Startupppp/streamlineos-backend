@@ -1,5 +1,6 @@
 import { ForbiddenException } from "@nestjs/common";
 import { PayrollSummaryService } from "./payroll-summary.service";
+import { ScopedRead } from "../../access/scoped-read";
 
 describe("PayrollSummaryService.getPeriodSummary scope gate", () => {
   const orgId = "org-1";
@@ -40,10 +41,8 @@ describe("PayrollSummaryService.getPeriodSummary scope gate", () => {
     const service = createService();
     await expect(
       service.getPeriodSummary(
-        orgId,
+        ScopedRead.of(orgId, actorUserId, "own"),
         { start: "2026-01-01", end: "2026-01-31", includeExported: false, userId: "other-user" },
-        "own",
-        actorUserId,
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });

@@ -68,8 +68,8 @@ export class PayrollController {
     @Query() query: PeriodSummaryQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolvePayrollScope(this.access, u);
-    return this.summary.getPeriodSummary(u.orgId, query, scope, u.userId);
+    const read = await resolvePayrollScope(this.access, u);
+    return this.summary.getPeriodSummary(read, query);
   }
 
   @Post("export")

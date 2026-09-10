@@ -20,7 +20,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { applyMembershipScope } from "../../timesheets/core/timesheets-core-scope";
+import { membershipScope } from "../../timesheets/core/timesheets-core-scope";
 import { canActOnPeriod } from "../../timesheets/core/lib/approval-guard";
 import { resolveTimesheetsScope } from "./timesheets-scope";
 import { formatDateOnly } from "../../../common/date";
@@ -81,15 +81,21 @@ export class TimesheetsService {
       if (!ticket) throw new NotFoundException("Ticket not found");
     }
 
-    const scope = await resolveTimesheetsScope(this.access, user);
+    const read = await resolveTimesheetsScope(this.access, user);
     const membershipId = actingMembershipId(user.principal);
 
     const conditions = [eq(timesheets.orgId, user.orgId)];
     if (query.ticketId)
       conditions.push(eq(timesheets.ticketId, query.ticketId));
-    conditions.push(applyMembershipScope(scope, membershipId, timesheets.userMembershipId));
+    conditions.push(
+      read.compose(
+        { tenant: timesheets.orgId, scope: membershipScope(membershipId, timesheets.userMembershipId) },
+        ({ sql: w }) => w,
+        () => sql`false`,
+      ),
+    );
 
-    if (query.userId && scope === "all") {
+    if (query.userId && read.discriminator === "all") {
       const [qMember] = await this.db
         .select({ id: organizationMembers.id })
         .from(organizationMembers)
@@ -297,8 +303,8 @@ export class TimesheetsService {
     const limit = query.limit;
     const cursorPredicate = timeEntryCursorPredicate(query.cursor);
 
-    const scope = await resolveTimesheetsScope(this.access, user);
-    if (scope === "none") {
+    const read = await resolveTimesheetsScope(this.access, user);
+    if (read.denied) {
       throw new ForbiddenException(
         "You do not have permission to view team timesheets",
       );
@@ -307,9 +313,13 @@ export class TimesheetsService {
     const membershipId = actingMembershipId(user.principal);
     const conditions = [
       eq(timesheets.orgId, user.orgId),
-      applyMembershipScope(scope, membershipId, timesheets.userMembershipId),
+      read.compose(
+        { tenant: timesheets.orgId, scope: membershipScope(membershipId, timesheets.userMembershipId) },
+        ({ sql: w }) => w,
+        () => sql`false`,
+      ),
     ];
-    if (query.userId && scope === "all") {
+    if (query.userId && read.discriminator === "all") {
       const [qMember] = await this.db
         .select({ id: organizationMembers.id })
         .from(organizationMembers)

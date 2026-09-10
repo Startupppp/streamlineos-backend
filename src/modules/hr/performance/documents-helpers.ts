@@ -1,26 +1,30 @@
-import { ForbiddenException } from "@nestjs/common";
-import { SQL, eq, sql } from "drizzle-orm";
+import { SQL, eq, or, sql } from "drizzle-orm";
 import { documents } from "../../../db/schema";
-import { applyScope } from "../../access/apply-scope";
-export { applyScope };
-import type { DataScope } from "../../access/access.types";
+import type { OwnershipScope } from "../../access/scoped-read";
 
 export function formatDateString(value: Date): string {
   return value.toISOString().split("T")[0];
 }
 
-export function documentOwnerPredicate(
-  scope: DataScope,
-  orgId: string,
-  userId: string,
+// `own` is the caller's membership row; `team` and `all` are keyed on the document's userId, which is what applyScope bound before.
+export function documentOwnerScope(
+  actorId: string,
   membershipId?: number | null,
-): SQL {
-  if (scope === "own") {
-    if (membershipId == null)
-      throw new ForbiddenException("Organization membership required.");
-    return eq(documents.userMembershipId, membershipId);
-  }
-  return applyScope(scope, orgId, userId, { ownerColumn: documents.userId });
+): { own: SQL; team: SQL } {
+  return {
+    own: membershipId == null ? sql`false` : eq(documents.userMembershipId, membershipId),
+    team: eq(documents.userId, actorId),
+  };
+}
+
+// A public document is readable by anyone who may read documents at all, so it widens the ownership arm rather than bypassing the scope.
+export function documentReadableScope(actorId: string, membershipId?: number | null): OwnershipScope {
+  const owner = documentOwnerScope(actorId, membershipId);
+  const isPublic = eq(documents.isPublic, true);
+  return {
+    own: or(isPublic, owner.own) ?? isPublic,
+    team: or(isPublic, owner.team) ?? isPublic,
+  };
 }
 
 export function documentCategoryCondition(category: string): SQL {

@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { hrDataRequests, organizationMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import type { DataScope } from "../access/access.types";
+import type { ScopedRead } from "../access/scoped-read";
 import {
   SYNC_EXPORT_CAP,
   fetchSyncAuditEntries,
@@ -18,18 +18,20 @@ export class GdprService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async exportSubjectData(
+    read: ScopedRead,
     subjectUserId: string,
-    callerUserId: string,
-    callerOrgId: string,
-    callerScope: DataScope,
   ): Promise<SubjectExportResult> {
-    if (callerScope === "none")
+    if (read.denied)
       throw new ForbiddenException("Export requires a resolved data scope");
 
-    if (subjectUserId !== callerUserId && callerScope !== "all")
+    const isAll =
+      read.rawScope("exporting another subject's data is an authorization gate on which subject may be read, not a row predicate") === "all";
+    if (subjectUserId !== read.actorId && !isAll)
       throw new ForbiddenException(
         "Exporting another person's data requires organisation-wide scope (hr:employees:view with all scope)",
       );
+
+    const callerOrgId = read.orgId;
 
     const memberships = await this.db
       .select({

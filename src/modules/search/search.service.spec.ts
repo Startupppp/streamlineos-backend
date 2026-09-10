@@ -6,7 +6,8 @@ import type { AccessResolver } from "../access/authorize";
 import type { DataScope } from "../access/access.types";
 import { moduleAvailabilityResolver } from "../../common/rbac/module-availability";
 import { isCoreModuleKey } from "../access/entitlements.service";
-import { resolveSearchAccess, SearchService } from "./search.service";
+import { resolveSearchAccess } from "./search-scope";
+import { SearchService } from "./search.service";
 import type { AccessService } from "../access/access.service";
 import type { CacheService } from "../../common/cache/cache.service";
 import type { Db } from "../../db/drizzle.module";
@@ -40,13 +41,12 @@ describe("resolveSearchAccess", () => {
         }),
     };
 
-    await expect(resolveSearchAccess(access, user)).resolves.toEqual({
-      leads: "own",
-      deals: null,
-      contacts: "team",
-      clients: null,
-      build: null,
-    });
+    const result = await resolveSearchAccess(access, user);
+    expect(result.leads?.rawScope("spec reads the resolved value")).toBe("own");
+    expect(result.deals).toBeNull();
+    expect(result.contacts?.rawScope("spec reads the resolved value")).toBe("team");
+    expect(result.clients).toBeNull();
+    expect(result.build).toBeNull();
   });
 
   it("does not expose disabled modules to an org owner", async () => {

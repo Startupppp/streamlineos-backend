@@ -82,8 +82,8 @@ export class AccountingPayablesReceivablesController {
     @Query() query: ListPurchaseBillsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveAccountingJournalViewScope(this.access, u);
-    return this.payables.listPurchaseBills(u.orgId, query, scope, actingMembershipId(u.principal));
+    const read = await resolveAccountingJournalViewScope(this.access, u);
+    return this.payables.listPurchaseBills(read, query, actingMembershipId(u.principal));
   }
 
   @Post("purchase-bills")

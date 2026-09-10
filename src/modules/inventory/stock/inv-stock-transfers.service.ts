@@ -1,7 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
-import { applyScope } from "../../access/apply-scope";
-import type { DataScope } from "../../access/access.types";
+import { ScopedRead } from "../../access/scoped-read";
 import { invStockTransfers, invStockTransferLines, invStockReservations, invStockTransactions } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -26,21 +25,21 @@ export class InvStockTransfersService {
     private readonly warehouseScope: WarehouseScopeService,
   ) {}
 
-  async listTransfers(orgId: string, filters: ListTransfersInput, scope: DataScope = "all", userId?: string) {
-    if (scope === "none") return { items: [], total: 0, page: filters.page, totalPages: 0 };
-
+  async listTransfers(read: ScopedRead, filters: ListTransfersInput) {
+    const orgId = read.orgId;
     const { status, warehouseId, fromWarehouseId, toWarehouseId, fromDate, toDate, search, page, limit } = filters;
     const offset = (page - 1) * limit;
-    const conditions: SQL[] = [eq(invStockTransfers.orgId, orgId)];
-    if (status) conditions.push(eq(invStockTransfers.status, status));
-    if (warehouseId) conditions.push(eq(invStockTransfers.fromWarehouseId, warehouseId));
-    if (fromWarehouseId) conditions.push(eq(invStockTransfers.fromWarehouseId, fromWarehouseId));
-    if (toWarehouseId) conditions.push(eq(invStockTransfers.toWarehouseId, toWarehouseId));
-    if (fromDate) conditions.push(gte(invStockTransfers.createdAt, new Date(fromDate)));
-    if (toDate) conditions.push(lte(invStockTransfers.createdAt, new Date(toDate)));
+    const domain: (SQL | undefined)[] = [
+      status ? eq(invStockTransfers.status, status) : undefined,
+      warehouseId ? eq(invStockTransfers.fromWarehouseId, warehouseId) : undefined,
+      fromWarehouseId ? eq(invStockTransfers.fromWarehouseId, fromWarehouseId) : undefined,
+      toWarehouseId ? eq(invStockTransfers.toWarehouseId, toWarehouseId) : undefined,
+      fromDate ? gte(invStockTransfers.createdAt, new Date(fromDate)) : undefined,
+      toDate ? lte(invStockTransfers.createdAt, new Date(toDate)) : undefined,
+    ];
     if (search) {
       const term = `%${search}%`;
-      conditions.push(
+      domain.push(
         sql`(
           ${invStockTransfers.referenceNumber} ILIKE ${term}
           OR ${invStockTransfers.notes} ILIKE ${term}
@@ -60,37 +59,41 @@ export class InvStockTransfersService {
         )`,
       );
     }
-    if (scope !== "all" && userId) {
-      conditions.push(applyScope(scope, orgId, userId, { ownerColumn: invStockTransfers.createdBy }));
-    }
-    if (userId) {
-      // A transfer is in scope only if BOTH ends are — seeing one leg would
-      // expose the counterpart warehouse's stock movement.
-      const warehouseScope = await this.warehouseScope.resolve(orgId, userId);
-      conditions.push(this.warehouseScope.locationPredicate(warehouseScope, sql`${invStockTransfers.fromLocationId}`));
-      conditions.push(this.warehouseScope.locationPredicate(warehouseScope, sql`${invStockTransfers.toLocationId}`));
-    }
-    const where = and(...conditions);
+    // A transfer is in scope only if BOTH ends are — seeing one leg would
+    // expose the counterpart warehouse's stock movement.
+    const warehouseScope = await this.warehouseScope.resolve(orgId, read.actorId);
+    domain.push(this.warehouseScope.locationPredicate(warehouseScope, sql`${invStockTransfers.fromLocationId}`));
+    domain.push(this.warehouseScope.locationPredicate(warehouseScope, sql`${invStockTransfers.toLocationId}`));
 
-    const [items, countResult] = await Promise.all([
-      this.db.query.invStockTransfers.findMany({
-        where,
-        orderBy: [desc(invStockTransfers.createdAt)],
-        limit,
-        offset,
-        with: {
-          fromLocation: { columns: { id: true, name: true, code: true } },
-          toLocation: { columns: { id: true, name: true, code: true } },
-          fromWarehouse: { columns: { id: true, name: true } },
-          toWarehouse: { columns: { id: true, name: true } },
-          creator: { columns: { id: true, name: true } },
-          lines: { with: { productVariant: { columns: { id: true, sku: true, name: true } } } },
-        },
-      }),
-      this.db.select({ count: sql<number>`count(*)::int` }).from(invStockTransfers).where(where),
-    ]);
+    return read.read(
+      {
+        tenant: invStockTransfers.orgId,
+        scope: { columns: { ownerColumn: invStockTransfers.createdBy } },
+        and: domain,
+      },
+      async ({ sql: where }) => {
+        const [items, countResult] = await Promise.all([
+          this.db.query.invStockTransfers.findMany({
+            where,
+            orderBy: [desc(invStockTransfers.createdAt)],
+            limit,
+            offset,
+            with: {
+              fromLocation: { columns: { id: true, name: true, code: true } },
+              toLocation: { columns: { id: true, name: true, code: true } },
+              fromWarehouse: { columns: { id: true, name: true } },
+              toWarehouse: { columns: { id: true, name: true } },
+              creator: { columns: { id: true, name: true } },
+              lines: { with: { productVariant: { columns: { id: true, sku: true, name: true } } } },
+            },
+          }),
+          this.db.select({ count: sql<number>`count(*)::int` }).from(invStockTransfers).where(where),
+        ]);
 
-    return { items, total: countResult[0]?.count ?? 0, page, totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit) };
+        return { items, total: countResult[0]?.count ?? 0, page, totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit) };
+      },
+      () => ({ items: [], total: 0, page, totalPages: 0 }),
+    );
   }
 
   getTransfer(orgId: string, transferId: number) {

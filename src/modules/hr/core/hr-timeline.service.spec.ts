@@ -2,6 +2,7 @@ import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { encodeCursor } from "../../../common/pagination/cursor";
 import * as applyScopeModule from "../../access/apply-scope";
 import { HrTimelineService } from "./hr-timeline.service";
+import { ScopedRead } from "../../access/scoped-read";
 
 function emptySelectDb() {
   const chain = {
@@ -29,7 +30,7 @@ describe("HrTimelineService employee scope", () => {
     const service = new HrTimelineService(db as never);
 
     await expect(
-      service.getEmploymentByUserId("org-1", "actor-1", "target-1", "team"),
+      service.getEmploymentByUserId(ScopedRead.of("org-1", "actor-1", "team"), "target-1"),
     ).rejects.toBeInstanceOf(NotFoundException);
 
     expect(scopeSpy).toHaveBeenCalledWith(
@@ -47,7 +48,7 @@ describe("HrTimelineService employee scope", () => {
     const service = new HrTimelineService(db as never);
 
     await expect(
-      service.getTimeline("org-1", "actor-1", 42, "own", { limit: 20 }),
+      service.getTimeline(ScopedRead.of("org-1", "actor-1", "own"), 42, { limit: 20 }),
     ).rejects.toBeInstanceOf(NotFoundException);
 
     expect(scopeSpy).toHaveBeenCalledWith(
@@ -123,10 +124,8 @@ describe("HrTimelineService employee scope", () => {
     const service = new HrTimelineService(db as never);
 
     const result = await service.getTimeline(
-      "org-1",
-      "actor-1",
+      ScopedRead.of("org-1", "actor-1", "all"),
       42,
-      "all",
       { limit: 2 },
     );
 
@@ -188,15 +187,13 @@ describe("HrTimelineService employee scope", () => {
     const service = new HrTimelineService(db as never);
 
     const firstPage = await service.getTimeline(
-      "org-1",
-      "actor-1",
+      ScopedRead.of("org-1", "actor-1", "all"),
       42,
-      "all",
       { limit: 1 },
     );
 
     await expect(
-      service.getTimeline("org-1", "actor-1", 99, "all", {
+      service.getTimeline(ScopedRead.of("org-1", "actor-1", "all"), 99, {
         limit: 1,
         cursor: firstPage.pageInfo.nextCursor ?? undefined,
       }),
@@ -229,10 +226,8 @@ describe("HrTimelineService employee scope", () => {
     const service = new HrTimelineService(db as never);
 
     const firstPage = await service.getHistory(
-      "org-1",
-      "actor-1",
+      ScopedRead.of("org-1", "actor-1", "all"),
       42,
-      "all",
       "manager",
       { limit: 1 },
     );
@@ -243,10 +238,8 @@ describe("HrTimelineService employee scope", () => {
     expect(firstPage.pagination).toMatchObject({ limit: 1, hasMore: true });
     await expect(
       service.getHistory(
-        "org-1",
-        "actor-1",
+        ScopedRead.of("org-1", "actor-1", "all"),
         42,
-        "all",
         "department",
         { limit: 1, cursor: firstPage.pagination.nextCursor ?? undefined },
       ),
@@ -263,7 +256,7 @@ describe("HrTimelineService employee scope", () => {
     });
 
     await expect(
-      service.getHistory("org-1", "actor-1", 42, "all", "manager", {
+      service.getHistory(ScopedRead.of("org-1", "actor-1", "all"), 42, "manager", {
         limit: 20,
         cursor,
       }),

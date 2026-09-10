@@ -58,11 +58,12 @@ describe("ToolAccessService", () => {
       ],
     }).compile();
     const toolSvc = m.get(ToolAccessService);
-    const scope = await toolSvc.scope("org1", "actorId", "build:tickets:view");
-    expect(scope).toBe("own");
+    const read = await toolSvc.scope("org1", "actorId", "build:tickets:view");
+    expect(read.rawScope("spec reads the resolved value")).toBe("own");
+    expect(read.unrestricted).toBe(false);
     const targetUserId: string = "differentUser";
     const actorId: string = "actorId";
-    const denied = scope === "own" && targetUserId !== actorId;
+    const denied = !read.unrestricted && targetUserId !== actorId;
     expect(denied).toBe(true);
   });
 });

@@ -1,30 +1,43 @@
-import { type SQL } from "drizzle-orm";
-import { applyFeedbucketScope } from "./feedbucket-scope";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
+import { FeedbucketSubmissionsService } from "./feedbucket-submissions.service";
+import { ScopedRead } from "../access/scoped-read";
 
-function isSqlLiteral(s: SQL, literal: string): boolean {
-  const first: unknown = s.queryChunks[0];
-  if (first == null || typeof first !== "object" || !("value" in first)) return false;
-  const value = (first as { value: unknown }).value;
-  if (!Array.isArray(value)) return false;
-  return (value as unknown[])[0] === literal;
+const dialect = new PgDialect();
+const ORG = "org-a";
+const userId = "user-stats";
+
+function makeDb(sink: { where?: SQL }) {
+  const chain = {
+    select: () => chain,
+    from: () => chain,
+    where: (w: SQL) => {
+      sink.where = w;
+      return chain;
+    },
+    groupBy: () => Promise.resolve([]),
+  };
+  return chain as never;
 }
 
-function isSqlFalse(s: SQL): boolean {
-  return s.queryChunks.length === 1 && isSqlLiteral(s, "false");
-}
+describe("FeedbucketSubmissionsService.stats scope application", () => {
+  it("stats aggregate must not use an unrestricted predicate when only team is granted", async () => {
+    const sink: { where?: SQL } = {};
+    const service = new FeedbucketSubmissionsService(makeDb(sink));
 
-function isSqlTrue(s: SQL): boolean {
-  return s.queryChunks.length === 1 && isSqlLiteral(s, "true");
-}
+    await service.stats(ScopedRead.of(ORG, userId, "team"), null);
 
-describe("feedbucket stats scope adapter", () => {
-  const userId = "user-stats";
-
-  it("stats aggregate must not use unscoped all when team is granted", () => {
-    expect(isSqlTrue(applyFeedbucketScope("team", "org-a", userId, null))).toBe(false);
+    const rendered = dialect.sqlToQuery(sink.where as SQL).sql;
+    expect(rendered).not.toBe("true");
   });
 
-  it("stats aggregate must deny none scope", () => {
-    expect(isSqlFalse(applyFeedbucketScope("none", "org-a", userId, null))).toBe(true);
+  it("stats aggregate must deny none scope outright, never reaching the database", async () => {
+    const sink: { where?: SQL } = {};
+    const service = new FeedbucketSubmissionsService(makeDb(sink));
+
+    const result = await service.stats(ScopedRead.of(ORG, userId, "none"), null);
+
+    expect(sink.where).toBeUndefined();
+    expect(result).toEqual({ byStatus: {}, byType: {} });
   });
 });

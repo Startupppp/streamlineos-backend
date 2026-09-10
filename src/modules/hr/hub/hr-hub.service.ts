@@ -109,7 +109,7 @@ export class HrHubService {
       ),
       this.capture(capabilities.canDocuments, async () => {
         const scope = await resolveDocumentsScope(this.access, user, permissions);
-        return this.documents.stats(user.orgId, user.userId, scope);
+        return this.documents.stats(scope);
       }),
       this.capture(capabilities.canAttendanceView, () =>
         this.holidays.listByYear(user.orgId, year),

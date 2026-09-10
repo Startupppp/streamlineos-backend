@@ -10,8 +10,7 @@ import { assetReturns, employeeDevices, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { formatDateOnly } from "../../../common/date";
-import type { DataScope } from "../../access/access.types";
-import { applyScope } from "../../access/apply-scope";
+import type { ScopedRead } from "../../access/scoped-read";
 import type {
   CreateAssetReturnInput,
   CreateDeviceInput,
@@ -23,28 +22,36 @@ import type {
 export class AssetsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async listAssetReturns(orgId: string, userId: string, scope: DataScope) {
-    const rows = await this.db
-      .select({
-        id: assetReturns.id,
-        orgId: assetReturns.orgId,
-        userId: assetReturns.userId,
-        assetId: assetReturns.assetId,
-        assetName: assetReturns.assetName,
-        status: assetReturns.status,
-        returnedAt: assetReturns.returnedAt,
-        condition: assetReturns.condition,
-        notes: assetReturns.notes,
-        createdAt: assetReturns.createdAt,
-        userFirstName: users.firstName,
-        userLastName: users.lastName,
-        userEmail: users.email,
-      })
-      .from(assetReturns)
-      .leftJoin(users, eq(assetReturns.userId, users.id))
-      .where(and(eq(assetReturns.orgId, orgId), applyScope(scope, orgId, userId, { ownerColumn: assetReturns.userId })))
-      .orderBy(desc(assetReturns.createdAt))
-      .limit(100);
+  async listAssetReturns(read: ScopedRead) {
+    const rows = await read.read(
+      {
+        tenant: assetReturns.orgId,
+        scope: { columns: { ownerColumn: assetReturns.userId } },
+      },
+      ({ sql: where }) =>
+        this.db
+          .select({
+            id: assetReturns.id,
+            orgId: assetReturns.orgId,
+            userId: assetReturns.userId,
+            assetId: assetReturns.assetId,
+            assetName: assetReturns.assetName,
+            status: assetReturns.status,
+            returnedAt: assetReturns.returnedAt,
+            condition: assetReturns.condition,
+            notes: assetReturns.notes,
+            createdAt: assetReturns.createdAt,
+            userFirstName: users.firstName,
+            userLastName: users.lastName,
+            userEmail: users.email,
+          })
+          .from(assetReturns)
+          .leftJoin(users, eq(assetReturns.userId, users.id))
+          .where(where)
+          .orderBy(desc(assetReturns.createdAt))
+          .limit(100),
+      () => [],
+    );
 
     const assetType: string | null = null;
     const serialNumber: string | null = null;

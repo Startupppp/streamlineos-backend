@@ -11,7 +11,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { actingMembershipId } from "../../common/auth/principal";
 import { Validate } from "../../common/validation/validate.decorator";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
-import { readRequestScope } from "../organization/core/read-request-scope";
+import { readRequestScopedRead } from "../organization/core/read-request-scope";
 import { SignEnvelopesService } from "./sign-envelopes.service";
 import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import {
@@ -69,8 +69,8 @@ export class SignEnvelopesController {
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
-    const viewAll = readRequestScope(req) === "all";
-    return this.envelopes.list(u.orgId, query, { membershipId: actingMembershipId(u.principal), viewAll });
+    const read = readRequestScopedRead(req, u);
+    return this.envelopes.list(read, actingMembershipId(u.principal), query);
   }
 
   @Get(":envelopeId")
@@ -82,8 +82,8 @@ export class SignEnvelopesController {
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
-    const viewAll = readRequestScope(req) === "all";
-    return this.envelopes.getFull(u.orgId, envelopeId, { membershipId: actingMembershipId(u.principal), viewAll });
+    const read = readRequestScopedRead(req, u);
+    return this.envelopes.getFull(read, actingMembershipId(u.principal), envelopeId);
   }
 
   @Patch(":envelopeId")

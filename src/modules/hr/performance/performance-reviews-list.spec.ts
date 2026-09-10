@@ -5,6 +5,7 @@ import type { SQL } from "drizzle-orm";
 import { PerformanceReviewsService } from "./performance-reviews.service";
 import { listPerformanceReviewsSchema } from "./dto/performance.schemas";
 import { encodeCursor } from "../../../common/pagination/cursor";
+import { ScopedRead } from "../../access/scoped-read";
 
 const dialect = new PgDialect();
 
@@ -70,7 +71,7 @@ describe("PerformanceReviewsService.listReviews — scope is a predicate, not a 
   it("denies a caller with no scope in SQL rather than reading rows first", async () => {
     const { service, captured } = buildService([]);
 
-    await service.listReviews("org-1", "actor-1", "none", query());
+    await service.listReviews(ScopedRead.of("org-1", "actor-1", "none"), query());
 
     expect(whereSql(captured).sql).toContain("false");
   });
@@ -78,7 +79,7 @@ describe("PerformanceReviewsService.listReviews — scope is a predicate, not a 
   it("binds an own-scope caller to their own reviews", async () => {
     const { service, captured } = buildService([]);
 
-    await service.listReviews("org-1", "actor-1", "own", query());
+    await service.listReviews(ScopedRead.of("org-1", "actor-1", "own"), query());
 
     const built = whereSql(captured);
     expect(built.sql).toContain('"performance_reviews"."user_id" =');
@@ -89,9 +90,7 @@ describe("PerformanceReviewsService.listReviews — scope is a predicate, not a 
     const { service, captured } = buildService([]);
 
     await service.listReviews(
-      "org-1",
-      "actor-1",
-      "own",
+      ScopedRead.of("org-1", "actor-1", "own"),
       query({ userId: "someone-else" }),
     );
 
@@ -103,7 +102,7 @@ describe("PerformanceReviewsService.listReviews — scope is a predicate, not a 
   it("always scopes to the caller's organization", async () => {
     const { service, captured } = buildService([]);
 
-    await service.listReviews("org-1", "actor-1", "all", query());
+    await service.listReviews(ScopedRead.of("org-1", "actor-1", "all"), query());
 
     const built = whereSql(captured);
     expect(built.sql).toContain('"performance_reviews"."org_id" =');
@@ -115,7 +114,7 @@ describe("PerformanceReviewsService.listReviews — keyset pagination", () => {
   it("over-fetches by exactly one row to decide hasMore without a second count", async () => {
     const { service, captured } = buildService([]);
 
-    await service.listReviews("org-1", "actor-1", "all", query({ limit: 25 }));
+    await service.listReviews(ScopedRead.of("org-1", "actor-1", "all"), query({ limit: 25 }));
 
     expect(captured.limit).toBe(26);
   });
@@ -123,7 +122,7 @@ describe("PerformanceReviewsService.listReviews — keyset pagination", () => {
   it("orders by the requested sort and the unique tie-breaker", async () => {
     const { service, captured } = buildService([]);
 
-    await service.listReviews("org-1", "actor-1", "all", query());
+    await service.listReviews(ScopedRead.of("org-1", "actor-1", "all"), query());
 
     expect(captured.orderBy).toHaveLength(2);
     const rendered = captured.orderBy!.map((part) => dialect.sqlToQuery(part as SQL).sql);
@@ -135,7 +134,7 @@ describe("PerformanceReviewsService.listReviews — keyset pagination", () => {
     const { service, captured } = buildService([]);
     const cursor = encodeCursor({ sortValue: "2026-08-20T09:00:00.000Z", id: "412" });
 
-    await service.listReviews("org-1", "actor-1", "all", query({ cursor }));
+    await service.listReviews(ScopedRead.of("org-1", "actor-1", "all"), query({ cursor }));
 
     const built = whereSql(captured);
     expect(built.sql).toContain(
@@ -150,9 +149,7 @@ describe("PerformanceReviewsService.listReviews — keyset pagination", () => {
     const cursor = encodeCursor({ sortValue: "2026-01-01", id: "412" });
 
     await service.listReviews(
-      "org-1",
-      "actor-1",
-      "all",
+      ScopedRead.of("org-1", "actor-1", "all"),
       query({ cursor, sortField: "periodStart" }),
     );
 
@@ -169,9 +166,7 @@ describe("PerformanceReviewsService.listReviews — keyset pagination", () => {
     const { service } = buildService(rows);
 
     const page = await service.listReviews(
-      "org-1",
-      "actor-1",
-      "all",
+      ScopedRead.of("org-1", "actor-1", "all"),
       query({ limit: 2 }),
     );
 
@@ -186,9 +181,7 @@ describe("PerformanceReviewsService.listReviews — keyset pagination", () => {
     const { service } = buildService([row(10, 0), row(9, 60)]);
 
     const page = await service.listReviews(
-      "org-1",
-      "actor-1",
-      "all",
+      ScopedRead.of("org-1", "actor-1", "all"),
       query({ limit: 2 }),
     );
 

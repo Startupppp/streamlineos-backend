@@ -5,7 +5,7 @@ import {
   NotFoundException,
   Optional,
 } from "@nestjs/common";
-import { and, desc, eq, isNotNull, notInArray, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, isNotNull, notInArray, sql } from "drizzle-orm";
 import { keysetBefore } from "../../common/pagination/keyset";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
@@ -18,8 +18,7 @@ import {
 } from "../../db/schema";
 import type { DecisionKind } from "../../db/schema/crm/autonomous-decisions";
 import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
-import { applyScope } from "../access/apply-scope";
-import type { DataScope, ScopePredicate } from "../access/access.types";
+import type { ScopedRead } from "../access/scoped-read";
 import { AutonomyReversalService } from "./autonomy-reversal.service";
 import { AutonomyHoldService } from "./autonomy-hold.service";
 import { resolveSwitch, switchesFor, type SwitchRow } from "./kill-switch";
@@ -37,37 +36,38 @@ export class AutonomyReviewService {
     private readonly holds?: AutonomyHoldService,
   ) {}
 
-  async listDecisions(
-    organizationId: string,
-    userId: string,
-    query: ListDecisionsQuery,
-    scope: DataScope,
-  ) {
+  async listDecisions(read: ScopedRead, query: ListDecisionsQuery) {
     const { limit, cursor, kind, outcome, partyId, dealId, assignedToId, reversedOnly, includeRoutine } = query;
     const position = decodeCursor(cursor);
+    const toPosition = (row: { decidedAt: Date; autonomousDecisionId: string }) => ({
+      sortValue: row.decidedAt.toISOString(),
+      id: row.autonomousDecisionId,
+    });
+    if (read.denied) return buildCursorPage([], limit, toPosition);
 
-    const filters: (SQL | undefined)[] = [
-      eq(autonomousDecisions.organizationId, organizationId),
-      kind ? eq(autonomousDecisions.kind, kind) : undefined,
-      outcome ? eq(autonomousDecisions.outcome, outcome) : undefined,
-      partyId ? eq(autonomousDecisions.partyId, partyId) : undefined,
-      dealId ? eq(autonomousDecisions.dealId, dealId) : undefined,
-      reversedOnly ? isNotNull(autonomousDecisions.reversedAt) : undefined,
-      assignedToId ? eq(deals.assignedToId, assignedToId) : undefined,
-      !includeRoutine && !kind
-        ? notInArray(autonomousDecisions.kind, [...ROUTINE_KINDS])
-        : undefined,
-      this.scopePredicate(scope, organizationId, userId),
-    ];
-
-    const conditions = and(...filters.filter((c): c is SQL => c !== undefined));
+    const where = read.compose(
+      {
+        tenant: autonomousDecisions.organizationId,
+        scope: { columns: { ownerColumn: deals.assignedToId } },
+        and: [
+          kind ? eq(autonomousDecisions.kind, kind) : undefined,
+          outcome ? eq(autonomousDecisions.outcome, outcome) : undefined,
+          partyId ? eq(autonomousDecisions.partyId, partyId) : undefined,
+          dealId ? eq(autonomousDecisions.dealId, dealId) : undefined,
+          reversedOnly ? isNotNull(autonomousDecisions.reversedAt) : undefined,
+          assignedToId ? eq(deals.assignedToId, assignedToId) : undefined,
+          !includeRoutine && !kind
+            ? notInArray(autonomousDecisions.kind, [...ROUTINE_KINDS])
+            : undefined,
+        ],
+      },
+      ({ sql: w }) => w,
+      () => sql`false`,
+    );
 
     const keyset = position
-      ? and(
-          conditions,
-          keysetBefore(autonomousDecisions.decidedAt, autonomousDecisions.autonomousDecisionId, position),
-        )
-      : conditions;
+      ? and(where, keysetBefore(autonomousDecisions.decidedAt, autonomousDecisions.autonomousDecisionId, position))
+      : where;
 
     const rows = await this.db
       .select({
@@ -110,15 +110,7 @@ export class AutonomyReviewService {
       .orderBy(desc(autonomousDecisions.decidedAt), desc(autonomousDecisions.autonomousDecisionId))
       .limit(limit + 1);
 
-    return buildCursorPage(rows, limit, (row) => ({
-      sortValue: row.decidedAt.toISOString(),
-      id: row.autonomousDecisionId,
-    }));
-  }
-
-  private scopePredicate(scope: DataScope, organizationId: string, userId: string): ScopePredicate | undefined {
-    if (scope === "all") return undefined;
-    return applyScope(scope, organizationId, userId, { ownerColumn: deals.assignedToId });
+    return buildCursorPage(rows, limit, toPosition);
   }
 
   async getDecision(organizationId: string, decisionId: string) {

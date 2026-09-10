@@ -5,7 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { collectRescheduledOccurrences, loadExceptionsByEvent } from "./calendar-exception-loader";
 import { expandToOccurrences } from "./calendar-occurrence.service";
-import type { DataScope } from "../access/access.types";
+import type { ScopedRead } from "../access/scoped-read";
 
 const EXPORT_ROW_CAP = 500;
 const EXPORT_RANGE_CAP_MS = 366 * 24 * 60 * 60 * 1000;
@@ -43,16 +43,17 @@ interface ExportedEvent {
 export class CalendarExportService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async exportEvents(orgId: string, userId: string, from: Date, to: Date, scope: DataScope = "all"): Promise<ExportedEvent[]> {
-    if (scope === "none") return [];
+  async exportEvents(read: ScopedRead, from: Date, to: Date): Promise<ExportedEvent[]> {
+    if (read.denied) return [];
     if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()) || from > to) throw new BadRequestException("Invalid calendar export range");
     if (to.getTime() - from.getTime() > EXPORT_RANGE_CAP_MS) throw new BadRequestException("Calendar export range cannot exceed 366 days");
 
+    const orgId = read.orgId;
     const membership = await this.db.query.organizationMembers.findFirst({
       columns: { id: true },
       where: and(
         eq(organizationMembers.orgId, orgId),
-        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.userId, read.actorId),
         eq(organizationMembers.status, "ACTIVE"),
       ),
     });
@@ -64,30 +65,12 @@ export class CalendarExportService {
       attendedByExporter(callerMembershipId),
     );
 
-    const scopeClause =
-      scope === "own"
-        ? eq(calendarEvents.createdByMembershipId, callerMembershipId)
-        : sql`true`;
-
-    const rows = await this.db
-      .select({
-        id: calendarEvents.id,
-        title: calendarEvents.title,
-        startDate: calendarEvents.startDate,
-        endDate: calendarEvents.endDate,
-        allDay: calendarEvents.allDay,
-        timezone: calendarEvents.timezone,
-        category: calendarEvents.category,
-        location: calendarEvents.location,
-        description: calendarEvents.description,
-        color: calendarEvents.color,
-        rrule: calendarEvents.rrule,
-        recurrenceEnd: calendarEvents.recurrenceEnd,
-      })
-      .from(calendarEvents)
-      .where(
-        and(
-          eq(calendarEvents.orgId, orgId),
+    const rows = await read.read(
+      {
+        tenant: calendarEvents.orgId,
+        // `team` is unrestricted here, same as `all` — a pre-existing quirk, preserved as-is.
+        scope: { own: eq(calendarEvents.createdByMembershipId, callerMembershipId), team: sql`true` },
+        and: [
           or(
             and(
               isNull(calendarEvents.rrule),
@@ -104,11 +87,30 @@ export class CalendarExportService {
             ),
           ),
           visibilityClause,
-          scopeClause,
-        ),
-      )
-      .orderBy(asc(calendarEvents.startDate))
-      .limit(EXPORT_ROW_CAP);
+        ],
+      },
+      async ({ sql: where }) =>
+        this.db
+          .select({
+            id: calendarEvents.id,
+            title: calendarEvents.title,
+            startDate: calendarEvents.startDate,
+            endDate: calendarEvents.endDate,
+            allDay: calendarEvents.allDay,
+            timezone: calendarEvents.timezone,
+            category: calendarEvents.category,
+            location: calendarEvents.location,
+            description: calendarEvents.description,
+            color: calendarEvents.color,
+            rrule: calendarEvents.rrule,
+            recurrenceEnd: calendarEvents.recurrenceEnd,
+          })
+          .from(calendarEvents)
+          .where(where)
+          .orderBy(asc(calendarEvents.startDate))
+          .limit(EXPORT_ROW_CAP),
+      () => [],
+    );
 
     if (rows.length === 0) return [];
 

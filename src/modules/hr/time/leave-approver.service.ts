@@ -4,23 +4,15 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { organizationMembers, users } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
+import { leaveApproverRead } from "./leaves-scope";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
 
 const LEAVE_APPROVE_PERMISSION = "hr:leaves:approve";
 const APPROVER_CANDIDATE_LIMIT = 100;
 
-/**
- * Only an `all` scope reaches a member other than the holder. `own` and `none`
- * exclude a different subject by definition, and `team` was resolved by a probe
- * that passed no team column, so `applyScope` degraded to `member.user_id =
- * candidate` and the surrounding WHERE already pinned `member.user_id = subject`
- * — a contradiction for every candidate the caller does not skip, and therefore
- * one guaranteed-empty round trip per candidate. Deciding what `team` should mean
- * for leave approval is a product question; running the query is not an answer.
- */
-function coversAnotherMember(scope: DataScope): boolean {
-  return scope === "all";
+function coversAnotherMember(read: ScopedRead): boolean {
+  return read.unrestricted;
 }
 
 export interface LeaveApprover {
@@ -60,7 +52,9 @@ export class LeaveApproverService {
 
     const [subjectFacts, holders] = await Promise.all([
       this.employment.getFacts(orgId, subjectUserId),
-      this.access.membersWithPermission(orgId, LEAVE_APPROVE_PERMISSION, { limit: APPROVER_CANDIDATE_LIMIT }),
+      this.access.membersWithPermission(orgId, LEAVE_APPROVE_PERMISSION, {
+        limit: APPROVER_CANDIDATE_LIMIT,
+      }),
     ]);
 
     const candidateIds = [
@@ -96,12 +90,18 @@ export class LeaveApproverService {
 
     const candidateById = new Map(candidateRows.map((row) => [row.id, row]));
 
-    const idsToCheck = uniqueCandidateIds.filter(id => id !== subjectUserId);
+    const idsToCheck = uniqueCandidateIds.filter((id) => id !== subjectUserId);
     if (idsToCheck.length === 0) return null;
 
     for (const candidateId of idsToCheck) {
-      const permissions = await this.access.resolveUserPermissions(orgId, candidateId);
-      if (!coversAnotherMember(permissions.get(LEAVE_APPROVE_PERMISSION) ?? "none")) continue;
+      const permissions = await this.access.resolveUserPermissions(
+        orgId,
+        candidateId,
+      );
+      if (
+        !coversAnotherMember(leaveApproverRead(orgId, candidateId, permissions))
+      )
+        continue;
 
       const candidate = candidateById.get(candidateId);
       if (candidate) {

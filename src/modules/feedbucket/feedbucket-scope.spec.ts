@@ -1,38 +1,48 @@
 import { type SQL } from "drizzle-orm";
-import { applyFeedbucketScope } from "./feedbucket-scope";
+import { PgDialect } from "drizzle-orm/pg-core";
+import { feedbucketSubmissions } from "../../db/schema";
+import { ScopedRead } from "../access/scoped-read";
+import { feedbucketScope } from "./feedbucket-scope";
 
-function isSqlLiteral(s: SQL, literal: string): boolean {
-  const first: unknown = s.queryChunks[0];
-  if (first == null || typeof first !== "object" || !("value" in first)) return false;
-  const value = (first as { value: unknown }).value;
-  if (!Array.isArray(value)) return false;
-  return (value as unknown[])[0] === literal;
+const dialect = new PgDialect();
+
+function renderArm(userId: string, membershipId: number | null, arm: "own" | "team"): string {
+  const shape = feedbucketScope(userId, membershipId);
+  const sqlValue = shape[arm] as SQL;
+  return dialect.sqlToQuery(sqlValue).sql;
 }
 
-function isSqlFalse(s: SQL): boolean {
-  return s.queryChunks.length === 1 && isSqlLiteral(s, "false");
-}
-
-function isSqlTrue(s: SQL): boolean {
-  return s.queryChunks.length === 1 && isSqlLiteral(s, "true");
-}
-
-describe("applyFeedbucketScope", () => {
+describe("feedbucketScope", () => {
   const userId = "user-abc";
 
-  it("returns sql`false` for none scope", () => {
-    expect(isSqlFalse(applyFeedbucketScope("none", "org-a", userId, null))).toBe(true);
+  it("own arm denies when there is no membership to bind", () => {
+    expect(renderArm(userId, null, "own")).toBe("false");
   });
 
-  it("returns sql`true` for all scope", () => {
-    expect(isSqlTrue(applyFeedbucketScope("all", "org-a", userId, null))).toBe(true);
+  it("own arm matches the caller's membership id, not the user id", () => {
+    const shape = feedbucketScope(userId, 42);
+    const query = dialect.sqlToQuery(shape.own as SQL);
+    expect(query.sql).toContain('"assignee_membership_id"');
+    expect(query.params).toContain(42);
+    expect(query.params).not.toContain(userId);
   });
 
-  it("does not widen team scope to every row", () => {
-    expect(isSqlTrue(applyFeedbucketScope("team", "org-a", userId, null))).toBe(false);
+  it("team arm compares the membership column to the actor's user id — a pre-existing mismatch, preserved as-is", () => {
+    const query = dialect.sqlToQuery(feedbucketScope(userId, null).team as SQL);
+    expect(query.sql).toContain('"assignee_membership_id"');
+    expect(query.params).toContain(userId);
   });
 
-  it("does not widen own scope to every row", () => {
-    expect(isSqlTrue(applyFeedbucketScope("own", "org-a", userId, null))).toBe(false);
+  it("composes through ScopedRead: all is unrestricted, none is denied", () => {
+    const ORG = "org-a";
+    const spec = { tenant: feedbucketSubmissions.orgId, scope: feedbucketScope(userId, null) };
+    expect(ScopedRead.of(ORG, userId, "none").denied).toBe(true);
+
+    const allSql = ScopedRead.of(ORG, userId, "all").compose(
+      spec,
+      ({ sql: where }) => dialect.sqlToQuery(where).sql,
+      () => "denied",
+    );
+    expect(allSql).toContain("true");
   });
 });

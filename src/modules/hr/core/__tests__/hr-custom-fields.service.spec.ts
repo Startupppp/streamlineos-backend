@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { HrCustomFieldsService } from "../hr-custom-fields.service";
+import { ScopedRead } from "../../../access/scoped-read";
 
 const ALL_SCOPE = "all" as const;
 const OWN_SCOPE = "own" as const;
@@ -73,7 +74,7 @@ describe("HrCustomFieldsService — validation on write", () => {
 
     const svc = makeSvc(db);
     await expect(
-      svc.upsertEntityValues("org-1", "user-1", ALL_SCOPE, "employee", "99", {
+      svc.upsertEntityValues(ScopedRead.of("org-1", "user-1", ALL_SCOPE), "employee", "99", {
         values: [{ fieldDefinitionId: 2, value: "not-a-number" }],
       }, false),
     ).rejects.toBeInstanceOf(BadRequestException);
@@ -90,7 +91,7 @@ describe("HrCustomFieldsService — validation on write", () => {
 
     const svc = makeSvc(db);
     await expect(
-      svc.upsertEntityValues("org-1", "user-1", ALL_SCOPE, "employee", "99", {
+      svc.upsertEntityValues(ScopedRead.of("org-1", "user-1", ALL_SCOPE), "employee", "99", {
         values: [{ fieldDefinitionId: 1, value: "yes" }],
       }, false),
     ).rejects.toBeInstanceOf(BadRequestException);
@@ -108,7 +109,7 @@ describe("HrCustomFieldsService — validation on write", () => {
 
     const svc = makeSvc(db);
     await expect(
-      svc.upsertEntityValues("org-1", "user-1", ALL_SCOPE, "employee", "99", {
+      svc.upsertEntityValues(ScopedRead.of("org-1", "user-1", ALL_SCOPE), "employee", "99", {
         values: [{ fieldDefinitionId: 1, value: null }],
       }, false),
     ).rejects.toBeInstanceOf(BadRequestException);
@@ -126,7 +127,7 @@ describe("HrCustomFieldsService — validation on write", () => {
 
     const svc = makeSvc(db);
     await expect(
-      svc.upsertEntityValues("org-1", "user-1", ALL_SCOPE, "employee", "99", {
+      svc.upsertEntityValues(ScopedRead.of("org-1", "user-1", ALL_SCOPE), "employee", "99", {
         values: [{ fieldDefinitionId: 3, value: "not-a-date" }],
       }, false),
     ).rejects.toBeInstanceOf(BadRequestException);
@@ -145,7 +146,7 @@ describe("HrCustomFieldsService — unknown key rejection", () => {
 
     const svc = makeSvc(db);
     await expect(
-      svc.upsertEntityValues("org-1", "user-1", ALL_SCOPE, "employee", "99", {
+      svc.upsertEntityValues(ScopedRead.of("org-1", "user-1", ALL_SCOPE), "employee", "99", {
         values: [{ fieldDefinitionId: 999, value: true }],
       }, false),
     ).rejects.toBeInstanceOf(BadRequestException);
@@ -163,7 +164,7 @@ describe("HrCustomFieldsService — unknown key rejection", () => {
 
     const svc = makeSvc(db);
     await expect(
-      svc.upsertEntityValues("org-1", "user-1", ALL_SCOPE, "employee", "99", {
+      svc.upsertEntityValues(ScopedRead.of("org-1", "user-1", ALL_SCOPE), "employee", "99", {
         values: [{ fieldDefinitionId: 1, value: true }],
       }, false),
     ).rejects.toBeInstanceOf(ForbiddenException);
@@ -177,9 +178,7 @@ describe("HrCustomFieldsService — containment filtering", () => {
 
     const svc = makeSvc(db);
     const ids = await svc.filterByCustomField(
-      "org-1",
-      "user-1",
-      ALL_SCOPE,
+      ScopedRead.of("org-1", "user-1", ALL_SCOPE),
       "employee",
       "joining_bonus",
       true,
@@ -194,9 +193,7 @@ describe("HrCustomFieldsService — containment filtering", () => {
 
     const svc = makeSvc(db);
     const ids = await svc.filterByCustomField(
-      "org-1",
-      "user-1",
-      ALL_SCOPE,
+      ScopedRead.of("org-1", "user-1", ALL_SCOPE),
       "employee",
       "joining_bonus",
       null,
@@ -211,9 +208,7 @@ describe("HrCustomFieldsService — containment filtering", () => {
 
     const svc = makeSvc(db);
     const ids = await svc.filterByCustomField(
-      "org-1",
-      "user-1",
-      ALL_SCOPE,
+      ScopedRead.of("org-1", "user-1", ALL_SCOPE),
       "employee",
       "joining_bonus",
       undefined,
@@ -228,9 +223,7 @@ describe("HrCustomFieldsService — containment filtering", () => {
 
     const svc = makeSvc(db);
     const ids = await svc.filterByCustomField(
-      "org-1",
-      "user-1",
-      ALL_SCOPE,
+      ScopedRead.of("org-1", "user-1", ALL_SCOPE),
       "employee",
       "joining_bonus",
       false,
@@ -247,7 +240,7 @@ describe("HrCustomFieldsService — scope enforcement", () => {
 
     const svc = makeSvc(db);
     await expect(
-      svc.getEntityValues("org-1", "user-1", OWN_SCOPE, "employee", "99", false),
+      svc.getEntityValues(ScopedRead.of("org-1", "user-1", OWN_SCOPE), "employee", "99", false),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -257,7 +250,7 @@ describe("HrCustomFieldsService — scope enforcement", () => {
 
     const svc = makeSvc(db);
     await expect(
-      svc.upsertEntityValues("org-other", "user-1", ALL_SCOPE, "employee", "99", {
+      svc.upsertEntityValues(ScopedRead.of("org-other", "user-1", ALL_SCOPE), "employee", "99", {
         values: [{ fieldDefinitionId: 1, value: true }],
       }, false),
     ).rejects.toBeInstanceOf(NotFoundException);
@@ -282,9 +275,7 @@ describe("HrCustomFieldsService — successful JSONB read", () => {
 
     const svc = makeSvc(db);
     const result = await svc.getEntityValues(
-      "org-1",
-      "user-1",
-      ALL_SCOPE,
+      ScopedRead.of("org-1", "user-1", ALL_SCOPE),
       "employee",
       "99",
       false,
@@ -312,7 +303,7 @@ describe("HrCustomFieldsService — successful JSONB read", () => {
     };
 
     const svc = makeSvc(db);
-    const result = await svc.getEntityValues("org-1", "user-1", ALL_SCOPE, "employee", "99", false);
+    const result = await svc.getEntityValues(ScopedRead.of("org-1", "user-1", ALL_SCOPE), "employee", "99", false);
 
     expect(result[0]?.value).toBe("[REDACTED]");
   });
@@ -333,7 +324,7 @@ describe("HrCustomFieldsService — successful JSONB read", () => {
     };
 
     const svc = makeSvc(db);
-    const result = await svc.getEntityValues("org-1", "user-1", ALL_SCOPE, "employee", "99", false);
+    const result = await svc.getEntityValues(ScopedRead.of("org-1", "user-1", ALL_SCOPE), "employee", "99", false);
 
     expect(result[0]?.value).toBeNull();
     expect(result[1]?.value).toBeUndefined();
@@ -354,7 +345,7 @@ describe("HrCustomFieldsService — successful JSONB write", () => {
     };
 
     const svc = makeSvc(db);
-    await svc.upsertEntityValues("org-1", "user-1", ALL_SCOPE, "employee", "99", {
+    await svc.upsertEntityValues(ScopedRead.of("org-1", "user-1", ALL_SCOPE), "employee", "99", {
       values: [{ fieldDefinitionId: 1, value: true }],
     }, false);
 

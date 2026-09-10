@@ -36,7 +36,7 @@ export async function queueAttendanceEmailReport(
   input: AttendanceEmailReportInput,
 ): Promise<{ queued: number }> {
   const scope = await resolveAttendanceScope(access, u);
-  if (scope === "none") {
+  if (scope.denied) {
     throw new ForbiddenException("You do not have permission to email attendance reports.");
   }
   const actorMembershipId = await requireOrganizationMembershipId(db, u.orgId, u.userId);
@@ -101,36 +101,38 @@ export async function queueAttendanceEmailReport(
     );
   }
 
-  const rows = await db
-    .select({
-      userId: organizationMembers.userId,
-      userName: sql<string>`coalesce(${users.name}, ${users.email}, 'Unknown')`,
-      totalHours: sql<string>`coalesce(sum(${attendance.workHours}), 0)`,
-      autoCheckoutDays: sql<number>`count(*) filter (where ${attendance.autoCheckedOut} = true)::integer`,
-      overtimeDays: sql<number>`count(*) filter (where ${attendance.isOvertime} = true)::integer`,
-      daysPresent: sql<number>`count(*) filter (where ${attendance.checkIn} is not null)::integer`,
-    })
-    .from(attendance)
-    .innerJoin(
-      organizationMembers,
-      and(
-        eq(organizationMembers.orgId, attendance.orgId),
-        eq(organizationMembers.id, attendance.userMembershipId),
-        eq(organizationMembers.status, "ACTIVE"),
-      ),
-    )
-    .innerJoin(users, eq(users.id, organizationMembers.userId))
-    .where(
-      and(
-        eq(attendance.orgId, u.orgId),
-        gte(attendance.date, startDate),
-        lte(attendance.date, endDate),
-        attendanceMemberScope(scope, actorMembershipId),
-      ),
-    )
-    .groupBy(organizationMembers.userId, users.name, users.email)
-    .orderBy(asc(users.name), asc(organizationMembers.userId))
-    .limit(ATTENDANCE_REPORT_ROW_LIMIT + 1);
+  const rows = await scope.read(
+    {
+      tenant: attendance.orgId,
+      scope: attendanceMemberScope(actorMembershipId),
+      and: [gte(attendance.date, startDate), lte(attendance.date, endDate)],
+    },
+    ({ sql: where }) =>
+      db
+        .select({
+          userId: organizationMembers.userId,
+          userName: sql<string>`coalesce(${users.name}, ${users.email}, 'Unknown')`,
+          totalHours: sql<string>`coalesce(sum(${attendance.workHours}), 0)`,
+          autoCheckoutDays: sql<number>`count(*) filter (where ${attendance.autoCheckedOut} = true)::integer`,
+          overtimeDays: sql<number>`count(*) filter (where ${attendance.isOvertime} = true)::integer`,
+          daysPresent: sql<number>`count(*) filter (where ${attendance.checkIn} is not null)::integer`,
+        })
+        .from(attendance)
+        .innerJoin(
+          organizationMembers,
+          and(
+            eq(organizationMembers.orgId, attendance.orgId),
+            eq(organizationMembers.id, attendance.userMembershipId),
+            eq(organizationMembers.status, "ACTIVE"),
+          ),
+        )
+        .innerJoin(users, eq(users.id, organizationMembers.userId))
+        .where(where)
+        .groupBy(organizationMembers.userId, users.name, users.email)
+        .orderBy(asc(users.name), asc(organizationMembers.userId))
+        .limit(ATTENDANCE_REPORT_ROW_LIMIT + 1),
+    () => [],
+  );
 
   if (rows.length > ATTENDANCE_REPORT_ROW_LIMIT) {
     throw new PayloadTooLargeException(
@@ -147,7 +149,7 @@ export async function queueAttendanceEmailReport(
     targetType: "attendance_report",
     result: "SUCCESS",
     metadata: {
-      dataScope: scope,
+      dataScope: scope.rawScope("audit trail records the resolved data scope value, not a row predicate"),
       startDate,
       endDate,
       employeeCount: rows.length,

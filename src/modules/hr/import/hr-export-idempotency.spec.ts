@@ -83,6 +83,7 @@ function serviceWith(existing: HrExportJobRow) {
     audit as never,
     {} as never,
     {} as never,
+    {} as never,
   );
   return { service, audit };
 }

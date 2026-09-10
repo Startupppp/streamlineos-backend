@@ -2,6 +2,7 @@ import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../../db/drizzle.module";
 import { CrmInboxService } from "../crm-inbox.service";
 import type { CrmInboxQueriesService } from "../crm-inbox-queries.service";
+import { ScopedRead } from "../../../access/scoped-read";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (
@@ -53,13 +54,15 @@ function makeQueriesDep(): CrmInboxQueriesService {
 const ATTACKER_ORG = "org-attacker-crm-inbox";
 const VICTIM_ORG = "org-victim-crm-inbox";
 
+const readAs = (orgId: string) => ScopedRead.of(orgId, "user-x", "all");
+
 describe("CrmInboxService — cross-tenant isolation", () => {
   it("snoozeTask throws NotFoundException when task not found in the requesting org (cross-tenant probe = 404 not 403)", async () => {
     const { db } = makeSelectDb([]);
     const svc = new CrmInboxService(db, makeQueriesDep());
 
     await expect(
-      svc.snoozeTask(ATTACKER_ORG, 999, "user-x", { until: new Date(Date.now() + 60_000).toISOString() }, "all"),
+      svc.snoozeTask(readAs(ATTACKER_ORG), 999, { until: new Date(Date.now() + 60_000).toISOString() }),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -68,7 +71,7 @@ describe("CrmInboxService — cross-tenant isolation", () => {
     const svc = new CrmInboxService(db, makeQueriesDep());
 
     await expect(
-      svc.snoozeTask(ATTACKER_ORG, 42, "user-x", { until: new Date(Date.now() + 60_000).toISOString() }, "all"),
+      svc.snoozeTask(readAs(ATTACKER_ORG), 42, { until: new Date(Date.now() + 60_000).toISOString() }),
     ).rejects.toBeInstanceOf(NotFoundException);
 
     expect(where).toHaveBeenCalled();
@@ -82,7 +85,7 @@ describe("CrmInboxService — cross-tenant isolation", () => {
     const svc = new CrmInboxService(db, makeQueriesDep());
 
     await expect(
-      svc.completeTask(ATTACKER_ORG, 777, "user-x", "all"),
+      svc.completeTask(readAs(ATTACKER_ORG), 777),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -91,7 +94,7 @@ describe("CrmInboxService — cross-tenant isolation", () => {
     const svc = new CrmInboxService(db, makeQueriesDep());
 
     await expect(
-      svc.completeTask(ATTACKER_ORG, 55, "user-x", "all"),
+      svc.completeTask(readAs(ATTACKER_ORG), 55),
     ).rejects.toBeInstanceOf(NotFoundException);
 
     expect(where).toHaveBeenCalled();

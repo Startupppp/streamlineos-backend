@@ -5,8 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { applyScope } from "../../access/apply-scope";
-import type { DataScope } from "../../access/access.types";
+import { ScopedRead } from "../../access/scoped-read";
 import {
   invProductVariants,
   invSalesOrders,
@@ -55,59 +54,52 @@ export class SoCoreService {
     private readonly lifecycle: SoLifecycleService,
   ) {}
 
-  async listSos(
-    orgId: string,
-    filters: ListSoInput,
-    scope: DataScope = "all",
-    userId?: string,
-  ) {
-    if (scope === "none") return { items: [], total: 0, page: filters.page, totalPages: 0 };
-
+  async listSos(read: ScopedRead, filters: ListSoInput) {
+    const orgId = read.orgId;
     const { status, clientId, page, limit } = filters;
     const offset = (page - 1) * limit;
-    const scopeSuffix = scope !== "all" ? `:${scope}:${userId ?? ""}` : "";
-    const hash = `${status ?? ""}:${clientId ?? ""}:${limit}:${offset}${scopeSuffix}`;
+    const hash = `${status ?? ""}:${clientId ?? ""}:${limit}:${offset}:${read.discriminator}`;
 
     return this.cache.cachedVersioned(
       CACHE_KEYS.invSoNamespace(orgId),
       hash,
-      async () => {
-        const conditions = [eq(invSalesOrders.orgId, orgId)];
-        if (status) conditions.push(eq(invSalesOrders.status, status));
-        if (clientId) conditions.push(eq(invSalesOrders.clientId, clientId));
-        if (scope !== "all" && userId) {
-          conditions.push(
-            applyScope(scope, orgId, userId, {
-              ownerColumn: invSalesOrders.createdBy,
-            }),
-          );
-        }
-        const where = and(...conditions);
+      () =>
+        read.read(
+          {
+            tenant: invSalesOrders.orgId,
+            scope: { columns: { ownerColumn: invSalesOrders.createdBy } },
+            and: [
+              status ? eq(invSalesOrders.status, status) : undefined,
+              clientId ? eq(invSalesOrders.clientId, clientId) : undefined,
+            ],
+          },
+          async ({ sql: where }) => {
+            const [items, countResult] = await Promise.all([
+              this.db.query.invSalesOrders.findMany({
+                where,
+                orderBy: [desc(invSalesOrders.createdAt)],
+                limit,
+                offset,
+                with: {
+                  client: { columns: { id: true, name: true } },
+                  creator: { columns: { id: true, name: true } },
+                },
+              }),
+              this.db
+                .select({ count: sql<number>`count(*)::int` })
+                .from(invSalesOrders)
+                .where(where),
+            ]);
 
-        const [items, countResult] = await Promise.all([
-          this.db.query.invSalesOrders.findMany({
-            where,
-            orderBy: [desc(invSalesOrders.createdAt)],
-            limit,
-            offset,
-            with: {
-              client: { columns: { id: true, name: true } },
-              creator: { columns: { id: true, name: true } },
-            },
-          }),
-          this.db
-            .select({ count: sql<number>`count(*)::int` })
-            .from(invSalesOrders)
-            .where(where),
-        ]);
-
-        return {
-          items,
-          total: countResult[0]?.count ?? 0,
-          page,
-          totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit),
-        };
-      },
+            return {
+              items,
+              total: countResult[0]?.count ?? 0,
+              page,
+              totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit),
+            };
+          },
+          () => ({ items: [], total: 0, page, totalPages: 0 }),
+        ),
       CACHE_TTL.SHORT,
     );
   }

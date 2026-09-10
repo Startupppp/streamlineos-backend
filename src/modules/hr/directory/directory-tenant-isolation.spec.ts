@@ -19,6 +19,7 @@ import { EmployeesService } from "./employees.service";
 import { EmployeeAnalyticsService } from "./employee-analytics.service";
 import { OrgStructureService } from "./org-structure.service";
 import { TeamEventsService } from "./team-events.service";
+import { ScopedRead } from "../../access/scoped-read";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -228,7 +229,7 @@ describe("CelebrationsService — cross-tenant isolation", () => {
     const { db, where } = makeDb([]);
     const cache = makeCacheMock();
     const svc = new CelebrationsService(db as never, cache as never);
-    await svc.getAnniversaryFeed(ATTACKER, "actor-1", "all");
+    await svc.getAnniversaryFeed(ScopedRead.of(ATTACKER, "actor-1", "all"));
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
   });
@@ -238,7 +239,7 @@ describe("CelebrationsService — cross-tenant isolation", () => {
     const { db, where } = makeDb([memberRow]);
     const cache = makeCacheMock();
     const svc = new CelebrationsService(db as never, cache as never);
-    await svc.getAnniversaryFeed(OWNER, "actor-1", "all");
+    await svc.getAnniversaryFeed(ScopedRead.of(OWNER, "actor-1", "all"));
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
   });
@@ -257,7 +258,7 @@ describe("EmployeeMutationsService — cross-tenant isolation", () => {
     const svc = new EmployeeMutationsService(
       db as never, cache as never, audit as never, hrAutomation as never, access as never, employment as never,
     );
-    const result = await svc.getEmployeeDetail(ATTACKER, "actor-1", "target-1", "all");
+    const result = await svc.getEmployeeDetail(ScopedRead.of(ATTACKER, "actor-1", "all"), "target-1");
     expect(result).toBeNull();
     expect(findFirst).toHaveBeenCalled();
     const call = findFirst.mock.calls[0]?.[0] as { where?: unknown } | undefined;
@@ -288,7 +289,7 @@ describe("EmployeeMutationsService — cross-tenant isolation", () => {
     const svc = new EmployeeMutationsService(
       db as never, cache as never, audit as never, hrAutomation as never, access as never, employment as never,
     );
-    const result = await svc.getEmployeeDetail(OWNER, "actor-1", "target-1", "all");
+    const result = await svc.getEmployeeDetail(ScopedRead.of(OWNER, "actor-1", "all"), "target-1");
     expect(result).not.toBeNull();
     const call = findFirst.mock.calls[0]?.[0] as { where?: unknown } | undefined;
     expect(sqlValues(call?.where)).toContain(OWNER);
@@ -301,7 +302,7 @@ describe("EmployeeSkillsService — cross-tenant isolation", () => {
   it("scopes expert search to the requesting org (DENY — cross-tenant isolation)", async () => {
     const { db, where } = makeDb([]);
     const svc = new EmployeeSkillsService(db as never);
-    await svc.findExpert(ATTACKER, "actor-1", { skill: "TypeScript" } as never, "all");
+    await svc.findExpert(ScopedRead.of(ATTACKER, "actor-1", "all"), { skill: "TypeScript" } as never);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
   });
@@ -311,7 +312,7 @@ describe("EmployeeSkillsService — cross-tenant isolation", () => {
   it("scopes expert search to the owning org (CONTROL)", async () => {
     const { db, where } = makeDb([]);
     const svc = new EmployeeSkillsService(db as never);
-    await svc.findExpert(OWNER, "actor-1", { skill: "TypeScript" } as never, "all");
+    await svc.findExpert(ScopedRead.of(OWNER, "actor-1", "all"), { skill: "TypeScript" } as never);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
   });
@@ -351,10 +352,10 @@ describe("OrgStructureService — cross-tenant isolation", () => {
     const cache = makeCacheMock();
     const employment = makeEmploymentFactsMock();
     const svc = new OrgStructureService(db as never, cache as never, employment as never, undefined as never);
-    await svc.getDirectory(ATTACKER, "actor-1", "all");
+    await svc.getDirectory(ScopedRead.of(ATTACKER, "actor-1", "all"));
     // The org predicate lives in the innerJoin condition:
     // innerJoin(organizationMembers, and(eq(userId, users.id), eq(orgId, orgId)))
-    // applyScope("all") returns sql`true`, so `where` contains no orgId.
+    // ScopedRead also asserts tenant in the WHERE clause itself.
     expect(innerJoin).toHaveBeenCalled();
     expect(sqlValues(innerJoin.mock.calls[0]?.[1])).toContain(ATTACKER);
   });
@@ -366,7 +367,7 @@ describe("OrgStructureService — cross-tenant isolation", () => {
     const cache = makeCacheMock();
     const employment = makeEmploymentFactsMock();
     const svc = new OrgStructureService(db as never, cache as never, employment as never, undefined as never);
-    await svc.getDirectory(OWNER, "actor-1", "all");
+    await svc.getDirectory(ScopedRead.of(OWNER, "actor-1", "all"));
     expect(innerJoin).toHaveBeenCalled();
     expect(sqlValues(innerJoin.mock.calls[0]?.[1])).toContain(OWNER);
   });

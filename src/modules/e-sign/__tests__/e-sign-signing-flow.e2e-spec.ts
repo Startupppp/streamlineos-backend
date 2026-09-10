@@ -17,7 +17,7 @@ import { SignRecipientsService } from "../sign-recipients.service";
 import { SignFieldsService } from "../sign-fields.service";
 import { SignPublicService } from "../sign-public.service";
 import { SignFinalizationService } from "../sign-finalization.service";
-import { SYSTEM_ENVELOPE_SCOPE } from "../sign-envelope-scope";
+import { systemEnvelopeScope } from "../sign-envelope-scope";
 import { SignAuditService } from "../sign-audit.service";
 import { SignTokensService } from "../sign-tokens.service";
 import { SignWatermarkService } from "../sign-watermark.service";
@@ -253,7 +253,7 @@ describe("SignOS signing flow integration (e2e)", () => {
     expect(finalizedEnvelope.finalPdfFileKey).toBeTruthy();
     expect(finalizedEnvelope.finalPdfHash).toBeTruthy();
 
-    const events = await inOrg(() => auditSvc.listForEnvelope(ORG_ID, envelope.id, SYSTEM_ENVELOPE_SCOPE));
+    const events = await inOrg(() => auditSvc.listForEnvelope(systemEnvelopeScope(ORG_ID), null, envelope.id));
     const eventTypes = new Set<string>(events.map((e) => e.eventType));
     for (const expected of [
       "envelope_created",
@@ -303,7 +303,7 @@ describe("SignOS signing flow integration (e2e)", () => {
     const declinedEnvelope = await inOrg(() => envelopesSvc.mustGet(ORG_ID, envelope.id));
     expect(declinedEnvelope.status).toBe("declined");
 
-    const events = await inOrg(() => auditSvc.listForEnvelope(ORG_ID, envelope.id, SYSTEM_ENVELOPE_SCOPE));
+    const events = await inOrg(() => auditSvc.listForEnvelope(systemEnvelopeScope(ORG_ID), null, envelope.id));
     expect(events.some((e) => e.eventType === "recipient_declined")).toBe(true);
 
     await expect(publicSvc.complete(token, {})).rejects.toThrow(ForbiddenException);

@@ -61,12 +61,10 @@ export class HrEmploymentsController {
     @Query() query: ListEmploymentsInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const scope = await resolveEmployeesScope(this.access, currentUser);
+    const read = await resolveEmployeesScope(this.access, currentUser);
     return this.employeeRecordLists.listEmploymentsCursor(
-      currentUser.orgId,
-      currentUser.userId,
+      read,
       { cursor: query.cursor, limit: query.limit },
-      scope,
     );
   }
 
@@ -79,13 +77,8 @@ export class HrEmploymentsController {
     @Param("employmentId", ParseIntPipe) employmentId: number,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const scope = await resolveEmployeesScope(this.access, currentUser);
-    return this.employments.getOne(
-      currentUser.orgId,
-      currentUser.userId,
-      employmentId,
-      scope,
-    );
+    const read = await resolveEmployeesScope(this.access, currentUser);
+    return this.employments.getOne(read, employmentId);
   }
 
   @Post()

@@ -4,8 +4,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
-import { applyScope } from "../../access/apply-scope";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import {
   organizationMembers,
   performanceImprovementPlans,
@@ -21,24 +20,25 @@ import type {
 export class PerformancePipsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listPips(orgId: string, userId: string, scope: DataScope) {
-    const conditions = [
-      eq(performanceImprovementPlans.orgId, orgId),
-      applyScope(scope, orgId, userId, {
-        ownerColumn: performanceImprovementPlans.userId,
-      }),
-    ];
-
-    return this.db.query.performanceImprovementPlans.findMany({
-      where: and(...conditions),
-      with: {
-        user: { columns: { id: true, name: true, image: true } },
-        manager: { columns: { id: true, name: true } },
-        hrRep: { columns: { id: true, name: true } },
+  listPips(read: ScopedRead) {
+    return read.read(
+      {
+        tenant: performanceImprovementPlans.orgId,
+        scope: { columns: { ownerColumn: performanceImprovementPlans.userId } },
       },
-      orderBy: [desc(performanceImprovementPlans.createdAt)],
-      limit: 100,
-    });
+      ({ sql: where }) =>
+        this.db.query.performanceImprovementPlans.findMany({
+          where,
+          with: {
+            user: { columns: { id: true, name: true, image: true } },
+            manager: { columns: { id: true, name: true } },
+            hrRep: { columns: { id: true, name: true } },
+          },
+          orderBy: [desc(performanceImprovementPlans.createdAt)],
+          limit: 100,
+        }),
+      () => [],
+    );
   }
 
   async createPip(orgId: string, managerId: string, input: CreatePipInput) {

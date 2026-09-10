@@ -5,6 +5,7 @@ import * as applyScopeModule from "../../access/apply-scope";
 import { HrEmployeeRecordListsService } from "./hr-employee-record-lists.service";
 import { HrEmploymentsService } from "./hr-employments.service";
 import { HrPeopleService } from "./hr-people.service";
+import { ScopedRead } from "../../access/scoped-read";
 
 function detailDb() {
   const chain = {
@@ -43,7 +44,7 @@ describe("legacy HR employee read scope", () => {
     const service = new HrPeopleService(db as never, undefined as never);
 
     await expect(
-      service.getOne("org-1", "actor-1", 17, "own"),
+      service.getOne(ScopedRead.of("org-1", "actor-1", "own"), 17),
     ).rejects.toBeInstanceOf(NotFoundException);
 
     expect(scopeSpy).toHaveBeenCalledWith(
@@ -60,7 +61,7 @@ describe("legacy HR employee read scope", () => {
     const service = new HrEmploymentsService(db as never, undefined as never);
 
     await expect(
-      service.getOne("org-1", "actor-1", 29, "team"),
+      service.getOne(ScopedRead.of("org-1", "actor-1", "team"), 29),
     ).rejects.toBeInstanceOf(NotFoundException);
 
     expect(scopeSpy).toHaveBeenCalledWith(
@@ -77,14 +78,12 @@ describe("legacy HR employee read scope", () => {
     const service = new HrEmployeeRecordListsService(db as never);
 
     await service.listPeopleCursor(
-      "org-1",
-      "actor-1",
+      ScopedRead.of("org-1", "actor-1", "own"),
       { limit: 20 },
-      "none",
     );
 
     expect(scopeSpy).toHaveBeenCalledWith(
-      "none",
+      "own",
       "org-1",
       "actor-1",
       expect.objectContaining({ ownerColumn: expect.anything() }),
@@ -96,16 +95,32 @@ describe("legacy HR employee read scope", () => {
     expect(selected).not.toHaveProperty("emergencyContact");
   });
 
+  it("denies the people list before touching the database when scope=none", async () => {
+    const { db } = listDb();
+    const scopeSpy = jest.spyOn(applyScopeModule, "applyScope");
+    const service = new HrEmployeeRecordListsService(db as never);
+
+    const result = await service.listPeopleCursor(
+      ScopedRead.of("org-1", "actor-1", "none"),
+      { limit: 20 },
+    );
+
+    expect(scopeSpy).not.toHaveBeenCalled();
+    expect(db.select).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      data: [],
+      pageInfo: { limit: 20, hasMore: false, nextCursor: null },
+    });
+  });
+
   it("scopes the employment cursor path without an exact-count query", async () => {
     const { db } = listDb();
     const scopeSpy = jest.spyOn(applyScopeModule, "applyScope");
     const service = new HrEmployeeRecordListsService(db as never);
 
     const result = await service.listEmploymentsCursor(
-      "org-1",
-      "actor-1",
+      ScopedRead.of("org-1", "actor-1", "own"),
       { limit: 20 },
-      "own",
     );
 
     expect(scopeSpy).toHaveBeenCalledWith(

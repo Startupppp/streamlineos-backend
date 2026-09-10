@@ -3,8 +3,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { goals, keyResults, organizationMembers } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { applyScope } from "../../access/apply-scope";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import { formatDateOnly } from "../../../common/date";
 import type {
   CreateGoalInput,
@@ -37,18 +36,25 @@ export class PerformanceGoalsService {
     return { goals: myGoals, keyResults: allKeyResults };
   }
 
-  listGoals(orgId: string, userId: string, scope: DataScope, filterUserId?: string) {
-    const conditions = [eq(goals.orgId, orgId)];
-    conditions.push(applyScope(scope, orgId, userId, { ownerColumn: goals.userId }));
-    if (filterUserId && scope === "all") {
-      conditions.push(eq(goals.userId, filterUserId));
-    }
-
-    return this.db.query.goals.findMany({
-      where: and(...conditions),
-      orderBy: [desc(goals.createdAt)],
-      limit: 100,
-    });
+  listGoals(read: ScopedRead, filterUserId?: string) {
+    return read.read(
+      {
+        tenant: goals.orgId,
+        scope: { columns: { ownerColumn: goals.userId } },
+        and: [
+          filterUserId && read.unrestricted
+            ? eq(goals.userId, filterUserId)
+            : undefined,
+        ],
+      },
+      ({ sql: where }) =>
+        this.db.query.goals.findMany({
+          where,
+          orderBy: [desc(goals.createdAt)],
+          limit: 100,
+        }),
+      () => [],
+    );
   }
 
   async createGoal(orgId: string, input: CreateGoalInput) {

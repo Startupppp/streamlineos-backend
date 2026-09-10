@@ -1,5 +1,5 @@
 import { PgDialect } from "drizzle-orm/pg-core";
-import { getTableName, type SQL } from "drizzle-orm";
+import { getTableName, type SQL, sql } from "drizzle-orm";
 import { KbCitationVisibilityService } from "./kb-citation-visibility.service";
 import { KbAskService } from "./kb-ask.service";
 import { KbSearchService } from "./kb-search.service";
@@ -178,7 +178,7 @@ describe("KbAskService — citation re-verification re-applies the article-restr
     jest.spyOn(search, "retrieveTopArticles").mockResolvedValue(retrieved);
     jest.spyOn(search, "retrieveTopSources").mockResolvedValue([]);
     jest.spyOn(search, "retrieveAttachmentSnippets").mockResolvedValue("");
-    jest.spyOn(search, "articleOwnerFilterFor").mockResolvedValue(null);
+    jest.spyOn(search, "articleOwnerFilterFor").mockResolvedValue(sql`true`);
 
     const ask = new KbAskService(
       db as never,

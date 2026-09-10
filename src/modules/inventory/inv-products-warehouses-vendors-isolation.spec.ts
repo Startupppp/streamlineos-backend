@@ -1,6 +1,7 @@
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { ScopedRead } from "../access/scoped-read";
 import { InvProductCrudService } from "./products/inv-product-crud.service";
 import { InvProductCatalogService } from "./products/inv-product-catalog.service";
 import { InvVendorsService } from "./vendors/inv-vendors.service";
@@ -98,7 +99,7 @@ describe("InvProductCrudService — cross-tenant isolation", () => {
       ],
     }).compile().then((m) => m.get(InvProductCrudService));
 
-    const result = await svc.listProducts(ATTACKER, { page: 1, limit: 20 });
+    const result = await svc.listProducts(ScopedRead.of(ATTACKER, "user-1", "all"), { page: 1, limit: 20 });
     expect(result.items).toHaveLength(0);
     const firstArg = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
     expect(sqlValues(firstArg?.where)).toContain(ATTACKER);
@@ -116,7 +117,7 @@ describe("InvProductCrudService — cross-tenant isolation", () => {
       ],
     }).compile().then((m) => m.get(InvProductCrudService));
 
-    const result = await svc.listProducts(OWNER, { page: 1, limit: 20 });
+    const result = await svc.listProducts(ScopedRead.of(OWNER, "user-1", "all"), { page: 1, limit: 20 });
     expect(result.items).toHaveLength(1);
   });
 });

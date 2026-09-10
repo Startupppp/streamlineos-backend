@@ -3,12 +3,15 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
 import { auditLogs, organizationMembers, users } from "../../db/schema";
+import { ScopedRead } from "../access/scoped-read";
 import { GdprService } from "./gdpr.service";
 
 const CALLER_ORG = "org-caller";
 const OTHER_ORG = "org-other";
 const SUBJECT = "user-subject";
 const CALLER = "user-caller";
+
+const readAs = (scope: "none" | "own" | "team" | "all") => ScopedRead.of(CALLER_ORG, CALLER, scope);
 
 function renderedWhere(condition: unknown): string {
   return new PgDialect().sqlToQuery(condition as SQL).sql;
@@ -35,7 +38,7 @@ describe("GdprService.exportSubjectData tenant isolation", () => {
     const service = new GdprService(db);
 
     await expect(
-      service.exportSubjectData(SUBJECT, CALLER, CALLER_ORG, "none"),
+      service.exportSubjectData(readAs("none"), SUBJECT),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
@@ -44,7 +47,7 @@ describe("GdprService.exportSubjectData tenant isolation", () => {
     const service = new GdprService(db);
 
     await expect(
-      service.exportSubjectData(SUBJECT, CALLER, CALLER_ORG, "own"),
+      service.exportSubjectData(readAs("own"), SUBJECT),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
@@ -53,7 +56,7 @@ describe("GdprService.exportSubjectData tenant isolation", () => {
     const service = new GdprService(db);
 
     await expect(
-      service.exportSubjectData(SUBJECT, CALLER, CALLER_ORG, "all"),
+      service.exportSubjectData(readAs("all"), SUBJECT),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -62,7 +65,7 @@ describe("GdprService.exportSubjectData tenant isolation", () => {
     const service = new GdprService(db);
 
     await service
-      .exportSubjectData(SUBJECT, CALLER, CALLER_ORG, "all")
+      .exportSubjectData(readAs("all"), SUBJECT)
       .catch(() => null);
 
     expect(captured.length).toBeGreaterThan(0);
@@ -74,7 +77,7 @@ describe("GdprService.exportSubjectData tenant isolation", () => {
     const service = new GdprService(db);
 
     const result = await service
-      .exportSubjectData(SUBJECT, CALLER, CALLER_ORG, "all")
+      .exportSubjectData(readAs("all"), SUBJECT)
       .catch(() => null);
 
     if (result !== null)
@@ -114,7 +117,7 @@ describe("GdprService.exportSubjectData — G3: sync export cap and truncation n
 
   it("reports a truncation notice in exportIncomplete when audit entries exceed the 500-row cap", async () => {
     const service = new GdprService(makeOverflowDb());
-    const result = await service.exportSubjectData(SUBJECT, SUBJECT, CALLER_ORG, "all");
+    const result = await service.exportSubjectData(ScopedRead.of(CALLER_ORG, SUBJECT, "all"), SUBJECT);
 
     expect(result.auditEntries).toHaveLength(500);
     expect(result.exportIncomplete.some((s) => s.includes("audit_logs") && s.includes("truncated"))).toBe(true);
@@ -122,7 +125,7 @@ describe("GdprService.exportSubjectData — G3: sync export cap and truncation n
 
   it("always includes the three design-time incomplete notices regardless of truncation", async () => {
     const service = new GdprService(makeOverflowDb());
-    const result = await service.exportSubjectData(SUBJECT, SUBJECT, CALLER_ORG, "all");
+    const result = await service.exportSubjectData(ScopedRead.of(CALLER_ORG, SUBJECT, "all"), SUBJECT);
 
     expect(result.exportIncomplete.some((s) => s.includes("blob storage"))).toBe(true);
     expect(result.exportIncomplete.some((s) => s.includes("chat_messages"))).toBe(true);

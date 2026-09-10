@@ -8,6 +8,7 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { actingMembershipId } from "../../common/auth/principal";
 import { Validate } from "../../common/validation/validate.decorator";
 import { AccessService } from "../access/access.service";
 import { SignAuditService } from "./sign-audit.service";
@@ -41,7 +42,7 @@ export class SignCertificatesController {
   @Validate({ params: envelopeIdParams })
   async getAudit(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
     const scope = await resolveEnvelopeViewScope(this.access, u);
-    return this.audit.listForEnvelope(u.orgId, envelopeId, scope);
+    return this.audit.listForEnvelope(scope, actingMembershipId(u.principal), envelopeId);
   }
 
   @Get(":envelopeId/certificate")
@@ -50,7 +51,7 @@ export class SignCertificatesController {
   @Validate({ params: envelopeIdParams })
   async getCertificate(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
     const scope = await resolveEnvelopeViewScope(this.access, u);
-    return this.finalization.getCertificateUrl(u.orgId, envelopeId, scope);
+    return this.finalization.getCertificateUrl(scope, actingMembershipId(u.principal), envelopeId);
   }
 
   @Get(":envelopeId/final-pdf")
@@ -59,7 +60,7 @@ export class SignCertificatesController {
   @Validate({ params: envelopeIdParams })
   async getFinalPdf(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
     const scope = await resolveEnvelopeViewScope(this.access, u);
-    return this.finalization.getFinalPdfUrl(u.orgId, envelopeId, { userId: u.userId, ipAddress: resolveClientIp(req) }, scope);
+    return this.finalization.getFinalPdfUrl(scope, actingMembershipId(u.principal), envelopeId, { userId: u.userId, ipAddress: resolveClientIp(req) });
   }
 
   @Post(":envelopeId/regenerate-certificate")

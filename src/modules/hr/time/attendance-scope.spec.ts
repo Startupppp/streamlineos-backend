@@ -46,14 +46,14 @@ describe("resolveAttendanceScope", () => {
       new Map<string, DataScope>([[ATTENDANCE_PERMISSION, "all"]]),
     );
     const result = await resolveAttendanceScope(mockAccess, makeUser({ isOrgOwner: true }));
-    expect(result).toBe("all");
+    expect(result.rawScope("spec reads the resolved value")).toBe("all");
     expect(mockAccess.resolveUserPermissions).toHaveBeenCalledWith("o1", "u1");
   });
 
   it("fails closed when the permission catalog unexpectedly marks manage unscopable", async () => {
     (isScopable as jest.Mock).mockReturnValue(false);
     const result = await resolveAttendanceScope(mockAccess, makeUser());
-    expect(result).toBe("none");
+    expect(result.denied).toBe(true);
     expect(mockAccess.resolveUserPermissions).not.toHaveBeenCalled();
   });
 
@@ -61,38 +61,39 @@ describe("resolveAttendanceScope", () => {
     const scopeMap = new Map<string, DataScope>([[ATTENDANCE_PERMISSION, "all"]]);
     (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(scopeMap);
     const result = await resolveAttendanceScope(mockAccess, makeUser());
-    expect(result).toBe("all");
+    expect(result.rawScope("spec reads the resolved value")).toBe("all");
   });
 
   it("returns own when the resolved permission scope is own", async () => {
     const scopeMap = new Map<string, DataScope>([[ATTENDANCE_PERMISSION, "own"]]);
     (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(scopeMap);
     const result = await resolveAttendanceScope(mockAccess, makeUser());
-    expect(result).toBe("own");
+    expect(result.rawScope("spec reads the resolved value")).toBe("own");
   });
 
   it("returns none when the permission is not in the resolved map", async () => {
     (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Map<string, DataScope>());
     const result = await resolveAttendanceScope(mockAccess, makeUser());
-    expect(result).toBe("none");
+    expect(result.denied).toBe(true);
   });
 
   it("maps a view-only employee to self-service read scope", async () => {
     (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Map());
-    await expect(resolveAttendanceReadScope(mockAccess, makeUser())).resolves.toBe("own");
+    const result = await resolveAttendanceReadScope(mockAccess, makeUser());
+    expect(result.rawScope("spec reads the resolved value")).toBe("own");
   });
 
   it("binds own summary reads to the authenticated user", () => {
-    const compiled = new PgDialect().sqlToQuery(
-      attendanceMemberScope("own", 7),
-    );
+    const shape = attendanceMemberScope(7);
+    if (!("own" in shape)) throw new Error("expected an own-shaped scope");
+    const compiled = new PgDialect().sqlToQuery(shape.own);
     expect(compiled.params).toEqual([7]);
   });
 
   it("falls back to owner-only when no team members are resolved", () => {
-    const compiled = new PgDialect().sqlToQuery(
-      attendanceMemberScope("team", 7),
-    );
+    const shape = attendanceMemberScope(7);
+    if (!("own" in shape)) throw new Error("expected an own-shaped scope");
+    const compiled = new PgDialect().sqlToQuery(shape.team ?? shape.own);
     expect(compiled.params).toEqual([7]);
   });
 });

@@ -3,6 +3,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import type { Db } from "../../../db/drizzle.module";
 import type { ListProfilesQuery } from "./dto/runs.schemas";
 import { SalaryProfilesRepository } from "./salary-profiles.repository";
+import { ScopedRead } from "../../access/scoped-read";
 
 const dialect = new PgDialect();
 
@@ -55,14 +56,14 @@ describe("SalaryProfilesRepository.list – tenant isolation", () => {
   it("includes the requesting orgId in the WHERE predicate", async () => {
     const { db, getCapturedWhere } = makeListMock();
     const repo = new SalaryProfilesRepository(db);
-    await repo.list("org-alpha", DEFAULT_QUERY, "all", "user-1");
+    await repo.list(ScopedRead.of("org-alpha", "user-1", "all"), DEFAULT_QUERY);
     expect(paramsOf(getCapturedWhere())).toContain("org-alpha");
   });
 
   it("does not include a foreign orgId in the WHERE predicate", async () => {
     const { db, getCapturedWhere } = makeListMock();
     const repo = new SalaryProfilesRepository(db);
-    await repo.list("org-alpha", DEFAULT_QUERY, "all", "user-1");
+    await repo.list(ScopedRead.of("org-alpha", "user-1", "all"), DEFAULT_QUERY);
     expect(paramsOf(getCapturedWhere())).not.toContain("org-other");
   });
 });
@@ -71,14 +72,14 @@ describe("SalaryProfilesRepository.list – own scope", () => {
   it("includes the actor userId in WHERE when scope is own", async () => {
     const { db, getCapturedWhere } = makeListMock();
     const repo = new SalaryProfilesRepository(db);
-    await repo.list("org-1", DEFAULT_QUERY, "own", "actor-user");
+    await repo.list(ScopedRead.of("org-1", "actor-user", "own"), DEFAULT_QUERY);
     expect(paramsOf(getCapturedWhere())).toContain("actor-user");
   });
 
   it("does not include a different userId in WHERE when scope is own", async () => {
     const { db, getCapturedWhere } = makeListMock();
     const repo = new SalaryProfilesRepository(db);
-    await repo.list("org-1", DEFAULT_QUERY, "own", "actor-user");
+    await repo.list(ScopedRead.of("org-1", "actor-user", "own"), DEFAULT_QUERY);
     expect(paramsOf(getCapturedWhere())).not.toContain("other-user");
   });
 });
@@ -106,7 +107,7 @@ describe("SalaryProfilesRepository.list – projection", () => {
     };
     const { db } = makeListMock([fakeRow], 1);
     const repo = new SalaryProfilesRepository(db);
-    const result = await repo.list("org-1", DEFAULT_QUERY, "all", "user-1");
+    const result = await repo.list(ScopedRead.of("org-1", "user-1", "all"), DEFAULT_QUERY);
     expect(result.data).toHaveLength(1);
     const EXPECTED_KEYS = [
       "annualCtc",
@@ -147,7 +148,7 @@ describe("SalaryProfilesRepository.list – projection", () => {
     };
     const { db } = makeListMock([fakeRow], 1);
     const repo = new SalaryProfilesRepository(db);
-    const result = await repo.list("org-1", DEFAULT_QUERY, "all", "user-1");
+    const result = await repo.list(ScopedRead.of("org-1", "user-1", "all"), DEFAULT_QUERY);
     const row = result.data[0];
     expect(Object.keys(row)).not.toContain("payoutCurrency");
     expect(Object.keys(row)).not.toContain("workerDisplayName");
