@@ -67,7 +67,7 @@ export class InvSalesOrdersController {
     @Param("soId", ParseIntPipe) soId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.soCore.getSo(u.orgId, soId);
+    return this.soCore.getSo(u.orgId, u.userId, soId);
   }
 
   @Post()
@@ -200,7 +200,7 @@ export class InvSalesOrdersController {
     @Param("soId", ParseIntPipe) soId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const so = await this.soCore.getSo(u.orgId, soId);
+    const so = await this.soCore.getSo(u.orgId, u.userId, soId);
     const variantIds = so.lines.map((l) => l.productVariantId);
     return this.soCore.getAtp(u.orgId, variantIds);
   }

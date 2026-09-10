@@ -172,7 +172,7 @@ describe("[seeded-e2e] product lifecycle and new demand", () => {
 
     await setProductStatus("DISCONTINUED");
 
-    const stillThere = await asTenant(() => so().getSo(scene.orgId, existing.id));
+    const stillThere = await asTenant(() => so().getSo(scene.orgId, scene.userId, existing.id));
     expect(stillThere).toBeDefined();
     expect((stillThere as { id: number }).id).toBe(existing.id);
   });

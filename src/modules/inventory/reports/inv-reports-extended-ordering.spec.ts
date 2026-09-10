@@ -76,7 +76,7 @@ describe("InvReportsExtendedService.getReorderReportUpgraded — deterministic O
   });
 
   it("reads the statement it actually ran, so an empty sweep cannot pass", async () => {
-    await service.getReorderReportUpgraded("org1", { page: 2, limit: 10 });
+    await service.getReorderReportUpgraded("org1", "user1", { page: 2, limit: 10 });
     expect(execute).toHaveBeenCalledTimes(1);
     const text = emittedSql(execute.mock.calls[0][0]);
     expect(text.length).toBeGreaterThan(200);
@@ -84,7 +84,7 @@ describe("InvReportsExtendedService.getReorderReportUpgraded — deterministic O
   });
 
   it("orders before it paginates", async () => {
-    await service.getReorderReportUpgraded("org1", { page: 2, limit: 10 });
+    await service.getReorderReportUpgraded("org1", "user1", { page: 2, limit: 10 });
     const outer = outerSelect(emittedSql(execute.mock.calls[0][0]));
 
     const orderBy = outer.indexOf("ORDER BY");
@@ -97,7 +97,7 @@ describe("InvReportsExtendedService.getReorderReportUpgraded — deterministic O
   });
 
   it("orders on a unique-enough key that two pages cannot overlap", async () => {
-    await service.getReorderReportUpgraded("org1", { page: 2, limit: 10 });
+    await service.getReorderReportUpgraded("org1", "user1", { page: 2, limit: 10 });
     const outer = outerSelect(emittedSql(execute.mock.calls[0][0]));
     // sku alone repeats across locations; the variant id is what breaks the tie.
     expect(outer.slice(outer.indexOf("ORDER BY"))).toContain("product_variant_id");

@@ -64,6 +64,21 @@ function serviceWith(assertWarehouseVisible: VisibilityMock): Fixture {
   return {
     service: new SoCoreService(db, stub, { next: nextNumber } as never, stub, {
       assertWarehouseVisible,
+      /*
+       * `updateSo` now also asks which orders this caller may TOUCH, not only
+       * which warehouse they may move one into — the source half of the same
+       * rule, gated on `soInScope`. Unrestricted here, so these cases keep
+       * measuring exactly what they were written to measure: whether the
+       * DESTINATION question was asked, and whether it was asked first.
+       */
+      forUser: async () => ({
+        key: "all",
+        isEmpty: false,
+        unrestricted: true,
+        warehouse: () => ({ queryChunks: [] }),
+        location: () => ({ queryChunks: [] }),
+        anyOf: () => ({ queryChunks: [] }),
+      }),
     } as never),
     nextNumber,
     findFirst,

@@ -102,7 +102,7 @@ export class InvReportsController {
     @Query() query: ReorderQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reports.getReorderReport(u.orgId, query);
+    return this.reports.getReorderReport(u.orgId, u.userId, query);
   }
 
   @Get("movements")

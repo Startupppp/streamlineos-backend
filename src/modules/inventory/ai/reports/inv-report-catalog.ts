@@ -149,7 +149,10 @@ const CATALOG: Readonly<Record<InvReportId, InvReportDefinition>> = {
       { path: "shortfall", label: "Shortfall", numeric: true },
     ],
     async run(ctx) {
-      const result = await ctx.reports.getReorderReport(ctx.orgId, {
+      // Every other entry in this catalog already spends `ctx.userId`; this one
+      // was the only report that did not, and it was the only one whose service
+      // method could not have used it.
+      const result = await ctx.reports.getReorderReport(ctx.orgId, ctx.userId, {
         page: ctx.page,
         limit: ctx.limit,
       });

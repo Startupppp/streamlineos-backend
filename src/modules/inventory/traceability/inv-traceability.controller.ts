@@ -100,7 +100,7 @@ export class InvTraceabilityController {
     @Param("serialId", ParseIntPipe) serialId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.traceability.getSerialDetail(u.orgId, serialId);
+    return this.traceability.getSerialDetail(u.orgId, u.userId, serialId);
   }
 
   @Get("expiry")
@@ -111,7 +111,7 @@ export class InvTraceabilityController {
     @Query() query: ExpiryQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.traceability.getExpiryReport(u.orgId, query.withinDays);
+    return this.traceability.getExpiryReport(u.orgId, u.userId, query.withinDays);
   }
 
   @Get("traceability")

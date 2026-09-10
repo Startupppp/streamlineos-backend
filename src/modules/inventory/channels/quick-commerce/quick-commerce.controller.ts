@@ -64,7 +64,7 @@ export class QuickCommerceController {
     @Query(new ZodValidationPipe(listPlatformPosQuerySchema)) query: ListPlatformPosQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.list(u.orgId, query);
+    return this.svc.list(u.orgId, u.userId, query);
   }
 
   @Get("purchase-orders/:platformPoId")
@@ -74,7 +74,7 @@ export class QuickCommerceController {
     @Param("platformPoId", ParseIntPipe) platformPoId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.detail(u.orgId, platformPoId);
+    return this.svc.detail(u.orgId, u.userId, platformPoId);
   }
 
   @Post("purchase-orders/ingest")

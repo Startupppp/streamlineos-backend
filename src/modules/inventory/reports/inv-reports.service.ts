@@ -196,12 +196,27 @@ export class InvReportsService {
     return new Map(rows.map((row) => [row.id, row.availableQty]));
   }
 
-  getReorderReport(orgId: string, filters: ReorderQueryInput) {
-    const cacheKey = CACHE_KEYS.invReorderReportPaged(orgId, `${filters.page}:${filters.limit}`);
-    return this.cache.cached(
-      cacheKey,
-      () => this.extended.getReorderReportUpgraded(orgId, filters),
-      CACHE_TTL.MEDIUM,
+  /**
+   * The scope discriminator in the cache key is not decoration.
+   *
+   * Narrowing the query below while leaving the key as `<page>:<limit>` would
+   * make this WORSE than the unscoped report it replaces: the first caller's
+   * narrowed answer would be stored under a scope-free key and served to the
+   * next, so a picker's page would be handed to the buyer and the buyer's whole
+   * organisation back to the picker — the filter defeated in both directions
+   * (§6). `scopeKey` rather than a hand-rolled join, so it cannot come out
+   * subtly different from the one the predicate was built from.
+   */
+  getReorderReport(orgId: string, userId: string, filters: ReorderQueryInput) {
+    return this.warehouseScope.resolve(orgId, userId).then((scope) =>
+      this.cache.cached(
+        CACHE_KEYS.invReorderReportPaged(
+          orgId,
+          `${this.warehouseScope.scopeKey(scope)}:${filters.page}:${filters.limit}`,
+        ),
+        () => this.extended.getReorderReportUpgraded(orgId, userId, filters),
+        CACHE_TTL.MEDIUM,
+      ),
     );
   }
 

@@ -254,7 +254,7 @@ describe("[seeded-e2e] purchase order to shipment", () => {
       expect(shipped.committed).toBe(0);
       await expectReconciled();
 
-      const finalSo = await asTenant(() => app.app.get(SoCoreService).getSo(scene.orgId, so.id));
+      const finalSo = await asTenant(() => app.app.get(SoCoreService).getSo(scene.orgId, scene.userId, so.id));
       expect(finalSo.status).toBe("SHIPPED");
     },
     600_000,
@@ -352,7 +352,7 @@ describe("[seeded-e2e] purchase order to shipment", () => {
       app.app.get(SoLifecycleService).confirmSo(scene.orgId, so.id, scene.userId, `confirm-${so.id}`),
     );
 
-    const confirmed = await asTenant(() => app.app.get(SoCoreService).getSo(scene.orgId, so.id));
+    const confirmed = await asTenant(() => app.app.get(SoCoreService).getSo(scene.orgId, scene.userId, so.id));
     // Asking for 500 against 60 on the shelf is not an error — it is a partial
     // reservation, and the order says so rather than silently promising stock
     // that is not there.

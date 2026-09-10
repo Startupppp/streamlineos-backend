@@ -25,7 +25,10 @@ import { InventorySettingsService } from "../../stock-engine/inventory-settings.
 import { InventoryAuditService } from "../../stock-engine/inventory-audit.service";
 import { NumberSequenceService } from "../../stock-engine/number-sequence.service";
 import { ChannelPoolService } from "../../stock-engine/channel-pool.service";
-import { WarehouseScopeService } from "../../stock-engine/warehouse-scope.service";
+import {
+  WarehouseScopeService,
+  type ResolvedWarehouseScope,
+} from "../../stock-engine/warehouse-scope.service";
 import { DockService } from "../../dock/dock.service";
 import { runIdempotent } from "../../stock-engine/idempotency";
 import { addDec, mulDec } from "../../stock-engine/decimal";
@@ -166,7 +169,7 @@ export class QuickCommerceInboundService {
     // Read before the transaction: the overwhelmingly common retry is a document
     // we have already handled, and it should not take a write lock to say so.
     const existing = await this.findByProviderNumber(orgId, parsed.provider, parsed.providerPoNumber);
-    if (existing) return this.detail(orgId, existing.id);
+    if (existing) return this.detailUnscoped(orgId, existing.id);
 
     const resolved = await this.resolveLines(orgId, parsed);
     const fieldErrors = resolved
@@ -254,7 +257,7 @@ export class QuickCommerceInboundService {
     if (created.raced || created.platformPoId === undefined) {
       const row = await this.findByProviderNumber(orgId, parsed.provider, parsed.providerPoNumber);
       if (!row) throw new ConflictException("Purchase order ingest raced and could not be re-read");
-      return this.detail(orgId, row.id);
+      return this.detailUnscoped(orgId, row.id);
     }
 
     if (fieldErrors.length > 0) {
@@ -266,7 +269,7 @@ export class QuickCommerceInboundService {
       });
     }
 
-    return this.detail(orgId, created.platformPoId);
+    return this.detailUnscoped(orgId, created.platformPoId);
   }
 
   /**
@@ -377,8 +380,50 @@ export class QuickCommerceInboundService {
     return row ?? null;
   }
 
-  async list(orgId: string, query: ListPlatformPosQuery) {
-    const conditions = [eq(invPlatformPurchaseOrders.orgId, orgId)];
+  /**
+   * Which platform purchase orders this caller may see.
+   *
+   * The ASN's rule, deliberately, and not the shipment's. A platform PO keeps an
+   * `IS NULL` escape because its warehouse may genuinely not be chosen yet:
+   * `ingestPurchaseOrder` says so in as many words — a document can arrive
+   * before anybody has wired the channel up, and refusing it then would lose the
+   * document rather than the configuration gap. An unattributed platform PO is
+   * precisely the one somebody has to open in order to give it a building, so
+   * hiding it from every scoped operator would strand it.
+   *
+   * The three cases are exactly `listAsns`': unrestricted sees everything, a
+   * caller holding no warehouse at all sees nothing (not even the unattributed
+   * ones — no assignment means no site), and a scoped caller sees their own
+   * buildings plus the not-yet-assigned. That is the opposite of the shipments
+   * and sales-order rule, where `NULL IN (…)` is NULL and an unattributed row
+   * stays hidden; each surface follows its own aggregate.
+   */
+  private platformPoInScope(scope: ResolvedWarehouseScope): SQL {
+    if (scope.unrestricted) return sql`TRUE`;
+    if (scope.isEmpty) return sql`FALSE`;
+    return sql`(${invPlatformPurchaseOrders.warehouseId} IS NULL OR ${scope.warehouse(
+      sql`${invPlatformPurchaseOrders.warehouseId}`,
+    )})`;
+  }
+
+  /**
+   * Every platform purchase order in the organisation, until now.
+   *
+   * This is not the ordinary "the list was scoped and the detail was not": NEITHER
+   * was, and the pair is the only reachable surface in this service that never
+   * asked. `ingestPurchaseOrder`, `acceptPurchaseOrder` and `createAsn` each
+   * assert the warehouse they write into, `listAsns` and `asnDetail` both narrow,
+   * and `FillRateService.report` asserts a platform PO's warehouse before it will
+   * report on one — so the rule was already settled by every sibling. These two
+   * simply took no `userId`, though the controller had `@CurrentUser()` in hand
+   * for both.
+   *
+   * Nothing downstream would have caught it: reading a platform PO posts no
+   * movements, so the engine's `assertLocationsInScope` never runs here.
+   */
+  async list(orgId: string, userId: string, query: ListPlatformPosQuery) {
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+    const conditions = [eq(invPlatformPurchaseOrders.orgId, orgId), this.platformPoInScope(scope)];
     if (query.provider) conditions.push(eq(invPlatformPurchaseOrders.provider, query.provider));
     if (query.status) conditions.push(eq(invPlatformPurchaseOrders.status, query.status));
 
@@ -401,11 +446,42 @@ export class QuickCommerceInboundService {
       .offset((query.page - 1) * query.limit);
   }
 
-  async detail(orgId: string, platformPoId: number) {
+  async detail(orgId: string, userId: string, platformPoId: number) {
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+    return this.loadPlatformPo(orgId, platformPoId, this.platformPoInScope(scope));
+  }
+
+  /**
+   * The unscoped read, named so nobody routes to it by accident.
+   *
+   * `ingestPurchaseOrder`, `acceptPurchaseOrder` and `createAsn` all end by
+   * returning the document they have just acted on, and every one of them has
+   * ALREADY asserted the warehouse it wrote — so the caller's standing is
+   * settled before this runs, and gating it again would refuse an operator the
+   * platform order they have this instant accepted.
+   */
+  private async detailUnscoped(orgId: string, platformPoId: number) {
+    return this.loadPlatformPo(orgId, platformPoId, null);
+  }
+
+  private async loadPlatformPo(orgId: string, platformPoId: number, gate: SQL | null) {
     const [header] = await this.db
       .select()
       .from(invPlatformPurchaseOrders)
-      .where(and(eq(invPlatformPurchaseOrders.orgId, orgId), eq(invPlatformPurchaseOrders.id, platformPoId)));
+      .where(
+        gate === null
+          ? and(
+              eq(invPlatformPurchaseOrders.orgId, orgId),
+              eq(invPlatformPurchaseOrders.id, platformPoId),
+            )
+          : and(
+              eq(invPlatformPurchaseOrders.orgId, orgId),
+              eq(invPlatformPurchaseOrders.id, platformPoId),
+              gate,
+            ),
+      );
+    // 404 rather than 403: a "forbidden" on a platform purchase-order id
+    // confirms it exists, which turns a probe into an existence oracle (§4).
     if (!header) throw new NotFoundException("Not found");
 
     const lines = await this.db
@@ -434,7 +510,7 @@ export class QuickCommerceInboundService {
     input: AcceptPlatformPoInput,
     idempotencyKey: string,
   ) {
-    const detail = await this.detail(orgId, platformPoId);
+    const detail = await this.detailUnscoped(orgId, platformPoId);
     if (detail.status === "REJECTED") {
       throw new BadRequestException(
         "This purchase order has lines that do not match the catalogue and cannot be accepted",
@@ -443,7 +519,7 @@ export class QuickCommerceInboundService {
     if (detail.status === "CANCELLED") {
       throw new BadRequestException("This purchase order has been cancelled");
     }
-    if (detail.poId !== null) return this.detail(orgId, platformPoId);
+    if (detail.poId !== null) return this.detailUnscoped(orgId, platformPoId);
 
     await this.warehouseScope.assertWarehouseVisible(orgId, userId, input.warehouseId);
 
@@ -542,7 +618,7 @@ export class QuickCommerceInboundService {
       }
     }
 
-    return this.detail(orgId, platformPoId);
+    return this.detailUnscoped(orgId, platformPoId);
   }
 
   /* ---------------------------------------------------------------- *

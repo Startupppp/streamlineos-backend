@@ -394,9 +394,43 @@ export class InvReportsExtendedService {
    * dropped before the response, so the screen's availability column read
    * `undefined`. Both are fixed here rather than mirrored.
    */
-  async getReorderReportUpgraded(orgId: string, filters: ReorderQueryInput) {
+  /**
+   * What to buy, per stock level, with the building each row is about.
+   *
+   * Every other report in this file resolves the caller's warehouses through
+   * `stockScope` — the dashboard extras, the slow-moving list and the expiry
+   * report all do — and this one took no `userId` at all. It is a row per
+   * `inv_stock_levels`, so it projected `warehouse_id`, `warehouse_name`,
+   * `location_name` and the on-hand, available, on-order, in-transit and
+   * committed quantities for every site in the organisation, to anybody holding
+   * the reports key. That is the whole stock position of every building the
+   * caller has never worked in, in one paginated screen.
+   *
+   * A read posts no movements, so the engine's `assertLocationsInScope` was
+   * never on this path either.
+   *
+   * The predicate goes on the `inv_stock_levels` scan inside the CTE rather than
+   * on the outer select, so the row is never built: the inbound sub-selects that
+   * hang off it — what is on a purchase order for this warehouse, what is in a
+   * van heading to it — are correlated to `sl.location_id` and would otherwise
+   * be computed and returned for buildings the caller cannot see, which is the
+   * same disclosure by a quieter route.
+   */
+  async getReorderReportUpgraded(orgId: string, userId: string, filters: ReorderQueryInput) {
     const { page, limit } = filters;
     const offset = (page - 1) * limit;
+    /*
+     * `stockScope` renders `"inv_stock_levels"."location_id"`, and this query
+     * aliases the table as `sl` inside its CTE. A fully-qualified name there is
+     * not a redundant spelling of the alias — it is `missing FROM-clause entry
+     * for table "inv_stock_levels"` at runtime, in a statement that typechecks
+     * and builds perfectly well. So the predicate is built against the alias by
+     * name, which is what `locationPredicate`'s string overload exists for.
+     */
+    const scopeSql = this.warehouseScope.locationPredicate(
+      await this.warehouseScope.resolve(orgId, userId),
+      "sl.location_id",
+    );
 
     const rows = await this.db.execute<ReorderRow>(sql`
       WITH r AS (
@@ -514,6 +548,7 @@ export class InvReportsExtendedService {
         ) rule ON TRUE
         WHERE sl.org_id = ${orgId}
           AND sl.on_hand::numeric <= p.reorder_point::numeric
+          AND ${scopeSql}
       )
       SELECT
         r.product_variant_id      AS "productVariantId",

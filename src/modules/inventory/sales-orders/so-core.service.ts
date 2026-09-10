@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
 import {
@@ -18,7 +18,10 @@ import type { InvNearExpiryPolicy } from "../stock-engine/stock-engine.types";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
-import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
+import {
+  WarehouseScopeService,
+  type ResolvedWarehouseScope,
+} from "../stock-engine/warehouse-scope.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { SoLifecycleService } from "./so-lifecycle.service";
 import { addDec, mulDec } from "../stock-engine/stock-engine.service";
@@ -111,6 +114,24 @@ export class SoCoreService {
     private readonly warehouseScope: WarehouseScopeService,
   ) {}
 
+  /**
+   * Which sales orders this caller may see — the list's rule, now the only copy.
+   *
+   * An order names its warehouse on the row, so this is the plain column
+   * predicate. The NULL half is worth stating because it differs by table on
+   * purpose: `warehouse_id` is nullable and `NULL IN (…)` is NULL, so an order
+   * attributed to no building is INVISIBLE to a scoped caller — exactly what the
+   * list has always done. That is the opposite of the ASN header, which keeps an
+   * `IS NULL` escape because its warehouse may genuinely not be known yet, and
+   * of the handling unit, which is built before it is put anywhere. Each detail
+   * follows its own aggregate, and this one follows the list above it.
+   *
+   * Private and single so the detail and the edit cannot drift from the list.
+   */
+  private soInScope(scope: ResolvedWarehouseScope): SQL {
+    return scope.warehouse(sql`${invSalesOrders.warehouseId}`);
+  }
+
   async listSos(
     orgId: string,
     filters: ListSoInput,
@@ -130,7 +151,7 @@ export class SoCoreService {
       hash,
       async () => {
         const conditions = [eq(invSalesOrders.orgId, orgId)];
-        if (warehouses) conditions.push(warehouses.warehouse(sql`${invSalesOrders.warehouseId}`));
+        if (warehouses) conditions.push(this.soInScope(warehouses));
         if (status) conditions.push(eq(invSalesOrders.status, status));
         if (clientId) conditions.push(eq(invSalesOrders.clientId, clientId));
         if (scope !== "all" && userId) {
@@ -180,9 +201,37 @@ export class SoCoreService {
    * shipping. `inv_sales_orders.client_party_id` is the Party-era column and
    * carries the same customer.
    */
-  async getSo(orgId: string, soId: number) {
+  async getSo(orgId: string, userId: string, soId: number) {
+    /*
+     * `listSos` beside this has narrowed on the caller's warehouses since the
+     * warehouse work landed; this took no `userId` at all, because the
+     * controller had `@CurrentUser()` in hand and passed only `orgId`. So an
+     * order an operator could not see in their list was theirs to read whole:
+     * the customer, the shipping address, every line with its price, and the
+     * invoice hanging off it.
+     *
+     * Nothing downstream would have caught it — a read posts no movements, so
+     * the engine's `assertLocationsInScope` never runs on this path.
+     *
+     * The `/:soId/atp` route reads through here first and spends the lines it
+     * gets on `getAtp`, so gating this gates that too: availability stays the
+     * org-wide number a promise is actually made against, but you can only ask
+     * it about an order you may see.
+     *
+     * Not cached. `CACHE_KEYS.invSoDetail` exists and five services bust it, but
+     * nothing has ever read it — so there is no key here to carry a scope
+     * discriminator. If one is ever added it must carry `scope.key`, or a
+     * correct predicate under a scope-free key would store one caller's narrowed
+     * answer and serve it to the next, which is worse than the unscoped read
+     * this replaces (§6).
+     */
+    const scope = await this.warehouseScope.forUser(orgId, userId);
     const so = await this.db.query.invSalesOrders.findFirst({
-      where: and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)),
+      where: and(
+        eq(invSalesOrders.id, soId),
+        eq(invSalesOrders.orgId, orgId),
+        this.soInScope(scope),
+      ),
       with: {
         warehouse: true,
         invoice: true,
@@ -302,8 +351,25 @@ export class SoCoreService {
       await this.warehouseScope.assertWarehouseVisible(orgId, userId, data.warehouseId);
     }
 
+    /*
+     * And the order's OWN warehouse, which is the half this method was still
+     * missing. The destination gate above answers "may you move it THERE"; it
+     * says nothing about whether you may touch the order at all, so a caller
+     * holding one building could still edit any DRAFT order in the organisation
+     * — its client, its lines, its quantities, its prices — provided they did
+     * not also try to re-home it. Same predicate as the list, so a draft you can
+     * edit is exactly a draft you could have found.
+     *
+     * Ahead of the status check, so a refusal cannot report whether the order
+     * exists or is still a draft.
+     */
+    const scope = await this.warehouseScope.forUser(orgId, userId);
     const so = await this.db.query.invSalesOrders.findFirst({
-      where: and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)),
+      where: and(
+        eq(invSalesOrders.id, soId),
+        eq(invSalesOrders.orgId, orgId),
+        this.soInScope(scope),
+      ),
     });
     if (!so) throw new NotFoundException("Sales order not found");
     if (so.status !== "DRAFT")
@@ -362,7 +428,7 @@ export class SoCoreService {
 
     await this.cache.del(CACHE_KEYS.invSoDetail(orgId, soId));
     await this.cache.invalidateNamespace(CACHE_KEYS.invSoNamespace(orgId));
-    return this.getSo(orgId, soId);
+    return this.getSo(orgId, userId, soId);
   }
 
   async getAtp(orgId: string, productVariantIds: number[]) {
