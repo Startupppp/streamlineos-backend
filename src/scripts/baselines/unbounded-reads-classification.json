@@ -3238,6 +3238,11 @@
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain - do not fix in this lane",
       "justification": "Classified 2026-09-10. Same code, new path: fileStatutoryDocuments and fileOne moved verbatim out of so-fulfillment.service.ts when that 673-line file was decomposed for check:file-sizes. The parent carries the same EXCLUDED-MODULE verdict. The single match reads the shipment LINES of one shipment (filtered on shipment_id, behind an early return when there is no shipmentId), so it is bounded by one document either way."
+    },
+    "/inventory/picking/lib/wave-planning.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-10. Same code, new path: planWaveLines moved verbatim out of pick-wave.service.ts when that file was decomposed for check:file-sizes. The parent's justification was re-read against the two queries that moved rather than copied, and it holds exactly - the orders are `inArray(invSalesOrders.id, input.soIds)` and the lines are those orders' SO lines, so both are bounded by the request's own input. FALSE-POSITIVE and not BOUNDED because BOUNDED is a FIXED verdict asserting the scanner no longer matches, and it still does."
     }
   }
 }

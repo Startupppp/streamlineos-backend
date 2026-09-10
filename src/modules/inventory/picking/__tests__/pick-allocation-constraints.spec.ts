@@ -34,7 +34,11 @@ function code(text: string): string {
 describe("D2 — picking allocates under the same constraints as reserving", () => {
   it("passes constraints at every call site that reaches the allocator", () => {
     const callers = [
-      "pick-wave.service.ts",
+      // Was "pick-wave.service.ts": `planWaveLines` moved to lib/wave-planning.ts
+      // when that service was decomposed for check:file-sizes. The call site
+      // followed the code rather than being deleted — the `missing` assertion
+      // below exists precisely so a relocated caller cannot drop out silently.
+      "lib/wave-planning.ts",
       "pick-confirm.service.ts",
       "pick-exception-report.service.ts",
     ];

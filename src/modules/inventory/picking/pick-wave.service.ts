@@ -4,11 +4,10 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   invPickLists,
   invPickListLines,
-  invSalesOrders,
   invSoLines,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -18,13 +17,15 @@ import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import { SoCoreService } from "../sales-orders/so-core.service";
-import { allocateWaveLines } from "./pick-allocation";
 import { assertNotAlreadyOnAWave, decideWaveJoin } from "./waveless";
-import { pickConstraintsResolver } from "./pick-allocation-constraints";
 import { assertClaimHeldBy } from "./pick-line";
-import { PICK_LINE_CLOSED_SQL } from "./pick-exception-policy";
-import { queryWaveQueue } from "./pick-wave-queue";
 import type { CreateWaveInput, ListWavesInput, ReassignWaveInput } from "./dto/picking.schemas";
+import {
+  planWaveLines,
+  toWaveLine,
+  type WavePlanDeps,
+} from "./lib/wave-planning";
+import { getWave, listWaves } from "./lib/wave-reads";
 
 @Injectable()
 export class PickWaveService {
@@ -113,125 +114,9 @@ export class PickWaveService {
     });
   }
 
-  /**
-   * The work `createWave` and `joinWave` share: are these orders pickable from
-   * this building, what are their lines, and where is each line's stock.
-   *
-   * Extracted rather than copied. A join that validated orders differently from
-   * a create would be a second definition of "ready to pick", and the two would
-   * drift the first time one of them was fixed.
-   */
-  private async planWaveLines(orgId: string, userId: string, input: CreateWaveInput) {
-    await this.warehouseScope.assertWarehouseVisible(orgId, userId, input.warehouseId);
-
-    const orders = await this.db.query.invSalesOrders.findMany({
-      where: and(
-        eq(invSalesOrders.orgId, orgId),
-        inArray(invSalesOrders.id, input.soIds),
-      ),
-      columns: { id: true, status: true, warehouseId: true },
-    });
-
-    const missing = input.soIds.filter((id) => !orders.some((o) => o.id === id));
-    if (missing.length > 0) {
-      throw new NotFoundException(`No such sales order: ${missing.join(", ")}`);
-    }
-
-    // Reported together rather than one at a time: a picker told to fix a wave
-    // of twelve orders should not discover the problems twelve waves later.
-    const notPickable = orders.filter(
-      (o) => !["CONFIRMED", "RESERVED", "PARTIALLY_RESERVED"].includes(o.status),
-    );
-    if (notPickable.length > 0) {
-      throw new BadRequestException(
-        `These orders are not ready to pick: ${notPickable.map((o) => `${o.id} (${o.status})`).join(", ")}`,
-      );
-    }
-    const wrongWarehouse = orders.filter(
-      (o) => o.warehouseId !== null && o.warehouseId !== input.warehouseId,
-    );
-    if (wrongWarehouse.length > 0) {
-      throw new BadRequestException(
-        `These orders ship from a different warehouse: ${wrongWarehouse.map((o) => o.id).join(", ")}`,
-      );
-    }
-
-    const lines = await this.db
-      .select({
-        soLineId: invSoLines.id,
-        soId: invSoLines.soId,
-        productVariantId: invSoLines.productVariantId,
-        quantity: invSoLines.quantity,
-      })
-      .from(invSoLines)
-      .where(
-        and(eq(invSoLines.orgId, orgId), inArray(invSoLines.soId, input.soIds)),
-      )
-      .orderBy(asc(invSoLines.productVariantId), asc(invSoLines.id));
-
-    if (lines.length === 0) {
-      throw new BadRequestException("Those orders have no lines to pick");
-    }
-
-    const settings = await this.settingsService.get(orgId);
-    const constraintsFor = pickConstraintsResolver(this.db, this.settingsService, orgId);
-    const allocations = await allocateWaveLines(
-      this.db,
-      orgId,
-      lines.map((l) => ({
-        soLineId: l.soLineId,
-        soId: l.soId,
-        productVariantId: l.productVariantId,
-        quantity: String(l.quantity),
-      })),
-      // D2. Constraints per order, cached per order. A wave spans several
-      // customers, and the shelf-life floor is a term of one agreement — see
-      // `pick-allocation-constraints.ts`. Without this the whole picking module
-      // allocated with no near-expiry tier and no floor, so a wave could promise
-      // a lot auto-reserve had refused for the same customer minutes earlier.
-      async (productVariantId, quantity, soId) =>
-        this.soCore.findAvailableLotForLine(
-          orgId,
-          productVariantId,
-          input.warehouseId,
-          quantity,
-          settings.reservationStrategy,
-          settings.expiryReservationPolicy,
-          await constraintsFor(soId),
-        ),
-    );
-
-    return { lines, allocations };
-  }
-
-  /** The wave line as it is stored, on the grain the allocator resolved. */
-  private toWaveLine(
-    orgId: string,
-    pickListId: number,
-    line: { soLineId: number; productVariantId: number; quantity: unknown },
-    allocations: Awaited<ReturnType<PickWaveService["planWaveLines"]>>["allocations"],
-  ) {
-    const at = allocations.get(line.soLineId);
-    const allocated = at?.status === "ALLOCATED" ? at : null;
-    return {
-      orgId,
-      pickListId,
-      soLineId: line.soLineId,
-      productVariantId: line.productVariantId,
-      locationId: allocated?.locationId ?? null,
-      lotId: allocated?.lotId ?? null,
-      serialId: allocated?.serialId ?? null,
-      // NEO-4. The wave line stands on the same grain the allocation
-      // resolved, or the pick empties a different row than the promise
-      // holds.
-      handlingUnitId: allocated?.handlingUnitId ?? null,
-      quantityToPick: String(line.quantity),
-      quantityPicked: "0",
-    };
-  }
 
   async createWave(orgId: string, userId: string, input: CreateWaveInput) {
-    const { lines, allocations } = await this.planWaveLines(orgId, userId, input);
+    const { lines, allocations } = await planWaveLines(this.wavePlanDeps, orgId, userId, input);
 
     const pickNumber = await this.numSeq.next(orgId, "PICK_LIST");
 
@@ -252,7 +137,7 @@ export class PickWaveService {
 
       const inserted = await tx
         .insert(invPickListLines)
-        .values(lines.map((line) => this.toWaveLine(orgId, wave!.id, line, allocations)))
+        .values(lines.map((line) => toWaveLine(this.wavePlanDeps, orgId, wave!.id, line, allocations)))
         .returning({ id: invPickListLines.id, soLineId: invPickListLines.soLineId });
 
       // R3, item 1. Named rather than counted. A wave that comes back "3 lines
@@ -346,7 +231,7 @@ export class PickWaveService {
      * for the planning first. That is a bad id doing a little more work, not a
      * correct call doing any.
      */
-    const { lines, allocations } = await this.planWaveLines(orgId, userId, input);
+    const { lines, allocations } = await planWaveLines(this.wavePlanDeps, orgId, userId, input);
 
     const wave = await this.db.query.invPickLists.findFirst({
       where: and(eq(invPickLists.id, pickListId), eq(invPickLists.orgId, orgId)),
@@ -396,7 +281,7 @@ export class PickWaveService {
     return this.db.transaction(async (tx) => {
       const inserted = await tx
         .insert(invPickListLines)
-        .values(lines.map((line) => this.toWaveLine(orgId, wave.id, line, allocations)))
+        .values(lines.map((line) => toWaveLine(this.wavePlanDeps, orgId, wave.id, line, allocations)))
         .returning({ id: invPickListLines.id, soLineId: invPickListLines.soLineId });
 
       const needsDecision = inserted
@@ -434,127 +319,23 @@ export class PickWaveService {
     });
   }
 
-  /**
-   * B4, item 5 — the workbench's queue.
-   *
-   * Warehouse-scoped like every other inventory list, and the scope resolution
-   * lives here rather than in the query file so the query stays a query.
-   */
-  async listWaves(orgId: string, userId: string, filters: ListWavesInput) {
-    const scope = await this.warehouseScope.resolve(orgId, userId);
-    return queryWaveQueue(this.db, orgId, userId, filters, (column) =>
-      this.warehouseScope.warehousePredicate(scope, column),
-    );
+  private get wavePlanDeps(): WavePlanDeps {
+    return {
+      db: this.db,
+      warehouseScope: this.warehouseScope,
+      settingsService: this.settingsService,
+      soCore: this.soCore,
+    };
   }
 
-  /**
-   * The wave in the order a picker should walk it.
-   *
-   * Sorted by location code, because a pick list that jumps around the building
-   * is the same wasted walk the wave was supposed to remove. Lines with no
-   * location yet sort last: they need a decision rather than a walk.
-   *
-   * B5. Each line carries `line_closed` from `PICK_LINE_CLOSED_SQL` rather than
-   * leaving the workbench to re-derive it from the quantities and the reason.
-   * The rule now has three clauses -- picked in full, a closing reason, and a
-   * reviewer's signature where one is required -- and a client copy of it would
-   * be a fourth place for it to drift, showing a picker a finished row the server
-   * still considers outstanding.
-   *
-   * R3. `needs_decision` is the other half of that: outstanding work with nowhere
-   * to walk to. Derived here for the same reason `line_closed` is -- a client
-   * inferring it from a null `location_id` would call a line that has already
-   * been short-closed a decision somebody still owes.
-   */
+  /** @see lib/wave-reads.ts — the bodies moved, the route surface did not. */
+  async listWaves(orgId: string, userId: string, filters: ListWavesInput) {
+    return listWaves(this.db, this.warehouseScope, orgId, userId, filters);
+  }
+
+  /** @see lib/wave-reads.ts */
   async getWave(orgId: string, userId: string, pickListId: number) {
-    const wave = await this.db.query.invPickLists.findFirst({
-      where: and(eq(invPickLists.id, pickListId), eq(invPickLists.orgId, orgId)),
-    });
-    if (!wave) throw new NotFoundException("Pick list not found");
-    if (wave.warehouseId !== null) {
-      await this.warehouseScope.assertWarehouseVisible(orgId, userId, wave.warehouseId);
-    }
-
-    const lines = await this.db.execute<{
-      id: number;
-      so_line_id: number | null;
-      so_number: string | null;
-      product_variant_id: number;
-      sku: string;
-      variant_name: string;
-      location_id: number | null;
-      location_code: string | null;
-      lot_id: number | null;
-      lot_number: string | null;
-      serial_id: number | null;
-      serial_number: string | null;
-      quantity_to_pick: string;
-      quantity_picked: string;
-      exception_reason: string | null;
-      exception_notes: string | null;
-      exception_status: string | null;
-      exception_resolution: string | null;
-      exception_owner_id: string | null;
-      exception_owner_name: string | null;
-      exception_location_code: string | null;
-      substitute_variant_id: number | null;
-      substitute_sku: string | null;
-      substitute_quantity: string | null;
-      line_closed: boolean;
-      needs_decision: boolean;
-    }>(sql`
-      SELECT pll.id,
-             pll.so_line_id,
-             so.so_number,
-             pll.product_variant_id,
-             v.sku,
-             v.name AS variant_name,
-             pll.location_id,
-             l.code AS location_code,
-             pll.lot_id,
-             lot.lot_number,
-             pll.serial_id,
-             ser.serial_number,
-             pll.quantity_to_pick,
-             pll.quantity_picked,
-             pll.exception_reason,
-             pll.exception_notes,
-             pll.exception_status,
-             pll.exception_resolution,
-             pll.exception_owner_id,
-             owner.name AS exception_owner_name,
-             found.code AS exception_location_code,
-             pll.substitute_variant_id,
-             sub.sku AS substitute_sku,
-             pll.substitute_quantity,
-             ${PICK_LINE_CLOSED_SQL} AS line_closed,
-             (pll.location_id IS NULL AND NOT ${PICK_LINE_CLOSED_SQL}) AS needs_decision
-      FROM inv_pick_list_lines pll
-      JOIN inv_product_variants v
-        ON v.org_id = pll.org_id AND v.id = pll.product_variant_id
-      LEFT JOIN inv_product_variants sub
-        ON sub.org_id = pll.org_id AND sub.id = pll.substitute_variant_id
-      LEFT JOIN inv_locations l
-        ON l.org_id = pll.org_id AND l.id = pll.location_id
-      LEFT JOIN inv_locations found
-        ON found.org_id = pll.org_id AND found.id = pll.exception_location_id
-      LEFT JOIN inv_lots lot
-        ON lot.org_id = pll.org_id AND lot.id = pll.lot_id
-      LEFT JOIN inv_serial_numbers ser
-        ON ser.org_id = pll.org_id AND ser.id = pll.serial_id
-      LEFT JOIN inv_so_lines sol
-        ON sol.org_id = pll.org_id AND sol.id = pll.so_line_id
-      LEFT JOIN inv_sales_orders so
-        ON so.org_id = sol.org_id AND so.id = sol.so_id
-      -- Explicitly projected: the global users table still holds authentication
-      -- secrets and legacy payroll columns, so nothing here reads it through a
-      -- relation.
-      LEFT JOIN users owner ON owner.id = pll.exception_owner_id
-      WHERE pll.org_id = ${orgId} AND pll.pick_list_id = ${pickListId}
-      ORDER BY l.code NULLS LAST, pll.id
-    `);
-
-    return { ...wave, lines };
+    return getWave(this.db, this.warehouseScope, orgId, userId, pickListId);
   }
 
   /**
