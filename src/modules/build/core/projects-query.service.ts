@@ -113,6 +113,7 @@ export class ProjectsQueryService {
       priority: projects.priority,
       startDate: projects.startDate,
       endDate: projects.endDate,
+      managedProductId: projects.managedProductId,
       managerId: organizationMembers.userId,
       managerFirstName: users.firstName,
       managerLastName: users.lastName,
@@ -247,6 +248,7 @@ export class ProjectsQueryService {
         priority: p.priority as "LOW" | "MEDIUM" | "HIGH" | "URGENT" | null,
         startDate: p.startDate,
         endDate: p.endDate,
+        managedProductId: p.managedProductId,
         manager: p.managerId
           ? {
               id: p.managerId,

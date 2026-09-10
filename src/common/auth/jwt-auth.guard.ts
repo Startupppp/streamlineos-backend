@@ -1,4 +1,12 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Inject, Injectable, UnauthorizedException, Logger } from "@nestjs/common";
+import {
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  UnauthorizedException,
+  Logger,
+} from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import { decodeJwt } from "jose";
@@ -8,10 +16,7 @@ import * as bcrypt from "bcryptjs";
 import type { Redis } from "@upstash/redis";
 import { IS_PUBLIC } from "./public.decorator";
 import { ALLOW_NO_ORG_KEY } from "./allow-no-org.decorator";
-import {
-  type BackendClaims,
-  type CurrentUserContext,
-} from "./backend-claims";
+import { type BackendClaims, type CurrentUserContext } from "./backend-claims";
 import {
   ACCOUNT_ONLY_PRINCIPAL,
   humanSessionPrincipal,
@@ -27,9 +32,21 @@ import {
   isModernApiToken,
   legacyApiTokenPrefix,
 } from "./api-token-hash";
-import { accountOrganizationIndex, organizationMembers, organizations, userApiTokens, userSessions } from "../../db/schema";
+import {
+  accountOrganizationIndex,
+  organizationMembers,
+  organizations,
+  userApiTokens,
+  userSessions,
+} from "../../db/schema";
 import { MembershipStateService } from "./membership-state.service";
 import { JwtKeyringService } from "./jwt-keyring.service";
+import {
+  createAuthContext,
+  type AuthContext,
+  type ModuleAvailabilityLookup,
+} from "./auth-context";
+import { MODULE_GUARD_ACCESS } from "../rbac/module-guard.token";
 
 interface OrgContext {
   orgId: string;
@@ -55,7 +72,17 @@ export class JwtAuthGuard implements CanActivate {
     @Inject(REDIS) private readonly redis: Redis | null,
     private readonly membership: MembershipStateService,
     private readonly keyring: JwtKeyringService,
+    @Inject(MODULE_GUARD_ACCESS)
+    private readonly moduleAccess: ModuleAvailabilityLookup,
   ) {}
+
+  private attach(
+    req: Request & { user?: CurrentUserContext; authContext?: AuthContext },
+    actor: CurrentUserContext,
+  ): void {
+    req.user = actor;
+    req.authContext = createAuthContext(actor, this.moduleAccess);
+  }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC, [
@@ -66,7 +93,9 @@ export class JwtAuthGuard implements CanActivate {
 
     const req = context
       .switchToHttp()
-      .getRequest<Request & { user?: CurrentUserContext }>();
+      .getRequest<
+        Request & { user?: CurrentUserContext; authContext?: AuthContext }
+      >();
     const header = req.headers.authorization;
     if (!header?.startsWith("Bearer ")) {
       throw new UnauthorizedException("Unauthorized");
@@ -89,7 +118,11 @@ export class JwtAuthGuard implements CanActivate {
     let claims: BackendClaims | null = null;
     const verified = await this.keyring.verifyToken(token);
     if (verified) {
-      claims = { sub: verified.sub, orgId: verified.orgId, sessionId: verified.sessionId };
+      claims = {
+        sub: verified.sub,
+        orgId: verified.orgId,
+        sessionId: verified.sessionId,
+      };
     }
 
     if (claims !== null) {
@@ -112,10 +145,12 @@ export class JwtAuthGuard implements CanActivate {
         }
 
         // Positive tombstone: session is durably revoked — deny without a DB read (hot path).
-        if (tombstone === true) throw new UnauthorizedException("Session has been revoked");
+        if (tombstone === true)
+          throw new UnauthorizedException("Session has been revoked");
 
         // Consult the DB when: Redis is absent, Redis errored, or tombstone was a cache miss (null).
-        const needsDatabase = this.redis === null || redisErrored || tombstone === null;
+        const needsDatabase =
+          this.redis === null || redisErrored || tombstone === null;
         if (needsDatabase) {
           const dbResult = await this.isRevokedInDatabase(claims.sessionId);
           if (dbResult === null) {
@@ -123,9 +158,12 @@ export class JwtAuthGuard implements CanActivate {
             this.logger.error(
               `session revocation double-failure for sessionId=${claims.sessionId}: both Redis and the database were unavailable; denying to fail closed`,
             );
-            throw new UnauthorizedException("Session revocation check unavailable");
+            throw new UnauthorizedException(
+              "Session revocation check unavailable",
+            );
           }
-          if (dbResult) throw new UnauthorizedException("Session has been revoked");
+          if (dbResult)
+            throw new UnauthorizedException("Session has been revoked");
         }
       }
       const allowNoOrg = this.reflector.getAllAndOverride<boolean>(
@@ -179,7 +217,7 @@ export class JwtAuthGuard implements CanActivate {
         }
       }
 
-      req.user = {
+      this.attach(req, {
         userId: claims.sub,
         orgId: resolvedOrgId,
         role,
@@ -187,28 +225,22 @@ export class JwtAuthGuard implements CanActivate {
         sessionId: claims.sessionId,
         tokenScopes: null,
         principal,
-      };
+      });
       return true;
     }
 
     const userCtx = await this.tryPatAuth(token);
     if (userCtx) {
-      req.user = userCtx;
+      this.attach(req, userCtx);
       return true;
     }
 
     throw new UnauthorizedException("Unauthorized");
   }
 
-  /**
-   * Redis holds the revocation tombstone, but it is a cache, not the record.
-   * When it is missing or erroring, `user_sessions.is_revoked` is the durable
-   * answer — so an Upstash outage costs a database read, not a 500 on every
-   * authenticated request and not a silently unenforced revocation. Only a
-   * double failure (Redis already failed, and this query also throws) returns
-   * null; the caller then denies the session to fail closed.
-   */
-  private async isRevokedInDatabase(sessionId: string): Promise<boolean | null> {
+  private async isRevokedInDatabase(
+    sessionId: string,
+  ): Promise<boolean | null> {
     try {
       const rows = await this.db
         .select({ isRevoked: userSessions.isRevoked })
@@ -230,7 +262,10 @@ export class JwtAuthGuard implements CanActivate {
 
     const result = await this.fetchOrgContext(userId);
     if (result !== null) {
-      this.orgCtxCache.set(userId, { value: result, expiresAt: Date.now() + ORG_CTX_TTL_MS });
+      this.orgCtxCache.set(userId, {
+        value: result,
+        expiresAt: Date.now() + ORG_CTX_TTL_MS,
+      });
       if (this.orgCtxCache.size > 5000) {
         const now = Date.now();
         for (const [key, entry] of this.orgCtxCache) {
@@ -250,7 +285,10 @@ export class JwtAuthGuard implements CanActivate {
           isOwner: organizationMembers.isOwner,
         })
         .from(organizationMembers)
-        .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
+        .innerJoin(
+          organizations,
+          eq(organizations.id, organizationMembers.orgId),
+        )
         .leftJoin(
           accountOrganizationIndex,
           and(

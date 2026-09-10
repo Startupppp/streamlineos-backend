@@ -1,10 +1,9 @@
 import { ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
-import { AgentTokensService } from "./agent-tokens.service";
+import { AgentTokensService, AGENT_TOKEN_DEFAULT_CEILING } from "./agent-tokens.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { AccessService } from "../access/access.service";
 import { AuditService } from "../../common/audit/audit.service";
-import { AGENT_TOKEN_DEFAULT_CEILING } from "./agent-token-ceiling";
 import type { DataScope } from "../access/access.types";
 
 const USER_ID = "user-1";

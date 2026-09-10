@@ -1,7 +1,7 @@
 import { ForbiddenException, UnauthorizedException, CanActivate, ExecutionContext, Injectable } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
-import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import type { AuthContext } from "../../common/auth/auth-context";
 import { IS_PUBLIC } from "../../common/auth/public.decorator";
 import { logger } from "../../common/logger/logger.service";
 import { ModuleDisabledException } from "../../common/http/api-exceptions";
@@ -33,11 +33,11 @@ export class PermissionGuard implements CanActivate {
 
     const req = context
       .switchToHttp()
-      .getRequest<Request & { user?: CurrentUserContext; rbacScope?: AuthResult["scope"] }>();
+      .getRequest<Request & { authContext?: AuthContext; rbacScope?: AuthResult["scope"] }>();
 
     let result: AuthResult;
     try {
-      result = await authorize(this.access, req.user ?? null, permissionKey);
+      result = await authorize(this.access, req.authContext ?? null, permissionKey);
     } catch (error: unknown) {
       logger.error("PermissionGuard: unexpected error during authorization — denying", {
         permissionKey,

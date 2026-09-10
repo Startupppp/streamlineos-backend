@@ -18,7 +18,8 @@ import { validateEnv } from "../../../src/config/env.validation";
 import { PermissionGuard } from "../../../src/modules/access/permission.guard";
 import { AuthController } from "../../../src/modules/auth/auth.controller";
 import { AuthService } from "../../../src/modules/auth/auth.service";
-import { AuthTokensService } from "../../../src/modules/auth/auth-tokens.service";
+import { AuthPasswordlessService } from "../../../src/modules/auth/auth-passwordless.service";
+import { AuthAnalyticsService } from "../../../src/modules/auth/auth-analytics.service";
 import { internalSecretMatches } from "../../../src/modules/auth/internal-secret";
 import type { Db } from "../../../src/db/drizzle.module";
 
@@ -310,8 +311,7 @@ describe("CSRF — the API carries no ambient credential a cross-site request co
 
     let controller: AuthController;
     let keyring: { isReady: jest.Mock; signToken: jest.Mock };
-    let authService: { getSessionData: jest.Mock };
-    let authTokens: { googleOAuth: jest.Mock };
+    let authService: { getSessionData: jest.Mock; googleOAuth: jest.Mock };
     let rateLimit: { check: jest.Mock };
     let moduleRedis: { set: jest.Mock; get: jest.Mock };
 
@@ -341,8 +341,7 @@ describe("CSRF — the API carries no ambient credential a cross-site request co
         isReady: jest.fn().mockReturnValue(true),
         signToken: jest.fn().mockResolvedValue("signed.jwt"),
       };
-      authService = { getSessionData: jest.fn().mockResolvedValue({ userId: USER_ID }) };
-      authTokens = { googleOAuth: jest.fn().mockResolvedValue({ token: "t" }) };
+      authService = { getSessionData: jest.fn().mockResolvedValue({ userId: USER_ID }), googleOAuth: jest.fn().mockResolvedValue({ token: "t" }) };
       rateLimit = { check: jest.fn().mockResolvedValue({ allowed: true, retryAfterSecs: 0 }) };
       moduleRedis = { set: jest.fn().mockResolvedValue("OK"), get: jest.fn().mockResolvedValue(null) };
 
@@ -350,7 +349,8 @@ describe("CSRF — the API carries no ambient credential a cross-site request co
         controllers: [AuthController],
         providers: [
           { provide: AuthService, useValue: authService },
-          { provide: AuthTokensService, useValue: authTokens },
+          { provide: AuthPasswordlessService, useValue: {} },
+          { provide: AuthAnalyticsService, useValue: {} },
           { provide: RateLimitService, useValue: rateLimit },
           { provide: JwtKeyringService, useValue: keyring },
           {

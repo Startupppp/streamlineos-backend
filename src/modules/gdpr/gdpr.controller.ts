@@ -15,6 +15,8 @@ import { z } from "zod";
 import type { Request, Response } from "express";
 import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
+import { AuthCtx } from "../../common/auth/auth-context.decorator";
+import type { AuthContext } from "../../common/auth/auth-context";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { PermissionGuard } from "../access/permission.guard";
 import { Validate } from "../../common/validation/validate.decorator";
@@ -167,9 +169,10 @@ export class GdprController {
   async getExportJobStatus(
     @Param("jobId") jobId: string,
     @CurrentUser() user: CurrentUserContext,
+    @AuthCtx() authCtx: AuthContext,
   ) {
     if (!user.orgId) throw new ForbiddenException("An active organization is required");
-    const authResult = await authorize(this.access, user, "hr:retention:manage");
+    const authResult = await authorize(this.access, authCtx, "hr:retention:manage");
     const isAdmin = authResult.allow && authResult.scope === "all";
     return this.gdprExport.get(user.userId, user.orgId, jobId, isAdmin);
   }
@@ -185,10 +188,11 @@ export class GdprController {
   async downloadExportJob(
     @Param("jobId") jobId: string,
     @CurrentUser() user: CurrentUserContext,
+    @AuthCtx() authCtx: AuthContext,
     @Res() res: Response,
   ) {
     if (!user.orgId) throw new ForbiddenException("An active organization is required");
-    const authResult = await authorize(this.access, user, "hr:retention:manage");
+    const authResult = await authorize(this.access, authCtx, "hr:retention:manage");
     const isAdmin = authResult.allow && authResult.scope === "all";
     const { job, file } = await this.gdprExport.download(user.userId, user.orgId, jobId, isAdmin);
     if (!job.fileName) throw new BadRequestException("File name missing");

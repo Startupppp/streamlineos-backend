@@ -27,7 +27,7 @@ describe("AuthService organization access session state", () => {
         (_key: string, load: () => Promise<unknown>) => load(),
       ),
     };
-    const authTokens = {
+    const membershipResolver = {
       resolveActiveMembership: jest
         .fn()
         .mockResolvedValue(options?.activeMembership ?? null),
@@ -42,15 +42,16 @@ describe("AuthService organization access session state", () => {
       cache as never,
       {} as never,
       {} as never,
-      authTokens as never,
+      membershipResolver as never,
+      {} as never,
       {} as never,
     );
 
-    return { service, authTokens };
+    return { service, membershipResolver };
   }
 
   it("reports suspended membership instead of presenting the user as unconfigured", async () => {
-    const { service, authTokens } = buildService({
+    const { service, membershipResolver } = buildService({
       suspendedMembership: {
         orgId: "org-original",
         orgName: "Original workspace",
@@ -63,7 +64,7 @@ describe("AuthService organization access session state", () => {
       organizationAccess: "suspended",
       suspendedOrganizationName: "Original workspace",
     });
-    expect(authTokens.resolveActiveMembership).toHaveBeenCalledWith(
+    expect(membershipResolver.resolveActiveMembership).toHaveBeenCalledWith(
       "user-1",
       "org-original",
       { honorSuspendedPreference: true },

@@ -1,13 +1,14 @@
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import {
-  moduleAvailability,
-} from "../../common/rbac/module-availability";
+import type { AuthContext } from "../../common/auth/auth-context";
 import { moduleOf } from "./access.service";
 import type { AuthResult, DataScope } from "./access.types";
 import type { ModuleAvailabilityResolver } from "../../common/rbac/module-availability";
 
-export interface AccessResolver {
+export interface AccessScopeResolver {
   scopeFor(user: CurrentUserContext, key: string): Promise<DataScope>;
+}
+
+export interface AccessResolver extends AccessScopeResolver {
   getModuleState(orgId: string, moduleKey: string): Promise<boolean | undefined>;
   buildModuleAvailabilityResolver: (
     getModuleMap: (orgId: string) => Promise<Record<string, boolean>>,
@@ -16,25 +17,16 @@ export interface AccessResolver {
 }
 
 export async function authorize(
-  access: AccessResolver,
-  ctx: CurrentUserContext | null,
+  access: AccessScopeResolver,
+  ctx: AuthContext | null,
   permissionKey: string,
 ): Promise<AuthResult> {
   if (!ctx) return { allow: false, scope: "none", reason: "UNAUTHENTICATED" };
 
-  const moduleKey = moduleOf(permissionKey);
-  const getModuleMap = async (orgId: string): Promise<Record<string, boolean>> => {
-    const state = await access.getModuleState(orgId, moduleKey);
-    if (state === undefined) return {};
-    return { [moduleKey]: state };
-  };
-
-  const resolver = access.buildModuleAvailabilityResolver(getModuleMap);
-
-  const avail = await moduleAvailability(resolver, ctx.orgId, ctx.userId, moduleKey);
+  const avail = await ctx.moduleAvailable(moduleOf(permissionKey));
   if (!avail.available) return { allow: false, scope: "none", reason: "NO_MODULE" };
 
-  const scope = await access.scopeFor(ctx, permissionKey);
+  const scope = await access.scopeFor(ctx.actor, permissionKey);
   if (scope === "none") return { allow: false, scope: "none", reason: "FORBIDDEN" };
 
   return { allow: true, scope };

@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from "@nestjs/common";
 import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
 import { seedSystemRolesForOrg } from "../rbac/seed-system-roles";
@@ -17,6 +18,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import {
   accountOrganizationIndex,
+  accounts,
   organizationMembers,
   organizations,
   subscriptions,
@@ -31,9 +33,10 @@ import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transa
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { SessionsService } from "../sessions/sessions.service";
-import { AuthTokensService } from "./auth-tokens.service";
+import { AuthMembershipResolverService } from "./auth-membership-resolver.service";
+import { AuthAnalyticsService } from "./auth-analytics.service";
 import { addDays } from "date-fns";
-import type { RegisterInput } from "./dto/auth.schemas";
+import type { RegisterInput, GoogleOAuthInput } from "./dto/auth.schemas";
 import {
   getTrialDays,
   TRIAL_PLAN,
@@ -62,8 +65,9 @@ export class AuthService {
     private readonly cache: CacheService,
     private readonly audit: AuditService,
     private readonly entitlements: EntitlementsService,
-    private readonly authTokens: AuthTokensService,
+    private readonly membershipResolver: AuthMembershipResolverService,
     private readonly dispatch: NotificationDispatchService,
+    private readonly analytics: AuthAnalyticsService,
   ) {}
 
   async register(input: RegisterInput): Promise<{ success: true }> {
@@ -184,6 +188,133 @@ export class AuthService {
     this.audit.log({ action: "auth.logout_all", userId });
   }
 
+  async googleOAuth(
+    input: GoogleOAuthInput,
+    context: { userAgent?: string; ipAddress?: string },
+  ): Promise<{ userId: string; isNewUser: boolean; sessionId: string }> {
+    const normalizedEmail = input.email.toLowerCase().trim();
+
+    const existingAccount = await this.db.query.accounts.findFirst({
+      where: and(
+        eq(accounts.provider, "google"),
+        eq(accounts.providerAccountId, input.googleId),
+      ),
+      columns: { userId: true },
+    });
+
+    if (existingAccount) {
+      const accountUser = await this.db.query.users.findFirst({
+        where: eq(users.id, existingAccount.userId),
+        columns: { isActive: true, deletedAt: true },
+      });
+      if (!accountUser || !accountUser.isActive || accountUser.deletedAt !== null) {
+        void this.analytics.logLoginEvent(existingAccount.userId, null, "google_oauth.login", false, "account_inactive", context);
+        throw new UnauthorizedException("Authentication failed");
+      }
+      const sessionId = await this.membershipResolver.createLoginSession(
+        existingAccount.userId,
+        context,
+      );
+      void this.analytics.logLoginEvent(
+        existingAccount.userId,
+        null,
+        "google_oauth.login",
+        true,
+        null,
+        context,
+      );
+      return { userId: existingAccount.userId, isNewUser: false, sessionId };
+    }
+
+    const existingUser = await this.db.query.users.findFirst({
+      where: sql`lower(${users.email}) = ${normalizedEmail}`,
+      columns: { id: true, emailVerified: true, isActive: true, deletedAt: true },
+    });
+
+    if (existingUser) {
+      if (!existingUser.isActive || existingUser.deletedAt !== null) {
+        void this.analytics.logLoginEvent(existingUser.id, null, "google_oauth.login", false, "account_inactive", context);
+        throw new UnauthorizedException("Authentication failed");
+      }
+      await this.db
+        .insert(accounts)
+        .values({
+          userId: existingUser.id,
+          type: "oauth",
+          provider: "google",
+          providerAccountId: input.googleId,
+        })
+        .onConflictDoNothing();
+
+      if (!existingUser.emailVerified) {
+        await this.db
+          .update(users)
+          .set({ emailVerified: new Date() })
+          .where(eq(users.id, existingUser.id));
+      }
+
+      const sessionId = await this.membershipResolver.createLoginSession(
+        existingUser.id,
+        context,
+      );
+      void this.analytics.logLoginEvent(
+        existingUser.id,
+        null,
+        "google_oauth.login",
+        true,
+        null,
+        context,
+      );
+      return { userId: existingUser.id, isNewUser: false, sessionId };
+    }
+
+    const userId = randomUUID();
+    const rawName = (input.name ?? normalizedEmail.split("@")[0]).trim();
+    const spaceIdx = rawName.indexOf(" ");
+    const firstName = spaceIdx === -1 ? rawName : rawName.slice(0, spaceIdx);
+    const lastName = spaceIdx === -1 ? "" : rawName.slice(spaceIdx + 1).trim();
+
+    await this.db.transaction(async (tx) => {
+      await tx.insert(users).values({
+        id: userId,
+        email: normalizedEmail,
+        name: rawName,
+        firstName,
+        lastName,
+        image: input.image || null,
+        isActive: true,
+        emailVerified: new Date(),
+      });
+
+      await tx.insert(accounts).values({
+        userId,
+        type: "oauth",
+        provider: "google",
+        providerAccountId: input.googleId,
+      });
+    });
+
+    this.audit.log({
+      action: "user.registered",
+      userId,
+      metadata: { email: normalizedEmail, provider: "google" },
+    });
+
+    const sessionId = await this.membershipResolver.createLoginSession(
+      userId,
+      context,
+    );
+    void this.analytics.logLoginEvent(
+      userId,
+      null,
+      "google_oauth.register",
+      true,
+      null,
+      context,
+    );
+    return { userId, isNewUser: true, sessionId };
+  }
+
   private async resolvePreferredOrg(
     userId: string,
   ): Promise<{ orgId: string; cellId: string } | null> {
@@ -257,14 +388,14 @@ export class AuthService {
 
         const preferredOrgId = preferred?.orgId ?? user.lastActiveOrgId ?? null;
 
-        const membership = await this.authTokens.resolveActiveMembership(
+        const membership = await this.membershipResolver.resolveActiveMembership(
           userId,
           preferredOrgId,
           { honorSuspendedPreference: true },
         );
         const suspendedMembership = membership
           ? null
-          : await this.authTokens.resolveSuspendedMembership(
+          : await this.membershipResolver.resolveSuspendedMembership(
               userId,
               preferredOrgId,
             );

@@ -4,21 +4,12 @@ import { ModuleDisabledException } from "../../../common/http/api-exceptions";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { REQUIRE_MODULE } from "../../../common/rbac/require-module.decorator";
 import { HrOrgStructureCompatController } from "./hr-org-structure-compat.controller";
-import type { AccessService } from "../../access/access.service";
+import {
+  makeGuardCtx,
+  makeGuardRequest,
+  MODULE_DISABLED,
+} from "../../../../test/helpers/module-guard-context";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-
-function makeGuardCtx(
-  ctrl: Function,
-  methodName: string,
-  user: Partial<CurrentUserContext>,
-): ExecutionContext {
-  const handler = (ctrl.prototype as Record<string, unknown>)[methodName] as Function;
-  return {
-    getHandler: () => handler,
-    getClass: () => ctrl,
-    switchToHttp: () => ({ getRequest: () => ({ user }) }),
-  } as unknown as ExecutionContext;
-}
 
 const orgAdminUser: Partial<CurrentUserContext> = { orgId: "org-1", userId: "u-1", isOrgOwner: false };
 
@@ -30,46 +21,43 @@ describe("HrOrgStructureCompatController — settings namespace, no module gate"
   });
 
   describe("ModuleGuard passes through regardless of HR module status", () => {
-    const disabledGuard = new ModuleGuard(
-      new Reflector(),
-      {
-        moduleAvailability: jest.fn().mockResolvedValue({ available: false, reason: "org-disabled" }),
-      } as unknown as AccessService,
-    );
+    const guard = new ModuleGuard(new Reflector());
 
     it("GET /hr/org/locations (listLocations) is reachable without HR module", async () => {
       await expect(
-        disabledGuard.canActivate(makeGuardCtx(HrOrgStructureCompatController, "listLocations", orgAdminUser)),
+        guard.canActivate(
+          makeGuardCtx(HrOrgStructureCompatController, "listLocations", orgAdminUser, MODULE_DISABLED),
+        ),
       ).resolves.toBe(true);
     });
 
     it("GET /hr/org/teams (listTeams) is reachable without HR module", async () => {
       await expect(
-        disabledGuard.canActivate(makeGuardCtx(HrOrgStructureCompatController, "listTeams", orgAdminUser)),
+        guard.canActivate(
+          makeGuardCtx(HrOrgStructureCompatController, "listTeams", orgAdminUser, MODULE_DISABLED),
+        ),
       ).resolves.toBe(true);
     });
 
     it("POST /hr/org/locations (createLocation) is reachable without HR module", async () => {
       await expect(
-        disabledGuard.canActivate(makeGuardCtx(HrOrgStructureCompatController, "createLocation", orgAdminUser)),
+        guard.canActivate(
+          makeGuardCtx(HrOrgStructureCompatController, "createLocation", orgAdminUser, MODULE_DISABLED),
+        ),
       ).resolves.toBe(true);
     });
   });
 
   describe("bite proof — adding @RequireModule would block org-wide structure management", () => {
     it("ModuleGuard blocks when @RequireModule(hr) is set on a gated class", async () => {
-      const gatedGuard = new ModuleGuard(
-        new Reflector(),
-        {
-          moduleAvailability: jest.fn().mockResolvedValue({ available: false, reason: "org-disabled" }),
-        } as unknown as AccessService,
-      );
+      const gatedGuard = new ModuleGuard(new Reflector());
       const fakeClass = class FakeGated {};
       Reflect.defineMetadata(REQUIRE_MODULE, "hr", fakeClass);
+      const req = makeGuardRequest(orgAdminUser, MODULE_DISABLED);
       const ctx: ExecutionContext = {
         getHandler: () => () => undefined,
         getClass: () => fakeClass,
-        switchToHttp: () => ({ getRequest: () => ({ user: orgAdminUser }) }),
+        switchToHttp: () => ({ getRequest: () => req }),
       } as unknown as ExecutionContext;
       await expect(gatedGuard.canActivate(ctx)).rejects.toThrow(ModuleDisabledException);
     });

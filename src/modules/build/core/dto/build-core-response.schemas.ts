@@ -245,6 +245,7 @@ export const projectListItemSchema = z.object({
   priority: z.string().nullable(),
   startDate: wireDate().nullable(),
   endDate: wireDate().nullable(),
+  managedProductId: z.number().int().nullable(),
   manager: projectManagerSchema.nullable(),
   progress: z.object({
     total: z.number().int(),

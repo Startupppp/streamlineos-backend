@@ -17,6 +17,8 @@ import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
+import { AuthCtx } from "../../../common/auth/auth-context.decorator";
+import type { AuthContext } from "../../../common/auth/auth-context";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { AccessService } from "../../access/access.service";
@@ -163,9 +165,10 @@ export class SupportTicketsController {
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Body() body: ReplyMessageInput,
     @CurrentUser() u: CurrentUserContext,
+    @AuthCtx() authCtx: AuthContext,
   ) {
     if (body.isInternal) {
-      const result = await authorize(this.access, u, "support:tickets:internal_note");
+      const result = await authorize(this.access, authCtx, "support:tickets:internal_note");
       if (!result.allow) throw new ForbiddenException("Permission denied");
     }
     return this.tickets.addMessage(u.orgId, supportTicketId, u.userId, body);

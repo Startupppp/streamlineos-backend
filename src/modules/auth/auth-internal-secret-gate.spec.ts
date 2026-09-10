@@ -21,7 +21,8 @@ import { Test, type TestingModule } from "@nestjs/testing";
 import { SignJWT } from "jose";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
-import { AuthTokensService } from "./auth-tokens.service";
+import { AuthPasswordlessService } from "./auth-passwordless.service";
+import { AuthAnalyticsService } from "./auth-analytics.service";
 import { internalSecretMatches } from "./internal-secret";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { JwtKeyringService } from "../../common/auth/jwt-keyring.service";
@@ -85,8 +86,7 @@ describe("internalSecretMatches — constant-time over a fixed-width digest", ()
 describe("AuthController — the INTERNAL_API_SECRET routes enforce a rate limit", () => {
   let controller: AuthController;
   let rateLimit: { check: jest.Mock };
-  let authService: { getSessionData: jest.Mock };
-  let authTokens: { googleOAuth: jest.Mock };
+  let authService: { getSessionData: jest.Mock; googleOAuth: jest.Mock };
   let keyring: { isReady: jest.Mock; signToken: jest.Mock };
 
   const originalNextAuth = process.env.NEXTAUTH_SECRET;
@@ -97,15 +97,15 @@ describe("AuthController — the INTERNAL_API_SECRET routes enforce a rate limit
     process.env.INTERNAL_API_SECRET = INTERNAL_SECRET;
 
     rateLimit = { check: jest.fn().mockResolvedValue({ allowed: true, retryAfterSecs: 0 }) };
-    authService = { getSessionData: jest.fn().mockResolvedValue({ userId: USER_ID }) };
-    authTokens = { googleOAuth: jest.fn().mockResolvedValue({ token: "t" }) };
+    authService = { getSessionData: jest.fn().mockResolvedValue({ userId: USER_ID }), googleOAuth: jest.fn().mockResolvedValue({ token: "t" }) };
     keyring = { isReady: jest.fn().mockReturnValue(true), signToken: jest.fn().mockResolvedValue("signed.jwt") };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AuthController],
       providers: [
         { provide: AuthService, useValue: authService },
-        { provide: AuthTokensService, useValue: authTokens },
+        { provide: AuthPasswordlessService, useValue: {} },
+        { provide: AuthAnalyticsService, useValue: {} },
         { provide: RateLimitService, useValue: rateLimit },
         { provide: JwtKeyringService, useValue: keyring },
         {
@@ -158,7 +158,7 @@ describe("AuthController — the INTERNAL_API_SECRET routes enforce a rate limit
     await expect(
       controller.googleOAuth({ email: "p@example.com", googleId: "g-1" }, { headers: secretHeaders() }),
     ).rejects.toMatchObject({ status: 429 });
-    expect(authTokens.googleOAuth).not.toHaveBeenCalled();
+    expect(authService.googleOAuth).not.toHaveBeenCalled();
   });
 
   it("POST auth/session-exchange limits on the proof subject", async () => {

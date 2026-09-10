@@ -6,7 +6,10 @@ import { AppModule } from "../../app.module";
 import { AllExceptionsFilter } from "../../common/http/all-exceptions.filter";
 import { stubMembershipState } from "../../../test/helpers/membership-state";
 import { AccessService } from "../access/access.service";
-import { moduleAvailabilityResolver } from "../../common/rbac/module-availability";
+import {
+  moduleAvailabilityResolver,
+  type ModuleAvailabilityResult,
+} from "../../common/rbac/module-availability";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
 import { MfaPolicyService } from "../access/mfa-policy.service";
@@ -30,7 +33,6 @@ type Scope = "all" | "own" | "team" | "none";
 const mockAccess = {
   resolveUserPermissions: jest.fn<Promise<Map<string, Scope>>, unknown[]>(),
   isModuleEnabled: jest.fn().mockResolvedValue(true),
-  // Bridge the fixture onto authorize()'s AccessResolver surface (scopeFor/getModuleState/buildModuleAvailabilityResolver).
   scopeFor: jest.fn(async (_ctx: unknown, key: string): Promise<Scope> => {
     const map = await mockAccess.resolveUserPermissions();
     return map.get(key) ?? "none";
@@ -39,6 +41,13 @@ const mockAccess = {
     async (orgId: string, moduleKey: string): Promise<boolean | undefined> =>
       mockAccess.isModuleEnabled(orgId, moduleKey),
   ),
+  moduleAvailability: async (
+    user: { orgId: string },
+    moduleKey: string,
+  ): Promise<ModuleAvailabilityResult> =>
+    (await mockAccess.isModuleEnabled(user.orgId, moduleKey))
+      ? { available: true }
+      : { available: false, reason: "org-disabled" },
   buildModuleAvailabilityResolver: (
     getModuleMap: (orgId: string) => Promise<Record<string, boolean>>,
   ) =>

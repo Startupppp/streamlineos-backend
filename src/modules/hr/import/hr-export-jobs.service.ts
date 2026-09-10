@@ -18,6 +18,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { createAuthContext } from "../../../common/auth/auth-context";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { AuditService } from "../../../common/audit/audit.service";
 import { withTenant } from "../../../common/tenant";
@@ -229,9 +230,10 @@ export class HrExportJobsService {
       tokenScopes: null,
       principal: humanSessionPrincipal(member.membershipId, member.isOwner),
     };
+    const authCtx = createAuthContext(context, this.access);
     const [exportAccess, employeeAccess] = await Promise.all([
-      authorize(this.access, context, "hr:export:manage"),
-      authorize(this.access, context, "hr:employees:view"),
+      authorize(this.access, authCtx, "hr:export:manage"),
+      authorize(this.access, authCtx, "hr:employees:view"),
     ]);
     if (!exportAccess.allow || !employeeAccess.allow) {
       throw new HrExportProcessingError(

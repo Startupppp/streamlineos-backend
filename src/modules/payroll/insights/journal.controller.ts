@@ -13,6 +13,8 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
+import { AuthCtx } from "../../../common/auth/auth-context.decorator";
+import type { AuthContext } from "../../../common/auth/auth-context";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { AccessService } from "../../access/access.service";
@@ -42,13 +44,14 @@ export class JournalController {
   async getJournal(
     @Query() query: JournalQuery,
     @CurrentUser() u: CurrentUserContext,
+    @AuthCtx() authCtx: AuthContext,
     @Res({ passthrough: true }) res: Response,
   ) {
     const targetMonth = query.month ?? new Date().toISOString().slice(0, 7);
     const result = await this.journalService.buildJournal(u.orgId, targetMonth);
 
     if (query.format === "csv") {
-      const exportCheck = await authorize(this.access, u, "payroll:reports:export");
+      const exportCheck = await authorize(this.access, authCtx, "payroll:reports:export");
       if (!exportCheck.allow)
         throw new ForbiddenException("Permission denied: payroll:reports:export required");
 

@@ -7,9 +7,9 @@ import { SignJWT, decodeJwt, exportJWK, generateKeyPair } from "jose";
 import { randomUUID } from "node:crypto";
 import { AuthController } from "../../../src/modules/auth/auth.controller";
 import { AuthService } from "../../../src/modules/auth/auth.service";
-import { AuthTokensService } from "../../../src/modules/auth/auth-tokens.service";
 import { sessionExchangeSchema } from "../../../src/modules/auth/dto/auth.schemas";
 import { AuthPasswordlessService } from "../../../src/modules/auth/auth-passwordless.service";
+import { AuthAnalyticsService } from "../../../src/modules/auth/auth-analytics.service";
 import { RateLimitService } from "../../../src/common/ratelimit/rate-limit.service";
 import { JwtKeyringService } from "../../../src/common/auth/jwt-keyring.service";
 import { JwtAuthGuard } from "../../../src/common/auth/jwt-auth.guard";
@@ -87,7 +87,8 @@ describe("Session fixation — the minted token's identity comes from the signed
       controllers: [AuthController],
       providers: [
         { provide: AuthService, useValue: {} },
-        { provide: AuthTokensService, useValue: {} },
+        { provide: AuthPasswordlessService, useValue: {} },
+        { provide: AuthAnalyticsService, useValue: {} },
         {
           provide: RateLimitService,
           useValue: { check: jest.fn().mockResolvedValue({ allowed: true, retryAfterSecs: 0 }) },
@@ -194,7 +195,8 @@ describe("Session replay — a captured proof is spendable exactly once", () => 
       controllers: [AuthController],
       providers: [
         { provide: AuthService, useValue: {} },
-        { provide: AuthTokensService, useValue: {} },
+        { provide: AuthPasswordlessService, useValue: {} },
+        { provide: AuthAnalyticsService, useValue: {} },
         {
           provide: RateLimitService,
           useValue: { check: jest.fn().mockResolvedValue({ allowed: true, retryAfterSecs: 0 }) },

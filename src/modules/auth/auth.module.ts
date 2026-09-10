@@ -1,7 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AuthService } from "./auth.service";
 import { AuthController } from "./auth.controller";
-import { AuthTokensService } from "./auth-tokens.service";
 import { AuthPasswordlessService } from "./auth-passwordless.service";
 import { AuthMembershipResolverService } from "./auth-membership-resolver.service";
 import { AuthAnalyticsService } from "./auth-analytics.service";
@@ -12,10 +11,9 @@ import { NotificationsModule } from "../notifications/notifications.module";
 @Module({
   controllers: [AuthController],
   imports: [RateLimitModule, NotificationsModule, SessionsModule],
-  exports: [AuthService, AuthTokensService],
+  exports: [AuthService],
   providers: [
     AuthService,
-    AuthTokensService,
     AuthPasswordlessService,
     AuthMembershipResolverService,
     AuthAnalyticsService,

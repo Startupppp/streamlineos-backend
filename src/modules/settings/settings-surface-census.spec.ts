@@ -124,31 +124,31 @@ const GLOBAL_SETTINGS_SURFACE: Readonly<Record<string, SurfaceEntry>> = {
    */
   "GET /settings/automations": {
     verdict: "PENDING-MOVE",
-    why: "R-12 product decision: no single owning module (HR/CRM/Support/Accounting)",
+    why: "R-12 (C4 closed): Support moved to GET /support/automations; HR/CRM/Accounting still share this route",
   },
   "POST /settings/automations": {
     verdict: "PENDING-MOVE",
-    why: "R-12 product decision: no single owning module (HR/CRM/Support/Accounting)",
+    why: "R-12 (C4 closed): Support moved to POST /support/automations; HR/CRM/Accounting still share this route",
   },
   "GET /settings/automations/:ruleId": {
     verdict: "PENDING-MOVE",
-    why: "R-12 product decision: no single owning module (HR/CRM/Support/Accounting)",
+    why: "R-12 (C4 closed): Support moved to /support/automations; HR/CRM/Accounting still share this route",
   },
   "PATCH /settings/automations/:ruleId": {
     verdict: "PENDING-MOVE",
-    why: "R-12 product decision: no single owning module (HR/CRM/Support/Accounting)",
+    why: "R-12 (C4 closed): Support moved to PATCH /support/automations/:automationId; HR/CRM/Accounting still share",
   },
   "DELETE /settings/automations/:ruleId": {
     verdict: "PENDING-MOVE",
-    why: "R-12 product decision: no single owning module (HR/CRM/Support/Accounting)",
+    why: "R-12 (C4 closed): Support moved to DELETE /support/automations/:automationId; HR/CRM/Accounting still share",
   },
   "GET /settings/automations/:ruleId/runs": {
     verdict: "PENDING-MOVE",
-    why: "R-12 product decision: no single owning module (HR/CRM/Support/Accounting). Also OPERATION — a run log is work, not policy",
+    why: "R-12 (C4 closed): Support moved to GET /support/automation-runs; HR/CRM/Accounting still share. Also OPERATION — a run log is work, not policy",
   },
   "POST /settings/automations/:ruleId/test": {
     verdict: "PENDING-MOVE",
-    why: "R-12 product decision: no single owning module (HR/CRM/Support/Accounting). Lives on AutomationController in modules/automation, which is why the six-route count in report 19b is short by one. Also OPERATION — firing a rule is work",
+    why: "R-12 (C4 closed): Support moved to POST /support/automations/:automationId/test; HR/CRM/Accounting still share. Lives on AutomationController in modules/automation. Also OPERATION — firing a rule is work",
   },
 
   /*

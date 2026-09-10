@@ -5,6 +5,7 @@ import { PermissionGuard } from "../access/permission.guard";
 import type { AccessService } from "../access/access.service";
 import type { AccessResolver } from "../access/authorize";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { createAuthContext } from "../../common/auth/auth-context";
 import { humanSessionPrincipal } from "../../common/auth/principal";
 import { GitConnectionsController } from "../integrations/git/git-connections.controller";
 import {
@@ -175,10 +176,13 @@ function canActivate(
   handler: Handler,
   keys: readonly string[],
 ): Promise<boolean> {
+  const authContext = createAuthContext(actor, {
+    moduleAvailability: async () => ({ available: true }),
+  });
   const context = {
     getHandler: () => handler,
     getClass: () => controller,
-    switchToHttp: () => ({ getRequest: () => ({ user: actor }) }),
+    switchToHttp: () => ({ getRequest: () => ({ user: actor, authContext }) }),
   } as unknown as ExecutionContext;
   return new PermissionGuard(new Reflector(), accessHolding(keys)).canActivate(context);
 }

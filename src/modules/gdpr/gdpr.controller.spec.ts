@@ -3,6 +3,7 @@ import type { Request } from "express";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { GdprController } from "./gdpr.controller";
 import { authorize } from "../access/authorize";
+import { createAuthContext } from "../../common/auth/auth-context";
 
 jest.mock("../access/authorize");
 
@@ -10,6 +11,10 @@ const USER = {
   userId: "user-caller",
   orgId: "org-1",
 } as CurrentUserContext;
+
+const AUTH_CTX = createAuthContext(USER, {
+  moduleAvailability: async () => ({ available: true }),
+});
 
 function buildController() {
   const gdpr = { exportSubjectData: jest.fn(), recordExportRequest: jest.fn() };
@@ -99,7 +104,7 @@ describe("GdprController.getExportJobStatus — G1: admin view uses authorize(),
     (authorize as jest.Mock).mockResolvedValue({ allow: true, scope: "all" });
     const { controller, gdprExport } = buildController();
 
-    await controller.getExportJobStatus("job-1", USER);
+    await controller.getExportJobStatus("job-1", USER, AUTH_CTX);
 
     expect(gdprExport.get).toHaveBeenCalledWith(USER.userId, USER.orgId, "job-1", true);
   });
@@ -108,7 +113,7 @@ describe("GdprController.getExportJobStatus — G1: admin view uses authorize(),
     (authorize as jest.Mock).mockResolvedValue({ allow: false, scope: "none", reason: "FORBIDDEN" });
     const { controller, gdprExport } = buildController();
 
-    await controller.getExportJobStatus("job-1", USER);
+    await controller.getExportJobStatus("job-1", USER, AUTH_CTX);
 
     expect(gdprExport.get).toHaveBeenCalledWith(USER.userId, USER.orgId, "job-1", false);
   });
@@ -117,7 +122,7 @@ describe("GdprController.getExportJobStatus — G1: admin view uses authorize(),
     (authorize as jest.Mock).mockResolvedValue({ allow: true, scope: "own" });
     const { controller, gdprExport } = buildController();
 
-    await controller.getExportJobStatus("job-1", USER);
+    await controller.getExportJobStatus("job-1", USER, AUTH_CTX);
 
     expect(gdprExport.get).toHaveBeenCalledWith(USER.userId, USER.orgId, "job-1", false);
   });
@@ -127,7 +132,7 @@ describe("GdprController.getExportJobStatus — G1: admin view uses authorize(),
     const { controller } = buildController();
     const noOrg = { ...USER, orgId: undefined } as unknown as CurrentUserContext;
 
-    await expect(controller.getExportJobStatus("job-1", noOrg)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(controller.getExportJobStatus("job-1", noOrg, AUTH_CTX)).rejects.toBeInstanceOf(ForbiddenException);
     expect(authorize).not.toHaveBeenCalled();
   });
 });

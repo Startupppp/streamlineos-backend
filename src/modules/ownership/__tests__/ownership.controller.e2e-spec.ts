@@ -31,7 +31,10 @@ import type { DataScope } from "../../access/access.types";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { principalIsOrgOwner } from "../../../common/auth/principal";
 import { isCoreModuleKey } from "../../../common/rbac/module-registry";
-import type { ModuleAvailabilityResolver } from "../../../common/rbac/module-availability";
+import type {
+  ModuleAvailabilityResolver,
+  ModuleAvailabilityResult,
+} from "../../../common/rbac/module-availability";
 import { MembershipStateService } from "../../../common/auth/membership-state.service";
 import { IdempotencyInterceptor } from "../../../common/idempotency/idempotency.interceptor";
 import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
@@ -92,18 +95,11 @@ const mockTransferResponseService = {
   cancelTransfer: jest.fn(),
 };
 
-/**
- * `authorize()` calls getModuleState, buildModuleAvailabilityResolver and
- * scopeFor. Overriding AccessService with only two methods replaced the
- * harness stub with one that answers none of them, so every route 403'd before
- * its permission was read. This mirrors production instead: `ownership` has no
- * module-registry entry so `isCoreModuleKey` is true, and an org owner
- * short-circuits to "all" exactly as `membershipCapability` does.
- */
 const mockAccessService = {
   resolveUserPermissions: jest.fn(),
   isModuleEnabled: jest.fn(),
   getModuleState: async (): Promise<boolean | undefined> => true,
+  moduleAvailability: async (): Promise<ModuleAvailabilityResult> => ({ available: true }),
   getUserDeniedModules: async (): Promise<Set<string>> => new Set<string>(),
   getPlanLockedModules: async (): Promise<readonly string[]> => [],
   buildModuleAvailabilityResolver: (

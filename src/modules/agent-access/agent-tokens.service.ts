@@ -15,9 +15,15 @@ import { AccessService } from "../access/access.service";
 import { isPersonalTokenPermissionDelegable } from "../../common/rbac/personal-token-policy";
 import { AuditService } from "../../common/audit/audit.service";
 import type { CreateAgentTokenInput } from "./dto/agent-tokens.schemas";
-import { AGENT_TOKEN_DEFAULT_CEILING } from "./agent-token-ceiling";
 
 const TOKEN_CAP = 10;
+export const AGENT_TOKEN_DEFAULT_CEILING: readonly string[] = [
+  "build:view",
+  "build:create",
+  "build:tickets:view",
+  "build:tickets:create",
+  "build:tickets:update",
+];
 
 @Injectable()
 export class AgentTokensService {

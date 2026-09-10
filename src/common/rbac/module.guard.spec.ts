@@ -4,14 +4,48 @@ import { ModuleGuard } from "./module.guard";
 import { REQUIRE_MODULE } from "./require-module.decorator";
 import { IS_PUBLIC } from "../auth/public.decorator";
 import { ModuleDisabledException } from "../http/api-exceptions";
+import { createAuthContext } from "../auth/auth-context";
+import type { ModuleAvailabilityLookup } from "../auth/auth-context";
+import { humanSessionPrincipal } from "../auth/principal";
 import type { CurrentUserContext } from "../auth/backend-claims";
 import type { EntitlementsService } from "../../modules/access/entitlements.service";
-import type { AccessService } from "../../modules/access/access.service";
+
+const entitlements: jest.Mocked<
+  Pick<
+    EntitlementsService,
+    "isCoreModule" | "getModuleMap" | "getPlanLockedModules"
+  >
+> = {
+  isCoreModule: jest.fn().mockReturnValue(false),
+  getModuleMap: jest.fn().mockResolvedValue({}),
+  getPlanLockedModules: jest.fn().mockResolvedValue([]),
+};
+
+const lookup: ModuleAvailabilityLookup = {
+  moduleAvailability: async (_user: CurrentUserContext, moduleKey: string) => {
+    if (entitlements.isCoreModule(moduleKey)) return { available: true };
+    const map = await entitlements.getModuleMap("org-1");
+    if (map[moduleKey] === true) return { available: true };
+    if (map[moduleKey] === false) return { available: false, reason: "org-disabled" };
+    const locked = await entitlements.getPlanLockedModules("org-1");
+    return locked.includes(moduleKey)
+      ? { available: false, reason: "not-in-plan" }
+      : { available: false, reason: "org-disabled" };
+  },
+};
 
 function ctx(user: Partial<CurrentUserContext>): ExecutionContext {
-  const req = {
-    user: { enabledModules: [], isOrgOwner: false, orgId: "org-1", userId: "user-1", ...user },
+  const actor: CurrentUserContext = {
+    userId: "user-1",
+    orgId: "org-1",
+    role: "MEMBER",
+    isOrgOwner: false,
+    sessionId: "session-1",
+    tokenScopes: null,
+    principal: humanSessionPrincipal(1, false),
+    ...user,
   };
+  const req = { user: actor, authContext: createAuthContext(actor, lookup) };
   return {
     switchToHttp: () => ({ getRequest: () => req }),
     getHandler: () => ({}),
@@ -36,17 +70,6 @@ describe("ModuleGuard", () => {
     getAllAndOverride: jest.fn(),
   } as jest.Mocked<Reflector>;
 
-  const entitlements: jest.Mocked<
-    Pick<
-      EntitlementsService,
-      "isCoreModule" | "getModuleMap" | "getPlanLockedModules"
-    >
-  > = {
-    isCoreModule: jest.fn().mockReturnValue(false),
-    getModuleMap: jest.fn().mockResolvedValue({}),
-    getPlanLockedModules: jest.fn().mockResolvedValue([]),
-  };
-
   // Expressed as the org's module map because that is what the guard now reads.
   const orgHasModules = (map: Record<string, boolean>): void => {
     entitlements.isCoreModule.mockReturnValue(false);
@@ -54,22 +77,7 @@ describe("ModuleGuard", () => {
     entitlements.getPlanLockedModules.mockResolvedValue([]);
   };
 
-  const guard = new ModuleGuard(
-    reflector,
-    {
-      moduleAvailability: async (_user: CurrentUserContext, moduleKey: string) => {
-        if (entitlements.isCoreModule(moduleKey)) return { available: true };
-        const map = await entitlements.getModuleMap("org-1");
-        if (map[moduleKey] === true) return { available: true };
-        if (map[moduleKey] === false)
-          return { available: false, reason: "org-disabled" };
-        const locked = await entitlements.getPlanLockedModules("org-1");
-        return locked.includes(moduleKey)
-          ? { available: false, reason: "not-in-plan" }
-          : { available: false, reason: "org-disabled" };
-      },
-    } as unknown as AccessService,
-  );
+  const guard = new ModuleGuard(reflector);
 
   /**
    * The real Reflector answers per key; a mock that returns one value for every

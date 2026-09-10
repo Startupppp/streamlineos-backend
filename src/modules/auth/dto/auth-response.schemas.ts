@@ -18,7 +18,7 @@ export const authRegisterResponseSchema = z.object({
   success: z.literal(true),
 });
 
-/** `AuthTokensService.verifyEmail` / `AuthPasswordlessService.verifyEmail` — issues a magic-link auto-login token. */
+/** `AuthPasswordlessService.verifyEmail` — issues a magic-link auto-login token. */
 export const authAutoLoginTokenResponseSchema = z.object({
   autoLoginToken: z.string(),
 });
@@ -72,7 +72,7 @@ export const authVerifyMagicLinkResponseSchema = z.object({
 });
 
 /**
- * `AuthTokensService.googleOAuth` — identity issued after Google OAuth.
+ * `AuthService.googleOAuth` — identity issued after Google OAuth.
  * Same shape as verifyMagicLink for the two legacy fields; `isNewUser` tells
  * the web tier whether to run onboarding.
  */

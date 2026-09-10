@@ -83,7 +83,9 @@ function buildGuard(opts: {
     verifyToken: jest.fn().mockResolvedValue(CLAIMS),
   } as unknown as JwtKeyringService;
 
-  return new JwtAuthGuard(reflector, db, redis, membership, keyring);
+  return new JwtAuthGuard(reflector, db, redis, membership, keyring, {
+    moduleAvailability: async () => ({ available: true }),
+  });
 }
 
 describe("JwtAuthGuard — revoked-session tombstone bite proofs", () => {

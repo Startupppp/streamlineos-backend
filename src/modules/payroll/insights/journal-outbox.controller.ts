@@ -18,6 +18,8 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
+import { AuthCtx } from "../../../common/auth/auth-context.decorator";
+import type { AuthContext } from "../../../common/auth/auth-context";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
 import { authorize } from "../../access/authorize";
@@ -104,9 +106,10 @@ export class JournalOutboxController {
   async exportCsv(
     @Param("batchId", ParseIntPipe) batchId: number,
     @CurrentUser() u: CurrentUserContext,
+    @AuthCtx() authCtx: AuthContext,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const exportCheck = await authorize(this.access, u, "payroll:reports:export");
+    const exportCheck = await authorize(this.access, authCtx, "payroll:reports:export");
     if (!exportCheck.allow) {
       throw new ForbiddenException("Permission denied: payroll:reports:export required");
     }

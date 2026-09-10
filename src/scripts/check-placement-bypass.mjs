@@ -266,10 +266,6 @@ export const WITH_IDENTITY_ALLOWLIST = new Map([
     "pre-tenant membership resolution: resolvePreferredOrgId, resolveActiveMembership and resolveSuspendedMembership all run before the org context is known, reading cross-org identity tables under user identity",
   ],
   [
-    "src/modules/auth/auth-tokens.service.ts",
-    "same pre-tenant identity resolution as auth-membership-resolver: resolvePreferredOrgId reads the cross-org accountOrganizationIndex, and the membership and suspended-membership lookups run at sign-in before an org is chosen, so a tenant-scoped GUC would return no rows",
-  ],
-  [
     "src/modules/auth/auth.service.ts",
     "register() writes and resolvePreferredOrg() reads the cross-org accountOrganizationIndex under user identity; the table is a global identity projection that cannot be read or written under a single org's tenant context",
   ],

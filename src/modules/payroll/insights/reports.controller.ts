@@ -11,6 +11,8 @@ import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
+import { AuthCtx } from "../../../common/auth/auth-context.decorator";
+import type { AuthContext } from "../../../common/auth/auth-context";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -53,8 +55,8 @@ export class PayrollInsightsReportsController {
     private readonly access: AccessService,
   ) {}
 
-  private async assertExport(u: CurrentUserContext): Promise<void> {
-    const check = await authorize(this.access, u, "payroll:reports:export");
+  private async assertExport(authCtx: AuthContext): Promise<void> {
+    const check = await authorize(this.access, authCtx, "payroll:reports:export");
     if (!check.allow) throw new ForbiddenException("Permission denied: payroll:reports:export required");
   }
 
@@ -64,12 +66,13 @@ export class PayrollInsightsReportsController {
   async getSummary(
     @Query() q: ReportsSummaryQuery,
     @CurrentUser() u: CurrentUserContext,
+    @AuthCtx() authCtx: AuthContext,
     @Res({ passthrough: true }) res: Response,
   ) {
     const month = q.month ?? defaultMonth();
     const result = await this.reports.getSummary(u.orgId, month);
     if (q.format === "csv") {
-      await this.assertExport(u);
+      await this.assertExport(authCtx);
       const run = result.run;
       const headers = ["month", "status", "employeeCount", "grossTotal", "deductionTotal", "netTotal", "employerCostTotal", "exceptionCount"];
       const rows = run
@@ -87,12 +90,13 @@ export class PayrollInsightsReportsController {
   async getRegister(
     @Query() q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
+    @AuthCtx() authCtx: AuthContext,
     @Res({ passthrough: true }) res: Response,
   ) {
     const month = q.month ?? defaultMonth();
     const result = await this.reports.getRegister(u.orgId, month, { department: q.department, costCenter: q.costCenter, workerType: q.workerType }, pagination(q));
     if (q.format === "csv") {
-      await this.assertExport(u);
+      await this.assertExport(authCtx);
       const headers = ["employeeId", "name", "department", "workerType", "paidDays", "gross", "totalDeductions", "net", ...result.columns];
       const rows = result.rows.map((r) => [
         r.employeeId, r.name, r.department, r.workerType, r.paidDays, r.gross, r.totalDeductions, r.net,
@@ -110,12 +114,13 @@ export class PayrollInsightsReportsController {
   async getDepartmentCost(
     @Query() q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
+    @AuthCtx() authCtx: AuthContext,
     @Res({ passthrough: true }) res: Response,
   ) {
     const month = q.month ?? defaultMonth();
     const result = await this.reports.getDepartmentCost(u.orgId, month, { department: q.department, workerType: q.workerType }, pagination(q));
     if (q.format === "csv") {
-      await this.assertExport(u);
+      await this.assertExport(authCtx);
       const headers = ["department", "employeeCount", "grossTotal", "netTotal", "employerCostTotal"];
       const rows = result.rows.map((r) => [r.department, r.employeeCount, r.grossTotal, r.netTotal, r.employerCostTotal]);
       setCsvHeaders(res, `payroll-department-cost-${month}`);
@@ -130,12 +135,13 @@ export class PayrollInsightsReportsController {
   async getCostCenter(
     @Query() q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
+    @AuthCtx() authCtx: AuthContext,
     @Res({ passthrough: true }) res: Response,
   ) {
     const month = q.month ?? defaultMonth();
     const result = await this.reports.getCostCenter(u.orgId, month, { costCenter: q.costCenter, workerType: q.workerType }, pagination(q));
     if (q.format === "csv") {
-      await this.assertExport(u);
+      await this.assertExport(authCtx);
       const headers = ["costCenter", "employeeCount", "grossTotal", "netTotal"];
       const rows = result.rows.map((r) => [r.costCenter, r.employeeCount, r.grossTotal, r.netTotal]);
       setCsvHeaders(res, `payroll-cost-center-${month}`);
@@ -150,12 +156,13 @@ export class PayrollInsightsReportsController {
   async getEarnings(
     @Query() q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
+    @AuthCtx() authCtx: AuthContext,
     @Res({ passthrough: true }) res: Response,
   ) {
     const month = q.month ?? defaultMonth();
     const result = await this.reports.getEarnings(u.orgId, month, { department: q.department, costCenter: q.costCenter, workerType: q.workerType }, pagination(q));
     if (q.format === "csv") {
-      await this.assertExport(u);
+      await this.assertExport(authCtx);
       const headers = ["employeeId", "name", "department", "workerType", ...result.columns];
       const rows = result.rows.map((r) => [r.employeeId, r.name, r.department, r.workerType, ...result.columns.map((c) => r.components[c] ?? "0")]);
       setCsvHeaders(res, `payroll-earnings-${month}`);
@@ -170,12 +177,13 @@ export class PayrollInsightsReportsController {
   async getDeductions(
     @Query() q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
+    @AuthCtx() authCtx: AuthContext,
     @Res({ passthrough: true }) res: Response,
   ) {
     const month = q.month ?? defaultMonth();
     const result = await this.reports.getDeductions(u.orgId, month, { department: q.department, costCenter: q.costCenter, workerType: q.workerType }, pagination(q));
     if (q.format === "csv") {
-      await this.assertExport(u);
+      await this.assertExport(authCtx);
       const headers = ["employeeId", "name", "department", "workerType", ...result.columns];
       const rows = result.rows.map((r) => [r.employeeId, r.name, r.department, r.workerType, ...result.columns.map((c) => r.components[c] ?? "0")]);
       setCsvHeaders(res, `payroll-deductions-${month}`);
@@ -190,12 +198,13 @@ export class PayrollInsightsReportsController {
   async getReimbursements(
     @Query() q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
+    @AuthCtx() authCtx: AuthContext,
     @Res({ passthrough: true }) res: Response,
   ) {
     const month = q.month ?? defaultMonth();
     const result = await this.reports.getReimbursements(u.orgId, month, { department: q.department, costCenter: q.costCenter, workerType: q.workerType }, pagination(q));
     if (q.format === "csv") {
-      await this.assertExport(u);
+      await this.assertExport(authCtx);
       const headers = ["employeeId", "name", "department", "workerType", ...result.columns];
       const rows = result.rows.map((r) => [r.employeeId, r.name, r.department, r.workerType, ...result.columns.map((c) => r.components[c] ?? "0")]);
       setCsvHeaders(res, `payroll-reimbursements-${month}`);
@@ -210,12 +219,13 @@ export class PayrollInsightsReportsController {
   async getTax(
     @Query() q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
+    @AuthCtx() authCtx: AuthContext,
     @Res({ passthrough: true }) res: Response,
   ) {
     const month = q.month ?? defaultMonth();
     const result = await this.reports.getTax(u.orgId, month, { department: q.department, costCenter: q.costCenter, workerType: q.workerType }, pagination(q));
     if (q.format === "csv") {
-      await this.assertExport(u);
+      await this.assertExport(authCtx);
       const headers = ["employeeId", "name", "department", "workerType", ...result.columns];
       const rows = result.rows.map((r) => [r.employeeId, r.name, r.department, r.workerType, ...result.columns.map((c) => r.components[c] ?? "0")]);
       setCsvHeaders(res, `payroll-tax-${month}`);
@@ -230,12 +240,13 @@ export class PayrollInsightsReportsController {
   async getBankPayout(
     @Query() q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
+    @AuthCtx() authCtx: AuthContext,
     @Res({ passthrough: true }) res: Response,
   ) {
     const month = q.month ?? defaultMonth();
     const result = await this.reports.getBankPayout(u.orgId, month, pagination(q));
     if (q.format === "csv") {
-      await this.assertExport(u);
+      await this.assertExport(authCtx);
       const headers = ["batchNumber", "format", "totalAmount", "itemCount", "status", "generatedAt", "userName", "accountMasked", "ifsc", "amount", "itemStatus"];
       const rows = result.batches.flatMap((b) =>
         b.items.length > 0
@@ -254,12 +265,13 @@ export class PayrollInsightsReportsController {
   async getVariance(
     @Query() q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
+    @AuthCtx() authCtx: AuthContext,
     @Res({ passthrough: true }) res: Response,
   ) {
     const month = q.month ?? defaultMonth();
     const result = await this.reports.getVariance(u.orgId, month, pagination(q));
     if (q.format === "csv") {
-      await this.assertExport(u);
+      await this.assertExport(authCtx);
       const headers = ["userId", "name", "prevGross", "currGross", "grossDelta", "prevNet", "currNet", "netDelta"];
       const rows = result.perEmployee.map((r) => [r.userId, r.name, r.prevGross, r.currGross, r.grossDelta, r.prevNet, r.currNet, r.netDelta]);
       setCsvHeaders(res, `payroll-variance-${month}`);
