@@ -11,6 +11,13 @@ import { PartyService } from "../../party/party.service";
 import { DealsService } from "../../deals/deals.service";
 import { ActivitiesService } from "../../activities/activities.service";
 import { ReportingService } from "../../reporting/reporting.service";
+import { listPartiesQuerySchema } from "../../party/dto/party.schemas";
+import { listDealsSchema } from "../../deals/dto/deals.schemas";
+import { timelineQuerySchema } from "../../activities/dto/activity.schemas";
+import {
+  asQueryDescription,
+  queryDescriptionSchema,
+} from "../../reporting/dto/reporting.schemas";
 
 export interface McpToolDefinition {
   name: string;
@@ -34,13 +41,27 @@ export interface McpContext {
 }
 
 /**
+ * The scope the resolver answered for a key, which is also its answer to
+ * whether the key is held at all.
+ *
+ * `resolveUserPermissions` returns `Map<string, DataScope>`, and a key resolved
+ * to `"none"` is present in that map and denied — that is how the resolver says
+ * no. So there is one reading here, not two: the scope is the decision, and
+ * `checkPermission` below is that same value asked as a yes/no.
+ */
+function scopeOf(
+  resolved: ReadonlyMap<string, DataScope> | null | undefined,
+  permission: string,
+): DataScope {
+  return resolved?.get(permission) ?? "none";
+}
+
+/**
  * Whether a resolved permission map actually grants a key.
  *
- * `resolved.has(key)` is not the question. `resolveUserPermissions` returns
- * `Map<string, DataScope>`, and a key resolved to `"none"` is present in that
- * map and denied — that is how the resolver says no. Asking `has` therefore let
- * an explicitly denied permission read as granted here while failing everywhere
- * else in the product, because `AccessService.holds` is
+ * `resolved.has(key)` is not the question, for the reason above: asking `has`
+ * let an explicitly denied permission read as granted here while failing
+ * everywhere else in the product, because `AccessService.holds` is
  * `scopeFor(...) !== "none"` and every `@RequirePermission` route goes through
  * it. This is the same test, said the same way.
  *
@@ -52,42 +73,54 @@ function checkPermission(
   resolved: ReadonlyMap<string, DataScope> | null | undefined,
   permission: string,
 ): boolean {
-  return (resolved?.get(permission) ?? "none") !== "none";
+  return scopeOf(resolved, permission) !== "none";
 }
 
 /**
- * The shape `executeTool` casts each injected service to so it can probe it for
- * a method name.
+ * What each report source returns to an agent.
  *
- * It was `Record<string, Function>`, which `no-unsafe-function-type` bans and
- * should: `Function` carries no call signature at all, so every probed call
- * took `any[]` and handed back `any`. Nothing below was checked. A real
- * signature restores the only two things the probe can honestly promise — the
- * value is callable, and what comes back is `unknown` and must be narrowed
- * before it is used. It is also what removes the `as any` that sat on the
- * report query: that cast existed only to satisfy a parameter `Function` had
- * already erased.
+ * Fixed per source and named from `REPORTING_REGISTRY`, the closed set the
+ * compiler resolves against — a name absent from it is refused at compile time
+ * rather than becoming a column. An agent chooses the source; it does not name
+ * columns, because inventing a field name here is exactly how the previous
+ * version failed: it asked for `["id", "name", "value"]` on every source, and
+ * not one of those three is a field of any of them.
  *
- * **What this does NOT fix, recorded here rather than in a commit message so
- * the next reader of the switch sees it.** `list`, `findOne` and `preview`
- * exist on none of the four services — `PartyService` has
- * `listParties`/`getParty`, `DealsService` `listDeals`/`getDeal`,
- * `ActivitiesService` `timeline`, `ReportingService` `runAdHoc` — so every
- * first branch below is dead and only the fallback beneath it ever runs. The
- * fallbacks are unchecked too: `getDeal` really takes `(orgId, dealId)`, and
- * the call below passes `(orgId, userId, dealId, "global")`, so the deal id it
- * reads is the caller's user id. `crm-mcp.service.spec.ts` builds its doubles
- * from the dead names, which is why the suite is green over a branch
- * production never enters — a double shaped from the caller can only confirm
- * the caller.
- *
- * The fix is to call the injected services directly with their real types,
- * which turns each of the above into a compile error. That was done on
- * `crm/phase-2-3-consolidated` in `f6d572780`, along with the spec rewrite it
- * requires; it is a behaviour change across six tools and does not belong in a
- * lint pass on this branch.
+ * A `Map`, for the reason `REPORTING_REGISTRY` is one: `source` is a string the
+ * caller chose, and looking it up in a plain object reaches the prototype —
+ * `"__proto__"` returns `Object.prototype` and `"constructor"` returns a
+ * function, both truthy, so the `if (!select)` below would treat them as found.
+ * Zod refuses the description a step later either way, so the old shape failed
+ * closed; it failed closed with a shape error about a source that does not
+ * exist, instead of saying which sources do.
  */
-type ProbedService = Record<string, (...args: unknown[]) => unknown>;
+const MCP_REPORT_PROJECTIONS: ReadonlyMap<string, { kind: "field"; field: string }[]> =
+  new Map([
+    [
+      "parties",
+      [
+        { kind: "field" as const, field: "name" },
+        { kind: "field" as const, field: "party_type" },
+        { kind: "field" as const, field: "status" },
+      ],
+    ],
+    [
+      "deals",
+      [
+        { kind: "field" as const, field: "name" },
+        { kind: "field" as const, field: "stage" },
+        { kind: "field" as const, field: "value_minor" },
+      ],
+    ],
+    [
+      "activities",
+      [
+        { kind: "field" as const, field: "kind" },
+        { kind: "field" as const, field: "subject" },
+        { kind: "field" as const, field: "occurred_at" },
+      ],
+    ],
+  ]);
 
 /**
  * CRM MCP Server.
@@ -120,10 +153,9 @@ export class CrmMcpService {
       inputSchema: {
         type: "object",
         properties: {
-          search: { type: "string", description: "Search query by name, email or domain" },
+          search: { type: "string", description: "Search by name, legal name or email" },
           page: { type: "number", description: "Page number (default 1)" },
           limit: { type: "number", description: "Page size (default 20, max 100)" },
-          standing: { type: "string", description: "Filter by standing (lead, contact, customer)" },
         },
       },
       requiredPermission: "party:parties:view",
@@ -142,13 +174,13 @@ export class CrmMcpService {
     },
     {
       name: "crm_list_deals",
-      description: "List pipeline deals in the organization with stage, pipeline, and assignee filters.",
+      description: "List pipeline deals in the organization with stage and assignee filters.",
       inputSchema: {
         type: "object",
         properties: {
-          pipelineId: { type: "number", description: "Pipeline ID filter" },
-          stageId: { type: "number", description: "Stage ID filter" },
-          page: { type: "number", description: "Page number" },
+          stage: { type: "string", description: "Filter by pipeline stage" },
+          assignedToId: { type: "string", description: "Filter to one owner's deals" },
+          offset: { type: "number", description: "Rows to skip (default 0)" },
           limit: { type: "number", description: "Items per page (max 100)" },
         },
       },
@@ -168,13 +200,16 @@ export class CrmMcpService {
     },
     {
       name: "crm_list_activities",
-      description: "List recent CRM activities (calls, emails, meetings, notes) attached to parties or deals.",
+      description:
+        "Read the activity timeline (calls, emails, meetings, notes) for one party or one deal. An anchor is required.",
       inputSchema: {
         type: "object",
         properties: {
-          dealId: { type: "number", description: "Filter by deal ID" },
-          page: { type: "number", description: "Page number" },
-          limit: { type: "number", description: "Items per page (max 100)" },
+          partyId: { type: "string", description: "Anchor: the party whose timeline to read" },
+          dealId: { type: "number", description: "Anchor: the deal whose timeline to read" },
+          kind: { type: "string", description: "Filter by activity kind" },
+          cursor: { type: "string", description: "Opaque cursor from the previous page" },
+          limit: { type: "number", description: "Items per page (default 25, max 100)" },
         },
       },
       requiredPermission: "crm:activities:view",
@@ -185,8 +220,8 @@ export class CrmMcpService {
       inputSchema: {
         type: "object",
         properties: {
-          reportKey: { type: "string", description: "Allowlisted report key" },
-          source: { type: "string", description: "Data source (parties, deals, activities)" },
+          source: { type: "string", description: "Data source: parties, deals or activities" },
+          limit: { type: "number", description: "Row cap (default 50, max 1000)" },
         },
         required: ["source"],
       },
@@ -228,94 +263,154 @@ export class CrmMcpService {
       );
     }
 
+    /**
+     * The caller's own DataScope, not the string `"global"` this used to pass.
+     *
+     * `"global"` is not a member of `DataScope`, so `applyScope` fell through to
+     * its exhaustive default and emitted a `false` predicate: `crm_list_deals`
+     * answered every agent with an EMPTY LIST, silently, because an empty deals
+     * result is indistinguishable from an organisation that has no deals. The
+     * check above has already established this is not `"none"`.
+     */
+    const scope = scopeOf(permissions, tool.requiredPermission);
+
     const args = call.arguments || {};
     let result: unknown;
 
-    const probedPartyService = this.partyService as unknown as ProbedService;
-    const probedDealsService = this.dealsService as unknown as ProbedService;
-    const probedActivitiesService = this.activitiesService as unknown as ProbedService;
-    const probedReportingService = this.reportingService as unknown as ProbedService;
-
+    /*
+     * The four services are called directly, with their real types. That is the
+     * fix here, not a tidy-up.
+     *
+     * This block used to cast each one to `Record<string, Function>` and probe
+     * it — `if (typeof svc.list === "function") … else if (typeof svc.listParties
+     * === "function")`. No service has a `list`, a `findOne` or a `preview`, so
+     * every first branch was dead and only the fallbacks ever ran; and because
+     * the cast erased the signatures, nothing checked what the fallbacks were
+     * handed. Every handler disagreed with the service it called, and the file
+     * compiled clean:
+     *
+     *   crm_list_parties     sent `query`; the schema and the service read
+     *                        `search`, so an agent's search term was dropped and
+     *                        every call returned page one of everything.
+     *   crm_list_deals       sent `page`, `pipelineId` and `stageId`; the input
+     *                        has `offset` and `stage` and no notion of a
+     *                        pipeline — three of its four advertised filters did
+     *                        nothing, and paging was impossible.
+     *   crm_get_deal         passed `(orgId, userId, dealId, "global")` to a
+     *                        method that takes `(orgId, dealId)`, so the deal id
+     *                        it read was the caller's user id.
+     *   crm_list_activities  sent `page` to a keyset timeline that pages on
+     *                        `cursor`, and could pass no anchor at all, which
+     *                        falls through to `subject_id = ''` and matches
+     *                        nothing.
+     *   crm_get_party        did `String(args.partyId)` and then tested the
+     *                        result for emptiness. `String(undefined)` is
+     *                        `"undefined"`, which is truthy, so a missing id was
+     *                        looked up as that literal string instead of refused.
+     *   crm_run_report       sent `fields` where the description takes `select`,
+     *                        naming fields that are in no source's registry, and
+     *                        omitted the required `limit` — three independent
+     *                        errors under one erased signature. It answered 400
+     *                        to every call ever made to it.
+     *
+     * Arguments are parsed by each module's own Zod schema rather than re-coerced
+     * by hand here, which is what stops the two surfaces drifting apart again:
+     * the bounds an agent gets are the bounds the HTTP route enforces, including
+     * the page cap and the timeline's "a timeline is read for a party, a deal or
+     * a subject" rule. A ZodError raised here maps to 400 in AllExceptionsFilter,
+     * so a malformed tool call is refused rather than quietly reinterpreted.
+     */
     switch (tool.name) {
       case "crm_list_parties": {
-        const query = {
-          page: typeof args.page === "number" ? args.page : 1,
-          limit: Math.min(typeof args.limit === "number" ? args.limit : 20, 100),
-          query: typeof args.search === "string" ? args.search : undefined,
-        };
-        if (typeof probedPartyService.list === "function") {
-          result = await probedPartyService.list(context.orgId, query);
-        } else if (typeof probedPartyService.listParties === "function") {
-          result = await probedPartyService.listParties(context.orgId, query);
-        }
+        const query = listPartiesQuerySchema.parse({
+          page: args.page ?? 1,
+          limit: args.limit ?? 20,
+          ...(args.search === undefined ? {} : { search: args.search }),
+        });
+        result = await this.partyService.listParties(context.orgId, query);
         break;
       }
 
       case "crm_get_party": {
-        const partyId = String(args.partyId);
+        const partyId = typeof args.partyId === "string" ? args.partyId.trim() : "";
         if (!partyId) throw new BadRequestException("partyId is required");
-        if (typeof probedPartyService.findOne === "function") {
-          result = await probedPartyService.findOne(context.orgId, partyId);
-        } else if (typeof probedPartyService.getParty === "function") {
-          result = await probedPartyService.getParty(context.orgId, partyId);
-        }
+        result = await this.partyService.getParty(context.orgId, partyId);
         break;
       }
 
       case "crm_list_deals": {
-        const query = {
-          page: typeof args.page === "number" ? args.page : 1,
-          limit: Math.min(typeof args.limit === "number" ? args.limit : 20, 100),
-          pipelineId: typeof args.pipelineId === "number" ? args.pipelineId : undefined,
-          stageId: typeof args.stageId === "number" ? args.stageId : undefined,
-        };
-        if (typeof probedDealsService.list === "function") {
-          result = await probedDealsService.list(context.orgId, query);
-        } else if (typeof probedDealsService.listDeals === "function") {
-          result = await probedDealsService.listDeals(context.orgId, context.userId, query, "global");
-        }
+        const query = listDealsSchema.parse({
+          limit: args.limit ?? 20,
+          ...(args.offset === undefined ? {} : { offset: args.offset }),
+          ...(args.stage === undefined ? {} : { stage: args.stage }),
+          ...(args.assignedToId === undefined ? {} : { assignedToId: args.assignedToId }),
+        });
+        result = await this.dealsService.listDeals(
+          context.orgId,
+          context.userId,
+          query,
+          scope,
+        );
         break;
       }
 
       case "crm_get_deal": {
+        /*
+         * `getDeal(orgId, dealId)` on this branch — two parameters, and no
+         * DataScope among them.
+         *
+         * That is not an omission here: reading one deal by id does not honour
+         * the caller's scope anywhere in this lane, HTTP included, because the
+         * method has nowhere to put it. `crm/phase-2-3-consolidated` widened it
+         * to `(orgId, userId, dealId, scope)` in `7b35e781e`, which is a
+         * separate change to `DealsService` and every one of its callers. What
+         * *is* fixed here is that the old call passed four arguments to this
+         * two-parameter method, so `dealId` received `context.userId` and the
+         * tool read a deal by the caller's user id.
+         */
         const dealId = Number(args.dealId);
-        if (Number.isNaN(dealId)) throw new BadRequestException("Valid dealId is required");
-        if (typeof probedDealsService.findOne === "function") {
-          result = await probedDealsService.findOne(context.orgId, dealId);
-        } else if (typeof probedDealsService.getDeal === "function") {
-          result = await probedDealsService.getDeal(context.orgId, context.userId, dealId, "global");
-        }
+        if (!Number.isInteger(dealId) || dealId < 1)
+          throw new BadRequestException("Valid dealId is required");
+        result = await this.dealsService.getDeal(context.orgId, dealId);
         break;
       }
 
       case "crm_list_activities": {
-        const query = {
-          page: typeof args.page === "number" ? args.page : 1,
-          limit: Math.min(typeof args.limit === "number" ? args.limit : 20, 100),
-          dealId: typeof args.dealId === "number" ? args.dealId : undefined,
-        };
-        if (typeof probedActivitiesService.list === "function") {
-          result = await probedActivitiesService.list(context.orgId, query);
-        } else if (typeof probedActivitiesService.timeline === "function") {
-          result = await probedActivitiesService.timeline(context.orgId, query);
-        }
+        /*
+         * The anchor is required, and that is the timeline's own rule rather
+         * than one invented here — `timelineQuerySchema` refines on it. Without
+         * one the service's anchor falls to `subject_id = ''`, which matches
+         * nothing, so an unanchored call returned an empty page that reads as
+         * "this deal has no activity". Refusing says what actually happened.
+         */
+        const query = timelineQuerySchema.parse({
+          limit: args.limit ?? 25,
+          ...(args.partyId === undefined ? {} : { partyId: args.partyId }),
+          ...(args.dealId === undefined ? {} : { dealId: args.dealId }),
+          ...(args.kind === undefined ? {} : { kind: args.kind }),
+          ...(args.cursor === undefined ? {} : { cursor: args.cursor }),
+        });
+        result = await this.activitiesService.timeline(context.orgId, query);
         break;
       }
 
       case "crm_run_report": {
-        const source = String(args.source || "deals");
-        if (typeof probedReportingService.preview === "function") {
-          result = await probedReportingService.preview(context.orgId, context.userId, {
-            source,
-            fields: ["id", "name", "value"],
-            limit: 50,
-          });
-        } else if (typeof probedReportingService.runAdHoc === "function") {
-          result = await probedReportingService.runAdHoc(context.orgId, context.userId, {
-            source,
-            fields: ["id", "name", "value"],
-          });
-        }
+        const source = typeof args.source === "string" ? args.source : "";
+        const select = MCP_REPORT_PROJECTIONS.get(source);
+        if (!select)
+          throw new BadRequestException(
+            `Unknown report source '${source}'. Valid sources: ${[...MCP_REPORT_PROJECTIONS.keys()].join(", ")}.`,
+          );
+        const query = queryDescriptionSchema.parse({
+          source,
+          select,
+          limit: args.limit ?? 50,
+        });
+        result = await this.reportingService.runAdHoc(
+          context.orgId,
+          context.userId,
+          asQueryDescription(query),
+        );
         break;
       }
 
