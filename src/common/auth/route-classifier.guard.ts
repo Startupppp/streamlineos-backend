@@ -34,6 +34,27 @@ import { REQUIRE_PERMISSION } from "../../modules/access/require-permission.deco
  */
 const ENFORCE = () => process.env.REQUIRE_ROUTE_CLASSIFICATION !== "false";
 
+/**
+ * Reads one metadata key off a single route, its handler overriding its
+ * controller class.
+ *
+ * `isDeclared` used to take `(handler: Function, classRef: Function)` and build
+ * that pair itself. `no-unsafe-function-type` bans the bare `Function` type,
+ * and there is no honest way to restate it here: the two values come from
+ * `ExecutionContext.getHandler()` and `Object.getPrototypeOf(x).constructor`,
+ * which Nest and the standard library both type `Function`, and `Function` has
+ * no call signature — so writing a real one and passing those values through
+ * needs a cast at every call site, while widening to `object` does not satisfy
+ * `Reflector`, whose own targets are `(Type<any> | Function)[]`.
+ *
+ * So the pair stays where it already is a plain array literal — at the call
+ * site, which is how every sibling guard in this repo spells it — and this
+ * closure is what crosses the boundary. Nothing here names a function type, and
+ * the reads return `unknown` and are narrowed below, where they used to be
+ * asserted to `boolean`/`string` on nothing but the decorator's good behaviour.
+ */
+type MetadataReader = (key: string) => unknown;
+
 @Injectable()
 export class RouteClassifierGuard implements CanActivate, OnApplicationBootstrap {
   private readonly logger = new Logger(RouteClassifierGuard.name);
@@ -45,13 +66,12 @@ export class RouteClassifierGuard implements CanActivate, OnApplicationBootstrap
     private readonly scanner: MetadataScanner,
   ) {}
 
-  private isDeclared(handler: Function, classRef: Function): boolean {
-    if (this.reflector.getAllAndOverride<boolean>(IS_PUBLIC, [handler, classRef])) return true;
-    if (this.reflector.getAllAndOverride<boolean>(IS_UNIVERSAL, [handler, classRef])) return true;
-    const by = this.reflector.getAllAndOverride<string | undefined>(AUTHORIZED_IN_SERVICE, [handler, classRef]);
-    if (by !== undefined && by !== "") return true;
-    const key = this.reflector.getAllAndOverride<string | undefined>(REQUIRE_PERMISSION, [handler, classRef]);
-    return key !== undefined;
+  private isDeclared(read: MetadataReader): boolean {
+    if (read(IS_PUBLIC) === true) return true;
+    if (read(IS_UNIVERSAL) === true) return true;
+    const by = read(AUTHORIZED_IN_SERVICE);
+    if (typeof by === "string" && by !== "") return true;
+    return read(REQUIRE_PERMISSION) !== undefined;
   }
 
   onApplicationBootstrap(): void {
@@ -66,7 +86,10 @@ export class RouteClassifierGuard implements CanActivate, OnApplicationBootstrap
         const handler: unknown = Reflect.get(proto, methodName);
         if (typeof handler !== "function") continue;
         if (Reflect.getMetadata(PATH_METADATA, handler) === undefined) continue;
-        if (this.isDeclared(handler, classRef)) continue;
+        const declared = this.isDeclared((key) =>
+          this.reflector.getAllAndOverride<unknown>(key, [handler, classRef]),
+        );
+        if (declared) continue;
         this.undeclared.add(`${classRef.name}#${methodName}`);
       }
     }
@@ -84,7 +107,13 @@ export class RouteClassifierGuard implements CanActivate, OnApplicationBootstrap
   }
 
   canActivate(context: ExecutionContext): boolean {
-    if (this.isDeclared(context.getHandler(), context.getClass())) return true;
+    const declared = this.isDeclared((key) =>
+      this.reflector.getAllAndOverride<unknown>(key, [
+        context.getHandler(),
+        context.getClass(),
+      ]),
+    );
+    if (declared) return true;
 
     const label = `${context.getClass().name}#${context.getHandler().name}`;
     if (!ENFORCE()) {
