@@ -280,7 +280,7 @@ describe("HRMS Phase 1 SQL-managed bundle", () => {
  * and cannot recreate DATA — and they do not always recreate the structure
  * faithfully either.
  *
- * `0464_gl_kernel` creates `gl_currencies` with `code text PRIMARY KEY` and two
+ * `0464a_gl_kernel` creates `gl_currencies` with `code text PRIMARY KEY` and two
  * CHECK constraints, then seeds 20 currencies. `0489_chain_creates_early` and
  * `0619_chain_creates_what_production_has` create the same table with NO primary
  * key and NO checks, and no rows. On a cold build that is harmless: 0464 sits at
@@ -328,7 +328,7 @@ describe("chain-repair migrations do not silently weaken a table", () => {
     expect(chainRepairTags().length).toBeGreaterThanOrEqual(2);
     const onCreation = seededOnCreation();
     expect(onCreation.size).toBeGreaterThanOrEqual(20);
-    expect(onCreation.get("gl_currencies")).toBe("0464_gl_kernel");
+    expect(onCreation.get("gl_currencies")).toBe("0464a_gl_kernel");
   });
 
   it("lists exactly the tables a chain repair can leave shaped and empty", () => {
@@ -344,7 +344,7 @@ describe("chain-repair migrations do not silently weaken a table", () => {
     // This ordering is the only reason a cold build is unaffected. If a repair
     // ever sorts first, its keyless copy wins and 0464's un-guarded CREATE TABLE
     // fails outright.
-    const authoritative = tags.indexOf("0464_gl_kernel");
+    const authoritative = tags.indexOf("0464a_gl_kernel");
     expect(authoritative).toBeGreaterThan(-1);
     for (const repair of chainRepairTags()) {
       if (created(readMigration(`${repair}.sql`)).has("gl_currencies")) {

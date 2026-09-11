@@ -150,7 +150,7 @@ export class AccountingSetupService {
    * every attempt to switch accounting on for any organisation dies with a raw
    * 23503 out of the driver, and the operator is told nothing they can act on.
    *
-   * **The empty table is not hypothetical and not test-only.** `0464_gl_kernel`
+   * **The empty table is not hypothetical and not test-only.** `0464a_gl_kernel`
    * carries both the DDL and this seed. `0489_chain_creates_early` and
    * `0619_chain_creates_what_production_has` transcribe a `pg_catalog`, so they
    * recreate the STRUCTURE and cannot recreate the DATA. Measured on the shared
@@ -174,7 +174,7 @@ export class AccountingSetupService {
     if (!installed) {
       throw new ConflictException(
         "Accounting reference data is not installed on this database: gl_currencies is empty, " +
-          "so no book can name a base currency. Apply migration 0464_gl_kernel, which carries the " +
+          "so no book can name a base currency. Apply migration 0464a_gl_kernel, which carries the " +
           "currency seed as well as the schema.",
       );
     }

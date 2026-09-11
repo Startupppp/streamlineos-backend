@@ -367,6 +367,9 @@ const BASELINE_JOURNAL_INTEGRITY = new Set([
   "insert-order:0268a_subject_requests.sql", // Neon(hash), streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +1 scratch
   "insert-order:0269a_payment_provider_columns.sql", // Neon(hash), streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +1 scratch
   "insert-order:0271a_waitlist_admission.sql", // streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +1 scratch
+  // 0472a/0473a: crm lane (0464a_gl_kernel already sits inside its window).
+  "insert-order:0472a_activities_deal_fk.sql", // Neon(hash), streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +1 scratch
+  "insert-order:0473a_accounting_attachments_permissions.sql", // Neon(hash), streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +1 scratch
 ]);
 
 // ─── check functions ──────────────────────────────────────────────────────────

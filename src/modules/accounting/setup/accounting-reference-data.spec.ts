@@ -13,7 +13,7 @@ import { AccountingSetupService } from "./accounting-setup.service";
  *
  * Not hypothetical, and not test-only. Measured on the shared branch:
  * `gl_currencies` exists with the right six columns and holds ZERO rows, and
- * `gl_accounts` is empty beside it. `0464_gl_kernel` carries both the DDL and the
+ * `gl_accounts` is empty beside it. `0464a_gl_kernel` carries both the DDL and the
  * currency seed; `0489_chain_creates_early` and
  * `0619_chain_creates_what_production_has` transcribe a `pg_catalog`, so they
  * recreate the STRUCTURE and cannot recreate the DATA. A correctly-shaped empty
@@ -43,7 +43,7 @@ describe("enabling accounting on an unprovisioned database", () => {
     await expect(enable(service, "INR")).rejects.toThrow(ConflictException);
     await expect(enable(service, "INR")).rejects.toThrow(/gl_currencies is empty/);
     /* The actionable half: which migration to run, not which constraint fired. */
-    await expect(enable(service, "INR")).rejects.toThrow(/0464_gl_kernel/);
+    await expect(enable(service, "INR")).rejects.toThrow(/0464a_gl_kernel/);
   });
 
   it("checks emptiness even when the caller names no currency", async () => {
