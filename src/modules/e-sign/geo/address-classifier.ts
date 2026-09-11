@@ -15,56 +15,26 @@
  * null column hides completely.
  */
 
-export type AddressFamily = "ipv4" | "ipv6" | "unknown";
-export type AddressScope = "public" | "private" | "loopback" | "reserved" | "unknown";
+import type { IpAddressFamily, IpAddressScope } from "../../../common/security/ssrf-guard";
+import { classifyIpAddress } from "../../../common/security/ssrf-guard";
+
+export type AddressFamily = IpAddressFamily;
+export type AddressScope = IpAddressScope;
 
 export interface AddressFacts {
   family: AddressFamily;
   scope: AddressScope;
 }
 
-const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
-
-function classifyIpv4(octets: number[]): AddressScope {
-  const [a, b] = octets as [number, number, number, number];
-  if (a === 127) return "loopback";
-  if (a === 10) return "private";
-  if (a === 172 && b >= 16 && b <= 31) return "private";
-  if (a === 192 && b === 168) return "private";
-  /** Carrier-grade NAT: not the public internet, and common behind mobile networks. */
-  if (a === 100 && b >= 64 && b <= 127) return "private";
-  /** Link-local, multicast, broadcast, and the RFC 2544 benchmark range. */
-  if (a === 169 && b === 254) return "reserved";
-  if (a === 0 || a >= 224) return "reserved";
-  if (a === 198 && (b === 18 || b === 19)) return "reserved";
-  return "public";
-}
-
+/**
+ * Delegated, not duplicated.
+ *
+ * These ranges used to be written out again here, which is a second copy of
+ * the outbound blocklist — the thing `injection-surfaces` refuses, and for a
+ * good reason: the two copies had already drifted apart in both directions.
+ * The shared guard now answers the classification question as well as the
+ * "may we call it" one, so a range is named in exactly one place.
+ */
 export function classifyAddress(ip: string | null | undefined): AddressFacts {
-  if (!ip) return { family: "unknown", scope: "unknown" };
-
-  /**
-   * `::ffff:203.0.113.5` is how an IPv4 client arrives on a dual-stack socket.
-   * Treating it as IPv6 would classify a perfectly ordinary signer as an
-   * address family their device has never used.
-   */
-  const trimmed = ip.trim().replace(/^::ffff:/i, "");
-
-  const v4 = IPV4.exec(trimmed);
-  if (v4) {
-    const octets = v4.slice(1).map(Number);
-    if (octets.some((o) => o > 255)) return { family: "unknown", scope: "unknown" };
-    return { family: "ipv4", scope: classifyIpv4(octets) };
-  }
-
-  if (trimmed.includes(":")) {
-    const lower = trimmed.toLowerCase();
-    if (lower === "::1") return { family: "ipv6", scope: "loopback" };
-    /** Unique local addresses, fc00::/7. */
-    if (/^f[cd]/.test(lower)) return { family: "ipv6", scope: "private" };
-    if (/^fe[89ab]/.test(lower)) return { family: "ipv6", scope: "reserved" };
-    return { family: "ipv6", scope: "public" };
-  }
-
-  return { family: "unknown", scope: "unknown" };
+  return classifyIpAddress(ip);
 }

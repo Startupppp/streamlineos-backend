@@ -24,13 +24,6 @@ export const MAX_RECORDING_BYTES = 100 * 1024 * 1024;
 
 export type FeedbucketWidget = typeof feedbucketWidgets.$inferSelect;
 
-export function clientIp(req: Request): string | undefined {
-  const forwarded = req.headers["x-forwarded-for"];
-  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  const candidate = raw?.split(",")[0]?.trim() || req.ip;
-  return candidate ? candidate.slice(0, 100) : undefined;
-}
-
 export function originHostname(req: Request): string | undefined {
   const originHeader = req.headers["origin"];
   const origin = Array.isArray(originHeader) ? originHeader[0] : originHeader;

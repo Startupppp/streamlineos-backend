@@ -51,7 +51,7 @@ export type WebhookDeliveryOutcome =
  * The SSRF check is `common/security/ssrf-guard`'s and is re-run on *every*
  * attempt rather than only at registration: DNS is not immutable, and a hostname
  * that resolved publicly when the subscription was created can be re-pointed at
- * 169.254.169.254 an hour later. `redirect: "manual"` is part of that guard, not
+ * the cloud metadata address an hour later. `redirect: "manual"` is part of that guard, not
  * an optimisation — a permitted host answering 302 to an internal address defeats
  * the resolution check entirely, so a redirect is a failed delivery.
  */

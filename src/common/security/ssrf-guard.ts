@@ -20,22 +20,84 @@ export type WebhookDnsResolver = (
   hostname: string,
 ) => Promise<ReadonlyArray<{ address: string; family: number }>>;
 
-function isBlockedIpv4(address: string): boolean {
+export type IpAddressFamily = "ipv4" | "ipv6" | "unknown";
+export type IpAddressScope = "public" | "private" | "loopback" | "reserved" | "unknown";
+
+export interface IpAddressFacts {
+  family: IpAddressFamily;
+  scope: IpAddressScope;
+}
+
+/**
+ * The one table. Two questions are asked of it.
+ *
+ * "May we send a request there?" is `scope !== "public"`, which is this
+ * module's original job. "What can an auditor be told about the address a
+ * signature came from?" is the scope itself — e-sign's signer annotation,
+ * which used to carry a second copy of these ranges. Two copies of a blocklist
+ * is the defect `injection-surfaces` exists to catch, and they had already
+ * drifted: this side blocked the documentation ranges the other called public,
+ * and the other named the RFC 2544 benchmark range this one allowed. The union
+ * is what a single table has to be — a range either side called non-public
+ * stays non-public, so nothing that was blocked becomes reachable.
+ */
+function classifyIpv4(address: string): IpAddressScope {
   const parts = address.split(".").map(Number);
   const [a, b, c] = parts;
-  if (a === undefined || b === undefined) return true;
-  if (a === 0) return true;
-  if (a === 10) return true;
-  if (a === 127) return true;
-  if (a === 169 && b === 254) return true;
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  if (a === 192 && b === 168) return true;
-  if (a === 100 && b >= 64 && b <= 127) return true;
-  if (a === 192 && b === 0) return true;
-  if (a === 198 && b === 51 && c === 100) return true;
-  if (a === 203 && b === 0 && c === 113) return true;
-  if (a >= 224) return true;
-  return false;
+  if (a === undefined || b === undefined) return "unknown";
+  if (parts.length !== 4 || parts.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255))
+    return "unknown";
+  if (a === 127) return "loopback";
+  if (a === 10) return "private";
+  if (a === 172 && b >= 16 && b <= 31) return "private";
+  if (a === 192 && b === 168) return "private";
+  /** Carrier-grade NAT: not the public internet, and common behind mobile networks. */
+  if (a === 100 && b >= 64 && b <= 127) return "private";
+  if (a === 0) return "reserved";
+  /** Link-local, which is where a cloud metadata service answers. */
+  if (a === 169 && b === 254) return "reserved";
+  if (a === 192 && b === 0) return "reserved";
+  if (a === 198 && b === 51 && c === 100) return "reserved";
+  if (a === 203 && b === 0 && c === 113) return "reserved";
+  /** RFC 2544 benchmarking. */
+  if (a === 198 && (b === 18 || b === 19)) return "reserved";
+  if (a >= 224) return "reserved";
+  return "public";
+}
+
+function classifyIpv6(address: string): IpAddressScope {
+  const value = address.toLowerCase().split("%")[0] ?? "";
+  if (value === "::" || value === "::1") return "loopback";
+  if (/^fe[89ab][0-9a-f]/.test(value)) return "reserved";
+  if (value.startsWith("fc") || value.startsWith("fd")) return "private";
+  if (value.startsWith("ff")) return "reserved";
+  return "public";
+}
+
+/**
+ * What can be said about an address without asking anybody: its family, and
+ * whether it is on the public internet at all. An IPv4-mapped IPv6 address is
+ * reported as the IPv4 it is, because a signer on a dual-stack socket has
+ * never used an address family they cannot see.
+ */
+export function classifyIpAddress(address: string | null | undefined): IpAddressFacts {
+  if (address === null || address === undefined || address.trim() === "")
+    return { family: "unknown", scope: "unknown" };
+  const value = address.trim();
+  const family = isIP(value);
+  if (family === 4) return { family: "ipv4", scope: classifyIpv4(value) };
+  if (family === 6) {
+    const mapped = mappedIpv4(value.toLowerCase().split("%")[0] ?? "");
+    if (mapped !== null) return { family: "ipv4", scope: classifyIpv4(mapped) };
+    return { family: "ipv6", scope: classifyIpv6(value) };
+  }
+  const bare = value.replace(/^::ffff:/i, "");
+  if (isIP(bare) === 4) return { family: "ipv4", scope: classifyIpv4(bare) };
+  return { family: "unknown", scope: "unknown" };
+}
+
+function isBlockedIpv4(address: string): boolean {
+  return classifyIpv4(address) !== "public";
 }
 
 /**
@@ -62,13 +124,9 @@ function mappedIpv4(value: string): string | null {
 
 function isBlockedIpv6(address: string): boolean {
   const value = address.toLowerCase().split("%")[0] ?? "";
-  if (value === "::" || value === "::1") return true;
-  if (/^fe[89ab][0-9a-f]/i.test(value)) return true;
-  if (value.startsWith("fc") || value.startsWith("fd")) return true;
-  if (value.startsWith("ff")) return true;
   const mapped = mappedIpv4(value);
   if (mapped !== null) return isBlockedIpv4(mapped);
-  return false;
+  return classifyIpv6(value) !== "public";
 }
 
 function isBlockedAddress(address: string): boolean {

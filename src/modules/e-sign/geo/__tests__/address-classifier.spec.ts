@@ -11,8 +11,14 @@ import { AddressGeoIp } from "../address-geo-ip";
  * `geolocation_json` column hid completely.
  */
 describe("classifyAddress", () => {
-  it("recognises ordinary public addresses", () => {
-    expect(classifyAddress("203.0.113.5")).toEqual({ family: "ipv4", scope: "public" });
+  /*
+  A genuinely routable address, not a documentation range. The classifier
+  shares one table with the outbound guard now, and that table names
+  192.0.2/24, 198.51.100/24 and 203.0.113/24 as reserved — which they are.
+  Using one here asserted that a reserved range reads as public.
+*/
+it("recognises ordinary public addresses", () => {
+    expect(classifyAddress("93.184.216.34")).toEqual({ family: "ipv4", scope: "public" });
     expect(classifyAddress("2606:4700:4700::1111")).toEqual({ family: "ipv6", scope: "public" });
   });
 
@@ -47,12 +53,12 @@ describe("classifyAddress", () => {
   });
 
   /**
-   * An IPv4 client on a dual-stack socket arrives as `::ffff:203.0.113.5`.
+   * An IPv4 client on a dual-stack socket arrives as `::ffff:93.184.216.34`.
    * Calling that IPv6 would report an address family the signer's device has
    * never used.
    */
   it("unwraps IPv4-mapped IPv6 rather than mislabelling the family", () => {
-    expect(classifyAddress("::ffff:203.0.113.5")).toEqual({ family: "ipv4", scope: "public" });
+    expect(classifyAddress("::ffff:93.184.216.34")).toEqual({ family: "ipv4", scope: "public" });
     expect(classifyAddress("::ffff:10.0.0.1")).toEqual({ family: "ipv4", scope: "private" });
   });
 
@@ -68,10 +74,10 @@ describe("AddressGeoIp", () => {
   const geo = new AddressGeoIp();
 
   it("records how much it knows, not just what it found", async () => {
-    const located = await geo.locate("203.0.113.5");
+    const located = await geo.locate("93.184.216.34");
 
     expect(located).toMatchObject({
-      ip: "203.0.113.5",
+      ip: "93.184.216.34",
       family: "ipv4",
       scope: "public",
       country: null,
