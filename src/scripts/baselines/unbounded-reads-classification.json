@@ -379,11 +379,6 @@
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
-    "/inventory/warehouses/inv-warehouse-locations.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Offset pagination with explicit min(limit, LOCATION_PAGE_LIMIT=100) bound; always emits both LIMIT and OFFSET.",
-      "justification": "listLocations uses Math.min(limit, 100) before computing offset, so depth is capped at the constant page size; a keyset migration would add latency with no correctness gain for a sub-100-row admin lookup."
-    },
     "/inventory/warehouses/inv-warehouses.service.ts": {
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
@@ -586,6 +581,21 @@
     "/webhooks/webhooks.service.ts": {
       "verdict": "ACTIONABLE",
       "note": "Offset pagination; needs keyset migration or proven depth bound"
+    },
+    "/timesheets/core/overdue.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Offset pagination; needs keyset migration or proven depth bound",
+      "justification": "Classified 2026-09-12. Offset pagination: the overdue-period list pages with .limit(limit).offset(offset), ordered (periodEnd ASC, id ASC) — the tiebreaker is present, so pages are stable, but the offset depth still grows with how many periods the organisation has left overdue. Needs a keyset cursor on (periodEnd, id)."
+    },
+    "/inventory/shipments/lib/carrier-operations.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Offset pagination; needs keyset migration or proven depth bound",
+      "justification": "Classified 2026-09-12. Two offset pages beside a count(*): listCarrierOperations (ordered createdAt DESC, id DESC) and listCarrierDeliveries (receivedAt DESC, id DESC), both .limit(limit).offset((page - 1) * limit). Each order carries an id tiebreaker, so pages are stable and do not drop rows — the unbounded part is the offset depth, which grows with the carrier traffic the organisation has accumulated, not with the page size. Both need a keyset cursor on their existing sort tuple."
+    },
+    "/inventory/channels/sync/channel-job.drizzle-store.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Offset pagination; needs keyset migration or proven depth bound",
+      "justification": "Classified 2026-09-12. The channel-job list pages with .limit(filters.limit).offset(offset) beside a count(*), ordered by `updated_at DESC` alone — no id tiebreaker, so two jobs touched in the same millisecond can repeat or drop between pages. Needs a keyset cursor on (updatedAt, id)."
     }
   },
   "unbounded": {
@@ -609,25 +619,10 @@
       "verdict": "BOUNDED",
       "note": "Denied-module resolution is capped to the finite 100-module catalog"
     },
-    "/accounting/core/accounting-cash-flow.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "split from accounting-statements.service.ts; L65 inArray(ledgerAccounts.code, CASH_CODES) is bounded by a 2-element compile-time constant; L131 inArray(journalLines.entryId, entryIds) is bounded by the period-scoped cash entry ids the prior query returned"
-    },
     "/accounting/adapters/posting-command.e2e-spec.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. Not a service: an e2e suite (18 describe/it blocks on seedOrg fixtures). collectServiceFiles drops names ending in .spec.ts, and a name ending in .e2e-spec.ts does not end in .spec.ts, so e2e suites are scanned as if they were services. The 14 matches are assertion reads against the org and book this suite seeds for itself; none is reachable from a request."
-    },
-    "/accounting/core/accounting-journal-entry.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "split from accounting-ledger.service.ts; L74 finApprovalPolicies is a per-org per-recordType config table bounded at 5; L189 reads the lines of one journal entry via eq(entryId)+eq(orgId)"
-    },
-    "/accounting/core/accounting-ledger.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. Both matches are book-wide reads with no LIMIT: the aging report loads every AP document in the book (optionally one party) and every debit-note allocation in the book up to asOf, then buckets them in JS. Both grow with the ledger. Aging needs to move into SQL (GROUP BY bucket) or page by party."
     },
     "/accounting/ap/ap-payments.service.ts": {
       "verdict": "ACTIONABLE",
@@ -643,16 +638,6 @@
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. loadPartyNames reads glParties by primary key inArray over the de-duplicated partyIds it is handed, so it returns at most one row per id. It has no caller today; requireVendor beside it reads with .limit(1)."
-    },
-    "/accounting/core/accounting-vendor-query.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "split from accounting-payables-query.service.ts; L100/L123 are scoped to a single vendorId; L190 agedPayables now filters total - amount_paid > 0.005 in SQL instead of fetching every PAID bill org-wide and discarding it in JS"
-    },
-    "/accounting/gl/periods.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "Classified 2026-09-11. Same code, new path: assertAccountsBelongToBook moved verbatim out of ap-documents.service.ts when that 1178-line file was decomposed for check:file-sizes. Inherits the parent's verdict: the expense-account check reads glAccounts by primary key inArray over the account ids on the request's own lines, de-duplicated, and compares the counts."
     },
     "/accounting/ap/lib/ap-document-reads.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -674,20 +659,10 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. The aging reads return every open AR document and every receipt in the book that match the filters, with no LIMIT, and bucket them in JS. Book-wide; grows with the ledger."
     },
-    "/accounting/settings/accounting-settings.service.ts": {
-      "verdict": "BOUNDED",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. Not a service: an e2e suite (11 describe/it blocks on seedOrg fixtures). collectServiceFiles drops names ending in .spec.ts, and a name ending in .e2e-spec.ts does not end in .spec.ts, so e2e suites are scanned as if they were services. The 2 matches are assertion reads against the org and book this suite seeds for itself; none is reachable from a request."
-    },
     "/accounting/ar/ar-documents.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. get() and loadComputedLines read ONE document's lines (eq documentId). Lines are replaced wholesale on update (delete, then insert) and capped at 500 by the create and update schemas in dto/ar-documents.schemas.ts. frozenTaxLines reads one document's frozen tax lines, derived from those lines and the pack's tax components. The offset list is classified separately."
-    },
-    "/accounting/settings/dimensions.service.ts": {
-      "verdict": "BOUNDED",
-      "note": "listDimensions and listValues use limit+1 overflow detection; callers receive an explicit error rather than a silently truncated growing configuration set",
-      "justification": "Source and tests enforce 101-dimension and 501-value overflow boundaries"
     },
     "/accounting/ar/ar-receipts.service.ts": {
       "verdict": "ACTIONABLE",
@@ -913,7 +888,6 @@
       "note": "The existing rule fan-out remains after action execution was extracted in ARCH-003.",
       "justification": "runAutomationsForEvent selects enabled rules for one org and one trigger; every matching rule must execute, and createRule enforces the organization's automations plan limit before insertion. This is the remaining original read, not a newly suppressed query; notifyMembers and its classification moved to automation-action-executor.service.ts on 2026-09-11."
     },
-
     "/autonomy/autonomy-actions.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
@@ -1354,11 +1328,6 @@
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "searchMessages uses id-keyset cursor (lt(chatMessages.id, cursor)) with limit+1 sentinel and hasMore check; already properly paginated; resolveContentMatch caps SECURITY_DEFINER call at CHAT_SEARCH_ID_CAP=1000 2026-09-01"
-    },
-    "/clients/client-accounts-crm-assignment.ts": {
-      "verdict": "KEYSET-MIGRATED",
-      "note": "csMembers bounded by .limit(CS_MEMBER_LIMIT); backfillCrmAssignments drains unassigned clientAccounts via keyset cursor on id in chunks of 500 2026-09-07",
-      "justification": "Two detections, split verdict, worst one governs. L18 is bounded - inArray(users.id, csMemberIds) on the primary key where csMemberIds comes from membersWithPermission(..., { limit: CS_MEMBER_LIMIT = 500 }). L74 is GENUINELY UNBOUNDED: backfillCrmAssignments reads every unassigned client account in the org, and(eq(orgId), isNull(assignedCrmId)) ordered by createdAt with no cap, to build its round-robin work list. A plain .limit() is the wrong fix - the backfill must be exhaustive or it silently leaves accounts unassigned - so this wants a batched keyset drain over (org_id, id) feeding bulkUpdateFromValues per batch. NOTE: this file arrived UNTRACKED mid-run from another agent's in-flight work; if it is renamed or abandoned before being committed this entry goes stale. Clients territory; not fixed in the gate lane 2026-09-03"
     },
     "/clients/client-accounts.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -1812,191 +1781,6 @@
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "widget reads bounded by orgId (small config set per org); widget configuration is small 2026-09-01"
-    },
-    "/finance/ap/ap-approval.helper.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "approval policies per org+recordType bounded at 0-5 per type; admin-configured catalog"
-    },
-    "/finance/ap/bills-due-check.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "background notification sweep for bills due in 3 days; must process all"
-    },
-    "/finance/ap/payment-run-executor.service.ts": {
-      "verdict": "BOUNDED",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "items for one payment run user-selected; bills inArray bounded by pendingItems"
-    },
-    "/finance/ap/payment-runs.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "items for one run bounded; createRun bill scan filtered by criteria"
-    },
-    "/finance/ap/recurring-bills.service.ts": {
-      "verdict": "BOUNDED",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "listTemplates already has limit(pageLimit+1) after orderBy; scanner misses limit outside 10-line window. runDueRecurringBills is background cron"
-    },
-    "/finance/ap/vendor-credits.service.ts": {
-      "verdict": "BOUNDED",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "single-record selects keyed on vendorCreditId via WHERE id=x"
-    },
-    "/finance/ap/vendor-payments-allocations.service.ts": {
-      "verdict": "BOUNDED",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "SUM aggregate for payment balance; allocations bounded by single payment"
-    },
-    "/finance/ar/ar-payments.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "single-payment selects keyed on paymentId; invoices for one payment bounded"
-    },
-    "/finance/ar/collections.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "overdue invoice sweep for collections management; must scan all overdue org-wide"
-    },
-    "/finance/ar/credit-notes.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "single credit-note selects; invoices for one note bounded by note line items"
-    },
-    "/finance/ar/recurring-invoices.service.ts": {
-      "verdict": "BOUNDED",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "listTemplates already has limit(pageLimit+1); scanner misses limit outside 10-line window. runDue is background cron"
-    },
-    "/finance/ar/reminder-outbox.consumer.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "member userId lookup during reminder delivery; bounded by org membership count"
-    },
-    "/finance/ar/reminders.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "member userId lookup for reminder recipients; bounded by org membership"
-    },
-    "/finance/assets/asset-categories.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "inArray(categoryIds) account lookup bounded by asset category count"
-    },
-    "/finance/assets/assets.service.ts": {
-      "verdict": "BOUNDED",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "all selects in this file already have limits or are aggregate projections"
-    },
-    "/finance/assets/depreciation-reverse.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "split from depreciation-runs.service.ts; L34 reads the lines of the run journal entry via eq(entryId)+eq(orgId); L66 enumerates one run via eq(runId)+eq(orgId), which the reversal must do in full"
-    },
-    "/finance/assets/depreciation-runs.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "background depreciation batch job must process all assets in a run"
-    },
-    "/finance/banking/bank-accounts.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "SUM aggregate for balance; single account lookup"
-    },
-    "/finance/banking/matching.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "lookups within one reconciliation session keyed on specific transaction IDs"
-    },
-    "/finance/banking/reconciliation-workspace.service.ts": {
-      "verdict": "BOUNDED",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "workspace and transaction selects for one reconciliation period"
-    },
-    "/finance/banking/reconciliation.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "single reconciliation period fetch; transactions bounded by date range"
-    },
-    "/finance/controls/approvals.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "approval policy and chain lookups per recordType; bounded at 0-10 per type"
-    },
-    "/finance/expenses/reimbursements.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "single reimbursement and expense lookup by reimbursementId"
-    },
-    "/finance/planning/budgets.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "budget lines for one budget; status-check selects on single budgetId"
-    },
-    "/finance/planning/bva.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "aggregate SUM of journal activity per budget line; must compute over full period data"
-    },
-    "/finance/planning/forecast.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "cash flow forecast aggregate over all open invoices/bills; financial projection"
-    },
-    "/finance/planning/scenarios.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "scenario adjustments for one scenario; bounded by scenario line count"
-    },
-    "/finance/reports/analytics-reports.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "finance/reports lane (excluded territory)",
-      "justification": "aggregate financial analytics compute over all org data in date range"
-    },
-    "/finance/reports/finance-report-export-worker.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "finance/reports lane (excluded territory)",
-      "justification": "report export aggregates must read all period data; background export job"
-    },
-    "/finance/reports/insights-finders.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "finance/reports lane (excluded territory)",
-      "justification": "aggregate insight algorithms require full period data for anomaly detection"
-    },
-    "/finance/reports/insights.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "finance/reports lane (excluded territory)",
-      "justification": "bank balance aggregate lookup for cash-position insight summary"
-    },
-    "/finance/reports/overview.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "finance/reports lane (excluded territory)",
-      "justification": "aggregate AR AP revenue expense totals for dashboard; must compute over all period data"
-    },
-    "/finance/reports/statement-reports.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "finance/reports lane (excluded territory)",
-      "justification": "aggregate P&L balance sheet cash flow statements over all accounts in period"
-    },
-    "/finance/tax/tax-codes.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "listTaxCodes already has limit via cursor page; scanner false-positive. Single-record lookup by code"
-    },
-    "/finance/tax/tax-compliance.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "L154 getAllActiveOrgIds() is the platform sweep enumeration — the same select/where/orderBy that common/tenant/for-each-org.ts:73-77 runs, which every cron service is already classified against. Bounded by the organizations table, not by tenant data. Recorded for S05: it is a hand-rolled copy of forEachOrg and so skips resolveEnumerationDb, which picks the correct cell db per org."
-    },
-    "/finance/tax/tax-dashboard.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "aggregate GST totals across all invoices/bills in period; financial reporting"
-    },
-    "/finance/tax/tax-reports.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "aggregate GSTR tax data across all period transactions; financial reports"
     },
     "/gdpr/gdpr-export-worker.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -2650,10 +2434,6 @@
       "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/purchase-orders/grn.service.ts": {
-      "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
-    },
-    "/inventory/quality/quality-disposition.ts": {
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
@@ -3835,8 +3615,9 @@
       "justification": "tasks calendar source bounded by date-range window + userId; calendar views are inherently time-windowed 2026-09-01"
     },
     "/timesheets/core/approvals-bulk.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "inArray(timesheetPeriods.id, input.periodIds) — bounded by the client-supplied periodIds array; cannot grow beyond request input"
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select over an org-and-period window; needs pagination or a stated bound",
+      "justification": "Re-verdicted FALSE-POSITIVE -> ACTIONABLE on 2026-09-12. FALSE-POSITIVE with NO justification field. The file shows the author bounding where a bound exists — :59 and :106 .limit(1), :128 .limit(requestedIds.length) — so the two reads of `timesheet_periods` at :138 and :248 that carry no limit are the exception rather than the pattern, and the blank justification is what let them sit beside the bounded ones without comment."
     },
     "/timesheets/core/approvals.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -3860,8 +3641,9 @@
       "note": "listEntries already keyset-migrated on (date, id); getEntryById is a single-row lookup by entryId with .limit(1); no unbounded list"
     },
     "/timesheets/core/exceptions-detector.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "background job reading periods for a specific week (date-range bounded) and active members per org (bounded by the org membership count, not a live list endpoint)"
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select over an org-and-period window; needs pagination or a stated bound",
+      "justification": "Re-verdicted FALSE-POSITIVE -> ACTIONABLE on 2026-09-12. FALSE-POSITIVE with NO justification field, suppressing four reads unexplained. Read against the source: :63 and :134 read `timesheets` for a period, :170 reads `timerSessions`, :202 reads `timesheets` again, each filtered by org plus a period/date window and nothing else. The row count grows with how much the organisation logged in that window, so these are genuinely unbounded sweeps, not single-row or id-set lookups. The two settings reads at :30 and :264 already carry .limit(1); these four do not and cannot without dropping exceptions the detector exists to find."
     },
     "/timesheets/core/lib/approval-transition.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -3894,8 +3676,9 @@
       "note": "scanner flag is stale; rates are a small config table bounded by orgId; no unbounded list endpoint"
     },
     "/timesheets/core/reports.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "inArray(projects.id, projectIds) — bounded by aggregate result; date-range bounded report aggregate; no unbounded org-wide scan"
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select over an org-and-period window; needs pagination or a stated bound",
+      "justification": "Re-verdicted FALSE-POSITIVE -> ACTIONABLE on 2026-09-12. FALSE-POSITIVE with NO justification field. The membership lookup at :32 carries .limit(1). The counted reads are the report bodies: :79 reads `timesheets` over the reporting window with no grouping and no limit, and :218 reads every holiday in the range. The grouped reads beside them (:69 by project, :90 by date, :159 by member) return one row per group and are bounded by the org's project/seat count, but the gate's AGGREGATE verdict is FIXED and cannot be applied while the scanner still matches the file."
     },
     "/timesheets/core/team.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -3906,16 +3689,19 @@
       "note": "scanner flag is stale; timer reads a single active entry per membership; no unbounded list"
     },
     "/timesheets/core/timesheet-analytics.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "inArray bounded by aggregate membershipIds; date-range bounded SLA report; no org-wide unbounded scan"
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select over an org-and-period window; needs pagination or a stated bound",
+      "justification": "Re-verdicted FALSE-POSITIVE -> ACTIONABLE on 2026-09-12. It carried a FALSE-POSITIVE verdict with NO justification field at all, so five reads were suppressed with no stated reason. Read against the source: the reads are org-and-date-range sweeps of `timesheets` and `timesheet_periods` (:57 grouped by client+currency, :146/:155/:161 grouped per member and per date, :269 the period rows, :369-:396 the totals), plus :187 every holiday in the range and :219/:324 the member rows behind them. The grouped ones return one row per member/date/currency, which is bounded by the org's seat count and the range length and not by row count — but the gate's AGGREGATE verdict cannot be used to say so, because AGGREGATE is a FIXED verdict and a still-matching file reports as a regression. ACTIONABLE records the debt honestly rather than hiding it behind a blank justification."
     },
     "/timesheets/payroll/payroll-export.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "scanner flag is stale; payroll-export reads a bounded set for a specific payroll run; no live-list endpoint"
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select over an org-and-period window; needs pagination or a stated bound",
+      "justification": "Re-verdicted FALSE-POSITIVE -> ACTIONABLE on 2026-09-12. FALSE-POSITIVE with NO justification field. The file is mostly careful — :102 limits to input.userIds.length, :128 to uniqueMembIds.length, :134 to userIdSet.size, :155 to 1 — which makes the three that carry no limit stand out rather than blend in. The significant one is :120, `tx.select().from(timesheets).where(...).for('update')`: an unprojected, unbounded read of every eligible timesheet row in the export window that also takes a row lock on each. Locking an unbounded set inside a transaction is the read here most worth bounding, and a blank FALSE-POSITIVE was hiding it next to the limits its own neighbours carry."
     },
     "/timesheets/payroll/payroll-summary.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "date-range bounded payroll summary report; inArray bounded by run membership; no unbounded pagination"
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select over an org-and-period window; needs pagination or a stated bound",
+      "justification": "Re-verdicted FALSE-POSITIVE -> ACTIONABLE on 2026-09-12. FALSE-POSITIVE with NO justification field. Read against the source: the membership and settings lookups at :128/:142/:153 already carry .limit(1), so they are not what is counted. What is counted is :172 reading `timesheets` for the payroll window, :190 the holidays in it and :212 the leave requests in it — all three filtered by org and a date range only, so each grows with the organisation's activity in the period rather than with any bounded key."
     },
     "/users/lib/user-account-records.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -4074,6 +3860,96 @@
       "verdict": "FALSE-POSITIVE",
       "note": "One read, and it is a subquery definition rather than an executed statement.",
       "justification": "The flagged site at :100 is the `ranked` subquery built with .as(\"ranked_employments\"); it is never executed on its own. The statement that runs is the outer select over it, which carries .limit(hrPersonRows.length * (SYNC_EXPORT_CAP + 1)) - an exact upper bound, because the window filter is personRank <= SYNC_EXPORT_CAP + 1 and row_number() partitions by person_id, so no person can contribute more rows than the cap. A .limit() cannot be put on the subquery itself: it would truncate BEFORE row_number() ranks, which would silently change which employments each person exports, and this is a compliance surface. Added 2026-09-08 when the per-person read loop became one windowed statement."
+    },
+    "/accounting/ap/lib/ap-document-guards.ts": {
+      "verdict": "BOUNDED",
+      "note": "Bounded by an explicit .limit() stating the row-set bound",
+      "justification": "Classified 2026-09-12. `assertAccountsBelongToBook` reads `gl_accounts` filtered `inArray(id, wanted)`, where `wanted` is the de-duplicated set of expense account ids named by ONE document's lines, with an empty-set early return. `id` is the primary key, so `wanted.length` is the exact maximum row count; a `.limit(wanted.length)` was added so the bound is stated in the statement rather than inferred."
+    },
+    "/accounting/ar/ar-document-pdf.e2e-spec.ts": {
+      "verdict": "BOUNDED",
+      "note": "Bounded by an explicit .limit() stating the row-set bound",
+      "justification": "Classified 2026-09-12. Both reads address ONE AR document by primary key (`eq(arDocuments.id, document.id)`) to assert on its stored PDF key and URL, and both destructure `[row]`. `.limit(1)` was added to each: exactly one row can match, and the spec only ever looked at the first."
+    },
+    "/crm/core/lib/support-dashboard.ts": {
+      "verdict": "BOUNDED",
+      "note": "Bounded by an explicit .limit() stating the row-set bound",
+      "justification": "Classified 2026-09-12. The counted read resolves assignee display names: `inArray(users.id, assigneeIds)` inner-joined 1:1 to that organisation's membership, guarded by an `assigneeIds.length > 0` early return. `users.id` is the primary key and the join cannot multiply rows within one org, so the assignee set is the exact bound and `.limit(assigneeIds.length)` now says so."
+    },
+    "/e-sign/lib/recipient-identity.ts": {
+      "verdict": "BOUNDED",
+      "note": "Bounded by an explicit .limit() stating the row-set bound",
+      "justification": "Classified 2026-09-12. A `SELECT ... FOR UPDATE` re-read of ONE signing recipient, addressed by `signRecipients.id` (primary key) AND its `signingTokenHash`, destructured as `[recipient]`. It had no limit, so the row lock was taken over a set to read a single row; `.limit(1)` was added."
+    },
+    "/inventory/purchase-orders/lib/receipt-lots-serials.ts": {
+      "verdict": "BOUNDED",
+      "note": "Bounded by an explicit .limit() stating the row-set bound",
+      "justification": "Classified 2026-09-12. Both reads are duplicate probes over `inv_serial_numbers` filtered `inArray(serialNumber, serials)` for one variant, each behind a `serials.length === 0` early return. A serial number is unique per (org_id, product_variant_id, serial_number), so at most one row can return per serial the caller sent, and `limit: serials.length` now states that bound."
+    },
+    "/accounting/ap/ap-aging.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-12. Both reads (:56 the document set, :184 the same shape for the detail view) select every AP document in the organisation that is POSTED/PARTIALLY_PAID/PAID and issued on or before the as-of date, optionally narrowed to one party. Nothing caps that set — it grows with the organisation's purchasing history — and the aging buckets are computed in JavaScript over the whole result, so a limit would silently understate the aging. Genuinely unbounded and genuinely unfixed: it needs either party-scoped paging or the bucketing pushed into SQL."
+    },
+    "/accounting/ar/ar-invoice-post-idempotency.e2e-spec.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-12. `fencesFor` reads `command_fences` for one organisation and one idempotency key with no limit. The row count is small in practice (a fence per command name under that key) but nothing in the schema caps it, and the spec asserts over the whole array, so a limit would change what it proves. Left unbounded deliberately; recorded rather than suppressed."
+    },
+    "/crm/core/lib/crm-org-records.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-12. The read collects `converted_from_party_id` for every contact of one company, to find the leads that company's employees came from. It is scoped to one company but nothing caps a company's contact count, so the row set grows with the organisation's CRM data rather than with any bounded key."
+    },
+    "/inventory/quality/inspection-release.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-12. `locateLines` reads `inv_stock_levels` filtered `inArray` on the variants of the lines being released, to pick a fallback location for each. One variant can stand in many locations, lots and serials, so the id-set is NOT the bound — the row count is the stock grain of those variants. A limit here would silently pick no location for some lines, so it is recorded as real rather than suppressed."
+    },
+    "/crm/core/lib/crm-org-listing.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; reviewed and found bounded by the row set named in the justification",
+      "justification": "Classified 2026-09-12. `companyQuery` is a query BUILDER, not an executed statement: it returns `db.select(COMPANY_COLUMNS).from(crmOrgPartyMap).innerJoin(businessParties, PARTY_OF_CRM_ORG)` for three callers to finish with their own `.where()`, `.orderBy()`, `.limit()` and `.offset()`. The scanner matches the builder's `.select(` and cannot see the limit its callers attach. Same shape as the already-recorded `/gdpr/gdpr-sync-export-fetchers.ts` `.as()` subquery: a definition, not a read."
+    },
+    "/crm/core/lib/crm-org-hierarchy.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; reviewed and found bounded by the row set named in the justification",
+      "justification": "Classified 2026-09-12. `companies()` takes an explicit `ids` array and filters `inArray(crmOrgPartyMap.crmOrganizationId, ids)` joined 1:1 to `business_parties` through the party map, so the caller's own id list is the bound. Not marked BOUNDED because BOUNDED is a FIXED verdict here and the scanner would still match the file, which reports as a regression."
+    },
+    "/crm/core/won-stage-keys.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; reviewed and found bounded by the row set named in the justification",
+      "justification": "Classified 2026-09-12. Reads the `key` column of one organisation's pipeline stages where `stage_type = 'won'`. Pipeline stages are per-org configuration — tens of rows, authored by hand in the pipeline editor — not transactional data. A limit is refused rather than forgotten: dropping a won stage would silently under-report closed revenue in both attribution reports this function exists to keep in agreement."
+    },
+    "/inventory/purchase-orders/lib/grn-post-tx.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; reviewed and found bounded by the row set named in the justification",
+      "justification": "Classified 2026-09-12. Reads the lines of ONE purchase order (`eq(invPoLines.poId, po.id)`) to decide whether the receipt closes it (`allReceived`). One document's lines, and the answer is an `every()` over all of them, so a limit would mark a partially received order as RECEIVED."
+    },
+    "/inventory/purchase-orders/lib/po-lifecycle.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; reviewed and found bounded by the row set named in the justification",
+      "justification": "Classified 2026-09-12. Two reads, both over ONE purchase order: :119 the order row itself by (id, orgId) as a findFirst fallback, and :175 that order's lines to compute the outstanding quantity per variant. One document's rows, and the outstanding calculation sums across all of them, so neither can take a limit without mis-stating what is still on its way."
+    },
+    "/inventory/quality/inspection-plans.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; reviewed and found bounded by the row set named in the justification",
+      "justification": "Classified 2026-09-12. `listVersions` reads the version rows of ONE inspection plan, ordered oldest-first, already projected to eight columns. A plan's version history is the bound; the detail screen renders the whole history, so truncating it would hide activated versions."
+    },
+    "/inventory/quality/lib/recall-create.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; reviewed and found bounded by the row set named in the justification",
+      "justification": "Classified 2026-09-12. Reads `inv_stock_levels` for the lots being recalled (`inArray(lotId, recalledLotIds)`), already projected to the six columns the recall holds need. A limit is refused rather than forgotten: a recall must place a hold on every stock row of every recalled lot, and one lot legitimately stands in many locations and handling units, so truncating the set would leave recalled goods on the shelf."
+    },
+    "/inventory/shipments/carriers.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Scanner matched prose in a docblock, not a statement",
+      "justification": "Classified 2026-09-12. The single match is at :16 and is a COMMENT, not a read: the CARRIER_COLUMNS docblock explains that 'The three reads below used a bare `.select()` and `.returning()`, which is SELECT *' and that INV-26's two ciphertext columns are why they no longer do. The scanner matched the sentence describing the defect that was fixed. Every actual read in the file now selects the named CARRIER_COLUMNS projection, and the carrier list is bounded by the organisation's own carrier roster."
+    },
+    "/inventory/channels/sync/channel-job.drizzle-store.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-12. Both reads resolve `inv_product_variants` by `inArray(sku, skus)` for one publication outcome (:174) or one channel order (:262), each behind a `skus.length === 0` early return, so the caller's SKU list is the bound. Recorded ACTIONABLE rather than FALSE-POSITIVE because that bound is only exact now that the missing `deleted_at IS NULL` predicate has been added to both (same pass): `uniq_inv_product_variants_org_sku_live` is PARTIAL on `deleted_at IS NULL`, so before that a SKU reused after a deletion returned two rows and the second silently overwrote the `bySku` entry. What remains is the limit — one row per SKU asked for — which nothing yet states."
     }
   }
 }
