@@ -29,7 +29,7 @@ describe("the call-analysis team key reaches admins and stops there", () => {
   const VIEW = "crm:call-analysis:view";
 
   const migration = readFileSync(
-    join(__dirname, "../../../migrations/0543_crm_call_analysis_team_permissions.sql"),
+    join(__dirname, "../../../migrations/0543a_crm_call_analysis_team_permissions.sql"),
     "utf8",
   );
 

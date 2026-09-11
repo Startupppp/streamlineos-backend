@@ -30,7 +30,7 @@ describe("the call recording consent key reaches admins and stops there", () => 
   const ATTEST = "crm:call-recording-consent:attest";
 
   const migration = readFileSync(
-    join(__dirname, "../../../migrations/0544_crm_call_recording_consent.sql"),
+    join(__dirname, "../../../migrations/0544a_crm_call_recording_consent.sql"),
     "utf8",
   );
 
@@ -119,7 +119,7 @@ describe("the call recording consent key reaches admins and stops there", () => 
 
 describe("the tables the rule reads are tenant-isolated", () => {
   const migration = readFileSync(
-    join(__dirname, "../../../migrations/0544_crm_call_recording_consent.sql"),
+    join(__dirname, "../../../migrations/0544a_crm_call_recording_consent.sql"),
     "utf8",
   );
 

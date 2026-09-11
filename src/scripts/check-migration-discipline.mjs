@@ -385,6 +385,18 @@ const BASELINE_JOURNAL_INTEGRITY = new Set([
   "insert-order:0533a_ledger_correction_objects_relocked.sql", // streamline_inv, inv_cold_head +11 scratch
   "insert-order:0534a_grn_receiving_lifecycle.sql", // streamline_inv, inv_cold_head +11 scratch
   "insert-order:0536a_putaway_tasks.sql", // streamline_inv, inv_cold_head +11 scratch
+  // 0540-0545: origin/main holds the HR files at 0540-0544 (fenced, untouched); both
+  // the crm (a) and inv (b) twins were renamed. 0545a: inv, crm twin applied on Neon.
+  "insert-order:0540a_crm_call_analyses.sql", // streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +1 scratch
+  "insert-order:0540b_package_sales_order_link.sql", // streamline_inv, inv_cold_head +11 scratch
+  "insert-order:0541a_crm_call_analysis_permissions.sql", // Neon(hash), streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +1 scratch
+  "insert-order:0541b_demand_forecast_versions.sql", // streamline_inv, inv_cold_head +11 scratch
+  "insert-order:0542a_crm_call_analysis_releases.sql", // streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +1 scratch
+  "insert-order:0542b_genealogy_traversal_indexes.sql", // streamline_inv, inv_cold_head +11 scratch
+  "insert-order:0543a_crm_call_analysis_team_permissions.sql", // Neon(hash), streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +1 scratch
+  "insert-order:0543b_pick_exception_ownership.sql", // streamline_inv, inv_cold_head +11 scratch
+  "insert-order:0544b_inspection_plans.sql", // streamline_inv, inv_cold_head +11 scratch
+  "insert-order:0545a_stock_write_off.sql", // streamline_inv, inv_cold_head +11 scratch
 ]);
 
 // ─── check functions ──────────────────────────────────────────────────────────

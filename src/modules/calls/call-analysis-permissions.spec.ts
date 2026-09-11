@@ -27,7 +27,7 @@ describe("the call-analysis permission keys reach somebody", () => {
   const RUN = "crm:call-analysis:run";
 
   const migration = readFileSync(
-    join(__dirname, "../../../migrations/0541_crm_call_analysis_permissions.sql"),
+    join(__dirname, "../../../migrations/0541a_crm_call_analysis_permissions.sql"),
     "utf8",
   );
 

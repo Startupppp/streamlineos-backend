@@ -23,9 +23,9 @@
 | 0524a_cartonization | 1700000320000 |
 | 0527_po_batching_policy | 1700000323000 |
 | 0529_ledger_corrections_and_immutability | 1700000325000 |
-| 0540_package_sales_order_link | 1700000336000 |
-| 0543_pick_exception_ownership | 1700000341000 |
-| 0544_inspection_plans | 1700000340000 |
+| 0540b_package_sales_order_link | 1700000336000 |
+| 0543b_pick_exception_ownership | 1700000341000 |
+| 0544b_inspection_plans | 1700000340000 |
 | 0581_inventory_quick_commerce_asn | 1700000359000 |
 | 0582_notifications_partition_by_created_at | 1700000379000 |
 | 0589_inventory_drop_reason_codes | 1700000367000 |
