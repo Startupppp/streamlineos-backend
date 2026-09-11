@@ -332,6 +332,34 @@ describe("OwnershipService — access / business-rule logic", () => {
         responses.acceptTransfer(ORG, ACTOR_USER, TRANSFER_ID),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
+
+    // The designated recipient can be the right person and still not be
+    // entitled to hold ownership: a SUSPENDED or LEFT membership must not be
+    // able to accept, or a transfer nominated before the suspension becomes a
+    // way back in. Nothing asserted this until 2026-09-11 — neutering the
+    // status check left all 57 ownership tests green.
+    it.each(["SUSPENDED", "LEFT"])(
+      "throws BadRequestException when the designated recipient's membership is %s",
+      async (status) => {
+        const transfer = {
+          id: TRANSFER_ID,
+          scope: "ORGANIZATION",
+          moduleKey: null,
+          fromMembershipId: 1,
+          initiatedByMembershipId: 1,
+          toMembershipId: 2,
+          status: "PENDING",
+          expiresAt: new Date(Date.now() + 3_600_000),
+        };
+        const actorMembership = { id: 2, userId: ACTOR_USER, isOwner: false, status };
+        mockDb.select
+          .mockReturnValueOnce(makeSelectChain([transfer]))
+          .mockReturnValueOnce(makeSelectChain([actorMembership]));
+        await expect(
+          responses.acceptTransfer(ORG, ACTOR_USER, TRANSFER_ID),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      },
+    );
   });
 
   describe("cancelTransfer", () => {
