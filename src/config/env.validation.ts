@@ -225,8 +225,10 @@ const baseSchema = z
     ),
     /**
      * Turns an undeclared route from a boot-report line into a hard failure.
-     * Read directly by `RouteClassifierGuard`; declared here so the schema is
-     * the whole contract rather than most of it.
+     * `RouteClassifierGuard` takes it through `APP_CONFIG` rather than reading
+     * `process.env` itself, so this enum is the whole contract and not most of
+     * it: a misspelled value fails validation at boot instead of falling
+     * through the guard's `!== "false"` test to "enforce".
      */
     REQUIRE_ROUTE_CLASSIFICATION: z.preprocess(
       emptyToUndefined,

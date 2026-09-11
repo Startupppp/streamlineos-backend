@@ -143,7 +143,27 @@ export class TimesheetsAuditService {
     };
   }
 
+  /**
+   * Walk the hash chain and say, honestly, how much of it was walked.
+   *
+   * The `limit` is real and an organisation will pass it: this reads the
+   * OLDEST `limit` events by id, so on a chain longer than that, everything
+   * after the cut is never examined and `valid: true` used to come back
+   * regardless. A caller had no way to tell "the whole chain is intact" from
+   * "the first ten thousand of ninety thousand are intact", which is the
+   * difference between an audit trail and a reassuring number.
+   *
+   * So the result carries `truncated` and `total`. A surface rendering this
+   * must say which of the two it is looking at — a green tick over a truncated
+   * check is worse than no check, because it is believed.
+   */
   async verifyChain(orgId: string, limit = 10_000) {
+    const [counted] = await this.db
+      .select({ n: sql<string>`count(*)` })
+      .from(timesheetAuditEvents)
+      .where(eq(timesheetAuditEvents.orgId, orgId));
+    const total = Number(counted?.n ?? 0);
+
     const rows = await this.db
       .select()
       .from(timesheetAuditEvents)
@@ -175,13 +195,24 @@ export class TimesheetsAuditService {
           valid: false,
           brokenAtId: row.id,
           checked: verified + legacyRows,
+          verified,
           legacyRows,
+          total,
+          /* A break found early says nothing about what lies past the cut. */
+          truncated: total > rows.length,
         };
       }
       prevHash = row.rowHash;
       verified++;
     }
 
-    return { valid: true, checked: verified + legacyRows, verified, legacyRows };
+    return {
+      valid: true,
+      checked: verified + legacyRows,
+      verified,
+      legacyRows,
+      total,
+      truncated: total > rows.length,
+    };
   }
 }

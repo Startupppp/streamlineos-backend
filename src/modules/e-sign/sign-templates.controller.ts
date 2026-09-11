@@ -13,11 +13,9 @@ import {
   createTemplateSchema,
   updateTemplateSchema,
   createEnvelopeFromTemplateSchema,
-  publishPublicFormSchema,
   type CreateTemplateInput,
   type UpdateTemplateInput,
   type CreateEnvelopeFromTemplateInput,
-  type PublishPublicFormInput,
 } from "./dto/e-sign.schemas";
 
 @RequireModule("sign")
@@ -83,15 +81,5 @@ export class SignTemplatesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.templates.instantiate(u.orgId, u.userId, templateId, body);
-  }
-
-  @Post("templates/:templateId/publish-public-form")
-  @RequirePermission("sign:template:manage")
-  publishPublicForm(
-    @Param("templateId", ParseIntPipe) templateId: number,
-    @Body(new ZodValidationPipe(publishPublicFormSchema)) body: PublishPublicFormInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.templates.publishPublicForm(u.orgId, u.userId, templateId, body);
   }
 }

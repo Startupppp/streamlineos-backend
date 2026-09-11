@@ -49,6 +49,52 @@ export interface McpToolCall {
 export type McpContext = CurrentUserContext;
 
 /**
+ * What each report source returns to an agent.
+ *
+ * Fixed per source and named from `REPORTING_REGISTRY`, the closed set the
+ * compiler resolves against — a name absent from it is refused at compile time
+ * rather than becoming a column. An agent chooses the source; it does not name
+ * columns, because inventing a field name here is exactly how the previous
+ * version failed: it asked for `["id", "name", "value"]` on every source, and
+ * not one of those three is a field of any of them.
+ *
+ * A `Map`, for the reason `REPORTING_REGISTRY` is one: `source` is a string the
+ * caller chose, and looking it up in a plain object reaches the prototype —
+ * `"__proto__"` returns `Object.prototype` and `"constructor"` returns a
+ * function, both truthy, so the `if (!select)` below would treat them as found.
+ * Zod refuses the description a step later either way, so the old shape failed
+ * closed; it failed closed with a shape error about a source that does not
+ * exist, instead of saying which sources do.
+ */
+const MCP_REPORT_PROJECTIONS: ReadonlyMap<string, { kind: "field"; field: string }[]> =
+  new Map([
+    [
+      "parties",
+      [
+        { kind: "field" as const, field: "name" },
+        { kind: "field" as const, field: "party_type" },
+        { kind: "field" as const, field: "status" },
+      ],
+    ],
+    [
+      "deals",
+      [
+        { kind: "field" as const, field: "name" },
+        { kind: "field" as const, field: "stage" },
+        { kind: "field" as const, field: "value_minor" },
+      ],
+    ],
+    [
+      "activities",
+      [
+        { kind: "field" as const, field: "kind" },
+        { kind: "field" as const, field: "subject" },
+        { kind: "field" as const, field: "occurred_at" },
+      ],
+    ],
+  ]);
+
+/**
  * CRM MCP Server.
  *
  * Exposes CRM capabilities as MCP tools calling the same Nest services as HTTP,
@@ -59,33 +105,6 @@ export type McpContext = CurrentUserContext;
  * - Access to payroll, inventory, or accounting is impossible through this server.
  * - A caller without the required permission is refused with 403 Forbidden.
  */
-/**
- * What each report source returns to an agent.
- *
- * Fixed per source and named from `REPORTING_REGISTRY`, the closed set the
- * compiler resolves against — a name absent from it is refused at compile time
- * rather than becoming a column. An agent chooses the source; it does not name
- * columns, because inventing a field name here is exactly how the previous
- * version failed: it asked for `["id", "name", "value"]` on every source, and
- * not one of those three is a field of any of them.
- */
-const MCP_REPORT_PROJECTIONS: Record<string, { kind: "field"; field: string }[]> = {
-  parties: [
-    { kind: "field", field: "name" },
-    { kind: "field", field: "party_type" },
-    { kind: "field", field: "status" },
-  ],
-  deals: [
-    { kind: "field", field: "name" },
-    { kind: "field", field: "stage" },
-    { kind: "field", field: "value_minor" },
-  ],
-  activities: [
-    { kind: "field", field: "kind" },
-    { kind: "field", field: "subject" },
-    { kind: "field", field: "occurred_at" },
-  ],
-};
 
 @Injectable()
 export class CrmMcpService {
@@ -130,7 +149,7 @@ export class CrmMcpService {
     },
     {
       name: "crm_list_deals",
-      description: "List pipeline deals in the organization with stage, pipeline, and assignee filters.",
+      description: "List pipeline deals in the organization with stage and assignee filters.",
       inputSchema: {
         type: "object",
         properties: {
@@ -294,6 +313,17 @@ export class CrmMcpService {
       );
     }
 
+    /**
+     * The caller's own DataScope, not the string `"global"` this used to pass.
+     *
+     * `"global"` is not a member of `DataScope`, so `applyScope` fell through to
+     * its exhaustive default and emitted a `false` predicate: `crm_list_deals`
+     * answered every agent with an EMPTY LIST, silently, because an empty deals
+     * result is indistinguishable from an organisation that has no deals. The
+     * check above has already established this is not `"none"`.
+     */
+    const scope = decision.scope;
+
     const args = call.arguments || {};
     let result: unknown;
 
@@ -419,10 +449,10 @@ export class CrmMcpService {
 
       case "crm_run_report": {
         const source = typeof args.source === "string" ? args.source : "";
-        const select = MCP_REPORT_PROJECTIONS[source];
+        const select = MCP_REPORT_PROJECTIONS.get(source);
         if (!select)
           throw new BadRequestException(
-            `Unknown report source '${source}'. Valid sources: ${Object.keys(MCP_REPORT_PROJECTIONS).join(", ")}.`,
+            `Unknown report source '${source}'. Valid sources: ${[...MCP_REPORT_PROJECTIONS.keys()].join(", ")}.`,
           );
         const query = queryDescriptionSchema.parse({
           source,

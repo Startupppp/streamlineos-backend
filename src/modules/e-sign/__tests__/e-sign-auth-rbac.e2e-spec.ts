@@ -15,8 +15,6 @@ const publicSigningStub = {
   setFieldValue: jest.fn().mockRejectedValue(new NotFoundException()),
   complete: jest.fn().mockRejectedValue(new NotFoundException()),
   decline: jest.fn().mockRejectedValue(new NotFoundException()),
-  getPublicForm: jest.fn().mockRejectedValue(new NotFoundException()),
-  submitPublicForm: jest.fn().mockRejectedValue(new NotFoundException()),
 };
 
 const rateLimitStub = { check: jest.fn().mockResolvedValue({ allowed: true }) };
@@ -89,7 +87,6 @@ describe("SignOS auth/RBAC (e2e)", () => {
     ["patch", "/sign/templates/1"],
     ["post", "/sign/templates/1/duplicate"],
     ["post", "/sign/templates/1/create-envelope"],
-    ["post", "/sign/templates/1/publish-public-form"],
     ["post", "/sign/bulk-send/jobs"],
     ["get", "/sign/bulk-send/jobs"],
     ["get", "/sign/bulk-send/jobs/1"],
@@ -140,7 +137,6 @@ describe("SignOS auth/RBAC (e2e)", () => {
       ["post", "/public/sign/nonexistent-token/consent"],
       ["post", "/public/sign/nonexistent-token/complete"],
       ["post", "/public/sign/nonexistent-token/decline"],
-      ["get", "/public/sign/forms/nonexistent-slug"],
     ];
 
     it.each(publicRoutes)("never 401s on %s %s", async (method, path) => {

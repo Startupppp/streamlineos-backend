@@ -77,7 +77,6 @@ const TIERS: Record<string, Tier> = {
   "sign:public-auth": { limit: 10, windowSecs: 60 },
   "sign:public-otp-request": { limit: 5, windowSecs: 3600 },
   "sign:public-complete": { limit: 10, windowSecs: 60 },
-  "sign:public-form-submit": { limit: 10, windowSecs: 3600 },
   "sign:bulk-send-create": { limit: 5, windowSecs: 3600 },
   "mail:send": { limit: 30, windowSecs: 60 },
   "mail:reply": { limit: 30, windowSecs: 60 },

@@ -112,6 +112,7 @@
     "db:check-request-txn": "node src/scripts/check-request-transaction-cost.mjs",
     "check:cycles": "npx --yes madge@8 --circular --extensions ts src",
     "check:route-classification": "node src/scripts/route-classification-report.mjs",
+    "check:timesheets-payroll-boundary": "node src/scripts/check-timesheets-payroll-boundary.mjs",
     "check:route-classification:self-test": "node src/scripts/route-classification-report.mjs --self-test",
     "check:permission-keys": "node src/scripts/check-permission-keys.mjs",
     "check:permission-keys:self-test": "node src/scripts/check-permission-keys.mjs --self-test",

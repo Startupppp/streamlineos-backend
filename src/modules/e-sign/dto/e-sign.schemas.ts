@@ -40,6 +40,27 @@ export const signAuthMethodSchema = z.enum([
   "id_verification",
 ]);
 
+/**
+ * The authentication methods the self-serve signing flow can actually execute.
+ *
+ * The enum above is the full product vocabulary; this is the part that works
+ * today. `SignPublicService.authenticate` refuses anything outside this set with
+ * "not yet supported for self-serve signing" — honest, but it says so to the
+ * SIGNER, at the end of a link, after the envelope has gone out. The sender had
+ * already chosen the method, been told a phone number was mandatory for it, and
+ * pressed send.
+ *
+ * Exported so the pre-send validator and the signing flow read the SAME list.
+ * Two hand-maintained copies would drift, and the direction they drift in is the
+ * one where an envelope passes validation and cannot be signed.
+ */
+export const SELF_SERVE_AUTH_METHODS = ["email_link", "access_code", "otp_email"] as const;
+export type SelfServeAuthMethod = (typeof SELF_SERVE_AUTH_METHODS)[number];
+
+export function isSelfServeAuthMethod(method: string): method is SelfServeAuthMethod {
+  return (SELF_SERVE_AUTH_METHODS as readonly string[]).includes(method);
+}
+
 export const signRoutingModeSchema = z.enum(["parallel", "sequential", "mixed"]);
 export const signCcTimingSchema = z.enum(["on_send", "on_complete"]);
 
@@ -213,22 +234,6 @@ export const createEnvelopeFromTemplateSchema = z.object({
 });
 export type CreateEnvelopeFromTemplateInput = z.infer<typeof createEnvelopeFromTemplateSchema>;
 
-export const publishPublicFormSchema = z.object({
-  slug: z
-    .string()
-    .trim()
-    .min(3)
-    .max(80)
-    .regex(/^[a-z0-9-]+$/, "Slug must be lowercase letters, numbers, and hyphens"),
-  accessCode: z.string().trim().min(4).max(50).optional(),
-  maxSubmissions: z.number().int().positive().optional(),
-  expiresAt: z.string().datetime().optional(),
-  completionRedirectUrl: z.string().trim().url().optional(),
-  webhookUrl: z.string().trim().url().optional(),
-  embedAllowed: z.boolean().default(false),
-});
-export type PublishPublicFormInput = z.infer<typeof publishPublicFormSchema>;
-
 // ---- Bulk send ----
 
 export const createBulkSendJobSchema = z.object({
@@ -270,14 +275,6 @@ export const declineSchema = z.object({
   reason: z.string().trim().min(1, "Decline reason is required").max(1000),
 });
 export type DeclineInput = z.infer<typeof declineSchema>;
-
-export const publicFormSubmitSchema = z.object({
-  name: z.string().trim().min(1).max(200),
-  email: z.string().trim().email(),
-  phone: z.string().trim().max(30).optional(),
-  accessCode: z.string().trim().max(50).optional(),
-});
-export type PublicFormESignSubmitInput = z.infer<typeof publicFormSubmitSchema>;
 
 // ---- Settings ----
 

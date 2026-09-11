@@ -201,3 +201,53 @@ describe("report-metrics", () => {
     });
   });
 });
+
+describe("expectedHoursForRange with holidays", () => {
+  /** Four complete weeks, Monday to Sunday, so the base is a round number. */
+  const START = "2026-06-01";
+  const END = "2026-06-28";
+
+  it("expects a full month when nothing is closed", () => {
+    expect(expectedHoursForRange(START, END, 40)).toBe(160);
+    expect(expectedHoursForRange(START, END, 40, [])).toBe(160);
+  });
+
+  /**
+   * The bug this replaced: a week containing a public holiday still expected
+   * forty hours, so the compliance report marked the whole company short for
+   * Diwali. A report that flags everybody teaches people to ignore it.
+   */
+  it("deducts a weekday holiday at the daily equivalent", () => {
+    expect(expectedHoursForRange(START, END, 40, ["2026-06-10"])).toBe(152);
+    expect(expectedHoursForRange(START, END, 40, ["2026-06-10", "2026-06-11"])).toBe(144);
+  });
+
+  /** A Saturday holiday costs nobody any expected hours. */
+  it("ignores a holiday that falls at the weekend", () => {
+    expect(expectedHoursForRange(START, END, 40, ["2026-06-13"])).toBe(160);
+    expect(expectedHoursForRange(START, END, 40, ["2026-06-14"])).toBe(160);
+  });
+
+  /** Two holiday rows can share a date; the day is only lost once. */
+  it("counts a doubly-listed date once", () => {
+    expect(expectedHoursForRange(START, END, 40, ["2026-06-10", "2026-06-10"])).toBe(152);
+  });
+
+  it("ignores holidays outside the range", () => {
+    expect(expectedHoursForRange(START, END, 40, ["2026-05-25", "2026-07-06"])).toBe(160);
+  });
+
+  it("never returns a negative expectation", () => {
+    const everyWeekday = [
+      "2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04", "2026-06-05",
+      "2026-06-08", "2026-06-09", "2026-06-10", "2026-06-11", "2026-06-12",
+      "2026-06-15", "2026-06-16", "2026-06-17", "2026-06-18", "2026-06-19",
+      "2026-06-22", "2026-06-23", "2026-06-24", "2026-06-25", "2026-06-26",
+    ];
+    expect(expectedHoursForRange(START, END, 40, everyWeekday)).toBe(0);
+  });
+
+  it("still returns null when no weekly expectation is configured", () => {
+    expect(expectedHoursForRange(START, END, null, ["2026-06-10"])).toBeNull();
+  });
+});

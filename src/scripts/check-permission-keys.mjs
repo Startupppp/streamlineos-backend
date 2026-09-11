@@ -51,6 +51,7 @@
  */
 
 import { readFileSync, readdirSync } from "node:fs";
+import { describeFrontendRoot, resolveFrontendRoot } from "./frontend-root.mjs";
 import { join, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -258,6 +259,15 @@ try {
   process.exit(2);
 }
 
+/**
+ * Which checkout the frontend half came from, printed before any verdict. A
+ * comparison between two repositories is only meaningful if you know which two,
+ * and a fallback to an unpaired checkout compares against whatever branch that
+ * one is on.
+ */
+process.stdout.write(`${describeFrontendRoot(FRONTEND)}\n`);
+if (!FRONTEND.root) process.exit(2);
+
 try {
   const unionSources = FRONTEND_UNION_FILES.map((f) => readFileSync(f, "utf8"));
   frontendCatalog = parseUnionKeys(unionSources);
@@ -290,7 +300,7 @@ const missingFrontend = new Map();
 const unresolved = new Map();
 
 for (const ref of routeRefs) {
-  const rel = relative(REPO_ROOT, ref.file);
+  const rel = relative(BACKEND_ROOT, ref.file);
   if (!ref.resolved) {
     if (!unresolved.has(ref.identifier)) unresolved.set(ref.identifier, []);
     unresolved.get(ref.identifier).push(`${rel}:${ref.line}`);

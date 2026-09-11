@@ -9,6 +9,7 @@ import { and, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { addDays } from "date-fns";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
+import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { signEnvelopes, signRecipients, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -33,6 +34,13 @@ import {
 } from "./sign-state";
 import type { RequestActorContext } from "../../common/audit/actor-context";
 
+/** One recipient's pending invitation, resolved while the transaction is live. */
+interface InvitationPlan {
+  email: string;
+  name: string;
+  rawToken: string;
+}
+
 @Injectable()
 export class SignEnvelopeDispatchService {
   constructor(
@@ -52,6 +60,46 @@ export class SignEnvelopeDispatchService {
     });
     if (!row) throw new NotFoundException("Envelope not found");
     return row;
+  }
+
+  /**
+   * Hand a batch of invitations to the transaction boundary, never to the
+   * transaction.
+   *
+   * `this.db` is the tenant-aware proxy, so anything issued under an ambient
+   * tenant transaction stays inside it — an SMTP outage would hold that
+   * transaction's pooled connection for its whole duration, which §4 forbids,
+   * and a throw partway through the loop rolled the token writes back
+   * underneath mail already sitting in inboxes.
+   *
+   * `registerAfterCommit` is the right one of §4's three mechanisms rather than
+   * the outbox: the recipient rows carry only the token *hash*, so an outbox
+   * payload would have to hold the raw signing token — a bearer credential in
+   * plaintext at rest — whereas a hook that never runs is re-drivable through
+   * `resend`, which rotates a fresh token for anyone left at `invited`.
+   *
+   * It returns false when the ambient context carries no hook array, and §4 is
+   * explicit that the fallback is to run inline rather than drop the work.
+   */
+  private async deliverInvitations(
+    invitations: InvitationPlan[],
+    senderNameStr: string,
+    envelope: { title: string; message: string | null },
+  ): Promise<void> {
+    if (invitations.length === 0) return;
+    const deliver = async () => {
+      for (const invitation of invitations) {
+        await this.notifications.sendInvitation(
+          invitation.email,
+          invitation.name,
+          senderNameStr,
+          envelope.title,
+          envelope.message ?? undefined,
+          this.tokens.buildSigningUrl(invitation.rawToken),
+        );
+      }
+    };
+    if (!registerAfterCommit(deliver)) await deliver();
   }
 
   private async senderName(userId: string): Promise<string> {
@@ -148,25 +196,41 @@ export class SignEnvelopeDispatchService {
       return row;
     });
 
-    for (const plan of sendPlans) {
-      if (plan.shouldInviteNow && plan.email) {
-        const signingUrl = this.tokens.buildSigningUrl(plan.rawToken);
-        await this.notifications.sendInvitation(
-          plan.email,
-          plan.name,
-          senderNameStr,
-          envelope.title,
-          envelope.message ?? undefined,
-          signingUrl,
-        );
-      }
-    }
+    /*
+     * Bulk send is why the fallback inside `deliverInvitations` matters here:
+     * it reaches this method one row at a time inside
+     * `runInNewTenantTransaction`, which builds a context with no hook array,
+     * so `registerAfterCommit` returns false and the email goes out inline —
+     * inside that row's transaction, as it does today — rather than being
+     * dropped. The single-envelope route runs under
+     * `TenantContextInterceptor` and does defer.
+     */
+    await this.deliverInvitations(
+      sendPlans.flatMap((plan) =>
+        plan.shouldInviteNow && plan.email
+          ? [{ email: plan.email, name: plan.name, rawToken: plan.rawToken }]
+          : [],
+      ),
+      senderNameStr,
+      envelope,
+    );
 
-    if (envelope.ccTiming === "on_send") {
-      for (const cc of recipientRows.filter(
-        (r) => r.recipientType === "cc" || r.recipientType === "viewer",
-      )) {
-        if (cc.email) {
+    /*
+     * The CC notices leave the same way. They are a second hook rather than
+     * part of the first only because they render a different template; hooks
+     * drain in registration order, so the signers are still mailed first.
+     */
+    const ccPlans =
+      envelope.ccTiming === "on_send"
+        ? recipientRows.flatMap((r) =>
+            (r.recipientType === "cc" || r.recipientType === "viewer") && r.email
+              ? [{ email: r.email, name: r.name }]
+              : [],
+          )
+        : [];
+    if (ccPlans.length > 0) {
+      const deliverCcNotices = async () => {
+        for (const cc of ccPlans) {
           await this.notifications.sendCcNotice(
             cc.email,
             cc.name,
@@ -174,7 +238,8 @@ export class SignEnvelopeDispatchService {
             `${appUrl()}/sign/envelopes/${envelopeId}`,
           );
         }
-      }
+      };
+      if (!registerAfterCommit(deliverCcNotices)) await deliverCcNotices();
     }
 
     await this.audit.record({
@@ -201,7 +266,7 @@ export class SignEnvelopeDispatchService {
 
     const senderNameStr = await this.senderName(actor.userId);
     const recipientRows = await this.recipients.listForEnvelope(orgId, envelopeId);
-    let count = 0;
+    const invitations: InvitationPlan[] = [];
     for (const r of recipientRows) {
       if (!isSigningType(r.recipientType)) continue;
       if (
@@ -221,19 +286,22 @@ export class SignEnvelopeDispatchService {
         })
         .where(eq(signRecipients.id, r.id));
 
-      if (r.email) {
-        const signingUrl = this.tokens.buildSigningUrl(rawToken);
-        await this.notifications.sendInvitation(
-          r.email,
-          r.name,
-          senderNameStr,
-          envelope.title,
-          envelope.message ?? undefined,
-          signingUrl,
-        );
-        count++;
-      }
+      if (r.email) invitations.push({ email: r.email, name: r.name, rawToken });
     }
+    const count = invitations.length;
+
+    /*
+     * Same rule as `send`: the token rotations above are in the request
+     * transaction, the emails are not. Rotating a token already invalidates the
+     * link the recipient was holding, so a hook that never runs leaves them no
+     * worse off than the throw did — and a second resend mints another token.
+     *
+     * `resentCount` therefore counts recipients whose token was rotated and who
+     * have an address, not deliveries confirmed by the provider. It never
+     * reported deliveries anyway: a mid-loop SMTP throw rolled the whole
+     * request back, so no caller ever saw a partial count.
+     */
+    await this.deliverInvitations(invitations, senderNameStr, envelope);
 
     await this.audit.record({
       orgId,
@@ -327,6 +395,7 @@ export class SignEnvelopeDispatchService {
         ),
       );
       const senderNameStr = await this.senderName(envelope.senderUserId);
+      const invitations: InvitationPlan[] = [];
       for (const r of signingRecipients) {
         if (r.status !== "pending" || !eligibleIds.has(r.id)) continue;
         const rawToken = this.tokens.generateSigningToken();
@@ -338,18 +407,19 @@ export class SignEnvelopeDispatchService {
             tokenExpiresAt: envelope.expiresAt,
           })
           .where(eq(signRecipients.id, r.id));
-        if (r.email) {
-          const signingUrl = this.tokens.buildSigningUrl(rawToken);
-          await this.notifications.sendInvitation(
-            r.email,
-            r.name,
-            senderNameStr,
-            envelope.title,
-            envelope.message ?? undefined,
-            signingUrl,
-          );
-        }
+        if (r.email) invitations.push({ email: r.email, name: r.name, rawToken });
       }
+
+      /*
+       * The one caller of this method is the public signing flow, which is
+       * `@Public()` — so `resolveTenant` finds no org, `TenantContextInterceptor`
+       * opens nothing, and the enclosing transaction is the one
+       * `SignPublicService.withRecipientSession` opens. That is why it installs
+       * a hook array of its own: without it `registerAfterCommit` would return
+       * false on the only path that reaches here, and this deferral would be
+       * decoration over an unchanged send.
+       */
+      await this.deliverInvitations(invitations, senderNameStr, envelope);
     }
 
     return {

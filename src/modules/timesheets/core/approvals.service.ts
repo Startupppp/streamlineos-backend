@@ -35,11 +35,18 @@ import {
   users,
 } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { applyScope } from "../../access/apply-scope";
 import { resolveApprovalScope } from "./timesheets-core-scope";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { RateResolverService } from "./rate-resolver.service";
 import { canActOnPeriod } from "./lib/approval-guard";
+import {
+  TIMESHEET_LIFECYCLE_EVENTS,
+  emitPeriodLifecycleEvent,
+  type PeriodLifecycleEvent,
+} from "./events/timesheet-lifecycle.events";
+
 import type {
   ApprovalsQuery,
   BulkApproveInput,
@@ -47,6 +54,56 @@ import type {
   RejectPeriodInput,
 } from "./dto/approvals.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+
+/**
+ * Everything a lifecycle event needs, returned by the UPDATE that performs the
+ * transition. `event_seq` is only correct as read back from the statement that
+ * incremented it — selecting it separately races another transition.
+ */
+const LIFECYCLE_RETURNING = {
+  eventSeq: timesheetPeriods.eventSeq,
+  userId: timesheetPeriods.userId,
+  periodStart: timesheetPeriods.periodStart,
+  periodEnd: timesheetPeriods.periodEnd,
+  status: timesheetPeriods.status,
+  totalHours: timesheetPeriods.totalHours,
+  billableHours: timesheetPeriods.billableHours,
+  nonBillableHours: timesheetPeriods.nonBillableHours,
+} as const;
+
+type LifecycleRow = {
+  userId: string;
+  periodStart: string;
+  periodEnd: string;
+  status: PeriodLifecycleEvent["status"];
+  totalHours: string;
+  billableHours: string;
+  nonBillableHours: string;
+};
+
+function lifecyclePayload(
+  orgId: string,
+  periodId: number,
+  row: LifecycleRow,
+  actorUserId: string,
+  occurredAt: Date,
+  reason: string | null,
+): PeriodLifecycleEvent {
+  return {
+    organization_id: orgId,
+    period_id: periodId,
+    user_id: row.userId,
+    period_start: row.periodStart,
+    period_end: row.periodEnd,
+    status: row.status,
+    total_hours: row.totalHours,
+    billable_hours: row.billableHours,
+    non_billable_hours: row.nonBillableHours,
+    actor_user_id: actorUserId,
+    reason,
+    occurred_at: occurredAt.toISOString(),
+  };
+}
 
 function isExpectedApprovalSkip(error: unknown): boolean {
   return (
@@ -64,6 +121,7 @@ export class ApprovalsService {
     private readonly access: AccessService,
     private readonly audit: TimesheetsAuditService,
     private readonly rateResolver: RateResolverService,
+    private readonly notifications: NotificationDispatchService,
   ) {}
 
   private async getSettings(orgId: string) {
@@ -258,8 +316,18 @@ export class ApprovalsService {
     const lockAfterApproval = settings?.lockAfterApproval ?? true;
     const now = new Date();
 
+    /**
+     * One transition, but up to two events: approving with
+     * `lock_after_approval` on also locks, and the pack's payroll handoff waits
+     * on `timesheets.period.locked` specifically. Both events therefore need
+     * their own `aggregate_version`, and they share a single `now` — which is
+     * exactly why the version is a row counter and not a timestamp. The UPDATE
+     * claims both numbers at once so nothing can be interleaved between them.
+     */
+    const emitCount = lockAfterApproval ? 2 : 1;
+
     await this.db.transaction(async (tx) => {
-      await tx
+      const [transition] = await tx
         .update(timesheetPeriods)
         .set({
           status: "APPROVED",
@@ -267,6 +335,7 @@ export class ApprovalsService {
           approvedBy: u.userId,
           approvedByMembershipId: approverActor.membershipId,
           lockedAt: lockAfterApproval ? now : null,
+          eventSeq: sql`${timesheetPeriods.eventSeq} + ${emitCount}`,
           updatedAt: now,
         })
         .where(
@@ -274,7 +343,8 @@ export class ApprovalsService {
             eq(timesheetPeriods.id, periodId),
             eq(timesheetPeriods.orgId, u.orgId),
           ),
-        );
+        )
+        .returning(LIFECYCLE_RETURNING);
 
       await tx
         .update(timesheets)
@@ -361,6 +431,57 @@ export class ApprovalsService {
         action: "period.approved",
         after: { status: "APPROVED" },
       });
+
+      if (transition) {
+        const base = transition.eventSeq - emitCount + 1;
+        const payload = lifecyclePayload(u.orgId, periodId, transition, u.userId, now, null);
+
+        await emitPeriodLifecycleEvent(tx, {
+          eventType: TIMESHEET_LIFECYCLE_EVENTS.approved,
+          orgId: u.orgId,
+          periodId,
+          eventSeq: base,
+          occurredAt: now,
+          payload,
+        });
+
+        if (lockAfterApproval) {
+          await emitPeriodLifecycleEvent(tx, {
+            eventType: TIMESHEET_LIFECYCLE_EVENTS.locked,
+            orgId: u.orgId,
+            periodId,
+            eventSeq: transition.eventSeq,
+            occurredAt: now,
+            payload,
+          });
+        }
+      }
+    });
+
+    /**
+     * TS-24. The worker hears that their week was signed off, through the
+     * existing notification pipeline and therefore the existing email outbox.
+     *
+     * `notifySelf` is left at its default, so an approver approving their own
+     * period — which `canActOnPeriod` allows an org owner to do — is not
+     * emailed about their own click.
+     */
+    await this.notifications.emit({
+      orgId: u.orgId,
+      eventKey: "timesheets.period.approved",
+      actorUserId: u.userId,
+      targetUserIds: [period.userId],
+      entityType: "timesheet_period",
+      entityId: String(periodId),
+      title: `Timesheet approved: ${period.periodStart} to ${period.periodEnd}`,
+      message: `Your timesheet for ${period.periodStart}–${period.periodEnd} (${period.totalHours}h) was approved.`,
+      link: `/timesheets/my-time?period=${periodId}`,
+      variables: {
+        periodId,
+        periodStart: period.periodStart,
+        periodEnd: period.periodEnd,
+        totalHours: period.totalHours,
+      },
     });
   }
 
@@ -426,12 +547,13 @@ export class ApprovalsService {
 
     const now = new Date();
     await this.db.transaction(async (tx) => {
-      await tx
+      const [transition] = await tx
         .update(timesheetPeriods)
         .set({
           status: "REJECTED",
           rejectedAt: now,
           rejectionReason: input.reason,
+          eventSeq: sql`${timesheetPeriods.eventSeq} + 1`,
           updatedAt: now,
         })
         .where(
@@ -439,7 +561,8 @@ export class ApprovalsService {
             eq(timesheetPeriods.id, periodId),
             eq(timesheetPeriods.orgId, u.orgId),
           ),
-        );
+        )
+        .returning(LIFECYCLE_RETURNING);
 
       await tx
         .update(timesheets)
@@ -464,6 +587,42 @@ export class ApprovalsService {
         action: "period.rejected",
         reason: input.reason,
       });
+
+      if (transition) {
+        await emitPeriodLifecycleEvent(tx, {
+          eventType: TIMESHEET_LIFECYCLE_EVENTS.rejected,
+          orgId: u.orgId,
+          periodId,
+          eventSeq: transition.eventSeq,
+          occurredAt: now,
+          payload: lifecyclePayload(
+            u.orgId,
+            periodId,
+            transition,
+            u.userId,
+            now,
+            input.reason,
+          ),
+        });
+      }
+    });
+
+    await this.notifications.emit({
+      orgId: u.orgId,
+      eventKey: "timesheets.period.rejected",
+      actorUserId: u.userId,
+      targetUserIds: [period.userId],
+      entityType: "timesheet_period",
+      entityId: String(periodId),
+      title: `Timesheet rejected: ${period.periodStart} to ${period.periodEnd}`,
+      message: `Your timesheet for ${period.periodStart}–${period.periodEnd} was rejected: ${input.reason}`,
+      link: `/timesheets/my-time?period=${periodId}`,
+      variables: {
+        periodId,
+        periodStart: period.periodStart,
+        periodEnd: period.periodEnd,
+        reason: input.reason,
+      },
     });
 
     const [updated] = await this.db
@@ -542,12 +701,13 @@ export class ApprovalsService {
     const ids = periods.map((p) => p.id);
 
     await this.db.transaction(async (tx) => {
-      await tx
+      const transitions = await tx
         .update(timesheetPeriods)
         .set({
           status: "REJECTED",
           rejectedAt: now,
           rejectionReason: input.reason,
+          eventSeq: sql`${timesheetPeriods.eventSeq} + 1`,
           updatedAt: now,
         })
         .where(
@@ -555,7 +715,8 @@ export class ApprovalsService {
             eq(timesheetPeriods.orgId, u.orgId),
             inArray(timesheetPeriods.id, ids),
           ),
-        );
+        )
+        .returning({ ...LIFECYCLE_RETURNING, id: timesheetPeriods.id });
 
       await tx
         .update(timesheets)
@@ -582,7 +743,51 @@ export class ApprovalsService {
           reason: input.reason,
         });
       }
+
+      /**
+       * One event per period, not one for the batch. A bulk rejection is a
+       * convenience for the approver; to everyone downstream it is N separate
+       * things that happened to N separate people, and an event whose
+       * `period_id` is a list is unroutable.
+       */
+      for (const transition of transitions) {
+        await emitPeriodLifecycleEvent(tx, {
+          eventType: TIMESHEET_LIFECYCLE_EVENTS.rejected,
+          orgId: u.orgId,
+          periodId: transition.id,
+          eventSeq: transition.eventSeq,
+          occurredAt: now,
+          payload: lifecyclePayload(
+            u.orgId,
+            transition.id,
+            transition,
+            u.userId,
+            now,
+            input.reason,
+          ),
+        });
+      }
     });
+
+    /**
+     * One notification per worker, after the batch commits. A bulk rejection is
+     * one action for the approver and N separate pieces of bad news for N
+     * people, each of whom needs the reason and their own period link.
+     */
+    for (const p of periods) {
+      await this.notifications.emit({
+        orgId: u.orgId,
+        eventKey: "timesheets.period.rejected",
+        actorUserId: u.userId,
+        targetUserIds: [p.userId],
+        entityType: "timesheet_period",
+        entityId: String(p.id),
+        title: "Timesheet rejected",
+        message: `Your submitted timesheet was rejected: ${input.reason}`,
+        link: `/timesheets/my-time?period=${p.id}`,
+        variables: { periodId: p.id, reason: input.reason },
+      });
+    }
 
     return { rejected: ids.length };
   }

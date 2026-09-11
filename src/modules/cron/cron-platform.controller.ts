@@ -23,9 +23,11 @@ import { CronIdempotencyService } from "./cron-idempotency.service";
 import { CronWorkflowService } from "./cron-workflow.service";
 import { ChatReplyRemindersService } from "../chat/chat-reply-reminders.service";
 import { ExceptionsDetectorService } from "../timesheets/core/exceptions-detector.service";
+import { TimesheetRemindersSweepService } from "../timesheets/core/reminders-sweep.service";
 import { BuildDueSweepService } from "../build/core/build-due-sweep.service";
 import { CrmFollowupSweepService } from "../crm/core/crm-followup-sweep.service";
 import { NotificationTimeSweepsService } from "../notifications/time-sweeps/notification-time-sweeps.service";
+import { CronSignService } from "./cron-sign.service";
 import { CronLeaseService } from "./cron-lease.service";
 
 @Public()
@@ -40,6 +42,7 @@ export class CronPlatformController {
     private readonly ownershipTransfers: OwnershipTransfersService,
     private readonly orgPurgeWorker: CronOrgPurgeWorkerService,
     private readonly timesheetExceptionsDetector: ExceptionsDetectorService,
+    private readonly timesheetReminders: TimesheetRemindersSweepService,
     private readonly idempotency: CronIdempotencyService,
     private readonly notificationRetention: CronNotificationRetentionService,
     private readonly partitionRetention: NotificationRetentionService,
@@ -49,6 +52,7 @@ export class CronPlatformController {
     private readonly crmFollowupSweep: CrmFollowupSweepService,
     private readonly timeSweeps: NotificationTimeSweepsService,
     private readonly accountOrgIndex: AccountOrganizationIndexService,
+    private readonly signSweeps: CronSignService,
     private readonly cronLease: CronLeaseService,
   ) {}
 
@@ -221,6 +225,17 @@ export class CronPlatformController {
     return this.runIdempotencyFenceSweep(authorization);
   }
 
+  @Get("timesheets-reminders")
+  getTimesheetsReminders(@Headers("authorization") authorization?: string) {
+    return this.runTimesheetsReminders(authorization);
+  }
+
+  @Post("timesheets-reminders")
+  @HttpCode(200)
+  postTimesheetsReminders(@Headers("authorization") authorization?: string) {
+    return this.runTimesheetsReminders(authorization);
+  }
+
   @Get("timesheets-exception-detection")
   getTimesheetsExceptionDetection(
     @Headers("authorization") authorization?: string,
@@ -234,6 +249,17 @@ export class CronPlatformController {
     @Headers("authorization") authorization?: string,
   ) {
     return this.runTimesheetsExceptionDetection(authorization);
+  }
+
+  @Get("sign-envelope-sweeps")
+  getSignEnvelopeSweeps(@Headers("authorization") authorization?: string) {
+    return this.runSignEnvelopeSweeps(authorization);
+  }
+
+  @Post("sign-envelope-sweeps")
+  @HttpCode(200)
+  postSignEnvelopeSweeps(@Headers("authorization") authorization?: string) {
+    return this.runSignEnvelopeSweeps(authorization);
   }
 
   private async runWorkflowTick(authorization?: string) {
@@ -532,6 +558,65 @@ export class CronPlatformController {
       };
     } catch (error) {
       logger.error("Idempotency fence sweep cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  /**
+   * Reminders for unsubmitted timesheet periods.
+   *
+   * 600s lease, matching the detection sweep beside it: both walk every
+   * organisation and a second copy starting underneath the first would send
+   * every reminder twice. The notification dedupe window is a day, so a double
+   * run would be caught there too — but relying on the second line of defence
+   * to cover a missing first one is how both end up load-bearing.
+   */
+  private async runTimesheetsReminders(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("timesheets-reminders", 600, () =>
+        this.timesheetReminders.remindAllOrgs(),
+      );
+      if (!outcome.ran) {
+        return { success: true, skipped: true, message: "timesheets-reminders already running" };
+      }
+      const result = outcome.result;
+      return {
+        success: true,
+        message:
+          `Timesheet reminders: scanned ${result.orgsScanned} orgs, ` +
+          `sent ${result.remindersSent} of ${result.periodsConsidered} open periods` +
+          (result.orgsMalformed > 0
+            ? `, ${result.orgsMalformed} org(s) have unreadable reminder rules`
+            : ""),
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Timesheet reminders cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runSignEnvelopeSweeps(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("sign-envelope-sweeps", 600, () =>
+        this.signSweeps.sweepEnvelopes(),
+      );
+      if (!outcome.ran) {
+        return { success: true, skipped: true, message: "sign-envelope-sweeps already running" };
+      }
+      const result = outcome.result;
+      return {
+        success: true,
+        message:
+          `E-sign envelope sweeps: scanned ${result.organizations} orgs, ` +
+          `expired ${result.expired}, reminded ${result.reminded}` +
+          (result.failed > 0 ? `, ${result.failed} org(s) failed` : ""),
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Sign envelope sweeps cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

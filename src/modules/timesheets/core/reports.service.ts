@@ -2,7 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { timesheets, timesheetPeriods, timesheetSettings, projects, users } from "../../../db/schema";
+import { timesheets, timesheetPeriods, timesheetSettings, projects, users, holidays } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { applyScope } from "../../access/apply-scope";
 import { resolveReportsScope } from "./timesheets-core-scope";
@@ -294,6 +294,33 @@ export class ReportsService {
    * - periodsOverdue: overlapping periods ending more than 3 days ago still OPEN or DRAFT.
    * Users are included when they have entries or periods in the range, ordered by actualHours desc.
    */
+  /**
+   * The organisation's holidays in a range, for the week grid to mark.
+   *
+   * `holidays` is HR's table and this only reads it — the same seam the
+   * payroll export and the compliance report use. It lives on the reports
+   * service because that is where the other calendar-shaped reads already are.
+   *
+   * Not scoped by DataScope: a public holiday is the same for everyone in the
+   * organisation, and hiding it from someone whose scope is "own" would make
+   * their grid wrong rather than private.
+   */
+  async getHolidays(u: CurrentUserContext, startDate: string, endDate: string) {
+    const rows = await this.db
+      .select({ date: holidays.date, name: holidays.name, isPublic: holidays.isPublic })
+      .from(holidays)
+      .where(
+        and(
+          eq(holidays.orgId, u.orgId),
+          gte(holidays.date, startDate),
+          lte(holidays.date, endDate),
+        ),
+      )
+      .orderBy(holidays.date);
+
+    return { startDate, endDate, holidays: rows };
+  }
+
   async getCompliance(u: CurrentUserContext, query: ReportRangeQuery) {
     const scope = await resolveReportsScope(this.access, u);
     const { startDate, endDate } = resolveDateRange(query.startDate, query.endDate);
@@ -346,7 +373,28 @@ export class ReportsService {
 
     const expectedWeeklyHours =
       settingsRows[0]?.expectedWeeklyHours != null ? Number(settingsRows[0].expectedWeeklyHours) : null;
-    const expectedHours = expectedHoursForRange(startDate, endDate, expectedWeeklyHours);
+
+    /**
+     * Read, not owned. `holidays` belongs to HR; this is the read-only seam the
+     * boundary doc describes, and the payroll export already uses it the same
+     * way. Nothing here writes to it.
+     */
+    const holidayRows = await this.db
+      .select({ date: holidays.date })
+      .from(holidays)
+      .where(
+        and(
+          eq(holidays.orgId, u.orgId),
+          gte(holidays.date, startDate),
+          lte(holidays.date, endDate),
+        ),
+      );
+    const expectedHours = expectedHoursForRange(
+      startDate,
+      endDate,
+      expectedWeeklyHours,
+      holidayRows.map((h) => h.date),
+    );
 
     const workedDates = new Map<string, Set<string>>();
     for (const r of dateRows) {

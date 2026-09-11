@@ -12,6 +12,7 @@
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, resolve, relative } from "node:path";
+import { describeFrontendRoot, resolveFrontendRoot } from "./frontend-root.mjs";
 import { fileURLToPath } from "node:url";
 import {
   WORKSPACE_ROOT,
@@ -310,7 +311,7 @@ for (const name of navFiles) {
 // -- report ------------------------------------------------------------------
 
 const where = (g) => {
-  const rel = relative(REPO_ROOT, g.file);
+  const rel = relative(BACKEND_ROOT, g.file);
   const dest = g.href ?? `group "${g.label}"`;
   return `${rel}:${g.line}  ${dest}`;
 };

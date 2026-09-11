@@ -105,8 +105,6 @@ function buildHarness(authMethod: Method) {
     {} as never, // envelopes
     {} as never, // finalization
     { sendOtpCode: async () => undefined } as never, // notifications
-    {} as never, // templates
-    {} as never, // settings
     {} as never, // integrations
     { isConfigured: () => true, send: async () => undefined } as never, // sms
   );

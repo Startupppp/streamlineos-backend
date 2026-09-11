@@ -165,9 +165,10 @@ export class SignEnvelopeSweepsService {
    * whole point of asking is to be told what the sweep will actually do, and a
    * second copy of the rule is exactly how the answer drifts from the act.
    */
-  private async reminderDueEnvelopes(now: Date) {
+  private async reminderDueEnvelopes(orgId: string, now: Date) {
     const candidates = await this.db.query.signEnvelopes.findMany({
       where: and(
+        eq(signEnvelopes.orgId, orgId),
         inArray(signEnvelopes.status, [
           "sent",
           "delivered",
@@ -190,9 +191,10 @@ export class SignEnvelopeSweepsService {
   }
 
   /** The envelopes an expiration sweep would act on, right now. */
-  private async expiringEnvelopes(now: Date) {
+  private async expiringEnvelopes(orgId: string, now: Date) {
     return this.db.query.signEnvelopes.findMany({
       where: and(
+        eq(signEnvelopes.orgId, orgId),
         inArray(signEnvelopes.status, [
           "sent",
           "delivered",
@@ -203,18 +205,28 @@ export class SignEnvelopeSweepsService {
     });
   }
 
-  async runReminderSweep(): Promise<number> {
+  /**
+   * `orgId` is required, and required because leaving it out was a cross-tenant
+   * write. The selection used to carry no `org_id` predicate and relied on the
+   * caller's tenant transaction and RLS to narrow it; an admin trigger reached it
+   * in a shape where that did not hold, and one organisation's button re-issued
+   * signing tokens — and emailed signers — in every organisation. Required rather
+   * than optional-with-a-default, so the unsafe call cannot keep compiling.
+   * (Timesheets' lane; merged onto the SignOS lane's preview/status structure.)
+   */
+  async runReminderSweep(orgId: string): Promise<number> {
     const now = new Date();
     let sentCount = 0;
-    for (const envelope of await this.reminderDueEnvelopes(now)) {
+    for (const envelope of await this.reminderDueEnvelopes(orgId, now)) {
       sentCount += await this.remindEnvelopeRecipients(envelope, "system");
     }
     return sentCount;
   }
 
-  async runExpirationSweep(): Promise<number> {
+  /** Tenant-scoped for the reason given on `runReminderSweep`. */
+  async runExpirationSweep(orgId: string): Promise<number> {
     const now = new Date();
-    const expiring = await this.expiringEnvelopes(now);
+    const expiring = await this.expiringEnvelopes(orgId, now);
 
     for (const envelope of expiring) {
       await this.db
@@ -252,11 +264,10 @@ export class SignEnvelopeSweepsService {
   /**
    * Both sweeps, across every organisation, for the platform scheduler.
    *
-   * The per-organisation methods above query `sign_envelopes` with no `org_id`
-   * filter. That is not a bug where they are called from — an admin request
-   * runs inside its own tenant transaction and RLS narrows the query to that
-   * organisation — but it means they cannot simply be called from a cron
-   * endpoint, which has no tenant context at all. `sign_envelopes` uses the
+   * The per-organisation methods above take `orgId` and filter on it
+   * explicitly; RLS narrows the same queries inside a tenant transaction as a
+   * second line, not the only one. They still cannot simply be called from a
+   * cron endpoint, which has no tenant context at all. `sign_envelopes` uses the
    * raising accessor, so such a call fails outright rather than sweeping
    * nothing quietly.
    *
@@ -274,7 +285,7 @@ export class SignEnvelopeSweepsService {
     const outcome = await forEachOrg(this.db, `sign-${sweep}-sweep`, async (_tx, orgId) => {
       try {
         if (dryRun) {
-          const preview = await this.previewSweep(sweep);
+          const preview = await this.previewSweep(orgId, sweep);
           affected += preview.affected;
           /**
            * Deliberately no `recordRun`. A dry run did not run the sweep, and
@@ -286,7 +297,7 @@ export class SignEnvelopeSweepsService {
           return;
         }
         const count =
-          sweep === "reminder" ? await this.runReminderSweep() : await this.runExpirationSweep();
+          sweep === "reminder" ? await this.runReminderSweep(orgId) : await this.runExpirationSweep(orgId);
         affected += count;
         await this.recordRun(orgId, sweep, count, null);
       } catch (error) {
@@ -330,14 +341,14 @@ export class SignEnvelopeSweepsService {
    * thinks will happen". `entries` is capped; the totals above it are not, so
    * a large preview is still numerically true.
    */
-  async previewSweep(sweep: "reminder" | "expiration"): Promise<SweepPreview> {
+  async previewSweep(orgId: string, sweep: "reminder" | "expiration"): Promise<SweepPreview> {
     const now = new Date();
     const entries: SweepPreviewEntry[] = [];
     let envelopes = 0;
     let affected = 0;
 
     if (sweep === "reminder") {
-      for (const envelope of await this.reminderDueEnvelopes(now)) {
+      for (const envelope of await this.reminderDueEnvelopes(orgId, now)) {
         const recipients = remindableRecipients(
           await this.recipients.listForEnvelope(envelope.orgId, envelope.id),
         ).length;
@@ -353,7 +364,7 @@ export class SignEnvelopeSweepsService {
           entries.push({ envelopeId: envelope.id, title: envelope.title, affected: recipients });
       }
     } else {
-      for (const envelope of await this.expiringEnvelopes(now)) {
+      for (const envelope of await this.expiringEnvelopes(orgId, now)) {
         envelopes += 1;
         affected += 1;
         if (entries.length < SWEEP_PREVIEW_LIMIT)

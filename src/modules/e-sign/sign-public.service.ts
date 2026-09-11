@@ -3,15 +3,25 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { signDocuments, signEnvelopes, signFields, signPublicForms, signRecipients, signSignatureAssets, users } from "../../db/schema";
+import { signDocuments, signEnvelopes, signFields, signRecipients, signSignatureAssets, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { withPublicToken } from "../../common/tenant/with-public-token";
-import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import {
+  runInNewTenantTransaction,
+  runInTenantTransaction,
+} from "../../common/tenant/run-in-tenant-transaction";
+import {
+  getTenantContext,
+  runWithTenantContext,
+  type AfterCommitHook,
+} from "../../common/tenant/tenant-context";
+import { reportError } from "../../common/observability";
 import { StorageService } from "../storage/storage.service";
 import { SignAuditService } from "./sign-audit.service";
 import { SignTokensService } from "./sign-tokens.service";
@@ -22,16 +32,14 @@ import { SignIntegrationsService } from "./sign-integrations.service";
 import { SMS_SENDER, type SmsSenderPort } from "./sms/sms-sender.port";
 import { SignTemplatesService, parseTemplateSnapshot } from "./sign-templates.service";
 import { SignSettingsService } from "./sign-settings.service";
+import { SELF_SERVE_AUTH_METHODS } from "./dto/e-sign.schemas";
 import type {
   PublicAuthInput,
   PublicConsentInput,
   PublicFieldValueInput,
   AdoptSignatureInput,
   DeclineInput,
-  PublicFormESignSubmitInput,
 } from "./dto/e-sign.schemas";
-
-const SIGNING_RECIPIENT_TYPES = ["signer", "approver", "in_person_host", "internal_reviewer"];
 
 const SIGNED_URL_EXPIRY_SECONDS = 900;
 const MAX_AUTH_ATTEMPTS = 5;
@@ -55,6 +63,8 @@ type SessionState =
 
 @Injectable()
 export class SignPublicService {
+  private readonly logger = new Logger(SignPublicService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly storage: StorageService,
@@ -63,88 +73,10 @@ export class SignPublicService {
     private readonly envelopes: SignEnvelopesService,
     private readonly finalization: SignFinalizationService,
     private readonly notifications: SignNotificationsService,
-    private readonly templates: SignTemplatesService,
-    private readonly settings: SignSettingsService,
     private readonly integrations: SignIntegrationsService,
     @Inject(SMS_SENDER) private readonly sms: SmsSenderPort,
   ) {}
 
-  async getPublicForm(slug: string) {
-    return this.templates.getPublicForm(slug);
-  }
-
-  /**
-   * A visitor submits a published public form themselves — no sender, no invitation email
-   * round-trip. We instantiate + "send" the envelope internally and hand back a ready signing
-   * token so the frontend can redirect the visitor straight into their own session.
-   */
-  async submitPublicForm(slug: string, input: PublicFormESignSubmitInput, ctx: PublicRequestContext) {
-    const form = await withPublicToken(this.db, slug, (tx) =>
-      tx.query.signPublicForms.findFirst({ where: eq(signPublicForms.slug, slug) }),
-    );
-    if (!form || form.status !== "published") throw new NotFoundException("Form not found");
-    if (form.expiresAt && form.expiresAt.getTime() < Date.now()) throw new NotFoundException("Form not found");
-    if (form.maxSubmissions && form.submissionCount >= form.maxSubmissions) throw new ForbiddenException("This form is no longer accepting submissions");
-    if (form.accessCodeHash && (!input.accessCode || this.tokens.hash(input.accessCode) !== form.accessCodeHash)) {
-      throw new ForbiddenException("Invalid access code");
-    }
-
-    return runInTenantTransaction(
-      this.db,
-      async (tx) => {
-        const template = await this.templates.get(form.orgId, form.templateId);
-        const snapshot = parseTemplateSnapshot(template.templateJson);
-        const signingRole = snapshot.roles.find((r) => SIGNING_RECIPIENT_TYPES.includes(r.recipientType));
-        if (!signingRole) throw new BadRequestException("This form's template has no signer role configured");
-
-        const envelope = await this.templates.instantiate(form.orgId, form.createdBy ?? template.ownerUserId ?? "", form.templateId, {
-          recipients: [{ roleName: signingRole.roleName, name: input.name, email: input.email, phone: input.phone }],
-          sourceModule: "public_form",
-          sourceEntityId: String(form.id),
-        });
-
-        const recipient = await tx.query.signRecipients.findFirst({ where: eq(signRecipients.envelopeId, envelope.id) });
-        if (!recipient) throw new BadRequestException("Failed to create a signer for this submission");
-
-        const orgSettings = await this.settings.getOrCreate(form.orgId);
-        const expiresAt = new Date(Date.now() + orgSettings.defaultExpirationDays * 24 * 60 * 60 * 1000);
-        const rawToken = this.tokens.generateSigningToken();
-
-        await tx
-          .update(signEnvelopes)
-          .set({ status: "sent", sentAt: new Date(), expiresAt })
-          .where(eq(signEnvelopes.id, envelope.id));
-        await tx
-          .update(signRecipients)
-          .set({ status: "invited", signingTokenHash: this.tokens.hash(rawToken), tokenExpiresAt: expiresAt })
-          .where(eq(signRecipients.id, recipient.id));
-        await tx
-          .update(signPublicForms)
-          .set({ submissionCount: form.submissionCount + 1 })
-          .where(eq(signPublicForms.id, form.id));
-
-        await this.audit.record({
-          orgId: form.orgId,
-          envelopeId: envelope.id,
-          recipientId: recipient.id,
-          actorType: "external_signer",
-          actorName: input.name,
-          actorEmail: input.email,
-          eventType: "public_form_submitted",
-          ipAddress: ctx.ipAddress,
-          userAgent: ctx.userAgent,
-        });
-
-        return {
-          token: rawToken,
-          recipientId: recipient.id,
-          envelopeId: envelope.id,
-          redirectUrl: form.completionRedirectUrl,
-        };
-      },
-      { orgId: form.orgId },
-    );
-  }
 
   private async withRecipientSession<T>(
     token: string,
@@ -159,15 +91,62 @@ export class SignPublicService {
     );
     if (!recipient) throw new NotFoundException("This signing link is invalid.");
 
-    return runInTenantTransaction(
+    /*
+     * This session owns a transaction, so it owns an after-commit queue too.
+     *
+     * Every public signing route is `@Public()`, so `JwtAuthGuard` returns
+     * before setting `req.user`, `resolveTenant` finds no organisation and
+     * `TenantContextInterceptor` opens nothing. The transaction below is
+     * therefore the outermost one on this path, and the context
+     * `runInTenantTransaction` builds carries no `afterCommit` array — which
+     * means `registerAfterCommit` would return false for everything running
+     * inside it, including the auto-advance invitation in
+     * `applyRecipientOutcome`. Deferring there without this would have been
+     * decoration over an unchanged send.
+     *
+     * Installed only when we are the ones opening the transaction. If a caller
+     * above already holds a context, the queue is theirs and drains after
+     * *their* commit; shadowing it would drain these hooks while that
+     * transaction is still open, which is the whole failure being avoided.
+     */
+    const preexisting = getTenantContext();
+    const afterCommit: AfterCommitHook[] = [];
+
+    const result = await runInTenantTransaction(
       this.db,
       async (tx) => {
         const envelope = await tx.query.signEnvelopes.findFirst({ where: eq(signEnvelopes.id, recipient.envelopeId) });
         if (!envelope) throw new NotFoundException("This signing link is invalid.");
-        return fn({ recipient, envelope });
+        const body = () => fn({ recipient, envelope });
+        const opened = getTenantContext();
+        if (preexisting || !opened) return body();
+        return runWithTenantContext({ ...opened, afterCommit }, body);
       },
       { orgId: recipient.orgId },
     );
+
+    /*
+     * Awaited rather than fired and forgotten: the signer already waited on
+     * this email when it went out inside the transaction, so awaiting it out
+     * here costs them nothing and keeps a provider failure observable. Each
+     * hook gets its own transaction, and a failure is logged and reported
+     * rather than swallowed (§4) — the signing itself has committed, so it must
+     * not be failed now for a mail provider's sake.
+     */
+    for (const hook of afterCommit) {
+      try {
+        await runInNewTenantTransaction(this.db, recipient.orgId, async () => {
+          await hook();
+        });
+      } catch (error) {
+        this.logger.error(
+          `after-commit hook failed for org ${recipient.orgId}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+        );
+        reportError(error, { orgId: recipient.orgId, phase: "after-commit" });
+      }
+    }
+
+    return result;
   }
 
   private deriveState(recipient: typeof signRecipients.$inferSelect, envelope: typeof signEnvelopes.$inferSelect): SessionState {
@@ -333,7 +312,14 @@ export class SignPublicService {
           Boolean(recipient.otpExpiresAt) &&
           recipient.otpExpiresAt!.getTime() > Date.now();
       } else {
-        throw new BadRequestException(`Authentication method "${recipient.authMethod}" is not yet supported for self-serve signing`);
+        /*
+         * Still the backstop, and still the only place that decides. The list it
+         * decides from is now `SELF_SERVE_AUTH_METHODS`, shared with the pre-send
+         * validator so an envelope can no longer pass validation and fail here.
+         */
+        throw new BadRequestException(
+          `Authentication method "${recipient.authMethod}" is not yet supported for self-serve signing. Supported: ${SELF_SERVE_AUTH_METHODS.join(", ")}.`,
+        );
       }
 
       if (!passed) {

@@ -50,6 +50,10 @@ export const NO_TENANT_TRANSACTION_ALLOWLIST = new Map([
     "src/modules/organization/core/organization.controller.ts",
     "identity-scoped organization discovery and switching; each handler opens its own withIdentity or runInTenantTransaction before touching the database",
   ],
+  [
+    "src/modules/e-sign/sign-bulk-send.controller.ts",
+    "bulk send dispatches up to 5000 invitation emails, and one request transaction around them held a pooled connection across every network call and made the whole job one rollback boundary — a failure at row 3000 discarded 3000 envelopes whose emails had already been delivered; createJob opens its own runInNewTenantTransaction per row, and writes each row's outcome in a second one so a rolled-back row still records that it failed",
+  ],
 ]);
 
 export const CONTEXT_EXIT_ALLOWLIST = new Map([

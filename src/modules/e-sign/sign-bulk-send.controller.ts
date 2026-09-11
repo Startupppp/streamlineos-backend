@@ -8,6 +8,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
+import { NoTenantTransaction } from "../../common/tenant/no-tenant-transaction.decorator";
 import { SignBulkSendService } from "./sign-bulk-send.service";
 import { createBulkSendJobSchema, type CreateBulkSendJobInput } from "./dto/e-sign.schemas";
 
@@ -17,8 +18,25 @@ import { createBulkSendJobSchema, type CreateBulkSendJobInput } from "./dto/e-si
 export class SignBulkSendController {
   constructor(private readonly bulkSend: SignBulkSendService) {}
 
+  /*
+   * Opted out of the request transaction, and the opt-out is load-bearing in
+   * both directions.
+   *
+   * A bulk send is up to 5000 envelopes, each one sending an invitation email
+   * over the network. Held inside `TenantContextInterceptor`'s single request
+   * transaction that meant one pooled connection for the whole run (backend §4
+   * forbids exactly this) and, worse, one rollback boundary around it: a
+   * failure at row 3000 discarded 3000 envelope rows while their 3000 emails
+   * stayed in recipients' inboxes, linking to envelopes that no longer existed.
+   *
+   * Opting out alone would be a different bug — the interceptor skips tenant
+   * setup entirely, so there is no `app.current_org_id` GUC and RLS denies
+   * every query. `createJob` therefore opens its own transactions, one per row,
+   * via `runInNewTenantTransaction`.
+   */
   @Post("jobs")
   @HttpCode(201)
+  @NoTenantTransaction()
   @Idempotent("sign:bulk_send.create")
   @RequirePermission("sign:bulk_send:run")
   create(@Body(new ZodValidationPipe(createBulkSendJobSchema)) body: CreateBulkSendJobInput, @CurrentUser() u: CurrentUserContext) {

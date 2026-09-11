@@ -10,12 +10,14 @@ import { TimerService } from "./timer.service";
 import { TimerController } from "./timer.controller";
 import { PeriodsService } from "./periods.service";
 import { PeriodsController } from "./periods.controller";
+import { TimesheetOverdueService } from "./overdue.service";
 import { ApprovalsService } from "./approvals.service";
 import { ApprovalsController } from "./approvals.controller";
 import { BillingService } from "./billing.service";
 import { BillingController } from "./billing.controller";
 import { ReportsService } from "./reports.service";
 import { ReportsController } from "./reports.controller";
+import { TimesheetCalendarController } from "./calendar.controller";
 import { SettingsService } from "./settings.service";
 import { SettingsController } from "./settings.controller";
 import { RatesService } from "./rates.service";
@@ -32,9 +34,17 @@ import { TimesheetsAiController } from "./timesheets-ai.controller";
 import { TimesheetsAiService } from "./timesheets-ai.service";
 import { AiModule } from "../../ai/core/ai.module";
 import { AccountingKernelModule } from "../../accounting/kernel/accounting-kernel.module";
+import { NotificationsModule } from "../../notifications/notifications.module";
+import { OutboxModule } from "../../../common/outbox/outbox.module";
+import { WebhooksModule } from "../../webhooks/webhooks.module";
+import { TimesheetLifecycleConsumer } from "./events/timesheet-lifecycle.consumer";
+import { TimesheetRemindersSweepService } from "./reminders-sweep.service";
+import { TIMESHEET_ATTENDANCE_PORT } from "./attendance/attendance.port";
+import { SchemaAttendanceAdapter } from "./attendance/schema-attendance.adapter";
+import { AttendanceDraftService } from "./attendance/attendance-draft.service";
 
 @Module({
-  imports: [AiModule, AccountingKernelModule],
+  imports: [AiModule, AccountingKernelModule, NotificationsModule, OutboxModule, WebhooksModule],
   controllers: [
     EntriesController,
     TimerController,
@@ -42,6 +52,7 @@ import { AccountingKernelModule } from "../../accounting/kernel/accounting-kerne
     ApprovalsController,
     BillingController,
     ReportsController,
+    TimesheetCalendarController,
     SettingsController,
     RatesController,
     BudgetsController,
@@ -59,6 +70,8 @@ import { AccountingKernelModule } from "../../accounting/kernel/accounting-kerne
     EntriesService,
     TimerService,
     PeriodsService,
+    /** TS-11. The overdue/escalation queue, derived from grace days + reminderRules. */
+    TimesheetOverdueService,
     ApprovalsService,
     BillingService,
     ReportsService,
@@ -69,7 +82,29 @@ import { AccountingKernelModule } from "../../accounting/kernel/accounting-kerne
     ExceptionsService,
     ExceptionsDetectorService,
     TimesheetsAiService,
+    TimesheetRemindersSweepService,
+    /**
+     * TS-06. Registers itself for every timesheet lifecycle event type at boot.
+     * Without it the publisher has no handler for the events TS-05 emits and
+     * dead-letters all of them.
+     */
+    TimesheetLifecycleConsumer,
+    /** TS-09. Reads the port above and writes draft entries; see the service. */
+    AttendanceDraftService,
+    /**
+     * Attendance, through a port. Swapping this binding is how a deployment
+     * says attendance is not a source of truth for timesheets, or moves to an
+     * HR-published service when one exists — nothing else in the module changes.
+     */
+    { provide: TIMESHEET_ATTENDANCE_PORT, useClass: SchemaAttendanceAdapter },
   ],
-  exports: [EntriesService, SettingsService, ExceptionsDetectorService, EntriesPeriodService],
+  exports: [
+    EntriesService,
+    SettingsService,
+    ExceptionsDetectorService,
+    EntriesPeriodService,
+    TimesheetRemindersSweepService,
+    TIMESHEET_ATTENDANCE_PORT,
+  ],
 })
 export class TimesheetsCoreModule {}

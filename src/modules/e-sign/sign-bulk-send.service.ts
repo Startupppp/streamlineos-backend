@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray , sql } from "drizzle-orm";
 import { signBulkSendJobs, signBulkSendRows, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -472,7 +472,17 @@ export class SignBulkSendService {
      * from the first hundred of it. The counts on the job itself are the whole
      * truth; these rows are a page of evidence.
      */
-    return { job, rows, rowsTruncated: job.totalCount > rows.length };
+    /*
+     * `rowTotal` counts the rows themselves rather than trusting the job's
+     * tally, so a caller is told how many rows exist even when the tally and the
+     * table disagree; `rowsTruncated` is read from that count.
+     */
+    const [counted] = await this.db
+      .select({ n: sql<string>`count(*)` })
+      .from(signBulkSendRows)
+      .where(eq(signBulkSendRows.jobId, jobId));
+    const rowTotal = Number(counted?.n ?? 0);
+    return { job, rows, rowTotal, rowsTruncated: rowTotal > rows.length };
   }
 
   async cancel(orgId: string, jobId: number, actor: { userId: string }) {
