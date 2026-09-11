@@ -2453,6 +2453,11 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "Split out of /leads/leads-reports.service.ts 2026-09-11; this gate keys on path, so the move forces a restatement. Three of the four matches carry the origin's FALSE-POSITIVE reasoning unchanged: L67 reads crmOptions lead_status config (5-15 rows per org), L105 reads crmPipelineStages by orgId (5-20 rows), L138 reads users bounded by inArray(permittedUserIds) from membersWithPermission. The fourth is ACTIONABLE and the origin's justification never described it: L164 selects value+createdAt from EVERY non-deleted deal in a won stage for the org, with no limit and no date predicate, then buckets by month and keeps .slice(-6) \u2014 so the rows read grow without bound with closed-deal history and all but six months of them are discarded. The sibling aggregate on the line above already sums revenue in SQL; this one wants the same GROUP BY month with a six-month lower bound. Verdict is ACTIONABLE for the file because the worst read governs."
     },
+    "/lifecycle/lib/lifecycle-scoring.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "rescore's signal read, moved here from /lifecycle/lifecycle.service.ts by the file-size split on 2026-09-11. Bounded by (organization_id, customer_lifecycle_id) equality plus observed_at >= now - SIGNAL_WINDOW_DAYS (90). The file's other two selects are a .limit(1) lookup and a max() aggregate",
+      "justification": "riskScore needs every signal inside the decay window, so a LIMIT would silently change the score instead of bounding the read. It is one contract's evidence over 90 days, not an org-wide read. NOT capped: nothing limits how many signals a producer writes per contract inside the window. Fresh verdict, not carried: the origin path had no entry (unclassified since the CRM/Timesheets merge) 2026-09-11"
+    },
     "/mail/mail-accounts.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
