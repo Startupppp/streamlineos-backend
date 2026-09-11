@@ -171,6 +171,12 @@ describe("accounting knows a counterparty only as a Party", () => {
     const lookup = readFileSync(join(__dirname, "../ap/ap.vendor-lookup.ts"), "utf8");
 
     expect(ap).toContain("requireVendor(");
+    /*
+      Posting moved out of the service into `ap/lib/ap-document-post.ts`, and
+      resolves its vendor the same way on the way to the journal.
+    */
+    const post = readFileSync(join(__dirname, "../ap/lib/ap-document-post.ts"), "utf8");
+    expect(post).toContain("requireVendor(");
     /* Every vendor field AP reads comes off `gl_parties` and nowhere else. */
     expect(lookup).toContain('from "../../../db/schema"');
     expect(lookup).toContain("glParties.displayName");
@@ -190,7 +196,13 @@ describe("accounting knows a counterparty only as a Party", () => {
 
       Enumerated, so a second caller has to come here and argue for itself.
     */
-    const callers = ["ar/ar-documents.service.ts", "ap/ap-documents.service.ts", "adapters/posting-command.service.ts"];
+    /* `ap/lib/ap-document-post.ts` is AP's posting path since the service was split. */
+    const callers = [
+      "ar/ar-documents.service.ts",
+      "ap/ap-documents.service.ts",
+      "ap/lib/ap-document-post.ts",
+      "adapters/posting-command.service.ts",
+    ];
     for (const caller of callers) {
       const source = readFileSync(join(__dirname, "..", caller), "utf8");
       expect(source).not.toContain("resolveOrCreateByExternalRef");
