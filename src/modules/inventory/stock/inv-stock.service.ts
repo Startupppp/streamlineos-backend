@@ -16,11 +16,20 @@ import { buildCursorPage, decodeTimestampCursor } from "../../../common/paginati
 import { keysetBeforeMicros, microsecondCursorValue } from "../../../common/pagination/keyset";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { CostVisibilityService, stripCostFields } from "../stock-engine/cost-visibility";
-import { availableQtySql, availableQtySumSql } from "../stock-engine/available-sql";
+import { availableQtySql } from "../stock-engine/available-sql";
 import type {
   ListStockLevelsInput, ListTransactionsInput, AvailabilityQueryInput,
 } from "./dto/inv-stock.schemas";
 import { scopeFragment, scopePredicate } from "./lib/stock-scope-sql";
+import { RESPONSE_SHAPE, toStockLevelItem } from "./lib/stock-level-row";
+import { readAvailability } from "./lib/availability-rollup";
+
+/**
+ * Re-exported so the service's public surface is what it always was — the wire
+ * shape moved to sit with the function that builds it, not away from its
+ * consumers.
+ */
+export type { StockLevelItem } from "./lib/stock-level-row";
 
 /**
  * Ceiling on matching variants a text search resolves.
@@ -51,141 +60,6 @@ const SEARCH_MATCH_CAP = 500;
  * `with:` like `listTransactions` beside it.
  */
 const STOCK_LEVELS_TABLE = getTableName(invStockLevels);
-
-/**
- * The response shape, as a cache-key discriminator.
- *
- * `listStockLevels` is cached, and the row shape changed: the response used to
- * carry the driver's own snake_case column names and no joins at all, so
- * `on_hand` arrived where the client reads `onHand` and every product and
- * location name rendered as a dash. Entries of that old shape are still sitting
- * in Redis under the current namespace version at deploy time, and the version
- * is per-org -- there is no boot-time hook that could bump every tenant's.
- *
- * So the shape rides in the key instead of relying on eviction. A new deploy
- * simply reads at a key no old entry occupies, which costs one cold fill per
- * key and cannot serve a single stale row of the previous shape. Bump it
- * whenever the fields below change again.
- */
-const RESPONSE_SHAPE = "s2";
-
-/**
- * One stock-level row as it reaches the wire.
- *
- * Written out rather than inferred because the frontend hook writes it out too
- * (`RawStockLevel` in `hooks/api/inventory/stock-levels.ts`) and the two halves
- * are a contract: this is the shape that hook parses, field for field, and the
- * nesting mirrors `listTransactions` because that is how this module already
- * hands a client an identity for a variant and a bin.
- *
- * Every quantity is a STRING. These are Postgres `numeric` columns, the driver
- * returns them as strings, and the hook's type says string and calls `Number()`
- * on them. Declaring a number here and shipping a string is precisely how the
- * table came to read `NaN`.
- */
-export interface StockLevelItem {
-  id: number;
-  onHand: string;
-  committed: string;
-  onOrder: string;
-  available: string;
-  blockedQty: string;
-  qualityHoldQty: string;
-  averageCost: string | null;
-  productVariant: {
-    id: number;
-    name: string | null;
-    sku: string | null;
-    product: { id: number; name: string; sku: string; reorderPoint: string | null } | null;
-  } | null;
-  location: {
-    id: number;
-    name: string;
-    code: string;
-    warehouse: { id: number; name: string } | null;
-  } | null;
-}
-
-/**
- * The row as the join hands it over.
- *
- * Drizzle's `select()` groups columns one level deep and no further -- a third
- * level is not a nested selection to it, it is a value, and it fails to compile.
- * So the product and the warehouse ride flat inside their parent's group and are
- * re-nested by `toStockLevelItem` below. That is also why nothing here is
- * nullable-by-group: a group mixing two tables is never nullified wholesale by
- * the driver mapper, so each field arrives null on its own and the parent object
- * is decided explicitly.
- */
-interface StockLevelJoinRow {
-  id: number;
-  onHand: string;
-  committed: string;
-  onOrder: string;
-  available: string;
-  blockedQty: string;
-  qualityHoldQty: string;
-  averageCost: string | null;
-  productVariant: {
-    id: number | null;
-    name: string | null;
-    sku: string | null;
-    productId: number | null;
-    productName: string | null;
-    productSku: string | null;
-    reorderPoint: string | null;
-  };
-  location: {
-    id: number | null;
-    name: string | null;
-    code: string | null;
-    warehouseId: number | null;
-    warehouseName: string | null;
-  };
-}
-
-/**
- * Re-nests a joined row into the shape the client parses.
- *
- * The null checks are per-field rather than a single `id === null` probe on
- * purpose: `name` and `code` are `NOT NULL` columns, so testing them is what
- * narrows them from `string | null` to `string` without an assertion, and an
- * assertion is the thing that would let a genuinely absent join through as a
- * half-built object.
- */
-export function toStockLevelItem(row: StockLevelJoinRow): StockLevelItem {
-  const variant = row.productVariant;
-  const location = row.location;
-
-  const product =
-    variant.productId !== null && variant.productName !== null && variant.productSku !== null
-      ? { id: variant.productId, name: variant.productName, sku: variant.productSku, reorderPoint: variant.reorderPoint }
-      : null;
-
-  const warehouse =
-    location.warehouseId !== null && location.warehouseName !== null
-      ? { id: location.warehouseId, name: location.warehouseName }
-      : null;
-
-  return {
-    id: row.id,
-    onHand: row.onHand,
-    committed: row.committed,
-    onOrder: row.onOrder,
-    available: row.available,
-    blockedQty: row.blockedQty,
-    qualityHoldQty: row.qualityHoldQty,
-    averageCost: row.averageCost,
-    productVariant:
-      variant.id === null
-        ? null
-        : { id: variant.id, name: variant.name, sku: variant.sku, product },
-    location:
-      location.id === null || location.name === null || location.code === null
-        ? null
-        : { id: location.id, name: location.name, code: location.code, warehouse },
-  };
-}
 
 @Injectable()
 export class InvStockService {
@@ -398,96 +272,9 @@ export class InvStockService {
     };
   }
 
+  /** @see lib/availability-rollup.ts — the rollup moved, the scope decision did not. */
   async getAvailability(orgId: string, userId: string, filters: AvailabilityQueryInput) {
-    const { variantId, warehouseId } = filters;
     const scope = scopeFragment(await this.warehouseScope.resolve(orgId, userId), orgId);
-
-    // [B1-09] stockRow, incomingRow, outgoingRow are fully independent — run in parallel.
-    // [B1-23] No typed generic on db.execute; fields read via String()/Number() converters below.
-    const [stockRows, incomingRows, outgoingRows, warehouseBreakdown] = await Promise.all([
-      this.db.execute(sql`
-        SELECT
-          COALESCE(SUM(on_hand::numeric), 0)::text AS on_hand,
-          COALESCE(SUM(committed::numeric), 0)::text AS committed,
-          COALESCE(SUM(COALESCE(blocked_qty, 0)::numeric), 0)::text AS blocked_qty,
-          COALESCE(SUM(COALESCE(quality_hold_qty, 0)::numeric), 0)::text AS quality_hold_qty,
-          COALESCE(SUM(COALESCE(outgoing_qty, 0)::numeric), 0)::text AS outgoing_qty,
-          -- A2. Availability is summed per row, by the one definition, because
-          -- it is now a function of where each row stands as well as of its
-          -- buckets. Summing the buckets first and subtracting afterwards -- as
-          -- this did -- cannot express "and none of it is in a van", so goods in
-          -- transit were promisable. on_hand above deliberately still counts
-          -- them: they exist, and the org's total must not dip while they move.
-          ${availableQtySumSql("sl")}::text AS available
-        FROM inv_stock_levels sl
-        WHERE sl.org_id = ${orgId} AND sl.product_variant_id = ${variantId}
-        ${scope.sql}
-        ${warehouseId ? sql`AND sl.location_id IN (SELECT id FROM inv_locations WHERE warehouse_id = ${warehouseId})` : sql``}
-      `),
-      this.db.execute(sql`
-        SELECT COALESCE(SUM((pl.quantity::numeric - pl.quantity_received::numeric)), 0)::text AS incoming
-        FROM inv_po_lines pl
-        JOIN inv_purchase_orders po ON po.id = pl.po_id
-        WHERE po.org_id = ${orgId}
-          AND pl.product_variant_id = ${variantId}
-          AND po.status IN ('SENT', 'PARTIAL')
-          ${warehouseId ? sql`AND po.warehouse_id = ${warehouseId}` : sql``}
-      `),
-      this.db.execute(sql`
-        SELECT COALESCE(SUM((sl.quantity::numeric - sl.quantity_shipped::numeric)), 0)::text AS outgoing
-        FROM inv_so_lines sl
-        JOIN inv_sales_orders so ON so.id = sl.so_id
-        WHERE so.org_id = ${orgId}
-          AND sl.product_variant_id = ${variantId}
-          AND so.status IN ('CONFIRMED', 'SHIPPED')
-          ${warehouseId ? sql`AND so.warehouse_id = ${warehouseId}` : sql``}
-      `),
-      this.db.execute(sql`
-        SELECT
-          w.id AS warehouse_id,
-          w.name AS warehouse_name,
-          COALESCE(SUM(sl.on_hand::numeric), 0)::text AS on_hand,
-          COALESCE(SUM(sl.committed::numeric), 0)::text AS committed,
-          ${availableQtySumSql("sl")}::text AS available
-        FROM inv_stock_levels sl
-        JOIN inv_locations loc ON loc.id = sl.location_id
-        JOIN inv_warehouses w ON w.id = loc.warehouse_id
-        WHERE sl.org_id = ${orgId} AND sl.product_variant_id = ${variantId}
-        ${warehouseId ? sql`AND w.id = ${warehouseId}` : sql``}
-        GROUP BY w.id, w.name
-      `),
-    ]);
-
-    const stockRow = stockRows[0];
-    const incomingRow = incomingRows[0];
-    const outgoingRow = outgoingRows[0];
-
-    const onHand = parseFloat(String(stockRow?.["on_hand"] ?? "0"));
-    const committed = parseFloat(String(stockRow?.["committed"] ?? "0"));
-    const incoming = parseFloat(String(incomingRow?.["incoming"] ?? "0"));
-    const outgoing = parseFloat(String(outgoingRow?.["outgoing"] ?? "0"));
-
-    // A1/A2. Exact and complete, and computed by the one definition in
-    // `available-sql.ts`. This used to be a TypeScript re-derivation from the
-    // summed buckets: it dropped outgoing_qty, it used floats, and once
-    // availability became location-aware it could not have been made right at
-    // all, because the sum has already thrown away which location each row was.
-    //
-    // `outgoing` below is open sales-order demand, not the `outgoing_qty`
-    // projection bucket — picked, not yet shipped. Conflating the two is easy
-    // and produces a number that looks right.
-    const available = parseFloat(String(stockRow?.["available"] ?? "0"));
-    const forecasted = onHand + incoming - outgoing;
-
-    return {
-      variantId,
-      onHand: onHand.toFixed(4),
-      available: available.toFixed(4),
-      committed: committed.toFixed(4),
-      incoming: incoming.toFixed(4),
-      outgoing: outgoing.toFixed(4),
-      forecasted: forecasted.toFixed(4),
-      warehouseBreakdown,
-    };
+    return readAvailability(this.db, orgId, filters, scope);
   }
 }
