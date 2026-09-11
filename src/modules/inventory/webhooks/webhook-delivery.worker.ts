@@ -8,13 +8,8 @@ import { AccessService } from "../../access/access.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import { WebhookTransportService } from "./webhook-transport.service";
-import {
-  WEBHOOK_DISABLE_AFTER_DEAD_LETTERS,
-  WEBHOOK_RETRY_WINDOW_MS,
-  planWebhookAttempt,
-  planWebhookHealth,
-  type WebhookAttemptPlan,
-} from "./webhook-delivery-policy";
+import { planWebhookAttempt, type WebhookAttemptPlan } from "./webhook-delivery-policy";
+import { applyFailurePolicy, type WebhookHealthDeps } from "./lib/webhook-health";
 import {
   claim,
   type ClaimedDelivery,
@@ -65,6 +60,17 @@ export class InventoryWebhookDeliveryWorker {
     private readonly access: AccessService,
     private readonly audit: InventoryAuditService,
   ) {}
+
+  /** E7's subscription-health half lives in `lib/webhook-health.ts`. */
+  private get healthDeps(): WebhookHealthDeps {
+    return {
+      db: this.db,
+      access: this.access,
+      dispatch: this.dispatch,
+      audit: this.audit,
+      logger: this.logger,
+    };
+  }
 
   async run(): Promise<WebhookDeliverySweepResult> {
     const result: WebhookDeliverySweepResult = {
@@ -148,7 +154,7 @@ export class InventoryWebhookDeliveryWorker {
       return { state: "PENDING", fenced: false, alerted: false, disabled: false };
     }
 
-    const health = await this.applyFailurePolicy(item, outcome.error);
+    const health = await applyFailurePolicy(this.healthDeps, item, outcome.error);
     return { state: "FAILED", fenced: false, ...health };
   }
 
@@ -231,158 +237,5 @@ export class InventoryWebhookDeliveryWorker {
     });
 
     return { applied, plan };
-  }
-
-  /**
-   * Alert, then — only ever later, never in the same call — disable.
-   *
-   * The two are separate awaits on purpose. `WEBHOOK_ALERT_AFTER_DEAD_LETTERS` is
-   * strictly below `WEBHOOK_DISABLE_AFTER_DEAD_LETTERS`, so the alert has already
-   * been stamped on an earlier dead letter by the time a disable is reachable;
-   * the sequencing here is the belt to that braces, and makes the guarantee hold
-   * even if someone later tunes the two thresholds to meet.
-   */
-  private async applyFailurePolicy(
-    item: ClaimedDelivery,
-    error: string,
-  ): Promise<{ alerted: boolean; disabled: boolean }> {
-    const webhook = item.webhook;
-    if (webhook === null) return { alerted: false, disabled: false };
-
-    const health = await runInNewTenantTransaction(this.db, item.orgId, async (tx) => {
-      const rows = await tx
-        .select({
-          consecutiveFailures: invWebhooks.consecutiveFailures,
-          alertedAt: invWebhooks.alertedAt,
-          isActive: invWebhooks.isActive,
-          url: invWebhooks.url,
-        })
-        .from(invWebhooks)
-        .where(and(eq(invWebhooks.orgId, item.orgId), eq(invWebhooks.id, webhook.id)))
-        .limit(1);
-      const row = rows[0];
-      if (!row) return null;
-      return { ...planWebhookHealth(row), url: row.url };
-    });
-
-    if (!health) return { alerted: false, disabled: false };
-
-    let alerted = false;
-    if (health.alert) {
-      alerted = await this.alert(item.orgId, webhook.id, health.url, health.consecutiveFailures, error);
-    }
-
-    let disabled = false;
-    if (health.disable) {
-      disabled = await this.disable(
-        item.orgId,
-        webhook.id,
-        health.url,
-        health.consecutiveFailures,
-        error,
-      );
-    }
-
-    return { alerted, disabled };
-  }
-
-  /**
-   * The alert goes to whoever can actually fix it — the holders of
-   * `inventory:webhooks:manage`, the same key that gates the screen where the URL
-   * is edited — rather than to org admins by position. An org with nobody holding
-   * it still gets the audit row, so the event is never lost to an empty audience.
-   */
-  private async alert(
-    orgId: string,
-    webhookId: number,
-    url: string,
-    consecutiveFailures: number,
-    error: string,
-  ): Promise<boolean> {
-    const hours = Math.round(WEBHOOK_RETRY_WINDOW_MS / 3_600_000);
-    const remaining = WEBHOOK_DISABLE_AFTER_DEAD_LETTERS - consecutiveFailures;
-
-    await runInNewTenantTransaction(this.db, orgId, async (tx) => {
-      await this.audit.insert(tx, {
-        orgId,
-        action: "webhook.delivery.alerted",
-        resourceType: "webhook",
-        resourceId: String(webhookId),
-        after: { url, consecutiveFailures, lastError: error },
-        metadata: { disableAfter: WEBHOOK_DISABLE_AFTER_DEAD_LETTERS, remaining },
-      });
-      await tx
-        .update(invWebhooks)
-        .set({ alertedAt: new Date() })
-        .where(and(eq(invWebhooks.orgId, orgId), eq(invWebhooks.id, webhookId)));
-    });
-
-    const members = await this.access.membersWithPermission(orgId, "inventory:webhooks:manage");
-    if (members.length === 0) {
-      this.logger.warn(
-        `inventory webhook ${webhookId} for org ${orgId} is failing and nobody holds ` +
-          "inventory:webhooks:manage — alert recorded to the audit log only",
-      );
-      return true;
-    }
-
-    await this.dispatch.emit({
-      orgId,
-      eventKey: "inventory.webhook.failing",
-      targetUserIds: members.map((member) => member.userId),
-      entityType: "inv_webhook",
-      entityId: String(webhookId),
-      // One alert per streak: the stamp on `alertedAt` already gates re-alerting,
-      // and this makes a concurrent second worker's emission a no-op too.
-      dedupeKey: `inv-webhook-failing:${webhookId}:${consecutiveFailures}`,
-      title: "Inventory webhook is failing",
-      message:
-        `${url} has not accepted a delivery in ${hours}h (${consecutiveFailures} dropped). ` +
-        `It will be disabled automatically after ${WEBHOOK_DISABLE_AFTER_DEAD_LETTERS}.`,
-      link: "/inventory/settings/webhooks",
-    });
-
-    return true;
-  }
-
-  private async disable(
-    orgId: string,
-    webhookId: number,
-    url: string,
-    consecutiveFailures: number,
-    error: string,
-  ): Promise<boolean> {
-    const reason = `auto-disabled after ${consecutiveFailures} undeliverable events`;
-
-    return runInNewTenantTransaction(this.db, orgId, async (tx) => {
-      const updated = await tx
-        .update(invWebhooks)
-        .set({ isActive: false, disabledAt: new Date(), disabledReason: reason })
-        .where(
-          and(
-            eq(invWebhooks.orgId, orgId),
-            eq(invWebhooks.id, webhookId),
-            eq(invWebhooks.isActive, true),
-          ),
-        )
-        .returning({ id: invWebhooks.id });
-
-      if (updated.length === 0) return false;
-
-      await this.audit.insert(tx, {
-        orgId,
-        action: "webhook.auto_disabled",
-        resourceType: "webhook",
-        resourceId: String(webhookId),
-        before: { url, isActive: true },
-        after: { url, isActive: false, disabledReason: reason },
-        metadata: { consecutiveFailures, lastError: error },
-      });
-
-      this.logger.error(
-        `inventory webhook ${webhookId} for org ${orgId} auto-disabled: ${reason} (${error})`,
-      );
-      return true;
-    });
   }
 }
