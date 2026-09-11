@@ -2766,6 +2766,11 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "web push reads bounded by userId (user device subscriptions, typically <5 devices per user) 2026-09-01"
     },
+    "/relationships/lib/relationship-rebuild.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "loadRelationshipWindow's participant read, moved here from /relationships/relationship-state.service.ts by the file-size split on 2026-09-11. inArray(activity_participants.activity_id, ids) where ids come from the activity read just above it, which is .limit(RELATIONSHIP_WINDOW_MAX_ACTIVITIES = 400); tenant-scoped on organization_id. The file's other selects carry .limit(",
+      "justification": "Bounded by the participants of at most 400 activities, one relationship's window, not an org-wide read. A LIMIT here would drop people from activities the fold counts. Fresh verdict, not carried: the origin path had no entry (unclassified since the CRM/Timesheets merge); its two remaining flagged reads (read's participants and threads) stay in the service and are still unclassified 2026-09-11"
+    },
     "/sales/sales-analytics.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",

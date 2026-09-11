@@ -1,31 +1,18 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, eq, isNotNull, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
 import {
   activities,
-  activityParticipants,
   relationshipParticipants,
   relationshipStates,
   relationshipThreads,
 } from "../../db/schema";
-import {
-  RELATIONSHIP_WINDOW_MAX_ACTIVITIES,
-  foldRelationshipState,
-  type RelationshipActivityRow,
-  type RelationshipState,
-} from "./relationship-state";
+import { foldRelationshipState } from "./relationship-state";
+import type { RelationshipAnchor, StoredRelationship } from "./relationship-state.types";
+import { loadRelationshipWindow, writeRelationshipState } from "./lib/relationship-rebuild";
 
-/**
- * What a relationship state is about. Exactly one, never a type-plus-id pair.
- *
- * The same shape `TimelineAnchor` uses, minus the subject arm: a subject is a
- * record on the generic renderer rather than a counterparty, so "how quickly do
- * they reply" is not a question about one.
- */
-export type RelationshipAnchor =
-  | { readonly kind: "party"; readonly partyId: string }
-  | { readonly kind: "deal"; readonly dealId: number };
+export type { RelationshipAnchor, StoredRelationship } from "./relationship-state.types";
 
 /**
  * The deal a stored row is anchored to, insisted upon.
@@ -42,12 +29,6 @@ function dealAnchorId(dealId: number | null): number {
   if (dealId === null)
     throw new Error("relationship_states row has neither a party nor a deal anchor");
   return dealId;
-}
-
-export interface StoredRelationship {
-  readonly relationshipStateId: string;
-  readonly anchor: RelationshipAnchor;
-  readonly state: RelationshipState;
 }
 
 /** How many relationships one sweep of the awaiting-reply read may return. */
@@ -72,6 +53,9 @@ export class RelationshipStateService {
   private readonly logger = new Logger("RelationshipState");
 
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+
+  // The activity window `rebuild` folds, and the transactional write of the
+  // result, live in `lib/relationship-rebuild.ts` and take this service's handle.
 
   /**
    * Bring a relationship up to date because something arrived on it.
@@ -116,136 +100,10 @@ export class RelationshipStateService {
    * conversation whose activities were deleted. Merging would keep them forever.
    */
   async rebuild(organizationId: string, anchor: RelationshipAnchor): Promise<void> {
-    const rows = await this.loadWindow(organizationId, anchor);
+    const rows = await loadRelationshipWindow(this.db, organizationId, anchor);
     const state = foldRelationshipState(rows);
 
-    await this.db.transaction(async (tx) => {
-      const anchorPredicate =
-        anchor.kind === "party"
-          ? and(
-              eq(relationshipStates.organizationId, organizationId),
-              eq(relationshipStates.partyId, anchor.partyId),
-            )
-          : and(
-              eq(relationshipStates.organizationId, organizationId),
-              eq(relationshipStates.dealId, anchor.dealId),
-            );
-
-      const columns = {
-        observedFrom: state.observedFrom,
-        lastContactAt: state.lastContactAt,
-        lastInboundAt: state.lastInboundAt,
-        lastOutboundAt: state.lastOutboundAt,
-        lastInboundActivityId: state.lastInboundActivityId,
-        lastOutboundActivityId: state.lastOutboundActivityId,
-        awaitingReplySince: state.awaitingReplySince,
-        contactCount: state.contactCount,
-        inboundCount: state.inboundCount,
-        outboundCount: state.outboundCount,
-        unreadableDirectionCount: state.unreadableDirectionCount,
-        replySampleCount: state.replyLatency.sampleCount,
-        replyP50Seconds: state.replyLatency.p50Seconds,
-        replyP90Seconds: state.replyLatency.p90Seconds,
-        replyMinSeconds: state.replyLatency.minSeconds,
-        replyMaxSeconds: state.replyLatency.maxSeconds,
-        participantCount: state.participants.length,
-        threadCount: state.threads.length,
-        builtAt: new Date(),
-      };
-
-      const [existing] = await tx
-        .select({ relationshipStateId: relationshipStates.relationshipStateId })
-        .from(relationshipStates)
-        .where(anchorPredicate)
-        .limit(1);
-
-      let relationshipStateId: string;
-
-      if (existing) {
-        relationshipStateId = existing.relationshipStateId;
-        await tx.update(relationshipStates).set(columns).where(anchorPredicate);
-      } else {
-        /**
-         * `targetWhere` is not optional. Both unique indexes are partial — one
-         * anchor column is null on every row — and naming a partial index in an
-         * ON CONFLICT without repeating its predicate raises 42P10 rather than
-         * quietly picking the other one.
-         */
-        const [inserted] = await tx
-          .insert(relationshipStates)
-          .values({
-            organizationId,
-            partyId: anchor.kind === "party" ? anchor.partyId : null,
-            dealId: anchor.kind === "deal" ? anchor.dealId : null,
-            ...columns,
-          })
-          .onConflictDoUpdate({
-            target:
-              anchor.kind === "party"
-                ? [relationshipStates.organizationId, relationshipStates.partyId]
-                : [relationshipStates.organizationId, relationshipStates.dealId],
-            targetWhere:
-              anchor.kind === "party"
-                ? sql`party_id is not null`
-                : sql`deal_id is not null`,
-            set: columns,
-          })
-          .returning({ relationshipStateId: relationshipStates.relationshipStateId });
-
-        if (!inserted) throw new Error("relationships: could not materialise the state row");
-        relationshipStateId = inserted.relationshipStateId;
-      }
-
-      const childPredicate = (table: typeof relationshipParticipants | typeof relationshipThreads) =>
-        and(
-          eq(table.organizationId, organizationId),
-          eq(table.relationshipStateId, relationshipStateId),
-        );
-
-      /**
-       * Physically deleted, not soft-deleted. These rows are derived — the
-       * platform's soft-delete default is about business entities somebody may
-       * need back, and a participant row nobody can produce from the activities
-       * is not a record of anything.
-       */
-      await tx.delete(relationshipParticipants).where(childPredicate(relationshipParticipants));
-      await tx.delete(relationshipThreads).where(childPredicate(relationshipThreads));
-
-      if (state.participants.length > 0) {
-        await tx.insert(relationshipParticipants).values(
-          state.participants.map((participant) => ({
-            organizationId,
-            relationshipStateId,
-            identity: participant.identity,
-            partyId: participant.partyId,
-            userId: participant.userId,
-            address: participant.address,
-            roles: [...participant.roles],
-            firstSeenAt: participant.firstSeenAt,
-            lastSeenAt: participant.lastSeenAt,
-            messageCount: participant.messageCount,
-            repliedCount: participant.repliedCount,
-            lastRepliedAt: participant.lastRepliedAt,
-          })),
-        );
-      }
-
-      if (state.threads.length > 0) {
-        await tx.insert(relationshipThreads).values(
-          state.threads.map((thread) => ({
-            organizationId,
-            relationshipStateId,
-            threadId: thread.threadId,
-            subject: thread.subject,
-            firstSeenAt: thread.firstSeenAt,
-            lastSeenAt: thread.lastSeenAt,
-            messageCount: thread.messageCount,
-            lastDirection: thread.lastDirection,
-            precededByThreadId: thread.precededByThreadId,
-          })),
-        );
-      }
-    });
+    await writeRelationshipState(this.db, organizationId, anchor, state);
   }
 
   /**
@@ -408,89 +266,6 @@ export class RelationshipStateService {
     }
 
     return found;
-  }
-
-  /**
-   * The relationship's activities, newest first, bounded by the same count the
-   * fold applies.
-   *
-   * The bound is applied twice deliberately, exactly as the thread window's is:
-   * here so the read is a bounded range scan on a partial timeline index rather
-   * than a whole correspondence pulled into memory, and again in the fold, which
-   * is the authority — how much history counts is decided by a pure function
-   * that can be argued with, not by a LIMIT in one of two queries.
-   */
-  private async loadWindow(
-    organizationId: string,
-    anchor: RelationshipAnchor,
-  ): Promise<RelationshipActivityRow[]> {
-    const rows = await this.db
-      .select({
-        activityId: activities.activityId,
-        kind: activities.kind,
-        occurredAt: activities.occurredAt,
-        subject: activities.subject,
-        threadId: activities.threadId,
-        actorKind: activities.actorKind,
-        source: activities.source,
-      })
-      .from(activities)
-      .where(
-        and(
-          eq(activities.organizationId, organizationId),
-          anchor.kind === "party"
-            ? eq(activities.partyId, anchor.partyId)
-            : eq(activities.dealId, anchor.dealId),
-          isNull(activities.deletedAt),
-        ),
-      )
-      .orderBy(desc(activities.occurredAt), desc(activities.activityId))
-      .limit(RELATIONSHIP_WINDOW_MAX_ACTIVITIES);
-
-    if (rows.length === 0) return [];
-
-    // One query for the people, never one per activity.
-    const people = await this.db
-      .select({
-        activityId: activityParticipants.activityId,
-        partyId: activityParticipants.partyId,
-        userId: activityParticipants.userId,
-        address: activityParticipants.address,
-        role: activityParticipants.role,
-      })
-      .from(activityParticipants)
-      .where(
-        and(
-          eq(activityParticipants.organizationId, organizationId),
-          inArray(
-            activityParticipants.activityId,
-            rows.map((row) => row.activityId),
-          ),
-        ),
-      );
-
-    const byActivity = new Map<string, RelationshipActivityRow["participants"][number][]>();
-    for (const person of people) {
-      const list = byActivity.get(person.activityId) ?? [];
-      list.push({
-        partyId: person.partyId,
-        userId: person.userId,
-        address: person.address,
-        role: person.role,
-      });
-      byActivity.set(person.activityId, list);
-    }
-
-    return rows.map((row) => ({
-      activityId: row.activityId,
-      kind: row.kind,
-      occurredAt: row.occurredAt,
-      subject: row.subject,
-      threadId: row.threadId,
-      actorKind: row.actorKind,
-      source: row.source,
-      participants: byActivity.get(row.activityId) ?? [],
-    }));
   }
 
   /**
