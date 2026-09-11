@@ -179,7 +179,7 @@ describe("PEND-DB — a migration may not name a column nobody declares", () => 
    * unguarded ADD.
    */
   const FK_FILES = [
-    "0575_inventory_composite_tenant_fks",
+    "0575a_inventory_composite_tenant_fks",
     "0576_tenant_fks_public_a",
     "0577_tenant_fks_public_b",
     "0578_tenant_fks_public_c",

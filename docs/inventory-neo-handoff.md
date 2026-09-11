@@ -515,9 +515,9 @@ tests green.
 
 | File | What it does |
 |---|---|
-| `0580_inventory_channel_pools` | `inv_channel_pools`; `inv_sales_orders.channel_id`. |
-| `0581_inventory_quick_commerce_asn` | Platform POs, ASNs, payout lines; `inv_channels.qc_provider`; `inv_grns.asn_id`; three settings flags; `inv_sales_orders.platform_po_id`. |
-| `0582_inventory_handling_units` | `inv_handling_units`; `handling_unit_id` on levels, transactions, reservations, pick lines and GRN lines; **the natural-key index is dropped and recreated**. |
+| `0580a_inventory_channel_pools` | `inv_channel_pools`; `inv_sales_orders.channel_id`. |
+| `0581a_inventory_quick_commerce_asn` | Platform POs, ASNs, payout lines; `inv_channels.qc_provider`; `inv_grns.asn_id`; three settings flags; `inv_sales_orders.platform_po_id`. |
+| `0582a_inventory_handling_units` | `inv_handling_units`; `handling_unit_id` on levels, transactions, reservations, pick lines and GRN lines; **the natural-key index is dropped and recreated**. |
 | `0583_inventory_slotting` | Slotting rules, velocity classes, re-slot recommendations. |
 | `0584_inventory_labor` | `inv_labor_records`; the `inventory:labor:read` backfill. |
 | `0585_inventory_cross_dock` | `inv_grn_lines.cross_dock_so_id`. |

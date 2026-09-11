@@ -3,6 +3,10 @@
 **Measured 2026-09-11 against the shared Neon branch
 (`ep-orange-mode-azxn5hbr-pooler.c-3.ap-southeast-1.aws.neon.tech`), read-only.**
 
+> Tags are shown under the names they carry after the 2026-09-11 cross-lane
+> collision renames (a letter suffix, e.g. `0520b_`). Content, hash and `when`
+> are unchanged, so the applied/unapplied split below is unaffected.
+
 ## What was measured
 
 - `drizzle.__drizzle_migrations` holds **858** applied rows; the highest
@@ -26,7 +30,7 @@
 | 0540b_package_sales_order_link | 1700000336000 |
 | 0543b_pick_exception_ownership | 1700000341000 |
 | 0544b_inspection_plans | 1700000340000 |
-| 0581_inventory_quick_commerce_asn | 1700000359000 |
+| 0581a_inventory_quick_commerce_asn | 1700000359000 |
 | 0582_notifications_partition_by_created_at | 1700000379000 |
 | 0589_inventory_drop_reason_codes | 1700000367000 |
 | 0611_delegations_and_overrides_expand_membership | 1700000394000 |

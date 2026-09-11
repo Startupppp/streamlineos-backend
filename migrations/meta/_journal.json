@@ -2792,21 +2792,21 @@
       "idx": 398,
       "version": "7",
       "when": 1700000358000,
-      "tag": "0580_inventory_channel_pools",
+      "tag": "0580a_inventory_channel_pools",
       "breakpoints": true
     },
     {
       "idx": 399,
       "version": "7",
       "when": 1700000359000,
-      "tag": "0581_inventory_quick_commerce_asn",
+      "tag": "0581a_inventory_quick_commerce_asn",
       "breakpoints": true
     },
     {
       "idx": 400,
       "version": "7",
       "when": 1700000360000,
-      "tag": "0582_inventory_handling_units",
+      "tag": "0582a_inventory_handling_units",
       "breakpoints": true
     },
     {
@@ -4556,7 +4556,7 @@
       "idx": 650,
       "version": "7",
       "when": 1700000586000,
-      "tag": "0575_inventory_composite_tenant_fks",
+      "tag": "0575a_inventory_composite_tenant_fks",
       "breakpoints": true
     },
     {

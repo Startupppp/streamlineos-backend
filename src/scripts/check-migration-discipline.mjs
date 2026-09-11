@@ -399,6 +399,10 @@ const BASELINE_JOURNAL_INTEGRITY = new Set([
   "insert-order:0545a_stock_write_off.sql", // streamline_inv, inv_cold_head +11 scratch
   // 0553a: inv, crm twin applied on Neon (0550a/0552a already sit inside their windows).
   "insert-order:0553a_inventory_pack_flags.sql", // streamline_inv, inv_cold_head +11 scratch
+  // 0580a-0582a: inv lane; origin/main holds 0580-0582 (0575a already fits).
+  "insert-order:0580a_inventory_channel_pools.sql", // streamline_inv, inv_cold_head +11 scratch
+  "insert-order:0581a_inventory_quick_commerce_asn.sql", // streamline_inv, inv_cold_head +11 scratch
+  "insert-order:0582a_inventory_handling_units.sql", // streamline_inv, inv_cold_head +11 scratch
 ]);
 
 // ─── check functions ──────────────────────────────────────────────────────────
