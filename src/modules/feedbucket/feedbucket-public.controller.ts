@@ -1,8 +1,6 @@
 import {
-  BadRequestException,
   Body,
   Controller,
-  ForbiddenException,
   Get,
   HttpCode,
   HttpException,
@@ -22,7 +20,6 @@ import {
   FileInterceptor,
 } from "@nestjs/platform-express";
 import type { Request } from "express";
-import { and, eq } from "drizzle-orm";
 import { Public } from "../../common/auth/public.decorator";
 import { MultipartAction } from "../../common/openapi/zod-operation-contracts";
 import { InsufficientAiCreditsException } from "../../common/http/api-exceptions";
@@ -32,85 +29,26 @@ import { StorageService } from "../storage/storage.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { ProjectsTicketsService } from "../build/core/projects-tickets.service";
-import { validateMagicBytes } from "../storage/file-signatures";
 import { publicSubmitSchema, publicAiAssistSchema, publicSubmitDeclSchema, publicAiAssistDeclSchema } from "./feedbucket.schemas";
-import {
-  feedbucketAttachments,
-  feedbucketSubmissions,
-  feedbucketWidgets,
-} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import { runInTenantTransaction, runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
-import { registerAfterCommit } from "../../common/tenant/tenant-context";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import {
+  MAX_RECORDING_BYTES,
+  MAX_SCREENSHOT_BYTES,
+  assertOriginAllowed,
+  assertScreenshotAcceptable,
+  clientIp,
+  normalizeMultipartBody,
+} from "./lib/feedbucket-public-request";
+import {
+  submitPublicFeedback,
+  type FeedbucketSubmitDeps,
+} from "./lib/feedbucket-submit";
 
 const publicKeyParams = z.object({ publicKey: z.string().min(1) }).strict();
-
-const ALLOWED_IMAGE_MIMES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/gif",
-  "image/webp",
-]);
-const MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024;
-const MAX_RECORDING_BYTES = 100 * 1024 * 1024;
-
-function projectFolder(widget: typeof feedbucketWidgets.$inferSelect): string {
-  return widget.projectId
-    ? `project-${widget.projectId}`
-    : `org-${widget.orgId}`;
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function clientIp(req: Request): string | undefined {
-  const forwarded = req.headers["x-forwarded-for"];
-  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  const candidate = raw?.split(",")[0]?.trim() || req.ip;
-  return candidate ? candidate.slice(0, 100) : undefined;
-}
-
-function originHostname(req: Request): string | undefined {
-  const originHeader = req.headers["origin"];
-  const origin = Array.isArray(originHeader) ? originHeader[0] : originHeader;
-  const refererHeader = req.headers["referer"];
-  const referer = Array.isArray(refererHeader)
-    ? refererHeader[0]
-    : refererHeader;
-  const src = origin ?? referer;
-  if (!src) return undefined;
-  try {
-    return new URL(src).hostname;
-  } catch {
-    return undefined;
-  }
-}
-
-function parseMultipartField(raw: unknown, fieldName: string): unknown {
-  if (
-    fieldName === "consoleLogs" ||
-    fieldName === "metadata" ||
-    fieldName === "networkLogs"
-  ) {
-    if (typeof raw === "string") {
-      try {
-        return JSON.parse(raw);
-      } catch {
-        return raw;
-      }
-    }
-  }
-  return raw;
-}
 
 @Public()
 @Controller("public/feedbucket")
@@ -125,6 +63,18 @@ export class FeedbucketPublicController {
     private readonly ticketsService: ProjectsTicketsService,
     @Inject(DRIZZLE) private readonly db: Db,
   ) {}
+
+  private get submitDeps(): FeedbucketSubmitDeps {
+    return {
+      db: this.db,
+      storage: this.storage,
+      notifications: this.notifications,
+      ticketsService: this.ticketsService,
+      logger: this.logger,
+      createSubmission: (widget, dto, screenshotUrl) =>
+        this.publicService.createSubmission(widget, dto, screenshotUrl),
+    };
+  }
 
   @Get(":publicKey/config")
   @Validate({ params: publicKeyParams })
@@ -183,14 +133,7 @@ export class FeedbucketPublicController {
     const widget = await this.publicService.resolveWidget(publicKey);
     if (!widget) throw new NotFoundException("Widget not found");
 
-    const host = originHostname(req);
-    if (
-      widget.allowedDomains.length > 0 &&
-      host !== undefined &&
-      !widget.allowedDomains.includes(host)
-    ) {
-      throw new ForbiddenException("Origin not allowed");
-    }
+    assertOriginAllowed(widget, req);
 
     const ip = clientIp(req);
     const rlResult = await this.rateLimitService.check(
@@ -201,123 +144,12 @@ export class FeedbucketPublicController {
       throw new HttpException({ message: "Rate limit exceeded" }, 429);
     }
 
-    const normalizedBody: Record<string, unknown> = {};
-    for (const [key, val] of Object.entries(rawBody)) {
-      normalizedBody[key] = parseMultipartField(val, key);
-    }
-    const dto = publicSubmitSchema.parse(normalizedBody);
+    const dto = publicSubmitSchema.parse(normalizeMultipartBody(rawBody));
 
-    const folder = projectFolder(widget);
-    const screenshot = files?.screenshot?.[0];
-    const recording = files?.recording?.[0];
-
-    let screenshotUpload:
-      | { url: string; size: number; mimeType: string }
-      | undefined;
-    if (screenshot) {
-      if (screenshot.size > MAX_SCREENSHOT_BYTES)
-        throw new BadRequestException("Screenshot must be under 5MB");
-
-      if (!ALLOWED_IMAGE_MIMES.has(screenshot.mimetype))
-        throw new BadRequestException(
-          "Screenshot must be an image (JPEG, PNG, GIF, or WebP)",
-        );
-
-      if (!validateMagicBytes(screenshot.buffer, screenshot.mimetype))
-        throw new BadRequestException(
-          "Screenshot file content does not match its type",
-        );
-
-      screenshotUpload = await this.storage.uploadCompressed(
-        widget.orgId,
-        screenshot.buffer,
-        `feedbucket/${folder}/screenshots`,
-        screenshot.originalname,
-        screenshot.mimetype,
-      );
-    }
-
-    let recordingUpload:
-      | { url: string; size: number; mimeType: string }
-      | undefined;
-    if (recording) {
-      if (recording.size > MAX_RECORDING_BYTES) {
-        throw new BadRequestException("Recording must be under 100MB");
-      }
-      const rawMime = recording.mimetype.split(";")[0]?.trim() ?? "";
-      const storeMime = rawMime.startsWith("video/") ? rawMime : "video/webm";
-      recordingUpload = await this.storage.uploadCompressed(
-        widget.orgId,
-        recording.buffer,
-        `feedbucket/${folder}/recordings`,
-        recording.originalname || "recording.webm",
-        storeMime,
-      );
-    }
-
-    const screenshotUrl = screenshotUpload?.url;
-    const recordingUrl = recordingUpload?.url;
-
-    await runInTenantTransaction(
-      this.db,
-      async (tx) => {
-        const submissionId = await this.publicService.createSubmission(
-          widget,
-          dto,
-          screenshotUrl,
-        );
-
-        if (screenshot && screenshotUpload)
-          await tx.insert(feedbucketAttachments).values({
-            submissionId,
-            orgId: widget.orgId,
-            fileUrl: screenshotUpload.url,
-            fileSize: screenshotUpload.size,
-            fileName: screenshot.originalname,
-            mimeType: screenshotUpload.mimeType,
-          });
-
-        if (recording && recordingUpload)
-          await tx.insert(feedbucketAttachments).values({
-            orgId: widget.orgId,
-            submissionId,
-            fileUrl: recordingUpload.url,
-            mimeType: recordingUpload.mimeType,
-            fileName: recording.originalname,
-            fileSize: recordingUpload.size,
-          });
-
-        if (widget.autoCreateTicket && widget.projectId) {
-          const deferred = () =>
-            this.autoLinkTicket(widget, submissionId, dto.type, dto.message, {
-              screenshot,
-              screenshotUrl,
-              recordingUrl,
-            });
-          if (!registerAfterCommit(deferred)) void deferred();
-        }
-
-        if (widget.createdBy) {
-          void this.notifications
-            .create({
-              orgId: widget.orgId,
-              userId: widget.createdBy,
-              type: "INFO",
-              category: "SYSTEM",
-              sourceModule: "feedbucket",
-              title: "New Feedback Received",
-              message: `New ${dto.type} feedback received via widget "${widget.name}"`,
-              link: widget.projectId
-                ? `/projects/${widget.projectId}/feedbucket/${submissionId}`
-                : `/projects/feedbucket`,
-            })
-            .catch(() => undefined);
-        }
-      },
-      { orgId: widget.orgId },
-    );
-
-    return { ok: true };
+    return submitPublicFeedback(this.submitDeps, widget, dto, {
+      screenshot: files?.screenshot?.[0],
+      recording: files?.recording?.[0],
+    });
   }
 
   @Post(":publicKey/ai-assist")
@@ -345,13 +177,7 @@ export class FeedbucketPublicController {
     if (!widget.aiAssistEnabled)
       throw new NotFoundException("Widget not found");
 
-    const host = originHostname(req);
-    if (
-      widget.allowedDomains.length > 0 &&
-      host !== undefined &&
-      !widget.allowedDomains.includes(host)
-    )
-      throw new ForbiddenException("Origin not allowed");
+    assertOriginAllowed(widget, req);
 
     const ip = clientIp(req);
     const perIpResult = await this.rateLimitService.check(
@@ -375,26 +201,9 @@ export class FeedbucketPublicController {
         HttpStatus.TOO_MANY_REQUESTS,
       );
 
-    if (screenshot) {
-      if (screenshot.size > MAX_SCREENSHOT_BYTES)
-        throw new BadRequestException("Screenshot must be under 5MB");
+    if (screenshot) assertScreenshotAcceptable(screenshot);
 
-      if (!ALLOWED_IMAGE_MIMES.has(screenshot.mimetype))
-        throw new BadRequestException(
-          "Screenshot must be an image (JPEG, PNG, GIF, or WebP)",
-        );
-
-      if (!validateMagicBytes(screenshot.buffer, screenshot.mimetype))
-        throw new BadRequestException(
-          "Screenshot file content does not match its type",
-        );
-    }
-
-    const normalizedAiBody: Record<string, unknown> = {};
-    for (const [key, val] of Object.entries(rawBody)) {
-      normalizedAiBody[key] = parseMultipartField(val, key);
-    }
-    const dto = publicAiAssistSchema.parse(normalizedAiBody);
+    const dto = publicAiAssistSchema.parse(normalizeMultipartBody(rawBody));
 
     const actorUserId = widget.createdBy ?? "system";
 
@@ -437,59 +246,5 @@ export class FeedbucketPublicController {
     }
 
     return result;
-  }
-
-  private async autoLinkTicket(
-    widget: typeof feedbucketWidgets.$inferSelect,
-    submissionId: number,
-    type: string,
-    message: string,
-    media: {
-      screenshot?: Express.Multer.File;
-      screenshotUrl?: string;
-      recordingUrl?: string;
-    },
-  ) {
-    const projectId = widget.projectId;
-    if (!projectId) return;
-    try {
-      await runInNewTenantTransaction(this.db, widget.orgId, async () => {
-        const actingUserId = widget.createdBy ?? widget.orgId;
-        const parts: string[] = [
-          `<p><strong>Feedback type:</strong> ${escapeHtml(type)}</p>`,
-        ];
-        if (message.trim())
-          parts.push(`<p>${escapeHtml(message).replace(/\n/g, "<br>")}</p>`);
-        if (media.screenshotUrl)
-          parts.push(
-            `<p><img src="${escapeHtml(media.screenshotUrl)}" alt="Feedback screenshot"></p>`,
-          );
-        if (media.recordingUrl)
-          parts.push(
-            `<p><strong>Screen recording:</strong> <a href="${escapeHtml(media.recordingUrl)}" target="_blank" rel="noopener noreferrer">Watch recording</a></p>`,
-          );
-        const ticket = await this.ticketsService.createFromFeedback(
-          widget.orgId,
-          actingUserId,
-          projectId,
-          {
-            title: message.slice(0, 255) || `${type} feedback`,
-            description: parts.join(""),
-            type: widget.defaultTicketType,
-          },
-        );
-        await this.db
-          .update(feedbucketSubmissions)
-          .set({ linkedTicketId: ticket.id })
-          .where(
-            and(
-              eq(feedbucketSubmissions.id, submissionId),
-              eq(feedbucketSubmissions.orgId, widget.orgId),
-            ),
-          );
-      });
-    } catch (err) {
-      this.logger.warn(`linkFeedbackToTicket failed for submission ${submissionId}: ${err instanceof Error ? err.message : String(err)}`);
-    }
   }
 }
