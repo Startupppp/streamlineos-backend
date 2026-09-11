@@ -499,18 +499,20 @@ const schema = baseSchema
       });
     }
 
-    if (owner && AWS_RDS_HOST.test(owner.hostname) && !owner.password)
+    const iamAuth = config.DB_IAM_AUTH === true;
+
+    if (!iamAuth && owner && AWS_RDS_HOST.test(owner.hostname) && !owner.password)
       context.addIssue({
         code: "custom",
         path: ["DATABASE_URL"],
-        message: "DATABASE_URL must include the RDS password; IAM-only authentication is not supported by this runtime",
+        message: "DATABASE_URL must include the RDS password; set DB_IAM_AUTH=true to use IAM database authentication instead",
       });
 
-    if (app && AWS_RDS_HOST.test(app.hostname) && !app.password)
+    if (!iamAuth && app && AWS_RDS_HOST.test(app.hostname) && !app.password)
       context.addIssue({
         code: "custom",
         path: ["APP_DATABASE_URL"],
-        message: "APP_DATABASE_URL must include the application-role password; IAM-only authentication is not supported by this runtime",
+        message: "APP_DATABASE_URL must include the application-role password; set DB_IAM_AUTH=true to use IAM database authentication instead",
       });
 
     // INV-27. `fake` answers every marketplace snapshot with a quantity derived

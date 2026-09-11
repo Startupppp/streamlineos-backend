@@ -71,6 +71,7 @@ export const poolEnvShape = {
   DB_POOL_QUEUE_DEPTH: optionalInt(0),
   DB_POOL_ACQUIRE_TIMEOUT_MS: optionalInt(1),
   DB_POOL_ADMISSION_ENABLED: optionalBool(),
+  DB_IAM_AUTH: optionalBool(),
   DB_APPLICATION_NAME: z.preprocess(
     emptyToUndefined,
     z.string().trim().min(1).max(63).optional(),
