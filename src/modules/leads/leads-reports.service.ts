@@ -1,19 +1,12 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, notInArray, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNotNull, isNull, lt, lte, notInArray, sql } from "drizzle-orm";
 import { AccessService } from "../access/access.service";
-import {
-  leadActivities,
-  deals,
-  users,
-  crmOptions,
-  crmPipelineStages,
-} from "../../db/schema";
+import { leadActivities, users, crmOptions } from "../../db/schema";
 import { businessParties, leadPartyMap } from "../../db/schema/party";
 import {
   LEAD_PARTY_COLUMNS,
   LEAD_PARTY_JOIN,
   leadPartyScope,
-  pushLeadPartyViewScope,
 } from "./lead-party-reader";
 import { resolveLeadStatusSemantics } from "./lead-status-semantics";
 import type {
@@ -26,6 +19,7 @@ import type { DataScope } from "../access/access.types";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { CacheService } from "../../common/cache/cache.service";
 import { LeadsReportsTeamService } from "./leads-reports-team.service";
+import { getLeadAnalytics, type LeadAnalyticsDeps } from "./lib/lead-analytics-report";
 
 @Injectable()
 export class LeadsReportsService {
@@ -36,172 +30,17 @@ export class LeadsReportsService {
     private readonly access: AccessService,
   ) {}
 
-  async getLeadAnalytics(
+  /** Bound once so the extracted report sees the same injected instances. */
+  private get analyticsDeps(): LeadAnalyticsDeps {
+    return { db: this.db, access: this.access };
+  }
+
+  getLeadAnalytics(
     orgId: string,
     filters: AnalyticsQuery,
     viewScope?: { scope: DataScope; userId: string },
   ) {
-    const f = leadPartyScope(orgId);
-    pushLeadPartyViewScope(f, orgId, viewScope?.scope, viewScope?.userId);
-    if (filters.dateFrom)
-      f.push(gte(LEAD_PARTY_COLUMNS.createdAt, new Date(filters.dateFrom)));
-    if (filters.dateTo)
-      f.push(lte(LEAD_PARTY_COLUMNS.createdAt, new Date(filters.dateTo + "T23:59:59")));
-
-    const now = new Date();
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
-
-    const statusOptions = await this.db
-      .select()
-      .from(crmOptions)
-      .where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status")));
-    const semantics = resolveLeadStatusSemantics(statusOptions);
-
-    const convertedExpr =
-      semantics.convertedKeys.length > 0
-        ? sql`${LEAD_PARTY_COLUMNS.status} = ANY(ARRAY[${sql.join(
-            semantics.convertedKeys.map((k) => sql`${k}`),
-            sql`, `,
-          )}])`
-        : sql`false`;
-
-    const [totalsRows, prevPeriodRows, wonStages, sourceRows, assignRows, permittedMembers] =
-      await Promise.all([
-        this.db
-          .select({
-            total: sql<number>`COUNT(*)::int`,
-            converted: sql<number>`COUNT(*) FILTER (WHERE ${convertedExpr})::int`,
-          })
-          .from(leadPartyMap)
-          .innerJoin(businessParties, LEAD_PARTY_JOIN)
-          .where(and(...f)),
-        this.db
-          .select({
-            total: sql<number>`COUNT(*)::int`,
-            converted: sql<number>`COUNT(*) FILTER (WHERE ${convertedExpr})::int`,
-          })
-          .from(leadPartyMap)
-          .innerJoin(businessParties, LEAD_PARTY_JOIN)
-          .where(
-            and(
-              ...leadPartyScope(orgId),
-              gte(LEAD_PARTY_COLUMNS.createdAt, sixtyDaysAgo),
-              lte(LEAD_PARTY_COLUMNS.createdAt, thirtyDaysAgo),
-            ),
-          ),
-        this.db
-          .select({ key: crmPipelineStages.key })
-          .from(crmPipelineStages)
-          .where(
-            and(
-              eq(crmPipelineStages.orgId, orgId),
-              eq(crmPipelineStages.stageType, "won"),
-            ),
-          ),
-        this.db
-          .select({
-            source: LEAD_PARTY_COLUMNS.source,
-            total: sql<number>`COUNT(*)::int`,
-            converted: sql<number>`COUNT(*) FILTER (WHERE ${convertedExpr})::int`,
-          })
-          .from(leadPartyMap)
-          .innerJoin(businessParties, LEAD_PARTY_JOIN)
-          .where(and(...f))
-          .groupBy(LEAD_PARTY_COLUMNS.source),
-        this.db
-          .select({
-            assignedToId: LEAD_PARTY_COLUMNS.assignedToId,
-            cnt: sql<number>`COUNT(*)::int`,
-          })
-          .from(leadPartyMap)
-          .innerJoin(businessParties, LEAD_PARTY_JOIN)
-          .where(and(...f, isNotNull(LEAD_PARTY_COLUMNS.assignedToId)))
-          .groupBy(LEAD_PARTY_COLUMNS.assignedToId),
-        this.access.membersWithPermission(orgId, "crm:leads:view"),
-      ]);
-
-    const permittedUserIds = permittedMembers.map((m) => m.userId);
-    const salesUsers = permittedUserIds.length > 0
-      ? await this.db
-          .select({ id: users.id, name: users.name })
-          .from(users)
-          .where(inArray(users.id, permittedUserIds))
-      : [];
-
-    const totalLeads = totalsRows[0]?.total ?? 0;
-    const converted = totalsRows[0]?.converted ?? 0;
-    const conversionRate =
-      totalLeads > 0 ? Math.round((converted / totalLeads) * 100) : 0;
-
-    const prevTotal = prevPeriodRows[0]?.total ?? 0;
-    const prevConverted = prevPeriodRows[0]?.converted ?? 0;
-    const prevConversionRate =
-      prevTotal > 0 ? Math.round((prevConverted / prevTotal) * 100) : 0;
-
-    const wonStageKeys = wonStages.length ? wonStages.map((s) => s.key) : ["WON"];
-
-    const [revenueRow, wonDeals] = await Promise.all([
-      this.db
-        .select({
-          totalRevenue: sql<number>`COALESCE(SUM(${deals.value}::numeric), 0)::float`,
-        })
-        .from(deals)
-        .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), inArray(deals.stage, wonStageKeys)))
-        .then((r) => r[0]),
-      this.db
-        .select({ value: deals.value, createdAt: deals.createdAt })
-        .from(deals)
-        .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), inArray(deals.stage, wonStageKeys))),
-    ]);
-
-    const totalRevenue = revenueRow?.totalRevenue ?? 0;
-
-    const conversionBySource: {
-      source: string;
-      total: number;
-      converted: number;
-      rate: number;
-    }[] = sourceRows.map((r) => ({
-      source: r.source.replace(/_/g, " "),
-      total: r.total,
-      converted: r.converted,
-      rate: r.total > 0 ? Math.round((r.converted / r.total) * 100) : 0,
-    }));
-
-    const monthMap = new Map<string, number>();
-    for (const d of wonDeals) {
-      const date = d.createdAt;
-      if (!date) continue;
-      const m = new Date(date);
-      const key = `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, "0")}`;
-      monthMap.set(key, (monthMap.get(key) ?? 0) + Number(d.value ?? 0));
-    }
-    const monthlyRevenue = [...monthMap.entries()]
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .slice(-6)
-      .map(([month, revenue]) => ({ month, revenue }));
-
-    const assignMap = new Map<string, number>();
-    for (const row of assignRows) {
-      if (row.assignedToId) assignMap.set(row.assignedToId, row.cnt);
-    }
-    const assignmentDistribution = salesUsers.map((u) => ({
-      userId: u.id,
-      name: u.name ?? "Unknown",
-      count: assignMap.get(u.id) ?? 0,
-    }));
-
-    return {
-      totalLeads,
-      totalLeadsPrevPeriod: prevTotal,
-      conversionRate,
-      conversionRatePrevPeriod: prevConversionRate,
-      totalRevenue,
-      conversionBySource,
-      monthlyRevenue,
-      assignmentDistribution,
-    };
+    return getLeadAnalytics(this.analyticsDeps, orgId, filters, viewScope);
   }
 
   getDashboardMetrics(orgId: string) {

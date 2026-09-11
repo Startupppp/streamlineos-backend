@@ -45,6 +45,42 @@ describe("LeadsReportsService — cross-tenant isolation", () => {
     expect(allVals).toContain(ATTACKER);
   });
 
+  /**
+   * The assertion above is weaker than it reads, and the difference matters.
+   *
+   * `getLeadAnalytics` issues nine queries. The one above flattens every
+   * `where()` call into a single list and asks whether the caller's org appears
+   * anywhere in it — which stays true if one query is scoped correctly and the
+   * others are not. Swapping the org on the funnel's own scope
+   * (`leadPartyScope(orgId)` -> a literal foreign org, so totals, the source
+   * breakdown and the assignment distribution all read another tenant's leads)
+   * left it green, because the status-options read and the revenue reads still
+   * mention the caller's org.
+   *
+   * So assert it per query instead: with no `viewScope` and no date filters,
+   * every predicate this report builds is scoped by org, and the mock returns no
+   * permitted members so the one org-free query — the `inArray(users.id, …)`
+   * name lookup, bounded by ids that were themselves resolved under the org — is
+   * never reached. A `where()` call with no trace of the caller's org is a query
+   * reading across tenants.
+   */
+  it("scopes EVERY query in the analytics report, not just one of them", async () => {
+    const { db, where } = makeThenableBuilder([]);
+    const cache = {
+      cachedVersioned: jest.fn().mockImplementation((_n: string, _k: string, fn: () => unknown) => fn()),
+    };
+    const teamReports = { getSalesLeaderboard: jest.fn().mockResolvedValue({}) };
+    const access = { getDataScopeForUser: jest.fn(), membersWithPermission: jest.fn().mockResolvedValue([]) };
+    const svc = new LeadsReportsService(db, cache as never, teamReports as never, access as never);
+    await svc.getLeadAnalytics(ATTACKER, {});
+
+    expect(where.mock.calls.length).toBeGreaterThanOrEqual(8);
+    const unscoped = where.mock.calls
+      .map((call, index) => ({ index, values: call.flatMap((c: unknown) => sqlValues(c)) }))
+      .filter((q) => !q.values.includes(ATTACKER));
+    expect(unscoped).toEqual([]);
+  });
+
   it("returns data for the owning org (control)", async () => {
     const { db } = makeThenableBuilder([]);
     const cache = {

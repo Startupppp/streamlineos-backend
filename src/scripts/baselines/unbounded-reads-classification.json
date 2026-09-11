@@ -2408,6 +2408,11 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "e2e test spec file; reads are test scaffolding with controlled data; test scope inherently bounded 2026-09-01"
     },
+    "/leads/lib/lead-analytics-report.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Split out of /leads/leads-reports.service.ts 2026-09-11; this gate keys on path, so the move forces a restatement. Three of the four matches carry the origin's FALSE-POSITIVE reasoning unchanged: L67 reads crmOptions lead_status config (5-15 rows per org), L105 reads crmPipelineStages by orgId (5-20 rows), L138 reads users bounded by inArray(permittedUserIds) from membersWithPermission. The fourth is ACTIONABLE and the origin's justification never described it: L164 selects value+createdAt from EVERY non-deleted deal in a won stage for the org, with no limit and no date predicate, then buckets by month and keeps .slice(-6) \u2014 so the rows read grow without bound with closed-deal history and all but six months of them are discarded. The sibling aggregate on the line above already sums revenue in SQL; this one wants the same GROUP BY month with a six-month lower bound. Verdict is ACTIONABLE for the file because the worst read governs."
+    },
     "/mail/mail-accounts.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
