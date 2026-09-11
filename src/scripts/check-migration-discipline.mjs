@@ -397,6 +397,8 @@ const BASELINE_JOURNAL_INTEGRITY = new Set([
   "insert-order:0543b_pick_exception_ownership.sql", // streamline_inv, inv_cold_head +11 scratch
   "insert-order:0544b_inspection_plans.sql", // streamline_inv, inv_cold_head +11 scratch
   "insert-order:0545a_stock_write_off.sql", // streamline_inv, inv_cold_head +11 scratch
+  // 0553a: inv, crm twin applied on Neon (0550a/0552a already sit inside their windows).
+  "insert-order:0553a_inventory_pack_flags.sql", // streamline_inv, inv_cold_head +11 scratch
 ]);
 
 // ─── check functions ──────────────────────────────────────────────────────────

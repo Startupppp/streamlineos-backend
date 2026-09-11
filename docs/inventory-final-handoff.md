@@ -180,7 +180,7 @@ Applied state below was checked against `pg_class` / `pg_attribute` /
 | `0549_transit_exit_queue_index` | stranded-transit queue index (R3) | — |
 | `0550_recall_evidence` | recall simulation evidence (D4) | — |
 | `0552_inventory_valuation_gl_recon_indexes` | valuation + GL recon indexes (D5/D6) | — |
-| `0553_inventory_pack_flags` | four pack flags + one-pack-on CHECK (E1) | ✅ |
+| `0553a_inventory_pack_flags` | four pack flags + one-pack-on CHECK (E1) | ✅ |
 | `0561_inventory_hsn_tax_treatment` | HSN + tax treatment (E2) | ✅ |
 | `0562_replenishment_proposal_overrides` | labelled proposal overrides (C2) | ✅ |
 | `0563_near_expiry_allocation_policy` | near-expiry policy + window (D2) | ✅ |
