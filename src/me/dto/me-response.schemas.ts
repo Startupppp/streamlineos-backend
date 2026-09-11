@@ -42,6 +42,7 @@ export const meResponseSchema = z.object({
 });
 
 export const accessSnapshotSchema = z.object({
+  membershipId: z.number().int().nullable(),
   scopes: z.record(z.string(), dataScopeSchema),
   modules: z.record(z.string(), z.boolean()),
   isOrgOwner: z.boolean(),
