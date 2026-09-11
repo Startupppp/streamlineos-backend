@@ -1,11 +1,18 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, count, desc, eq, gt, lt, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, lt, ne, sql } from "drizzle-orm";
 import { blogCategories, blogPosts } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { calcReadingTime, slugify } from "./blog-utils";
+import {
+  createCategory,
+  deleteCategory,
+  listCategories,
+  updateCategory,
+  type BlogCategoryDeps,
+} from "./lib/blog-categories";
 import type {
   CategoryCreateInput,
   CategoryUpdateInput,
@@ -135,77 +142,24 @@ export class BlogService {
     return { success: true };
   }
 
-  async getCategories() {
-    const rows = await this.db
-      .select({
-        id: blogCategories.id,
-        name: blogCategories.name,
-        slug: blogCategories.slug,
-        color: blogCategories.color,
-        description: blogCategories.description,
-        count: count(blogPosts.id),
-      })
-      .from(blogCategories)
-      .leftJoin(
-        blogPosts,
-        and(
-          eq(blogPosts.categoryId, blogCategories.id),
-          eq(blogPosts.status, "published"),
-        ),
-      )
-      .groupBy(blogCategories.id)
-      .orderBy(asc(blogCategories.name));
-
-    return rows.map((r) => ({ ...r, count: Number(r.count) }));
+  getCategories() {
+    return listCategories(this.categoryDeps);
   }
 
-  async createCategory(input: CategoryCreateInput) {
-    const slug = slugify(input.name);
-
-    const existing = await this.db.query.blogCategories.findFirst({
-      where: eq(blogCategories.slug, slug),
-    });
-    if (existing) return { error: "duplicate" as const };
-
-    const [created] = await this.db
-      .insert(blogCategories)
-      .values({
-        name: input.name,
-        slug,
-        description: input.description ?? null,
-        color: input.color ?? null,
-      })
-      .returning();
-
-    return created;
+  createCategory(input: CategoryCreateInput) {
+    return createCategory(this.categoryDeps, input);
   }
 
-  async updateCategory(id: string, input: CategoryUpdateInput) {
-    const updates: Record<string, unknown> = {};
-    if (input.name !== undefined) {
-      updates.name = input.name;
-      updates.slug = slugify(input.name);
-    }
-    if (input.description !== undefined) updates.description = input.description;
-    if (input.color !== undefined) updates.color = input.color;
-
-    const [updated] = await this.db
-      .update(blogCategories)
-      .set(updates)
-      .where(eq(blogCategories.id, id))
-      .returning();
-
-    if (!updated) return null;
-    return updated;
+  updateCategory(id: string, input: CategoryUpdateInput) {
+    return updateCategory(this.categoryDeps, id, input);
   }
 
-  async deleteCategory(id: string) {
-    const [deleted] = await this.db
-      .delete(blogCategories)
-      .where(eq(blogCategories.id, id))
-      .returning();
-    if (!deleted) return null;
-    return { success: true };
+  deleteCategory(id: string) {
+    return deleteCategory(this.categoryDeps, id);
+  }
+
+  private get categoryDeps(): BlogCategoryDeps {
+    return { db: this.db };
   }
 
   getPublishedPostBySlug(slug: string) {
