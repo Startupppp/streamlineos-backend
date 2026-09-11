@@ -7,6 +7,7 @@ import { accountingPeriods } from "../../../db/schema/accounting/accounting-core
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { AuditService } from "../../../common/audit/audit.service";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { FinancePostingService } from "../../accounting/posting/finance-posting.service";
 import { buildIdCursorPage } from "../../../common/pagination/cursor";
@@ -95,7 +96,7 @@ export class TaxPaymentsService {
         .returning();
       payment = inserted;
     } catch (err: unknown) {
-      if (err instanceof Error && "code" in err && (err as Record<string, unknown>).code === "23505") {
+      if (isUniqueViolation(err)) {
         throw new ConflictException(`Tax payment with reference '${input.reference}' already exists`);
       }
       throw err;
