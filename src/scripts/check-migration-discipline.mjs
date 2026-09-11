@@ -430,6 +430,9 @@ const BASELINE_JOURNAL_INTEGRITY = new Set([
   "insert-order:0672a_gl_system_tag_inventory_roles.sql", // crm_cold_0908
   "insert-order:0673a_compliance_mock_transport.sql", // applied nowhere; windows disjoint, see note above
   "insert-order:0674a_subprocessor_subscribers_tenant_index.sql", // applied nowhere; windows disjoint, see note above
+  // 0819a/0820a: inv lane; origin/main holds 0819/0820.
+  "insert-order:0819a_drop_resurrected_sku_uniques_third_time.sql", // streamline_inv, inv_cold_head +8 scratch
+  "insert-order:0820a_materials_pack.sql", // streamline_inv, inv_cold_head +9 scratch
 ]);
 
 // ─── check functions ──────────────────────────────────────────────────────────

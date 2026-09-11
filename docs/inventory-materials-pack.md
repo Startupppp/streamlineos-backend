@@ -398,7 +398,7 @@ unauthenticated read is 401 and an unknown id is 404 rather than 403.
 
 ## Deployment
 
-Nothing new is required. The migration (`0820_materials_pack`) is
+Nothing new is required. The migration (`0820a_materials_pack`) is
 additive: every column is nullable or defaulted, both new tables are new, every
 foreign key is added `NOT VALID` then validated separately, and `lock_timeout` is
 set so a contended statement fails fast rather than queueing behind a table.

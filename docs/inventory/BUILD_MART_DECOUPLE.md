@@ -32,7 +32,7 @@ What carried the customer's name:
 | --- | --- | --- |
 | `src/scripts/seed-buildmart.ts` (1,150 lines) | one org, four named Hyderabad dark stores with 60–120 minute promises, 20 products / 23 variants under two house brands, five staff on `@buildmart.local` | deleted; no branded seed ships |
 | `package.json` `seed:buildmart` | ran the above | deleted |
-| `migrations/0820_buildmart_materials_pack.sql` | the materials-pack DDL under a customer's name | renamed `0820_materials_pack.sql`, journal tag with it, **content byte-identical** |
+| `migrations/0820_buildmart_materials_pack.sql` | the materials-pack DDL under a customer's name | renamed `0820_materials_pack.sql`, journal tag with it, **content byte-identical**; since 2026-09-11 `0820a_materials_pack.sql`, suffixed off origin/main's 0820 |
 | `docs/buildmart-inventory.md` | the pack documented as one company's system | rewritten as `docs/inventory-materials-pack.md`, tenant-neutral |
 | `.env.example` materials block | `buildmart_dev` database, `buildmart_app` role | `streamline_dev`, `streamline_app` |
 | `frontend/features/inventory/components/buildmart/` (17 files) | generic projects / requirements / facility screens in a customer-named folder | `components/materials/` |
