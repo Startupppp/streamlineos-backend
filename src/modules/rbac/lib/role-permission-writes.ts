@@ -14,7 +14,7 @@ import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import {
   assertPermissionsGrantable,
-  buildPermissionModuleMap,
+  buildPermissionAdministeringModuleMap,
   isImmutableSystemRole,
   toGrantableSet,
   type RoleGrantTarget,
@@ -99,7 +99,7 @@ async function assertGrantable(
     deps.access.resolveUserPermissions(actor.orgId, actor.userId),
     resolveActorRankContext(deps.db, actor.orgId, actor.userId),
   ]);
-  const permMeta = buildPermissionModuleMap(requestedKeys);
+  const permMeta = buildPermissionAdministeringModuleMap(requestedKeys);
   assertPermissionsGrantable(
     {
       isOrgOwner: false,

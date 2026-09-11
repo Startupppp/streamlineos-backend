@@ -17,7 +17,7 @@ import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-tra
 import {
   assertKnownPermissionKeys,
   assertPermissionsGrantable,
-  buildPermissionModuleMap,
+  buildPermissionAdministeringModuleMap,
   isImmutableSystemRole,
   toGrantableSet,
   type RoleGrantTarget,
@@ -46,7 +46,7 @@ const CATALOG_KEYS = new Set(PERMISSIONS.map((permission) => permission.name));
  * their own transaction, which is what makes the change visible to the next
  * request.
  *
- * Seeding from the fixed catalog (lib/role-template-seeding.ts) is deliberately
+ * Seeding from the fixed catalog (role-seed.service.ts) is deliberately
  * NOT here: nothing about those rows is caller-supplied, so there is nothing to
  * escalate and they never consult grantability at all.
  */
@@ -67,7 +67,7 @@ async function assertGrantable(
     deps.access.resolveUserPermissions(actor.orgId, actor.userId),
     resolveActorRankContext(deps.db, actor.orgId, actor.userId),
   ]);
-  const permMeta = buildPermissionModuleMap(requestedKeys);
+  const permMeta = buildPermissionAdministeringModuleMap(requestedKeys);
   assertPermissionsGrantable(
     {
       isOrgOwner: false,

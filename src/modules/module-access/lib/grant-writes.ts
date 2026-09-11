@@ -8,7 +8,7 @@ import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-tra
 import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
 import {
   assertPermissionsGrantable,
-  buildPermissionModuleMap,
+  buildPermissionAdministeringModuleMap,
   toGrantableSet,
 } from "../../../common/rbac/grantability";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -160,7 +160,7 @@ async function assertGrantable(
     },
     keys,
     undefined,
-    buildPermissionModuleMap(keys),
+    buildPermissionAdministeringModuleMap(keys),
   );
 
   if (actor.isOrgOwner) return;
