@@ -171,4 +171,5 @@ export const autonomySettingsResponseSchema = z.object({
   shadowSampleRate: z.number(),
   shadowDailyCap: z.number().int(),
   holdWindowSeconds: z.number().int(),
+  autoQuoteEnabled: z.boolean(),
 });
