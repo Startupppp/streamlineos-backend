@@ -4,16 +4,18 @@ import { Redis } from "@upstash/redis";
 import { clientAccounts, users } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
 import { AccessService } from "../../access/access.service";
+import { bulkUpdateFromValues, type BulkUpdateRow } from "../../../common/db/bulk-update";
 
 /**
  * Opening the accounts nobody opened, and sharing out the ones nobody owns.
  *
  * This is the half of `ClientAccountsService` that runs BESIDE a request rather
- * than for it. `tryBackfill` is fired off the client list with `void`, behind a
- * sixty-second Redis lock, and every failure inside it is caught and logged as a
- * warning — the list still renders. Everything else in that service throws at
- * the caller, and a reader who could not see which was which would have to guess
- * whether a thrown error reaches the browser.
+ * than for it. `tryBackfill` is registered off the client list as an
+ * after-commit hook, behind a sixty-second Redis lock, so the list renders from
+ * a transaction the backfill can no longer abort. Its failures are NOT caught
+ * here: they reach the after-commit handler, which logs them at error and
+ * reports them. The old `catch` logged a warning and returned, which is how the
+ * first failure stayed invisible and only its 25P02 shadow reached anyone.
  *
  * Two jobs, one lock, because they compose: converting a lead opens an account
  * with no CRM owner, and the round-robin below is what gives it one. Running the
@@ -98,12 +100,8 @@ export async function tryBackfill(
       deps.logger.warn(`Redis lock acquire failed for client backfill ${orgId}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
-  try {
-    await backfillConvertedLeadsToClientAccounts(deps, orgId, userId);
-    await backfillCrmAssignments(deps, orgId);
-  } catch (err) {
-    deps.logger.warn(`Client account backfill failed for org ${orgId}: ${err instanceof Error ? err.message : String(err)}`);
-  }
+  await backfillConvertedLeadsToClientAccounts(deps, orgId, userId);
+  await backfillCrmAssignments(deps, orgId);
 }
 
 /**
@@ -126,6 +124,11 @@ export async function tryBackfill(
  * unique -- after a merge several ids answer to one Party. That is correct
  * here rather than a hazard: `client_accounts.lead_id` is the legacy id, the
  * anti-join is on that id, so each surviving id still gets exactly one account.
+ *
+ * The seeded status is cast to the `client_account_status` enum. Cast to text
+ * it died 42804 at parse time — Postgres has no assignment cast from text to an
+ * enum — so it failed even for an organisation with nothing to backfill, and
+ * because the list read shares one tenant transaction, it aborted that read.
  */
 async function backfillConvertedLeadsToClientAccounts(
   deps: ClientAccountBackfillDeps,
@@ -147,7 +150,7 @@ async function backfillConvertedLeadsToClientAccounts(
       p.phone,
       p.whatsapp_phone,
       COALESCE(p.expected_value, p.stated_budget)::numeric(15,2),
-      'ACCOUNT_OPENING'::text,
+      'ACCOUNT_OPENING'::client_account_status,
       COALESCE(p.converted_at, NOW()),
       NOW(),
       NOW()
@@ -189,6 +192,12 @@ export const CRM_ASSIGNMENT_BATCH_SIZE = 500;
  * no lock, so a forced run can deal the same batch as a background one, and
  * without the guard the later write would move accounts the earlier one had
  * already handed out.
+ *
+ * The write is ONE `UPDATE … FROM (VALUES …)` for the whole batch. It used to be
+ * one `inArray` UPDATE per assignee, so the round trips grew with the number of
+ * CS members sharing the batch; the still-unowned guard rides along as
+ * `extraWhere`, which is the compare-and-set a per-row update would otherwise
+ * have carried.
  */
 async function backfillCrmAssignments(
   deps: ClientAccountBackfillDeps,
@@ -243,19 +252,17 @@ async function backfillCrmAssignments(
     }
   }
 
-  const now = new Date();
-  await Promise.all(
-    Object.entries(assignments).map(([assigneeId, ids]) =>
-      deps.db
-        .update(clientAccounts)
-        .set({ assignedCrmId: assigneeId, updatedAt: now })
-        .where(
-          and(
-            eq(clientAccounts.orgId, orgId),
-            inArray(clientAccounts.id, ids),
-            isNull(clientAccounts.assignedCrmId),
-          ),
-        ),
-    ),
-  );
+  const rows: BulkUpdateRow[] = [];
+  for (const [assigneeId, ids] of Object.entries(assignments))
+    for (const id of ids) rows.push({ key: id, values: [assigneeId] });
+
+  await bulkUpdateFromValues(deps.db, {
+    table: clientAccounts,
+    orgId,
+    key: { column: "id", type: "integer" },
+    columns: [{ column: "assigned_crm_id", type: "text" }],
+    rows,
+    touch: ["updated_at"],
+    extraWhere: isNull(clientAccounts.assignedCrmId),
+  });
 }

@@ -38,11 +38,18 @@ interface Chain extends PromiseLike<unknown[]> {
  * Postgres would. It sorts the unowned read newest-first itself (the ordering
  * test pins the real query to that), but it applies only the limit the code
  * passes, so a read that loses its `.limit()` gets the whole backlog back.
+ *
+ * The write is one `UPDATE … FROM (VALUES (id, assignee), …)` through `execute`:
+ * each tuple lands only on a row still unowned, which is what the statement's
+ * `assigned_crm_id IS NULL` guard does, and the moved keys come back the way
+ * `RETURNING` hands them. Anything else through `execute` is the conversion
+ * INSERT, which has nothing to open against this table. A per-assignee
+ * `update()` chain is refused outright.
  */
 function fakeClientAccounts(accounts: Account[]) {
   const batchesRead: number[] = [];
   const orderBys: unknown[][] = [];
-  const updateWheres: SQL[] = [];
+  const updateStatements: string[] = [];
   const unowned = () => accounts.filter((a) => a.assignedCrmId === null);
 
   function select(projection: Record<string, unknown>): Chain {
@@ -84,21 +91,29 @@ function fakeClientAccounts(accounts: Account[]) {
     return chain;
   }
 
-  function update() {
-    return {
-      set: (values: { assignedCrmId: string }) => ({
-        where: (condition: SQL) => {
-          updateWheres.push(condition);
-          const ids = new Set(render(condition).params.filter((p): p is number => typeof p === "number"));
-          for (const a of accounts) if (ids.has(a.id)) a.assignedCrmId = values.assignedCrmId;
-          return Promise.resolve();
-        },
-      }),
-    };
-  }
+  const execute = jest.fn((statement: unknown) => {
+    const { sql: text, params } = render(statement);
+    if (!/^\s*update\b/i.test(text)) return Promise.resolve([]);
+    updateStatements.push(text);
+    // (id, assignee) per tuple, then the org id the tenant predicate binds.
+    const moved: Array<{ key: number }> = [];
+    for (let i = 0; i < params.length - 1; i += 2) {
+      const id = params[i] as number;
+      const account = accounts.find((a) => a.id === id);
+      if (account && account.assignedCrmId === null) {
+        account.assignedCrmId = params[i + 1] as string;
+        moved.push({ key: id });
+      }
+    }
+    return Promise.resolve(moved);
+  });
 
-  const db = { select, update, execute: jest.fn().mockResolvedValue(undefined) } as unknown as Db;
-  return { db, batchesRead, orderBys, updateWheres };
+  const update = () => {
+    throw new Error("per-assignee UPDATE: the batch write should be one statement");
+  };
+
+  const db = { select, update, execute } as unknown as Db;
+  return { db, batchesRead, orderBys, updateStatements };
 }
 
 function depsFor(db: Db) {
@@ -142,9 +157,10 @@ describe("backfillCrmAssignments — one batch per run", () => {
       expect.stringMatching(/"created_at" desc$/),
       expect.stringMatching(/"id" desc$/),
     ]);
-    expect(table.updateWheres.length).toBeGreaterThan(0);
-    for (const where of table.updateWheres) {
-      expect(render(where).sql).toContain('"assigned_crm_id" is null');
+    // One statement for the whole batch, however many members share it.
+    expect(table.updateStatements).toHaveLength(1);
+    for (const statement of table.updateStatements) {
+      expect(statement).toContain('"assigned_crm_id" is null');
     }
   });
 
