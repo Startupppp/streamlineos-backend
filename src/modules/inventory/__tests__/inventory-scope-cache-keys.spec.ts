@@ -12,7 +12,7 @@
  * checked, including ones added later.
  */
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 const MODULE_ROOT = join(__dirname, "..");
 
@@ -44,17 +44,35 @@ function scannedFiles(): string[] {
 }
 
 /**
- * A file together with every `.ts` in a `lib/` directory beside it.
+ * A file together with the local modules it actually IMPORTS.
  *
  * This is what lets the "applies what it resolves" rule read a BODY again
- * rather than trust a name. A predicate builder that moved to a sibling `lib/`
- * is inside the unit, so gutting it fails the check — which is precisely what
- * the old comment here said the name-matching version could no longer catch.
+ * rather than trust a name: a predicate builder that moved to a sibling file is
+ * inside the unit, so gutting it fails the check — precisely what the old
+ * comment here said the name-matching version could no longer catch.
+ *
+ * It follows imports rather than scanning a directory, and that distinction is
+ * load-bearing. A directory-level unit passed `shipments/lib/shipment-dispatch.ts`
+ * on the strength of `package-resolve.ts` sitting beside it — a file it does not
+ * import and does not use — so gutting the builder it DOES import changed
+ * nothing. Measured, not theorised: that mutation passed under the directory
+ * rule and fails under this one.
+ *
+ * One hop is deliberate. A builder is imported directly by the code that
+ * applies it; a transitive hop would start borrowing scope applications from
+ * modules this file never calls, which is the same dilution in slower form.
  */
 function unitSource(path: string): string {
-  const libDir = join(dirname(path), "lib");
-  const libs = existsSync(libDir) && statSync(libDir).isDirectory() ? walkTs(libDir) : [];
-  return [path, ...libs].map((file) => readFileSync(file, "utf8")).join("\n");
+  const source = readFileSync(path, "utf8");
+  const dir = dirname(path);
+  const parts = [source];
+  for (const match of source.matchAll(/from\s+["'](\.[^"']*)["']/g)) {
+    const candidate = resolve(dir, `${match[1]!}.ts`);
+    if (existsSync(candidate) && statSync(candidate).isFile()) {
+      parts.push(readFileSync(candidate, "utf8"));
+    }
+  }
+  return parts.join("\n");
 }
 
 const RESOLVES_SCOPE = /warehouseScope\.(forUser|resolve)\(/;
@@ -103,6 +121,27 @@ const LOCAL_BUILDERS = [
     // column, and an empty scope yields FALSE rather than an omitted predicate.
     mustContain: ["scope.length === 0) return sql`FALSE`", "warehouseId} IN ("],
   },
+  {
+    /*
+     * Added 2026-09-11. This pair was applying the audit-export scope with
+     * NOTHING verifying it: the service used to name `locationPredicate` in its
+     * own source, which satisfied the old rule, and that call has since moved to
+     * `lib/audit-export-run.ts`. What the service actually gates on is this
+     * predicate, and it was invisible to the check the whole time.
+     */
+    name: "jobVisibilityPredicate",
+    file: "audit-export/audit-export-job.ts",
+    // An empty scope yields FALSE, and the containment is `<@` — a job whose
+    // warehouses are a SUBSET of the caller's, not merely overlapping.
+    mustContain: ["scope.length === 0) return sql`FALSE`", "<@"],
+  },
+  {
+    name: "jobIsCoveredBy",
+    file: "audit-export/audit-export-job.ts",
+    // The in-memory half of the same rule, for a job already read: a job with
+    // no recorded scope is NOT covered, and every warehouse must be allowed.
+    mustContain: ["if (jobScope === null) return false;", "every((warehouseId) => allowed.has(warehouseId))"],
+  },
 ] as const;
 
 const APPLIES_BY_NAME = new RegExp(
@@ -135,9 +174,20 @@ describe("inventory scoped lists", () => {
   it("never resolves a scope it then fails to apply to a query", () => {
     const unused: string[] = [];
     for (const path of files) {
-      if (!RESOLVES_SCOPE.test(readFileSync(path, "utf8"))) continue;
-      const unit = unitSource(path);
-      if (!APPLIES_BY_BODY.test(unit) && !APPLIES_BY_NAME.test(unit)) {
+      const own = readFileSync(path, "utf8");
+      if (!RESOLVES_SCOPE.test(own)) continue;
+      /*
+       * The name rule reads the file's OWN source; the body rule reads the unit.
+       *
+       * That asymmetry is the fix for a second dilution. Following imports pulls
+       * in `warehouse-scope.service.ts` itself, whose source contains every
+       * allowlisted name by DEFINITION — so a unit-wide name check passed every
+       * file that merely imports the scope service, which is all of them.
+       * A name is evidence only where it is CALLED; an imported builder
+       * contributes its body instead. Measured: with the name rule unit-wide,
+       * gutting `lib/vendor-return-scope.ts` changed nothing.
+       */
+      if (!APPLIES_BY_BODY.test(unitSource(path)) && !APPLIES_BY_NAME.test(own)) {
         unused.push(path.replace(MODULE_ROOT + "/", ""));
       }
     }

@@ -30,8 +30,8 @@ const INVENTORY = resolve(process.cwd(), "src/modules/inventory");
  */
 const CANNOT_INVALIDATE: ReadonlyArray<{ file: string; method: string; reason: string }> = [
   {
-    file: "shipments/shipments.service.ts",
-    method: "ship",
+    file: "shipments/lib/shipment-dispatch.ts",
+    method: "shipShipment",
     reason:
       "Guards on CANCELLED and on the sales order's own status. Shipping sets SHIPPED on the shipment; it never sets CANCELLED, and the SO status it reads is written by the SO, not here.",
   },
