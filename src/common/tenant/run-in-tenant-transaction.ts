@@ -4,14 +4,57 @@ import {
   getTenantContext,
   runWithTenantContext,
   runOutsideTenantContext,
+  type AfterCommitHook,
+  type TenantAudience,
 } from "./tenant-context";
 import { runOutsidePoolBorrow } from "../../db/pool-telemetry";
 import { withTenant, type TenantTx } from "./with-tenant";
+import { logger } from "../logger/logger.service";
+import { bindObservabilityContext, reportError } from "../observability";
+import { runAfterCommitWork } from "../observability/after-commit-work";
+
+// Each hook gets its own transaction: the one it was registered in has already committed.
+export function drainAfterCommitHooks(
+  db: Db,
+  orgId: string,
+  hooks: readonly AfterCommitHook[],
+): void {
+  for (const hook of hooks) {
+    const run = bindObservabilityContext(() =>
+      runInNewTenantTransaction(db, orgId, async () => {
+        await hook();
+      }),
+    );
+    void runAfterCommitWork(run).catch((error: unknown) => {
+      logger.error(`after-commit hook failed for org ${orgId}`, {
+        error: error instanceof Error ? (error.stack ?? error.message) : String(error),
+      });
+      reportError(error, { orgId, phase: "after-commit" });
+    });
+  }
+}
+
+// A fresh context must carry an `afterCommit` array or `registerAfterCommit` reports `false` and
+// callers that ignore that (most do) lose the work — which is how consumer-emitted notifications
+// were committed as intents and never dispatched.
+async function openTenantTransaction<T>(
+  db: Db,
+  orgId: string,
+  audience: TenantAudience,
+  fn: (tx: TenantTx) => Promise<T>,
+): Promise<T> {
+  const afterCommit: AfterCommitHook[] = [];
+  const result = await withTenant(db, { orgId, audience }, (tx) =>
+    runWithTenantContext({ orgId, audience, tx, afterCommit }, () => fn(tx)),
+  );
+  drainAfterCommitHooks(db, orgId, afterCommit);
+  return result;
+}
 
 export async function runInTenantTransaction<T>(
   db: Db,
   fn: (tx: TenantTx) => Promise<T>,
-  explicit?: { orgId: string; audience?: "INTERNAL" | "PORTAL" },
+  explicit?: { orgId: string; audience?: TenantAudience },
 ): Promise<T> {
   const ambient = getTenantContext();
 
@@ -29,10 +72,7 @@ export async function runInTenantTransaction<T>(
 
   if (ambient) return fn(ambient.tx);
 
-  const audience = explicit.audience ?? "INTERNAL";
-  return withTenant(db, { orgId: explicit.orgId, audience }, (tx) =>
-    runWithTenantContext({ orgId: explicit.orgId, audience, tx }, () => fn(tx)),
-  );
+  return openTenantTransaction(db, explicit.orgId, explicit.audience ?? "INTERNAL", fn);
 }
 
 export async function runInNewTenantTransaction<T>(
@@ -46,11 +86,7 @@ export async function runInNewTenantTransaction<T>(
     );
 
   return runOutsidePoolBorrow(() =>
-    runOutsideTenantContext(() =>
-      withTenant(db, { orgId, audience: "INTERNAL" }, (tx) =>
-        runWithTenantContext({ orgId, audience: "INTERNAL", tx }, () => fn(tx)),
-      ),
-    ),
+    runOutsideTenantContext(() => openTenantTransaction(db, orgId, "INTERNAL", fn)),
   );
 }
 

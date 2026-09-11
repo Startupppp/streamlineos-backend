@@ -4964,6 +4964,41 @@
       "when": 1803000010160,
       "tag": "1082_organization_placement_control_plane_policy",
       "breakpoints": true
+    },
+    {
+      "idx": 842,
+      "version": "7",
+      "when": 1803000010161,
+      "tag": "1083_account_organization_index_identity_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 843,
+      "version": "7",
+      "when": 1803000010162,
+      "tag": "1084_api_keys_public_token_read",
+      "breakpoints": true
+    },
+    {
+      "idx": 844,
+      "version": "7",
+      "when": 1803000010163,
+      "tag": "1085_organization_lifecycle_control_plane_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 845,
+      "version": "7",
+      "when": 1803000010164,
+      "tag": "1086_saga_steps_drop_premature_org_fk",
+      "breakpoints": true
+    },
+    {
+      "idx": 846,
+      "version": "7",
+      "when": 1803000010165,
+      "tag": "1087_cell_control_plane_policies",
+      "breakpoints": true
     }
   ]
 }

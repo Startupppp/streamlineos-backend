@@ -107,15 +107,17 @@ export class ImportPump {
    *
    * `SKIP LOCKED` rather than a wait: if the cron worker is holding this run at
    * this instant, the right answer is "somebody else is on it", not a request
-   * queued behind a five-minute lease. The organisation is in the predicate as
-   * well as the identifier because `workflow_runs` is deliberately outside
-   * row-level security — a worker claims across tenants — so this is the only
-   * thing standing between a guessed identifier and another tenant's run.
+   * queued behind a five-minute lease. The organisation stays in the predicate as
+   * well as the identifier so a guessed identifier cannot reach another tenant's
+   * run even if the policy is ever relaxed.
    */
   private async claim(organizationId: string, workflowRunId: string): Promise<RunRecord | null> {
     const lease = leaseExpiry(new Date());
 
-    const claimed = await this.db.execute(sql`
+    // `advance()` runs under `runOutsideTenantContext`, and `workflow_runs` is under RLS despite
+    // the older comment here, so this claim needs a GUC of its own or it can never match a row.
+    const claimed = await runInNewTenantTransaction(this.db, organizationId, (tx) =>
+      tx.execute(sql`
       UPDATE workflow_runs SET
         status = 'RUNNING',
         lease_expires_at = ${lease.toISOString()}::timestamptz,
@@ -131,7 +133,8 @@ export class ImportPump {
         FOR UPDATE SKIP LOCKED
       )
       RETURNING workflow_run_id, organization_id, workflow_name, input, attempt, max_attempts
-    `);
+    `),
+    );
 
     const [row] = claimed;
     if (!row) return null;

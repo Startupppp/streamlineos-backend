@@ -241,6 +241,7 @@ export async function createE2eApp(options: E2eAppOptions = {}): Promise<INestAp
   process.env.EXPENSE_EXPORT_WORKER_ENABLED = "false";
   process.env.FINANCE_REPORT_EXPORT_WORKER_ENABLED = "false";
   process.env.GDPR_EXPORT_WORKER_ENABLED = "false";
+  process.env.OUTBOX_INPROCESS_WORKER = "false";
 
   let builder: TestingModuleBuilder = Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(MembershipStateService)

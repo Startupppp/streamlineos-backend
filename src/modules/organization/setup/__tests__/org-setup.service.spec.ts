@@ -2,6 +2,7 @@ import { Test } from "@nestjs/testing";
 import { OrgSetupService } from "../org-setup.service";
 import { OrgSetupResolverService } from "../org-setup-resolver.service";
 import { OrganizationCreationService } from "../../core/organization-creation.service";
+import { AccountOrganizationIndexService } from "../../core/account-organization-index.service";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
@@ -123,7 +124,10 @@ function buildDb(ownerMembershipId: number | null) {
   return { db, txMocks, outerMocks: { insert: outerInsert, values: outerValues, onConflictDoNothing } };
 }
 
-async function buildService(db: unknown) {
+async function buildService(
+  db: unknown,
+  cache: { invalidate: jest.Mock } = { invalidate: jest.fn() },
+) {
   const moduleRef = await Test.createTestingModule({
     providers: [
       OrgSetupService,
@@ -132,9 +136,13 @@ async function buildService(db: unknown) {
         provide: OrganizationCreationService,
         useValue: { createFromSetup: jest.fn() },
       },
+      {
+        provide: AccountOrganizationIndexService,
+        useValue: { refreshForUser: jest.fn() },
+      },
       { provide: DRIZZLE, useValue: db },
       { provide: AuditService, useValue: { log: jest.fn() } },
-      { provide: CacheService, useValue: { invalidate: jest.fn() } },
+      { provide: CacheService, useValue: cache },
       {
         provide: OnboardingSessionService,
         useValue: {
@@ -288,6 +296,39 @@ describe("OrgSetupService — replay of a completed setup", () => {
     ).resolves.toEqual({ success: true, orgId: "org-1" });
 
     expect(txMocks.insert).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The replay must still drop the session cache. `getSessionData` is cached for 60s and the
+   * NextAuth session callback reads it, so it is what `resolveWizardGate` decides on: a replay
+   * that answered success while leaving the pre-setup organisation cached sent the caller — which
+   * had already written its gate cookie and refreshed its claims — straight back into the wizard,
+   * and kept doing so until the entry expired.
+   */
+  it("still invalidates the session cache when the stamp was already claimed", async () => {
+    const { db, txMocks } = buildDb(99);
+    txMocks.returningUpdate.mockResolvedValue([]);
+    const cache = { invalidate: jest.fn() };
+    const svc = await buildService(db, cache);
+
+    await svc.skipSetup(ownerActor());
+
+    expect(cache.invalidate).toHaveBeenCalledWith("user:session:user-1");
+  });
+
+  it("invalidates the session cache on a completeSetup replay too", async () => {
+    const { db, txMocks } = buildDb(99);
+    txMocks.returningUpdate.mockResolvedValue([]);
+    const cache = { invalidate: jest.fn() };
+    const svc = await buildService(db, cache);
+
+    await svc.completeSetup(ownerActor(), {
+      industry: "IT Services",
+      companySize: "1-10",
+      enabledModules: ["hr"],
+    } as Parameters<OrgSetupService["completeSetup"]>[1]);
+
+    expect(cache.invalidate).toHaveBeenCalledWith("user:session:user-1");
   });
 });
 

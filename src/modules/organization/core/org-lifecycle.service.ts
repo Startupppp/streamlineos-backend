@@ -24,7 +24,10 @@ import { bustMembershipsAfterOrgTeardown } from "../../../common/org/membership-
 import { OrgMembershipService } from "./org-membership.service";
 import { InvitationLifecycleService } from "./invitation-lifecycle.service";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
-import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import {
+  runInNewTenantTransaction,
+  runInTenantTransaction,
+} from "../../../common/tenant/run-in-tenant-transaction";
 import { withIdentity } from "../../../common/tenant/with-identity";
 import { repairLastActiveOrgIds } from "./lifecycle/last-active-org-repair";
 import { nextActiveOrgIdsQuery } from "./lifecycle/next-active-org";
@@ -249,7 +252,13 @@ export class OrgLifecycleService {
     if (row.orgStatus !== "ARCHIVED") {
       throw new BadRequestException("Organization is not archived");
     }
-    const activeLegalHoldForRestore = await this.hasActiveLegalHold(orgId);
+    // `POST /organization/restore` is @NoTenantTransaction(), so this needs its own GUC — the
+    // archive path gets one only because it passes the surrounding transaction's `tx`.
+    const activeLegalHoldForRestore = await runInNewTenantTransaction(
+      this.db,
+      orgId,
+      (tx) => this.hasActiveLegalHold(orgId, tx),
+    );
     const transition = assertTransitionAllowed(
       "RESTORE",
       row.statusV2 ?? "ARCHIVED",
@@ -299,20 +308,25 @@ export class OrgLifecycleService {
       throw err;
     }
 
-    await Promise.all([
-      this.bustMembersMembership(orgId, memberUserIds),
-      withIdentity(this.db, userId, (tx) =>
-        tx
-          .update(accountOrganizationIndex)
-          .set({ organizationStatus: "ACTIVE", lastActivatedAt: new Date() })
-          .where(
-            and(
-              eq(accountOrganizationIndex.userId, userId),
-              eq(accountOrganizationIndex.orgId, orgId),
-            ),
+    // A replay skips the step that collected member ids, and an empty list busts nobody — the
+    // restoring owner then reads a 60s-old session with no org and lands back in the wizard.
+    if (memberUserIds.length === 0)
+      memberUserIds = await runInNewTenantTransaction(this.db, orgId, (tx) =>
+        this.listMemberUserIds(tx, orgId),
+      );
+
+    await withIdentity(this.db, userId, (tx) =>
+      tx
+        .update(accountOrganizationIndex)
+        .set({ organizationStatus: "ACTIVE", lastActivatedAt: new Date() })
+        .where(
+          and(
+            eq(accountOrganizationIndex.userId, userId),
+            eq(accountOrganizationIndex.orgId, orgId),
           ),
-      ),
-    ]);
+        ),
+    );
+    await this.bustMembersMembership(orgId, memberUserIds);
 
     this.audit.log({
       action: "org.restored",

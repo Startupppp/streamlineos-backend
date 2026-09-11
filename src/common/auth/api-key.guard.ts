@@ -15,6 +15,8 @@ import { apiKeys } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { RateLimitService } from "../ratelimit/rate-limit.service";
+import { withPublicToken } from "../tenant/with-public-token";
+import { runInNewTenantTransaction } from "../tenant/run-in-tenant-transaction";
 import type { ApiKeyContext } from "./api-key.decorator";
 import {
   MODULE_ENTITLEMENTS,
@@ -40,9 +42,13 @@ export class ApiKeyGuard implements CanActivate {
     if (!rawKey) throw new UnauthorizedException("Missing X-API-Key header");
 
     const keyHash = createHash("sha256").update(rawKey).digest("hex");
-    const apiKey = await this.db.query.apiKeys.findFirst({
-      where: and(eq(apiKeys.keyHash, keyHash), eq(apiKeys.isRevoked, false)),
-    });
+    // This read is how the org is discovered, so the presented hash is the only credential
+    // available — the `api_keys` policy admits on it, as `agent_tokens` does.
+    const apiKey = await withPublicToken(this.db, keyHash, (tx) =>
+      tx.query.apiKeys.findFirst({
+        where: and(eq(apiKeys.keyHash, keyHash), eq(apiKeys.isRevoked, false)),
+      }),
+    );
     if (!apiKey) throw new UnauthorizedException("Invalid or revoked API key");
     if (!apiKey.expiresAt || apiKey.expiresAt < new Date())
       throw new UnauthorizedException(
@@ -63,11 +69,14 @@ export class ApiKeyGuard implements CanActivate {
     if (!hasScope)
       throw new ForbiddenException("API key does not have leads:write scope");
 
-    void this.db
-      .update(apiKeys)
-      .set({ lastUsedAt: new Date() })
-      .where(eq(apiKeys.id, apiKey.id))
-      .catch(() => undefined);
+    // The org is known now, so this write carries real tenant context and WITH CHECK stays strict.
+    void runInNewTenantTransaction(this.db, apiKey.orgId, (tx) =>
+      tx
+        .update(apiKeys)
+        .set({ lastUsedAt: new Date() })
+        .where(eq(apiKeys.id, apiKey.id))
+        .then(() => undefined),
+    ).catch(() => undefined);
 
     req.apiKey = {
       id: apiKey.id,

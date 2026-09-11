@@ -11,6 +11,7 @@ import { and, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { portalMemberships } from "../../db/schema";
+import { runInTenantTransaction } from "../tenant/run-in-tenant-transaction";
 import { PORTAL_AUDIENCE, type PortalUserContext } from "./portal-claims";
 import { portalJwtPayloadSchema } from "./portal-claims-schema";
 
@@ -54,21 +55,27 @@ export class PortalJwtAuthGuard implements CanActivate {
 
       const parsed = parseResult.data;
 
-      const rows = await this.db
-        .select({
-          partyContactId: portalMemberships.partyContactId,
-          status: portalMemberships.status,
-          sessionEpoch: portalMemberships.sessionEpoch,
-          userMembershipId: portalMemberships.userMembershipId,
-        })
-        .from(portalMemberships)
-        .where(
-          and(
-            eq(portalMemberships.portalMembershipId, parsed.sub),
-            eq(portalMemberships.organizationId, parsed.orgId),
-          ),
-        )
-        .limit(1);
+      // A guard has no ambient GUC, and `parsed.orgId` is already signature-verified above.
+      const rows = await runInTenantTransaction(
+        this.db,
+        (tx) =>
+          tx
+            .select({
+              partyContactId: portalMemberships.partyContactId,
+              status: portalMemberships.status,
+              sessionEpoch: portalMemberships.sessionEpoch,
+              userMembershipId: portalMemberships.userMembershipId,
+            })
+            .from(portalMemberships)
+            .where(
+              and(
+                eq(portalMemberships.portalMembershipId, parsed.sub),
+                eq(portalMemberships.organizationId, parsed.orgId),
+              ),
+            )
+            .limit(1),
+        { orgId: parsed.orgId, audience: "PORTAL" },
+      );
 
       const membership = rows[0];
       if (!membership) {

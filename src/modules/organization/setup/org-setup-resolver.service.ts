@@ -76,23 +76,27 @@ export class OrgSetupResolverService {
   ): Promise<SetupTarget | null> {
     if (!u.orgId) return null;
 
-    const [membership, organization] = await Promise.all([
-      this.db.query.organizationMembers.findFirst({
-        where: and(
-          eq(organizationMembers.userId, u.userId),
-          eq(organizationMembers.orgId, u.orgId),
-        ),
-        columns: { status: true, isOwner: true },
-      }),
-      this.db.query.organizations.findFirst({
-        where: and(
-          eq(organizations.id, u.orgId),
-          eq(organizations.status, "ACTIVE"),
-          isNull(organizations.deletedAt),
-        ),
-        columns: { id: true, name: true },
-      }),
-    ]);
+    // The setup routes carry `@NoTenantTransaction()`, so only `withIdentity` sets a GUC the
+    // `organization_members` policy admits on; without it this read silently matched nothing.
+    const [membership, organization] = await withIdentity(this.db, u.userId, (tx) =>
+      Promise.all([
+        tx.query.organizationMembers.findFirst({
+          where: and(
+            eq(organizationMembers.userId, u.userId),
+            eq(organizationMembers.orgId, u.orgId),
+          ),
+          columns: { status: true, isOwner: true },
+        }),
+        tx.query.organizations.findFirst({
+          where: and(
+            eq(organizations.id, u.orgId),
+            eq(organizations.status, "ACTIVE"),
+            isNull(organizations.deletedAt),
+          ),
+          columns: { id: true, name: true },
+        }),
+      ]),
+    );
 
     if (!organization || !membership) return null;
     if (membership.status === "ACTIVE") {

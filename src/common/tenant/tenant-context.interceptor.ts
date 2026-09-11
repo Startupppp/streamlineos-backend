@@ -1,7 +1,6 @@
 import {
   Inject,
   Injectable,
-  Logger,
   type CallHandler,
   type ExecutionContext,
   type NestInterceptor,
@@ -18,20 +17,19 @@ import {
 } from "./tenant-context";
 import { withTenant } from "./with-tenant";
 import type { PlacementIntent } from "../region/placement";
-import { bindObservabilityContext, reportError } from "../observability";
-import { runInNewTenantTransaction } from "./run-in-tenant-transaction";
+import { drainAfterCommitHooks } from "./run-in-tenant-transaction";
 import {
   createStreamAbortSignal,
   type CloseableRequest as StreamAbortRequest,
   type EndableResponse,
 } from "../http/stream-abort";
 import { resolveAdmissionConfig } from "../admission/admission.config";
-import { runAfterCommitWork } from "../observability/after-commit-work";
 
 interface TenantBearingRequest {
   method?: string;
   user?: { orgId?: string };
   portalUser?: { organizationId?: string };
+  apiKey?: { orgId?: string };
 }
 
 interface CloseableRequest extends TenantBearingRequest, StreamAbortRequest {}
@@ -39,37 +37,6 @@ interface CloseableRequest extends TenantBearingRequest, StreamAbortRequest {}
 type WritableResponse = EndableResponse;
 
 const READ_ONLY_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
-
-/**
- * The request deadline, propagated rather than declared and dropped (PRD-C091).
- *
- * `createStreamAbortSignal` has always taken a `deadlineMs`, and this interceptor —
- * the one that arms the signal every tenant-scoped request runs under — passed `null`.
- * So of the two arms that abort a request, only `client_disconnected` was ever
- * reachable outside `src/modules/ai`: `deadline_exceeded` existed in the type, in the
- * timer branch and in the reason union, and nothing could produce it. A request that
- * hung on a slow upstream ran until something else gave up.
- *
- * The value is `admission.maxExecutionMs`, which the admission config already declares
- * as this deployment's per-request execution ceiling and already uses as the weight
- * divisor for queue accounting (`admission.service.ts:80`) — so the deadline the
- * scheduler assumes and the deadline the request enforces are now the same number
- * instead of one assumption and one absence. It defaults to `statementTimeoutMs`
- * (30 s) and is overridable with `ADMISSION_MAX_EXECUTION_MS`.
- *
- * Resolved once at module load, matching `AdmissionModule`'s own factory: the value is
- * environment, not per-request state, and re-parsing it 200 times a second to get the
- * same answer is worse than a snapshot.
- *
- * WHAT THIS DOES NOT DO. Aborting the signal does not itself cancel a running query or
- * an in-flight provider call — only a consumer that reads the signal can do that, and
- * today the only one is the AI gateway's ambient fallback. What it does is make the
- * deadline REACHABLE, so a consumer that adopts it has something to adopt. Cancelling
- * outbound provider calls on it is deliberately NOT done here: `callProvider` is used
- * for side-effecting calls (a payment capture among them), and abandoning one
- * mid-flight on a client disconnect turns a completed external effect into an
- * unrecorded one. That needs a per-descriptor opt-in, and it is named in report 04.
- */
 const REQUEST_DEADLINE_MS = resolveAdmissionConfig().maxExecutionMs;
 
 interface ResolvedTenant {
@@ -86,19 +53,21 @@ function resolveTenant(req: TenantBearingRequest): ResolvedTenant | null {
     : "write";
 
   const portalOrgId = req.portalUser?.organizationId;
-  if (portalOrgId)
-    return { orgId: portalOrgId, audience: "PORTAL", intent };
+  if (portalOrgId) return { orgId: portalOrgId, audience: "PORTAL", intent };
 
   const orgId = req.user?.orgId;
   if (orgId) return { orgId, audience: "INTERNAL", intent };
+
+  // ApiKeyGuard is the third way a request names a tenant. It sets `req.apiKey`, not `req.user`,
+  // so every API-key route ran with no GUC at all and 42501'd on the first RLS table it touched.
+  const apiKeyOrgId = req.apiKey?.orgId;
+  if (apiKeyOrgId) return { orgId: apiKeyOrgId, audience: "INTERNAL", intent };
 
   return null;
 }
 
 @Injectable()
 export class TenantContextInterceptor implements NestInterceptor {
-  private readonly logger = new Logger(TenantContextInterceptor.name);
-
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly tenant: TenantContextService,
@@ -143,19 +112,7 @@ export class TenantContextInterceptor implements NestInterceptor {
       ),
     );
 
-    for (const hook of afterCommit) {
-      const run = bindObservabilityContext(async () => {
-        await runInNewTenantTransaction(this.db, resolved.orgId, async () => {
-          await hook();
-        });
-      });
-      void runAfterCommitWork(run).catch((error: unknown) => {
-        this.logger.error(
-          `after-commit hook failed for org ${resolved.orgId}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
-        );
-        reportError(error, { orgId: resolved.orgId, phase: "after-commit" });
-      });
-    }
+    drainAfterCommitHooks(this.db, resolved.orgId, afterCommit);
 
     return result;
   }

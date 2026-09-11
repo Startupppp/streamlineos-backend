@@ -89,6 +89,7 @@ import { CronStorageController } from "./cron-storage.controller";
 import { CronOutboxRetentionService } from "./cron-outbox-retention.service";
 import { CronNotificationOutboxRetentionService } from "./cron-notification-outbox-retention.service";
 import { CronRetentionSchedulerService } from "./cron-retention-scheduler.service";
+import { CronOutboxWorkerService } from "./cron-outbox-worker.service";
 import { CronSweepFailureSinkService } from "./cron-sweep-failure-sink.service";
 import { CronGdprExportRetentionService } from "./cron-gdpr-export-retention.service";
 
@@ -190,6 +191,7 @@ import { CronGdprExportRetentionService } from "./cron-gdpr-export-retention.ser
     CronGdprExportRetentionService,
     CronSweepFailureSinkService,
     CronRetentionSchedulerService,
+    CronOutboxWorkerService,
   ],
 })
 export class CronModule {}

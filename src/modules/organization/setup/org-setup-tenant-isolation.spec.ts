@@ -110,7 +110,15 @@ describe("OrgSetupService — cross-tenant isolation", () => {
     const sessions = { skipSession: jest.fn().mockResolvedValue(undefined) };
     const creation = { createFromSetup: jest.fn() } as unknown as OrganizationCreationService;
     const resolver = new OrgSetupResolverService(db, cache as never, audit as never, creation);
-    const svc = new OrgSetupService(db, audit as never, cache as never, sessions as never, resolver);
+    const accountOrgIndex = { refreshForUser: jest.fn().mockResolvedValue(undefined) };
+    const svc = new OrgSetupService(
+      db,
+      audit as never,
+      cache as never,
+      sessions as never,
+      resolver,
+      accountOrgIndex as never,
+    );
     return { svc, db, sessions, whereArgs };
   }
 

@@ -68,10 +68,12 @@ export class OrgController {
     });
   }
 
+  // The org being set up need not be the session's, so an ambient transaction would mismatch.
   @Get("setup/session")
   @ResponseSchema(orgSetupSessionResponseSchema)
   @Universal()
   @AllowNoOrg()
+  @NoTenantTransaction()
   getSetupSession(@CurrentUser() u: CurrentUserContext) {
     return this.setup.getSetupSession(u);
   }
@@ -80,6 +82,7 @@ export class OrgController {
   @ResponseSchema(orgSetupStatusResponseSchema)
   @Universal()
   @AllowNoOrg()
+  @NoTenantTransaction()
   getSetupStatus(@CurrentUser() u: CurrentUserContext) {
     return this.setup.getSetupStatus(u);
   }

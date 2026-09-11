@@ -88,54 +88,48 @@ export class MembershipStateService {
   }
 
   private async fetchMembershipState(userId: string, orgId: string): Promise<MembershipState> {
-    let state = UNKNOWN;
-    try {
-      const rows = await runInTenantTransaction(
-        this.db,
-        (tx) =>
-          tx
-            .select({
-              membershipId: organizationMembers.id,
-              status: organizationMembers.status,
-              isOwner: organizationMembers.isOwner,
-              role: organizationMembers.role,
-              userIsActive: users.isActive,
-              userDeletedAt: users.deletedAt,
-              orgStatus: organizations.status,
-              orgDeletedAt: organizations.deletedAt,
-            })
-            .from(organizationMembers)
-            .innerJoin(users, eq(users.id, organizationMembers.userId))
-            .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
-            .where(
-              and(
-                eq(organizationMembers.userId, userId),
-                eq(organizationMembers.orgId, orgId),
-              ),
-            )
-            .orderBy(desc(organizationMembers.joinedAt))
-            .limit(1),
-        { orgId },
-      );
-      const row = rows[0];
-      if (row) {
-        state = {
-          active:
-            row.status === "ACTIVE" &&
-            row.userIsActive &&
-            row.userDeletedAt === null &&
-            row.orgStatus === "ACTIVE" &&
-            row.orgDeletedAt === null,
-          isOwner: row.isOwner,
-          role: row.role,
-          membershipId: row.membershipId,
-        };
-      }
-    } catch {
-      state = UNKNOWN;
-    }
-
-    return state;
+    // A thrown read must propagate: swallowing it into UNKNOWN cached "not a member" for the TTL
+    // and turned one transient database error into a 403 on every route for the owner.
+    const rows = await runInTenantTransaction(
+      this.db,
+      (tx) =>
+        tx
+          .select({
+            membershipId: organizationMembers.id,
+            status: organizationMembers.status,
+            isOwner: organizationMembers.isOwner,
+            role: organizationMembers.role,
+            userIsActive: users.isActive,
+            userDeletedAt: users.deletedAt,
+            orgStatus: organizations.status,
+            orgDeletedAt: organizations.deletedAt,
+          })
+          .from(organizationMembers)
+          .innerJoin(users, eq(users.id, organizationMembers.userId))
+          .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
+          .where(
+            and(
+              eq(organizationMembers.userId, userId),
+              eq(organizationMembers.orgId, orgId),
+            ),
+          )
+          .orderBy(desc(organizationMembers.joinedAt))
+          .limit(1),
+      { orgId },
+    );
+    const row = rows[0];
+    if (!row) return UNKNOWN;
+    return {
+      active:
+        row.status === "ACTIVE" &&
+        row.userIsActive &&
+        row.userDeletedAt === null &&
+        row.orgStatus === "ACTIVE" &&
+        row.orgDeletedAt === null,
+      isOwner: row.isOwner,
+      role: row.role,
+      membershipId: row.membershipId,
+    };
   }
 
   async isAccountActive(userId: string): Promise<boolean> {

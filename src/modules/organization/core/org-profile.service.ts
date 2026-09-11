@@ -159,6 +159,9 @@ export class OrgProfileService {
       };
     });
 
+    // The session resolves its org from `last_activated_at`, so the stamp must land BEFORE the
+    // cache is dropped — an `update()` racing an unawaited write re-cached the outgoing org.
+    await this.indexService.activate(userId, targetOrgId);
     await this.cache.invalidate(CACHE_KEYS.userSession(userId));
     if (outgoingOrgId && outgoingOrgId !== targetOrgId) {
       await this.cache.invalidate(CACHE_KEYS.accessVersion(outgoingOrgId));
@@ -167,7 +170,6 @@ export class OrgProfileService {
     this.audit.log({ action: "org.switched", userId, orgId: targetOrgId });
     void this.indexService
       .refreshForUser(userId)
-      .then(() => this.indexService.touchLastActivated(userId, targetOrgId))
       .catch((error: unknown) => {
         logger.error("[account-org-index] opportunistic refresh failed", {
           userId,

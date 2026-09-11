@@ -12,7 +12,10 @@ import { LEGACY_CELL_ID } from "../../../common/region/placement";
 import { addMinutes } from "date-fns";
 import { hashToken } from "../../../common/security/token.util";
 import { withPublicToken } from "../../../common/tenant/with-public-token";
-import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import {
+  runInNewTenantTransaction,
+  runInTenantTransaction,
+} from "../../../common/tenant/run-in-tenant-transaction";
 import { getOrgAdminRecipients } from "../../../common/tenant/org-admin-recipients";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -51,19 +54,22 @@ export class InvitationAcceptanceService {
   ) {}
 
   private async touchIndexLastActivated(orgId: string, userId: string): Promise<void> {
-    const [org, membership] = await Promise.all([
-      this.db.query.organizations.findFirst({
-        where: eq(organizations.id, orgId),
-        columns: { name: true, slug: true, region: true, status: true },
-      }),
-      this.db.query.organizationMembers.findFirst({
-        where: and(
-          eq(organizationMembers.userId, userId),
-          eq(organizationMembers.orgId, orgId),
-        ),
-        columns: { role: true, status: true, joinedAt: true },
-      }),
-    ]);
+    // Public accept route: no ambient GUC, so only `withIdentity` lets the members policy match.
+    const [org, membership] = await withIdentity(this.db, userId, (tx) =>
+      Promise.all([
+        tx.query.organizations.findFirst({
+          where: eq(organizations.id, orgId),
+          columns: { name: true, slug: true, region: true, status: true },
+        }),
+        tx.query.organizationMembers.findFirst({
+          where: and(
+            eq(organizationMembers.userId, userId),
+            eq(organizationMembers.orgId, orgId),
+          ),
+          columns: { role: true, status: true, joinedAt: true },
+        }),
+      ]),
+    );
     if (!org || !membership) return;
     await withIdentity(this.db, userId, (tx) =>
       tx
@@ -252,9 +258,9 @@ export class InvitationAcceptanceService {
           autoLoginToken,
         );
 
+    // Index first, then invalidate: the session resolves its org from this projection.
+    await this.touchIndexLastActivated(invitedOrgId, joinedUserId).catch(() => undefined);
     await this.invalidateJoinCaches(invitedOrgId, joinedUserId);
-
-    void this.touchIndexLastActivated(invitedOrgId, joinedUserId).catch(() => undefined);
 
     await this.notifyAccepted(
       invitedOrgId,
@@ -430,13 +436,15 @@ export class InvitationAcceptanceService {
     inviterMembershipId: number | null,
   ): Promise<string | null> {
     if (inviterMembershipId === null) return null;
-    const row = await this.db.query.organizationMembers.findFirst({
-      where: and(
-        eq(organizationMembers.id, inviterMembershipId),
-        eq(organizationMembers.orgId, orgId),
-      ),
-      columns: { userId: true },
-    });
+    const row = await runInNewTenantTransaction(this.db, orgId, (tx) =>
+      tx.query.organizationMembers.findFirst({
+        where: and(
+          eq(organizationMembers.id, inviterMembershipId),
+          eq(organizationMembers.orgId, orgId),
+        ),
+        columns: { userId: true },
+      }),
+    );
     return row?.userId ?? null;
   }
 
@@ -448,8 +456,11 @@ export class InvitationAcceptanceService {
     joinedUserId: string,
   ): Promise<void> {
     const inviterUserId = await this.resolveInviterUserId(orgId, inviterMembershipId);
+    // Public route, so no ambient GUC; inside the callback the DRIZZLE proxy routes `this.db` to `tx`.
     const targetUserIds = (
-      await getOrgAdminRecipients(this.db, orgId, [inviterUserId])
+      await runInNewTenantTransaction(this.db, orgId, () =>
+        getOrgAdminRecipients(this.db, orgId, [inviterUserId]),
+      )
     ).filter((id) => id !== joinedUserId);
     if (targetUserIds.length === 0) return;
 
@@ -473,7 +484,9 @@ export class InvitationAcceptanceService {
     inviterMembershipId: number | null,
   ): Promise<void> {
     const inviterUserId = await this.resolveInviterUserId(orgId, inviterMembershipId);
-    const targetUserIds = await getOrgAdminRecipients(this.db, orgId, [inviterUserId]);
+    const targetUserIds = await runInNewTenantTransaction(this.db, orgId, () =>
+      getOrgAdminRecipients(this.db, orgId, [inviterUserId]),
+    );
     if (targetUserIds.length === 0) return;
 
     await this.dispatch.emit({

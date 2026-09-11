@@ -1,7 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import {
-  accountOrganizationIndex,
   inboxRecords,
   users,
   organizations,
@@ -13,7 +12,6 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type SetupInput, type SetupInvitee } from "./dto/org.schemas";
 import { OnboardingSessionService } from "../../hr/onboarding/flow/onboarding-session.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
-import { logger } from "../../../common/logger/logger.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { randomUUID, randomBytes, createHash } from "node:crypto";
@@ -22,13 +20,13 @@ import {
   runInTenantTransaction,
 } from "../../../common/tenant/run-in-tenant-transaction";
 import type { TenantTx } from "../../../common/tenant/with-tenant";
-import { withIdentity } from "../../../common/tenant/with-identity";
 import {
   DEFAULT_SKIP_MODULES,
   provisionOrgModules,
 } from "../../../common/org/provision-org-modules";
 import { provisionEmployeeSelfService } from "../../../common/org/provision-employee-self-service";
 import { OrgSetupResolverService } from "./org-setup-resolver.service";
+import { AccountOrganizationIndexService } from "../core/account-organization-index.service";
 import { ORG_SETUP_COMPLETED_CONSUMER } from "./org-setup-completed-consumer.service";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 
@@ -59,6 +57,7 @@ export class OrgSetupService {
     private readonly cache: CacheService,
     private readonly sessions: OnboardingSessionService,
     private readonly resolver: OrgSetupResolverService,
+    private readonly accountOrgIndex: AccountOrganizationIndexService,
   ) {}
 
   /**
@@ -109,31 +108,10 @@ export class OrgSetupService {
     });
   }
 
-  /**
-   * `last_activated_at` is a display timestamp that the next organisation switch rewrites, so a
-   * failure here is genuinely recoverable and must not fail setup. Awaiting it rather than
-   * discarding the promise keeps the failure inside the request that caused it.
-   */
-  private async touchAccountOrgIndex(userId: string, orgId: string): Promise<void> {
-    try {
-      await withIdentity(this.db, userId, (tx) =>
-        tx
-          .update(accountOrganizationIndex)
-          .set({ lastActivatedAt: new Date() })
-          .where(
-            and(
-              eq(accountOrganizationIndex.userId, userId),
-              eq(accountOrganizationIndex.orgId, orgId),
-            ),
-          ),
-      );
-    } catch (error: unknown) {
-      logger.error("[account-org-index] last-activated write failed", {
-        userId,
-        orgId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+  // Runs on replays too, and writes before invalidating so no concurrent read re-caches the old org.
+  private async publishSetupResult(userId: string, orgId: string): Promise<void> {
+    await this.accountOrgIndex.activate(userId, orgId);
+    await this.cache.invalidate(CACHE_KEYS.userSession(userId));
   }
 
   private ephemeralSession() {
@@ -189,7 +167,10 @@ export class OrgSetupService {
   async completeSetup(u: CurrentUserContext, input: SetupInput) {
     const target = await this.resolver.resolveOrCreateOrg(u, input);
     const { orgId } = target;
-    if (!target.isOwner) return { success: true, orgId };
+    if (!target.isOwner) {
+      await this.publishSetupResult(u.userId, orgId);
+      return { success: true, orgId };
+    }
 
     const autoLoginToken = randomBytes(32).toString("hex");
     const now = new Date();
@@ -243,10 +224,9 @@ export class OrgSetupService {
       { orgId },
     );
 
-    if (!claimed) return { success: true, orgId };
+    await this.publishSetupResult(u.userId, orgId);
 
-    await this.cache.invalidate(CACHE_KEYS.userSession(u.userId));
-    await this.touchAccountOrgIndex(u.userId, orgId);
+    if (!claimed) return { success: true, orgId };
 
     return { success: true, orgId, autoLoginToken };
   }
@@ -362,6 +342,7 @@ export class OrgSetupService {
         () => this.sessions.skipSession(orgId, u.userId, "org_setup", reason),
         { orgId },
       );
+      await this.publishSetupResult(u.userId, orgId);
       return { success: true, orgId };
     }
 
@@ -412,10 +393,9 @@ export class OrgSetupService {
       { orgId },
     );
 
-    if (!claimed) return { success: true, orgId };
+    await this.publishSetupResult(u.userId, orgId);
 
-    await this.cache.invalidate(CACHE_KEYS.userSession(u.userId));
-    await this.touchAccountOrgIndex(u.userId, orgId);
+    if (!claimed) return { success: true, orgId };
 
     this.audit.log({
       action: "org.setup.skipped",
