@@ -403,6 +403,33 @@ const BASELINE_JOURNAL_INTEGRITY = new Set([
   "insert-order:0580a_inventory_channel_pools.sql", // streamline_inv, inv_cold_head +11 scratch
   "insert-order:0581a_inventory_quick_commerce_asn.sql", // streamline_inv, inv_cold_head +11 scratch
   "insert-order:0582a_inventory_handling_units.sql", // streamline_inv, inv_cold_head +11 scratch
+  // 0656a-0674a: crm lane; origin/main holds 0656-0674.
+  // 0673a/0674a are applied NOWHERE, yet keep their `when`: their insert windows
+  // (1700000447000-448000, 1700000448000-449000) sit below the array predecessor
+  // 0672a (1787942048254) and below streamline_crm_merge's watermark (1787941988254).
+  // Restamping would add a journal-order regression and strand them for when-filtered
+  // runners, which is the hazard journal-order exists to catch.
+  "insert-order:0656a_autonomy_auto_quote_opt_in.sql", // Neon(hash), streamline_crm_merge, crm_cold_0908 +63 scratch
+  "insert-order:0657a_crm_whatsapp_channels.sql", // Neon(hash), streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +63 scratch
+  "insert-order:0658a_crm_whatsapp_channels_fail_closed.sql", // Neon(hash), streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +63 scratch
+  "insert-order:0659a_sign_sweep_runs.sql", // Neon(hash), streamline_crm_merge, crm_cold_0908 +62 scratch
+  "insert-order:0659b_timesheets_lifecycle_seq_and_attendance_draft.sql", // streamline_crm_merge +1 scratch
+  "insert-order:0660a_sign_bulk_row_attempts.sql", // Neon(hash), streamline_crm_merge, crm_cold_0908 +62 scratch
+  "insert-order:0660b_retire_sign_public_forms.sql", // scratch_idem_e2e only; its window (1700000437000-438000) is disjoint from its array slot (1700000589000-590000) too
+  "insert-order:0661a_business_parties_timezone.sql", // Neon(hash), streamline_crm_merge, crm_cold_0908 +62 scratch
+  "insert-order:0662a_composite_fk_set_null_nulls_tenant.sql", // Neon(hash), streamline_crm_merge, crm_cold_0908 +62 scratch
+  "insert-order:0663a_audit_logs_unattributed_actor.sql", // Neon(hash), streamline_crm_merge, crm_cold_0908
+  "insert-order:0664a_crm_report_schedules.sql", // Neon(hash), streamline_crm_merge, crm_cold_0908
+  "insert-order:0665a_crm_mcp_off_by_default.sql", // Neon(hash), streamline_crm_merge, crm_cold_0908
+  "insert-order:0666a_lifecycle_expansion_trigger.sql", // Neon(hash), streamline_crm_merge, crm_cold_0908
+  "insert-order:0667a_crm_segments.sql", // Neon(hash), streamline_crm_merge, crm_cold_0908
+  "insert-order:0668a_crm_call_analyses_window.sql", // Neon(hash), streamline_crm_merge, crm_cold_0908
+  "insert-order:0669a_crm_deal_competitor_suggestions.sql", // Neon(hash), streamline_crm_merge, crm_cold_0908
+  "insert-order:0670a_crm_contacts_view_not_scopable.sql", // Neon(hash), crm_cold_0908 +1 scratch
+  "insert-order:0671a_accounting_reads_not_scopable.sql", // Neon(hash), streamline_crm_merge, crm_cold_0908
+  "insert-order:0672a_gl_system_tag_inventory_roles.sql", // crm_cold_0908
+  "insert-order:0673a_compliance_mock_transport.sql", // applied nowhere; windows disjoint, see note above
+  "insert-order:0674a_subprocessor_subscribers_tenant_index.sql", // applied nowhere; windows disjoint, see note above
 ]);
 
 // ─── check functions ──────────────────────────────────────────────────────────

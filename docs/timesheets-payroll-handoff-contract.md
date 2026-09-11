@@ -236,7 +236,7 @@ of them a product defect and none of them clearing the code of one:
 | Cause | What is actually missing |
 |---|---|
 | A | Live `timesheets` has no `user_id` (it has `user_membership_id`); this branch still declares `userId` at `src/db/schema/timesheets/entries.ts:33`. `main`'s `0824_timesheets_auth_owner_drop.sql` and the 0715/0810 pair are not on this branch |
-| B | This branch's own `migrations/0659_timesheets_lifecycle_seq_and_attendance_draft.sql` was never applied to the shared DB, so `timesheet_settings.auto_draft_from_attendance` and `timesheet_periods.event_seq` do not exist live — and because the Drizzle schema declares them, *every* select on those tables 500s |
+| B | This branch's own `migrations/0659b_timesheets_lifecycle_seq_and_attendance_draft.sql` was never applied to the shared DB, so `timesheet_settings.auto_draft_from_attendance` and `timesheet_periods.event_seq` do not exist live — and because the Drizzle schema declares them, *every* select on those tables 500s |
 | C | Live `build.projects` has no `client_id` (it has `client_membership_id`); `main`'s `0917_build_actor_drop.sql` is not on this branch |
 
 The branch is 821 commits behind `main`; its journal ends at 421 entries while

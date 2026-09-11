@@ -31,28 +31,32 @@ DATABASE_URL="postgres://$(whoami)@127.0.0.1:5432/crm_cold_0908" PGSSLMODE=disab
 ```
 
 ```
-OK    [0657_crm_whatsapp_channels]
-OK    [0658_crm_whatsapp_channels_fail_closed]
-OK    [0659_sign_sweep_runs]
-OK    [0660_sign_bulk_row_attempts]
-OK    [0661_business_parties_timezone]
-OK    [0662_composite_fk_set_null_nulls_tenant]
-OK    [0663_audit_logs_unattributed_actor]
-OK    [0664_crm_report_schedules]
-OK    [0665_crm_mcp_off_by_default]
-OK    [0666_lifecycle_expansion_trigger]
-OK    [0667_crm_segments]
-OK    [0668_crm_call_analyses_window]
-OK    [0669_crm_deal_competitor_suggestions]
-OK    [0670_crm_contacts_view_not_scopable]
-OK    [0671_accounting_reads_not_scopable]
-OK    [0672_gl_system_tag_inventory_roles]
+OK    [0657a_crm_whatsapp_channels]
+OK    [0658a_crm_whatsapp_channels_fail_closed]
+OK    [0659a_sign_sweep_runs]
+OK    [0660a_sign_bulk_row_attempts]
+OK    [0661a_business_parties_timezone]
+OK    [0662a_composite_fk_set_null_nulls_tenant]
+OK    [0663a_audit_logs_unattributed_actor]
+OK    [0664a_crm_report_schedules]
+OK    [0665a_crm_mcp_off_by_default]
+OK    [0666a_lifecycle_expansion_trigger]
+OK    [0667a_crm_segments]
+OK    [0668a_crm_call_analyses_window]
+OK    [0669a_crm_deal_competitor_suggestions]
+OK    [0670a_crm_contacts_view_not_scopable]
+OK    [0671a_accounting_reads_not_scopable]
+OK    [0672a_gl_system_tag_inventory_roles]
 
 RESULT: REACHED_HEAD 433/433
 ```
 
+> The run printed the unsuffixed tags. They are shown here under the names they
+> carry since 2026-09-11, when the crm lane's 0656-0674 took a letter suffix to
+> stop colliding with origin/main's numbers. Content and hashes are unchanged.
+
 `migrations/meta/_journal.json` carries 433 entries, last tag
-`0672_gl_system_tag_inventory_roles`, so 433/433 is head and not a partial run.
+`0672a_gl_system_tag_inventory_roles`, so 433/433 is head and not a partial run.
 
 Grants re-applied for the 16 new migrations' tables:
 
