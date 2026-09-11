@@ -1,4 +1,4 @@
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { loginHistory, userPreferences, userSessions } from "../../../db/schema";
@@ -8,6 +8,8 @@ import type {
   UpdatePreferencesInput,
 } from "../dto/users.schemas";
 import { withClientInfo } from "../../../common/http/parse-user-agent";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBefore } from "../../../common/pagination/keyset";
 
 /**
  * The records that belong to a person's ACCOUNT rather than to their place in an
@@ -196,35 +198,28 @@ export async function getLoginHistory(
 ) {
   await deps.assertMember(orgId, userId);
 
-  const { page, limit, success: successFilter } = params;
-  const offset = (page - 1) * limit;
+  const { cursor, limit, success: successFilter } = params;
 
   const conditions = [eq(loginHistory.userId, userId)];
   if (successFilter !== undefined) {
     conditions.push(eq(loginHistory.success, successFilter));
   }
 
-  const [data, countResult] = await Promise.all([
-    deps.db
-      .select()
-      .from(loginHistory)
-      .where(and(...conditions))
-      .orderBy(desc(loginHistory.createdAt))
-      .limit(limit)
-      .offset(offset),
-    deps.db
-      .select({ total: count() })
-      .from(loginHistory)
-      .where(and(...conditions)),
-  ]);
+  const position = decodeCursor(cursor);
+  if (position) {
+    conditions.push(keysetBefore(loginHistory.createdAt, loginHistory.id, position));
+  }
 
-  return {
-    data: data.map(withClientInfo),
-    pagination: {
-      page,
-      limit,
-      total: countResult[0]?.total ?? 0,
-      totalPages: Math.ceil((countResult[0]?.total ?? 0) / limit),
-    },
-  };
+  const rows = await deps.db
+    .select()
+    .from(loginHistory)
+    .where(and(...conditions))
+    .orderBy(desc(loginHistory.createdAt), desc(loginHistory.id))
+    .limit(limit + 1);
+  const page = buildCursorPage(rows, limit, (row) => ({
+    sortValue: row.createdAt.toISOString(),
+    id: row.id,
+  }));
+
+  return { ...page, data: page.data.map(withClientInfo) };
 }

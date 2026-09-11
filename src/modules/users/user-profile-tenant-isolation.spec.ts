@@ -165,7 +165,7 @@ describe("UserProfileService — account records never leave the tenant", () => 
   it("will not read the sign-in history of a user outside the caller's org", async () => {
     const h = nonMemberHarness();
     await expect(
-      h.svc.getLoginHistory(ATTACKER_ORG, TARGET, { page: 1, limit: 20, success: undefined }),
+      h.svc.getLoginHistory(ATTACKER_ORG, TARGET, { limit: 20, success: undefined }),
     ).rejects.toThrow(NotFoundException);
     expect(h.select).not.toHaveBeenCalled();
   });

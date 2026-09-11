@@ -1,16 +1,4 @@
-import {
-  and,
-  asc,
-  count,
-  desc,
-  eq,
-  gt,
-  ilike,
-  inArray,
-  lte,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, asc, desc, eq, gt, ilike, inArray, lte, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import {
   organizationMembers,
@@ -20,6 +8,8 @@ import {
 } from "../../../db/schema";
 import type { Db } from "../../../db/drizzle.module";
 import type { ListDelegationsQuery } from "../dto/delegation.schemas";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBefore } from "../../../common/pagination/keyset";
 
 /**
  * The read half of delegations.
@@ -182,7 +172,7 @@ export async function listDelegationsPage(
   if (!actorMembership) {
     return {
       data: [],
-      pagination: { page: query.page, limit: query.limit, total: 0, totalPages: 0 },
+      pagination: { limit: query.limit, nextCursor: null, hasMore: false },
     };
   }
   const actorMembershipId = actorMembership.id;
@@ -213,6 +203,7 @@ export async function listDelegationsPage(
         )`,
       )
     : undefined;
+  const position = decodeCursor(query.cursor);
   const conditions = and(
     eq(userDelegations.orgId, orgId),
     eq(actorColumn, actorMembershipId),
@@ -224,36 +215,23 @@ export async function listDelegationsPage(
         )
       : undefined,
     participantSearch,
+    position
+      ? keysetBefore(userDelegations.createdAt, userDelegations.id, position)
+      : undefined,
   );
-  const offset = (query.page - 1) * query.limit;
 
-  const [rows, [totalRow]] = await Promise.all([
-    deps.db
-      .select(delegationSelection)
-      .from(userDelegations)
-      .innerJoin(delegatorMember, joinDelegatorMember)
-      .innerJoin(delegateeMember, joinDelegateeMember)
-      .where(conditions)
-      .orderBy(desc(userDelegations.createdAt), desc(userDelegations.id))
-      .limit(query.limit)
-      .offset(offset),
-    deps.db
-      .select({ total: count() })
-      .from(userDelegations)
-      .innerJoin(delegatorMember, joinDelegatorMember)
-      .innerJoin(delegateeMember, joinDelegateeMember)
-      .where(conditions),
-  ]);
-  const total = Number(totalRow?.total ?? 0);
-  const data = await withPermissions(deps, rows, now);
+  const rows = await deps.db
+    .select(delegationSelection)
+    .from(userDelegations)
+    .innerJoin(delegatorMember, joinDelegatorMember)
+    .innerJoin(delegateeMember, joinDelegateeMember)
+    .where(conditions)
+    .orderBy(desc(userDelegations.createdAt), desc(userDelegations.id))
+    .limit(query.limit + 1);
+  const page = buildCursorPage(rows, query.limit, (row) => ({
+    sortValue: row.createdAt.toISOString(),
+    id: row.id,
+  }));
 
-  return {
-    data,
-    pagination: {
-      page: query.page,
-      limit: query.limit,
-      total,
-      totalPages: Math.ceil(total / query.limit),
-    },
-  };
+  return { ...page, data: await withPermissions(deps, page.data, now) };
 }

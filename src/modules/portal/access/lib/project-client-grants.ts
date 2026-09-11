@@ -1,5 +1,5 @@
-import { ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, isNull } from "drizzle-orm";
+import { ConflictException, ForbiddenException, NotFoundException, BadRequestException } from "@nestjs/common";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { projectClientGrants } from "../../../../db/schema/portal-access/project-client-grants";
 import { portalMemberships } from "../../../../db/schema/portal-access/portal-memberships";
 import { partyContacts, projects } from "../../../../db/schema";
@@ -11,6 +11,8 @@ import type {
   CreateGrantInput,
   UpdateGrantInput,
 } from "../dto/portal-access.schemas";
+import { buildCursorPage, decodeCursor } from "../../../../common/pagination/cursor";
+import { keysetBeforeUuid } from "../../../../common/pagination/keyset";
 
 /**
  * The per-project half of portal access: which projects a portal member may see,
@@ -85,61 +87,54 @@ export async function listGrants(
   organizationId: string,
   query: ListGrantsQuery,
 ) {
-  const { page, limit, projectId } = query;
-  const offset = (page - 1) * limit;
+  const { limit, cursor, projectId } = query;
+  const position = cursor === undefined ? undefined : decodeCursor(cursor);
+  if (cursor !== undefined && !position) throw new BadRequestException("Invalid pagination cursor");
 
   const conditions = and(
     eq(projectClientGrants.organizationId, organizationId),
     projectId ? eq(projectClientGrants.projectId, projectId) : undefined,
+    position
+      ? keysetBeforeUuid(projectClientGrants.createdAt, projectClientGrants.projectClientGrantId, position)
+      : undefined,
   );
 
-  const [rows, [totalRow]] = await Promise.all([
-    deps.db
-      .select({
-        projectClientGrantId: projectClientGrants.projectClientGrantId,
-        organizationId: projectClientGrants.organizationId,
-        portalMembershipId: projectClientGrants.portalMembershipId,
-        partyContactId: projectClientGrants.partyContactId,
-        projectId: projectClientGrants.projectId,
-        pmWorkspaceId: projectClientGrants.pmWorkspaceId,
-        canViewMilestones: projectClientGrants.canViewMilestones,
-        canViewTasks: projectClientGrants.canViewTasks,
-        canViewAttachments: projectClientGrants.canViewAttachments,
-        canViewComments: projectClientGrants.canViewComments,
-        canSubmitChangeRequests: projectClientGrants.canSubmitChangeRequests,
-        status: projectClientGrants.status,
-        expiresAt: projectClientGrants.expiresAt,
-        createdAt: projectClientGrants.createdAt,
-        updatedAt: projectClientGrants.updatedAt,
-        contactFirstName: partyContacts.firstName,
-        contactLastName: partyContacts.lastName,
-      })
-      .from(projectClientGrants)
-      .leftJoin(
-        partyContacts,
-        and(
-          eq(partyContacts.partyContactId, projectClientGrants.partyContactId),
-          eq(partyContacts.organizationId, projectClientGrants.organizationId),
-          isNull(partyContacts.deletedAt),
-        ),
-      )
-      .where(conditions)
-      .orderBy(desc(projectClientGrants.createdAt), desc(projectClientGrants.projectClientGrantId))
-      .limit(limit)
-      .offset(offset),
-    deps.db.select({ total: count() }).from(projectClientGrants).where(conditions),
-  ]);
-
-  const total = Number(totalRow?.total ?? 0);
-  return {
-    data: rows,
-    pagination: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit),
-    },
-  };
+  const rows = await deps.db
+    .select({
+      projectClientGrantId: projectClientGrants.projectClientGrantId,
+      organizationId: projectClientGrants.organizationId,
+      portalMembershipId: projectClientGrants.portalMembershipId,
+      partyContactId: projectClientGrants.partyContactId,
+      projectId: projectClientGrants.projectId,
+      pmWorkspaceId: projectClientGrants.pmWorkspaceId,
+      canViewMilestones: projectClientGrants.canViewMilestones,
+      canViewTasks: projectClientGrants.canViewTasks,
+      canViewAttachments: projectClientGrants.canViewAttachments,
+      canViewComments: projectClientGrants.canViewComments,
+      canSubmitChangeRequests: projectClientGrants.canSubmitChangeRequests,
+      status: projectClientGrants.status,
+      expiresAt: projectClientGrants.expiresAt,
+      createdAt: projectClientGrants.createdAt,
+      updatedAt: projectClientGrants.updatedAt,
+      contactFirstName: partyContacts.firstName,
+      contactLastName: partyContacts.lastName,
+    })
+    .from(projectClientGrants)
+    .leftJoin(
+      partyContacts,
+      and(
+        eq(partyContacts.partyContactId, projectClientGrants.partyContactId),
+        eq(partyContacts.organizationId, projectClientGrants.organizationId),
+        isNull(partyContacts.deletedAt),
+      ),
+    )
+    .where(conditions)
+    .orderBy(desc(projectClientGrants.createdAt), desc(projectClientGrants.projectClientGrantId))
+    .limit(limit + 1);
+  return buildCursorPage(rows, limit, (row) => ({
+    sortValue: row.createdAt.toISOString(),
+    id: row.projectClientGrantId,
+  }));
 }
 
 export async function createGrant(
