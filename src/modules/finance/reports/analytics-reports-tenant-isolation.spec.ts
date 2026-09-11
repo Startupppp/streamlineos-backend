@@ -1,5 +1,7 @@
 import type { Db } from "../../../db/drizzle.module";
+import { journalLines, orgUnits, projects } from "../../../db/schema";
 import { AnalyticsReportsService } from "./analytics-reports.service";
+import { computeDeptProfitability, computeProjectProfitability } from "./lib/profitability-reports";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -70,5 +72,77 @@ describe("AnalyticsReportsService — cross-tenant isolation", () => {
     const result = await svc.projectProfitability(OWNER_ORG, "2024-01-01", "2024-12-31");
 
     expect(result).toBeDefined();
+  });
+});
+
+/**
+ * Remembers which table each WHERE belongs to. The aggregate reads bind the org
+ * id as well, so an assertion over every WHERE at once stays green with a
+ * hydration read's org predicate deleted; these tests pick the read by table.
+ */
+function makeTableAwareDb(rowsByTable: Map<unknown, unknown[]>) {
+  const reads: { table: unknown; where: unknown }[] = [];
+  const db = {
+    select: jest.fn().mockImplementation(() => {
+      let table: unknown;
+      const builder: { from: jest.Mock; innerJoin: jest.Mock; where: jest.Mock } = {
+        from: jest.fn(),
+        innerJoin: jest.fn(),
+        where: jest.fn(),
+      };
+      builder.from.mockImplementation((t: unknown) => {
+        table = t;
+        return builder;
+      });
+      builder.innerJoin.mockReturnValue(builder);
+      builder.where.mockImplementation((arg: unknown) => {
+        reads.push({ table, where: arg });
+        const rows = rowsByTable.get(table) ?? [];
+        return Object.assign(Promise.resolve(rows), { groupBy: jest.fn().mockResolvedValue(rows) });
+      });
+      return builder;
+    }),
+  } as unknown as Db;
+  const whereOn = (table: unknown) => reads.filter((r) => r.table === table).map((r) => r.where);
+  return { db, whereOn };
+}
+
+describe("profitability id-to-name hydration — tenant predicate", () => {
+  const ORG = "org-caller";
+
+  it("re-asserts the caller's org on the projects lookup, not only on the aggregates", async () => {
+    const { db, whereOn } = makeTableAwareDb(
+      new Map<unknown, unknown[]>([
+        [
+          journalLines,
+          [
+            { projectId: 7, totalCredit: "500.00", totalDebit: "0" },
+            { projectId: 9, totalCredit: "0", totalDebit: "120.00" },
+          ],
+        ],
+        [projects, [{ id: 7, name: "Apollo" }, { id: 9, name: "Gemini" }]],
+      ]),
+    );
+
+    const rows = await computeProjectProfitability({ db }, ORG, "2024-01-01", "2024-12-31");
+
+    expect(whereOn(projects)).toHaveLength(1);
+    expect(sqlValues(whereOn(projects)[0])).toEqual(expect.arrayContaining([ORG, 7, 9]));
+    expect(rows.map((r) => r.projectName)).toEqual(["Apollo", "Gemini"]);
+  });
+
+  it("re-asserts the caller's org on the org_units lookup, not only on the aggregates", async () => {
+    const { db, whereOn } = makeTableAwareDb(
+      new Map<unknown, unknown[]>([
+        [journalLines, [{ departmentId: "dept-1", totalCredit: "300.00", totalDebit: "0" }]],
+        [orgUnits, [{ id: "dept-1", name: "Field Ops" }]],
+      ]),
+    );
+
+    const rows = await computeDeptProfitability({ db }, ORG, "2024-01-01", "2024-12-31");
+
+    expect(whereOn(orgUnits)).toHaveLength(1);
+    expect(sqlValues(whereOn(orgUnits)[0])).toEqual(expect.arrayContaining([ORG, "dept-1"]));
+    expect(rows.map((r) => r.departmentName)).toEqual(["Field Ops"]);
   });
 });

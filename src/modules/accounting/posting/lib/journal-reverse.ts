@@ -109,7 +109,7 @@ export async function reverseJournal(
         dimensionValues: journalLines.dimensionValues,
       })
       .from(journalLines)
-      .where(eq(journalLines.entryId, entryId));
+      .where(and(eq(journalLines.entryId, entryId), eq(journalLines.orgId, orgId)));
 
     if (lines.length === 0) throw new BadRequestException("Entry has no lines to reverse");
 

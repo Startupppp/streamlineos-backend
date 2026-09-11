@@ -107,7 +107,7 @@ export async function computeProjectProfitability(
   const projectRows = await deps.db
     .select({ id: projects.id, name: projects.name })
     .from(projects)
-    .where(inArray(projects.id, Array.from(allProjectIds)));
+    .where(and(eq(projects.orgId, orgId), inArray(projects.id, Array.from(allProjectIds))));
   const projectMap = new Map(projectRows.map((p) => [p.id, p.name]));
 
   const revenueMap = new Map(revenueRows.map((r) => [r.projectId, r]));
@@ -194,7 +194,7 @@ export async function computeDeptProfitability(
   const deptRows = await deps.db
     .select({ id: orgUnits.id, name: orgUnits.name })
     .from(orgUnits)
-    .where(inArray(orgUnits.id, Array.from(allDeptIds)));
+    .where(and(eq(orgUnits.orgId, orgId), inArray(orgUnits.id, Array.from(allDeptIds))));
   const deptMap = new Map(deptRows.map((d) => [d.id, d.name]));
 
   const revMap = new Map(revenueRows.map((r) => [r.departmentId, r]));
