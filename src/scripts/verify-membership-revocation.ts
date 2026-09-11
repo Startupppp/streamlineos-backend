@@ -1,13 +1,12 @@
 import "reflect-metadata";
 import { Module } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
-import { and, count, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { createHash, randomUUID } from "node:crypto";
 import { DrizzleModule } from "../db/drizzle.module";
 import { DRIZZLE } from "../db/drizzle.constants";
 import type { Db } from "../db/drizzle.module";
 import { runInNewTenantTransaction } from "../common/tenant/run-in-tenant-transaction";
-import type { RemovalAction } from "../modules/organization/core/membership-artifacts";
 import {
   agentTokens,
   invitations,
@@ -27,7 +26,12 @@ import {
   userPermissionGrants,
   users,
 } from "../db/schema";
-import { MEMBERSHIP_ARTIFACTS } from "../modules/organization/core/membership-artifacts";
+import {
+  buildResults,
+  printUncoveredArtifacts,
+  snapshot,
+} from "./membership-revocation/artifact-census";
+import { checkArtifactFkDrift } from "./membership-revocation/fk-drift";
 
 @Module({ imports: [DrizzleModule] })
 class RevocationContextModule {}
@@ -42,201 +46,6 @@ const DELEGATION_ID = randomUUID();
 const INV_ID = randomUUID();
 const AGENT_TOKEN_HASH = createHash("sha256").update(`agent-${TS}`).digest("hex");
 const AGENT_TOKEN_PREFIX = `sat_${TS.slice(0, 10)}`;
-
-type CountRow = { n: unknown };
-const toN = (r: CountRow | undefined): number => Number(r?.n ?? 0);
-
-type ArtifactResult = { table: string; before: number; after: number; status: "PASS" | "FAIL" };
-
-function buildResults(
-  before: Record<string, number>,
-  after: Record<string, number>,
-): ArtifactResult[] {
-  return Object.keys(before).map((table) => ({
-    table,
-    before: before[table] ?? 0,
-    after: after[table] ?? 0,
-    status: (after[table] ?? 0) === 0 ? "PASS" : "FAIL",
-  }));
-}
-
-async function snapshot(
-  db: Db,
-  orgId: string,
-  membershipId: number,
-  userId: string,
-  email: string,
-): Promise<Record<string, number>> {
-  return runInNewTenantTransaction(db, orgId, async (tx) => {
-    const [ra] = await tx
-      .select({ n: count() })
-      .from(roleAssignments)
-      .where(and(eq(roleAssignments.orgId, orgId), eq(roleAssignments.organizationMembershipId, membershipId)));
-    const [upg] = await tx
-      .select({ n: count() })
-      .from(userPermissionGrants)
-      .where(and(eq(userPermissionGrants.orgId, orgId), eq(userPermissionGrants.organizationMembershipId, membershipId)));
-    const [pgm] = await tx
-      .select({ n: count() })
-      .from(principalGroupMembers)
-      .where(and(eq(principalGroupMembers.orgId, orgId), eq(principalGroupMembers.organizationMembershipId, membershipId)));
-    const [uma] = await tx
-      .select({ n: count() })
-      .from(userModuleAccess)
-      .where(and(eq(userModuleAccess.orgId, orgId), eq(userModuleAccess.organizationMembershipId, membershipId)));
-    const [ud] = await tx
-      .select({ n: count() })
-      .from(userDelegations)
-      .where(
-        and(
-          eq(userDelegations.orgId, orgId),
-          or(eq(userDelegations.delegatorMembershipId, membershipId), eq(userDelegations.delegateeMembershipId, membershipId)),
-        ),
-      );
-    const [udp] = await tx
-      .select({ n: count() })
-      .from(userDelegationPermissions)
-      .where(and(eq(userDelegationPermissions.orgId, orgId), eq(userDelegationPermissions.delegationId, DELEGATION_ID)));
-    const [at] = await tx
-      .select({ n: count() })
-      .from(agentTokens)
-      .where(and(eq(agentTokens.orgId, orgId), eq(agentTokens.issuerMembershipId, membershipId)));
-    const [rg] = await tx
-      .select({ n: count() })
-      .from(resourceGrants)
-      .where(and(eq(resourceGrants.orgId, orgId), eq(resourceGrants.principalType, "user"), eq(resourceGrants.principalId, userId)));
-    const [ksg] = await tx
-      .select({ n: count() })
-      .from(kbSpaceGrants)
-      .where(and(eq(kbSpaceGrants.orgId, orgId), eq(kbSpaceGrants.principalType, "user"), eq(kbSpaceGrants.principalId, userId)));
-    const [inv] = await tx
-      .select({ n: count() })
-      .from(invitations)
-      .where(
-        and(eq(invitations.orgId, orgId), eq(invitations.email, email), eq(invitations.status, "PENDING"), isNull(invitations.acceptedAt)),
-      );
-    return {
-      role_assignments: toN(ra),
-      user_permission_grants: toN(upg),
-      principal_group_members: toN(pgm),
-      user_module_access: toN(uma),
-      user_delegations: toN(ud),
-      user_delegation_permissions: toN(udp),
-      agent_tokens: toN(at),
-      resource_grants: toN(rg),
-      kb_space_grants: toN(ksg),
-      invitations_pending: toN(inv),
-    };
-  });
-}
-
-const ARTIFACT_COVERAGE: ReadonlySet<string> = new Set([
-  "role_assignments", "user_permission_grants", "principal_group_members",
-  "user_delegations", "user_module_access", "agent_tokens",
-  "resource_grants", "kb_space_grants", "invitations",
-]);
-
-function printUncoveredArtifacts(): void {
-  const uncovered = MEMBERSHIP_ARTIFACTS.filter(
-    (a) => a.table !== null && a.onRemoval !== "blocks-removal" && a.onRemoval !== "set-null" && !ARTIFACT_COVERAGE.has(a.table),
-  );
-  if (uncovered.length > 0) {
-    console.log("\nNOTICE — inventory artifacts not checked by this script:");
-    uncovered.forEach((a) => console.log(`  ${a.table ?? ""} (${a.id})`));
-  }
-}
-
-const FK_ACTION_BY_CODE: Record<string, RemovalAction> = {
-  c: "cascade",
-  n: "set-null",
-  a: "blocks-removal",
-  r: "blocks-removal",
-};
-
-async function checkArtifactFkDrift(db: Db): Promise<boolean> {
-  const result = await db.execute(sql`
-    SELECT
-      n.nspname AS schema_name,
-      cl.relname AS table_name,
-      c.conname AS constraint_name,
-      c.confdeltype AS delete_code,
-      c.convalidated AS is_validated,
-      array_length(c.confdelsetcols, 1) AS set_null_col_count,
-      (SELECT string_agg(a.attname, ',' ORDER BY k.ord)
-         FROM unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord)
-         JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum) AS columns,
-      (SELECT string_agg(a.attname, ',' ORDER BY k.ord)
-         FROM unnest(c.confdelsetcols) WITH ORDINALITY AS k(attnum, ord)
-         JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum) AS set_null_cols
-    FROM pg_constraint c
-    JOIN pg_class cl ON cl.oid = c.conrelid
-    JOIN pg_namespace n ON n.oid = cl.relnamespace
-    WHERE c.contype = 'f' AND c.confrelid = 'organization_members'::regclass
-  `);
-  const rows = Array.isArray(result) ? result : [];
-
-  console.log("\n=== INVENTORY vs pg_constraint (declared onRemoval must match the real FK) ===");
-  let pass = true;
-  for (const artifact of MEMBERSHIP_ARTIFACTS) {
-    if (artifact.table === null) continue;
-    if (artifact.onRemoval !== "cascade" && artifact.onRemoval !== "set-null" && artifact.onRemoval !== "blocks-removal") continue;
-
-    const keys = artifact.keyedBy.split(/\s*\/\s*/);
-    const matches = rows.filter((row) => {
-      const record: Record<string, unknown> = row;
-      if (String(record.table_name ?? "") !== artifact.table) return false;
-      const fkCols = String(record.columns ?? "").split(",");
-      return keys.some((key) => fkCols.includes(key.trim()));
-    });
-
-    if (matches.length === 0) {
-      console.log(`  SKIP  ${(artifact.table ?? "").padEnd(34)} no FK on [${keys.join(", ")}] references organization_members`);
-      continue;
-    }
-
-    for (const match of matches) {
-      const record: Record<string, unknown> = match;
-      const actual = FK_ACTION_BY_CODE[String(record.delete_code ?? "")];
-      let ok = actual === artifact.onRemoval;
-
-      if (actual === "set-null") {
-        const fkCols = String(record.columns ?? "").split(",");
-        const hasOrgId = fkCols.includes("org_id");
-        const setNullColCount = Number(record.set_null_col_count ?? 0);
-        if (hasOrgId && setNullColCount === 0) {
-          ok = false;
-          console.log(
-            `  FAIL  ${(artifact.table ?? "").padEnd(34)} SET NULL without column list on composite FK — org_id is NOT NULL, will 23502 (${String(record.constraint_name ?? "")})`,
-          );
-          pass = false;
-          continue;
-        }
-      }
-
-      if (!ok) pass = false;
-      console.log(
-        `  ${ok ? "PASS" : "FAIL"}  ${(artifact.table ?? "").padEnd(34)} declared=${artifact.onRemoval} actual=${actual ?? "unknown"} (${String(record.constraint_name ?? "")})`,
-      );
-    }
-  }
-
-  const brokenSetNull = rows.filter((row) => {
-    const record: Record<string, unknown> = row;
-    if (String(record.delete_code ?? "") !== "n") return false;
-    const fkCols = String(record.columns ?? "").split(",");
-    if (!fkCols.includes("org_id")) return false;
-    return Number(record.set_null_col_count ?? 0) === 0;
-  });
-  if (brokenSetNull.length > 0) {
-    console.log("\n  WARNING — SET NULL FKs without column list (will 23502 if triggered):");
-    for (const row of brokenSetNull) {
-      const record: Record<string, unknown> = row;
-      console.log(`    ${String(record.schema_name ?? "")}.${String(record.table_name ?? "")} → ${String(record.constraint_name ?? "")} on (${String(record.columns ?? "")})`);
-    }
-  }
-
-  return pass;
-}
 
 async function main(): Promise<void> {
   const app = await NestFactory.createApplicationContext(RevocationContextModule, { logger: ["error"] });
@@ -354,7 +163,7 @@ async function main(): Promise<void> {
     console.log(`\nThrowaway org: ${ORG_ID}  membershipId: ${memId}`);
     printUncoveredArtifacts();
 
-    const before = await snapshot(db, ORG_ID, memId, MEM_USER_ID, MEM_EMAIL);
+    const before = await snapshot(db, ORG_ID, memId, MEM_USER_ID, MEM_EMAIL, DELEGATION_ID);
     console.log("\n=== BEFORE (each should be 1) ===");
     for (const [k, v] of Object.entries(before)) console.log(`  ${k.padEnd(30)} ${v}`);
 
@@ -372,7 +181,7 @@ async function main(): Promise<void> {
     });
     const t0 = Date.now();
 
-    const after = await snapshot(db, ORG_ID, memId, MEM_USER_ID, MEM_EMAIL);
+    const after = await snapshot(db, ORG_ID, memId, MEM_USER_ID, MEM_EMAIL, DELEGATION_ID);
     const t1 = Date.now();
 
     const results = buildResults(before, after);
@@ -425,7 +234,7 @@ async function main(): Promise<void> {
     );
     if (!reRow) throw new Error("re-invite insert failed");
 
-    const reCounts = await snapshot(db, ORG_ID, reRow.id, MEM_USER_ID, MEM_EMAIL);
+    const reCounts = await snapshot(db, ORG_ID, reRow.id, MEM_USER_ID, MEM_EMAIL, DELEGATION_ID);
     let inheritancePass = true;
     console.log("\n=== RE-INVITE: NO INHERITANCE (each should be 0) ===");
     for (const [table, ct] of Object.entries(reCounts)) {
