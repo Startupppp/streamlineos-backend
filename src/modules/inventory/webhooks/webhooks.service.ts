@@ -2,16 +2,24 @@ import { Injectable, Inject, BadRequestException, NotFoundException } from "@nes
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
-import { invWebhookEventSubscriptions, invWebhooks, invWebhookEvents } from "../../../db/schema";
-import { eq, and, desc, isNotNull, sql, type SQL } from "drizzle-orm";
+import { invWebhookEventSubscriptions, invWebhooks } from "../../../db/schema";
+import { eq, and, desc } from "drizzle-orm";
 import { randomBytes } from "crypto";
 import { checkWebhookUrl } from "../../../common/security/ssrf-guard";
 import { WebhookTransportService } from "./webhook-transport.service";
-import { planWebhookAttempt } from "./webhook-delivery-policy";
+import {
+  listDeadLetters,
+  listEvents,
+  retryEvent,
+  type EventPage,
+  type EventRow,
+  type WebhookEventDeps,
+} from "./lib/webhook-events";
 import type { CreateWebhookInput, UpdateWebhookInput, ListEventsQueryInput } from "./dto/webhooks.schemas";
 
 type WebhookRow = typeof invWebhooks.$inferSelect;
-type EventRow = typeof invWebhookEvents.$inferSelect;
+
+export type { EventPage, EventRow };
 
 @Injectable()
 export class WebhooksService {
@@ -200,201 +208,23 @@ export class WebhooksService {
     return { deleted: true };
   }
 
-  /**
-   * The event projection. `lastError`, `nextAttemptAt` and `deadLetteredAt` are
-   * part of it because without them the list cannot answer the only question an
-   * operator actually has: is this delivery still coming, and if not, why not.
-   */
-  private readonly eventColumns = {
-    id: invWebhookEvents.id,
-    orgId: invWebhookEvents.orgId,
-    webhookId: invWebhookEvents.webhookId,
-    eventType: invWebhookEvents.eventType,
-    payload: invWebhookEvents.payload,
-    status: invWebhookEvents.status,
-    attempts: invWebhookEvents.attempts,
-    deliveredAt: invWebhookEvents.deliveredAt,
-    dedupeKey: invWebhookEvents.dedupeKey,
-    nextAttemptAt: invWebhookEvents.nextAttemptAt,
-    leaseExpiresAt: invWebhookEvents.leaseExpiresAt,
-    lastAttemptAt: invWebhookEvents.lastAttemptAt,
-    lastError: invWebhookEvents.lastError,
-    deadLetteredAt: invWebhookEvents.deadLetteredAt,
-    createdAt: invWebhookEvents.createdAt,
-  };
-
-  private async pageEvents(
-    conditions: SQL[],
-    query: ListEventsQueryInput,
-  ): Promise<{ items: EventRow[]; total: number; page: number; totalPages: number }> {
-    const offset = (query.page - 1) * query.limit;
-
-    const rows = await this.db
-      .select({ ...this.eventColumns, windowTotal: sql<string>`count(*) OVER ()` })
-      .from(invWebhookEvents)
-      .where(and(...conditions))
-      .orderBy(desc(invWebhookEvents.createdAt))
-      .limit(query.limit)
-      .offset(offset);
-
-    const first = rows[0];
-    let total: number;
-    if (first) {
-      total = Number(first.windowTotal);
-    } else if (offset === 0) {
-      total = 0;
-    } else {
-      const fallback = await this.db
-        .select({ n: sql<string>`count(*)` })
-        .from(invWebhookEvents)
-        .where(and(...conditions));
-      total = Number(fallback[0]?.n ?? 0);
-    }
-
-    const items: EventRow[] = rows.map(({ windowTotal: _, ...rest }) => rest);
-
-    return { items, total, page: query.page, totalPages: Math.ceil(total / query.limit) };
+  private get eventDeps(): WebhookEventDeps {
+    return { db: this.db, audit: this.audit, transport: this.transport, isProd: this.isProd };
   }
 
-  async listEvents(
-    orgId: string,
-    webhookId: number,
-    query: ListEventsQueryInput,
-  ): Promise<{ items: EventRow[]; total: number; page: number; totalPages: number }> {
-    const webhookCheck = await this.db
-      .select({ id: invWebhooks.id })
-      .from(invWebhooks)
-      .where(and(eq(invWebhooks.id, webhookId), eq(invWebhooks.orgId, orgId)))
-      .limit(1);
-    if (!webhookCheck[0]) throw new NotFoundException("Webhook not found");
-
-    return this.pageEvents(
-      [
-        eq(invWebhookEvents.orgId, orgId),
-        eq(invWebhookEvents.webhookId, webhookId),
-        ...(query.status ? [eq(invWebhookEvents.status, query.status)] : []),
-      ],
-      query,
-    );
+  listEvents(orgId: string, webhookId: number, query: ListEventsQueryInput): Promise<EventPage> {
+    return listEvents(this.eventDeps, orgId, webhookId, query);
   }
 
-  /**
-   * E7 — the dead-letter list.
-   *
-   * Deliberately org-wide rather than per webhook: the reason to open this screen
-   * is "did we drop anything", and asking that one subscription at a time means
-   * the answer for a subscription nobody thought to check is no answer at all.
-   * `deadLetteredAt is not null` is the predicate rather than `status = 'FAILED'`
-   * — status is also where a merely-retrying row would land under any future
-   * relabelling, and an events list that quietly includes work still in flight is
-   * worse than no list.
-   */
-  async listDeadLetters(
+  listDeadLetters(
     orgId: string,
     query: ListEventsQueryInput,
     webhookId?: number,
-  ): Promise<{ items: EventRow[]; total: number; page: number; totalPages: number }> {
-    return this.pageEvents(
-      [
-        eq(invWebhookEvents.orgId, orgId),
-        isNotNull(invWebhookEvents.deadLetteredAt),
-        ...(webhookId !== undefined ? [eq(invWebhookEvents.webhookId, webhookId)] : []),
-      ],
-      query,
-    );
+  ): Promise<EventPage> {
+    return listDeadLetters(this.eventDeps, orgId, query, webhookId);
   }
 
-  /**
-   * Manual redelivery of one event, from the dead-letter list.
-   *
-   * It goes through the same `WebhookTransportService` the worker uses, so the
-   * button cannot drift onto a different signing scheme from the automatic path —
-   * which is exactly what had happened: this method carried its own copy of the
-   * body, the HMAC and the fetch.
-   */
-  async retryEvent(orgId: string, userId: string, eventId: number): Promise<EventRow> {
-    const eventRows = await this.db
-      .select(this.eventColumns)
-      .from(invWebhookEvents)
-      .where(and(eq(invWebhookEvents.id, eventId), eq(invWebhookEvents.orgId, orgId)))
-      .limit(1);
-    const event = eventRows[0];
-    if (!event) throw new NotFoundException("Event not found");
-
-    if (event.status === "DELIVERED") return event;
-
-    if (event.webhookId === null) throw new NotFoundException("Webhook no longer exists");
-
-    const webhookRows = await this.db
-      .select()
-      .from(invWebhooks)
-      .where(and(eq(invWebhooks.id, event.webhookId), eq(invWebhooks.orgId, orgId)))
-      .limit(1);
-    const webhook = webhookRows[0];
-    if (!webhook) throw new NotFoundException("Webhook no longer exists");
-
-    // Refusing rather than delivering anyway: a disabled subscription is either an
-    // admin's decision or this module's, and honouring a retry through it would
-    // send traffic to the endpoint the disable exists to stop sending to. The fix
-    // is to re-enable — which clears the health counters — and retry then.
-    if (!webhook.isActive) {
-      throw new BadRequestException(
-        webhook.disabledReason
-          ? `Webhook is disabled (${webhook.disabledReason}); re-enable it before retrying`
-          : "Webhook is disabled; re-enable it before retrying",
-      );
-    }
-
-    const now = new Date();
-    const outcome = await this.transport.deliver(
-      { id: webhook.id, url: webhook.url, secret: webhook.secret },
-      {
-        id: event.id,
-        eventType: event.eventType,
-        payload: event.payload,
-        createdAt: event.createdAt,
-        attempt: event.attempts + 1,
-      },
-      { requireHttps: this.isProd },
-    );
-
-    const plan = planWebhookAttempt({ attempts: event.attempts, ok: outcome.ok, now });
-    const status = plan.status === "DELIVERED" ? "DELIVERED" : "FAILED";
-
-    const [updatedEvent] = await this.db
-      .update(invWebhookEvents)
-      .set({
-        status: plan.status,
-        attempts: plan.attempts,
-        nextAttemptAt: plan.nextAttemptAt,
-        deliveredAt: plan.deliveredAt,
-        // A successful manual retry takes the event back out of the dead-letter
-        // list; a failed one leaves whatever put it there in place.
-        deadLetteredAt: outcome.ok ? null : (plan.deadLetteredAt ?? event.deadLetteredAt),
-        lastAttemptAt: now,
-        lastError: outcome.ok ? null : outcome.error,
-      })
-      .where(and(eq(invWebhookEvents.orgId, orgId), eq(invWebhookEvents.id, eventId)))
-      .returning();
-
-    await this.db
-      .update(invWebhooks)
-      .set({
-        lastDeliveryAt: now,
-        lastDeliveryStatus: status,
-        ...(outcome.ok && { consecutiveFailures: 0, failingSince: null, alertedAt: null }),
-      })
-      .where(and(eq(invWebhooks.orgId, orgId), eq(invWebhooks.id, webhook.id)));
-
-    await this.audit.insert(this.db, {
-      orgId,
-      actorUserId: userId,
-      action: "webhook.event.retried",
-      resourceType: "webhook_event",
-      resourceId: String(eventId),
-      after: { status, attempts: plan.attempts, ...(outcome.ok ? {} : { error: outcome.error }) },
-    });
-
-    return updatedEvent ?? event;
+  retryEvent(orgId: string, userId: string, eventId: number): Promise<EventRow> {
+    return retryEvent(this.eventDeps, orgId, userId, eventId);
   }
 }
