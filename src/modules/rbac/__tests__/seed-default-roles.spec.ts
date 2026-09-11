@@ -22,7 +22,12 @@ function createDeps(existingSlugs: string[]) {
   const dbMock = {
     query: { roles: { findFirst: jest.fn() } },
     insert: jest.fn((table: unknown) => {
-      const chain = {
+      // Annotated because `values` returns `chain`, so without a declared type
+      // the initializer refers to itself and TS falls back to `any` (TS7022).
+      const chain: {
+        values: (values: unknown) => typeof chain;
+        returning: () => Promise<Array<{ id: number }>>;
+      } = {
         values: jest.fn((values: unknown) => {
           inserted.push({ table, values });
           return chain;
