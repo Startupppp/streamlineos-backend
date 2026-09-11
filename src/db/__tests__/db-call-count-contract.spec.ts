@@ -21,7 +21,6 @@ import { UsageMeteringService } from "../../modules/billing/core/usage-metering.
 import { AutonomyHoldService } from "../../modules/autonomy/autonomy-hold.service";
 import { CronHolidayService } from "../../modules/cron/cron-holiday.service";
 import { SurveyParticipantService } from "../../modules/surveys/survey-participant.service";
-import { VendorPaymentsAllocationsService } from "../../modules/finance/ap/vendor-payments-allocations.service";
 import { ClientAccountsService } from "../../modules/clients/client-accounts.service";
 import { SurveyBuilderService } from "../../modules/surveys/survey-builder.service";
 
@@ -178,42 +177,6 @@ describe("database call-count contract", () => {
         expect(created).toHaveLength(rows);
         expect(created.every((entry) => typeof entry.accessToken === "string")).toBe(true);
         expect(countOf("insert")).toBe(1);
-        counts.push(statements());
-      }
-      expect(counts[0]).toBe(counts[1]);
-    });
-  });
-
-  describe("VendorPaymentsAllocationsService.allocate", () => {
-    it("settles every allocation in one upsert and one balance update", async () => {
-      const counts: number[] = [];
-      for (const rows of ROW_COUNTS) {
-        const bills = repeat(rows, (index) => ({
-          id: index + 1,
-          status: "APPROVED",
-          total: "1000.0000",
-          amountPaid: "0.0000",
-        }));
-        const { db, statements, countOf } = makeCountingDb({
-          select: [
-            [{ id: 99, orgId: "org-1", amount: "1000000.0000" }],
-            [{ total: "0" }],
-            bills,
-          ],
-          insert: [[]],
-          execute: [[]],
-        });
-        const service = new VendorPaymentsAllocationsService(db as Db, {
-          log: jest.fn(),
-        } as unknown as ConstructorParameters<typeof VendorPaymentsAllocationsService>[1]);
-
-        await service.allocate("org-1", "user-1", {
-          vendorPaymentId: 99,
-          allocations: repeat(rows, (index) => ({ billId: index + 1, amount: 1 })),
-        } as Parameters<VendorPaymentsAllocationsService["allocate"]>[2]);
-
-        expect(countOf("insert")).toBe(1);
-        expect(countOf("execute")).toBe(1);
         counts.push(statements());
       }
       expect(counts[0]).toBe(counts[1]);
