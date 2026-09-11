@@ -312,7 +312,10 @@ describe("VendorScorecardService", () => {
   it("scopes the evidence list and its count to the asking tenant too", async () => {
     // `deliveries` is the drill-down behind the rates and is reached by its own
     // route, so it needs the predicate in its own right.
-    const execute = jest.fn(() => Promise.resolve([]));
+    // Declared with its parameter, not as `jest.fn(() => ...)`: a zero-arg mock
+    // gives `mock.calls` an empty tuple type, and the destructuring below then
+    // asks for element 0 of it — which jest never notices and tsc does.
+    const execute = jest.fn((_query: unknown) => Promise.resolve([]));
     const service = new VendorScorecardService({ execute } as never, {
       vendorLeadTimes: jest.fn(() => Promise.resolve(new Map())),
     } as never);
