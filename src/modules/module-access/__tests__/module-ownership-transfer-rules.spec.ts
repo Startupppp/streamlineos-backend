@@ -1,4 +1,10 @@
-import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from "@nestjs/common";
+import { drizzlePostgresError, drizzleUniqueViolation } from "../../../test/postgres-error-fixture";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
@@ -196,6 +202,27 @@ describe("opening a transfer", () => {
     const hours = ((expiresAt as Date).getTime() - before) / 3_600_000;
     expect(hours).toBeGreaterThan(47.99);
     expect(hours).toBeLessThan(48.01);
+  });
+
+  it("answers 409 when the module already has a pending transfer", async () => {
+    const h = harness({ members: [CALLER, TARGET], selects: [[{ ownerMembershipId: 9 }]] });
+    h.insertValues.mockRejectedValueOnce(
+      drizzleUniqueViolation("uniq_ownership_xfers_org_pending_module"),
+    );
+
+    await expect(
+      initiateModuleOwnershipTransfer(h.deps, actor(), "hr", "u-target"),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it("rethrows any other database error from the insert untouched", async () => {
+    const fkViolation = drizzlePostgresError("23503", "some_fk");
+    const h = harness({ members: [CALLER, TARGET], selects: [[{ ownerMembershipId: 9 }]] });
+    h.insertValues.mockRejectedValueOnce(fkViolation);
+
+    await expect(
+      initiateModuleOwnershipTransfer(h.deps, actor(), "hr", "u-target"),
+    ).rejects.toBe(fkViolation);
   });
 });
 

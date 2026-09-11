@@ -15,6 +15,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { AuditService } from "../../../common/audit/audit.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 /**
@@ -123,12 +124,7 @@ export async function initiateModuleOwnershipTransfer(
       { orgId },
     );
   } catch (err: unknown) {
-    if (
-      typeof err === "object" &&
-      err !== null &&
-      "code" in err &&
-      err.code === "23505"
-    ) {
+    if (isUniqueViolation(err)) {
       throw new ConflictException(
         `A pending transfer for module "${moduleKey}" already exists`,
       );

@@ -17,6 +17,7 @@ import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { assertPermissionsGrantable, ROLE_RANK, toGrantableSet } from "../../common/rbac/grantability";
 import { isStructuralOrgAdmin } from "../../common/rbac/is-structural-org-admin";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { isUniqueViolation } from "../../common/db/postgres-error";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AccessService } from "../access/access.service";
 import type { DataScope } from "../access/access.types";
@@ -148,7 +149,7 @@ export class ModuleAccessGroupCrudService {
       await bumpPermissionsVersion(tx, actor.orgId);
       return created;
     }, { orgId: actor.orgId }).catch((error: unknown) => {
-      if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") throw new ConflictException(`A group named "${input.name}" already exists in this module`);
+      if (isUniqueViolation(error)) throw new ConflictException(`A group named "${input.name}" already exists in this module`);
       throw error;
     });
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
@@ -167,7 +168,7 @@ export class ModuleAccessGroupCrudService {
       await bumpPermissionsVersion(tx, actor.orgId);
       return updated;
     }, { orgId: actor.orgId }).catch((error: unknown) => {
-      if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") throw new ConflictException(`A group named "${input.name}" already exists in this module`);
+      if (isUniqueViolation(error)) throw new ConflictException(`A group named "${input.name}" already exists in this module`);
       throw error;
     });
     if (!row) throw new BadRequestException("Failed to rename group");

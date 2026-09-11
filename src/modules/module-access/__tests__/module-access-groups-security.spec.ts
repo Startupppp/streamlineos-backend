@@ -10,6 +10,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { drizzlePostgresError, drizzleUniqueViolation } from "../../../test/postgres-error-fixture";
 
 function makeActor(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
   return {
@@ -351,5 +352,53 @@ describe("ModuleAccessGroupsService — P0-3: duplicate group name guard", () =>
     });
 
     expect(result).toBeDefined();
+  });
+
+  describe("when the write itself fails in the database", () => {
+    /** A tenant transaction whose insert and update both fail with `error`. */
+    function failingTx(error: Error) {
+      const returning = jest.fn().mockRejectedValue(error);
+      return {
+        execute: jest.fn().mockResolvedValue([]),
+        insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning }) }),
+        update: jest.fn().mockReturnValue({
+          set: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ returning }) }),
+        }),
+      };
+    }
+
+    /** The name precheck reads no clash, so the race is lost at the index instead. */
+    async function buildFailing(error: Error) {
+      const { svc, mockDb } = await buildSvc({ authority: "org-owner", selectResultSets: [[]] });
+      mockDb.transaction.mockImplementationOnce(
+        async (fn: (tx: ReturnType<typeof failingTx>) => Promise<unknown>) => fn(failingTx(error)),
+      );
+      return svc;
+    }
+
+    const owner = makeActor({ isOrgOwner: true });
+    const input = { name: "Recruitment HR" };
+
+    it("answers 409 when createGroup hits uniq_roles_org_module_name_ci", async () => {
+      const svc = await buildFailing(drizzleUniqueViolation("uniq_roles_org_module_name_ci"));
+      await expect(svc.createGroup(owner, "hr", input)).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it("answers 409 when renameGroup hits uniq_roles_org_module_name_ci", async () => {
+      const svc = await buildFailing(drizzleUniqueViolation("uniq_roles_org_module_name_ci"));
+      await expect(svc.renameGroup(owner, "hr", 9, input)).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it("rethrows any other database error from createGroup untouched", async () => {
+      const fkViolation = drizzlePostgresError("23503", "some_fk");
+      const svc = await buildFailing(fkViolation);
+      await expect(svc.createGroup(owner, "hr", input)).rejects.toBe(fkViolation);
+    });
+
+    it("rethrows any other database error from renameGroup untouched", async () => {
+      const fkViolation = drizzlePostgresError("23503", "some_fk");
+      const svc = await buildFailing(fkViolation);
+      await expect(svc.renameGroup(owner, "hr", 9, input)).rejects.toBe(fkViolation);
+    });
   });
 });
