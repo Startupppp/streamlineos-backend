@@ -6,6 +6,7 @@ import { accTaxCodes } from "../../../db/schema/accounting/finance-tax";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { AuditService } from "../../../common/audit/audit.service";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 import { FinancePostingService } from "../../accounting/posting/finance-posting.service";
 import { buildCursorPage, decodeCursor, type CursorPage } from "../../../common/pagination/cursor";
 import { keysetAfterValue } from "../../../common/pagination/keyset";
@@ -140,8 +141,7 @@ export class TaxCodesService {
 
       return row;
     } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      if (msg.includes("uniq_acc_tax_codes_org_code") || msg.includes("23505")) {
+      if (isUniqueViolation(error)) {
         throw new ConflictException(`Tax code '${input.code}' already exists for this organization`);
       }
       throw error;
@@ -171,8 +171,7 @@ export class TaxCodesService {
 
       return row;
     } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      if (msg.includes("uniq_acc_tax_codes_org_code") || msg.includes("23505")) {
+      if (isUniqueViolation(error)) {
         throw new ConflictException(`Tax code '${input.code}' already exists for this organization`);
       }
       throw error;

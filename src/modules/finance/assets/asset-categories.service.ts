@@ -6,6 +6,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 import { accAssetCategories } from "../../../db/schema/accounting/finance-assets";
 import { ledgerAccounts } from "../../../db/schema/accounting/accounting";
 import type { CreateCategoryInput, ListCategoriesQuery, UpdateCategoryInput } from "./dto/assets.schemas";
@@ -59,8 +60,7 @@ export class AssetCategoriesService {
       await this.cache.invalidateNamespace(CACHE_KEYS.finAssetCategoriesNamespace(orgId));
       return row;
     } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      if (msg.includes("uniq_acc_asset_categories_org_name") || msg.includes("23505")) {
+      if (isUniqueViolation(error)) {
         throw new ConflictException(`Category name '${input.name}' already exists`);
       }
       throw error;
@@ -87,8 +87,7 @@ export class AssetCategoriesService {
       await this.cache.invalidateNamespace(CACHE_KEYS.finAssetCategoriesNamespace(orgId));
       return row;
     } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      if (msg.includes("uniq_acc_asset_categories_org_name") || msg.includes("23505")) {
+      if (isUniqueViolation(error)) {
         throw new ConflictException(`Category name '${input.name}' already exists`);
       }
       throw error;
