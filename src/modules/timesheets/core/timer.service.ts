@@ -14,49 +14,16 @@ import { actingMembershipId } from "../../../common/auth/principal";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { EntriesService } from "./entries.service";
 import { formatDateOnly } from "./lib/period.helpers";
+import { buildTimerShape } from "./lib/timer-shape";
+import {
+  discardTimer,
+  pauseTimer,
+  resumeTimer,
+  stopTimer,
+  type TimerTransitionDeps,
+} from "./lib/timer-transitions";
 import type { StartTimerInput, ConvertTimerInput } from "./dto/timer.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-
-function elapsedSeconds(session: {
-  accumulatedSeconds: number;
-  status: string;
-  lastResumedAt: Date | null;
-}): number {
-  if (session.status !== "RUNNING" || !session.lastResumedAt) {
-    return session.accumulatedSeconds;
-  }
-  const sinceResume = Math.floor((Date.now() - session.lastResumedAt.getTime()) / 1000);
-  return session.accumulatedSeconds + sinceResume;
-}
-
-function buildTimerShape(
-  session: typeof timerSessions.$inferSelect & {
-    projectName?: string | null;
-    ticketTitle?: string | null;
-  },
-) {
-  return {
-    id: session.id,
-    userMembershipId: session.userMembershipId,
-    projectId: session.projectId,
-    ticketId: session.ticketId,
-    description: session.description,
-    billable: session.billable,
-    startedAt: session.startedAt,
-    lastResumedAt: session.lastResumedAt,
-    accumulatedSeconds: session.accumulatedSeconds,
-    status: session.status,
-    elapsedSeconds: elapsedSeconds(session),
-    project:
-      session.projectId && session.projectName
-        ? { id: session.projectId, name: session.projectName }
-        : null,
-    ticket:
-      session.ticketId && session.ticketTitle
-        ? { id: session.ticketId, title: session.ticketTitle }
-        : null,
-  };
-}
 
 @Injectable()
 export class TimerService {
@@ -178,86 +145,31 @@ export class TimerService {
     return buildTimerShape(row!);
   }
 
+  /** @see lib/timer-transitions.ts */
   async pauseTimer(u: CurrentUserContext, timerId: number) {
-    const membershipId = actingMembershipId(u.principal);
-    const session = await this.db.query.timerSessions.findFirst({
-      where: and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)),
-    });
-    if (!session) throw new NotFoundException("Timer not found");
-    if (session.userMembershipId !== membershipId) throw new ForbiddenException("Not your timer");
-    if (session.status !== "RUNNING") throw new ConflictException("Timer is not running");
-
-    const sinceResume = session.lastResumedAt
-      ? Math.floor((Date.now() - session.lastResumedAt.getTime()) / 1000)
-      : 0;
-    const newAccumulated = session.accumulatedSeconds + sinceResume;
-
-    await this.db
-      .update(timerSessions)
-      .set({ status: "PAUSED", accumulatedSeconds: newAccumulated, updatedAt: new Date() })
-      .where(and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)));
-
-    const row = await this.fetchTimerWithRelations(u.orgId, timerId);
-    return buildTimerShape(row!);
+    return pauseTimer(this.transitionDeps, u, timerId);
   }
 
+  /** @see lib/timer-transitions.ts */
   async resumeTimer(u: CurrentUserContext, timerId: number) {
-    const membershipId = actingMembershipId(u.principal);
-    const session = await this.db.query.timerSessions.findFirst({
-      where: and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)),
-    });
-    if (!session) throw new NotFoundException("Timer not found");
-    if (session.userMembershipId !== membershipId) throw new ForbiddenException("Not your timer");
-    if (session.status !== "PAUSED") throw new ConflictException("Timer is not paused");
-
-    await this.db
-      .update(timerSessions)
-      .set({ status: "RUNNING", lastResumedAt: new Date(), updatedAt: new Date() })
-      .where(and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)));
-
-    const row = await this.fetchTimerWithRelations(u.orgId, timerId);
-    return buildTimerShape(row!);
+    return resumeTimer(this.transitionDeps, u, timerId);
   }
 
+  /** @see lib/timer-transitions.ts */
   async stopTimer(u: CurrentUserContext, timerId: number) {
-    const membershipId = actingMembershipId(u.principal);
-    const session = await this.db.query.timerSessions.findFirst({
-      where: and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)),
-    });
-    if (!session) throw new NotFoundException("Timer not found");
-    if (session.userMembershipId !== membershipId) throw new ForbiddenException("Not your timer");
-    if (!["RUNNING", "PAUSED"].includes(session.status)) {
-      throw new ConflictException("Timer is not active");
-    }
-
-    let newAccumulated = session.accumulatedSeconds;
-    if (session.status === "RUNNING" && session.lastResumedAt) {
-      newAccumulated += Math.floor((Date.now() - session.lastResumedAt.getTime()) / 1000);
-    }
-
-    await this.db
-      .update(timerSessions)
-      .set({ status: "STOPPED", accumulatedSeconds: newAccumulated, updatedAt: new Date() })
-      .where(and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)));
-
-    const row = await this.fetchTimerWithRelations(u.orgId, timerId);
-    return buildTimerShape(row!);
+    return stopTimer(this.transitionDeps, u, timerId);
   }
 
+  /** @see lib/timer-transitions.ts */
   async discardTimer(u: CurrentUserContext, timerId: number) {
-    const membershipId = actingMembershipId(u.principal);
-    const session = await this.db.query.timerSessions.findFirst({
-      where: and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)),
-    });
-    if (!session) throw new NotFoundException("Timer not found");
-    if (session.userMembershipId !== membershipId) throw new ForbiddenException("Not your timer");
+    return discardTimer(this.transitionDeps, u, timerId);
+  }
 
-    await this.db
-      .update(timerSessions)
-      .set({ status: "DISCARDED", updatedAt: new Date() })
-      .where(and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)));
-
-    return { success: true };
+  private get transitionDeps(): TimerTransitionDeps {
+    return {
+      db: this.db,
+      reloadTimer: (orgId, timerId) => this.fetchTimerWithRelations(orgId, timerId),
+    };
   }
 
   async convertTimer(u: CurrentUserContext, timerId: number, input: ConvertTimerInput) {
