@@ -16,7 +16,13 @@ import { join, relative, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const LIMIT = 300;
-const BASELINE = 394;
+/**
+ * 394 was set on 2026-08-31. Lowered to 380 on 2026-09-11 after the split
+ * programme took the real count from 476 to 380 without registering an
+ * exemption, so the ratchet holds the new floor instead of leaving 14 files of
+ * silent headroom for a regression to spend.
+ */
+const BASELINE = 380;
 const MIN_FILES = 50;
 
 function resolvePath(rel) {
