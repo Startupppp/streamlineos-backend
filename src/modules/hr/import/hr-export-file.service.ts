@@ -112,7 +112,7 @@ export class HrExportFileService {
     return this.storage.deleteFile(orgId, fileKey);
   }
 
-  public async fetchBatch(
+  private async fetchBatch(
     input: {
       orgId: string;
       actorUserId: string;
