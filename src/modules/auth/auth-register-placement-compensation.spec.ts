@@ -36,6 +36,7 @@ function build() {
     {} as never,
     {} as never,
     {} as never,
+    new Proxy({}, { get: () => () => Promise.resolve(undefined) }) as never,
     {} as never,
   );
 }

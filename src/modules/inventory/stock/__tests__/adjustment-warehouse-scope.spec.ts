@@ -4,6 +4,7 @@ import { InvStockAdjustmentsService } from "../inv-stock-adjustments.service";
 import type { WarehouseScopeService } from "../../stock-engine/warehouse-scope.service";
 import type { CreateAdjustmentInput } from "../dto/inv-stock.schemas";
 import { cacheWith, dbWith, scopeOf, sqlText, type DbHarness } from "../../__tests__/warehouse-scope-harness";
+import { ScopedRead } from "../../../access/scoped-read";
 
 /**
  * Five ways to reach another building's write-off, behind a list that scopes.
@@ -160,7 +161,7 @@ describe("the detail gate follows its own aggregate", () => {
   it("uses the same EXISTS over lines and locations that the list uses", async () => {
     const listHarness = dbWith({});
     const listSvc = serviceWith(listHarness, outOfScope().service);
-    await listSvc.listAdjustments(ORG, { page: 1, limit: 20 } as never, "all", USER);
+    await listSvc.listAdjustments(ScopedRead.of(ORG, USER, "all"), { page: 1, limit: 20 } as never);
 
     const detailHarness = dbWith({});
     const detailSvc = serviceWith(detailHarness, outOfScope().service);

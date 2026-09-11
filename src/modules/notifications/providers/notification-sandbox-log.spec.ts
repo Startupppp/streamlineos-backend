@@ -53,7 +53,7 @@ describe("sandbox notification providers emit a tenant-safe line", () => {
   });
 
   it("email: neither the recipient address nor the title is in the emitted line", async () => {
-    const provider = new NotificationEmailProvider({} as EmailProviderService);
+    const provider = new NotificationEmailProvider({} as EmailProviderService, {});
     const result = await provider.send(input());
 
     const joint = cap.lines.join("");
@@ -74,7 +74,7 @@ describe("sandbox notification providers emit a tenant-safe line", () => {
   });
 
   it("the line is still structured JSON an operator can act on", async () => {
-    await new NotificationEmailProvider({} as EmailProviderService).send(input());
+    await new NotificationEmailProvider({} as EmailProviderService, {}).send(input());
     const record = JSON.parse(cap.lines.join("")) as Record<string, unknown>;
     expect(record["level"]).toBe("debug");
     const meta = record["meta"] as Record<string, unknown>;

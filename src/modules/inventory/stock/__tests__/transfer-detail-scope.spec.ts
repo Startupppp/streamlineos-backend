@@ -9,6 +9,7 @@ import {
   sqlText,
   type DbHarness,
 } from "../../__tests__/warehouse-scope-harness";
+import { ScopedRead } from "../../../access/scoped-read";
 
 /**
  * `listTransfers` was scoped and everything you could do to one transfer by id
@@ -138,7 +139,7 @@ describe("one stock transfer, read by id", () => {
     const { service: scope } = scopeOf([7, 9]);
 
     const list = dbWith();
-    await serviceWith(list, scope).listTransfers(ORG, LIST_QUERY, "all", "picker-1");
+    await serviceWith(list, scope).listTransfers(ScopedRead.of(ORG, "picker-1", "all"), LIST_QUERY);
 
     const detail = dbWith();
     await expect(

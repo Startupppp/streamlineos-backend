@@ -108,6 +108,7 @@ describe(`${SEEDED_HARNESS} the bulk error report reports every error`, () => {
     /** One shape for both branches: a union of two row shapes is not an insert. */
     const rows: (typeof signBulkSendRows.$inferInsert)[] = [
       ...Array.from({ length: SENT_ROWS }, (_, i) => ({
+        orgId: fixture.orgId,
         jobId,
         rowNumber: i + 1,
         rawDataJson: { name: `Fine ${i + 1}`, email: `fine${i + 1}@test.invalid` },
@@ -115,6 +116,7 @@ describe(`${SEEDED_HARNESS} the bulk error report reports every error`, () => {
         errorMessage: null,
       })),
       ...Array.from({ length: FAILED_ROWS }, (_, i) => ({
+        orgId: fixture.orgId,
         jobId,
         rowNumber: SENT_ROWS + i + 1,
         rawDataJson: { name: `Broken ${i + 1}`, email: "not-an-email" },

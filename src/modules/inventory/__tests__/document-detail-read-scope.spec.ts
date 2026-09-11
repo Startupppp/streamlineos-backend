@@ -13,6 +13,7 @@ import {
   sqlText,
   type DbHarness,
 } from "./warehouse-scope-harness";
+import { ScopedRead } from "../../access/scoped-read";
 
 /**
  * Five reads that answered for a building the caller had never been shown.
@@ -97,7 +98,7 @@ describe("one sales order, read by id", () => {
 
     const list = dbWith();
     const { cache: listCache } = cacheWith();
-    await soWith(list, scope, listCache).listSos(ORG, { page: 1, limit: 20 } as never, "all", "picker-1");
+    await soWith(list, scope, listCache).listSos(ScopedRead.of(ORG, "picker-1", "all"), { page: 1, limit: 20 } as never);
 
     const detail = dbWith();
     const { cache: detailCache } = cacheWith();

@@ -205,7 +205,7 @@ function makeAuditService(envelope: ReturnType<typeof makeEnvelope> | null) {
     select,
     query: { signEnvelopes: { findFirst } },
   } as unknown as Db;
-  return { service: new SignAuditService(db), select, rows };
+  return { service: new SignAuditService(db, {} as never), select, rows };
 }
 
 describe("GET /sign/envelopes/:envelopeId/audit — envelope-view scope gate", () => {

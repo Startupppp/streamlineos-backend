@@ -154,7 +154,6 @@ describe("PRD-C145 — an unconfigured deployment skips the push instead of dead
 
     await expect(
       service.sendToUser(ORG, "user-0", { url: "/notifications" }, {
-        orgId: ORG,
         producerEventId: "producer-1",
         effectKey: "effect-1",
       }),

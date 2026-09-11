@@ -62,6 +62,7 @@ function buildService(provider: "gmail" | "outlook", thread: MailMessageDetail[]
     {} as never,
     {} as never,
     {} as never,
+    { ENCRYPTION_KEY: "mail-thread-ordering-secret" },
   );
   return { service, getThread };
 }

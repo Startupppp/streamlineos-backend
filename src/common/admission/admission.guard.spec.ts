@@ -7,6 +7,7 @@ import { AdmissionGuard } from "./admission.guard";
 import { AdmissionInterceptor } from "./admission.interceptor";
 import { AdmissionService } from "./admission.service";
 import { WORK_CLASS_KEY } from "./work-class.decorator";
+import type { ModuleRef } from "@nestjs/core";
 
 const BASE_CONFIG: AdmissionConfig = {
   maxConcurrent: 5,
@@ -358,7 +359,7 @@ describe("an admitted request always gives its slot back", () => {
 
   function admit(svc: AdmissionService, orgId: string) {
     const { ctx, res } = makeContext({ orgId });
-    new AdmissionGuard(new Reflector(), svc).canActivate(ctx);
+    new AdmissionGuard(new Reflector(), svc, {} as ModuleRef).canActivate(ctx);
     return res;
   }
 
@@ -375,14 +376,14 @@ describe("an admitted request always gives its slot back", () => {
     expect(svc.snapshot().inFlight).toBe(0);
     /* And the org can still be served — the point of the whole thing. */
     const { ctx } = makeContext({ orgId: "org-a" });
-    expect(new AdmissionGuard(new Reflector(), svc).canActivate(ctx)).toBe(true);
+    expect(new AdmissionGuard(new Reflector(), svc, {} as ModuleRef).canActivate(ctx)).toBe(true);
   });
 
   it("does not double-release when the interceptor runs too", async () => {
     const svc = new AdmissionService(config);
     const { ctx, req, res } = makeContext({ orgId: "org-b" });
 
-    new AdmissionGuard(new Reflector(), svc).canActivate(ctx);
+    new AdmissionGuard(new Reflector(), svc, {} as ModuleRef).canActivate(ctx);
     expect(svc.snapshot().inFlight).toBe(1);
 
     const handler = { handle: () => of("ok") } as unknown as CallHandler;

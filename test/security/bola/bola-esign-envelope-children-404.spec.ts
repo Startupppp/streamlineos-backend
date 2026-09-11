@@ -114,7 +114,7 @@ function makeFields(h: Harness): SignFieldsService {
 }
 
 function makeRecipients(h: Harness): SignRecipientsService {
-  return new SignRecipientsService(h.db, { record: jest.fn() } as never, {} as never);
+  return new SignRecipientsService(h.db, { record: jest.fn() } as never, {} as never, {} as never);
 }
 
 function makeDocuments(h: Harness): SignDocumentsService {
@@ -301,7 +301,7 @@ describe("GET /sign/envelopes/:envelopeId/audit — already bound, asserted so i
       query: { signEnvelopes: { findFirst: envelopeFindFirst } },
       select: jest.fn(),
     } as unknown as Db;
-    const service = new SignAuditService(db);
+    const service = new SignAuditService(db, {} as never);
     await expect(
       service.listForEnvelope(systemEnvelopeScope(CALLER_ORG), null, CROSS_TENANT_ENVELOPE_ID),
     ).rejects.toThrow(NotFoundException);

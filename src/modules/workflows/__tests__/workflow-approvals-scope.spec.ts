@@ -1,6 +1,6 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
-import { WorkflowsExecutionService } from "../workflows-execution.service";
+import { WorkflowsApprovalService } from "../workflows-approval.service";
 
 /**
  * The three predicates that decide whose approval is whose, asserted as
@@ -10,7 +10,7 @@ import { WorkflowsExecutionService } from "../workflows-execution.service";
  * — 404 not 403 — and it is right to. But its select mock hands back the same
  * rows whatever the query says, so it cannot tell a scoped query from an
  * unscoped one: every one of the five predicates below could be deleted from
- * `lib/workflow-approvals.ts` with the whole workflows suite green, including
+ * `workflows-approval.service.ts` with the whole workflows suite green, including
  * the join org predicate that spec names as the thing it proves. An approval is
  * the permission to push someone else's workflow forward, so "anyone in any org
  * can list and action anyone's approvals" was one deleted line away, silently.
@@ -60,7 +60,7 @@ describe("getApprovals — the approver's inbox is scoped to the approver and th
 
   it("lists only approvals addressed to the caller", async () => {
     const { db, where } = inboxDb();
-    await new WorkflowsExecutionService(db).getApprovals(ORG, APPROVER);
+    await new WorkflowsApprovalService(db).getApprovals(ORG, APPROVER);
 
     expect(where).toHaveBeenCalledTimes(1);
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(APPROVER);
@@ -68,7 +68,7 @@ describe("getApprovals — the approver's inbox is scoped to the approver and th
 
   it("lists only approvals on executions in the caller's org", async () => {
     const { db, where } = inboxDb();
-    await new WorkflowsExecutionService(db).getApprovals(ORG, APPROVER);
+    await new WorkflowsApprovalService(db).getApprovals(ORG, APPROVER);
 
     expect(where).toHaveBeenCalledTimes(1);
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ORG);
@@ -111,7 +111,7 @@ describe("handleApproval — only the addressed approver, in the right org, may 
 
   it("reaches the approval only through an execution in the caller's org", async () => {
     const { db, joinOn } = decisionDb([ROW]);
-    await new WorkflowsExecutionService(db).handleApproval(ORG, APPROVER, APPROVAL_ID, {
+    await new WorkflowsApprovalService(db).handleApproval(ORG, APPROVER, APPROVAL_ID, {
       action: "approve",
     });
 
@@ -121,7 +121,7 @@ describe("handleApproval — only the addressed approver, in the right org, may 
 
   it("finds the approval only if it is addressed to the caller", async () => {
     const { db, selectWhere } = decisionDb([ROW]);
-    await new WorkflowsExecutionService(db).handleApproval(ORG, APPROVER, APPROVAL_ID, {
+    await new WorkflowsApprovalService(db).handleApproval(ORG, APPROVER, APPROVAL_ID, {
       action: "approve",
     });
 
@@ -136,7 +136,7 @@ describe("handleApproval — only the addressed approver, in the right org, may 
    */
   it("writes the decision only onto an approval addressed to the caller", async () => {
     const { db, updateWhere } = decisionDb([ROW]);
-    await new WorkflowsExecutionService(db).handleApproval(ORG, APPROVER, APPROVAL_ID, {
+    await new WorkflowsApprovalService(db).handleApproval(ORG, APPROVER, APPROVAL_ID, {
       action: "approve",
     });
 
@@ -147,7 +147,7 @@ describe("handleApproval — only the addressed approver, in the right org, may 
   it("writes nothing when the scoped read finds no approval", async () => {
     const { db, update } = decisionDb([]);
     await expect(
-      new WorkflowsExecutionService(db).handleApproval(ORG, APPROVER, APPROVAL_ID, {
+      new WorkflowsApprovalService(db).handleApproval(ORG, APPROVER, APPROVAL_ID, {
         action: "approve",
       }),
     ).rejects.toThrow(NotFoundException);
