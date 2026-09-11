@@ -1359,6 +1359,11 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "e2e test spec file; reads are test scaffolding with controlled data; test scope inherently bounded 2026-09-01"
     },
+    "/e-sign/lib/bulk-send-pass.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Carried from /e-sign/sign-bulk-send.service.ts by the file-size split on 2026-09-11, with the two reads it covers: the pass's pending rows (job_id + status = pending) and finishJob's status recount (job_id). Both are one job's rows, bounded by the job's row count",
+      "justification": "bulk send reads bounded by bulk send ID; recipient list bounded by bulk send configuration (bulkSendMaxRowsPerJob, which an org may raise to 10,000). A LIMIT on the pending read would strand rows and on the recount would miscount the job. The origin keeps its entry for createJob's active-jobs findMany, which stayed in the service 2026-09-11"
+    },
     "/e-sign/sign-ai.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
