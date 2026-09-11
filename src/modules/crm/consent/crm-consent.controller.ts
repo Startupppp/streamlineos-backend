@@ -1,3 +1,4 @@
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import {
   Body,
@@ -148,6 +149,7 @@ export class CrmPublicConsentController {
   }
 
   @Post("unsubscribe/:token")
+  @BodylessAction()
   @Public()
   @HttpCode(200)
   @UseGuards(RateLimitGuard)

@@ -1,3 +1,4 @@
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import {
   Body,
   Controller,
@@ -71,6 +72,7 @@ export class DealsCompetitorSuggestionsController {
    * may disagree.
    */
   @Post(":dealId/competitor-suggestions/scan")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("crm:deals:update")
   scan(

@@ -1,3 +1,4 @@
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import {
   Body,
   Controller,
@@ -107,6 +108,7 @@ export class CallAnalysisController {
    * analysed by the person who made it.
    */
   @Post(":activityId/analysis")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:call-analysis:run")
   @HttpCode(200)

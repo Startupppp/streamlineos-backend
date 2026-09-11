@@ -1,3 +1,4 @@
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import {
   Controller,
   Get,
@@ -114,6 +115,7 @@ export class WhatsAppIngressController {
    * arriving on the wrong tenant's URL files nothing and says so.
    */
   @Post(":channelId")
+  @BodylessAction()
   @HttpCode(200)
   async deliverToChannel(
     @Param("channelId") channelId: string,
@@ -133,6 +135,7 @@ export class WhatsAppIngressController {
    * the tenant, and the adapter re-checks the line against the binding.
    */
   @Post()
+  @BodylessAction()
   @HttpCode(200)
   async deliver(
     @Req() req: RawBodyRequest<Request>,

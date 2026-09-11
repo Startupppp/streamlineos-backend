@@ -1,3 +1,4 @@
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import {
   Body,
   Controller,
@@ -202,6 +203,7 @@ export class CommissionController {
   }
 
   @Post("earnings/:earningId/approve")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("crm:commission-earnings:approve")
   /**

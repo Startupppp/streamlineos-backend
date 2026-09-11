@@ -1,3 +1,4 @@
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import {
   Body,
   Controller,
@@ -132,6 +133,7 @@ export class ArInvoicesController {
    * call's journal rather than posting a second one.
    */
   @Post(":invoiceId/post")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:receivables:manage")
   @HttpCode(200)

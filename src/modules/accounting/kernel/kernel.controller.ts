@@ -1,3 +1,4 @@
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import {
   Body,
   Controller,
@@ -224,6 +225,7 @@ export class AccountingKernelController {
   }
 
   @Post("fiscal-years/open-next")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:periods:manage")
   async openNextFiscalYear(@CurrentUser() u: CurrentUserContext) {

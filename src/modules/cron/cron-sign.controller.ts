@@ -1,3 +1,4 @@
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import { Controller, Get, Headers, HttpCode, Post, Query } from "@nestjs/common";
 import { Public } from "../../common/auth/public.decorator";
 import { SignEnvelopeSweepsService } from "../e-sign/sign-envelope-sweeps.service";
@@ -34,6 +35,7 @@ export class CronSignController {
   }
 
   @Post("sign-reminder-sweep")
+  @BodylessAction()
   @HttpCode(200)
   reminderPost(
     @Headers("authorization") authorization?: string,
@@ -51,6 +53,7 @@ export class CronSignController {
   }
 
   @Post("sign-expiration-sweep")
+  @BodylessAction()
   @HttpCode(200)
   expirationPost(
     @Headers("authorization") authorization?: string,

@@ -1,3 +1,4 @@
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
@@ -89,6 +90,7 @@ export class LifecycleTriggersController {
    * honest way to send one of those is to write it.
    */
   @Post(":customerLifecycleId/consider")
+  @BodylessAction()
   @Idempotent("crm.lifecycle.trigger-consider")
   @RequirePermission("crm:lifecycle-triggers:run")
   consider(

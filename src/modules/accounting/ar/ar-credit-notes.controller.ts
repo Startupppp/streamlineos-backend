@@ -1,3 +1,4 @@
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import {
   Body,
   Controller,
@@ -120,6 +121,7 @@ export class ArCreditNotesController {
   }
 
   @Post(":creditNoteId/post")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:credit-notes:manage")
   @HttpCode(200)

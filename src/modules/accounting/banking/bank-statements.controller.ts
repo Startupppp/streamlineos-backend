@@ -1,3 +1,4 @@
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { Body, Controller, Get, HttpCode, Param, Post, Query, Res, UseGuards } from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
@@ -99,6 +100,7 @@ export class BankStatementsController {
   }
 
   @Post(":statementId/reconcile")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:banking:reconcile")
   @HttpCode(200)

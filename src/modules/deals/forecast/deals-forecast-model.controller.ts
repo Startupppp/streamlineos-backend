@@ -1,3 +1,4 @@
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { Controller, Get, HttpCode, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -34,6 +35,7 @@ export class DealsForecastModelController {
   }
 
   @Post("train")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("crm:deals:manage")
   train(@CurrentUser() u: CurrentUserContext) {

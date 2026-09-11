@@ -1,3 +1,4 @@
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import { Controller, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
@@ -73,6 +74,7 @@ export class CustomerHealthController {
    * recording why.
    */
   @Post(":partyId/recompute")
+  @BodylessAction()
   @RequirePermission("crm:customer-health:manage")
   recompute(@Param("partyId") partyId: string, @CurrentUser() u: CurrentUserContext) {
     return this.health.assess(u.orgId, partyId);

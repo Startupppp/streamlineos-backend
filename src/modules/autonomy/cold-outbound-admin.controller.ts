@@ -1,3 +1,4 @@
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
@@ -66,6 +67,7 @@ export class ColdOutboundAdminController {
    * would strand the tenant on a stale answer.
    */
   @Post("domains/:sendingDomainId/verify")
+  @BodylessAction()
   @RequirePermission("crm:autonomy:manage")
   verifyDomain(
     @Param("sendingDomainId") sendingDomainId: string,
@@ -75,6 +77,7 @@ export class ColdOutboundAdminController {
   }
 
   @Post("domains/:sendingDomainId/warmup")
+  @BodylessAction()
   @Idempotent("crm.autonomy.cold-domain-warmup")
   @RequirePermission("crm:autonomy:manage")
   startWarmup(
@@ -103,6 +106,7 @@ export class ColdOutboundAdminController {
    * deliverability halt the tenant never read.
    */
   @Post("resume")
+  @BodylessAction()
   @Idempotent("crm.autonomy.cold-track-resume")
   @RequirePermission("crm:autonomy:manage")
   resume(@CurrentUser() u: CurrentUserContext) {

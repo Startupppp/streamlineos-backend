@@ -206,6 +206,7 @@ export class AutonomyReviewController {
 
   /** Let that class reach that party again. The stop's only exit. */
   @Post("class-stops/:outboundClassStopId/release")
+  @BodylessAction()
   @Idempotent("crm.autonomy.release-class-stop")
   @RequirePermission("crm:autonomy:manage")
   releaseClassStop(

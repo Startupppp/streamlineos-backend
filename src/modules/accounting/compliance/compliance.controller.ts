@@ -1,3 +1,4 @@
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import {
   ConflictException,
   Controller,
@@ -93,6 +94,7 @@ export class ComplianceController {
    * evidence against the tenant.
    */
   @Post("documents/:documentType/:documentId/submit")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:receivables:manage")
   @Idempotent("accounting.compliance.document.submit")
