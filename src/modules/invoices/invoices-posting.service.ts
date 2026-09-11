@@ -240,6 +240,7 @@ export class InvoicesPostingService {
     orgId: string,
     userId: string,
     invoice: { id: number; currency: string; issueDate: string },
+    paymentId: number,
     settledAmount: number,
     paymentDate: string,
   ): Promise<string | null> {
@@ -275,9 +276,12 @@ export class InvoicesPostingService {
       {
         sourceType: "fx_reval",
         sourceId: String(invoice.id),
-        purpose: `realized:${paymentDate}`,
+        // Keyed on the payment, not the day: two receipts against one invoice on
+        // the same date each clear their own residue instead of the second
+        // replaying the first's journal.
+        purpose: `realized:payment:${paymentId}`,
         journalDate: paymentDate,
-        memo: `Realised FX on invoice ${invoice.id}`,
+        memo: `Realised FX on invoice ${invoice.id}, payment ${paymentId}`,
         lines: [
           {
             accountTag: gain ? "ar_control" : "fx_loss",
