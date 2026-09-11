@@ -119,8 +119,20 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
   },
   {
     namespace: "org:units:<orgId>",
-    description: "Org unit list by kind. Never populated: no hierarchy read ever called cachedForOrg/cachedVersioned on it, and the 18 invalidateForOrg(orgId,'org:units:<KIND>') writes that suggested otherwise were removed. The live hierarchy cache is org:hierarchy:<orgId>, owned by OrgHierarchyCacheService.",
+    description: "Org unit list by kind. Never populated: the 18 invalidateForOrg(orgId,'org:units:<KIND>') writes that suggested otherwise were removed, and no read ever produced the key. Org unit reads are cached under org:hierarchy:<orgId> instead.",
     invalidation: { kind: "ttl-only", reason: "Dead namespace — key never produced or consumed; document to trigger removal" },
+  },
+  {
+    namespace: "org:hierarchy:<orgId>",
+    description: "Every org hierarchy read, version-keyed via cachedVersionedForOrg and owned by OrgHierarchyCacheService. Sub-keys: overview and tree:<strategy> carry the caller's ScopedRead discriminator because those reads are actor-scoped; units:list:<kind>:<status>:<search>:<cursor>:<limit> and units:get:<kind>:<id> carry none because the per-kind handlers pass only (orgId, query) — no rbacScope reaches OrgUnitCrudService, so every holder of settings:view sees identical rows. Adding a DataScope to those reads means adding the discriminator to these keys in the same change.",
+    invalidation: {
+      kind: "write",
+      events: [
+        "OrgUnitCrudService.create/update (every kind funnels through auditMutation)",
+        "WorkspaceOnboardingService.generateWorkspace",
+        "EmployeeBulkOnboardingService (when hierarchy rows change)",
+      ],
+    },
   },
   {
     namespace: "tasks:list:<orgId>",

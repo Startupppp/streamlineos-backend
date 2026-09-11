@@ -8,6 +8,7 @@ import { OrgHierarchyLocationsService } from "./org-hierarchy-locations.service"
 import { OrgHierarchyTeamsService } from "./org-hierarchy-teams.service";
 import { encodeOrgUnitCursor } from "./org-hierarchy-list-filters";
 import { OrgUnitCrudService } from "./org-unit-crud";
+import { orgHierarchyCacheStub } from "../../../../test/helpers/org-hierarchy-cache-stub";
 
 const ORG_ID = "org-1";
 const UNIT_ID = "00000000-0000-0000-0000-000000000001";
@@ -86,7 +87,7 @@ function makeCursorDb(rows?: Array<Record<string, unknown>>) {
 }
 
 const audit = { logCritical: jest.fn() };
-const cache = { invalidateAfterMutation: jest.fn() };
+const cache = orgHierarchyCacheStub();
 
 function createCrud(db: Db) {
   return new OrgUnitCrudService(db, audit, cache);

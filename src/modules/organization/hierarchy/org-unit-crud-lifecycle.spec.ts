@@ -3,6 +3,7 @@ import type { Db } from "../../../db/drizzle.module";
 import { OrgHierarchyBranchesService } from "./org-hierarchy-branches.service";
 import { OrgHierarchyBusinessUnitsService } from "./org-hierarchy-business-units.service";
 import { OrgUnitCrudService } from "./org-unit-crud";
+import { orgHierarchyCacheStub } from "../../../../test/helpers/org-hierarchy-cache-stub";
 
 const ORG_ID = "org-1";
 const USER_ID = "user-1";
@@ -56,11 +57,8 @@ function makeHarness(
   const updateWhere = jest.fn().mockReturnValue({ returning: updateReturning });
   const updateSet = jest.fn().mockReturnValue({ where: updateWhere });
   const audit = { logCritical: jest.fn().mockResolvedValue(undefined) };
-  const cache = {
-    invalidateAfterMutation: cacheFailure
-      ? jest.fn().mockRejectedValue(cacheFailure)
-      : jest.fn().mockResolvedValue(undefined),
-  };
+  const cache = orgHierarchyCacheStub();
+  if (cacheFailure) cache.invalidateAfterMutation.mockRejectedValue(cacheFailure);
   const db = {
     select,
     insert: jest.fn().mockReturnValue({ values: insertValues }),

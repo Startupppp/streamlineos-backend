@@ -4,6 +4,7 @@ import { OrgHierarchyBranchesService } from "./org-hierarchy-branches.service";
 import { OrgHierarchyCostCentersService } from "./org-hierarchy-cost-centers.service";
 import { OrgHierarchyLocationsService } from "./org-hierarchy-locations.service";
 import { OrgUnitCrudService } from "./org-unit-crud";
+import { orgHierarchyCacheStub } from "../../../../test/helpers/org-hierarchy-cache-stub";
 
 const dialect = new PgDialect();
 
@@ -37,7 +38,7 @@ function makeHarness(code: string) {
   const crud = new OrgUnitCrudService(
     db,
     { logCritical: jest.fn() },
-    { invalidateAfterMutation: jest.fn() },
+    orgHierarchyCacheStub(),
   );
   return { crud, findFirst, insertValues };
 }

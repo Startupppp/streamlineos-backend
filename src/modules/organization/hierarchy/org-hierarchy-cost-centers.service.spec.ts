@@ -1,6 +1,7 @@
 import type { Db } from "../../../db/drizzle.module";
 import { OrgHierarchyCostCentersService } from "./org-hierarchy-cost-centers.service";
 import { OrgUnitCrudService } from "./org-unit-crud";
+import { orgHierarchyCacheStub } from "../../../../test/helpers/org-hierarchy-cache-stub";
 
 describe("OrgHierarchyCostCentersService", () => {
   it("archives a cost center and never hard-deletes the row", async () => {
@@ -34,7 +35,7 @@ describe("OrgHierarchyCostCentersService", () => {
       delete: hardDelete,
     } as unknown as Db;
     const audit = { logCritical: jest.fn().mockResolvedValue(undefined) };
-    const cache = { invalidateAfterMutation: jest.fn() };
+    const cache = orgHierarchyCacheStub();
     const service = new OrgHierarchyCostCentersService(
       new OrgUnitCrudService(db, audit, cache),
     );

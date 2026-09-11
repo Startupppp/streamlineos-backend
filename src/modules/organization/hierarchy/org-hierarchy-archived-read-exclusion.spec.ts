@@ -5,11 +5,12 @@ import { OrgHierarchyBranchesService } from "./org-hierarchy-branches.service";
 import { OrgHierarchyDepartmentsService } from "./org-hierarchy-departments.service";
 import { OrgHierarchyTeamsService } from "./org-hierarchy-teams.service";
 import { OrgUnitCrudService } from "./org-unit-crud";
+import { orgHierarchyCacheStub } from "../../../../test/helpers/org-hierarchy-cache-stub";
 
 const ORG = "org-1";
 
 const audit = () => ({ logCritical: jest.fn() });
-const cache = () => ({ invalidateAfterMutation: jest.fn() });
+const cache = () => (orgHierarchyCacheStub());
 
 function crud(db: Db) {
   return new OrgUnitCrudService(db, audit(), cache());

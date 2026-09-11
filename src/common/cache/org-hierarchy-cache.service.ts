@@ -4,13 +4,20 @@ import { CACHE_TTL } from "./cache-keys";
 import { CacheService } from "./cache.service";
 
 export interface OrgHierarchyCacheContext {
-  /** `ScopedRead.discriminator` — already actor-qualified for the scopes that need it. */
+  // `ScopedRead.discriminator` — already actor-qualified for the scopes that need it.
   discriminator: string;
 }
 
 export type OrgHierarchyCacheResource =
   | "overview"
   | `tree:${"ADJACENCY" | "SHADOW_CLOSURE" | "CLOSURE"}:r${number}`;
+
+export interface OrgUnitListQuery {
+  status?: string;
+  search?: string;
+  cursor?: string;
+  limit: number;
+}
 
 @Injectable()
 export class OrgHierarchyCacheService {
@@ -25,7 +32,43 @@ export class OrgHierarchyCacheService {
     return this.cache.cachedVersionedForOrg(
       orgId,
       "org:hierarchy",
-      `${resource}:${this.viewerKey(context)}`,
+      `${resource}:scope:${context.discriminator}`,
+      fetcher,
+      CACHE_TTL.LONG,
+    );
+  }
+
+  readUnitList<T>(
+    orgId: string,
+    kind: string,
+    query: OrgUnitListQuery,
+    fetcher: () => Promise<T>,
+  ): Promise<T> {
+    const filters = JSON.stringify([
+      query.status ?? null,
+      query.search ?? null,
+      query.cursor ?? null,
+      query.limit,
+    ]);
+    return this.cache.cachedVersionedForOrg(
+      orgId,
+      "org:hierarchy",
+      `units:list:${kind}:${filters}`,
+      fetcher,
+      CACHE_TTL.LONG,
+    );
+  }
+
+  readUnitGet<T>(
+    orgId: string,
+    kind: string,
+    id: string,
+    fetcher: () => Promise<T>,
+  ): Promise<T> {
+    return this.cache.cachedVersionedForOrg(
+      orgId,
+      "org:hierarchy",
+      `units:get:${kind}:${id}`,
       fetcher,
       CACHE_TTL.LONG,
     );
@@ -42,9 +85,5 @@ export class OrgHierarchyCacheService {
     if (!registerAfterCommit(invalidate)) {
       await invalidate();
     }
-  }
-
-  private viewerKey(context: OrgHierarchyCacheContext): string {
-    return `scope:${context.discriminator}`;
   }
 }

@@ -172,7 +172,10 @@ export class OrgUnitCrudService {
     @Inject(AuditService)
     private readonly audit: Pick<AuditService, "logCritical">,
     @Inject(OrgHierarchyCacheService)
-    private readonly cache: Pick<OrgHierarchyCacheService, "invalidateAfterMutation">,
+    private readonly cache: Pick<
+      OrgHierarchyCacheService,
+      "invalidateAfterMutation" | "readUnitList" | "readUnitGet"
+    >,
   ) {}
 
   async list<TCreate, TUpdate extends { status?: OrgUnitStatus }, TRead extends { id: string; name: string }, TList extends { id: string; name: string }, TOutput, TListOutput>(
@@ -180,17 +183,19 @@ export class OrgUnitCrudService {
     orgId: string,
     query: ListQueryInput,
   ) {
-    const rows = await adapter.listRows(this.db, {
-      where: getOrgUnitListFilter(
-        orgId,
-        adapter.kind,
-        query,
-        adapter.searchExtension,
-      ),
-      orderBy: [asc(orgUnitNormalizedName), asc(orgUnits.id)],
-      limit: query.limit + 1,
+    return this.cache.readUnitList(orgId, adapter.kind, query, async () => {
+      const rows = await adapter.listRows(this.db, {
+        where: getOrgUnitListFilter(
+          orgId,
+          adapter.kind,
+          query,
+          adapter.searchExtension,
+        ),
+        orderBy: [asc(orgUnitNormalizedName), asc(orgUnits.id)],
+        limit: query.limit + 1,
+      });
+      return toOrgUnitCursorPage(rows, query.limit, adapter.toListOutput);
     });
-    return toOrgUnitCursorPage(rows, query.limit, adapter.toListOutput);
   }
 
   async get<TCreate, TUpdate extends { status?: OrgUnitStatus }, TRead extends { id: string; name: string }, TList extends { id: string; name: string }, TOutput, TListOutput>(
@@ -198,11 +203,13 @@ export class OrgUnitCrudService {
     orgId: string,
     id: string,
   ): Promise<TOutput | null> {
-    const row = await adapter.readRow(
-      this.db,
-      getOrgUnitRowFilter(orgId, adapter.kind, id),
-    );
-    return row ? adapter.toOutput(row) : null;
+    return this.cache.readUnitGet(orgId, adapter.kind, id, async () => {
+      const row = await adapter.readRow(
+        this.db,
+        getOrgUnitRowFilter(orgId, adapter.kind, id),
+      );
+      return row ? adapter.toOutput(row) : null;
+    });
   }
 
   async create<TCreate, TUpdate extends { status?: OrgUnitStatus }, TRead extends { id: string; name: string }, TList extends { id: string; name: string }, TOutput, TListOutput>(

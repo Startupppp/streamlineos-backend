@@ -3,6 +3,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { OrgHierarchyBranchesService } from "./org-hierarchy-branches.service";
 import type { Db } from "../../../db/drizzle.module";
 import { OrgUnitCrudService } from "./org-unit-crud";
+import { orgHierarchyCacheStub } from "../../../../test/helpers/org-hierarchy-cache-stub";
 
 const dialect = new PgDialect();
 
@@ -82,7 +83,7 @@ describe("OrgHierarchyBranchesService — cross-tenant isolation", () => {
       query: { orgUnits: { findFirst: jest.fn().mockResolvedValue(undefined) } },
     } as unknown as Db;
     const audit = { log: jest.fn(), logCritical: jest.fn() };
-    const cache = { invalidateAfterMutation: jest.fn() };
+    const cache = orgHierarchyCacheStub();
     const svc = new OrgHierarchyBranchesService(
       new OrgUnitCrudService(db, audit, cache),
     );
