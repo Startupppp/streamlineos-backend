@@ -355,6 +355,18 @@ const BASELINE_JOURNAL_INTEGRITY = new Set([
   // commits on cold replay (no-op) and that production never got (0678 also failed there).
   "journal-order:0680_kb_versions_author_membership.sql",
   "insert-order:0678b_feedback_cycle_responses_rls_complete.sql",
+  // Cross-lane numbering collisions from merging integration/crm-ts into the inventory
+  // branch (2026-09-11). In each collision the file NOT on origin/main was renamed to the
+  // next free letter suffix. Renaming is hash-safe: every applier keys on sha256(content)
+  // and the ledger stores no tag. These are not true inserts, so their `when` does not sit
+  // between NNNN_ and the next plain number. Each one below is already applied (content
+  // hash or `when` present in a ledger we can read, named per entry). check:migration-ledger
+  // joins on `when`, so moving it would orphan those rows. Hence baseline, not restamp.
+  // 0267a-0275a: crm lane, interleaved after its own-lane predecessors.
+  "insert-order:0267a_subprocessor_register.sql", // Neon(when), streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +1 scratch
+  "insert-order:0268a_subject_requests.sql", // Neon(hash), streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +1 scratch
+  "insert-order:0269a_payment_provider_columns.sql", // Neon(hash), streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +1 scratch
+  "insert-order:0271a_waitlist_admission.sql", // streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +1 scratch
 ]);
 
 // ─── check functions ──────────────────────────────────────────────────────────
