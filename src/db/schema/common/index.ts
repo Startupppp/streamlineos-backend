@@ -18,6 +18,8 @@ export * from "./integrations";
 export * from "./email";
 export * from "./workflow";
 export * from "./notifications-delivery";
+export * from "./notifications-preferences";
+export * from "./notifications-digests";
 export * from "./user-management";
 export * from "./idempotency";
 export * from "./outbox";
