@@ -1040,15 +1040,29 @@ function resolveSpecifier(filePath, spec, fileSet) {
   ).find((c) => fileSet.has(c)) ?? null;
 }
 
-/** Symbol → absolute file path, from a file's own import statements. */
+/**
+ * Local binding name → { target file, original exported name }, from a file's
+ * own import statements.
+ *
+ * Keyed on the LOCAL name, because that is the name the @Module arrays write.
+ * `import { ReportsModule as AccountingReportsModule }` then lists
+ * `AccountingReportsModule` in `imports:`, while the target file declares
+ * `ReportsModule` — so the two names must both be carried. Keying on the
+ * exported name instead left every aliased import unresolvable, and the
+ * accounting reports module's six services read as orphans while being wired
+ * correctly through accounting.module.ts.
+ */
 function importedSymbolPaths(filePath, src, fileSet) {
   const map = new Map();
   for (const m of src.matchAll(NAMED_IMPORT_RE)) {
     const target = resolveSpecifier(filePath, m[2], fileSet);
     if (!target) continue;
     for (const raw of m[1].split(",")) {
-      const name = raw.replace(/\btype\b/, "").split(/\bas\b/)[0].trim();
-      if (name) map.set(name, target);
+      const cleaned = raw.replace(/\btype\b/, "").trim();
+      if (!cleaned) continue;
+      const parts = cleaned.split(/\s+as\s+/).map((x) => x.trim());
+      const local = parts[1] ?? parts[0];
+      if (local) map.set(local, { target, original: parts[0] });
     }
   }
   return map;
@@ -1230,13 +1244,16 @@ export function analyseRegistration(sourceByFile, options = {}) {
       // A provider may be listed under a name a re-export renames onto the real
       // class — GdprExportWorkerImplementation is provided as
       // GdprExportWorkerService. Resolve to the declaring file so the alias
-      // does not read as an orphan.
-      const identity = locate(importPaths.get(name) ?? null, name, wantClass);
+      // does not read as an orphan. An `import { X as Y }` renames it the same
+      // way, so the lookup starts from the binding's original export name.
+      const binding = importPaths.get(name);
+      const identity = binding ? locate(binding.target, binding.original, wantClass) : null;
       if (identity) registeredIdentities.add(identity);
     }
 
     for (const imported of mod.imports) {
-      const viaImport = locate(importPaths.get(imported) ?? null, imported, wantModule);
+      const binding = importPaths.get(imported);
+      const viaImport = binding ? locate(binding.target, binding.original, wantModule) : null;
       if (viaImport) {
         queue.push(viaImport);
         continue;
@@ -1721,6 +1738,45 @@ export class M {}`,
     assertD(
       "a class provided under a re-exported alias is not an orphan",
       analyseRegistration(aliased, opts).exempt.some(
+        (e) => e.className === "ImplementationService" && e.verdict === "aliased",
+      ),
+    );
+
+    // The importing file may rename the module instead:
+    // `import { ReportsModule as AccountingReportsModule }` in
+    // accounting.module.ts, because app.module.ts already registers a
+    // ReportsModule of its own. The import map used to be keyed on the EXPORTED
+    // name, so the local alias resolved to nothing and the walk stopped there —
+    // the accounting reports module's six services read as orphans while being
+    // wired correctly.
+    const aliasedImport = new Map(sources);
+    aliasedImport.set(
+      `${base}/app.module.ts`,
+      `import { FeatureModule as RenamedFeatureModule } from "./b/feature.module";\n@Module({ imports: [RenamedFeatureModule] })\nexport class AppModule {}`,
+    );
+    const aliasedImportResult = analyseRegistration(aliasedImport, opts);
+    assertD(
+      "a module imported under a local alias is still reachable",
+      !flagged(aliasedImportResult, "WiredService"),
+    );
+    assertD(
+      "the orphan is still found through an aliased module import",
+      flagged(aliasedImportResult, "OrphanService"),
+    );
+
+    // The same rename on a provider import resolves to the declaring file, so
+    // the class is exempt as aliased rather than reported as an orphan.
+    const aliasedProvider = new Map([
+      [`${base}/b/impl.ts`, `@Injectable()\nexport class ImplementationService {}`],
+      [
+        `${base}/b/feature.module.ts`,
+        `import { ImplementationService as PublicService } from "./impl";\n@Module({ providers: [PublicService] })\nexport class FeatureModule {}`,
+      ],
+      [`${base}/app.module.ts`, app],
+    ]);
+    assertD(
+      "a class provided under a locally aliased import is not an orphan",
+      analyseRegistration(aliasedProvider, opts).exempt.some(
         (e) => e.className === "ImplementationService" && e.verdict === "aliased",
       ),
     );
