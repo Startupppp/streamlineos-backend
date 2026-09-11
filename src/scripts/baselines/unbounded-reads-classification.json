@@ -1253,6 +1253,11 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "L98 reads deal by id+orgId (single-row); L104 reads dealApprovalRules by orgId+isActive (small config set per org); all bounded 2026-09-01"
     },
+    "/deals/lib/deal-bulk-ops.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11 by reading the call site, when the bulk operations moved out of /deals/deals-crud.service.ts unchanged \u2014 this gate keys on path, so a move forces a restatement. The one match is the BEFORE snapshot a bulk stage change takes so it can write the transition ledger: filtered `inArray` on `input.dealIds`, which is the request's own list, and skipped entirely when the update does not touch the stage. The bound is the caller's payload, which the DTO caps. FALSE-POSITIVE rather than BOUNDED because BOUNDED is a FIXED verdict here \u2014 it asserts the scanner no longer matches, and a continued match is reported as a regression."
+    },
     "/deals/deals-crud.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",

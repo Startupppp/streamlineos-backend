@@ -1,9 +1,9 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { logSideEffectFailure } from "../../common/logger/side-effect";
-import { and, desc, eq, inArray, isNull, type SQL } from "drizzle-orm";
+import { and, desc, eq, isNull, type SQL } from "drizzle-orm";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
-import { deals, dealStageTransitions, organizationMembers } from "../../db/schema";
+import { deals, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -12,7 +12,12 @@ import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { CrmValidationService } from "../crm/metadata/crm-validation.service";
 import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
-import { toMinorUnits, toTransitionRow } from "./deal-stage-ledger";
+import { toMinorUnits } from "./deal-stage-ledger";
+import {
+  bulkDelete,
+  bulkUpdate,
+  type DealBulkDeps,
+} from "./lib/deal-bulk-ops";
 import type {
   CreateDealInput,
   DealBulkDeleteInput,
@@ -163,128 +168,18 @@ export class DealsCrudService {
     return { deleted: true };
   }
 
-  /**
-   * One batched UPDATE rather than N single writes: the whole selection either
-   * moves or it does not, and the row count comes from `.returning()` so a
-   * caller passing another tenant's ids is told 0, not "success".
-   */
+  /** @see lib/deal-bulk-ops.ts */
   async bulkUpdate(orgId: string, userId: string, input: DealBulkUpdateInput) {
-    const setData: Partial<typeof deals.$inferInsert> = { updatedAt: new Date() };
-    if (input.update.stage !== undefined) setData.stage = input.update.stage;
-
-    if (input.update.assignedToId !== undefined) {
-      const member = await this.db.query.organizationMembers.findFirst({
-        where: and(
-          eq(organizationMembers.userId, input.update.assignedToId),
-          eq(organizationMembers.orgId, orgId),
-        ),
-        columns: { userId: true },
-      });
-      if (!member) throw new BadRequestException("Assignee is not a member of this organization");
-      setData.assignedToId = input.update.assignedToId;
-    }
-
-    /**
-     * A bulk stage change is still a stage change.
-     *
-     * This path used to move any number of deals with no transition recorded at
-     * all, so the pipeline's own history depended on which screen a person
-     * happened to use. The prior stages are read and the ledger written inside
-     * the same transaction as the update, so a rolled-back move leaves no row
-     * claiming it happened.
-     */
-    const updated = await this.db.transaction(async (tx) => {
-      const before =
-        setData.stage === undefined
-          ? []
-          : await (tx as Db)
-              .select({ id: deals.id, stage: deals.stage, pipelineId: deals.pipelineId })
-              .from(deals)
-              .where(
-                and(
-                  eq(deals.orgId, orgId),
-                  inArray(deals.id, input.dealIds),
-                  isNull(deals.deletedAt),
-                ),
-              );
-
-      const rows = await (tx as Db)
-        .update(deals)
-        .set(setData)
-        .where(
-          and(
-            eq(deals.orgId, orgId),
-            inArray(deals.id, input.dealIds),
-            isNull(deals.deletedAt),
-          ),
-        )
-        .returning({ id: deals.id });
-
-      const toStage = setData.stage;
-      if (toStage !== undefined) {
-        const moved = before.filter((deal) => deal.stage !== toStage);
-        if (moved.length > 0)
-          await (tx as Db).insert(dealStageTransitions).values(
-            moved.map((deal) =>
-              toTransitionRow({
-                organizationId: orgId,
-                dealId: deal.id,
-                pipelineId: deal.pipelineId ?? null,
-                fromStage: deal.stage ?? null,
-                toStage,
-                actor: { kind: "human", userId },
-                reason: "Bulk stage change",
-              }),
-            ),
-          );
-      }
-
-      return rows;
-    });
-
-    await this.invalidateDealCaches(orgId);
-    this.audit.log({
-      action: "deal.bulk_updated",
-      userId,
-      orgId,
-      targetType: "deal",
-      metadata: { requested: input.dealIds.length, updated: updated.length, update: input.update },
-    });
-
-    return { updated: updated.length, requested: input.dealIds.length };
+    return bulkUpdate(this.bulkDeps, orgId, userId, input);
   }
 
+  /** @see lib/deal-bulk-ops.ts */
   async bulkDelete(orgId: string, userId: string, input: DealBulkDeleteInput) {
-    const deleted = await this.db
-      .update(deals)
-      .set({ deletedAt: new Date() })
-      .where(
-        and(
-          eq(deals.orgId, orgId),
-          inArray(deals.id, input.dealIds),
-          isNull(deals.deletedAt),
-        ),
-      )
-      .returning({ id: deals.id });
-
-    await this.invalidateDealCaches(orgId);
-    this.audit.log({
-      action: "deal.bulk_deleted",
-      userId,
-      orgId,
-      targetType: "deal",
-      metadata: { requested: input.dealIds.length, deleted: deleted.length },
-    });
-
-    return { deleted: deleted.length, requested: input.dealIds.length };
+    return bulkDelete(this.bulkDeps, orgId, userId, input);
   }
 
-  private async invalidateDealCaches(orgId: string): Promise<void> {
-    await Promise.all([
-      this.cache.invalidateNamespace(`deals:list:${orgId}`),
-      this.cache.invalidate(CACHE_KEYS.dealsForecast(orgId)),
-      this.cache.invalidate(CACHE_KEYS.salesDashboard(orgId)),
-    ]);
+  private get bulkDeps(): DealBulkDeps {
+    return { db: this.db, cache: this.cache, audit: this.audit };
   }
 
   async cloneDeal(orgId: string, dealId: number) {
