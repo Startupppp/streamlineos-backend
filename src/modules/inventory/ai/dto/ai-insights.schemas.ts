@@ -42,13 +42,3 @@ export interface InsightCandidate {
   /** Fingerprint of the material figures, for "is this still true?". */
   evidenceHash: string;
 }
-
-export const reorderProposalBodySchema = z.object({ variantId: z.number().int().positive(), warehouseId: z.number().int().positive().optional() }).strict();
-export const confirmProposalBodySchema = z.object({ proposalId: z.number().int().positive(), token: z.string().min(1) }).strict();
-export const digestQuerySchema = z.object({ narrate: z.enum(["true", "false"]).optional() }).strict();
-export const supplierDelayQuerySchema = z.object({ vendorId: z.coerce.number().int().positive().optional() }).strict();
-
-export type ReorderProposalBodyInput = z.infer<typeof reorderProposalBodySchema>;
-export type ConfirmProposalBodyInput = z.infer<typeof confirmProposalBodySchema>;
-export type DigestQueryInput = z.infer<typeof digestQuerySchema>;
-export type SupplierDelayQueryInput = z.infer<typeof supplierDelayQuerySchema>;
