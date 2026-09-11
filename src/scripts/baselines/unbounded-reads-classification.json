@@ -2911,6 +2911,11 @@
       "note": "Has 5 explicit .limit() calls; KB article suggestions are capped per search context",
       "justification": "KB reads bounded by articleId or spaceId (per-article context) 2026-09-01"
     },
+    "/support/core/lib/support-kb-articles.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Split out of /support/core/support-kb.service.ts 2026-09-11, restating that file's FALSE-POSITIVE for the three tag reads that moved. All three are the article's own tag set, and that set has a hard cap: createKbArticleSchema/updateKbArticleSchema declare tags as z.array(...).max(20) (dto/support-kb.schemas.ts L33/L43), and syncArticleTags is the only writer of kb_article_tags on this path. L219 is bounded directly by inArray(kbTags.slug, slugged) over that <=20 input; L120 (getArticle) and L182 (updateArticle) join kb_article_tags for one articleId, so they return at most the same 20 rows. The article list itself keeps its .limit(100)."
+    },
     "/support/core/support-macros.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Has 3 explicit .limit() calls and 5 aggregate references; macro list is bounded per org",
