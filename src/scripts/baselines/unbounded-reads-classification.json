@@ -998,6 +998,11 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "client reads bounded by clientId+orgId (single-record lookups) or by explicit filter conditions 2026-09-01"
     },
+    "/contacts/lib/contact-duplicates.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11 by reading the call site, when the duplicate search and merge moved out of /contacts/contact-roles.service.ts unchanged \u2014 this gate keys on path, so a move forces a restatement. The one match is `mergeCandidate`, a single-row read of ONE contact's party columns by contact id, destructured as `const [row]`. The pair search beside it is the offset-paginated one and is already limited. FALSE-POSITIVE rather than BOUNDED because BOUNDED is a FIXED verdict here \u2014 it asserts the scanner no longer matches, and a continued match is reported as a regression."
+    },
     "/contacts/contact-roles.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
