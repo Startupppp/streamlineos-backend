@@ -1,23 +1,17 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
-import { timesheetPeriods, timesheets } from "../../../db/schema";
-import { actingMembershipId } from "../../../common/auth/principal";
+import { timesheetPeriods } from "../../../db/schema";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import {
   ApprovalsService,
-  LIFECYCLE_RETURNING,
   isExpectedApprovalSkip,
-  lifecyclePayload,
   membershipUserIds,
   periodOwnerUserIdOrWarn,
 } from "./approvals.service";
-import {
-  TIMESHEET_LIFECYCLE_EVENTS,
-  emitPeriodLifecycleEvent,
-} from "./events/timesheet-lifecycle.events";
+import { applyBulkRejection, applyRejection } from "./lib/rejection-transition";
 import type {
   BulkApproveInput,
   BulkRejectInput,
@@ -25,6 +19,12 @@ import type {
 } from "./dto/approvals.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
+/*
+  The service decides who and whether: it reads the periods, runs the guard on
+  each, resolves the owners, opens the transaction and sends the notices once it
+  commits. What a rejection writes inside that transaction is in
+  `lib/rejection-transition.ts`, beside `lib/approval-transition.ts`.
+*/
 @Injectable()
 export class ApprovalsBulkService {
   constructor(
@@ -62,67 +62,13 @@ export class ApprovalsBulkService {
     });
 
     const now = new Date();
-    await this.db.transaction(async (tx) => {
-      const [transition] = await tx
-        .update(timesheetPeriods)
-        .set({
-          status: "REJECTED",
-          rejectedAt: now,
-          rejectionReason: input.reason,
-          eventSeq: sql`${timesheetPeriods.eventSeq} + 1`,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(timesheetPeriods.id, periodId),
-            eq(timesheetPeriods.orgId, u.orgId),
-          ),
-        )
-        .returning(LIFECYCLE_RETURNING);
-
-      await tx
-        .update(timesheets)
-        .set({
-          status: "REJECTED",
-          rejectionReason: input.reason,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(timesheets.timesheetPeriodId, periodId),
-            eq(timesheets.orgId, u.orgId),
-            isNull(timesheets.voidedAt),
-          ),
-        );
-
-      await this.audit.record(tx, {
-        orgId: u.orgId,
-        actorMembershipId: actingMembershipId(u.principal),
-        entityType: "period",
-        entityId: periodId.toString(),
-        action: "period.rejected",
-        reason: input.reason,
-      });
-
-      if (transition && ownerUserId) {
-        await emitPeriodLifecycleEvent(tx, {
-          eventType: TIMESHEET_LIFECYCLE_EVENTS.rejected,
-          orgId: u.orgId,
-          periodId,
-          eventSeq: transition.eventSeq,
-          occurredAt: now,
-          payload: lifecyclePayload(
-            u.orgId,
-            periodId,
-            transition,
-            ownerUserId,
-            u.userId,
-            now,
-            input.reason,
-          ),
-        });
-      }
-    });
+    await this.db.transaction((tx) =>
+      applyRejection(tx, { audit: this.audit }, u, periodId, {
+        input,
+        ownerUserId,
+        now,
+      }),
+    );
 
     if (ownerUserId) {
       await this.approvals.notifyPeriodRejected(u, {
@@ -219,82 +165,13 @@ export class ApprovalsBulkService {
       periods.map((p) => p.userMembershipId),
     );
 
-    await this.db.transaction(async (tx) => {
-      const transitions = await tx
-        .update(timesheetPeriods)
-        .set({
-          status: "REJECTED",
-          rejectedAt: now,
-          rejectionReason: input.reason,
-          eventSeq: sql`${timesheetPeriods.eventSeq} + 1`,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(timesheetPeriods.orgId, u.orgId),
-            inArray(timesheetPeriods.id, ids),
-          ),
-        )
-        .returning({ ...LIFECYCLE_RETURNING, id: timesheetPeriods.id });
-
-      await tx
-        .update(timesheets)
-        .set({
-          status: "REJECTED",
-          rejectionReason: input.reason,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            inArray(timesheets.timesheetPeriodId, ids),
-            eq(timesheets.orgId, u.orgId),
-            isNull(timesheets.voidedAt),
-          ),
-        );
-
-      const actorMembId = actingMembershipId(u.principal);
-      for (const id of ids) {
-        await this.audit.record(tx, {
-          orgId: u.orgId,
-          actorMembershipId: actorMembId,
-          entityType: "period",
-          entityId: id.toString(),
-          action: "period.rejected",
-          reason: input.reason,
-        });
-      }
-
-      /**
-       * One event per period, not one for the batch. A bulk rejection is a
-       * convenience for the approver; to everyone downstream it is N separate
-       * things that happened to N separate people, and an event whose
-       * `period_id` is a list is unroutable.
-       */
-      for (const transition of transitions) {
-        const ownerUserId = periodOwnerUserIdOrWarn(owners, transition.userMembershipId, {
-          orgId: u.orgId,
-          periodId: transition.id,
-          operation: "bulk-reject",
-        });
-        if (!ownerUserId) continue;
-        await emitPeriodLifecycleEvent(tx, {
-          eventType: TIMESHEET_LIFECYCLE_EVENTS.rejected,
-          orgId: u.orgId,
-          periodId: transition.id,
-          eventSeq: transition.eventSeq,
-          occurredAt: now,
-          payload: lifecyclePayload(
-            u.orgId,
-            transition.id,
-            transition,
-            ownerUserId,
-            u.userId,
-            now,
-            input.reason,
-          ),
-        });
-      }
-    });
+    await this.db.transaction((tx) =>
+      applyBulkRejection(tx, { audit: this.audit }, u, ids, {
+        input,
+        owners,
+        now,
+      }),
+    );
 
     /**
      * One notification per worker, after the batch commits. A bulk rejection is
