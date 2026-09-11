@@ -113,6 +113,14 @@ const ACKNOWLEDGED = [
       "Materialises a missing grain so it can be locked, with ON CONFLICT DO NOTHING and every bucket '0'. It moves no quantity; without it the kernel cannot take a row lock on a grain that has never held stock.",
   },
   {
+    file: "stock-engine/lib/committed-grain.ts",
+    tables: ["levels"],
+    buckets: "committed",
+    grain: "full",
+    reason:
+      "INV-40, the same exception as reservation.service.ts, which this was split out of (f071b292a). releaseCommitted gives `committed` back on the grain the reservation incremented, through the one predicate both halves of the split import. That shared predicate is why the split is safe, and it names all six key columns.",
+  },
+  {
     file: "stock-engine/reservation.service.ts",
     tables: ["levels"],
     buckets: "committed",
