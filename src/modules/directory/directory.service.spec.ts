@@ -1,4 +1,5 @@
 import { ConflictException, NotFoundException } from "@nestjs/common";
+import { drizzlePostgresError, drizzleUniqueViolation } from "../../test/postgres-error-fixture";
 import { DirectoryService } from "./directory.service";
 import {
   createDirectoryTestHarness,
@@ -58,13 +59,15 @@ describe("DirectoryService person operations", () => {
   // ---------------------------------------------------------------------------
   describe("createPerson  -  23505  -  409 and audit-log on success", () => {
     it("maps Postgres unique violation to ConflictException", async () => {
+      // A real rejected promise, so the service's own `.catch` runs: the old mock
+      // replaced `.catch` with one that returned a ConflictException outright,
+      // which passed whatever the handler did. uniq_org_people_org_work_email,
+      // as drizzle surfaces it.
       (mockDb as { insert: jest.Mock }).insert.mockReturnValue({
         values: jest.fn().mockReturnValue({
-          returning: jest.fn().mockReturnValue({
-            catch: jest.fn().mockRejectedValue(new ConflictException(
-              "A person with this work email already exists in this organization.",
-            )),
-          }),
+          returning: jest
+            .fn()
+            .mockRejectedValue(drizzleUniqueViolation("uniq_org_people_org_work_email")),
         }),
       });
 
@@ -76,6 +79,19 @@ describe("DirectoryService person operations", () => {
         }),
       ).rejects.toBeInstanceOf(ConflictException);
       expect(mockAudit.logCritical).not.toHaveBeenCalled();
+    });
+
+    it("rethrows any other database error untouched", async () => {
+      const fkViolation = drizzlePostgresError("23503", "fk_org_people_membership");
+      (mockDb as { insert: jest.Mock }).insert.mockReturnValue({
+        values: jest.fn().mockReturnValue({
+          returning: jest.fn().mockRejectedValue(fkViolation),
+        }),
+      });
+
+      await expect(
+        svc.createPerson(ORG_ID, USER_ID, { firstName: "Jane", lastName: "Doe" }),
+      ).rejects.toBe(fkViolation);
     });
 
     it("inserts and audit-logs on success", async () => {
@@ -213,14 +229,13 @@ describe("DirectoryService person operations", () => {
       const existing = makePerson();
       const { selectChain } = makeSelectChain([existing]);
       (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
+      // A real rejected promise, so the service's own `.catch` runs (see createPerson).
       (mockDb as { update: jest.Mock }).update.mockReturnValue({
         set: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
-            returning: jest.fn().mockReturnValue({
-              catch: jest.fn().mockRejectedValue(new ConflictException(
-                "A person with this work email already exists in this organization.",
-              )),
-            }),
+            returning: jest
+              .fn()
+              .mockRejectedValue(drizzleUniqueViolation("uniq_org_people_org_work_email")),
           }),
         }),
       });
@@ -228,6 +243,23 @@ describe("DirectoryService person operations", () => {
       await expect(
         svc.updatePerson(ORG_ID, USER_ID, PERSON_ID, { workEmail: "taken@example.com" }),
       ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it("rethrows any other database error untouched on update", async () => {
+      const { selectChain } = makeSelectChain([makePerson()]);
+      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
+      const fkViolation = drizzlePostgresError("23503", "fk_org_people_membership");
+      (mockDb as { update: jest.Mock }).update.mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            returning: jest.fn().mockRejectedValue(fkViolation),
+          }),
+        }),
+      });
+
+      await expect(
+        svc.updatePerson(ORG_ID, USER_ID, PERSON_ID, { workEmail: "taken@example.com" }),
+      ).rejects.toBe(fkViolation);
     });
   });
 
