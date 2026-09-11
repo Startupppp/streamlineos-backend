@@ -3001,6 +3001,11 @@
       "note": "1 aggregate reference; SLA service reads policy config (small) and computes scalar SLA metrics",
       "justification": "SLA reads bounded by ticketId or slaId (per-ticket SLA context) 2026-09-01"
     },
+    "/support/core/lib/support-sla-escalation.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Split out of /support/core/support-sla.service.ts 2026-09-11. NOT carried over as FALSE-POSITIVE, and that is a deliberate CORRECTION rather than a regression: the origin entry says SLA reads are \u0022bounded by ticketId or slaId (per-ticket SLA context)\u0022, which is a one-line bulk classification from 2026-09-01 and is simply not true of this read. L110 (runEscalations) selects EVERY non-RESOLVED, non-CLOSED ticket for an organisation with no limit and no bound but the tenant, materialises them all, and loops. It is a cron sweep, so nothing upstream caps it, and a busy support org's open-ticket count is exactly the number that grows. Small in practice today, unbounded in principle. Left ACTIONABLE so it stays on the backlog; this raises the unbounded ACTIONABLE count by one, which is the honest direction. The selectDistinct in runEscalationsForAllOrgs is bounded by the org count, and everything else in the file is a single-row update or pure computation."
+    },
     "/support/core/support-ticket-activity.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "4 aggregate references; ticket activity service produces count/timeline aggregates",
