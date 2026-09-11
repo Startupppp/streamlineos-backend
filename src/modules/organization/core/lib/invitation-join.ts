@@ -9,6 +9,7 @@ import { addMinutes } from "date-fns";
 import { withIdentity } from "../../../../common/tenant/with-identity";
 import { LEGACY_CELL_ID } from "../../../../common/region/placement";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
+import { isUniqueViolation } from "../../../../common/db/postgres-error";
 import { type Db } from "../../../../db/drizzle.module";
 import { syncStructuralRoleAssignment } from "../../../../common/rbac/sync-structural-role";
 import type { PlanLimitsService } from "../../../billing/core/plan-limits.service";
@@ -290,8 +291,7 @@ export async function acceptAsNewUser(
       { orgId },
     );
   } catch (err) {
-    const code = (err as { code?: string }).code;
-    if (code === "23505") {
+    if (isUniqueViolation(err)) {
       throw new ConflictException("Invitation has already been accepted");
     }
     throw err;
