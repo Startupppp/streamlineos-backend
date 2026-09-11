@@ -160,9 +160,13 @@ export class SeedBuilder {
        *
        * All three real creation paths call `chooseRegionForNewOrg()`; only this
        * fixture did not, so a seeded org was unreachable the moment any code
-       * resolved its region — which every tenant transaction does. The fixture
-       * takes the default rather than the selector, because a seed must not
-       * depend on a capacity measurement existing.
+       * resolved its region — which every tenant transaction does. Reads resolve
+       * the region through the placement row, and an organisation without one
+       * raises "has no region", which `MembershipStateService` reports as an
+       * inactive membership: every seeded request 403s with a message about
+       * membership rather than placement. The fixture takes the default rather
+       * than the selector, because a seed must not depend on a capacity
+       * measurement existing. One row: the organisation id is its primary key.
        */
       await tx.insert(organizations).values({
         id: orgId,
@@ -182,26 +186,6 @@ export class SeedBuilder {
         writeFenceToken: crypto.randomUUID(),
         leaseExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
         status: "ACTIVE",
-      });
-
-      /*
-        Placed, not merely created.
-
-        Reads resolve an organisation's region through its placement row now, and
-        an organisation without one raises "has no region. It must be placed
-        before its data can be reached" — which `MembershipStateService` catches
-        and reports as an inactive membership, so every seeded request 403s with
-        a message about membership rather than about placement.
-      */
-      await tx.insert(organizationPlacement).values({
-        organizationId: orgId,
-        region: DEFAULT_REGION,
-        cellId: LEGACY_CELL_ID,
-        databaseShard: DEFAULT_DATABASE_SHARD,
-        objectStorageRegion: DEFAULT_REGION,
-        searchCluster: DEFAULT_SEARCH_CLUSTER,
-        writeFenceToken: crypto.randomUUID(),
-        leaseExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       });
 
       if (ownerAliasEntry) {
