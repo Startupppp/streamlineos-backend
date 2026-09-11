@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, gte, lte, or } from "drizzle-orm";
+import { and, eq, gte, lte } from "drizzle-orm";
 import {
   accountingPeriods,
   accountingSettings,
