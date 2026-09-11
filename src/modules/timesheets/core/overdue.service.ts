@@ -1,12 +1,12 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, lte, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { organizationMembers, timesheetPeriods, timesheetSettings, users } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { applyMembershipScope, resolveApprovalScope } from "./timesheets-core-scope";
+import { membershipScope, resolveApprovalScope } from "./timesheets-core-scope";
 import { dueDateFor, resolveReminderRules } from "./dto/reminder-rules.schemas";
 import { wholeDaysBetween } from "./lib/period.helpers";
 import type { OverdueQuery } from "./dto/overdue.schemas";
@@ -118,14 +118,22 @@ export class TimesheetOverdueService {
       .toISOString()
       .slice(0, 10);
 
-    const scope = await resolveApprovalScope(this.access, u);
-    const conditions = [
-      eq(timesheetPeriods.orgId, u.orgId),
-      inArray(timesheetPeriods.status, [...UNSETTLED]),
-      lte(timesheetPeriods.periodEnd, cutoff),
-      applyMembershipScope(scope, actingMembershipId(u.principal), timesheetPeriods.userMembershipId),
+    const read = await resolveApprovalScope(this.access, u);
+    const conditions: SQL[] = [
+      read.compose(
+        {
+          tenant: timesheetPeriods.orgId,
+          scope: membershipScope(actingMembershipId(u.principal), timesheetPeriods.userMembershipId),
+          and: [
+            inArray(timesheetPeriods.status, [...UNSETTLED]),
+            lte(timesheetPeriods.periodEnd, cutoff),
+          ],
+        },
+        (where) => where.sql,
+        () => sql`false`,
+      ),
     ];
-    if (query.userId && scope === "all") {
+    if (query.userId && read.unrestricted) {
       /**
        * The filter names a person by user id and the period names them by
        * membership, so the one is looked up as the other inside this
