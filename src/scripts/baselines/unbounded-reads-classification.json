@@ -2916,6 +2916,11 @@
       "note": "Has 3 explicit .limit() calls and 5 aggregate references; macro list is bounded per org",
       "justification": "L306/L334 read agent skills/availability for routing decision; bounded by org agent count (support agents typically <200); required for full routing decision without truncation 2026-09-01"
     },
+    "/support/core/lib/support-routing.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Split out of /support/core/support-macros.service.ts 2026-09-11, restating that file's FALSE-POSITIVE for the three reads that moved with the routing engine. L110 reads the enabled routing rules for one org \u2014 an admin-authored config set whose own settings list caps at .limit(100), and the evaluator must see every enabled rule or it would silently skip the lowest-priority ones. L168 (agent skills) and L196 (agent availability) are both bounded by inArray(userId, candidates), where candidates is rule.candidateAgentIds on the single matched rule; L168 is bounded a second time by inArray(skill, rule.requiredSkills). Org agent count is <200 in practice."
+    },
     "/support/core/support-mentions.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Reads mentions per ticket message; mentions are a small set bounded by message length",

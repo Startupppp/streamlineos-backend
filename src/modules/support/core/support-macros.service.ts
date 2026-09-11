@@ -1,19 +1,26 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, count, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, asc, eq, ilike, or, sql } from "drizzle-orm";
 import {
   supportMacros,
-  supportRoutingRules,
   supportTickets,
   supportAgentSkills,
   supportAgentAvailability,
   supportVipClients,
   users,
   organizations,
-  type RoutingRuleCondition,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { appUrl } from "../../email/app-url";
+import {
+  applyRoutingRules,
+  createRoutingRule,
+  deleteRoutingRule,
+  listRoutingRules,
+  updateRoutingRule,
+  type RoutableTicket,
+  type RoutingOutcome,
+} from "./lib/support-routing";
 import type {
   ApplyMacroInput,
   CreateMacroInput,
@@ -23,19 +30,17 @@ import type {
   UpdateRoutingRuleInput,
 } from "./dto/support.schemas";
 
-export interface RoutableTicket {
-  title?: string | null;
-  category?: string | null;
-  description?: string | null;
-  priority?: string | null;
-  isVip?: boolean;
-}
+export type { RoutableTicket, RoutingOutcome } from "./lib/support-routing";
 
-export interface RoutingOutcome {
-  assigneeId?: string;
-  setPriority?: string;
-}
-
+/**
+ * Macros (canned agent replies) and the support agent roster that routing
+ * draws its candidates from — skills, availability and the VIP client list.
+ *
+ * The routing rules themselves, and the engine that picks an assignee, live
+ * in `lib/support-routing.ts`; the five members below are thin delegates
+ * kept because `SupportTicketsService` and `SupportSlaService` inject this
+ * service, not the lib.
+ */
 @Injectable()
 export class SupportMacrosService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
@@ -196,182 +201,23 @@ export class SupportMacrosService {
   }
 
   listRoutingRules(orgId: string) {
-    return this.db.query.supportRoutingRules.findMany({
-      where: eq(supportRoutingRules.orgId, orgId),
-      orderBy: [asc(supportRoutingRules.sortOrder), asc(supportRoutingRules.id)],
-      limit: 100,
-    });
+    return listRoutingRules(this.db, orgId);
   }
 
-  async createRoutingRule(orgId: string, userId: string, input: CreateRoutingRuleInput) {
-    const [rule] = await this.db
-      .insert(supportRoutingRules)
-      .values({
-        orgId,
-        name: input.name,
-        conditions: input.conditions,
-        assigneeId: input.assigneeId ?? null,
-        setPriority: input.setPriority ?? null,
-        assignmentMode: input.assignmentMode,
-        candidateAgentIds: input.candidateAgentIds,
-        requiredSkills: input.requiredSkills,
-        isEnabled: input.isEnabled,
-        sortOrder: input.sortOrder,
-        createdBy: userId,
-      })
-      .returning();
-    return rule;
+  createRoutingRule(orgId: string, userId: string, input: CreateRoutingRuleInput) {
+    return createRoutingRule(this.db, orgId, userId, input);
   }
 
-  async updateRoutingRule(orgId: string, ruleId: number, input: UpdateRoutingRuleInput) {
-    const [updated] = await this.db
-      .update(supportRoutingRules)
-      .set({ ...input, updatedAt: new Date() })
-      .where(and(eq(supportRoutingRules.id, ruleId), eq(supportRoutingRules.orgId, orgId)))
-      .returning();
-
-    if (!updated) throw new NotFoundException("Routing rule not found");
-    return updated;
+  updateRoutingRule(orgId: string, ruleId: number, input: UpdateRoutingRuleInput) {
+    return updateRoutingRule(this.db, orgId, ruleId, input);
   }
 
-  async deleteRoutingRule(orgId: string, ruleId: number) {
-    const [deleted] = await this.db
-      .delete(supportRoutingRules)
-      .where(and(eq(supportRoutingRules.id, ruleId), eq(supportRoutingRules.orgId, orgId)))
-      .returning();
-
-    if (!deleted) throw new NotFoundException("Routing rule not found");
-    return { success: true };
+  deleteRoutingRule(orgId: string, ruleId: number) {
+    return deleteRoutingRule(this.db, orgId, ruleId);
   }
 
-  async applyRoutingRules(orgId: string, ticket: RoutableTicket): Promise<RoutingOutcome> {
-    const rules = await this.db.query.supportRoutingRules.findMany({
-      where: and(eq(supportRoutingRules.orgId, orgId), eq(supportRoutingRules.isEnabled, true)),
-      orderBy: [asc(supportRoutingRules.sortOrder), asc(supportRoutingRules.id)],
-    });
-
-    for (const rule of rules) {
-      const conditions = Array.isArray(rule.conditions) ? rule.conditions : [];
-      if (conditions.length === 0) continue;
-
-      const allMatch = conditions.every((condition) => this.matchesCondition(ticket, condition));
-      if (!allMatch) continue;
-
-      const outcome: RoutingOutcome = {};
-      const candidates = Array.isArray(rule.candidateAgentIds) ? rule.candidateAgentIds : [];
-      const requiredSkills = Array.isArray(rule.requiredSkills) ? rule.requiredSkills : [];
-
-      if (rule.assignmentMode !== "static" && candidates.length > 0) {
-        outcome.assigneeId = await this.resolveAssignmentModeAgent(orgId, rule.assignmentMode, candidates, requiredSkills);
-      } else if (rule.assigneeId) {
-        outcome.assigneeId = rule.assigneeId;
-      }
-
-      if (rule.setPriority) outcome.setPriority = rule.setPriority;
-      return outcome;
-    }
-
-    return {};
-  }
-
-  private async loadBalance(orgId: string, candidates: string[]): Promise<string> {
-    const workloads = await this.db
-      .select({ assigneeId: supportTickets.assigneeId, cnt: count() })
-      .from(supportTickets)
-      .where(
-        and(
-          eq(supportTickets.orgId, orgId),
-          inArray(supportTickets.assigneeId, candidates),
-          or(eq(supportTickets.status, "OPEN"), eq(supportTickets.status, "IN_PROGRESS")),
-        ),
-      )
-      .groupBy(supportTickets.assigneeId);
-
-    const workloadMap = new Map(workloads.map((w) => [w.assigneeId, Number(w.cnt)]));
-    return candidates.reduce((least, candidate) =>
-      (workloadMap.get(candidate) ?? 0) < (workloadMap.get(least) ?? 0) ? candidate : least,
-    );
-  }
-
-  /**
-   * Filters candidates down to those who have EVERY skill in requiredSkills.
-   * Falls back to the full candidate list (rather than returning nothing) if
-   * no candidate qualifies — a misconfigured skill requirement shouldn't
-   * leave a ticket unassigned.
-   */
-  private async filterBySkills(orgId: string, candidates: string[], requiredSkills: string[]): Promise<string[]> {
-    if (requiredSkills.length === 0) return candidates;
-
-    const rows = await this.db
-      .select({ userId: supportAgentSkills.userId, skill: supportAgentSkills.skill })
-      .from(supportAgentSkills)
-      .where(
-        and(
-          eq(supportAgentSkills.orgId, orgId),
-          inArray(supportAgentSkills.userId, candidates),
-          inArray(supportAgentSkills.skill, requiredSkills),
-        ),
-      );
-
-    const skillsByUser = new Map<string, Set<string>>();
-    for (const row of rows) {
-      const set = skillsByUser.get(row.userId) ?? new Set<string>();
-      set.add(row.skill);
-      skillsByUser.set(row.userId, set);
-    }
-
-    const qualified = candidates.filter((c) => requiredSkills.every((skill) => skillsByUser.get(c)?.has(skill)));
-    return qualified.length > 0 ? qualified : candidates;
-  }
-
-  /**
-   * Filters candidates down to those currently marked available (no row =
-   * available by default). Falls back to the full candidate list if nobody
-   * is available — better to assign someone than leave the ticket unassigned.
-   */
-  private async filterByAvailability(orgId: string, candidates: string[]): Promise<string[]> {
-    const rows = await this.db
-      .select({ userId: supportAgentAvailability.userId, isAvailable: supportAgentAvailability.isAvailable })
-      .from(supportAgentAvailability)
-      .where(
-        and(
-          eq(supportAgentAvailability.orgId, orgId),
-          inArray(supportAgentAvailability.userId, candidates),
-        ),
-      );
-
-    const availabilityByUser = new Map(rows.map((r) => [r.userId, r.isAvailable]));
-    const available = candidates.filter((c) => availabilityByUser.get(c) ?? true);
-    return available.length > 0 ? available : candidates;
-  }
-
-  private async resolveAssignmentModeAgent(
-    orgId: string,
-    mode: string,
-    candidates: string[],
-    requiredSkills: string[],
-  ): Promise<string> {
-    if (mode === "load_balanced") {
-      return this.loadBalance(orgId, candidates);
-    }
-
-    if (mode === "skill_based") {
-      const qualified = await this.filterBySkills(orgId, candidates, requiredSkills);
-      return this.loadBalance(orgId, qualified);
-    }
-
-    if (mode === "availability_based") {
-      const available = await this.filterByAvailability(orgId, candidates);
-      return this.loadBalance(orgId, available);
-    }
-
-    // round_robin: use total ticket count for the org as a stateless rotating cursor.
-    const [totalResult] = await this.db
-      .select({ cnt: count() })
-      .from(supportTickets)
-      .where(eq(supportTickets.orgId, orgId));
-    const cursor = Number(totalResult?.cnt ?? 0) % candidates.length;
-    return candidates[cursor];
+  applyRoutingRules(orgId: string, ticket: RoutableTicket): Promise<RoutingOutcome> {
+    return applyRoutingRules(this.db, orgId, ticket);
   }
 
   async setAgentSkills(orgId: string, userId: string, skills: string[]) {
@@ -432,40 +278,5 @@ export class SupportMacrosService {
       columns: { id: true },
     });
     return Boolean(row);
-  }
-
-  private resolveField(ticket: RoutableTicket, field: string): string | null {
-    switch (field) {
-      case "title":
-      case "subject":
-        return ticket.title ?? null;
-      case "category":
-        return ticket.category ?? null;
-      case "description":
-        return ticket.description ?? null;
-      case "priority":
-        return ticket.priority ?? null;
-      case "isVip":
-        return ticket.isVip ? "true" : "false";
-      default:
-        return null;
-    }
-  }
-
-  private matchesCondition(ticket: RoutableTicket, condition: RoutingRuleCondition): boolean {
-    const fieldValue = this.resolveField(ticket, condition.field);
-    const actual = (fieldValue ?? "").toLowerCase();
-    const expected = (condition.value ?? "").toLowerCase();
-
-    switch (condition.op) {
-      case "eq":
-        return actual === expected;
-      case "neq":
-        return actual !== expected;
-      case "contains":
-        return actual.includes(expected);
-      default:
-        return false;
-    }
   }
 }
