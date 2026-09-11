@@ -24,6 +24,7 @@ import {
   FAKE_PROVIDER_ORDER_ID,
   FAKE_PUBLIC_KEY_ID,
 } from "../payments/testing/fake-provider-adapter";
+import { drizzlePostgresError, drizzleUniqueViolation } from "../../../test/postgres-error-fixture";
 
 const VALID_INPUT = {
   razorpay_order_id: "order_test_1",
@@ -210,7 +211,7 @@ describe("BillingService.verifyAndActivate — goes through the registry", () =>
   });
 
   it("23505 on subscription_payments insert — returns success without re-inserting", async () => {
-    const db = makeDb({ transactionRejects: { code: "23505" } });
+    const db = makeDb({ transactionRejects: drizzleUniqueViolation("uniq_subscription_payments_razorpay_payment") });
     const svc = await buildService(db, makeResolver());
     const result = await svc.verifyAndActivate("org1", "user1", VALID_INPUT);
     expect(db.transaction).toHaveBeenCalledTimes(1);
@@ -220,6 +221,12 @@ describe("BillingService.verifyAndActivate — goes through the registry", () =>
   it("non-23505 DB error propagates — service does not swallow unexpected failures", async () => {
     const svc = await buildService(makeDb({ transactionRejects: new Error("deadlock detected") }), makeResolver());
     await expect(svc.verifyAndActivate("org1", "user1", VALID_INPUT)).rejects.toThrow("deadlock detected");
+  });
+
+  it("a different database error propagates untouched", async () => {
+    const err = drizzlePostgresError("23503", "some_fk");
+    const svc = await buildService(makeDb({ transactionRejects: err }), makeResolver());
+    await expect(svc.verifyAndActivate("org1", "user1", VALID_INPUT)).rejects.toBe(err);
   });
 
   it("wrong signature — throws BadRequestException", async () => {
@@ -483,10 +490,7 @@ describe("c17-03 — a coupon can be used once", () => {
   });
 
   it("two simultaneous redemptions: the loser's unique violation becomes a conflict, not a silent success", async () => {
-    const couponConflict = Object.assign(new Error("duplicate key"), {
-      code: "23505",
-      constraint: "uq_coupon_redemptions_coupon_org",
-    });
+    const couponConflict = drizzleUniqueViolation("uq_coupon_redemptions_coupon_org");
     const svc = await buildService(makeDb({ transactionRejects: couponConflict }), makeResolver());
 
     await expect(
@@ -495,10 +499,7 @@ describe("c17-03 — a coupon can be used once", () => {
   });
 
   it("exactly one of two concurrent redemptions succeeds", async () => {
-    const couponConflict = Object.assign(new Error("duplicate key"), {
-      code: "23505",
-      constraint: "uq_coupon_redemptions_coupon_org",
-    });
+    const couponConflict = drizzleUniqueViolation("uq_coupon_redemptions_coupon_org");
     const winner = await buildService(makeDb({ lockedCoupon: { id: 42, maxUses: 1, usedCount: 0 } }), makeResolver());
     const loser = await buildService(makeDb({ transactionRejects: couponConflict }), makeResolver());
 
@@ -507,15 +508,16 @@ describe("c17-03 — a coupon can be used once", () => {
       loser.verifyAndActivate("org1", "user2", { ...VALID_INPUT, couponId: 42 }),
     ]);
 
+    const rejected = outcomes.filter((o): o is PromiseRejectedResult => o.status === "rejected");
     expect(outcomes.filter((o) => o.status === "fulfilled")).toHaveLength(1);
-    expect(outcomes.filter((o) => o.status === "rejected")).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    // A 500 is a rejection too; the loser must be told it lost a conflict.
+    const reason: unknown = rejected[0]?.reason;
+    expect(reason).toBeInstanceOf(ConflictException);
   });
 
   it("an unrelated 23505 is still treated as a payment replay", async () => {
-    const paymentConflict = Object.assign(new Error("duplicate key"), {
-      code: "23505",
-      constraint: "uniq_subscription_payments_razorpay_payment",
-    });
+    const paymentConflict = drizzleUniqueViolation("uniq_subscription_payments_razorpay_payment");
     const svc = await buildService(makeDb({ transactionRejects: paymentConflict }), makeResolver());
 
     await expect(svc.verifyAndActivate("org1", "user1", { ...VALID_INPUT, couponId: 42 })).resolves.toEqual({

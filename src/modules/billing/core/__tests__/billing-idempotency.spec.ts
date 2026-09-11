@@ -133,7 +133,9 @@ describe("BillingService.verifyAndActivate — idempotency", () => {
   }
 
   it("23505 on subscription_payments insert → returns success, not 500 (idempotent retry)", async () => {
-    const db = { transaction: jest.fn().mockRejectedValue({ code: "23505" }) };
+    const db = {
+      transaction: jest.fn().mockRejectedValue(drizzleUniqueViolation("uniq_subscription_payments_razorpay_payment")),
+    };
     const svc = await buildBilling(db);
 
     const result = await svc.verifyAndActivate("org-idp", "user-1", VERIFY_INPUT);

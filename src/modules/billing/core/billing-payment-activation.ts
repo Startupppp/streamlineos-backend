@@ -14,6 +14,7 @@ import {
 } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
 import { type DbOrTx } from "../../../common/rbac/access-invalidate";
+import { getPostgresErrorDetails } from "../../../common/db/postgres-error";
 import { AuditService } from "../../../common/audit/audit.service";
 import { logger } from "../../../common/logger/logger.service";
 import {
@@ -175,8 +176,17 @@ export class BillingPaymentActivation {
         }
       });
     } catch (err: unknown) {
-      if (isUniqueViolation(err)) {
-        if (err.constraint === "uq_coupon_redemptions_coupon_org") {
+      /**
+       * Drizzle wraps the driver error and leaves the SQLSTATE on `.cause`, and
+       * postgres-js spells the constraint `constraint_name`, so the guard that
+       * stood here found neither: a second redemption of one coupon by one
+       * organisation (`uq_coupon_redemptions_coupon_org`), or a replayed
+       * payment, was a 500. The transaction above is a savepoint inside a
+       * request, so returning success leaves the request transaction usable.
+       */
+      const pgErr = getPostgresErrorDetails(err);
+      if (pgErr.code === "23505") {
+        if (pgErr.constraint === "uq_coupon_redemptions_coupon_org") {
           throw new ConflictException("This coupon has already been used by your organization");
         }
         return { success: true, plan: input.plan, status: "ACTIVE" };
@@ -304,14 +314,4 @@ export class BillingPaymentActivation {
       );
     }
   }
-}
-
-function isUniqueViolation(error: unknown): error is { code: "23505"; constraint?: string } {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === "23505" &&
-    (!("constraint" in error) || typeof error.constraint === "string")
-  );
 }
