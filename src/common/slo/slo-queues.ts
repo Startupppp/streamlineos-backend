@@ -48,6 +48,13 @@ export const QUEUE_SUBJECTS: readonly QueueSubject[] = [
     channel: "outbox",
   },
   {
+    id: "accounting-journal-posted",
+    sourceFile: "src/modules/accounting/adapters/journal-posted.consumer.ts",
+    drains: "outbox_events",
+    owner: "finance-team",
+    channel: "outbox",
+  },
+  {
     id: "gdpr-export-outbox",
     sourceFile: "src/modules/gdpr/gdpr-export-outbox.consumer.ts",
     drains: "outbox_events",
