@@ -50,6 +50,7 @@ import {
   conversationMessagesQuerySchema,
   conversationRenameSchema,
   conversationsListQuerySchema,
+  mailSendPayloadSchema,
 } from "../dto/request.schemas";
 import { ToolAccessService } from "../tool-access.service";
 import { AI_EVENT_TIMEZONE } from "../ai-event-timezone";
@@ -443,12 +444,6 @@ export class ChatAssistantController {
       }
 
       case "mail.send": {
-        const mailSendPayloadSchema = z.object({
-          accountId: z.number().int().positive(),
-          toEmail: z.string().email(),
-          subject: z.string().min(1).max(500),
-          body: z.string().min(1),
-        });
         const mailPayload = mailSendPayloadSchema.parse(payload);
         const mailAccountsSvc = this.moduleRef.get(MailAccountsService, { strict: false });
         await mailAccountsSvc.assertOwnedConnection(u.orgId, u.userId, mailPayload.accountId);

@@ -8,6 +8,7 @@ import { ModuleChecklistService } from "../../hr/onboarding/flow/module-checklis
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { bulkUpdateFromValues } from "../../../common/db/bulk-update";
 import { OrgHierarchyCacheService } from "../../../common/cache/org-hierarchy-cache.service";
+import type { GenerateWorkspaceResponse } from "./dto/workspace-onboarding.schemas";
 
 const INDUSTRY_TEMPLATES: Record<string, string[]> = {
   "it-services": ["Engineering", "Product", "Operations", "HR"],
@@ -106,12 +107,7 @@ export class WorkspaceOnboardingService {
     orgId: string,
     industry: string,
     enabledModules?: string[],
-  ): Promise<{
-    businessUnits: number;
-    branches: number;
-    departments: number;
-    teams: number;
-  }> {
+  ): Promise<GenerateWorkspaceResponse> {
     if (enabledModules?.length) {
       await this.checklists.ensureChecklistsForModules(orgId, enabledModules);
     }

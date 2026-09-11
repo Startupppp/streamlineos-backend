@@ -79,6 +79,51 @@ describe("MembershipAdmissionService member-seat reservation", () => {
     expect(planLimits.assertWithinLimit).toHaveBeenCalledWith("org-1", "members", 2, tx);
   });
 
+  it("rejects later canonical-email duplicates while admitting the other rows", async () => {
+    const tx = { execute: jest.fn().mockResolvedValue([]) };
+    const planLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
+    const seatLedger = { recordSeatEvents: jest.fn().mockResolvedValue(undefined) };
+    const membership = {
+      createMemberships: jest.fn().mockResolvedValue(new Map([["user-1", 7]])),
+    };
+    const service = new MembershipAdmissionService(planLimits as never, seatLedger as never);
+
+    const outcomes = await service.admitMany(tx as never, {
+      orgId: "org-1",
+      actor: { userId: "actor-1" },
+      membership: membership as never,
+      candidates: [
+        {
+          email: "joiner@example.com",
+          role: "MEMBER",
+          screen: { kind: "clear", userId: "user-1" },
+          createUserIfMissing: null,
+        },
+        {
+          email: " JOINER@EXAMPLE.COM ",
+          role: "MEMBER",
+          screen: { kind: "clear", userId: "user-1" },
+          createUserIfMissing: null,
+        },
+      ],
+    });
+
+    expect(outcomes).toEqual([
+      { kind: "admitted", userId: "user-1", membershipId: 7, createdUser: false },
+      {
+        kind: "conflict",
+        reason: "duplicate-in-batch",
+        message: "Duplicate email in this upload",
+      },
+    ]);
+    expect(tx.execute).toHaveBeenCalledTimes(1);
+    expect(planLimits.assertWithinLimit).toHaveBeenCalledWith("org-1", "members", 1, tx);
+    expect(membership.createMemberships).toHaveBeenCalledWith(tx, {
+      orgId: "org-1",
+      members: [{ userId: "user-1", role: "MEMBER" }],
+    });
+  });
+
   it("never touches the quota when every candidate is refused", async () => {
     const tx = { execute: jest.fn().mockResolvedValue([]) };
     const planLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };

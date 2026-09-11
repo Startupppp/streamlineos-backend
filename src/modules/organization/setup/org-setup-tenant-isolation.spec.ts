@@ -1,6 +1,7 @@
 import { OrgSetupService } from "./org-setup.service";
 import { OrgSetupResolverService } from "./org-setup-resolver.service";
 import type { Db } from "../../../db/drizzle.module";
+import { OrganizationCreationService } from "../core/organization-creation.service";
 
 jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
   runInTenantTransaction: jest.fn((_db: unknown, fn: (tx: unknown) => Promise<unknown>, _opts?: unknown) => fn(_db)),
@@ -107,7 +108,8 @@ describe("OrgSetupService — cross-tenant isolation", () => {
     };
     const audit = { log: jest.fn() };
     const sessions = { skipSession: jest.fn().mockResolvedValue(undefined) };
-    const resolver = new OrgSetupResolverService(db, cache as never, audit as never);
+    const creation = { createFromSetup: jest.fn() } as unknown as OrganizationCreationService;
+    const resolver = new OrgSetupResolverService(db, cache as never, audit as never, creation);
     const svc = new OrgSetupService(db, audit as never, cache as never, sessions as never, resolver);
     return { svc, db, sessions, whereArgs };
   }

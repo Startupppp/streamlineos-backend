@@ -1,6 +1,6 @@
 import { MailService } from "./mail.service";
 import { sortThreadChronologically } from "./providers/mail-normalizers";
-import type { MailMessageDetail } from "./dto/mail-schemas";
+import type { MailMessageDetail } from "./dto/mail-response.schemas";
 
 /**
  * "Indexed conversation ordering" — the conversation half. `getThread` handed

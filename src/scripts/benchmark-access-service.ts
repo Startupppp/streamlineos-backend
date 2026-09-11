@@ -5,6 +5,7 @@ process.chdir(resolve(__dirname, "../.."));
 
 import { AccessService } from "../modules/access/access.service";
 import { AccessVersionCache } from "../modules/access/access-version-cache";
+import { DeniedModulesResolver } from "../modules/access/denied-modules.resolver";
 import { membershipCacheKey } from "../modules/access/access-permission.resolver";
 import type { CacheService } from "../common/cache/cache.service";
 import type { EntitlementsService } from "../modules/access/entitlements.service";
@@ -97,7 +98,7 @@ async function run() {
     mockMfa,
     mockVersionCache,
     mockMembershipState,
-  ) as AccessService & Record<string, unknown>;
+  );
 
   const orgId = "bench-org-a1b2c3d4";
   const userId = "bench-user-e5f6g7h8";
@@ -138,21 +139,36 @@ async function run() {
   });
 
   const permsKey = `${orgId}:${userId}:${version}`;
-  (svc as Record<string, unknown>).permsCache = new Map([
-    [permsKey, { perms, expiresAt }],
-  ]);
+  Reflect.set(
+    svc,
+    "permsCache",
+    new Map([[permsKey, { perms, expiresAt }]]),
+  );
 
   const memberKey = membershipCacheKey(orgId, userId, version);
-  (svc as Record<string, unknown>).membershipAccessCache = new Map([
-    [memberKey, { active: true, isOwnerOrAdmin: false, expiresAt }],
-  ]);
+  Reflect.set(
+    svc,
+    "membershipAccessCache",
+    new Map([
+      [memberKey, { active: true, isOwnerOrAdmin: false, expiresAt }],
+    ]),
+  );
 
-  (svc as Record<string, unknown>).deniedModulesCache = new Map([
-    [
-      `${orgId}:${userId}:${version}`,
-      { modules: new Set<string>(), expiresAt },
-    ],
-  ]);
+  const deniedModulesResolver = Reflect.get(svc, "deniedModulesResolver");
+  if (!(deniedModulesResolver instanceof DeniedModulesResolver))
+    throw new Error(
+      "[BENCHMARK INTEGRITY] AccessService denial resolver was not found",
+    );
+  Reflect.set(
+    deniedModulesResolver,
+    "cache",
+    new Map([
+      [
+        `${orgId}:${userId}:${version}`,
+        { modules: new Set<string>(), expiresAt },
+      ],
+    ]),
+  );
 
   console.log(`Warmup: ${WARMUP} calls...`);
   for (let i = 0; i < WARMUP; i++) {
@@ -230,7 +246,7 @@ async function run() {
     "  - All four in-process caches (versionCache, permsCache, membershipAccessCache,",
   );
   console.log(
-    "    deniedModulesCache) primed before measurement; zero I/O on the measured calls",
+    "    denied resolver cache) primed before measurement; zero I/O on the measured calls",
   );
   console.log(
     "  - Stub dependencies throw on any cold-path access (none fired)",
@@ -239,7 +255,7 @@ async function run() {
     "  - CPU time via process.cpuUsage() (user + system), not wall clock",
   );
   console.log(
-    "  - Warm path: Map.get × 3 → applyUniversalGrants (real method) → return",
+    "  - Warm path: Map.get × 4 → applyUniversalGrants (real method) → return",
   );
   console.log(
     "  - Promise micro-task overhead is included because resolveUserPermissions is async",
@@ -262,7 +278,8 @@ async function run() {
     batches: BATCHES,
     verdict,
     conditions: {
-      warmPath: "all four in-process caches primed; zero I/O on measured calls",
+      warmPath:
+        "versionCache, permsCache, membershipAccessCache and denied resolver cache primed; zero I/O on measured calls",
       service:
         "real AccessService instance, real applyUniversalGrants and stripDeniedModules called",
       stubIntegrity:

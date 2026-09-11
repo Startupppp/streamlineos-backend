@@ -2,7 +2,6 @@ import {
   ConflictException,
   Inject,
   Injectable,
-  InternalServerErrorException,
 } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
@@ -74,33 +73,7 @@ export class EmployeeOnboardingService {
   ) {}
 
   async onboardEmployee(actor: CurrentUserContext, body: OnboardEmployeeInput) {
-    const screen = await this.admission.screen(this.db, {
-      orgId: actor.orgId,
-      email: body.email,
-    });
-    if (screen.kind !== "clear") throw admissionFailure(screen);
-    const existingUserId = screen.userId ?? undefined;
-
     const resolvedEmployeeId = body.employeeId?.trim() || `EMP-${randomEmployeeCode(6)}`;
-
-    if (body.employeeId?.trim()) {
-      const [duplicate] = await this.db
-        .select({ userId: hrPeople.userId })
-        .from(hrEmployments)
-        .innerJoin(hrPeople, livePersonOfEmployment(actor.orgId))
-        .where(
-          and(
-            liveEmployment(actor.orgId),
-            eq(hrEmployments.isPrimary, true),
-            eq(hrEmployments.employeeNumber, resolvedEmployeeId),
-          ),
-        )
-        .limit(1);
-      if (duplicate && duplicate.userId !== existingUserId) {
-        throw new ConflictException(`Employee ID "${resolvedEmployeeId}" is already in use in your organization.`);
-      }
-    }
-
     const role = body.role || ORG_MEMBER_ROLES.MEMBER;
     await assertMayGrantRole(this.access, actor.orgId, actor, role);
 
@@ -112,34 +85,46 @@ export class EmployeeOnboardingService {
       runInTenantTransaction(
         this.db,
         async (tx) => {
-          const [outcome] = await this.admission.admitMany(tx, {
+          const outcome = await this.admission.admitOne(tx, {
             orgId: actor.orgId,
+            email: body.email,
+            role,
             actor,
             membership,
             seatReason: "employee onboarded",
-            candidates: [
-              {
-                email: body.email,
-                role,
-                screen,
-                createUserIfMissing: {
-                  name: fullName,
-                  firstName: body.firstName,
-                  lastName: body.lastName,
-                  phone: body.phone,
-                  whatsappNumber: body.whatsappSameAsPhone
-                    ? body.phone
-                    : body.whatsappNumber,
-                  gender: body.gender,
-                  dateOfBirth,
-                  isActive: true,
-                },
-              },
-            ],
+            createUserIfMissing: {
+              name: fullName,
+              firstName: body.firstName,
+              lastName: body.lastName,
+              phone: body.phone,
+              whatsappNumber: body.whatsappSameAsPhone
+                ? body.phone
+                : body.whatsappNumber,
+              gender: body.gender,
+              dateOfBirth,
+              isActive: true,
+            },
           });
-          if (!outcome)
-            throw new InternalServerErrorException("Failed to admit the employee.");
           if (outcome.kind !== "admitted") throw admissionFailure(outcome);
+
+          if (body.employeeId?.trim()) {
+            const [duplicate] = await tx
+              .select({ userId: hrPeople.userId })
+              .from(hrEmployments)
+              .innerJoin(hrPeople, livePersonOfEmployment(actor.orgId))
+              .where(
+                and(
+                  liveEmployment(actor.orgId),
+                  eq(hrEmployments.isPrimary, true),
+                  eq(hrEmployments.employeeNumber, resolvedEmployeeId),
+                ),
+              )
+              .limit(1);
+            if (duplicate && duplicate.userId !== outcome.userId)
+              throw new ConflictException(
+                `Employee ID "${resolvedEmployeeId}" is already in use in your organization.`,
+              );
+          }
 
           if (!outcome.createdUser)
             await tx

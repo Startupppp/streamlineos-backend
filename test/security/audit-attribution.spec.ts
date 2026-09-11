@@ -100,8 +100,7 @@ const MUTATION_SERVICES_WITH_CRITICAL_AUDIT = [
   "modules/hr/lifecycle/termination.service.ts",
   "modules/hr/time/leaves-approval.service.ts",
   "modules/hr/time/leaves-write.service.ts",
-  "modules/organization/hierarchy/org-hierarchy-branches.service.ts",
-  "modules/organization/hierarchy/org-hierarchy-departments.service.ts",
+  "modules/organization/hierarchy/org-unit-crud.ts",
 ];
 
 describe("HRMS critical services — logCritical is called and awaited", () => {

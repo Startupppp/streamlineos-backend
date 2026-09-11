@@ -21,10 +21,10 @@ import { listFromMetadata, pageFromMetadata } from "./mail-mirror-page";
 import { advanceUnionCursor } from "./mail-union-cursor";
 import type {
   MailDownloadResponse,
-  MailFolder,
   MailListResponse,
   MailMessageDetail,
-} from "./dto/mail-schemas";
+} from "./dto/mail-response.schemas";
+import type { MailFolder } from "./dto/mail-schemas";
 
 const CACHE_TTL_SECONDS = 45;
 
@@ -44,31 +44,6 @@ export class MailService {
   async listAccounts(orgId: string, userId: string) {
     return this.accounts.listAccounts(orgId, userId);
   }
-
-  /**
-   * How many messages in `folder` are unread, for the unread badge.
-   *
-   * The badge is rendered by every authenticated page, and it used to be derived
-   * by listing `scanLimit` messages per connected mailbox out of Gmail/Graph and
-   * counting `!isRead` in JavaScript — a provider fanout on every page load, and
-   * an answer that was only ever `exact` when the mailbox happened to hold fewer
-   * than `scanLimit` messages.
-   *
-   * `mail_message_metadata` already mirrors exactly the rows being counted: it is
-   * upserted on every inbox load by `deferUpsertBatch`, whichever read path
-   * served that load. So when every connected mailbox's copy of `folder` is
-   * fresh, one indexed aggregate against the mirror answers it exactly.
-   *
-   * The provider fanout stays as the cold and stale path rather than being
-   * deleted, because the mirror only holds what has already been listed — a
-   * member who has never opened their inbox has no rows, and counting zero there
-   * would be wrong rather than slow. That fanout also refreshes the mirror on its
-   * way through, so the following call is served locally.
-   *
-   * All-fresh rather than per-account is deliberate: mixing a mirrored count for
-   * some mailboxes with a scanned count for others would double-count nothing but
-   * would report `exact` for a number that is partly a 100-message sample.
-   */
   async countUnread(
     orgId: string,
     userId: string,
@@ -81,15 +56,30 @@ export class MailService {
 
     if (membershipId !== null) {
       const accountIds = accounts.map((acc) => acc.id);
-      const fresh = await this.metadata.freshAccountIds(orgId, accountIds, folder);
+      const fresh = await this.metadata.freshAccountIds(
+        orgId,
+        accountIds,
+        folder,
+      );
       if (fresh.length === accountIds.length) {
-        const unread = await this.metadata.countUnread(orgId, membershipId, folder, accountIds);
+        const unread = await this.metadata.countUnread(
+          orgId,
+          membershipId,
+          folder,
+          accountIds,
+        );
         return { unread, exact: true };
       }
     }
 
     const result = await this.listMessages(
-      orgId, userId, membershipId, folder, "all", scanLimit, undefined,
+      orgId,
+      userId,
+      membershipId,
+      folder,
+      "all",
+      scanLimit,
+      undefined,
     );
     return {
       unread: result.messages.filter((m) => !m.isRead).length,
@@ -108,36 +98,40 @@ export class MailService {
     query?: string,
   ): Promise<MailListResponse> {
     const allAccounts = await this.accounts.listAccounts(orgId, userId);
-    const targetAccounts = accountIdParam === "all"
-      ? allAccounts
-      : allAccounts.filter((a) => a.id === Number(accountIdParam));
+    const targetAccounts =
+      accountIdParam === "all"
+        ? allAccounts
+        : allAccounts.filter((a) => a.id === Number(accountIdParam));
 
     if (targetAccounts.length === 0) {
       return { messages: [], nextCursor: null, accountErrors: [] };
     }
 
-    // The paging regime is chosen once, at page one, and then carried in the cursor:
-    // a keyset against the local mirror and a provider page token resume differently,
-    // so swapping regimes mid-scroll repeats or skips rows.
-    //
-    // The mirror serves the whole target set, not just a mailbox the reader has
-    // singled out. It used to be gated on `accountIdParam !== "all"`, and every
-    // default caller passes "all" — the list pane opens on it — so the indexed
-    // keyset path that `idx_mail_metadata_list_keyset` exists for was unreachable
-    // from the shipped UI, and the default inbox load was always a provider
-    // fanout. The union is the same single index walk: the keyset index leads
-    // with (org_id, user_membership_id, folder) and orders by (date DESC, id
-    // DESC), with no account column in between.
     const metadataCursor = cursor ? decodeMetadataCursor(cursor, userId) : null;
     if (membershipId !== null) {
       if (metadataCursor !== null) {
         return pageFromMetadata(
-          this.metadata, orgId, userId, membershipId, targetAccounts, folder, limit, query, metadataCursor,
+          this.metadata,
+          orgId,
+          userId,
+          membershipId,
+          targetAccounts,
+          folder,
+          limit,
+          query,
+          metadataCursor,
         );
       }
       if (!cursor) {
         const page = await listFromMetadata(
-          this.metadata, orgId, userId, membershipId, targetAccounts, folder, limit, query,
+          this.metadata,
+          orgId,
+          userId,
+          membershipId,
+          targetAccounts,
+          folder,
+          limit,
+          query,
         );
         if (page) return page;
       }
@@ -147,7 +141,19 @@ export class MailService {
     const skipCache = Boolean(query);
 
     const settled = await Promise.allSettled(
-      targetAccounts.map((acc) => this.fetchMessagesForAccount(orgId, userId, membershipId, acc, folder, limit, parsedCursor, query, skipCache)),
+      targetAccounts.map((acc) =>
+        this.fetchMessagesForAccount(
+          orgId,
+          userId,
+          membershipId,
+          acc,
+          folder,
+          limit,
+          parsedCursor,
+          query,
+          skipCache,
+        ),
+      ),
     );
 
     const allMessages: ReturnType<typeof mergeMessagesByDate> = [];
@@ -161,13 +167,8 @@ export class MailService {
       outlookHasMore: boolean;
       currentCursorValue: AccountCursorValue;
     }> = [];
-    // The incoming position of every account whose fetch REJECTED. It is carried
-    // into the outgoing cursor verbatim: an account that is not in the cursor map
-    // decodes on the next request as "no position yet" and replays from row zero,
-    // so one transient provider error re-delivers that mailbox's first page in the
-    // middle of a scroll — duplicate `accountId-id` keys, and every message
-    // between its real position and the end silently unreachable.
-    const carriedCursors: Array<{ accId: number; value: AccountCursorValue }> = [];
+    const carriedCursors: Array<{ accId: number; value: AccountCursorValue }> =
+      [];
 
     settled.forEach((outcome, i) => {
       const acc = targetAccounts[i];
@@ -184,30 +185,40 @@ export class MailService {
         });
       } else {
         const err = outcome.reason;
-        const message = err instanceof Error ? err.message : "Failed to load messages";
-        accountErrors.push({ accountId: acc.id, accountEmail: acc.accountEmail, message });
-        if (err instanceof ComposioToolError && err.isAuthError) reauthAccountIds.push(acc.id);
+        const message =
+          err instanceof Error ? err.message : "Failed to load messages";
+        accountErrors.push({
+          accountId: acc.id,
+          accountEmail: acc.accountEmail,
+          message,
+        });
+        if (err instanceof ComposioToolError && err.isAuthError)
+          reauthAccountIds.push(acc.id);
         const carried = parsedCursor[acc.id];
-        if (carried !== undefined) carriedCursors.push({ accId: acc.id, value: carried });
+        if (carried !== undefined)
+          carriedCursors.push({ accId: acc.id, value: carried });
       }
     });
 
-    // One awaited UPDATE for every mailbox whose grant just failed. The per-account
-    // fire-and-forget form it replaces issued a write per row and dropped its rejection,
-    // so a failed flag left the mailbox reading `active` with nothing logged.
-    if (reauthAccountIds.length > 0) await this.accounts.markNeedsReauthMany(reauthAccountIds, orgId);
+    if (reauthAccountIds.length > 0)
+      await this.accounts.markNeedsReauthMany(reauthAccountIds, orgId);
 
     const merged = mergeMessagesByDate(allMessages).slice(0, limit);
     const mergedIds = new Set(merged.map((m) => `${m.accountId}:${m.id}`));
 
-    const nextCursorMap = advanceUnionCursor(accountFetches, mergedIds, carriedCursors);
+    const nextCursorMap = advanceUnionCursor(
+      accountFetches,
+      mergedIds,
+      carriedCursors,
+    );
 
-    const hasMore = Object.values(nextCursorMap).some((v) => v !== undefined && v !== null);
+    const hasMore = Object.values(nextCursorMap).some(
+      (v) => v !== undefined && v !== null,
+    );
     const nextCursor = hasMore ? encodeCursor(nextCursorMap, userId) : null;
 
     return { messages: merged, nextCursor, accountErrors };
   }
-
 
   private async fetchMessagesForAccount(
     orgId: string,
@@ -219,14 +230,28 @@ export class MailService {
     parsedCursor: OpaqueCursor,
     query: string | undefined,
     skipCache: boolean,
-  ): Promise<{ messages: ReturnType<typeof mergeMessagesByDate>; nextPageToken: string | undefined; outlookHasMore: boolean }> {
-    const conn: NormalizerConnectionMeta = { id: acc.id, composioAccountId: acc.composioConnectedAccountId, provider: acc.provider, accountEmail: acc.accountEmail };
+  ): Promise<{
+    messages: ReturnType<typeof mergeMessagesByDate>;
+    nextPageToken: string | undefined;
+    outlookHasMore: boolean;
+  }> {
+    const conn: NormalizerConnectionMeta = {
+      id: acc.id,
+      composioAccountId: acc.composioConnectedAccountId,
+      provider: acc.provider,
+      accountEmail: acc.accountEmail,
+    };
     const cursorValue = parsedCursor[acc.id];
-    if (cursorValue === null) return { messages: [], nextPageToken: undefined, outlookHasMore: false };
+    if (cursorValue === null)
+      return { messages: [], nextPageToken: undefined, outlookHasMore: false };
     const cacheKey = `${folder}:${JSON.stringify(cursorValue ?? "")}:${query ?? ""}`;
 
     const fetcher = async () => {
-      let result: { messages: ReturnType<typeof mergeMessagesByDate>; nextPageToken: string | undefined; outlookHasMore: boolean };
+      let result: {
+        messages: ReturnType<typeof mergeMessagesByDate>;
+        nextPageToken: string | undefined;
+        outlookHasMore: boolean;
+      };
       if (acc.provider === "gmail") {
         let pageToken: string | undefined;
         let withinPageSkip = 0;
@@ -236,19 +261,52 @@ export class MailService {
         } else if (typeof cursorValue === "string") {
           pageToken = cursorValue;
         }
-        const raw = await this.gmail.listMessages(userId, conn, folder, limit + withinPageSkip, pageToken, query);
-        result = { messages: raw.messages.slice(withinPageSkip), nextPageToken: raw.nextPageToken ?? undefined, outlookHasMore: false };
+        const raw = await this.gmail.listMessages(
+          userId,
+          conn,
+          folder,
+          limit + withinPageSkip,
+          pageToken,
+          query,
+        );
+        result = {
+          messages: raw.messages.slice(withinPageSkip),
+          nextPageToken: raw.nextPageToken ?? undefined,
+          outlookHasMore: false,
+        };
       } else {
         const skip = typeof cursorValue === "number" ? cursorValue : 0;
-        const raw = await this.outlook.listMessages(userId, conn, folder, limit, skip, query);
-        result = { messages: raw.messages, nextPageToken: undefined, outlookHasMore: raw.nextSkip !== null && raw.nextSkip !== undefined };
+        const raw = await this.outlook.listMessages(
+          userId,
+          conn,
+          folder,
+          limit,
+          skip,
+          query,
+        );
+        result = {
+          messages: raw.messages,
+          nextPageToken: undefined,
+          outlookHasMore: raw.nextSkip !== null && raw.nextSkip !== undefined,
+        };
       }
 
       if (!query && result.messages.length > 0 && membershipId !== null) {
-        this.metadata.deferUpsertBatch(acc.id, membershipId, orgId, folder, result.messages);
-        await this.checkpoints.savePosition(orgId, acc.id, folder, result.nextPageToken ?? null).catch((err: unknown) => {
-          this.logger.error(`checkpoint save failed orgId=${orgId} accountId=${acc.id} folder=${folder}`, err instanceof Error ? err.stack : String(err));
-        });
+        this.metadata.deferUpsertBatch(
+          acc.id,
+          membershipId,
+          orgId,
+          folder,
+          result.messages,
+        );
+        await this.checkpoints
+          .savePosition(orgId, acc.id, folder, result.nextPageToken ?? null)
+          .catch((err: unknown) => {
+            this.logger.error(
+              `checkpoint save failed orgId=${orgId} accountId=${acc.id} folder=${folder}`,
+              err instanceof Error ? err.stack : String(err),
+            );
+          });
       }
 
       return result;
@@ -269,10 +327,20 @@ export class MailService {
     messageId: string,
     accountId: number,
   ): Promise<MailMessageDetail> {
-    const acc = await this.accounts.assertOwnedConnection(orgId, userId, accountId);
-    const conn: NormalizerConnectionMeta = { id: acc.id, composioAccountId: acc.composioConnectedAccountId, provider: acc.provider, accountEmail: acc.accountEmail };
+    const acc = await this.accounts.assertOwnedConnection(
+      orgId,
+      userId,
+      accountId,
+    );
+    const conn: NormalizerConnectionMeta = {
+      id: acc.id,
+      composioAccountId: acc.composioConnectedAccountId,
+      provider: acc.provider,
+      accountEmail: acc.accountEmail,
+    };
     try {
-      if (acc.provider === "gmail") return await this.gmail.getMessage(userId, conn, messageId);
+      if (acc.provider === "gmail")
+        return await this.gmail.getMessage(userId, conn, messageId);
       return await this.outlook.getMessage(userId, conn, messageId);
     } catch (err) {
       if (err instanceof ComposioToolError && err.isAuthError)
@@ -287,12 +355,22 @@ export class MailService {
     threadId: string,
     accountId: number,
   ): Promise<MailMessageDetail[]> {
-    const acc = await this.accounts.assertOwnedConnection(orgId, userId, accountId);
-    const conn: NormalizerConnectionMeta = { id: acc.id, composioAccountId: acc.composioConnectedAccountId, provider: acc.provider, accountEmail: acc.accountEmail };
+    const acc = await this.accounts.assertOwnedConnection(
+      orgId,
+      userId,
+      accountId,
+    );
+    const conn: NormalizerConnectionMeta = {
+      id: acc.id,
+      composioAccountId: acc.composioConnectedAccountId,
+      provider: acc.provider,
+      accountEmail: acc.accountEmail,
+    };
     try {
-      const messages = acc.provider === "gmail"
-        ? await this.gmail.getThread(userId, conn, threadId)
-        : await this.outlook.getThread(userId, conn, threadId);
+      const messages =
+        acc.provider === "gmail"
+          ? await this.gmail.getThread(userId, conn, threadId)
+          : await this.outlook.getThread(userId, conn, threadId);
       return sortThreadChronologically(messages);
     } catch (err) {
       if (err instanceof ComposioToolError && err.isAuthError)
@@ -311,12 +389,29 @@ export class MailService {
     cc?: string[],
     bcc?: string[],
   ): Promise<void> {
-    const acc = await this.accounts.assertOwnedConnection(orgId, userId, accountId);
-    const conn: NormalizerConnectionMeta = { id: acc.id, composioAccountId: acc.composioConnectedAccountId, provider: acc.provider, accountEmail: acc.accountEmail };
+    const acc = await this.accounts.assertOwnedConnection(
+      orgId,
+      userId,
+      accountId,
+    );
+    const conn: NormalizerConnectionMeta = {
+      id: acc.id,
+      composioAccountId: acc.composioConnectedAccountId,
+      provider: acc.provider,
+      accountEmail: acc.accountEmail,
+    };
     if (acc.provider === "gmail") {
       await this.gmail.sendEmail(userId, conn, to, subject, bodyHtml, cc, bcc);
     } else {
-      await this.outlook.sendEmail(userId, conn, to, subject, bodyHtml, cc, bcc);
+      await this.outlook.sendEmail(
+        userId,
+        conn,
+        to,
+        subject,
+        bodyHtml,
+        cc,
+        bcc,
+      );
     }
   }
 
@@ -347,22 +442,48 @@ export class MailService {
     cc?: string[],
     to?: string[],
   ): Promise<void> {
-    const acc = await this.accounts.assertOwnedConnection(orgId, userId, accountId);
-    const conn: NormalizerConnectionMeta = { id: acc.id, composioAccountId: acc.composioConnectedAccountId, provider: acc.provider, accountEmail: acc.accountEmail };
+    const acc = await this.accounts.assertOwnedConnection(
+      orgId,
+      userId,
+      accountId,
+    );
+    const conn: NormalizerConnectionMeta = {
+      id: acc.id,
+      composioAccountId: acc.composioConnectedAccountId,
+      provider: acc.provider,
+      accountEmail: acc.accountEmail,
+    };
     const requestedRecipient = to?.[0];
     if (acc.provider === "gmail") {
-      if (!threadId) throw new BadRequestException("threadId is required for Gmail replies");
+      if (!threadId)
+        throw new BadRequestException("threadId is required for Gmail replies");
       let recipientEmail = requestedRecipient;
       if (!recipientEmail) {
         const original = await this.gmail.getMessage(userId, conn, messageId);
-        recipientEmail = original.from.email !== acc.accountEmail
-          ? original.from.email
-          : original.to[0]?.email;
+        recipientEmail =
+          original.from.email !== acc.accountEmail
+            ? original.from.email
+            : original.to[0]?.email;
       }
-      if (!recipientEmail) throw new BadRequestException("Cannot determine reply recipient: original message has no resolvable address");
-      await this.gmail.replyToThread(userId, conn, { threadId, recipientEmail, bodyHtml, cc });
+      if (!recipientEmail)
+        throw new BadRequestException(
+          "Cannot determine reply recipient: original message has no resolvable address",
+        );
+      await this.gmail.replyToThread(userId, conn, {
+        threadId,
+        recipientEmail,
+        bodyHtml,
+        cc,
+      });
     } else {
-      await this.outlook.replyToMessage(userId, conn, messageId, bodyHtml, cc, requestedRecipient);
+      await this.outlook.replyToMessage(
+        userId,
+        conn,
+        messageId,
+        bodyHtml,
+        cc,
+        requestedRecipient,
+      );
     }
   }
 
@@ -375,31 +496,72 @@ export class MailService {
     action: "markRead" | "markUnread" | "star" | "unstar" | "archive" | "trash",
     threadId?: string,
   ): Promise<void> {
-    const acc = await this.accounts.assertOwnedConnection(orgId, userId, accountId);
-    const conn: NormalizerConnectionMeta = { id: acc.id, composioAccountId: acc.composioConnectedAccountId, provider: acc.provider, accountEmail: acc.accountEmail };
+    const acc = await this.accounts.assertOwnedConnection(
+      orgId,
+      userId,
+      accountId,
+    );
+    const conn: NormalizerConnectionMeta = {
+      id: acc.id,
+      composioAccountId: acc.composioConnectedAccountId,
+      provider: acc.provider,
+      accountEmail: acc.accountEmail,
+    };
 
     if (acc.provider === "gmail") {
       if (action === "trash") {
         await this.gmail.moveToTrash(userId, conn, messageId);
       } else {
         if (!threadId) {
-          throw new BadRequestException("threadId is required for Gmail label operations");
+          throw new BadRequestException(
+            "threadId is required for Gmail label operations",
+          );
         }
         switch (action) {
           case "markRead":
-            await this.gmail.modifyThreadLabels(userId, conn, threadId, [], ["UNREAD"]);
+            await this.gmail.modifyThreadLabels(
+              userId,
+              conn,
+              threadId,
+              [],
+              ["UNREAD"],
+            );
             break;
           case "markUnread":
-            await this.gmail.modifyThreadLabels(userId, conn, threadId, ["UNREAD"], []);
+            await this.gmail.modifyThreadLabels(
+              userId,
+              conn,
+              threadId,
+              ["UNREAD"],
+              [],
+            );
             break;
           case "star":
-            await this.gmail.modifyThreadLabels(userId, conn, threadId, ["STARRED"], []);
+            await this.gmail.modifyThreadLabels(
+              userId,
+              conn,
+              threadId,
+              ["STARRED"],
+              [],
+            );
             break;
           case "unstar":
-            await this.gmail.modifyThreadLabels(userId, conn, threadId, [], ["STARRED"]);
+            await this.gmail.modifyThreadLabels(
+              userId,
+              conn,
+              threadId,
+              [],
+              ["STARRED"],
+            );
             break;
           case "archive":
-            await this.gmail.modifyThreadLabels(userId, conn, threadId, [], ["INBOX"]);
+            await this.gmail.modifyThreadLabels(
+              userId,
+              conn,
+              threadId,
+              [],
+              ["INBOX"],
+            );
             break;
         }
       }
@@ -421,14 +583,23 @@ export class MailService {
           await this.outlook.moveMessage(userId, conn, messageId, "archive");
           break;
         case "trash":
-          await this.outlook.moveMessage(userId, conn, messageId, "deleteditems");
+          await this.outlook.moveMessage(
+            userId,
+            conn,
+            messageId,
+            "deleteditems",
+          );
           break;
       }
     }
 
     await this.cache.invalidateNamespace(`mail:messages:${acc.id}`);
 
-    const stateUpdate: { isRead?: boolean; isStarred?: boolean; folder?: string } = {};
+    const stateUpdate: {
+      isRead?: boolean;
+      isStarred?: boolean;
+      folder?: string;
+    } = {};
     if (action === "markRead") stateUpdate.isRead = true;
     else if (action === "markUnread") stateUpdate.isRead = false;
     else if (action === "star") stateUpdate.isStarred = true;
@@ -437,7 +608,13 @@ export class MailService {
     else if (action === "trash") stateUpdate.folder = "trash";
 
     if (Object.keys(stateUpdate).length > 0 && membershipId !== null) {
-      this.metadata.deferUpdateState(acc.id, membershipId, orgId, messageId, stateUpdate);
+      this.metadata.deferUpdateState(
+        acc.id,
+        membershipId,
+        orgId,
+        messageId,
+        stateUpdate,
+      );
     }
   }
 
@@ -449,11 +626,32 @@ export class MailService {
     accountId: number,
     fileName: string,
   ): Promise<MailDownloadResponse> {
-    const acc = await this.accounts.assertOwnedConnection(orgId, userId, accountId);
-    const conn: NormalizerConnectionMeta = { id: acc.id, composioAccountId: acc.composioConnectedAccountId, provider: acc.provider, accountEmail: acc.accountEmail };
+    const acc = await this.accounts.assertOwnedConnection(
+      orgId,
+      userId,
+      accountId,
+    );
+    const conn: NormalizerConnectionMeta = {
+      id: acc.id,
+      composioAccountId: acc.composioConnectedAccountId,
+      provider: acc.provider,
+      accountEmail: acc.accountEmail,
+    };
     if (acc.provider === "gmail") {
-      return this.gmail.getAttachment(userId, conn, messageId, attachmentId, fileName);
+      return this.gmail.getAttachment(
+        userId,
+        conn,
+        messageId,
+        attachmentId,
+        fileName,
+      );
     }
-    return this.outlook.getAttachment(userId, conn, messageId, attachmentId, fileName);
+    return this.outlook.getAttachment(
+      userId,
+      conn,
+      messageId,
+      attachmentId,
+      fileName,
+    );
   }
 }

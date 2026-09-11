@@ -91,7 +91,7 @@ export class EmployeeBulkOnboardingService {
 
     const plan = planBulkOnboarding(rows, catalog, screens, employeeNumberOwner, roleErrors);
 
-    let outcome: BulkOnboardWriteOutcome = { admitted: [], welcomeEmails: [] };
+    let outcome: BulkOnboardWriteOutcome = { admitted: [], rejected: [], welcomeEmails: [] };
     const results: BulkOnboardRowResult[] = [...plan.rejected];
     if (plan.accepted.length > 0) {
       outcome = await withMembershipMutations(this.cache, (membership) =>
@@ -113,6 +113,7 @@ export class EmployeeBulkOnboardingService {
           success: true,
           userId: employee.userId,
         });
+      results.push(...outcome.rejected);
     }
 
     this.deferDelivery(actor, outcome, catalog.created);
@@ -124,16 +125,16 @@ export class EmployeeBulkOnboardingService {
       targetType: "employee",
       metadata: {
         total: rows.length,
-        created: plan.accepted.length,
-        failed: plan.rejected.length,
+        created: outcome.admitted.length,
+        failed: plan.rejected.length + outcome.rejected.length,
       },
     });
 
     results.sort((left, right) => left.row - right.row);
     return {
       total: rows.length,
-      created: plan.accepted.length,
-      failed: plan.rejected.length,
+      created: outcome.admitted.length,
+      failed: plan.rejected.length + outcome.rejected.length,
       results,
     };
   }

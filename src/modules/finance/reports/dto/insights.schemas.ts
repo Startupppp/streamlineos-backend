@@ -8,27 +8,3 @@ export const insightsQuerySchema = z.object({
 }).strict();
 
 export type InsightsQuery = z.infer<typeof insightsQuerySchema>;
-
-export type AnomalySeverity = "info" | "warning" | "critical";
-
-export type AnomalyKind =
-  | "EXPENSE_SPIKE"
-  | "DUPLICATE_BILL_SUSPECT"
-  | "UNUSUAL_JOURNAL"
-  | "ROUND_AMOUNT_PATTERN"
-  | "AR_CONCENTRATION"
-  | "CASH_DIP_PROJECTED";
-
-export interface AnomalyDrill {
-  type: string;
-  params: Record<string, string | number>;
-}
-
-export interface AnomalyFinding {
-  id: string;
-  severity: AnomalySeverity;
-  kind: AnomalyKind;
-  title: string;
-  detail: string;
-  drill: AnomalyDrill;
-}

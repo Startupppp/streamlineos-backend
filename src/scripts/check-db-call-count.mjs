@@ -96,7 +96,7 @@ const DB_CALL_PATTERNS = [
   //
   // Anchored on `cache.` exactly rather than `\w*[Cc]ache`, because the in-process
   // TTL maps in this repo are named `versionCache` / `permsCache` / `tierCache` /
-  // `moduleMapCache` / `deniedModulesCache`, and `Map.prototype.delete` is not a
+  // `moduleMapCache`, and `Map.prototype.delete` is not a
   // round trip. A looser pattern reports those five sweeps as N+1s.
   /\b(?:this\.)?cache\s*\.\s*(?:get|set|del|delete|wrap|cached|cachedForOrg|cachedVersioned|invalidate|invalidateMany|invalidateNamespace|invalidateNamespaceMany|invalidateForOrg|invalidateNamespaceForOrg)\s*\(/,
   /\bredisClient\s*\.\s*(?:get|set|del|hget|hset|lpush|rpush)\s*\(/,

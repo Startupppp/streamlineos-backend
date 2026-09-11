@@ -1,6 +1,7 @@
 import { Test } from "@nestjs/testing";
 import { OrgSetupService } from "../org-setup.service";
 import { OrgSetupResolverService } from "../org-setup-resolver.service";
+import { OrganizationCreationService } from "../../core/organization-creation.service";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
@@ -127,6 +128,10 @@ async function buildService(db: unknown) {
     providers: [
       OrgSetupService,
       OrgSetupResolverService,
+      {
+        provide: OrganizationCreationService,
+        useValue: { createFromSetup: jest.fn() },
+      },
       { provide: DRIZZLE, useValue: db },
       { provide: AuditService, useValue: { log: jest.fn() } },
       { provide: CacheService, useValue: { invalidate: jest.fn() } },

@@ -23,6 +23,8 @@ export const ALREADY_MEMBER_MESSAGE = "User is already a member of this organiza
 export const ARCHIVED_MEMBER_MESSAGE =
   "This person was archived/suspended in this organization. Restore them from Users instead of inviting again.";
 
+export const DUPLICATE_ADMISSION_EMAIL_MESSAGE = "Duplicate email in this upload";
+
 export type AdmissionUserDraft = Omit<typeof users.$inferInsert, "id" | "email">;
 
 export interface AdmissionActor {
@@ -42,7 +44,7 @@ export interface AdmissionNeedsRestore {
 
 export interface AdmissionConflict {
   kind: "conflict";
-  reason: "already-member" | "email-domain-not-allowed";
+  reason: "already-member" | "duplicate-in-batch" | "email-domain-not-allowed";
   message: string;
 }
 
@@ -254,9 +256,19 @@ export class MembershipAdmissionService {
   async admitMany(tx: DbOrTx, input: AdmitManyInput): Promise<AdmissionOutcome[]> {
     const outcomes: AdmissionOutcome[] = [];
     const cleared: ClearedAdmission[] = [];
+    const seenEmails = new Set<string>();
 
     input.candidates.forEach((candidate, index) => {
       const email = canonicalAdmissionEmail(candidate.email);
+      if (seenEmails.has(email)) {
+        outcomes[index] = {
+          kind: "conflict",
+          reason: "duplicate-in-batch",
+          message: DUPLICATE_ADMISSION_EMAIL_MESSAGE,
+        };
+        return;
+      }
+      seenEmails.add(email);
       const screen = candidate.screen;
       if (screen.kind !== "clear") {
         outcomes[index] = screen;

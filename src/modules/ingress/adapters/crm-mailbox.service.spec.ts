@@ -4,7 +4,7 @@
 jest.mock("@composio/core", () => ({ Composio: jest.fn() }));
 
 import type { Db } from "../../../db/drizzle.types";
-import type { MailMessageDetail, MailMessageSummary } from "../../mail/dto/mail-schemas";
+import type { MailMessageDetail, MailMessageSummary } from "../../mail/dto/mail-response.schemas";
 import type { GmailMailProvider } from "../../mail/providers/gmail-mail.provider";
 import type { OutlookMailProvider } from "../../mail/providers/outlook-mail.provider";
 import type { OutlookMessageWithLabels } from "../../mail/providers/outlook-mail-wire";

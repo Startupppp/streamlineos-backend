@@ -6,7 +6,7 @@ import type { MailAccountsService, MailAccount } from "./mail-accounts.service";
 import type { CacheService } from "../../common/cache/cache.service";
 import type { MailMetadataService } from "./mail-metadata.service";
 import type { MailSyncCheckpointService } from "./mail-sync-checkpoint.service";
-import type { MailMessageDetail } from "./dto/mail-schemas";
+import type { MailMessageDetail } from "./dto/mail-response.schemas";
 
 const ACCOUNT_EMAIL = "me@example.com";
 

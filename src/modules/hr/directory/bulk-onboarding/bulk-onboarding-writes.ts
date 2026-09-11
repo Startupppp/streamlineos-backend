@@ -18,7 +18,10 @@ import { formatDateOnly } from "../../../../common/date";
 import { appUrl } from "../../../email/app-url";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { PersonEmploymentSyncService } from "../../core/person-employment-sync.service";
-import type { MembershipAdmissionService } from "../../../organization/core/membership-admission.service";
+import {
+  admissionRefusalMessage,
+  type MembershipAdmissionService,
+} from "../../../organization/core/membership-admission.service";
 import { toBankDetails } from "./bulk-onboarding-bank-details";
 import { seedSalaryProfiles, type SalarySeedEntry } from "./bulk-onboarding-salary";
 import type {
@@ -136,18 +139,29 @@ export async function writeBulkOnboarding(
     })),
   });
 
-  const admitted: AdmittedEmployee[] = accepted.map((employee, index) => {
+  const admitted: AdmittedEmployee[] = [];
+  const rejected: BulkOnboardWriteOutcome["rejected"] = [];
+  accepted.forEach((employee, index) => {
     const outcome = outcomes[index];
-    if (!outcome || outcome.kind !== "admitted")
+    if (!outcome)
       throw new InternalServerErrorException(
         `Admission did not complete for ${employee.email}.`,
       );
-    return {
+    if (outcome.kind !== "admitted") {
+      rejected.push({
+        row: employee.row,
+        email: employee.email,
+        success: false,
+        error: admissionRefusalMessage(outcome),
+      });
+      return;
+    }
+    admitted.push({
       ...employee,
       userId: outcome.userId,
       membershipId: outcome.membershipId,
       createdUser: outcome.createdUser,
-    };
+    });
   });
 
   await refreshRelinkedUsers(tx, admitted);
@@ -218,5 +232,5 @@ export async function writeBulkOnboarding(
     await tx.insert(magicLinkTokens).values(tokens);
   }
 
-  return { admitted, welcomeEmails };
+  return { admitted, rejected, welcomeEmails };
 }

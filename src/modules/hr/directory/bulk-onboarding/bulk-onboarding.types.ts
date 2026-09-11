@@ -39,5 +39,6 @@ export interface BulkOnboardPlan {
 
 export interface BulkOnboardWriteOutcome {
   admitted: AdmittedEmployee[];
+  rejected: BulkOnboardRowResult[];
   welcomeEmails: Array<{ email: string; name: string; signInUrl: string }>;
 }

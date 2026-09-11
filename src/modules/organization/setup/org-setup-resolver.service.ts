@@ -7,20 +7,11 @@ import type { SetupInput } from "./dto/org.schemas";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { withMembershipMutations } from "../../../common/org/membership-mutations";
-import { randomUUID } from "node:crypto";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { withIdentity } from "../../../common/tenant/with-identity";
 import { logger } from "../../../common/logger/logger.service";
-import {
-  bootstrapCellOrganization,
-  generateOrgSlug,
-} from "../core/bootstrap-cell-organization";
-import {
-  placeOrganization,
-  unplaceOrganization,
-} from "../../../common/region/placement-lookup";
-import { chooseRegionForNewOrg } from "../../../common/region/cell-admission";
+import { OrganizationCreationService } from "../core/organization-creation.service";
 
 export type SetupMembership = {
   id: number;
@@ -44,6 +35,7 @@ export class OrgSetupResolverService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
+    private readonly creation: OrganizationCreationService,
   ) {}
 
   async listSetupMemberships(userId: string): Promise<SetupMembership[]> {
@@ -192,41 +184,19 @@ export class OrgSetupResolverService {
       }
     }
 
-    const orgId = randomUUID();
     const orgName = input.companyName?.trim() || "My Organization";
-    const region = (await chooseRegionForNewOrg(this.db, { organizationId: orgId })).region;
-    await placeOrganization(this.db, { orgId, region });
-
-    // A placed organisation with no rows 401s every request, so placement must be compensated.
-    try {
-      await bootstrapCellOrganization(this.db, this.cache, {
-        orgId,
-        userId: u.userId,
-        region,
-        name: orgName,
-        slug: generateOrgSlug(orgName),
-        // The wizard chooses the modules; seeding a default set here would enable three the
-        // owner never picked and hand them ownership rows for modules they then switched off.
-        moduleKeys: [],
-      });
-    } catch (error) {
-      await unplaceOrganization(this.db, orgId).catch((compensationError: unknown) => {
-        logger.error("Placement compensation failed after org bootstrap error", {
-          userId: u.userId,
-          orgId,
-          error: compensationError,
-        });
-      });
-      throw error;
-    }
+    const organization = await this.creation.createFromSetup({
+      userId: u.userId,
+      name: orgName,
+    });
 
     this.audit.log({
       action: "org.created",
       userId: u.userId,
-      orgId,
-      targetId: orgId,
+      orgId: organization.id,
+      targetId: organization.id,
       targetType: "organization",
     });
-    return { orgId, isOwner: true };
+    return { orgId: organization.id, isOwner: true };
   }
 }

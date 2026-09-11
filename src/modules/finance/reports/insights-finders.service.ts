@@ -14,7 +14,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { baseCreditAmount, baseDebitAmount } from "../../accounting/core/journal-base-amount";
-import type { AnomalyFinding } from "./dto/insights.schemas";
+import type { AnomalyFinding } from "./dto/finance-reports-insights-response.schemas";
 
 export function stableHash(s: string): string {
   let h = 2166136261;

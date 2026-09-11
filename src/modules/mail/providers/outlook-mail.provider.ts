@@ -5,7 +5,8 @@ import {
   unwrapComposioData,
   type NormalizerConnectionMeta,
 } from "./mail-normalizers";
-import type { MailFolder, MailMessageDetail, MailMessageSummary } from "../dto/mail-schemas";
+import type { MailMessageDetail, MailMessageSummary } from "../dto/mail-response.schemas";
+import type { MailFolder } from "../dto/mail-schemas";
 import {
   folderToWellKnownName,
   outlookAttachmentDownloadSchema,

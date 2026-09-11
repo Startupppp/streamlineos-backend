@@ -1,35 +1,21 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { Injectable } from "@nestjs/common";
+import { and, eq, isNull } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { randomUUID } from "node:crypto";
 import { organizationMembers, orgUnits } from "../../../db/schema";
-import { DRIZZLE } from "../../../db/drizzle.constants";
-import { type Db } from "../../../db/drizzle.module";
-import { AuditService } from "../../../common/audit/audit.service";
 import type {
   CreateOrgDepartmentInput,
-  UpdateOrgDepartmentInput,
   ListQueryInput,
+  UpdateOrgDepartmentInput,
 } from "./dto/org-hierarchy.schemas";
 import {
-  orgUnitNormalizedName,
-  toOrgUnitCursorPage,
-} from "./org-hierarchy-list-filters";
-import {
-  assertOrgUnitCodeAvailable,
-  getOrgUnitListFilter,
-  getOrgUnitRowFilter,
-  getOrgUnitWriteFilter,
-  recordOrgUnitAudit,
-  resolveOrgUnitHeadMembershipId,
+  OrgUnitCrudService,
+  type OrgUnitCrudAdapter,
 } from "./org-unit-crud";
 
-const KIND = "DEPARTMENT";
-const LABEL = "Department";
-
 const headMember = alias(organizationMembers, "head_member");
+const departmentBranches = alias(orgUnits, "department_branches");
 
-const ORG_DEPT_COLUMNS = {
+const ORG_DEPARTMENT_COLUMNS = {
   id: orgUnits.id,
   orgId: orgUnits.orgId,
   name: orgUnits.name,
@@ -42,14 +28,13 @@ const ORG_DEPT_COLUMNS = {
   deletedAt: orgUnits.deletedAt,
 };
 
-const ORG_DEPT_READ_COLUMNS = {
-  ...ORG_DEPT_COLUMNS,
+const ORG_DEPARTMENT_READ_COLUMNS = {
+  ...ORG_DEPARTMENT_COLUMNS,
   headUserId: headMember.userId,
 };
 
-const departmentBranches = alias(orgUnits, "department_branches");
-const ORG_DEPT_LIST_COLUMNS = {
-  ...ORG_DEPT_READ_COLUMNS,
+const ORG_DEPARTMENT_LIST_COLUMNS = {
+  ...ORG_DEPARTMENT_READ_COLUMNS,
   branchName: departmentBranches.name,
 };
 
@@ -67,6 +52,8 @@ type OrgDepartmentRow = Pick<
   | "deletedAt"
 > & { headUserId: string | null };
 
+type OrgDepartmentListRow = OrgDepartmentRow & { branchName: string | null };
+
 export function toOrgDepartment(row: OrgDepartmentRow) {
   return {
     id: row.id,
@@ -83,25 +70,45 @@ export function toOrgDepartment(row: OrgDepartmentRow) {
   };
 }
 
-function toOrgDepartmentList(
-  row: OrgDepartmentRow & { branchName: string | null },
-) {
+function toOrgDepartmentList(row: OrgDepartmentListRow) {
   return {
     ...toOrgDepartment(row),
     branchName: row.branchName,
   };
 }
 
-@Injectable()
-export class OrgHierarchyDepartmentsService {
-  constructor(
-    @Inject(DRIZZLE) private readonly db: Db,
-    private readonly audit: AuditService,
-  ) {}
-
-  async listDepartments(orgId: string, query: ListQueryInput) {
-    const rows = await this.db
-      .select(ORG_DEPT_LIST_COLUMNS)
+const DEPARTMENT_ADAPTER: OrgUnitCrudAdapter<
+  CreateOrgDepartmentInput,
+  UpdateOrgDepartmentInput,
+  OrgDepartmentRow,
+  OrgDepartmentListRow,
+  ReturnType<typeof toOrgDepartment>,
+  ReturnType<typeof toOrgDepartmentList>
+> = {
+  kind: "DEPARTMENT",
+  label: "Department",
+  auditName: "org.department",
+  code: {
+    create: (input) => input.code,
+    update: (input) => input.code,
+    current: (row) => row.code,
+  },
+  parent: {
+    rule: "optional",
+    kind: "BRANCH",
+    label: "branch",
+    create: (input) => input.branchId,
+    update: (input) => input.branchId,
+    current: (row) => row.parentId,
+  },
+  head: {
+    create: (input) => input.headUserId,
+    update: (input) => input.headUserId,
+    current: (row) => row.headUserId,
+  },
+  listRows: async (db, plan) =>
+    db
+      .select(ORG_DEPARTMENT_LIST_COLUMNS)
       .from(orgUnits)
       .leftJoin(headMember, eq(headMember.id, orgUnits.headMembershipId))
       .leftJoin(
@@ -113,106 +120,60 @@ export class OrgHierarchyDepartmentsService {
           isNull(departmentBranches.deletedAt),
         ),
       )
-      .where(getOrgUnitListFilter({ orgId, kind: KIND, query }))
-      .orderBy(asc(orgUnitNormalizedName), asc(orgUnits.id))
-      .limit(query.limit + 1);
-    return toOrgUnitCursorPage(rows, query.limit, toOrgDepartmentList);
-  }
-
-  async getDepartment(orgId: string, id: string) {
-    const [row] = await this.db
-      .select(ORG_DEPT_READ_COLUMNS)
+      .where(plan.where)
+      .orderBy(...plan.orderBy)
+      .limit(plan.limit),
+  readRow: async (db, where) => {
+    const [row] = await db
+      .select(ORG_DEPARTMENT_READ_COLUMNS)
       .from(orgUnits)
       .leftJoin(headMember, eq(headMember.id, orgUnits.headMembershipId))
-      .where(getOrgUnitRowFilter(orgId, KIND, id))
+      .where(where)
       .limit(1);
-    return row ? toOrgDepartment(row) : null;
+    return row ?? null;
+  },
+  createValues: (input) => ({
+    name: input.name,
+    description: input.description,
+  }),
+  updateValues: (input) => ({
+    ...(input.name !== undefined ? { name: input.name } : {}),
+    ...(input.description !== undefined
+      ? { description: input.description }
+      : {}),
+    ...(input.status !== undefined ? { status: input.status } : {}),
+  }),
+  toOutput: toOrgDepartment,
+  toListOutput: toOrgDepartmentList,
+  toWriteOutput: toOrgDepartment,
+};
+
+@Injectable()
+export class OrgHierarchyDepartmentsService {
+  constructor(private readonly crud: OrgUnitCrudService) {}
+
+  listDepartments(orgId: string, query: ListQueryInput) {
+    return this.crud.list(DEPARTMENT_ADAPTER, orgId, query);
   }
 
-  async createDepartment(orgId: string, userId: string, body: CreateOrgDepartmentInput) {
-    const code = body.code.toUpperCase();
-    await assertOrgUnitCodeAvailable({
-      db: this.db,
-      orgId,
-      kind: KIND,
-      code,
-      label: LABEL,
-    });
-
-    const headMembershipId =
-      (await resolveOrgUnitHeadMembershipId(this.db, orgId, body.headUserId)) ?? null;
-
-    const [row] = await this.db
-      .insert(orgUnits)
-      .values({
-        id: randomUUID(),
-        orgId,
-        kind: KIND,
-        name: body.name,
-        code,
-        description: body.description,
-        headMembershipId,
-        parentId: body.branchId ?? undefined,
-      })
-      .returning(ORG_DEPT_COLUMNS);
-
-    if (!row) throw new Error("Failed to create department");
-
-    await recordOrgUnitAudit(this.audit, {
-      action: "org.department.created",
-      userId,
-      orgId,
-      targetId: row.id,
-    });
-
-    return toOrgDepartment({ ...row, headUserId: body.headUserId ?? null });
+  getDepartment(orgId: string, id: string) {
+    return this.crud.get(DEPARTMENT_ADAPTER, orgId, id);
   }
 
-  async updateDepartment(orgId: string, userId: string, id: string, body: UpdateOrgDepartmentInput) {
-    const existing = await this.getDepartment(orgId, id);
-    if (!existing) throw new NotFoundException("Department not found");
+  createDepartment(
+    orgId: string,
+    userId: string,
+    body: CreateOrgDepartmentInput,
+  ) {
+    return this.crud.create(DEPARTMENT_ADAPTER, orgId, userId, body);
+  }
 
-    if (body.code && body.code !== existing.code) {
-      await assertOrgUnitCodeAvailable({
-        db: this.db,
-        orgId,
-        kind: KIND,
-        code: body.code.toUpperCase(),
-        label: LABEL,
-      });
-    }
-
-    const { branchId, headUserId, code, ...rest } = body;
-
-    const deptHeadMembershipId = await resolveOrgUnitHeadMembershipId(
-      this.db,
-      orgId,
-      headUserId,
-    );
-
-    const effectiveHeadUserId =
-      headUserId !== undefined ? (headUserId ?? null) : (existing.headUserId ?? null);
-
-    const [row] = await this.db
-      .update(orgUnits)
-      .set({
-        ...rest,
-        ...(code !== undefined && { code: code.toUpperCase() }),
-        ...(headUserId !== undefined && { headMembershipId: deptHeadMembershipId }),
-        ...(branchId !== undefined && { parentId: branchId }),
-      })
-      .where(getOrgUnitWriteFilter(orgId, KIND, id))
-      .returning(ORG_DEPT_COLUMNS);
-
-    if (!row) throw new NotFoundException("Department not found");
-
-    await recordOrgUnitAudit(this.audit, {
-      action: "org.department.updated",
-      userId,
-      orgId,
-      targetId: id,
-    });
-
-    return toOrgDepartment({ ...row, headUserId: effectiveHeadUserId });
+  updateDepartment(
+    orgId: string,
+    userId: string,
+    id: string,
+    body: UpdateOrgDepartmentInput,
+  ) {
+    return this.crud.update(DEPARTMENT_ADAPTER, orgId, userId, id, body);
   }
 }

@@ -4,7 +4,7 @@ import {
 } from "@nestjs/common";
 import { OrgProfileService } from "./org-profile.service";
 import { AccountOrganizationIndexService } from "./account-organization-index.service";
-import type { OrganizationSagaService } from "./lifecycle/organization-saga.service";
+import type { OrganizationCreationService } from "./organization-creation.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
@@ -132,21 +132,17 @@ function makeService(
     rebuild: jest.fn(),
   } as unknown as AccountOrganizationIndexService;
 
-  const sagaService = {
-    begin: jest.fn(),
-    runStep: jest.fn(),
-    complete: jest.fn(),
-    compensate: jest.fn(),
-    reserve: jest.fn(),
-    release: jest.fn(),
-  } as unknown as OrganizationSagaService;
+  const creationService = {
+    createFromProfile: jest.fn(),
+    createFromSetup: jest.fn(),
+  } as unknown as OrganizationCreationService;
 
   return new OrgProfileService(
     primaryDb,
     auditService,
     cacheService,
     indexService,
-    sagaService,
+    creationService,
   );
 }
 

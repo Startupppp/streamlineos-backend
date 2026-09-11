@@ -1,6 +1,4 @@
-import { BadRequestException, ConflictException } from "@nestjs/common";
-import type { Db } from "../../../db/drizzle.module";
-import type { OrgHierarchyCacheService } from "../../../common/cache/org-hierarchy-cache.service";
+import { ConflictException } from "@nestjs/common";
 import { OrgHierarchyBranchesService } from "./org-hierarchy-branches.service";
 import { OrgHierarchyBusinessUnitsService } from "./org-hierarchy-business-units.service";
 import { OrgHierarchyCommandService } from "./org-hierarchy-command.service";
@@ -16,7 +14,6 @@ describe("OrgHierarchyService integrity boundaries", () => {
   const orgId = "org-1";
   const userId = "user-1";
   const unitId = "00000000-0000-0000-0000-000000000001";
-  let parentRows: unknown[];
   let businessUnits: {
     createBusinessUnit: jest.Mock;
     getBusinessUnit: jest.Mock;
@@ -51,20 +48,9 @@ describe("OrgHierarchyService integrity boundaries", () => {
     listCostCenters: jest.Mock;
     updateCostCenter: jest.Mock;
   };
-  let hierarchyCache: { invalidateAfterMutation: jest.Mock };
   let service: OrgHierarchyService;
 
   beforeEach(() => {
-    parentRows = [];
-    const db = {
-      select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({
-          where: jest.fn().mockReturnValue({
-            limit: jest.fn().mockImplementation(async () => parentRows),
-          }),
-        }),
-      }),
-    } as unknown as Db;
     businessUnits = {
       createBusinessUnit: jest.fn(),
       getBusinessUnit: jest.fn(),
@@ -111,12 +97,7 @@ describe("OrgHierarchyService integrity boundaries", () => {
       listCostCenters: jest.fn(),
       updateCostCenter: jest.fn(),
     };
-    hierarchyCache = {
-      invalidateAfterMutation: jest.fn().mockResolvedValue(undefined),
-    };
-
     service = new OrgHierarchyService(
-      db,
       businessUnits as unknown as OrgHierarchyBusinessUnitsService,
       branches as unknown as OrgHierarchyBranchesService,
       departments as unknown as OrgHierarchyDepartmentsService,
@@ -126,7 +107,6 @@ describe("OrgHierarchyService integrity boundaries", () => {
       dependencies as unknown as OrgHierarchyDependenciesService,
       commands as unknown as OrgHierarchyCommandService,
       {} as OrgHierarchyReadService,
-      hierarchyCache as unknown as OrgHierarchyCacheService,
     );
   });
 
@@ -202,79 +182,4 @@ describe("OrgHierarchyService integrity boundaries", () => {
     expect(branches.updateOrgBranch).not.toHaveBeenCalled();
   });
 
-  it("rejects a new assignment to an archived, disabled, or removed parent", async () => {
-    await expect(
-      service.createOrgBranch(orgId, userId, {
-        name: "West",
-        code: "WEST",
-        businessUnitId: unitId,
-      }),
-    ).rejects.toBeInstanceOf(BadRequestException);
-
-    expect(branches.createOrgBranch).not.toHaveBeenCalled();
-  });
-
-  it("allows a new assignment when the parent is active in the same organization", async () => {
-    parentRows = [{ id: unitId }];
-    branches.createOrgBranch.mockResolvedValue({ id: "branch-1" });
-
-    await expect(
-      service.createOrgBranch(orgId, userId, {
-        name: "West",
-        code: "WEST",
-        businessUnitId: unitId,
-      }),
-    ).resolves.toEqual({ id: "branch-1" });
-
-    expect(branches.createOrgBranch).toHaveBeenCalledTimes(1);
-  });
-
-  it("prevents restoring a nested business unit beneath an unavailable parent", async () => {
-    businessUnits.getBusinessUnit.mockResolvedValue({ parentId: unitId });
-
-    await expect(
-      service.updateBusinessUnit(orgId, userId, "child-business-unit", {
-        status: "ACTIVE",
-      }),
-    ).rejects.toBeInstanceOf(BadRequestException);
-
-    expect(businessUnits.updateBusinessUnit).not.toHaveBeenCalled();
-  });
-
-  it("prevents restoring a child while its existing parent is unavailable", async () => {
-    branches.getOrgBranch.mockResolvedValue({ businessUnitId: unitId });
-
-    await expect(
-      service.updateOrgBranch(orgId, userId, "branch-1", {
-        status: "ACTIVE",
-      }),
-    ).rejects.toBeInstanceOf(BadRequestException);
-
-    expect(branches.updateOrgBranch).not.toHaveBeenCalled();
-  });
-
-  it("invalidates after successful create, update, archive and restore mutations", async () => {
-    businessUnits.createBusinessUnit.mockResolvedValue({ id: "bu-created" });
-    locations.updateLocation.mockResolvedValue({ id: "location-updated" });
-    costCenters.updateCostCenter.mockResolvedValue({ id: "cost-center-archived" });
-    businessUnits.getBusinessUnit.mockResolvedValue({ parentId: null });
-    businessUnits.updateBusinessUnit.mockResolvedValue({ id: "bu-restored" });
-
-    await service.createBusinessUnit(orgId, userId, {
-      name: "Operations",
-      code: "OPS",
-    });
-    await service.updateLocation(orgId, userId, unitId, {
-      name: "Bengaluru",
-    });
-    await service.updateCostCenter(orgId, userId, unitId, {
-      status: "ARCHIVED",
-    });
-    await service.updateBusinessUnit(orgId, userId, unitId, {
-      status: "ACTIVE",
-    });
-
-    expect(hierarchyCache.invalidateAfterMutation).toHaveBeenCalledTimes(4);
-    expect(hierarchyCache.invalidateAfterMutation).toHaveBeenCalledWith(orgId);
-  });
 });

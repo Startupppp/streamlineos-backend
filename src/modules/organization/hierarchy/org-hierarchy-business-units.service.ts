@@ -1,29 +1,14 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { asc } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
-import { orgUnits } from "../../../db/schema/common/organization";
-import { DRIZZLE } from "../../../db/drizzle.constants";
-import { type Db } from "../../../db/drizzle.module";
-import { AuditService } from "../../../common/audit/audit.service";
+import { Injectable } from "@nestjs/common";
+import { orgUnits } from "../../../db/schema";
 import type {
   CreateBusinessUnitInput,
-  UpdateBusinessUnitInput,
   ListQueryInput,
+  UpdateBusinessUnitInput,
 } from "./dto/org-hierarchy.schemas";
 import {
-  orgUnitNormalizedName,
-  toOrgUnitCursorPage,
-} from "./org-hierarchy-list-filters";
-import {
-  assertOrgUnitCodeAvailable,
-  getOrgUnitListFilter,
-  getOrgUnitRowFilter,
-  getOrgUnitWriteFilter,
-  recordOrgUnitAudit,
+  OrgUnitCrudService,
+  type OrgUnitCrudAdapter,
 } from "./org-unit-crud";
-
-const KIND = "BUSINESS_UNIT";
-const LABEL = "Business unit";
 
 const ORG_BU_COLUMNS = {
   id: orgUnits.id,
@@ -67,95 +52,84 @@ export function toOrgBusinessUnit(row: OrgBusinessUnitRow) {
   };
 }
 
+const BUSINESS_UNIT_ADAPTER: OrgUnitCrudAdapter<
+  CreateBusinessUnitInput,
+  UpdateBusinessUnitInput,
+  OrgBusinessUnitRow,
+  OrgBusinessUnitRow,
+  ReturnType<typeof toOrgBusinessUnit>
+> = {
+  kind: "BUSINESS_UNIT",
+  label: "Business unit",
+  auditName: "org.businessUnit",
+  code: {
+    create: (input) => input.code,
+    update: (input) => input.code,
+    current: (row) => row.code,
+  },
+  parent: {
+    rule: "absent",
+    kind: "BUSINESS_UNIT",
+    label: "business unit",
+    current: (row) => row.parentId,
+  },
+  listRows: async (db, plan) =>
+    db
+      .select(ORG_BU_COLUMNS)
+      .from(orgUnits)
+      .where(plan.where)
+      .orderBy(...plan.orderBy)
+      .limit(plan.limit),
+  readRow: async (db, where) => {
+    const [row] = await db
+      .select(ORG_BU_COLUMNS)
+      .from(orgUnits)
+      .where(where)
+      .limit(1);
+    return row ?? null;
+  },
+  createValues: (input) => ({
+    name: input.name,
+    description: input.description,
+  }),
+  updateValues: (input) => ({
+    ...(input.name !== undefined ? { name: input.name } : {}),
+    ...(input.description !== undefined
+      ? { description: input.description }
+      : {}),
+    ...(input.status !== undefined ? { status: input.status } : {}),
+  }),
+  toOutput: toOrgBusinessUnit,
+  toListOutput: toOrgBusinessUnit,
+  toWriteOutput: toOrgBusinessUnit,
+};
+
 @Injectable()
 export class OrgHierarchyBusinessUnitsService {
-  constructor(
-    @Inject(DRIZZLE) private readonly db: Db,
-    private readonly audit: AuditService,
-  ) {}
+  constructor(private readonly crud: OrgUnitCrudService) {}
 
-  async listBusinessUnits(orgId: string, query: ListQueryInput) {
-    const rows = await this.db
-      .select(ORG_BU_COLUMNS)
-      .from(orgUnits)
-      .where(getOrgUnitListFilter({ orgId, kind: KIND, query }))
-      .orderBy(asc(orgUnitNormalizedName), asc(orgUnits.id))
-      .limit(query.limit + 1);
-    return toOrgUnitCursorPage(rows, query.limit, toOrgBusinessUnit);
+  listBusinessUnits(orgId: string, query: ListQueryInput) {
+    return this.crud.list(BUSINESS_UNIT_ADAPTER, orgId, query);
   }
 
-  async getBusinessUnit(orgId: string, id: string) {
-    const [row] = await this.db
-      .select(ORG_BU_COLUMNS)
-      .from(orgUnits)
-      .where(getOrgUnitRowFilter(orgId, KIND, id))
-      .limit(1);
-    return row ? toOrgBusinessUnit(row) : null;
+  getBusinessUnit(orgId: string, id: string) {
+    return this.crud.get(BUSINESS_UNIT_ADAPTER, orgId, id);
   }
 
-  async createBusinessUnit(orgId: string, userId: string, body: CreateBusinessUnitInput) {
-    const code = body.code.toUpperCase();
-    await assertOrgUnitCodeAvailable({
-      db: this.db,
-      orgId,
-      kind: KIND,
-      code,
-      label: LABEL,
-    });
-
-    const [row] = await this.db
-      .insert(orgUnits)
-      .values({
-        id: randomUUID(),
-        orgId,
-        kind: KIND,
-        name: body.name,
-        code,
-        description: body.description,
-      })
-      .returning(ORG_BU_COLUMNS);
-
-    if (!row) throw new Error("Failed to create business unit");
-
-    await recordOrgUnitAudit(this.audit, {
-      action: "org.businessUnit.created",
-      userId,
-      orgId,
-      targetId: row.id,
-    });
-
-    return toOrgBusinessUnit(row);
+  createBusinessUnit(
+    orgId: string,
+    userId: string,
+    body: CreateBusinessUnitInput,
+  ) {
+    return this.crud.create(BUSINESS_UNIT_ADAPTER, orgId, userId, body);
   }
 
-  async updateBusinessUnit(orgId: string, userId: string, id: string, body: UpdateBusinessUnitInput) {
-    const existing = await this.getBusinessUnit(orgId, id);
-    if (!existing) throw new NotFoundException("Business unit not found");
-
-    if (body.code && body.code !== existing.code) {
-      await assertOrgUnitCodeAvailable({
-        db: this.db,
-        orgId,
-        kind: KIND,
-        code: body.code.toUpperCase(),
-        label: LABEL,
-      });
-    }
-
-    const [row] = await this.db
-      .update(orgUnits)
-      .set({ ...body, ...(body.code !== undefined && { code: body.code.toUpperCase() }) })
-      .where(getOrgUnitWriteFilter(orgId, KIND, id))
-      .returning(ORG_BU_COLUMNS);
-
-    if (!row) throw new NotFoundException("Business unit not found");
-
-    await recordOrgUnitAudit(this.audit, {
-      action: "org.businessUnit.updated",
-      userId,
-      orgId,
-      targetId: id,
-    });
-
-    return toOrgBusinessUnit(row);
+  updateBusinessUnit(
+    orgId: string,
+    userId: string,
+    id: string,
+    body: UpdateBusinessUnitInput,
+  ) {
+    return this.crud.update(BUSINESS_UNIT_ADAPTER, orgId, userId, id, body);
   }
 }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { mailProviderSchema } from "./mail-schemas";
 
 const mailAddressSchema = z.object({
   name: z.string().nullable(),
@@ -26,9 +27,9 @@ export const mailAccountListSchema = z.array(mailAccountSchema);
 
 const mailMessageSummarySchema = z.object({
   id: z.string(),
-  threadId: z.string(),
+  threadId: z.string().nullable(),
   accountId: z.number().int(),
-  provider: z.string(),
+  provider: mailProviderSchema,
   from: mailAddressSchema,
   to: z.array(mailAddressSchema),
   subject: z.string(),
@@ -68,6 +69,13 @@ export const mailDownloadSchema = z.object({
   downloadUrl: z.string(),
   fileName: z.string(),
 });
+
+export type MailAddress = z.infer<typeof mailAddressSchema>;
+export type MailAttachment = z.infer<typeof mailAttachmentSchema>;
+export type MailMessageSummary = z.infer<typeof mailMessageSummarySchema>;
+export type MailMessageDetail = z.infer<typeof mailMessageDetailSchema>;
+export type MailListResponse = z.infer<typeof mailListResponseSchema>;
+export type MailDownloadResponse = z.infer<typeof mailDownloadSchema>;
 
 export const mailAiInboxSummarySchema = z.object({
   summary: z.string(),

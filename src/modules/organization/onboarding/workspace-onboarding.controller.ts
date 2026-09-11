@@ -8,8 +8,11 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { WorkspaceOnboardingService } from "./workspace-onboarding.service";
-import { generateSchema, type GenerateInput } from "./dto/workspace-onboarding.schemas";
-import { generateWorkspaceResponseSchema } from "../setup/dto/org-setup-response.schemas";
+import {
+  generateSchema,
+  generateWorkspaceResponseSchema,
+  type GenerateInput,
+} from "./dto/workspace-onboarding.schemas";
 
 @Controller("workspace-onboarding")
 @UseGuards(JwtAuthGuard)

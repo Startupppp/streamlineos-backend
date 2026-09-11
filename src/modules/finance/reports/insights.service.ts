@@ -11,7 +11,8 @@ import type { Db } from "../../../db/drizzle.module";
 import { baseCreditAmount, baseDebitAmount } from "../../accounting/core/journal-base-amount";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
-import type { InsightsQuery, AnomalyFinding } from "./dto/insights.schemas";
+import type { AnomalyFinding } from "./dto/finance-reports-insights-response.schemas";
+import type { InsightsQuery } from "./dto/insights.schemas";
 import { InsightsFindersService, monthStart, monthEnd, todayIso } from "./insights-finders.service";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
 

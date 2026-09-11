@@ -199,14 +199,21 @@ describe("OrgSetupCompletedConsumerService", () => {
     );
   });
 
-  // The payload is data, not an authority claim: `bulkInvite` grants a role, so the actor's
-  // standing is re-read from the membership row.
-  it("does not invite when the payload's user holds no active membership", async () => {
-    const { svc, bulkInvite } = await build({ actorRows: [] });
+  it("fails the event when the invitation actor has no active membership", async () => {
+    const { svc, bulkInvite, completeSession } = await build({ actorRows: [] });
 
-    await svc.handle(event(COMPLETE_PAYLOAD));
+    await expect(svc.handle(event(COMPLETE_PAYLOAD))).rejects.toThrow(
+      "Organization org-1 has no active membership for the setup invitation actor",
+    );
 
     expect(bulkInvite).not.toHaveBeenCalled();
+    expect(completeSession).not.toHaveBeenCalled();
+    expect(markProcessed).toHaveBeenCalledWith(
+      "organization:setup-completed",
+      expect.any(String),
+      "FAILED",
+      "Organization org-1 has no active membership for the setup invitation actor",
+    );
   });
 
   // A missing industry template is a permanent precondition miss, not a transient failure:
@@ -282,6 +289,33 @@ describe("OrgSetupCompletedConsumerService", () => {
     await expect(svc.handle(event(COMPLETE_PAYLOAD))).rejects.toThrow("checklist failed");
     expect(seedSystemRolesForOrg).toHaveBeenCalled();
     expect(ensureChecklistsForModules).toHaveBeenCalled();
+  });
+
+  it("rethrows a partial bulk-invite failure and does not complete the event", async () => {
+    const { svc, bulkInvite, completeSession, emit } = await build();
+    bulkInvite.mockResolvedValueOnce({
+      results: [
+        { email: "new@acme.test", success: false, error: "delivery failed" },
+      ],
+    });
+
+    await expect(svc.handle(event(COMPLETE_PAYLOAD))).rejects.toThrow(
+      "Failed to create 1 of 1 MEMBER setup invitation(s)",
+    );
+    expect(markProcessed).toHaveBeenCalledWith(
+      "organization:setup-completed",
+      expect.any(String),
+      "FAILED",
+      "Failed to create 1 of 1 MEMBER setup invitation(s)",
+    );
+    expect(markProcessed).not.toHaveBeenCalledWith(
+      "organization:setup-completed",
+      expect.any(String),
+      "COMPLETED",
+      null,
+    );
+    expect(completeSession).not.toHaveBeenCalled();
+    expect(emit).not.toHaveBeenCalled();
   });
 
   it("does no work when the inbox fence says the event was already processed", async () => {

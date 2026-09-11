@@ -18,12 +18,7 @@ const HRMS_MUTATION_SERVICES = [
   "modules/hr/time/leaves-approval.service.ts",
   "modules/hr/time/leaves-write.service.ts",
   "modules/hr/time/work-logs.service.ts",
-  "modules/organization/hierarchy/org-hierarchy-branches.service.ts",
-  "modules/organization/hierarchy/org-hierarchy-business-units.service.ts",
-  "modules/organization/hierarchy/org-hierarchy-cost-centers.service.ts",
-  "modules/organization/hierarchy/org-hierarchy-departments.service.ts",
-  "modules/organization/hierarchy/org-hierarchy-locations.service.ts",
-  "modules/organization/hierarchy/org-hierarchy-teams.service.ts",
+  "modules/organization/hierarchy/org-unit-crud.ts",
 ] as const;
 
 describe("HRMS critical audit boundaries", () => {

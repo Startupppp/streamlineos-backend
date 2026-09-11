@@ -1,6 +1,6 @@
-import type { AuditService } from "../../../common/audit/audit.service";
 import type { Db } from "../../../db/drizzle.module";
 import { OrgHierarchyCostCentersService } from "./org-hierarchy-cost-centers.service";
+import { OrgUnitCrudService } from "./org-unit-crud";
 
 describe("OrgHierarchyCostCentersService", () => {
   it("archives a cost center and never hard-deletes the row", async () => {
@@ -33,10 +33,11 @@ describe("OrgHierarchyCostCentersService", () => {
       update,
       delete: hardDelete,
     } as unknown as Db;
-    const audit = {
-      logCritical: jest.fn().mockResolvedValue(undefined),
-    } as unknown as AuditService;
-    const service = new OrgHierarchyCostCentersService(db, audit);
+    const audit = { logCritical: jest.fn().mockResolvedValue(undefined) };
+    const cache = { invalidateAfterMutation: jest.fn() };
+    const service = new OrgHierarchyCostCentersService(
+      new OrgUnitCrudService(db, audit, cache),
+    );
 
     const result = await service.updateCostCenter("org-1", "user-1", costCenter.id, {
       status: "ARCHIVED",
@@ -49,5 +50,6 @@ describe("OrgHierarchyCostCentersService", () => {
     expect(audit.logCritical).toHaveBeenCalledWith(
       expect.objectContaining({ action: "org.costCenter.updated" }),
     );
+    expect(cache.invalidateAfterMutation).toHaveBeenCalledWith("org-1");
   });
 });

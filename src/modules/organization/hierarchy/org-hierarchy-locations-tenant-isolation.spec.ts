@@ -2,6 +2,7 @@ import { NotFoundException } from "@nestjs/common";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { OrgHierarchyLocationsService } from "./org-hierarchy-locations.service";
 import type { Db } from "../../../db/drizzle.module";
+import { OrgUnitCrudService } from "./org-unit-crud";
 
 const dialect = new PgDialect();
 
@@ -75,7 +76,10 @@ describe("OrgHierarchyLocationsService — cross-tenant isolation", () => {
       update: jest.fn().mockReturnValue(updateBuilder),
     } as unknown as Db;
     const audit = { log: jest.fn(), logCritical: jest.fn() };
-    const svc = new OrgHierarchyLocationsService(db, audit as never);
+    const cache = { invalidateAfterMutation: jest.fn() };
+    const svc = new OrgHierarchyLocationsService(
+      new OrgUnitCrudService(db, audit, cache),
+    );
     return { svc, captured };
   }
 

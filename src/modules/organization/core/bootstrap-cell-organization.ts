@@ -18,7 +18,10 @@ import {
 import { provisionEmployeeSelfService } from "../../../common/org/provision-employee-self-service";
 import { seedSystemRolesForOrg } from "../../rbac/seed-system-roles";
 
-export function generateOrgSlug(name: string): string {
+export function generateOrgSlug(
+  name: string,
+  suffix = Date.now().toString(36),
+): string {
   return (
     name
       .toLowerCase()
@@ -26,7 +29,7 @@ export function generateOrgSlug(name: string): string {
       .replace(/^-|-$/g, "")
       .substring(0, 50) +
     "-" +
-    Date.now().toString(36)
+    suffix
   );
 }
 
@@ -42,21 +45,6 @@ export interface BootstrapCellOrganizationInput {
   moduleKeys?: readonly string[];
 }
 
-/**
- * The one definition of "the rows a new organisation is made of": the organization, its owner
- * membership, its trial subscription, employee self-service, the permission version, the system
- * roles and the module rows — all in a single tenant transaction, so a crash can never leave a
- * half-provisioned organisation behind.
- *
- * `POST /organization` reaches it through the saga step that owns compensation, and
- * `POST /org/setup/complete` reaches it directly; both used to carry their own copy and the two
- * copies had drifted. Setup passes no `onboardingCompletedAt`, because the wizard stamps that
- * itself once the owner finishes — and the completion stamp is what makes replaying the wizard a
- * no-op.
- *
- * Re-entrant by design: an organisation row that already exists short-circuits the whole
- * transaction, so a retried saga step never writes a second owner membership or subscription.
- */
 export async function bootstrapCellOrganization(
   db: Db,
   cache: CacheService,

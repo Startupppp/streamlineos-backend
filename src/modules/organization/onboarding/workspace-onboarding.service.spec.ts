@@ -1,5 +1,6 @@
 import { BadRequestException } from "@nestjs/common";
 import { resolveStructureTemplate } from "./workspace-onboarding.service";
+import { generateWorkspaceResponseSchema } from "./dto/workspace-onboarding.schemas";
 
 describe("resolveStructureTemplate", () => {
   it("combines the industry structure with selected module teams", () => {
@@ -40,5 +41,32 @@ describe("resolveStructureTemplate", () => {
     expect(() => resolveStructureTemplate("Unknown", ["hr"])).toThrow(
       BadRequestException,
     );
+  });
+
+  it("declares the generated-unit counts returned by the service", () => {
+    expect(
+      generateWorkspaceResponseSchema.parse({
+        businessUnits: 1,
+        branches: 0,
+        departments: 4,
+        teams: 6,
+      }),
+    ).toEqual({ businessUnits: 1, branches: 0, departments: 4, teams: 6 });
+    expect(
+      generateWorkspaceResponseSchema.safeParse({
+        businessUnits: [],
+        branches: [],
+        departments: [],
+        teams: [],
+      }).success,
+    ).toBe(false);
+    expect(
+      generateWorkspaceResponseSchema.safeParse({
+        businessUnits: -1,
+        branches: 0,
+        departments: 0,
+        teams: 0.5,
+      }).success,
+    ).toBe(false);
   });
 });

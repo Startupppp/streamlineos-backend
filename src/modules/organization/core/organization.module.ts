@@ -26,6 +26,7 @@ import { OrgMembershipStatusService } from "./org-membership-status.service";
 import { OrgMemberDepartureService } from "./org-member-departure.service";
 import { IntegrationConnectionDisconnectedConsumer } from "./integration-connection-disconnected-consumer.service";
 import { MembershipAdmissionModule } from "./membership-admission.module";
+import { OrganizationCreationService } from "./organization-creation.service";
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { MembershipAdmissionModule } from "./membership-admission.module";
     InvitationAcceptanceService,
     AccountOrganizationIndexService,
     OrganizationSagaService,
+    OrganizationCreationService,
     OrganizationLegalHoldService,
     OrganizationPlacementAdminService,
     IntegrationConnectionDisconnectedConsumer,
@@ -68,6 +70,7 @@ import { MembershipAdmissionModule } from "./membership-admission.module";
     OrgMemberDepartureService,
     AccountOrganizationIndexService,
     OrganizationSagaService,
+    OrganizationCreationService,
   ],
 })
 export class OrganizationModule {}

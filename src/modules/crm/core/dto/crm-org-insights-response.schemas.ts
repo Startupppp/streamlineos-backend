@@ -1,25 +1,18 @@
 import { z } from "zod";
 import { wireDate } from "../../../../common/openapi/wire-types";
 
-export interface OrgHierarchyNodeType {
-  id: number;
-  name: string;
-  industry: string | null;
-  healthScore: number | null;
-  parentId: number | null;
-  children: OrgHierarchyNodeType[];
-}
+export const orgHierarchyNodeSchema = z.object({
+  id: z.number().int(),
+  name: z.string(),
+  industry: z.string().nullable(),
+  healthScore: z.number().nullable(),
+  parentId: z.number().int().nullable(),
+  get children() {
+    return z.array(orgHierarchyNodeSchema);
+  },
+});
 
-export const orgHierarchyNodeSchema: z.ZodType<OrgHierarchyNodeType> = z.lazy(() =>
-  z.object({
-    id: z.number().int(),
-    name: z.string(),
-    industry: z.string().nullable(),
-    healthScore: z.number().nullable(),
-    parentId: z.number().int().nullable(),
-    children: z.array(orgHierarchyNodeSchema),
-  }),
-);
+export type OrgHierarchyNodeType = z.infer<typeof orgHierarchyNodeSchema>;
 
 export const orgRollupSchema = z.object({
   totalContacts: z.number().int(),

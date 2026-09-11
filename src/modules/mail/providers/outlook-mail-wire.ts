@@ -1,5 +1,6 @@
 import { z } from "zod";
-import type { MailFolder, MailMessageSummary } from "../dto/mail-schemas";
+import type { MailMessageSummary } from "../dto/mail-response.schemas";
+import type { MailFolder } from "../dto/mail-schemas";
 
 export const outlookListResponseSchema = z.object({
   value: z.array(z.unknown()).optional(),

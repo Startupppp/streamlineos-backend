@@ -21,6 +21,8 @@ export const anomalyFindingSchema = z.object({
   drill: anomalyDrillSchema,
 });
 
+export type AnomalyFinding = z.infer<typeof anomalyFindingSchema>;
+
 export const anomaliesResponseSchema = z.array(anomalyFindingSchema);
 
 export const digestResponseSchema = z.object({

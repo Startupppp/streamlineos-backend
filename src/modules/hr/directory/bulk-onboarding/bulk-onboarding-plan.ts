@@ -86,19 +86,12 @@ export function planBulkOnboarding(
   roleErrors: Map<string, string>,
 ): BulkOnboardPlan {
   const plan: BulkOnboardPlan = { accepted: [], rejected: [] };
-  const seenEmails = new Set<string>();
   const claimedNumbers = new Set(employeeNumberOwner.keys());
 
   for (let index = 0; index < rows.length; index += 1) {
     const source = rows[index];
     const row = index + 1;
     const email = canonicalAdmissionEmail(source.email);
-
-    if (seenEmails.has(email)) {
-      plan.rejected.push({ row, email, success: false, error: "Duplicate email in this upload" });
-      continue;
-    }
-    seenEmails.add(email);
 
     const role = source.role || ORG_MEMBER_ROLES.MEMBER;
     const roleError = roleErrors.get(role);

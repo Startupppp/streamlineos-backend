@@ -49,7 +49,7 @@ export function buildSeededProcessEnvironment(source: NodeJS.ProcessEnv, databas
     DB_POOL_MAX: "5", DB_POOL_CONNECT_TIMEOUT: "10", DB_STATEMENT_TIMEOUT_MS: "15000",
     DB_IDLE_IN_TRANSACTION_TIMEOUT_MS: "15000", DB_APPLICATION_NAME: "streamlineos-seeded-e2e",
     REGION_PRIMARY_DATABASE_URL: owner.toString(), REGION_PRIMARY_APP_DATABASE_URL: app.toString(),
-    REGION_PRIMARY_CELL_ID: "legacy-1", REQUIRE_ROUTE_CLASSIFICATION: "true", RBAC_MIGRATION_MODE: "off",
+    REGION_PRIMARY_CELL_ID: "legacy-1", REQUIRE_ROUTE_CLASSIFICATION: "true",
     CORS_ORIGINS: "http://localhost:3000", APP_URL: "http://localhost:3000",
     BACKEND_JWT_SECRET: randomBytes(48).toString("base64"), PORTAL_JWT_SECRET: randomBytes(48).toString("base64"),
     ENCRYPTION_KEY: randomBytes(32).toString("hex"),

@@ -1,30 +1,18 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { asc, sql } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
+import { Injectable } from "@nestjs/common";
+import { sql } from "drizzle-orm";
 import {
   orgUnits,
   type OrgUnitMetadata,
-} from "../../../db/schema/common/organization";
-import { DRIZZLE } from "../../../db/drizzle.constants";
-import { type Db } from "../../../db/drizzle.module";
-import { AuditService } from "../../../common/audit/audit.service";
+} from "../../../db/schema";
 import type {
   CreateOrgLocationInput,
   ListQueryInput,
   UpdateOrgLocationInput,
 } from "./dto/org-hierarchy.schemas";
 import {
-  orgUnitNormalizedName,
-  toOrgUnitCursorPage,
-} from "./org-hierarchy-list-filters";
-import {
-  getOrgUnitListFilter,
-  getOrgUnitRowFilter,
-  getOrgUnitWriteFilter,
-  recordOrgUnitAudit,
+  OrgUnitCrudService,
+  type OrgUnitCrudAdapter,
 } from "./org-unit-crud";
-
-const KIND = "LOCATION";
 
 const ORG_LOCATION_COLUMNS = {
   id: orgUnits.id,
@@ -37,14 +25,6 @@ const ORG_LOCATION_COLUMNS = {
   deletedAt: orgUnits.deletedAt,
 };
 
-const locationAddressSearch = (pattern: string) =>
-  sql<boolean>`coalesce(${orgUnits.metadata}->>'address', '') ilike ${pattern}`;
-
-/** Locations carry no user-supplied code; it is derived from the name. */
-function toLocationCode(name: string) {
-  return name.substring(0, 8).toUpperCase().replace(/\s/g, "");
-}
-
 type OrgLocationRow = Pick<
   typeof orgUnits.$inferSelect,
   | "id"
@@ -56,6 +36,25 @@ type OrgLocationRow = Pick<
   | "updatedAt"
   | "deletedAt"
 >;
+
+function toLocationCode(name: string) {
+  return name.substring(0, 8).toUpperCase().replace(/\s/g, "");
+}
+
+function toLocationMetadata(input: CreateOrgLocationInput): OrgUnitMetadata {
+  return {
+    locationType: input.type ?? "OFFICE",
+    ...(input.address !== undefined
+      ? { address: input.address ?? undefined }
+      : {}),
+    ...(input.latitude !== undefined && input.latitude !== null
+      ? { latitude: input.latitude }
+      : {}),
+    ...(input.longitude !== undefined && input.longitude !== null
+      ? { longitude: input.longitude }
+      : {}),
+  };
+}
 
 export function toOrgLocation(row: OrgLocationRow) {
   return {
@@ -75,132 +74,93 @@ export function toOrgLocation(row: OrgLocationRow) {
   };
 }
 
-@Injectable()
-export class OrgHierarchyLocationsService {
-  constructor(
-    @Inject(DRIZZLE) private readonly db: Db,
-    private readonly audit: AuditService,
-  ) {}
-
-  async listLocations(orgId: string, query: ListQueryInput) {
-    const rows = await this.db
+const LOCATION_ADAPTER: OrgUnitCrudAdapter<
+  CreateOrgLocationInput,
+  UpdateOrgLocationInput,
+  OrgLocationRow,
+  OrgLocationRow,
+  ReturnType<typeof toOrgLocation>
+> = {
+  kind: "LOCATION",
+  label: "Location",
+  auditName: "org.location",
+  searchExtension: (pattern) =>
+    sql<boolean>`coalesce(${orgUnits.metadata}->>'address', '') ilike ${pattern}`,
+  code: {
+    create: (input) => toLocationCode(input.name),
+    unique: false,
+  },
+  listRows: async (db, plan) =>
+    db
       .select(ORG_LOCATION_COLUMNS)
       .from(orgUnits)
-      .where(
-        getOrgUnitListFilter({
-          orgId,
-          kind: KIND,
-          query,
-          searchExtension: locationAddressSearch,
-        }),
-      )
-      .orderBy(asc(orgUnitNormalizedName), asc(orgUnits.id))
-      .limit(query.limit + 1);
-    return toOrgUnitCursorPage(rows, query.limit, toOrgLocation);
-  }
-
-  private async getLocationRow(
-    orgId: string,
-    id: string,
-  ): Promise<OrgLocationRow | null> {
-    const [row] = await this.db
+      .where(plan.where)
+      .orderBy(...plan.orderBy)
+      .limit(plan.limit),
+  readRow: async (db, where) => {
+    const [row] = await db
       .select(ORG_LOCATION_COLUMNS)
       .from(orgUnits)
-      .where(getOrgUnitRowFilter(orgId, KIND, id))
+      .where(where)
       .limit(1);
     return row ?? null;
+  },
+  createValues: (input) => ({
+    name: input.name,
+    metadata: toLocationMetadata(input),
+  }),
+  updateValues: (input, existing) => {
+    const metadata: OrgUnitMetadata = {
+      locationType: "OFFICE",
+      ...(existing.metadata ?? {}),
+      ...(input.type !== undefined ? { locationType: input.type } : {}),
+      ...(input.address !== undefined
+        ? { address: input.address ?? undefined }
+        : {}),
+      ...(input.latitude !== undefined
+        ? { latitude: input.latitude ?? undefined }
+        : {}),
+      ...(input.longitude !== undefined
+        ? { longitude: input.longitude ?? undefined }
+        : {}),
+    };
+    return {
+      ...(input.name !== undefined ? { name: input.name } : {}),
+      ...(input.status !== undefined ? { status: input.status } : {}),
+      metadata,
+    };
+  },
+  toOutput: toOrgLocation,
+  toListOutput: toOrgLocation,
+  toWriteOutput: toOrgLocation,
+};
+
+@Injectable()
+export class OrgHierarchyLocationsService {
+  constructor(private readonly crud: OrgUnitCrudService) {}
+
+  listLocations(orgId: string, query: ListQueryInput) {
+    return this.crud.list(LOCATION_ADAPTER, orgId, query);
   }
 
-  async getLocation(orgId: string, id: string) {
-    const row = await this.getLocationRow(orgId, id);
-    return row ? toOrgLocation(row) : null;
+  getLocation(orgId: string, id: string) {
+    return this.crud.get(LOCATION_ADAPTER, orgId, id);
   }
 
-  async createLocation(
+  createLocation(
     orgId: string,
     userId: string,
     body: CreateOrgLocationInput,
   ) {
-    const [row] = await this.db
-      .insert(orgUnits)
-      .values({
-        id: randomUUID(),
-        orgId,
-        kind: KIND,
-        name: body.name,
-        code: toLocationCode(body.name),
-        metadata: {
-          locationType: body.type ?? "OFFICE",
-          ...(body.address !== undefined
-            ? { address: body.address ?? undefined }
-            : {}),
-          ...(body.latitude !== undefined && body.latitude !== null
-            ? { latitude: body.latitude }
-            : {}),
-          ...(body.longitude !== undefined && body.longitude !== null
-            ? { longitude: body.longitude }
-            : {}),
-        },
-      })
-      .returning(ORG_LOCATION_COLUMNS);
-
-    if (!row) throw new Error("Failed to create location");
-
-    await recordOrgUnitAudit(this.audit, {
-      action: "org.location.created",
-      userId,
-      orgId,
-      targetId: row.id,
-    });
-
-    return toOrgLocation(row);
+    return this.crud.create(LOCATION_ADAPTER, orgId, userId, body);
   }
 
-  async updateLocation(
+  updateLocation(
     orgId: string,
     userId: string,
     id: string,
     body: UpdateOrgLocationInput,
   ) {
-    const existing = await this.getLocationRow(orgId, id);
-    if (!existing) throw new NotFoundException("Location not found");
-
-    const existingMeta: OrgUnitMetadata = {
-      locationType: "OFFICE",
-      ...(existing.metadata ?? {}),
-    };
-
-    const [row] = await this.db
-      .update(orgUnits)
-      .set({
-        ...(body.name !== undefined && { name: body.name }),
-        ...(body.status !== undefined && { status: body.status }),
-        metadata: {
-          ...existingMeta,
-          ...(body.type !== undefined && { locationType: body.type }),
-          ...(body.address !== undefined
-            ? { address: body.address ?? undefined }
-            : {}),
-          ...(body.latitude !== undefined
-            ? { latitude: body.latitude ?? undefined }
-            : {}),
-          ...(body.longitude !== undefined
-            ? { longitude: body.longitude ?? undefined }
-            : {}),
-        },
-      })
-      .where(getOrgUnitWriteFilter(orgId, KIND, id))
-      .returning(ORG_LOCATION_COLUMNS);
-
-    if (!row) throw new NotFoundException("Location not found");
-
-    await recordOrgUnitAudit(this.audit, {
-      action: "org.location.updated",
-      userId,
-      orgId,
-      targetId: id,
-    });
-
-    return toOrgLocation(row);
+    return this.crud.update(LOCATION_ADAPTER, orgId, userId, id, body);
   }
 }

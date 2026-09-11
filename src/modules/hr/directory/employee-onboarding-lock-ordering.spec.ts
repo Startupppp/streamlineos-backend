@@ -42,25 +42,20 @@ const ACTOR = {
   tokenScopes: null,
   principal: { kind: "human-session" as const, membershipId: 1, isOrgOwner: true },
 };
-const NEW_USER = {
-  id: "u-new",
-  email: "jane@example.com",
-  name: "Jane Doe",
-  firstName: "Jane",
-  lastName: "Doe",
-  isActive: true,
-};
 const INPUT = { email: "jane@example.com", firstName: "Jane", lastName: "Doe", designation: "Engineer" };
 
 function buildTx() {
   return {
     execute: jest.fn().mockResolvedValue([{}]),
-    query: { users: { findFirst: jest.fn().mockResolvedValue(NEW_USER) } },
+    query: {
+      users: { findFirst: jest.fn().mockResolvedValue(null) },
+      organizationMembers: { findFirst: jest.fn().mockResolvedValue(null) },
+    },
     insert: jest
       .fn()
       .mockImplementationOnce(() => ({
         values: jest.fn().mockReturnValue({
-          returning: jest.fn().mockResolvedValue([NEW_USER]),
+          returning: jest.fn().mockResolvedValue([]),
         }),
       }))
       .mockImplementation(() => ({
@@ -81,6 +76,7 @@ function buildTx() {
 
 describe("EmployeeOnboardingService.onboardEmployee — seat-limit ordering", () => {
   let svc: EmployeeOnboardingService;
+  let admission: MembershipAdmissionService;
   let tx: ReturnType<typeof buildTx>;
   let mockPlanLimits: { assertWithinLimit: jest.Mock };
 
@@ -153,6 +149,19 @@ describe("EmployeeOnboardingService.onboardEmployee — seat-limit ordering", ()
     }).compile();
 
     svc = module.get(EmployeeOnboardingService);
+    admission = module.get(MembershipAdmissionService);
+  });
+
+  it("enters the single-person admission policy through admitOne on the write transaction", async () => {
+    const admitOne = jest.spyOn(admission, "admitOne");
+
+    await svc.onboardEmployee(ACTOR, INPUT);
+
+    expect(admitOne).toHaveBeenCalledTimes(1);
+    expect(admitOne).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ orgId: ORG_ID, email: INPUT.email }),
+    );
   });
 
   it("calls assertWithinLimit before the first insert when onboarding a new user", async () => {

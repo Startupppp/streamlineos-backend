@@ -825,10 +825,6 @@
       "as": 0,
       "nonNull": 2
     },
-    "src/scripts/benchmark-access-service.ts": {
-      "as": 4,
-      "nonNull": 0
-    },
     "src/scripts/convert-kb-articles.ts": {
       "as": 1,
       "nonNull": 2

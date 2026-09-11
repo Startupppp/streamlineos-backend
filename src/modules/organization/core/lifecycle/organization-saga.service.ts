@@ -21,6 +21,15 @@ export type SagaWithSteps = {
 export class OrganizationSagaService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
+  async findByRequestKey(requestKey: string) {
+    const [saga] = await this.db
+      .select()
+      .from(organizationLifecycleSagas)
+      .where(eq(organizationLifecycleSagas.requestKey, requestKey))
+      .limit(1);
+    return saga ?? null;
+  }
+
   async begin(
     kind: OrganizationSagaKind,
     organizationId: string,

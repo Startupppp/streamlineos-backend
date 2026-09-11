@@ -1,5 +1,19 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, desc, eq, gt, ilike, inArray, isNotNull, isNull, lt, or, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gt,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { mailMessageMetadata } from "../../db/schema/mail";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -7,18 +21,12 @@ import { registerAfterCommit } from "../../common/tenant";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { logger } from "../../common/logger/logger.service";
 import { keysetBeforeId } from "../../common/pagination/keyset";
-import type { MailFolder, MailMessageSummary } from "./dto/mail-schemas";
+import type { MailMessageSummary } from "./dto/mail-response.schemas";
+import type { MailFolder } from "./dto/mail-schemas";
 import type { MailMetadataCursor } from "./providers/mail-metadata-cursor";
 
 const CACHE_FRESH_SECS = 300;
 
-/**
- * How many message ids `app.search_mail_message_ids` is asked for before the
- * caller gives up on an id list. The caller requests `cap + 1`: getting `cap + 1`
- * back means the term matches too much of the mailbox to be worth materialising,
- * and the plain ILIKE under a LIMIT is the faster plan in exactly that regime
- * (migration 0425 measured 434 ms against 1 ms on the equivalent ticket search).
- */
 const SEARCH_ID_CAP = 500;
 
 export interface CachedMailPage {
@@ -127,38 +135,6 @@ export class MailMetadataService {
       });
   }
 
-  /**
-   * Resolve the search predicate for `query`.
-   *
-   * `mail_message_metadata` has RLS on (`org_id = app.current_org_id()`), and
-   * `texticlike` is not leakproof, so the planner must run the security qual
-   * first and refuses the trigram index — a plain ILIKE here is a sequential
-   * scan of the tenant's whole mailbox no matter what index exists. Migration
-   * 1022 therefore puts the match inside `app.search_mail_message_ids`, a
-   * SECURITY DEFINER function owned by the BYPASSRLS role, which returns ids
-   * only; the returned ids are then fed back into a query that still runs under
-   * RLS with its own org, membership, folder and account predicates, so nothing
-   * about who may read what moves into the function.
-   *
-   * A term that matches more than `SEARCH_ID_CAP` messages falls back to the
-   * ILIKE, which is the faster plan once the match is that broad. So does a
-   * function that is missing or errors: a slower correct answer beats a 500 on
-   * a database whose migrations have not caught up.
-   *
-   * An EMPTY id list is not a fallback case, it is the answer. The indexed
-   * expression concatenates the same three columns the ILIKE branch ORs over,
-   * separated by `chr(1)` which the function asserts the term cannot contain,
-   * so the two are exactly equivalent (migration 1022) — an id list of zero
-   * length means no row in this org/membership/folder matches, and re-deriving
-   * that same empty answer through three leading-wildcard ILIKEs is a full
-   * sequential scan of the tenant's mirrored mailbox for a result already
-   * known. Measured on a 200k-row reproduction as the non-owner with the tenant
-   * GUC set, warm: 2.2 ms / 486 buffers for the definer against 184 ms / 5,006
-   * buffers for the ILIKE. This is the most common interactive case, because
-   * the list pane debounces at 300 ms and searches every prefix of the term as
-   * it is typed. The caller still treats an empty page as inconclusive and
-   * falls through to the provider, exactly as it did before.
-   */
   private async resolveSearchCondition(
     membershipId: number,
     folder: MailFolder,
@@ -183,33 +159,21 @@ export class MailMetadataService {
         rows.map((r) => Number(r["id"])),
       );
     } catch (err) {
-      logger.warn("[mail-metadata] indexed search unavailable, falling back to ILIKE", { err });
+      logger.warn(
+        "[mail-metadata] indexed search unavailable, falling back to ILIKE",
+        { err },
+      );
       return literal;
     }
   }
 
-  /**
-   * Keyset predicate for `ORDER BY date DESC, id DESC`.
-   *
-   * Postgres defaults DESC to NULLS FIRST, so rows with no date sort ahead of
-   * every dated row. That makes the two branches genuinely different: once the
-   * cursor carries a date, every null-dated row has already been served and the
-   * row comparison drops them on its own (a comparison against NULL is NULL, so
-   * the row is filtered out) — which is the correct behaviour, not an accident.
-   * A null-dated cursor is still inside that leading block, so it takes the
-   * remaining null-dated rows and then everything dated.
-   *
-   * The dated branch goes through `keysetBeforeId` rather than a `sql` template
-   * of its own. The right-hand side of a keyset comparison is a value, and a
-   * value interpolated into a template reaches the driver with no type
-   * attached — postgres re-parses the cursor's `date` from text instead of
-   * round-tripping it through the same column encoder the row came back
-   * through, which is how a boundary row starts repeating or getting skipped.
-   */
   private keysetCondition(after: MailMetadataCursor): SQL {
     if (after.d === null) {
       const clause = or(
-        and(isNull(mailMessageMetadata.date), lt(mailMessageMetadata.id, after.i)),
+        and(
+          isNull(mailMessageMetadata.date),
+          lt(mailMessageMetadata.id, after.i),
+        ),
         isNotNull(mailMessageMetadata.date),
       );
       return clause ?? sql`true`;
@@ -251,7 +215,10 @@ export class MailMetadataService {
       conditions.push(eq(mailMessageMetadata.accountId, accountId));
     else if (accountId !== null)
       conditions.push(inArray(mailMessageMetadata.accountId, [...accountId]));
-    if (query) conditions.push(await this.resolveSearchCondition(membershipId, folder, query));
+    if (query)
+      conditions.push(
+        await this.resolveSearchCondition(membershipId, folder, query),
+      );
     if (after) conditions.push(this.keysetCondition(after));
 
     const rows = await this.db
@@ -276,7 +243,8 @@ export class MailMetadataService {
       .orderBy(desc(mailMessageMetadata.date), desc(mailMessageMetadata.id))
       .limit(limit + 1);
 
-    if (rows.length === 0) return { messages: [], hasData: false, isFresh: false, nextCursor: null };
+    if (rows.length === 0)
+      return { messages: [], hasData: false, isFresh: false, nextCursor: null };
 
     const hasMore = rows.length > limit;
     const page = hasMore ? rows.slice(0, limit) : rows;
@@ -313,27 +281,6 @@ export class MailMetadataService {
     };
   }
 
-  /**
-   * How many of this member's mirrored messages in `folder` are unread.
-   *
-   * The badge this answers used to have no query at all: it listed 100 messages
-   * per connected mailbox out of Gmail/Graph over HTTP and counted `!isRead` in
-   * JavaScript, on a number every authenticated page renders. Counting against
-   * the mirror instead is one indexed aggregate.
-   *
-   * `idx_mail_metadata_unread_count` is `(org_id, user_membership_id, folder,
-   * account_id) WHERE is_read = false` — this predicate exactly. The partial
-   * qualifier matters: on a mailbox that is mostly read, the unread rows are a
-   * small tail, and a full index over `is_read` would be almost entirely dead
-   * weight on a table that is re-upserted on every inbox load. `org_id` leads it
-   * because the RLS policy adds `org_id = app.current_org_id()`, which is not
-   * leakproof and so is evaluated against the heap tuple unless the index
-   * supplies the column itself.
-   *
-   * `accountIds` is the caller's live account list, not a convenience: a mailbox
-   * that has been disconnected leaves its mirrored rows behind, and counting
-   * them would keep a revoked account's unread mail in the badge forever.
-   */
   async countUnread(
     orgId: string,
     membershipId: number,
@@ -356,15 +303,6 @@ export class MailMetadataService {
     return Number(rows[0]?.cnt ?? 0);
   }
 
-  /**
-   * Which of `accountIds` have a copy of `folder` fresh enough to answer a read
-   * without going to the provider.
-   *
-   * One query for the whole set rather than `isFreshForAccount` per account —
-   * the per-account form is a loop that grows with the number of connected
-   * mailboxes, which is exactly the shape `check:n1-growing-loops` exists to
-   * stop.
-   */
   async freshAccountIds(
     orgId: string,
     accountIds: readonly number[],
@@ -386,20 +324,11 @@ export class MailMetadataService {
     return rows.map((r) => r.accountId);
   }
 
-  /**
-   * Whether this account's copy of `folder` was synced recently enough to answer
-   * a read without going to the provider.
-   *
-   * `listCached` derives freshness from the rows it returns, which is the wrong
-   * question once a search filter is applied: a search matching only old mail
-   * returns stale-looking rows from a mailbox that synced seconds ago. This asks
-   * about the account instead, so the search path can trust a fresh cache even
-   * when the matches themselves are old.
-   *
-   * The `org_id` predicate is explicit rather than left to RLS — guards and
-   * background callers can reach a service without the tenant GUC set.
-   */
-  async isFreshForAccount(orgId: string, accountId: number, folder: MailFolder): Promise<boolean> {
+  async isFreshForAccount(
+    orgId: string,
+    accountId: number,
+    folder: MailFolder,
+  ): Promise<boolean> {
     const cutoff = new Date(Date.now() - CACHE_FRESH_SECS * 1000);
     const [row] = await this.db
       .select({ syncedAt: mailMessageMetadata.syncedAt })

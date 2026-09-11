@@ -145,13 +145,10 @@ export class OrgSetupCompletedConsumerService
       )
       .limit(1);
 
-    if (!actor) {
-      this.logger.warn(
-        `organization.setup.completed: org ${orgId} has no active membership for ${actorUserId} — ` +
-          `skipping ${invitees.length} setup invitation(s)`,
+    if (!actor)
+      throw new Error(
+        `Organization ${orgId} has no active membership for the setup invitation actor`,
       );
-      return;
-    }
 
     const emailsByRole = new Map<string, string[]>();
     for (const invitee of invitees)
@@ -169,11 +166,8 @@ export class OrgSetupCompletedConsumerService
       );
       const failed = results.filter((result) => !result.success);
       if (failed.length > 0)
-        this.logger.warn(
-          `organization.setup.completed: org ${orgId} could not invite ${failed.length} of ` +
-            `${emails.length} ${role} address(es): ${failed
-              .map((result) => `${result.email} (${result.error ?? "unknown"})`)
-              .join(", ")}`,
+        throw new Error(
+          `Failed to create ${failed.length} of ${emails.length} ${role} setup invitation(s)`,
         );
     }
   }

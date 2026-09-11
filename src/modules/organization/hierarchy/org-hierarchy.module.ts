@@ -11,11 +11,13 @@ import { OrgHierarchyDependenciesService } from "./org-hierarchy-dependencies.se
 import { OrgHierarchyCommandService } from "./org-hierarchy-command.service";
 import { OrgHierarchyReadService } from "./org-hierarchy-read.service";
 import { OrgHierarchyTreeSourceService } from "./org-hierarchy-tree-source.service";
+import { OrgUnitCrudService } from "./org-unit-crud";
 
 @Module({
   controllers: [OrgHierarchyController],
   providers: [
     OrgHierarchyService,
+    OrgUnitCrudService,
     OrgHierarchyBusinessUnitsService,
     OrgHierarchyBranchesService,
     OrgHierarchyDepartmentsService,

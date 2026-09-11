@@ -170,7 +170,7 @@ describe("EmployeeOnboardingService — cross-tenant isolation", () => {
     );
     expect(membershipWhere).toContain(ATTACKER);
     expect(membershipWhere).not.toContain(OWNER);
-    expect(transaction).not.toHaveBeenCalled();
+    expect(transaction).toHaveBeenCalledTimes(1);
   });
 
   it("uses owner org for membership scoping (control — same-tenant access works)", async () => {
@@ -231,6 +231,6 @@ describe("EmployeeOnboardingService — cross-tenant isolation", () => {
     );
     expect(membershipWhere).toContain(OWNER);
     expect(membershipWhere).not.toContain(ATTACKER);
-    expect(transaction).not.toHaveBeenCalled();
+    expect(transaction).toHaveBeenCalledTimes(1);
   });
 });

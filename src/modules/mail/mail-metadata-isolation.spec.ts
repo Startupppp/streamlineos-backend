@@ -2,7 +2,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
 import { MailMetadataService } from "./mail-metadata.service";
-import type { MailMessageSummary } from "./dto/mail-schemas";
+import type { MailMessageSummary } from "./dto/mail-response.schemas";
 
 const dialect = new PgDialect();
 

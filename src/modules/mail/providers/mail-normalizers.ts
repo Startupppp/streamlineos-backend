@@ -6,8 +6,8 @@ import type {
   MailAttachment,
   MailMessageDetail,
   MailMessageSummary,
-  MailProvider,
-} from "../dto/mail-schemas";
+} from "../dto/mail-response.schemas";
+import type { MailProvider } from "../dto/mail-schemas";
 
 const SNIPPET_MAX = 160;
 

@@ -7,7 +7,8 @@ import type { GmailMailProvider } from "./providers/gmail-mail.provider";
 import type { OutlookMailProvider } from "./providers/outlook-mail.provider";
 import type { CacheService } from "../../common/cache/cache.service";
 import type { MailSyncCheckpointService } from "./mail-sync-checkpoint.service";
-import type { MailFolder, MailMessageSummary } from "./dto/mail-schemas";
+import type { MailMessageSummary } from "./dto/mail-response.schemas";
+import type { MailFolder } from "./dto/mail-schemas";
 
 /**
  * A merged two-account inbox slices globally, so a page can consume four of

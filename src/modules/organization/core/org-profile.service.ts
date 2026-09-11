@@ -6,31 +6,23 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { organizationMembers, organizations, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
-import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import type { CreateOrganizationInput } from "./dto/organization.schemas";
-import { bootstrapCellOrganization } from "./bootstrap-cell-organization";
 import { withIdentity } from "../../../common/tenant/with-identity";
 import {
   getRegionRegistry,
   hasRegionRegistry,
   PlacementRefusedError,
 } from "../../../common/region/region-registry";
-import {
-  placeOrganization,
-  unplaceOrganization,
-} from "../../../common/region/placement-lookup";
-import { chooseRegionForNewOrg } from "../../../common/region/cell-admission";
 import { logger } from "../../../common/logger/logger.service";
 import { AccountOrganizationIndexService } from "./account-organization-index.service";
-import { OrganizationSagaService } from "./lifecycle/organization-saga.service";
+import { OrganizationCreationService } from "./organization-creation.service";
 
 @Injectable()
 export class OrgProfileService {
@@ -39,7 +31,7 @@ export class OrgProfileService {
     private readonly audit: AuditService,
     private readonly cache: CacheService,
     private readonly indexService: AccountOrganizationIndexService,
-    private readonly saga: OrganizationSagaService,
+    private readonly creation: OrganizationCreationService,
   ) {}
 
   async listUserOrganizations(userId: string) {
@@ -197,113 +189,12 @@ export class OrgProfileService {
         .limit(1);
       billingEmail = actor?.email ?? null;
     }
-    const requestKey = `create:${userId}:${input.slug}`;
-    const { saga, steps } = await this.saga.begin(
-      "CREATE",
-      randomUUID(),
-      requestKey,
+    return this.creation.createFromProfile({
       userId,
-      null,
-    );
-
-    const orgId = saga.organizationId;
-    const done = new Set(
-      steps.filter((step) => step.state === "DONE").map((step) => step.stepName),
-    );
-    const region = (await chooseRegionForNewOrg(this.db, { organizationId: orgId })).region;
-
-    try {
-      if (!done.has("reserve-identity"))
-        await this.saga.runStep(saga.sagaId, "reserve-identity", async () => {
-          const idReserved = await this.saga.reserve(
-            "ORGANIZATION_ID",
-            orgId,
-            orgId,
-            saga.sagaId,
-          );
-          if (!idReserved)
-            throw new ConflictException("Organization id is already reserved");
-
-          try {
-            const slugReserved = await this.saga.reserve(
-              "SLUG",
-              input.slug,
-              orgId,
-              saga.sagaId,
-            );
-            if (!slugReserved)
-              throw new ConflictException("Organization slug already exists");
-          } catch (error) {
-            await this.saga.release("ORGANIZATION_ID", orgId);
-            throw error;
-          }
-        });
-
-      if (!done.has("reserve-placement"))
-        await this.saga.runStep(saga.sagaId, "reserve-placement", () =>
-          placeOrganization(this.db, { orgId, region }),
-        );
-
-      if (!done.has("bootstrap-cell-organization"))
-        await this.saga.runStep(
-          saga.sagaId,
-          "bootstrap-cell-organization",
-          () =>
-            bootstrapCellOrganization(this.db, this.cache, {
-              orgId,
-              userId,
-              region,
-              name: input.name,
-              slug: input.slug,
-              billingEmail,
-              onboardingCompletedAt: new Date(),
-              ownerActivatedAt: new Date(),
-            }),
-        );
-
-      if (!done.has("bootstrap-owner-membership"))
-        await this.saga.runStep(saga.sagaId, "bootstrap-owner-membership", async () => {
-          const [owner] = await runInNewTenantTransaction(this.db, orgId, (tx) =>
-            tx
-              .select({ id: organizationMembers.id })
-              .from(organizationMembers)
-              .where(
-                and(
-                  eq(organizationMembers.orgId, orgId),
-                  eq(organizationMembers.isOwner, true),
-                ),
-              )
-              .limit(1),
-          );
-          if (!owner)
-            throw new Error(
-              `Organization ${orgId} was created without an owner membership`,
-            );
-        });
-
-      if (!done.has("activate-directory-projection"))
-        await this.saga.runStep(saga.sagaId, "activate-directory-projection", async () => {
-          await this.indexService.refreshForUser(userId);
-          await this.indexService.touchLastActivated(userId, orgId);
-        });
-
-      await this.saga.complete(saga.sagaId);
-      await this.saga.claim("ORGANIZATION_ID", orgId);
-      await this.saga.claim("SLUG", input.slug);
-    } catch (error) {
-      await this.saga.compensate(saga.sagaId, {
-        "reserve-identity": async () => {
-          await this.saga.release("SLUG", input.slug);
-          await this.saga.release("ORGANIZATION_ID", orgId);
-        },
-        "reserve-placement": () => unplaceOrganization(this.db, orgId),
-      });
-      throw error;
-    }
-
-    await this.cache.invalidate(CACHE_KEYS.userSession(userId));
-
-    return { id: orgId, name: input.name, slug: input.slug };
+      name: input.name,
+      slug: input.slug,
+      billingEmail,
+    });
   }
 
   async getProfile(userId: string, orgId: string) {

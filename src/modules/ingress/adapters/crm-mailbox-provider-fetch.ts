@@ -4,7 +4,7 @@ import type { OutlookMailProvider } from "../../mail/providers/outlook-mail.prov
 import type { NormalizerConnectionMeta } from "../../mail/providers/mail-normalizers";
 import { isPrivateMessage } from "./mail-ingress-privacy";
 import { type MailMessageForIngress } from "./mail-to-inbound-event";
-import type { MailMessageDetail } from "../../mail/dto/mail-schemas";
+import type { MailMessageDetail } from "../../mail/dto/mail-response.schemas";
 import {
   forIngress,
   GMAIL_EXCLUSIONS,
