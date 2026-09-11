@@ -54,10 +54,6 @@ export const NO_TENANT_TRANSACTION_ALLOWLIST = new Map([
     "src/modules/inventory/channels/channel-webhook.controller.ts",
     "inbound marketplace webhook: the caller is a marketplace with no session, so there is no tenant to derive and the interceptor would open nothing anyway. ChannelSnapshotService resolves the organisation from the channel id through a SECURITY DEFINER resolver and opens its own tenant transaction, and refuses anything whose HMAC does not verify. The decorator makes that reason explicit rather than incidental",
   ],
-  [
-    "src/modules/e-sign/sign-bulk-send.controller.ts",
-    "bulk send dispatches up to 5000 invitation emails, and one request transaction around them held a pooled connection across every network call and made the whole job one rollback boundary — a failure at row 3000 discarded 3000 envelopes whose emails had already been delivered; createJob opens its own runInNewTenantTransaction per row, and writes each row's outcome in a second one so a rolled-back row still records that it failed",
-  ],
 ]);
 
 export const CONTEXT_EXIT_ALLOWLIST = new Map([

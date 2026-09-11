@@ -10,7 +10,6 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { actingMembershipId } from "../../common/auth/principal";
 import { Validate } from "../../common/validation/validate.decorator";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
-import { NoTenantTransaction } from "../../common/tenant/no-tenant-transaction.decorator";
 import { SignBulkSendService } from "./sign-bulk-send.service";
 import { createBulkSendJobSchema, type CreateBulkSendJobInput } from "./dto/e-sign.schemas";
 import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
@@ -24,24 +23,23 @@ export class SignBulkSendController {
   constructor(private readonly bulkSend: SignBulkSendService) {}
 
   /*
-   * Opted out of the request transaction, and the opt-out is load-bearing in
-   * both directions.
+   * In the request transaction, like any bounded write.
    *
-   * A bulk send is up to 5000 envelopes, each one sending an invitation email
-   * over the network. Held inside `TenantContextInterceptor`'s single request
-   * transaction that meant one pooled connection for the whole run (backend §4
-   * forbids exactly this) and, worse, one rollback boundary around it: a
-   * failure at row 3000 discarded 3000 envelope rows while their 3000 emails
-   * stayed in recipients' inboxes, linking to envelopes that no longer existed.
+   * This handler used to opt out with `@NoTenantTransaction()`, because it sent
+   * every row's invitation email inline: up to 5000 network calls held in one
+   * pooled connection and one rollback boundary (backend §4). SIGN-P0-05 moved
+   * the send onto the outbox, and `SignBulkSendConsumer` now runs the row pass
+   * in the relay's tenant transaction, with one new transaction per row write
+   * (`lib/bulk-send-pass.ts`). What is left here is validation, the job, its
+   * rows and the queue entry: bounded database work.
    *
-   * Opting out alone would be a different bug — the interceptor skips tenant
-   * setup entirely, so there is no `app.current_org_id` GUC and RLS denies
-   * every query. `createJob` therefore opens its own transactions, one per row,
-   * via `runInNewTenantTransaction`.
+   * The opt-out outlived its reason and broke the request. With it the
+   * interceptor set no `app.current_org_id`, and nothing in `createJob` opened
+   * a tenant transaction, so RLS refused the first read (`sign_templates`,
+   * SQLSTATE 42501) and every bulk send answered 500.
    */
   @Post("jobs")
   @HttpCode(201)
-  @NoTenantTransaction()
   @Idempotent("sign:bulk_send.create")
   @RequirePermission("sign:bulk_send:run")
   @Validate({ body: createBulkSendJobSchema })
