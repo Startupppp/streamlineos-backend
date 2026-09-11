@@ -113,14 +113,14 @@ describe("organization creation reservations", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     runInNewTx.mockImplementation(
-      (_db: unknown, _orgId: string, work: (tx: unknown) => Promise<unknown>) =>
+      ((_db: unknown, _orgId: string, work: (tx: unknown) => Promise<unknown>) =>
         work({
           select: () => ({
             from: () => ({
               where: () => ({ limit: () => Promise.resolve([{ id: 1 }]) }),
             }),
           }),
-        }) as Promise<never>,
+        }) as Promise<never>) as never,
     );
   });
 
@@ -188,7 +188,7 @@ describe("bootstrapCellOrganization idempotency", () => {
     const insert = jest.fn();
 
     runInNewTx.mockImplementation(
-      (_db: unknown, _orgId: string, work: (tx: unknown) => Promise<unknown>) =>
+      ((_db: unknown, _orgId: string, work: (tx: unknown) => Promise<unknown>) =>
         work({
           // The organization is already there, which is what a resumed saga
           // sees. Nothing may be written a second time.
@@ -201,7 +201,7 @@ describe("bootstrapCellOrganization idempotency", () => {
           }),
           insert,
           execute: jest.fn(),
-        }) as Promise<never>,
+        }) as Promise<never>) as never,
     );
 
     await expect(createOrganization(deps, USER, INPUT)).resolves.toMatchObject({
