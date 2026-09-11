@@ -11,8 +11,12 @@ import { listHoldsQuerySchema, createHoldSchema } from "./dto/quality.schemas";
 import type { ListHoldsQueryInput, CreateHoldInput } from "./dto/quality.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
+import {
+  listHoldsResponseSchema,
+  invQualityHoldSchema,
+} from "./dto/quality-response.schemas";
 
 const holdIdParams = z.object({ holdId: z.coerce.number().int().positive() }).strict();
 
@@ -23,6 +27,7 @@ export class HoldsController {
   constructor(private readonly svc: HoldsService) {}
 
   @Get()
+  @ResponseSchema(listHoldsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:read")
   @Validate({ query: listHoldsQuerySchema })
@@ -34,6 +39,7 @@ export class HoldsController {
   }
 
   @Get(":holdId")
+  @ResponseSchema(invQualityHoldSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:read")
   @Validate({ params: holdIdParams })
@@ -45,6 +51,7 @@ export class HoldsController {
   }
 
   @Post()
+  @ResponseSchema(invQualityHoldSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
   @Validate({ body: createHoldSchema })
@@ -58,6 +65,7 @@ export class HoldsController {
 
   @Post(":holdId/release")
   @BodylessAction()
+  @ResponseSchema(invQualityHoldSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:release")
   @Validate({ params: holdIdParams })

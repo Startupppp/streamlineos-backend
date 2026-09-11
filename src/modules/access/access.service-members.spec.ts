@@ -3,7 +3,9 @@ jest.mock("../../common/relocation/relocation-traffic-tracker", () => ({
   isRelocationTarget: jest.fn().mockReturnValue(false),
 }));
 
+import { makeMembershipStateStub } from "../../../test/helpers/membership-state-stub";
 import { AccessService } from "./access.service";
+import { AccessVersionCache } from "./access-version-cache";
 import type { Db } from "../../db/drizzle.module";
 import type { CacheService } from "../../common/cache/cache.service";
 import type { EntitlementsService } from "./entitlements.service";
@@ -78,6 +80,8 @@ describe("AccessService.membersWithPermission", () => {
       cache as unknown as CacheService,
       entitlements as unknown as EntitlementsService,
       makeMfaPolicyStub(),
+      new AccessVersionCache(db as unknown as Db, cache as unknown as CacheService),
+      makeMembershipStateStub(),
     );
   }
 
@@ -282,6 +286,8 @@ describe("AccessService.membersWithPermission — pagination", () => {
         cache as unknown as CacheService,
         entitlements as unknown as EntitlementsService,
         makeMfaPolicyStub(),
+        new AccessVersionCache(db as unknown as Db, cache as unknown as CacheService),
+        makeMembershipStateStub(),
       ),
       cachedMock,
     };

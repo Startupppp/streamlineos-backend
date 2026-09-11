@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, desc, eq, inArray, isNull, notInArray } from "drizzle-orm";
 import { leadAssignmentRules, leadScoringRules, crmEmailTemplates } from "../../../db/schema";
 import { businessParties, leadPartyMap } from "../../../db/schema/party";
@@ -76,9 +76,11 @@ export class CrmRulesService {
   }
 
   async deleteAssignmentRule(orgId: string, id: number) {
-    await this.db
+    const deleted = await this.db
       .delete(leadAssignmentRules)
-      .where(and(eq(leadAssignmentRules.id, id), eq(leadAssignmentRules.orgId, orgId)));
+      .where(and(eq(leadAssignmentRules.id, id), eq(leadAssignmentRules.orgId, orgId)))
+      .returning({ id: leadAssignmentRules.id });
+    if (deleted.length === 0) throw new NotFoundException("Assignment rule not found");
     return { success: true };
   }
 
@@ -172,18 +174,14 @@ export class CrmRulesService {
     effectiveType: string,
     sampleLead: SampleLeadForPreview,
   ): Promise<string | null> {
-    const config = (rule.config ?? {}) as {
-      weights?: Record<string, number>;
-      leastLoadedWindowDays?: number;
-      fallbackUserId?: string;
-    };
+    const config = rule.config;
 
     if (effectiveType === "assign_user") {
       return rule.assignToUserId ?? null;
     }
 
     if (effectiveType === "round_robin") {
-      const candidates = (rule.roundRobinUserIds ?? []) as string[];
+      const candidates = rule.roundRobinUserIds ?? [];
       if (candidates.length === 0) return null;
       return candidates[0] ?? null;
     }
@@ -192,7 +190,7 @@ export class CrmRulesService {
       const weights = config.weights ?? {};
       const entries = Object.entries(weights);
       if (entries.length === 0) {
-        const candidates = (rule.roundRobinUserIds ?? []) as string[];
+        const candidates = rule.roundRobinUserIds ?? [];
         return candidates[0] ?? null;
       }
       const total = entries.reduce((sum, [, w]) => sum + w, 0);
@@ -205,7 +203,7 @@ export class CrmRulesService {
     }
 
     if (effectiveType === "least_loaded") {
-      const candidates = (rule.roundRobinUserIds ?? []) as string[];
+      const candidates = rule.roundRobinUserIds ?? [];
       if (candidates.length === 0) return null;
 
       const rows = await this.db
@@ -300,9 +298,12 @@ export class CrmRulesService {
   }
 
   async deleteScoringRule(orgId: string, id: number) {
-    await this.db
+    const deleted = await this.db
       .delete(leadScoringRules)
-      .where(and(eq(leadScoringRules.id, id), eq(leadScoringRules.orgId, orgId)));
+      .where(and(eq(leadScoringRules.id, id), eq(leadScoringRules.orgId, orgId)))
+      .returning({ id: leadScoringRules.id });
+    if (deleted.length === 0) throw new NotFoundException("Scoring rule not found");
+    await this.cache.invalidateNamespace(`crm:scoring-rules:${orgId}`);
     return { success: true };
   }
 
@@ -339,9 +340,11 @@ export class CrmRulesService {
   }
 
   async deleteEmailTemplate(orgId: string, id: number) {
-    await this.db
+    const deleted = await this.db
       .delete(crmEmailTemplates)
-      .where(and(eq(crmEmailTemplates.id, id), eq(crmEmailTemplates.orgId, orgId)));
+      .where(and(eq(crmEmailTemplates.id, id), eq(crmEmailTemplates.orgId, orgId)))
+      .returning({ id: crmEmailTemplates.id });
+    if (deleted.length === 0) throw new NotFoundException("Email template not found");
     return { success: true };
   }
 }

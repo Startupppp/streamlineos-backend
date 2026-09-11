@@ -1,6 +1,8 @@
 import { Test } from "@nestjs/testing";
 import { OrgSetupService } from "../org-setup.service";
 import { OrgSetupResolverService } from "../org-setup-resolver.service";
+import { OrganizationCreationService } from "../../core/organization-creation.service";
+import { AccountOrganizationIndexService } from "../../core/account-organization-index.service";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
@@ -65,7 +67,13 @@ function buildTxMock(ownerMembershipId: number | null) {
   const values = jest.fn().mockReturnValue({ onConflictDoUpdate, onConflictDoNothing });
   const insert = jest.fn().mockReturnValue({ values });
 
-  const whereUpdate = jest.fn().mockResolvedValue([]);
+  // `claimOnboardingStamp` reads `.returning()` off the same `update(...).set(...).where(...)`
+  // chain that the plain `users` update awaits directly, so the double has to be both.
+  const returningUpdate = jest.fn().mockResolvedValue([{ id: "org-1" }]);
+  const whereUpdate = jest.fn().mockReturnValue({
+    returning: returningUpdate,
+    then: (resolve: (rows: unknown[]) => unknown) => resolve([]),
+  });
   const set = jest.fn().mockReturnValue({ where: whereUpdate });
   const update = jest.fn().mockReturnValue({ set });
 
@@ -84,7 +92,7 @@ function buildTxMock(ownerMembershipId: number | null) {
 
   const execute = jest.fn().mockResolvedValue(undefined);
   const tx: TxMock = { execute, insert, update, select };
-  return { tx, mocks: { insert, values, onConflictDoUpdate, onConflictDoNothing, returning, update, select, limit } };
+  return { tx, mocks: { insert, values, onConflictDoUpdate, onConflictDoNothing, returning, returningUpdate, update, select, limit } };
 }
 
 function buildDb(ownerMembershipId: number | null) {
@@ -116,14 +124,25 @@ function buildDb(ownerMembershipId: number | null) {
   return { db, txMocks, outerMocks: { insert: outerInsert, values: outerValues, onConflictDoNothing } };
 }
 
-async function buildService(db: unknown) {
+async function buildService(
+  db: unknown,
+  cache: { invalidate: jest.Mock } = { invalidate: jest.fn() },
+) {
   const moduleRef = await Test.createTestingModule({
     providers: [
       OrgSetupService,
       OrgSetupResolverService,
+      {
+        provide: OrganizationCreationService,
+        useValue: { createFromSetup: jest.fn() },
+      },
+      {
+        provide: AccountOrganizationIndexService,
+        useValue: { refreshForUser: jest.fn() },
+      },
       { provide: DRIZZLE, useValue: db },
       { provide: AuditService, useValue: { log: jest.fn() } },
-      { provide: CacheService, useValue: { invalidate: jest.fn() } },
+      { provide: CacheService, useValue: cache },
       {
         provide: OnboardingSessionService,
         useValue: {
@@ -232,13 +251,94 @@ describe("OrgSetupService — provisionOrgModules ownership seeding", () => {
   });
 });
 
+/**
+ * Decision D14: the setup routes are made naturally idempotent rather than decorated with
+ * `@Idempotent`, which 400s any caller that sends no `Idempotency-Key` header. The stamp is
+ * claimed by a conditional UPDATE, so a replay writes nothing at all — no second
+ * `organization.setup.completed` with `sendWelcome: true`, and no second `magic_link_tokens` row.
+ */
+describe("OrgSetupService — replay of a completed setup", () => {
+  it("control — the first call claims the stamp and writes the token and the event", async () => {
+    const { db, txMocks } = buildDb(99);
+    const svc = await buildService(db);
+
+    const result = await svc.skipSetup(ownerActor());
+
+    expect(result).toMatchObject({ success: true, orgId: "org-1" });
+    expect(result).toHaveProperty("autoLoginToken");
+    expect(txMocks.insert).toHaveBeenCalled();
+  });
+
+  it("writes nothing and mints no login token when the stamp was already claimed", async () => {
+    const { db, txMocks } = buildDb(99);
+    txMocks.returningUpdate.mockResolvedValue([]);
+    const svc = await buildService(db);
+
+    await expect(svc.skipSetup(ownerActor())).resolves.toEqual({
+      success: true,
+      orgId: "org-1",
+    });
+
+    expect(txMocks.insert).not.toHaveBeenCalled();
+  });
+
+  it("does not re-run completeSetup either", async () => {
+    const { db, txMocks } = buildDb(99);
+    txMocks.returningUpdate.mockResolvedValue([]);
+    const svc = await buildService(db);
+
+    await expect(
+      svc.completeSetup(ownerActor(), {
+        industry: "IT Services",
+        companySize: "1-10",
+        enabledModules: ["hr"],
+      } as Parameters<OrgSetupService["completeSetup"]>[1]),
+    ).resolves.toEqual({ success: true, orgId: "org-1" });
+
+    expect(txMocks.insert).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The replay must still drop the session cache. `getSessionData` is cached for 60s and the
+   * NextAuth session callback reads it, so it is what `resolveWizardGate` decides on: a replay
+   * that answered success while leaving the pre-setup organisation cached sent the caller — which
+   * had already written its gate cookie and refreshed its claims — straight back into the wizard,
+   * and kept doing so until the entry expired.
+   */
+  it("still invalidates the session cache when the stamp was already claimed", async () => {
+    const { db, txMocks } = buildDb(99);
+    txMocks.returningUpdate.mockResolvedValue([]);
+    const cache = { invalidate: jest.fn() };
+    const svc = await buildService(db, cache);
+
+    await svc.skipSetup(ownerActor());
+
+    expect(cache.invalidate).toHaveBeenCalledWith("user:session:user-1");
+  });
+
+  it("invalidates the session cache on a completeSetup replay too", async () => {
+    const { db, txMocks } = buildDb(99);
+    txMocks.returningUpdate.mockResolvedValue([]);
+    const cache = { invalidate: jest.fn() };
+    const svc = await buildService(db, cache);
+
+    await svc.completeSetup(ownerActor(), {
+      industry: "IT Services",
+      companySize: "1-10",
+      enabledModules: ["hr"],
+    } as Parameters<OrgSetupService["completeSetup"]>[1]);
+
+    expect(cache.invalidate).toHaveBeenCalledWith("user:session:user-1");
+  });
+});
+
 describe("OrgSetupService stale-session membership guards", () => {
   function buildMembershipDb(rows: Record<string, unknown>[]) {
     const chain: Record<string, jest.Mock> = {};
     chain.from = jest.fn().mockReturnValue(chain);
     chain.leftJoin = jest.fn().mockReturnValue(chain);
     chain.where = jest.fn().mockReturnValue(chain);
-    chain.orderBy = jest.fn().mockResolvedValue(rows);
+    chain.orderBy = jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(rows) });
 
     const tx = {
       execute: jest.fn().mockResolvedValue([]),

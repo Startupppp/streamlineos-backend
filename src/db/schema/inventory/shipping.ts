@@ -20,7 +20,6 @@ export const invCarriers = pgTable("inv_carriers", {
 }, (table) => [
   uniqueIndex("uniq_inv_carriers_org_code").on(table.orgId, table.code),
   unique("uniq_inv_carriers_org_id").on(table.orgId, table.id),
-  index("idx_inv_carriers_org").on(table.orgId),
 ]);
 
 export const invShipments = pgTable("inv_shipments", {

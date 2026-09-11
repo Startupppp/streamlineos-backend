@@ -1,16 +1,4 @@
-import {
-  pgTable,
-  pgEnum,
-  text,
-  serial,
-  timestamp,
-  boolean,
-  integer,
-  jsonb,
-  index,
-  unique,
-  uniqueIndex,
-} from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 
@@ -44,7 +32,7 @@ export const hrSafetyIncidents = pgTable("hr_safety_incidents", {
   type: hrSafetyIncidentTypeEnum("type").notNull(),
   location: text("location").notNull(),
   occurredAt: timestamp("occurred_at").notNull(),
-  reportedBy: text("reported_by").references(() => users.id, { onDelete: "set null" }).notNull(),
+  reportedBy: text("reported_by").references(() => users.id).notNull(),
   description: text("description").notNull(),
   severity: hrSafetyIncidentSeverityEnum("severity").notNull(),
   status: hrSafetyIncidentStatusEnum("status").default("open").notNull(),
@@ -64,7 +52,7 @@ export const hrSafetyIncidents = pgTable("hr_safety_incidents", {
 export const hrWellnessCheckins = pgTable("hr_wellness_checkins", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  userId: text("user_id").notNull(),
   userMembershipId: integer("user_membership_id"),
   date: text("date").notNull(),
   score: integer("score").notNull(),
@@ -74,7 +62,6 @@ export const hrWellnessCheckins = pgTable("hr_wellness_checkins", {
   unique("uniq_hr_wellness_checkins_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_wellness_org_user_date").on(table.orgId, table.userId, table.date),
   index("idx_hr_wellness_org_date").on(table.orgId, table.date),
-  index("idx_hr_wellness_org_user").on(table.orgId, table.userId),
   index("idx_hr_wellness_org_user_membership").on(table.orgId, table.userMembershipId),
 ]);
 

@@ -4,9 +4,13 @@ import { z } from "zod";
 import { readRequestScope } from "../organization/core/read-request-scope";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
-
-const surveyIdParams = z.object({ surveyId: z.coerce.number().int().positive() }).strict();
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  surveyFormRowSchema,
+  surveyFormListSchema,
+  surveyTemplateListSchema,
+  surveyVersionRowSchema,
+} from "./dto/survey-forms-response.schemas";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../common/rbac/module.guard";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
@@ -25,6 +29,8 @@ import {
   type PatchSurveyInput,
 } from "./dto/survey-forms.schemas";
 
+const surveyIdParams = z.object({ surveyId: z.coerce.number().int().positive() }).strict();
+
 @RequireModule("surveys")
 @Controller("surveys")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
@@ -36,6 +42,7 @@ export class SurveysController {
 
   @Get("templates")
   @RequirePermission("surveys:view")
+  @ResponseSchema(surveyTemplateListSchema)
   listTemplates() {
     return this.templates.list();
   }
@@ -43,6 +50,7 @@ export class SurveysController {
   @Get()
   @RequirePermission("surveys:view")
   @Validate({ query: listSurveysSchema })
+  @ResponseSchema(surveyFormListSchema)
   list(@Query() query: ListSurveysInput, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
     return this.forms.list(u.orgId, u.userId, query, readRequestScope(req));
   }
@@ -51,6 +59,7 @@ export class SurveysController {
   @HttpCode(201)
   @RequirePermission("surveys:create")
   @Validate({ body: createSurveySchema })
+  @ResponseSchema(surveyFormRowSchema)
   create(@Body() body: CreateSurveyInput, @CurrentUser() u: CurrentUserContext) {
     return this.forms.create(u.orgId, u.userId, body);
   }
@@ -58,6 +67,7 @@ export class SurveysController {
   @Get(":surveyId")
   @RequirePermission("surveys:view")
   @Validate({ params: surveyIdParams })
+  @ResponseSchema(surveyFormRowSchema)
   get(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
     return this.forms.get(u.orgId, u.userId, surveyId, readRequestScope(req));
   }
@@ -65,6 +75,7 @@ export class SurveysController {
   @Patch(":surveyId")
   @RequirePermission("surveys:update")
   @Validate({ params: surveyIdParams, body: patchSurveySchema })
+  @ResponseSchema(surveyFormRowSchema)
   patch(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body() body: PatchSurveyInput,
@@ -78,6 +89,7 @@ export class SurveysController {
   @Idempotent("surveys.survey.publish")
   @RequirePermission("surveys:publish")
   @Validate({ params: surveyIdParams })
+  @ResponseSchema(surveyVersionRowSchema)
   publish(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
     return this.forms.publish(u.orgId, u.userId, surveyId, readRequestScope(req));
   }
@@ -86,6 +98,7 @@ export class SurveysController {
   @BodylessAction()
   @RequirePermission("surveys:publish")
   @Validate({ params: surveyIdParams })
+  @ResponseSchema(surveyFormRowSchema)
   pause(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
     return this.forms.pause(u.orgId, u.userId, surveyId, readRequestScope(req));
   }
@@ -94,6 +107,7 @@ export class SurveysController {
   @BodylessAction()
   @RequirePermission("surveys:publish")
   @Validate({ params: surveyIdParams })
+  @ResponseSchema(surveyFormRowSchema)
   close(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
     return this.forms.close(u.orgId, u.userId, surveyId, readRequestScope(req));
   }
@@ -102,6 +116,7 @@ export class SurveysController {
   @BodylessAction()
   @RequirePermission("surveys:delete")
   @Validate({ params: surveyIdParams })
+  @ResponseSchema(surveyFormRowSchema)
   archive(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
     return this.forms.archive(u.orgId, u.userId, surveyId, readRequestScope(req));
   }
@@ -110,6 +125,7 @@ export class SurveysController {
   @BodylessAction()
   @RequirePermission("surveys:create")
   @Validate({ params: surveyIdParams })
+  @ResponseSchema(surveyFormRowSchema)
   duplicate(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
     return this.forms.duplicate(u.orgId, surveyId, u.userId, readRequestScope(req));
   }

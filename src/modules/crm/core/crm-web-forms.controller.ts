@@ -26,6 +26,8 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
+import { webFormSchema } from "./dto/crm-web-forms-response.schemas";
 
 const formIdParams = z.object({ formId: z.coerce.number().int().positive() }).strict();
 
@@ -37,6 +39,7 @@ export class CrmWebFormsController {
 
   @Get()
   @RequirePermission("crm:web-forms:manage")
+  @ResponseSchema(z.array(webFormSchema))
   list(@CurrentUser() u: CurrentUserContext) {
     return this.forms.list(u.orgId);
   }
@@ -44,6 +47,7 @@ export class CrmWebFormsController {
   @Post()
   @RequirePermission("crm:web-forms:manage")
   @HttpCode(201)
+  @ResponseSchema(webFormSchema)
   @Validate({ body: webFormCreateSchema })
   create(
     @Body() body: WebFormCreateInput,
@@ -54,6 +58,7 @@ export class CrmWebFormsController {
 
   @Patch(":formId")
   @RequirePermission("crm:web-forms:manage")
+  @ResponseSchema(webFormSchema)
   @Validate({ params: formIdParams, body: webFormUpdateSchema })
   async update(
     @Param("formId", ParseIntPipe) formId: number,
@@ -68,6 +73,7 @@ export class CrmWebFormsController {
   @Delete(":formId")
   @HttpCode(204)
   @RequirePermission("crm:web-forms:manage")
+  @NoContentResponse()
   @Validate({ params: formIdParams })
   async remove(
     @Param("formId", ParseIntPipe) formId: number,

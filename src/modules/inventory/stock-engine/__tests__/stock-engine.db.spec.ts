@@ -11,15 +11,28 @@
  * semantics and ledger/snapshot agreement are only provable against Postgres.
  */
 import { randomUUID } from "node:crypto";
+import { requireApprovedDatabaseUrl } from "../../../../test/db-spec-guard";
 import postgres from "postgres";
-import { dbSpecClient, dbSpecSessionClient, dbSpecSuite, dbSpecUrl } from "../../../../test/db-spec-gate";
+import { dbSpecClient, dbSpecSessionClient, dbSpecSuite } from "../../../../test/db-spec-gate";
 
 const describeDb = dbSpecSuite();
+
+/**
+ * The URL, refused unless the destructive-spec guard approves its target: these
+ * probes create and drop scratch tables, so they must never reach a database
+ * nobody opted in to.
+ */
+function approvedDatabaseUrl(): string {
+  return requireApprovedDatabaseUrl({
+    spec: "stock-engine.db.spec.ts",
+    vars: ["DATABASE_URL", "APP_DATABASE_URL"],
+  });
+}
 
 function connect() {
   // DATABASE_URL first: these specs create and drop scratch tables, which the
   // RLS-enforced application role is not permitted to do.
-  return dbSpecClient(dbSpecUrl("DATABASE_URL", "APP_DATABASE_URL"), { max: 10 });
+  return dbSpecClient(approvedDatabaseUrl(), { max: 10 });
 }
 
 /**
@@ -33,7 +46,7 @@ function connect() {
  * mode in the host, the same substitution db-verify-rls.mjs makes.
  */
 function connectSession() {
-  return dbSpecSessionClient(dbSpecUrl("DATABASE_URL", "APP_DATABASE_URL"));
+  return dbSpecSessionClient(approvedDatabaseUrl());
 }
 
 describeDb("stock engine — real database", () => {
@@ -118,7 +131,6 @@ describeDb("stock engine — real database", () => {
       await sql`CREATE TABLE IF NOT EXISTS inv_test_level (id int PRIMARY KEY, on_hand numeric(18,4) NOT NULL)`;
       await sql`INSERT INTO inv_test_level (id, on_hand) VALUES (1, 1) ON CONFLICT (id) DO UPDATE SET on_hand = 1`;
 
-      // Genuinely parallel: both transactions are started before either resolves.
       const claim = async () =>
         sql.begin(async (tx) => {
           const [row] = await tx`SELECT on_hand FROM inv_test_level WHERE id = 1 FOR UPDATE`;
@@ -151,7 +163,6 @@ describeDb("stock engine — real database", () => {
       };
 
       const results = await Promise.all([claimUnsafe(), claimUnsafe()]);
-      // Read-then-write with no lock lets both through and drives stock negative.
       expect(results.filter((r) => r === "won").length).toBe(2);
       const [final] = await sql`SELECT on_hand FROM inv_test_level_nolock WHERE id = 1`;
       expect(Number(final!.on_hand)).toBe(-1);
@@ -166,7 +177,6 @@ describeDb("stock engine — real database", () => {
       await sql`TRUNCATE inv_test_ledger`;
       await sql`INSERT INTO inv_test_snapshot (id, on_hand) VALUES (1, 0) ON CONFLICT (id) DO UPDATE SET on_hand = 0`;
 
-      // Deterministic pseudo-random sequence — no Math.random, so a failure reproduces.
       const deltas: number[] = [];
       let seed = 20260811;
       for (let i = 0; i < 60; i++) {

@@ -20,7 +20,7 @@ export function resetRelocationTrafficTracker(): void {
   inFlight = null;
 }
 
-export function trackedTargets(): ReadonlyMap<string, string> {
+function trackedTargets(): ReadonlyMap<string, string> {
   return tracked;
 }
 
@@ -44,7 +44,8 @@ export async function loadActiveRelocationTargets(db: Db): Promise<readonly Trac
         eq(organizationRelocations.isActive, true),
         eq(organizationRelocations.currentState, "ACTIVE_TARGET"),
       ),
-    );
+    )
+    .limit(10_000);
   return rows.map((row) => ({ orgId: row.orgId, cellId: row.cellId }));
 }
 
@@ -72,7 +73,7 @@ export function isRelocationTarget(orgId: string, cellId: string | null): boolea
   return tracked.get(orgId) === cellId;
 }
 
-export async function countRequestIfRelocationTarget(
+async function countRequestIfRelocationTarget(
   db: Db,
   orgId: string,
   cellId: string | null,

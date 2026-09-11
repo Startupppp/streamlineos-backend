@@ -1,6 +1,7 @@
 import type { Request } from "express";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { ListEnvelopesInput } from "../dto/e-sign.schemas";
+import { ScopedRead } from "../../access/scoped-read";
 import { SignEnvelopesController } from "../sign-envelopes.controller";
 import type { SignEnvelopesService } from "../sign-envelopes.service";
 
@@ -23,45 +24,58 @@ const makeUser = (): CurrentUserContext =>
 const makeQuery = (): ListEnvelopesInput =>
   ({ page: 1, limit: 25 }) as unknown as ListEnvelopesInput;
 
-describe("SignEnvelopesController list — DataScope → viewAll", () => {
-  it("passes viewAll:true when req.rbacScope is 'all'", () => {
+function forwardedRead(svc: jest.Mocked<Pick<SignEnvelopesService, "list">>): ScopedRead {
+  const [read] = svc.list.mock.calls[0] as [ScopedRead, number | null, ListEnvelopesInput];
+  return read;
+}
+
+describe("SignEnvelopesController list — request scope becomes a ScopedRead", () => {
+  it("forwards an unrestricted ScopedRead when req.rbacScope is 'all'", () => {
     const svc = makeService();
     const ctrl = new SignEnvelopesController(svc as unknown as SignEnvelopesService);
     const req = { rbacScope: "all" } as Request;
 
     ctrl.list(makeQuery(), makeUser(), req);
 
-    expect(svc.list).toHaveBeenCalledWith(ORG, expect.anything(), expect.objectContaining({ viewAll: true }));
+    const read = forwardedRead(svc);
+    expect(read).toBeInstanceOf(ScopedRead);
+    expect(read.denied).toBe(false);
+    expect(read.discriminator).toBe("all");
   });
 
-  it("passes viewAll:false when req.rbacScope is 'own'", () => {
+  it("forwards an own-scoped ScopedRead when req.rbacScope is 'own'", () => {
     const svc = makeService();
     const ctrl = new SignEnvelopesController(svc as unknown as SignEnvelopesService);
     const req = { rbacScope: "own" } as Request;
 
     ctrl.list(makeQuery(), makeUser(), req);
 
-    expect(svc.list).toHaveBeenCalledWith(ORG, expect.anything(), expect.objectContaining({ viewAll: false }));
+    const read = forwardedRead(svc);
+    expect(read.denied).toBe(false);
+    expect(read.discriminator).toBe("own:user-scope-1");
   });
 
-  it("passes viewAll:false when req.rbacScope is 'team'", () => {
+  it("forwards a team-scoped ScopedRead when req.rbacScope is 'team'", () => {
     const svc = makeService();
     const ctrl = new SignEnvelopesController(svc as unknown as SignEnvelopesService);
     const req = { rbacScope: "team" } as Request;
 
     ctrl.list(makeQuery(), makeUser(), req);
 
-    expect(svc.list).toHaveBeenCalledWith(ORG, expect.anything(), expect.objectContaining({ viewAll: false }));
+    const read = forwardedRead(svc);
+    expect(read.denied).toBe(false);
+    expect(read.discriminator).toBe("team:user-scope-1");
   });
 
-  it("passes viewAll:false when req.rbacScope is absent (guard not run)", () => {
+  it("fails closed to a denied ScopedRead when req.rbacScope is absent (guard not run)", () => {
     const svc = makeService();
     const ctrl = new SignEnvelopesController(svc as unknown as SignEnvelopesService);
     const req = {} as Request;
 
     ctrl.list(makeQuery(), makeUser(), req);
 
-    expect(svc.list).toHaveBeenCalledWith(ORG, expect.anything(), expect.objectContaining({ viewAll: false }));
+    const read = forwardedRead(svc);
+    expect(read.denied).toBe(true);
   });
 
   it("always passes membershipId from the authenticated context", () => {
@@ -71,6 +85,7 @@ describe("SignEnvelopesController list — DataScope → viewAll", () => {
 
     ctrl.list(makeQuery(), makeUser(), req);
 
-    expect(svc.list).toHaveBeenCalledWith(ORG, expect.anything(), expect.objectContaining({ membershipId: MEMBER_ID }));
+    const [, membershipId] = svc.list.mock.calls[0] as [ScopedRead, number | null, ListEnvelopesInput];
+    expect(membershipId).toBe(MEMBER_ID);
   });
 });

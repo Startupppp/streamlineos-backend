@@ -18,9 +18,10 @@ const KB_OWNER_PERMISSION = "kb:articles:manage";
  * The primitives knowledge-gap detection is built from, lifted out of
  * `support-kb-gap.service.ts` unchanged.
  *
- * All five were private with no caller outside that service, and every one of
- * them reached for `this.db` and nothing else — so the executor arrives as a
- * parameter and the rest of the service keeps the orchestration.
+ * Every one of them reached for `this.db` and nothing else — so the executor
+ * arrives as a parameter. `SupportKbGapDetectionService` keeps the detection
+ * orchestration (clustering, search gaps, upsert); `SupportKbGapService` uses
+ * `findKbOwners` and `buildEvidenceText` when it drafts an article for a gap.
  */
 export async function clusterTicketEmbeddings(
     db: Db,orgId: string) {

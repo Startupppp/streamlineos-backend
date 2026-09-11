@@ -1,31 +1,19 @@
 import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { createHash } from "node:crypto";
 import { AvScanner, type AvScanResult } from "./av-scan";
+import { vtFileReportSchema, type VtStats } from "./virustotal-av-scanner.schema";
 
 const VT_BASE = "https://www.virustotal.com/api/v3";
-const POLL_INTERVAL_MS = 15_000;
-const MAX_POLLS = 6;
 
-interface VtStats {
-  malicious?: number;
-  suspicious?: number;
-}
-
-interface VtFileReport {
-  data?: { attributes?: { last_analysis_stats?: VtStats } };
-}
-
-interface VtUploadResponse {
-  data?: { id?: string };
-}
-
-interface VtAnalysisReport {
-  data?: { attributes?: { status?: string; stats?: VtStats } };
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+/**
+ * Node's `fetch` has no default request timeout, so a VirusTotal endpoint that
+ * accepts the connection and then stops writing holds this call — and the upload
+ * request that is waiting on it — for as long as the socket stays open. The one
+ * request here goes through `vtFetch`, which takes the deadline as a required
+ * argument, so a second endpoint added later cannot omit one by writing a bare
+ * `fetch`.
+ */
+const VT_REPORT_TIMEOUT_MS = 10_000;
 
 @Injectable()
 export class VirusTotalScanner extends AvScanner implements OnModuleInit {
@@ -35,70 +23,62 @@ export class VirusTotalScanner extends AvScanner implements OnModuleInit {
     super();
   }
 
+  private vtFetch(url: string, timeoutMs: number, init?: RequestInit): Promise<Response> {
+    return fetch(url, {
+      ...init,
+      headers: { "x-apikey": this.apiKey, ...init?.headers },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  }
+
   onModuleInit(): void {
     this.logger.log("VirusTotal scanner active (fail-closed on error)");
   }
 
-  async scan(buffer: Buffer, filename: string, mimeType: string): Promise<AvScanResult> {
+  /**
+   * Hash lookup only. Submitting the bytes was the previous behaviour and it
+   * shipped every first-seen tenant document — payslips, signed contracts,
+   * candidate identity documents — to a third party that publishes what it is
+   * sent, which is the opposite of the tenant-private guarantee this scanner
+   * exists to defend. A hash carries no content, so the lookup is safe; a hash
+   * VirusTotal has never seen returns `error`, and every caller treats `error`
+   * as a refusal, so the unknown file is rejected rather than exported.
+   */
+  async scan(buffer: Buffer, filename: string, _mimeType: string): Promise<AvScanResult> {
     try {
       const sha256 = createHash("sha256").update(buffer).digest("hex");
       const cached = await this.lookupHash(sha256);
       if (cached !== null) return cached;
 
-      const analysisId = await this.uploadFile(buffer, filename, mimeType);
-      if (!analysisId) return { status: "error", reason: "vt-upload-failed" };
-
-      return await this.pollAnalysis(analysisId, filename);
+      this.logger.warn("VirusTotal has no report for this file; refusing rather than submitting its bytes", { filename });
+      return { status: "error", reason: "vt-unknown-hash" };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      this.logger.error(`VirusTotal scan failed for "${filename}": ${message}`);
+      this.logger.error(`VirusTotal scan failed: ${message}`, { filename });
       return { status: "error", reason: `vt-api-error: ${message}` };
     }
   }
 
   private async lookupHash(sha256: string): Promise<AvScanResult | null> {
-    const res = await fetch(`${VT_BASE}/files/${sha256}`, {
-      headers: { "x-apikey": this.apiKey },
-    });
+    const res = await this.vtFetch(`${VT_BASE}/files/${sha256}`, VT_REPORT_TIMEOUT_MS);
     if (res.status === 404) return null;
     if (!res.ok) return null;
-    const body = (await res.json()) as VtFileReport;
-    return this.parseStats(body.data?.attributes?.last_analysis_stats ?? null);
-  }
 
-  private async uploadFile(buffer: Buffer, filename: string, mimeType: string): Promise<string | null> {
-    const form = new FormData();
-    const blob = new Blob([new Uint8Array(buffer)], { type: mimeType });
-    form.append("file", blob, filename);
-    const res = await fetch(`${VT_BASE}/files`, {
-      method: "POST",
-      headers: { "x-apikey": this.apiKey },
-      body: form,
-    });
-    if (!res.ok) return null;
-    const body = (await res.json()) as VtUploadResponse;
-    return body.data?.id ?? null;
-  }
-
-  private async pollAnalysis(analysisId: string, filename: string): Promise<AvScanResult> {
-    for (let i = 0; i < MAX_POLLS; i++) {
-      await sleep(POLL_INTERVAL_MS);
-      const res = await fetch(`${VT_BASE}/analyses/${analysisId}`, {
-        headers: { "x-apikey": this.apiKey },
-      });
-      if (!res.ok) continue;
-      const body = (await res.json()) as VtAnalysisReport;
-      if (body.data?.attributes?.status !== "completed") continue;
-      return this.parseStats(body.data.attributes.stats ?? null);
+    const parsed = vtFileReportSchema.safeParse(await res.json());
+    if (!parsed.success) {
+      this.logger.error(`Malformed VirusTotal file-report response: ${parsed.error.message}`);
+      return { status: "error", reason: "vt-malformed-file-report" };
     }
-    this.logger.warn(`VirusTotal analysis timed out for "${filename}"`);
-    return { status: "error", reason: "vt-analysis-timeout" };
+    return this.parseStats(parsed.data.data?.attributes?.last_analysis_stats ?? null);
   }
 
   private parseStats(stats: VtStats | null): AvScanResult {
     if (!stats) return { status: "error", reason: "vt-no-stats" };
     if ((stats.malicious ?? 0) > 0 || (stats.suspicious ?? 0) > 0)
-      return { status: "infected", threat: `${stats.malicious ?? 0} malicious, ${stats.suspicious ?? 0} suspicious` };
+      return {
+        status: "infected",
+        threat: `${stats.malicious ?? 0} malicious, ${stats.suspicious ?? 0} suspicious`,
+      };
     return { status: "clean" };
   }
 }

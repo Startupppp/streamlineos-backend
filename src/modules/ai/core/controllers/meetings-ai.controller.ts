@@ -3,9 +3,13 @@ import {
   Controller,
   ForbiddenException,
   Post,
+  Req,
+  Res,
   ServiceUnavailableException,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
+import type { Request, Response } from "express";
 import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../../access/permission.guard";
 import { RequirePermission } from "../../../access/require-permission.decorator";
@@ -28,12 +32,24 @@ import {
   type MeetingSendConfirmBodyInput,
   type ProposeSendBodyInput,
 } from "../dto/meetings.schemas";
+import { AiRequestAbortInterceptor, respondWithAiTextStream } from "../streaming";
+import { ApiOkResponse } from "@nestjs/swagger";
+import { ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
+import {
+  meetingsPrepResponseSchema,
+  meetingsFollowUpResponseSchema,
+  proposeSendFollowUpResponseSchema,
+  confirmSendFollowUpResponseSchema,
+} from "../dto/ai-response.schemas";
+
+const MEETING_SOURCES_HEADER = "x-ai-sources";
 
 @Controller("ai/meetings")
 @UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)
 @RequirePermission("calendar:ai:use")
 @UseRateLimit("ai:invoke")
 @NoTenantTransaction()
+@UseInterceptors(AiRequestAbortInterceptor)
 export class MeetingsAiController {
   constructor(
     private readonly meetingsPrep: MeetingsPrepService,
@@ -51,6 +67,7 @@ export class MeetingsAiController {
   }
 
   @Post("prep")
+  @ResponseSchema(meetingsPrepResponseSchema)
   @Validate({ body: meetingPrepBodySchema })
   async prep(
     @Body() body: MeetingPrepBodyInput,
@@ -64,7 +81,50 @@ export class MeetingsAiController {
     });
   }
 
+  /**
+   * The streamed representation of the same prep. The buffered sibling above
+   * stays: its product is a Zod-validated record, and this release does not
+   * stream those. This route is the one the calendar panel opens, because an
+   * agenda is prose a client can append and a user should not watch a skeleton
+   * for it. One paid call, the shared helper, and the real sources on the
+   * headers so a stopped stream keeps its citations.
+   */
+  @Post("prep/stream")
+  @ApiOkResponse({ description: "AI text stream with meeting sources", content: { "text/plain": { schema: { type: "string" } } } })
+  @Validate({ body: meetingPrepBodySchema })
+  async prepStream(
+    @Req() req: Request,
+    @Body() body: MeetingPrepBodyInput,
+    @CurrentUser() u: CurrentUserContext,
+    @Res() res: Response,
+  ): Promise<void> {
+    await this.requireAiFlag(u.orgId);
+    this.ensureLlm();
+    return respondWithAiTextStream(
+      req,
+      res,
+      {
+        feature: "meetings.prep",
+        orgId: u.orgId,
+        route: "POST /ai/meetings/prep/stream",
+        sourcesHeader: MEETING_SOURCES_HEADER,
+      },
+      async (signal) =>
+        this.meetingsPrep.streamAgenda(
+          u.orgId,
+          u.userId,
+          body.eventId,
+          {
+            includeCrmContext: body.includeCrmContext,
+            includeProjectContext: body.includeProjectContext,
+          },
+          signal,
+        ),
+    );
+  }
+
   @Post("follow-up")
+  @ResponseSchema(meetingsFollowUpResponseSchema)
   @Validate({ body: meetingFollowUpBodySchema })
   async followUp(
     @Body() body: MeetingFollowUpBodyInput,
@@ -81,7 +141,47 @@ export class MeetingsAiController {
     );
   }
 
+  /**
+   * The streamed representation of the same follow-up, and the one the calendar
+   * panel opens. The buffered sibling above stays: its product is a
+   * Zod-validated record, and other callers may still want one. Same feature
+   * key, same gateway, so this route is credit-metered exactly as the buffered
+   * one is; the real sources ride the headers so a stopped stream keeps them.
+   */
+  @Post("follow-up/stream")
+  @ApiOkResponse({ description: "AI text stream with meeting sources", content: { "text/plain": { schema: { type: "string" } } } })
+  @Validate({ body: meetingFollowUpBodySchema })
+  async followUpStream(
+    @Req() req: Request,
+    @Body() body: MeetingFollowUpBodyInput,
+    @CurrentUser() u: CurrentUserContext,
+    @Res() res: Response,
+  ): Promise<void> {
+    await this.requireAiFlag(u.orgId);
+    this.ensureLlm();
+    return respondWithAiTextStream(
+      req,
+      res,
+      {
+        feature: "meetings.follow-up",
+        orgId: u.orgId,
+        route: "POST /ai/meetings/follow-up/stream",
+        sourcesHeader: MEETING_SOURCES_HEADER,
+      },
+      async (signal) =>
+        this.meetingsPrep.streamFollowUp(
+          u.orgId,
+          u.userId,
+          body.eventId,
+          body.meetingNotes,
+          body.actionItems,
+          signal,
+        ),
+    );
+  }
+
   @Post("follow-up/propose-send")
+  @ResponseSchema(proposeSendFollowUpResponseSchema)
   @Validate({ body: proposeSendBodySchema })
   async proposeSend(
     @Body() body: ProposeSendBodyInput,
@@ -98,6 +198,7 @@ export class MeetingsAiController {
   }
 
   @Post("follow-up/confirm-send")
+  @ResponseSchema(confirmSendFollowUpResponseSchema)
   @Validate({ body: meetingSendConfirmBodySchema })
   async confirmSend(
     @Body() body: MeetingSendConfirmBodyInput,

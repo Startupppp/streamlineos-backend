@@ -25,11 +25,13 @@ import { ProjectsProvisionService } from "./projects-provision.service";
 import { ProjectsMembersService } from "./projects-members.service";
 import { BuildDueSweepService } from "./build-due-sweep.service";
 import { BuildNotificationVisibility } from "./build-notification-visibility";
+import { BuildNotificationContextService } from "./build-notification-context.service";
 import { ProjectsTicketsService } from "./projects-tickets.service";
 import { ProjectsTicketsCreateService } from "./projects-tickets-create.service";
 import { ProjectsTicketsUpdateService } from "./projects-tickets-update.service";
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import { ProjectsWorkQueryService } from "./projects-work-query.service";
+import { ProjectsSearchService } from "./projects-search.service";
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import { ProjectsTicketsDetailService } from "./projects-tickets-detail.service";
 import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
@@ -41,6 +43,8 @@ import { ProjectsReportsService } from "./projects-reports.service";
 import { ProjectsBudgetService } from "./projects-budget.service";
 import { ProjectsTemplatesService } from "./projects-templates.service";
 import { ProjectsRoadmapService } from "./projects-roadmap.service";
+import { ProjectsChangelogService } from "./projects-changelog.service";
+import { ProjectsFeedbackService } from "./projects-feedback.service";
 import { ProjectsCustomFieldsService } from "./projects-custom-fields.service";
 import { ProjectsReleasesService } from "./projects-releases.service";
 import { ProjectsWebhooksService } from "./projects-webhooks.service";
@@ -55,6 +59,7 @@ import { BuildAutomationRunnerService } from "./build-automation-runner.service"
 import { PmWorkspacesModule } from "../pm-workspaces/pm-workspaces.module";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
 import { BuildReleasePublishedConsumerService } from "./build-release-published-consumer.service";
+import { BuildTicketStatusChangedConsumerService } from "./build-ticket-status-changed-consumer.service";
 
 @Module({
   imports: [BillingModule, NotificationsModule, UsersModule, PmWorkspacesModule, OutboxModule],
@@ -77,8 +82,10 @@ import { BuildReleasePublishedConsumerService } from "./build-release-published-
   ],
   providers: [
     BuildReleasePublishedConsumerService,
+    BuildTicketStatusChangedConsumerService,
     BuildDueSweepService,
     BuildNotificationVisibility,
+    BuildNotificationContextService,
     ProjectsQueryService,
     ProjectsWriteService,
     ProjectsProvisionService,
@@ -88,6 +95,7 @@ import { BuildReleasePublishedConsumerService } from "./build-release-published-
     ProjectsTicketsUpdateService,
     ProjectsTicketsQueryService,
     ProjectsWorkQueryService,
+    ProjectsSearchService,
     ProjectsTicketsReadService,
     ProjectsTicketsDetailService,
     ProjectsTicketsTransferService,
@@ -99,6 +107,8 @@ import { BuildReleasePublishedConsumerService } from "./build-release-published-
     ProjectsBudgetService,
     ProjectsTemplatesService,
     ProjectsRoadmapService,
+    ProjectsChangelogService,
+    ProjectsFeedbackService,
     ProjectsCustomFieldsService,
     ProjectsReleasesService,
     ProjectsWebhooksService,

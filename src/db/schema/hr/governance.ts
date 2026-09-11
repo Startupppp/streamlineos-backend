@@ -10,9 +10,10 @@ import {
   index,
   uniqueIndex,
   unique,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizationMembers, organizations, users } from "../common/auth";
 import { orgUnits } from "../common/organization";
 import { hrJobLevels } from "./core-org";
 
@@ -34,7 +35,12 @@ export const hrRetentionRecordTypeEnum = pgEnum("hr_retention_record_type", [
 
 export const hrRetentionActionEnum = pgEnum("hr_retention_action", ["delete", "anonymize"]);
 
-export const hrDataRequestTypeEnum = pgEnum("hr_data_request_type", ["export", "delete", "anonymize"]);
+export const hrDataRequestTypeEnum = pgEnum("hr_data_request_type", [
+  "export",
+  "delete",
+  "anonymize",
+  "correction",
+]);
 
 export const hrDataRequestStatusEnum = pgEnum("hr_data_request_status", [
   "pending",
@@ -42,6 +48,7 @@ export const hrDataRequestStatusEnum = pgEnum("hr_data_request_status", [
   "processing",
   "completed",
   "rejected",
+  "partial",
 ]);
 
 export const hrProxyScopeEnum = pgEnum("hr_proxy_scope", ["approvals", "hr_admin", "manager_tasks"]);
@@ -67,12 +74,13 @@ export const hrLegalHolds = pgTable(
     orgId: text("org_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    subjectUserId: text("subject_user_id").references(() => users.id, { onDelete: "set null" }),
+    subjectUserId: text("subject_user_id"),
+    subjectMembershipId: integer("subject_membership_id"),
     reason: text("reason").notNull(),
     status: hrLegalHoldStatusEnum("status").notNull().default("active"),
-    placedBy: text("placed_by").references(() => users.id, { onDelete: "set null" }),
+    placedBy: text("placed_by"),
     placedAt: timestamp("placed_at").notNull().defaultNow(),
-    releasedBy: text("released_by").references(() => users.id, { onDelete: "set null" }),
+    releasedBy: text("released_by"),
     releasedAt: timestamp("released_at"),
     restrictedExport: boolean("restricted_export").notNull().default(true),
     deletedAt: timestamp("deleted_at"),
@@ -95,13 +103,14 @@ export const hrLegalHoldItems = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     holdId: integer("hold_id")
       .notNull()
-      .references(() => hrLegalHolds.id, { onDelete: "cascade" }),
+      ,
     itemType: hrLegalHoldItemTypeEnum("item_type").notNull(),
     itemRef: text("item_ref").notNull(),
     locked: boolean("locked").notNull().default(true),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.holdId], foreignColumns: [hrLegalHolds.orgId, hrLegalHolds.id], name: "fk_hr_legal_hold_items_org_hold" }).onDelete("cascade"),
     unique("uniq_hr_legal_hold_items_org_id").on(table.orgId, table.id),
     index("idx_hr_legal_hold_items_hold").on(table.holdId),
     index("idx_hr_legal_hold_items_org_subject").on(table.orgId, table.itemType, table.itemRef),
@@ -125,7 +134,6 @@ export const hrRetentionPolicies = pgTable(
   },
   (table) => [
     unique("uniq_hr_retention_policies_org_id").on(table.orgId, table.id),
-    index("idx_hr_retention_policies_org").on(table.orgId),
     uniqueIndex("uniq_hr_retention_policy_org_type_country").on(
       table.orgId,
       table.recordType,
@@ -143,11 +151,12 @@ export const hrDataRequests = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     subjectUserId: text("subject_user_id")
       .notNull()
-      .references(() => users.id, { onDelete: "restrict" }),
+      ,
+    subjectMembershipId: integer("subject_membership_id"),
     type: hrDataRequestTypeEnum("type").notNull(),
     status: hrDataRequestStatusEnum("status").notNull().default("pending"),
-    requestedBy: text("requested_by").references(() => users.id, { onDelete: "set null" }),
-    approvedBy: text("approved_by").references(() => users.id, { onDelete: "set null" }),
+    requestedBy: text("requested_by"),
+    approvedBy: text("approved_by"),
     reason: text("reason"),
     completedAt: timestamp("completed_at"),
     deletedAt: timestamp("deleted_at"),
@@ -170,11 +179,11 @@ export const hrProxyAccess = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     grantorUserId: text("grantor_user_id")
       .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+      ,
     grantorMembershipId: integer("grantor_membership_id"),
     proxyUserId: text("proxy_user_id")
       .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+      ,
     proxyMembershipId: integer("proxy_membership_id"),
     scope: hrProxyScopeEnum("scope").notNull(),
     startsAt: timestamp("starts_at").notNull(),
@@ -182,7 +191,7 @@ export const hrProxyAccess = pgTable(
     reason: text("reason"),
     active: boolean("active").notNull().default(true),
     disallowSensitive: boolean("disallow_sensitive").notNull().default(false),
-    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdBy: text("created_by"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -192,6 +201,16 @@ export const hrProxyAccess = pgTable(
     index("idx_hr_proxy_access_org_proxy").on(table.orgId, table.proxyUserId),
     index("idx_hr_proxy_access_org_grantor_membership").on(table.orgId, table.grantorMembershipId),
     index("idx_hr_proxy_access_org_proxy_membership").on(table.orgId, table.proxyMembershipId),
+    foreignKey({
+      columns: [table.orgId, table.grantorMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_hr_proxy_access_grantor_actor",
+    }).onDelete("set null"),
+    foreignKey({
+      columns: [table.orgId, table.proxyMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_hr_proxy_access_proxy_actor",
+    }).onDelete("set null"),
   ],
 );
 
@@ -203,22 +222,23 @@ export const hrPositions = pgTable(
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
-    departmentId: text("department_id").references(() => orgUnits.id, { onDelete: "set null" }),
-    jobLevelId: integer("job_level_id").references(() => hrJobLevels.id, { onDelete: "set null" }),
+    departmentId: text("department_id"),
+    jobLevelId: integer("job_level_id"),
     status: text("status").notNull().default("open"),
     budgetedCostCents: integer("budgeted_cost_cents"),
     effectiveFrom: timestamp("effective_from").notNull(),
-    incumbentUserId: text("incumbent_user_id").references(() => users.id, { onDelete: "set null" }),
+    incumbentUserId: text("incumbent_user_id"),
     futureDated: boolean("future_dated").notNull().default(false),
     deletedAt: timestamp("deleted_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.departmentId], foreignColumns: [orgUnits.orgId, orgUnits.id], name: "fk_hr_positions_org_department" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.jobLevelId], foreignColumns: [hrJobLevels.orgId, hrJobLevels.id], name: "fk_hr_positions_job_level_id_org" }).onDelete("set null"),
     unique("uniq_hr_positions_org_id").on(table.orgId, table.id),
     index("idx_hr_positions_org_status").on(table.orgId, table.status),
     index("idx_hr_positions_org_dept").on(table.orgId, table.departmentId),
-    index("idx_hr_positions_org").on(table.orgId),
   ],
 );
 
@@ -232,7 +252,7 @@ export const hrReorgScenarios = pgTable(
     name: text("name").notNull(),
     status: hrReorgScenarioStatusEnum("status").notNull().default("draft"),
     changes: jsonb("changes").notNull().$type<Record<string, unknown>>(),
-    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdBy: text("created_by"),
     deletedAt: timestamp("deleted_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -252,7 +272,8 @@ export const hrUnionMemberships = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     userId: text("user_id")
       .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+      ,
+    userMembershipId: integer("user_membership_id"),
     unionName: text("union_name").notNull(),
     memberSince: timestamp("member_since").notNull(),
     status: hrUnionMembershipStatusEnum("status").notNull().default("active"),
@@ -262,7 +283,6 @@ export const hrUnionMemberships = pgTable(
   },
   (table) => [
     unique("uniq_hr_union_memberships_org_id").on(table.orgId, table.id),
-    index("idx_hr_union_memberships_org").on(table.orgId),
     index("idx_hr_union_memberships_org_user").on(table.orgId, table.userId),
   ],
 );
@@ -302,7 +322,7 @@ export const hrLaborCases = pgTable(
     subject: text("subject").notNull(),
     description: text("description").notNull(),
     status: hrLaborCaseStatusEnum("status").notNull().default("open"),
-    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdBy: text("created_by"),
     deletedAt: timestamp("deleted_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),

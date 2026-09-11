@@ -75,10 +75,8 @@ describe("HR least-privilege controller boundaries", () => {
     for (const handler of [
       controller.createLocation,
       controller.updateLocation,
-      controller.deleteLocation,
       controller.createTeam,
       controller.updateTeam,
-      controller.deleteTeam,
     ])
       expect(permissionFor(handler)).toBe("settings:organization:manage");
   });

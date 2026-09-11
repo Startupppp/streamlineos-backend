@@ -85,24 +85,34 @@ CREATE POLICY chat_message_reactions_tenant_isolation ON chat_message_reactions
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_chat_message_reaction_actor_emoji
   ON chat_message_reactions (org_id, message_id, membership_id, emoji);
 
-INSERT INTO chat_message_reactions (org_id, message_id, membership_id, emoji)
-SELECT message.org_id, message.id, member.id, reaction.emoji
-FROM chat_messages message
-CROSS JOIN LATERAL jsonb_object_keys(message.reactions) AS reaction(emoji)
-CROSS JOIN LATERAL jsonb_array_elements_text(message.reactions -> reaction.emoji) AS reactor(user_id)
-JOIN organization_members member
-  ON member.org_id = message.org_id
- AND member.user_id = reactor.user_id
-ON CONFLICT (org_id, message_id, membership_id, emoji) DO NOTHING;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = current_schema()
+      AND table_name = 'chat_messages'
+      AND column_name = 'reactions'
+  ) THEN
+    INSERT INTO chat_message_reactions (org_id, message_id, membership_id, emoji)
+    SELECT message.org_id, message.id, member.id, reaction.emoji
+    FROM chat_messages message
+    CROSS JOIN LATERAL jsonb_object_keys(message.reactions) AS reaction(emoji)
+    CROSS JOIN LATERAL jsonb_array_elements_text(message.reactions -> reaction.emoji) AS reactor(user_id)
+    JOIN organization_members member
+      ON member.org_id = message.org_id
+     AND member.user_id = reactor.user_id
+    ON CONFLICT (org_id, message_id, membership_id, emoji) DO NOTHING;
 
-INSERT INTO communication_backfill_issues (org_id, domain, source_id, reason, details)
-SELECT message.org_id, 'chat_reaction', message.id::text,
-  'duplicate_legacy_reaction_removed', jsonb_build_object('emoji', reaction.emoji, 'userId', reactor.user_id, 'count', COUNT(*) - 1)
-FROM chat_messages message
-CROSS JOIN LATERAL jsonb_object_keys(message.reactions) AS reaction(emoji)
-CROSS JOIN LATERAL jsonb_array_elements_text(message.reactions -> reaction.emoji) AS reactor(user_id)
-GROUP BY message.org_id, message.id, reaction.emoji, reactor.user_id
-HAVING COUNT(*) > 1;
+    INSERT INTO communication_backfill_issues (org_id, domain, source_id, reason, details)
+    SELECT message.org_id, 'chat_reaction', message.id::text,
+      'duplicate_legacy_reaction_removed', jsonb_build_object('emoji', reaction.emoji, 'userId', reactor.user_id, 'count', COUNT(*) - 1)
+    FROM chat_messages message
+    CROSS JOIN LATERAL jsonb_object_keys(message.reactions) AS reaction(emoji)
+    CROSS JOIN LATERAL jsonb_array_elements_text(message.reactions -> reaction.emoji) AS reactor(user_id)
+    GROUP BY message.org_id, message.id, reaction.emoji, reactor.user_id
+    HAVING COUNT(*) > 1;
+  END IF;
+END $$;
 
 ALTER TABLE chat_message_reactions VALIDATE CONSTRAINT fk_chat_message_reactions_org_message;
 ALTER TABLE chat_message_reactions VALIDATE CONSTRAINT fk_chat_message_reactions_org_membership;

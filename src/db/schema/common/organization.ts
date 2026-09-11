@@ -9,7 +9,6 @@ import {
   foreignKey,
   check,
   jsonb,
-  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { organizationMembers, organizations } from "./auth";
@@ -49,9 +48,7 @@ export const orgUnits = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     kind: text("kind").$type<OrgUnitKind>().notNull(),
-    parentId: text("parent_id").references((): AnyPgColumn => orgUnits.id, {
-      onDelete: "set null",
-    }),
+    parentId: text("parent_id"),
     name: text("name").notNull(),
     code: text("code").notNull(),
     description: text("description"),
@@ -104,7 +101,6 @@ export const orgUnits = pgTable(
       "chk_org_units_parent_not_self",
       sql`${table.parentId} IS NULL OR ${table.parentId} <> ${table.id}`,
     ),
-    index("idx_org_units_org_kind").on(table.orgId, table.kind),
     index("idx_org_units_head_membership").on(table.orgId, table.headMembershipId),
     index("idx_org_units_parent").on(table.parentId),
     uniqueIndex("uniq_org_units_org_kind_code").on(
@@ -125,19 +121,18 @@ export const orgUnitMembers = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     orgUnitId: text("org_unit_id")
-      .references(() => orgUnits.id, { onDelete: "cascade" })
       .notNull(),
     membershipId: integer("membership_id").notNull(),
     role: text("role").default("member").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.orgUnitId], foreignColumns: [orgUnits.orgId, orgUnits.id], name: "fk_org_unit_members_org_unit_id_org" }).onDelete("cascade"),
     uniqueIndex("uniq_org_unit_members_unit_membership").on(
       table.orgUnitId,
       table.membershipId,
     ),
     index("idx_org_unit_members_membership").on(table.orgId, table.membershipId),
-    index("idx_org_unit_members_unit").on(table.orgUnitId),
     foreignKey({
       name: "fk_org_unit_members_membership",
       columns: [table.orgId, table.membershipId],

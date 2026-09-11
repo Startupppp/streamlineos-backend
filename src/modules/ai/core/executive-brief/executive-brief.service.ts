@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { ModuleRef } from "@nestjs/core";
+import { z } from "zod";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
@@ -10,6 +11,12 @@ import { CrmSalesDashboardService } from "../../../crm/core/crm-sales-dashboard.
 import { SupportReportsService } from "../../../support/core/support-reports.service";
 import type { SnapshotCitation } from "../../summaries/ai-summaries.types";
 import type { AiUsageMeta } from "../gateway/ai-gateway.types";
+import { createPipeableAiTextStream } from "../streaming/raw-ai-text-stream";
+import type { AiTextStreamProduct } from "../streaming/ai-text-stream-route";
+import {
+  computeTokenCharge,
+  milliToCredits,
+} from "../billing/ai-model-pricing.constants";
 
 export interface BriefCitation {
   id: string;
@@ -42,6 +49,61 @@ interface StoredBriefPayload {
   citations: BriefCitation[];
   sources: Record<string, unknown>;
   uncertaintyNotes: string[];
+  aiUsage?: AiUsageMeta;
+}
+
+const briefCitationSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  href: z.string(),
+});
+
+const aiUsageMetaSchema = z.object({
+  model: z.string(),
+  promptTokens: z.number(),
+  completionTokens: z.number(),
+  totalTokens: z.number(),
+  credits: z.number(),
+  costUsd: z.number(),
+});
+
+const storedBriefSnapshotSchema = z.object({
+  narrative: z.string().optional(),
+  citations: z.array(briefCitationSchema).optional(),
+  uncertaintyNotes: z.array(z.string()).optional(),
+  aiUsage: aiUsageMetaSchema.optional(),
+});
+
+function errorMessage(reason: unknown): string {
+  return reason instanceof Error ? reason.message : String(reason);
+}
+
+function isProjectHealthSummary(value: unknown): value is {
+  total: number;
+  healthy: number;
+  atRisk: number;
+  critical: number;
+  avgScore: number;
+} {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "total" in value &&
+    "avgScore" in value
+  );
+}
+
+function isSupportOverview(value: unknown): value is {
+  openTickets: number;
+  slaBreachCount: number;
+  avgFirstResponseMinutes: number | null;
+} {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "openTickets" in value &&
+    "slaBreachCount" in value
+  );
 }
 
 @Injectable()
@@ -59,7 +121,11 @@ export class ExecutiveBriefService {
   }
 
   async getLatest(orgId: string): Promise<LatestBriefResponse> {
-    const result = await this.summaries.getLatestWithDiff(orgId, "executive_brief", orgId);
+    const result = await this.summaries.getLatestWithDiff(
+      orgId,
+      "executive_brief",
+      orgId,
+    );
 
     if (!result) {
       return { snapshot: null, isStale: false };
@@ -70,37 +136,50 @@ export class ExecutiveBriefService {
     const isStale = ageMs > STALE_THRESHOLD_MS;
     const staleSinceMinutes = isStale ? Math.floor(ageMs / 60_000) : undefined;
 
-    let payload: StoredBriefPayload;
-    try {
-      payload = JSON.parse(snapshot.summary) as StoredBriefPayload;
-    } catch {
-      this.logger.warn("Failed to parse executive brief snapshot summary JSON", { id: snapshot.id });
+    const parsed = storedBriefSnapshotSchema.safeParse(
+      (() => {
+        try {
+          return JSON.parse(snapshot.summary);
+        } catch {
+          return null;
+        }
+      })(),
+    );
+    if (!parsed.success) {
+      this.logger.warn(
+        "Failed to parse executive brief snapshot summary JSON",
+        { id: snapshot.id },
+      );
       return { snapshot: null, isStale };
     }
 
     return {
       snapshot: {
-        narrative: payload.narrative ?? "",
-        citations: Array.isArray(payload.citations) ? payload.citations : [],
-        uncertaintyNotes: Array.isArray(payload.uncertaintyNotes) ? payload.uncertaintyNotes : [],
+        narrative: parsed.data.narrative ?? "",
+        citations: parsed.data.citations ?? [],
+        uncertaintyNotes: parsed.data.uncertaintyNotes ?? [],
         generatedAt: snapshot.createdAt.toISOString(),
+        aiUsage: parsed.data.aiUsage,
       },
       isStale,
       staleSinceMinutes,
     };
   }
 
-  async generate(orgId: string, userId: string): Promise<ExecutiveBriefResult> {
-    const [projectsResult, crmResult, supportResult] = await runInTenantTransaction(
-      this.db,
-      () =>
-        Promise.allSettled([
-          this.getSvc(ProjectsAnalyticsService).getOrgProjectHealthSummary(orgId),
-          this.getSvc(CrmSalesDashboardService).getSalesDashboard(orgId),
-          this.getSvc(SupportReportsService).getOverview(orgId, {}),
-        ]),
-      { orgId },
-    );
+  private async resolveContext(orgId: string) {
+    const [projectsResult, crmResult, supportResult] =
+      await runInTenantTransaction(
+        this.db,
+        () =>
+          Promise.allSettled([
+            this.getSvc(ProjectsAnalyticsService).getOrgProjectHealthSummary(
+              orgId,
+            ),
+            this.getSvc(CrmSalesDashboardService).getSalesDashboard(orgId),
+            this.getSvc(SupportReportsService).getOverview(orgId, {}),
+          ]),
+        { orgId },
+      );
 
     const sources: Record<string, unknown> = {};
     const uncertaintyNotes: string[] = [];
@@ -108,31 +187,122 @@ export class ExecutiveBriefService {
     if (projectsResult.status === "fulfilled") {
       sources.projects = projectsResult.value;
     } else {
-      this.logger.warn("Projects health unavailable", (projectsResult.reason as Error)?.message);
+      this.logger.warn(
+        "Projects health unavailable",
+        errorMessage(projectsResult.reason),
+      );
       uncertaintyNotes.push("Projects health data unavailable.");
     }
 
     if (crmResult.status === "fulfilled") {
       sources.crm = crmResult.value;
     } else {
-      this.logger.warn("CRM dashboard unavailable", (crmResult.reason as Error)?.message);
+      this.logger.warn(
+        "CRM dashboard unavailable",
+        errorMessage(crmResult.reason),
+      );
       uncertaintyNotes.push("CRM sales dashboard unavailable.");
     }
 
     if (supportResult.status === "fulfilled") {
       sources.support = supportResult.value;
     } else {
-      this.logger.warn("Support overview unavailable", (supportResult.reason as Error)?.message);
+      this.logger.warn(
+        "Support overview unavailable",
+        errorMessage(supportResult.reason),
+      );
       uncertaintyNotes.push("Support overview unavailable.");
     }
 
-    const MODULE_MAP: Record<string, { title: string; href: string }> = {
+    return { sources, uncertaintyNotes };
+  }
+
+  private resolveCitations(sources: Record<string, unknown>): BriefCitation[] {
+    const moduleMap: Record<string, { title: string; href: string }> = {
       projects: { title: "Project Health", href: "/projects" },
       crm: { title: "CRM Sales Dashboard", href: "/crm" },
       support: { title: "Support Overview", href: "/support" },
     };
 
-    const invokeResult = await this.getSvc(AiGatewayService).invokeTextWithUsage({
+    return Object.keys(sources).flatMap((key) => {
+      const module = moduleMap[key];
+      return module ? [{ id: key, ...module }] : [];
+    });
+  }
+
+  async streamGenerate(
+    orgId: string,
+    userId: string,
+    signal: AbortSignal,
+  ): Promise<AiTextStreamProduct> {
+    const { sources, uncertaintyNotes } = await this.resolveContext(orgId);
+    signal.throwIfAborted();
+    const citations = this.resolveCitations(sources);
+    const { stream, model } = await this.getSvc(
+      AiGatewayService,
+    ).streamTextWithUsage({
+      actor: { orgId, userId },
+      feature: "exec.brief.generate",
+      tier: "standard",
+      prompt: {
+        system:
+          "You are an executive AI assistant. Produce a concise, factual business brief for senior leadership. Cite each data source by module name. Never fabricate metrics not present in the data.",
+        user: buildBriefPrompt(sources, uncertaintyNotes),
+      },
+      maxTokens: 1024,
+      charge: true,
+      signal,
+    });
+    const handleCompletion = async () => {
+      signal.throwIfAborted();
+      const finishReason = await stream.finishReason;
+      if (finishReason !== "stop")
+        throw new Error("Executive brief generation did not complete");
+      const narrative = await stream.text;
+      const usage = await stream.totalUsage;
+      const promptTokens = usage.inputTokens ?? 0;
+      const completionTokens = usage.outputTokens ?? 0;
+      const { milliCredits, costUsd } = computeTokenCharge(
+        model,
+        promptTokens,
+        completionTokens,
+      );
+      const aiUsage: AiUsageMeta = {
+        model,
+        promptTokens,
+        completionTokens,
+        totalTokens: usage.totalTokens ?? promptTokens + completionTokens,
+        credits: milliToCredits(milliCredits),
+        costUsd,
+      };
+      signal.throwIfAborted();
+      await this.saveBrief(orgId, userId, {
+        narrative,
+        citations,
+        sources,
+        uncertaintyNotes,
+        aiUsage,
+      });
+    };
+    const output = stream.textStream.pipeThrough(
+      new TransformStream<string, string>({
+        transform(chunk, controller) {
+          controller.enqueue(chunk);
+        },
+        flush: handleCompletion,
+      }),
+    );
+    return {
+      sources: citations,
+      stream: createPipeableAiTextStream(output),
+    };
+  }
+
+  async generate(orgId: string, userId: string): Promise<ExecutiveBriefResult> {
+    const { sources, uncertaintyNotes } = await this.resolveContext(orgId);
+    const invokeResult = await this.getSvc(
+      AiGatewayService,
+    ).invokeTextWithUsage({
       actor: { orgId, userId },
       feature: "exec.brief.generate",
       prompt: {
@@ -152,15 +322,38 @@ export class ExecutiveBriefService {
     if (invokeResult.ok) {
       narrative = invokeResult.data;
       aiUsage = invokeResult.aiUsage;
-      for (const key of Object.keys(sources)) {
-        const m = MODULE_MAP[key];
-        if (m) citations.push({ id: key, ...m });
-      }
+      citations.push(...this.resolveCitations(sources));
     } else {
-      uncertaintyNotes.push(`Narrative generation failed: ${invokeResult.message}`);
+      uncertaintyNotes.push(
+        `Narrative generation failed: ${invokeResult.message}`,
+      );
       narrative = "Executive brief generation failed. Please retry.";
     }
 
+    await this.saveBrief(orgId, userId, {
+      narrative,
+      citations,
+      sources,
+      uncertaintyNotes,
+      aiUsage,
+    });
+
+    return {
+      narrative,
+      citations,
+      sources,
+      uncertaintyNotes,
+      generatedAt: new Date().toISOString(),
+      aiUsage,
+    };
+  }
+
+  private async saveBrief(
+    orgId: string,
+    userId: string,
+    payload: StoredBriefPayload,
+  ): Promise<void> {
+    const { narrative, citations, sources, uncertaintyNotes } = payload;
     const snapshotCitations: SnapshotCitation[] = citations.map((c) => ({
       id: c.id,
       title: c.title,
@@ -172,7 +365,7 @@ export class ExecutiveBriefService {
       "executive_brief",
       orgId,
       {
-        summary: JSON.stringify({ narrative, citations, sources, uncertaintyNotes }),
+        summary: JSON.stringify(payload),
         structured: {
           highlights: citations.map((c) => c.title),
           blockers: uncertaintyNotes,
@@ -182,23 +375,19 @@ export class ExecutiveBriefService {
       },
       userId,
     );
-
-    return {
-      narrative,
-      citations,
-      sources,
-      uncertaintyNotes,
-      generatedAt: new Date().toISOString(),
-      aiUsage,
-    };
   }
 }
 
-function buildBriefPrompt(sources: Record<string, unknown>, uncertaintyNotes: string[]): string {
-  const parts: string[] = ["Generate an executive business brief based on the following operational data:\n"];
+function buildBriefPrompt(
+  sources: Record<string, unknown>,
+  uncertaintyNotes: string[],
+): string {
+  const parts: string[] = [
+    "Generate an executive business brief based on the following operational data:\n",
+  ];
 
-  if (sources.projects) {
-    const p = sources.projects as { total: number; healthy: number; atRisk: number; critical: number; avgScore: number };
+  if (sources.projects && isProjectHealthSummary(sources.projects)) {
+    const p = sources.projects;
     parts.push(
       `**Projects (source: /projects):** ${p.total} total projects. Healthy: ${p.healthy}, At Risk: ${p.atRisk}, Critical: ${p.critical}. Average health score: ${p.avgScore}/100.`,
     );
@@ -208,15 +397,17 @@ function buildBriefPrompt(sources: Record<string, unknown>, uncertaintyNotes: st
     parts.push(`**CRM/Sales (source: /crm):** ${JSON.stringify(sources.crm)}`);
   }
 
-  if (sources.support) {
-    const s = sources.support as { openTickets: number; slaBreachCount: number; avgFirstResponseMinutes: number | null };
+  if (sources.support && isSupportOverview(sources.support)) {
+    const s = sources.support;
     parts.push(
       `**Support (source: /support):** Open tickets: ${s.openTickets}, SLA breaches: ${s.slaBreachCount}, Avg first response: ${s.avgFirstResponseMinutes ?? "N/A"} min.`,
     );
   }
 
   if (uncertaintyNotes.length > 0) {
-    parts.push(`\n**Data gaps (do not fabricate for these):** ${uncertaintyNotes.join("; ")}`);
+    parts.push(
+      `\n**Data gaps (do not fabricate for these):** ${uncertaintyNotes.join("; ")}`,
+    );
   }
 
   parts.push(

@@ -19,10 +19,12 @@ describe("NotificationRoutingService — cross-tenant isolation", () => {
 
   function makeDb(): { db: Db; allWhereArgs: unknown[] } {
     const allWhereArgs: unknown[] = [];
+    const chain: Record<string, jest.Mock> = {};
     const where = jest.fn().mockImplementation((arg: unknown) => {
       allWhereArgs.push(arg);
-      return Promise.resolve([]);
+      return chain;
     });
+    chain["limit"] = jest.fn().mockResolvedValue([]);
     const findFirst = jest.fn().mockImplementation(({ where: w } = {}) => {
       if (w) allWhereArgs.push(w);
       return Promise.resolve(undefined);

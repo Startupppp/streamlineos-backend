@@ -58,7 +58,8 @@ export class FnfInsightsService {
       })
       .from(fnfSettlements)
       .leftJoin(users, eq(fnfSettlements.userId, users.id))
-      .where(and(eq(fnfSettlements.id, settlementId), eq(fnfSettlements.orgId, orgId)));
+      .where(and(eq(fnfSettlements.id, settlementId), eq(fnfSettlements.orgId, orgId)))
+      .limit(1);
 
     if (!row) throw new NotFoundException("F&F settlement not found");
     return row;

@@ -58,9 +58,9 @@ describe("creditsToMilli / milliToCredits — round-trip invariants", () => {
 });
 
 const VERIFY_INPUT = {
-  razorpay_order_id: "order_idp_001",
-  razorpay_payment_id: "pay_idp_abc",
-  razorpay_signature: FAKE_VALID_PAYMENT_SIG,
+  orderId: "order_idp_001",
+  paymentId: "pay_idp_abc",
+  signature: FAKE_VALID_PAYMENT_SIG,
   plan: "STARTER" as const,
 };
 
@@ -191,7 +191,7 @@ describe("BillingService.verifyAndActivate — idempotency", () => {
   });
 
   it("invalid signature → throws BadRequestException before any DB write", async () => {
-    const wrongSigInput = { ...VERIFY_INPUT, razorpay_signature: "wrong-signature" };
+    const wrongSigInput = { ...VERIFY_INPUT, signature: "wrong-signature" };
     const svc = await buildBilling({ transaction: jest.fn() });
     await expect(svc.verifyAndActivate("org-1", "user-1", wrongSigInput)).rejects.toThrow(
       "Payment verification failed",
@@ -212,6 +212,50 @@ const MOCK_PACK = {
 
 const EXPECTED_CREDITS_ADDED = MOCK_PACK.credits + MOCK_PACK.bonusCredits;
 const EXPECTED_CREDITS_ADDED_MILLI = creditsToMilli(EXPECTED_CREDITS_ADDED);
+
+
+type WalletUpsertCapture = {
+  insertedBalance: number | null;
+  conflictSetBalance: unknown;
+  ledgerBalanceAfter: number | null;
+  selectedForUpdate: number;
+};
+
+function makeWalletCapture(): WalletUpsertCapture {
+  return {
+    insertedBalance: null,
+    conflictSetBalance: null,
+    ledgerBalanceAfter: null,
+    selectedForUpdate: 0,
+  };
+}
+
+/**
+ * The wallet credit is one `INSERT … ON CONFLICT DO UPDATE … RETURNING`, so
+ * `values(...)` must be awaitable (the ledger insert) and also carry the upsert
+ * link. `settledBalance` is what the database would return, which is where the
+ * service now reads the new balance from.
+ */
+function makeUpsertAwareInsert(captured: WalletUpsertCapture, settledBalance: number) {
+  return jest.fn().mockImplementation(() => ({
+    values: jest.fn().mockImplementation(
+      (args: { balance?: number; balanceAfter?: number }) => {
+        if (args.balanceAfter !== undefined) captured.ledgerBalanceAfter = args.balanceAfter;
+        else if (args.balance !== undefined) captured.insertedBalance = args.balance;
+        return Object.assign(Promise.resolve([]), {
+          onConflictDoUpdate: jest.fn().mockImplementation(
+            (config: { set: { balance?: unknown } }) => {
+              captured.conflictSetBalance = config.set.balance;
+              return {
+                returning: jest.fn().mockResolvedValue([{ balance: settledBalance }]),
+              };
+            },
+          ),
+        });
+      },
+    ),
+  }));
+}
 
 describe("AiCreditsService.purchaseCreditsDirectly — exact milli-credit arithmetic", () => {
   async function buildCreditsService(db: unknown): Promise<AiCreditsService> {
@@ -236,14 +280,7 @@ describe("AiCreditsService.purchaseCreditsDirectly — exact milli-credit arithm
           }),
         }),
       }),
-      update: jest.fn().mockReturnValue({
-        set: jest.fn().mockReturnValue({
-          where: jest.fn().mockReturnValue({
-            returning: jest.fn().mockResolvedValue([updatedWallet]),
-          }),
-        }),
-      }),
-      insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) }),
+      insert: makeUpsertAwareInsert(makeWalletCapture(), updatedWallet.balance),
     };
 
     const db = {
@@ -273,14 +310,7 @@ describe("AiCreditsService.purchaseCreditsDirectly — exact milli-credit arithm
           }),
         }),
       }),
-      update: jest.fn().mockReturnValue({
-        set: jest.fn().mockReturnValue({
-          where: jest.fn().mockReturnValue({
-            returning: jest.fn().mockResolvedValue([updatedWallet]),
-          }),
-        }),
-      }),
-      insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) }),
+      insert: makeUpsertAwareInsert(makeWalletCapture(), updatedWallet.balance),
     };
 
     const db = {
@@ -300,29 +330,21 @@ describe("AiCreditsService.purchaseCreditsDirectly — exact milli-credit arithm
     expect(result.balance).toBe(550);
   });
 
-  it("starting from zero balance: newBalance === creditsAddedMilli (550,000)", async () => {
-    let capturedNewBalance: number | undefined;
-    const updatedWallet = { balance: EXPECTED_CREDITS_ADDED_MILLI };
+  it("first purchase on an organisation with no wallet row grants the whole pack", async () => {
+    const captured = makeWalletCapture();
 
     const txMock = {
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
-            for: jest.fn().mockResolvedValue([{ balance: 0 }]),
+            for: jest.fn().mockImplementation(() => {
+              captured.selectedForUpdate += 1;
+              return Promise.resolve([]);
+            }),
           }),
         }),
       }),
-      update: jest.fn().mockReturnValue({
-        set: jest.fn().mockImplementation((setArg: { balance?: number }) => {
-          capturedNewBalance = setArg.balance;
-          return {
-            where: jest.fn().mockReturnValue({
-              returning: jest.fn().mockResolvedValue([updatedWallet]),
-            }),
-          };
-        }),
-      }),
-      insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) }),
+      insert: makeUpsertAwareInsert(captured, EXPECTED_CREDITS_ADDED_MILLI),
     };
 
     const db = {
@@ -337,36 +359,30 @@ describe("AiCreditsService.purchaseCreditsDirectly — exact milli-credit arithm
     };
 
     const svc = await buildCreditsService(db);
-    await svc.purchaseCreditsDirectly("org-1", "user-1", 1);
+    const result = await svc.purchaseCreditsDirectly("org-1", "user-1", 1);
 
-    expect(capturedNewBalance).toBe(EXPECTED_CREDITS_ADDED_MILLI);
+    expect(captured.insertedBalance).toBe(EXPECTED_CREDITS_ADDED_MILLI);
+    expect(captured.ledgerBalanceAfter).toBe(EXPECTED_CREDITS_ADDED_MILLI);
+    expect(result.balance).toBe(milliToCredits(EXPECTED_CREDITS_ADDED_MILLI));
   });
 
-  it("additive: starting from 200,000 milli balance → newBalance = 200,000 + 550,000 = 750,000", async () => {
+  it("additive: an existing 200,000 milli balance ends at 200,000 + 550,000 = 750,000", async () => {
     const initialBalance = 200_000;
     const expectedNewBalance = initialBalance + EXPECTED_CREDITS_ADDED_MILLI;
-    let capturedNewBalance: number | undefined;
-    const updatedWallet = { balance: expectedNewBalance };
+    const captured = makeWalletCapture();
 
     const txMock = {
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
-            for: jest.fn().mockResolvedValue([{ balance: initialBalance }]),
+            for: jest.fn().mockImplementation(() => {
+              captured.selectedForUpdate += 1;
+              return Promise.resolve([{ balance: initialBalance }]);
+            }),
           }),
         }),
       }),
-      update: jest.fn().mockReturnValue({
-        set: jest.fn().mockImplementation((setArg: { balance?: number }) => {
-          capturedNewBalance = setArg.balance;
-          return {
-            where: jest.fn().mockReturnValue({
-              returning: jest.fn().mockResolvedValue([updatedWallet]),
-            }),
-          };
-        }),
-      }),
-      insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) }),
+      insert: makeUpsertAwareInsert(captured, expectedNewBalance),
     };
 
     const db = {
@@ -381,9 +397,10 @@ describe("AiCreditsService.purchaseCreditsDirectly — exact milli-credit arithm
     };
 
     const svc = await buildCreditsService(db);
-    await svc.purchaseCreditsDirectly("org-1", "user-1", 1);
+    const result = await svc.purchaseCreditsDirectly("org-1", "user-1", 1);
 
-    expect(capturedNewBalance).toBe(750_000);
+    expect(captured.ledgerBalanceAfter).toBe(750_000);
+    expect(result.balance).toBe(750);
     expect(milliToCredits(expectedNewBalance)).toBe(750);
   });
 });
@@ -401,9 +418,9 @@ describe("AiCreditsService.purchaseCreditsDirectly — reserve-before-spend orde
     return module.get(AiCreditsService);
   }
 
-  it("SELECT FOR UPDATE (reserve wallet lock) happens strictly before UPDATE balance (spend)", async () => {
+  it("the wallet credit takes no SELECT FOR UPDATE — the row it would lock may not exist", async () => {
     const callOrder: string[] = [];
-    const updatedWallet = { balance: EXPECTED_CREDITS_ADDED_MILLI };
+    const captured = makeWalletCapture();
 
     const txMock = {
       select: jest.fn().mockImplementation(() => ({
@@ -421,12 +438,12 @@ describe("AiCreditsService.purchaseCreditsDirectly — reserve-before-spend orde
         return {
           set: jest.fn().mockReturnValue({
             where: jest.fn().mockReturnValue({
-              returning: jest.fn().mockResolvedValue([updatedWallet]),
+              returning: jest.fn().mockResolvedValue([]),
             }),
           }),
         };
       }),
-      insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) }),
+      insert: makeUpsertAwareInsert(captured, EXPECTED_CREDITS_ADDED_MILLI),
     };
 
     const db = {
@@ -443,10 +460,20 @@ describe("AiCreditsService.purchaseCreditsDirectly — reserve-before-spend orde
     const svc = await buildCreditsService(db);
     await svc.purchaseCreditsDirectly("org-1", "user-1", 1);
 
-    const reserveIndex = callOrder.indexOf("SELECT_FOR_UPDATE");
-    const spendIndex = callOrder.indexOf("UPDATE_BALANCE");
-    expect(reserveIndex).toBeGreaterThanOrEqual(0);
-    expect(spendIndex).toBeGreaterThan(reserveIndex);
+    /*
+     * The wallet used to be credited read-modify-write behind `SELECT … FOR
+     * UPDATE`, and this test pinned that ordering. The lock was the defect: it
+     * locks nothing when the row does not exist, so on an organisation's first
+     * ever purchase two payments both saw no wallet, both inserted, and the
+     * loser died 23505 with the customer charged and no credits granted.
+     *
+     * There is now no lock and no separate UPDATE — one upsert does both, and
+     * the balance moves in SQL so a concurrent grant cannot be erased.
+     */
+    expect(callOrder).not.toContain("SELECT_FOR_UPDATE");
+    expect(callOrder).not.toContain("UPDATE_BALANCE");
+    expect(captured.conflictSetBalance).not.toBeNull();
+    expect(typeof captured.conflictSetBalance).not.toBe("number");
   });
 
   it("23505 backstop: transaction failure returns existing balance without re-granting credits", async () => {

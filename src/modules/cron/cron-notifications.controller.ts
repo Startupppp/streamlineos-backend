@@ -10,15 +10,20 @@ import { Public } from "../../common/auth/public.decorator";
 import { logger } from "../../common/logger/logger.service";
 import { assertCronSecret } from "./cron-secret";
 import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
-import { CronNotificationRetentionService } from "./cron-notification-retention.service";
-import { NotificationRetentionService } from "../notifications/notification-retention.service";
 import { NotificationOutboxRelayService } from "../notifications/notification-outbox-relay.service";
 import { NotificationDigestService } from "../notifications/notification-digest.service";
 import { CrmFollowupSweepService } from "../crm/core/crm-followup-sweep.service";
 import { NotificationTimeSweepsService } from "../notifications/time-sweeps/notification-time-sweeps.service";
 import { CronLeaseService } from "./cron-lease.service";
+import {
+  notificationTimeSweepsResponseSchema,
+  notificationDigestFlushResponseSchema,
+  notificationOutboxFlushResponseSchema,
+  chatReplyRemindersResponseSchema,
+  notificationDeliveryFlushResponseSchema,
+} from "./dto/cron-notifications-response.schemas";
 import { ChatReplyRemindersService } from "../chat/chat-reply-reminders.service";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 
 @Public()
 @Controller("cron")
@@ -26,8 +31,6 @@ export class CronNotificationsController {
   constructor(
     private readonly chatReplyReminders: ChatReplyRemindersService,
     private readonly notificationDelivery: CronNotificationDeliveryService,
-    private readonly notificationRetention: CronNotificationRetentionService,
-    private readonly partitionRetention: NotificationRetentionService,
     private readonly outboxRelay: NotificationOutboxRelayService,
     private readonly digest: NotificationDigestService,
     private readonly crmFollowupSweep: CrmFollowupSweepService,
@@ -36,6 +39,7 @@ export class CronNotificationsController {
   ) {}
 
   @Get("notification-time-sweeps")
+  @ResponseSchema(notificationTimeSweepsResponseSchema)
   getNotificationTimeSweeps(@Headers("authorization") authorization?: string) {
     return this.runNotificationTimeSweeps(authorization);
   }
@@ -43,11 +47,13 @@ export class CronNotificationsController {
   @Post("notification-time-sweeps")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(notificationTimeSweepsResponseSchema)
   postNotificationTimeSweeps(@Headers("authorization") authorization?: string) {
     return this.runNotificationTimeSweeps(authorization);
   }
 
   @Get("notification-digest-flush")
+  @ResponseSchema(notificationDigestFlushResponseSchema)
   getNotificationDigestFlush(@Headers("authorization") authorization?: string) {
     return this.runNotificationDigestFlush(authorization);
   }
@@ -55,11 +61,13 @@ export class CronNotificationsController {
   @Post("notification-digest-flush")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(notificationDigestFlushResponseSchema)
   postNotificationDigestFlush(@Headers("authorization") authorization?: string) {
     return this.runNotificationDigestFlush(authorization);
   }
 
   @Get("notification-outbox-flush")
+  @ResponseSchema(notificationOutboxFlushResponseSchema)
   getNotificationOutboxFlush(@Headers("authorization") authorization?: string) {
     return this.runNotificationOutboxFlush(authorization);
   }
@@ -67,35 +75,13 @@ export class CronNotificationsController {
   @Post("notification-outbox-flush")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(notificationOutboxFlushResponseSchema)
   postNotificationOutboxFlush(@Headers("authorization") authorization?: string) {
     return this.runNotificationOutboxFlush(authorization);
   }
 
-  @Get("notifications-retention-sweep")
-  getNotificationsRetentionSweep(@Headers("authorization") authorization?: string) {
-    return this.runNotificationsRetentionSweep(authorization);
-  }
-
-  @Post("notifications-retention-sweep")
-  @BodylessAction()
-  @HttpCode(200)
-  postNotificationsRetentionSweep(@Headers("authorization") authorization?: string) {
-    return this.runNotificationsRetentionSweep(authorization);
-  }
-
-  @Get("notifications-retention-detach")
-  getNotificationsRetentionDetach(@Headers("authorization") authorization?: string) {
-    return this.runNotificationsRetentionDetach(authorization);
-  }
-
-  @Post("notifications-retention-detach")
-  @BodylessAction()
-  @HttpCode(200)
-  postNotificationsRetentionDetach(@Headers("authorization") authorization?: string) {
-    return this.runNotificationsRetentionDetach(authorization);
-  }
-
   @Get("chat-reply-reminders")
+  @ResponseSchema(chatReplyRemindersResponseSchema)
   getChatReplyReminders(@Headers("authorization") authorization?: string) {
     return this.runChatReplyReminders(authorization);
   }
@@ -103,11 +89,13 @@ export class CronNotificationsController {
   @Post("chat-reply-reminders")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(chatReplyRemindersResponseSchema)
   postChatReplyReminders(@Headers("authorization") authorization?: string) {
     return this.runChatReplyReminders(authorization);
   }
 
   @Get("notification-delivery-flush")
+  @ResponseSchema(notificationDeliveryFlushResponseSchema)
   getNotificationDeliveryFlush(@Headers("authorization") authorization?: string) {
     return this.runNotificationDeliveryFlush(authorization);
   }
@@ -115,6 +103,7 @@ export class CronNotificationsController {
   @Post("notification-delivery-flush")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(notificationDeliveryFlushResponseSchema)
   postNotificationDeliveryFlush(@Headers("authorization") authorization?: string) {
     return this.runNotificationDeliveryFlush(authorization);
   }
@@ -176,44 +165,6 @@ export class CronNotificationsController {
       };
     } catch (error) {
       logger.error("Notification outbox flush cron failed", error);
-      throw new InternalServerErrorException("Internal server error");
-    }
-  }
-
-  private async runNotificationsRetentionSweep(authorization?: string) {
-    assertCronSecret(authorization);
-    try {
-      const outcome = await this.cronLease.withLease("notifications-retention-sweep", 300, () =>
-        this.notificationRetention.sweep(),
-      );
-      if (!outcome.ran) return { success: true, skipped: true, message: "notifications-retention-sweep already running" };
-      const result = outcome.result;
-      return {
-        success: true,
-        message:
-          `Purged ${result.emailBodiesPurged} email bodies and ${result.deliveryBodiesPurged} delivery bodies; ` +
-          `deleted ${result.emailRecordsDeleted} email rows and ${result.deliveryRecordsDeleted} delivery rows`,
-        ...result,
-      };
-    } catch (error) {
-      logger.error("Notification retention sweep cron failed", error);
-      throw new InternalServerErrorException("Internal server error");
-    }
-  }
-
-  private async runNotificationsRetentionDetach(authorization?: string) {
-    assertCronSecret(authorization);
-    try {
-      const result = await this.partitionRetention.sweep();
-      if (result === null)
-        return { success: true, skipped: true, message: "notification-retention-detach already running" };
-      return {
-        success: true,
-        message: `Detached ${result.partitionsDetached} partitions and dropped ${result.partitionsDropped}`,
-        ...result,
-      };
-    } catch (error) {
-      logger.error("Notification retention detach cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

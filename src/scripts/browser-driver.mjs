@@ -12,7 +12,7 @@
  * Run: node src/scripts/browser-driver.mjs [--self-test] [--url=http://localhost:1000]
  */
 
-import { writeFileSync, existsSync } from "node:fs";
+import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
@@ -37,6 +37,12 @@ const OUT = resolve(process.cwd(), flag("out", ".browser-driver-results.json"));
 const REPEAT = Number(flag("repeat", "5"));
 const TIMEOUT_MS = Number(flag("timeout", "15000"));
 const DEBUG_PORT = Number(flag("debug-port", "9222"));
+const PROFILE = flag("profile", "desktop");
+
+if (!new Set(["desktop", "mobile"]).has(PROFILE)) {
+  console.error(`REFUSED: --profile must be desktop or mobile, received ${PROFILE}`);
+  process.exit(1);
+}
 
 const started = Date.now();
 const log = (m) => console.log(`[${((Date.now() - started) / 1000).toFixed(1)}s] ${m}`);
@@ -136,12 +142,78 @@ async function navigateAndMeasure(cdp, url, timeoutMs) {
   await cdp.send("Page.enable");
   await cdp.send("Network.enable");
   await cdp.send("Runtime.enable");
+  await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
+    source: `(() => {
+      if (window.__streamlineVitals) return;
+      const state = { lcp: null, cls: 0, inp: null, longTaskMs: 0 };
+      Object.defineProperty(window, "__streamlineVitals", { value: state });
+      try {
+        new PerformanceObserver((list) => {
+          const entries = list.getEntries();
+          const last = entries[entries.length - 1];
+          if (last) state.lcp = last.startTime;
+        }).observe({ type: "largest-contentful-paint", buffered: true });
+        new PerformanceObserver((list) => {
+          for (const entry of list.getEntries())
+            if (!entry.hadRecentInput) state.cls += entry.value;
+        }).observe({ type: "layout-shift", buffered: true });
+        new PerformanceObserver((list) => {
+          for (const entry of list.getEntries())
+            if (entry.interactionId && (state.inp === null || entry.duration > state.inp))
+              state.inp = entry.duration;
+        }).observe({ type: "event", buffered: true, durationThreshold: 16 });
+        new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) state.longTaskMs += entry.duration;
+        }).observe({ type: "longtask", buffered: true });
+      } catch {}
+    })();`,
+  });
+
+  if (PROFILE === "mobile") {
+    await cdp.send("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 3,
+      mobile: true,
+    });
+    await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+    await cdp.send("Network.emulateNetworkConditions", {
+      offline: false,
+      latency: 150,
+      downloadThroughput: 1_600_000 / 8,
+      uploadThroughput: 750_000 / 8,
+      connectionType: "cellular4g",
+    });
+  } else {
+    await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
+    await cdp.send("Network.emulateNetworkConditions", {
+      offline: false,
+      latency: 0,
+      downloadThroughput: -1,
+      uploadThroughput: -1,
+      connectionType: "none",
+    });
+  }
 
   const loaded = new Promise((resolve) => cdp.on("Page.loadEventFired", resolve));
 
   const navStart = Date.now();
   await cdp.send("Page.navigate", { url });
   await Promise.race([loaded, sleep(timeoutMs)]);
+  await sleep(250);
+  const targetEntry = await cdp.send("Runtime.evaluate", {
+    expression: `JSON.stringify((() => {
+      const element = document.querySelector('button[type="button"], [role="button"], input:not([type="submit"])');
+      if (!element) return { x: 1, y: 1 };
+      const rect = element.getBoundingClientRect();
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    })())`,
+    returnByValue: true,
+  });
+  const interactionTarget = JSON.parse(targetEntry.result.value ?? '{"x":1,"y":1}');
+  await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: interactionTarget.x, y: interactionTarget.y, button: "left", clickCount: 1 });
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: interactionTarget.x, y: interactionTarget.y, button: "left", clickCount: 1 });
+  await sleep(250);
   const wallMs = Date.now() - navStart;
 
   const navEntries = await cdp.send("Runtime.evaluate", {
@@ -165,6 +237,10 @@ async function navigateAndMeasure(cdp, url, timeoutMs) {
     })))`,
     returnByValue: true,
   });
+  const vitalsEntry = await cdp.send("Runtime.evaluate", {
+    expression: `JSON.stringify(window.__streamlineVitals ?? {})`,
+    returnByValue: true,
+  });
 
   const nav = JSON.parse(navEntries.result.value ?? "[]")[0] ?? null;
   const resources = JSON.parse(resourceEntries.result.value ?? "[]");
@@ -172,8 +248,28 @@ async function navigateAndMeasure(cdp, url, timeoutMs) {
     (r) => r.transferSize === 0 && r.decodedBodySize > 0,
   );
   const paints = JSON.parse(paintEntries.result.value ?? "[]");
+  const vitals = JSON.parse(vitalsEntry.result.value ?? "{}");
   const fcp = paints.find((p) => p.name === "first-contentful-paint");
   const fp = paints.find((p) => p.name === "first-paint");
+  const resourceTotals = resources.reduce((totals, resource) => {
+    const kind = resource.name.includes("/_next/static/") && resource.name.includes(".js")
+      ? "javascript"
+      : resource.name.includes(".woff")
+        ? "font"
+        : /\.(?:png|jpe?g|webp|avif|gif|svg)(?:\?|$)/i.test(resource.name)
+          ? "image"
+          : "other";
+    totals[kind].transferSizeBytes += resource.transferSize ?? 0;
+    totals[kind].decodedBodySizeBytes += resource.decodedBodySize ?? 0;
+    totals[kind].durationMs += resource.duration ?? 0;
+    totals[kind].count++;
+    return totals;
+  }, {
+    javascript: { count: 0, transferSizeBytes: 0, decodedBodySizeBytes: 0, durationMs: 0 },
+    font: { count: 0, transferSizeBytes: 0, decodedBodySizeBytes: 0, durationMs: 0 },
+    image: { count: 0, transferSizeBytes: 0, decodedBodySizeBytes: 0, durationMs: 0 },
+    other: { count: 0, transferSizeBytes: 0, decodedBodySizeBytes: 0, durationMs: 0 },
+  });
 
   return {
     wallMs,
@@ -188,6 +284,12 @@ async function navigateAndMeasure(cdp, url, timeoutMs) {
       : null,
     fcpMs: fcp ? fcp.startTime : null,
     fpMs: fp ? fp.startTime : null,
+    lcpMs: Number.isFinite(vitals.lcp) ? vitals.lcp : null,
+    inpMs: Number.isFinite(vitals.inp) ? vitals.inp : null,
+    cls: Number.isFinite(vitals.cls) ? vitals.cls : null,
+    longTaskMs: Number.isFinite(vitals.longTaskMs) ? vitals.longTaskMs : null,
+    renderAfterFcpMs: nav && fcp ? Math.max(0, nav.loadEventEnd - fcp.startTime) : null,
+    resources: resourceTotals,
   };
 }
 
@@ -272,7 +374,7 @@ async function selfTest() {
 
   const server = createServer((_req, res) => {
     res.writeHead(200, { "Content-Type": "text/html" });
-    res.end("<!DOCTYPE html><html><body><h1>CDPtest</h1><script>performance.mark('app-ready')</script></body></html>");
+    res.end("<!DOCTYPE html><html><body><h1>CDPtest</h1><button type=\"button\">Measure</button><script>document.querySelector('button').onclick=()=>{const end=performance.now()+20;while(performance.now()<end){}};performance.mark('app-ready')</script></body></html>");
   });
   server.listen(9870);
   await sleep(200);
@@ -285,7 +387,14 @@ async function selfTest() {
       process.exitCode = 1;
       return;
     }
-    console.log(`SELF-TEST PASS: ${ttfbs.length} navigation(s), min TTFB=${Math.min(...ttfbs).toFixed(1)}ms — the browser driver can measure`);
+    const lcps = samples.map((s) => s.lcpMs).filter((v) => v !== null && Number.isFinite(v));
+    const inps = samples.map((s) => s.inpMs).filter((v) => v !== null && Number.isFinite(v));
+    if (lcps.length !== samples.length || inps.length !== samples.length) {
+      console.error(`SELF-TEST FAIL: vital coverage lcp=${lcps.length}/${samples.length} inp=${inps.length}/${samples.length}`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`SELF-TEST PASS: ${ttfbs.length} navigation(s), LCP and INP captured, min TTFB=${Math.min(...ttfbs).toFixed(1)}ms`);
   } finally {
     server.close();
   }
@@ -327,6 +436,11 @@ async function main() {
   const wallSummary = summariseMetric(samples, "wallMs");
   const ttfbSummary = summariseMetric(samples, "ttfbMs");
   const fcpSummary = summariseMetric(samples, "fcpMs");
+  const lcpSummary = summariseMetric(samples, "lcpMs");
+  const inpSummary = summariseMetric(samples, "inpMs");
+  const clsSummary = summariseMetric(samples, "cls");
+  const longTaskSummary = summariseMetric(samples, "longTaskMs");
+  const renderAfterFcpSummary = summariseMetric(samples, "renderAfterFcpMs");
 
   const cachedSamples = samples
     .slice(1)
@@ -338,11 +452,32 @@ async function main() {
     0,
   );
 
+  let previous = {};
+  if (existsSync(OUT)) {
+    try {
+      previous = JSON.parse(readFileSync(OUT, "utf8"));
+    } catch {
+      previous = {};
+    }
+  }
+
+  const profileResult = {
+    lcp: { p75_ms: lcpSummary?.p75 ?? null },
+    inp: { p75_ms: inpSummary?.p75 ?? null },
+    cls: { p75: clsSummary?.p75 ?? null },
+    fcp: { p75_ms: fcpSummary?.p75 ?? null },
+    ttfb: { p95_ms: ttfbSummary?.p95 ?? null },
+    longTasks: { p75_ms: longTaskSummary?.p75 ?? null },
+    renderAfterFcp: { p75_ms: renderAfterFcpSummary?.p75 ?? null },
+  };
+
   const result = {
+    ...previous,
     generatedAtMs: Date.now(),
     targetUrl: TARGET_URL,
     browserPath,
     repeat: REPEAT,
+    [PROFILE]: profileResult,
     conditions: {
       geography: "localhost — not the PRD reference geography (same-region reference device/network)",
       device: "developer machine running headless Chrome/Edge",

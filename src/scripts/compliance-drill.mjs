@@ -41,15 +41,15 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 
-const args = process.argv.slice(2);
+const runtime = globalThis.process;
+const args = runtime.argv.slice(2);
 const EXECUTE = args.includes("--execute");
-const I_KNOW = args.includes("--i-know-what-im-doing");
 
 const DRILL_MARKER = "COMPLIANCE-DRILL-SYNTHETIC";
 
 function loadDatabaseUrl() {
-  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
-  const envPath = path.resolve(process.cwd(), ".env");
+  if (runtime.env.DATABASE_URL) return runtime.env.DATABASE_URL;
+  const envPath = path.resolve(runtime.cwd(), ".env");
   if (!fs.existsSync(envPath)) throw new Error("DATABASE_URL not set and no .env found");
   const match = fs.readFileSync(envPath, "utf8").match(/^DATABASE_URL\s*=\s*(.+)$/m);
   if (!match) throw new Error("DATABASE_URL not found in .env");
@@ -59,11 +59,11 @@ function loadDatabaseUrl() {
 const db = postgres(loadDatabaseUrl(), { prepare: false, max: 1, onnotice: () => {} });
 
 function log(msg) {
-  process.stdout.write(msg + "\n");
+  runtime.stdout.write(msg + "\n");
 }
 
 function fail(msg) {
-  process.stderr.write("FAIL  " + msg + "\n");
+  runtime.stderr.write("FAIL  " + msg + "\n");
   throw new Error(msg);
 }
 
@@ -287,10 +287,7 @@ async function runDrill(tx, dryRun) {
   log("  INCOMPLETE: database_rows adapter — marks statusV2=PURGED but does NOT physically delete tenant data rows.");
 
   log("\n─── Cleanup ──────────────────────────────────────────────");
-  await tx`DELETE FROM audit_logs WHERE org_id = ${orgId}`;
-  await tx`DELETE FROM organizations WHERE id = ${orgId}`;
-  await tx`DELETE FROM users WHERE id = ${userId}`;
-  log(`  Synthetic org ${orgId} and user ${userId} deleted.`);
+  log(dryRun ? `  Synthetic org ${orgId} and user ${userId} will be removed by transaction rollback.` : `  Synthetic org ${orgId} and user ${userId} retained with audit evidence for the executed drill.`);
 
   return { orgId, userId, auditRowCount: auditRows.length, runId };
 }
@@ -313,7 +310,7 @@ async function main() {
       });
     } catch (err) {
       if (err.message !== "DRY_RUN_ROLLBACK") {
-        process.stderr.write(`Dry-run error: ${err.message}\n`);
+        runtime.stderr.write(`Dry-run error: ${err.message}\n`);
         dryRunFailed = true;
       } else {
         log("\nDry run complete — transaction rolled back. No data was committed.");
@@ -321,7 +318,7 @@ async function main() {
     } finally {
       await db.end({ timeout: 5 });
     }
-    process.exit(dryRunFailed ? 1 : 0);
+    runtime.exit(dryRunFailed ? 1 : 0);
   }
 
   log("EXECUTE mode — drill will commit real rows.");
@@ -334,18 +331,18 @@ async function main() {
       result = await runDrill(tx, false);
     });
     log(`\nDrill complete.  org=${result.orgId}  user=${result.userId}  run=${result.runId}`);
-    log(`${result.auditRowCount} audit rows verified and cleaned up.`);
+    log(`${result.auditRowCount} audit rows verified and retained for the executed drill.`);
   } catch (err) {
-    process.stderr.write(`Drill failed: ${err.message}\n${err.stack ?? ""}\n`);
+    runtime.stderr.write(`Drill failed: ${err.message}\n${err.stack ?? ""}\n`);
     executeFailed = true;
   } finally {
     await db.end({ timeout: 5 });
   }
-  process.exit(executeFailed ? 1 : 0);
+  runtime.exit(executeFailed ? 1 : 0);
 }
 
 main().catch(async (err) => {
-  process.stderr.write(`Fatal: ${err.message}\n`);
+  runtime.stderr.write(`Fatal: ${err.message}\n`);
   try { await db.end({ timeout: 5 }); } catch { void 0; }
-  process.exit(2);
+  runtime.exit(2);
 });

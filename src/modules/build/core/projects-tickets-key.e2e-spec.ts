@@ -1,4 +1,5 @@
 import { INestApplication } from "@nestjs/common";
+import { configureBuildDatabaseAccess } from "test/build/configure-build-database-access";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { signToken } from "../../../../test/helpers/sign-token";
@@ -9,6 +10,7 @@ import {
   organizations,
   pmWorkspaces,
   projectMembers,
+  projectStatuses,
   projects,
   tickets,
   users,
@@ -35,6 +37,7 @@ describeWithDb(
       outsider: "u_tk_outsider",
     };
     const projectIds = { target: 0 };
+    const membershipIds = { owner: 0, member: 0, outsider: 0 };
 
     async function cleanup(): Promise<void> {
       await runInNewTenantTransaction(db, ORG_ID, async (tx) => {
@@ -68,14 +71,20 @@ describeWithDb(
           .values({ id: ORG_ID, name: "Ticket Key E2E", slug: ORG_ID, ownerMembershipId })
           .onConflictDoNothing();
 
-        await tx
+        const insertedMembers = await tx
           .insert(organizationMembers)
           .values([
             { id: ownerMembershipId, userId: U.owner, orgId: ORG_ID, isOwner: true },
             { userId: U.member, orgId: ORG_ID, isOwner: false },
             { userId: U.outsider, orgId: ORG_ID, isOwner: false },
           ])
-          .onConflictDoNothing();
+          .onConflictDoNothing()
+          .returning({ id: organizationMembers.id, userId: organizationMembers.userId });
+        for (const member of insertedMembers) {
+          if (member.userId === U.owner) membershipIds.owner = member.id;
+          if (member.userId === U.member) membershipIds.member = member.id;
+          if (member.userId === U.outsider) membershipIds.outsider = member.id;
+        }
 
         const [ws] = await tx
           .insert(pmWorkspaces)
@@ -85,7 +94,7 @@ describeWithDb(
         const inserted = await tx
           .insert(projects)
           .values([
-            { orgId: ORG_ID, name: "Key Test Project", key: "KTP", managerId: U.owner, pmWorkspaceId: ws.pmWorkspaceId },
+            { orgId: ORG_ID, name: "Key Test Project", key: "KTP", managerMembershipId: membershipIds.owner, pmWorkspaceId: ws.pmWorkspaceId },
           ])
           .onConflictDoNothing()
           .returning({ id: projects.id });
@@ -94,9 +103,10 @@ describeWithDb(
 
         await tx
           .insert(projectMembers)
-          .values({ orgId: ORG_ID, projectId: projectIds.target, userId: U.member })
+          .values({ orgId: ORG_ID, projectId: projectIds.target, membershipId: membershipIds.member })
           .onConflictDoNothing();
 
+        await tx.insert(projectStatuses).values({ orgId: ORG_ID, projectId: projectIds.target, name: "TODO" });
         const ticketRows = Array.from({ length: 101 }, (_, i) => ({
           orgId: ORG_ID,
           projectId: projectIds.target,
@@ -121,6 +131,8 @@ describeWithDb(
       if (db) await cleanup();
       if (app) await app.close();
     });
+
+    beforeEach(() => configureBuildDatabaseAccess(app, db));
 
     afterEach(() => {
       jest.restoreAllMocks();

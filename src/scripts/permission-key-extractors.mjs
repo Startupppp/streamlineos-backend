@@ -8,11 +8,13 @@
  */
 
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SCRIPT_DIR = fileURLToPath(new URL(".", import.meta.url));
 const BACKEND_ROOT = resolve(SCRIPT_DIR, "../..");
+export const COMMITTED_MODULE_MANIFEST = resolve(BACKEND_ROOT, "module-manifest.json");
 
 // The module manifest, loaded rather than parsed — every manifest check uses this
 export function loadModuleManifest() {
@@ -25,6 +27,44 @@ export function loadModuleManifest() {
   if (typeof parsed.version !== "number" || !Array.isArray(parsed.modules) || parsed.modules.length === 0)
     throw new Error("module manifest dump returned invalid data");
   return parsed;
+}
+
+// Read from the COMMITTED manifest, never a ts-node spawn: the alerting scripts import this. `module-manifest-sync.spec.ts` fails if that file drifts from MODULE_REGISTRY.
+export function committedModuleManifest() {
+  const parsed = JSON.parse(readFileSync(COMMITTED_MODULE_MANIFEST, "utf8"));
+  if (typeof parsed.version !== "number" || !Array.isArray(parsed.modules) || parsed.modules.length === 0)
+    throw new Error(`${COMMITTED_MODULE_MANIFEST} is not a valid module manifest`);
+  return parsed;
+}
+
+let namespaceAdministrationMap = null;
+
+function namespaceToAdministeringModule() {
+  if (namespaceAdministrationMap === null) {
+    namespaceAdministrationMap = new Map();
+    for (const entry of committedModuleManifest().modules)
+      for (const namespace of entry.administersNamespaces ?? [])
+        namespaceAdministrationMap.set(namespace, entry.id);
+    if (namespaceAdministrationMap.size === 0)
+      throw new Error("module manifest declares no administered namespaces; the scan would report every key unadministered");
+  }
+  return namespaceAdministrationMap;
+}
+
+// RUNTIME ENTITLEMENT: the key's own namespace. Mirrors namespaceOf() in common/rbac/module-vocabulary.ts.
+export function namespaceOf(permissionKey) {
+  const separatorIndex = permissionKey.indexOf(":");
+  return separatorIndex === -1 ? permissionKey : permissionKey.slice(0, separatorIndex);
+}
+
+// ADMINISTRATION: derived from MODULE_REGISTRY.administersNamespaces via the manifest, never a second hand-copied table.
+export function moduleOwningNamespace(namespace) {
+  return namespaceToAdministeringModule().get(namespace) ?? namespace;
+}
+
+// ADMINISTRATION for a key. Never the runtime-entitlement question namespaceOf answers.
+export function administeringModuleOf(permissionKey) {
+  return moduleOwningNamespace(namespaceOf(permissionKey));
 }
 
 // The real backend catalog, loaded rather than parsed

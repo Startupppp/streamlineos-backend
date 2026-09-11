@@ -1,5 +1,7 @@
 import type { Redis } from "@upstash/redis";
 import { CacheService } from "./cache.service";
+import { REDIS_COMMAND_TIMEOUT } from "./cache.service";
+import { CacheFiller } from "./cache-fill";
 
 function buildRedis(values = new Map<string, unknown>()): Redis {
   return {
@@ -14,8 +16,20 @@ function buildRedis(values = new Map<string, unknown>()): Redis {
       values.set(key, next);
       return next;
     }),
-    eval: jest.fn(async (_script: string, keys: string[], args: string[]) => {
+    del: jest.fn(async (...keys: string[]) => {
+      let deleted = 0;
+      for (const key of keys) {
+        if (!values.delete(key)) continue;
+        deleted += 1;
+      }
+      return deleted;
+    }),
+    eval: jest.fn(async (script: string, keys: string[], args: string[]) => {
       if (values.get(keys[0]) !== args[0]) return 0;
+      if (script.includes('redis.call("set"') && keys[1] !== undefined) {
+        values.set(keys[1], JSON.parse(args[1] ?? "null"));
+        return 1;
+      }
       values.delete(keys[0]);
       return 1;
     }),
@@ -53,8 +67,12 @@ describe("CacheService", () => {
         values.set(key, value);
         return "OK";
       }),
-      eval: jest.fn(async (_script: string, keys: string[], args: string[]) => {
+      eval: jest.fn(async (script: string, keys: string[], args: string[]) => {
         if (values.get(keys[0]) !== args[0]) return 0;
+        if (script.includes('redis.call("set"') && keys[1] !== undefined) {
+          values.set(keys[1], JSON.parse(args[1] ?? "null"));
+          return 1;
+        }
         values.delete(keys[0]);
         return 1;
       }),
@@ -166,12 +184,15 @@ describe("tenant-aware wrappers", () => {
     expect(fetchE).toHaveBeenCalledTimes(2);
   });
 
-  it("applyJitter — TTLs across many fills are spread rather than identical", () => {
-    const cache = new CacheService(null);
+  // TTL jitter is now owned by CacheFiller, which is the collaborator that
+  // resolves a TTL for the write; CacheService.cachedForOrgWith is the only
+  // caller that needs it directly, to jitter inside its own declared bound.
+  it("jitterTtl — TTLs across many fills are spread rather than identical", () => {
+    const filler = new CacheFiller((operation) => operation());
     const base = 300;
     const ttls = new Set<number>();
     for (let i = 0; i < 50; i++) {
-      const result = cache["applyJitter"](base);
+      const result = filler.jitterTtl(base);
       expect(result).toBeGreaterThanOrEqual(Math.floor(base * 0.85));
       expect(result).toBeLessThanOrEqual(Math.ceil(base * 1.15));
       ttls.add(result);
@@ -187,7 +208,10 @@ describe("tenant-aware wrappers", () => {
         return "OK";
       }),
       incr: jest.fn(async () => 1),
-      eval: jest.fn(async () => 1),
+      eval: jest.fn(async (_script: string, keys: string[], args: string[]) => {
+        if (keys.length === 2 && args.length === 3) captured.push(Number(args[2]));
+        return 1;
+      }),
     } as unknown as Redis;
 
     const cache = new CacheService(redis);
@@ -205,5 +229,113 @@ describe("tenant-aware wrappers", () => {
       expect(ttl).toBeLessThanOrEqual(Math.ceil(base * 1.15));
     }
     expect(new Set(captured).size).toBeGreaterThan(1);
+  });
+
+  it("never serves a null fetch result from cache, so a denial cannot outlive the grant that ends it", async () => {
+    const values = new Map<string, unknown>();
+    const redis = buildRedis(values);
+    const cache = new CacheService(redis);
+
+    const fetcher = jest
+      .fn<Promise<{ ok: true } | null>, []>()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue({ ok: true });
+
+    await expect(cache.cached("negative-key", fetcher)).resolves.toBeNull();
+    await expect(cache.cached("negative-key", fetcher)).resolves.toEqual({ ok: true });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries a failing invalidation and records the drop instead of swallowing it", async () => {
+    const del = jest.fn(async () => {
+      throw new Error("redis down");
+    });
+    const redis = { del, get: jest.fn(async () => null) } as unknown as Redis;
+    const cache = new CacheService(redis);
+    const logged = jest
+      .spyOn(cache["logger"], "error")
+      .mockImplementation(() => undefined);
+
+    await cache.invalidate("stale-key");
+
+    expect(del).toHaveBeenCalledTimes(3);
+    expect(cache.droppedInvalidationCount).toBe(1);
+    expect(String(logged.mock.calls[0]?.[0])).toContain("cache.invalidation.dropped");
+    logged.mockRestore();
+  });
+
+  it("stops retrying an invalidation as soon as one attempt succeeds", async () => {
+    let attempts = 0;
+    const del = jest.fn(async () => {
+      attempts++;
+      if (attempts === 1) throw new Error("transient");
+      return 1;
+    });
+    const redis = { del, get: jest.fn(async () => null) } as unknown as Redis;
+    const cache = new CacheService(redis);
+
+    await cache.invalidate("flaky-key");
+
+    expect(del).toHaveBeenCalledTimes(2);
+    expect(cache.droppedInvalidationCount).toBe(0);
+  });
+
+  it("does not restore a stale value when invalidation lands during a fill", async () => {
+    const values = new Map<string, unknown>();
+    let release = (_value: { revision: number }): void => {
+      throw new Error("fill did not start");
+    };
+    const redis = buildRedis(values);
+    const cache = new CacheService(redis);
+    const pending = cache.cached(
+      "race-key",
+      () => new Promise<{ revision: number }>((resolve) => {
+        release = resolve;
+      }),
+    );
+
+    await new Promise((resolve) => setImmediate(resolve));
+    await cache.invalidate("race-key");
+    release({ revision: 1 });
+
+    await expect(pending).resolves.toEqual({ revision: 1 });
+    expect(values.has("race-key")).toBe(false);
+  });
+});
+
+describe("command-timeout boundary", () => {
+  it("a timed-out get degrades to the underlying source without surfacing an error", async () => {
+    const redis = {
+      get: jest.fn((): Promise<null> => new Promise(() => {})),
+      set: jest.fn((): Promise<string | null> => new Promise(() => {})),
+      eval: jest.fn((): Promise<number> => new Promise(() => {})),
+    } as unknown as Redis;
+    const cache = new CacheService(redis, 1);
+    const source = jest.fn().mockResolvedValue({ fromDb: true });
+
+    await expect(cache.cached("timeout-read-key", source)).resolves.toEqual({ fromDb: true });
+    expect(source).toHaveBeenCalledTimes(1);
+  });
+
+  it("a timed-out invalidation surfaces through the drop counter and error log, not swallowed", async () => {
+    const redis = {
+      del: jest.fn((): Promise<number> => new Promise(() => {})),
+      get: jest.fn((): Promise<null> => new Promise(() => {})),
+    } as unknown as Redis;
+    const cache = new CacheService(redis, 1);
+    const errorSpy = jest
+      .spyOn(cache["logger"], "error")
+      .mockImplementation(() => undefined);
+
+    await cache.invalidate("timeout-invalidation-key");
+
+    expect(redis.del).toHaveBeenCalledTimes(3);
+    expect(cache.droppedInvalidationCount).toBe(1);
+    expect(String(errorSpy.mock.calls[0]?.[0])).toContain("cache.invalidation.dropped");
+    errorSpy.mockRestore();
+  });
+
+  it("REDIS_COMMAND_TIMEOUT token is exported for injection", () => {
+    expect(REDIS_COMMAND_TIMEOUT).toBe("REDIS_COMMAND_TIMEOUT");
   });
 });

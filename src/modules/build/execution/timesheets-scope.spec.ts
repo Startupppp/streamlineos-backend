@@ -29,7 +29,7 @@ describe("resolveTimesheetsScope", () => {
   it("returns all when isOrgOwner is true", async () => {
     (mockAccess.scopeFor as jest.Mock).mockResolvedValueOnce("all");
     const result = await resolveTimesheetsScope(mockAccess, makeUser({ isOrgOwner: true }));
-    expect(result).toBe("all");
+    expect(result.rawScope("spec reads the resolved value")).toBe("all");
     expect(mockAccess.scopeFor).toHaveBeenCalledWith(expect.objectContaining({ isOrgOwner: true }), expect.any(String));
   });
 
@@ -43,19 +43,21 @@ describe("resolveTimesheetsScope", () => {
   it("returns all when the resolved scope is all", async () => {
     (mockAccess.scopeFor as jest.Mock).mockResolvedValueOnce("all");
     const result = await resolveTimesheetsScope(mockAccess, makeUser());
-    expect(result).toBe("all");
+    expect(result.rawScope("spec reads the resolved value")).toBe("all");
+    expect(result.denied).toBe(false);
   });
 
   it("returns own when the resolved scope is own", async () => {
     (mockAccess.scopeFor as jest.Mock).mockResolvedValueOnce("own");
     const result = await resolveTimesheetsScope(mockAccess, makeUser());
-    expect(result).toBe("own");
+    expect(result.rawScope("spec reads the resolved value")).toBe("own");
+    expect(result.denied).toBe(false);
   });
 
   it("returns none when the permission is absent from the resolved map", async () => {
     (mockAccess.scopeFor as jest.Mock).mockResolvedValueOnce("none");
     (mockAccess.holds as jest.Mock).mockResolvedValueOnce(false);
     const result = await resolveTimesheetsScope(mockAccess, makeUser());
-    expect(result).toBe("none");
+    expect(result.denied).toBe(true);
   });
 });

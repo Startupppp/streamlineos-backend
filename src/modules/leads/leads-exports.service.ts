@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, and, or, ilike, sql, type SQL } from "drizzle-orm";
+import { eq, and, or, ilike, isNull, sql, type SQL } from "drizzle-orm";
 
 const EXPORT_ROW_CAP = 10_000;
 import { users } from "../../db/schema";
@@ -7,7 +7,13 @@ import { businessParties, leadPartyMap } from "../../db/schema/party";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { findDuplicateLeads } from "./duplicate-leads";
-import { LEAD_PARTY_COLUMNS, LEAD_PARTY_JOIN, leadPartyScope } from "./lead-party-reader";
+import {
+  LEAD_PARTY_COLUMNS,
+  LEAD_PARTY_JOIN,
+  leadPartyScope,
+  LEAD_PARTY_SCOPE,
+} from "./lead-party-reader";
+import type { ScopedRead } from "../access/scoped-read";
 import type { CheckDuplicatesQuery, ExportQuery } from "./dto/lead-reports.schemas";
 
 @Injectable()
@@ -63,14 +69,22 @@ export class LeadsExportsService {
     return { duplicates };
   }
 
-  async exportCsv(orgId: string, filters: ExportQuery) {
-    const conditions = leadPartyScope(orgId);
-    if (filters.status) conditions.push(eq(LEAD_PARTY_COLUMNS.status, filters.status));
-    if (filters.priority) conditions.push(eq(LEAD_PARTY_COLUMNS.priority, filters.priority));
-    if (filters.assigneeId)
-      conditions.push(eq(LEAD_PARTY_COLUMNS.assignedToId, filters.assigneeId));
-
-    const rows = await this.db
+  async exportCsv(read: ScopedRead, filters: ExportQuery) {
+    const orgId = read.orgId;
+    // The caller may narrow to another rep only when their own scope already reaches beyond themselves; below `all` the scope predicate holds.
+    const rows = await read.read(
+      {
+        tenant: businessParties.organizationId,
+        scope: LEAD_PARTY_SCOPE,
+        and: [
+          eq(leadPartyMap.organizationId, orgId),
+          isNull(businessParties.deletedAt),
+          filters.status ? eq(LEAD_PARTY_COLUMNS.status, filters.status) : undefined,
+          filters.priority ? eq(LEAD_PARTY_COLUMNS.priority, filters.priority) : undefined,
+          filters.assigneeId ? eq(LEAD_PARTY_COLUMNS.assignedToId, filters.assigneeId) : undefined,
+        ],
+      },
+      ({ sql: where }) => this.db
       .select({
         id: LEAD_PARTY_COLUMNS.id,
         name: LEAD_PARTY_COLUMNS.name,
@@ -89,9 +103,11 @@ export class LeadsExportsService {
       .from(leadPartyMap)
       .innerJoin(businessParties, LEAD_PARTY_JOIN)
       .leftJoin(users, eq(LEAD_PARTY_COLUMNS.assignedToId, users.id))
-      .where(and(...conditions))
+      .where(where)
       .orderBy(LEAD_PARTY_COLUMNS.createdAt, LEAD_PARTY_COLUMNS.id)
-      .limit(EXPORT_ROW_CAP);
+      .limit(EXPORT_ROW_CAP),
+      () => [],
+    );
 
     const truncated = rows.length === EXPORT_ROW_CAP;
 

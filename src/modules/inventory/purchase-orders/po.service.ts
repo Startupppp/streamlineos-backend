@@ -1,7 +1,6 @@
 import { Inject, Injectable, BadRequestException, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, sql } from "drizzle-orm";
-import { applyScope } from "../../access/apply-scope";
-import type { DataScope } from "../../access/access.types";
+import { ScopedRead } from "../../access/scoped-read";
 import { invPurchaseOrders, invPoLines } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -71,51 +70,52 @@ export class PoService {
     return resolveLocationId(this.db, orgId, warehouseId);
   }
 
-  async listPos(orgId: string, filters: ListPoInput, scope: DataScope = "all", userId?: string) {
-    if (scope === "none") return { items: [], total: 0, page: filters.page, totalPages: 0 };
-
+  async listPos(read: ScopedRead, filters: ListPoInput) {
+    const orgId = read.orgId;
     const { status, vendorId, page, limit } = filters;
     const offset = (page - 1) * limit;
-    const scopeSuffix = scope !== "all" ? `:${scope}:${userId ?? ""}` : "";
-    // RBAC DataScope answers "whose records", warehouse scope answers "which
+    // RBAC scope answers "whose records", warehouse scope answers "which
     // sites" — separate checks, and both belong in the cache key or one
     // caller's warehouses are served to the next.
-    const warehouses = userId
-      ? await this.warehouseScope.forUser(orgId, userId)
-      : null;
-    const hash = `${warehouses?.key ?? "all"}:${status ?? ""}:${vendorId ?? ""}:${limit}:${offset}${scopeSuffix}`;
+    const warehouses = await this.warehouseScope.forUser(orgId, read.actorId);
+    const hash = `${warehouses?.key ?? "all"}:${status ?? ""}:${vendorId ?? ""}:${limit}:${offset}:${read.discriminator}`;
 
-    return this.cache.cachedVersioned(CACHE_KEYS.invPoNamespace(orgId), hash, async () => {
-      const conditions = [eq(invPurchaseOrders.orgId, orgId)];
-      if (status) conditions.push(eq(invPurchaseOrders.status, status));
-      if (vendorId) conditions.push(eq(invPurchaseOrders.vendorId, vendorId));
-      if (scope !== "all" && userId) {
-        conditions.push(applyScope(scope, orgId, userId, { ownerColumn: invPurchaseOrders.createdBy }));
-      }
-      if (warehouses) conditions.push(warehouses.warehouse(sql`${invPurchaseOrders.warehouseId}`));
-      const where = and(...conditions);
+    return this.cache.cachedVersioned(CACHE_KEYS.invPoNamespace(orgId), hash, () =>
+      read.read(
+        {
+          tenant: invPurchaseOrders.orgId,
+          scope: { columns: { ownerColumn: invPurchaseOrders.createdBy } },
+          and: [
+            status ? eq(invPurchaseOrders.status, status) : undefined,
+            vendorId ? eq(invPurchaseOrders.vendorId, vendorId) : undefined,
+            warehouses ? warehouses.warehouse(sql`${invPurchaseOrders.warehouseId}`) : undefined,
+          ],
+        },
+        async ({ sql: where }) => {
+          const [items, countResult] = await Promise.all([
+            this.db.query.invPurchaseOrders.findMany({
+              where,
+              orderBy: [desc(invPurchaseOrders.createdAt)],
+              limit,
+              offset,
+              with: {
+                vendor: { columns: { id: true, name: true, code: true } },
+                creator: { columns: { id: true, name: true } },
+              },
+            }),
+            this.db.select({ count: sql<number>`count(*)::int` }).from(invPurchaseOrders).where(where),
+          ]);
 
-      const [items, countResult] = await Promise.all([
-        this.db.query.invPurchaseOrders.findMany({
-          where,
-          orderBy: [desc(invPurchaseOrders.createdAt)],
-          limit,
-          offset,
-          with: {
-            vendor: { columns: { id: true, name: true, code: true } },
-            creator: { columns: { id: true, name: true } },
-          },
-        }),
-        this.db.select({ count: sql<number>`count(*)::int` }).from(invPurchaseOrders).where(where),
-      ]);
-
-      return {
-        items,
-        total: countResult[0]?.count ?? 0,
-        page,
-        totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit),
-      };
-    }, CACHE_TTL.SHORT);
+          return {
+            items,
+            total: countResult[0]?.count ?? 0,
+            page,
+            totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit),
+          };
+        },
+        () => ({ items: [], total: 0, page, totalPages: 0 }),
+      ),
+    CACHE_TTL.SHORT);
   }
 
   async getPo(orgId: string, poId: number, userId?: string) {

@@ -33,14 +33,17 @@ export class ProjectsTicketCommentsService {
   private async resolveTicketForComment(u: CurrentUserContext, ticketId: number) {
     const ticket = await this.db.query.tickets.findFirst({
       where: and(eq(tickets.id, ticketId), eq(tickets.orgId, u.orgId), isNull(tickets.deletedAt)),
-      with: { assignees: { columns: { userId: true } } },
-      columns: { id: true, assigneeId: true, reporterId: true, ticketNumber: true, title: true, projectId: true },
+      with: {
+        assignee: { with: { user: { columns: { id: true } } } },
+        assignees: { with: { user: { columns: { userId: true } } } },
+      },
+      columns: { id: true, assigneeMembershipId: true, reporterId: true, ticketNumber: true, title: true, projectId: true },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
 
-    const scope = await resolveTicketsScope(this.access, u);
-    if (scope !== "all") {
-      const isAssignee = ticket.assigneeId === u.userId || ticket.assignees.some((a) => a.userId === u.userId);
+    const read = await resolveTicketsScope(this.access, u);
+    if (!read.unrestricted) {
+      const isAssignee = ticket.assignee?.user?.id === u.userId || ticket.assignees.some((a) => a.user.userId === u.userId);
       const isReporter = ticket.reporterId === u.userId;
       if (!isAssignee && !isReporter) throw new ProjectsForbiddenTicketException();
     }
@@ -71,16 +74,29 @@ export class ProjectsTicketCommentsService {
       }
     }
 
-    const [comment] = await this.db
-      .insert(ticketComments)
-      .values({
-        orgId: u.orgId,
-        ticketId,
-        userId: u.userId,
-        content: body.content,
-        parentCommentId: body.parentCommentId ?? null,
-      })
-      .returning();
+    const comment = await this.db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(ticketComments)
+        .values({
+          orgId: u.orgId,
+          ticketId,
+          userId: u.userId,
+          content: body.content,
+          parentCommentId: body.parentCommentId ?? null,
+        })
+        .returning();
+      if (ticket.projectId) {
+        await this.webhooksDispatch.enqueue(tx, u.orgId, ticket.projectId, "comment.created", {
+          id: created.id,
+          projectId: ticket.projectId,
+          ticketId,
+          parentCommentId: body.parentCommentId ?? null,
+          actor: u.userId,
+          timestamp: new Date().toISOString(),
+        });
+      }
+      return created;
+    });
 
     try {
       await this.activity.logTicketActivity(u.orgId, ticketId, u.userId, "comment_added");
@@ -102,17 +118,6 @@ export class ProjectsTicketCommentsService {
       });
     } catch (error) {
       logger.error("Failed to process comment mentions", { error });
-    }
-
-    if (ticket.projectId) {
-      this.webhooksDispatch.dispatch(u.orgId, ticket.projectId, "comment.created", {
-        id: comment.id,
-        projectId: ticket.projectId,
-        ticketId,
-        parentCommentId: body.parentCommentId ?? null,
-        actor: u.userId,
-        timestamp: new Date().toISOString(),
-      });
     }
 
     return comment;
@@ -259,19 +264,17 @@ export class ProjectsTicketCommentsService {
     });
     if (!comment) throw new NotFoundException("Comment not found");
 
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const [reaction] = await this.db
       .insert(ticketCommentReactions)
-      .values({ commentId, userId, orgId, emoji, membershipId: membershipId ?? undefined })
+      .values({ commentId, orgId, emoji, membershipId })
       .onConflictDoNothing()
       .returning();
     return reaction ?? { commentId, userId, emoji };
   }
 
   async removeReaction(commentId: number, userId: string, orgId: string, emoji: string, membershipId: number | null) {
-    const actorPredicate =
-      membershipId !== null
-        ? eq(ticketCommentReactions.membershipId, membershipId)
-        : eq(ticketCommentReactions.userId, userId);
+    const actorPredicate = eq(ticketCommentReactions.membershipId, membershipId ?? -1);
     await this.db
       .delete(ticketCommentReactions)
       .where(
@@ -288,6 +291,7 @@ export class ProjectsTicketCommentsService {
     return this.db
       .select()
       .from(ticketCommentReactions)
-      .where(and(eq(ticketCommentReactions.commentId, commentId), eq(ticketCommentReactions.orgId, orgId)));
+      .where(and(eq(ticketCommentReactions.commentId, commentId), eq(ticketCommentReactions.orgId, orgId)))
+      .limit(100);
   }
 }

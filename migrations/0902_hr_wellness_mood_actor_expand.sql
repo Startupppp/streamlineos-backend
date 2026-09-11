@@ -25,6 +25,7 @@ SET "user_membership_id" = om.id
 FROM "organization_members" om
 WHERE om.org_id = wc.org_id
   AND om.user_id = wc.user_id
+  AND om.status = 'ACTIVE'
   AND wc."user_membership_id" IS NULL;
 
 --> statement-breakpoint
@@ -33,6 +34,7 @@ SET "user_membership_id" = om.id
 FROM "organization_members" om
 WHERE om.org_id = mc.org_id
   AND om.user_id = mc.user_id
+  AND om.status = 'ACTIVE'
   AND mc."user_membership_id" IS NULL;
 
 --> statement-breakpoint

@@ -1,205 +1,205 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, isNull, sql } from "drizzle-orm";
-import { orgUnits } from "../../../db/schema";
-import { nextDepartmentCode, toDepartmentCode } from "../../organization/hierarchy/lib/department-code";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
+import { CacheService } from "../../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
+import { logger } from "../../../common/logger/logger.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { EmployeeOnboardingService } from "./employee-onboarding.service";
-import type { BulkOnboardEmployeeRow, OnboardEmployeeInput } from "./dto/hr-directory.schemas";
-import { ORG_MEMBER_ROLES } from "../../../common/rbac/org-roles";
+import { withMembershipMutations } from "../../../common/org/membership-mutations";
+import { assertMayGrantRole } from "../../../common/rbac/assert-may-grant-role";
 import { OrgHierarchyCacheService } from "../../../common/cache/org-hierarchy-cache.service";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
+import {
+  runInNewTenantTransaction,
+  runInTenantTransaction,
+} from "../../../common/tenant/run-in-tenant-transaction";
+import { AccessService } from "../../access/access.service";
+import {
+  MembershipAdmissionService,
+  canonicalAdmissionEmail,
+} from "../../organization/core/membership-admission.service";
+import { EmailService } from "../../email/email.service";
+import { AutomationService } from "../../automation/automation.service";
+import { WebhooksDispatchService } from "../../webhooks/webhooks-dispatch.service";
+import { PersonEmploymentSyncService } from "../core/person-employment-sync.service";
+import type { BulkOnboardEmployeeRow } from "./dto/hr-directory.schemas";
+import {
+  ensureDepartments,
+  loadDepartmentCatalog,
+} from "./bulk-onboarding/bulk-onboarding-departments";
+import {
+  distinctRoles,
+  planBulkOnboarding,
+  preloadEmployeeNumbers,
+} from "./bulk-onboarding/bulk-onboarding-plan";
+import { writeBulkOnboarding } from "./bulk-onboarding/bulk-onboarding-writes";
+import type {
+  BulkOnboardRowResult,
+  BulkOnboardWriteOutcome,
+} from "./bulk-onboarding/bulk-onboarding.types";
 
 @Injectable()
 export class EmployeeBulkOnboardingService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
-    private readonly onboarding: EmployeeOnboardingService,
     private readonly hierarchyCache: OrgHierarchyCacheService,
+    private readonly cache: CacheService,
+    private readonly access: AccessService,
+    private readonly admission: MembershipAdmissionService,
+    private readonly email: EmailService,
+    private readonly automation: AutomationService,
+    private readonly webhooks: WebhooksDispatchService,
+    private readonly personEmploymentSync: PersonEmploymentSyncService,
   ) {}
 
   async onboardEmployeesBulk(actor: CurrentUserContext, rows: BulkOnboardEmployeeRow[]) {
-    let hierarchyChanged = false;
-    const orgDeptRows = await this.db
-      .select({
-        id: orgUnits.id,
-        name: orgUnits.name,
-        code: orgUnits.code,
-      })
-      .from(orgUnits)
-      .where(
-        and(
-          eq(orgUnits.orgId, actor.orgId),
-          eq(orgUnits.kind, "DEPARTMENT"),
-          isNull(orgUnits.deletedAt),
-          sql`${orgUnits.status} <> 'ARCHIVED'`,
+    const catalog = await loadDepartmentCatalog(this.db, actor.orgId);
+
+    const roleErrors = new Map<string, string>();
+    for (const role of distinctRoles(rows)) {
+      try {
+        await assertMayGrantRole(this.access, actor.orgId, actor, role);
+      } catch (err) {
+        roleErrors.set(role, err instanceof Error ? err.message : "Role cannot be granted");
+      }
+    }
+
+    await ensureDepartments(
+      this.db,
+      actor.orgId,
+      catalog,
+      rows.flatMap((row) => (row.departmentId == null && row.department ? [row.department] : [])),
+    );
+
+    const employeeNumberOwner = await preloadEmployeeNumbers(
+      this.db,
+      actor.orgId,
+      [
+        ...new Set(
+          rows.flatMap((row) => (row.employeeId?.trim() ? [row.employeeId.trim()] : [])),
+        ),
+      ],
+    );
+
+    const screens = await this.admission.screenMany(this.db, {
+      orgId: actor.orgId,
+      emails: [...new Set(rows.map((row) => canonicalAdmissionEmail(row.email)))],
+    });
+
+    const plan = planBulkOnboarding(rows, catalog, screens, employeeNumberOwner, roleErrors);
+
+    let outcome: BulkOnboardWriteOutcome = { admitted: [], rejected: [], welcomeEmails: [] };
+    const results: BulkOnboardRowResult[] = [...plan.rejected];
+    if (plan.accepted.length > 0) {
+      outcome = await withMembershipMutations(this.cache, (membership) =>
+        runInTenantTransaction(
+          this.db,
+          (tx) =>
+            writeBulkOnboarding(tx, actor, plan.accepted, {
+              admission: this.admission,
+              personEmploymentSync: this.personEmploymentSync,
+              membership,
+            }),
+          { orgId: actor.orgId },
         ),
       );
-
-    const orgDeptByKey = new Map<string, string>();
-    const usedCodes = new Set<string>();
-    for (const departmentRecord of orgDeptRows) {
-      orgDeptByKey.set(
-        departmentRecord.name.trim().toLowerCase(),
-        departmentRecord.id,
-      );
-      if (departmentRecord.code?.trim()) {
-        orgDeptByKey.set(
-          departmentRecord.code.trim().toLowerCase(),
-          departmentRecord.id,
-        );
-        usedCodes.add(departmentRecord.code);
-      }
-    }
-
-    const resolveDepartmentId = async (raw: string): Promise<string | undefined> => {
-      const key = raw.trim().toLowerCase();
-      if (!key) return undefined;
-
-      const existing = orgDeptByKey.get(key);
-      if (existing) return existing;
-
-      const name = raw.trim();
-      const base = toDepartmentCode(name);
-      let code = base;
-      let suffix = 2;
-      while (usedCodes.has(code)) {
-        code = nextDepartmentCode(base, suffix);
-        suffix += 1;
-      }
-
-      const inserted = await this.db
-        .insert(orgUnits)
-        .values({ orgId: actor.orgId, kind: "DEPARTMENT", name, code, status: "ACTIVE" })
-        .onConflictDoNothing({ target: [orgUnits.orgId, orgUnits.kind, orgUnits.code] })
-        .returning({ id: orgUnits.id, name: orgUnits.name });
-
-      let departmentRecord = inserted[0];
-      if (departmentRecord) hierarchyChanged = true;
-      if (!departmentRecord) {
-        const [found] = await this.db
-          .select({ id: orgUnits.id, name: orgUnits.name })
-          .from(orgUnits)
-          .where(
-            and(
-              eq(orgUnits.orgId, actor.orgId),
-              eq(orgUnits.kind, "DEPARTMENT"),
-              isNull(orgUnits.deletedAt),
-              sql`lower(${orgUnits.name}) = ${key}`,
-            ),
-          )
-          .limit(1);
-        departmentRecord = found;
-      }
-      if (!departmentRecord) return undefined;
-
-      usedCodes.add(code);
-      orgDeptByKey.set(
-        departmentRecord.name.trim().toLowerCase(),
-        departmentRecord.id,
-      );
-      return departmentRecord.id;
-    };
-
-    const seenEmails = new Set<string>();
-    const results: Array<{
-      row: number;
-      email: string;
-      success: boolean;
-      userId?: string;
-      error?: string;
-    }> = [];
-
-    let created = 0;
-    let failed = 0;
-
-    for (let i = 0; i < rows.length; i += 1) {
-      const employeeRow = rows[i]!;
-      const rowNum = i + 1;
-      const email = employeeRow.email.trim().toLowerCase();
-
-      if (seenEmails.has(email)) {
-        failed += 1;
+      for (const employee of outcome.admitted)
         results.push({
-          row: rowNum,
-          email,
-          success: false,
-          error: "Duplicate email in this upload",
-        });
-        continue;
-      }
-      seenEmails.add(email);
-
-      let departmentId = employeeRow.departmentId;
-      if (departmentId == null && employeeRow.department) {
-        departmentId = await resolveDepartmentId(employeeRow.department);
-        if (departmentId == null) {
-          failed += 1;
-          results.push({
-            row: rowNum,
-            email,
-            success: false,
-            error: `Unknown department "${employeeRow.department}". Create it under Organization → Departments (or HR departments) first.`,
-          });
-          continue;
-        }
-      }
-
-      const payload: OnboardEmployeeInput = {
-        firstName: employeeRow.firstName.trim(),
-        lastName: employeeRow.lastName.trim(),
-        email,
-        phone: employeeRow.phone,
-        whatsappSameAsPhone: employeeRow.whatsappSameAsPhone ?? true,
-        whatsappNumber: employeeRow.whatsappNumber,
-        gender: employeeRow.gender,
-        designation: employeeRow.designation.trim(),
-        departmentId,
-        role: employeeRow.role || ORG_MEMBER_ROLES.MEMBER,
-        employeeId: employeeRow.employeeId,
-        joiningDate: employeeRow.joiningDate,
-        dateOfBirth: employeeRow.dateOfBirth,
-        taxId: employeeRow.taxId,
-        monthlySalary: employeeRow.monthlySalary,
-        bankDetails: employeeRow.bankDetails,
-      };
-
-      try {
-        const res = await this.onboarding.onboardEmployee(actor, payload);
-        created += 1;
-        results.push({
-          row: rowNum,
-          email,
+          row: employee.row,
+          email: employee.email,
           success: true,
-          userId: res.userId,
+          userId: employee.userId,
         });
-      } catch (err) {
-        failed += 1;
-        const message =
-          err instanceof Error ? err.message : "Failed to onboard employee";
-        results.push({ row: rowNum, email, success: false, error: message });
-      }
+      results.push(...outcome.rejected);
     }
 
-    if (hierarchyChanged) {
-      await this.hierarchyCache.invalidateAfterMutation(actor.orgId);
-    }
+    this.deferDelivery(actor, outcome, catalog.created);
 
     await this.audit.logCritical({
       action: "hr.employees_bulk_onboarded",
       userId: actor.userId,
       orgId: actor.orgId,
       targetType: "employee",
-      metadata: { total: rows.length, created, failed },
+      metadata: {
+        total: rows.length,
+        created: outcome.admitted.length,
+        failed: plan.rejected.length + outcome.rejected.length,
+      },
     });
 
+    results.sort((left, right) => left.row - right.row);
     return {
       total: rows.length,
-      created,
-      failed,
+      created: outcome.admitted.length,
+      failed: plan.rejected.length + outcome.rejected.length,
       results,
     };
+  }
+
+  private deferDelivery(
+    actor: CurrentUserContext,
+    outcome: BulkOnboardWriteOutcome,
+    hierarchyChanged: boolean,
+  ): void {
+    if (outcome.admitted.length === 0 && !hierarchyChanged) return;
+
+    for (const employee of outcome.admitted)
+      if (employee.createdUser)
+        this.webhooks.dispatch(actor.orgId, "employee.hired", {
+          userId: employee.userId,
+          email: employee.email,
+          firstName: employee.firstName,
+          lastName: employee.lastName,
+          joiningDate: employee.joiningDate,
+        });
+
+    const deliver = () => this.runDelivery(actor, outcome, hierarchyChanged);
+    if (!registerAfterCommit(deliver)) void deliver();
+  }
+
+  private async runDelivery(
+    actor: CurrentUserContext,
+    outcome: BulkOnboardWriteOutcome,
+    hierarchyChanged: boolean,
+  ): Promise<void> {
+    await this.invalidateHrDashboardCache(actor.orgId);
+    if (hierarchyChanged) await this.hierarchyCache.invalidateAfterMutation(actor.orgId);
+
+    for (const message of outcome.welcomeEmails) {
+      try {
+        await this.email.sendWelcomeEmail(message.email, message.name, message.signInUrl);
+      } catch (err) {
+        logger.error("Failed to send welcome email", { email: message.email, error: err });
+      }
+    }
+
+    if (outcome.admitted.length === 0) return;
+    try {
+      await runInNewTenantTransaction(this.db, actor.orgId, async () => {
+        for (const employee of outcome.admitted)
+          await this.automation.runAutomationsForEvent(actor.orgId, "onboarding.started", {
+            userId: employee.userId,
+            employeeName: `${employee.firstName} ${employee.lastName}`,
+            employeeEmail: employee.email,
+            departmentId: employee.departmentId,
+            joiningDate: employee.joiningDate,
+            startedAt: new Date().toISOString(),
+          });
+      });
+    } catch (err) {
+      logger.error("Bulk onboarding automations failed", { orgId: actor.orgId, error: err });
+    }
+  }
+
+  private async invalidateHrDashboardCache(orgId: string): Promise<void> {
+    await Promise.all([
+      this.cache.invalidateNamespaceForOrg(orgId, "hr:analytics"),
+      this.cache.invalidate(`hr:dashboard:metrics:${orgId}`),
+      this.cache.invalidate(`hr:dashboard:headcount-trends:${orgId}`),
+      this.cache.invalidateNamespaceForOrg(orgId, "hr:celebrations"),
+      this.cache.invalidateNamespace(CACHE_KEYS.hrEmployeesListNamespace(orgId)),
+    ]);
   }
 }

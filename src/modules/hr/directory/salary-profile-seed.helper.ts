@@ -174,7 +174,8 @@ export async function seedEmployeeSalaryProfile(
         eq(salaryComponents.isActive, true),
       ),
     )
-    .orderBy(asc(salaryComponents.sortOrder));
+    .orderBy(asc(salaryComponents.sortOrder))
+    .limit(100);
 
   if (components.length === 0) {
     return { profileId: profile.id, componentCount: 0 };

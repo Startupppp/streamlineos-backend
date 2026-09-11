@@ -37,7 +37,7 @@ jest.mock("../branding", () => ({
 
 jest.mock("../app-url", () => ({ appUrl: () => "https://app.streamlineos.com" }));
 
-import { resolveLocaleText } from "./email-locale";
+import { resolveLocaleText, type LocalizedValues } from "./email-locale";
 import { getVerificationEmailTemplate } from "./auth";
 import { getPayslipEmailTemplate } from "./payroll";
 
@@ -45,7 +45,7 @@ const { resolveLocaleText: mockResolveLocaleText } = jest.requireMock("./email-l
   resolveLocaleText: jest.Mock;
 };
 
-const MAP: Record<string, string> = {
+const MAP: LocalizedValues<string> = {
   en: "English text",
   fr: "French text",
   de: "German text",

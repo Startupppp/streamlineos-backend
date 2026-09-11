@@ -57,8 +57,18 @@ describe("sweepExpiredReservations — RLS guard (bite-proof)", () => {
   });
 
   it("releases exactly the expired rows found inside the per-org tenant context", async () => {
-    const reservationRows = [{ id: 42 }, { id: 43 }];
-    const walletRow = { orgId: "org1", balance: 5000 };
+    /*
+     * Ticket 21 replaced the per-row `runInNewTenantTransaction` release with a
+     * set-based claim inside forEachOrg's own transaction, so the shape under
+     * test is now: one page select, one compare-and-set claim returning the
+     * refunded credits, one atomic wallet increment. The property this test
+     * exists for is unchanged — the sweep must only ever touch the rows the
+     * per-org tenant context handed it, never `this.db` directly.
+     */
+    const expiredRows = [{ id: 42 }, { id: 43 }];
+    const claimedRows = [{ credits: 200 }, { credits: 300 }];
+    let claimWhere: unknown;
+    let walletSet: Record<string, unknown> | undefined;
 
     mockForEachOrg.mockImplementation(
       async (
@@ -66,79 +76,41 @@ describe("sweepExpiredReservations — RLS guard (bite-proof)", () => {
         _name: string,
         fn: (tx: unknown, orgId: string) => Promise<void>,
       ) => {
-        const selectForUpdate = jest.fn().mockResolvedValue([walletRow]);
-        const whereForUpdate = jest.fn().mockReturnValue({ for: () => selectForUpdate() });
-        const fromForUpdate = jest.fn().mockReturnValue({ where: whereForUpdate });
-
-        const selectExpired = jest.fn().mockResolvedValue([]);
-        const whereExpired = jest.fn().mockReturnValue({
-          limit: jest.fn().mockResolvedValue(reservationRows),
-        });
-        const fromExpired = jest.fn().mockReturnValue({ where: whereExpired });
-
-        let selectCall = 0;
-        const txSelect = jest.fn().mockImplementation(() => {
-          if (selectCall++ === 0) return { from: fromExpired };
-          return { from: fromForUpdate };
-        });
-        const txUpdate = jest.fn().mockReturnValue({
-          set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
-        });
-
-        const reservationRow = {
-          id: 42,
-          orgId: "org1",
-          credits: 200,
-          status: "RESERVED",
-          expiresAt: new Date(),
-        };
-        const innerSelectFn = jest.fn().mockReturnValue({
+        const txSelect = jest.fn().mockReturnValue({
           from: jest.fn().mockReturnValue({
             where: jest.fn().mockReturnValue({
-              for: jest.fn().mockResolvedValue([reservationRow]),
+              limit: jest.fn().mockResolvedValue(expiredRows),
             }),
           }),
         });
 
-        const innerTx = tenantTx({
-          select: innerSelectFn,
-          update: txUpdate,
-        });
-
-        const outerTxForRelease = tenantTx({
-          select: jest.fn().mockReturnValueOnce({
-            from: jest.fn().mockReturnValue({
-              where: jest.fn().mockReturnValue({
-                for: jest.fn().mockResolvedValue([reservationRow]),
-              }),
+        let updateCall = 0;
+        const txUpdate = jest.fn().mockImplementation(() => {
+          const isClaim = updateCall++ === 0;
+          return {
+            set: jest.fn().mockImplementation((values: Record<string, unknown>) => {
+              if (!isClaim) walletSet = values;
+              return {
+                where: jest.fn().mockImplementation((predicate: unknown) => {
+                  if (isClaim) claimWhere = predicate;
+                  return isClaim
+                    ? { returning: jest.fn().mockResolvedValue(claimedRows) }
+                    : Promise.resolve([]);
+                }),
+              };
             }),
-          }).mockReturnValue({
-            from: jest.fn().mockReturnValue({
-              where: jest.fn().mockReturnValue({
-                for: jest.fn().mockResolvedValue([walletRow]),
-              }),
-            }),
-          }),
-          update: txUpdate,
-          transaction: jest.fn().mockImplementation(
-            (cb: (tx: unknown) => Promise<unknown>) => cb(innerTx),
-          ),
+          };
         });
 
-        const tx = tenantTx({
-          select: txSelect,
-          update: txUpdate,
-          transaction: jest.fn().mockImplementation(
-            (cb: (tx: unknown) => Promise<unknown>) => cb(outerTxForRelease),
-          ),
-        });
-
-        await fn(tx, "org1");
+        await fn(tenantTx({ select: txSelect, update: txUpdate }), "org1");
         return { organizations: 1, succeeded: 1, failed: 0 };
       },
     );
 
     const db = makeDb({
+      select: jest.fn(() => {
+        throw new Error("sweep read this.db directly — the RLS bypass is back");
+      }),
       transaction: jest.fn().mockResolvedValue(undefined),
     });
     const svc = new (AiCreditsReservationService as unknown as new (
@@ -147,6 +119,10 @@ describe("sweepExpiredReservations — RLS guard (bite-proof)", () => {
 
     const count = await svc.sweepExpiredReservations();
     expect(count).toBe(2);
+    expect(claimWhere).toBeDefined();
+    // The refund is atomic SQL over the column, not a number computed in JS.
+    expect(typeof walletSet?.["balance"]).toBe("object");
+    expect(db.select).not.toHaveBeenCalled();
   });
 
   it("does NOT touch this.db.select directly (proves the RLS bypass is gone)", async () => {

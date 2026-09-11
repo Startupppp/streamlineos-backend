@@ -26,15 +26,14 @@ export interface CalendarEventItem {
   color?: string | null;
   category: string;
   source: "event" | "leave" | "interview" | "task" | "holiday" | "attendance";
+  timezone?: string | null;
   location?: string | null;
-  meetingUrl?: string | null;
   description?: string | null;
   creatorName?: string | null;
   entityId?: string | null;
   entityType?: string | null;
   myRsvpStatus?: string | null;
   projectId?: number | null;
-  linkedTicket?: LinkedTicket | null;
 }
 
 export interface OooConflict {

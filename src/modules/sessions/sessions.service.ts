@@ -1,4 +1,10 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from "@nestjs/common";
 import { and, asc, desc, eq, gt, inArray, isNull, ne, or } from "drizzle-orm";
 import { addDays } from "date-fns";
 import { randomUUID } from "node:crypto";
@@ -8,10 +14,22 @@ import { type Db } from "../../db/drizzle.module";
 import { REDIS } from "../../common/cache/cache.service";
 import type { Redis } from "@upstash/redis";
 import { isApiClientUserAgent, withClientInfo } from "../../common/http/parse-user-agent";
+import { logger } from "../../common/logger/logger.service";
 
 const SESSION_TTL_SECONDS = 8 * 60 * 60;
 const REVOKED_SESSION_INDEX_KEY = "revoked:sessions:index";
 const REVOCATION_PRUNE_BATCH = 200;
+/**
+ * One MSET and one variadic ZADD per chunk. The Upstash REST transport puts the
+ * whole command in one request body, so an unbounded id list is an unbounded
+ * payload; a failed chunk then loses only its own tombstones.
+ */
+const REVOCATION_WRITE_CHUNK = 256;
+/**
+ * The device list is a page, not a dump. Matches the admin twin
+ * `UserProfileService.getUserSessions`, which has always read `.limit(50)`.
+ */
+export const SESSION_LIST_CAP = 50;
 
 @Injectable()
 export class SessionsService {
@@ -60,13 +78,42 @@ export class SessionsService {
       }
     }
 
+    /**
+     * The same "still active" predicate `enforceMaxSessions` uses below. The
+     * asymmetry was the defect: that method has always excluded expired rows,
+     * this one never did, so a session the user signed out of a month ago
+     * rendered in Settings → Security as a live device with a working Revoke
+     * button. Nothing prunes `user_sessions` and
+     * `organizations.max_concurrent_sessions` is nullable with no default, so
+     * without this the list grew one row per sign-in forever.
+     *
+     * `id` breaks the `lastActive` tie so the capped page is a stable
+     * prefix — the cap must not return an arbitrary subset that changes
+     * between two reads of the same state.
+     */
+    const listedAt = new Date();
     const rows = await this.db.query.userSessions.findMany({
-      where: and(eq(userSessions.userId, userId), eq(userSessions.isRevoked, false)),
-      orderBy: [desc(userSessions.lastActive)],
+      where: and(
+        eq(userSessions.userId, userId),
+        eq(userSessions.isRevoked, false),
+        or(isNull(userSessions.expiresAt), gt(userSessions.expiresAt, listedAt)),
+      ),
+      orderBy: [desc(userSessions.lastActive), asc(userSessions.id)],
+      limit: SESSION_LIST_CAP + 1,
       columns: { id: true, userAgent: true, ipAddress: true, lastActive: true, createdAt: true },
     });
 
-    return rows.map((s) => ({
+    if (rows.length > SESSION_LIST_CAP) {
+      // Never a silent truncation. One person holding more than a page of live
+      // sessions is either an integration signing in on a loop or an attack,
+      // and both need to be visible rather than quietly clipped.
+      logger.warn("session list truncated at the page cap", {
+        userId,
+        cap: SESSION_LIST_CAP,
+      });
+    }
+
+    return rows.slice(0, SESSION_LIST_CAP).map((s) => ({
       ...withClientInfo(s),
       isCurrent: s.id === currentSessionId,
     }));
@@ -78,6 +125,7 @@ export class SessionsService {
     }
 
     const target = await this.db.query.userSessions.findFirst({
+      columns: { id: true },
       where: and(eq(userSessions.id, targetSessionId), eq(userSessions.userId, userId)),
     });
 
@@ -101,12 +149,12 @@ export class SessionsService {
 
     if (active.length === 0) return { revokedCount: 0 };
 
-    await this.tombstone(active.map((s) => s.id));
-
     await this.db
       .update(userSessions)
       .set({ isRevoked: true })
       .where(eq(userSessions.userId, userId));
+
+    await this.tombstone(active.map((s) => s.id));
 
     return { revokedCount: active.length };
   }
@@ -121,8 +169,6 @@ export class SessionsService {
 
     if (toRevoke.length === 0) return { revokedCount: 0 };
 
-    await this.tombstone(toRevoke.map((s) => s.id));
-
     await this.db
       .update(userSessions)
       .set({ isRevoked: true })
@@ -133,6 +179,8 @@ export class SessionsService {
           ne(userSessions.id, currentSessionId),
         ),
       );
+
+    await this.tombstone(toRevoke.map((s) => s.id));
 
     return { revokedCount: toRevoke.length };
   }
@@ -201,10 +249,18 @@ export class SessionsService {
       .set({ isRevoked: true })
       .where(and(eq(userSessions.userId, userId), inArray(userSessions.id, ids)));
 
-    await this.tombstone(ids);
+    try {
+      await this.tombstone(ids);
+    } catch (err: unknown) {
+      logger.error("session cap eviction left sessions untombstoned", {
+        userId,
+        sessions: ids.length,
+        cause: describeRedisFailure(err),
+      });
+    }
   }
 
-  // Tombstones carry no TTL on purpose: volatile-lru only evicts keys that have one, and an evicted tombstone silently un-revokes a session.
+  // Tombstones carry no TTL on purpose: volatile-lru only evicts keys that have one, and an evicted tombstone silently un-revokes a session. MSET cannot carry one at all.
   async publishRevocations(sessionIds: string[]): Promise<void> {
     await this.tombstone(sessionIds);
   }
@@ -213,12 +269,37 @@ export class SessionsService {
     if (!this.redis || sessionIds.length === 0) return;
     const redis = this.redis;
     const expiresAt = Date.now() + SESSION_TTL_SECONDS * 1000;
-    await Promise.allSettled(
-      sessionIds.flatMap((id) => [
-        redis.set(`revoked:session:${id}`, true),
-        redis.zadd(REVOKED_SESSION_INDEX_KEY, { score: expiresAt, member: id }),
-      ]),
-    );
+    const unique = [...new Set(sessionIds)];
+    let unwritten = 0;
+    for (let i = 0; i < unique.length; i += REVOCATION_WRITE_CHUNK) {
+      const chunk = unique.slice(i, i + REVOCATION_WRITE_CHUNK);
+      const [head, ...rest] = chunk;
+      if (head === undefined) continue;
+      const [written, indexed] = await Promise.allSettled([
+        redis.mset(Object.fromEntries(chunk.map((id) => [`revoked:session:${id}`, true]))),
+        redis.zadd(
+          REVOKED_SESSION_INDEX_KEY,
+          { score: expiresAt, member: head },
+          ...rest.map((id) => ({ score: expiresAt, member: id })),
+        ),
+      ]);
+      if (indexed?.status === "rejected")
+        logger.error("session revocation index write failed", {
+          sessions: chunk.length,
+          cause: describeRedisFailure(indexed.reason),
+        });
+      if (written?.status === "rejected") {
+        unwritten += chunk.length;
+        logger.error("session revocation tombstone write failed", {
+          sessions: chunk.length,
+          cause: describeRedisFailure(written.reason),
+        });
+      }
+    }
+    if (unwritten > 0)
+      throw new ServiceUnavailableException(
+        `Could not publish ${String(unwritten)} session revocation(s)`,
+      );
   }
 
   async pruneExpiredRevocations(): Promise<{ removed: number }> {
@@ -239,4 +320,10 @@ export class SessionsService {
 
     return { removed: expired.length };
   }
+}
+
+function describeRedisFailure(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  const cause = err.cause;
+  return cause instanceof Error ? `${err.message}: ${cause.message}` : err.message;
 }

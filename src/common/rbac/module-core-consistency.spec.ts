@@ -9,6 +9,10 @@ const ALWAYS_ON_AT_RUNTIME = [
   "kb",
   "mail",
   "notifications",
+  // Always on before it was registered as well — `isCoreModuleKey` answers core
+  // for a key it does not hold — which is the whole reason it needed an entry:
+  // it was always-on by accident rather than by declaration.
+  "tasks",
   "workflows",
 ] as const;
 

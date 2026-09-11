@@ -16,6 +16,7 @@ import type {
   TemplateComponentDef,
 } from "../payroll.types";
 import { DEFAULT_PAYROLL_TOGGLES } from "../payroll.types";
+import { normalizePayrollToggles, toPayrollPolicyConfig, toTemplateComponentDefs } from "../dto/payroll.schemas";
 import { getStatutoryPack } from "../runs/lib/statutory-packs";
 import { DEFAULT_PAYROLL_CALENDAR as DEFAULT_CALENDAR } from "./payroll-policy-defaults.constants";
 import { format } from "date-fns";
@@ -26,6 +27,82 @@ import {
   TOGGLE_STATUTORY_CODES,
   assertBelongsToOrg,
 } from "./lib/policy-builders";
+
+/**
+ * Every key the policy preview puts on the wire, and nothing else.
+ *
+ * This endpoint has NO salary basis: `policyPreviewSchema` is `.strict()` and carries no
+ * `annualCtc`, and the setup wizard's draft never collects one. So it cannot answer a
+ * `monthlyAmount` the way `computeTemplatePreview` does for the template preview sheet, which
+ * takes a CTC from the user. It answers what a component IS, not what it pays — and it now says
+ * so in a shape that is declared here rather than whatever the seed literal or the template
+ * jsonb happens to hold.
+ */
+export const POLICY_PREVIEW_WIRE_KEYS = [
+  "approvalChain",
+  "calendarPlan",
+  "components",
+  "essOptions",
+  "statutoryPack",
+  "toggles",
+] as const;
+
+/** Every key a previewed salary component carries. Always present, `null` when unset. */
+export const POLICY_PREVIEW_COMPONENT_WIRE_KEYS = [
+  "amount",
+  "calcMethod",
+  "code",
+  "formula",
+  "includeInCtc",
+  "isStatutory",
+  "name",
+  "percent",
+  "showOnPayslip",
+  "sortOrder",
+  "statutoryKey",
+  "taxable",
+  "type",
+] as const;
+
+export interface PolicyPreviewComponent {
+  code: string;
+  name: string;
+  type: TemplateComponentDef["type"];
+  calcMethod: TemplateComponentDef["calcMethod"];
+  amount: string | null;
+  percent: string | null;
+  formula: string | null;
+  taxable: boolean;
+  showOnPayslip: boolean;
+  includeInCtc: boolean;
+  isStatutory: boolean;
+  statutoryKey: string | null;
+  sortOrder: number;
+}
+
+/**
+ * A total projection. Both sources reach here through an unchecked `as TemplateComponentDef[]`
+ * — the seed literals are typed, the stored `defaultComponents` jsonb is not — so an absent
+ * optional becomes an explicit `null` and an absent flag becomes `false` rather than a key that
+ * `JSON.stringify` drops on the floor.
+ */
+function toPreviewComponent(component: TemplateComponentDef): PolicyPreviewComponent {
+  return {
+    code: component.code,
+    name: component.name,
+    type: component.type,
+    calcMethod: component.calcMethod,
+    amount: component.amount ?? null,
+    percent: component.percent ?? null,
+    formula: component.formula ?? null,
+    taxable: component.taxable === true,
+    showOnPayslip: component.showOnPayslip === true,
+    includeInCtc: component.includeInCtc === true,
+    isStatutory: component.isStatutory === true,
+    statutoryKey: component.statutoryKey ?? null,
+    sortOrder: Number.isFinite(component.sortOrder) ? component.sortOrder : 0,
+  };
+}
 
 @Injectable()
 export class PolicyQueryService {
@@ -54,11 +131,7 @@ export class PolicyQueryService {
       ),
     });
 
-    const rawPolicyConfig = activeVersion?.config;
-    const config: PayrollPolicyConfig | null =
-      rawPolicyConfig && typeof rawPolicyConfig === "object"
-        ? (rawPolicyConfig as PayrollPolicyConfig)
-        : null;
+    const config = toPayrollPolicyConfig(activeVersion?.config);
 
     let packData: {
       country: string;
@@ -109,15 +182,8 @@ export class PolicyQueryService {
       }
     } else if (input.templateId) {
       const tpl = await this.templatesService.getById(orgId, input.templateId);
-      const rawComponents = tpl.defaultComponents;
-      components = Array.isArray(rawComponents)
-        ? (rawComponents as TemplateComponentDef[])
-        : [];
-      const rawToggles = tpl.defaultToggles;
-      baseToggles =
-        rawToggles && typeof rawToggles === "object"
-          ? { ...DEFAULT_PAYROLL_TOGGLES, ...(rawToggles as Partial<PayrollToggles>) }
-          : { ...DEFAULT_PAYROLL_TOGGLES };
+      components = toTemplateComponentDefs(tpl.defaultComponents);
+      baseToggles = normalizePayrollToggles(tpl.defaultToggles);
     }
 
     const toggles: PayrollToggles = { ...baseToggles, ...(input.toggleOverrides ?? {}) };
@@ -162,7 +228,14 @@ export class PolicyQueryService {
       complianceChecklist: pack.complianceChecklist,
     };
 
-    return { toggles, components, approvalChain, calendarPlan, essOptions, statutoryPack };
+    return {
+      toggles,
+      components: components.map(toPreviewComponent),
+      approvalChain,
+      calendarPlan,
+      essOptions,
+      statutoryPack,
+    };
   }
 
   async listVersions(orgId: string, policyId: number) {

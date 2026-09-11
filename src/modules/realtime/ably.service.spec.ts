@@ -44,25 +44,33 @@ describe("AblyService capabilities", () => {
     expect(capability["cell:legacy-1:chat:org-1:8"]).toBeUndefined();
   });
 
-  it("never grants a wildcard chat or huddle capability", () => {
+  it("never grants a wildcard capability of any kind on a chat token", () => {
     const { capability } = capabilityFor(service, () =>
       service.createChatTokenRequest("user-1", "org-1", [7]),
     );
 
-    for (const resource of Object.keys(capability)) {
-      const isOwnSignalChannel = resource === "cell:legacy-1:huddle-signal:org-1:*:user-1";
-      if (isOwnSignalChannel) continue;
-      expect(resource).not.toContain("*");
-    }
+    for (const resource of Object.keys(capability)) expect(resource).not.toContain("*");
   });
 
-  it("scopes huddle signalling to the caller and makes it subscribe-only", () => {
+  /**
+   * The mesh is gone: the transport is a Google Meet link, so no browser signals a peer and the
+   * one wildcard this token ever carried — `huddle-signal:{org}:*:{clientId}` — has no consumer.
+   * A grant nobody uses is a grant an attacker can still use.
+   */
+  it("grants no huddle-signal channel at all", () => {
     const { capability } = capabilityFor(service, () =>
       service.createChatTokenRequest("user-1", "org-1", [7]),
     );
 
-    expect(capability["cell:legacy-1:huddle-signal:org-1:*:user-1"]).toEqual(["subscribe"]);
-    expect(capability["cell:legacy-1:huddle-signal:org-1:*"]).toBeUndefined();
+    expect(Object.keys(capability).filter((r) => r.includes("huddle-signal"))).toEqual([]);
+  });
+
+  it("still grants the huddle lifecycle channel, which drives the panel", () => {
+    const { capability } = capabilityFor(service, () =>
+      service.createChatTokenRequest("user-1", "org-1", [7]),
+    );
+
+    expect(capability["cell:legacy-1:huddle:org-1:7"]).toEqual(["subscribe", "publish"]);
   });
 
   it("grants notifications only on the caller's own channel", () => {
@@ -74,14 +82,68 @@ describe("AblyService capabilities", () => {
     expect(capability["cell:legacy-1:notifications:org-1:user-2"]).toBeUndefined();
   });
 
-  it("issues no channel capability when the user belongs to nothing", () => {
+  it("issues no per-channel capability when the user belongs to nothing", () => {
     const { capability } = capabilityFor(service, () =>
       service.createChatTokenRequest("user-1", "org-1", []),
     );
 
+    // The org-wide presence channel is not a per-channel grant and is deliberately
+    // excluded: it carries no messages, only the presence set, and a member with no
+    // channels still has to be able to appear online.
     expect(
-      Object.keys(capability).filter((r) => r.includes(":chat:")),
+      Object.keys(capability).filter(
+        (r) => r.includes(":chat:") && r !== "cell:legacy-1:chat:org-1:presence",
+      ),
     ).toEqual([]);
+  });
+
+  /**
+   * `useChatPresence` (frontend/features/chat/use-chat-presence.ts) enters the presence
+   * set on `chat:{orgId}:presence`. Ably requires the `presence` operation to ENTER a
+   * presence set — `subscribe` only reads it — and this capability map carried no key for
+   * that channel at all, so every `presence.enter` was refused with a 403 the hook
+   * swallows in its `.catch(() => {})`. Nobody ever appeared online and nothing said so.
+   */
+  it("grants the org-wide chat presence channel with the presence operation", () => {
+    const { capability } = capabilityFor(service, () =>
+      service.createChatTokenRequest("user-1", "org-1", [7]),
+    );
+
+    expect(capability["cell:legacy-1:chat:org-1:presence"]).toEqual([
+      "subscribe",
+      "presence",
+    ]);
+  });
+
+  it("scopes chat presence to the caller's own org and never lets it publish", () => {
+    const { capability } = capabilityFor(service, () =>
+      service.createChatTokenRequest("user-1", "org-1", [7]),
+    );
+
+    expect(capability["cell:legacy-1:chat:org-2:presence"]).toBeUndefined();
+    expect(capability["cell:legacy-1:chat:org-1:presence"]).not.toContain(
+      "publish",
+    );
+    expect(capability["cell:legacy-1:chat:org-1:presence"]).not.toContain(
+      "history",
+    );
+  });
+
+  it("grants presence even when the caller belongs to no channel", () => {
+    const { capability } = capabilityFor(service, () =>
+      service.createChatTokenRequest("user-1", "org-1", []),
+    );
+
+    expect(capability["cell:legacy-1:chat:org-1:presence"]).toEqual([
+      "subscribe",
+      "presence",
+    ]);
+  });
+
+  it("builds the presence channel name the frontend asks Ably for", () => {
+    expect(service.presenceChannelName("org-1")).toBe(
+      "cell:legacy-1:chat:org-1:presence",
+    );
   });
 
   it("does not let a support client publish", () => {
@@ -122,6 +184,34 @@ describe("AblyService capabilities", () => {
 });
 
 describe("AblyService durable publish contract", () => {
+  it("revokes a previously minted publish/subscribe token before the refreshed capability is narrowed", async () => {
+    const service = new AblyService({ ABLY_API_KEY: "app.key:secret", CELL_ID: undefined });
+    const revokeTokens = jest.fn().mockResolvedValue(undefined);
+    let captured: CapturedTokenParams | undefined;
+    Reflect.set(service, "restClient", {
+      auth: {
+        createTokenRequest: (params: CapturedTokenParams) => {
+          captured = params;
+          return Promise.resolve({} as Ably.TokenRequest);
+        },
+        revokeTokens,
+      },
+    });
+
+    await service.createChatTokenRequest("removed-user", "org-1", [7]);
+    expect(captured?.capability["cell:legacy-1:chat:org-1:7"]).toEqual([
+      "subscribe",
+      "publish",
+      "history",
+    ]);
+
+    await service.revokeUserTokens("removed-user");
+    expect(revokeTokens).toHaveBeenCalledWith([{ type: "clientId", value: "removed-user" }]);
+
+    await service.createChatTokenRequest("removed-user", "org-1", []);
+    expect(captured?.capability["cell:legacy-1:chat:org-1:7"]).toBeUndefined();
+  });
+
   it("rejects a durable publish when Ably is not configured", async () => {
     const service = new AblyService({ ABLY_API_KEY: undefined, CELL_ID: undefined });
     await expect(service.publishChatMessage("org-1", 1, {} as never, {

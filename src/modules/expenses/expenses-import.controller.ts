@@ -8,6 +8,8 @@ import { ExpensesImportService } from "./expenses-import.service";
 import { importSchema, type ImportInput } from "./dto/expense-import.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { expenseImportResultSchema } from "./dto/expenses-response.schemas";
 
 @RequireModule("accounting")
 @Controller("hr/expenses/import")
@@ -19,6 +21,7 @@ export class ExpensesImportController {
   @HttpCode(200)
   @RequirePermission("hr:expenses:manage")
   @Validate({ body: importSchema })
+  @ResponseSchema(expenseImportResultSchema)
   importExpenses(
     @Body() body: ImportInput,
     @CurrentUser() u: CurrentUserContext,

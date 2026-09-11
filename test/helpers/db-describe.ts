@@ -11,4 +11,7 @@ function loudSkip(name: string, fn: () => void): void {
 
 export const describeWithDb: SuiteFactory = RBAC_E2E_DATABASE_URL ? describe : loudSkip;
 
+// For a suite that overrides DRIZZLE with a mock: it opens no connection, so gating it on a database URL only hides it.
+export const describeWithMockedDb: SuiteFactory = describe;
+
 export { RBAC_E2E_DATABASE_URL };

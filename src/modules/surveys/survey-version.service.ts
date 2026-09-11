@@ -10,6 +10,7 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { assertSurveyInOrg } from "./survey-tenant";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -17,7 +18,7 @@ function remapQuestionIds(node: unknown, idMap: Map<number, number>): unknown {
   if (Array.isArray(node)) return node.map((item) => remapQuestionIds(item, idMap));
   if (node && typeof node === "object") {
     const out: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+    for (const [key, value] of Object.entries(node)) {
       if (key === "questionId" && typeof value === "number" && idMap.has(value)) {
         out[key] = idMap.get(value);
       } else {
@@ -29,9 +30,22 @@ function remapQuestionIds(node: unknown, idMap: Map<number, number>): unknown {
   return node;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function remapQuestionIdsInRecord(node: Record<string, unknown>, idMap: Map<number, number>): Record<string, unknown> {
+  const remapped = remapQuestionIds(node, idMap);
+  return isRecord(remapped) ? remapped : {};
+}
+
 @Injectable()
 export class SurveyVersionService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+
+  async assertSurveyInOrg(orgId: string, surveyId: number) {
+    await assertSurveyInOrg(this.db, orgId, surveyId);
+  }
 
   async getDraftVersion(orgId: string, surveyId: number) {
     const existing = await this.db.query.surveyVersions.findFirst({
@@ -39,6 +53,8 @@ export class SurveyVersionService {
       orderBy: [desc(surveyVersions.versionNumber)],
     });
     if (existing) return existing;
+
+    await this.assertSurveyInOrg(orgId, surveyId);
 
     const [created] = await this.db
       .insert(surveyVersions)
@@ -154,20 +170,26 @@ export class SurveyVersionService {
       orderBy: [asc(surveySections.sortOrder)],
     });
     const sectionIdMap = new Map<number, number>();
-    for (const section of sourceSections) {
-      const [cloned] = await tx
+    if (sourceSections.length > 0) {
+      const clonedSections = await tx
         .insert(surveySections)
-        .values({
-          orgId,
-          surveyId,
-          versionId: newVersion.id,
-          title: section.title,
-          description: section.description,
-          sortOrder: section.sortOrder,
-          settings: section.settings,
-        })
+        .values(
+          sourceSections.map((section) => ({
+            orgId,
+            surveyId,
+            versionId: newVersion.id,
+            title: section.title,
+            description: section.description,
+            sortOrder: section.sortOrder,
+            settings: section.settings,
+          })),
+        )
         .returning();
-      sectionIdMap.set(section.id, cloned.id);
+      for (let i = 0; i < sourceSections.length; i++) {
+        const src = sourceSections[i];
+        const dst = clonedSections[i];
+        if (src && dst) sectionIdMap.set(src.id, dst.id);
+      }
     }
 
     const sourceQuestions = await tx.query.surveyQuestions.findMany({
@@ -176,30 +198,36 @@ export class SurveyVersionService {
       with: { choices: { orderBy: [asc(surveyQuestionChoices.sortOrder)] } },
     });
     const questionIdMap = new Map<number, number>();
-    for (const question of sourceQuestions) {
-      const [cloned] = await tx
+    if (sourceQuestions.length > 0) {
+      const clonedQuestions = await tx
         .insert(surveyQuestions)
-        .values({
-          orgId,
-          surveyId,
-          versionId: newVersion.id,
-          sectionId: sectionIdMap.get(question.sectionId) ?? question.sectionId,
-          questionKey: question.questionKey,
-          variableName: question.variableName,
-          type: question.type,
-          title: question.title,
-          description: question.description,
-          required: question.required,
-          settings: question.settings,
-          validation: question.validation,
-          scoring: question.scoring,
-          sortOrder: question.sortOrder,
-        })
+        .values(
+          sourceQuestions.map((question) => ({
+            orgId,
+            surveyId,
+            versionId: newVersion.id,
+            sectionId: sectionIdMap.get(question.sectionId) ?? question.sectionId,
+            questionKey: question.questionKey,
+            variableName: question.variableName,
+            type: question.type,
+            title: question.title,
+            description: question.description,
+            required: question.required,
+            settings: question.settings,
+            validation: question.validation,
+            scoring: question.scoring,
+            sortOrder: question.sortOrder,
+          })),
+        )
         .returning();
-      questionIdMap.set(question.id, cloned.id);
-
-      for (const choice of question.choices) {
-        await tx.insert(surveyQuestionChoices).values({
+      for (let i = 0; i < sourceQuestions.length; i++) {
+        const src = sourceQuestions[i];
+        const dst = clonedQuestions[i];
+        if (src && dst) questionIdMap.set(src.id, dst.id);
+      }
+      const allChoices = clonedQuestions.flatMap((cloned, qi) => {
+        const choices = sourceQuestions[qi]?.choices ?? [];
+        return choices.map((choice) => ({
           orgId,
           questionId: cloned.id,
           choiceKey: choice.choiceKey,
@@ -208,7 +236,10 @@ export class SurveyVersionService {
           score: choice.score,
           sortOrder: choice.sortOrder,
           isCorrect: choice.isCorrect,
-        });
+        }));
+      });
+      if (allChoices.length > 0) {
+        await tx.insert(surveyQuestionChoices).values(allChoices);
       }
     }
 
@@ -216,18 +247,19 @@ export class SurveyVersionService {
       where: and(eq(surveyLogicRules.orgId, orgId), eq(surveyLogicRules.versionId, fromVersionId)),
       orderBy: [asc(surveyLogicRules.sortOrder)],
     });
-    for (const rule of sourceLogicRules) {
-      const remappedSourceId = questionIdMap.get(rule.sourceQuestionId) ?? rule.sourceQuestionId;
-      await tx.insert(surveyLogicRules).values({
-        orgId,
-        surveyId,
-        versionId: newVersion.id,
-        sourceQuestionId: remappedSourceId,
-        condition: remapQuestionIds(rule.condition, questionIdMap) as Record<string, unknown>,
-        action: remapQuestionIds(rule.action, questionIdMap) as Record<string, unknown>,
-        target: rule.target ? (remapQuestionIds(rule.target, questionIdMap) as Record<string, unknown>) : null,
-        sortOrder: rule.sortOrder,
-      });
+    if (sourceLogicRules.length > 0) {
+      await tx.insert(surveyLogicRules).values(
+        sourceLogicRules.map((rule) => ({
+          orgId,
+          surveyId,
+          versionId: newVersion.id,
+          sourceQuestionId: questionIdMap.get(rule.sourceQuestionId) ?? rule.sourceQuestionId,
+          condition: remapQuestionIdsInRecord(rule.condition, questionIdMap),
+          action: remapQuestionIdsInRecord(rule.action, questionIdMap),
+          target: rule.target ? remapQuestionIdsInRecord(rule.target, questionIdMap) : null,
+          sortOrder: rule.sortOrder,
+        })),
+      );
     }
 
     return newVersion;

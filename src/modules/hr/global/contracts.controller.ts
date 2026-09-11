@@ -25,6 +25,7 @@ import {
   listContractsSchema,
   endContractSchema,
   convertToEmployeeSchema,
+  daysQuerySchema,
   type CreateContractInput,
   type UpdateContractInput,
   type ListContractsInput,
@@ -32,10 +33,10 @@ import {
   type ConvertToEmployeeInput,
 } from "./dto/hr-global.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts"
+import { listContractsResponseSchema, listExpiringContractsResponseSchema, getContractResponseSchema, createContractResponseSchema, updateContractResponseSchema, endContractResponseSchema, convertToEmployeeResponseSchema, internshipCertificateResponseSchema, renewContractResponseSchema } from "./dto/global-response.schemas"
 
 const contractIdParams = z.object({ contractId: z.coerce.number().int().positive() }).strict();
-
-const daysQuerySchema = z.object({ days: z.coerce.number().int().min(1).max(3650).default(30) });
 
 @RequireModule("hr")
 @Controller("hr/global/contracts")
@@ -43,6 +44,7 @@ const daysQuerySchema = z.object({ days: z.coerce.number().int().min(1).max(3650
 export class ContractsController {
   constructor(private readonly service: ContractsService) {}
 
+  @ResponseSchema(listContractsResponseSchema)
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:contracts:view")
@@ -54,6 +56,7 @@ export class ContractsController {
     return this.service.list(u.orgId, query);
   }
 
+  @ResponseSchema(listExpiringContractsResponseSchema)
   @Get("renewal-due")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:contracts:manage")
@@ -65,6 +68,7 @@ export class ContractsController {
     return this.service.list(u.orgId, { limit: 100, days, status: "active" });
   }
 
+  @ResponseSchema(getContractResponseSchema)
   @Get(":contractId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:contracts:view")
@@ -76,6 +80,7 @@ export class ContractsController {
     return this.service.getOne(u.orgId, contractId);
   }
 
+  @ResponseSchema(createContractResponseSchema)
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:contracts:manage")
@@ -88,6 +93,7 @@ export class ContractsController {
     return this.service.create(u.orgId, u.userId, body);
   }
 
+  @ResponseSchema(updateContractResponseSchema)
   @Patch(":contractId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:contracts:manage")
@@ -100,6 +106,7 @@ export class ContractsController {
     return this.service.update(u.orgId, contractId, u.userId, body);
   }
 
+  @ResponseSchema(endContractResponseSchema)
   @Post(":contractId/end")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:contracts:manage")
@@ -113,6 +120,7 @@ export class ContractsController {
     return this.service.endContract(u.orgId, contractId, u.userId, body);
   }
 
+  @ResponseSchema(convertToEmployeeResponseSchema)
   @Post(":contractId/convert-to-employee")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:contracts:manage")
@@ -126,6 +134,7 @@ export class ContractsController {
     return this.service.convertToEmployee(u.orgId, contractId, u.userId, body);
   }
 
+  @ResponseSchema(internshipCertificateResponseSchema)
   @Get(":contractId/internship-certificate")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:contracts:view")
@@ -137,6 +146,7 @@ export class ContractsController {
     return this.service.renderInternshipCertificate(u.orgId, contractId, u.userId);
   }
 
+  @ResponseSchema(endContractResponseSchema)
   @Delete(":contractId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:contracts:manage")

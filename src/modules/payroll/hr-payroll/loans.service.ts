@@ -1,54 +1,96 @@
 import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
-import { salaryLoans, auditLogs, organizationMembers } from "../../../db/schema";
+import { and, count, desc, eq } from "drizzle-orm";
+import {
+  salaryLoans,
+  auditLogs,
+  organizationMembers,
+} from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CreateLoanInput, UpdateLoanInput } from "./dto/payroll.schemas";
+import { buildListResponse } from "../../../common/pagination/pagination";
+
+export type UpdateLoanResult =
+  | { ok: false; reason: "not_found" | "own_request" }
+  | { ok: true };
 
 @Injectable()
 export class LoansService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listLoans(orgId: string, userId: string, membershipId: number | null, isAdmin: boolean, page = 1, limit = 100) {
+  async listLoans(
+    orgId: string,
+    userId: string,
+    membershipId: number | null,
+    isAdmin: boolean,
+    page = 1,
+    limit = 100,
+  ) {
     const conditions = [eq(salaryLoans.orgId, orgId)];
     if (!isAdmin) {
-      if (membershipId != null) {
-        conditions.push(eq(salaryLoans.userMembershipId, membershipId));
-      } else {
-        conditions.push(eq(salaryLoans.userId, userId));
-      }
+      if (membershipId === null)
+        throw new ForbiddenException("Organization membership required");
+      conditions.push(eq(salaryLoans.userMembershipId, membershipId));
     }
 
-    return this.db.query.salaryLoans.findMany({
-      where: and(...conditions),
-      with: {
-        user: {
-          columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true },
+    const where = and(...conditions);
+    const [rows, [totalRow]] = await Promise.all([
+      this.db.query.salaryLoans.findMany({
+        where,
+        with: {
+          user: {
+            columns: {
+              id: true,
+              name: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              image: true,
+            },
+          },
         },
-      },
-      orderBy: [desc(salaryLoans.createdAt)],
-      limit,
-      offset: (page - 1) * limit,
-    });
+        orderBy: [desc(salaryLoans.createdAt)],
+        limit,
+        offset: (page - 1) * limit,
+      }),
+      this.db.select({ total: count() }).from(salaryLoans).where(where),
+    ]);
+
+    return buildListResponse(rows, Number(totalRow?.total ?? 0), { page, pageSize: limit });
   }
 
-  async createLoan(orgId: string, userId: string, isAdmin: boolean, body: CreateLoanInput) {
+  async createLoan(
+    orgId: string,
+    userId: string,
+    membershipId: number | null,
+    isAdmin: boolean,
+    body: CreateLoanInput,
+  ) {
     const emiAmount = body.amount / body.totalEmis;
+    if (!isAdmin && membershipId === null)
+      throw new ForbiddenException("Organization membership required");
     const targetUserId = isAdmin && body.userId ? body.userId : userId;
 
     const targetMember = await this.db.query.organizationMembers.findFirst({
-      where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, targetUserId)),
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, targetUserId),
+      ),
       columns: { id: true },
     });
     if (targetUserId !== userId && !targetMember)
-      throw new ForbiddenException("Employee is not a member of this organization");
+      throw new ForbiddenException(
+        "Employee is not a member of this organization",
+      );
 
     const [loan] = await this.db
       .insert(salaryLoans)
       .values({
         orgId,
         userId: targetUserId,
-        userMembershipId: targetMember?.id ?? undefined,
+        userMembershipId:
+          targetMember?.id ??
+          (targetUserId === userId ? membershipId : undefined),
         amount: body.amount.toString(),
         reason: body.reason,
         emiAmount: emiAmount.toFixed(2),
@@ -60,15 +102,24 @@ export class LoansService {
     return loan;
   }
 
-  async updateLoan(orgId: string, userId: string, loanId: number, body: UpdateLoanInput): Promise<{ ok: boolean }> {
+  async updateLoan(
+    orgId: string,
+    userId: string,
+    loanId: number,
+    body: UpdateLoanInput,
+  ): Promise<UpdateLoanResult> {
     const existing = await this.db.query.salaryLoans.findFirst({
       where: and(eq(salaryLoans.id, loanId), eq(salaryLoans.orgId, orgId)),
     });
-    if (!existing) return { ok: false };
+    if (!existing) return { ok: false, reason: "not_found" };
+    if (existing.userId === userId) return { ok: false, reason: "own_request" };
 
     const patch = {
       ...(body.status && { status: body.status }),
-      ...(body.status === "APPROVED" && { approvedBy: userId, approvedAt: new Date() }),
+      ...(body.status === "APPROVED" && {
+        approvedBy: userId,
+        approvedAt: new Date(),
+      }),
       ...(body.status === "ACTIVE" && { disbursedAt: new Date() }),
       ...(body.paidEmis !== undefined && { paidEmis: body.paidEmis }),
       updatedAt: new Date(),
@@ -76,7 +127,10 @@ export class LoansService {
 
     if (body.status && body.status !== existing.status) {
       await this.db.transaction(async (tx) => {
-        await tx.update(salaryLoans).set(patch).where(and(eq(salaryLoans.id, loanId), eq(salaryLoans.orgId, orgId)));
+        await tx
+          .update(salaryLoans)
+          .set(patch)
+          .where(and(eq(salaryLoans.id, loanId), eq(salaryLoans.orgId, orgId)));
         await tx.insert(auditLogs).values({
           action: "loan.status_changed",
           userId,
@@ -88,7 +142,10 @@ export class LoansService {
         });
       });
     } else {
-      await this.db.update(salaryLoans).set(patch).where(and(eq(salaryLoans.id, loanId), eq(salaryLoans.orgId, orgId)));
+      await this.db
+        .update(salaryLoans)
+        .set(patch)
+        .where(and(eq(salaryLoans.id, loanId), eq(salaryLoans.orgId, orgId)));
     }
 
     return { ok: true };

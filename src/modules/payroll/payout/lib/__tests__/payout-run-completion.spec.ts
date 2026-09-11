@@ -1,17 +1,15 @@
 import type { RunCompletionDeps } from "../payout-run-completion";
 import { checkRunCompletion } from "../payout-run-completion";
 import { registerAfterCommit } from "../../../../../common/tenant/tenant-context";
+import { PAYROLL_RUN_PAYOUT_POSTING_INTENT_EVENT } from "../../payroll-payout-posting-intent.consumer";
 
 jest.mock("../../../../../common/tenant/tenant-context", () => ({
   registerAfterCommit: jest.fn(),
 }));
-jest.mock("../../../../../common/auth/system-actor", () => ({
-  systemActor: jest.fn().mockReturnValue({ userId: "system", orgId: "org-1" }),
-}));
 
-const mockRegisterAfterCommit = registerAfterCommit as jest.MockedFunction<typeof registerAfterCommit>;
-
-type PostPaidFn = RunCompletionDeps["payrollPosting"]["postPaid"];
+const mockRegisterAfterCommit = registerAfterCommit as jest.MockedFunction<
+  typeof registerAfterCommit
+>;
 
 function mkWhere(data: unknown[]) {
   return {
@@ -21,15 +19,46 @@ function mkWhere(data: unknown[]) {
   };
 }
 
-function makeDb(overrides?: { pendingCount?: number }) {
-  const { pendingCount = 0 } = overrides ?? {};
+interface TxRecorder {
+  inserted: unknown[];
+}
+
+interface DbOverrides {
+  /** distinct payees carrying a bank instruction on this run */
+  subjects?: number;
+  /** distinct payees whose instruction settled PAID */
+  paidSubjects?: number;
+  /**
+   * Run payees who are owed money and are not on hold — the set a completed
+   * run must have covered. Defaults to `paidSubjects`, i.e. a run where the
+   * batch reached everyone.
+   */
+  payable?: number;
+  runStatus?: string;
+  /** Integer paise actually disbursed, as the aggregate returns it (text). */
+  paidNetPaise?: string;
+}
+
+function makeDb(overrides?: DbOverrides) {
+  const {
+    subjects = 1,
+    paidSubjects = 1,
+    payable = paidSubjects,
+    runStatus = "PROCESSING",
+    paidNetPaise = "100000000",
+  } = overrides ?? {};
   let outerSelectCall = 0;
+  const recorder: TxRecorder = { inserted: [] };
 
   const tx = {
     select: jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue({
         where: jest.fn().mockReturnValue({
-          limit: jest.fn().mockResolvedValue([{ status: "PROCESSING" }]),
+          limit: jest
+            .fn()
+            .mockResolvedValue([
+              { status: runStatus, month: "2026-08", netTotal: "1000000" },
+            ]),
         }),
       }),
     }),
@@ -37,11 +66,14 @@ function makeDb(overrides?: { pendingCount?: number }) {
       set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
     }),
     insert: jest.fn().mockReturnValue({
-      values: jest.fn().mockResolvedValue([]),
+      values: jest.fn().mockImplementation((v: unknown) => {
+        recorder.inserted.push(v);
+        return Promise.resolve([]);
+      }),
     }),
   };
 
-  return {
+  const db = {
     query: {
       payrollBankBatches: {
         findFirst: jest.fn().mockResolvedValue({ runId: 100 }),
@@ -50,26 +82,60 @@ function makeDb(overrides?: { pendingCount?: number }) {
         findFirst: jest.fn().mockResolvedValue(null),
       },
     },
+    // The reads checkRunCompletion issues, in order: the run's batches, the
+    // batched coverage aggregate, the run's payable-payee count, the paid
+    // instruction ids, and the paise those paid payees are owed.
     select: jest.fn().mockImplementation(() => {
       const call = outerSelectCall++;
       const data =
-        call === 0 ? [{ id: 1 }] :
-        call === 1 ? Array.from({ length: pendingCount }, (_, i) => ({ id: i + 1 })) :
-        call === 2 ? [{ runEmployeeId: 50 }] :
-        [{ month: "2026-08", netTotal: "1000000" }];
-      return { from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue(mkWhere(data)) }) };
+        call === 0
+          ? [{ id: 1 }]
+          : call === 1
+            ? [{ subjects, paidSubjects }]
+            : call === 2
+              ? [{ payable }]
+              : call === 3
+                ? Array.from({ length: paidSubjects }, (_, i) => ({ runEmployeeId: 50 + i }))
+                : [{ totalPaise: paidNetPaise }];
+      return {
+        from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue(mkWhere(data)) }),
+      };
     }),
     transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => unknown) => cb(tx)),
   };
+
+  return { db, recorder };
 }
 
-function makeDeps(overrides?: { pendingCount?: number }): RunCompletionDeps {
+function makeDeps(overrides?: DbOverrides): {
+  deps: RunCompletionDeps;
+  recorder: TxRecorder;
+} {
+  const { db, recorder } = makeDb(overrides);
   return {
-    db: makeDb(overrides) as never,
-    audit: { log: jest.fn() } as never,
-    payrollPosting: { postPaid: jest.fn().mockResolvedValue(undefined) } as never,
-    logger: { log: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() } as never,
+    deps: {
+      db: db as never,
+      audit: { log: jest.fn() } as never,
+      logger: {
+        log: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+      } as never,
+    },
+    recorder,
   };
+}
+
+function postingIntents(recorder: TxRecorder): Record<string, unknown>[] {
+  return recorder.inserted.filter(
+    (row): row is Record<string, unknown> =>
+      typeof row === "object" &&
+      row !== null &&
+      !Array.isArray(row) &&
+      (row as Record<string, unknown>).eventType ===
+        PAYROLL_RUN_PAYOUT_POSTING_INTENT_EVENT,
+  );
 }
 
 beforeEach(() => {
@@ -77,69 +143,155 @@ beforeEach(() => {
   mockRegisterAfterCommit.mockReturnValue(true);
 });
 
-describe("checkRunCompletion — postPaid accounting side-effect", () => {
-  it("registers postPaid as an after-commit hook and does not call it synchronously", async () => {
-    const deps = makeDeps();
+describe("checkRunCompletion — the paid posting intent commits on the run transaction", () => {
+  it("emits exactly one payout posting intent inside the transaction that marks the run PAID", async () => {
+    const { deps, recorder } = makeDeps();
 
     await checkRunCompletion(deps, "org-1", 1, "actor-1");
 
-    expect(mockRegisterAfterCommit).toHaveBeenCalledTimes(2);
-    expect(deps.payrollPosting.postPaid).not.toHaveBeenCalled();
-  });
-
-  it("the registered hook calls postPaid with the correct run data when invoked", async () => {
-    let capturedHook: (() => Promise<unknown>) | undefined;
-    mockRegisterAfterCommit.mockImplementation((hook) => {
-      capturedHook ??= hook;
-      return true;
+    const intents = postingIntents(recorder);
+    expect(intents).toHaveLength(1);
+    expect(intents[0]).toMatchObject({
+      organizationId: "org-1",
+      aggregateType: "payroll_run",
+      aggregateId: "100",
+      eventType: PAYROLL_RUN_PAYOUT_POSTING_INTENT_EVENT,
     });
-    const deps = makeDeps();
+  });
+
+  it("carries the run's month and the disbursed net in the payload so the consumer needs no extra read", async () => {
+    const { deps, recorder } = makeDeps();
 
     await checkRunCompletion(deps, "org-1", 1, "actor-1");
 
-    expect(capturedHook).toBeDefined();
-    await capturedHook!();
-
-    expect(deps.payrollPosting.postPaid).toHaveBeenCalledTimes(1);
-    expect(deps.payrollPosting.postPaid).toHaveBeenCalledWith(
-      expect.anything(),
-      100,
-      "2026-08",
-      "1000000",
-    );
+    expect(postingIntents(recorder)[0]?.payload).toEqual({
+      runId: 100,
+      month: "2026-08",
+      net: "1000000.00",
+      actorUserId: "actor-1",
+      orgId: "org-1",
+    });
   });
 
-  it("calls postPaid inline when registerAfterCommit returns false (no ambient context)", async () => {
-    mockRegisterAfterCommit.mockReturnValue(false);
-    const deps = makeDeps();
+  it("posts what the bank moved, not the run's net total, when a payee is held back", async () => {
+    // Nine of ten payees settle; the tenth is on hold, so the run's ₹1,000,000
+    // net total overstates the disbursement by that payee's ₹100,000. Posting
+    // the run total would credit BANK_CLEARING for money that never moved and
+    // write off a payable that is still owed.
+    const { deps, recorder } = makeDeps({
+      subjects: 9,
+      paidSubjects: 9,
+      payable: 9,
+      paidNetPaise: "90000000",
+    });
 
     await checkRunCompletion(deps, "org-1", 1, "actor-1");
 
-    expect(deps.payrollPosting.postPaid).toHaveBeenCalledTimes(1);
-    expect(deps.payrollPosting.postPaid).toHaveBeenCalledWith(
-      expect.anything(),
-      100,
-      "2026-08",
-      "1000000",
-    );
+    const intents = postingIntents(recorder);
+    expect(intents).toHaveLength(1);
+    expect(intents[0]?.payload).toMatchObject({ net: "900000.00" });
   });
 
-  it("checkRunCompletion resolves even when postPaid would fail (postPaid is deferred, not in-flight)", async () => {
-    const deps = makeDeps();
-    (deps.payrollPosting.postPaid as jest.MockedFunction<PostPaidFn>).mockRejectedValue(
-      new Error("accounting unavailable"),
-    );
-
-    await expect(checkRunCompletion(deps, "org-1", 1, "actor-1")).resolves.toBeUndefined();
-    expect(deps.payrollPosting.postPaid).not.toHaveBeenCalled();
-  });
-
-  it("does not call postPaid or registerAfterCommit when pending batch items remain", async () => {
-    const deps = makeDeps({ pendingCount: 2 });
+  it("never marks the run PAID while a payee who is owed money never reached a batch", async () => {
+    // Every instruction settled — but the batch only ever held nine of the ten
+    // payees the run owes, and the missing one is not on hold.
+    const { deps, recorder } = makeDeps({ subjects: 9, paidSubjects: 9, payable: 10 });
 
     await checkRunCompletion(deps, "org-1", 1, "actor-1");
 
+    expect(postingIntents(recorder)).toHaveLength(0);
     expect(mockRegisterAfterCommit).not.toHaveBeenCalled();
-    expect(deps.payrollPosting.postPaid).not.toHaveBeenCalled();
+  });
+
+  it("records the disbursed net beside the run's net total on the MARKED_PAID event", async () => {
+    const { deps, recorder } = makeDeps({
+      subjects: 9,
+      paidSubjects: 9,
+      payable: 9,
+      paidNetPaise: "90000000",
+    });
+
+    await checkRunCompletion(deps, "org-1", 1, "actor-1");
+
+    const markedPaid = recorder.inserted.find(
+      (row): row is Record<string, unknown> =>
+        typeof row === "object" &&
+        row !== null &&
+        !Array.isArray(row) &&
+        (row as Record<string, unknown>).type === "MARKED_PAID",
+    );
+    expect(markedPaid?.metadata).toEqual({
+      paidCount: 9,
+      payableCount: 9,
+      netDisbursed: "900000.00",
+      netTotal: "1000000",
+    });
+  });
+
+  it("never defers the accounting post to an after-commit hook — only the journal snapshot is deferred", async () => {
+    const { deps } = makeDeps();
+
+    await checkRunCompletion(deps, "org-1", 1, "actor-1");
+
+    expect(mockRegisterAfterCommit).toHaveBeenCalledTimes(1);
+  });
+
+  it("emits no posting intent when pending batch items remain", async () => {
+    const { deps, recorder } = makeDeps({ subjects: 3, paidSubjects: 1 });
+
+    await checkRunCompletion(deps, "org-1", 1, "actor-1");
+
+    expect(postingIntents(recorder)).toHaveLength(0);
+    expect(mockRegisterAfterCommit).not.toHaveBeenCalled();
+  });
+
+  it("never marks the run PAID when every bank item FAILED — nobody was actually paid", async () => {
+    const { deps, recorder } = makeDeps({ subjects: 4, paidSubjects: 0 });
+
+    await checkRunCompletion(deps, "org-1", 1, "actor-1");
+
+    expect(postingIntents(recorder)).toHaveLength(0);
+    expect(mockRegisterAfterCommit).not.toHaveBeenCalled();
+  });
+
+  it("never marks the run PAID while one payee's payment failed and was not re-issued", async () => {
+    const { deps, recorder } = makeDeps({ subjects: 3, paidSubjects: 2 });
+
+    await checkRunCompletion(deps, "org-1", 1, "actor-1");
+
+    expect(postingIntents(recorder)).toHaveLength(0);
+  });
+
+  it("marks the run PAID once a failed payee is re-issued and the retry is paid", async () => {
+    const { deps, recorder } = makeDeps({ subjects: 3, paidSubjects: 3 });
+
+    await checkRunCompletion(deps, "org-1", 1, "actor-1");
+
+    expect(postingIntents(recorder)).toHaveLength(1);
+  });
+
+  it("emits no posting intent when the run has no bank items at all", async () => {
+    const { deps, recorder } = makeDeps({ subjects: 0, paidSubjects: 0 });
+
+    await checkRunCompletion(deps, "org-1", 1, "actor-1");
+
+    expect(postingIntents(recorder)).toHaveLength(0);
+  });
+
+  it("emits no posting intent when the run is already PAID, so a replayed completion cannot double-post", async () => {
+    const { deps, recorder } = makeDeps({ runStatus: "PAID" });
+
+    await checkRunCompletion(deps, "org-1", 1, "actor-1");
+
+    expect(postingIntents(recorder)).toHaveLength(0);
+    expect(mockRegisterAfterCommit).not.toHaveBeenCalled();
+  });
+
+  it("emits no posting intent when the run is already CLOSED", async () => {
+    const { deps, recorder } = makeDeps({ runStatus: "CLOSED" });
+
+    await checkRunCompletion(deps, "org-1", 1, "actor-1");
+
+    expect(postingIntents(recorder)).toHaveLength(0);
   });
 });

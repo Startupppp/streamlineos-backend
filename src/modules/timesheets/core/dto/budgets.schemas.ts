@@ -12,9 +12,9 @@ export const createBudgetSchema = z.object({
   startsAt: z.string().optional(),
   endsAt: z.string().optional(),
   status: timesheetBudgetStatusSchema.optional(),
-});
+}).strict();
 
-export const updateBudgetSchema = createBudgetSchema.partial();
+export const updateBudgetSchema = createBudgetSchema.partial().strict();
 
 export type CreateBudgetInput = z.infer<typeof createBudgetSchema>;
 export type UpdateBudgetInput = z.infer<typeof updateBudgetSchema>;

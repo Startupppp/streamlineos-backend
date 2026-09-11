@@ -29,7 +29,13 @@ export class HrAnalyticsService {
   ) {}
 
   overview(orgId: string) {
-    return this.cache.cached(`hr:analytics:${orgId}`, () => this.buildOverview(orgId), CACHE_TTL.MEDIUM);
+    return this.cache.cachedVersionedForOrg(
+      orgId,
+      "hr:analytics",
+      "overview",
+      () => this.buildOverview(orgId),
+      CACHE_TTL.MEDIUM,
+    );
   }
 
   private async buildOverview(orgId: string) {
@@ -154,7 +160,11 @@ export class HrAnalyticsService {
         .groupBy(sql`to_char(${resignations.createdAt}, 'Mon')`, sql`EXTRACT(MONTH FROM ${resignations.createdAt})`)
         .orderBy(sql`EXTRACT(MONTH FROM ${resignations.createdAt})`),
 
-      this.db.select({ id: orgUnits.id, name: orgUnits.name }).from(orgUnits).where(and(eq(orgUnits.orgId, orgId), isNull(orgUnits.deletedAt), eq(orgUnits.kind, "DEPARTMENT"))),
+      this.db
+        .select({ id: orgUnits.id, name: orgUnits.name })
+        .from(orgUnits)
+        .where(and(eq(orgUnits.orgId, orgId), isNull(orgUnits.deletedAt), eq(orgUnits.kind, "DEPARTMENT")))
+        .limit(1_000),
     ]);
 
     const deptMap = new Map(allDepts.map((d) => [d.id, d.name]));
@@ -213,8 +223,10 @@ export class HrAnalyticsService {
   attendance(orgId: string, yearInput?: number, monthInput?: number) {
     const year = yearInput || new Date().getFullYear();
     const month = monthInput || new Date().getMonth() + 1;
-    return this.cache.cached(
-      `hr:analytics:attendance:${orgId}:${year}:${month}`,
+    return this.cache.cachedVersionedForOrg(
+      orgId,
+      "hr:analytics",
+      `attendance:${year}:${month}`,
       () => this.buildAttendance(orgId, year, month),
       CACHE_TTL.SHORT,
     );
@@ -248,7 +260,11 @@ export class HrAnalyticsService {
         .from(attendance)
         .where(and(eq(attendance.orgId, orgId), gte(attendance.date, startDate), lte(attendance.date, endDate))),
 
-      this.db.select({ id: orgUnits.id, name: orgUnits.name }).from(orgUnits).where(and(eq(orgUnits.orgId, orgId), isNull(orgUnits.deletedAt), eq(orgUnits.kind, "DEPARTMENT"))),
+      this.db
+        .select({ id: orgUnits.id, name: orgUnits.name })
+        .from(orgUnits)
+        .where(and(eq(orgUnits.orgId, orgId), isNull(orgUnits.deletedAt), eq(orgUnits.kind, "DEPARTMENT")))
+        .limit(1_000),
     ]);
 
     const deptMap = new Map(allDepts.map((d) => [d.id, d.name]));
@@ -270,7 +286,13 @@ export class HrAnalyticsService {
 
   attrition(orgId: string) {
     const year = new Date().getFullYear();
-    return this.cache.cached(`hr:analytics:attrition:${orgId}:${year}`, () => this.buildAttrition(orgId), CACHE_TTL.MEDIUM);
+    return this.cache.cachedVersionedForOrg(
+      orgId,
+      "hr:analytics",
+      `attrition:${year}`,
+      () => this.buildAttrition(orgId),
+      CACHE_TTL.MEDIUM,
+    );
   }
 
   private async buildAttrition(orgId: string) {

@@ -39,7 +39,6 @@ export const projectWhiteboards = build.table(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     projectId: integer("project_id")
-      .references(() => projects.id, { onDelete: "cascade" })
       .notNull(),
     name: text("name").notNull(),
     data: jsonb("data").$type<ExcalidrawSceneData>().default({ elements: [] }).notNull(),
@@ -57,6 +56,7 @@ export const projectWhiteboards = build.table(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_project_whiteboards_org_project" }).onDelete("cascade"),
     index("idx_project_whiteboards_org_project").on(table.orgId, table.projectId).where(sql`deleted_at IS NULL`),
     uniqueIndex("uniq_project_whiteboards_share_token").on(table.shareToken),
     unique("uniq_project_whiteboards_org_id").on(table.orgId, table.id),
@@ -71,18 +71,15 @@ export const projectWhiteboardShares = build.table(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     whiteboardId: integer("whiteboard_id")
-      .references(() => projectWhiteboards.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    membershipId: integer("membership_id"),
+    membershipId: integer("membership_id").notNull(),
     role: whiteboardShareRoleEnum("role").notNull().default("viewer"),
     createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex("uniq_whiteboard_shares_board_user").on(table.whiteboardId, table.userId),
+  foreignKey({ columns: [table.orgId, table.whiteboardId], foreignColumns: [projectWhiteboards.orgId, projectWhiteboards.id], name: "fk_project_whiteboard_shares_org_board" }).onDelete("cascade"),
+    uniqueIndex("uniq_whiteboard_shares_board_user").on(table.whiteboardId, table.membershipId),
     index("idx_whiteboard_shares_org_board").on(table.orgId, table.whiteboardId),
     index("idx_whiteboard_shares_org_membership").on(table.orgId, table.membershipId),
     unique("uniq_project_whiteboard_shares_org_id").on(table.orgId, table.id),
@@ -104,5 +101,4 @@ export const projectWhiteboardSharesRelations = relations(projectWhiteboardShare
     fields: [projectWhiteboardShares.whiteboardId],
     references: [projectWhiteboards.id],
   }),
-  user: one(users, { fields: [projectWhiteboardShares.userId], references: [users.id] }),
 }));

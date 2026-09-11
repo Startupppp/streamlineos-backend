@@ -8,6 +8,12 @@ import { HrAnalyticsService } from "./hr-analytics.service";
 import { attendanceAnalyticsQuerySchema, type AttendanceAnalyticsQuery } from "./dto/hr-lifecycle.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  hrAnalyticsOverviewSchema,
+  hrAttendanceAnalyticsSchema,
+  hrAttritionSchema,
+} from "./dto/lifecycle-response.schemas";
 
 @RequireModule("hr")
 @Controller("hr/analytics")
@@ -17,11 +23,13 @@ export class HrAnalyticsController {
   constructor(private readonly analytics: HrAnalyticsService) {}
 
   @Get()
+  @ResponseSchema(hrAnalyticsOverviewSchema)
   overview(@CurrentUser() u: CurrentUserContext) {
     return this.analytics.overview(u.orgId);
   }
 
   @Get("attendance")
+  @ResponseSchema(hrAttendanceAnalyticsSchema)
   @Validate({ query: attendanceAnalyticsQuerySchema })
   attendance(
     @Query() query: AttendanceAnalyticsQuery,
@@ -31,6 +39,7 @@ export class HrAnalyticsController {
   }
 
   @Get("attrition")
+  @ResponseSchema(hrAttritionSchema)
   attrition(@CurrentUser() u: CurrentUserContext) {
     return this.analytics.attrition(u.orgId);
   }

@@ -6,10 +6,16 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, gt, isNull } from "drizzle-orm";
-import { operatorAccessGrants, operatorAccessLog } from "../../db/schema";
+import { and, eq, gt, inArray, isNull, lte } from "drizzle-orm";
+import {
+  organizationMembers,
+  operatorAccessGrants,
+  operatorAccessLog,
+} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 
 export type OperatorScope =
   | "read_customer_data"
@@ -18,12 +24,13 @@ export type OperatorScope =
   | "read_leads"
   | "manage_subscription";
 
-const MAX_GRANT_DURATION_MS = 24 * 60 * 60 * 1000;
+const MAX_GRANT_DURATION_MS = 4 * 60 * 60 * 1000;
 
 export interface GrantParams {
   operatorUserId: string;
   orgId: string;
   incidentRef: string;
+  reason: string;
   grantedBy: string;
   scope: OperatorScope;
   expiresAt: Date;
@@ -31,32 +38,91 @@ export interface GrantParams {
 
 @Injectable()
 export class PlatformOperatorAccessService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly notifications: NotificationDispatchService,
+  ) {}
 
   async createGrant(params: GrantParams): Promise<string> {
+    return this.createGrantAndLog(params, undefined);
+  }
+
+  /**
+   * Creates the grant request and its management audit event in one tenant
+   * transaction. A request must never become visible without its immutable
+   * `grant.requested` record.
+   */
+  async createGrantAndLog(
+    params: GrantParams,
+    ipAddress: string | undefined,
+    detail?: Record<string, unknown>,
+  ): Promise<string> {
+    this.assertReason(params.reason, params.incidentRef);
+    if (params.expiresAt <= new Date())
+      throw new BadRequestException("Grant expiry must be in the future");
     const maxExpiry = new Date(Date.now() + MAX_GRANT_DURATION_MS);
     if (params.expiresAt > maxExpiry)
       throw new BadRequestException(
-        "Grant duration cannot exceed 24 hours from now",
+        "Grant duration cannot exceed 4 hours from now",
       );
-    const [row] = await this.db
-      .insert(operatorAccessGrants)
-      .values({
+
+    return runInNewTenantTransaction(this.db, params.orgId, async (tx) => {
+      const [member] = await tx
+        .select({ userId: organizationMembers.userId })
+        .from(organizationMembers)
+        .where(and(
+          eq(organizationMembers.orgId, params.orgId),
+          eq(organizationMembers.userId, params.operatorUserId),
+          eq(organizationMembers.status, "ACTIVE"),
+        ))
+        .limit(1);
+      if (!member)
+        throw new ForbiddenException("Target operator is not an active member of the organization");
+
+      const [row] = await tx
+        .insert(operatorAccessGrants)
+        .values({
+          operatorUserId: params.operatorUserId,
+          orgId: params.orgId,
+          incidentRef: params.incidentRef,
+          grantedBy: params.grantedBy,
+          scope: params.scope,
+          expiresAt: params.expiresAt,
+          status: "pending",
+        })
+        .returning({ grantId: operatorAccessGrants.grantId });
+
+      await tx.insert(operatorAccessLog).values({
+        grantId: row!.grantId,
         operatorUserId: params.operatorUserId,
         orgId: params.orgId,
-        incidentRef: params.incidentRef,
-        grantedBy: params.grantedBy,
-        scope: params.scope,
-        expiresAt: params.expiresAt,
-        status: "pending",
-      })
-      .returning({ grantId: operatorAccessGrants.grantId });
-    return row!.grantId;
+        action: "grant.requested",
+        detail: { ...(detail ?? {}), reason: params.reason },
+        ipAddress: ipAddress ?? null,
+      });
+
+      await this.notifications.emit({
+        eventKey: "security.operator_access.requested",
+        orgId: params.orgId,
+        actorUserId: params.grantedBy,
+        targetUserIds: [params.operatorUserId],
+        notifySelf: true,
+        entityType: "operator_access_grant",
+        entityId: row!.grantId,
+        title: "Operator access requires approval",
+        message: "A break-glass operator access request was created for your organization.",
+        priority: "HIGH",
+        metadata: { incidentRef: params.incidentRef, scope: params.scope },
+      });
+
+      return row!.grantId;
+    });
   }
 
   async approveGrant(
     grantId: string,
     approverId: string,
+    ipAddress?: string,
   ): Promise<{ orgId: string; operatorUserId: string }> {
     const [grant] = await this.db
       .select({
@@ -71,19 +137,42 @@ export class PlatformOperatorAccessService {
       .where(eq(operatorAccessGrants.grantId, grantId))
       .limit(1);
     if (!grant) throw new NotFoundException("Grant not found");
+    if (grant.operatorUserId === approverId)
+      throw new ForbiddenException("Self-approval not permitted: the operator receiving access cannot approve their own grant");
     if (grant.status === "active" && grant.approverId === approverId)
       return { orgId: grant.orgId, operatorUserId: grant.operatorUserId };
     if (grant.status !== "pending") throw new ConflictException("Grant is not in pending status");
     if (grant.grantedBy === approverId)
       throw new ForbiddenException("Self-approval not permitted: approverId must differ from the requester");
-    await this.db
-      .update(operatorAccessGrants)
-      .set({ status: "active", approverId })
-      .where(eq(operatorAccessGrants.grantId, grantId));
+    await runInNewTenantTransaction(this.db, grant.orgId, async (tx) => {
+      const updated = await tx
+        .update(operatorAccessGrants)
+        .set({ status: "active", approverId })
+        .where(
+          and(
+            eq(operatorAccessGrants.grantId, grantId),
+            eq(operatorAccessGrants.status, "pending"),
+            isNull(operatorAccessGrants.revokedAt),
+            gt(operatorAccessGrants.expiresAt, new Date()),
+          ),
+        )
+        .returning({ grantId: operatorAccessGrants.grantId });
+      if (!updated?.[0])
+        throw new ConflictException("Grant was changed before approval completed");
+      await tx.insert(operatorAccessLog).values({
+        grantId,
+        operatorUserId: approverId,
+        orgId: grant.orgId,
+        action: "grant.approved",
+        detail: { operatorUserId: grant.operatorUserId },
+        ipAddress: ipAddress ?? null,
+      });
+    });
     return { orgId: grant.orgId, operatorUserId: grant.operatorUserId };
   }
 
-  async rejectGrant(grantId: string, reason: string): Promise<void> {
+  async rejectGrant(grantId: string, reason: string, actorId: string, ipAddress?: string): Promise<void> {
+    this.assertReason(reason);
     const [grant] = await this.db
       .select({ grantId: operatorAccessGrants.grantId, status: operatorAccessGrants.status })
       .from(operatorAccessGrants)
@@ -92,10 +181,33 @@ export class PlatformOperatorAccessService {
     if (!grant) throw new NotFoundException("Grant not found");
     if (grant.status === "rejected") return;
     if (grant.status !== "pending") throw new ConflictException("Grant is not in pending status");
-    await this.db
-      .update(operatorAccessGrants)
-      .set({ status: "rejected", revokedAt: new Date(), revocationReason: reason })
-      .where(eq(operatorAccessGrants.grantId, grantId));
+    const [grantOrg] = await this.db
+      .select({ orgId: operatorAccessGrants.orgId, operatorUserId: operatorAccessGrants.operatorUserId })
+      .from(operatorAccessGrants)
+      .where(eq(operatorAccessGrants.grantId, grantId))
+      .limit(1);
+    if (!grantOrg) throw new NotFoundException("Grant not found");
+    await runInNewTenantTransaction(this.db, grantOrg.orgId, async (tx) => {
+      const updated = await tx
+        .update(operatorAccessGrants)
+        .set({ status: "rejected", revokedAt: new Date(), revocationReason: reason })
+        .where(and(
+          eq(operatorAccessGrants.grantId, grantId),
+          eq(operatorAccessGrants.status, "pending"),
+          isNull(operatorAccessGrants.revokedAt),
+        ))
+        .returning({ grantId: operatorAccessGrants.grantId });
+      if (!updated?.[0])
+        throw new ConflictException("Grant was changed before rejection completed");
+      await tx.insert(operatorAccessLog).values({
+        grantId,
+        operatorUserId: actorId,
+        orgId: grantOrg.orgId,
+        action: "grant.rejected",
+        detail: { operatorUserId: grantOrg.operatorUserId, reason },
+        ipAddress: ipAddress ?? null,
+      });
+    });
   }
 
   async assertGrant(
@@ -123,6 +235,54 @@ export class PlatformOperatorAccessService {
         "No active operator access grant for this organisation and scope",
       );
     return grant.grantId;
+  }
+
+  /** Move stale approval requests out of the queue without extending access. */
+  async expirePendingGrants(now = new Date()): Promise<number> {
+    const grants = await this.db
+      .select({ grantId: operatorAccessGrants.grantId, orgId: operatorAccessGrants.orgId, operatorUserId: operatorAccessGrants.operatorUserId })
+      .from(operatorAccessGrants)
+      .where(and(
+        eq(operatorAccessGrants.status, "pending"),
+        lte(operatorAccessGrants.expiresAt, now),
+        isNull(operatorAccessGrants.revokedAt),
+      ));
+    const byOrg = new Map<string, Array<{ grantId: string; operatorUserId: string }>>();
+    for (const grant of grants) {
+      const orgGrants = byOrg.get(grant.orgId) ?? [];
+      orgGrants.push({ grantId: grant.grantId, operatorUserId: grant.operatorUserId });
+      byOrg.set(grant.orgId, orgGrants);
+    }
+
+    let count = 0;
+    for (const [orgId, orgGrants] of byOrg) {
+      await runInNewTenantTransaction(this.db, orgId, async (tx) => {
+        const grantIds = orgGrants.map((g) => g.grantId);
+        const expired = await tx
+          .update(operatorAccessGrants)
+          .set({ status: "expired" })
+          .where(and(
+            inArray(operatorAccessGrants.grantId, grantIds),
+            eq(operatorAccessGrants.status, "pending"),
+            lte(operatorAccessGrants.expiresAt, now),
+            isNull(operatorAccessGrants.revokedAt),
+          ))
+          .returning({ grantId: operatorAccessGrants.grantId, operatorUserId: operatorAccessGrants.operatorUserId });
+        if (expired.length === 0) return;
+        count += expired.length;
+        await tx.insert(operatorAccessLog).values(
+          expired.map((e) => ({
+            grantId: e.grantId,
+            operatorUserId: "system",
+            orgId,
+            action: "grant.expired" as const,
+            detail: { operatorUserId: e.operatorUserId },
+            ipAddress: null,
+          })),
+        );
+      });
+    }
+    return count;
   }
 
   async recordAccess(
@@ -155,17 +315,87 @@ export class PlatformOperatorAccessService {
     await this.recordAccess(grantId, operatorUserId, orgId, action, ipAddress, detail);
   }
 
-  async revokeGrant(grantId: string, reason: string): Promise<void> {
+  async authorizeRequest(
+    operatorUserId: string,
+    orgId: string,
+    scope: OperatorScope,
+    action: string,
+    ipAddress: string | undefined,
+  ): Promise<void> {
+    await runInNewTenantTransaction(this.db, orgId, async (tx) => {
+      const now = new Date();
+      const [grant] = await tx
+        .select({ grantId: operatorAccessGrants.grantId })
+        .from(operatorAccessGrants)
+        .where(
+          and(
+            eq(operatorAccessGrants.operatorUserId, operatorUserId),
+            eq(operatorAccessGrants.orgId, orgId),
+            eq(operatorAccessGrants.scope, scope),
+            eq(operatorAccessGrants.status, "active"),
+            gt(operatorAccessGrants.expiresAt, now),
+            isNull(operatorAccessGrants.revokedAt),
+          ),
+        )
+        .limit(1);
+      if (!grant)
+        throw new ForbiddenException(
+          "No active operator access grant for this organisation and scope",
+        );
+
+      await tx.insert(operatorAccessLog).values({
+        grantId: grant.grantId,
+        operatorUserId,
+        orgId,
+        action,
+        ipAddress: ipAddress ?? null,
+      });
+    });
+  }
+
+  async revokeGrant(grantId: string, reason: string, actorId: string, ipAddress?: string): Promise<void> {
+    this.assertReason(reason);
     const [existing] = await this.db
       .select({ grantId: operatorAccessGrants.grantId })
       .from(operatorAccessGrants)
       .where(eq(operatorAccessGrants.grantId, grantId))
       .limit(1);
     if (!existing) throw new NotFoundException("Grant not found");
-    await this.db
-      .update(operatorAccessGrants)
-      .set({ status: "revoked", revokedAt: new Date(), revocationReason: reason })
-      .where(eq(operatorAccessGrants.grantId, grantId));
+    const [grant] = await this.db
+      .select({ orgId: operatorAccessGrants.orgId, operatorUserId: operatorAccessGrants.operatorUserId })
+      .from(operatorAccessGrants)
+      .where(eq(operatorAccessGrants.grantId, grantId))
+      .limit(1);
+    if (!grant) throw new NotFoundException("Grant not found");
+    await runInNewTenantTransaction(this.db, grant.orgId, async (tx) => {
+      const revoked = await tx
+        .update(operatorAccessGrants)
+        .set({ status: "revoked", revokedAt: new Date(), revocationReason: reason })
+        .where(and(
+          eq(operatorAccessGrants.grantId, grantId),
+          eq(operatorAccessGrants.status, "active"),
+          isNull(operatorAccessGrants.revokedAt),
+        ))
+        .returning({ grantId: operatorAccessGrants.grantId });
+      if (!revoked?.[0])
+        throw new ConflictException("Grant was changed before revocation completed");
+      await tx.insert(operatorAccessLog).values({
+        grantId,
+        operatorUserId: actorId,
+        orgId: grant.orgId,
+        action: "grant.revoked",
+        detail: { operatorUserId: grant.operatorUserId, reason },
+        ipAddress: ipAddress ?? null,
+      });
+    });
+  }
+
+  private assertReason(reason: string, incidentRef?: string): void {
+    const normalized = reason.trim();
+    if (normalized.length < 3 || normalized.length > 1000)
+      throw new BadRequestException("Grant reason must be between 3 and 1000 characters");
+    if (incidentRef && normalized.toLowerCase() === incidentRef.trim().toLowerCase())
+      throw new BadRequestException("Grant reason must be distinct from incident reference");
   }
 
   async listGrants(orgId: string, status?: string) {

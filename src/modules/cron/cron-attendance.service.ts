@@ -4,12 +4,43 @@ import { attendance } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { HrAutomationEngineService } from "../hr/automations/hr-automation-engine.service";
-import { AttendancePolicyService } from "../hr/time/attendance-policy.service";
+import {
+  AttendancePolicyService,
+  type AttendancePolicyRules,
+  type OvertimePolicyRules,
+} from "../hr/time/attendance-policy.service";
+import { bulkUpdateFromValues, type BulkUpdateRow } from "../../common/db/bulk-update";
 import { forEachOrg } from "../../common/tenant";
 
 const DEFAULT_AUTO_CHECKOUT_TIME = "19:00";
 const DEFAULT_BREAK_HOURS_AUTO_CHECKOUT = 1;
+const DEFAULT_OVERTIME_THRESHOLD_MINUTES = 480;
 const FALLBACK_TZ_OFFSET_MINUTES = 0;
+
+interface OpenAttendanceRecord {
+  id: number;
+  orgId: string;
+  userId: string;
+  checkIn: Date | null;
+  autoCheckedOut: boolean;
+  date: string;
+  breaks: { start: string; end?: string }[];
+  breakHours: string;
+}
+
+type DueAttendanceRecord = OpenAttendanceRecord & { checkIn: Date };
+
+interface ResolvedPolicies {
+  attendance: Map<string, AttendancePolicyRules>;
+  overtime: Map<string, OvertimePolicyRules>;
+}
+
+interface MissedPunch {
+  userId: string;
+  date: string;
+}
+
+const policyKey = (userId: string, date: string): string => `${userId}|${date}`;
 
 @Injectable()
 export class CronAttendanceService {
@@ -24,7 +55,7 @@ export class CronAttendanceService {
     const now = Date.now();
 
     await forEachOrg(this.db, "auto-checkout", async (tx, orgId) => {
-      const openRecords = await tx.query.attendance.findMany({
+      const openRecords: OpenAttendanceRecord[] = await tx.query.attendance.findMany({
         where: and(eq(attendance.orgId, orgId), isNull(attendance.checkOut)),
         columns: {
           id: true,
@@ -38,14 +69,24 @@ export class CronAttendanceService {
         },
       });
 
-      for (const record of openRecords) {
-        if (!record.checkIn || record.autoCheckedOut || !record.date) continue;
+      const dueRecords = openRecords.filter(
+        (record): record is DueAttendanceRecord =>
+          record.checkIn !== null && !record.autoCheckedOut && record.date !== "",
+      );
+      if (dueRecords.length === 0) return;
 
-        const policy = await this.policyService.getAttendanceRules(record.orgId, record.userId, record.date);
-        const autoCheckoutTime = policy.autoCheckoutTime ?? DEFAULT_AUTO_CHECKOUT_TIME;
+      const policies = await this.resolvePolicies(orgId, dueRecords);
 
-        const overtimeRules = await this.policyService.getOvertimeRules(record.orgId, record.userId, record.date);
-        const dailyThresholdHours = overtimeRules.dailyThresholdMinutes / 60;
+      const writes: BulkUpdateRow[] = [];
+      const missedPunches = new Map<number, MissedPunch>();
+
+      for (const record of dueRecords) {
+        const key = policyKey(record.userId, record.date);
+        const autoCheckoutTime =
+          policies.attendance.get(key)?.autoCheckoutTime ?? DEFAULT_AUTO_CHECKOUT_TIME;
+        const dailyThresholdHours =
+          (policies.overtime.get(key)?.dailyThresholdMinutes ??
+            DEFAULT_OVERTIME_THRESHOLD_MINUTES) / 60;
 
         const checkOutTime = this.policyService.parseAutoCheckoutTimeToUtc(
           autoCheckoutTime,
@@ -55,31 +96,30 @@ export class CronAttendanceService {
 
         if (checkOutTime.getTime() > now) continue;
 
-        const checkInTime = new Date(record.checkIn);
+        const checkOutAt = checkOutTime.toISOString();
 
-        if (checkInTime >= checkOutTime) {
-          const result = await tx
-            .update(attendance)
-            .set({
-              checkOut: checkOutTime,
-              workHours: "0",
-              status: "CHECKED_OUT",
-              autoCheckedOut: true,
-              isOvertime: false,
-            })
-            .where(and(eq(attendance.id, record.id), isNull(attendance.checkOut)))
-            .returning({ id: attendance.id });
-
-          if (result.length > 0) processed++;
+        if (record.checkIn >= checkOutTime) {
+          writes.push({
+            key: record.id,
+            values: [
+              checkOutAt,
+              "0",
+              record.breakHours,
+              JSON.stringify(record.breaks),
+              "CHECKED_OUT",
+              true,
+              false,
+            ],
+          });
           continue;
         }
 
-        const breaks = record.breaks ?? [];
+        const breaks = record.breaks;
         let totalBreakHours = Number(record.breakHours) || 0;
 
         for (const b of breaks) {
           if (!b.end) {
-            b.end = checkOutTime.toISOString();
+            b.end = checkOutAt;
             const breakStart = new Date(b.start);
             const breakDuration = (checkOutTime.getTime() - breakStart.getTime()) / (1000 * 60 * 60);
             totalBreakHours += Math.max(0, breakDuration);
@@ -87,30 +127,51 @@ export class CronAttendanceService {
         }
 
         const effectiveBreakHours = Math.max(totalBreakHours, DEFAULT_BREAK_HOURS_AUTO_CHECKOUT);
-        const durationMs = checkOutTime.getTime() - checkInTime.getTime();
+        const durationMs = checkOutTime.getTime() - record.checkIn.getTime();
         const workHours = Math.max(0, durationMs / (1000 * 60 * 60) - effectiveBreakHours);
-        const isOvertime = workHours > dailyThresholdHours;
 
-        const result = await tx
-          .update(attendance)
-          .set({
-            checkOut: checkOutTime,
-            workHours: workHours.toFixed(2),
-            breakHours: effectiveBreakHours.toFixed(2),
-            breaks,
-            status: "CHECKED_OUT",
-            autoCheckedOut: true,
-            isOvertime,
-          })
-          .where(and(eq(attendance.id, record.id), isNull(attendance.checkOut)))
-          .returning({ id: attendance.id });
+        writes.push({
+          key: record.id,
+          values: [
+            checkOutAt,
+            workHours.toFixed(2),
+            effectiveBreakHours.toFixed(2),
+            JSON.stringify(breaks),
+            "CHECKED_OUT",
+            true,
+            workHours > dailyThresholdHours,
+          ],
+        });
+        missedPunches.set(record.id, { userId: record.userId, date: record.date });
+      }
 
-        if (result.length > 0) {
-          processed++;
-          this.automations
-            .emit(record.orgId, "attendance.missed_punch", { employeeId: record.userId, date: record.date })
-            .catch(() => undefined);
-        }
+      if (writes.length === 0) return;
+
+      const closed = await bulkUpdateFromValues(tx, {
+        table: attendance,
+        orgId,
+        key: { column: "id", type: "integer" },
+        columns: [
+          { column: "check_out", type: "timestamp" },
+          { column: "work_hours", type: "numeric" },
+          { column: "break_hours", type: "numeric" },
+          { column: "breaks", type: "jsonb" },
+          { column: "status", type: "text" },
+          { column: "auto_checked_out", type: "boolean" },
+          { column: "is_overtime", type: "boolean" },
+        ],
+        rows: writes,
+        extraWhere: isNull(attendance.checkOut),
+      });
+
+      processed += closed.length;
+
+      for (const id of closed) {
+        const punch = missedPunches.get(Number(id));
+        if (punch === undefined) continue;
+        this.automations
+          .emit(orgId, "attendance.missed_punch", { employeeId: punch.userId, date: punch.date })
+          .catch(() => undefined);
       }
     });
 
@@ -118,5 +179,34 @@ export class CronAttendanceService {
       processed,
       message: `Auto-checked out ${processed} attendance records`,
     };
+  }
+
+  private async resolvePolicies(
+    orgId: string,
+    records: ReadonlyArray<{ userId: string; date: string }>,
+  ): Promise<ResolvedPolicies> {
+    const employeesByDate = new Map<string, Set<string>>();
+    for (const record of records) {
+      const employees = employeesByDate.get(record.date) ?? new Set<string>();
+      employees.add(record.userId);
+      employeesByDate.set(record.date, employees);
+    }
+
+    const attendanceRules = new Map<string, AttendancePolicyRules>();
+    const overtimeRules = new Map<string, OvertimePolicyRules>();
+
+    for (const [date, employees] of employeesByDate) {
+      const employeeIds = [...employees];
+      const [attendanceForDate, overtimeForDate] = await Promise.all([
+        this.policyService.getAttendanceRulesForEmployees(orgId, employeeIds, date),
+        this.policyService.getOvertimeRulesForEmployees(orgId, employeeIds, date),
+      ]);
+      for (const [employeeId, rules] of attendanceForDate)
+        attendanceRules.set(policyKey(employeeId, date), rules);
+      for (const [employeeId, rules] of overtimeForDate)
+        overtimeRules.set(policyKey(employeeId, date), rules);
+    }
+
+    return { attendance: attendanceRules, overtime: overtimeRules };
   }
 }

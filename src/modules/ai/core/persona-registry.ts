@@ -83,12 +83,12 @@ const PERSONAS: Record<PersonaId, PersonaConfig> = {
   },
 };
 
-export function getPersona(id: string): PersonaConfig | undefined {
-  return PERSONAS[id as PersonaId];
-}
-
 export function isValidPersona(id: string): id is PersonaId {
   return id in PERSONAS;
+}
+
+export function getPersona(id: string): PersonaConfig | undefined {
+  return isValidPersona(id) ? PERSONAS[id] : undefined;
 }
 
 export function listPersonas(): PersonaConfig[] {

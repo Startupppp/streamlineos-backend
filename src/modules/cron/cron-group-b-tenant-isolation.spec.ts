@@ -5,6 +5,7 @@ jest.mock("../../common/tenant", () => ({
 
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../db/drizzle.constants";
+import { APP_CONFIG } from "../../config/config.module";
 import type { Db } from "../../db/drizzle.module";
 import { forEachOrg } from "../../common/tenant";
 import { CronKbChunkRetentionService } from "./cron-kb-chunk-retention.service";
@@ -216,6 +217,7 @@ describe("CronOrgPurgeWorkerService — cross-tenant isolation", () => {
         { provide: CacheService, useValue: cache },
         { provide: OrgMembershipService, useValue: { revokeOrgScopedAccess: jest.fn() } },
         { provide: StorageService, useValue: { deleteFile: jest.fn() } },
+        { provide: APP_CONFIG, useValue: { R2_KB_BUCKET_NAME: "kb-files" } },
       ],
     }).compile().then((m) => m.get(CronOrgPurgeWorkerService));
 
@@ -234,6 +236,7 @@ describe("CronOrgPurgeWorkerService — cross-tenant isolation", () => {
         { provide: CacheService, useValue: cache },
         { provide: OrgMembershipService, useValue: { revokeOrgScopedAccess: jest.fn() } },
         { provide: StorageService, useValue: { deleteFile: jest.fn() } },
+        { provide: APP_CONFIG, useValue: { R2_KB_BUCKET_NAME: "kb-files" } },
       ],
     }).compile().then((m) => m.get(CronOrgPurgeWorkerService));
 

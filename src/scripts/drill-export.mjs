@@ -28,15 +28,35 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 
-const MIN_EXPECTED_TABLES = 1;
+const MIN_EXPECTED_TABLES = 2;
 const APP_SCHEMAS = ["public", "build", "build_events"];
 
-const [, , emailArg] = process.argv;
-if (!emailArg) {
+const argv = process.argv.slice(2);
+const selfTest = argv.includes("--self-test");
+const emailArg = argv.find((arg) => !arg.startsWith("--"));
+if (!selfTest && !emailArg) {
   console.error("Usage: node drill-export.mjs <email>");
   process.exit(1);
 }
-const email = emailArg.trim().toLowerCase();
+const email = emailArg?.trim().toLowerCase() ?? "";
+
+function exportVacuityPass(rowCounts, minimum) {
+  return rowCounts.filter((count) => Number(count) > 0).length >= minimum;
+}
+
+if (selfTest) {
+  if (!exportVacuityPass([3, 1, 0], 2)) {
+    throw new Error("SELF-TEST FAIL: two populated high-signal tables must pass");
+  }
+  if (exportVacuityPass([4, 0, 0], 2)) {
+    throw new Error("SELF-TEST FAIL: one populated high-signal table must fail");
+  }
+  if (exportVacuityPass([], 2)) {
+    throw new Error("SELF-TEST FAIL: an empty table set must fail");
+  }
+  console.log("SELF-TEST PASS: export vacuity guard requires two populated high-signal tables");
+  process.exit(0);
+}
 
 function loadDatabaseUrl() {
   if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
@@ -58,7 +78,7 @@ function loadAppDatabaseUrl() {
 }
 
 let exitCode = 0;
-let tablesVerified = 0;
+let tablesWithRows = 0;
 
 function pass(msg) {
   console.log(`PASS  ${msg}`);
@@ -102,7 +122,7 @@ async function main() {
       );
       const n = Number(result[0]?.n ?? 0);
       console.log(`  ${String(n).padStart(6)} row(s)  ${table}.${col}`);
-      tablesVerified++;
+      if (n > 0) tablesWithRows++;
     } catch {
       blocked(`${table}.${col} not reachable — table may be missing or migrated differently`);
     }
@@ -116,14 +136,14 @@ async function main() {
     );
     const n = Number(empRows[0]?.n ?? 0);
     console.log(`  ${String(n).padStart(6)} row(s)  hr_employments (via hr_people.user_id)`);
-    tablesVerified++;
+    if (n > 0) tablesWithRows++;
   } catch {
     blocked("hr_employments (via hr_people join) not reachable — table may be missing");
   }
 
-  if (tablesVerified < MIN_EXPECTED_TABLES) {
+  if (tablesWithRows < MIN_EXPECTED_TABLES) {
     fail(
-      `only ${tablesVerified} table(s) reachable (threshold: ${MIN_EXPECTED_TABLES}) — dev DB may be empty or email is wrong`,
+      `only ${tablesWithRows} high-signal table(s) contain rows (threshold: ${MIN_EXPECTED_TABLES}) — dev DB may be empty or email is wrong`,
     );
     await sql.end();
     process.exit(1);

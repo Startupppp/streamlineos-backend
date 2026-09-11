@@ -20,15 +20,14 @@ import type {
   TriggerWorkflowDto,
   ApprovalActionDto,
 } from "./dto/workflow.schemas";
-import {
-  getApprovals,
-  handleApproval,
-  type WorkflowApprovalDeps,
-} from "./lib/workflow-approvals";
+import { WorkflowsApprovalService } from "./workflows-approval.service";
 
 @Injectable()
 export class WorkflowsExecutionService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly approval: WorkflowsApprovalService,
+  ) {}
 
   async triggerWorkflow(
     orgId: string,
@@ -42,8 +41,13 @@ export class WorkflowsExecutionService {
         eq(workflows.orgId, orgId),
         eq(workflows.status, "published"),
       ),
+      columns: { id: true },
       with: {
-        versions: { orderBy: [desc(workflowVersions.version)], limit: 1 },
+        versions: {
+          columns: { id: true },
+          orderBy: [desc(workflowVersions.version)],
+          limit: 1,
+        },
       },
     });
     if (!workflow) throw new NotFoundException("Published workflow not found");
@@ -256,21 +260,11 @@ export class WorkflowsExecutionService {
     }));
   }
 
-  private get approvalDeps(): WorkflowApprovalDeps {
-    return { db: this.db };
+  getApprovals(orgId: string, userId: string) {
+    return this.approval.getApprovals(orgId, userId);
   }
 
-  /** The approver's inbox; see `lib/workflow-approvals.ts` for why it is keyed on the person. */
-  async getApprovals(orgId: string, userId: string) {
-    return getApprovals(this.approvalDeps, orgId, userId);
-  }
-
-  async handleApproval(
-    orgId: string,
-    userId: string,
-    approvalId: string,
-    dto: ApprovalActionDto,
-  ) {
-    return handleApproval(this.approvalDeps, orgId, userId, approvalId, dto);
+  handleApproval(orgId: string, userId: string, approvalId: string, dto: ApprovalActionDto) {
+    return this.approval.handleApproval(orgId, userId, approvalId, dto);
   }
 }

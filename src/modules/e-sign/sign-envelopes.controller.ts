@@ -11,9 +11,17 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { actingMembershipId } from "../../common/auth/principal";
 import { Validate } from "../../common/validation/validate.decorator";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
-import { readRequestScope } from "../organization/core/read-request-scope";
+import { readRequestScopedRead } from "../organization/core/read-request-scope";
 import { SignEnvelopesService } from "./sign-envelopes.service";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  envelopeMutationResponseSchema,
+  listEnvelopesResponseSchema,
+  getEnvelopeFullResponseSchema,
+  validateEnvelopeResponseSchema,
+  resendEnvelopeResponseSchema,
+  sendReminderResponseSchema,
+} from "./dto/e-sign-response.schemas";
 import {
   createEnvelopeSchema,
   updateEnvelopeSchema,
@@ -28,15 +36,11 @@ import {
   type CorrectEnvelopeInput,
   type ExtendExpirationInput,
 } from "./dto/e-sign.schemas";
+import { resolveClientIp } from "../../common/http/client-ip";
 
-function clientIp(req: Request): string | undefined {
-  const forwarded = req.headers["x-forwarded-for"];
-  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  return (raw?.split(",")[0]?.trim() || req.ip)?.slice(0, 100);
-}
 
 function actorFrom(u: CurrentUserContext, req: Request) {
-  return { orgId: u.orgId, userId: u.userId, membershipId: actingMembershipId(u.principal), ipAddress: clientIp(req), userAgent: req.headers["user-agent"] };
+  return { orgId: u.orgId, userId: u.userId, membershipId: actingMembershipId(u.principal), ipAddress: resolveClientIp(req), userAgent: req.headers["user-agent"] };
 }
 
 const envelopeIdParams = z.object({ envelopeId: z.coerce.number().int().positive() }).strict();
@@ -50,6 +54,7 @@ export class SignEnvelopesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("sign:envelope:create")
+  @ResponseSchema(envelopeMutationResponseSchema)
   @Validate({ body: createEnvelopeSchema })
   create(@Body() body: CreateEnvelopeInput, @CurrentUser() u: CurrentUserContext) {
     return this.envelopes.create(u.orgId, actingMembershipId(u.principal), body);
@@ -57,30 +62,33 @@ export class SignEnvelopesController {
 
   @Get()
   @RequirePermission("sign:envelope:view")
+  @ResponseSchema(listEnvelopesResponseSchema)
   @Validate({ query: listEnvelopesSchema })
   list(
     @Query() query: ListEnvelopesInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
-    const viewAll = readRequestScope(req) === "all";
-    return this.envelopes.list(u.orgId, query, { membershipId: actingMembershipId(u.principal), viewAll });
+    const read = readRequestScopedRead(req, u);
+    return this.envelopes.list(read, actingMembershipId(u.principal), query);
   }
 
   @Get(":envelopeId")
   @RequirePermission("sign:envelope:view")
+  @ResponseSchema(getEnvelopeFullResponseSchema)
   @Validate({ params: envelopeIdParams })
   get(
     @Param("envelopeId", ParseIntPipe) envelopeId: number,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
-    const viewAll = readRequestScope(req) === "all";
-    return this.envelopes.getFull(u.orgId, envelopeId, { membershipId: actingMembershipId(u.principal), viewAll });
+    const read = readRequestScopedRead(req, u);
+    return this.envelopes.getFull(read, actingMembershipId(u.principal), envelopeId);
   }
 
   @Patch(":envelopeId")
   @RequirePermission("sign:envelope:create")
+  @ResponseSchema(envelopeMutationResponseSchema)
   @Validate({ params: envelopeIdParams, body: updateEnvelopeSchema })
   update(
     @Param("envelopeId", ParseIntPipe) envelopeId: number,
@@ -93,6 +101,7 @@ export class SignEnvelopesController {
 
   @Delete(":envelopeId")
   @RequirePermission("sign:envelope:create")
+  @ResponseSchema(envelopeMutationResponseSchema)
   @Validate({ params: envelopeIdParams })
   remove(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
     return this.envelopes.delete(u.orgId, envelopeId, actorFrom(u, req));
@@ -101,6 +110,7 @@ export class SignEnvelopesController {
   @Post(":envelopeId/validate")
   @BodylessAction()
   @RequirePermission("sign:envelope:create")
+  @ResponseSchema(validateEnvelopeResponseSchema)
   @Validate({ params: envelopeIdParams })
   validate(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
     return this.envelopes.validate(u.orgId, envelopeId);
@@ -110,6 +120,7 @@ export class SignEnvelopesController {
   @BodylessAction()
   @Idempotent("sign:envelope.send")
   @RequirePermission("sign:envelope:send")
+  @ResponseSchema(envelopeMutationResponseSchema)
   @Validate({ params: envelopeIdParams })
   send(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
     return this.envelopes.send(u.orgId, envelopeId, actorFrom(u, req));
@@ -118,6 +129,7 @@ export class SignEnvelopesController {
   @Post(":envelopeId/void")
   @Idempotent("sign:envelope.void")
   @RequirePermission("sign:envelope:void")
+  @ResponseSchema(envelopeMutationResponseSchema)
   @Validate({ params: envelopeIdParams, body: voidEnvelopeSchema })
   voidEnvelope(
     @Param("envelopeId", ParseIntPipe) envelopeId: number,
@@ -131,6 +143,7 @@ export class SignEnvelopesController {
   @Post(":envelopeId/correct")
   @Idempotent("sign:envelope.correct")
   @RequirePermission("sign:envelope:correct")
+  @ResponseSchema(envelopeMutationResponseSchema)
   @Validate({ params: envelopeIdParams, body: correctEnvelopeSchema })
   correct(
     @Param("envelopeId", ParseIntPipe) envelopeId: number,
@@ -145,6 +158,7 @@ export class SignEnvelopesController {
   @BodylessAction()
   @Idempotent("sign:envelope.resend")
   @RequirePermission("sign:envelope:send")
+  @ResponseSchema(resendEnvelopeResponseSchema)
   @Validate({ params: envelopeIdParams })
   resend(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
     return this.envelopes.resend(u.orgId, envelopeId, actorFrom(u, req));
@@ -154,6 +168,7 @@ export class SignEnvelopesController {
   @BodylessAction()
   @Idempotent("sign:envelope.send_reminder")
   @RequirePermission("sign:envelope:send")
+  @ResponseSchema(sendReminderResponseSchema)
   @Validate({ params: envelopeIdParams })
   sendReminder(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
     return this.envelopes.sendManualReminder(u.orgId, envelopeId, actorFrom(u, req));
@@ -161,6 +176,7 @@ export class SignEnvelopesController {
 
   @Post(":envelopeId/extend-expiration")
   @RequirePermission("sign:envelope:correct")
+  @ResponseSchema(envelopeMutationResponseSchema)
   @Validate({ params: envelopeIdParams, body: extendExpirationSchema })
   extendExpiration(
     @Param("envelopeId", ParseIntPipe) envelopeId: number,

@@ -93,7 +93,7 @@ function bodyParserFailure(exception: unknown): (ApiErrorEnvelope & { status: nu
 
 function describeUnhandled(exception: unknown): Record<string, unknown> {
   if (!(exception instanceof Error)) return { message: String(exception) };
-  const record = exception as unknown as Record<string, unknown>;
+  const record = exception as Error & Record<string, unknown>;
   const detail = record["detail"];
   const hint = record["hint"];
   const query = record["query"];
@@ -132,10 +132,29 @@ function correlationIdOf(host: ArgumentsHost): string | undefined {
   }
 }
 
+/**
+ * The path, never the query string.
+ *
+ * A query string is caller-supplied tenant content — a search term, a filter on
+ * an email address, a date range someone chose — and putting it on every 500 log
+ * line and error report carries tenant DATA where only tenant CONTEXT belongs.
+ * The parameter *names* are the route's own contract rather than the tenant's
+ * content, so they are kept: which filters were in play is usually the whole
+ * diagnostic value, and the values almost never are.
+ */
 function describeRequest(host: ArgumentsHost): Record<string, unknown> {
   try {
     const req = host.switchToHttp().getRequest<Request>();
-    return { method: req.method, url: req.url };
+    const [path = "", queryString] = req.url.split("?", 2);
+    const queryKeys =
+      queryString === undefined || queryString === ""
+        ? []
+        : [...new URLSearchParams(queryString).keys()];
+    return {
+      method: req.method,
+      url: path,
+      ...(queryKeys.length > 0 ? { queryKeys } : {}),
+    };
   } catch {
     return {};
   }
@@ -165,6 +184,30 @@ export class AllExceptionsFilter implements ExceptionFilter {
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
       const body = exception.getResponse();
+
+      /**
+       * The classification line. A 4xx is the application working: the caller
+       * asked for a row that is not theirs, or does not exist, or sent a body
+       * that does not validate. Logging those at error level and reporting them
+       * is what turns a routine 404 into a page, and what trains an operator to
+       * ignore the stream.
+       *
+       * A 5xx raised deliberately — `InternalServerErrorException`,
+       * `ServiceUnavailableException`, a `BadGatewayException` from an adapter —
+       * is the opposite: it is an actionable fault that used to leave this
+       * branch with no log line and no error report at all, so a handler that
+       * threw one produced complete silence.
+       */
+      if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
+        const request = describeRequest(host);
+        logger.error("Server-side HttpException", {
+          status,
+          ...describeUnhandled(exception),
+          request,
+        });
+        if (!isHealthProbe(request)) reportError(exception, request);
+      }
+
       res
         .status(status)
         .json({ ...httpErrorEnvelope(status, body as string | Record<string, unknown>), ...cid });

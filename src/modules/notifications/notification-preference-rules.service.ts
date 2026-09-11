@@ -1,5 +1,5 @@
-import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { and, eq } from "drizzle-orm";
 import { notificationPreferenceRules } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -25,30 +25,28 @@ export interface PreferenceRuleInput {
 export class NotificationPreferenceRulesService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  private memberPredicate(userId: string, membershipId: number | null | undefined) {
-    if (membershipId != null)
-      return or(
-        eq(notificationPreferenceRules.membershipId, membershipId),
-        and(isNull(notificationPreferenceRules.membershipId), eq(notificationPreferenceRules.userId, userId)),
-      );
-    return eq(notificationPreferenceRules.userId, userId);
+  private memberPredicate(membershipId: number | null | undefined) {
+    if (membershipId == null) throw new ForbiddenException("Organization membership required");
+    return eq(notificationPreferenceRules.membershipId, membershipId);
   }
 
-  list(orgId: string, userId: string, membershipId?: number | null) {
+  list(orgId: string, _userId: string, membershipId?: number | null) {
     return this.db
       .select()
       .from(notificationPreferenceRules)
-      .where(and(eq(notificationPreferenceRules.orgId, orgId), this.memberPredicate(userId, membershipId)));
+      .where(and(eq(notificationPreferenceRules.orgId, orgId), this.memberPredicate(membershipId)))
+      .limit(100);
   }
 
-  async set(orgId: string, userId: string, input: PreferenceRuleInput, membershipId?: number | null) {
+  async set(orgId: string, _userId: string, input: PreferenceRuleInput, membershipId?: number | null) {
+    if (membershipId == null) throw new ForbiddenException("Organization membership required");
     if (input.mode === "ON") {
       await this.db
         .delete(notificationPreferenceRules)
         .where(
           and(
             eq(notificationPreferenceRules.orgId, orgId),
-            this.memberPredicate(userId, membershipId),
+            this.memberPredicate(membershipId),
             eq(notificationPreferenceRules.scopeType, input.scopeType),
             eq(notificationPreferenceRules.scopeKey, input.scopeKey),
             eq(notificationPreferenceRules.channel, input.channel),
@@ -57,11 +55,11 @@ export class NotificationPreferenceRulesService {
     } else {
       await this.db
         .insert(notificationPreferenceRules)
-        .values({ orgId, userId, membershipId: membershipId ?? null, ...input, updatedAt: new Date() })
+        .values({ orgId, membershipId, ...input, updatedAt: new Date() })
         .onConflictDoUpdate({
           target: [
             notificationPreferenceRules.orgId,
-            notificationPreferenceRules.userId,
+            notificationPreferenceRules.membershipId,
             notificationPreferenceRules.scopeType,
             notificationPreferenceRules.scopeKey,
             notificationPreferenceRules.channel,

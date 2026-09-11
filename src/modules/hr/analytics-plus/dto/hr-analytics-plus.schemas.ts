@@ -6,18 +6,18 @@ import {
 
 export const departmentQuerySchema = z.object({
   departmentId: z.string().uuid().optional(),
-});
+}).strict();
 
 export const cycleQuerySchema = z.object({
   cycleId: z.coerce.number().int().positive().optional(),
-});
+}).strict();
 
 export const drilldownQuerySchema = z.object({
   metric: z.enum(["attrition", "leave", "attendance", "cases"]),
   page: optionalPageNumberField(),
   limit: optionalPageSizeField(100),
   departmentId: z.string().uuid().optional(),
-});
+}).strict();
 
 export const headcountPlanSchema = z.object({
   fiscalYear: z.number().int().min(2020).max(2050),
@@ -25,11 +25,11 @@ export const headcountPlanSchema = z.object({
   budgetedHeadcount: z.number().int().positive(),
   budgetedCostCents: z.number().int().positive().optional(),
   note: z.string().max(500).optional(),
-});
+}).strict();
 
 export const updateHeadcountPlanSchema = headcountPlanSchema
   .partial()
-  .omit({ fiscalYear: true });
+  .omit({ fiscalYear: true }).strict();
 
 export type DepartmentQuery = z.infer<typeof departmentQuerySchema>;
 export type CycleQuery = z.infer<typeof cycleQuerySchema>;

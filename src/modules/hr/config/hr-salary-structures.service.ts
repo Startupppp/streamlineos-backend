@@ -4,7 +4,6 @@ import { employeeSalaryProfiles } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
-import { CacheService } from "../../../common/cache/cache.service";
 import { formatDateOnly } from "./hr-config.helpers";
 import type { CreateSalaryStructureInput } from "./dto/salary-structures.schemas";
 
@@ -13,7 +12,6 @@ export class HrSalaryStructuresService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
-    private readonly cache: CacheService,
   ) {}
 
   list(orgId: string, userId: string | undefined, requestingUserId: string, isAdmin: boolean) {
@@ -25,6 +23,7 @@ export class HrSalaryStructuresService {
     }
 
     return this.db.query.employeeSalaryProfiles.findMany({
+      limit: 100,
       where: and(...conditions),
       columns: {
         id: true,
@@ -44,7 +43,6 @@ export class HrSalaryStructuresService {
         updatedAt: true,
       },
       orderBy: [desc(employeeSalaryProfiles.effectiveFrom)],
-      limit: 100,
     });
   }
 
@@ -77,14 +75,12 @@ export class HrSalaryStructuresService {
           hraPercentage: input.hraPercentage.toString(),
           allowances: input.allowances.toString(),
           deductions: input.deductions.toString(),
-          effectiveFrom: formatDateOnly(new Date(input.effectiveFrom)),
-          effectiveTo: input.effectiveTo ? formatDateOnly(new Date(input.effectiveTo)) : undefined,
+          effectiveFrom: formatDateOnly(input.effectiveFrom),
+          effectiveTo: input.effectiveTo ? formatDateOnly(input.effectiveTo) : undefined,
           status: "ACTIVE",
         })
         .returning();
     });
-
-    void this.cache.del(`hr:salary-bands:${orgId}`);
 
     this.audit.log({
       action: "hr.salary_changed",

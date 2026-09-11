@@ -1,3 +1,4 @@
+import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { HrTravelVisitsService } from "./hr-travel-visits.service";
 
@@ -54,17 +55,26 @@ describe("HrTravelVisitsService — cross-tenant isolation", () => {
   const ROW = { id: 1, orgId: OWNER, travelRequestId: 10 };
 
   it("hides travel visits from different org (cross-tenant isolation)", async () => {
-    const { db, where, findMany } = makeDb([]);
+    const { db, where, findMany } = makeDb([ROW]);
     const svc = new HrTravelVisitsService(db);
-    await svc.listVisits(ATTACKER, 10);
+    await svc.listVisits(ATTACKER, 10, { limit: 50 });
     const arg = where.mock.calls[0]?.[0] ?? (findMany.mock.calls[0]?.[0] as Record<string, unknown> | undefined)?.["where"];
     expect(sqlValues(arg)).toContain(ATTACKER);
+  });
+
+  it("refuses a travel request the org does not own (404, not an empty 200)", async () => {
+    const { db, where } = makeDb([]);
+    Object.assign(db, { query: { travelRequests: { findFirst: jest.fn().mockResolvedValue(undefined) } } });
+    const svc = new HrTravelVisitsService(db);
+
+    await expect(svc.listVisits(ATTACKER, 10, { limit: 50 })).rejects.toThrow(NotFoundException);
+    expect(where).not.toHaveBeenCalled();
   });
 
   it("returns travel visits for owning org (control — same-tenant access works)", async () => {
     const { db, where, findMany } = makeDb([ROW]);
     const svc = new HrTravelVisitsService(db);
-    await svc.listVisits(OWNER, 10);
+    await svc.listVisits(OWNER, 10, { limit: 50 });
     const arg = where.mock.calls[0]?.[0] ?? (findMany.mock.calls[0]?.[0] as Record<string, unknown> | undefined)?.["where"];
     expect(sqlValues(arg)).toContain(OWNER);
   });

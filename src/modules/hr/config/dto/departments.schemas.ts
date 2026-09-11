@@ -16,6 +16,6 @@ export const createDepartmentSchema = z.object({
           "Name cannot have consecutive special characters",
         ),
     ),
-});
+}).strict();
 
 export type CreateDepartmentInput = z.infer<typeof createDepartmentSchema>;

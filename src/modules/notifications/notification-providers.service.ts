@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException, BadRequestException } from "@nestjs/common";
-import { and, eq, desc } from "drizzle-orm";
+import { and, eq, desc, sql } from "drizzle-orm";
 import { notificationProviderAccounts, notificationAuditLogs, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -34,13 +34,20 @@ export class NotificationProvidersService {
     });
   }
 
+  /** The ciphertext is derived to a boolean in SQL, so provider credentials never leave the database. */
   async list(orgId: string) {
-    const rows = await this.db.query.notificationProviderAccounts.findMany({
+    return this.db.query.notificationProviderAccounts.findMany({
+      columns: { configEncrypted: false },
+      extras: {
+        hasCredentials:
+          sql<boolean>`${notificationProviderAccounts.configEncrypted} IS NOT NULL`.as(
+            "has_credentials",
+          ),
+      },
       where: eq(notificationProviderAccounts.orgId, orgId),
       orderBy: [desc(notificationProviderAccounts.createdAt)],
       limit: 100,
     });
-    return rows.map((r) => this.sanitize(r));
   }
 
   private encryptConfig(config: Record<string, unknown> | undefined): string | null {
@@ -77,6 +84,7 @@ export class NotificationProvidersService {
 
   async update(orgId: string, userId: string, id: number, dto: UpdateProviderInput) {
     const existing = await this.db.query.notificationProviderAccounts.findFirst({
+      columns: { id: true },
       where: and(eq(notificationProviderAccounts.id, id), eq(notificationProviderAccounts.orgId, orgId)),
     });
     if (!existing) throw new NotFoundException("Provider not found");
@@ -92,7 +100,7 @@ export class NotificationProvidersService {
         ...(dto.dailySendLimit !== undefined && { dailySendLimit: dto.dailySendLimit }),
         ...(dto.monthlyCostLimit !== undefined && { monthlyCostLimit: dto.monthlyCostLimit }),
       })
-      .where(eq(notificationProviderAccounts.id, id))
+      .where(and(eq(notificationProviderAccounts.id, id), eq(notificationProviderAccounts.orgId, orgId)))
       .returning();
     if (!row) throw new NotFoundException("Provider not found");
     await this.audit(orgId, userId, "provider.updated", row.id, row.channel);
@@ -105,7 +113,9 @@ export class NotificationProvidersService {
       where: and(eq(notificationProviderAccounts.id, id), eq(notificationProviderAccounts.orgId, orgId)),
     });
     if (!existing) throw new NotFoundException("Provider not found");
-    await this.db.delete(notificationProviderAccounts).where(eq(notificationProviderAccounts.id, id));
+    await this.db
+      .delete(notificationProviderAccounts)
+      .where(and(eq(notificationProviderAccounts.id, id), eq(notificationProviderAccounts.orgId, orgId)));
     await this.audit(orgId, userId, "provider.deleted", id, existing.channel);
     await this.cache.del(NOTIF_CACHE.availability(orgId));
     return { success: true };
@@ -142,7 +152,7 @@ export class NotificationProvidersService {
     await this.db
       .update(notificationProviderAccounts)
       .set({ lastTestedAt: new Date(), healthStatus: result.status === "SENT" ? "healthy" : "unhealthy" })
-      .where(eq(notificationProviderAccounts.id, id));
+      .where(and(eq(notificationProviderAccounts.id, id), eq(notificationProviderAccounts.orgId, orgId)));
     await this.audit(orgId, userId, "provider.tested", id, channel);
 
     return { status: result.status, sandbox: account.sandboxMode, message: result.failureMessage ?? "Test dispatched", providerMessageId: result.providerMessageId ?? null };

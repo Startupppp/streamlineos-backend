@@ -69,7 +69,7 @@ export class CommsActionsTools {
             sql`SELECT id, name FROM chat_channels WHERE org_id = ${orgId} AND name ILIKE ${"%" + channelName + "%"} AND is_archived = false LIMIT 1`,
           );
 
-          const row = rows[0] as Record<string, unknown> | undefined;
+          const row = rows[0];
           if (!row) {
             return { success: false, message: `Channel matching "${channelName}" not found in this org.` };
           }

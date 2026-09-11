@@ -21,6 +21,9 @@ import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { FnfInsightsService } from "./fnf.service";
 import { patchFnfSchema, listPageQuerySchema, type PatchFnfInput, type ListPageQueryInput } from "../hr-payroll/dto/payroll.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { ApiOkResponse } from "@nestjs/swagger";
+import { fnfInsightsListSchema, fnfGetOneSchema, fnfStatementSchema, updateFnfResultSchema } from "./dto/insights-response.schemas";
 import { z } from "zod";
 
 const settlementIdParams = z.object({ settlementId: z.coerce.number().int().positive() }).strict();
@@ -35,6 +38,7 @@ export class PayrollInsightsFnfController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payroll:fnf:view")
   @Validate({ query: listPageQuerySchema })
+  @ResponseSchema(fnfInsightsListSchema)
   list(@CurrentUser() u: CurrentUserContext, @Query() query: ListPageQueryInput) {
     return this.fnfService.list(u.orgId, u.userId, true, query.page, query.limit);
   }
@@ -43,6 +47,7 @@ export class PayrollInsightsFnfController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payroll:fnf:view")
   @Validate({ params: settlementIdParams })
+  @ResponseSchema(fnfGetOneSchema)
   getOne(
     @CurrentUser() u: CurrentUserContext,
     @Param("settlementId", ParseIntPipe) settlementId: number,
@@ -56,6 +61,7 @@ export class PayrollInsightsFnfController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payroll:fnf:manage")
   @Validate({ params: settlementIdParams, body: patchFnfSchema })
+  @ResponseSchema(updateFnfResultSchema)
   approve(
     @CurrentUser() u: CurrentUserContext,
     @Param("settlementId", ParseIntPipe) settlementId: number,
@@ -68,6 +74,7 @@ export class PayrollInsightsFnfController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payroll:fnf:view")
   @Validate({ params: settlementIdParams })
+  @ResponseSchema(fnfStatementSchema)
   getStatement(
     @CurrentUser() u: CurrentUserContext,
     @Param("settlementId", ParseIntPipe) settlementId: number,
@@ -79,6 +86,7 @@ export class PayrollInsightsFnfController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payroll:fnf:view")
   @Validate({ params: settlementIdParams })
+  @ApiOkResponse({ content: { "application/pdf": { schema: { type: "string", format: "binary" } } } })
   downloadStatement(
     @CurrentUser() u: CurrentUserContext,
     @Param("settlementId", ParseIntPipe) settlementId: number,

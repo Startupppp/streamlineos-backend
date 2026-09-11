@@ -9,7 +9,6 @@ const ctx: CalendarSourceContext = {
   userId: "user-1",
   start: new Date("2026-08-01"),
   end: new Date("2026-08-31"),
-  scope: "all",
 };
 
 function buildDb(rows: unknown[]): unknown {
@@ -17,7 +16,8 @@ function buildDb(rows: unknown[]): unknown {
     select: jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue({
         innerJoin: jest.fn().mockReturnThis(),
-        where: jest.fn().mockResolvedValue(rows),
+        where: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockResolvedValue(rows),
       }),
     }),
   };

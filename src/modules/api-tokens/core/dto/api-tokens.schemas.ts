@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const createApiTokenSchema = z.object({
   name: z.string().trim().min(1).max(100),
@@ -16,9 +16,9 @@ export const createApiTokenSchema = z.object({
 }).strict();
 
 export const listApiTokensSchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().trim().min(1).max(2048).optional(),
   limit: pageSizeField(20, 100),
-});
+}).strict();
 
 export type CreateApiTokenInput = z.infer<typeof createApiTokenSchema>;
 export type ListApiTokensQuery = z.infer<typeof listApiTokensSchema>;

@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { AutomationModule } from "../automation/automation.module";
 import { AccountingAdaptersModule } from "../accounting/adapters/accounting-adapters.module";
+import { EmploymentFactsModule } from "../directory/employment-facts.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { OutboxModule } from "../../common/outbox/outbox.module";
 import {
@@ -30,7 +31,7 @@ import { ExpenseExportWorkerService } from "./expense-export-worker.service";
  * pointing at the one seam accounting exposes to other modules.
  */
 @Module({
-  imports: [AutomationModule, AccountingAdaptersModule, NotificationsModule, OutboxModule],
+  imports: [AutomationModule, AccountingAdaptersModule, NotificationsModule, OutboxModule, EmploymentFactsModule],
   controllers: [EmployeeExpensesController, ExpensesController, ExpenseCategoriesController, ExpensesImportController, TravelController],
   providers: [
     ExpensesService,
@@ -44,6 +45,6 @@ import { ExpenseExportWorkerService } from "./expense-export-worker.service";
     ExpenseExportService,
     ExpenseExportWorkerService,
   ],
-  exports: [ExpensesService, ExpenseLifecycleService],
+  exports: [ExpensesService],
 })
 export class ExpensesModule {}

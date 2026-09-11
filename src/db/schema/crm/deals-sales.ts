@@ -1,16 +1,4 @@
-import {
-  pgTable,
-  text,
-  serial,
-  timestamp,
-  boolean,
-  jsonb,
-  decimal,
-  date,
-  integer,
-  index,
-  unique,
-} from "drizzle-orm/pg-core";
+import { boolean, date, decimal, foreignKey, index, integer, jsonb, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { incentiveStatusEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
@@ -138,7 +126,8 @@ export const incentiveConfig = pgTable(
     createdByMembershipId: integer("created_by_membership_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
-  (t) => [unique("uniq_incentive_config_org_id").on(t.orgId, t.id)],
+  (t) => [
+  foreignKey({ columns: [t.orgId, t.branchId], foreignColumns: [orgUnits.orgId, orgUnits.id], name: "fk_incentive_config_branch_id_org" }).onDelete("set null"),unique("uniq_incentive_config_org_id").on(t.orgId, t.id)],
 );
 
 export const incentives = pgTable(
@@ -181,7 +170,7 @@ export const incentives = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    index("idx_incentives_org").on(table.orgId),
+  foreignKey({ columns: [table.orgId, table.branchId], foreignColumns: [orgUnits.orgId, orgUnits.id], name: "fk_incentives_branch_id_org" }).onDelete("set null"),
     index("idx_incentives_sales_rep").on(table.salesRepId),
     index("idx_incentives_status").on(table.status),
     unique("uniq_incentives_org_id").on(table.orgId, table.id),

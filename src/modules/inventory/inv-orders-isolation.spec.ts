@@ -2,6 +2,7 @@ import { Test } from "@nestjs/testing";
 import { sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { ScopedRead } from "../access/scoped-read";
 import { PoService } from "./purchase-orders/po.service";
 import { GrnReadService } from "./purchase-orders/grn-read.service";
 import { WarehouseScopeService } from "./stock-engine/warehouse-scope.service";
@@ -72,7 +73,7 @@ describe("PoService — cross-tenant isolation", () => {
       ],
     }).compile().then((m) => m.get(PoService));
 
-    const result = await svc.listPos(ATTACKER, { page: 1, limit: 20 });
+    const result = await svc.listPos(ScopedRead.of(ATTACKER, "user-1", "all"), { page: 1, limit: 20 });
     expect(result.items).toHaveLength(0);
     const whereArg = selectWhere.mock.calls[0]?.[0] as unknown;
     expect(sqlValues(whereArg)).toContain(ATTACKER);
@@ -92,7 +93,7 @@ describe("PoService — cross-tenant isolation", () => {
       ],
     }).compile().then((m) => m.get(PoService));
 
-    const result = await svc.listPos(OWNER, { page: 1, limit: 20 });
+    const result = await svc.listPos(ScopedRead.of(OWNER, "user-1", "all"), { page: 1, limit: 20 });
     expect(result.items).toHaveLength(1);
   });
 });
@@ -199,7 +200,7 @@ describe("SoCoreService — cross-tenant isolation", () => {
       ],
     }).compile().then((m) => m.get(SoCoreService));
 
-    const result = await svc.listSos(ATTACKER, { page: 1, limit: 20 });
+    const result = await svc.listSos(ScopedRead.of(ATTACKER, "user-1", "all"), { page: 1, limit: 20 });
     expect(result.items).toHaveLength(0);
     const whereArg = selectWhere.mock.calls[0]?.[0] as unknown;
     expect(sqlValues(whereArg)).toContain(ATTACKER);
@@ -219,7 +220,7 @@ describe("SoCoreService — cross-tenant isolation", () => {
       ],
     }).compile().then((m) => m.get(SoCoreService));
 
-    const result = await svc.listSos(OWNER, { page: 1, limit: 20 });
+    const result = await svc.listSos(ScopedRead.of(OWNER, "user-1", "all"), { page: 1, limit: 20 });
     expect(result.items).toHaveLength(1);
   });
 });

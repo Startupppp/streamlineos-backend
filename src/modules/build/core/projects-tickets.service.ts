@@ -23,6 +23,7 @@ import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import { ProjectsWorkQueryService } from "./projects-work-query.service";
+import { ProjectsSearchService } from "./projects-search.service";
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import { ProjectsTicketsDetailService } from "./projects-tickets-detail.service";
 import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
@@ -39,12 +40,22 @@ import type {
   UpdateTicketInput,
 } from "./dto/projects.schemas";
 
+/**
+ * How many blockers the delete guard reads before it stops counting.
+ *
+ * The guard is a yes/no question with a number attached for the message, so it
+ * never needs the whole set — and an unbounded read here grows with the size of
+ * the dependency graph a caller happens to have built.
+ */
+const BLOCKER_PROBE_LIMIT = 50;
+
 @Injectable()
 export class ProjectsTicketsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly query: ProjectsTicketsQueryService,
     private readonly workQuery: ProjectsWorkQueryService,
+    private readonly search: ProjectsSearchService,
     private readonly read: ProjectsTicketsReadService,
     private readonly detail: ProjectsTicketsDetailService,
     private readonly transfer: ProjectsTicketsTransferService,
@@ -107,26 +118,51 @@ export class ProjectsTicketsService {
     });
     if (!existing || !existing.projectId)
       throw new NotFoundException("Ticket not found");
+    const ticketProjectId = existing.projectId;
 
     const { hasAccess } = await this.read.checkProjectAccess(
       orgId,
       userId,
-      existing.projectId,
+      ticketProjectId,
     );
     if (!hasAccess)
       throw new ForbiddenException("Not authorized to delete this ticket");
 
     if (!force) {
+      /**
+       * Bounded, and scoped to the organisation.
+       *
+       * The limit is the substantive fix: this read had none, so a yes/no
+       * question materialised every blocker a caller had ever created. The
+       * branch needs to know whether any blocker exists and roughly how many,
+       * not to load the whole dependency graph.
+       *
+       * The `orgId` predicate is defence in depth rather than a leak that was
+       * reachable. `related_work_item_id` carries a composite foreign key on
+       * `(org_id, related_work_item_id)` into `(tickets.org_id, tickets.id)`,
+       * and `tickets.id` is a globally unique identity column — so a row
+       * matching this ticket id already had to belong to this ticket's
+       * organisation. The predicate states the tenant rather than resting on
+       * that inference, and keeps the scan on the organisation-leading index.
+       */
       const blockedBy = await this.db.query.workItemRelations.findMany({
         where: and(
+          eq(workItemRelations.orgId, orgId),
           eq(workItemRelations.relatedWorkItemId, ticketId),
           eq(workItemRelations.relationType, "blocks"),
         ),
         columns: { workItemId: true },
+        limit: BLOCKER_PROBE_LIMIT,
       });
       if (blockedBy.length > 0) {
+        // Honest about the cap: at the limit the real count is unknown, and
+        // reporting the sentinel as if it were exact understates it silently.
+        const count =
+          blockedBy.length === BLOCKER_PROBE_LIMIT
+            ? `${String(BLOCKER_PROBE_LIMIT)}+`
+            : String(blockedBy.length);
         throw new ConflictException(
-          `This ticket is blocked by ${blockedBy.length} other ticket(s). Add ?force=true to delete anyway.`,
+          `This ticket is blocked by ${count} other ticket(s). Add ?force=true to delete anyway.`,
         );
       }
     }
@@ -170,24 +206,19 @@ export class ProjectsTicketsService {
         .update(tickets)
         .set({ deletedAt: new Date() })
         .where(eq(tickets.id, ticketId));
-    });
 
-    this.webhooksDispatch.dispatch(
-      orgId,
-      existing.projectId,
-      "ticket.deleted",
-      {
+      await this.webhooksDispatch.enqueue(tx, orgId, ticketProjectId, "ticket.deleted", {
         id: ticketId,
-        projectId: existing.projectId,
+        projectId: ticketProjectId,
         title: existing.title,
         actor: userId,
         timestamp: new Date().toISOString(),
-      },
-    );
+      });
+    });
 
     void this.cache
-      .del(`projects:analytics:${orgId}:${existing.projectId}`)
-      .catch(logSideEffectFailure("analytics cache eviction", { orgId, projectId: existing.projectId }));
+      .del(`projects:analytics:${orgId}:${ticketProjectId}`)
+      .catch(logSideEffectFailure("analytics cache eviction", { orgId, projectId: ticketProjectId }));
 
     return { deleted: true };
   }
@@ -201,10 +232,7 @@ export class ProjectsTicketsService {
   }
 
   async rankTicket(u: CurrentUserContext, projectId: number, ticketId: number, body: RankTicketInput) {
-    return this.query.rankTicket(u.orgId, projectId, ticketId, body, {
-      userId: u.userId,
-      isOrgOwner: u.isOrgOwner,
-    });
+    return this.query.rankTicket(u, projectId, ticketId, body);
   }
 
   async exportTickets(u: CurrentUserContext, projectId: number) {
@@ -225,14 +253,14 @@ export class ProjectsTicketsService {
     q: string,
     limit: number,
   ) {
-    return this.workQuery.searchOrgTickets(orgId, userId, q, limit);
+    return this.search.searchOrgTickets(orgId, userId, q, limit);
   }
 
   async getAllWork(u: CurrentUserContext, query: AllWorkQuery) {
     return this.workQuery.getAllWork(u, query);
   }
 
-  async getColumnCounts(orgId: string, projectId: number) {
-    return this.read.getColumnCounts(orgId, projectId);
+  async getColumnCounts(u: CurrentUserContext, projectId: number) {
+    return this.read.getColumnCounts(u, projectId);
   }
 }

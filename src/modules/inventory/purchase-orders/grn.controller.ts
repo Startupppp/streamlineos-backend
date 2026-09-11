@@ -17,7 +17,12 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  listGrnsResponseSchema,
+  getGrnResponseSchema,
+  reverseGrnResponseSchema,
+} from "./dto/purchase-orders-response.schemas";
 
 const grnIdParams = z.object({ grnId: z.coerce.number().int().positive() }).strict();
 
@@ -31,6 +36,7 @@ export class GrnController {
   ) {}
 
   @Get()
+  @ResponseSchema(listGrnsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:read")
   @Validate({ query: listGrnSchema })
@@ -42,6 +48,7 @@ export class GrnController {
   }
 
   @Get(":grnId")
+  @ResponseSchema(getGrnResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:read")
   @Validate({ params: grnIdParams })
@@ -134,6 +141,7 @@ export class GrnController {
   }
 
   @Post(":grnId/reverse")
+  @ResponseSchema(reverseGrnResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:receive")
   @HttpCode(HttpStatus.OK)

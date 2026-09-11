@@ -15,7 +15,6 @@ export const hrAccessRequests = pgTable("hr_access_requests", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_hr_access_requests_org_id").on(table.orgId, table.id),
-  index("idx_hr_access_requests_org").on(table.orgId),
   index("idx_hr_access_requests_employee").on(table.employeeId),
 ]);
 

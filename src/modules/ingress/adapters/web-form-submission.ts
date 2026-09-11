@@ -107,7 +107,7 @@ export type WebFormField = z.infer<typeof webFormFieldSchema>;
  * body never names one; the secret, so the endpoint is not open; and the key,
  * which becomes the provider label and therefore the deduplication namespace.
  */
-export interface WebFormRegistration {
+interface WebFormRegistration {
   readonly formKey: string;
   readonly organizationId: string;
   /** What the form is called, for the activity's subject. */

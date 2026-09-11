@@ -32,7 +32,7 @@ export const createShiftSchema = z.object({
   breakMinutes: z.coerce.number().int().min(0).max(480).optional().default(60),
   gracePeriodMinutes: z.coerce.number().int().min(0).max(120).optional().default(15),
   isNightShift: z.boolean().optional().default(false),
-});
+}).strict();
 
 export const updateShiftSchema = z.object({
   name: shiftNameSchema.optional(),
@@ -42,7 +42,7 @@ export const updateShiftSchema = z.object({
   breakMinutes: z.coerce.number().int().min(0).max(480).optional(),
   gracePeriodMinutes: z.coerce.number().int().min(0).max(120).optional(),
   isNightShift: z.boolean().optional(),
-});
+}).strict();
 
 export type CreateShiftInput = z.infer<typeof createShiftSchema>;
 export type UpdateShiftInput = z.infer<typeof updateShiftSchema>;
@@ -54,7 +54,7 @@ export const assignShiftSchema = z.object({
   shiftId: z.coerce.number().int().positive("A shift must be selected"),
   effectiveFrom: dateOnly,
   effectiveTo: dateOnly.optional(),
-});
+}).strict();
 
 export const createSwapRequestSchema = z
   .object({
@@ -62,7 +62,7 @@ export const createSwapRequestSchema = z
     requestDate: dateOnly,
     targetDate: dateOnly,
     reason: z.string().trim().max(500, "Reason must be at most 500 characters").optional(),
-  })
+  }).strict()
   .refine((data) => data.requestDate !== data.targetDate, {
     message: "Request date and target date must be different",
     path: ["targetDate"],
@@ -72,7 +72,7 @@ const SWAP_DECISIONS = ["APPROVED", "REJECTED"] as const;
 
 export const updateSwapStatusSchema = z.object({
   status: z.enum(SWAP_DECISIONS),
-});
+}).strict();
 
 export type AssignShiftInput = z.infer<typeof assignShiftSchema>;
 export type CreateSwapRequestInput = z.infer<typeof createSwapRequestSchema>;

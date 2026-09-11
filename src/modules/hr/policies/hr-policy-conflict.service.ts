@@ -1,8 +1,10 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull, ne, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { hrPolicies } from "../../../db/schema";
+
+const POLICY_CONFLICT_SCAN_LIMIT = 500;
 
 export type PolicyConflict = {
   severity: "blocking" | "warning";
@@ -54,9 +56,7 @@ export class HrPolicyConflictService {
       ),
       with: { scopes: true },
     });
-    if (!policy) {
-      return { conflicts: [], canActivate: false };
-    }
+    if (!policy) throw new NotFoundException("Policy not found");
 
     const others = await this.db.query.hrPolicies.findMany({
       where: and(
@@ -67,6 +67,7 @@ export class HrPolicyConflictService {
         isNull(hrPolicies.deletedAt),
       ),
       with: { scopes: true },
+      limit: 500,
     });
 
     const policyScopes = policy.scopes.map((s) => ({
@@ -131,6 +132,7 @@ export class HrPolicyConflictService {
     const active = await this.db.query.hrPolicies.findMany({
       where: and(...conditions),
       with: { scopes: true },
+      limit: POLICY_CONFLICT_SCAN_LIMIT,
     });
 
     const conflicts: PolicyConflict[] = [];
@@ -139,12 +141,25 @@ export class HrPolicyConflictService {
         const a = active[i];
         const b = active[j];
         if (a.policyType !== b.policyType) continue;
-        if (!datesOverlap(a.effectiveFrom, a.effectiveTo, b.effectiveFrom, b.effectiveTo)) {
+        if (
+          !datesOverlap(
+            a.effectiveFrom,
+            a.effectiveTo,
+            b.effectiveFrom,
+            b.effectiveTo,
+          )
+        ) {
           continue;
         }
         const overlap = scopesOverlap(
-          a.scopes.map((s) => ({ scopeType: s.scopeType, scopeValue: s.scopeValue })),
-          b.scopes.map((s) => ({ scopeType: s.scopeType, scopeValue: s.scopeValue })),
+          a.scopes.map((s) => ({
+            scopeType: s.scopeType,
+            scopeValue: s.scopeValue,
+          })),
+          b.scopes.map((s) => ({
+            scopeType: s.scopeType,
+            scopeValue: s.scopeValue,
+          })),
         );
         if (overlap.length === 0) continue;
         const samePriority = a.priority === b.priority;

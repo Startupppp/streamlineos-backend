@@ -3,9 +3,15 @@ import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { reminderRulesSchema } from "./reminder-rules.schemas";
 import { timesheetApprovalModeSchema, timesheetRoundingRuleSchema } from "./status.schemas";
 
+export const storedRequiredFieldsSchema = z.array(z.string()).catch([]);
+
+export function parseStoredRequiredFields(value: unknown): string[] {
+  return storedRequiredFieldsSchema.parse(value);
+}
+
 export const updateCoreSettingsSchema = z.object({
   workWeekStart: z.number().int().min(0).max(6).optional(),
-  requiredFields: z.array(z.string()).optional(),
+  requiredFields: z.array(z.string().trim().min(1).max(100)).max(50).optional(),
   roundingRule: timesheetRoundingRuleSchema.optional(),
   maxHoursPerDay: z.number().positive().max(24).optional(),
   allowOverlappingEntries: z.boolean().optional(),
@@ -40,7 +46,7 @@ export const updateCoreSettingsSchema = z.object({
    * to compare against, so the rule lives where the comparison happens.
    */
   changeReason: z.string().max(500).optional(),
-});
+}).strict();
 export type UpdateCoreSettingsInput = z.infer<typeof updateCoreSettingsSchema>;
 
 /** TS-34. The settings history list, bounded like every other list endpoint. */

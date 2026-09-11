@@ -1,10 +1,10 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { ConflictException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { payrollJobs } from "../../../db/schema";
-import { getPostgresErrorCode } from "../../../common/db/postgres-error";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 import { logger } from "../../../common/logger/logger.service";
 import { buildCursorPage, decodeCursor, type CursorPage } from "../../../common/pagination/cursor";
 import { keysetAfterId, keysetBeforeId } from "../../../common/pagination/keyset";
@@ -14,6 +14,12 @@ export type PayrollJobType =
   | "RECALCULATE"
   | "PDF_PUBLISH"
   | "FILING_EXPORT";
+
+const PAYROLL_JOB_TYPES: readonly PayrollJobType[] = ["GENERATE", "RECALCULATE", "PDF_PUBLISH", "FILING_EXPORT"];
+
+export function isPayrollJobType(value: string): value is PayrollJobType {
+  return PAYROLL_JOB_TYPES.some((t) => t === value);
+}
 
 @Injectable()
 export class PayrollJobsService {
@@ -62,9 +68,10 @@ export class PayrollJobsService {
           createdBy: params.actorId,
         })
         .returning();
-      return row!;
+      if (!row) throw new InternalServerErrorException("Failed to create payroll job");
+      return row;
     } catch (err) {
-      if (getPostgresErrorCode(err) !== "23505") {
+      if (!isUniqueViolation(err)) {
         logger.error("payroll-jobs.enqueue: insert failed unexpectedly", {
           cause: err instanceof Error ? err.message : String(err),
         });
@@ -192,30 +199,49 @@ export class PayrollJobsService {
     }));
   }
 
-  /** Claim a batch of PENDING jobs for a worker (cross-process safe-ish via status flip). */
+  /**
+   * Claim a batch of PENDING jobs for a worker (cross-process safe-ish via status flip).
+   *
+   * One `UPDATE … WHERE id = ANY(…) AND status = 'PENDING' RETURNING *` rather than one
+   * round trip per candidate, and `attempt` is incremented in SQL rather than from the
+   * value the SELECT read: a second worker that claimed the same row between the two
+   * statements would otherwise have its increment written back over. The `status =
+   * 'PENDING'` predicate still does the claiming, so a row another worker took is simply
+   * absent from RETURNING. Rows come back unordered, so the FIFO order of the candidate
+   * SELECT is restored before returning.
+   */
   async claimPending(limit = 10): Promise<(typeof payrollJobs.$inferSelect)[]> {
     const pending = await this.db
-      .select()
+      .select({ id: payrollJobs.id })
       .from(payrollJobs)
       .where(eq(payrollJobs.status, "PENDING"))
       .orderBy(asc(payrollJobs.createdAt))
       .limit(limit);
+    if (pending.length === 0) return [];
 
-    const claimed: (typeof payrollJobs.$inferSelect)[] = [];
-    for (const job of pending) {
-      const [row] = await this.db
-        .update(payrollJobs)
-        .set({
-          status: "RUNNING",
-          startedAt: new Date(),
-          attempt: (job.attempt ?? 0) + 1,
-          progress: 1,
-        })
-        .where(and(eq(payrollJobs.id, job.id), eq(payrollJobs.status, "PENDING")))
-        .returning();
-      if (row) claimed.push(row);
-    }
-    return claimed;
+    const claimed = await this.db
+      .update(payrollJobs)
+      .set({
+        status: "RUNNING",
+        startedAt: new Date(),
+        attempt: sql`coalesce(${payrollJobs.attempt}, 0) + 1`,
+        progress: 1,
+      })
+      .where(
+        and(
+          inArray(
+            payrollJobs.id,
+            pending.map((job) => job.id),
+          ),
+          eq(payrollJobs.status, "PENDING"),
+        ),
+      )
+      .returning();
+
+    const order = new Map(pending.map((job, index) => [job.id, index]));
+    return claimed.sort(
+      (a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0),
+    );
   }
 
   async listForResource(

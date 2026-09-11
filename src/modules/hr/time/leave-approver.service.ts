@@ -1,15 +1,19 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { organizationMembers, users } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
-import { applyScope } from "../../access/apply-scope";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
+import { leaveApproverRead } from "./leaves-scope";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
 
 const LEAVE_APPROVE_PERMISSION = "hr:leaves:approve";
 const APPROVER_CANDIDATE_LIMIT = 100;
+
+function coversAnotherMember(read: ScopedRead): boolean {
+  return read.unrestricted;
+}
 
 export interface LeaveApprover {
   id: string;
@@ -48,7 +52,9 @@ export class LeaveApproverService {
 
     const [subjectFacts, holders] = await Promise.all([
       this.employment.getFacts(orgId, subjectUserId),
-      this.access.membersWithPermission(orgId, LEAVE_APPROVE_PERMISSION, { limit: APPROVER_CANDIDATE_LIMIT }),
+      this.access.membersWithPermission(orgId, LEAVE_APPROVE_PERMISSION, {
+        limit: APPROVER_CANDIDATE_LIMIT,
+      }),
     ]);
 
     const candidateIds = [
@@ -57,15 +63,11 @@ export class LeaveApproverService {
     ];
 
     const uniqueCandidateIds = [...new Set(candidateIds)];
-    const candidateFactsBatch = await this.employment.getFactsBatch(orgId, uniqueCandidateIds);
+    if (uniqueCandidateIds.length === 0) return null;
 
-    for (const candidateId of uniqueCandidateIds) {
-      if (candidateId === subjectUserId) continue;
-      const permissions = await this.access.resolveUserPermissions(orgId, candidateId);
-      const scope = permissions.get(LEAVE_APPROVE_PERMISSION) ?? "none";
-      if (!(await this.includesSubject(scope, orgId, candidateId, subjectUserId))) continue;
-
-      const [candidate] = await this.db
+    const [candidateFactsBatch, candidateRows] = await Promise.all([
+      this.employment.getFactsBatch(orgId, uniqueCandidateIds),
+      this.db
         .select({
           id: users.id,
           name: users.name,
@@ -79,11 +81,29 @@ export class LeaveApproverService {
         .where(
           and(
             eq(organizationMembers.orgId, orgId),
-            eq(organizationMembers.userId, candidateId),
+            inArray(organizationMembers.userId, uniqueCandidateIds),
             eq(organizationMembers.status, "ACTIVE"),
           ),
         )
-        .limit(1);
+        .limit(uniqueCandidateIds.length),
+    ]);
+
+    const candidateById = new Map(candidateRows.map((row) => [row.id, row]));
+
+    const idsToCheck = uniqueCandidateIds.filter((id) => id !== subjectUserId);
+    if (idsToCheck.length === 0) return null;
+
+    for (const candidateId of idsToCheck) {
+      const permissions = await this.access.resolveUserPermissions(
+        orgId,
+        candidateId,
+      );
+      if (
+        !coversAnotherMember(leaveApproverRead(orgId, candidateId, permissions))
+      )
+        continue;
+
+      const candidate = candidateById.get(candidateId);
       if (candidate) {
         const facts = candidateFactsBatch.get(candidateId);
         return { ...candidate, designation: facts?.designation ?? null };
@@ -91,31 +111,5 @@ export class LeaveApproverService {
     }
 
     return null;
-  }
-
-  private async includesSubject(
-    scope: DataScope,
-    orgId: string,
-    candidateId: string,
-    subjectUserId: string,
-  ): Promise<boolean> {
-    if (scope === "all") return true;
-    if (scope === "none" || scope === "own") return false;
-
-    const [visible] = await this.db
-      .select({ id: organizationMembers.id })
-      .from(organizationMembers)
-      .where(
-        and(
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.userId, subjectUserId),
-          eq(organizationMembers.status, "ACTIVE"),
-          applyScope(scope, orgId, candidateId, {
-            ownerColumn: organizationMembers.userId,
-          }),
-        ),
-      )
-      .limit(1);
-    return Boolean(visible);
   }
 }

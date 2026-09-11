@@ -4,6 +4,7 @@ import { CrmAutomationStudioModule } from "../crm/automation-studio/crm-automati
 import { QuotesController } from "./quotes.controller";
 import { QuotesService } from "./quotes.service";
 import { QuotesLifecycleService } from "./quotes-lifecycle.service";
+import { QuotesQueryService } from "./quotes-query.service";
 
 /**
  * Exports both services so the autonomy module can draft a quote and send one.
@@ -15,7 +16,7 @@ import { QuotesLifecycleService } from "./quotes-lifecycle.service";
 @Module({
   imports: [BillingModule, CrmAutomationStudioModule],
   controllers: [QuotesController],
-  providers: [QuotesService, QuotesLifecycleService],
-  exports: [QuotesService, QuotesLifecycleService],
+  providers: [QuotesService, QuotesQueryService, QuotesLifecycleService],
+  exports: [QuotesService, QuotesQueryService, QuotesLifecycleService],
 })
 export class QuotesModule {}

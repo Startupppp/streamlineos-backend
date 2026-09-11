@@ -4,7 +4,7 @@ import type { INestApplication } from "@nestjs/common";
 import { AUTHORIZED_IN_SERVICE } from "./authorized-in-service.decorator";
 import { IS_PUBLIC } from "./public.decorator";
 import { IS_UNIVERSAL } from "./universal.decorator";
-import { REQUIRE_PERMISSION } from "../../modules/access/require-permission.decorator";
+import { REQUIRE_PERMISSION } from "../rbac/require-permission-key";
 import { DEPRECATION_KEY, type DeprecationMeta } from "../deprecation/deprecated.decorator";
 
 export type RouteExposure =
@@ -34,19 +34,29 @@ function read(key: string, handler: object, classRef: object): unknown {
   return own === undefined ? Reflect.getMetadata(key, classRef) : own;
 }
 
-function readString(key: string, handler: object, classRef: object): string | undefined {
-  const value = read(key, handler, classRef);
-  return typeof value === "string" ? value : undefined;
+function classifyAt(target: object): RouteExposure | null {
+  if (Reflect.getMetadata(IS_PUBLIC, target) === true) return { mode: "public" };
+  if (Reflect.getMetadata(IS_UNIVERSAL, target) === true) return { mode: "universal" };
+  const by: unknown = Reflect.getMetadata(AUTHORIZED_IN_SERVICE, target);
+  if (typeof by === "string" && by !== "") return { mode: "in-service", by };
+  const permission: unknown = Reflect.getMetadata(REQUIRE_PERMISSION, target);
+  if (typeof permission === "string") return { mode: "permissioned", permission };
+  return null;
 }
 
+/**
+ * The handler's OWN declaration wins outright; the class is only a fallback.
+ *
+ * Reading the four keys in a fixed order across both levels made a class-level
+ * declaration outrank a method-level one, and `AgentController` is exactly that
+ * shape: `@Public()` on the class because these routes authenticate with an agent
+ * token instead of a user JWT, `@UseGuards(AgentTokenGuard, PermissionGuard)`
+ * alongside it, and `@RequirePermission` on every handler. All nine operations
+ * published `x-permission: null` while the guard was enforcing `build:*`, which is
+ * the document understating the gate rather than the gate being absent.
+ */
 export function classifyHandler(handler: object, classRef: object): RouteExposure {
-  if (read(IS_PUBLIC, handler, classRef) === true) return { mode: "public" };
-  if (read(IS_UNIVERSAL, handler, classRef) === true) return { mode: "universal" };
-  const by = readString(AUTHORIZED_IN_SERVICE, handler, classRef);
-  if (by !== undefined && by !== "") return { mode: "in-service", by };
-  const permission = readString(REQUIRE_PERMISSION, handler, classRef);
-  if (permission !== undefined) return { mode: "permissioned", permission };
-  return { mode: "undeclared" };
+  return classifyAt(handler) ?? classifyAt(classRef) ?? { mode: "undeclared" };
 }
 
 export function describeExposure(exposure: RouteExposure): string {
@@ -67,8 +77,19 @@ export function describeExposure(exposure: RouteExposure): string {
 // URI versioning appends "_<version>" to operationId (e.g. "ClassName_method_1").
 // Strip it so the lookup matches the map key "ClassName_method" regardless of which
 // versioned copy of the route the document contains.
+/**
+ * Nest suffixes an operationId twice over, and both have to come off to reach the
+ * method name this map is keyed by: `_1`, `_2`… when two handlers would collide, and
+ * `_v2`, `_v3`… for every route carrying `@Version`.
+ *
+ * Only the numeric form was stripped, so a versioned operation never matched and was
+ * silently skipped — `GET /v2/users` and `GET /v2/users/{userId}` both carry
+ * `@RequirePermission("settings:view")` and both shipped with no `x-exposure`. The
+ * stamping loop counted them as neither stamped nor undeclared, so the generator
+ * reported "0 undeclared" over two operations it had not classified at all.
+ */
 export function normalizeOperationId(id: string): string {
-  return id.replace(/_\d+$/, "");
+  return id.replace(/_v\d+$/, "").replace(/_\d+$/, "");
 }
 
 interface OperationMeta {
@@ -115,7 +136,15 @@ export function recordRouteClassification(
     for (const operation of Object.values(pathItem)) {
       if (!stampable(operation)) continue;
       const meta = byOperationId.get(normalizeOperationId(String(operation.operationId)));
-      if (!meta) continue;
+      if (!meta) {
+        // Counted, not skipped. A silent `continue` here is what let two versioned
+        // operations ship unstamped while the generator reported "0 undeclared":
+        // an operation whose handler cannot be found is exactly as unclassified as
+        // one that declares nothing, and the caller's freshness check reads this
+        // number to decide whether stamping covered the document.
+        undeclared += 1;
+        continue;
+      }
 
       const { exposure, deprecation } = meta;
       const summary = describeExposure(exposure);

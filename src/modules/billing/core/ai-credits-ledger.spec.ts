@@ -368,27 +368,18 @@ describe("AiCreditsReservationService — reserve/settle/release ledger", () => 
     });
 
     it("releases only expired RESERVED rows and returns the count", async () => {
-      const reservation10 = { id: 10, orgId: "org1", userId: null, feature: "chat.message", credits: 1000, status: "RESERVED" };
-      const reservation11 = { id: 11, orgId: "org2", userId: null, feature: "chat.message", credits: 1000, status: "RESERVED" };
-      const wallet = { orgId: "org1", balance: 0 };
-
-      let releaseCall = 0;
-      db.transaction = jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
-        const current = releaseCall === 0 ? reservation10 : reservation11;
-        releaseCall++;
-        let innerCall = 0;
-        const txSelect = jest.fn().mockImplementation(() => ({
-          from: jest.fn().mockReturnValue({
-            where: jest.fn().mockReturnValue({
-              for: jest.fn().mockResolvedValue(innerCall++ === 0 ? [current] : [wallet]),
-            }),
-          }),
-        }));
-        const txUpdate = jest.fn().mockReturnValue({
-          set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
-        });
-        return fn(tenantTx({ select: txSelect, update: txUpdate }));
-      });
+      /*
+       * Ticket 21: the sweep no longer opens a transaction per expired row. Each
+       * organisation's page is claimed with a single
+       * `UPDATE ... WHERE status = 'RESERVED' ... RETURNING credits`, so the
+       * count is the number of rows the claim actually took — a row a concurrent
+       * settle already moved out of RESERVED is simply not returned, which is
+       * the property this test is really about.
+       */
+      const claims: Record<string, Array<{ credits: number }>> = {
+        org1: [{ credits: 1000 }],
+        org2: [{ credits: 1000 }],
+      };
 
       mockForEachOrg.mockImplementation(
         async (
@@ -398,6 +389,7 @@ describe("AiCreditsReservationService — reserve/settle/release ledger", () => 
         ) => {
           const makeOrgTx = (orgId: string) => {
             const row = orgId === "org1" ? { id: 10 } : { id: 11 };
+            let updateCall = 0;
             return tenantTx({
               select: jest.fn().mockReturnValue({
                 from: jest.fn().mockReturnValue({
@@ -406,7 +398,18 @@ describe("AiCreditsReservationService — reserve/settle/release ledger", () => 
                   }),
                 }),
               }),
-              update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
+              update: jest.fn().mockImplementation(() => {
+                const isClaim = updateCall++ === 0;
+                return {
+                  set: jest.fn().mockReturnValue({
+                    where: jest.fn().mockImplementation(() =>
+                      isClaim
+                        ? { returning: jest.fn().mockResolvedValue(claims[orgId] ?? []) }
+                        : Promise.resolve([]),
+                    ),
+                  }),
+                };
+              }),
             });
           };
           await fn(makeOrgTx("org1"), "org1");
@@ -417,6 +420,45 @@ describe("AiCreditsReservationService — reserve/settle/release ledger", () => 
 
       const count = await svc.sweepExpiredReservations();
       expect(count).toBe(2);
+    });
+
+    it("counts only what the claim actually took when a row was already settled", async () => {
+      mockForEachOrg.mockImplementation(
+        async (
+          _db: unknown,
+          _name: string,
+          fn: (tx: unknown, orgId: string) => Promise<void>,
+        ) => {
+          let updateCall = 0;
+          await fn(
+            tenantTx({
+              select: jest.fn().mockReturnValue({
+                from: jest.fn().mockReturnValue({
+                  where: jest.fn().mockReturnValue({
+                    limit: jest.fn().mockResolvedValue([{ id: 10 }, { id: 11 }]),
+                  }),
+                }),
+              }),
+              update: jest.fn().mockImplementation(() => {
+                const isClaim = updateCall++ === 0;
+                return {
+                  set: jest.fn().mockReturnValue({
+                    where: jest.fn().mockImplementation(() =>
+                      isClaim
+                        ? { returning: jest.fn().mockResolvedValue([{ credits: 1000 }]) }
+                        : Promise.resolve([]),
+                    ),
+                  }),
+                };
+              }),
+            }),
+            "org1",
+          );
+          return { organizations: 1, succeeded: 1, failed: 0 };
+        },
+      );
+
+      await expect(svc.sweepExpiredReservations()).resolves.toBe(1);
     });
   });
 });

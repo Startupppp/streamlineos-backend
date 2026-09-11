@@ -26,18 +26,31 @@ describe("KbArticleAiService — cross-tenant isolation", () => {
   } as never;
   const audit = { log: jest.fn() } as never;
 
+  /**
+   * `summarize` reads through `loadArticle`, which opens a SHORT tenant
+   * transaction that COMMITS before `invokeTextWithUsage` — the fix for a pooled
+   * connection held across the provider round trip. The double therefore needs a
+   * `transaction` seam and the `execute` that `withTenant`'s placement-fence
+   * probe issues; without them the isolation assertions below never reach the
+   * query at all.
+   */
   function makeDb(articleRow: unknown) {
     const wheres: unknown[] = [];
+    const surface = {
+      query: {
+        kbArticles: {
+          findFirst: jest.fn().mockImplementation((opts: { where?: unknown } = {}) => {
+            wheres.push(opts.where);
+            return Promise.resolve(articleRow);
+          }),
+        },
+      },
+      execute: jest.fn().mockResolvedValue([{ placement_fence_held: 1 }]),
+    };
     return {
       db: {
-        query: {
-          kbArticles: {
-            findFirst: jest.fn().mockImplementation((opts: { where?: unknown } = {}) => {
-              wheres.push(opts.where);
-              return Promise.resolve(articleRow);
-            }),
-          },
-        },
+        ...surface,
+        transaction: <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(surface),
       } as unknown as Db,
       wheres,
     };

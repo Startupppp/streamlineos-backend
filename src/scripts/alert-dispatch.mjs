@@ -15,6 +15,11 @@ const FAILURE_RUNBOOK =
 const REGISTRY = {
   "dead-outbox": { owner: "platform-reliability", runbookAnchor: "#dead-outbox", severity: "critical" },
   "dead-delivery": { owner: "notifications-team", runbookAnchor: "#dead-delivery", severity: "high" },
+  "dead-notification-outbox": {
+    owner: "notifications-team",
+    runbookAnchor: "#dead-notification-outbox",
+    severity: "critical",
+  },
   "sig-failures": { owner: "payments-team", runbookAnchor: "#sig-failures", severity: "high" },
   "tenant-ctx-errors": { owner: "platform-reliability", runbookAnchor: "#tenant-ctx-errors", severity: "critical" },
   p95: { owner: "platform-reliability", runbookAnchor: "#p95", severity: "high" },
@@ -29,11 +34,17 @@ const REGISTRY = {
   "pool-saturation": { owner: "platform-reliability", runbookAnchor: "#database-cell-failure", severity: "high" },
   "tenant-cost": { owner: "platform-reliability", runbookAnchor: "#tenant-cost", severity: "high" },
   "cell-recovery": { owner: "platform-reliability", runbookAnchor: "#cell-recovery", severity: "critical" },
+  "retention-dead-man": {
+    owner: "platform-reliability",
+    runbookFile: FAILURE_RUNBOOK,
+    runbookAnchor: "#retention-dead-man",
+    severity: "critical",
+  },
 };
 
 const RUNBOOK_BASE =
   process.env.ALERT_RUNBOOK_BASE ??
-  "architecture-refactor/c28-cell-based-platform-at-20m/RUNBOOKS.md";
+  "architecture-refactor/final-refactor/evidence/40-observability/FAILURE-RUNBOOKS.md";
 
 const DEFAULT_SUPPRESSION_WINDOW_MS = 60 * 60 * 1000;
 

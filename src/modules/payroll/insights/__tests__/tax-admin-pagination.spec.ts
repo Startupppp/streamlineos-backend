@@ -1,8 +1,7 @@
 import { TaxAdminService } from "../tax-admin.service";
 
 function makeDb(rows: unknown[] = []) {
-  const offset = jest.fn().mockResolvedValue(rows);
-  const limit = jest.fn().mockReturnValue({ offset });
+  const limit = jest.fn().mockResolvedValue(rows);
   const orderBy = jest.fn().mockReturnValue({ limit });
   const where = jest.fn().mockReturnValue({ orderBy });
   const leftJoin = jest.fn().mockReturnValue({ where });
@@ -17,14 +16,14 @@ describe("TaxAdminService.listDeclarations — pagination cap", () => {
   it("caps at 100 when caller requests more", async () => {
     const { db, limit } = makeDb();
     const svc = new TaxAdminService(db);
-    await svc.listDeclarations(orgId, {}, 1, 500);
-    expect(limit.mock.calls[0]?.[0]).toBeLessThanOrEqual(100);
+    await svc.listDeclarations(orgId, {}, undefined, 500);
+    expect(limit.mock.calls[0]?.[0]).toBeLessThanOrEqual(101);
   });
 
   it("uses default limit=50 when none supplied", async () => {
     const { db, limit } = makeDb();
     const svc = new TaxAdminService(db);
     await svc.listDeclarations(orgId, {});
-    expect(limit.mock.calls[0]?.[0]).toBe(50);
+    expect(limit.mock.calls[0]?.[0]).toBe(51);
   });
 });

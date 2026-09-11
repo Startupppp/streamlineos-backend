@@ -1,11 +1,26 @@
-import { Injectable, BadGatewayException, OnModuleInit } from "@nestjs/common";
+import { Injectable, BadGatewayException, OnModuleInit, Optional } from "@nestjs/common";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import { outboundRequest, OutboundRequestError } from "../../../../common/http/outbound-request";
+import { outboundRequest, OutboundRequestError, type OutboundRequestInit } from "../../../../common/http/outbound-request";
 import { callProvider, type FailureClass } from "../../../../common/outbound/call-provider";
 import { ProviderCircuitBreaker } from "../../../../common/outbound/provider-circuit-breaker";
 import { PaymentProviderAdapterRegistry, type PaymentCredentialWarning, type PaymentProviderAdapter, type PaymentProviderRuntime, type PaymentWebhookNormalization } from "../payment-provider-adapter.interface";
-import { webhookEnvelopeSchema } from "../dto/webhook.schemas";
+import {
+  webhookEnvelopeSchema,
+  rawWebhookIdSchema,
+  rawPaymentEntitySchema,
+  tenantCredentialFieldsSchema,
+} from "../dto/webhook.schemas";
+export type RazorpayTransport = (url: string, init: OutboundRequestInit) => Promise<Response>;
+
+interface RazorpayAdapterOptions {
+  readonly transport?: RazorpayTransport;
+  readonly breaker?: ProviderCircuitBreaker;
+  readonly orderTimeoutMs?: number;
+  readonly baseDelayMs?: number;
+  readonly maxDelayMs?: number;
+}
+
 interface TenantRazorpayCredentials {
   readonly keyId: string | null;
   readonly secret: string | null;
@@ -21,6 +36,7 @@ const razorpayOrderResponseSchema = z.object({
 const razorpayOrderErrorSchema = z.object({
   error: z.object({ description: z.string().optional() }).optional(),
 });
+
 
 function constantTimeEquals(expected: string, provided: string): boolean {
   const a = Buffer.from(expected, "utf8");
@@ -60,9 +76,22 @@ const razorpayBreaker = new ProviderCircuitBreaker();
 export class RazorpayAdapter implements PaymentProviderAdapter, OnModuleInit {
   readonly providerKey = "razorpay";
 
+  private readonly _transport: RazorpayTransport;
+  private readonly _breaker: ProviderCircuitBreaker;
+  private readonly _orderTimeoutMs: number;
+  private readonly _baseDelayMs: number;
+  private readonly _maxDelayMs: number;
+
   constructor(
     private readonly registry: PaymentProviderAdapterRegistry,
-  ) {}
+    @Optional() opts?: RazorpayAdapterOptions,
+  ) {
+    this._transport = opts?.transport ?? outboundRequest;
+    this._breaker = opts?.breaker ?? razorpayBreaker;
+    this._orderTimeoutMs = opts?.orderTimeoutMs ?? 10_000;
+    this._baseDelayMs = opts?.baseDelayMs ?? 200;
+    this._maxDelayMs = opts?.maxDelayMs ?? 5_000;
+  }
 
   onModuleInit(): void {
     this.registry.register(this);
@@ -114,16 +143,17 @@ export class RazorpayAdapter implements PaymentProviderAdapter, OnModuleInit {
     const result = await callProvider(
       {
         provider: "razorpay-orders",
-        timeoutMs: 10_000,
-        maxAttempts: 3,
-        baseDelayMs: 200,
-        maxDelayMs: 5_000,
+        timeoutMs: this._orderTimeoutMs,
+        // An order may commit before an error response; the provider does not promise safe replay.
+        maxAttempts: 1,
+        baseDelayMs: this._baseDelayMs,
+        maxDelayMs: this._maxDelayMs,
         classify: classifyRazorpayError,
       },
       async () => {
-        const response = await outboundRequest("https://api.razorpay.com/v1/orders", {
+        const response = await this._transport("https://api.razorpay.com/v1/orders", {
           provider: "razorpay-tenant",
-          timeoutMs: 10_000,
+          timeoutMs: this._orderTimeoutMs,
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -146,7 +176,7 @@ export class RazorpayAdapter implements PaymentProviderAdapter, OnModuleInit {
         const data: unknown = await response.json();
         return razorpayOrderResponseSchema.parse(data);
       },
-      razorpayBreaker,
+      this._breaker,
     );
 
     if (!result.ok) {
@@ -187,26 +217,27 @@ export class RazorpayAdapter implements PaymentProviderAdapter, OnModuleInit {
     const parsed = webhookEnvelopeSchema.safeParse(raw);
     if (!parsed.success) return { ok: false, error: "invalid_payload" };
 
-    const providerEventId =
-      typeof (raw as { id?: unknown }).id === "string" ? (raw as { id: string }).id : undefined;
+    const idParsed = rawWebhookIdSchema.safeParse(raw);
+    const providerEventId = idParsed.success ? idParsed.data.id : undefined;
     const providerPayload = parsed.data.payload;
     const payment = providerPayload.payment;
     const entity = payment && typeof payment === "object" && "entity" in payment ? payment.entity : undefined;
-    const normalizedEntity = entity && typeof entity === "object"
+    const entityParsed = entity && typeof entity === "object" ? rawPaymentEntitySchema.safeParse(entity) : null;
+    const normalizedEntity = entityParsed?.success
       ? Object.fromEntries(
           Object.entries({
-            id: (entity as Record<string, unknown>).id,
-            orderId: (entity as Record<string, unknown>).order_id,
-            amount: (entity as Record<string, unknown>).amount,
-            fee: (entity as Record<string, unknown>).fee,
-            currency: (entity as Record<string, unknown>).currency,
-            status: (entity as Record<string, unknown>).status,
-            method: (entity as Record<string, unknown>).method,
-            email: (entity as Record<string, unknown>).email,
-            description: (entity as Record<string, unknown>).description,
-            notes: (entity as Record<string, unknown>).notes,
-            invoiceId: (entity as Record<string, unknown>).invoice_id,
-            createdAt: (entity as Record<string, unknown>).created_at,
+            id: entityParsed.data.id,
+            orderId: entityParsed.data.order_id,
+            amount: entityParsed.data.amount,
+            fee: entityParsed.data.fee,
+            currency: entityParsed.data.currency,
+            status: entityParsed.data.status,
+            method: entityParsed.data.method,
+            email: entityParsed.data.email,
+            description: entityParsed.data.description,
+            notes: entityParsed.data.notes,
+            invoiceId: entityParsed.data.invoice_id,
+            createdAt: entityParsed.data.created_at,
           }).filter(([, value]) => value !== undefined),
         )
       : undefined;
@@ -224,14 +255,12 @@ export class RazorpayAdapter implements PaymentProviderAdapter, OnModuleInit {
   }
 
   private toTenantCredentials(credentials: unknown): TenantRazorpayCredentials {
-    if (!credentials || typeof credentials !== "object") {
-      return { keyId: null, secret: null, webhookSecret: null };
-    }
-    const value = credentials as Record<string, unknown>;
+    const parsed = tenantCredentialFieldsSchema.safeParse(credentials);
+    if (!parsed.success) return { keyId: null, secret: null, webhookSecret: null };
     return {
-      keyId: typeof value.keyId === "string" ? value.keyId : null,
-      secret: typeof value.secret === "string" ? value.secret : null,
-      webhookSecret: typeof value.webhookSecret === "string" ? value.webhookSecret : null,
+      keyId: parsed.data.keyId ?? null,
+      secret: parsed.data.secret ?? null,
+      webhookSecret: parsed.data.webhookSecret ?? null,
     };
   }
 }

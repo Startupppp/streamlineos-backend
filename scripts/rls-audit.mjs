@@ -15,11 +15,11 @@
 
 import postgres from 'postgres';
 
-const OWNER_URL = process.env.DATABASE_URL
-  || 'postgresql://neondb_owner:npg_uHztXRn51MdW@ep-orange-mode-azxn5hbr-pooler.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require';
+const OWNER_URL = process.env.DATABASE_URL;
+if (!OWNER_URL) throw new Error("DATABASE_URL is required");
 
-const APP_URL = process.env.APP_DATABASE_URL
-  || 'postgresql://streamline_app:npg_eKlEfHtbMg93@ep-orange-mode-azxn5hbr-pooler.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require';
+const APP_URL = process.env.APP_DATABASE_URL;
+if (!APP_URL) throw new Error("APP_DATABASE_URL is required");
 
 const owner = postgres(OWNER_URL, { prepare: false, ssl: 'require', max: 3 });
 

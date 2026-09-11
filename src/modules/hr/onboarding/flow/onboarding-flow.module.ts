@@ -24,7 +24,6 @@ import { HrChecklistReconciliationService } from "./hr-checklist-reconciliation.
     ModuleChecklistService,
     GuidedTourService,
     OnboardingAnalyticsService,
-    HrChecklistReconciliationService,
   ],
 })
 export class OnboardingFlowModule {}

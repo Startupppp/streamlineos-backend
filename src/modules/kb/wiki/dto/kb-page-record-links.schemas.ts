@@ -14,13 +14,13 @@ export const createRecordLinkSchema = z.object({
   targetType: z.enum(RECORD_LINK_TARGET_TYPES),
   targetId: z.string().min(1).max(64),
   label: z.string().min(1).max(300),
-});
+}).strict();
 
 export type CreateRecordLinkDto = z.infer<typeof createRecordLinkSchema>;
 
 export const recordLinkByRecordQuerySchema = z.object({
   targetType: z.enum(RECORD_LINK_TARGET_TYPES),
   targetId: z.string().min(1).max(64),
-});
+}).strict();
 
 export type RecordLinkByRecordQuery = z.infer<typeof recordLinkByRecordQuerySchema>;

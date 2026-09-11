@@ -12,14 +12,20 @@ export interface VisibilityColumns {
   createdByMembershipId?: AnyColumn;
 }
 
+/**
+ * The tenant equality is emitted on BOTH branches, not only the owner's. It used to
+ * be the owner's whole predicate and absent from everyone else's, so `chunkVisibleTo`
+ * — the only candidate-side tenant carrier `pageVectorCandidates` had — bound no
+ * `org_id` for an ordinary reader, and a covering index on an RLS table is unusable
+ * without one (backend CLAUDE.md §7).
+ */
 export function visibleTo(
   columns: VisibilityColumns,
   user: CurrentUserContext,
   accessibleProjectIds: number[],
 ): SQL<unknown> {
-  if (user.isOrgOwner) {
-    return eq(columns.orgId, user.orgId);
-  }
+  const tenant = eq(columns.orgId, user.orgId);
+  if (user.isOrgOwner) return tenant;
   const userId = user.userId;
   const membershipId = user.principal === undefined ? null : actingMembershipId(user.principal);
   const unscoped = sql`(
@@ -27,15 +33,15 @@ export function visibleTo(
     OR ${columns.createdById} = ${userId}
     ${membershipId == null || columns.createdByMembershipId === undefined ? sql`` : sql`OR ${columns.createdByMembershipId} = ${membershipId}`}
   )`;
-  if (accessibleProjectIds.length === 0) return unscoped;
+  if (accessibleProjectIds.length === 0) return sql`(${tenant} AND ${unscoped})`;
   const projectIdList = sql.join(
     accessibleProjectIds.map((id) => sql`${id}`),
     sql`, `,
   );
-  return sql`(
+  return sql`(${tenant} AND (
     ${unscoped}
     OR (${columns.projectId} IS NOT NULL AND ${columns.projectId} = ANY(ARRAY[${projectIdList}]::int[]))
-  )`;
+  ))`;
 }
 
 export function pageVisibleTo(

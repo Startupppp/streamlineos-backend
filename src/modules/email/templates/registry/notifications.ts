@@ -16,10 +16,9 @@ import {
   getWorkLogRejectedEmailTemplate,
   getOnboardingReminderEmailTemplate,
 } from "../index";
-import { BRAND } from "./_shared";
-import type { TemplateEntry } from "./_shared";
+import { BRAND, EMAIL_TEMPLATE_VERSION, defineTemplateFamily } from "./_shared";
 
-export const notificationsTemplates: Record<string, TemplateEntry> = {
+export const notificationsTemplates = defineTemplateFamily({
   "notif.task_assigned": {
     category: "Notifications",
     name: "Task Assigned",
@@ -153,4 +152,4 @@ export const notificationsTemplates: Record<string, TemplateEntry> = {
         "Please add more detail on the task descriptions.",
       ),
   },
-};
+}, EMAIL_TEMPLATE_VERSION);

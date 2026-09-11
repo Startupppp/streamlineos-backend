@@ -11,6 +11,8 @@ import {
   listProjectCustomersSchema,
   type ListProjectCustomersInput,
 } from "./dto/projects-customers.schemas";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { customerPageSchema } from "./dto/build-reports-response.schemas";
 
 @RequireModule("build")
 @Controller("build/customers")
@@ -20,6 +22,7 @@ export class ProjectsCustomersController {
 
   @Get()
   @RequirePermission("build:customers:view")
+  @ResponseSchema(customerPageSchema)
   @Validate({ query: listProjectCustomersSchema })
   list(
     @Query() query: ListProjectCustomersInput,

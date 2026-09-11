@@ -7,10 +7,14 @@ function makeDb(orgRows: { id: string }[], outboxRows: unknown[] = []) {
     from: jest.fn(),
     where: jest.fn(),
     orderBy: jest.fn(),
+    limit: jest.fn(),
   };
   selectChain.from.mockReturnValue(selectChain);
   selectChain.where.mockReturnValue(selectChain);
-  selectChain.orderBy.mockImplementation(() => Promise.resolve(orgRows));
+  selectChain.orderBy.mockReturnValue(selectChain);
+  selectChain.limit.mockImplementation((pageSize: number) =>
+    Promise.resolve(orgRows.slice(0, pageSize)),
+  );
 
   const updateChain = {
     set: jest.fn(),

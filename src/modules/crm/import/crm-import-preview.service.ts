@@ -70,14 +70,14 @@ export class CrmImportPreviewService {
     const columns = applyOverrides(entity, mapColumns(input.headers, entity), input.overrides);
     const unanswered = needsConfirmation(columns);
 
-    const candidates =
+    const candidates: { fingerprints: PartyFingerprint[]; truncated: boolean } =
       entity === "party"
         ? await existingFingerprints(
             this.db,
             input.organizationId,
             blockingKeysFor(columns, input.rows),
           )
-        : { fingerprints: [] as PartyFingerprint[], truncated: false };
+        : { fingerprints: [], truncated: false };
 
     const keys = lookupKeysFor(entity, columns, input.rows);
     const plan = planImport({
@@ -108,7 +108,7 @@ export class CrmImportPreviewService {
         sourceFilename: input.filename ?? null,
         targetEntity: entity,
         targetSubjectTypeId: subjectTypeId,
-        columns: columns as unknown as StoredColumnMapping[],
+        columns,
         summary: plan.summary,
         createdByUserId: input.userId,
       })
@@ -122,8 +122,8 @@ export class CrmImportPreviewService {
       rowNumber: row.rowNumber,
       action: row.action,
       reason: row.reason,
-      values: row.values as Record<string, string>,
-      customFields: row.customFields as Record<string, string>,
+      values: row.values,
+      customFields: row.customFields,
       matchedRecordId: row.matchedRecordId ?? null,
       duplicateOfRow: row.duplicateOfRow ?? null,
       match: row.match ? { ...row.match, signals: [...row.match.signals] } : null,

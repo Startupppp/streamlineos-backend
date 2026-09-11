@@ -7,7 +7,7 @@
  * Exit codes (convention shared across all alert scripts):
  *   0 = verified — operator ACK recorded and within TTL
  *   1 = failed   — state file present but unacknowledged (or stale ACK)
- *   2 = prerequisite missing — ALERT_WEBHOOK_URL not set OR state file absent
+ *   2 = prerequisite missing — state file absent or unreadable (drill never run)
  *
  * Usage:
  *   node src/scripts/check-alert-ack.mjs
@@ -145,7 +145,18 @@ if (SELF_TEST) {
     }
   })();
 
-  const pass = case1 && case2 && case3 && case4 && case5 && case6;
+  const case7 = (() => {
+    const state = {
+      delivered: false,
+      acked: true,
+      nonce: "pqr678",
+      sentAt: new Date(now - 60_000).toISOString(),
+    };
+    const r = classifyAckState(state, maxAgeMs);
+    return r.pass === false && r.reason.includes("UNACKNOWLEDGED");
+  })();
+
+  const pass = case1 && case2 && case3 && case4 && case5 && case6 && case7;
   process.stdout.write(
     JSON.stringify({
       selfTest: true,
@@ -157,23 +168,11 @@ if (SELF_TEST) {
         case4NullAckedFails: case4,
         case5StaleAckFails: case5,
         case6RoundTripStateFile: case6,
+        case7UndeliveredFails: case7,
       },
     }) + "\n",
   );
   process.exit(pass ? 0 : 1);
-}
-
-const webhookUrl = process.env.ALERT_WEBHOOK_URL ?? null;
-if (!webhookUrl) {
-  process.stderr.write(
-    "PREREQUISITE MISSING: ALERT_WEBHOOK_URL is not set.\n" +
-      "Alert acknowledgement cannot be confirmed without a configured webhook destination.\n" +
-      "1. Set ALERT_WEBHOOK_URL to your Slack/PagerDuty/OpsGenie webhook endpoint.\n" +
-      "2. Run the interactive drill: node src/scripts/drill-alert-system.mjs\n" +
-      "3. Enter the nonce shown in your alert channel to confirm a human received it.\n" +
-      "4. Re-run this check.\n",
-  );
-  process.exit(2);
 }
 
 const { ok, missing, error, data } = readAckState(stateFilePath);

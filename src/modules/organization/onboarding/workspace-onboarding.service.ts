@@ -1,12 +1,14 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { orgUnits, organizations } from "../../../db/schema";
 import { ModuleChecklistService } from "../../hr/onboarding/flow/module-checklist.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { bulkUpdateFromValues } from "../../../common/db/bulk-update";
 import { OrgHierarchyCacheService } from "../../../common/cache/org-hierarchy-cache.service";
+import type { GenerateWorkspaceResponse } from "./dto/workspace-onboarding.schemas";
 
 const INDUSTRY_TEMPLATES: Record<string, string[]> = {
   "it-services": ["Engineering", "Product", "Operations", "HR"],
@@ -40,6 +42,11 @@ const MODULE_STRUCTURE_TEMPLATES: Record<
     { department: "Customer Service", team: "Customer Support" },
   ],
 };
+
+export function hasStructureTemplate(industry: string | null | undefined): boolean {
+  if (!industry) return false;
+  return INDUSTRY_TEMPLATES[normalizeIndustrySlug(industry)] !== undefined;
+}
 
 export function resolveStructureTemplate(
   industry: string,
@@ -100,12 +107,7 @@ export class WorkspaceOnboardingService {
     orgId: string,
     industry: string,
     enabledModules?: string[],
-  ): Promise<{
-    businessUnits: number;
-    branches: number;
-    departments: number;
-    teams: number;
-  }> {
+  ): Promise<GenerateWorkspaceResponse> {
     if (enabledModules?.length) {
       await this.checklists.ensureChecklistsForModules(orgId, enabledModules);
     }
@@ -181,58 +183,90 @@ export class WorkspaceOnboardingService {
           );
       }
 
-      for (const [deptName, teamNames] of structure) {
-        const [existingDept] = await tx
-          .select({ id: orgUnits.id, parentId: orgUnits.parentId })
-          .from(orgUnits)
-          .where(and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "DEPARTMENT"), eq(orgUnits.name, deptName), isNull(orgUnits.deletedAt)))
-          .limit(1);
+      const deptNames = [...structure.keys()];
+      const allTeamNamesByDept = [...structure.entries()].map(([dept, ts]) => ({ dept, teams: [...ts] }));
+      const allTeamNames = allTeamNamesByDept.flatMap((d) => d.teams);
 
-        let departmentId: string | undefined = existingDept?.id;
-        if (!existingDept) {
-          const code = deptCode(deptName);
-          const [insertedDept] = await tx
-            .insert(orgUnits)
-            .values({ id: randomUUID(), orgId, kind: "DEPARTMENT", name: deptName, code, parentId: branchId })
-            .returning({ id: orgUnits.id });
-          departmentId = requireCreatedId(insertedDept, "department");
-          createdDepartments += 1;
-        } else if (existingDept.parentId !== branchId) {
-          await tx
-            .update(orgUnits)
-            .set({ parentId: branchId })
-            .where(
-              and(eq(orgUnits.id, existingDept.id), eq(orgUnits.orgId, orgId)),
-            );
-        }
+      const existingDepts = await tx
+        .select({ id: orgUnits.id, name: orgUnits.name, parentId: orgUnits.parentId })
+        .from(orgUnits)
+        .where(and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "DEPARTMENT"), inArray(orgUnits.name, deptNames), isNull(orgUnits.deletedAt)));
+      const existingDeptByName = new Map(existingDepts.map((d) => [d.name, d]));
 
+      const deptsToInsert = deptNames
+        .filter((n) => !existingDeptByName.has(n))
+        .map((n) => ({ id: randomUUID(), orgId, kind: "DEPARTMENT" as const, name: n, code: deptCode(n), parentId: branchId }));
+
+      let insertedDepts: Array<{ id: string; name: string }> = [];
+      if (deptsToInsert.length > 0) {
+        insertedDepts = await tx
+          .insert(orgUnits)
+          .values(deptsToInsert)
+          .returning({ id: orgUnits.id, name: orgUnits.name });
+        createdDepartments = insertedDepts.length;
+      }
+
+      const deptsNeedingReparent = existingDepts.filter((d) => d.parentId !== branchId).map((d) => d.id);
+      if (deptsNeedingReparent.length > 0) {
+        await tx
+          .update(orgUnits)
+          .set({ parentId: branchId })
+          .where(and(eq(orgUnits.orgId, orgId), inArray(orgUnits.id, deptsNeedingReparent)));
+      }
+
+      const deptIdByName = new Map<string, string>();
+      for (const d of existingDepts) deptIdByName.set(d.name, d.id);
+      for (const d of insertedDepts) deptIdByName.set(d.name, d.id);
+
+      const existingTeams = allTeamNames.length > 0
+        ? await tx
+            .select({ id: orgUnits.id, name: orgUnits.name, parentId: orgUnits.parentId })
+            .from(orgUnits)
+            .where(and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "TEAM"), inArray(orgUnits.name, allTeamNames), isNull(orgUnits.deletedAt)))
+        : [];
+      const existingTeamByName = new Map(existingTeams.map((t) => [t.name, t]));
+
+      const teamsToInsert: Array<{ id: string; orgId: string; kind: "TEAM"; name: string; code: string; parentId: string | undefined }> = [];
+      for (const { dept: deptName, teams: teamNames } of allTeamNamesByDept) {
+        const departmentId = deptIdByName.get(deptName);
         let teamIndex = 0;
         for (const teamName of teamNames) {
-          const [existingTeam] = await tx
-            .select({ id: orgUnits.id, parentId: orgUnits.parentId })
-            .from(orgUnits)
-            .where(and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "TEAM"), eq(orgUnits.name, teamName), isNull(orgUnits.deletedAt)))
-            .limit(1);
-
-          if (!existingTeam) {
+          if (!existingTeamByName.has(teamName)) {
             const suffix = teamIndex === 0 ? "" : String(teamIndex + 1);
-            const code = `${teamCode(deptName)}${suffix}`;
-            await tx.insert(orgUnits).values({ id: randomUUID(), orgId, kind: "TEAM", name: teamName, code, parentId: departmentId });
-            createdTeams += 1;
-          } else if (existingTeam.parentId !== departmentId) {
-            await tx
-              .update(orgUnits)
-              .set({ parentId: departmentId })
-              .where(
-                and(
-                  eq(orgUnits.id, existingTeam.id),
-                  eq(orgUnits.orgId, orgId),
-                ),
-              );
+            teamsToInsert.push({ id: randomUUID(), orgId, kind: "TEAM", name: teamName, code: `${teamCode(deptName)}${suffix}`, parentId: departmentId });
           }
           teamIndex += 1;
         }
       }
+
+      if (teamsToInsert.length > 0) {
+        await tx.insert(orgUnits).values(teamsToInsert);
+        createdTeams = teamsToInsert.length;
+      }
+
+      const teamReparents = new Map<string, string>();
+      for (const { dept: deptName, teams: teamNames } of allTeamNamesByDept) {
+        const departmentId = deptIdByName.get(deptName);
+        if (departmentId === undefined) continue;
+        for (const teamName of teamNames) {
+          const existingTeam = existingTeamByName.get(teamName);
+          if (existingTeam && existingTeam.parentId !== departmentId)
+            teamReparents.set(existingTeam.id, departmentId);
+        }
+      }
+
+      if (teamReparents.size > 0)
+        await bulkUpdateFromValues(tx, {
+          table: orgUnits,
+          orgId,
+          key: { column: "id", type: "text" },
+          columns: [{ column: "parent_id", type: "text" }],
+          touch: ["updated_at"],
+          rows: [...teamReparents].map(([teamId, departmentId]) => ({
+            key: teamId,
+            values: [departmentId],
+          })),
+        });
     }, { orgId });
 
     await this.hierarchyCache.invalidateAfterMutation(orgId);
@@ -245,12 +279,4 @@ export class WorkspaceOnboardingService {
     };
   }
 
-  async completeOnboarding(orgId: string): Promise<{ completedAt: Date }> {
-    const completedAt = new Date();
-    await this.db
-      .update(organizations)
-      .set({ onboardingCompletedAt: completedAt })
-      .where(eq(organizations.id, orgId));
-    return { completedAt };
-  }
 }

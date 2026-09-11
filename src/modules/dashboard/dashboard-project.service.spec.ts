@@ -9,6 +9,7 @@ import {
   resolveBuildDashboardScope,
 } from "./dashboard-scope";
 import { DashboardProjectService } from "./dashboard-project.service";
+import { isScopable } from "../rbac/permissions";
 
 const dialect = new PgDialect();
 const ORG = "org_proj_1";
@@ -27,26 +28,9 @@ function makeAccess(scope: DataScope = "all"): AccessService {
   } as unknown as AccessService;
 }
 
-function makeSelectBuilder(onWhere?: (w: SQL) => void) {
-  const builder = {
-    select: () => builder,
-    from: () => builder,
-    where: (w: SQL) => {
-      onWhere?.(w);
-      return Promise.resolve([]);
-    },
-    query: {
-      projects: { findMany: async () => [] },
-      sprints: { findFirst: async () => null },
-      tickets: { findMany: async () => [] },
-    },
-  };
-  return builder;
-}
-
 describe("DASHBOARD_BUILD_PERMISSION constant", () => {
-  it("is exactly the build:manage catalog key", () => {
-    expect(DASHBOARD_BUILD_PERMISSION).toBe("build:manage");
+  it("is the build:tickets:view catalog key — matching the @RequirePermission on the recent-projects route", () => {
+    expect(DASHBOARD_BUILD_PERMISSION).toBe("build:tickets:view");
   });
 
   it("is not the HR employees key", () => {
@@ -55,124 +39,128 @@ describe("DASHBOARD_BUILD_PERMISSION constant", () => {
 });
 
 describe("resolveBuildDashboardScope", () => {
-  it("calls scopeFor with build:manage and not with hr:employees:manage", async () => {
-    const keysSeen: string[] = [];
-    const access = {
-      scopeFor: async (_u: CurrentUserContext, key: string) => {
-        keysSeen.push(key);
-        return "all" as DataScope;
-      },
-    } as unknown as AccessService;
-    await resolveBuildDashboardScope(access, makeUser(USER, ORG));
-    expect(keysSeen).toContain("build:manage");
-    expect(keysSeen).not.toContain("hr:employees:manage");
+  /**
+   * These two used to assert the opposite: that a non-scopable key resolves
+   * `all` without consulting the access service at all. `build:tickets:view`
+   * carries no `scopable: true` entry, so that branch was permanently live and
+   * the recent-projects section resolved `all` for every caller — a gate that
+   * read as present in review and admitted everyone at runtime. The old
+   * expectations encoded the vulnerability.
+   */
+  it("denies rather than admits when the caller holds nothing", async () => {
+    expect(isScopable(DASHBOARD_BUILD_PERMISSION)).toBe(false);
+    const result = await resolveBuildDashboardScope(makeAccess("none"), makeUser(USER, ORG));
+    expect(result.denied).toBe(true);
   });
 
   it("returns all when the user has all scope", async () => {
     const result = await resolveBuildDashboardScope(makeAccess("all"), makeUser(USER, ORG));
-    expect(result).toBe("all");
+    expect(result.rawScope("spec reads the resolved value")).toBe("all");
   });
 
-  it("returns none when the user has no build:manage permission", async () => {
-    const result = await resolveBuildDashboardScope(makeAccess("none"), makeUser(USER, ORG));
-    expect(result).toBe("none");
+  it("asks the access service for this key rather than short-circuiting past it", async () => {
+    const keysSeen: string[] = [];
+    const access = {
+      scopeFor: async (_u: CurrentUserContext, key: string) => {
+        keysSeen.push(key);
+        return "own" as DataScope;
+      },
+    } as unknown as AccessService;
+    const result = await resolveBuildDashboardScope(access, makeUser(USER, ORG));
+    expect(keysSeen).toEqual([DASHBOARD_BUILD_PERMISSION]);
+    expect(result.rawScope("spec reads the resolved value")).toBe("own");
   });
 });
 
-describe("DashboardProjectService — projectMembers org predicate", () => {
-  it("getRecentProjects includes orgId in projectMembers WHERE clause for a non-all scope", async () => {
-    let capturedWhere: SQL | undefined;
-    const db = makeSelectBuilder((w) => { capturedWhere = w; });
-    const service = new DashboardProjectService(db as never, makeAccess("own"));
-    await service.getRecentProjects(ORG, makeUser(USER, ORG));
-
-    expect(capturedWhere).toBeDefined();
-    const { params } = dialect.sqlToQuery(capturedWhere as SQL);
-    expect(params).toContain(ORG);
-    expect(params).toContain(USER);
-  });
-
-  it("getRecentProjects orgId predicate excludes members of a different org", async () => {
-    let capturedWhere: SQL | undefined;
-    const db = makeSelectBuilder((w) => { capturedWhere = w; });
-    const service = new DashboardProjectService(db as never, makeAccess("own"));
-    await service.getRecentProjects(ORG, makeUser(USER, ORG));
-
-    const { params } = dialect.sqlToQuery(capturedWhere as SQL);
-    expect(params).toContain(ORG);
-    expect(params).not.toContain(ORG2);
-  });
-
-  it("the predicate shape matches eq(orgId) AND eq(userId) — both columns present", () => {
-    const predicate = and(eq(projectMembers.orgId, ORG), eq(projectMembers.userId, USER));
+describe("DashboardProjectService — org predicate in the all-scope path", () => {
+  it("the projectMembers predicate shape matches eq(orgId) AND eq(membershipId) — both columns present", () => {
+    const predicate = and(eq(projectMembers.orgId, ORG), eq(projectMembers.membershipId, 1));
     const { sql: sqlStr } = dialect.sqlToQuery(predicate as SQL);
     expect(sqlStr).toContain('"project_members"."org_id"');
-    expect(sqlStr).toContain('"project_members"."user_id"');
+    expect(sqlStr).toContain('"project_members"."membership_id"');
   });
-});
 
-describe("DashboardProjectService — scope none is a deny, not a member fallback", () => {
-  function makeCountingDb() {
-    const counts = { select: 0, where: 0, findMany: 0, findFirst: 0 };
+  it("getRecentProjects returns empty array when the relational query returns nothing", async () => {
     const db = {
-      select: () => { counts.select++; return db; },
+      select: () => db,
       from: () => db,
-      where: () => { counts.where++; return Promise.resolve([{ projectId: 10 }]); },
+      innerJoin: () => db,
+      where: () => Promise.resolve([]),
       query: {
-        projects: { findMany: async () => { counts.findMany++; return [{ id: 10 }]; } },
-        sprints: { findFirst: async () => { counts.findFirst++; return null; } },
-        tickets: { findMany: async () => { counts.findMany++; return []; } },
+        organizationMembers: { findFirst: async () => ({ id: 1 }) },
+        projects: { findMany: async () => [] },
+        sprints: { findFirst: async () => null },
+        tickets: { findMany: async () => [] },
       },
     };
-    return { db, counts };
-  }
-
-  it("getRecentProjects issues no query at all for scope none", async () => {
-    const { db, counts } = makeCountingDb();
-    const service = new DashboardProjectService(db as never, makeAccess("none"));
+    const service = new DashboardProjectService(db as never, makeAccess("all"));
     const result = await service.getRecentProjects(ORG, makeUser(USER, ORG));
-
     expect(result).toEqual([]);
-    expect(counts).toEqual({ select: 0, where: 0, findMany: 0, findFirst: 0 });
   });
 
-  it("getActiveSprintSummary issues no query at all for scope none", async () => {
-    const { db, counts } = makeCountingDb();
-    const service = new DashboardProjectService(db as never, makeAccess("none"));
-    const result = await service.getActiveSprintSummary(ORG, makeUser(USER, ORG));
-
-    expect(result).toBeNull();
-    expect(counts).toEqual({ select: 0, where: 0, findMany: 0, findFirst: 0 });
-  });
-
-  it("getRecentActivity issues no query at all for scope none", async () => {
-    const { db, counts } = makeCountingDb();
-    const service = new DashboardProjectService(db as never, makeAccess("none"));
-    const result = await service.getRecentActivity(ORG, makeUser(USER, ORG));
-
-    expect(result).toEqual([]);
-    expect(counts).toEqual({ select: 0, where: 0, findMany: 0, findFirst: 0 });
-  });
-
-  it("scope own still reaches the project-membership query, so the guard is on none alone", async () => {
-    const { db, counts } = makeCountingDb();
-    const service = new DashboardProjectService(db as never, makeAccess("own"));
-    await service.getRecentActivity(ORG, makeUser(USER, ORG));
-
-    expect(counts.where).toBeGreaterThan(0);
+  it("getRecentProjects and getRecentActivity for ORG do not surface data from ORG2", async () => {
+    let findManyOrgArg: string | undefined;
+    const db = {
+      select: () => db,
+      from: () => db,
+      innerJoin: () => db,
+      where: () => Promise.resolve([]),
+      query: {
+        organizationMembers: { findFirst: async () => ({ id: 1 }) },
+        projects: {
+          findMany: async (opts: { where?: SQL }) => {
+            if (opts?.where) {
+              const { params } = dialect.sqlToQuery(opts.where as SQL);
+              const param = params.find((p) => p === ORG || p === ORG2);
+              findManyOrgArg = param as string | undefined;
+            }
+            return [];
+          },
+        },
+        sprints: { findFirst: async () => null },
+        tickets: { findMany: async () => [] },
+      },
+    };
+    const service = new DashboardProjectService(db as never, makeAccess("all"));
+    await service.getRecentProjects(ORG, makeUser(USER, ORG));
+    expect(findManyOrgArg).toBe(ORG);
+    expect(findManyOrgArg).not.toBe(ORG2);
   });
 });
 
 describe("DashboardProjectService — getActiveSprintSummary SQL aggregate", () => {
   it("returns null when no active sprint is found", async () => {
-    const db = makeSelectBuilder();
+    const db = {
+      select: () => db,
+      from: () => db,
+      where: () => Promise.resolve([]),
+      query: {
+        organizationMembers: { findFirst: async () => ({ id: 1 }) },
+        projects: { findMany: async () => [] },
+        sprints: { findFirst: async () => null },
+        tickets: { findMany: async () => [] },
+      },
+    };
     const service = new DashboardProjectService(db as never, makeAccess("all"));
     const result = await service.getActiveSprintSummary(ORG, makeUser(USER, ORG));
     expect(result).toBeNull();
   });
 
   it("returns null when project list is empty (no project memberships, non-all scope)", async () => {
-    const db = makeSelectBuilder();
+    const db = {
+      select: () => db,
+      from: () => db,
+      innerJoin: () => db,
+      where: () => db,
+      orderBy: () => db,
+      limit: () => Promise.resolve([]),
+      query: {
+        organizationMembers: { findFirst: async () => ({ id: 1 }) },
+        projects: { findMany: async () => [] },
+        sprints: { findFirst: async () => null },
+        tickets: { findMany: async () => [] },
+      },
+    };
     const service = new DashboardProjectService(db as never, makeAccess("own"));
     const result = await service.getActiveSprintSummary(ORG, makeUser(USER, ORG));
     expect(result).toBeNull();
@@ -203,6 +191,7 @@ describe("DashboardProjectService — getActiveSprintSummary SQL aggregate", () 
         return Promise.resolve([{ projectId: 10 }]);
       },
       query: {
+        organizationMembers: { findFirst: async () => ({ id: 1 }) },
         projects: {
           findMany: async () => [{ id: 10 }],
         },
@@ -231,5 +220,65 @@ describe("DashboardProjectService — getActiveSprintSummary SQL aggregate", () 
       expect(result.completedPoints).toBe(20);
       expect(result.progress).toBe(40);
     }
+  });
+});
+
+describe("DashboardProjectService — getMyIssues reuses a membership the caller already resolved", () => {
+  function makeDb(ticketWhereSink: { value: unknown }) {
+    let membershipReads = 0;
+    const db = {
+      query: {
+        organizationMembers: {
+          findFirst: async () => {
+            membershipReads += 1;
+            return { id: 77 };
+          },
+        },
+        tickets: {
+          findMany: async (args: { where: unknown }) => {
+            ticketWhereSink.value = args.where;
+            return [];
+          },
+        },
+      },
+    };
+    return { db, membershipReads: () => membershipReads };
+  }
+
+  it("issues NO organizationMembers read when handed a resolved membership id", async () => {
+    const sink = { value: undefined as unknown };
+    const { db, membershipReads } = makeDb(sink);
+    const service = new DashboardProjectService(db as never, makeAccess("all"));
+
+    await service.getMyIssues(ORG, USER, ["TODO"], 4242);
+
+    expect(membershipReads()).toBe(0);
+    const { sql: sqlStr, params } = dialect.sqlToQuery(sink.value as SQL);
+    expect(sqlStr).toContain('"assignee_membership_id"');
+    expect(params).toContain(4242);
+  });
+
+  it("returns [] without touching tickets when the caller resolved no membership (null)", async () => {
+    const sink = { value: undefined as unknown };
+    const { db, membershipReads } = makeDb(sink);
+    const service = new DashboardProjectService(db as never, makeAccess("all"));
+
+    const result = await service.getMyIssues(ORG, USER, ["TODO"], null);
+
+    expect(result).toEqual([]);
+    expect(membershipReads()).toBe(0);
+    expect(sink.value).toBeUndefined();
+  });
+
+  it("still resolves the membership itself when the argument is omitted", async () => {
+    const sink = { value: undefined as unknown };
+    const { db, membershipReads } = makeDb(sink);
+    const service = new DashboardProjectService(db as never, makeAccess("all"));
+
+    await service.getMyIssues(ORG, USER);
+
+    expect(membershipReads()).toBe(1);
+    const { params } = dialect.sqlToQuery(sink.value as SQL);
+    expect(params).toContain(77);
   });
 });

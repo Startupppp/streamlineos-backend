@@ -25,9 +25,7 @@ export const kbSources = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    spaceId: integer("space_id").references(() => kbSpaces.id, {
-      onDelete: "set null",
-    }),
+    spaceId: integer("space_id"),
     kind: text("kind").$type<KbSourceKind>().notNull(),
     title: text("title").notNull(),
     fileKey: text("file_key"),
@@ -49,7 +47,6 @@ export const kbSources = pgTable(
     deletedAt: timestamp("deleted_at"),
   },
   (table) => [
-    index("idx_kb_sources_org").on(table.orgId),
     index("idx_kb_sources_org_space").on(table.orgId, table.spaceId),
     unique("uniq_kb_sources_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.spaceId], foreignColumns: [kbSpaces.orgId, kbSpaces.id], name: "fk_kb_sources_org_space" }),

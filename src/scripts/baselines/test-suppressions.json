@@ -1,0 +1,118 @@
+{
+  "note": "Every unconditional test suppression in this repository, with the blocker that justifies it. PLACEHOLDER = empty body, nothing was ever written. QUARANTINE = live assertions that do not run. check:test-suppressions fails on an unregistered site, a stale entry, a declared class that does not match the measured one, and on a quarantine count above its ratchet.",
+  "measured": "2026-09-02",
+  "entries": [
+    {
+      "file": "src/degradation/ai-provider.spec.ts",
+      "title": "integration: releasing a RESERVED reservation restores the org wallet balance — persisted refund, owner-scope, and rollback probes are unimplemented; a provider-isolated seeded harness exists but requires an approved disposable database at the current migration head",
+      "kind": "it.skip",
+      "class": "PLACEHOLDER",
+      "blocker": "Persisted refund, owner-scope, and partial-write rollback probes are unimplemented. Release uses runInTenantTransaction and can reuse a same-tenant ambient transaction. A provider-isolated seeded harness exists, but no approved disposable database at the current migration head is available for this acceptance run. Empty body — nothing is switched off."
+    },
+    {
+      "file": "src/degradation/ai-provider.spec.ts",
+      "title": "integration: sweeping expired reservations restores credits atomically within each tenant — persisted refund and rollback probes are unimplemented; tenants commit or roll back independently and require an approved disposable database at the current migration head",
+      "kind": "it.skip",
+      "class": "PLACEHOLDER",
+      "blocker": "Persisted sweep refund and partial-write rollback probes are unimplemented. forEachOrg supplies a separate transaction for each tenant, not one atomic transaction across all wallets; an outer rollback cannot isolate the entire sweep on a shared database. A provider-isolated seeded harness exists, but no approved disposable database at the current migration head is available for this acceptance run. Empty body — nothing is switched off."
+    },
+    {
+      "file": "src/degradation/email-provider.spec.ts",
+      "title": "integration: a provider 503 increments retryCount and returns the event to PENDING — the real-publisher persistence probe is unimplemented; the provider can be a local fault server, but an approved disposable database is required",
+      "kind": "it.skip",
+      "class": "PLACEHOLDER",
+      "blocker": "The real-publisher retry persistence probe is unimplemented. A provider-isolated seeded harness and local fault server exist, but no approved disposable database at the current migration head is available for this acceptance run. The publisher uses runInNewTenantTransaction, so an outer rollback cannot isolate its writes on a shared database. Empty body — nothing is switched off."
+    },
+    {
+      "file": "src/degradation/email-provider.spec.ts",
+      "title": "integration: reaching OUTBOX_MAX_RETRIES dead-letters the event while the request row stays committed — the real-publisher persistence probe is unimplemented and requires an approved disposable database",
+      "kind": "it.skip",
+      "class": "PLACEHOLDER",
+      "blocker": "The real-publisher dead-letter and committed-request persistence probe is unimplemented. A provider-isolated seeded harness and local fault server exist, but no approved disposable database at the current migration head is available for this acceptance run. The publisher uses runInNewTenantTransaction, so an outer rollback cannot isolate its writes on a shared database. Empty body — nothing is switched off."
+    },
+    {
+      "file": "src/degradation/email-provider.spec.ts",
+      "title": "integration: the request transaction commits before any delivery attempt — the real-publisher transaction-ordering probe is unimplemented and requires an approved disposable database",
+      "kind": "it.skip",
+      "class": "PLACEHOLDER",
+      "blocker": "The real-publisher request-commit/delivery-ordering probe is unimplemented. A provider-isolated seeded harness and local fault server exist, but no approved disposable database at the current migration head is available for this acceptance run. The publisher uses runInNewTenantTransaction, so an outer rollback cannot isolate its writes on a shared database. Empty body — nothing is switched off."
+    },
+    {
+      "file": "src/degradation/object-storage.spec.ts",
+      "title": "integration: retrying an upload from its stored pre-generated key completes the object and metadata without data loss — R2 settings exist but are unverified; the probe and authorized disposable storage/database acceptance are not available",
+      "kind": "it.skip",
+      "class": "PLACEHOLDER",
+      "blocker": "Local R2 endpoint, bucket, and credential settings exist, but their validity and suitability for disposable testing are unverified. The upload-retry/metadata persistence probe is unimplemented; an authorized disposable storage target and approved database are required. No provider acceptance was performed. Empty body — nothing is switched off."
+    },
+    {
+      "file": "src/degradation/object-storage.spec.ts",
+      "title": "integration: scan state changes from PENDING to CLEAN only after a real scanner confirms the result — R2 settings are unverified, no real scanner is configured, and the disposable storage/database probe is unimplemented",
+      "kind": "it.skip",
+      "class": "PLACEHOLDER",
+      "blocker": "Local R2 settings exist but are unverified, and no real scanner is configured. The real storage/scanner lifecycle probe is unimplemented; it requires a scanner plus authorized disposable storage and an approved database. Mocked scanner/unit coverage does not establish real scan acceptance. Empty body — nothing is switched off."
+    },
+    {
+      "file": "src/degradation/read-replica.spec.ts",
+      "title": "PHYSICAL REPLICA NOT PROVISIONED. The staleness behaviour below is proved against a REPEATABLE READ ",
+      "kind": "it.skip",
+      "class": "PLACEHOLDER",
+      "blocker": "no physical read replica is provisioned; the staleness behaviour is proved against a REPEATABLE READ snapshot instead. Empty body — nothing is switched off."
+    },
+    {
+      "file": "src/degradation/realtime-adapter.spec.ts",
+      "title": "integration: a test client receives messages from the DB lastReadAt watermark after reconnecting — Ably configuration exists but is unverified; the subscription/history probe and authorized disposable Ably/database acceptance are not available",
+      "kind": "it.skip",
+      "class": "PLACEHOLDER",
+      "blocker": "Local Ably API-key configuration exists, but its validity and suitability for disposable testing are unverified. The reconnect/subscription/history probe is unimplemented and requires authorized test channels plus an approved database with watermark fixtures. No provider acceptance was performed. Empty body — nothing is switched off."
+    },
+    {
+      "file": "src/modules/ai/core/crm-copilot.service.phase2.spec.ts",
+      "title": "stalePipelineDigest",
+      "kind": "describe.skip",
+      "class": "QUARANTINE",
+      "blocker": "QUARANTINE, recorded not excused: CRM is excluded from the 10/10 release and these blocks hold live assertions against CrmScoringService/CrmBriefService that do not run. Counted against the quarantine ratchet so the class cannot grow."
+    },
+    {
+      "file": "src/modules/ai/core/crm-copilot.service.phase2.spec.ts",
+      "title": "dataQualityCopilot",
+      "kind": "describe.skip",
+      "class": "QUARANTINE",
+      "blocker": "QUARANTINE, recorded not excused: CRM is excluded from the 10/10 release and these blocks hold live assertions against CrmScoringService/CrmBriefService that do not run. Counted against the quarantine ratchet so the class cannot grow."
+    },
+    {
+      "file": "src/modules/ai/core/crm-copilot.service.phase2.spec.ts",
+      "title": "nextBestActionWithEvidence (CrmScoringService)",
+      "kind": "describe.skip",
+      "class": "QUARANTINE",
+      "blocker": "QUARANTINE, recorded not excused: CRM is excluded from the 10/10 release and these blocks hold live assertions against CrmScoringService/CrmBriefService that do not run. Counted against the quarantine ratchet so the class cannot grow."
+    },
+    {
+      "file": "src/modules/ai/core/crm-copilot.service.phase2.spec.ts",
+      "title": "leadSummaryWithCitations",
+      "kind": "describe.skip",
+      "class": "QUARANTINE",
+      "blocker": "QUARANTINE, recorded not excused: CRM is excluded from the 10/10 release and these blocks hold live assertions against CrmScoringService/CrmBriefService that do not run. Counted against the quarantine ratchet so the class cannot grow."
+    },
+    {
+      "file": "src/modules/ai/core/crm-copilot.service.phase2.spec.ts",
+      "title": "predictDeal (estimateDisclaimer)",
+      "kind": "describe.skip",
+      "class": "QUARANTINE",
+      "blocker": "QUARANTINE, recorded not excused: CRM is excluded from the 10/10 release and these blocks hold live assertions against CrmScoringService/CrmBriefService that do not run. Counted against the quarantine ratchet so the class cannot grow."
+    },
+    {
+      "file": "src/modules/ai/core/crm-copilot.service.phase2.spec.ts",
+      "title": "meetingFollowUpDraft (CrmBriefService)",
+      "kind": "describe.skip",
+      "class": "QUARANTINE",
+      "blocker": "QUARANTINE, recorded not excused: CRM is excluded from the 10/10 release and these blocks hold live assertions against CrmScoringService/CrmBriefService that do not run. Counted against the quarantine ratchet so the class cannot grow."
+    },
+    {
+      "file": "src/modules/crm/core/crm-attribution-report.service.spec.ts",
+      "title": "last-touch uses a subquery (.as()) to find max occurredAt per lead — mock chain depth makes this an integration-level test; cover in e2e",
+      "kind": "it.todo",
+      "class": "PLACEHOLDER",
+      "blocker": "CRM is excluded from the 10/10 release; the last-touch subquery needs an integration harness the mock chain cannot reach. Empty body — nothing is switched off."
+    }
+  ]
+}

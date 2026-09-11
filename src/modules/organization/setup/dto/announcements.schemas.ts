@@ -31,13 +31,13 @@ const announcementBodyBase = z.object({
   title: titleSchema,
   content: contentSchema,
   targetType: z.enum(["ALL", "DEPARTMENT", "BRANCH", "ROLE"]).default("ALL"),
-  targetIds: z.array(z.string().min(1)).default([]),
+  targetIds: z.array(z.string().min(1)).max(1000).default([]),
   status: z.enum(["DRAFT", "SCHEDULED", "PUBLISHED", "EXPIRED"]).default("DRAFT"),
   publishAt: optionalDateTime,
   expiresAt: optionalDateTime,
   isPinned: z.boolean().default(false),
   attachmentUrls: z.array(z.string()).default([]),
-});
+}).strict();
 
 function refineAnnouncementDates(
   data: {
@@ -126,7 +126,7 @@ export const updateHrAnnouncementSchema = announcementBodyBase
         path: ["targetIds"],
       });
     }
-  });
+  }).strict();
 
 export type CreateHrAnnouncementInput = z.infer<typeof createHrAnnouncementSchema>;
 export type UpdateHrAnnouncementInput = z.infer<typeof updateHrAnnouncementSchema>;

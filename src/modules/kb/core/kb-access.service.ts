@@ -1,11 +1,10 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull, or, inArray } from "drizzle-orm";
 import {
   kbSpaces,
   kbSpaceMembers,
   kbArticles,
   kbArticleRestrictions,
-  kbSpaceGrants,
   roles,
   roleAssignments,
   organizationMembers,
@@ -13,13 +12,13 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { actingMembershipId } from "../../../common/auth/principal";
+import { accountableMembershipId, actingMembershipId } from "../../../common/auth/principal";
 import { CacheService } from "../../../common/cache/cache.service";
 import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
 import { AccessService } from "../../access/access.service";
+import { kbAclCacheKey, type KbAclDimension } from "./kb-acl-cache-key";
 
 const KB_MANAGE_SPACES = "kb:spaces:manage";
-const KB_SPACE_VIEWER_PERMISSION = "kb:space:viewer";
 
 @Injectable()
 export class KbAccessService {
@@ -52,11 +51,20 @@ export class KbAccessService {
     return rows.map((r) => r.slug);
   }
 
+  private async resolveAclDimension(user: CurrentUserContext): Promise<KbAclDimension> {
+    return {
+      orgId: user.orgId,
+      permissionsVersion: await this.access.getPermissionsVersion(user.orgId),
+      membershipId: user.principal !== undefined ? accountableMembershipId(user.principal) : null,
+    };
+  }
+
   async getAccessibleSpaceIds(user: CurrentUserContext): Promise<number[]> {
+    const acl = await this.resolveAclDimension(user);
     return this.cache.cachedVersioned(
       `kb:acc-spaces:${user.orgId}`,
-      user.userId,
-      () => this.computeAccessibleSpaceIds(user),
+      kbAclCacheKey(user.userId, acl),
+      () => this.computeAccessibleSpaceIds(user, acl),
       60,
     );
   }
@@ -69,7 +77,10 @@ export class KbAccessService {
     return getAccessibleProjectIds(this.db, user);
   }
 
-  private async computeAccessibleSpaceIds(user: CurrentUserContext): Promise<number[]> {
+  private async computeAccessibleSpaceIds(
+    user: CurrentUserContext,
+    acl: KbAclDimension,
+  ): Promise<number[]> {
     const spaces = await this.db
       .select({ id: kbSpaces.id, audience: kbSpaces.audience })
       .from(kbSpaces)
@@ -77,12 +88,10 @@ export class KbAccessService {
 
     if (await this.isAdmin(user)) return spaces.map((s) => s.id);
 
-    const membershipId = user.principal !== undefined ? actingMembershipId(user.principal) : null;
+    const membershipId = acl.membershipId;
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const roleSlugs = await this.resolveRoleSlugs(user.orgId, user.userId);
-    const directMatch =
-      membershipId !== null
-        ? or(eq(kbSpaceMembers.membershipId, membershipId), eq(kbSpaceMembers.userId, user.userId))
-        : eq(kbSpaceMembers.userId, user.userId);
+    const directMatch = eq(kbSpaceMembers.membershipId, membershipId);
     const grantedRows = await this.db
       .selectDistinct({ spaceId: kbSpaceMembers.spaceId })
       .from(kbSpaceMembers)
@@ -95,38 +104,11 @@ export class KbAccessService {
         ),
       );
 
-    const restrictedRows = await this.db
-      .selectDistinct({ spaceId: kbSpaceMembers.spaceId })
-      .from(kbSpaceMembers)
-      .where(eq(kbSpaceMembers.orgId, user.orgId));
-
     const granted = new Set(grantedRows.map((m) => m.spaceId));
-    const restricted = new Set(restrictedRows.map((m) => m.spaceId));
 
-    const memberAccessIds = spaces
-      .filter(
-        (s) =>
-          s.audience === "public" ||
-          s.audience === "mixed" ||
-          granted.has(s.id) ||
-          !restricted.has(s.id),
-      )
+    return spaces
+      .filter((s) => s.audience === "public" || s.audience === "mixed" || granted.has(s.id))
       .map((s) => s.id);
-
-    const explicitGrantRows = await this.db
-      .selectDistinct({ spaceId: kbSpaceGrants.spaceId })
-      .from(kbSpaceGrants)
-      .where(
-        and(
-          eq(kbSpaceGrants.orgId, user.orgId),
-          eq(kbSpaceGrants.principalType, "user"),
-          eq(kbSpaceGrants.principalId, user.userId),
-          eq(kbSpaceGrants.permissionKey, KB_SPACE_VIEWER_PERMISSION),
-        ),
-      );
-    const explicitGrantedIds = explicitGrantRows.map((r) => r.spaceId);
-
-    return [...new Set([...memberAccessIds, ...explicitGrantedIds])];
   }
 
   async assertSpaceAccessible(user: CurrentUserContext, spaceId: number): Promise<void> {
@@ -158,7 +140,7 @@ export class KbAccessService {
     }
 
     const restrictions = await this.db
-      .select({ userId: kbArticleRestrictions.userId, membershipId: kbArticleRestrictions.membershipId, role: kbArticleRestrictions.role })
+      .select({ membershipId: kbArticleRestrictions.membershipId, role: kbArticleRestrictions.role })
       .from(kbArticleRestrictions)
       .where(
         and(
@@ -173,7 +155,6 @@ export class KbAccessService {
       const allowed = restrictions.some(
         (r) =>
           (membershipId !== null && r.membershipId === membershipId) ||
-          r.userId === user.userId ||
           (r.role !== null && roleSlugs.includes(r.role)),
       );
       if (!allowed) throw new NotFoundException("Article not found");
@@ -208,7 +189,7 @@ export class KbAccessService {
     }
 
     const restrictions = await this.db
-      .select({ userId: kbArticleRestrictions.userId, membershipId: kbArticleRestrictions.membershipId, role: kbArticleRestrictions.role })
+      .select({ membershipId: kbArticleRestrictions.membershipId, role: kbArticleRestrictions.role })
       .from(kbArticleRestrictions)
       .where(
         and(
@@ -223,7 +204,6 @@ export class KbAccessService {
       const allowed = restrictions.some(
         (r) =>
           (membershipId !== null && r.membershipId === membershipId) ||
-          r.userId === user.userId ||
           (r.role !== null && roleSlugs.includes(r.role)),
       );
       if (!allowed) throw new NotFoundException("Article not found");

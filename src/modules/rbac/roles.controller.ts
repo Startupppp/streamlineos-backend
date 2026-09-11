@@ -22,6 +22,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { AccessService } from "../access/access.service";
 import type { DataScope } from "../access/access.types";
 import { RolesService } from "./roles.service";
+import { RoleSeedService } from "./role-seed.service";
 import { RolesQueryService } from "./roles-query.service";
 import {
   materializeTemplateSchema,
@@ -38,7 +39,25 @@ import {
   type UpdateRoleInput,
 } from "./dto/rbac.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  roleTemplateCatalogResponseSchema,
+  seededRolesResponseSchema,
+  roleListResponseSchema,
+  roleDetailResponseSchema,
+  roleAnalyticsResponseSchema,
+  permissionsMatrixResponseSchema,
+  simulationCandidatesResponseSchema,
+  simulateAccessResponseSchema,
+  materializeTemplateResponseSchema,
+  assignableDepartmentsResponseSchema,
+  roleMutationResponseSchema,
+  rolePermissionsResponseSchema,
+  setRolePermissionsResponseSchema,
+  roleMembersResponseSchema,
+  roleMemberMutationResponseSchema,
+} from "./dto/roles-response.schemas";
 import { z } from "zod";
 
 const targetUserIdParams = z.object({ targetUserId: z.string().min(1) }).strict();
@@ -56,10 +75,12 @@ interface SimulateAccessResponse {
 export class RolesController {
   constructor(
     private readonly roles: RolesService,
+    private readonly seed: RoleSeedService,
     private readonly query: RolesQueryService,
     private readonly access: AccessService,
   ) {}
 
+  @ResponseSchema(roleListResponseSchema)
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
@@ -71,6 +92,7 @@ export class RolesController {
     return this.roles.getRoles(u.orgId, query);
   }
 
+  @ResponseSchema(roleAnalyticsResponseSchema)
   @Get("analytics")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
@@ -78,6 +100,7 @@ export class RolesController {
     return this.query.getRoleAnalytics(u.orgId);
   }
 
+  @ResponseSchema(permissionsMatrixResponseSchema)
   @Get("permissions/matrix")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
@@ -85,6 +108,7 @@ export class RolesController {
     return this.roles.getPermissionsMatrix(u.orgId);
   }
 
+  @ResponseSchema(simulationCandidatesResponseSchema)
   @Get("simulate/candidates")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
@@ -96,6 +120,7 @@ export class RolesController {
     return this.query.listSimulationCandidates(u.orgId, query);
   }
 
+  @ResponseSchema(simulateAccessResponseSchema)
   @Get("simulate/:targetUserId")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
@@ -128,14 +153,18 @@ export class RolesController {
   @Post("seed-defaults")
   @BodylessAction()
   @HttpCode(200)
+  @Idempotent("rbac.roles.seedDefaults")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @ResponseSchema(seededRolesResponseSchema)
   seedDefaults(@CurrentUser() u: CurrentUserContext) {
-    return this.roles.seedDefaultRoles(u.orgId);
+    return this.seed.seedDefaultRoles(u.orgId);
   }
 
+  @ResponseSchema(materializeTemplateResponseSchema)
   @Post("templates")
   @HttpCode(201)
+  @Idempotent("rbac.role.materializeTemplate")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   @Validate({ body: materializeTemplateSchema })
@@ -143,16 +172,18 @@ export class RolesController {
     @Body() body: MaterializeTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.roles.materializeTemplate(u, body.templateId);
+    return this.seed.materializeTemplate(u, body.templateId);
   }
 
   // ROLE_TEMPLATES is a product constant, no actor and no tenant data; materializing one is the gated action.
   @Get("templates")
   @Universal()
+  @ResponseSchema(roleTemplateCatalogResponseSchema)
   templates() {
-    return this.roles.listTemplates();
+    return this.seed.listTemplates();
   }
 
+  @ResponseSchema(assignableDepartmentsResponseSchema)
   @Get("departments")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
@@ -160,6 +191,7 @@ export class RolesController {
     return this.query.listAssignableDepartments(u.orgId);
   }
 
+  @ResponseSchema(roleDetailResponseSchema)
   @Get(":roleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
@@ -168,6 +200,7 @@ export class RolesController {
     return this.roles.getRole(u.orgId, this.parseRoleId(roleId));
   }
 
+  @ResponseSchema(roleMutationResponseSchema)
   @Patch(":roleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
@@ -180,6 +213,7 @@ export class RolesController {
     return this.roles.updateRole(u, this.parseRoleId(roleId), body);
   }
 
+  @ResponseSchema(roleMutationResponseSchema)
   @Delete(":roleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
@@ -191,6 +225,7 @@ export class RolesController {
     return this.roles.deleteRole(u, this.parseRoleId(roleId));
   }
 
+  @ResponseSchema(rolePermissionsResponseSchema)
   @Get(":roleId/permissions")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
@@ -202,6 +237,7 @@ export class RolesController {
     return this.roles.getRolePermissions(u.orgId, this.parseRoleId(roleId));
   }
 
+  @ResponseSchema(setRolePermissionsResponseSchema)
   @Put(":roleId/permissions")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
@@ -214,6 +250,7 @@ export class RolesController {
     return this.roles.setRolePermissions(u, this.parseRoleId(roleId), body);
   }
 
+  @ResponseSchema(roleMembersResponseSchema)
   @Get(":roleId/members")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
@@ -225,8 +262,10 @@ export class RolesController {
     return this.roles.getRoleMembers(u.orgId, this.parseRoleId(roleId));
   }
 
+  @ResponseSchema(roleMemberMutationResponseSchema)
   @Post(":roleId/members")
   @HttpCode(201)
+  @Idempotent("rbac.role.addMember")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   @Validate({ params: roleIdParams, body: roleMemberSchema })
@@ -238,6 +277,7 @@ export class RolesController {
     return this.roles.addRoleMember(u, this.parseRoleId(roleId), body);
   }
 
+  @ResponseSchema(roleMemberMutationResponseSchema)
   @Delete(":roleId/members")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")

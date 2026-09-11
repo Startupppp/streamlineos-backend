@@ -36,6 +36,16 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  helpdeskTicketListSchema,
+  helpdeskSuggestSchema,
+  hrHelpdeskRoutingSchema,
+  helpdeskTicketDetailSchema,
+  helpdeskTicketSchema,
+  hrHelpdeskCommentSchema,
+  successSchema,
+} from "./dto/helpdesk-response.schemas";
 
 const ticketIdParams = z.object({ ticketId: z.coerce.number().int().positive() }).strict();
 const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
@@ -56,6 +66,7 @@ export class HrHelpdeskController {
   }
 
   @Get()
+  @ResponseSchema(helpdeskTicketListSchema)
   @RequirePermission("hr:helpdesk:view")
   @Validate({ query: listSchema })
   async list(
@@ -66,6 +77,7 @@ export class HrHelpdeskController {
   }
 
   @Get("suggest")
+  @ResponseSchema(helpdeskSuggestSchema)
   @RequirePermission("hr:helpdesk:view")
   @Validate({ query: suggestSchema })
   suggest(
@@ -76,12 +88,14 @@ export class HrHelpdeskController {
   }
 
   @Get("routing")
+  @ResponseSchema(z.array(hrHelpdeskRoutingSchema))
   @RequirePermission("hr:helpdesk:manage")
   listRouting(@CurrentUser() u: CurrentUserContext) {
     return this.helpdesk.listRoutingRules(u.orgId);
   }
 
   @Get(":ticketId")
+  @ResponseSchema(helpdeskTicketDetailSchema)
   @RequirePermission("hr:helpdesk:view")
   @Validate({ params: ticketIdParams })
   async getById(
@@ -92,6 +106,7 @@ export class HrHelpdeskController {
   }
 
   @Post()
+  @ResponseSchema(helpdeskTicketSchema)
   @HttpCode(201)
   @RequirePermission("hr:helpdesk:create")
   @Validate({ body: createSchema })
@@ -103,6 +118,7 @@ export class HrHelpdeskController {
   }
 
   @Patch(":ticketId")
+  @ResponseSchema(helpdeskTicketSchema)
   @RequirePermission("hr:helpdesk:manage")
   @Validate({ params: ticketIdParams, body: updateTicketSchema })
   async update(
@@ -114,6 +130,7 @@ export class HrHelpdeskController {
   }
 
   @Post(":ticketId/comments")
+  @ResponseSchema(hrHelpdeskCommentSchema)
   @HttpCode(201)
   @RequirePermission("hr:helpdesk:view")
   @Validate({ params: ticketIdParams, body: addCommentSchema })
@@ -126,6 +143,7 @@ export class HrHelpdeskController {
   }
 
   @Post("routing")
+  @ResponseSchema(hrHelpdeskRoutingSchema)
   @HttpCode(201)
   @RequirePermission("hr:helpdesk:manage")
   @Validate({ body: routingRuleSchema })
@@ -137,6 +155,7 @@ export class HrHelpdeskController {
   }
 
   @Delete("routing/:ruleId")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:helpdesk:manage")
   @Validate({ params: ruleIdParams })
   deleteRouting(

@@ -1,0 +1,481 @@
+name: Database gates
+
+# Ported here on 2026-09-02 (ticket 35b) from two workflow files that lived in
+# the FRONTEND repository — `.github/workflows/backend.yml` and
+# `.github/workflows/seeded-e2e.yml`. That repository has no `backend/`
+# directory, so `pnpm/action-setup` could not find `backend/package.json` and
+# every run died at step 3 with "No pnpm version is specified" (measured: FE runs
+# 33601538287 and 33601538365, 52s and 35s, every gate step reporting `-`).
+# Those two files never executed a single gate and have been deleted.
+#
+# The static gates they named now run in `ci.yml`'s `gates` job on every push and
+# pull request. What is left here is the half that needs a live database.
+#
+# ── 2026-09-03: THE RESULT WAS READ ──────────────────────────────────────────
+#
+# The header used to say "these jobs have never executed in any repository ...
+# run it with workflow_dispatch, read the result, then promote the jobs that
+# pass". The schedule fired before anyone did: run 33733281657, 2026-09-03
+# 08:25:35Z, at f22c79f0 — the ONLY run this workflow has ever had. All three
+# jobs FAILED, in 1m11s, and nobody looked. So the claim was already false when
+# it was written, and worse than false: this file was believed to be pending
+# rather than red.
+#
+# All three failures had one cause, and it was this file's, not the gates':
+#
+#   FAIL [0423_repair_schema_drift] role "streamline_app" does not exist
+#   RESULT: FAILED at 0423_repair_schema_drift (165/672 ok before failure)
+#
+# 84 migrations issue `GRANT ... TO streamline_app` unconditionally. The role is
+# cluster-wide and every developer machine already has one, which is why a cold
+# build reaches head locally and died at migration 166 here. `tenant-relationships`
+# created it with `db:bootstrap-role` AFTER `db:bootstrap`, which is too late;
+# `bootstrapped` and `migration-proof` never created it at all. It is now the
+# first database step of every job.
+#
+# Two further defects that the first green then exposed, both fixed:
+#   * `migration-proof` and `replay-chain-cold` lacked the session `search_path`
+#     that `db-bootstrap.mjs` sets, so the 152 unqualified `current_org_id()`
+#     calls in 0619 and its siblings resolved only under a role literally named
+#     `neondb_owner`. Under CI's `ci` role the cold proof died at 0619 with
+#     `42883 function current_org_id() does not exist`.
+#   * the `Replay ledger` step pointed `COLD_DATABASE_URL` at the database
+#     `db:bootstrap` had just built. `check:replay-ledger` reads `drizzle.__replay`,
+#     which only `replay:chain-cold` writes, so it reported 672 of 672 entries
+#     "not applied" and exited 1 by construction. It now gets a database that
+#     `replay:chain-cold` actually replayed.
+#
+# Every gate below was then measured at journal head 672/672 on a locally
+# bootstrapped database and exits 0. The two controller e2e suites were NOT, and
+# they carry an explicit event guard saying so rather than a silent one.
+#
+# This workflow now runs on push and pull request. A gate whose only trigger is a
+# nightly nobody reads is a gate in name only — which is what the last twenty-four
+# hours of this file demonstrated. `check:gate-wiring` enforces that property now.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The migration ledger and the controller e2e suite, against a bootstrapped
+  # database. Also the ON DELETE SET NULL catalog half, which cannot be answered
+  # by anything static — the column list lives only in pg_constraint.confdelsetcols.
+  bootstrapped:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      # Required by the Controller E2E Tests step below. The application talks to
+      # Redis exclusively through @upstash/redis (REST protocol); local-upstash-shim.mjs
+      # bridges that protocol to this RESP server. The shim is started in the
+      # "Start Upstash REST shim" step further down, after the database is ready.
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+      PGSSLMODE: disable
+      BACKEND_JWT_SECRET: ci-only-backend-jwt-secret-with-at-least-44-characters
+      PORTAL_JWT_SECRET: ci-only-portal-jwt-secret-with-at-least-44-characters-xx
+      ENCRYPTION_KEY: ci-only-encryption-key-min-32-characters-for-testing
+      INTERNAL_API_SECRET: ci-only-internal-api-secret-min-32-chars-for-testing
+      CORS_ORIGINS: http://localhost:1000
+      APP_URL: http://localhost:1000
+      # Shim defaults: port 8079, token "local-dev-token", redis 127.0.0.1:6379.
+      # Read from local-upstash-shim.mjs; do not guess these values.
+      UPSTASH_REDIS_REST_URL: http://127.0.0.1:8079
+      UPSTASH_REDIS_REST_TOKEN: local-dev-token
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # MUST precede db:bootstrap. 84 migrations GRANT to this role by name and
+      # do not guard the grant, so on a fresh cluster the chain dies at 0423.
+      # This is exactly how run 33733281657 failed.
+      - name: Create the app role the migration chain grants to
+        run: pnpm db:bootstrap-role
+        env:
+          APP_DB_PASSWORD: ci
+
+      - name: Bootstrap Database
+        run: pnpm db:bootstrap
+
+      - name: Migration ledger agrees with the journal
+        run: pnpm check:migration-ledger:self-test && pnpm check:migration-ledger
+
+      # Nine RBAC foreign keys, each bitten by a probe that names the SQLSTATE *and* the
+      # constraint it asserts, inside BEGIN/ROLLBACK. Every probe builds its own two tenants,
+      # memberships and role in the transaction it rolls back, so nothing pre-exists to
+      # collide on a unique index -- the failure that used to score a REJECT pass on 23505
+      # and fail both ACCEPT controls. It never skips: a database that cannot support the
+      # probes fails loudly naming what is missing, because a skip reads as a pass.
+      - name: RBAC referential integrity (live probes)
+        run: pnpm verify:rbac-integrity:self-test && pnpm verify:rbac-integrity
+
+      - name: ON DELETE SET NULL column lists (catalog half)
+        run: pnpm check:set-null-column-lists
+        env:
+          SET_NULL_GATE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+
+      - name: Retention coverage (live)
+        run: pnpm check:retention-coverage
+
+      # Both drift gates read pg_attribute / pg_constraint / pg_index against a database at
+      # journal head, so the hermetic `gates` job in ci.yml cannot host them. They spent this
+      # release in check-gate-wiring's UNWIRED_BY_DESIGN list under the reason "runs in
+      # db-gates.yml when a bootstrapped target exists" — and neither name appeared anywhere
+      # in this file. The reason is now true because the steps exist.
+      - name: Declared columns match the catalog
+        run: pnpm check:declaration-column-drift:self-test && pnpm check:declaration-column-drift
+        env:
+          COLUMN_DRIFT_GATE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+
+      - name: Declared constraints and indexes match the catalog
+        run: >-
+          pnpm check:declaration-constraint-drift:self-test &&
+          pnpm check:declaration-constraint-drift
+        env:
+          CONSTRAINT_DRIFT_GATE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+
+      # Wired 2026-09-03 (v2 ticket 30). It landed in package.json during this session and
+      # check:gate-wiring caught it UNWIRED within the hour — the second new gate that rule has
+      # caught the same day. Same prerequisite and same home as the two drift gates above: it
+      # reads pg_constraint against a database at journal head, so the hermetic `gates` job in
+      # ci.yml cannot host it. MEASURED locally: self-test exit 0; the gate exits 2
+      # (INCONCLUSIVE — "Set REFERENTIAL_ACTION_GATE_DATABASE_URL to a database bootstrapped to
+      # journal head") with no database, which is the correct prerequisite-absent code and not a
+      # red. Its live half runs here, where the URL is supplied.
+      - name: Foreign keys use the declared referential action
+        run: >-
+          pnpm check:referential-action-drift:self-test &&
+          pnpm check:referential-action-drift
+        env:
+          REFERENTIAL_ACTION_GATE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+
+      # The third leg. The two drift gates above compare the Drizzle source to the
+      # catalog; this one compares MEMBERSHIP_ARTIFACTS -- the product's contract for
+      # what survives a membership removal -- to the same catalog. It belongs here and
+      # not in the hermetic `gates` job for the same reason as its neighbours: whether
+      # a foreign key exists at all lives only in pg_constraint. MEASURED locally at
+      # journal head: self-test 20/20; the gate found 8 foreign keys the schema had
+      # declared for months and no migration had ever created (fixed in 1072) and now
+      # exits 0 over 344 column-level expectations. With no database it exits 2
+      # (INCONCLUSIVE), the prerequisite-absent code, not a red.
+      - name: Membership artifacts match the catalog
+        run: >-
+          pnpm check:membership-parity:self-test &&
+          pnpm check:membership-parity
+        env:
+          MEMBERSHIP_PARITY_GATE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+
+      # The application speaks the Upstash REST protocol, not RESP directly.
+      # local-upstash-shim.mjs bridges them: it listens on :8079 and forwards
+      # every command to the Redis service container on :6379.
+      # Values are read from the script's own defaults (port 8079, token
+      # "local-dev-token"); do not invent them.
+      - name: Start Upstash REST shim
+        run: >-
+          nohup node src/scripts/local-upstash-shim.mjs
+          --port=8079 --redis=127.0.0.1:6379 --token=local-dev-token
+          > /tmp/upstash-shim.log 2>&1 &
+
+      # Poll until the shim answers a PING or 30 s elapse. A background process
+      # that died silently would let the test suite fail on an unrelated-looking
+      # connection error; this step names the real cause and prints the shim log.
+      - name: Wait for Upstash shim to be ready
+        run: |
+          for i in $(seq 1 30); do
+            status=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+              -H "Authorization: Bearer local-dev-token" \
+              -H "Content-Type: application/json" \
+              -d '["PING"]' \
+              http://127.0.0.1:8079)
+            [ "$status" = "200" ] && echo "Upstash shim ready" && exit 0
+            echo "Waiting for shim ($i/30)..."
+            sleep 1
+          done
+          echo "Upstash shim did not come up in 30 s; shim log:"
+          cat /tmp/upstash-shim.log || true
+          exit 1
+
+      # MEASURED 2026-09-08 at commit 514ea82da: 16 suites / 787 tests, 0
+      # ResponseContractViolation, 0 live email sends, on a co-located PostgreSQL
+      # 18.6 + Redis + Upstash-shim stack. Now provisioned here: PostgreSQL
+      # (service container), Redis (service container), Upstash REST shim (steps
+      # above). Promoted to push/pull_request on 2026-09-08.
+      # UNPROVEN IN CI — the local measurement is the only green read so far.
+      # A real CI green is required before citing this as a passing gate.
+      - name: Controller E2E Tests
+        run: pnpm test:e2e:ci
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+
+      - name: Five-area billing replay and hierarchy protection (real Postgres)
+        run: >-
+          pnpm test:db-specs --runTestsByPath
+          src/modules/billing/core/provider-event-ledger.db.spec.ts
+          src/modules/billing/payments/payment-webhook-event-id-precedence.db.spec.ts
+          src/modules/organization/hierarchy/org-hierarchy-descendant-protection.db.spec.ts
+        env:
+          ALLOW_DESTRUCTIVE_DB_TESTS: "1"
+
+      # ── The `.db.spec.ts` class ──────────────────────────────────────────────
+      #
+      # 56 spec files need a live Postgres. They used to carry a runtime env gate
+      # in the house style (`const describeDb = ENABLED && DB_URL ? describe :
+      # describe.skip`), which meant that on a machine without a database they
+      # reported as passing tests while asserting nothing — and until this step
+      # existed, that machine was every machine.
+      #
+      # 2026-09-07: that gate is GONE, and with it the whole class. These files
+      # are now selected the same way `*.e2e-spec.ts` already was — by SUITE, via
+      # `jest-db.json` (`pnpm test:db-specs`), and excluded from the default
+      # `jest` run. Each one now runs UNCONDITIONALLY here and THROWS, naming the
+      # environment variable it needs, when its database is absent. A missing
+      # prerequisite is a red step, never a silent skip. The 23 `*_DB_TESTS: "1"`
+      # variables this step used to set are deleted because nothing reads them;
+      # the `*_PROBE_DATABASE_URL` values below are the real prerequisite and stay.
+      #
+      # `check:test-suppressions` went 76 -> 20 against its ratchet of 29 on that
+      # change, and the ratchet was then LOWERED to 20 to hold the ground. It was
+      # never raised.
+      #
+      # STILL `if:`-GUARDED, and deliberately. The full `pnpm test:db-specs` run
+      # includes suites that read seeded rows (an org with an active member) that
+      # `db:bootstrap` alone does not create, and this job has no seed step.
+      # Promoting it to every event today would turn CI red for a missing fixture
+      # rather than a real defect. Delete this `if:` once a seed step lands.
+      #
+      # MEASURED 2026-09-08 at commit 514ea82da on a co-located bootstrapped
+      # database: provider-event-ledger, payment-webhook-event-id-precedence and
+      # org-hierarchy-descendant-protection ran green (3 suites / 17 tests). Those
+      # three now create their own tenant fixtures and run on every event above.
+      # Other suites in the full run still require a seed step.
+      - name: Database-gated spec suites (.db.spec.ts)
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: pnpm test:db-specs
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+          # 2026-09-08: these suites are destructive (party-identifiers drops
+          # `party_identifiers`, party-legacy-backfill drops two `business_parties`
+          # constraints), and each file used to fall back to `backend/.env` — a
+          # REMOTE Neon database — whenever DATABASE_URL was unset.
+          # `src/test/db-spec-guard.ts` now refuses unless the target host is
+          # loopback AND the operator has stated destructive intent here. Every URL
+          # in this step is already 127.0.0.1; this line is the second condition.
+          ALLOW_DESTRUCTIVE_DB_TESTS: "1"
+          # The NON-OWNER role, deliberately. `db:bootstrap-role` creates
+          # streamline_app NOBYPASSRLS with APP_DB_PASSWORD, and an RLS-sensitive
+          # spec pointed at the `ci` owner would pass by bypassing the policy it
+          # means to prove. DATABASE_URL above stays the owner for the schema work.
+          APP_DATABASE_URL: postgres://streamline_app:ci@127.0.0.1:5432/ci
+          ACCESS_PROBE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+          API_KEY_PROBE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+          BILLING_PROBE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+          BLOG_PROBE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+          CHAT_PROBE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+          FK_PROBE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+          HR_PROBE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+          SESSIONS_PROBE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+          # These three probe the POLICY, not the catalog, so they take the app
+          # role — a `*_PROBE_DATABASE_URL` wins over APP_DATABASE_URL in the spec,
+          # so pointing them at the owner is what the comment above warns against.
+          # calendar asserts `rolbypassrls = false` outright and email asserts a
+          # 42501 the owner never raises: both were red here. push is worse — it
+          # was GREEN at the owner, because "re-registers instead of raising 42501"
+          # is free when RLS never applies. Measured on a Neon branch as
+          # streamline_app: calendar 9/9, email 9/9, push 9/9.
+          CALENDAR_PROBE_DATABASE_URL: postgres://streamline_app:ci@127.0.0.1:5432/ci
+          EMAIL_PROBE_DATABASE_URL: postgres://streamline_app:ci@127.0.0.1:5432/ci
+          PUSH_PROBE_DATABASE_URL: postgres://streamline_app:ci@127.0.0.1:5432/ci
+
+  # Run the complete migration chain twice from disposable databases: once from
+  # zero and once split at the supported upgrade watermark. The proof compares the
+  # full catalog and drops both probes in a finally block.
+  #
+  # Also the replay ledger, because `replay:chain-cold` is the only thing that
+  # writes `drizzle.__replay` and this is the job that owns cold-chain territory.
+  migration-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+      PGSSLMODE: disable
+      PGPASSWORD: ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # Roles are cluster-wide, so creating it once here covers both disposable
+      # probe databases migration:proof creates on this same server.
+      - name: Create the app role the migration chain grants to
+        run: pnpm db:bootstrap-role
+        env:
+          APP_DB_PASSWORD: ci
+
+      - name: Migration proof guard self-test
+        run: pnpm migration:proof --self-test
+
+      - name: Cold bootstrap and supported-upgrade catalog proof
+        run: pnpm migration:proof
+
+      # `check:replay-ledger` reads drizzle.__replay, which only replay:chain-cold
+      # writes. Pointed at a db:bootstrap database it reports every journal entry
+      # as "not applied" and exits 1 for a reason that has nothing to do with the
+      # chain. It gets its own blank database here.
+      - name: Blank database for the cold replay
+        run: |
+          psql -h 127.0.0.1 -U ci -d ci -v ON_ERROR_STOP=1 -c 'CREATE DATABASE replay'
+          psql -h 127.0.0.1 -U ci -d replay -v ON_ERROR_STOP=1 \
+            -c 'CREATE EXTENSION IF NOT EXISTS vector' \
+            -c 'CREATE EXTENSION IF NOT EXISTS pg_trgm' \
+            -c 'CREATE EXTENSION IF NOT EXISTS btree_gist' \
+            -c 'CREATE EXTENSION IF NOT EXISTS pgcrypto' \
+            -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'
+
+      - name: Replay the whole journal into a blank database
+        run: pnpm replay:chain-cold
+        env:
+          COLD_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/replay
+
+      # `check:replay-ledger:self-test` is NOT a self-test — check-replay-ledger.mjs
+      # accepts no `--self-test` argument and ignores it, so that script name runs the
+      # live check a second time. It is deliberately not invoked here.
+      - name: Replay ledger
+        run: pnpm check:replay-ledger
+        env:
+          COLD_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/replay
+
+  # Composite tenant foreign keys. The detector reads pg_constraint, so it only
+  # runs where a bootstrapped database exists. Its self-test runs without one and
+  # includes an inline .references() fixture — the form an earlier version of this
+  # gate could not see, which is how it reported a false zero.
+  #
+  # It used to carry `continue-on-error: true` with the note "NON-BLOCKING, and only
+  # until the count reaches zero: 486 single-column tenant FKs remain actionable".
+  # Measured at head on 2026-09-03: **Actionable 0** (79 CRM, 134 Inventory and 1
+  # platform-global excluded by the gate's own scope rules). The count reached zero,
+  # so by that note's own terms the gate is now blocking.
+  tenant-relationships:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: scratch_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d scratch_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/scratch_ci
+      APP_DATABASE_URL: postgres://streamline_app:ci@127.0.0.1:5432/scratch_ci
+      APP_DB_PASSWORD: ci
+      PGSSLMODE: disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # First, not last. The chain grants to this role by name from migration 0423
+      # onwards; creating it afterwards is 507 migrations too late.
+      - name: Create App Role
+        run: pnpm db:bootstrap-role
+
+      - name: Bootstrap Database
+        run: pnpm db:bootstrap
+
+      # Second pass, now that the tables exist: grants every table created by the
+      # chain, and re-revokes UPDATE/DELETE on the append-only audit_logs.
+      - name: Grant the app role on the bootstrapped schema
+        run: pnpm db:bootstrap-role
+
+      - name: Tenant foreign keys are composite
+        env:
+          TENANT_RELATIONSHIP_DB_URL: postgres://ci:ci@127.0.0.1:5432/scratch_ci
+        run: pnpm check:tenant-relationships:self-test && pnpm check:tenant-relationships
+
+      # The seeded suite needs the non-owner role above; without it every case
+      # passes while proving nothing, since the owner has BYPASSRLS.
+      #
+      # MEASURED 2026-09-08 at commit 514ea82da: 8 seeded suites ran green on the
+      # co-located seeded stack — 4 settings/RBAC-lifecycle suites (30 tests) and
+      # 4 billing/payments suites (27 tests). The "UNPROVEN" claim is retired.
+      #
+      # Still guarded: this job bootstraps scratch_ci from zero but does not seed
+      # it with fixture data. Named missing prerequisite: a seed step. Owner:
+      # whoever adds a seed step to this job. Promote by adding the seed step and
+      # then deleting the `if:`.
+      - name: Seeded Controller E2E Tests
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: |
+          pnpm test:e2e:seeded scratch_ci \
+            test/{accounting,billing,build,calendar,chat,db,home,hr,kb,mail,notifications,payments,payroll,settings,support,workflows}/*.seeded-e2e-spec.ts \
+            test/security/gdpr-export-cross-module-privacy.seeded-e2e-spec.ts \
+            test/helpers/__tests__/seeded-e2e-app.spec.ts
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192

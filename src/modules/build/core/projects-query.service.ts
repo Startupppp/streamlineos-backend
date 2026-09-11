@@ -3,7 +3,7 @@ import {
   ProjectsForbiddenProjectException,
   ProjectsNotFoundException,
 } from "../../../common/http/api-exceptions";
-import { and, asc, count, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 import {
   projectMembers,
   projectStatuses,
@@ -13,110 +13,97 @@ import {
   projects,
   tickets,
   users,
+  organizationMembers,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { resolveProjectsScope } from "./projects-scope";
+import { resolveTicketsScope, ticketScope } from "./tickets-scope";
 import type { ListProjectsInput } from "./dto/projects.schemas";
 
 @Injectable()
 export class ProjectsQueryService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly cache: CacheService,
     private readonly audit: AuditService,
     private readonly access: AccessService,
   ) {}
 
   async listProjects(u: CurrentUserContext, input: ListProjectsInput) {
-    const scope = await resolveProjectsScope(this.access, u);
+    const read = await resolveProjectsScope(this.access, u);
+    if (read.denied) return { data: [], hasMore: false, nextCursor: null };
+    const ticketRead = await resolveTicketsScope(this.access, u);
     const orgId = u.orgId;
     const userId = u.userId;
     const membershipId = actingMembershipId(u.principal);
-    const key = `${userId}:${scope}:${input.status}:${input.search ?? ""}:${input.afterId ?? "first"}:${input.limit}:${input.pmWorkspaceId ?? ""}`;
-    return this.cache.cachedVersioned(
-      `projects:list:${orgId}`,
-      key,
-      () => this.queryProjects(orgId, userId, membershipId, scope, input),
-      CACHE_TTL.SHORT,
-    );
+    return this.queryProjects(orgId, userId, membershipId, read, ticketRead, input);
   }
 
   private async queryProjects(
     orgId: string,
     userId: string,
     membershipId: number | null,
-    scope: DataScope,
+    read: ScopedRead,
+    ticketRead: ScopedRead,
     input: ListProjectsInput,
   ) {
     const { search, status, afterId, limit, pmWorkspaceId } = input;
 
-    const conditions = [eq(projects.orgId, orgId), isNull(projects.deletedAt)];
+    const domain: (SQL | undefined)[] = [isNull(projects.deletedAt)];
 
     if (pmWorkspaceId) {
-      conditions.push(eq(projects.pmWorkspaceId, pmWorkspaceId));
+      domain.push(eq(projects.pmWorkspaceId, pmWorkspaceId));
     }
 
-    if (scope !== "all") {
-      const [memberOf, teamProjectsOf] = await Promise.all([
-        this.db
-          .select({ projectId: projectMembers.projectId })
-          .from(projectMembers)
-          .where(eq(projectMembers.userId, userId)),
-        this.db
-          .select({ projectId: projectTeamAssignments.projectId })
-          .from(projectTeamAssignments)
-          .innerJoin(
-            projectTeamMembers,
-            eq(projectTeamMembers.teamId, projectTeamAssignments.teamId),
-          )
-          .where(
-            and(
-              eq(projectTeamAssignments.orgId, orgId),
-              eq(projectTeamMembers.userId, userId),
-            ),
-          ),
-      ]);
-      const accessibleProjectIds = Array.from(
-        new Set([
-          ...memberOf.map((m) => m.projectId),
-          ...teamProjectsOf.map((t) => t.projectId),
-        ]),
+    const memberOf = this.db
+      .select({ projectId: projectMembers.projectId })
+      .from(projectMembers)
+      .where(and(eq(projectMembers.orgId, orgId), eq(projectMembers.membershipId, membershipId ?? -1)));
+    const teamProjectsOf = this.db
+      .select({ projectId: projectTeamAssignments.projectId })
+      .from(projectTeamAssignments)
+      .innerJoin(
+        projectTeamMembers,
+        and(eq(projectTeamMembers.orgId, projectTeamAssignments.orgId), eq(projectTeamMembers.teamId, projectTeamAssignments.teamId)),
+      )
+      .where(
+        and(
+          eq(projectTeamAssignments.orgId, orgId),
+          eq(projectTeamMembers.membershipId, membershipId ?? -1),
+        ),
       );
-      const memberScopeCondition = or(
-        membershipId !== null ? eq(projects.managerMembershipId, membershipId) : undefined,
-        eq(projects.managerId, userId),
-        accessibleProjectIds.length > 0
-          ? inArray(projects.id, accessibleProjectIds)
-          : sql`false`,
-      );
-      if (memberScopeCondition) conditions.push(memberScopeCondition);
-    }
+    const ownProjects = sql`${or(
+      membershipId !== null ? eq(projects.managerMembershipId, membershipId) : sql`false`,
+      inArray(projects.id, memberOf),
+      inArray(projects.id, teamProjectsOf),
+    )}`;
 
     if (search?.trim()) {
       const match = or(
         sql`${projects.name} ILIKE ${"%" + search + "%"}`,
         sql`${projects.key} ILIKE ${"%" + search + "%"}`,
       );
-      if (match) conditions.push(match);
+      if (match) domain.push(match);
     }
 
     if (status !== "ALL") {
-      conditions.push(eq(projects.status, status));
+      domain.push(eq(projects.status, status));
     }
 
     if (afterId !== undefined) {
-      conditions.push(lt(projects.id, afterId));
+      domain.push(lt(projects.id, afterId));
     }
 
-    const whereClause = and(...conditions);
+    const whereClause = read.compose(
+      { tenant: projects.orgId, scope: { own: ownProjects }, and: domain },
+      ({ sql: where }) => where,
+      () => sql`false`,
+    );
 
     const projectCols = {
       id: projects.id,
@@ -127,7 +114,8 @@ export class ProjectsQueryService {
       priority: projects.priority,
       startDate: projects.startDate,
       endDate: projects.endDate,
-      managerId: projects.managerId,
+      managedProductId: projects.managedProductId,
+      managerId: organizationMembers.userId,
       managerFirstName: users.firstName,
       managerLastName: users.lastName,
       managerImage: users.image,
@@ -135,7 +123,8 @@ export class ProjectsQueryService {
     const projectRows = await this.db
       .select(projectCols)
       .from(projects)
-      .leftJoin(users, eq(projects.managerId, users.id))
+      .leftJoin(organizationMembers, and(eq(organizationMembers.orgId, projects.orgId), eq(organizationMembers.id, projects.managerMembershipId)))
+      .leftJoin(users, eq(organizationMembers.userId, users.id))
       .where(whereClause)
       .orderBy(desc(projects.id))
       .limit(limit + 1);
@@ -148,30 +137,52 @@ export class ProjectsQueryService {
     }
 
     const projectIds = trimmedRows.map((p) => p.id);
+    const memberPreview = this.db.select({
+      membershipId: projectMembers.membershipId,
+      userId: organizationMembers.userId,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      image: users.image,
+    }).from(projectMembers)
+      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, projectMembers.orgId), eq(organizationMembers.id, projectMembers.membershipId)))
+      .innerJoin(users, eq(organizationMembers.userId, users.id))
+      .where(and(eq(projectMembers.orgId, orgId), eq(projectMembers.projectId, projects.id)))
+      .orderBy(asc(projectMembers.membershipId)).limit(5).as("member_preview");
 
+    const ticketProgressWhere = ticketRead.compose(
+      {
+        tenant: tickets.orgId,
+        scope: ticketScope(ticketRead.orgId, ticketRead.actorId),
+        and: [inArray(tickets.projectId, projectIds), isNull(tickets.deletedAt)],
+      },
+      ({ sql: where }) => where,
+      () => sql`false`,
+    );
     const [progressRows, memberRows, teamRows] = await Promise.all([
       this.db
         .select({
           projectId: tickets.projectId,
           total: count(),
-          done: sql<number>`count(*) filter (where ${tickets.status} = 'DONE')`.as(
+          done: sql<number>`count(*) filter (where ${projectStatuses.type} = 'completed')`.as(
             "done",
           ),
         })
         .from(tickets)
-        .where(and(inArray(tickets.projectId, projectIds), isNull(tickets.deletedAt)))
+        .leftJoin(projectStatuses, and(eq(projectStatuses.orgId, tickets.orgId), eq(projectStatuses.projectId, tickets.projectId), eq(projectStatuses.name, tickets.status)))
+        .where(ticketProgressWhere)
         .groupBy(tickets.projectId),
       this.db
         .select({
-          projectId: projectMembers.projectId,
-          userId: projectMembers.userId,
-          firstName: users.firstName,
-          lastName: users.lastName,
-          image: users.image,
+          projectId: projects.id,
+          userId: memberPreview.userId,
+          firstName: memberPreview.firstName,
+          lastName: memberPreview.lastName,
+          image: memberPreview.image,
         })
-        .from(projectMembers)
-        .innerJoin(users, eq(projectMembers.userId, users.id))
-        .where(inArray(projectMembers.projectId, projectIds)),
+        .from(projects)
+        .innerJoinLateral(memberPreview, sql`true`)
+        .where(and(eq(projects.orgId, orgId), inArray(projects.id, projectIds)))
+        .orderBy(asc(projects.id), asc(memberPreview.membershipId)),
       this.db
         .select({
           projectId: projectMembers.projectId,
@@ -180,10 +191,10 @@ export class ProjectsQueryService {
         .from(projectMembers)
         .innerJoin(
           projectTeamMembers,
-          eq(projectTeamMembers.userId, projectMembers.userId),
+          and(eq(projectTeamMembers.orgId, projectMembers.orgId), eq(projectTeamMembers.membershipId, projectMembers.membershipId)),
         )
-        .innerJoin(projectTeams, eq(projectTeams.id, projectTeamMembers.teamId))
-        .where(inArray(projectMembers.projectId, projectIds))
+        .innerJoin(projectTeams, and(eq(projectTeams.orgId, projectTeamMembers.orgId), eq(projectTeams.id, projectTeamMembers.teamId)))
+        .where(and(eq(projectMembers.orgId, orgId), inArray(projectMembers.projectId, projectIds)))
         .groupBy(projectMembers.projectId, projectTeams.name),
     ]);
 
@@ -193,7 +204,7 @@ export class ProjectsQueryService {
     const membersMap = new Map<
       number,
       {
-        id: string;
+          id: string;
         firstName: string | null;
         lastName: string | null;
         image: string | null;
@@ -247,6 +258,7 @@ export class ProjectsQueryService {
         priority: p.priority as "LOW" | "MEDIUM" | "HIGH" | "URGENT" | null,
         startDate: p.startDate,
         endDate: p.endDate,
+        managedProductId: p.managedProductId,
         manager: p.managerId
           ? {
               id: p.managerId,
@@ -284,12 +296,8 @@ export class ProjectsQueryService {
               user: {
                 columns: {
                   id: true,
-                  name: true,
-                  firstName: true,
-                  lastName: true,
-                  email: true,
-                  image: true,
                 },
+                with: { user: { columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true } } },
               },
             },
           },
@@ -304,18 +312,19 @@ export class ProjectsQueryService {
     if (!isOwnerOrAdmin) {
       const callerMid = actingMembershipId(u.principal);
       const isManager =
-        (callerMid !== null && project.managerMembershipId === callerMid) ||
-        project.managerId === u.userId;
+        callerMid !== null && project.managerMembershipId === callerMid;
       if (!isManager) {
         const memberOf = await this.db
           .select({ projectId: projectMembers.projectId })
           .from(projectMembers)
           .where(
             and(
-              eq(projectMembers.userId, u.userId),
+              eq(projectMembers.orgId, u.orgId),
+              eq(projectMembers.membershipId, callerMid ?? -1),
               eq(projectMembers.projectId, projectId),
             ),
-          );
+          )
+          .limit(1);
         if (memberOf.length === 0) {
           const teamAccess = await this.db
             .select({ id: projectTeamMembers.id })
@@ -328,7 +337,7 @@ export class ProjectsQueryService {
               and(
                 eq(projectTeamAssignments.projectId, projectId),
                 eq(projectTeamAssignments.orgId, orgId),
-                eq(projectTeamMembers.userId, u.userId),
+                eq(projectTeamMembers.membershipId, callerMid ?? -1),
               ),
             )
             .limit(1);

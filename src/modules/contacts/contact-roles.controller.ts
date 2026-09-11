@@ -24,6 +24,11 @@ import {
   type ContactRoleListInput,
 } from "./dto/contact-roles.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
+import { NoContentResponse, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  contactRoleListResponseSchema,
+  contactRoleRowSchema,
+} from "./dto/contacts-response.schemas";
 import { z } from "zod";
 
 const contactIdParams = z.object({ contactId: z.coerce.number().int().positive() }).strict();
@@ -36,6 +41,7 @@ export class ContactRolesController {
   constructor(private readonly svc: ContactRolesService) {}
 
   @Get(":contactId/roles")
+  @ResponseSchema(contactRoleListResponseSchema)
   @RequirePermission("crm:contacts:view")
   @Validate({ params: contactIdParams, query: contactRoleListSchema })
   listRoles(
@@ -48,6 +54,7 @@ export class ContactRolesController {
 
   @Post(":contactId/roles")
   @HttpCode(201)
+  @ResponseSchema(contactRoleRowSchema)
   @RequirePermission("crm:contacts:manage")
   @Validate({ params: contactIdParams, body: contactRoleCreateSchema })
   addRole(
@@ -60,6 +67,7 @@ export class ContactRolesController {
 
   @Delete(":contactId/roles/:roleId")
   @HttpCode(204)
+  @NoContentResponse()
   @RequirePermission("crm:contacts:manage")
   @Validate({ params: contactIdroleIdParams })
   async removeRole(

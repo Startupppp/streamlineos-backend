@@ -1,3 +1,5 @@
+import { ScopedRead } from "../../access/scoped-read";
+import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { AlumniService } from "./alumni.service";
 import { ExitService } from "./exit.service";
@@ -13,7 +15,9 @@ import { TerminationService } from "./termination.service";
 import { TerminationReadService } from "./termination-read.service";
 import { TerminationCommunicationsService } from "./termination-communications.service";
 import { ExperienceLetterService } from "./experience-letter.service";
-import type { CacheService } from "../../../common/cache/cache.service";
+import type { Redis } from "@upstash/redis";
+import { CacheService } from "../../../common/cache/cache.service";
+import { InMemoryRedis } from "../../../common/cache/in-memory-redis.test-double";
 import type { EmploymentFactsService } from "../../directory/employment-facts.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -111,11 +115,7 @@ function makeDb(rows: unknown[]): { db: Db; where: jest.Mock; findMany: jest.Moc
 }
 
 function makeCacheMock(): CacheService {
-  return {
-    cached: jest.fn().mockImplementation((_key: string, cb: () => Promise<unknown>) => cb()),
-    cachedVersioned: jest.fn().mockImplementation((_k: string, _v: string, cb: () => Promise<unknown>) => cb()),
-    invalidateNamespace: jest.fn(),
-  } as unknown as CacheService;
+  return new CacheService(new InMemoryRedis() as unknown as Redis);
 }
 
 const OWNER = "org-owner";
@@ -146,7 +146,7 @@ describe("HR Lifecycle services — cross-tenant isolation", () => {
       const { db, findMany } = makeDb([]);
       const mockEmployment = {} as unknown as EmploymentFactsService;
       const svc = new ExitService(db, mockEmployment);
-      const result = await svc.list(ATTACKER, "user-1", true, { page: 1, limit: 10 });
+      const result = await svc.list(ATTACKER, "user-1", true, { limit: 10 });
       expect(result.data).toHaveLength(0);
       expect(findMany).toHaveBeenCalled();
       const call = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
@@ -157,7 +157,7 @@ describe("HR Lifecycle services — cross-tenant isolation", () => {
       const { db } = makeDb([{ id: 1, orgId: OWNER }]);
       const mockEmployment = {} as unknown as EmploymentFactsService;
       const svc = new ExitService(db, mockEmployment);
-      const result = await svc.list(OWNER, "user-1", true, { page: 1, limit: 10 });
+      const result = await svc.list(OWNER, "user-1", true, { limit: 10 });
       expect(result.data).toHaveLength(1);
     });
   });
@@ -275,7 +275,7 @@ describe("HR Lifecycle services — cross-tenant isolation", () => {
         {} as never, {} as never, {} as never,
         reader, {} as never,
       );
-      const result = await svc.list(ATTACKER, { page: 1, limit: 10 });
+      const result = await svc.list(ATTACKER, { limit: 10 });
       expect(result.data).toHaveLength(0);
       expect(where).toHaveBeenCalled();
       expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
@@ -289,7 +289,7 @@ describe("HR Lifecycle services — cross-tenant isolation", () => {
         {} as never, {} as never, {} as never,
         reader, {} as never,
       );
-      const result = await svc.list(OWNER, { page: 1, limit: 10 });
+      const result = await svc.list(OWNER, { limit: 10 });
       expect(result.data).toHaveLength(1);
     });
   });
@@ -361,7 +361,7 @@ describe("HR Lifecycle services — cross-tenant isolation", () => {
         db,
         {} as never, {} as never, {} as never,
       );
-      await expect(svc.getLetter(ATTACKER, 1)).rejects.toThrow();
+      await expect(svc.getLetter(ATTACKER, 1)).rejects.toThrow(NotFoundException);
       expect(findFirst).toHaveBeenCalled();
       const call = findFirst.mock.calls[0]?.[0] as { where?: unknown } | undefined;
       expect(sqlValues(call?.where)).toContain(ATTACKER);
@@ -390,7 +390,7 @@ describe("HR Lifecycle services — cross-tenant isolation", () => {
     it("scopes employment queries to the requesting org (DENY — cross-tenant isolation)", async () => {
       const { db, where } = makeDb([]);
       const svc = new ExperienceLetterService(db, {} as never);
-      await expect(svc.create(ATTACKER, "user-1", { userId: "user-1", relievingDate: "2025-01-01" })).rejects.toThrow();
+      await expect(svc.create(ATTACKER, "user-1", { userId: "user-1", relievingDate: "2025-01-01" })).rejects.toThrow(NotFoundException);
       expect(where).toHaveBeenCalled();
       const allValues = where.mock.calls.flatMap((call: unknown[]) => call).flatMap((arg) => sqlValues(arg));
       expect(allValues).toContain(ATTACKER);
@@ -399,7 +399,7 @@ describe("HR Lifecycle services — cross-tenant isolation", () => {
     it("scopes employment queries to the owning org (CONTROL)", async () => {
       const { db, where } = makeDb([]);
       const svc = new ExperienceLetterService(db, {} as never);
-      await expect(svc.create(OWNER, "user-1", { userId: "user-1", relievingDate: "2025-01-01" })).rejects.toThrow();
+      await expect(svc.create(OWNER, "user-1", { userId: "user-1", relievingDate: "2025-01-01" })).rejects.toThrow(NotFoundException);
       expect(where).toHaveBeenCalled();
       const allValues = where.mock.calls.flatMap((call: unknown[]) => call).flatMap((arg) => sqlValues(arg));
       expect(allValues).toContain(OWNER);
@@ -410,7 +410,7 @@ describe("HR Lifecycle services — cross-tenant isolation", () => {
     it("scopes onboarding document list to the requesting org (DENY — cross-tenant isolation)", async () => {
       const { db, where } = makeDb([]);
       const svc = new OnboardingViewsService(db, {} as never);
-      const result = await svc.list(ATTACKER, "user-1", true, { page: 1, limit: 10 }, "all");
+      const result = await svc.list(ScopedRead.of(ATTACKER, "user-1", "all"), true, { limit: 10 });
       expect(result.data).toHaveLength(0);
       expect(where).toHaveBeenCalled();
       const allValues = where.mock.calls.flatMap((call: unknown[]) => call).flatMap((arg) => sqlValues(arg));
@@ -420,7 +420,7 @@ describe("HR Lifecycle services — cross-tenant isolation", () => {
     it("returns onboarding documents for the owning org (CONTROL)", async () => {
       const { db } = makeDb([{ id: 1, orgId: OWNER, userId: "user-1" }]);
       const svc = new OnboardingViewsService(db, {} as never);
-      const result = await svc.list(OWNER, "user-1", true, { page: 1, limit: 10 }, "all");
+      const result = await svc.list(ScopedRead.of(OWNER, "user-1", "all"), true, { limit: 10 });
       expect(result.data).toHaveLength(1);
     });
   });

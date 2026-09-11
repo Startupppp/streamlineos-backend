@@ -35,7 +35,12 @@ export class WorkforceCostingService {
       GROUP BY d.id, d.name
       ORDER BY monthly_cost_cents DESC
     `);
-    return rows;
+    return rows.map((row) => ({
+      departmentId: row.department_id === null || row.department_id === undefined ? null : String(row.department_id),
+      departmentName: row.department_name === null || row.department_name === undefined ? null : String(row.department_name),
+      headcount: Number(row.headcount ?? 0),
+      monthlyCostCents: Number(row.monthly_cost_cents ?? 0),
+    }));
   }
 
   async costByLocation(orgId: string) {
@@ -51,7 +56,11 @@ export class WorkforceCostingService {
       GROUP BY he.location_id
       ORDER BY monthly_cost_cents DESC
     `);
-    return rows;
+    return rows.map((row) => ({
+      locationId: String(row.location_id ?? "unassigned"),
+      headcount: Number(row.headcount ?? 0),
+      monthlyCostCents: Number(row.monthly_cost_cents ?? 0),
+    }));
   }
 
   async forecastedCost(orgId: string, cycleId: number) {
@@ -95,6 +104,11 @@ export class WorkforceCostingService {
       WHERE org_id = ${orgId}
         AND status = 'ACTIVE'
     `);
-    return rows[0];
+    const row = rows[0];
+    return {
+      totalHeadcount: Number(row?.total_headcount ?? 0),
+      totalAnnualCtcCents: Number(row?.total_annual_ctc_cents ?? 0),
+      totalMonthlyCostCents: Number(row?.total_monthly_cost_cents ?? 0),
+    };
   }
 }

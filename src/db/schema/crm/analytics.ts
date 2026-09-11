@@ -1,10 +1,6 @@
-import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, index, jsonb, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, decimal, date, integer, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import {
-  crmPersonRoleEnum, crmHealthEnum, crmDealStageEnum,
-  crmSupportTicketStatusEnum, crmSupportTicketPriorityEnum, crmActivityTypeEnum,
-  slaAppliesToEnum, slaPriorityEnum,
-} from "../common/enums";
+import { crmPersonRoleEnum, crmHealthEnum, crmDealStageEnum, crmSupportTicketStatusEnum, crmSupportTicketPriorityEnum, crmActivityTypeEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
 
 export const crmPeople = pgTable("crm_people", {
@@ -120,7 +116,6 @@ export const crmEmailTemplates = pgTable("crm_email_templates", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  index("idx_crm_email_templates_org").on(table.orgId),
   unique("uniq_crm_email_templates_org_id").on(table.orgId, table.id),
 ]);
 

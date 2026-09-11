@@ -3,6 +3,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { hrPolicies, leavePolicies, leaveTypes } from "../../../db/schema";
 import { and, desc, eq, isNull, lte, gte, or } from "drizzle-orm";
+import { hasPatchValues } from "../../../common/db/patch-values";
 
 export interface LeavePolicySummary {
   wfhMonthlyQuota: number | null;
@@ -47,14 +48,16 @@ export class LeavePoliciesService {
           carryForward: leaveTypes.carryForward,
         })
         .from(leaveTypes)
-        .where(eq(leaveTypes.orgId, orgId)),
+        .where(eq(leaveTypes.orgId, orgId))
+        .limit(100),
       this.db
         .select({
           leaveTypeId: leavePolicies.leaveTypeId,
           accrualType: leavePolicies.accrualType,
         })
         .from(leavePolicies)
-        .where(and(eq(leavePolicies.orgId, orgId), eq(leavePolicies.isActive, true))),
+        .where(and(eq(leavePolicies.orgId, orgId), eq(leavePolicies.isActive, true)))
+        .limit(100),
       this.resolveOrgWfhQuota(orgId),
     ]);
 
@@ -132,20 +135,21 @@ export class LeavePoliciesService {
     if (data.leaveTypeId != null) {
       await this.assertLeaveTypeInOrg(orgId, data.leaveTypeId);
     }
-    const [policy] = await this.db
-      .update(leavePolicies)
-      .set(data)
-      .where(and(eq(leavePolicies.id, id), eq(leavePolicies.orgId, orgId)))
-      .returning();
+    const scope = and(eq(leavePolicies.id, id), eq(leavePolicies.orgId, orgId));
+    const [policy] = hasPatchValues(data)
+      ? await this.db.update(leavePolicies).set(data).where(scope).returning()
+      : await this.db.select().from(leavePolicies).where(scope).limit(1);
     if (!policy) throw new NotFoundException("Leave policy not found");
     return policy;
   }
 
   async remove(orgId: string, id: number) {
-    await this.db
+    const removed = await this.db
       .update(leavePolicies)
       .set({ isActive: false })
-      .where(and(eq(leavePolicies.id, id), eq(leavePolicies.orgId, orgId)));
+      .where(and(eq(leavePolicies.id, id), eq(leavePolicies.orgId, orgId)))
+      .returning({ id: leavePolicies.id });
+    if (removed.length === 0) throw new NotFoundException("Leave policy not found");
   }
 
   private async resolveOrgWfhQuota(orgId: string): Promise<number | null> {

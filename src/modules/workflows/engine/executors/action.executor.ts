@@ -40,8 +40,8 @@ export interface ActionResultLike {
 }
 
 /**
- * A structural port rather than `AutomationService` itself, so a test can pass a
- * plain object without a cast; `AutomationService` satisfies it as-is.
+ * A structural port rather than `AutomationActionExecutor` itself, so a test can pass a
+ * plain object without a cast; `AutomationActionExecutor` satisfies it as-is.
  */
 export interface AutomationActionRunner {
   executeAction(

@@ -3,6 +3,8 @@ import { KbSearchService } from "./kb-search.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 
+const makeScopes = (scope = "all") => ({ scopeFor: jest.fn().mockResolvedValue(scope) });
+
 function makeUser(orgId = "org-minority"): CurrentUserContext {
   return {
     userId: "user-1",
@@ -59,9 +61,8 @@ const makeAccess = () => ({
 });
 
 const makeEmbeddings = () => ({
-  isConfigured: jest.fn().mockReturnValue(true),
-  embedQuery: jest.fn().mockResolvedValue([0.1, 0.2]),
-  toVectorLiteral: jest.fn().mockReturnValue("[0.1,0.2]"),
+  isEmbeddingConfigured: jest.fn().mockReturnValue(true),
+  embedQueryWithCredit: jest.fn().mockResolvedValue({ ok: true, vector: [0.1, 0.2], vectorLiteral: "[0.1,0.2]" }),
 });
 
 const makeEvents = () => ({ record: jest.fn().mockResolvedValue(undefined) });
@@ -75,6 +76,7 @@ describe("KB ANN minority-tenant — vectorChunkIds uses plain ANN with iterativ
       makeEmbeddings() as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
+      makeScopes() as never,
     );
 
     await svc.retrieveTopArticles(makeUser(), "deployment config", 4);
@@ -98,6 +100,7 @@ describe("KB ANN minority-tenant — vectorChunkIds uses plain ANN with iterativ
       makeEmbeddings() as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
+      makeScopes() as never,
     );
 
     await svc.retrieveTopArticles(makeUser(), "password reset", 4);
@@ -119,6 +122,7 @@ describe("KB ANN minority-tenant — vectorChunkIds uses plain ANN with iterativ
       makeEmbeddings() as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
+      makeScopes() as never,
     );
 
     await svc.retrieveTopSources(makeUser(), "onboarding", 4);

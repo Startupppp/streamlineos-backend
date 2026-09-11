@@ -1,8 +1,12 @@
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException } from "@nestjs/common";
 import { EntitlementsService } from "./entitlements.service";
 import type { Db } from "../../db/drizzle.module";
 import type { CacheService } from "../../common/cache/cache.service";
 import type { PlanLimitsService } from "../billing/core/plan-limits.service";
+import {
+  PLAN_LOCKED_MODULES,
+  type PlanTier,
+} from "../billing/core/plan-entitlements.constants";
 import { ADMINISTRABLE_MODULES, MODULE_CATALOG } from "../../common/rbac/module-vocabulary";
 
 type DeepPartial<T> = {
@@ -18,13 +22,22 @@ function buildMockDb(ownerMembershipId: number | null = 42, mockRoleId: number |
   const findFirst = jest.fn();
   const findMany = jest.fn().mockResolvedValue([]);
   const orgFindFirst = jest.fn();
+  const activeMemberRows = [
+    { membershipId: 1, userId: "member-1" },
+    { membershipId: 2, userId: "member-2" },
+  ];
 
   const limit = jest.fn()
     .mockResolvedValueOnce(ownerMembershipId !== null ? [{ ownerMembershipId }] : [])
-    .mockResolvedValue(mockRoleId !== null ? [{ id: mockRoleId }] : []);
-  const activeMemberRows = [{ userId: "member-1" }, { userId: "member-2" }];
+    .mockResolvedValueOnce(mockRoleId !== null ? [{ id: mockRoleId }] : [])
+    .mockResolvedValue(activeMemberRows);
+  // The ACTIVE-member scan is keyset-paged, so it orders by membership id before
+  // taking a page. Without `orderBy` here the mock would throw rather than fail
+  // an assertion, which reads as an unrelated crash.
+  const orderBy = jest.fn().mockReturnValue({ limit });
   const txWhere = jest.fn().mockReturnValue({
     limit,
+    orderBy,
     then: (resolve: (rows: { userId: string }[]) => unknown) => resolve(activeMemberRows),
   });
   const txFrom = jest.fn().mockReturnValue({ where: txWhere });
@@ -60,6 +73,7 @@ function buildMockDb(ownerMembershipId: number | null = 42, mockRoleId: number |
       txSelect,
       txFrom,
       txWhere,
+      orderBy,
       limit,
       activeMemberRows,
     },
@@ -83,31 +97,33 @@ function buildMockCache(
     .fn()
     .mockImplementation((orgId: string, key: string) => invalidate(`${orgId}:${key}`));
 
+  const invalidateMany = jest.fn().mockResolvedValue(undefined);
+
   const cache: DeepPartial<CacheService> = {
     cached,
     cachedForOrg,
     invalidate,
     invalidateForOrg,
+    invalidateMany,
   };
 
   return {
     cache: cache as unknown as CacheService,
-    mocks: { cached, cachedForOrg, invalidate, invalidateForOrg },
+    mocks: { cached, cachedForOrg, invalidate, invalidateForOrg, invalidateMany },
   };
 }
 
 function buildService(
   db: Db,
   cache: CacheService,
-  migrationMode: "off" | "degrade" = "off",
+  tier: PlanTier = "ENTERPRISE",
 ) {
-  const resolveTier = jest.fn().mockResolvedValue({ tier: "ENTERPRISE", plan: "ENTERPRISE" });
+  const resolveTier = jest.fn().mockResolvedValue({ tier, plan: tier });
   const planLimits: DeepPartial<PlanLimitsService> = { resolveTier };
   return new EntitlementsService(
     db,
     cache,
     planLimits as unknown as PlanLimitsService,
-    { RBAC_MIGRATION_MODE: migrationMode },
   );
 }
 
@@ -168,7 +184,7 @@ describe("EntitlementsService", () => {
       expect(result).toBe(true);
     });
 
-    it("fails closed on 42P01 when migration mode is off", async () => {
+    it("fails closed on 42P01 (missing org_modules table)", async () => {
       const { db, mocks } = buildMockDb();
       mocks.findMany.mockRejectedValue({ code: "42P01" });
       const { cache } = buildMockCache();
@@ -186,20 +202,6 @@ describe("EntitlementsService", () => {
       const result = await buildService(db, cache).isModuleEnabled("org-1", "hr");
 
       expect(result).toBe(false);
-    });
-
-    it("degrades only when migration mode is explicitly enabled", async () => {
-      const { db, mocks } = buildMockDb();
-      mocks.findMany.mockRejectedValue({ code: "42P01" });
-      const { cache } = buildMockCache();
-
-      const result = await buildService(
-        db,
-        cache,
-        "degrade",
-      ).isModuleEnabled("org-1", "hr");
-
-      expect(result).toBe(true);
     });
 
     it("returns false when the row has enabled=false", async () => {
@@ -243,14 +245,96 @@ describe("EntitlementsService", () => {
     });
   });
 
+  describe("setModuleEnabled — plan gate", () => {
+    it.each(PLAN_LOCKED_MODULES.FREE)(
+      "refuses to enable %s on FREE and writes nothing",
+      async (moduleKey) => {
+        const { db, mocks } = buildMockDb();
+        const { cache } = buildMockCache();
+
+        await expect(
+          buildService(db, cache, "FREE").setModuleEnabled(
+            "org-1",
+            moduleKey,
+            true,
+            "user-1",
+          ),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+
+        expect(mocks.transaction).not.toHaveBeenCalled();
+        expect(mocks.insert).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(PLAN_LOCKED_MODULES.FREE)(
+      "allows %s on a paid tier, so the FREE refusal is the plan gate and not the module",
+      async (moduleKey) => {
+        const { db, mocks } = buildMockDb();
+        const { cache } = buildMockCache();
+
+        await buildService(db, cache, "PAID").setModuleEnabled(
+          "org-1",
+          moduleKey,
+          true,
+          "user-1",
+        );
+
+        expect(mocks.values).toHaveBeenCalledWith({
+          orgId: "org-1",
+          moduleKey,
+          enabled: true,
+          enabledBy: "user-1",
+        });
+      },
+    );
+
+    it("never blocks a DISABLE on FREE, so a downgrade cannot strand an org", async () => {
+      const { db, mocks } = buildMockDb();
+      const { cache } = buildMockCache();
+
+      await buildService(db, cache, "FREE").setModuleEnabled(
+        "org-1",
+        "payroll",
+        false,
+        "user-1",
+      );
+
+      expect(mocks.values).toHaveBeenCalledWith({
+        orgId: "org-1",
+        moduleKey: "payroll",
+        enabled: false,
+        enabledBy: "user-1",
+      });
+    });
+
+    it("leaves an already-enabled paid module enabled on FREE — enablement is never revoked", async () => {
+      const { db } = buildMockDb();
+      const { cache } = buildMockCache(async () => ({ payroll: true }));
+
+      const service = buildService(db, cache, "FREE");
+
+      await expect(service.isModuleEnabled("org-1", "payroll")).resolves.toBe(true);
+      await expect(
+        service.setModuleEnabled("org-1", "payroll", true, "user-1"),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+  });
+
   describe("setModuleEnabled", () => {
-    it("wraps the upsert in a single transaction", async () => {
+    it("wraps the upsert in a single transaction, and reads members in a second", async () => {
       const { db, mocks } = buildMockDb();
       const { cache } = buildMockCache();
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
-      expect(mocks.transaction).toHaveBeenCalledTimes(1);
+      // Two, not one, and the second is the point. Every write — the upsert, the
+      // default workspace, the ownership row, the version bump — is still one
+      // atomic transaction. The ACTIVE-member scan that feeds the session bust is
+      // deliberately NOT in it: it is deferred past the commit so the request's
+      // pooled connection is released first. There is no ambient request context
+      // in a unit test, so `registerAfterCommit` declines and the hook runs
+      // inline here, opening its own tenant transaction.
+      expect(mocks.transaction).toHaveBeenCalledTimes(2);
     });
 
     it("upserts with enabled=true and the correct field values", async () => {
@@ -294,7 +378,10 @@ describe("EntitlementsService", () => {
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
-      expect(mocks.execute).toHaveBeenCalledTimes(1);
+      // One set_config per transaction and no other raw SQL: the write transaction
+      // and the deferred member scan. Anything above two is hand-written SQL that
+      // has escaped the query builder.
+      expect(mocks.execute).toHaveBeenCalledTimes(2);
     });
 
     it("executes only the tenant context SQL when disabling a module", async () => {
@@ -303,7 +390,7 @@ describe("EntitlementsService", () => {
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", false, "user-1");
 
-      expect(mocks.execute).toHaveBeenCalledTimes(1);
+      expect(mocks.execute).toHaveBeenCalledTimes(2);
     });
 
     it("throws 400 BadRequestException when toggling a core module (kb)", async () => {
@@ -325,14 +412,21 @@ describe("EntitlementsService", () => {
     });
 
     it("invalidates the module, list, and session caches after the transaction", async () => {
-      const { db } = buildMockDb();
+      const { db, mocks } = buildMockDb();
       const { cache, mocks: cacheMocks } = buildMockCache();
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
       expect(cacheMocks.invalidate).toHaveBeenCalledWith("org-1:entitlements:module:hr");
       expect(cacheMocks.invalidate).toHaveBeenCalledWith("org-1:entitlements:modules");
-      expect(cacheMocks.invalidate).toHaveBeenCalledTimes(4);
+      // Exactly the two org-scoped keys go through the single-key path. The member
+      // session busts used to make this 4; they are now one batched call, and the
+      // count is asserted on both paths so neither can quietly grow.
+      expect(cacheMocks.invalidate).toHaveBeenCalledTimes(2);
+      expect(cacheMocks.invalidateMany).toHaveBeenCalledTimes(1);
+      expect(cacheMocks.invalidateMany).toHaveBeenCalledWith(
+        mocks.activeMemberRows.map((row) => `user:session:${row.userId}`),
+      );
     });
 
     it("busts the session cache of every active member, not just the actor", async () => {
@@ -341,9 +435,47 @@ describe("EntitlementsService", () => {
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "actor-not-a-member");
 
+      // ONE call carrying every member's key, not one call per member. A
+      // `members.map((m) => cache.invalidate(...))` reads as batched and is not:
+      // it is one Redis command per member, so the widest tenant in the seeded
+      // database — 89.93% of the rows — pays the worst price for one toggle.
+      expect(cacheMocks.invalidateMany).toHaveBeenCalledTimes(1);
+      const keys = cacheMocks.invalidateMany.mock.calls[0]?.[0] as string[];
       for (const row of mocks.activeMemberRows)
-        expect(cacheMocks.invalidate).toHaveBeenCalledWith(`user:session:${row.userId}`);
-      expect(cacheMocks.invalidate).not.toHaveBeenCalledWith("user:session:actor-not-a-member");
+        expect(keys).toContain(`user:session:${row.userId}`);
+      expect(keys).not.toContain("user:session:actor-not-a-member");
+    });
+
+    it("keyset-pages the member scan so an org past one page is not truncated", async () => {
+      // The scan used to be a single `.limit(10000)`: member 10,001 onward kept a
+      // stale enabledModules until TTL and nothing said so. This proves the loop
+      // continues past a full page and advances on the last membership id.
+      const { db, mocks } = buildMockDb();
+      const { cache, mocks: cacheMocks } = buildMockCache();
+
+      const fullPage = Array.from({ length: 500 }, (_, i) => ({
+        membershipId: i + 1,
+        userId: `member-${String(i + 1)}`,
+      }));
+      const tail = [{ membershipId: 501, userId: "member-501" }];
+      mocks.limit
+        .mockReset()
+        .mockResolvedValueOnce([{ ownerMembershipId: 42 }])
+        .mockResolvedValueOnce([{ id: 999 }])
+        .mockResolvedValueOnce(fullPage)
+        .mockResolvedValueOnce(tail)
+        .mockResolvedValue([]);
+
+      await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
+
+      expect(cacheMocks.invalidateMany).toHaveBeenCalledTimes(2);
+      expect(cacheMocks.invalidateMany).toHaveBeenNthCalledWith(
+        2,
+        ["user:session:member-501"],
+      );
+      // A short page ends the scan: no third read is issued for a page that
+      // cannot exist.
+      expect(mocks.orderBy).toHaveBeenCalledTimes(2);
     });
 
     describe("ownership seeding", () => {

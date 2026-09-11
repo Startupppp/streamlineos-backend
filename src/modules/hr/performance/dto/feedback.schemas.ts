@@ -23,7 +23,7 @@ export const createFeedbackCycleSchema = z
     endDate: dateOnly,
     isAnonymous: z.boolean().optional().default(true),
     questions: z.array(feedbackQuestionSchema).max(50, "At most 50 questions are allowed").optional(),
-  })
+  }).strict()
   .refine((d) => d.endDate >= d.startDate, {
     message: "End date must be on or after start date",
     path: ["endDate"],
@@ -31,7 +31,7 @@ export const createFeedbackCycleSchema = z
 
 export const updateCycleStatusSchema = z.object({
   status: z.enum(CYCLE_STATUSES),
-});
+}).strict();
 
 export const submitFeedbackResponseSchema = z.object({
   responses: z
@@ -45,7 +45,7 @@ export const submitFeedbackResponseSchema = z.object({
     .min(1, "At least one response is required")
     .max(50, "At most 50 responses are allowed"),
   overallRating: z.number().int().min(1).max(5).optional(),
-});
+}).strict();
 
 export type CreateFeedbackCycleInput = z.infer<typeof createFeedbackCycleSchema>;
 export type UpdateCycleStatusInput = z.infer<typeof updateCycleStatusSchema>;

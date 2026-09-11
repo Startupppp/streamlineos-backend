@@ -11,7 +11,6 @@ const ctx: CalendarSourceContext = {
   userId: "user-1",
   start: new Date("2026-08-01T00:00:00.000Z"),
   end: new Date("2026-08-31T23:59:59.999Z"),
-  scope: "all",
 };
 
 const defaultAttendanceRules = {
@@ -33,10 +32,26 @@ function buildAttendancePolicy(): jest.Mocked<AttendancePolicyService> {
   } as unknown as jest.Mocked<AttendancePolicyService>;
 }
 
-function makeChain(rows: unknown[]): Record<string, unknown> {
+type QueryWhere = { fields: Record<string, unknown>; where: jest.Mock };
+
+function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
+  if (value === null || value === undefined || ["string", "number", "boolean"].includes(typeof value)) return [value];
+  if (Array.isArray(value)) return value.flatMap((item) => sqlValues(item, seen));
+  if (typeof value !== "object" || seen.has(value)) return [];
+  seen.add(value);
+  const record = value as { queryChunks?: unknown[]; value?: unknown };
+  return [
+    ...(record.queryChunks ? sqlValues(record.queryChunks, seen) : []),
+    ...(Object.prototype.hasOwnProperty.call(record, "value") ? sqlValues(record.value, seen) : []),
+  ];
+}
+
+function makeChain(rows: unknown[], fields: Record<string, unknown>, wheres: QueryWhere[]): Record<string, unknown> {
   const chain: Record<string, unknown> = {};
   chain["innerJoin"] = jest.fn().mockReturnValue(chain);
-  chain["where"] = jest.fn().mockReturnValue(chain);
+  const where = jest.fn().mockReturnValue(chain);
+  wheres.push({ fields, where });
+  chain["where"] = where;
   chain["orderBy"] = jest.fn().mockReturnValue(chain);
   chain["limit"] = jest.fn().mockResolvedValue(rows);
   chain["then"] = (resolve: (v: unknown[]) => void, reject: (e: unknown) => void) =>
@@ -44,14 +59,24 @@ function makeChain(rows: unknown[]): Record<string, unknown> {
   return chain;
 }
 
-function buildDb(queryResults: unknown[][]): unknown {
+function buildDb(queryResults: unknown[][], membership: { id: number } | null = { id: 1 }): unknown {
   let callIndex = 0;
+  const wheres: QueryWhere[] = [];
+  const chains: Record<string, unknown>[] = [];
   return {
-    select: jest.fn().mockImplementation(() => {
+    select: jest.fn().mockImplementation((fields: Record<string, unknown>) => {
       const rows = queryResults[callIndex++] ?? [];
-      const chain = makeChain(rows);
+      const chain = makeChain(rows, fields, wheres);
+      chains.push(chain);
       return { from: jest.fn().mockReturnValue(chain) };
     }),
+    query: {
+      organizationMembers: {
+        findFirst: jest.fn().mockResolvedValue(membership),
+      },
+    },
+    __wheres: wheres,
+    __chains: chains,
   };
 }
 
@@ -121,11 +146,16 @@ describe("HrCalendarSource", () => {
     expect(result).toHaveLength(0);
   });
 
+  it("denies calendar reads for a revoked or cross-organization membership", async () => {
+    const source = await buildSource(buildDb(emptyWith({}), null));
+    await expect(source.load(ctx)).resolves.toEqual([]);
+  });
+
   it("shows a colleague's absence without its reason", async () => {
     const leaveRows = [
       {
         id: 7,
-        userId: "someone-else",
+        userMembershipId: 2,
         startDate: "2026-08-12",
         endDate: "2026-08-12",
         reason: "Chemotherapy appointment",
@@ -148,7 +178,7 @@ describe("HrCalendarSource", () => {
     const leaveRows = [
       {
         id: 8,
-        userId: "user-1",
+        userMembershipId: 1,
         startDate: "2026-08-13",
         endDate: "2026-08-13",
         reason: "Chemotherapy appointment",
@@ -168,7 +198,7 @@ describe("HrCalendarSource", () => {
     const leaveRows = [
       {
         id: 1,
-        userId: "user-1",
+        userMembershipId: 1,
         startDate: "2026-08-10",
         endDate: "2026-08-10",
         reason: "Rest",
@@ -194,7 +224,7 @@ describe("HrCalendarSource", () => {
     const leaveRows = [
       {
         id: 2,
-        userId: "user-1",
+        userMembershipId: 1,
         startDate: "2026-08-11",
         endDate: "2026-08-11",
         reason: null,
@@ -253,7 +283,7 @@ describe("HrCalendarSource", () => {
     const leaveRows = [
       {
         id: 3,
-        userId: "user-1",
+        userMembershipId: 1,
         startDate: "2026-08-10",
         endDate: "2026-08-12",
         reason: null,
@@ -291,6 +321,24 @@ describe("HrCalendarSource", () => {
     expect(denyResult.filter((e) => e.category === "interview")).toHaveLength(0);
   });
 
+  it("keys interview visibility by active membership in both granular and legacy source paths", async () => {
+    const granularDb = buildDb([[]]) as { __wheres: QueryWhere[] };
+    const granularSource = await buildSource(granularDb);
+    await granularSource.loadSource(ctx, "interview");
+
+    const legacyDb = buildDb(emptyWith({})) as { __wheres: QueryWhere[] };
+    const legacySource = await buildSource(legacyDb);
+    await legacySource.load(ctx);
+
+    for (const db of [granularDb, legacyDb]) {
+      const interviewWhere = db.__wheres.find(({ fields }) => "interviewerId" in fields)?.where;
+      expect(interviewWhere).toHaveBeenCalledWith(expect.anything());
+      const values = sqlValues(interviewWhere?.mock.calls[0]?.[0]);
+      expect(values).toContain(1);
+      expect(values).not.toContain(ctx.userId);
+    }
+  });
+
   it("generates an attendance event for an active member with a present check-in record", async () => {
     const attendanceRow = {
       id: 55,
@@ -325,7 +373,7 @@ describe("HrCalendarSource", () => {
     const leaveRows = [
       {
         id: 30,
-        userId: "other-user",
+        userMembershipId: 2,
         startDate: "2026-08-14",
         endDate: "2026-08-14",
         reason: "PRIVATE",
@@ -335,7 +383,7 @@ describe("HrCalendarSource", () => {
       },
       {
         id: 31,
-        userId: "user-1",
+        userMembershipId: 1,
         startDate: "2026-08-15",
         endDate: "2026-08-15",
         reason: "Mine",
@@ -378,5 +426,16 @@ describe("HrCalendarSource", () => {
     expect(event?.category).toBe("attendance");
     expect(event?.allDay).toBe(true);
     expect(event?.start).toEqual(new Date("2026-08-03T12:00:00.000Z"));
+  });
+
+  it("applies a bounded read batch to every growing calendar source query", async () => {
+    const db = buildDb(emptyWith({})) as { __chains: Array<Record<string, jest.Mock>> };
+    const source = await buildSource(db);
+
+    await source.load(ctx);
+
+    const limitedChains = db.__chains.filter((chain) => (chain["limit"] as jest.Mock).mock.calls.length > 0);
+    expect(limitedChains.length).toBeGreaterThanOrEqual(6);
+    expect(limitedChains.every((chain) => (chain["limit"] as jest.Mock).mock.calls[0]?.[0] === 500 || (chain["limit"] as jest.Mock).mock.calls[0]?.[0] === 1)).toBe(true);
   });
 });

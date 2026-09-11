@@ -20,6 +20,8 @@ import { upsertCommentDraftSchema, type UpsertCommentDraftInput } from "./dto/co
 import { Validate } from "../../../common/validation/validate.decorator";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { commentDraftSchema, deletedSchema } from "./dto/comment-drafts-response.schemas";
 
 const ticketIdParams = z.object({ ticketId: z.coerce.number().int().positive() }).strict();
 const draftIdParams = z.object({ draftId: z.coerce.number().int().positive() }).strict();
@@ -32,12 +34,14 @@ export class CommentDraftsController {
 
   @Get("mine")
   @RequirePermission("build:tickets:view")
+  @ResponseSchema(z.array(commentDraftSchema))
   listMine(@CurrentUser() u: CurrentUserContext) {
     return this.svc.listMine(u.orgId, actingMembershipId(u.principal), u.userId);
   }
 
   @Put("tickets/:ticketId")
   @RequirePermission("build:tickets:view")
+  @ResponseSchema(commentDraftSchema)
   @Validate({ params: ticketIdParams, body: upsertCommentDraftSchema })
   upsert(
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -50,6 +54,7 @@ export class CommentDraftsController {
   @Delete("mine")
   @HttpCode(200)
   @RequirePermission("build:tickets:view")
+  @ResponseSchema(deletedSchema)
   deleteAll(@CurrentUser() u: CurrentUserContext) {
     return this.svc.deleteAllMine(u.orgId, actingMembershipId(u.principal), u.userId);
   }
@@ -57,6 +62,7 @@ export class CommentDraftsController {
   @Delete("tickets/:ticketId")
   @HttpCode(200)
   @RequirePermission("build:tickets:view")
+  @ResponseSchema(deletedSchema)
   @Validate({ params: ticketIdParams })
   deleteByTicket(
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -68,6 +74,7 @@ export class CommentDraftsController {
   @Delete(":draftId")
   @HttpCode(200)
   @RequirePermission("build:tickets:view")
+  @ResponseSchema(deletedSchema)
   @Validate({ params: draftIdParams })
   deleteOne(
     @Param("draftId", ParseIntPipe) draftId: number,

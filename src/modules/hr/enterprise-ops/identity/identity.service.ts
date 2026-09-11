@@ -1,7 +1,7 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, notInArray } from "drizzle-orm";
 import { decodeCursor, buildCursorPage } from "../../../../common/pagination/cursor";
-import { keysetBeforeId } from "../../../../common/pagination/keyset";
+import { keysetBeforeUuid } from "../../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import {
@@ -26,12 +26,17 @@ export class IdentityService {
   async listProvisioning(orgId: string, input: ListProvisioningInput) {
     const { cursor, limit, userId, triggeredBy, status } = input;
     const pos = decodeCursor(cursor);
+    if (cursor !== undefined && !pos)
+      throw new BadRequestException("Invalid pagination cursor");
 
     const conditions = [eq(hrAccessProvisioning.orgId, orgId)];
     if (userId) conditions.push(eq(hrAccessProvisioning.userId, userId));
     if (triggeredBy) conditions.push(eq(hrAccessProvisioning.triggeredBy, triggeredBy));
     if (status) conditions.push(eq(hrAccessProvisioning.status, status));
-    if (pos) conditions.push(keysetBeforeId(hrAccessProvisioning.createdAt, hrAccessProvisioning.id, pos));
+    if (pos)
+      conditions.push(
+        keysetBeforeUuid(hrAccessProvisioning.createdAt, hrAccessProvisioning.id, pos),
+      );
 
     const rows = await this.db
       .select()
@@ -118,7 +123,8 @@ export class IdentityService {
           eq(hrAccessProvisioningTemplates.orgId, orgId),
           eq(hrAccessProvisioningTemplates.triggeredBy, input.triggeredBy),
         ),
-      );
+      )
+      .limit(100);
 
     const records: typeof hrAccessProvisioning.$inferInsert[] = [];
 

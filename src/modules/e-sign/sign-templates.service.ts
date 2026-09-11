@@ -9,142 +9,18 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { SignAuditService } from "./sign-audit.service";
 import { SignSettingsService } from "./sign-settings.service";
 import { SignAuthMethodPolicy } from "./sign-auth-method.policy";
 import { SignTokensService } from "./sign-tokens.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
+import { buildTemplateSnapshot, parseTemplateSnapshot } from "./sign-template-snapshot";
 import type {
   CreateTemplateInput,
   UpdateTemplateInput,
   CreateEnvelopeFromTemplateInput,
 } from "./dto/e-sign.schemas";
 import type { RequestActorContext } from "../../common/audit/actor-context";
-
-export interface TemplateRole {
-  roleName: string;
-  recipientType: string;
-  routingOrder: number;
-  authMethod: string;
-}
-
-export interface TemplateDocument {
-  fileKey: string;
-  fileName: string;
-  mimeType: string;
-  pageCount: number | null;
-  fileSize: number;
-  sha256Hash: string;
-  orderIndex: number;
-}
-
-export interface TemplateField {
-  roleName: string;
-  documentIndex: number;
-  fieldType: string;
-  label?: string | null;
-  pageNumber: number;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  required: boolean;
-  readonly: boolean;
-  orderIndex: number;
-  groupId?: string | null;
-  defaultValue?: string | null;
-  optionsJson?: string[] | null;
-  validationType?: string | null;
-  validationRulesJson?: Record<string, unknown> | null;
-  conditionalRulesJson?: Record<string, unknown> | null;
-}
-
-export interface TemplateSnapshot {
-  subject?: string;
-  message?: string;
-  routingMode: string;
-  ccTiming: string;
-  allowDecline: boolean;
-  expirationDays: number;
-  reminderEnabled: boolean;
-  /**
-   * Optional on purpose. The parser used to substitute 3/2/3 here — a third
-   * hardcoded cadence, agreeing with neither the column defaults (3/3/5) nor
-   * the DTO's, and unreachable by any org setting. Absence now means "use the
-   * organisation's default", resolved at instantiation.
-   */
-  reminderFirstAfterDays?: number;
-  reminderRepeatDays?: number;
-  reminderMaxCount?: number;
-  watermarkPolicyId?: number | null;
-  roles: TemplateRole[];
-  documents: TemplateDocument[];
-  fields: TemplateField[];
-}
-
-export function parseTemplateSnapshot(json: Record<string, unknown>): TemplateSnapshot {
-  const parseRole = (r: unknown): TemplateRole => {
-    const o = typeof r === "object" && r !== null ? (r as Record<string, unknown>) : {};
-    return {
-      roleName: String(o["roleName"] ?? ""),
-      recipientType: String(o["recipientType"] ?? "signer"),
-      routingOrder: typeof o["routingOrder"] === "number" ? o["routingOrder"] : 0,
-      authMethod: String(o["authMethod"] ?? "email_link"),
-    };
-  };
-  const parseDocument = (d: unknown): TemplateDocument => {
-    const o = typeof d === "object" && d !== null ? (d as Record<string, unknown>) : {};
-    return {
-      fileKey: String(o["fileKey"] ?? ""),
-      fileName: String(o["fileName"] ?? ""),
-      mimeType: String(o["mimeType"] ?? ""),
-      pageCount: typeof o["pageCount"] === "number" ? o["pageCount"] : null,
-      fileSize: typeof o["fileSize"] === "number" ? o["fileSize"] : 0,
-      sha256Hash: String(o["sha256Hash"] ?? ""),
-      orderIndex: typeof o["orderIndex"] === "number" ? o["orderIndex"] : 0,
-    };
-  };
-  const parseField = (f: unknown): TemplateField => {
-    const o = typeof f === "object" && f !== null ? (f as Record<string, unknown>) : {};
-    return {
-      roleName: String(o["roleName"] ?? ""),
-      documentIndex: typeof o["documentIndex"] === "number" ? o["documentIndex"] : 0,
-      fieldType: String(o["fieldType"] ?? ""),
-      label: o["label"] != null ? String(o["label"]) : null,
-      pageNumber: typeof o["pageNumber"] === "number" ? o["pageNumber"] : 1,
-      x: typeof o["x"] === "number" ? o["x"] : 0,
-      y: typeof o["y"] === "number" ? o["y"] : 0,
-      width: typeof o["width"] === "number" ? o["width"] : 0,
-      height: typeof o["height"] === "number" ? o["height"] : 0,
-      required: Boolean(o["required"]),
-      readonly: Boolean(o["readonly"]),
-      orderIndex: typeof o["orderIndex"] === "number" ? o["orderIndex"] : 0,
-      groupId: o["groupId"] != null ? String(o["groupId"]) : null,
-      defaultValue: o["defaultValue"] != null ? String(o["defaultValue"]) : null,
-      optionsJson: Array.isArray(o["optionsJson"]) ? o["optionsJson"].map(String) : null,
-      validationType: o["validationType"] != null ? String(o["validationType"]) : null,
-      validationRulesJson: typeof o["validationRulesJson"] === "object" && o["validationRulesJson"] !== null ? (o["validationRulesJson"] as Record<string, unknown>) : null,
-      conditionalRulesJson: typeof o["conditionalRulesJson"] === "object" && o["conditionalRulesJson"] !== null ? (o["conditionalRulesJson"] as Record<string, unknown>) : null,
-    };
-  };
-  return {
-    subject: json["subject"] != null ? String(json["subject"]) : undefined,
-    message: json["message"] != null ? String(json["message"]) : undefined,
-    routingMode: String(json["routingMode"] ?? "parallel"),
-    ccTiming: String(json["ccTiming"] ?? "on_complete"),
-    allowDecline: Boolean(json["allowDecline"]),
-    expirationDays: typeof json["expirationDays"] === "number" ? json["expirationDays"] : 30,
-    reminderEnabled: Boolean(json["reminderEnabled"]),
-    reminderFirstAfterDays: typeof json["reminderFirstAfterDays"] === "number" ? json["reminderFirstAfterDays"] : undefined,
-    reminderRepeatDays: typeof json["reminderRepeatDays"] === "number" ? json["reminderRepeatDays"] : undefined,
-    reminderMaxCount: typeof json["reminderMaxCount"] === "number" ? json["reminderMaxCount"] : undefined,
-    watermarkPolicyId: typeof json["watermarkPolicyId"] === "number" ? json["watermarkPolicyId"] : null,
-    roles: Array.isArray(json["roles"]) ? json["roles"].map(parseRole) : [],
-    documents: Array.isArray(json["documents"]) ? json["documents"].map(parseDocument) : [],
-    fields: Array.isArray(json["fields"]) ? json["fields"].map(parseField) : [],
-  };
-}
 
 @Injectable()
 export class SignTemplatesService {
@@ -167,8 +43,6 @@ export class SignTemplatesService {
         category: input.category,
         ownerMembershipId,
         templateJson: input.templateJson,
-        restrictedToRoles: input.restrictedToRoles,
-        restrictedToTeams: input.restrictedToTeams,
       })
       .returning();
 
@@ -193,60 +67,8 @@ export class SignTemplatesService {
       this.db.query.signFields.findMany({ where: and(eq(signFields.orgId, orgId), eq(signFields.envelopeId, envelopeId)) }),
     ]);
 
-    const documentIndexById = new Map(documents.map((d, idx) => [d.id, idx]));
-    const recipientRoleById = new Map(recipients.map((r) => [r.id, r.roleName]));
-
-    const snapshot: TemplateSnapshot = {
-      subject: envelope.subject ?? undefined,
-      message: envelope.message ?? undefined,
-      routingMode: envelope.routingMode,
-      ccTiming: envelope.ccTiming,
-      allowDecline: envelope.allowDecline,
-      expirationDays: 30,
-      reminderEnabled: envelope.reminderEnabled,
-      reminderFirstAfterDays: envelope.reminderFirstAfterDays,
-      reminderRepeatDays: envelope.reminderRepeatDays,
-      reminderMaxCount: envelope.reminderMaxCount,
-      watermarkPolicyId: envelope.watermarkPolicyId,
-      roles: recipients.map((r) => ({
-        roleName: r.roleName,
-        recipientType: r.recipientType,
-        routingOrder: r.routingOrder,
-        authMethod: r.authMethod,
-      })),
-      documents: documents.map((d) => ({
-        fileKey: d.currentFileKey,
-        fileName: d.fileName,
-        mimeType: d.mimeType,
-        pageCount: d.pageCount,
-        fileSize: d.fileSize,
-        sha256Hash: d.sha256Hash,
-        orderIndex: d.orderIndex,
-      })),
-      fields: fields.map((f) => ({
-        roleName: recipientRoleById.get(f.recipientId) ?? "",
-        documentIndex: documentIndexById.get(f.documentId) ?? 0,
-        fieldType: f.fieldType,
-        label: f.label,
-        pageNumber: f.pageNumber,
-        x: f.x,
-        y: f.y,
-        width: f.width,
-        height: f.height,
-        required: f.required,
-        readonly: f.readonly,
-        orderIndex: f.orderIndex,
-        groupId: f.groupId,
-        defaultValue: f.defaultValue,
-        optionsJson: f.optionsJson,
-        validationType: f.validationType,
-        validationRulesJson: f.validationRulesJson,
-        conditionalRulesJson: f.conditionalRulesJson,
-      })),
-    };
-
-    const templateJson: Record<string, unknown> = { ...snapshot };
-    return this.create(orgId, ownerMembershipId, { name, templateJson, restrictedToRoles: [], restrictedToTeams: [] });
+    const templateJson: Record<string, unknown> = { ...buildTemplateSnapshot({ envelope, documents, recipients, fields }) };
+    return this.create(orgId, ownerMembershipId, { name, templateJson });
   }
 
   async update(orgId: string, templateId: number, input: UpdateTemplateInput, actor: RequestActorContext) {
@@ -277,8 +99,9 @@ export class SignTemplatesService {
         category: template.category,
         ownerMembershipId: actor.membershipId,
         templateJson: template.templateJson,
-        restrictedToRoles: template.restrictedToRoles,
-        restrictedToTeams: template.restrictedToTeams,
+        // `restrictedToRoles` / `restrictedToTeams` are deliberately NOT copied.
+        // They were never enforced anywhere, and propagating them into new rows
+        // spreads a setting that looks like an access control and is not one.
       })
       .returning();
     return copy;
@@ -345,8 +168,8 @@ export class SignTemplatesService {
         title: input.title ?? template.name,
         subject: snapshot.subject,
         message: snapshot.message,
-        routingMode: snapshot.routingMode as "parallel" | "sequential" | "mixed",
-        ccTiming: snapshot.ccTiming as "on_send" | "on_complete",
+        routingMode: snapshot.routingMode,
+        ccTiming: snapshot.ccTiming,
         allowDecline: snapshot.allowDecline,
         templateId: template.id,
         watermarkPolicyId: snapshot.watermarkPolicyId ?? undefined,
@@ -363,75 +186,93 @@ export class SignTemplatesService {
       .returning();
 
     const documentIdByIndex = new Map<number, number>();
-    for (let i = 0; i < snapshot.documents.length; i++) {
-      const doc = snapshot.documents[i];
-      const [inserted] = await this.db
+    if (snapshot.documents.length > 0) {
+      const insertedDocs = await this.db
         .insert(signDocuments)
-        .values({
-          orgId,
-          envelopeId: envelope.id,
-          originalFileKey: doc.fileKey,
-          currentFileKey: doc.fileKey,
-          fileName: doc.fileName,
-          mimeType: doc.mimeType,
-          pageCount: doc.pageCount,
-          fileSize: doc.fileSize,
-          sha256Hash: doc.sha256Hash,
-          conversionStatus: "not_needed",
-          orderIndex: doc.orderIndex,
-          createdByMembershipId: senderMembershipId,
-        })
+        .values(
+          snapshot.documents.map((doc) => ({
+            orgId,
+            envelopeId: envelope.id,
+            originalFileKey: doc.fileKey,
+            currentFileKey: doc.fileKey,
+            fileName: doc.fileName,
+            mimeType: doc.mimeType,
+            pageCount: doc.pageCount,
+            fileSize: doc.fileSize,
+            sha256Hash: doc.sha256Hash,
+            conversionStatus: "not_needed" as const,
+            orderIndex: doc.orderIndex,
+            createdByMembershipId: senderMembershipId,
+          })),
+        )
         .returning();
-      documentIdByIndex.set(i, inserted.id);
+      for (let i = 0; i < insertedDocs.length; i++) {
+        const doc = insertedDocs[i];
+        if (doc) documentIdByIndex.set(i, doc.id);
+      }
     }
 
     const recipientIdByRole = new Map<string, number>();
-    for (const role of snapshot.roles) {
+    const recipientInserts = snapshot.roles.flatMap((role) => {
       const provided = input.recipients.find((r) => r.roleName === role.roleName);
-      if (!provided) continue;
-      const [inserted] = await this.db
+      if (!provided) return [];
+      return [{ role, provided }];
+    });
+    if (recipientInserts.length > 0) {
+      const insertedRecipients = await this.db
         .insert(signRecipients)
-        .values({
-          orgId,
-          envelopeId: envelope.id,
-          roleName: role.roleName,
-          recipientType: role.recipientType as "signer" | "approver" | "cc" | "viewer" | "in_person_host" | "internal_reviewer",
-          name: provided.name,
-          email: provided.email,
-          phone: provided.phone,
-          routingOrder: role.routingOrder,
-          authMethod: role.authMethod as "email_link" | "access_code" | "otp_email" | "otp_sms" | "sso" | "passkey" | "kba" | "id_verification",
-        })
+        .values(
+          recipientInserts.map(({ role, provided }) => ({
+            orgId,
+            envelopeId: envelope.id,
+            roleName: role.roleName,
+            recipientType: role.recipientType,
+            name: provided.name,
+            email: provided.email,
+            phone: provided.phone,
+            routingOrder: role.routingOrder,
+            authMethod: role.authMethod,
+          })),
+        )
         .returning();
-      recipientIdByRole.set(role.roleName, inserted.id);
+      for (let i = 0; i < recipientInserts.length; i++) {
+        const insert = recipientInserts[i];
+        const row = insertedRecipients[i];
+        if (insert && row) recipientIdByRole.set(insert.role.roleName, row.id);
+      }
     }
 
-    for (const field of snapshot.fields) {
+    const fieldValues = snapshot.fields.flatMap((field) => {
       const recipientId = recipientIdByRole.get(field.roleName);
       const documentId = documentIdByIndex.get(field.documentIndex);
-      if (!recipientId || !documentId) continue;
-      await this.db.insert(signFields).values({
-        orgId,
-        envelopeId: envelope.id,
-        documentId,
-        recipientId,
-        fieldType: field.fieldType as typeof signFields.$inferInsert.fieldType,
-        label: field.label,
-        pageNumber: field.pageNumber,
-        x: field.x,
-        y: field.y,
-        width: field.width,
-        height: field.height,
-        required: field.required,
-        readonly: field.readonly,
-        orderIndex: field.orderIndex,
-        groupId: field.groupId,
-        defaultValue: field.defaultValue,
-        optionsJson: field.optionsJson,
-        validationType: field.validationType,
-        validationRulesJson: field.validationRulesJson,
-        conditionalRulesJson: field.conditionalRulesJson,
-      });
+      if (!recipientId || !documentId) return [];
+      return [
+        {
+          orgId,
+          envelopeId: envelope.id,
+          documentId,
+          recipientId,
+          fieldType: field.fieldType,
+          label: field.label,
+          pageNumber: field.pageNumber,
+          x: field.x,
+          y: field.y,
+          width: field.width,
+          height: field.height,
+          required: field.required,
+          readonly: field.readonly,
+          orderIndex: field.orderIndex,
+          groupId: field.groupId,
+          defaultValue: field.defaultValue,
+          optionsJson: field.optionsJson,
+          validationType: field.validationType,
+          validationRulesJson: field.validationRulesJson,
+          conditionalRulesJson: field.conditionalRulesJson,
+        },
+      ];
+    });
+    if (fieldValues.length > 0) {
+      await this.db.insert(signFields).values(fieldValues);
     }
 
     await this.audit.record({

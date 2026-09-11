@@ -50,18 +50,19 @@
  *   2  — usage error (e.g. catalog unreadable)
  */
 
-import { readFileSync, readdirSync } from "node:fs";
-import { describeFrontendRoot, resolveFrontendRoot } from "./frontend-root.mjs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  BACKEND_ROOT,
-  WORKSPACE_ROOT,
-  resolveBackendModulesDir,
-} from "./lib/repo-roots.mjs";
+  FRONTEND_ROOT,
+  frontendAvailable,
+  frontendUnreachableReason,
+  reportUnreachable,
+} from "./check-repo-paths.mjs";
 import {
   loadBackendCatalog,
   loadModuleManifest,
+  namespaceOf,
   parsePermissionConstants,
   parseRouteRefs,
   parseUnionKeys,
@@ -86,7 +87,7 @@ export function checkNamespacePilot(pilotEntry, routeRefs, modulesDir) {
     if (!ref.resolved || ref.key === null) return false;
     const filePath = ref.file.replace(/\\/g, "/");
     if (!filePath.includes(prefix)) return false;
-    const ns = ref.key.split(":")[0];
+    const ns = namespaceOf(ref.key);
     return !allowedNamespaces.includes(ns);
   });
   return { ok: violations.length === 0, violations };
@@ -94,28 +95,30 @@ export function checkNamespacePilot(pilotEntry, routeRefs, modulesDir) {
 
 const args = process.argv.slice(2);
 
-// Roots are RESOLVED, not assumed: this gate spent its whole life exiting 2
-// because it hardcoded a `<root>/backend` + `<root>/frontend` monorepo layout
-// that this checkout does not use. See src/scripts/lib/repo-roots.mjs.
-const REPO_ROOT = WORKSPACE_ROOT;
-/**
- * The paired-worktree resolver matters more here than anywhere: this backend is
- * `inv-wt-backend`, so its frontend is `inv-wt-frontend`. Pointing it at
- * `streamlineos-frontend` would diff an inventory catalog against a CRM union
- * on a different branch and report every legitimate difference as a missing
- * key — confidently wrong instead of honestly unable to run. `FRONTEND` is the
- * same answer the run prints before its verdict, so the checkout named is the
- * checkout read.
- */
-const FRONTEND = resolveFrontendRoot(BACKEND_ROOT);
-const FRONTEND_ROOT = FRONTEND.root;
-const { root: RESOLVED_MODULES_DIR } = resolveBackendModulesDir();
-const BACKEND_MODULES_DIR = RESOLVED_MODULES_DIR ?? join(BACKEND_ROOT, "src", "modules");
-const FRONTEND_UNION_FILES = (FRONTEND_ROOT === null ? [] : [
-  join(FRONTEND_ROOT, "lib", "rbac", "permissions", "permission-key-foundation.ts"),
-  join(FRONTEND_ROOT, "lib", "rbac", "permissions", "permission-key-extended.ts"),
-  join(FRONTEND_ROOT, "lib", "rbac", "permissions", "permission-key-business.ts"),
-]);
+const SCRIPT_DIR = fileURLToPath(new URL(".", import.meta.url));
+// scripts/ → src/ → backend root. The frontend is found by marker, not by depth:
+// guessing `<repo>/../frontend` resolved outside both repositories on a sibling
+// checkout, and the resulting ENOENT was the only thing stopping this gate from
+// scanning an empty modules directory and reporting OK.
+const BACKEND_ROOT = resolve(SCRIPT_DIR, "../..");
+const REPO_ROOT = BACKEND_ROOT;
+const BACKEND_MODULES_DIR = join(BACKEND_ROOT, "src", "modules");
+const MIN_CONTROLLER_FILES = 100;
+const MIN_ROUTE_REFS = 200;
+const MIN_UNION_KEYS = 100;
+
+function isVacuousScan(fileCount, refCount) {
+  return fileCount < MIN_CONTROLLER_FILES || refCount < MIN_ROUTE_REFS;
+}
+
+function walkedTreeIsReachable(dir) {
+  return existsSync(dir);
+}
+const FRONTEND_UNION_BASENAMES = [
+  "permission-key-foundation.ts",
+  "permission-key-extended.ts",
+  "permission-key-business.ts",
+];
 
 // The extractors live in ./permission-key-extractors.mjs so this check and
 // check-navigation-permissions read keys through one implementation.
@@ -235,6 +238,21 @@ if (args.includes("--self-test")) {
   checks.pilotNamespaceMismatchDetected = !pilotFail.ok && pilotFail.violations.length === 1;
   checks.pilotOtherModuleRefNotFlagged = pilotOk.violations.length === 0;
 
+  // The scan root and the vacuity floor. A wrong BACKEND_MODULES_DIR made this
+  // gate walk a directory outside the repository; the only thing that stopped it
+  // reporting OK over zero controllers was an unrelated ENOENT elsewhere.
+  checks.backendModulesDirExists = walkedTreeIsReachable(BACKEND_MODULES_DIR);
+  checks.backendModulesDirIsInsideThisRepo = BACKEND_MODULES_DIR.startsWith(BACKEND_ROOT);
+  checks.emptyScanIsVacuous = isVacuousScan(0, 0) === true;
+  checks.tooFewControllersIsVacuous = isVacuousScan(MIN_CONTROLLER_FILES - 1, 5000) === true;
+  checks.tooFewRefsIsVacuous = isVacuousScan(5000, MIN_ROUTE_REFS - 1) === true;
+  checks.aRealSizedScanIsNotVacuous = isVacuousScan(MIN_CONTROLLER_FILES, MIN_ROUTE_REFS) === false;
+  checks.frontendUnionFilesAreReachable =
+    frontendAvailable &&
+    FRONTEND_UNION_BASENAMES.every((f) =>
+      existsSync(join(FRONTEND_ROOT, "lib", "rbac", "permissions", f)),
+    );
+
   const pass = Object.values(checks).every(Boolean);
   process.stdout.write(
     JSON.stringify({ selfTest: true, pass, checks, catalogError }, null, 2) + "\n",
@@ -268,21 +286,30 @@ try {
   process.exit(2);
 }
 
-/**
- * Which checkout the frontend half came from, printed before any verdict. A
- * comparison between two repositories is only meaningful if you know which two,
- * and a fallback to an unpaired checkout compares against whatever branch that
- * one is on.
- */
-process.stdout.write(`${describeFrontendRoot(FRONTEND)}\n`);
-if (!FRONTEND.root) process.exit(2);
+if (!frontendAvailable) {
+  reportUnreachable(
+    "check-permission-keys",
+    "the frontend PermissionKey union comparison",
+    frontendUnreachableReason(),
+  );
+  frontendCatalog = null;
+} else {
+  try {
+    const unionSources = FRONTEND_UNION_BASENAMES.map((f) =>
+      readFileSync(join(FRONTEND_ROOT, "lib", "rbac", "permissions", f), "utf8"),
+    );
+    frontendCatalog = parseUnionKeys(unionSources);
+  } catch (err) {
+    process.stderr.write(`Cannot read frontend PermissionKey union files: ${err.message}\n`);
+    process.exit(2);
+  }
 
-try {
-  const unionSources = FRONTEND_UNION_FILES.map((f) => readFileSync(f, "utf8"));
-  frontendCatalog = parseUnionKeys(unionSources);
-} catch (err) {
-  process.stderr.write(`Cannot read frontend PermissionKey union files: ${err.message}\n`);
-  process.exit(2);
+  if (frontendCatalog.size < MIN_UNION_KEYS) {
+    process.stderr.write(
+      `check-permission-keys: vacuity guard — the frontend PermissionKey union parsed to ${frontendCatalog.size} keys (floor ${MIN_UNION_KEYS}); the union parser is broken.\n`,
+    );
+    process.exit(2);
+  }
 }
 
 // ── scan route files ────────────────────────────────────────────────────────
@@ -300,6 +327,15 @@ for (const { src } of files)
   for (const [name, key] of parsePermissionConstants(src)) constants.set(name, key);
 
 const routeRefs = files.flatMap(({ file, src }) => parseRouteRefs(src, file, constants));
+
+// A wrong BACKEND_MODULES_DIR, or a decorator-shape change, makes this scan find
+// nothing and report OK. Neither number can plausibly collapse below these floors.
+if (isVacuousScan(files.length, routeRefs.length)) {
+  process.stderr.write(
+    `check-permission-keys: vacuity guard — scanned ${files.length} files (floor ${MIN_CONTROLLER_FILES}) under ${BACKEND_MODULES_DIR} and found ${routeRefs.length} @RequirePermission usages (floor ${MIN_ROUTE_REFS}); the scan is broken, not the codebase.\n`,
+  );
+  process.exit(2);
+}
 
 // ── collect offenders ───────────────────────────────────────────────────────
 
@@ -319,7 +355,7 @@ for (const ref of routeRefs) {
     if (!missingBackend.has(ref.key)) missingBackend.set(ref.key, []);
     missingBackend.get(ref.key).push(`${rel}:${ref.line}`);
   }
-  if (!frontendCatalog.has(ref.key)) {
+  if (frontendCatalog !== null && !frontendCatalog.has(ref.key)) {
     if (!missingFrontend.has(ref.key)) missingFrontend.set(ref.key, []);
     missingFrontend.get(ref.key).push(`${rel}:${ref.line}`);
   }
@@ -332,7 +368,11 @@ const uniqueKeys = new Set(routeRefs.filter((r) => r.resolved).map((r) => r.key)
 console.log(`Scanned  ${routeRefs.length} @RequirePermission usages  (${uniqueKeys} unique keys)`);
 console.log(`  of which ${viaConstant} pass a constant rather than a literal`);
 console.log(`Backend catalog   ${backendCatalog.size} keys`);
-console.log(`Frontend PermissionKey union  ${frontendCatalog.size} keys`);
+console.log(
+  frontendCatalog === null
+    ? "Frontend PermissionKey union  NOT COMPARED (PARTIAL run)"
+    : `Frontend PermissionKey union  ${frontendCatalog.size} keys`,
+);
 console.log("");
 
 if (unresolved.size > 0) {
@@ -367,7 +407,11 @@ if (missingFrontend.size > 0) {
 
 const totalFailures = missingBackend.size + missingFrontend.size + unresolved.size;
 if (totalFailures === 0) {
-  console.log("OK — every @RequirePermission key resolves and exists in the backend catalog and the frontend PermissionKey union.");
+  console.log(
+    frontendCatalog === null
+      ? "PARTIAL — every @RequirePermission key resolves and exists in the backend catalog. The frontend PermissionKey union was NOT compared; this run proves nothing about useCan."
+      : "OK — every @RequirePermission key resolves and exists in the backend catalog and the frontend PermissionKey union.",
+  );
 } else {
   console.error(
     `FAIL — ${unresolved.size} unresolvable argument(s), ` +

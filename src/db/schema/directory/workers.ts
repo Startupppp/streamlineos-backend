@@ -62,7 +62,6 @@ export const workers = pgTable(
       .where(
         sql`${table.workerNumber} IS NOT NULL AND ${table.archivedAt} IS NULL AND ${table.deletedAt} IS NULL`,
       ),
-    index("idx_workers_org").on(table.organizationId),
     index("idx_workers_person").on(table.organizationPersonId),
     index("idx_workers_org_status").on(table.organizationId, table.status),
     index("idx_workers_created_actor").on(

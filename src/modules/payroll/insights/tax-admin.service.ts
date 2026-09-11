@@ -1,26 +1,41 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, gt, lt, or } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { taxDeclarations, users } from "../../../db/schema";
 import { buildCsv } from "./lib/csv";
+import { PAYROLL_READ_CAP, requirePayrollReadWithinCap } from "../lib/query-bounds";
+import { buildCursorPage } from "../../../common/pagination/cursor";
+import {
+  decodePayrollTimestampCursor,
+  payrollCursorPosition,
+} from "../payroll-cursor";
 
 @Injectable()
 export class TaxAdminService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listDeclarations(
+  async listDeclarations(
     orgId: string,
     filters: { financialYear?: string; status?: string },
-    page = 1,
+    cursor?: string,
     limit = 50,
   ) {
     const cap = Math.min(limit, 100);
-    return this.db
+    const cursorScope = [
+      "tax-declarations",
+      orgId,
+      filters.financialYear ?? null,
+      filters.status ?? null,
+    ] as const;
+    const position = decodePayrollTimestampCursor(cursor, cursorScope);
+    const where = this.scopeWhere(orgId, filters);
+    const rows = await this.db
       .select({
         id: taxDeclarations.id,
         orgId: taxDeclarations.orgId,
         userId: taxDeclarations.userId,
+        userMembershipId: taxDeclarations.userMembershipId,
         financialYear: taxDeclarations.financialYear,
         regime: taxDeclarations.regime,
         hra: taxDeclarations.hra,
@@ -36,15 +51,32 @@ export class TaxAdminService {
         verifiedAt: taxDeclarations.verifiedAt,
         reviewNote: taxDeclarations.reviewNote,
         createdAt: taxDeclarations.createdAt,
+        updatedAt: taxDeclarations.updatedAt,
         userName: users.name,
         userEmail: users.email,
       })
       .from(taxDeclarations)
       .leftJoin(users, eq(taxDeclarations.userId, users.id))
-      .where(this.scopeWhere(orgId, filters))
+      .where(
+        and(
+          where,
+          position
+            ? or(
+                lt(taxDeclarations.createdAt, position.createdAt),
+                and(
+                  eq(taxDeclarations.createdAt, position.createdAt),
+                  gt(taxDeclarations.id, position.id),
+                ),
+              )
+            : undefined,
+        ),
+      )
       .orderBy(desc(taxDeclarations.createdAt), asc(taxDeclarations.id))
-      .limit(cap)
-      .offset((page - 1) * cap);
+      .limit(cap + 1);
+
+    return buildCursorPage(rows, cap, (row) =>
+      payrollCursorPosition(cursorScope, [row.createdAt.toISOString()], row.id),
+    );
   }
 
   async approve(orgId: string, verifierId: string, declarationId: number) {
@@ -92,7 +124,9 @@ export class TaxAdminService {
       .from(taxDeclarations)
       .leftJoin(users, eq(taxDeclarations.userId, users.id))
       .where(this.scopeWhere(orgId, { financialYear }))
-      .limit(100);
+      .limit(PAYROLL_READ_CAP + 1);
+
+    requirePayrollReadWithinCap(rows, "export tax declarations");
 
     const headers = [
       "ID",

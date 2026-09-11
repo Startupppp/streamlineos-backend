@@ -9,7 +9,59 @@ export interface FileKeyColumn {
   column: string;
 }
 
+export type StorageBucketRole = "default" | "kb";
+
+export interface OrgFileKey {
+  key: string;
+  bucket: StorageBucketRole;
+}
+
+/**
+ * The file-key columns whose objects were uploaded with R2_KB_BUCKET_NAME as the
+ * bucket override, and therefore are NOT in the default bucket.
+ *
+ * `enumerateFileKeyColumns` below sweeps every `%_key` column in the schema plus
+ * three URL-shaped names, so it finds these three whether or not anyone thought
+ * about buckets. Deleting one of them without the override addresses a bucket
+ * the object was never written to, and an S3-compatible delete of an absent key
+ * answers SUCCESS -- so the asymmetry cannot surface as an error.
+ *
+ * `kb_sources.file_url` is here because KbSourcesService writes the object KEY
+ * into it (`fileUrl: result.key`), not a URL. `kb_article_attachments.file_key`
+ * is deliberately ABSENT: those objects come from POST /storage/upload with no
+ * override, so they really are default-bucket rows, and "completing" this list
+ * with them would 404 every read wherever the two buckets differ.
+ *
+ * Anything not listed resolves to `default`, which is what every other uploader
+ * in the repo addresses. The list is pinned against the set of KB-bucket
+ * uploaders by `organization-purge-bucket-symmetry.spec.ts`, so a new one fails
+ * a test rather than silently inheriting `default`.
+ */
+const KB_BUCKET_KEY_COLUMNS: ReadonlySet<string> = new Set([
+  "public.kb_page_attachments.file_key",
+  "public.kb_sources.file_key",
+  "public.kb_sources.file_url",
+]);
+
+export function bucketRoleForColumn(table: string, column: string): StorageBucketRole {
+  return KB_BUCKET_KEY_COLUMNS.has(`${table}.${column}`) ? "kb" : "default";
+}
+
+const BUCKET_ROLE_LITERAL: Readonly<Record<StorageBucketRole, string>> = {
+  default: "'default'",
+  kb: "'kb'",
+};
+
+/** Drizzle expands a JS array into the row constructor `($1, $2)`, which `= ANY()` rejects with 42809. */
+function inList(values: readonly string[]): SQL {
+  return sql.join(
+    values.map((value) => sql`${value}`),
+    sql`, `,
+  );
+}
+
 export async function enumerateFileKeyColumns(db: Db): Promise<FileKeyColumn[]> {
+  const schemaList = inList(APP_SCHEMAS);
   const rows = await db.execute(sql`
     SELECT
       n.nspname || '.' || c.relname AS "table",
@@ -18,7 +70,7 @@ export async function enumerateFileKeyColumns(db: Db): Promise<FileKeyColumn[]> 
     JOIN pg_namespace n ON n.oid = c.relnamespace
     JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
     JOIN pg_type t ON t.oid = a.atttypid
-    WHERE n.nspname = ANY(${APP_SCHEMAS})
+    WHERE n.nspname IN (${schemaList})
       AND c.relkind = 'r'
       AND t.typname IN ('text', 'varchar', 'bpchar')
       AND (
@@ -33,27 +85,39 @@ export async function enumerateFileKeyColumns(db: Db): Promise<FileKeyColumn[]> 
   }));
 }
 
+/**
+ * Each key carries the bucket its column's uploader addressed. The role is a SQL
+ * literal from a closed union rather than a bound parameter, so the UNION ALL
+ * keeps `$1` for the org id and Postgres never has to infer a parameter type in
+ * a SELECT list.
+ */
 export async function collectOrgFileKeys(
   db: Db,
   orgId: string,
   columns: FileKeyColumn[],
-): Promise<string[]> {
-  const keys = new Set<string>();
-  for (const { table, column } of columns) {
-    try {
-      const rows = await db.execute(
-        sql.raw(
-          `SELECT "${column}" AS k FROM ${table} WHERE org_id = '${orgId.replace(/'/g, "''")}' AND "${column}" IS NOT NULL`,
-        ),
-      );
-      for (const row of rows) {
-        const k = row["k"];
-        if (typeof k === "string" && k.length > 0) keys.add(k);
-      }
-    } catch {
-    }
+): Promise<OrgFileKey[]> {
+  if (columns.length === 0) return [];
+  const parts: SQL[] = columns.map(({ table, column }) =>
+    sql`SELECT ${sql.raw(`"${column}"`)} AS k, ${sql.raw(BUCKET_ROLE_LITERAL[bucketRoleForColumn(table, column)])} AS bucket FROM ${sql.raw(table)} WHERE org_id = ${orgId} AND ${sql.raw(`"${column}"`)} IS NOT NULL`,
+  );
+  const roles = new Map<string, StorageBucketRole>();
+  // Deliberately unguarded. Both call sites in organization-purge-adapters.ts
+  // already answer a throw with state FAILED — one for the enumeration, one for
+  // the post-delete verification. Swallowing here returned [] instead, which
+  // those call sites read as "no keys", so a failed enumeration reported
+  // "No object-storage keys found for this org; nothing to delete" and a failed
+  // verification reported "deleted and verified absent", both CONFIRMED, while
+  // every object survived in the bucket.
+  const rows = await db.execute(sql.join(parts, sql` UNION ALL `));
+  for (const row of rows) {
+    const k = row["k"];
+    if (typeof k !== "string" || k.length === 0) continue;
+    // `kb` wins a tie: it is a positive assertion that a KB uploader wrote the
+    // object, where `default` is only the absence of one.
+    if (row["bucket"] === "kb") roles.set(k, "kb");
+    else if (!roles.has(k)) roles.set(k, "default");
   }
-  return [...keys];
+  return [...roles].map(([key, bucket]) => ({ key, bucket }));
 }
 
 export async function collectUserFileKeys(
@@ -61,22 +125,26 @@ export async function collectUserFileKeys(
   userId: string,
   columns: FileKeyColumn[],
 ): Promise<string[]> {
-  const keys = new Set<string>();
+  if (columns.length === 0) return [];
+  const schemas = [...new Set(columns.map((c) => c.table.split(".")[0]).filter(Boolean))];
+  const userFkMap = await discoverUserFkColumns(db, schemas);
+  const parts: SQL[] = [];
   for (const { table, column } of columns) {
-    for (const userCol of ["user_id", "created_by", "uploaded_by", "actor_id"]) {
-      try {
-        const rows = await db.execute(
-          sql.raw(
-            `SELECT "${column}" AS k FROM ${table} WHERE "${userCol}" = '${userId.replace(/'/g, "''")}' AND "${column}" IS NOT NULL`,
-          ),
-        );
-        for (const row of rows) {
-          const k = row["k"];
-          if (typeof k === "string" && k.length > 0) keys.add(k);
-        }
-      } catch {
-      }
+    const userCols = userFkMap.get(table) ?? [];
+    for (const userCol of userCols) {
+      parts.push(
+        sql`SELECT ${sql.raw(`"${column}"`)} AS k FROM ${sql.raw(table)} WHERE ${sql.raw(`"${userCol}"`)} = ${userId} AND ${sql.raw(`"${column}"`)} IS NOT NULL`,
+      );
     }
+  }
+  if (parts.length === 0) return [];
+  const keys = new Set<string>();
+  // Deliberately unguarded, for the same reason as collectOrgFileKeys above: an
+  // empty result and a failed query must not be the same answer on an erasure path.
+  const rows = await db.execute(sql.join(parts, sql` UNION ALL `));
+  for (const row of rows) {
+    const k = row["k"];
+    if (typeof k === "string" && k.length > 0) keys.add(k);
   }
   return [...keys];
 }
@@ -107,7 +175,7 @@ export async function discoverUserFkColumns(
     JOIN LATERAL unnest(k.conkey) ck(attnum) ON true
     JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = ck.attnum
     WHERE k.contype = 'f'
-      AND n.nspname = ANY(${schemas})
+      AND n.nspname IN (${inList(schemas)})
       AND pn.nspname = 'public' AND p.relname = 'users'
       AND array_length(k.conkey, 1) = 1
   `);
@@ -128,7 +196,7 @@ async function discoverOrgIdTables(db: Db, schemas: string[]): Promise<Set<strin
     FROM   pg_class c
     JOIN   pg_namespace n ON n.oid = c.relnamespace
     JOIN   pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
-    WHERE  n.nspname = ANY(${schemas})
+    WHERE  n.nspname IN (${inList(schemas)})
       AND  c.relkind = 'r'
       ${sql.raw("AND  a.attname = 'org_id'")}
   `);
@@ -175,7 +243,7 @@ export function buildSubjectKeyQuery(
   return sql`
     SELECT ${colId} AS k${orgIdSelect}
     FROM   ${tableId}
-    WHERE  ${filterColId} = ANY(${filterValue as string[]})
+    WHERE  ${filterColId} IN (${inList(filterValue as string[])})
       AND  ${colId} IS NOT NULL
       ${afterClause}
       ${legalHoldBlock}

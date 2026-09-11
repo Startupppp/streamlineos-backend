@@ -1,9 +1,12 @@
 import { CalendarExportService } from "./calendar-export.service";
 import { EXPORT_MAX_SPAN_DAYS, exportSchema } from "./dto/calendar.schemas";
 import type { Db } from "../../db/drizzle.module";
+import { ScopedRead } from "../access/scoped-read";
 
 const ATTACKER_ORG = "org-attacker";
 const ATTACKER_USER = "user-attacker";
+const readAs = (orgId: string, userId: string, scope: "none" | "own" | "team" | "all" = "all") =>
+  ScopedRead.of(orgId, userId, scope);
 
 function sqlValues(val: unknown, seen = new Set<object>()): unknown[] {
   if (val === null || val === undefined || typeof val === "string" || typeof val === "number" || typeof val === "boolean") return [val];
@@ -17,6 +20,15 @@ function sqlValues(val: unknown, seen = new Set<object>()): unknown[] {
   ];
 }
 
+/**
+ * The mock chain deliberately omits `leftJoin`. The export query uses a
+ * scalar subquery for attendance visibility instead of a LEFT JOIN (see
+ * `attendedByExporter` in calendar-export.service.ts). If the service is
+ * reverted to use `.leftJoin()`, every test below throws
+ * "TypeError: db.select(...).from(...).leftJoin is not a function" —
+ * that TypeError IS the bite proof: the test fails exactly where the
+ * structural regression is.
+ */
 function makeDb(memberRow?: { id: number }, whereCalls?: unknown[]): Db {
   const limit = jest.fn().mockResolvedValue([]);
   const orderBy = jest.fn().mockReturnValue({ limit });
@@ -24,8 +36,7 @@ function makeDb(memberRow?: { id: number }, whereCalls?: unknown[]): Db {
     whereCalls?.push(cond);
     return { orderBy };
   });
-  const leftJoin = jest.fn().mockReturnValue({ where });
-  const from = jest.fn().mockReturnValue({ leftJoin });
+  const from = jest.fn().mockReturnValue({ where });
   return {
     query: {
       organizationMembers: {
@@ -87,13 +98,23 @@ describe("exportSchema — date range enforcement", () => {
   });
 });
 
+describe("CalendarExportService — scalar subquery visibility (no LEFT JOIN)", () => {
+  it("BITE: resolves without error when the mock chain has no leftJoin — reverted service throws TypeError here", async () => {
+    const db = makeDb({ id: 7 });
+    const svc = new CalendarExportService(db);
+    const from = new Date("2026-01-01");
+    const to = new Date("2026-06-30");
+    await expect(svc.exportEvents(readAs("org-1", "user-1"), from, to)).resolves.toBeDefined();
+  });
+});
+
 describe("CalendarExportService — cross-tenant isolation (BOLA)", () => {
   it("exportEvents returns empty array when caller has no membership in the requesting org (DENY)", async () => {
     const db = makeDb(undefined);
     const svc = new CalendarExportService(db);
     const from = new Date("2026-01-01");
     const to = new Date("2026-12-31");
-    const result = await svc.exportEvents(ATTACKER_ORG, ATTACKER_USER, from, to);
+    const result = await svc.exportEvents(readAs(ATTACKER_ORG, ATTACKER_USER), from, to);
     expect(result).toHaveLength(0);
   });
 
@@ -103,7 +124,7 @@ describe("CalendarExportService — cross-tenant isolation (BOLA)", () => {
     const svc = new CalendarExportService(db);
     const from = new Date("2026-01-01");
     const to = new Date("2026-12-31");
-    await svc.exportEvents(ATTACKER_ORG, ATTACKER_USER, from, to);
+    await svc.exportEvents(readAs(ATTACKER_ORG, ATTACKER_USER), from, to);
     expect(whereCalls.length).toBeGreaterThan(0);
     const allValues = whereCalls.flatMap((w) => sqlValues(w));
     expect(allValues).toContain(ATTACKER_ORG);
@@ -114,7 +135,7 @@ describe("CalendarExportService — cross-tenant isolation (BOLA)", () => {
     const svc = new CalendarExportService(db);
     const from = new Date("2026-01-01");
     const to = new Date("2026-12-31");
-    await svc.exportEvents(ATTACKER_ORG, ATTACKER_USER, from, to);
+    await svc.exportEvents(readAs(ATTACKER_ORG, ATTACKER_USER), from, to);
     const findFirstCalls = (db.query.organizationMembers.findFirst as jest.Mock).mock.calls;
     expect(findFirstCalls.length).toBe(1);
     const arg = findFirstCalls[0]?.[0] as { where?: unknown };

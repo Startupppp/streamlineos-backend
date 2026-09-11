@@ -10,7 +10,7 @@ export const signBulkSendJobs = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    templateId: integer("template_id").references(() => signTemplates.id, { onDelete: "cascade" }).notNull(),
+    templateId: integer("template_id").notNull(),
     senderMembershipId: integer("sender_membership_id"),
     status: signBulkJobStatusEnum("status").default("pending").notNull(),
     columnMappingJson: jsonb("column_mapping_json").$type<Record<string, string>>().default({}).notNull(),
@@ -23,6 +23,7 @@ export const signBulkSendJobs = pgTable(
     completedAt: timestamp("completed_at"),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.templateId], foreignColumns: [signTemplates.orgId, signTemplates.id], name: "fk_sign_bulk_send_jobs_template_id_org" }).onDelete("cascade"),
     index("idx_sign_bulk_send_jobs_org_status").on(table.orgId, table.status),
     unique("uniq_sign_bulk_send_jobs_org_id").on(table.orgId, table.id),
     foreignKey({
@@ -37,11 +38,12 @@ export const signBulkSendRows = pgTable(
   "sign_bulk_send_rows",
   {
     id: serial("id").primaryKey(),
-    jobId: integer("job_id").references(() => signBulkSendJobs.id, { onDelete: "cascade" }).notNull(),
+    orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+    jobId: integer("job_id").notNull(),
     rowNumber: integer("row_number").notNull(),
     rawDataJson: jsonb("raw_data_json").$type<Record<string, unknown>>().notNull(),
     status: signBulkRowStatusEnum("status").default("pending").notNull(),
-    envelopeId: integer("envelope_id").references(() => signEnvelopes.id, { onDelete: "set null" }),
+    envelopeId: integer("envelope_id"),
     errorMessage: text("error_message"),
     /**
      * Tries for THIS row, not for the job. One bad address in a spreadsheet of
@@ -53,6 +55,9 @@ export const signBulkSendRows = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
+    foreignKey({ columns: [table.orgId, table.jobId], foreignColumns: [signBulkSendJobs.orgId, signBulkSendJobs.id], name: "fk_sign_bulk_send_rows_job_id_org" }).onDelete("cascade"),
+    foreignKey({ columns: [table.orgId, table.envelopeId], foreignColumns: [signEnvelopes.orgId, signEnvelopes.id], name: "fk_sign_bulk_send_rows_envelope_id_org" }).onDelete("set null"),
+    unique("uniq_sign_bulk_send_rows_org_id").on(table.orgId, table.id),
     index("idx_sign_bulk_send_rows_job").on(table.jobId, table.rowNumber),
     index("idx_sign_bulk_send_rows_status").on(table.jobId, table.status),
   ],

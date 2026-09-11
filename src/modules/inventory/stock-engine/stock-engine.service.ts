@@ -26,7 +26,7 @@ import {
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-export { addDec, subDec, mulDec, divDec, cmpDec } from "./decimal";
+export { addDec, mulDec, divDec } from "./decimal";
 
 function grainsOf(cmd: StockEngineCommand): LevelGrain[] {
   return cmd.movements.map((m) => ({

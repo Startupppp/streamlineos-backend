@@ -30,9 +30,16 @@ import {
 } from "./dto/import-job.dto";
 import { z } from "zod";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { ApiOkResponse } from "@nestjs/swagger";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  hrImportJobCreateResultSchema,
+  hrImportJobListSchema,
+  hrImportJobDetailSchema,
+  hrImportJobRowSchema,
+} from "./dto/import-response.schemas";
 
-const jobIdParams = z.object({ jobId: z.string().min(1) }).strict();
+const jobIdParams = z.object({ jobId: z.string().uuid() }).strict();
 const entityParams = z.object({ entity: z.string().min(1) }).strict();
 
 const entityParamSchema = z.enum(hrImportEntityValues);
@@ -44,6 +51,7 @@ export class HrImportController {
   constructor(private readonly importService: HrImportService) {}
 
   @Post("hr/import/jobs")
+  @ResponseSchema(hrImportJobCreateResultSchema)
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:import:manage")
@@ -56,6 +64,7 @@ export class HrImportController {
   }
 
   @Get("hr/import/jobs")
+  @ResponseSchema(hrImportJobListSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:import:manage")
   @Validate({ query: listImportJobsSchema })
@@ -67,6 +76,7 @@ export class HrImportController {
   }
 
   @Get("hr/import/jobs/:jobId")
+  @ResponseSchema(hrImportJobDetailSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:import:manage")
   @Validate({ params: jobIdParams })
@@ -78,6 +88,7 @@ export class HrImportController {
   }
 
   @Post("hr/import/jobs/:jobId/commit")
+  @ResponseSchema(hrImportJobRowSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:import:manage")
@@ -90,6 +101,7 @@ export class HrImportController {
   }
 
   @Post("hr/import/jobs/:jobId/rollback")
+  @ResponseSchema(hrImportJobRowSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:import:manage")
@@ -102,6 +114,7 @@ export class HrImportController {
   }
 
   @Get("hr/export/:entity")
+  @ApiOkResponse({ description: "CSV file download", content: { "text/csv": { schema: { type: "string" } } } })
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:export:manage")
   @Validate({ params: entityParams, query: exportQuerySchema })
@@ -113,7 +126,8 @@ export class HrImportController {
   ) {
     const parsed = entityParamSchema.safeParse(entity);
     if (!parsed.success) throw new BadRequestException(`Invalid entity '${entity}'`);
-    const rows = await this.importService.exportEntity(u.orgId, parsed.data, query);
+    const page = await this.importService.exportEntity(u.orgId, parsed.data, query);
+    const rows = page.data;
     const headers = Object.keys(rows[0] ?? {});
     const csv = toCsv(headers, rows);
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
@@ -121,6 +135,10 @@ export class HrImportController {
       "Content-Disposition",
       `attachment; filename="${parsed.data}-export-${new Date().toISOString().split("T")[0]}.csv"`,
     );
+    res.setHeader("X-Has-More", String(page.pagination.hasMore));
+    if (page.pagination.nextCursor) {
+      res.setHeader("X-Next-Cursor", page.pagination.nextCursor);
+    }
     res.send(csv);
   }
 }

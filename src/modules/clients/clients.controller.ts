@@ -22,6 +22,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AccessService } from "../access/access.service";
 import { ClientAccountsService } from "./client-accounts.service";
 import { ClientsService } from "./clients.service";
+import { ClientTimelineService } from "./client-timeline.service";
 import { resolveClientsReadScope } from "./clients-scope";
 import { ClientOpportunitiesService } from "./client-opportunities.service";
 import { ClientOnboardingService } from "./client-onboarding.service";
@@ -55,7 +56,28 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Deprecated } from "../../common/deprecation/deprecated.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema, NoContentResponse } from "../../common/openapi/zod-operation-contracts";
+import {
+  clientAccountsListSchema,
+  clientListSchema,
+  exportCsvSchema,
+  clientHealthSchema,
+  churnAlertsSchema,
+  crmAssignmentStatsSchema,
+  renewalListSchema,
+  renewalUpdateSchema,
+  opportunityListSchema,
+  opportunityRowExportSchema,
+  onboardingItemListSchema,
+  onboardingItemRowExportSchema,
+  onboardingTemplateListSchema,
+  onboardingTemplateRowExportSchema,
+  clientAccountDetailSchema,
+  clientStatusUpdateSchema,
+  clientActivitiesSchema,
+  activityCreateSchema,
+  clientTimelineSchema,
+} from "./dto/clients-response.schemas";
 
 const accountIdParams = z.object({ accountId: z.coerce.number().int().positive() }).strict();
 const oppIdParams = z.object({ oppId: z.coerce.number().int().positive() }).strict();
@@ -69,6 +91,7 @@ export class ClientsController {
   constructor(
     private readonly accounts: ClientAccountsService,
     private readonly clients: ClientsService,
+    private readonly timeline: ClientTimelineService,
     private readonly opportunities: ClientOpportunitiesService,
     private readonly onboarding: ClientOnboardingService,
     private readonly access: AccessService,
@@ -77,51 +100,58 @@ export class ClientsController {
   @Deprecated({ sunset: "2026-10-25", link: "/crm/organizations" })
   @Get()
   @RequirePermission("crm:clients:read")
+  @ResponseSchema(clientAccountsListSchema)
   @Validate({ query: listAccountsSchema })
   async listAccounts(
     @Query() query: ListAccountsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveClientsReadScope(this.access, u);
-    return this.accounts.getClientAccounts(u.orgId, scope, u.userId, query);
+    const read = await resolveClientsReadScope(this.access, u);
+    return this.accounts.getClientAccounts(read, query);
   }
 
   @Deprecated({ sunset: "2026-10-25", link: "/crm/organizations" })
   @Get("list")
   @RequirePermission("crm:clients:read")
+  @ResponseSchema(clientListSchema)
   async listClients(@CurrentUser() u: CurrentUserContext) {
-    const scope = await resolveClientsReadScope(this.access, u);
-    return this.clients.listClients(u.orgId, u.userId, scope);
+    const read = await resolveClientsReadScope(this.access, u);
+    return this.clients.listClients(read);
   }
 
   @Get("export")
   @RequirePermission("crm:clients:read")
+  @ResponseSchema(exportCsvSchema)
   @Header("Content-Type", "text/csv; charset=utf-8")
   @Header("Content-Disposition", 'attachment; filename="clients-export.csv"')
-  exportCsv(@CurrentUser() u: CurrentUserContext) {
-    return this.clients.exportCsv(u.orgId);
+  async exportCsv(@CurrentUser() u: CurrentUserContext) {
+    const read = await resolveClientsReadScope(this.access, u);
+    return this.clients.exportCsv(read);
   }
 
   @Get("health")
   @RequirePermission("crm:clients:read")
+  @ResponseSchema(clientHealthSchema)
   @Validate({ query: healthQuerySchema })
   async getHealth(
     @Query() query: HealthQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveClientsReadScope(this.access, u);
-    return this.clients.getHealth(u.orgId, query.status, query.limit, u.userId, scope);
+    const read = await resolveClientsReadScope(this.access, u);
+    return this.clients.getHealth(read, query.status, query.limit);
   }
 
   @Get("churn-alerts")
   @RequirePermission("crm:clients:read")
+  @ResponseSchema(churnAlertsSchema)
   async getChurnAlerts(@CurrentUser() u: CurrentUserContext) {
-    const scope = await resolveClientsReadScope(this.access, u);
-    return this.clients.getChurnAlerts(u.orgId, u.userId, scope);
+    const read = await resolveClientsReadScope(this.access, u);
+    return this.clients.getChurnAlerts(read);
   }
 
   @Get("assign-crm")
   @RequirePermission("crm:clients:read")
+  @ResponseSchema(crmAssignmentStatsSchema)
   getCrmAssignmentStats(@CurrentUser() u: CurrentUserContext) {
     return this.accounts.getCrmAssignmentStats(u.orgId);
   }
@@ -130,6 +160,7 @@ export class ClientsController {
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("crm:clients:manage")
+  @ResponseSchema(crmAssignmentStatsSchema)
   async runCrmAssignments(@CurrentUser() u: CurrentUserContext) {
     try {
       return await this.accounts.runCrmAssignments(u.orgId);
@@ -140,13 +171,15 @@ export class ClientsController {
 
   @Get("renewals")
   @RequirePermission("crm:clients:read")
+  @ResponseSchema(renewalListSchema)
   async listRenewals(@CurrentUser() u: CurrentUserContext) {
-    const scope = await resolveClientsReadScope(this.access, u);
-    return this.accounts.listRenewals(u.orgId, scope, u.userId);
+    const read = await resolveClientsReadScope(this.access, u);
+    return this.accounts.listRenewals(read);
   }
 
   @Patch("renewals/:accountId")
   @RequirePermission("crm:clients:update")
+  @ResponseSchema(renewalUpdateSchema)
   @Validate({ params: accountIdParams, body: updateRenewalSchema })
   async updateRenewal(
     @Param("accountId", ParseIntPipe) accountId: number,
@@ -161,6 +194,7 @@ export class ClientsController {
 
   @Get("opportunities")
   @RequirePermission("crm:clients:read")
+  @ResponseSchema(opportunityListSchema)
   @Validate({ query: opportunitiesListSchema })
   listOpportunities(
     @Query() query: OpportunitiesListInput,
@@ -172,6 +206,7 @@ export class ClientsController {
   @Post("opportunities")
   @HttpCode(201)
   @RequirePermission("crm:clients:update")
+  @ResponseSchema(opportunityRowExportSchema)
   @Validate({ body: createOpportunitySchema })
   async createOpportunity(
     @Body() body: CreateOpportunityInput,
@@ -184,6 +219,7 @@ export class ClientsController {
 
   @Patch("opportunities/:oppId")
   @RequirePermission("crm:clients:update")
+  @ResponseSchema(opportunityRowExportSchema)
   @Validate({ params: oppIdParams, body: updateOpportunitySchema })
   async updateOpportunity(
     @Param("oppId", ParseIntPipe) oppId: number,
@@ -198,6 +234,7 @@ export class ClientsController {
   @Delete("opportunities/:oppId")
   @HttpCode(204)
   @RequirePermission("crm:clients:update")
+  @NoContentResponse()
   @Validate({ params: oppIdParams })
   async deleteOpportunity(
     @Param("oppId", ParseIntPipe) oppId: number,
@@ -209,6 +246,7 @@ export class ClientsController {
 
   @Get("onboarding/items")
   @RequirePermission("crm:clients:read")
+  @ResponseSchema(onboardingItemListSchema)
   @Validate({ query: onboardingItemsListSchema })
   listOnboardingItems(
     @Query() query: OnboardingItemsListInput,
@@ -220,6 +258,7 @@ export class ClientsController {
   @Post("onboarding/items")
   @HttpCode(201)
   @RequirePermission("crm:clients:update")
+  @ResponseSchema(onboardingItemRowExportSchema)
   @Validate({ body: createOnboardingItemSchema })
   createOnboardingItem(
     @Body() body: CreateOnboardingItemInput,
@@ -230,6 +269,7 @@ export class ClientsController {
 
   @Patch("onboarding/items/:itemId")
   @RequirePermission("crm:clients:update")
+  @ResponseSchema(onboardingItemRowExportSchema)
   @Validate({ params: itemIdParams, body: patchOnboardingItemSchema })
   async updateOnboardingItem(
     @Param("itemId", ParseIntPipe) itemId: number,
@@ -244,6 +284,7 @@ export class ClientsController {
   @Delete("onboarding/items/:itemId")
   @HttpCode(204)
   @RequirePermission("crm:clients:update")
+  @NoContentResponse()
   @Validate({ params: itemIdParams })
   async deleteOnboardingItem(
     @Param("itemId", ParseIntPipe) itemId: number,
@@ -255,6 +296,7 @@ export class ClientsController {
 
   @Get("onboarding/templates")
   @RequirePermission("crm:clients:read")
+  @ResponseSchema(onboardingTemplateListSchema)
   listOnboardingTemplates(@CurrentUser() u: CurrentUserContext) {
     return this.onboarding.listTemplates(u.orgId);
   }
@@ -262,6 +304,7 @@ export class ClientsController {
   @Post("onboarding/templates")
   @HttpCode(201)
   @RequirePermission("settings:manage")
+  @ResponseSchema(onboardingTemplateRowExportSchema)
   @Validate({ body: createTemplateSchema })
   createOnboardingTemplate(
     @Body() body: CreateTemplateInput,
@@ -273,13 +316,14 @@ export class ClientsController {
   @Deprecated({ sunset: "2026-10-25", link: "/crm/organizations/:organizationId" })
   @Get(":clientId")
   @RequirePermission("crm:clients:read")
+  @ResponseSchema(clientAccountDetailSchema)
   @Validate({ params: clientIdParams })
   async getClientAccount(
     @Param("clientId", ParseIntPipe) clientId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveClientsReadScope(this.access, u);
-    const account = await this.accounts.getClientAccount(u.orgId, clientId, scope, u.userId);
+    const read = await resolveClientsReadScope(this.access, u);
+    const account = await this.accounts.getClientAccount(read, clientId);
     if (!account) throw new NotFoundException("Client account not found");
     return account;
   }
@@ -287,6 +331,7 @@ export class ClientsController {
   @Deprecated({ sunset: "2026-10-25", link: "/crm/organizations/:organizationId" })
   @Patch(":clientId")
   @RequirePermission("crm:clients:update")
+  @ResponseSchema(clientStatusUpdateSchema)
   @Validate({ params: clientIdParams, body: updateClientStatusSchema })
   async updateClientStatus(
     @Param("clientId", ParseIntPipe) clientId: number,
@@ -302,6 +347,7 @@ export class ClientsController {
   @Deprecated({ sunset: "2026-10-25", link: "/crm/organizations/:organizationId/timeline" })
   @Get(":clientId/activities")
   @RequirePermission("crm:clients:read")
+  @ResponseSchema(clientActivitiesSchema)
   @Validate({ params: clientIdParams })
   async getClientActivities(
     @Param("clientId", ParseIntPipe) clientId: number,
@@ -314,6 +360,7 @@ export class ClientsController {
   @Post(":clientId/activities")
   @HttpCode(201)
   @RequirePermission("crm:clients:update")
+  @ResponseSchema(activityCreateSchema)
   @Validate({ params: clientIdParams, body: createActivitySchema })
   async createClientActivity(
     @Param("clientId", ParseIntPipe) clientId: number,
@@ -329,12 +376,13 @@ export class ClientsController {
   @Deprecated({ sunset: "2026-10-25", link: "/crm/organizations/:organizationId/timeline" })
   @Get(":clientId/timeline")
   @RequirePermission("crm:clients:read")
+  @ResponseSchema(clientTimelineSchema)
   @Validate({ params: clientIdParams })
   async getClientTimeline(
     @Param("clientId", ParseIntPipe) clientId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.clients.getTimeline(u.orgId, clientId);
+    const result = await this.timeline.getTimeline(u.orgId, clientId);
     if (!result) throw new NotFoundException("Client not found");
     return result;
   }

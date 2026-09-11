@@ -26,6 +26,9 @@ import {
   type UpdateProjectInput,
 } from "./dto/projects.schemas";
 import { projectIdParams } from "./dto/build-params.schemas";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { linkManagedProductResultSchema } from "./dto/build-core-response.schemas";
+import { projectDetailSchema } from "./dto/build-project-detail-response.schemas";
 
 @RequireModule("build")
 @Controller("build")
@@ -38,6 +41,7 @@ export class ProjectsByIdController {
 
   @Get(":projectId")
   @RequirePermission("build:view")
+  @ResponseSchema(projectDetailSchema)
   @Validate({ params: projectIdParams })
   getProject(
     @Param("projectId", ParseResourceIdPipe) projectId: number,
@@ -48,6 +52,7 @@ export class ProjectsByIdController {
 
   @Patch(":projectId")
   @RequirePermission("build:update")
+  @ResponseSchema(projectDetailSchema)
   @Validate({ params: projectIdParams, body: updateProjectSchema })
   updateProject(
     @Param("projectId", ParseResourceIdPipe) projectId: number,
@@ -60,6 +65,7 @@ export class ProjectsByIdController {
   @Delete(":projectId")
   @RequirePermission("build:delete")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: projectIdParams })
   deleteProject(
     @Param("projectId", ParseResourceIdPipe) projectId: number,
@@ -70,6 +76,7 @@ export class ProjectsByIdController {
 
   @Patch(":projectId/managed-product")
   @RequirePermission("build:managed-products:update")
+  @ResponseSchema(linkManagedProductResultSchema)
   @Validate({ params: projectIdParams, body: linkManagedProductSchema })
   linkManagedProduct(
     @Param("projectId", ParseResourceIdPipe) projectId: number,

@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq, inArray, isNull } from "drizzle-orm";
@@ -141,8 +142,10 @@ export class TimerService {
       })
       .returning();
 
-    const row = await this.fetchTimerWithRelations(u.orgId, session!.id);
-    return buildTimerShape(row!);
+    if (!session) throw new InternalServerErrorException("Failed to create timer session");
+    const row = await this.fetchTimerWithRelations(u.orgId, session.id);
+    if (!row) throw new InternalServerErrorException("Timer not found after creation");
+    return buildTimerShape(row);
   }
 
   /** @see lib/timer-transitions.ts */

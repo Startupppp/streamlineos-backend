@@ -2,13 +2,13 @@ import { Inject, Injectable, type OnModuleInit } from "@nestjs/common";
 import { and, eq, gte, isNotNull, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import { projectMembers, projects, tickets } from "../../db/schema";
+import { organizationMembers, projectMembers, projects, tickets } from "../../db/schema";
 import type {
   CalendarEventProjection,
   CalendarEventSource,
   CalendarSourceContext,
 } from "../calendar/calendar-event-source";
-import { CalendarSourceRegistry } from "../calendar/calendar-source.registry";
+import { CalendarSourceRegistry, CALENDAR_PER_SOURCE_CAP } from "../calendar/calendar-source.registry";
 
 function dateOnly(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -45,15 +45,23 @@ export class BuildCalendarSource implements CalendarEventSource, OnModuleInit {
       .from(tickets)
       .innerJoin(projects, eq(tickets.projectId, projects.id))
       .innerJoin(projectMembers, eq(projectMembers.projectId, projects.id))
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, projectMembers.orgId),
+          eq(organizationMembers.id, projectMembers.membershipId),
+        ),
+      )
       .where(
         and(
           eq(tickets.orgId, orgId),
-          eq(projectMembers.userId, userId),
+          eq(organizationMembers.userId, userId),
           isNotNull(tickets.dueDate),
           gte(tickets.dueDate, dateOnly(start)),
           lte(tickets.dueDate, dateOnly(end)),
         ),
-      );
+      )
+      .limit(CALENDAR_PER_SOURCE_CAP);
 
     const projections: CalendarEventProjection[] = [];
     for (const row of rows) {

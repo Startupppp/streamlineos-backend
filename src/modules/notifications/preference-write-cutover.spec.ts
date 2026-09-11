@@ -48,6 +48,11 @@ describe("NotificationPreferencesService — preference rule projection", () => 
       { assertKnown: jest.fn(), listForOrg: jest.fn() } as unknown as ConstructorParameters<
         typeof NotificationPreferencesService
       >[1],
+    
+  {
+      withdrawChannels: jest.fn().mockResolvedValue(0),
+      withdrawChannel: jest.fn().mockResolvedValue(0),
+    } as unknown as ConstructorParameters<typeof NotificationPreferencesService>[2],
     );
     return { svc, captured };
   }
@@ -58,7 +63,7 @@ describe("NotificationPreferencesService — preference rule projection", () => 
   it("writes an OFF rule for every channel when an event is muted", async () => {
     const { svc, captured } = harness();
 
-    await svc.update(ORG, USER, { eventPreferences: { "build.ticket.assigned": { muted: true } } });
+    await svc.update(ORG, USER, { eventPreferences: { "build.ticket.assigned": { muted: true } } }, 7);
 
     const rules = captured.inserted.filter((r) => r.scopeType === "EVENT");
     expect(rules.length).toBeGreaterThan(0);
@@ -73,7 +78,7 @@ describe("NotificationPreferencesService — preference rule projection", () => 
 
     await svc.update(ORG, USER, {
       eventPreferences: { "build.ticket.assigned": { channels: { EMAIL: false, IN_APP: true } } },
-    });
+    }, 7);
 
     const rules = captured.inserted.filter((r) => r.scopeType === "EVENT");
     expect(rules).toHaveLength(1);
@@ -85,7 +90,7 @@ describe("NotificationPreferencesService — preference rule projection", () => 
   it("projects a category switched off", async () => {
     const { svc, captured } = harness();
 
-    await svc.update(ORG, USER, { categories: { SECURITY: false } });
+    await svc.update(ORG, USER, { categories: { SECURITY: false } }, 7);
 
     const rules = captured.inserted.filter((r) => r.scopeType === "CATEGORY");
     expect(rules.every((r) => r.scopeKey === "SECURITY" && r.mode === "OFF")).toBe(true);
@@ -95,7 +100,7 @@ describe("NotificationPreferencesService — preference rule projection", () => 
   it("projects a muted module", async () => {
     const { svc, captured } = harness();
 
-    await svc.update(ORG, USER, { modulePreferences: { crm: { muted: true } } });
+    await svc.update(ORG, USER, { modulePreferences: { crm: { muted: true } } }, 7);
 
     const rules = captured.inserted.filter((r) => r.scopeType === "MODULE");
     expect(rules.every((r) => r.scopeKey === "crm" && r.mode === "OFF")).toBe(true);
@@ -106,7 +111,7 @@ describe("NotificationPreferencesService — preference rule projection", () => 
   it("deletes rather than storing a row when a preference is turned back on", async () => {
     const { svc, captured } = harness();
 
-    await svc.update(ORG, USER, { categories: { SECURITY: true } });
+    await svc.update(ORG, USER, { categories: { SECURITY: true } }, 7);
 
     expect(captured.inserted.filter((r) => r.scopeType === "CATEGORY")).toHaveLength(0);
     expect(captured.deleted.length).toBeGreaterThan(0);
@@ -115,7 +120,7 @@ describe("NotificationPreferencesService — preference rule projection", () => 
   it("writes no rules when the update touches nothing routing reads", async () => {
     const { svc, captured } = harness();
 
-    await svc.update(ORG, USER, { soundEnabled: false });
+    await svc.update(ORG, USER, { soundEnabled: false }, 7);
 
     expect(captured.inserted).toHaveLength(0);
     expect(captured.deleted).toHaveLength(0);

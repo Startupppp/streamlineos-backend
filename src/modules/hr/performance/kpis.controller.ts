@@ -1,4 +1,4 @@
-import { Controller, Get, HttpCode, Post, Patch, Delete, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
+import { Controller, Get, HttpCode, Post, Patch, Delete, Body, Param, ParseIntPipe, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -13,14 +13,18 @@ import {
   createFrameworkSchema,
   updateFrameworkSchema,
   createCompetencySchema,
+  listCompetenciesSchema,
   type CreateKpiInput,
   type UpdateKpiInput,
   type CreateFrameworkInput,
   type UpdateFrameworkInput,
   type CreateCompetencyInput,
+  type ListCompetenciesInput,
 } from "./dto/kpis.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts"
+import { listKpisResponseSchema, createKpiResponseSchema, updateKpiResponseSchema, listFrameworksResponseSchema, createFrameworkResponseSchema, updateFrameworkResponseSchema, listCompetenciesResponseSchema, createCompetencyResponseSchema } from "./dto/kpis-response.schemas"
 
 const kpiIdParams = z.object({ kpiId: z.coerce.number().int().positive() }).strict();
 const frameworkIdParams = z.object({ frameworkId: z.coerce.number().int().positive() }).strict();
@@ -31,12 +35,14 @@ const frameworkIdParams = z.object({ frameworkId: z.coerce.number().int().positi
 export class KpisController {
   constructor(private readonly service: KpisService) {}
 
+  @ResponseSchema(listKpisResponseSchema)
   @Get()
   @RequirePermission("hr:performance:view")
   listKpis(@CurrentUser() u: CurrentUserContext) {
     return this.service.listKpis(u.orgId);
   }
 
+  @ResponseSchema(createKpiResponseSchema)
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:performance:manage")
@@ -48,6 +54,7 @@ export class KpisController {
     return this.service.createKpi(u.orgId, body);
   }
 
+  @ResponseSchema(updateKpiResponseSchema)
   @Patch(":kpiId")
   @RequirePermission("hr:performance:manage")
   @Validate({ params: kpiIdParams, body: updateKpiSchema })
@@ -59,6 +66,7 @@ export class KpisController {
     return this.service.updateKpi(u.orgId, kpiId, body);
   }
 
+  @NoContentResponse()
   @Delete(":kpiId")
   @HttpCode(204)
   @RequirePermission("hr:performance:manage")
@@ -67,12 +75,14 @@ export class KpisController {
     await this.service.deleteKpi(u.orgId, kpiId);
   }
 
+  @ResponseSchema(listFrameworksResponseSchema)
   @Get("frameworks")
   @RequirePermission("hr:performance:view")
   listFrameworks(@CurrentUser() u: CurrentUserContext) {
     return this.service.listFrameworks(u.orgId);
   }
 
+  @ResponseSchema(createFrameworkResponseSchema)
   @Post("frameworks")
   @HttpCode(201)
   @RequirePermission("hr:performance:manage")
@@ -84,6 +94,7 @@ export class KpisController {
     return this.service.createFramework(u.orgId, body);
   }
 
+  @ResponseSchema(updateFrameworkResponseSchema)
   @Patch("frameworks/:frameworkId")
   @RequirePermission("hr:performance:manage")
   @Validate({ params: frameworkIdParams, body: updateFrameworkSchema })
@@ -95,13 +106,19 @@ export class KpisController {
     return this.service.updateFramework(u.orgId, frameworkId, body);
   }
 
+  @ResponseSchema(listCompetenciesResponseSchema)
   @Get("frameworks/:frameworkId/competencies")
   @RequirePermission("hr:performance:view")
-  @Validate({ params: frameworkIdParams })
-  listCompetencies(@Param("frameworkId", ParseIntPipe) frameworkId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.service.listCompetencies(u.orgId, frameworkId);
+  @Validate({ params: frameworkIdParams, query: listCompetenciesSchema })
+  listCompetencies(
+    @Param("frameworkId", ParseIntPipe) frameworkId: number,
+    @Query() query: ListCompetenciesInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.service.listCompetencies(u.orgId, frameworkId, query);
   }
 
+  @ResponseSchema(createCompetencyResponseSchema)
   @Post("frameworks/:frameworkId/competencies")
   @HttpCode(201)
   @RequirePermission("hr:performance:manage")

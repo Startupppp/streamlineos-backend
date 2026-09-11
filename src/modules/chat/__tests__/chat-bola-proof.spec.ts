@@ -10,6 +10,7 @@ import { ChatSavedService } from "../chat-saved.service";
 import { ChatSavedController } from "../chat-saved.controller";
 import { ChatPinsController } from "../chat-pins.controller";
 import { ChatSearchController } from "../chat-search.controller";
+import { searchMessagesQuerySchema } from "../dto/chat-search.schemas";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
@@ -323,7 +324,7 @@ describe("ChatSavedService — the saved list is keyed on membership, never on u
     const findManySaved = jest.fn().mockResolvedValue([]);
     const findFirstMsg = jest.fn().mockResolvedValue({ id: MSG_ID, channelId: CHANNEL_ID, orgId: ORG_OWNER });
     const findFirstChanMember = jest.fn().mockResolvedValue({ role: "MEMBER" });
-    const deleteWhere = jest.fn().mockResolvedValue(undefined);
+    const deleteWhere = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ messageId: MSG_ID }]) });
     const deleteFn = jest.fn().mockReturnValue({ where: deleteWhere });
     const insertValues = jest.fn().mockReturnValue({ onConflictDoNothing: jest.fn().mockResolvedValue(undefined) });
     const insertFn = jest.fn().mockReturnValue({ values: insertValues });
@@ -422,7 +423,11 @@ describe("Chat controllers hand the service an actor that carries the membership
   it("ChatSavedController.list passes membershipId through — without it the list is always empty", () => {
     const saved = { list: jest.fn().mockResolvedValue({ items: [], nextCursor: undefined }) };
     const controller = new ChatSavedController(saved as never);
-    controller.list(undefined, undefined, currentUser());
+    // The controller now takes the zod-parsed query object rather than two raw strings:
+    // `?limit=abc` used to reach the database as NaN, and drizzle drops a NaN `limit`
+    // clause instead of erroring, so the saved list became an unbounded read.
+    // `pageSizeField(30, 100)` supplies the 30 when `limit` is absent.
+    controller.list({ cursor: undefined, limit: 30 }, currentUser());
     expect(saved.list).toHaveBeenCalledWith(
       expect.objectContaining({ membershipId: MEMBERSHIP_ID }),
       undefined,
@@ -444,7 +449,9 @@ describe("Chat controllers hand the service an actor that carries the membership
   it("ChatSearchController.searchMessages passes membershipId through — without it search returns nothing", () => {
     const search = { searchMessages: jest.fn().mockResolvedValue({ results: [], nextCursor: undefined }) };
     const controller = new ChatSearchController(search as never);
-    controller.searchMessages({ q: "hello" } as never, currentUser());
+    // Parse through the real schema rather than hand-building the query: the page
+    // size default is the schema's, and a hand-built object silently loses it.
+    controller.searchMessages(searchMessagesQuerySchema.parse({ q: "hello" }), currentUser());
     expect(search.searchMessages).toHaveBeenCalledWith(
       expect.objectContaining({ membershipId: MEMBERSHIP_ID }),
       "hello",
@@ -541,35 +548,36 @@ describe("ChatMessageTimelineService — thread BOLA", () => {
   it("DENY: poll returns 404 for a channel that does not exist in the caller's org (cross-org BOLA)", async () => {
     const db = makeTimelineDb(false, "GROUP", false);
     const svc = await buildTimeline(db, makeStubEntityRef());
-    await expect(svc.poll(CHANNEL_ID, makeActor(ORG_ATTACKER, MEMBERSHIP_ID), new Date())).rejects.toThrow(NotFoundException);
+    await expect(svc.poll(CHANNEL_ID, makeActor(ORG_ATTACKER, MEMBERSHIP_ID), new Date(), undefined, 50)).rejects.toThrow(NotFoundException);
     expect(db.query.chatMessages.findMany).not.toHaveBeenCalled();
   });
 
   it("DENY: poll returns 403 for a public-channel non-member (thread BOLA — existence known, access denied)", async () => {
     const db = makeTimelineDb(true, "PUBLIC", false);
     const svc = await buildTimeline(db, makeStubEntityRef());
-    await expect(svc.poll(CHANNEL_ID, makeActor(ORG_OWNER, MEMBERSHIP_ID), new Date())).rejects.toThrow(ForbiddenException);
+    await expect(svc.poll(CHANNEL_ID, makeActor(ORG_OWNER, MEMBERSHIP_ID), new Date(), undefined, 50)).rejects.toThrow(ForbiddenException);
     expect(db.query.chatMessages.findMany).not.toHaveBeenCalled();
   });
 
   it("DENY: poll returns 404 for a private-channel non-member (thread BOLA — existence concealed)", async () => {
     const db = makeTimelineDb(true, "GROUP", false);
     const svc = await buildTimeline(db, makeStubEntityRef());
-    await expect(svc.poll(CHANNEL_ID, makeActor(ORG_OWNER, MEMBERSHIP_ID), new Date())).rejects.toThrow(NotFoundException);
+    await expect(svc.poll(CHANNEL_ID, makeActor(ORG_OWNER, MEMBERSHIP_ID), new Date(), undefined, 50)).rejects.toThrow(NotFoundException);
     expect(db.query.chatMessages.findMany).not.toHaveBeenCalled();
   });
 
   it("DENY: poll returns 403 when caller has no membershipId (not org member, public channel)", async () => {
     const db = makeTimelineDb(true, "PUBLIC", false);
     const svc = await buildTimeline(db, makeStubEntityRef());
-    await expect(svc.poll(CHANNEL_ID, makeActor(ORG_OWNER, undefined), new Date())).rejects.toThrow(ForbiddenException);
+    await expect(svc.poll(CHANNEL_ID, makeActor(ORG_OWNER, undefined), new Date(), undefined, 50)).rejects.toThrow(ForbiddenException);
     expect(db.query.chatMessages.findMany).not.toHaveBeenCalled();
   });
 
-  it("ALLOW: channel member can poll thread messages and receives an array", async () => {
+  it("ALLOW: channel member can poll and receives a paginated result with messages array", async () => {
     const db = makeTimelineDb(true, "GROUP", true);
     const svc = await buildTimeline(db, makeStubEntityRef());
-    const result = await svc.poll(CHANNEL_ID, makeActor(ORG_OWNER, MEMBERSHIP_ID), new Date("2020-01-01"));
-    expect(Array.isArray(result)).toBe(true);
+    const result = await svc.poll(CHANNEL_ID, makeActor(ORG_OWNER, MEMBERSHIP_ID), new Date("2020-01-01"), undefined, 50);
+    expect(Array.isArray(result.messages)).toBe(true);
+    expect(result).toHaveProperty("hasMore");
   });
 });

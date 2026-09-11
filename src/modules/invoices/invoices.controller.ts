@@ -17,6 +17,14 @@ import { listInvoicesSchema, type ListInvoicesInput } from "./dto/invoice.schema
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  invoiceListResponseSchema,
+  invoiceStatsResponseSchema,
+  recurringInvoiceListResponseSchema,
+  invoiceDetailResponseSchema,
+  invoicePaymentsListResponseSchema,
+} from "./dto/invoice-response.schemas";
 
 const invoiceIdParams = z.object({ invoiceId: z.coerce.number().int().positive() }).strict();
 
@@ -31,6 +39,7 @@ export class InvoicesController {
   constructor(private readonly invoices: InvoicesService) {}
 
   @Get()
+  @ResponseSchema(invoiceListResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:read")
   @Validate({ query: listInvoicesSchema })
@@ -42,6 +51,7 @@ export class InvoicesController {
   }
 
   @Get("stats")
+  @ResponseSchema(invoiceStatsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:read")
   stats(@CurrentUser() u: CurrentUserContext) {
@@ -49,6 +59,7 @@ export class InvoicesController {
   }
 
   @Get("recurring")
+  @ResponseSchema(recurringInvoiceListResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:read")
   listRecurring(@CurrentUser() u: CurrentUserContext) {
@@ -56,6 +67,7 @@ export class InvoicesController {
   }
 
   @Get(":invoiceId")
+  @ResponseSchema(invoiceDetailResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:read")
   @Validate({ params: invoiceIdParams })
@@ -69,6 +81,7 @@ export class InvoicesController {
   }
 
   @Get(":invoiceId/payments")
+  @ResponseSchema(invoicePaymentsListResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:read")
   @Validate({ params: invoiceIdParams })

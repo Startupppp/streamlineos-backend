@@ -1,12 +1,15 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
 import { kbPageTemplates, kbPages } from "../../../db/schema";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { CreatePageTemplateInput } from "./dto/kb-page-templates.schemas";
 
 type TemplateRow = typeof kbPageTemplates.$inferSelect;
+
+const TEMPLATE_LIST_CAP = 200;
 
 @Injectable()
 export class KbPageTemplatesService {
@@ -17,7 +20,8 @@ export class KbPageTemplatesService {
       .select()
       .from(kbPageTemplates)
       .where(eq(kbPageTemplates.orgId, orgId))
-      .orderBy(kbPageTemplates.name);
+      .orderBy(kbPageTemplates.name)
+      .limit(TEMPLATE_LIST_CAP);
   }
 
   async create(user: CurrentUserContext, input: CreatePageTemplateInput): Promise<TemplateRow> {
@@ -28,18 +32,24 @@ export class KbPageTemplatesService {
     });
     if (!page) throw new NotFoundException("Source page not found");
 
-    const [template] = await this.db
-      .insert(kbPageTemplates)
-      .values({
-        orgId,
-        name: input.name,
-        description: input.description ?? null,
-        icon: page.icon,
-        content: page.content ?? null,
-        createdById: user.userId,
-      })
-      .returning();
-    return template;
+    try {
+      const [template] = await this.db
+        .insert(kbPageTemplates)
+        .values({
+          orgId,
+          name: input.name,
+          description: input.description ?? null,
+          icon: page.icon,
+          content: page.content ?? null,
+          createdById: user.userId,
+        })
+        .returning();
+      return template;
+    } catch (err) {
+      if (isUniqueViolation(err))
+        throw new ConflictException("A template with that name already exists");
+      throw err;
+    }
   }
 
   async remove(orgId: string, templateId: number): Promise<void> {

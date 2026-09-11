@@ -6,8 +6,19 @@ import { type Db } from "../../db/drizzle.module";
 import { InvoicesPostingService } from "./invoices-posting.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
+import { compareDecimals, subtractDecimals, toDecimal } from "../accounting/core/money.util";
 
 type DbOrTx = Parameters<Parameters<Db["transaction"]>[0]>[0] | Db;
+
+/**
+ * `payments.amount` is `numeric(12,2)` while `invoices.total` is `numeric(18,4)`,
+ * so an invoice whose total carries sub-paisa components can never be settled to
+ * the last 0.0050 by any sequence of receipts. That half-paisa is the entire
+ * tolerance — it is a scale reconciliation, not slack for arithmetic error.
+ */
+const PAID_TOLERANCE = "0.0050";
+
+const FALLBACK_RECIPIENTS_PER_ORG = 5;
 
 @Injectable()
 export class InvoicesLifecycleService {
@@ -20,7 +31,7 @@ export class InvoicesLifecycleService {
 
   async recomputeInvoiceBalance(invoiceId: number, tx: DbOrTx): Promise<void> {
     const [{ totalPaid }] = await tx
-      .select({ totalPaid: sql<number>`COALESCE(sum(${payments.amount}::numeric), 0)::float` })
+      .select({ totalPaid: sql<string>`COALESCE(sum(${payments.amount}), 0)::text` })
       .from(payments)
       .where(eq(payments.invoiceId, invoiceId));
 
@@ -31,13 +42,14 @@ export class InvoicesLifecycleService {
 
     if (!invoice) return;
 
-    const invTotal = Number(invoice.total);
+    const paid = toDecimal(totalPaid);
+    const outstanding = subtractDecimals(toDecimal(invoice.total), paid);
     const today = new Date().toISOString().slice(0, 10);
     let newStatus = invoice.status;
 
-    if (totalPaid >= invTotal - 0.005) {
+    if (compareDecimals(outstanding, PAID_TOLERANCE) <= 0) {
       newStatus = "PAID";
-    } else if (totalPaid > 0) {
+    } else if (compareDecimals(paid, "0") > 0) {
       newStatus = "PARTIALLY_PAID";
     } else if (invoice.dueDate && invoice.dueDate < today && invoice.status === "ISSUED") {
       newStatus = "OVERDUE";
@@ -46,7 +58,7 @@ export class InvoicesLifecycleService {
     await tx
       .update(invoices)
       .set({
-        amountPaid: totalPaid.toFixed(4),
+        amountPaid: paid,
         status: newStatus,
         ...(newStatus === "PAID" ? { paidAt: new Date() } : {}),
         updatedAt: new Date(),
@@ -127,20 +139,20 @@ export class InvoicesLifecycleService {
     await this.db
       .update(invoices)
       .set({ status: "OVERDUE", updatedAt: new Date() })
-      .where(inArray(invoices.id, ids));
+      .where(
+        orgId
+          ? and(inArray(invoices.id, ids), eq(invoices.orgId, orgId))
+          : inArray(invoices.id, ids),
+      );
+
+    const fallbackRecipients = await this.loadFallbackRecipients(
+      dueInvoices.filter((inv) => !inv.collectionOwnerId).map((inv) => inv.orgId),
+    );
 
     for (const inv of dueInvoices) {
-      const targetUserIds: string[] = [];
-      if (inv.collectionOwnerId) {
-        targetUserIds.push(inv.collectionOwnerId);
-      } else {
-        const members = await this.db
-          .select({ userId: organizationMembers.userId })
-          .from(organizationMembers)
-          .where(eq(organizationMembers.orgId, inv.orgId))
-          .limit(5);
-        targetUserIds.push(...members.map((m) => m.userId));
-      }
+      const targetUserIds = inv.collectionOwnerId
+        ? [inv.collectionOwnerId]
+        : fallbackRecipients.get(inv.orgId) ?? [];
       if (targetUserIds.length > 0) {
         await this.dispatch.emit({
           eventKey: "accounting.invoice.overdue",
@@ -155,5 +167,33 @@ export class InvoicesLifecycleService {
     }
 
     return { updated: dueInvoices.length };
+  }
+
+  private async loadFallbackRecipients(orgIds: readonly string[]): Promise<Map<string, string[]>> {
+    const byOrg = new Map<string, string[]>();
+    const distinct = [...new Set(orgIds)];
+    if (distinct.length === 0) return byOrg;
+
+    const ranked = this.db
+      .select({
+        orgId: organizationMembers.orgId,
+        userId: organizationMembers.userId,
+        memberRank: sql<number>`row_number() over (partition by ${organizationMembers.orgId} order by ${organizationMembers.userId})`.as("member_rank"),
+      })
+      .from(organizationMembers)
+      .where(inArray(organizationMembers.orgId, distinct))
+      .as("ranked_org_members");
+
+    const rows = await this.db
+      .select({ orgId: ranked.orgId, userId: ranked.userId })
+      .from(ranked)
+      .where(lte(ranked.memberRank, FALLBACK_RECIPIENTS_PER_ORG));
+
+    for (const row of rows) {
+      const members = byOrg.get(row.orgId);
+      if (members) members.push(row.userId);
+      else byOrg.set(row.orgId, [row.userId]);
+    }
+    return byOrg;
   }
 }

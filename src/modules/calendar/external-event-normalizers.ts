@@ -13,12 +13,64 @@ export interface ProviderCapabilities {
   create: boolean;
   update: boolean;
   delete: boolean;
+  /**
+   * Whether a push can carry the series' RRULE, and therefore whether a recurring
+   * event can be represented at the provider at all.
+   *
+   * `PushEventInput` used to have no rrule field, so a weekly series synced to a
+   * provider landed as ONE meeting at the first occurrence and stayed that way —
+   * divergence from the very first push, with nothing anywhere reporting it. Google
+   * takes `recurrence: ["RRULE:…"]`; the Outlook create tool exposes no recurrence
+   * argument, so the honest answer there is a refused push (visible as `failed`),
+   * never a silently-wrong single meeting.
+   */
+  recurrence: boolean;
+  /**
+   * Whether ONE occurrence of a series can be addressed on its own. Google names an
+   * instance `<masterId>_<basic-UTC-instant>`, so a moved or cancelled occurrence can
+   * be pushed without overwriting the series.
+   */
+  occurrence: boolean;
 }
 
 export const PROVIDER_CAPABILITIES: Record<"googlecalendar" | "outlook", ProviderCapabilities> = {
-  googlecalendar: { create: true, update: true, delete: true },
-  outlook: { create: true, update: false, delete: false },
+  googlecalendar: { create: true, update: true, delete: true, recurrence: true, occurrence: true },
+  outlook: { create: true, update: false, delete: false, recurrence: false, occurrence: false },
 } as const;
+
+/**
+ * A push the provider cannot express — not a transient failure.
+ *
+ * Retrying it can never succeed, so the sweep marks the queue row FAILED on the first
+ * attempt with this reason rather than burning the backoff ladder. It must NEVER be
+ * swallowed: a refused push that is marked PROCESSED reports `synced` over a provider
+ * copy that is stale or missing, and `retrySync` (FAILED-only) can never reach it.
+ */
+export class ProviderCapabilityError extends Error {
+  readonly permanent = true;
+
+  constructor(reason: string) {
+    super(reason);
+    this.name = "ProviderCapabilityError";
+  }
+}
+
+/**
+ * Google addresses one instance of a recurring event as `<masterId>_<YYYYMMDDTHHMMSSZ>`,
+ * built from the occurrence's NOMINAL UTC instant — the one the RRULE generated, which is
+ * also `calendar_event_exceptions.occurrence_start`. An all-day series uses the date form.
+ */
+export function googleInstanceEventId(
+  masterEventId: string,
+  nominalStart: Date,
+  allDay = false,
+): string {
+  const iso = nominalStart.toISOString();
+  const compact = allDay
+    ? iso.slice(0, 10).replace(/-/g, "")
+    : `${iso.slice(0, 19).replace(/[-:]/g, "")}Z`;
+  return `${masterEventId}_${compact}`;
+}
 
 export interface ExternalCalendarEventItem {
   id: string;

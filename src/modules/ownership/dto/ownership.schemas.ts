@@ -1,32 +1,32 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
 
 export const setModuleOwnerSchema = z.object({
   ownerMembershipId: z.number().int().positive(),
-});
+}).strict();
 
 export const initiateOrgTransferSchema = z.object({
   toMembershipId: z.number().int().positive(),
   expiresInHours: z.number().int().min(1).max(168).default(48),
   reason: z.string().max(500).optional(),
-});
+}).strict();
 
 export const initiateModuleTransferSchema = z.object({
   toMembershipId: z.number().int().positive(),
   expiresInHours: z.number().int().min(1).max(168).default(48),
   reason: z.string().max(500).optional(),
-});
+}).strict();
 
 export const declineTransferSchema = z.object({
   reason: z.string().max(500).optional(),
-});
+}).strict();
 
 export const listTransfersSchema = z.object({
   scope: z.enum(["ORGANIZATION", "MODULE"]).optional(),
   status: z.enum(["PENDING", "ACCEPTED", "DECLINED", "CANCELLED", "EXPIRED"]).optional(),
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
-});
+}).strict();
 
 
 export type SetModuleOwnerInput = z.infer<typeof setModuleOwnerSchema>;

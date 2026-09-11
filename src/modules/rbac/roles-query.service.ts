@@ -18,6 +18,8 @@ import {
 } from "../directory/employment-query";
 import { PERMISSIONS } from "./permissions";
 import type { SimulationCandidatesQuery } from "./dto/rbac.schemas";
+import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
+import { keysetAfterTextExpression } from "../../common/pagination/keyset";
 
 @Injectable()
 export class RolesQueryService {
@@ -32,14 +34,14 @@ export class RolesQueryService {
       })
       .from(principalGroups)
       .where(eq(principalGroups.orgId, orgId))
-      .orderBy(asc(principalGroups.name));
+      .orderBy(asc(principalGroups.name))
+      .limit(500);
   }
 
   async listSimulationCandidates(
     orgId: string,
     input: SimulationCandidatesQuery,
   ) {
-    const offset = (input.page - 1) * input.limit;
     const conditions = [
       eq(organizationMembers.orgId, orgId),
       eq(organizationMembers.status, "ACTIVE"),
@@ -51,39 +53,37 @@ export class RolesQueryService {
       );
       if (searchCondition) conditions.push(searchCondition);
     }
-    const where = and(...conditions);
-    const [data, [{ value }]] = await Promise.all([
-      this.db
+    const normalizedName = sql<string>`coalesce(${users.name}, ${"\uffff"})`;
+    const position = decodeCursor(input.cursor);
+    const where = and(
+      ...conditions,
+      position
+        ? keysetAfterTextExpression(normalizedName, users.name, users.email, position)
+        : undefined,
+    );
+    const rows = await this.db
         .select({
           id: users.id,
           name: users.name,
           email: users.email,
           image: users.image,
           designation: hrEmployments.designation,
+          cursorSortValue: normalizedName,
         })
         .from(organizationMembers)
         .innerJoin(users, eq(users.id, organizationMembers.userId))
         .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
         .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .where(where)
-        .orderBy(asc(users.name), asc(users.email))
-        .limit(input.limit)
-        .offset(offset),
-      this.db
-        .select({ value: count() })
-        .from(organizationMembers)
-        .innerJoin(users, eq(users.id, organizationMembers.userId))
-        .where(where),
-    ]);
-    const total = Number(value);
+        .orderBy(asc(normalizedName), asc(users.email))
+        .limit(input.limit + 1);
+    const page = buildCursorPage(rows, input.limit, (row) => ({
+      sortValue: row.cursorSortValue,
+      id: row.email,
+    }));
     return {
-      data,
-      pagination: {
-        page: input.page,
-        limit: input.limit,
-        total,
-        totalPages: Math.ceil(total / input.limit),
-      },
+      data: page.data.map(({ cursorSortValue: _cursor, ...row }) => row),
+      pagination: page.pagination,
     };
   }
 
@@ -118,13 +118,15 @@ export class RolesQueryService {
           customRoles: sql<number>`count(*) filter (where not ${roles.isSystem})`,
         })
         .from(roles)
-        .where(eq(roles.orgId, orgId)),
+        .where(eq(roles.orgId, orgId))
+        .limit(1),
       this.db
         .select({
           value: countDistinct(roleAssignments.organizationMembershipId),
         })
         .from(roleAssignments)
-        .where(eq(roleAssignments.orgId, orgId)),
+        .where(eq(roleAssignments.orgId, orgId))
+        .limit(1),
       this.db
         .select({ value: count() })
         .from(auditLogs)
@@ -134,7 +136,8 @@ export class RolesQueryService {
             like(auditLogs.action, "role.%"),
             gte(auditLogs.createdAt, sevenDaysAgo),
           ),
-        ),
+        )
+        .limit(1),
     ]);
     const roleTotals = roleTotalsRows[0];
     const assignedRow = assignedRows[0];

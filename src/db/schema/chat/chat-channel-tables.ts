@@ -10,6 +10,7 @@ import {
   foreignKey,
   unique,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { organizations, organizationMembers } from "../common/auth";
 import { deals } from "../crm";
 
@@ -30,9 +31,7 @@ export const chatChannels = pgTable(
     entityId: text("entity_id"),
     isPinned: boolean("is_pinned").default(false).notNull(),
     isPrivate: boolean("is_private").default(false).notNull(),
-    linkedDealId: integer("linked_deal_id").references(() => deals.id, {
-      onDelete: "set null",
-    }),
+    linkedDealId: integer("linked_deal_id"),
     messageCount: bigint("message_count", { mode: "number" }).notNull().default(0),
     lastMessageAt: timestamp("last_message_at").defaultNow().notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -42,15 +41,21 @@ export const chatChannels = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    index("idx_chat_channels_org").on(table.orgId),
     index("idx_chat_channels_last_msg").on(table.orgId, table.lastMessageAt),
-    index("idx_chat_channels_org_entity").on(
-      table.orgId,
-      table.entityType,
-      table.entityId,
-    ),
+    // UNIQUE, and it is the only thing preventing two chat channels for one record.
+    // `getOrCreateEntityChannel` is reached by a TanStack useQuery — a GET that writes —
+    // so a StrictMode double-mount or a retry issues two concurrent requests that both
+    // miss the pre-check and both insert; `createChannel` accepts entityType/entityId too
+    // and does not pre-check at all, so an application-side lock could not close it.
+    // Partial on `entity_type IS NOT NULL` because most channels are not attached to a
+    // record and must not share one uniqueness class — the call site names that predicate
+    // in its ON CONFLICT `targetWhere`, which is what keeps it inferable (see 1054).
+    uniqueIndex("uniq_chat_channels_org_entity")
+      .on(table.orgId, table.entityType, table.entityId)
+      .where(sql`entity_type IS NOT NULL`),
     unique("uniq_chat_channels_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_chat_channels_org_created_by_membership" }).onDelete("set null"),
+    foreignKey({ columns: [table.orgId, table.linkedDealId], foreignColumns: [deals.orgId, deals.id], name: "fk_chat_channels_linked_deal_id_org" }).onDelete("set null"),
   ],
 );
 
@@ -62,11 +67,11 @@ export const chatChannelMembers = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     channelId: integer("channel_id")
-      .references(() => chatChannels.id, { onDelete: "cascade" })
       .notNull(),
     membershipId: integer("membership_id").notNull(),
     role: text("role").default("MEMBER").notNull(),
     lastReadAt: timestamp("last_read_at").defaultNow().notNull(),
+    lastReadPosition: bigint("last_read_position", { mode: "number" }).notNull().default(0),
     joinedAt: timestamp("joined_at").defaultNow().notNull(),
     mutedUntil: timestamp("muted_until"),
     archivedAt: timestamp("archived_at"),
@@ -76,12 +81,12 @@ export const chatChannelMembers = pgTable(
       .notNull(),
   },
   (table) => [
+    index("idx_chat_channel_members_org").on(table.orgId),
     uniqueIndex("uniq_chat_channel_member_membership").on(table.orgId, table.channelId, table.membershipId),
     index("idx_chat_members_channel").on(table.channelId),
-    index("idx_chat_channel_members_org").on(table.orgId),
     unique("uniq_chat_channel_members_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.channelId], foreignColumns: [chatChannels.orgId, chatChannels.id], name: "fk_chat_channel_members_org_channel" }),
-    foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_chat_channel_members_org_membership" }),
+    foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_chat_channel_members_org_membership" }).onDelete("cascade"),
   ],
 );
 
@@ -93,7 +98,6 @@ export const chatChannelInviteLinks = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     channelId: integer("channel_id")
-      .references(() => chatChannels.id, { onDelete: "cascade" })
       .notNull(),
     token: text("token"),
     tokenHash: text("token_hash"),
@@ -101,12 +105,17 @@ export const chatChannelInviteLinks = pgTable(
     createdByMembershipId: integer("created_by_membership_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     revokedAt: timestamp("revoked_at"),
+    expiresAt: timestamp("expires_at"),
+    maxUses: integer("max_uses"),
+    useCount: integer("use_count").notNull().default(0),
   },
   (table) => [
     uniqueIndex("uniq_chat_invite_link_token").on(table.token),
     uniqueIndex("uniq_chat_invite_link_token_hash").on(table.tokenHash),
+    uniqueIndex("uniq_chat_invite_active_link_channel")
+      .on(table.orgId, table.channelId)
+      .where(sql`revoked_at IS NULL`),
     index("idx_chat_invite_links_channel").on(table.channelId, table.revokedAt),
-    index("idx_chat_channel_invite_links_org").on(table.orgId),
     unique("uniq_chat_channel_invite_links_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.channelId], foreignColumns: [chatChannels.orgId, chatChannels.id], name: "fk_chat_invite_links_org_channel" }),
     foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_chat_invite_links_created_by_membership" }).onDelete("set null"),

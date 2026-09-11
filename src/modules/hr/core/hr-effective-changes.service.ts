@@ -4,14 +4,12 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, gt, isNull, lte } from "drizzle-orm";
-import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
+import { and, desc, eq, isNull } from "drizzle-orm";
+import { buildCursorPage } from "../../../common/pagination/cursor";
 import { keysetBeforeValue } from "../../../common/pagination/keyset";
 import {
   hrEffectiveDatedChanges,
   hrEmployments,
-  hrEmployeeSensitiveFields,
-  hrReportingLines,
   hrPeople,
   OPEN_ENDED_DATE,
 } from "../../../db/schema/hr/core-people";
@@ -26,15 +24,12 @@ import type {
 import { HrAuditService } from "./hr-audit.service";
 import { HrWorkflowEngineService } from "../workflows/hr-workflow-engine.service";
 import { HrEffectiveChangeApplierService } from "./hr-effective-change-applier.service";
-
-type EmploymentSnapshot = {
-  id: number;
-  subjectUserId: string | null;
-  departmentId: string | null;
-  designation: string | null;
-  jobLevelId: number | null;
-  locationId: string | null;
-};
+import { boundHrReadLimit } from "../hr-read-limits";
+import {
+  type EffectiveChangeCursorScope,
+  decodeEffectiveChangeCursor,
+  snapshotOldValue,
+} from "./hr-effective-changes.helpers";
 
 @Injectable()
 export class HrEffectiveChangesService {
@@ -108,7 +103,7 @@ export class HrEffectiveChangesService {
       if (!employment) throw new NotFoundException("Employment not found.");
 
       const actorMembershipId = await this.resolveActorMembershipId(tx, orgId, actorId);
-      const oldValue = await this.snapshotOldValue(tx, orgId, input, employment);
+      const oldValue = await snapshotOldValue(tx, orgId, input, employment);
       const [created] = await tx
         .insert(hrEffectiveDatedChanges)
         .values({
@@ -184,8 +179,15 @@ export class HrEffectiveChangesService {
   }
 
   async list(orgId: string, input: ListEffectiveDateChangesInput) {
-    const { cursor, limit, employmentId, changeType, status } = input;
-    const pos = decodeCursor(cursor);
+    const { cursor, employmentId, changeType, status } = input;
+    const limit = boundHrReadLimit(input.limit);
+    const cursorScope: EffectiveChangeCursorScope = {
+      orgId,
+      employmentId: employmentId ?? null,
+      changeType: changeType ?? null,
+      status: status ?? null,
+    };
+    const pos = decodeEffectiveChangeCursor(cursor, cursorScope);
     const conditions = [eq(hrEffectiveDatedChanges.orgId, orgId)];
     if (employmentId) conditions.push(eq(hrEffectiveDatedChanges.employmentId, employmentId));
     if (changeType) conditions.push(eq(hrEffectiveDatedChanges.changeType, changeType));
@@ -201,7 +203,13 @@ export class HrEffectiveChangesService {
 
     return buildCursorPage(rows, limit, (row) => ({
       sortValue: String(row.effectiveFrom),
-      id: String(row.id),
+      id: JSON.stringify([
+        row.id,
+        cursorScope.orgId,
+        cursorScope.employmentId,
+        cursorScope.changeType,
+        cursorScope.status,
+      ]),
     }));
   }
 
@@ -256,47 +264,5 @@ export class HrEffectiveChangesService {
 
   applyDueChanges(orgId: string, actorId: string | null, input: ApplyDueChangesInput) {
     return this.applier.applyDue(orgId, actorId, input.asOfDate, input.limit);
-  }
-
-  private async snapshotOldValue(
-    tx: Db,
-    orgId: string,
-    input: CreateEffectiveDateChangeInput,
-    employment: EmploymentSnapshot,
-  ): Promise<Record<string, unknown>> {
-    if (input.changeType === "department") return { departmentId: employment.departmentId };
-    if (input.changeType === "location") return { locationId: employment.locationId };
-    if (input.changeType === "designation") return { designation: employment.designation };
-    if (input.changeType === "job_level") return { jobLevelId: employment.jobLevelId };
-    if (input.changeType === "compensation") {
-      const [sensitive] = await tx
-        .select({ salaryCents: hrEmployeeSensitiveFields.salaryAmountCents })
-        .from(hrEmployeeSensitiveFields)
-        .where(
-          and(
-            eq(hrEmployeeSensitiveFields.orgId, orgId),
-            eq(hrEmployeeSensitiveFields.employmentId, employment.id),
-          ),
-        )
-        .limit(1);
-      return { salaryCents: sensitive?.salaryCents ?? null };
-    }
-
-    const today = new Date().toISOString().slice(0, 10);
-    const [line] = await tx
-      .select({ managerEmploymentId: hrReportingLines.managerEmploymentId })
-      .from(hrReportingLines)
-      .where(
-        and(
-          eq(hrReportingLines.orgId, orgId),
-          eq(hrReportingLines.employmentId, employment.id),
-          eq(hrReportingLines.lineType, "primary"),
-          lte(hrReportingLines.effectiveFrom, today),
-          gt(hrReportingLines.effectiveTo, today),
-        ),
-      )
-      .orderBy(desc(hrReportingLines.effectiveFrom), desc(hrReportingLines.id))
-      .limit(1);
-    return { managerEmploymentId: line?.managerEmploymentId ?? null };
   }
 }

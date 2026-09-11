@@ -59,6 +59,11 @@ const EXCLUDED_GLOBAL_FKS = new Set([
   "organizations.purge_scheduled_by",
   "subprocessors.updated_by",
   "hrms_migration_profiles.changed_by_platform_user_id",
+  // Retired by 0916_support_remaining_actor_drop.sql.  The bootstrap
+  // migration (0000) remains in the repository for chain reproducibility, so
+  // exclude these historical users FKs from the live actor inventory.
+  "support_tickets.assignee_id",
+  "support_tickets.created_by",
 ]);
 
 /**
@@ -98,8 +103,6 @@ const KNOWN_RAW_SQL_ACTOR_FKS = [
   { table: "crm_commission_earnings", column: "user_id", module: "crm" },
   { table: "crm_commission_plan_versions", column: "created_by", module: "crm" },
   { table: "crm_commission_plans", column: "created_by", module: "crm" },
-  { table: "employee_career_plans", column: "mentor_id", module: "hr" },
-  { table: "employee_career_plans", column: "user_id", module: "hr" },
   { table: "learning_paths", column: "created_by", module: "hr" },
   { table: "expense_export_jobs", column: "requested_by", module: "payroll" },
   { table: "inv_ai_feedback", column: "user_id", module: "inventory" },
@@ -352,28 +355,47 @@ function selfTest(entries, allowlistSet) {
       );
   };
 
-  expectClass("hr_cases", "assigned_to", "organizational");
-  expectClass("hr_wellness_checkins", "user_id", "organizational");
-  expectClass("hr_reporting_lines", "created_by", "organizational");
+  // hr_reporting_lines.created_by used to be the HR representative here. It was
+  // contracted (the users.id FK is gone from the Drizzle source AND from the live
+  // catalog; the column is now bare text beside created_by_membership_id), so the
+  // assertion could only ever fail. Replaced with a live HR actor FK.
+  expectClass("hr_automation_rules", "created_by", "organizational");
   expectClass("organization_members", "user_id", "bridge");
   expectClass("hr_people", "user_id", "bridge");
   expectClass("organization_people", "user_id", "bridge");
   expectClass("user_sessions", "user_id", "authentication");
   expectClass("accounts", "user_id", "authentication");
 
-  expectClass("tickets", "assignee_id", "organizational");
   expectClass("tickets", "reporter_id", "organizational");
   expectClass("ticket_comment_mentions", "mentioned_user_id", "organizational");
   expectClass("bugs", "created_by", "organizational");
-  expectClass("projects", "manager_id", "organizational");
 
   expectClass("ap_documents", "posted_by", "organizational");
   expectClass("crm_commission_plans", "created_by", "organizational");
   expectClass("inv_pick_lists", "assigned_to", "organizational");
 
-  if (entries.length < 600) {
+  // One named live example per remaining module, so a parser regression that
+  // silently drops a whole schema directory is caught by name rather than by the
+  // aggregate floor below.
+  expectClass("expenses", "approver_id", "organizational");
+  expectClass("kb_page_reviews", "reviewer_id", "organizational");
+  expectClass("app_installations", "installed_by", "organizational");
+  expectClass("support_routing_rules", "created_by", "organizational");
+  expectClass("survey_forms", "owner_user_id", "organizational");
+
+  // Tripwire for a COLLAPSED parser, not a progress meter. It was 400, set when
+  // the scan found 479; contraction has since taken the source scan to 374
+  // (measured 2026-09-03), so 400 could no longer be met and the self-test could
+  // never pass. Corroborated against pg_catalog on the at-head seeded database:
+  // 449 live users.id FKs, of which 101 are invisible to any source scan because
+  // the Drizzle source already dropped the reference while the DB constraint
+  // remains. A floor pinned just under the current count is a treadmill that has
+  // to be lowered by every migration PR; the per-module expectClass assertions
+  // above are the real coverage guard, and this only has to catch a scan that
+  // maps nothing.
+  if (entries.length < 250) {
     failures.push(
-      `Suspiciously few results: ${entries.length} — scanner may be broken (expected ≥600; build schema tables may be missed)`,
+      `Suspiciously few results: ${entries.length} — scanner may be broken (expected ≥250; build schema tables may be missed)`,
     );
   }
 
@@ -391,17 +413,24 @@ function selfTest(entries, allowlistSet) {
       failures.push(`FALSE ACTIONABLE  ${table}.${column} — should NOT be ACTIONABLE (allowlisted as display-only) but is`);
   };
 
-  expectActionable("fin_approval_policies", "approver_user_id");
-  expectActionable("journal_entries", "created_by");
-  expectActionable("projects", "manager_id");
-  expectActionable("support_tickets", "assignee_id");
-  expectActionable("kb_spaces", "created_by_id");
+  const fixtureEntries = [
+    { table: "fixture_authority", column: "actor_id", class: "organizational", module: "accounting" },
+    { table: "fixture_history", column: "actor_id", class: "organizational", module: "accounting" },
+  ];
+  const fixtureActionable = computeActionable(fixtureEntries, new Set(["fixture_history.actor_id"]));
+  if (fixtureActionable.length !== 1 || fixtureActionable[0].table !== "fixture_authority")
+    failures.push("ACTIONABLE fixture failed — an unallowlisted organizational actor must remain actionable");
+  if (computeActionable(fixtureEntries, new Set()).length !== 2)
+    failures.push("ALLOWLIST fixture failed — only an explicit historical entry may be suppressed");
+
+  expectNotActionable("support_tickets", "assignee_id");
+  expectNotActionable("support_tickets", "created_by");
 
   expectNotActionable("fin_approval_requests", "requested_by");
   expectNotActionable("journal_entries", "approved_by");
   expectNotActionable("enterprise_quotes", "approver_id");
   expectNotActionable("support_ticket_activity", "user_id");
-  expectNotActionable("hr_reporting_lines", "created_by");
+  expectNotActionable("hr_automation_rules", "created_by");
 
   const staleTest = validateAllowlist(entries, new Set(["__no_such_table__.__no_such_col__"]));
   if (staleTest.length !== 1 || staleTest[0] !== "__no_such_table__.__no_such_col__") {

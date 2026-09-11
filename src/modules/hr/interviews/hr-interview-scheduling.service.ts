@@ -88,6 +88,8 @@ export class HrInterviewSchedulingService {
   ) {}
 
   async createInterview(orgId: string, input: CreateInterviewInput) {
+    if (!input.interviewerId) throw new BadRequestException("Interviewer is required.");
+    const interviewerMembership = await this.requireActiveMember(orgId, input.interviewerId);
     const [interview] = await this.db
       .insert(interviews)
       .values({
@@ -95,6 +97,7 @@ export class HrInterviewSchedulingService {
         candidateId: input.candidateId,
         jobPostingId: input.jobPostingId,
         interviewerId: input.interviewerId,
+        interviewerMembershipId: interviewerMembership.id,
         type: toInterviewType(input.type),
         scheduledAt: new Date(input.scheduledAt),
         duration: input.duration ?? 60,
@@ -115,17 +118,34 @@ export class HrInterviewSchedulingService {
   }
 
   async deleteInterview(orgId: string, interviewId: number) {
-    await this.db
+    const removed = await this.db
       .delete(interviews)
-      .where(and(eq(interviews.id, interviewId), eq(interviews.orgId, orgId)));
+      .where(and(eq(interviews.id, interviewId), eq(interviews.orgId, orgId)))
+      .returning({ id: interviews.id });
+    if (removed.length === 0) throw new NotFoundException("Interview not found");
     return { success: true };
   }
 
   async scheduleInterview(
     orgId: string,
     userId: string,
-    input: ScheduleInterviewInput,
+    actorMembershipIdOrInput: number | null | ScheduleInterviewInput,
+    inputMaybe?: ScheduleInterviewInput,
   ) {
+    // Keep the pre-membership internal call shape usable for existing unit
+    // consumers; HTTP callers always provide the active membership explicitly.
+    const legacyCall = actorMembershipIdOrInput !== null && typeof actorMembershipIdOrInput === "object";
+    let input: ScheduleInterviewInput;
+    if (legacyCall) {
+      input = actorMembershipIdOrInput;
+    } else {
+      if (inputMaybe == null) throw new BadRequestException("Interview scheduling input is required.");
+      input = inputMaybe;
+    }
+    const actorMembershipId = legacyCall
+      ? (await this.requireActiveMember(orgId, userId)).id
+      : actorMembershipIdOrInput;
+    if (actorMembershipId == null) throw new BadRequestException("Active organization membership required.");
     const candidate = await this.db.query.candidates.findFirst({
       where: and(
         eq(candidates.id, input.candidateId),
@@ -144,8 +164,13 @@ export class HrInterviewSchedulingService {
     const endDate = new Date(
       scheduledDate.getTime() + input.durationMinutes * 60_000,
     );
-    const primaryInterviewerId = input.interviewers[0];
     const candidateName = `${candidate.firstName} ${candidate.lastName}`;
+
+    const memberships = await this.requireActiveMembers(orgId, input.interviewers);
+    const membershipByUserId = new Map(memberships.map((member) => [member.userId, member.id]));
+    const primaryInterviewerId = input.interviewers[0];
+    const primaryInterviewerMembershipId = membershipByUserId.get(primaryInterviewerId);
+    if (primaryInterviewerMembershipId == null) throw new BadRequestException("Active organization membership required.");
 
     const interview = await this.db.transaction(async (tx) => {
       const [created] = await tx
@@ -155,6 +180,7 @@ export class HrInterviewSchedulingService {
           candidateId: input.candidateId,
           jobPostingId: input.jobPostingId,
           interviewerId: primaryInterviewerId,
+          interviewerMembershipId: primaryInterviewerMembershipId,
           type: FORMAT_TO_TYPE[input.format],
           scheduledAt: scheduledDate,
           duration: input.durationMinutes,
@@ -166,21 +192,20 @@ export class HrInterviewSchedulingService {
         .returning();
 
       await tx.insert(interviewPanelMembers).values(
-        input.interviewers.map((uid) => ({
-          interviewId: created.id,
-          orgId,
-          userId: uid,
-        })),
+        input.interviewers.map((uid) => {
+          const uidMembershipId = membershipByUserId.get(uid);
+          if (uidMembershipId == null) throw new BadRequestException("Active organization membership required.");
+          return {
+            interviewId: created.id,
+            orgId,
+            userId: uid,
+            userMembershipId: uidMembershipId,
+          };
+        }),
       );
 
       return created;
     });
-
-    const creatorMembership = await this.db.query.organizationMembers.findFirst({
-      columns: { id: true },
-      where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId), eq(organizationMembers.status, "ACTIVE")),
-    });
-    if (!creatorMembership) throw new BadRequestException("Active organization membership required.");
 
     const [calendarEvent] = await this.db
       .insert(calendarEvents)
@@ -195,21 +220,9 @@ export class HrInterviewSchedulingService {
         category: "interview",
         entityType: "interview",
         entityId: String(interview.id),
-        createdByMembershipId: creatorMembership.id,
+        createdByMembershipId: actorMembershipId,
       })
       .returning({ id: calendarEvents.id });
-    const memberships = await this.db
-      .select({
-        id: organizationMembers.id,
-        userId: organizationMembers.userId,
-      })
-      .from(organizationMembers)
-      .where(
-        and(
-          eq(organizationMembers.orgId, orgId),
-          inArray(organizationMembers.userId, input.interviewers),
-        ),
-      );
     if (calendarEvent && memberships.length > 0) {
       await this.db.insert(eventAttendees).values(
         memberships.map((membership) => ({
@@ -256,7 +269,8 @@ export class HrInterviewSchedulingService {
     };
   }
 
-  async selfSchedule(orgId: string, userId: string, input: SelfScheduleInput) {
+  async selfSchedule(orgId: string, userId: string, actorMembershipId: number | null, input: SelfScheduleInput) {
+    if (actorMembershipId == null) throw new BadRequestException("Active organization membership required.");
     const candidate = await this.db.query.candidates.findFirst({
       where: and(
         eq(candidates.id, input.candidateId),
@@ -271,6 +285,8 @@ export class HrInterviewSchedulingService {
       Date.now() + input.expiresInDays * 24 * 60 * 60 * 1000,
     );
 
+    const memberships = await this.requireActiveMembers(orgId, input.interviewerIds);
+    const membershipByUserId = new Map(memberships.map((member) => [member.userId, member.id]));
     const link = await this.db.transaction(async (tx) => {
       const [created] = await tx
         .insert(interviewBookingLinks)
@@ -284,15 +300,21 @@ export class HrInterviewSchedulingService {
           availableSlots: input.availableSlots,
           expiresAt,
           createdBy: userId,
+          createdByMembershipId: actorMembershipId,
           notes: input.notes,
         })
         .returning();
 
       await tx.insert(bookingLinkInterviewers).values(
-        input.interviewerIds.map((uid) => ({
-          bookingLinkId: created.id,
-          userId: uid,
-        })),
+        input.interviewerIds.map((uid) => {
+          const uidMembershipId = membershipByUserId.get(uid);
+          if (uidMembershipId == null) throw new BadRequestException("Active organization membership required.");
+          return {
+            bookingLinkId: created.id,
+            userId: uid,
+            userMembershipId: uidMembershipId,
+          };
+        }),
       );
 
       return created;
@@ -343,7 +365,8 @@ export class HrInterviewSchedulingService {
         email: users.email,
       })
       .from(users)
-      .where(inArray(users.id, input.interviewers));
+      .where(inArray(users.id, input.interviewers))
+      .limit(Math.max(input.interviewers.length, 1));
 
     const tasks: Promise<void>[] = [];
 
@@ -413,5 +436,27 @@ export class HrInterviewSchedulingService {
       durationMinutes: interview.duration ?? 60,
       meetingLink: interview.meetingLink ?? null,
     });
+  }
+
+  private async requireActiveMember(orgId: string, userId: string) {
+    const members = await this.requireActiveMembers(orgId, [userId]);
+    return members[0];
+  }
+
+  private async requireActiveMembers(orgId: string, userIds: readonly string[]) {
+    const uniqueUserIds = [...new Set(userIds)];
+    const members = await this.db
+      .select({ id: organizationMembers.id, userId: organizationMembers.userId })
+      .from(organizationMembers)
+      .where(and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.status, "ACTIVE"),
+        inArray(organizationMembers.userId, uniqueUserIds),
+      ))
+      .limit(Math.max(uniqueUserIds.length, 1));
+    if (members.length !== uniqueUserIds.length) {
+      throw new BadRequestException("Every interviewer must have an active organization membership.");
+    }
+    return members;
   }
 }

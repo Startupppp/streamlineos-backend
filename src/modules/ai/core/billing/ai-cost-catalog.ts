@@ -55,6 +55,14 @@ export const AI_FEATURE_COSTS: Readonly<Record<string, number>> = {
   "support.root-cause": 2,
   "kb.ask": 1,
   "kb.public-ask": 1,
+  "kb.public-embedding": 1,
+  // Embedding ceilings are fractional because the settled charge is tiny: a query
+  // embed lands on the 10-milli floor, and `chunkText` caps a document at 400
+  // chunks, whose worst case settles near 450 milli.
+  "kb.search": 0.05,
+  "kb.indexing": 1,
+  "support.embedding": 0.05,
+  "support.kb-search": 0.05,
   "chat.message": 1,
   "feedbucket.analyze": 5,
   "feedbucket.assist": 5,
@@ -126,5 +134,5 @@ function getFeatureCost(feature: string): number {
 }
 
 export function getReserveEstimateMilli(feature: string): number {
-  return getFeatureCost(feature) * 1000;
+  return Math.round(getFeatureCost(feature) * 1000);
 }

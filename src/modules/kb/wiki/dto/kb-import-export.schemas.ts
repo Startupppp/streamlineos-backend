@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const exportPageSchema = z.object({
   format: z.enum(["markdown", "html"]),
-});
+}).strict();
 export type ExportPageInput = z.infer<typeof exportPageSchema>;
 
 export const importItemSchema = z.object({
@@ -14,5 +14,5 @@ export const importItemSchema = z.object({
 export const importPagesSchema = z.object({
   sourceType: z.enum(["markdown", "html", "zip"]),
   items: z.array(importItemSchema).min(1).max(100),
-});
+}).strict();
 export type ImportPagesInput = z.infer<typeof importPagesSchema>;

@@ -25,6 +25,5 @@ import { IssueTransitionsService } from "./issue-transitions.service";
 @Module({
   controllers: [IssuesController],
   providers: [IssuesService, IssueTransitionsService],
-  exports: [IssuesService, IssueTransitionsService],
 })
 export class IssuesModule {}

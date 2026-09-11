@@ -6,11 +6,21 @@ import { AppModule } from "../../app.module";
 import { AllExceptionsFilter } from "../../common/http/all-exceptions.filter";
 import { stubMembershipState } from "../../../test/helpers/membership-state";
 import { AccessService } from "../access/access.service";
+import {
+  moduleAvailabilityResolver,
+  type ModuleAvailabilityResult,
+} from "../../common/rbac/module-availability";
 import { DRIZZLE } from "../../db/drizzle.constants";
+import type { Db } from "../../db/drizzle.types";
 import { MfaPolicyService } from "../access/mfa-policy.service";
 import { makeMfaPolicyStub } from "test/helpers/mfa-policy-stub";
+import { installFixtureRegionRegistry } from "test/helpers/e2e-app";
+import { PayrollJobsWorkerService } from "../payroll/jobs/payroll-jobs-worker.service";
+import { PayrollCalendarReminderScheduler } from "../payroll/insights/payroll-calendar-reminder.scheduler";
+import { NotificationDeliveryWorker } from "../notifications/notification-delivery-worker.service";
+import { PermissionCatalogSyncService } from "../rbac/permission-catalog-sync.service";
 
-import { describeWithDb, RBAC_E2E_DATABASE_URL } from "test/helpers/db-describe";
+import { describeWithMockedDb } from "test/helpers/db-describe";
 
 type Scope = "all" | "own" | "team" | "none";
 
@@ -23,6 +33,32 @@ type Scope = "all" | "own" | "team" | "none";
 const mockAccess = {
   resolveUserPermissions: jest.fn<Promise<Map<string, Scope>>, unknown[]>(),
   isModuleEnabled: jest.fn().mockResolvedValue(true),
+  scopeFor: jest.fn(async (_ctx: unknown, key: string): Promise<Scope> => {
+    const map = await mockAccess.resolveUserPermissions();
+    return map.get(key) ?? "none";
+  }),
+  getModuleState: jest.fn(
+    async (orgId: string, moduleKey: string): Promise<boolean | undefined> =>
+      mockAccess.isModuleEnabled(orgId, moduleKey),
+  ),
+  moduleAvailability: async (
+    user: { orgId: string },
+    moduleKey: string,
+  ): Promise<ModuleAvailabilityResult> =>
+    (await mockAccess.isModuleEnabled(user.orgId, moduleKey))
+      ? { available: true }
+      : { available: false, reason: "org-disabled" },
+  buildModuleAvailabilityResolver: (
+    getModuleMap: (orgId: string) => Promise<Record<string, boolean>>,
+  ) =>
+    moduleAvailabilityResolver(
+      {
+        isCoreModule: () => false,
+        getModuleMap,
+        getPlanLockedModules: async () => [],
+      },
+      { getUserDeniedModules: async () => new Set<string>() },
+    ),
 };
 
 function q(value: unknown[]): Promise<unknown[]> & { limit: jest.Mock } {
@@ -38,6 +74,25 @@ const TICKET_ROW = {
   status: "IN_PROGRESS",
   ticketNumber: 31,
   projectKey: "WEB",
+};
+
+const CHANNEL_ROW = {
+  id: 1,
+  orgId: "org_1",
+  name: "Test Channel",
+  type: "GROUP",
+  description: null,
+  avatarUrl: null,
+  isArchived: false,
+  entityType: null,
+  entityId: null,
+  isPinned: false,
+  isPrivate: true,
+  messageCount: 0,
+  lastMessageAt: new Date("2026-09-10T00:00:00.000Z"),
+  createdAt: new Date("2026-09-10T00:00:00.000Z"),
+  updatedAt: new Date("2026-09-10T00:00:00.000Z"),
+  members: [],
 };
 
 const mockDb = {
@@ -57,9 +112,12 @@ const mockDb = {
   limit: jest.fn().mockResolvedValue([TICKET_ROW]),
   insert: jest.fn().mockReturnThis(),
   values: jest.fn().mockReturnThis(),
+  onConflictDoUpdate: jest.fn().mockReturnThis(),
+  onConflictDoNothing: jest.fn().mockReturnThis(),
   returning: jest.fn().mockResolvedValue([{ id: 1, name: "Ticket", type: "GROUP" }]),
   update: jest.fn().mockReturnThis(),
   set: jest.fn().mockReturnThis(),
+  orderBy: jest.fn().mockResolvedValue([]),
   execute: jest.fn().mockResolvedValue([]),
   __client: { end: jest.fn().mockResolvedValue(undefined) },
   transaction: jest
@@ -67,13 +125,20 @@ const mockDb = {
     .mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(mockDb)),
 };
 
-describeWithDb("Chat entity channel access (e2e, mocked)", () => {
+describeWithMockedDb("Chat entity channel access (e2e, mocked)", () => {
   let app: INestApplication;
 
   beforeAll(async () => {
     process.env.DATABASE_URL ??=
       process.env.RBAC_E2E_DATABASE_URL ?? "postgres://u:p@localhost:5432/db";
     process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
+    process.env.ADMISSION_ENABLED = "false";
+    process.env.NOTIFICATIONS_INPROCESS_WORKER = "false";
+    process.env.HR_EXPORT_WORKER_ENABLED = "false";
+    process.env.PAYROLL_EXPORT_WORKER_ENABLED = "false";
+    process.env.EXPENSE_EXPORT_WORKER_ENABLED = "false";
+    process.env.FINANCE_REPORT_EXPORT_WORKER_ENABLED = "false";
+    process.env.GDPR_EXPORT_WORKER_ENABLED = "false";
 
     const ref = await stubMembershipState(
       Test.createTestingModule({ imports: [AppModule] })
@@ -82,10 +147,19 @@ describeWithDb("Chat entity channel access (e2e, mocked)", () => {
         .overrideProvider(DRIZZLE)
         .useValue(mockDb)
         .overrideProvider(MfaPolicyService)
-        .useValue(makeMfaPolicyStub()),
+        .useValue(makeMfaPolicyStub())
+        .overrideProvider(PayrollJobsWorkerService)
+        .useValue({})
+        .overrideProvider(PayrollCalendarReminderScheduler)
+        .useValue({})
+        .overrideProvider(NotificationDeliveryWorker)
+        .useValue({})
+        .overrideProvider(PermissionCatalogSyncService)
+        .useValue({}),
       { member_1: { role: "MEMBER" } },
     ).compile();
 
+    installFixtureRegionRegistry(ref.get<Db>(DRIZZLE));
     app = ref.createNestApplication();
     app.useGlobalFilters(new AllExceptionsFilter());
     await app.init();
@@ -96,10 +170,31 @@ describeWithDb("Chat entity channel access (e2e, mocked)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockAccess.isModuleEnabled.mockResolvedValue(true);
-    mockDb.query.chatChannels.findFirst.mockResolvedValue(null);
-    mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ userId: "member_1" });
+    const now = new Date();
+    mockDb.query.chatChannels.findFirst.mockResolvedValue(CHANNEL_ROW);
+    mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ id: 1 });
     mockDb.query.chatMessages.findMany.mockResolvedValue([]);
-    mockDb.query.chatMessages.findFirst.mockResolvedValue({ id: 1, channelId: 1 });
+    mockDb.query.chatMessages.findFirst.mockResolvedValue({
+      id: 1,
+      orgId: "org_1",
+      channelId: 1,
+      senderMembershipId: null,
+      content: "parent message",
+      replyToId: null,
+      isEdited: false,
+      isDeleted: false,
+      messageType: "text",
+      metadata: null,
+      actionStatus: null,
+      clientKey: null,
+      channelPosition: 1,
+      createdAt: now,
+      updatedAt: now,
+      attachments: [],
+      senderMembership: null,
+      reactions: [],
+      replyTo: null,
+    });
     mockDb.where.mockReturnValue(q([TICKET_ROW]));
     mockDb.limit.mockResolvedValue([TICKET_ROW]);
   });
@@ -107,15 +202,23 @@ describeWithDb("Chat entity channel access (e2e, mocked)", () => {
   const messageCarryingTicketRef = [
     {
       id: 1,
+      orgId: "org_1",
       channelId: 1,
-      senderId: "member_1",
+      senderMembershipId: null,
       content: "look at this",
-      createdAt: new Date(),
       replyToId: null,
+      isEdited: false,
+      isDeleted: false,
       messageType: "text",
       metadata: { entities: [{ type: "ticket", id: "7" }] },
-      sender: { id: "member_1", name: "Ann", image: null },
+      actionStatus: null,
+      clientKey: null,
+      channelPosition: 1,
+      createdAt: new Date(),
+      updatedAt: new Date(),
       attachments: [],
+      senderMembership: null,
+      reactions: [],
       replyTo: null,
     },
   ];
@@ -221,11 +324,26 @@ describeWithDb("Chat entity channel access (e2e, mocked)", () => {
   it("does not join the caller to an existing channel as a side effect of opening it", async () => {
     grant("chat:channels:read", "build:tickets:view");
     mockDb.query.chatChannels.findFirst.mockResolvedValue({
+      ...CHANNEL_ROW,
       id: 4,
       name: TICKET_ROW.title,
       entityType: "task",
       entityId: "7",
-      members: [{ userId: "someone_else", user: { id: "someone_else" } }],
+      members: [{
+        id: 2,
+        channelId: 4,
+        role: "MEMBER",
+        lastReadAt: null,
+        joinedAt: CHANNEL_ROW.createdAt,
+        mutedUntil: null,
+        archivedAt: null,
+        isFavorite: false,
+        notificationPreference: "all",
+        membership: {
+          userId: "someone_else",
+          user: { id: "someone_else", name: "Other member", email: "other@example.test", image: null },
+        },
+      }],
     });
     const token = await signToken({
       sub: "member_1",
@@ -233,10 +351,11 @@ describeWithDb("Chat entity channel access (e2e, mocked)", () => {
       enabledModules: ALL_MODULES,
     });
 
-    await request(app.getHttpServer())
+    const res = await request(app.getHttpServer())
       .get("/chat/channels/entity/task/7")
       .set("Authorization", `Bearer ${token}`);
 
+    expect(res.status).toBe(200);
     expect(mockDb.insert).not.toHaveBeenCalled();
   });
 

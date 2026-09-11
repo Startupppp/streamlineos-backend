@@ -1,4 +1,4 @@
-import { ForbiddenException } from "@nestjs/common";
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { REDIS } from "../../common/cache/cache.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -6,6 +6,7 @@ import { ChatTypingService } from "./chat-typing.service";
 
 const db = {
   query: {
+    chatChannels: { findFirst: jest.fn() },
     chatChannelMembers: { findFirst: jest.fn() },
     organizationMembers: { findFirst: jest.fn() },
     users: { findFirst: jest.fn() },
@@ -37,6 +38,7 @@ describe("ChatTypingService", () => {
   });
 
   it("rejects a typing mutation when the actor is not in the channel", async () => {
+    db.query.chatChannels.findFirst.mockResolvedValue({ id: 12, isPrivate: false });
     db.query.organizationMembers.findFirst.mockResolvedValue(null);
     db.query.chatChannelMembers.findFirst.mockResolvedValue(undefined);
 
@@ -45,10 +47,30 @@ describe("ChatTypingService", () => {
   });
 
   it("rejects typing reads when the actor is not in the channel", async () => {
+    db.query.chatChannels.findFirst.mockResolvedValue({ id: 12, isPrivate: false });
     db.query.organizationMembers.findFirst.mockResolvedValue(null);
     db.query.chatChannelMembers.findFirst.mockResolvedValue(undefined);
 
     await expect(service.getTyping(12, "org-1", "user-2")).rejects.toThrow(ForbiddenException);
     expect(redis.hgetall).not.toHaveBeenCalled();
+  });
+
+  it("refuses a channel this organization does not hold with NotFound, never Forbidden", async () => {
+    db.query.chatChannels.findFirst.mockResolvedValue(undefined);
+    db.query.organizationMembers.findFirst.mockResolvedValue({ id: 1 });
+    db.query.chatChannelMembers.findFirst.mockResolvedValue(undefined);
+
+    const thrown = await service.getTyping(12, "org-1", "user-2").catch((error: unknown) => error);
+    expect(thrown).toBeInstanceOf(NotFoundException);
+    expect(thrown).not.toBeInstanceOf(ForbiddenException);
+    expect(redis.hgetall).not.toHaveBeenCalled();
+  });
+
+  it("a private channel does not confirm its own existence to a non-member", async () => {
+    db.query.chatChannels.findFirst.mockResolvedValue({ id: 12, isPrivate: true });
+    db.query.organizationMembers.findFirst.mockResolvedValue({ id: 1 });
+    db.query.chatChannelMembers.findFirst.mockResolvedValue(undefined);
+
+    await expect(service.setTyping(12, "org-1", "user-2")).rejects.toThrow(NotFoundException);
   });
 });

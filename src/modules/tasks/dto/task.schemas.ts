@@ -9,7 +9,7 @@ export const listSchema = z.object({
   entityId: z.string().optional(),
   limit: pageSizeField(50, 100),
   cursor: z.string().optional(),
-});
+}).strict();
 
 export const createSchema = z.object({
   title: z.string().min(1).max(255),
@@ -21,7 +21,7 @@ export const createSchema = z.object({
   dueDate: z.string().datetime({ offset: true }).optional(),
   remindAt: z.string().datetime({ offset: true }).optional(),
   timezone: z.string().optional(),
-});
+}).strict();
 
 export const updateSchema = z.object({
   title: z.string().min(1).max(255).optional(),
@@ -32,15 +32,15 @@ export const updateSchema = z.object({
   dueDate: z.string().datetime({ offset: true }).nullable().optional(),
   remindAt: z.string().datetime({ offset: true }).nullable().optional(),
   timezone: z.string().optional(),
-});
+}).strict();
 
 export const completeSchema = z.object({
   completedAt: z.string().datetime({ offset: true }).optional(),
-});
+}).strict();
 
 export const analyticsSchema = z.object({
   days: z.coerce.number().int().min(1).max(90).default(30),
-});
+}).strict();
 
 const stepSchema = z.object({
   title: z.string().min(1),
@@ -52,20 +52,22 @@ const stepSchema = z.object({
 
 export const sequenceListSchema = z.object({
   limit: pageSizeField(100),
-});
+}).strict();
 
 export const sequenceCreateSchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().optional(),
-  steps: z.array(stepSchema).min(1),
-});
+  // A sequence expands to one task row per step on every apply, so an
+  // uncapped array is an unbounded write batch behind one request.
+  steps: z.array(stepSchema).min(1).max(100),
+}).strict();
 
 export const sequenceApplySchema = z.object({
   baseDate: z.string().datetime({ offset: true }),
   entityType: z.enum(["LEAD", "DEAL", "CONTACT", "PROJECT"]).optional(),
   entityId: z.number().int().optional(),
   assigneeId: z.string().optional(),
-});
+}).strict();
 
 export type ListInput = z.infer<typeof listSchema>;
 export type CreateInput = z.infer<typeof createSchema>;

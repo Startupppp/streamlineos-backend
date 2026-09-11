@@ -1,12 +1,15 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, desc, eq, inArray, isNull, lt } from "drizzle-orm";
-import { notifications, projectApprovals, users } from "../../db/schema";
+import { and, count, eq, inArray, isNull } from "drizzle-orm";
+import { notifications, projectApprovals, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AccessService } from "../access/access.service";
 import { actingMembershipId } from "../../common/auth/principal";
+import { assertNever } from "../../common/types/assert-never";
 import { MailService } from "../mail/mail.service";
+import { KIND_ORDER, deduplicate, stableSortItems } from "./unified-inbox-projections";
 import { BroadcastsService } from "./broadcasts.service";
+import { fetchBroadcastItems, fetchNotificationItems } from "./unified-inbox-sources";
 import { BuildApprovalsInboxService } from "../build/approvals/build-approvals-inbox.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import {
@@ -33,61 +36,6 @@ export type UnifiedUnreadCount = {
 };
 
 const MAIL_COUNT_SCAN_LIMIT = 100;
-
-function assertNever(x: never): never {
-  throw new Error(`Unhandled union member: ${String(x)}`);
-}
-
-const KIND_ORDER: Record<InboxKind, number> = {
-  notification: 0,
-  broadcast: 1,
-  mail: 2,
-  build_approval: 3,
-};
-
-function stableSortItems(items: UnifiedInboxItem[]): UnifiedInboxItem[] {
-  return [...items].sort((a, b) => {
-    const tDiff = b.timestamp.localeCompare(a.timestamp);
-    if (tDiff !== 0) return tDiff;
-    const kDiff = (KIND_ORDER[a.kind] ?? 99) - (KIND_ORDER[b.kind] ?? 99);
-    if (kDiff !== 0) return kDiff;
-    return String(b.id).localeCompare(String(a.id));
-  });
-}
-
-function deduplicate(items: UnifiedInboxItem[]): UnifiedInboxItem[] {
-  const seen = new Set<string>();
-  const out: UnifiedInboxItem[] = [];
-  for (const item of items) {
-    if (!seen.has(item.dedupKey)) {
-      seen.add(item.dedupKey);
-      out.push(item);
-    }
-  }
-  return out;
-}
-
-const NOTIF_COLUMNS = {
-  id: notifications.id,
-  type: notifications.type,
-  priority: notifications.priority,
-  category: notifications.category,
-  sourceModule: notifications.sourceModule,
-  eventKey: notifications.eventKey,
-  title: notifications.title,
-  message: notifications.message,
-  link: notifications.link,
-  isRead: notifications.isRead,
-  pinned: notifications.pinned,
-  createdAt: notifications.createdAt,
-  actorUserId: notifications.actorUserId,
-} as const;
-
-const ACTOR_COLUMNS = {
-  actorId: users.id,
-  actorName: users.name,
-  actorImage: users.image,
-} as const;
 
 @Injectable()
 export class UnifiedInboxService {
@@ -144,29 +92,35 @@ export class UnifiedInboxService {
       },
     ];
 
+    const emptyNotifications: NotificationInboxItem[] = [];
+    const emptyBroadcasts: BroadcastInboxItem[] = [];
+    const emptyMailResult: { items: MailInboxItem[]; nextMailCursor: string | null } = {
+      items: [],
+      nextMailCursor: null,
+    };
+    const emptyApprovals: BuildApprovalInboxItem[] = [];
+
     const [notifItems, broadcastItems, mailResult, approvalItems] =
       await Promise.all([
         wantsNotifications
-          ? this.fetchNotifications(
+          ? fetchNotificationItems(
+              this.db,
               orgId,
-              userId,
+              actingMembershipId(user.principal),
               limit + 1,
               cursorState.n,
               query.unreadOnly ?? false,
             )
-          : ([] as NotificationInboxItem[]),
+          : emptyNotifications,
         wantsBroadcasts
-          ? this.fetchBroadcasts(orgId, userId, limit + 1, cursorState.b, actingMembershipId(user.principal))
-          : ([] as BroadcastInboxItem[]),
+          ? fetchBroadcastItems(this.broadcasts, orgId, userId, limit + 1, cursorState.b, actingMembershipId(user.principal))
+          : emptyBroadcasts,
         wantsMail && canViewMail
           ? this.fetchMail(orgId, userId, actingMembershipId(user.principal), limit + 1, cursorState.m)
-          : {
-              items: [] as MailInboxItem[],
-              nextMailCursor: null as string | null,
-            },
+          : emptyMailResult,
         wantsBuildApprovals && canViewBuildApprovals
           ? this.fetchBuildApprovals(orgId, userId, actingMembershipId(user.principal), limit + 1, cursorState.a)
-          : ([] as BuildApprovalInboxItem[]),
+          : emptyApprovals,
       ]);
 
     const merged = stableSortItems([
@@ -193,12 +147,50 @@ export class UnifiedInboxService {
       .reverse()
       .find((i): i is BuildApprovalInboxItem => i.kind === "build_approval");
 
+    // Mail resumes from the last message actually DELIVERED, the way n/b/a do.
+    //
+    // It used to resume from `nextMailCursor` — the end of the batch it FETCHED.
+    // The merge keeps `limit` items out of four sources fetched at `limit + 1`
+    // each, so on any mixed page most of the mail batch is trimmed, and stepping
+    // the cursor past the whole batch meant those messages were never delivered
+    // to anyone. Silently: the reader sees a full page and scrolls on, and the
+    // gap widens by up to a page every time.
+    //
+    // A mail cursor cannot address a message inside its own batch — it is a map
+    // of per-account provider page tokens and skips — so the position after the
+    // delivered prefix is asked for rather than computed: one more read of
+    // exactly that prefix, whose `nextCursor` is the boundary wanted. It runs
+    // only on a page that actually trimmed mail, is bounded by `limit`, and on
+    // the mirror path it is the same indexed keyset walk the page itself used.
+    //
+    // The delivered count is the leading run that reached the page, not the
+    // total: the merge orders on (timestamp, kind, id) while the provider orders
+    // on date alone, so a timestamp tie could in principle place a later message
+    // ahead of an earlier one. Counting the prefix re-delivers that one message
+    // rather than skipping the one behind it.
+    const deliveredMailKeys = new Set(
+      page
+        .filter((i): i is MailInboxItem => i.kind === "mail")
+        .map((i) => i.dedupKey),
+    );
+    let deliveredMail = 0;
+    while (
+      deliveredMail < mailResult.items.length &&
+      deliveredMailKeys.has(mailResult.items[deliveredMail].dedupKey)
+    )
+      deliveredMail++;
+
     const nextState: InboxCursorState = {
       n: lastNotif ? lastNotif.id : cursorState.n,
       b: lastBroadcast ? lastBroadcast.id : cursorState.b,
-      m: lastMail
-        ? (mailResult.nextMailCursor ?? cursorState.m)
-        : cursorState.m,
+      m: await this.nextMailPosition(
+        orgId,
+        userId,
+        actingMembershipId(user.principal),
+        cursorState.m,
+        mailResult,
+        deliveredMail,
+      ),
       a: lastApproval ? lastApproval.id : cursorState.a,
     };
 
@@ -222,89 +214,37 @@ export class UnifiedInboxService {
     }
   }
 
-  private async fetchNotifications(
+  /**
+   * Where the mail source should resume, given how much of the batch it fetched
+   * was actually delivered.
+   *
+   * Fully delivered — or nothing fetched at all — and the batch's own
+   * `nextMailCursor` is the answer. Partly delivered, and the boundary is
+   * re-read: `limit`-bounded, one read, and never on a page that trimmed no
+   * mail. Nothing delivered leaves the position untouched, so the same batch is
+   * offered again on the next page rather than being skipped.
+   */
+  private async nextMailPosition(
     orgId: string,
     userId: string,
-    fetchLimit: number,
-    cursor: number | null,
-    unreadOnly: boolean,
-  ): Promise<NotificationInboxItem[]> {
-    const rows = await this.db
-      .select({ ...NOTIF_COLUMNS, ...ACTOR_COLUMNS })
-      .from(notifications)
-      .leftJoin(users, eq(users.id, notifications.actorUserId))
-      .where(
-        and(
-          eq(notifications.orgId, orgId),
-          eq(notifications.userId, userId),
-          isNull(notifications.deletedAt),
-          isNull(notifications.archivedAt),
-          cursor !== null ? lt(notifications.id, cursor) : undefined,
-          unreadOnly ? eq(notifications.isRead, false) : undefined,
-        ),
-      )
-      .orderBy(desc(notifications.id))
-      .limit(fetchLimit);
-
-    return rows.map(
-      (row): NotificationInboxItem => ({
-        kind: "notification",
-        id: Number(row.id),
-        notifType: row.type,
-        priority: row.priority,
-        category: row.category,
-        sourceModule: row.sourceModule ?? "system",
-        eventKey: row.eventKey ?? null,
-        subject: row.title,
-        body: row.message,
-        deepLink: row.link ?? null,
-        isRead: row.isRead,
-        pinned: row.pinned,
-        timestamp: row.createdAt.toISOString(),
-        dedupKey: `notification:${String(row.id)}`,
-        actor: row.actorId
-          ? {
-              id: row.actorId,
-              name: row.actorName ?? null,
-              image: row.actorImage ?? null,
-            }
-          : null,
-      }),
-    );
-  }
-
-  private async fetchBroadcasts(
-    orgId: string,
-    userId: string,
-    fetchLimit: number,
-    cursor: number | null,
-    membershipId?: number | null,
-  ): Promise<BroadcastInboxItem[]> {
-    const rows = await this.broadcasts.listInboxPage(
+    membershipId: number | null,
+    current: string | null,
+    fetched: { items: MailInboxItem[]; nextMailCursor: string | null },
+    delivered: number,
+  ): Promise<string | null> {
+    if (fetched.items.length === 0) return current;
+    if (delivered === fetched.items.length) return fetched.nextMailCursor ?? current;
+    if (delivered === 0) return current;
+    const boundary = await this.mail.listMessages(
       orgId,
       userId,
-      fetchLimit,
-      cursor,
       membershipId,
+      "inbox",
+      "all",
+      delivered,
+      current ?? undefined,
     );
-
-    return rows.map(
-      (row): BroadcastInboxItem => ({
-        kind: "broadcast",
-        id: row.id,
-        notifType: row.type,
-        priority: row.priority,
-        category: row.category,
-        sourceModule: "notification",
-        subject: row.title,
-        body: row.message,
-        deepLink: null,
-        isRead: false,
-        dedupKey: `broadcast:${String(row.id)}`,
-        timestamp: (row.sentAt ?? row.createdAt).toISOString(),
-        actor: null,
-      }),
-    );
+    return boundary.nextCursor ?? current;
   }
 
   private async fetchMail(
@@ -360,7 +300,7 @@ export class UnifiedInboxService {
     ]);
 
     const [notifCount, mailCount, approvalCount] = await Promise.all([
-      this.countNotificationUnread(orgId, userId),
+      this.countNotificationUnread(orgId, actingMembershipId(user.principal)),
       canMail
         ? this.countMailUnread(orgId, userId, actingMembershipId(user.principal))
         : Promise.resolve({ unread: 0, exact: true }),
@@ -376,14 +316,40 @@ export class UnifiedInboxService {
     };
   }
 
-  private async countNotificationUnread(orgId: string, userId: string): Promise<number> {
+  /**
+   * Keyed on `membership_id`, not `user_id`, because every index on `notifications`
+   * leads `(org_id, membership_id, …)` and none mentions `user_id`.
+   *
+   * MEASURED on the shipped perf seed (a tenant with 240,000 notifications), as an
+   * EXPLAIN (ANALYZE, BUFFERS) of this exact predicate:
+   *
+   *   user_id       Seq Scan on EVERY monthly partition — 10,231 blocks, 15.4 ms
+   *   membership_id Index scan on idx_notifications_unread_count — 24 blocks, 0.5 ms
+   *
+   * 426x fewer blocks for one integer, and the user_id form grows linearly with the
+   * tenant's notification volume, on a badge that every authenticated page renders.
+   * This is the unmeasured twin of a defect already fixed once: GET
+   * /notifications/unread-count measured 10,234 blocks before it was re-keyed on
+   * membership_id and now measures 16 (.github/workflows/ci.yml:928).
+   *
+   * A principal with no membership (an API token) counts zero rather than scanning:
+   * `notifications.membership_id` is the recipient, so there is nothing to count.
+   * Rows whose `membership_id` is NULL are excluded, which is the same set
+   * `NotificationsReadService.queryUnreadCount` already excludes — the badge and the
+   * page it links to now agree instead of differing by those rows.
+   */
+  private async countNotificationUnread(
+    orgId: string,
+    membershipId: number | null,
+  ): Promise<number> {
+    if (membershipId === null) return 0;
     const rows = await this.db
       .select({ cnt: count() })
       .from(notifications)
       .where(
         and(
           eq(notifications.orgId, orgId),
-          eq(notifications.userId, userId),
+          eq(notifications.membershipId, membershipId),
           eq(notifications.isRead, false),
           isNull(notifications.deletedAt),
           isNull(notifications.archivedAt),
@@ -392,34 +358,37 @@ export class UnifiedInboxService {
     return Number(rows[0]?.cnt ?? 0);
   }
 
+  /**
+   * Counted against `mail_message_metadata` when every connected mailbox's copy
+   * of the inbox is fresh, and only then fanned out to the providers — see
+   * `MailService.countUnread`. This used to be the fanout unconditionally: a live
+   * Gmail/Graph fetch of `MAIL_COUNT_SCAN_LIMIT` messages per account, on a badge
+   * every authenticated page renders. The scan limit is now only the cold path's
+   * sample size.
+   */
   private async countMailUnread(
     orgId: string,
     userId: string,
     membershipId: number | null,
   ): Promise<{ unread: number; exact: boolean }> {
-    const result = await this.mail.listMessages(
-      orgId,
-      userId,
-      membershipId,
-      "inbox",
-      "all",
-      MAIL_COUNT_SCAN_LIMIT,
-      undefined,
-    );
-    return {
-      unread: result.messages.filter((m) => !m.isRead).length,
-      exact: result.messages.length < MAIL_COUNT_SCAN_LIMIT,
-    };
+    return this.mail.countUnread(orgId, userId, membershipId, "inbox", MAIL_COUNT_SCAN_LIMIT);
   }
 
   private async countApprovalPending(orgId: string, userId: string): Promise<number> {
     const rows = await this.db
       .select({ cnt: count() })
       .from(projectApprovals)
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, projectApprovals.orgId),
+          eq(organizationMembers.id, projectApprovals.approverMembershipId),
+        ),
+      )
       .where(
         and(
           eq(projectApprovals.orgId, orgId),
-          eq(projectApprovals.approverId, userId),
+          eq(organizationMembers.userId, userId),
           inArray(projectApprovals.status, ["pending", "escalated"]),
           isNull(projectApprovals.deletedAt),
         ),

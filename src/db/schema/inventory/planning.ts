@@ -23,7 +23,6 @@ export const invReorderRules = pgTable("inv_reorder_rules", {
 }, (table) => [
   uniqueIndex("uniq_inv_reorder_org_variant_wh").on(table.orgId, table.productVariantId, table.warehouseId),
   unique("uniq_inv_reorder_rules_org_id").on(table.orgId, table.id),
-  index("idx_inv_reorder_org").on(table.orgId),
   index("idx_inv_reorder_variant").on(table.productVariantId),
 ]);
 

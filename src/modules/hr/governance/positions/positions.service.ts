@@ -95,18 +95,19 @@ export class PositionsService {
         futureDated: input.futureDated ?? false,
       })
       .returning();
+    if (!position) throw new Error("Position insert did not return a row");
 
     await this.audit.log({
       orgId,
       actorId: userId,
       entityType: "hr_position",
-      entityId: String(position!.id),
+      entityId: String(position.id),
       action: "position.created",
       after: { title: input.title, status: input.status },
       ipAddress,
     });
 
-    return position!;
+    return position;
   }
 
   async update(
@@ -161,6 +162,7 @@ export class PositionsService {
       })
       .where(and(eq(hrPositions.orgId, orgId), eq(hrPositions.id, positionId)))
       .returning();
+    if (!updated) throw new Error("Position update did not return a row");
 
     await this.audit.log({
       orgId,
@@ -173,7 +175,7 @@ export class PositionsService {
       ipAddress,
     });
 
-    return updated!;
+    return updated;
   }
 
   async softDelete(
@@ -235,6 +237,7 @@ export class PositionsService {
       })
       .where(and(eq(hrPositions.orgId, orgId), eq(hrPositions.id, positionId)))
       .returning();
+    if (!updated) throw new Error("Position assign update did not return a row");
 
     await this.audit.log({
       orgId,
@@ -247,7 +250,7 @@ export class PositionsService {
       ipAddress,
     });
 
-    return updated!;
+    return updated;
   }
 
   async listScenarios(orgId: string, input: ListScenariosInput) {
@@ -290,18 +293,19 @@ export class PositionsService {
         createdBy: userId,
       })
       .returning();
+    if (!scenario) throw new Error("Reorg scenario insert did not return a row");
 
     await this.audit.log({
       orgId,
       actorId: userId,
       entityType: "hr_reorg_scenario",
-      entityId: String(scenario!.id),
+      entityId: String(scenario.id),
       action: "reorg_scenario.created",
       after: { name: input.name },
       ipAddress,
     });
 
-    return scenario!;
+    return scenario;
   }
 
   async updateScenario(
@@ -328,6 +332,7 @@ export class PositionsService {
         ),
       )
       .returning();
+    if (!updated) throw new Error("Reorg scenario update did not return a row");
 
     await this.audit.log({
       orgId,
@@ -340,7 +345,7 @@ export class PositionsService {
       ipAddress,
     });
 
-    return updated!;
+    return updated;
   }
 
   async deleteScenario(
@@ -374,10 +379,12 @@ export class PositionsService {
   async simulateScenario(orgId: string, scenarioId: number) {
     const scenario = await this.getScenarioById(orgId, scenarioId);
 
-    const changes = scenario.changes as Record<string, unknown>;
+    const changes = scenario.changes;
 
-    const positionMoves = (changes["positionMoves"] as unknown[]) ?? [];
-    const reportingMoves = (changes["reportingMoves"] as unknown[]) ?? [];
+    const positionMovesRaw = changes["positionMoves"];
+    const positionMoves = Array.isArray(positionMovesRaw) ? positionMovesRaw : [];
+    const reportingMovesRaw = changes["reportingMoves"];
+    const reportingMoves = Array.isArray(reportingMovesRaw) ? reportingMovesRaw : [];
 
     return {
       scenarioId,

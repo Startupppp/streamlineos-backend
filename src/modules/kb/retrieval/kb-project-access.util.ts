@@ -1,5 +1,5 @@
 import { and, eq, isNull } from "drizzle-orm";
-import { projectMembers, projects } from "../../../db/schema";
+import { organizationMembers, projectMembers, projects } from "../../../db/schema";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
@@ -12,10 +12,18 @@ export async function getAccessibleProjectIds(
     .select({ id: projects.id })
     .from(projects)
     .innerJoin(projectMembers, eq(projectMembers.projectId, projects.id))
+    .innerJoin(
+      organizationMembers,
+      and(
+        eq(organizationMembers.orgId, projects.orgId),
+        eq(organizationMembers.id, projectMembers.membershipId),
+      ),
+    )
     .where(
       and(
         eq(projects.orgId, user.orgId),
-        eq(projectMembers.userId, user.userId),
+        eq(organizationMembers.userId, user.userId),
+        eq(organizationMembers.status, "ACTIVE"),
         isNull(projects.deletedAt),
       ),
     );

@@ -1,14 +1,4 @@
-import {
-  pgTable,
-  serial,
-  text,
-  integer,
-  boolean,
-  jsonb,
-  timestamp,
-  index,
-  unique,
-} from "drizzle-orm/pg-core";
+import { boolean, foreignKey, index, integer, jsonb, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../common/auth";
 import { supportTicketPriorityEnum } from "../common/enums";
@@ -37,7 +27,6 @@ export const supportBusinessHours = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
-    index("idx_support_business_hours_org").on(table.orgId),
     unique("uniq_support_business_hours_org_id").on(table.orgId, table.id),
   ],
 );
@@ -50,7 +39,7 @@ export const supportSlaPolicies = pgTable(
     name: text("name").notNull(),
     priority: supportTicketPriorityEnum("priority"),
     category: text("category"),
-    businessHoursId: integer("business_hours_id").references(() => supportBusinessHours.id, { onDelete: "set null" }),
+    businessHoursId: integer("business_hours_id"),
     firstResponseTargetMins: integer("first_response_target_mins").notNull(),
     resolutionTargetMins: integer("resolution_target_mins").notNull(),
     pauseStatuses: jsonb("pause_statuses").$type<string[]>().default(["WAITING"]).notNull(),
@@ -60,6 +49,7 @@ export const supportSlaPolicies = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.businessHoursId], foreignColumns: [supportBusinessHours.orgId, supportBusinessHours.id], name: "fk_support_sla_policies_business_hours_id_org" }).onDelete("set null"),
     index("idx_support_sla_policies_org_enabled").on(table.orgId, table.isEnabled),
     unique("uniq_support_sla_policies_org_id").on(table.orgId, table.id),
   ],

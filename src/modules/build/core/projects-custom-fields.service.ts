@@ -5,6 +5,8 @@ import type { Db } from "../../../db/drizzle.module";
 import { customFieldDefinitions } from "../../../db/schema/custom-field-engine";
 import { ticketCustomFieldValues, tickets } from "../../../db/schema";
 import type { CreateCustomFieldInput, UpdateCustomFieldInput, UpsertCustomFieldValuesInput } from "./dto/custom-fields.schemas";
+import { assertProjectInOrg } from "./project-access";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 const BUILD_ENTITY_TYPE = "build_ticket" as const;
 
@@ -41,6 +43,7 @@ export class ProjectsCustomFieldsService {
   }
 
   async listFields(orgId: string, projectId: number) {
+    await assertProjectInOrg(this.db, orgId, projectId);
     const rows = await this.db
       .select()
       .from(customFieldDefinitions)
@@ -56,6 +59,11 @@ export class ProjectsCustomFieldsService {
   }
 
   async createField(orgId: string, projectId: number, data: CreateCustomFieldInput) {
+    // `listFields` above already resolves the project. Without the same assertion here the row
+    // landed under the caller's own organisation carrying ANOTHER organisation's project id —
+    // 201 where the contract requires 404, and a definition addressed to a project that is not
+    // the tenant's.
+    await assertProjectInOrg(this.db, orgId, projectId);
     const [field] = await this.db
       .insert(customFieldDefinitions)
       .values({
@@ -73,8 +81,8 @@ export class ProjectsCustomFieldsService {
         isActive: true,
       })
       .returning()
-      .catch((e: { code?: string }) => {
-        if (e.code === "23505") {
+      .catch((e: unknown) => {
+        if (isUniqueViolation(e)) {
           throw new ConflictException(`A custom field named "${data.name}" already exists in this project`);
         }
         throw e;
@@ -105,8 +113,8 @@ export class ProjectsCustomFieldsService {
         ),
       )
       .returning()
-      .catch((e: { code?: string }) => {
-        if (e.code === "23505") {
+      .catch((e: unknown) => {
+        if (isUniqueViolation(e)) {
           throw new ConflictException(`A custom field with this name already exists in the project`);
         }
         throw e;

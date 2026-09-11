@@ -10,6 +10,7 @@ jest.mock("../../../integrations/core/composio.gateway", () => ({
 
 import { NotFoundException } from "@nestjs/common";
 import { KbRagService } from "./kb-rag.service";
+import { KbRagRetrievalService } from "./kb-rag-retrieval.service";
 import { SurveyAiService } from "./survey-ai.service";
 import { OrgFeaturesService } from "./org-features.service";
 import { MeetingsPrepService } from "./meetings-prep.service";
@@ -70,32 +71,38 @@ function makeFluentChain<T = unknown>(finalResult: T[]): FluentChain<T> {
 // ---------------------------------------------------------------------------
 
 describe("KbRagService tenant isolation", () => {
-  it("DENY: short-circuits when org has no published articles — embedQuery never called", async () => {
+  it("DENY: short-circuits when org has no published articles — embedQueryWithCredit never called", async () => {
     const noArticlesChain = makeFluentChain([]);
     const mockDb = {
       select: jest.fn().mockReturnValue(noArticlesChain),
       insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
     };
-    const mockEmbeddings = {
-      isConfigured: jest.fn().mockReturnValue(true),
-      embedQuery: jest.fn().mockResolvedValue([0.1, 0.2, 0.3]),
-      toVectorLiteral: jest.fn().mockReturnValue("[0.1,0.2,0.3]"),
-    };
     const mockGateway = {
-      invokeText: jest.fn().mockResolvedValue({ ok: true, data: "answer text" }),
+      invokeText: jest.fn(),
+      embedQueryWithCredit: jest.fn(),
+      isEmbeddingConfigured: jest.fn().mockReturnValue(true),
     };
+    const mockLedger = { reserve: jest.fn(), settle: jest.fn(), release: jest.fn() };
+    const mockUsageSvc = { track: jest.fn() };
 
+    const retrievalSvc = new KbRagRetrievalService(
+      mockDb as unknown as ConstructorParameters<typeof KbRagRetrievalService>[0],
+      mockGateway as unknown as ConstructorParameters<typeof KbRagRetrievalService>[1],
+    );
+    const limiterStub = { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
     const svc = new KbRagService(
-      mockDb as unknown as Db,
-      mockEmbeddings as unknown as ConstructorParameters<typeof KbRagService>[1],
-      mockGateway as unknown as ConstructorParameters<typeof KbRagService>[2],
+      retrievalSvc,
+      mockGateway as unknown as ConstructorParameters<typeof KbRagService>[1],
+      mockLedger as unknown as ConstructorParameters<typeof KbRagService>[2],
+      mockUsageSvc as unknown as ConstructorParameters<typeof KbRagService>[3],
+      limiterStub as never,
     );
 
     const result = await svc.answerQuestion({ orgId: OWNER_ORG, question: "What is X?" });
 
     expect(result.hasContext).toBe(false);
     expect(result.answer).toMatch(/couldn't find/i);
-    expect(mockEmbeddings.embedQuery).not.toHaveBeenCalled();
+    expect(mockGateway.embedQueryWithCredit).not.toHaveBeenCalled();
   });
 
   it("CONTROL: chunk query is scoped to owner org and answer is returned", async () => {
@@ -125,25 +132,33 @@ describe("KbRagService tenant isolation", () => {
       }),
       insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
     };
-    const mockEmbeddings = {
-      isConfigured: jest.fn().mockReturnValue(true),
-      embedQuery: jest.fn().mockResolvedValue([0.1, 0.2, 0.3]),
-      toVectorLiteral: jest.fn().mockReturnValue("[0.1,0.2,0.3]"),
-    };
     const mockGateway = {
       invokeText: jest.fn().mockResolvedValue({ ok: true, data: "answer text" }),
+      embedQueryWithCredit: jest.fn().mockResolvedValue({ ok: true, vector: [0.1, 0.2, 0.3], vectorLiteral: "[0.1,0.2,0.3]" }),
+      isEmbeddingConfigured: jest.fn().mockReturnValue(true),
     };
+    const mockLedger = { reserve: jest.fn(), settle: jest.fn(), release: jest.fn() };
+    const mockUsageSvc = { track: jest.fn() };
 
+    const retrievalSvc = new KbRagRetrievalService(
+      mockDb as unknown as ConstructorParameters<typeof KbRagRetrievalService>[0],
+      mockGateway as unknown as ConstructorParameters<typeof KbRagRetrievalService>[1],
+    );
+    const limiterStub = { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
     const svc = new KbRagService(
-      mockDb as unknown as Db,
-      mockEmbeddings as unknown as ConstructorParameters<typeof KbRagService>[1],
-      mockGateway as unknown as ConstructorParameters<typeof KbRagService>[2],
+      retrievalSvc,
+      mockGateway as unknown as ConstructorParameters<typeof KbRagService>[1],
+      mockLedger as unknown as ConstructorParameters<typeof KbRagService>[2],
+      mockUsageSvc as unknown as ConstructorParameters<typeof KbRagService>[3],
+      limiterStub as never,
     );
 
     const result = await svc.answerQuestion({ orgId: OWNER_ORG, question: "What is X?" });
 
     expect(result.hasContext).toBe(true);
-    expect(mockEmbeddings.embedQuery).toHaveBeenCalledWith("What is X?");
+    expect(mockGateway.embedQueryWithCredit).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "What is X?", orgId: OWNER_ORG, charge: true }),
+    );
 
     // The chunk query's where predicate must scope to OWNER_ORG.
     const whereArg = fetchChunksChain.where.mock.calls[0]?.[0];

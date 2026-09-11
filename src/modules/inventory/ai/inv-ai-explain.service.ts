@@ -209,7 +209,7 @@ export class InvAiExplainService {
 
     if (!insight) throw new NotFoundException("Insight not found");
 
-    const sourceRefs = (insight.sourceRefs ?? {}) as Record<string, unknown>;
+    const sourceRefs = insight.sourceRefs ?? {};
 
     const result = await this.gateway.invokeStructured({
       actor: { orgId, userId },
@@ -333,7 +333,7 @@ export class InvAiExplainService {
 
     const filteredInsights = vendorId
       ? insightRows.filter((r) => {
-          const refs = (r.sourceRefs ?? {}) as Record<string, unknown>;
+          const refs = r.sourceRefs ?? {};
           return Number(refs["vendorId"]) === vendorId;
         })
       : insightRows;
@@ -344,7 +344,7 @@ export class InvAiExplainService {
     >();
 
     for (const insight of filteredInsights) {
-      const refs = (insight.sourceRefs ?? {}) as Record<string, unknown>;
+      const refs = insight.sourceRefs ?? {};
       const vId = Number(refs["vendorId"]);
       const vName = String(refs["vendorName"] ?? "Unknown");
       if (!vId) continue;

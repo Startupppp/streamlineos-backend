@@ -131,7 +131,7 @@ describe("Chat entity actions (e2e, no DB required)", () => {
     expect(res.status).toBe(404);
   });
 
-  it("refuses every action when the chat module is disabled", async () => {
+  it("chat is platform core: a member with no enabled modules is still served", async () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
 
     const res = await request(app.getHttpServer())
@@ -140,7 +140,22 @@ describe("Chat entity actions (e2e, no DB required)", () => {
       .set("Idempotency-Key", `chat-entity-${String(idempotencyKey++)}`)
       .send({ channelId: 1, reference: DEAL, actionId: "stage", input: {} });
 
-    expect(res.status).toBe(402);
+    expect(res.status).toBe(201);
+  });
+
+  it("channel membership is still the real gate: no modules + non-member yields 403", async () => {
+    members.assertChannelMembership.mockRejectedValue(
+      new ForbiddenException("You are not a member of this channel"),
+    );
+    const token = await signToken({ permissions: [], enabledModules: [] });
+
+    const res = await request(app.getHttpServer())
+      .post("/chat/entity-actions/submit")
+      .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", `chat-entity-${String(idempotencyKey++)}`)
+      .send({ channelId: 1, reference: DEAL, actionId: "stage", input: {} });
+
+    expect(res.status).toBe(403);
   });
 
   it("answers for a list of references in one call rather than one per reference", async () => {

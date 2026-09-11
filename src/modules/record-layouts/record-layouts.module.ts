@@ -21,6 +21,5 @@ import { RecordLayoutsService } from "./record-layouts.service";
 @Module({
   controllers: [RecordLayoutsController],
   providers: [RecordLayoutsService],
-  exports: [RecordLayoutsService],
 })
 export class RecordLayoutsModule {}

@@ -3,6 +3,7 @@ import type { Db } from "../../db/drizzle.module";
 import { WorkflowsSchedulesService } from "./workflows-schedules.service";
 import { WorkflowsSecretsService } from "./workflows-secrets.service";
 import { WorkflowsVariablesService } from "./workflows-variables.service";
+import { WORKFLOW_PERMISSIONS } from "../rbac/permissions/workflows";
 
 const OWNER_ORG = "org-owner-uuid";
 const ATTACKER_ORG = "org-attacker-uuid";
@@ -11,6 +12,8 @@ const SCHEDULE_ID = "sched-uuid-1";
 const SECRET_ID = "secret-uuid-1";
 const VARIABLE_ID = "var-uuid-1";
 
+const LIST_QUERY = { cursor: undefined, limit: 50 } as const;
+
 describe("WorkflowsSchedulesService — cross-tenant isolation", () => {
   describe("listSchedules", () => {
     it("throws NotFoundException when workflow belongs to a different org (cross-tenant isolation)", async () => {
@@ -18,14 +21,15 @@ describe("WorkflowsSchedulesService — cross-tenant isolation", () => {
       const db = { query: { workflows: { findFirst } } } as unknown as Db;
 
       const svc = new WorkflowsSchedulesService(db);
-      await expect(svc.listSchedules(ATTACKER_ORG, WORKFLOW_ID)).rejects.toThrow(NotFoundException);
+      await expect(svc.listSchedules(ATTACKER_ORG, WORKFLOW_ID, LIST_QUERY)).rejects.toThrow(NotFoundException);
     });
 
     it("returns schedules for the owning org (control — same-tenant access works)", async () => {
       const scheduleRow = { id: SCHEDULE_ID, orgId: OWNER_ORG, workflowId: WORKFLOW_ID };
       const findFirst = jest.fn().mockResolvedValue({ id: WORKFLOW_ID });
       const limit = jest.fn().mockResolvedValue([scheduleRow]);
-      const where = jest.fn().mockReturnValue({ limit });
+      const orderBy = jest.fn().mockReturnValue({ limit });
+      const where = jest.fn().mockReturnValue({ orderBy });
       const from = jest.fn().mockReturnValue({ where });
       const db = {
         query: { workflows: { findFirst } },
@@ -33,8 +37,8 @@ describe("WorkflowsSchedulesService — cross-tenant isolation", () => {
       } as unknown as Db;
 
       const svc = new WorkflowsSchedulesService(db);
-      const result = await svc.listSchedules(OWNER_ORG, WORKFLOW_ID);
-      expect(result).toEqual([scheduleRow]);
+      const result = await svc.listSchedules(OWNER_ORG, WORKFLOW_ID, LIST_QUERY);
+      expect(result.data).toEqual([scheduleRow]);
     });
   });
 
@@ -52,27 +56,26 @@ describe("WorkflowsSchedulesService — cross-tenant isolation", () => {
 
   describe("deleteSchedule", () => {
     it("throws NotFoundException when schedule belongs to a different org (cross-tenant isolation)", async () => {
-      const findFirst = jest.fn().mockResolvedValue(null);
+      const deleteWhere = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) });
       const db = {
         query: {
           workflows: { findFirst: jest.fn().mockResolvedValue({ id: WORKFLOW_ID }) },
-          workflowSchedules: { findFirst },
         },
+        delete: jest.fn().mockReturnValue({ where: deleteWhere }),
       } as unknown as Db;
 
       const svc = new WorkflowsSchedulesService(db);
       await expect(svc.deleteSchedule(ATTACKER_ORG, WORKFLOW_ID, SCHEDULE_ID)).rejects.toThrow(NotFoundException);
+      expect(deleteWhere).toHaveBeenCalledTimes(1);
     });
 
     it("deletes schedule for the owning org (control)", async () => {
       const workflowFindFirst = jest.fn().mockResolvedValue({ id: WORKFLOW_ID });
-      const scheduleFindFirst = jest.fn().mockResolvedValue({ id: SCHEDULE_ID });
-      const deleteWhere = jest.fn().mockResolvedValue([]);
+      const deleteWhere = jest
+        .fn()
+        .mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: SCHEDULE_ID }]) });
       const db = {
-        query: {
-          workflows: { findFirst: workflowFindFirst },
-          workflowSchedules: { findFirst: scheduleFindFirst },
-        },
+        query: { workflows: { findFirst: workflowFindFirst } },
         delete: jest.fn().mockReturnValue({ where: deleteWhere }),
       } as unknown as Db;
 
@@ -90,7 +93,7 @@ describe("WorkflowsSecretsService — cross-tenant isolation and secret redactio
       const db = { query: { workflows: { findFirst } } } as unknown as Db;
 
       const svc = new WorkflowsSecretsService(db);
-      await expect(svc.listSecrets(ATTACKER_ORG, WORKFLOW_ID)).rejects.toThrow(NotFoundException);
+      await expect(svc.listSecrets(ATTACKER_ORG, WORKFLOW_ID, LIST_QUERY)).rejects.toThrow(NotFoundException);
     });
 
     it("never includes encryptedValue in the returned rows (same-tenant control)", async () => {
@@ -104,7 +107,8 @@ describe("WorkflowsSecretsService — cross-tenant isolation and secret redactio
       };
       const findFirst = jest.fn().mockResolvedValue({ id: WORKFLOW_ID });
       const limit = jest.fn().mockResolvedValue([secretRow]);
-      const where = jest.fn().mockReturnValue({ limit });
+      const orderBy = jest.fn().mockReturnValue({ limit });
+      const where = jest.fn().mockReturnValue({ orderBy });
       const from = jest.fn().mockReturnValue({ where });
       const db = {
         query: { workflows: { findFirst } },
@@ -112,10 +116,10 @@ describe("WorkflowsSecretsService — cross-tenant isolation and secret redactio
       } as unknown as Db;
 
       const svc = new WorkflowsSecretsService(db);
-      const result = await svc.listSecrets(OWNER_ORG, WORKFLOW_ID);
+      const result = await svc.listSecrets(OWNER_ORG, WORKFLOW_ID, LIST_QUERY);
       expect(JSON.stringify(result)).not.toContain("encryptedValue");
       expect(JSON.stringify(result)).not.toContain("encrypted_value");
-      expect(result[0]).not.toHaveProperty("encryptedValue");
+      expect(result.data[0]).not.toHaveProperty("encryptedValue");
     });
   });
 
@@ -163,7 +167,7 @@ describe("WorkflowsSecretsService — cross-tenant isolation and secret redactio
       } as unknown as Db;
 
       const svc = new WorkflowsSecretsService(db);
-      const result = await svc.listGlobalSecrets(OWNER_ORG);
+      const result = await svc.listGlobalSecrets(OWNER_ORG, LIST_QUERY);
       expect(JSON.stringify(result)).not.toContain("encryptedValue");
       expect(JSON.stringify(result)).not.toContain("encrypted_value");
     });
@@ -171,20 +175,21 @@ describe("WorkflowsSecretsService — cross-tenant isolation and secret redactio
 
   describe("deleteGlobalSecret", () => {
     it("throws NotFoundException when secret belongs to a different org (cross-tenant isolation)", async () => {
-      const findFirst = jest.fn().mockResolvedValue(null);
+      const deleteWhere = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) });
       const db = {
-        query: { workflowSecrets: { findFirst } },
+        delete: jest.fn().mockReturnValue({ where: deleteWhere }),
       } as unknown as Db;
 
       const svc = new WorkflowsSecretsService(db);
       await expect(svc.deleteGlobalSecret(ATTACKER_ORG, SECRET_ID)).rejects.toThrow(NotFoundException);
+      expect(deleteWhere).toHaveBeenCalledTimes(1);
     });
 
     it("deletes secret for the owning org (control)", async () => {
-      const findFirst = jest.fn().mockResolvedValue({ id: SECRET_ID });
-      const deleteWhere = jest.fn().mockResolvedValue([]);
+      const deleteWhere = jest
+        .fn()
+        .mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: SECRET_ID }]) });
       const db = {
-        query: { workflowSecrets: { findFirst } },
         delete: jest.fn().mockReturnValue({ where: deleteWhere }),
       } as unknown as Db;
 
@@ -248,6 +253,11 @@ describe("WorkflowsVariablesService — cross-tenant isolation", () => {
 
 describe("DataScope — not applicable to Workflows", () => {
   it("workflows are org-level resources with no user-scoped DataScope (own/team/all do not apply)", () => {
-    expect(true).toBe(true);
+    // Asserted expect(true).toBe(true). The claim is a property of the
+    // permission catalog: a scopable permission is exactly the one that carries
+    // own/team/all, so "DataScope does not apply" means none of these is scopable.
+    expect(WORKFLOW_PERMISSIONS.length).toBeGreaterThan(0);
+    const scopable = WORKFLOW_PERMISSIONS.filter((p) => p.scopable === true).map((p) => p.name);
+    expect(scopable).toEqual([]);
   });
 });

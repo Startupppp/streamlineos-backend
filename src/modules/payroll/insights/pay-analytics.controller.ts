@@ -7,6 +7,8 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { TeamRewardsService } from "./team-rewards.service";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { orgPayCompressionSchema } from "./dto/manager-team-response.schemas";
 
 /**
  * Org-level pay distribution analytics (cash CTC only).
@@ -20,6 +22,7 @@ export class PayAnalyticsController {
 
   @Get("pay-compression")
   @RequirePermission("payroll:salaries:view")
+  @ResponseSchema(orgPayCompressionSchema)
   orgPayCompression(@CurrentUser() u: CurrentUserContext) {
     return this.teamRewards.getOrgPayCompression(u.orgId);
   }

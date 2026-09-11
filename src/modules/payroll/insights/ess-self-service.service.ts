@@ -9,6 +9,7 @@ import {
 } from "../../../db/schema";
 import { LoansService } from "../hr-payroll/loans.service";
 import { ReimbursementsService } from "../hr-payroll/reimbursements.service";
+import { selfOnlyReimbursementsRead } from "../hr-payroll/reimbursements-scope";
 import { TaxService } from "../hr-payroll/tax.service";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import { type BankDetails } from "../../hr/onboarding/core/crypto.helpers";
@@ -16,6 +17,7 @@ import { syncCanonicalSensitiveFields } from "../../../common/hr/sync-canonical-
 import { detectScheme, validateSchemeCode } from "../../payroll/payout/lib/bank-validation";
 import type { EssBank } from "./dto/insights.schemas";
 import { EssService } from "./ess.service";
+import { multiplyDecimals, roundDecimal, toDecimal } from "../../accounting/core/money.util";
 
 @Injectable()
 export class EssSelfServiceService {
@@ -48,23 +50,26 @@ export class EssSelfServiceService {
   async listReimbursements(orgId: string, userId: string, membershipId: number | null, page = 1, limit = 50) {
     const toggles = await this.ess.getActiveToggles(orgId);
     if (!toggles.essAllowReimbursements) throw new ForbiddenException("Reimbursements are disabled");
-    return this.reimbursementsService.listReimbursements(orgId, userId, membershipId, "own", page, Math.min(limit, 100));
+    return this.reimbursementsService.listReimbursements(selfOnlyReimbursementsRead(orgId, userId), membershipId, page, Math.min(limit, 100));
   }
 
   async listLoans(orgId: string, userId: string, membershipId: number | null) {
     const toggles = await this.ess.getActiveToggles(orgId);
     if (!toggles.essAllowLoanRequests) throw new ForbiddenException("Loan requests are disabled");
     const loans = await this.loansService.listLoans(orgId, userId, membershipId, false);
-    return loans.map((l) => ({
+    return loans.items.map((l) => ({
       ...l,
-      balance: (((l.totalEmis ?? 0) - l.paidEmis) * parseFloat(l.emiAmount ?? "0")).toFixed(2),
+      balance: roundDecimal(
+        multiplyDecimals(String((l.totalEmis ?? 0) - l.paidEmis), toDecimal(l.emiAmount)),
+        2,
+      ),
     }));
   }
 
   async createLoan(orgId: string, userId: string, membershipId: number | null, body: { amount: number; reason: string; totalEmis: number }) {
     const toggles = await this.ess.getActiveToggles(orgId);
     if (!toggles.essAllowLoanRequests) throw new ForbiddenException("Loan requests are disabled");
-    return this.loansService.createLoan(orgId, userId, false, { amount: body.amount, reason: body.reason, totalEmis: body.totalEmis });
+    return this.loansService.createLoan(orgId, userId, membershipId, false, { amount: body.amount, reason: body.reason, totalEmis: body.totalEmis });
   }
 
   async getTaxDeclaration(orgId: string, userId: string) {

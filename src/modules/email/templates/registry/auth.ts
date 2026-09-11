@@ -1,20 +1,22 @@
 import {
   getVerificationEmailTemplate,
+  getVerificationEmailSubject,
   getMagicLinkEmailTemplate,
   getWelcomeEmailTemplate,
   getAccountDeactivationEmailTemplate,
   getAccountLockedEmailTemplate,
   getEmailOtpTemplate,
 } from "../index";
-import { BASE_URL, BRAND } from "./_shared";
-import type { TemplateEntry } from "./_shared";
+import { BASE_URL, BRAND, EMAIL_TEMPLATE_VERSION, defineTemplateFamily } from "./_shared";
+import { AUTH_TEMPLATE_LOCALES } from "../auth";
 
-export const authTemplates: Record<string, TemplateEntry> = {
+export const authTemplates = defineTemplateFamily({
   "auth.verify": {
     category: "Auth",
     name: "Email Verification",
-    subject: "Verify your email address",
-    generateHtml: () => getVerificationEmailTemplate(`${BASE_URL()}/verify-email?token=test-token`),
+    subject: (locale: string) => getVerificationEmailSubject(locale),
+    generateHtml: (locale?: string) => getVerificationEmailTemplate(`${BASE_URL()}/verify-email?token=test-token`, locale),
+    supportedLocales: AUTH_TEMPLATE_LOCALES,
   },
   "auth.magic_link": {
     category: "Auth",
@@ -47,4 +49,4 @@ export const authTemplates: Record<string, TemplateEntry> = {
     subject: "Your sign-in code",
     generateHtml: () => getEmailOtpTemplate("482917"),
   },
-};
+}, EMAIL_TEMPLATE_VERSION);

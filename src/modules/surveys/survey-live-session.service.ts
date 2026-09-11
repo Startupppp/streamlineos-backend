@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { randomBytes } from "node:crypto";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { surveyLiveSessions, surveyForms, surveyQuestions, surveySections, surveyQuestionChoices } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -17,7 +17,7 @@ export class SurveyLiveSessionService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async create(orgId: string, surveyId: number, hostUserId: string, input: CreateLiveSessionInput) {
-    const survey = await this.db.query.surveyForms.findFirst({ where: and(eq(surveyForms.id, surveyId), eq(surveyForms.orgId, orgId)) });
+    const survey = await this.db.query.surveyForms.findFirst({ where: and(eq(surveyForms.id, surveyId), eq(surveyForms.orgId, orgId), isNull(surveyForms.archivedAt)) });
     if (!survey) throw new NotFoundException("Survey not found");
     if (!survey.activeVersionId) throw new BadRequestException("Survey must be published before starting a live session");
 
@@ -70,10 +70,24 @@ export class SurveyLiveSessionService {
 
   async start(orgId: string, sessionId: number) {
     const session = await this.get(orgId, sessionId);
-    const firstQuestion = await this.db.query.surveyQuestions.findFirst({
-      where: and(eq(surveyQuestions.orgId, session.orgId), eq(surveyQuestions.versionId, session.versionId)),
-      orderBy: [asc(surveySections.sortOrder), asc(surveyQuestions.sortOrder)],
-    });
+    const [firstQuestion] = await this.db
+      .select({ id: surveyQuestions.id })
+      .from(surveyQuestions)
+      .innerJoin(
+        surveySections,
+        and(
+          eq(surveySections.id, surveyQuestions.sectionId),
+          eq(surveySections.orgId, surveyQuestions.orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(surveyQuestions.orgId, session.orgId),
+          eq(surveyQuestions.versionId, session.versionId),
+        ),
+      )
+      .orderBy(asc(surveySections.sortOrder), asc(surveyQuestions.sortOrder))
+      .limit(1);
     const [updated] = await this.db
       .update(surveyLiveSessions)
       .set({ status: "active", startedAt: new Date(), currentQuestionId: firstQuestion?.id ?? null })

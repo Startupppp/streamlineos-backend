@@ -1,15 +1,19 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   projectAutomations,
+  projectStatuses,
   ticketComments,
   ticketLabelMappings,
   ticketLabels,
   tickets,
+  organizationMembers,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
+import { reserveTicketCapacity } from "./build-ticket-capacity";
 import {
   evaluateNormalizedCondition,
   type ConditionOp,
@@ -112,23 +116,54 @@ export class BuildAutomationRunnerService {
 
   private async executeAction(
     orgId: string,
+    projectId: number,
     ticketId: number,
+    ruleId: number,
     action: StoredAction,
     authorId: string | null,
   ): Promise<void> {
-    const ticketWhere = and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId));
+    const ticketWhere = and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), isNull(tickets.deletedAt));
     switch (action.type) {
       case "set_status": {
-        await this.db
-          .update(tickets)
-          .set({ status: action.value, updatedAt: new Date() })
-          .where(ticketWhere);
+        const statusExists = await this.db.query.projectStatuses.findFirst({
+          where: and(
+            eq(projectStatuses.orgId, orgId),
+            eq(projectStatuses.projectId, projectId),
+            eq(projectStatuses.name, action.value),
+          ),
+          columns: { id: true },
+        });
+        if (!statusExists) {
+          logger.warn("BuildAutomationRunner: set_status skipped — status does not exist in project", {
+            ruleId,
+            projectId,
+            orgId,
+            status: action.value,
+          });
+          return;
+        }
+        await this.db.transaction(async tx => {
+          await reserveTicketCapacity(tx, orgId, projectId, [{ status: action.value, count: 1 }], [ticketId]);
+          await tx.update(tickets)
+            .set({ status: action.value, updatedAt: new Date(), version: sql`${tickets.version} + 1` })
+            .where(ticketWhere);
+        });
         return;
       }
       case "set_assignee": {
         await this.db
           .update(tickets)
-          .set({ assigneeId: action.value, updatedAt: new Date() })
+          .set({
+            assigneeMembershipId: (await this.db.query.organizationMembers.findFirst({
+              where: and(
+                eq(organizationMembers.orgId, orgId),
+                eq(organizationMembers.userId, action.value),
+                eq(organizationMembers.status, "ACTIVE"),
+              ),
+              columns: { id: true },
+            }))?.id ?? null,
+            updatedAt: new Date(),
+          })
           .where(ticketWhere);
         return;
       }
@@ -198,7 +233,7 @@ export class BuildAutomationRunnerService {
         if (!matched) continue;
 
         for (const action of rule.actions) {
-          await this.executeAction(orgId, ticket.ticketId, action, rule.createdBy).catch(
+          await this.executeAction(orgId, ticket.projectId, ticket.ticketId, rule.id, action, rule.createdBy).catch(
             (error: unknown) => {
               logger.error("BuildAutomationRunner: action failed", {
                 ruleId: rule.id,
@@ -214,19 +249,31 @@ export class BuildAutomationRunnerService {
     }
   }
 
+  /**
+   * Automation actions write tickets, labels and comments, so they must not be
+   * fired into the request's own transaction and left to race its COMMIT. The
+   * DRIZZLE handle is the tenant-aware proxy: a promise started here and resumed
+   * after the handler returns still resolves `this.db` to the ambient `tx`, which
+   * by then is committed and has lost its GUC, so the write dies 42501 and the
+   * rule silently never applies. Deferring also means a rolled-back ticket write
+   * cannot leave its automations applied. CLAUDE.md §4, mechanism 3.
+   */
   runForTicketEvent(
     orgId: string,
     projectId: number,
     triggerEvent: string,
     ticket: TicketEventPayload,
   ): void {
-    void this.execute(orgId, projectId, triggerEvent, ticket).catch((error: unknown) => {
-      logger.error("BuildAutomationRunner: unexpected failure", {
-        orgId,
-        projectId,
-        triggerEvent,
-        error,
+    const run = (): Promise<void> =>
+      this.execute(orgId, projectId, triggerEvent, ticket).catch((error: unknown) => {
+        logger.error("BuildAutomationRunner: unexpected failure", {
+          orgId,
+          projectId,
+          triggerEvent,
+          error,
+        });
       });
-    });
+
+    if (!registerAfterCommit(run)) void run();
   }
 }

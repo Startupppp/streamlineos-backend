@@ -6,7 +6,8 @@ import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import { billingSeatEvents } from "../../../db/schema";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { readCount } from "./quota-counts";
-import { SEAT_EVENT_DELTAS, lockMembersQuota, seatCount, type SeatEventType } from "./seat-definition";
+import { SEAT_EVENT_DELTAS, SEAT_EVENT_TYPES, lockMembersQuota, seatCount, type SeatEventType } from "./seat-definition";
+import { assertOneOf } from "./lib/enum-guard";
 
 export interface SeatEventInput {
   orgId: string;
@@ -54,6 +55,47 @@ export class SeatLedgerService {
   async recordSeatEvent(input: SeatEventInput, executor?: DbOrTx): Promise<SeatEventRecord> {
     if (executor) return this.write(executor, input);
     return runInTenantTransaction(this.db, (tx) => this.write(tx, input), { orgId: input.orgId });
+  }
+
+  /**
+   * The batched form for an import: one lock, one count and one multi-row INSERT
+   * for a whole batch that shares an organisation, instead of three statements
+   * per subject. Callers must already hold the transaction that inserted the
+   * memberships, so the count is read after them exactly as the single-row path
+   * reads it.
+   */
+  async recordSeatEvents(
+    tx: DbOrTx,
+    orgId: string,
+    inputs: readonly Omit<SeatEventInput, "orgId">[],
+  ): Promise<void> {
+    if (inputs.length === 0) return;
+
+    await tx.execute(lockMembersQuota(orgId));
+    const countRows = await tx.execute(sql`SELECT ${seatCount(orgId)} AS count`);
+    const billedQuantityAfter = readCount(countRows, "count");
+    const now = new Date();
+
+    await tx
+      .insert(billingSeatEvents)
+      .values(
+        inputs.map((input) => ({
+          orgId,
+          eventType: input.eventType,
+          subjectId: input.subjectId,
+          actorId: input.actorId ?? null,
+          reason: input.reason ?? null,
+          idempotencyKey: input.idempotencyKey ?? null,
+          effectiveAt: input.effectiveAt ?? now,
+          quantityDelta: SEAT_EVENT_DELTAS[input.eventType],
+          billedQuantityAfter,
+          metadata: input.metadata ?? null,
+        })),
+      )
+      .onConflictDoNothing({
+        target: [billingSeatEvents.orgId, billingSeatEvents.idempotencyKey],
+        where: sql`idempotency_key IS NOT NULL`,
+      });
   }
 
   private async write(tx: DbOrTx, input: SeatEventInput): Promise<SeatEventRecord> {
@@ -132,7 +174,11 @@ export class SeatLedgerService {
       .limit(1);
 
     if (!existing) return null;
-    return { ...existing, eventType: existing.eventType as SeatEventType, replayed: true };
+    return {
+      ...existing,
+      eventType: assertOneOf(SEAT_EVENT_TYPES, existing.eventType, "billing_seat_events.event_type"),
+      replayed: true,
+    };
   }
 
   async reconcileBilledQuantity(orgId: string): Promise<SeatReconciliation> {
@@ -211,7 +257,7 @@ export class SeatLedgerService {
 
         return rows.map((row) => ({
           ...row,
-          eventType: row.eventType as SeatEventType,
+          eventType: assertOneOf(SEAT_EVENT_TYPES, row.eventType, "billing_seat_events.event_type"),
           replayed: false,
         }));
       },

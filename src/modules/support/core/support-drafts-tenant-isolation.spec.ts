@@ -27,7 +27,7 @@ describe("SupportDraftsService — cross-tenant isolation", () => {
   it("returns null draft when ticket belongs to the owning org (control — same-tenant access works)", async () => {
     const db = makeDb({ id: 99 });
     const svc = new SupportDraftsService(db);
-    const result = await svc.getDraft(OWNER_ORG, 99, USER_ID, null);
+    const result = await svc.getDraft(OWNER_ORG, 99, USER_ID, 7);
     expect(result).toBeNull();
   });
 });

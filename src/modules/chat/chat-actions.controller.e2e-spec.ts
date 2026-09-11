@@ -76,20 +76,33 @@ describe("ChatActions auth (e2e, no DB required)", () => {
     const res = await request(app.getHttpServer())
       .post("/chat/actions/create-task-from-message")
       .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", "test-key-not-a-member-403")
       .send(BODY);
 
     expect(res.status).toBe(403);
   });
 
-  it("402 when the chat module is disabled", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+  it("400 when Idempotency-Key is missing on a mutating request", async () => {
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
 
     const res = await request(app.getHttpServer())
       .post("/chat/actions/create-task-from-message")
       .set("Authorization", `Bearer ${token}`)
       .send(BODY);
 
-    expect(res.status).toBe(402);
+    expect(res.status).toBe(400);
+  });
+
+  it("chat is platform core: a member with no enabled modules is still served", async () => {
+    const token = await signToken({ permissions: [], enabledModules: [] });
+
+    const res = await request(app.getHttpServer())
+      .post("/chat/actions/create-task-from-message")
+      .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", "test-key-no-modules-201")
+      .send(BODY);
+
+    expect(res.status).toBe(201);
   });
 
   it("leaves the create refusal to the adapter that owns the record", async () => {
@@ -99,6 +112,7 @@ describe("ChatActions auth (e2e, no DB required)", () => {
     const res = await request(app.getHttpServer())
       .post("/chat/actions/create-task-from-message")
       .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", "test-key-adapter-refusal-403")
       .send(BODY);
 
     expect(res.status).toBe(403);
@@ -111,6 +125,7 @@ describe("ChatActions auth (e2e, no DB required)", () => {
     const res = await request(app.getHttpServer())
       .post("/chat/actions/create-task-from-message")
       .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", "test-key-unreadable-message-403")
       .send(BODY);
 
     expect(res.status).toBe(403);
@@ -122,6 +137,7 @@ describe("ChatActions auth (e2e, no DB required)", () => {
     await request(app.getHttpServer())
       .post("/chat/actions/create-task-from-message")
       .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", "test-key-passes-description")
       .send(BODY);
 
     expect(entities.submitAction).toHaveBeenCalledWith(

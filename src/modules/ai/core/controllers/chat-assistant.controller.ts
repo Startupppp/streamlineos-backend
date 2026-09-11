@@ -6,17 +6,17 @@ import {
   ForbiddenException,
   Get,
   HttpCode,
-  Inject,
-  InternalServerErrorException,
   Param,
   Patch,
   Post,
   Query,
+  Req,
   Res,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
 import { ModuleRef } from "@nestjs/core";
-import type { Response } from "express";
+import type { Request, Response } from "express";
 import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../../access/permission.guard";
 import { RequirePermission } from "../../../access/require-permission.decorator";
@@ -25,7 +25,6 @@ import { UseRateLimit } from "../../../../common/ratelimit/use-rate-limit.decora
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { NoTenantTransaction } from "../../../../common/tenant";
-import { logger } from "../../../../common/logger/logger.service";
 import { z } from "zod";
 import { ChatAssistantService } from "../services/chat-assistant.service";
 import { ChatHistoryService } from "../services/chat-history.service";
@@ -35,29 +34,47 @@ import { ProjectsTicketsService } from "../../../build/core/projects-tickets.ser
 import { ProjectsTicketCommentsService } from "../../../build/core/projects-ticket-comments.service";
 import { CalendarService } from "../../../calendar/calendar.service";
 import { EmailOutboxService } from "../../../email/email-outbox.service";
+import { escapeHtml } from "../../../email/templates/base";
 import { ChatMessagesService } from "../../../chat/chat-messages.service";
 import { EngagementService } from "../../../hr/performance/engagement.service";
 import { BonusesService } from "../../../payroll/hr-payroll/bonuses.service";
 import { createBonusSchema } from "../../../payroll/hr-payroll/dto/payroll.schemas";
 import { MailService } from "../../../mail/mail.service";
 import { MailAccountsService } from "../../../mail/mail-accounts.service";
-import { tickets } from "../../../../db/schema";
-import { DRIZZLE } from "../../../../db/drizzle.constants";
-import { type Db } from "../../../../db/drizzle.module";
-import { and, eq } from "drizzle-orm";
 import type { CreateRecognitionInput } from "../../../hr/performance/dto/engagement.schemas";
 import {
   chatHistoryQuerySchema,
   chatRequestSchema,
+  confirmActionBodySchema,
   conversationCreateSchema,
   conversationMessagesQuerySchema,
   conversationRenameSchema,
   conversationsListQuerySchema,
+  mailSendPayloadSchema,
+  ticketStatusUpdatePayloadSchema,
 } from "../dto/request.schemas";
 import { ToolAccessService } from "../tool-access.service";
 import { AI_EVENT_TIMEZONE } from "../ai-event-timezone";
 import { Validate } from "../../../../common/validation/validate.decorator";
 import { actingMembershipId } from "../../../../common/auth/principal";
+import {
+  createStreamAbortSignal,
+  pipeAiUiMessageStream,
+  rethrowStreamRouteError,
+} from "../streaming";
+import { AiRequestAbortInterceptor } from "../streaming";
+import { ApiOkResponse } from "@nestjs/swagger";
+import { ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
+import {
+  chatHistoryResponseSchema,
+  chatClearHistoryResponseSchema,
+  listConversationsResponseSchema,
+  aiConversationSchema,
+  deleteConversationResponseSchema,
+  confirmActionResponseSchema,
+} from "../dto/ai-response.schemas";
+
+export const CHAT_STREAM_DEADLINE_MS = 120_000;
 
 const conversationIdParams = z.object({ conversationId: z.string().min(1) }).strict();
 
@@ -69,19 +86,21 @@ type TicketType = (typeof TICKET_TYPES)[number];
 type TicketPriority = (typeof TICKET_PRIORITIES)[number];
 type RecognitionCategory = (typeof RECOGNITION_CATEGORIES)[number];
 
+function pickFromEnum<T extends string>(candidates: readonly T[], v: unknown, fallback: T): T {
+  const s = String(v ?? fallback).toUpperCase();
+  return candidates.find((candidate) => candidate === s) ?? fallback;
+}
+
 function pickTicketType(v: unknown): TicketType {
-  const s = String(v ?? "TASK").toUpperCase();
-  return (TICKET_TYPES as readonly string[]).includes(s) ? (s as TicketType) : "TASK";
+  return pickFromEnum(TICKET_TYPES, v, "TASK");
 }
 
 function pickPriority(v: unknown): TicketPriority {
-  const s = String(v ?? "MEDIUM").toUpperCase();
-  return (TICKET_PRIORITIES as readonly string[]).includes(s) ? (s as TicketPriority) : "MEDIUM";
+  return pickFromEnum(TICKET_PRIORITIES, v, "MEDIUM");
 }
 
 function pickCategory(v: unknown): RecognitionCategory {
-  const s = String(v ?? "KUDOS").toUpperCase();
-  return (RECOGNITION_CATEGORIES as readonly string[]).includes(s) ? (s as RecognitionCategory) : "KUDOS";
+  return pickFromEnum(RECOGNITION_CATEGORIES, v, "KUDOS");
 }
 
 const CONFIRMABLE_ACTIONS = [
@@ -98,14 +117,34 @@ const CONFIRMABLE_ACTIONS = [
 
 type ConfirmableAction = (typeof CONFIRMABLE_ACTIONS)[number];
 
-function isConfirmableAction(s: string): s is ConfirmableAction {
-  return (CONFIRMABLE_ACTIONS as readonly string[]).includes(s);
-}
+/**
+ * DELIBERATE, PENDING AN OWNER'S DECISION (findings register #241): "email.send"
+ * is gated on `chat:messages:write`, so anyone who may post a chat message may
+ * also send outbound email through `EmailOutboxService.enqueueAndTry`. The
+ * matching key is `mail:messages:send`, which "mail.send" below already uses.
+ * Tightening this key would lock out callers who use the path today, so it is
+ * left exactly as it was until an owner decides; do not "fix" it silently.
+ */
+const CONFIRM_ACTION_PERMISSION: Record<ConfirmableAction, string> = {
+  "ticket.create": "build:tickets:create",
+  "ticket.updateStatus": "build:tickets:update",
+  "ticket.addComment": "build:tickets:update",
+  "calendar.createReminder": "calendar:write",
+  "email.send": "chat:messages:write",
+  "chat.postChannel": "chat:messages:write",
+  "hr.grantRecognition": "hr:engagement:manage",
+  "hr.grantBonus": "hr:bonuses:manage",
+  "mail.send": "mail:messages:send",
+};
 
-const confirmActionBodySchema = z.object({ token: z.string().min(1) });
+
+function isConfirmableAction(s: string): s is ConfirmableAction {
+  return CONFIRMABLE_ACTIONS.some((action) => action === s);
+}
 
 @Controller("chat")
 @UseGuards(JwtAuthGuard, PermissionGuard)
+@UseInterceptors(AiRequestAbortInterceptor)
 export class ChatAssistantController {
   constructor(
     private readonly chat: ChatAssistantService,
@@ -114,11 +153,11 @@ export class ChatAssistantController {
     private readonly confirmation: AiConfirmationService,
     private readonly toolAccess: ToolAccessService,
     private readonly moduleRef: ModuleRef,
-    @Inject(DRIZZLE) private readonly db: Db,
   ) {}
 
   @Get("history")
   @RequirePermission("ai:chat:use")
+  @ResponseSchema(chatHistoryResponseSchema)
   async getHistory(@Query() query: unknown, @CurrentUser() u: CurrentUserContext) {
     const parsed = chatHistoryQuerySchema.safeParse(query);
     if (!parsed.success) throw new BadRequestException("Invalid query parameters");
@@ -130,6 +169,7 @@ export class ChatAssistantController {
 
   @Delete("history")
   @RequirePermission("ai:chat:use")
+  @ResponseSchema(chatClearHistoryResponseSchema)
   async clearHistory(@CurrentUser() u: CurrentUserContext): Promise<{ success: boolean }> {
     await this.history.clear(u.orgId, u.userId, actingMembershipId(u.principal) ?? 0);
     return { success: true };
@@ -137,6 +177,7 @@ export class ChatAssistantController {
 
   @Get("conversations")
   @RequirePermission("ai:chat:use")
+  @ResponseSchema(listConversationsResponseSchema)
   async listConversations(@Query() query: unknown, @CurrentUser() u: CurrentUserContext) {
     const parsed = conversationsListQuerySchema.safeParse(query);
     if (!parsed.success) throw new BadRequestException("Invalid query parameters");
@@ -149,8 +190,9 @@ export class ChatAssistantController {
   @Post("conversations")
   @HttpCode(201)
   @RequirePermission("ai:chat:use")
+  @ResponseSchema(aiConversationSchema)
   @Validate({ body: conversationCreateSchema })
-  async createConversation(@Body() body: unknown, @CurrentUser() u: CurrentUserContext) {
+  async createConversation(@Body() body: z.infer<typeof conversationCreateSchema>, @CurrentUser() u: CurrentUserContext) {
     const parsed = conversationCreateSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException("Invalid request body");
     return this.history.createConversation(u.orgId, u.userId, actingMembershipId(u.principal) ?? 0, parsed.data.title);
@@ -158,10 +200,11 @@ export class ChatAssistantController {
 
   @Patch("conversations/:conversationId")
   @RequirePermission("ai:chat:use")
+  @ResponseSchema(aiConversationSchema)
   @Validate({ params: conversationIdParams, body: conversationRenameSchema })
   async renameConversation(
     @Param("conversationId") conversationIdParam: string,
-    @Body() body: unknown,
+    @Body() body: z.infer<typeof conversationRenameSchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const conversationId = parseInt(conversationIdParam, 10);
@@ -173,6 +216,7 @@ export class ChatAssistantController {
 
   @Delete("conversations/:conversationId")
   @RequirePermission("ai:chat:use")
+  @ResponseSchema(deleteConversationResponseSchema)
   @Validate({ params: conversationIdParams })
   async deleteConversation(
     @Param("conversationId") conversationIdParam: string,
@@ -186,6 +230,7 @@ export class ChatAssistantController {
 
   @Get("conversations/:conversationId/messages")
   @RequirePermission("ai:chat:use")
+  @ResponseSchema(chatHistoryResponseSchema)
   @Validate({ params: conversationIdParams })
   async getConversationMessages(
     @Param("conversationId") conversationIdParam: string,
@@ -207,9 +252,11 @@ export class ChatAssistantController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:chat")
   @NoTenantTransaction()
+  @ApiOkResponse({ description: "AI UI message stream", content: { "text/event-stream": { schema: { type: "string" } } } })
   @Validate({ body: chatRequestSchema })
   async chatAssistant(
-    @Body() body: unknown,
+    @Req() req: Request,
+    @Body() body: z.infer<typeof chatRequestSchema>,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ): Promise<void> {
@@ -221,24 +268,29 @@ export class ChatAssistantController {
       throw new ForbiddenException("AI chat is disabled for this organization.");
     }
 
+    const abort = createStreamAbortSignal(req, res, CHAT_STREAM_DEADLINE_MS);
+
     try {
       const result = await this.chat.processChat(
         parsed.data.messages,
         u,
         parsed.data.conversationId,
         parsed.data.persona,
+        abort.signal,
       );
-      result.pipeTextStreamToResponse(res);
+      await pipeAiUiMessageStream(res, result, { feature: "ai.chat", orgId: u.orgId });
     } catch (error) {
-      logger.error("Chat route error", { error });
-      throw new InternalServerErrorException("Internal server error");
+      rethrowStreamRouteError(error, { route: "POST /chat" });
+    } finally {
+      abort.dispose();
     }
   }
 
   @Post("confirm")
   @RequirePermission("ai:chat:use")
+  @ResponseSchema(confirmActionResponseSchema)
   @Validate({ body: confirmActionBodySchema })
-  async confirmAction(@Body() body: unknown, @CurrentUser() u: CurrentUserContext) {
+  async confirmAction(@Body() body: z.infer<typeof confirmActionBodySchema>, @CurrentUser() u: CurrentUserContext) {
     const parsed = confirmActionBodySchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException("Invalid request body");
 
@@ -249,14 +301,18 @@ export class ChatAssistantController {
       throw new BadRequestException(`Unknown action type: ${action}`);
     }
 
-    const confirmedAction = action;
+    const denyReason = await this.toolAccess.denyReason(
+      u.orgId,
+      u.userId,
+      CONFIRM_ACTION_PERMISSION[action],
+    );
+    if (denyReason) throw new ForbiddenException(denyReason);
+
     let result: Record<string, unknown>;
     let summary: string;
 
-    switch (confirmedAction) {
+    switch (action) {
       case "ticket.create": {
-        const deny = await this.toolAccess.denyReason(u.orgId, u.userId, "build:tickets:create");
-        if (deny) throw new ForbiddenException(deny);
         const svc = this.moduleRef.get(ProjectsTicketsService, { strict: false });
         const createInput = {
           title: String(payload["title"]),
@@ -271,23 +327,37 @@ export class ChatAssistantController {
         break;
       }
 
+      /**
+       * Goes through the same service the other eight branches use.
+       *
+       * The branch used to be a raw `db.update(tickets).set({ status })`, which
+       * is not a shortcut to `updateTicket` — it is a different operation.
+       * It matched on `(id, org_id)` with no `deleted_at` predicate, so a
+       * soft-deleted ticket was updated; it skipped `checkProjectAccess`, so a
+       * caller holding `build:tickets:update` but no access to the ticket's
+       * project succeeded; it skipped `validateTicketStatus`,
+       * `enforceWipLimitForStatus` and `assertTransitionAllowed`, so an unknown
+       * status reached the composite FK `fk_tickets_status` as an opaque 500
+       * instead of `ProjectsInvalidTicketStatusException`; it left `updated_at`
+       * and `version` untouched, so the next optimistic check compared a stale
+       * timestamp; and it emitted no `build.ticket.status_changed` outbox row,
+       * no activity-log entry, no review notification, no automation run and no
+       * `projects:analytics:<org>:<project>` cache eviction — so the analytics
+       * panel served the pre-change status until the key expired.
+       */
       case "ticket.updateStatus": {
-        const deny = await this.toolAccess.denyReason(u.orgId, u.userId, "build:tickets:update");
-        if (deny) throw new ForbiddenException(deny);
-        const ticketId = Number(payload["ticketId"]);
-        const status = String(payload["status"]);
-        await this.db
-          .update(tickets)
-          .set({ status })
-          .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, u.orgId)));
+        const parsedStatusUpdate = ticketStatusUpdatePayloadSchema.safeParse(payload);
+        if (!parsedStatusUpdate.success)
+          throw new BadRequestException("Invalid ticket status update payload");
+        const { ticketId, status } = parsedStatusUpdate.data;
+        const svc = this.moduleRef.get(ProjectsTicketsService, { strict: false });
+        await svc.updateTicket(u, ticketId, { status });
         result = { ticketId, status };
         summary = `Ticket #${ticketId} status updated to ${status}`;
         break;
       }
 
       case "ticket.addComment": {
-        const deny = await this.toolAccess.denyReason(u.orgId, u.userId, "build:tickets:update");
-        if (deny) throw new ForbiddenException(deny);
         const commentSvc = this.moduleRef.get(ProjectsTicketCommentsService, { strict: false });
         const comment = await commentSvc.addComment(u, Number(payload["ticketId"]), { content: String(payload["comment"]) });
         result = { commentId: comment.id };
@@ -296,8 +366,6 @@ export class ChatAssistantController {
       }
 
       case "calendar.createReminder": {
-        const deny = await this.toolAccess.denyReason(u.orgId, u.userId, "calendar:write");
-        if (deny) throw new ForbiddenException(deny);
         const calSvc = this.moduleRef.get(CalendarService, { strict: false });
         const { event } = await calSvc.createEvent(u.orgId, u.userId, {
           title: String(payload["title"]),
@@ -314,14 +382,12 @@ export class ChatAssistantController {
       }
 
       case "email.send": {
-        const deny = await this.toolAccess.denyReason(u.orgId, u.userId, "chat:messages:write");
-        if (deny) throw new ForbiddenException(deny);
         const emailSvc = this.moduleRef.get(EmailOutboxService, { strict: false });
         const bodyText = String(payload["body"]);
         await emailSvc.enqueueAndTry({
           to: String(payload["toEmail"]),
           subject: String(payload["subject"]),
-          html: `<p>${bodyText}</p>`,
+          html: `<p>${escapeHtml(bodyText)}</p>`,
           text: bodyText,
         });
         result = { queued: true };
@@ -330,8 +396,6 @@ export class ChatAssistantController {
       }
 
       case "chat.postChannel": {
-        const deny = await this.toolAccess.denyReason(u.orgId, u.userId, "chat:messages:write");
-        if (deny) throw new ForbiddenException(deny);
         const msgSvc = this.moduleRef.get(ChatMessagesService, { strict: false });
         await msgSvc.send(Number(payload["channelId"]), u.userId, u.orgId, { content: String(payload["message"]) });
         result = { sent: true };
@@ -340,8 +404,6 @@ export class ChatAssistantController {
       }
 
       case "hr.grantRecognition": {
-        const deny = await this.toolAccess.denyReason(u.orgId, u.userId, "hr:engagement:manage");
-        if (deny) throw new ForbiddenException(deny);
         const engSvc = this.moduleRef.get(EngagementService, { strict: false });
         const recognitionInput: CreateRecognitionInput = {
           toUserId: String(payload["toUserId"]),
@@ -355,8 +417,6 @@ export class ChatAssistantController {
       }
 
       case "hr.grantBonus": {
-        const deny = await this.toolAccess.denyReason(u.orgId, u.userId, "hr:bonuses:manage");
-        if (deny) throw new ForbiddenException(deny);
         const bonusInput = createBonusSchema.parse({
           userId: payload["employeeId"],
           type: payload["type"],
@@ -373,14 +433,6 @@ export class ChatAssistantController {
       }
 
       case "mail.send": {
-        const deny = await this.toolAccess.denyReason(u.orgId, u.userId, "mail:messages:send");
-        if (deny) throw new ForbiddenException(deny);
-        const mailSendPayloadSchema = z.object({
-          accountId: z.number().int().positive(),
-          toEmail: z.string().email(),
-          subject: z.string().min(1).max(500),
-          body: z.string().min(1),
-        });
         const mailPayload = mailSendPayloadSchema.parse(payload);
         const mailAccountsSvc = this.moduleRef.get(MailAccountsService, { strict: false });
         await mailAccountsSvc.assertOwnedConnection(u.orgId, u.userId, mailPayload.accountId);
@@ -391,7 +443,7 @@ export class ChatAssistantController {
           mailPayload.accountId,
           [mailPayload.toEmail],
           mailPayload.subject,
-          `<p>${mailPayload.body}</p>`,
+          `<p>${escapeHtml(mailPayload.body)}</p>`,
         );
         result = { sent: true };
         summary = `Email sent to ${mailPayload.toEmail}`;
@@ -399,8 +451,7 @@ export class ChatAssistantController {
       }
 
       default: {
-        const _exhaustive: never = confirmedAction;
-        throw new BadRequestException(`Unknown action type: ${String(_exhaustive)}`);
+        throw new BadRequestException(`Unknown action type: ${String(action satisfies never)}`);
       }
     }
 

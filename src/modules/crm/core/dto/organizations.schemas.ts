@@ -8,7 +8,7 @@ export const organizationListSchema = z.object({
   pageSize: pageSizeField(20),
   q: z.string().trim().max(200).optional(),
   search: z.string().trim().max(200).optional(),
-});
+}).strict();
 
 export const organizationCreateSchema = z.object({
   name: z.string().trim().min(1, "Name is required"),
@@ -48,7 +48,7 @@ export const mergeOrgsSchema = z.object({
 export const orgDuplicatesQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: pageSizeField(20),
-});
+}).strict();
 
 /** At least one discriminator is required — an empty check would match every org. */
 export const orgDuplicateCheckSchema = z

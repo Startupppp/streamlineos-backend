@@ -72,8 +72,8 @@ export const invStockLevels = pgTable("inv_stock_levels", {
 export const invStockTransactions = pgTable("inv_stock_transactions", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  productVariantId: integer("product_variant_id").references(() => invProductVariants.id, { onDelete: "cascade" }).notNull(),
-  locationId: integer("location_id").references(() => invLocations.id, { onDelete: "set null" }),
+  productVariantId: integer("product_variant_id").notNull(),
+  locationId: integer("location_id"),
   transactionType: invTxnTypeEnum("transaction_type").notNull(),
   quantityBucket: invQuantityBucketEnum("quantity_bucket").default("ON_HAND").notNull(),
   quantityChange: decimal("quantity_change", { precision: 18, scale: 4 }).notNull(),
@@ -104,7 +104,6 @@ export const invStockTransactions = pgTable("inv_stock_transactions", {
   createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
-  index("idx_inv_txn_org_variant").on(table.orgId, table.productVariantId),
   index("idx_inv_txn_org_type").on(table.orgId, table.transactionType),
   index("idx_inv_txn_reference").on(table.referenceType, table.referenceId),
   index("idx_inv_txn_idempotency").on(table.orgId, table.idempotencyKey),
@@ -115,6 +114,9 @@ export const invStockTransactions = pgTable("inv_stock_transactions", {
   // and the index has to carry it too, or the scan re-sorts the tenant.
   // Supersedes `idx_inv_txn_org_created`, which was its exact prefix.
   index("idx_inv_txn_org_created_id").on(table.orgId, desc(table.createdAt), desc(table.id)),
+  foreignKey({ columns: [table.orgId, table.productVariantId], foreignColumns: [invProductVariants.orgId, invProductVariants.id], name: "fk_inv_stock_transactions_product_variant_id_org" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.locationId], foreignColumns: [invLocations.orgId, invLocations.id], name: "fk_inv_stock_transactions_location_id_org" }).onDelete("set null"),
+  index("idx_inv_txn_org_variant").on(table.orgId, table.productVariantId),
   index("idx_inv_txn_org_variant_type_created").on(table.orgId, table.productVariantId, table.transactionType, table.createdAt),
   index("idx_inv_txn_org_posting_date").on(table.orgId, table.postingDate),
   index("idx_inv_txn_org_hu")
@@ -184,7 +186,6 @@ export const invStockAdjustments = pgTable("inv_stock_adjustments", {
 }, (table) => [
   index("idx_inv_adj_org_ref").on(table.orgId, table.referenceNumber),
   unique("uniq_inv_stock_adjustments_org_id").on(table.orgId, table.id),
-  index("idx_inv_adj_org").on(table.orgId),
   index("idx_inv_adj_org_reason").on(table.orgId, table.reason, desc(table.createdAt)),
   foreignKey({
     columns: [table.orgId, table.scrapLocationId],

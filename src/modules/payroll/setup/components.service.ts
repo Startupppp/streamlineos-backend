@@ -5,14 +5,18 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { SQL, and, count, eq, getTableColumns, ilike, or } from "drizzle-orm";
+import { SQL, and, asc, eq, getTableColumns, ilike, or, sql } from "drizzle-orm";
 import { salaryComponents, employeeSalaryProfileComponents } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { validateFormula } from "./lib/template-preview";
 import type { ListComponentsInput, CreateComponentInput, UpdateComponentInput } from "./dto/setup.schemas";
-import { resolveWindowedTotal, totalOverWindow, withoutTotal } from "../../../common/pagination/window-count";
+import { buildCursorPage } from "../../../common/pagination/cursor";
+import {
+  decodePayrollNumberTextCursor,
+  payrollCursorPosition,
+} from "../payroll-cursor";
 
 type ComponentRow = typeof salaryComponents.$inferSelect;
 
@@ -20,11 +24,11 @@ type ComponentRow = typeof salaryComponents.$inferSelect;
 export class PayrollComponentsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async list(orgId: string, input: ListComponentsInput): Promise<{ items: ComponentRow[]; total: number }> {
-    const filters: SQL[] = [eq(salaryComponents.orgId, orgId)];
+  async list(orgId: string, input: ListComponentsInput) {
+    const filters: (SQL | undefined)[] = [eq(salaryComponents.orgId, orgId)];
 
     if (input.type) {
-      filters.push(eq(salaryComponents.type, input.type as ComponentRow["type"]));
+      filters.push(eq(salaryComponents.type, input.type));
     }
     if (input.active !== undefined) {
       filters.push(eq(salaryComponents.isActive, input.active));
@@ -34,30 +38,39 @@ export class PayrollComponentsService {
         or(
           ilike(salaryComponents.name, `%${input.search}%`),
           ilike(salaryComponents.code, `%${input.search}%`),
-        ) as SQL,
+        ),
       );
     }
 
-    const where = and(...filters);
-    const offset = (input.page - 1) * input.pageSize;
+    const cursorScope = [
+      "components",
+      orgId,
+      input.type ?? null,
+      input.active ?? null,
+      input.search ?? null,
+    ] as const;
+    const position = decodePayrollNumberTextCursor(input.cursor, cursorScope);
+    if (position) {
+      filters.push(
+        sql`(${salaryComponents.sortOrder}, ${salaryComponents.name}, ${salaryComponents.id}) > (${sql.param(position.numberValue, salaryComponents.sortOrder)}, ${sql.param(position.textValue, salaryComponents.name)}, ${sql.param(position.id, salaryComponents.id)})`,
+      );
+    }
 
     const rows = await this.db
-      .select({ ...getTableColumns(salaryComponents), total: totalOverWindow })
+      .select(getTableColumns(salaryComponents))
       .from(salaryComponents)
-      .where(where)
-      .orderBy(salaryComponents.sortOrder, salaryComponents.name)
-      .limit(input.pageSize)
-      .offset(offset);
+      .where(and(...filters))
+      .orderBy(
+        asc(salaryComponents.sortOrder),
+        asc(salaryComponents.name),
+        asc(salaryComponents.id),
+      )
+      .limit(input.limit + 1);
 
-    const total = await resolveWindowedTotal(rows, offset, async () => {
-      const [totalRow] = await this.db
-        .select({ total: count() })
-        .from(salaryComponents)
-        .where(where);
-      return Number(totalRow?.total ?? 0);
-    });
-
-    return { items: withoutTotal(rows), total };
+    const page = buildCursorPage(rows, input.limit, (row) =>
+      payrollCursorPosition(cursorScope, [row.sortOrder, row.name], row.id),
+    );
+    return { items: page.data, pagination: page.pagination };
   }
 
   async create(u: CurrentUserContext, input: CreateComponentInput): Promise<ComponentRow> {
@@ -127,17 +140,18 @@ export class PayrollComponentsService {
   async remove(u: CurrentUserContext, componentId: number): Promise<{ success: boolean; softDeleted: boolean }> {
     await this.assertBelongsToOrg(u.orgId, componentId);
 
-    const [usageRow] = await this.db
-      .select({ total: count() })
+    const inUse = await this.db
+      .select({ one: sql`1` })
       .from(employeeSalaryProfileComponents)
       .where(
         and(
           eq(employeeSalaryProfileComponents.componentId, componentId),
           eq(employeeSalaryProfileComponents.orgId, u.orgId),
         ),
-      );
+      )
+      .limit(1);
 
-    if ((usageRow?.total ?? 0) > 0) {
+    if (inUse.length > 0) {
       await this.db
         .update(salaryComponents)
         .set({ isActive: false })

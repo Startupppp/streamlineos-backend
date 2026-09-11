@@ -4,10 +4,9 @@ import {
   getExpenseRejectedEmailTemplate,
   getExpensePaidEmailTemplate,
 } from "../index";
-import { BASE_URL } from "./_shared";
-import type { TemplateEntry } from "./_shared";
+import { BASE_URL, EMAIL_TEMPLATE_VERSION, defineTemplateFamily } from "./_shared";
 
-export const hrExpenseTemplates: Record<string, TemplateEntry> = {
+export const hrExpenseTemplates = defineTemplateFamily({
   "expense.submitted": {
     category: "HR Expense",
     name: "Expense Submitted",
@@ -41,4 +40,4 @@ export const hrExpenseTemplates: Record<string, TemplateEntry> = {
     subject: "Your expense reimbursement was paid",
     generateHtml: () => getExpensePaidEmailTemplate("Priya Sharma", "Travel", "1,500", "TXN-TEST-001"),
   },
-};
+}, EMAIL_TEMPLATE_VERSION);

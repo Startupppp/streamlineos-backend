@@ -1,0 +1,859 @@
+{
+  "version": 1,
+  "classifiedAt": "2026-09-08",
+  "note": "Verdicts: N+1-FIXED|BATCHED|FALSE-POSITIVE|EXCLUDED-MODULE|ACTIONABLE",
+  "files": {
+    "/access/access-grant-drains.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Classified by reading from ticket 21 (access is not that ticket's territory; the service was not edited). Both `for(;;)` bodies are keyset drains over role_permission_grants / user_permission_grants â€” the loop's query IS the next page, one round trip per page and not per row. Same shape as /access/access-permission.resolver.ts, already FALSE-POSITIVE. Split out of access-permission.resolver.ts, which is why the baseline had never seen the path."
+    },
+    "/access/access.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "deleteOrgEntries(cache: Map<string, T>, orgId) sweeps an IN-PROCESS Map â€” the parameter is literally named `cache`, so the widened this.cache pattern matches Map.prototype.delete. No round trip. This is one of the two false positives the cache widening costs, and it buys 188 previously-invisible real cache call sites."
+    },
+    "/access/denied-modules.resolver.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "`private readonly cache = new Map<...>()` â€” clearForOrg sweeps that Map by key prefix. Same shape as access.service.ts: an in-process Map whose identifier is `cache`."
+    },
+    "/access/entitlements.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Two sites, neither a per-row round trip. (1) bustActiveMemberSessions is a for(;;) keyset drain over organization_members paged at SESSION_BUST_PAGE=500 â€” the loop query IS the next page â€” and each page busts through cache.invalidateMany, one variadic DEL per page rather than one per member. It replaced a .limit(10000) that silently never invalidated member 10,001 onward. (2) The other match is the detector reading its own warning: the doc comment above it contains the literal prose `members.map((m) => cache.invalidate(...))` describing the shape NOT used, and this gate does not mask comments the way check-relation-key-reach does. Classified 2026-09-03 by reading; the file was uncommitted and under another agent edit at the time, so re-read the drain before trusting this line."
+    },
+    "/accounting/gl/recurring-journals.service.ts": {
+      "verdict": "BATCHED",
+      "note": "N+1 removed 2026-09-03. The stale ACTIONABLE verdict was a FALSE NEGATIVE, not a fix: commit 2cd41f1f made the per-template work atomic by moving it behind `this.claimAndMaterialize(tmpl, ...)`, a private method with no handle in its argument list, so the detector stopped matching a loop that still issued a transaction + claim UPDATE + sequence upsert + entry INSERT + line INSERT PER DUE TEMPLATE. runDueTemplates now groups the due set by org, chunks it at RUN_BATCH=50 and posts each chunk in one transaction: the claim is at most five bounded multi-key UPDATEs (next_run_date is a function of (entryDate, frequency) alone, so the five enum values are the only distinct SET clauses a batch can need), then one sequence upsert reserving the whole block, one multi-row entry INSERT and one multi-row line INSERT. Statements go from 4N to 4 per org chunk. The three detected sites are that per-org/per-chunk transaction and the per-frequency claim â€” bounded, which is why this is BATCHED and stays visible to the detector rather than N+1-FIXED and invisible. Pinned by recurring-journals-run-atomicity.spec.ts, which asserts the statement labels per transaction, one claim per distinct frequency, one transaction per org, and a single consecutive entry-number block."
+    },
+    "/ai/core/ops-copilot-tools.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "variant and stock reads hoisted above the loop into two inArray queries grouped by Map; the Promise.all is gone"
+    },
+    "/ai/core/services/crm-tasks.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "Entity ids are grouped by entityType and read once each: leads via leadIdIn(leadIds) keeping LEAD_PARTY_JOIN + leadPartyScope(orgId, INCLUDE_DELETED), deals via inArray(crmDeals.id, dealIds) + eq(crmDeals.orgId, orgId). Enrichment is an in-memory map and both reads are skipped when their id list is empty. N<=30 pending tasks: up to N selects -> at most 2, and 0 when no task carries a LEAD/DEAL entity."
+    },
+    "/ai/jobs/ai-jobs-worker.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "the batch is claim-bounded by `limit` and each iteration runs a different job's handler; the update is that job's own terminal state, not a repeated lookup"
+    },
+    "/audit-log/audit-log.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "for(;;) keyset export page loop bounded by EXPORT_ROW_CAP â€” one query per page of EXPORT_PAGE_SIZE rows"
+    },
+    "/autonomy/autonomy-hold.service.ts": {
+      "verdict": "BATCHED",
+      "note": "BATCHED (was N+1-FIXED; re-verdicted 2026-09-03 when the braceless scanner made the loop visible again). cancelInFlight issued one UPDATE per cancelled hold with an identical SET; it is now `for (let i = 0; i < ids.length; i += DECISION_REVERSAL_CHUNK) await this.db.update(...).where(inArray(...))` â€” statements bounded by ceil(n/CHUNK), not by n. The loop is SUPPOSED to keep matching, which is what BATCHED means."
+    },
+    "/billing/core/ai-credits-packs.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "loop is over the DEFAULT_AI_CREDIT_PACKS module constant, so the call count is fixed at compile time and does not grow with data"
+    },
+    "/billing/core/ai-credits-reservation.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "ticket 21 removed the N+1: sweepExpiredReservations opened runInNewTenantTransaction per expired row (up to 500 nested pooled borrows per org) and released each via a read-modify-write wallet update. It is now a bounded keyset drain inside forEachOrg's own transaction â€” one page select, one compare-and-set claim, one atomic `balance + refunded`. What the detector still sees is the for(;;) page stepper, which is the correct shape. Proved by src/db/__tests__/db-call-count-contract.spec.ts: statement count identical at 1 and 50 expired rows"
+    },
+    "/billing/core/billing-webhook.handler.ts": {
+      "verdict": "FIXED-SET",
+      "note": "the loop is over `applied.revenue`, which billing-webhook-effects.ts fills from exactly two push sites, so it is <=2 entries per webhook â€” not tenant-sized."
+    },
+    "/billing/core/payment-status-order.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "First seen 2026-09-03 by the braceless scanner. `Object.entries(PAYMENT_STATUS_RANK).map(([status, rank]) => sql`when ... then ...`)` builds the branches of ONE `CASE` expression that is then embedded in a single returned SQL guard. Zero round trips: the `sql`` pattern is matching a fragment builder."
+    },
+    "/billing/core/plan-limits.service.ts": {
+      "verdict": "FIXED-SET",
+      "note": "the loop is over crossedThresholds(), which returns at most [100, 80]. The sibling tierCache is an in-process Map and is not what matched."
+    },
+    "/billing/core/usage-metering.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "ticket 21 removed the N+1: was one runInNewTenantTransaction per expired reservation. Now one advisory lock and one compare-and-set claim per DISTINCT METER inside the sweep's own transaction. The detector sees the page stepper and the per-meter group loop, both bounded. Proved by db-call-count-contract.spec.ts: one execute and one update at both 1 and 50 rows"
+    },
+    "/blog/blog.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "ensureUniqueSlug: replaced per-iteration findFirst with single findMany on slug = root OR slug LIKE root-%; compute next suffix in memory"
+    },
+    "/branches/branches.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "loop is over the two-element literal [branchManagerId, branchHrId]; at most two calls, fixed"
+    },
+    "/build/core/projects-custom-states.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "N+1 removed: the reorder is one UPDATE ... FROM (VALUES (id, order), ...) via common/db/bulk-update.ts. Executed against a real database (build.project_statuses, schema-qualified, reserved-word column) and asserted at one statement in projects-custom-states-bulk-reorder.spec.ts"
+    },
+    "/build/core/build-ticket-batch-workflow.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "First seen 2026-09-09. The detector matches `for (const row of changed) await assertTransitionAllowed(db, ...)` at :20-23 because the callee takes a `db` handle, but that call issues ZERO statements on this path. `validateBatchTransition` reads the workflow ONCE at :13 via `fetchTransitionsAndStatuses`, then builds `prefetched` at :19 carrying `{ ...workflow, ticketFields: new Map(rows.map(row => [row.id, row])), wipAlreadyChecked: true }` and passes it as the last argument. `assertTransitionAllowed` (projects-tickets-workflow-utils.ts:93) destructures `prefetched ?? await fetchTransitionsAndStatuses(...)`, so the workflow read is skipped, and its only other query — `readTicketRequiredFields` at :120 — is reached at :163 only when `prefetched?.ticketFields?.get(context.ticketId)` misses. The Map is keyed by every row `readMutationTickets` returned, and `changed` is a subset of those rows, so it never misses. The one remaining round trip is the capacity reservation at :18, which is hoisted ABOVE the loop and runs once for the whole batch. Statement count is therefore independent of batch size; pinned by build-ticket-mutation-bounds.spec.ts, which asserts one read for a 100-ticket batch."
+    },
+    "/build/core/build-ticket-capacity.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "First seen 2026-09-09. The detector matches `for (const row of rows)` at :45, but `rows` was already materialised by the single `tx.execute` at :28 and the loop body only throws ConflictException on a missing status or a breached WIP limit — there is no database call inside it. The whole check is one statement: a `WITH incoming(status, amount) AS (VALUES ...)` CTE that left-joins `build.project_statuses` and `build.tickets` and aggregates per status, so N incoming statuses cost one round trip, not N. `lockProjectTicketMutation` at :13 is a separate single advisory-lock statement taken once before it."
+    },
+    "/build/core/projects-tickets-rank-utils.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "First seen 2026-09-03, reclassified FALSE-POSITIVE -> N+1-FIXED on 2026-09-09 because the detector no longer matches this file and a still-detected verdict would read as stale. The substance is unchanged and still true: `rows.map((r, i) => sql`WHEN ... THEN ...`)` builds CASE branches joined into ONE `tx.update(tickets).set({ rank: sql`(CASE ... END)` })`, and `rebalanceProjectRanks` (:13-24) is a single `UPDATE ... FROM (SELECT row_number() OVER (...))`. Zero round trips inside any loop — this is the bulk rank rewrite, not an N+1."
+    },
+    "/build/core/projects-tickets-transfer.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "per-row membership lookup replaced by a Map built from the existing memberEmails join; the loop still detected is a CHUNK_SIZE=100 bounded batch insert"
+    },
+    "/build/core/projects-tickets-update.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "the up-to-100-hop ancestor walk is one WITH RECURSIVE CTE; cycle, project and depth checks read from its rows"
+    },
+    "/build/core/projects-tickets-workflow-utils.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "Ticket 21 third pass, verified by reading: the ticket read is memoized in `ticketRows` above the loop and runs at most once for any number of matching transitions. The inner `for (const field of transition.requiredFields)` touches nothing but the row already in hand."
+    },
+    "/build/core/projects-webhooks-dispatch.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "Ticket 21 third pass, verified by reading: the deliveries insert is one multi-row INSERT ... RETURNING and the outbox emit is a single `OutboxWriter.emitMany` over `deliveries.map(...)`. The per-delivery `OutboxWriter.emit` the earlier note named is gone."
+    },
+    "/build/core/projects-write.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "Ticket 21 third pass: the member-removal reassignment grouped open tickets by target assignee and issued one `tx.update(tickets)` per group. It is now one `bulkUpdateFromValues`, so no statement is issued from inside a loop. Pinned by projects-write-reassign.spec.ts, which fails against the grouped shape."
+    },
+    "/build/forms/submissions.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "Ticket 21 third pass, verified by reading: `allocateTicketNumbers` is called once for the whole submission with `ticketActions.length`, and the tickets are one multi-row INSERT. The remaining `for (const [index, ticket] of inserted.entries())` only fills two in-memory arrays."
+    },
+    "/build/qa/test-runs.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "sql.join id list replaced with inArray; the second flagged site is sql fragments inside a count() aggregate, not a per-row query"
+    },
+    "/calendar/calendar-conflict.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Bounded keyset drain, not an N+1: the loop's query IS the next page, one indexed round trip per page rather than one per row. The defect the old note named - no overall bound, accumulating every matching event into a Node array on the create-event write transaction - is fixed: the drain now stops at CONFLICT_SCAN_MAX_EVENTS=5000 candidate rows and THROWS rather than truncating. A truncating LIMIT was refused deliberately, because checkConflictsInTx returns only the conflicts it found, so a truncated drain is indistinguishable from no-further-conflicts and would tell a caller a booked slot is free. The budget is roughly 100x the largest measured real answer (50 rows in a single page after mineOrAttending narrowing). The throw logs org, user and window and returns a generic message, so the internal user id does not reach the caller."
+    },
+    "/calendar/calendar-exception-loader.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "for(;;) keyset page loop over calendar_event_exceptions; one query per page"
+    },
+    "/calendar/calendar-reminder-sweep.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "both sites are bounded pagination: drainByKeyset pages the attendee fan-out, and the second is a chunked multi-row outbox insert of OUTBOX_INSERT_CHUNK rows"
+    },
+    "/chat/chat-channel-member-batches.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Both for(;;) sites are the ONE keyset drain over chat_channel_members that the calendar attendee backfill (ATTENDEE_BATCH=500) and the huddle-start notification (NOTIFY_BATCH=500) now share â€” the loop's query IS the next page, one round trip per page and never per row. Same shape and same verdict as /access/access-grant-drains.ts. This entry carries the verdict that stood at /chat/chat-huddles.service.ts until commit e8d65e64 lifted both drains into forEachChannelMemberBatch; that extraction closed over the handle instead of taking it, so the detector stopped matching the drain anywhere and the old entry went stale as a false negative rather than as a fix. The helper now takes the handle it drains, which is why the loop is visible here."
+    },
+    "/chat/chat-reply-reminders.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "chunked bulk insert â€” the loop steps by REMINDER_INSERT_BATCH_SIZE and each iteration writes a whole batch"
+    },
+    "/clients/client-accounts-crm-assignment.ts": {
+      "verdict": "BATCHED",
+      "note": "for(;;) keyset drain over client_accounts (BACKFILL_CHUNK=500): one page SELECT + one bulkUpdateFromValues per chunk. Bounded by ceil(n/500), not by n."
+    },
+    "/clients/client-accounts.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "N+1 removed 2026-09-03 (register A-4). reassignAccounts issued one `db.update(clientAccounts)` per DISTINCT ASSIGNEE inside `Promise.all(Object.entries(assignments).map(...))` â€” every account carries a different assigned_crm_id, so `inArray` could only batch the accounts that share an assignee and the round trips grew with the number of assignees. Now one `bulkUpdateFromValues` keyed on id with assigned_crm_id per row and touch ['updated_at'], which is the batched form this entry already recorded. Measured hermetically over `git archive HEAD` with the counting double: 1 unassigned account -> 6 statements before and after; 50 accounts over 5 members -> 10 before (5 UPDATEs) and 6 after (1 execute). Pinned by src/db/__tests__/db-call-count-contract.spec.ts (`ClientAccountsService.runCrmAssignments`), which asserts statement equality across 1 and 50 rows, countOf('update') === 0, and that all five assignees appear in the bindings of the ONE statement; both cases fail against the pre-fix service."
+    },
+    "/clients/clients.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "for(;;) keyset export drain — (name, id) composite cursor + .limit(EXPORT_PAGE) — one SELECT per page, never per row. Same shape as /contacts/contacts.service.ts."
+    },
+    "/contacts/contacts.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "for(;;) keyset drain paged at 500 for the CSV export generator"
+    },
+    "/crm/automation-studio/crm-automation-bus.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner"
+    },
+    "/crm/automation-studio/crm-sequences-runner.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner"
+    },
+    "/crm/automation-studio/crm-sequences.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner"
+    },
+    "/crm/core/crm-rules.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "First seen 2026-09-03. reorderAssignmentRules issues one UPDATE per rule id inside `Promise.all(ruleIds.map(...))` â€” a real per-row write, but CRM is out of scope for this release. Recorded so it is not lost."
+    },
+    "/crm/import/crm-import-commit.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "1 DB call(s) detected inside loop body â€” batch with inArray or Promise.all"
+    },
+    "/crm/import/crm-import-preview.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "First seen 2026-09-03. Chunked insert under PLAN_INSERT_CHUNK â€” bounded, and CRM is out of scope."
+    },
+    "/crm/import/crm-import-revert.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "1 DB call(s) detected inside loop body â€” batch with inArray or Promise.all"
+    },
+    "/crm/import/import-lookups.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner"
+    },
+    "/crm/metadata/crm-metadata.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "First seen 2026-09-03. reorderStages issues one UPDATE per stage id inside `Promise.all(input.stageIds.map(...))` â€” a real per-row write, but CRM is out of scope for this release."
+    },
+    "/cron/cron-ai-usage-retention.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "for(;;) cursor drain over ai_usage_logs; one select per page"
+    },
+    "/cron/cron-attendance.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "Policy resolution is hoisted into resolvePolicies, which groups the due records by date and calls the batch policy APIs (getAttendanceRulesForEmployees / getOvertimeRulesForEmployees) once per distinct date, then keys an in-memory map on userId|date. The per-record checkout write is one bulkUpdateFromValues with the check_out IS NULL compare-and-set moved into extraWhere, and RETURNING drives both the processed count and which records fire attendance.missed_punch. N rows over D dates: 2N resolutions + N UPDATEs -> 2D + 1."
+    },
+    "/cron/cron-billing.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "All four sites batched. The three windowed trial-reminder SELECTs became one read of the live trial_ends_at values with the day windows matched in memory. Past-due suspension is one conditional UPDATE claiming status=PAST_DUE with a jsonb || metadata patch and RETURNING id, so the claim is unchanged and the read-modify-write that could clobber a concurrent metadata write is gone; planLimits.bust and findOrgOwner now run once per org. Dunning reminders read the recorded milestones once, choose the next unsent per subscription in memory, claim by a single INSERT ... ON CONFLICT DO NOTHING RETURNING (still the authority against a racing sweep) and mark SENT in one UPDATE. The two revenue.emit sites are now one RevenueAnalyticsService.emitMany per branch, sharing the single envelope() builder with emit so a batched emit and N single emits are the same code rather than merely equal."
+    },
+    "/cron/cron-build-retention.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "for(;;) chunked batch delete â€” SELECT batch IDs + DELETE WHERE id IN batch; same pattern as kb-page-tree.service.ts; not per-row N+1"
+    },
+    "/cron/cron-gdpr-export-retention.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "page loop bounded by MAX_PAGES, and the second/third sites are one withTenant per UPDATE_CHUNK of purged ids â€” chunked, not per row"
+    },
+    "/cron/cron-helpdesk-retention.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "bounded batch-delete loop â€” each iteration deletes BATCH_SIZE rows in one statement, capped by MAX_BATCHES"
+    },
+    "/cron/cron-holiday.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "ticket 21: one UPDATE per upcoming holiday with an identical SET, now a single inArray UPDATE. Proved by db-call-count-contract.spec.ts, and mutation-tested â€” reverting the fix takes the assertion from 1 update to 50"
+    },
+    "/cron/cron-hr-retention.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Loop:88 â€” `for (const policy of policies)` fans out over the org's active retention policies, at most one per record type (employee, case, attendance, document, payroll). Each iteration issues a different statement against a different table, so there is no single query the loop could collapse into. Split out from the document-sweep entry 2026-09-02 (ticket 37), which moved to cron-hr-retention-documents.ts."
+    },
+    "/cron/cron-hr.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "N+1 removed 2026-09-03: all three sweeps (certifications, onboarding completion, document expiry) issued one UPDATE per row with a uniform SET. Each now collects ids in the loop and issues ONE inArray UPDATE after it. certifications and documents also gained the org_id predicate they were missing; users has no org_id column so that one stays keyed on id."
+    },
+    "/cron/cron-idempotency.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "3 while(true) chunked batch-delete loops: SELECT batch â†’ DELETE batch; same pattern as kb-page-tree.service.ts; not per-row N+1"
+    },
+    "/cron/cron-kb-chat-retention.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "for(;;) chunked drain â€” the flagged sql is a NOT EXISTS subquery inside the batch SELECT's WHERE, not a standalone query"
+    },
+    "/cron/cron-kb-chunk-retention.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "for(;;) chunked drain in both prune methods â€” SELECT up to 500 ids then one inArray DELETE per iteration"
+    },
+    "/cron/cron-leave.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Was N+1-FIXED, which was the wrong verdict for the wrong reason. The two sites the detector reports (134/136 and 322/324) are `while (true)` KEYSET PAGINATION loops â€” each iteration reads the next page, which is the correct bounded-read pattern, not an N+1. expireUnusedMonthlyLeaves itself is batched as the old note said."
+    },
+    "/cron/cron-mail-retention.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "bounded batch-delete loop, same shape as cron-helpdesk-retention"
+    },
+    "/cron/cron-notification-outbox-retention.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "for(;;) chunked drain bounded by MAX_BATCHES=50 x BATCH_SIZE=500; reports truncated:true rather than stopping silently"
+    },
+    "/cron/cron-notifications.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "notifyAllMembers, which was a member SELECT plus an insert per celebrant, is deleted. The fan-out moved into the database: one INSERT INTO notifications ... SELECT ... FROM organization_members CROSS JOIN jsonb_to_recordset(announcements::jsonb). B birthdays x M members: 2B statements and BxM bind parameters -> 1 statement and 2 parameters. A client-side multi-row insert was rejected deliberately, because BxMx6 parameters crosses the 65535 bind limit for a mid-size org and the per-celebrant insert never did."
+    },
+    "/cron/cron-org-purge-worker.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "both loops are over the PURGE_ADAPTERS constant â€” a fixed number of adapters, not a growing set"
+    },
+    "/cron/cron-organization.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "N+1 removed 2026-09-03: one organizationMembers SELECT per expired invitation, to resolve the inviter. Now one inArray read over the distinct inviterMembershipIds into a Map, with the org_id predicate retained."
+    },
+    "/cron/cron-projects.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "Templates are partitioned in memory. The disable branch is one UPDATE ... WHERE org_id AND id IN (...). The advance branch is spawnBatch: two grouped reads (max ticket_number per project, first project_statuses.name per project), one multi-row INSERT ... RETURNING for the children, one watchers INSERT ... ON CONFLICT DO NOTHING, one activity INSERT, and one bulkUpdateFromValues for recurrence_next_run_at, with numbering incremented in memory so several templates in one project still get consecutive numbers. N due templates -> at most 7 statements. Trade-off recorded rather than hidden: the per-template inner transaction is now one per batch, so a poison template blocks its org's batch for that run instead of only itself, and every templateId is logged."
+    },
+    "/data-quality/data-quality-producers.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "chunked insert loop replaced with one insert...onConflictDoUpdate; 13 cols x 2000 rows stays inside the 65535 parameter limit"
+    },
+    "/data-quality/data-quality-resolution.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "The per-finding undoToken UPDATE is collected into a map of findingId to token and written by one statement, SET undo_token = <map>::jsonb -> finding_id WHERE organization_id = $1 AND finding_id IN (...). The map rides as a single jsonb bind parameter and each row picks its own entry. K applied merges: K UPDATEs -> 1. bulkUpdateFromValues was not used here because it routes through executor.execute(), which this service's FakeDb spec double does not implement."
+    },
+    "/directory/worker-engagements.service.ts": {
+      "verdict": "FIXED-SET",
+      "note": "loop over a 5-element array literal of engagement fields; the number of statements does not grow with tenant data."
+    },
+    "/e-sign/sign-audit.service.ts": {
+      "verdict": "BATCHED",
+      "note": "record() takes one event or a batch and issues one multi-row INSERT per SIGN_AUDIT_INSERT_CHUNK=500 rows â€” the loop steps by the chunk size, so the round trips grow with ceil(N/500) pages and not with N events. Fourteen bound parameters per row keeps a full chunk at 7,000 placeholders, an order of magnitude under the 65,535 one statement can bind. New to the baseline because the batch entry point is new (commit 2cd41f1f); the shape it replaced was one INSERT per audited event."
+    },
+    "/e-sign/sign-bulk-send.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "Row outcomes are collected into RowOutcome[] and written by one UPDATE ... FROM (VALUES ...) keyed on row_number with extraWhere job_id. N rows: N status UPDATEs -> 1, chunked at 500. The batched statement also adds the org_id predicate the per-row UPDATE lacked, which filtered on job_id + row_number only. Template instantiate and envelope send stay per row by nature, each row being a distinct document for a distinct signer, and deferring the status write loses nothing on a crash because process runs inside the request transaction."
+    },
+    "/e-sign/sign-documents.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Loop:164 keysToDelete has â‰¤2 items (current key + optional original); sql` is an arithmetic expression in a SET clause (attemptCount + 1), not a separate query"
+    },
+    "/e-sign/sign-envelope-dispatch.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Loop:251 scanner crosses map closure boundary â€” map body has bdelta=0 so enteredBody stays false, then a subsequent if block's { sets enteredBody; db.transaction at line 265 is inside that if, not the map"
+    },
+    "/e-sign/sign-envelope-sweeps.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Site 1 is fixed: remindEnvelopeRecipients filters eligibility in memory, rotates every recipient token in one UPDATE sign_recipients ... FROM (VALUES ...) and writes one batched audit.record, leaving only the mail send in a loop, which is a network call and not a DB call. N recipients: 2N+2 -> 4 statements, and listForEnvelope caps N at 100 so it is always one chunk. The batched WHERE also gained envelope_id beside the org_id the builder always emits, which is strictly tighter than the per-row form. What the detector still matches is site 2, runExpirationSweep, which is a 500-envelope chunk loop at 3 statements per chunk - the target shape, not a defect."
+    },
+    "/e-sign/sign-public.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "N+1 removed 2026-09-03: adopt() and complete() each ran a findMany and then one UPDATE sign_fields per row keyed on id ALONE â€” no org_id, on an unauthenticated public route. Both collapse to ONE UPDATE whose WHERE carries org_id + recipient_id + field_type + completed_at IS NULL, which also deletes the read that existed only to drive the loop."
+    },
+    "/e-sign/sign-templates.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "instantiate: bulk insert documents (single VALUES), bulk insert recipients (filtered flatMap), bulk insert fields (filtered flatMap)"
+    },
+    "/email/email-outbox-retry.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "each iteration is one message's own provider send and its own terminal status; the batch is claim-bounded and the work is not a repeated lookup"
+    },
+    "/expenses/expenses-import.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "each iteration is one bounded bulk insert of BATCH_SIZE=500 rows, not one query per row"
+    },
+    "/finance/ap/payment-run-executor.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "bill reads are pre-batched into billMap before the loop; each iteration opens its own transaction so one failed item is SKIPPED without rolling back the rest"
+    },
+    "/finance/ap/recurring-bills.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "The prescription in the old note was already implemented: deactivateExpired is one inArray UPDATE per 500-id chunk. What the detector matches is that chunk loop itself, which is the target shape. The materialise branch is per row by nature - each occurrence is a distinct bill."
+    },
+    "/finance/ap/vendor-payments-allocations.service.ts": {
+      "verdict": "BATCHED",
+      "note": "BATCHED (was N+1-FIXED; re-verdicted 2026-09-03). The match is `allocations.map((alloc) => sql`(...)`)` building a VALUES list for ONE `tx.execute`, so the loop issues zero round trips â€” the `sql`` pattern matches a fragment builder, not a call. Kept as BATCHED rather than FALSE-POSITIVE because the loop is real and the single statement it feeds is the batching."
+    },
+    "/finance/ar/reminders.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "The prescription in the old note was already implemented: the claim is one multi-row INSERT ... ON CONFLICT DO UPDATE per 500-candidate chunk on (orgId, invoiceId, offsetDays). What the detector matches is that chunk loop itself, which is the target shape."
+    },
+    "/finance/assets/depreciation-reverse.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "N+1 removed: the per-asset UPDATE is now one UPDATE ... FROM (VALUES ...) via common/db/bulk-update.ts, with the numeric + acc_asset_status enum casts executed against a real database"
+    },
+    "/finance/assets/depreciation-runs.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "N+1 removed: same UPDATE ... FROM (VALUES ...) as depreciation-reverse; the remaining loop only builds the value tuples and issues no query. The tenant predicate the per-row update lacked is now in the WHERE"
+    },
+    "/finance/banking/imports.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "ticket 21 removed the N+1: was one existence SELECT plus one INSERT per parsed row â€” up to 4,000 round trips for a MAX_IMPORT_ROWS file, and a lost-update race besides. Now one chunked multi-row INSERT ... ON CONFLICT DO NOTHING against uniq_fin_bank_txn_org_account_fp with the duplicate count derived from RETURNING. The detector sees the IMPORT_INSERT_CHUNK stepper"
+    },
+    "/finance/banking/reconciliation-workspace.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "ticket 21: Promise.all fired one match SELECT per suggested transaction, up to 100 per page load. Now one inArray read grouped in memory, with the per-transaction cap preserved so nothing is truncated"
+    },
+    "/finance/planning/scenarios.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "seedDefaults hoists the conditional default update and bulk-inserts all scenarios; 2-4 round trips down to 1-2"
+    },
+    "/gdpr/gdpr-export-worker-implementation.ts": {
+      "verdict": "FIXED-SET",
+      "note": "the three loops iterate SUBJECT_/MEMBERSHIP_/EMPLOYMENT_SCOPED_TABLE_DEFINITIONS, exported constant adapter arrays in gdpr-export-adapters.ts. One query per TABLE in the export contract, not per row."
+    },
+    "/gdpr/gdpr-subject-erasure-chat-attachments.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "chunked multi-key delete â€” the loop steps by ERASURE_ID_PAGE and each iteration deletes a whole page with inArray, returning its file keys. Read and classified by ticket 21; the file itself belongs to the GDPR erasure lane and was not edited"
+    },
+    "/gdpr/gdpr-sync-export-fetchers.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "One statement for all persons: a subquery with row_number() over (partition by person_id order by id) filtered at personRank <= SYNC_EXPORT_CAP + 1, grouped in memory by personId. The window was chosen over a bare inArray deliberately, because the old code capped at 500 PER PERSON and emitted a per-person truncation message, so a plain inArray would have changed the exported row set. The row set is identical whenever any person has at most 500 employments, the over-500 case still truncates at 500 and still pushes the same truncation line, and the outer person order is preserved. P hr_people rows: P selects -> 1."
+    },
+    "/hr/automations/hr-webhooks.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "First seen 2026-09-08. The one detected site is the keyset drain in run(): `for (let page = 0; page < HR_SCAN_MAX_PAGES; page++)` (HR_SCAN_MAX_PAGES = 200, a compile-time constant in modules/hr/hr-read-limits.ts) over hr_webhook_subscriptions, stepping on gt(id, afterSubscriptionId) with .limit(HR_SCAN_PAGE) and returning the moment a short page comes back. Statements per iteration are fixed at two and do not grow with the subscription count: one bounded SELECT that IS the next page, then one multi-row INSERT of that page's hr_webhook_deliveries. attemptDelivery does issue one UPDATE per delivery, but it is called from a separate method (outside the 30-line body window) and that UPDATE is that delivery's own terminal state after its own outbound fetch, not a repeated lookup - the same shape already classified FALSE-POSITIVE on /ai/jobs/ai-jobs-worker.service.ts. Read and classified 2026-09-08 by the gate-repair lane; the file belongs to the HR lane and was not edited."
+    },
+    "/hr/config/hr-holidays.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "First seen 2026-09-08. announceHoliday is a keyset drain over organization_members INNER JOIN users: `for (let page = 0; page < HR_SCAN_MAX_PAGES; page++)` stepping on gt(organizationMembers.id, afterMembershipId) with .limit(HR_SCAN_PAGE), returning on a short page. One bounded SELECT per page - the loop's query IS the next page - and one dispatch.emit per page that carries the whole page as a single targetUserIds array, not one emit per recipient. Read and classified 2026-09-08 by the gate-repair lane; the file belongs to the HR lane and was not edited."
+    },
+    "/hr/core/hr-audit.service.ts": {
+      "verdict": "BATCHED",
+      "note": "First seen 2026-09-03. `for (let offset = 0; offset < rows.length; offset += HR_AUDIT_LOG_CHUNK) await db.insert(hrAuditLogs).values(rows.slice(...))` â€” this IS logMany, the batching ticket 21's third pass introduced. Bounded by ceil(n/CHUNK)."
+    },
+    "/hr/core/hr-effective-change-applier.service.ts": {
+      "verdict": "PARTIALLY-BATCHED",
+      "note": "READ N+1 FIXED 2026-09-07: all employment+person rows preload with one inArray+FOR UPDATE before the loop, and all needed job-level rows with one inArray, so applyOne issues no per-change SELECT. The per-change WRITES REMAIN and this file is still correctly detected. They are not batchable without losing behaviour: each branch validates that specific row (assertActiveOrgUnit, the activeJobLevelIds membership test) and must throw for that row, and department/location additionally call syncOrgUnitPlacement only when employment.userId is set. A bulk update keyed by change type would drop the per-row throw and the conditional placement sync. NOT MARKED FIXED, and NOT hidden: a first attempt moved tx from argument 0 to argument 2 so DB_CALL_PATTERNS 10 and 11 (which anchor on the handle being the FIRST argument) could not match. That is evading the detector the gate comment explicitly warns about - a helper that receives the handle issues the query just as surely as one that owns it - and it was reverted."
+    },
+    "/hr/core/person-employment-backfill.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "processMemberBatch drops the 4-wide concurrency window and hands the whole fetched page to the existing batched ensureManyFromUsers inside ONE runInNewTenantTransaction per page, so the tenant GUC is still set by withTenant and the tx is threaded into every statement rather than any of it running on the bare db handle. N=100: roughly 600-1000 round trips -> 1 transaction and at most 9 statements. Behaviour change recorded: a page is now atomic, so a failure costs the page rather than one member, and every member of that page gets the same generic error entry with no detail leaked."
+    },
+    "/hr/directory/bulk-onboarding/bulk-onboarding-departments.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Classified 2026-09-08 when the bulk-onboarding batching split this file out of /hr/directory/employee-bulk-onboarding.service.ts. The detected site is loadDepartmentCatalog: a bounded keyset drain, `for (let page = 0; page < HR_SCAN_MAX_PAGES; page++)` stepping on gt(orgUnits.id, afterOrgUnitId) with .limit(HR_SCAN_PAGE), breaking on a short page. It issues one SELECT per PAGE OF THE ORG'S DEPARTMENTS, never one per uploaded row, and it runs once before any row is processed to build the name/code -> id map the whole import reads from memory. The write side of this file is already batched: ensureDepartments creates every missing department name in one multi-row INSERT ... ON CONFLICT DO NOTHING plus at most one reconciling SELECT for names a concurrent writer created, replacing the old per-row resolveDepartmentId INSERT."
+    },
+    "/hr/directory/employee-bulk-onboarding.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "N+1 FIXED 2026-09-08. The `for (let i = 0; i < rows.length; i += 1)` loop that ran one complete EmployeeOnboardingService.onboardEmployee(actor, payload) per uploaded row is gone; the service now runs a fixed number of statements for any batch size, proved by employee-bulk-onboarding-query-count.spec.ts against db/__tests__/counting-db (23 statements at 1 row and 23 at 50; the previous shape measured 28 statements per row against the same harness, so 50 rows cost 1,401). What changed, clause by clause against root CLAUDE.md section 5: assertMayGrantRole runs once per DISTINCT role instead of once per row, and a role the actor may not grant rejects only the rows carrying it; emails are trimmed+lowercased once in planBulkOnboarding and deduplicated there; the department catalogue, the existing users, their memberships and the claimed employee numbers are four inArray reads taken before the loop into Maps; every write is one multi-row statement (users, organization_members, role_assignments, org_unit_members, billing_seat_events, organization_people, hr_people, hr_employments, hr_employee_sensitive_fields, employee_salary_profiles + components, magic_link_tokens, hr_audit_logs); the per-org `quota:${orgId}:members` advisory lock is taken once and PlanLimitsService.assertWithinLimit(orgId, 'members', acceptedCount, tx) is called once inside the transaction immediately before the membership insert; cache invalidation, welcome-email delivery and automations are deferred once through registerAfterCommit instead of running inline per row. ERROR MODEL, stated rather than silently changed: partial acceptance with per-row reasons, then one all-or-nothing transaction for everything accepted. Every rejection reason is decided from the preloaded maps (duplicate email in the upload, unauthorised role, unknown department, email already a member, employee id already in use), so a rejected row still names its row and its reason exactly as before; what changed is that a DATABASE failure now rolls the whole batch back instead of leaving half an import written. Idempotency is preserved: a re-upload still fails every already-onboarded row with 'This email already belongs to an employee in your organization.', now from the preloaded membership set instead of a per-row ConflictException, and the seat events keep their `member-added:${orgId}:${userId}` idempotency key. STILL PER ROW, deliberately and outside the transaction: AutomationService.runAutomationsForEvent is called once per created employee inside the single after-commit hook (wrapped in runInNewTenantTransaction, so it does not borrow the committed request transaction) and WebhooksDispatchService.dispatch is called once per new hire. Both are per-entity delivery events with no batch API, they are not part of the membership write path, and collapsing them would drop events rather than batch them. The detected keyset drain moved to bulk-onboarding/bulk-onboarding-departments.ts, classified FALSE-POSITIVE there."
+    },
+    "/hr/global/compliance-requirements.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "First seen 2026-09-08. generateEvents is a keyset drain over hr_compliance_requirements: `for (let page = 0; page < HR_SCAN_MAX_PAGES; page++)` stepping on gt(id, afterRequirementId) with .limit(HR_SCAN_PAGE), breaking on a short page. Three statements per page regardless of page contents: the page SELECT, one inArray SELECT of existing hr_compliance_events for that page's requirement ids, and one multi-row INSERT of the missing ones. The nested `for (const req of reqs)` and `for (const d of dates)` at :226/:228 are pure in-memory date arithmetic (computeDueDates) and issue nothing. Read and classified 2026-09-08 by the gate-repair lane; the file belongs to the HR lane and was not edited."
+    },
+    "/hr/governance/retention/retention.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "anonymizeSubjects replaces three statements per subject with three in total: one grouped read over organization_members answering both is-this-subject-in-this-org and does-it-hold-another-membership in the same pass, one set-based UPDATE users SET email over the eligible set, and one UPDATE ... WHERE id = ANY(completedIds) after the loop. anonymizeSubject delegates to it and still raises the same NotFoundException and BadRequestException. R stranded requests: 4R statements -> 3. A mid-loop failure no longer leaves earlier subjects completed; an unanonymisable subject is counted skipped with the same error log and the rest still complete."
+    },
+    "/hr/import/hr-import.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "while(true) keyset drain reading IMPORT_ROW_BATCH_SIZE=500 rows per outer iteration; inner commitRow calls are sequential for error isolation and dependency ordering"
+    },
+    "/hr/interviews/hr-scorecards.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "while(true) keyset drain over interview_scorecards; one query per page"
+    },
+    "/hr/onboarding/core/onboarding-admin.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "while(true) keyset drain on afterUserId â€” one bounded SELECT and one bulk INSERT per iteration"
+    },
+    "/hr/onboarding/flow/hr-checklist-reconciliation.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "Ticket 21 third pass, verified by reading: the loop partitions items into `nowDone` / `nowTodo` in memory and the two `inArray` UPDATEs sit outside it, one per SET shape, exactly as the earlier note prescribed."
+    },
+    "/hr/onboarding/flow/module-checklist.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "existing checklists read with one inArray and seeds bulk-inserted per module; the loop still detected is the bounded metadata sync over at most 12 compile-time seed items"
+    },
+    "/hr/recruitment/recruitment-candidate-ops.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "each iteration is one bounded bulk insert of chunkSize=50 rows"
+    },
+    "/hr/recruitment/recruitment-jobs.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "duplicate-title probe was up to 20 findFirst calls; now one LIKE query and an in-memory set"
+    },
+    "/hr/recruitment/recruitment-pipeline.service.ts": {
+      "verdict": "BATCHED",
+      "note": "First seen 2026-09-03. `PIPELINE_STAGES.map((stage) => this.db.query.candidates.findMany(...))` is a fan-out of exactly 6 queries â€” PIPELINE_STAGES is `[\"NEW\",\"SCREENING\",\"INTERVIEW\",\"OFFER\",\"HIRED\",\"REJECTED\"] as const`, a compile-time constant. Bounded by the vocabulary, not by data, and each branch carries its own STAGE_CANDIDATE_LIMIT."
+    },
+    "/hr/time/attendance-summary.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "chunked multi-key read â€” the loop steps by MEMBER_READ_BATCH_SIZE and each iteration reads a whole batch with inArray"
+    },
+    "/hr/time/leave-approver.service.ts": {
+      "verdict": "BOUNDED",
+      "note": "BOUNDED 2026-09-07. The earlier 'N+1-FIXED via Promise.all' claim was withdrawn: preloading every candidate's permissions did not batch the work, it removed the loop's early exit, so a path that typically resolved ONE candidate always resolved all of them. Concurrency hid the cost in wall-clock while raising it in total. The sequential loop with its early return is restored. There is no bulk resolver to batch into - AccessService exposes only resolveUserPermissions(orgId, userId), and membersWithPermission returns PermissionMember {userId, membershipId} with no DataScope, which is the field the loop actually tests. Bounded instead by APPROVER_CANDIDATE_LIMIT = 100 on the candidate list and by returning at the first candidate whose scope covers another member. Pinned by leave-approver-query-count.spec.ts: 2 statements at 1 and at 50 candidates, and exactly 1 resolution when the first candidate covers."
+    },
+    "/inventory/channels/channels.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "2 DB call(s) detected inside loop body â€” batch with inArray or Promise.all"
+    },
+    "/inventory/counts/inv-cycle-counts.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "First seen 2026-09-03. `data.lines.map((u) => sql`(...)`)` builds a VALUES list for ONE `UPDATE ... FROM (VALUES ...)`; zero round trips in the loop. Inventory is out of scope for this release."
+    },
+    "/inventory/counts/inv-physical-audits.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "First seen 2026-09-03. Same shape as inv-cycle-counts: a VALUES fragment builder feeding one statement. Inventory is out of scope."
+    },
+    "/inventory/products/inv-product-crud.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "1 DB call(s) detected inside loop body â€” batch with inArray or Promise.all"
+    },
+    "/inventory/purchase-orders/grn-receive.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "2 DB call(s) detected inside loop body â€” batch with inArray or Promise.all"
+    },
+    "/inventory/purchase-orders/grn.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "1 DB call(s) detected inside loop body â€” batch with inArray or Promise.all"
+    },
+    "/inventory/quality/quality-disposition.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "1 DB call(s) detected inside loop body â€” batch with inArray or Promise.all"
+    },
+    "/inventory/quality/quality-inspections.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "2 DB call(s) detected inside loop body â€” batch with inArray or Promise.all"
+    },
+    "/inventory/returns/customer-returns.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "1 DB call(s) detected inside loop body â€” batch with inArray or Promise.all"
+    },
+    "/inventory/sales-orders/so-fulfillment.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "2 DB call(s) detected inside loop body â€” batch with inArray or Promise.all"
+    },
+    "/inventory/sales-orders/so-lifecycle.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner"
+    },
+    "/inventory/stock-engine/movement-costing.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner"
+    },
+    "/inventory/stock-engine/reservation.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner"
+    },
+    "/inventory/stock-engine/stock-engine-batch.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner"
+    },
+    "/inventory/stock-engine/stock-engine.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "1 DB call(s) detected inside loop body â€” batch with inArray or Promise.all"
+    },
+    "/inventory/stock-engine/valuation.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "1 DB call(s) detected inside loop body â€” batch with inArray or Promise.all"
+    },
+    "/inventory/stock/inv-stock-transfers.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "4 DB call(s) detected inside loop body â€” batch with inArray or Promise.all"
+    },
+    "/inventory/stock/inv-stock.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "1 DB call(s) detected inside loop body â€” batch with inArray or Promise.all"
+    },
+    "/inventory/webhooks/webhook-emitter.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner"
+    },
+    "/invoices/invoices-lifecycle.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "The loop-invariant fallback-recipient read is hoisted into loadFallbackRecipients: one ranked statement, row_number() over (partition by org_id order by user_id) filtered to at most 5, over the distinct orgs of the unowned invoices, taken before the notification loop. Between 1 and K interleaved SELECTs -> 1, and 0 when every overdue invoice names a collection owner. Ordering is now deterministic where the old .limit(5) was arbitrary."
+    },
+    "/invoices/invoices-payment.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "recordPayment reads touched invoices with one inArray and clears reminder logs with one inArray update"
+    },
+    "/invoices/invoices-write.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "the per-invoice UPDATE is a compare-and-set claim on nextRecurringDate; making it a batch would remove the guarantee that exactly one worker advances each schedule"
+    },
+    "/kb/article-conversion/kb-article-migration.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "each iteration is one transaction with a single bulk insert of up to 50 rows"
+    },
+    "/kb/help-centre/kb-articles.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "uniqueArticleSlug is one LIKE query with the suffix computed in memory; the loop still detected is a maxAttempts=3 bounded retry"
+    },
+    "/kb/help-centre/kb-categories.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "depthOf and isAncestorOf were one findFirst per tree level; both are now a single WITH RECURSIVE query"
+    },
+    "/kb/retrieval/kb-ingestion-checkpoint.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "chunked bulk insert â€” the loop steps by CHECKPOINT_WRITE_BATCH and writes a whole batch per iteration"
+    },
+    "/kb/retrieval/kb-page-backfill.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "a deliberately resumable, paced backfill: one withTenant per page so the pooled connection is RELEASED between embedding calls, which is the box 8 requirement rather than a violation of box 2"
+    },
+    "/kb/wiki/kb-import-export.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "The per-parent max(sortOrder) probe is one grouped max() over or(inArray(parentPageId, ids), isNull(parentPageId)) with GROUP BY parent_page_id, read into a map; the surviving loop only fills sortOffsets in memory. Org and deleted_at filters unchanged, and a missing group still defaults to 0 and offset 100. P distinct parents: P selects -> 1."
+    },
+    "/kb/wiki/kb-page-attachment-purge.ts": {
+      "verdict": "BATCHED",
+      "note": "Classified 2026-09-03 (file arrived from another lane mid-release; classified by reading, not baselined). Two sites. Site A line 43 is a chunked write-ahead insert under PURGE_BOOKKEEPING_CHUNK with an onConflictDoUpdate â€” bounded by ceil(n/CHUNK). Site B line 79 issues one `markPurge` per key and that is CORRECT rather than batched: each key needs its own object-store delete, and the bookkeeping row is marked per key so a partial failure is recoverable â€” collapsing the marks to one statement after the loop would report objects as purged that were never deleted, which is the same crash-window argument ticket 21 records for the recurring-journal sweeps."
+    },
+    "/kb/wiki/kb-page-duplicate.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "The subtree copy is a breadth-first level walk: every node at one depth is inserted in a single INSERT ... VALUES RETURNING, and returned rows are correlated back by (parentPageId, sortOrder), a key unique by construction within a level, rather than by relying on RETURNING order. Page links are one select of all referenced ids across the subtree plus one bulk insert. The final select of the new root is gone, because the root comes back from its own level's RETURNING, and that read also had no org_id predicate. N nodes at depth D: at most 3N+1 -> D+2. BFS additionally makes unrepresentable an ordering defect the old map-order walk had, where a child visited before its parent got a null newParentId and was grafted to the space root."
+    },
+    "/kb/wiki/kb-page-tree.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "purgeExpired uses for(;;) chunked batch delete â€” SELECT batch IDs + DELETE batch; not per-row N+1"
+    },
+    "/kb/wiki/kb-spaces.service.ts": {
+      "verdict": "BATCHED",
+      "note": "First seen 2026-09-03 by the braceless scanner, and it was real: deleting a space emitted ONE outbox row per article and per page via `for (const { contentType, id } of [...articles.map(...), ...pages.map(...)]) await OutboxWriter.emit(tx, {...})`, i.e. one INSERT per piece of content in the space. Reclassified N+1-FIXED -> BATCHED on 2026-09-09, which is a verdict correction and NOT a code regression. The per-row emit is gone, but the replacement is not a single statement either: `emitContentDeletes` (:256-287) is a deliberate keyset loop — `for (;;)` reading SPACE_CONTENT_BATCH_SIZE rows ordered by id, then one `OutboxWriter.emitMany` per batch, resuming from the last id. It stays inside the space's own transaction because the events must commit with the soft delete, and it must not read tens of thousands of pages into one array. Statements are 2 per batch, i.e. O(pages / SPACE_CONTENT_BATCH_SIZE), never O(pages). N+1-FIXED asserts the detector no longer matches; a keyset batch is SUPPOSED to keep matching it, exactly as the /access/access-grant-drains.ts and /accounting/recurring-journals entries record. This is the shape the PRD requires of growing work, so it stays visible rather than exempt."
+    },
+    "/leads/lead-triggers.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "advanceRoundRobinState is one INSERT ... ON CONFLICT (rule_id) DO UPDATE SET last_assigned_index = (last_assigned_index + 1) % $n RETURNING: 2 statements -> 1, and the read-modify-write race two concurrent leads could interleave onto the same index is gone. The rule loop is split so condition matching and plan selection are pure (matchesConditions, planForRule and an AssignmentPlan discriminated union) and the single assignment round trip moved out of the loop into resolveAssignee; first-match-wins is preserved exactly. Three as-casts and a non-null assertion were removed in the same change."
+    },
+    "/leads/leads-board.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Promise.all over the fixed statusKeys set â€” one query per board column, a constant"
+    },
+    "/leads/leads-import.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "the loop is over the assignment map; each iteration is one updateMirroredLeads over that salesperson's whole id list"
+    },
+    "/leads/leads-ops.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "same shape â€” one batched updateMirroredLeads per salesperson, not per lead"
+    },
+    "/mail/mail-accounts.service.ts": {
+      "verdict": "BATCHED",
+      "note": "markNeedsReauthMany dedupes the account ids and issues one `UPDATE ... WHERE id IN (chunk) AND org_id = ...` per REAUTH_MARK_CHUNK, so the loop steps by the chunk size rather than by the account. The try/catch inside the loop is deliberate and is not a per-row round trip: every caller is on an error path about to rethrow the provider's own error, so a failed flag write is logged rather than thrown or discarded â€” discarding it left a revoked mailbox reading `active` forever. New to the baseline because markNeedsReauth is now a one-element call into this batch path."
+    },
+    "/notifications/broadcasts-audience.queries.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "for(;;) at L101 is keyset streaming, not per-recipient: gt(organizationMembers.id, cursor) + .limit(PAGE_SIZE=500), returning when rows.length < PAGE_SIZE. That is one page query per 500 members, the pattern this gate exists to encourage. The flagged sql at L168 is a scalar subquery supplying notificationCreatedAt inside .values({}) of that one insert."
+    },
+    "/notifications/notification-delivery-worker.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "each claimed job is a distinct delivery through an external provider; the write in the loop is that job's own retry state"
+    },
+    "/notifications/notification-digest.service.ts": {
+      "verdict": "BATCHED",
+      "note": "BATCHED (was N+1-FIXED; re-verdicted 2026-09-03). The item flush is `for (let offset = 0; offset < flushIds.length; offset += DIGEST_FLUSH_CHUNK) await tx.update(...).where(inArray(...))` â€” chunked, bounded by ceil(n/CHUNK). Claiming ripe windows is one multi-row INSERT ... ON CONFLICT DO NOTHING."
+    },
+    "/notifications/notification-dispatch-persistence.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "for (const decision of routingResult.channels) iterates the NotificationChannel union - IN_APP|EMAIL|PUSH|SMS|WHATSAPP|WEBHOOK, six members fixed at compile time, minus IN_APP which continues at L156, so at most five. It does not grow with recipients or tenant data. The flagged sql template at L168 is a scalar subquery supplying notificationCreatedAt inside .values({}) of that single insert."
+    },
+    "/notifications/notification-dispatch.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "outbox intents batch-inserted with onConflictDoNothing; after-commit hooks registered in a separate pass"
+    },
+    "/notifications/notification-preferences.service.ts": {
+      "verdict": "BATCHED",
+      "note": "BATCHED (was N+1-FIXED; re-verdicted 2026-09-03). `on.map((w) => sql`(...)`)` builds a row-constructor IN list over (scope_type, scope_key, channel) for ONE DELETE; a preferences save was one round trip per channel per event before. Zero round trips inside the loop."
+    },
+    "/organization/core/lifecycle/last-active-org-repair.ts": {
+      "verdict": "BATCHED",
+      "note": "First seen 2026-09-03 (ticket 21, sixth pass), and it is the fix. This helper replaces the byte-identical repairLastActiveOrgIds that org-lifecycle.service.ts and org-purge.service.ts each carried, which issued TWO UPDATEs per member (users + account_organization_index) â€” 1,000 statements to archive a 500-member org. The users half now goes through bulkUpdateFromValues (the new last_active_org_id differs per row) with orgColumn last_active_org_id, which is both the tenant correlation on a table that has no org_id AND the compare-and-set the per-row form used; the index half is a uniform SET and is one inArray UPDATE per ARCHIVE_INDEX_CHUNK (500). The `for (let i = 0; i < memberUserIds.length; i += ARCHIVE_INDEX_CHUNK)` opener is what the detector matches."
+    },
+    "/organization/core/lifecycle/organization-purge-adapters.ts": {
+      "verdict": "BATCHED",
+      "note": "BATCHED (was N+1-FIXED; re-verdicted 2026-09-03). Three braceless chunk loops over PURGE_BOOKKEEPING_CHUNK feeding one UPDATE and two INSERTs with sliced value arrays. Bounded by ceil(n/CHUNK)."
+    },
+    "/organization/core/lifecycle/organization-saga.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "compensation must run in reverse step order and each step's compensator is different work; the write in the loop is that step's own state"
+    },
+    "/organization/core/org-lifecycle.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "Was ACTIVE debt (BLOCKED ON A MIGRATION) until 2026-09-09. resolveReplacementOrgIds opened one withIdentity transaction PER MEMBER, because policy tenant_isolation on organization_members (migration 0383) is USING (org_id = app.current_org_id_or_null() OR user_id = app.current_user_id_or_null()): the org arm cannot reach the other organisations the answer lives in, and the identity arm admits one principal because app.user_id is a single text GUC, so the set form was not expressible. Migration 1081 adds app.next_active_org_ids(text[]), a SECURITY DEFINER resolver owned by the BYPASSRLS role. The whole departing cohort is now one statement inside one runInTenantTransaction pinned to the organisation being archived. The account_organization_index half was already batched in lifecycle/last-active-org-repair.ts (chunked inArray plus bulkUpdateFromValues). The now-orphaned private findNextActiveOrgId was deleted. Detector no longer matches this file. Query shape pinned by lifecycle/next-active-org.spec.ts, which asserts the rendered SQL is ARRAY[, , ]::text[] and not the row constructor (, , )::text[] that would fail 42809."
+    },
+    "/organization/core/org-membership-access-revocation.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "N+1 removed 2026-09-03: one OutboxWriter.emit INSERT per disabled user_integration_connections row. Now a single OutboxWriter.emitMany."
+    },
+    "/organization/core/org-purge.service.ts": {
+      "verdict": "BATCHED",
+      "note": "ACTIONABLE -> BATCHED on 2026-09-09. Sites 2 and 3 were the same per-member withIdentity transaction pair as org-lifecycle and are gone: resolveReplacementOrgIds is now one app.next_active_org_ids call for the whole cohort (migration 1081); see the org-lifecycle entry for the full RLS analysis. The single remaining detected site is listMemberUserIds (:69-90), a correct keyset drain — the loop body IS the page fetch, one bounded MEMBER_PAGE_SIZE=500 select per page resuming from the last id, which is the shape the PRD requires of growing work. It replaced a .limit(10000) that left every member past the ten-thousandth with live org-scoped access while the purge reported success, so it must stay a loop. BATCHED rather than N+1-FIXED because a keyset batch is SUPPOSED to keep matching the detector."
+    },
+    "/organization/onboarding/workspace-onboarding.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "The per-team reparent is collected into a map of teamId to departmentId, last write wins to match the old last-UPDATE-wins, and issued as one bulkUpdateFromValues UPDATE org_units SET parent_id ... FROM (VALUES ...). N teams: N -> ceil(N/500). The helper emits org_units.org_id = $orgId in the WHERE and runs on the same runInTenantTransaction tx the surrounding reads use, and touch: [updated_at] preserves the $onUpdate timestamp the per-row update wrote. A departmentId of undefined is now skipped rather than throwing Drizzle's no-values-to-set."
+    },
+    "/organization/setup/org-setup-resolver.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "one transaction per ORGANISATION, not per row â€” each iteration is a different tenant and needs its own GUC; the delete inside it is already an inArray over that org's orphans"
+    },
+    "/ownership/ownership-transfer-expiry.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "The defect the old note described, resolveMembershipUserIds once per expiring transfer, was already fixed: resolveMembershipUserIdMap is a single inArray read for the whole batch. What remained was the cache fan-out, one Redis DEL per expired MODULE transfer. expiredModuleKeys is now a Set and the fan-out goes through the new CacheService.invalidateManyForOrg, so it is one pass over the distinct module keys, bounded by the module catalog and independent of the transfer count. invalidateMany could not be substituted: it resolves the default Redis and an unprefixed key, so it would delete nothing in a regional cell."
+    },
+    "/party/party-legacy-clients.ts": {
+      "verdict": "BATCHED",
+      "note": "Both sites the old note named are fixed. adoptClient per unadopted id became adoptClients: one select with inArray(clients.id, ids).limit(ids.length), one partyIdsOfLeads map read, one multi-row insert(businessParties) with ids minted by randomUUID so rows pair by identity rather than RETURNING order, one grouped movePartiesFor, one insert(clientPartyMap) and one grantRoles - roughly 6N statements -> 5 + G, where G is the number of distinct derived payloads. convertedFromColumnOf per derived row became one leadIdsOfParties read over every convertedFromPartyId plus an in-memory lookup: N -> 1. What the detector still matches is the groupByPayload UPDATE loop, which is one UPDATE per DISTINCT payload and is batched by construction."
+    },
+    "/party/party-legacy-contacts.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "Both sites the old note named are fixed. adoptContact per unadopted id became adoptContacts plus one partyIdsOfCrmOrgs and one partyIdsOfLeads preload (about 7N -> 6 + G), and employerColumnOf AND convertedFromColumnOf per derived row became one employerLegacyIds plus one leadIdsOfParties read before the loop (2N -> 2). The grouped UPDATE is batched by construction. The genuine remainder is createMirroredContacts (:178-191), a real per-row create loop: one transaction, then `for (const values of rows) created.push(await createMirroredContact(tx, ...))`. ACTIONABLE -> EXCLUDED-MODULE on 2026-09-09 on CALLER evidence, not on the file's own path. Every caller is CRM, which this release excludes: createMirroredContacts is called only at contacts.service.ts:143 (contacts import), and the singular createMirroredContact only at contacts.service.ts:64. No in-scope module reaches either. The file sits under /party/ rather than /crm/, so isExcludedModule does not auto-exclude it, and /party/ was deliberately NOT added to EXCLUDED_MODULE_PREFIXES — party is the shared person/party seam that in-scope code also uses, and blanket-excluding it would blind the detector to a future in-scope N+1 there. EXCLUDED-MODULE keeps this file printed on every run while removing it from the actionable count. If an in-scope caller is ever added, this verdict is wrong and must go back to ACTIONABLE. Batching it needs the importer's chunk-bisect semantics rebuilt, which exist to attribute an import failure to the offending row rather than failing the batch."
+    },
+    "/party/party-legacy-employer.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "The per-distinct-employer UPDATE contacts ... WHERE id IN (correlated subselect) is replaced by one contact_party_map read plus one bulkUpdateFromValues over (id, organization_id), chunked at BULK_UPDATE_CHUNK=500. D updates -> 1. The tenant predicate is explicit on both the map read and the UPDATE, and the deliberate absence of a deleted_at filter is preserved because a soft-deleted employee must still move."
+    },
+    "/party/party-legacy-leads.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "The site the old note named is fixed: adoptLead per unadopted id became adoptLeads, about 5N statements -> 4 + G. Two sites remain and neither is the one the note described. The grouped UPDATE at the end is batched by construction. The genuine remainder is createMirroredLeads, a real per-row create loop. ACTIONABLE -> EXCLUDED-MODULE on 2026-09-09 on CALLER evidence, not on the file's own path. Every caller is CRM, which this release excludes: createMirroredLeads only at leads-import.service.ts:200, and the singular createMirroredLead only at leads.service.ts:136, leads.service.ts:368 and public/crm.service.ts:141. No in-scope module reaches any of them. The file sits under /party/ rather than /crm/, so isExcludedModule does not auto-exclude it, and /party/ was deliberately NOT added to EXCLUDED_MODULE_PREFIXES — party is the shared person/party seam that in-scope code also uses, and blanket-excluding it would blind the detector to a future in-scope N+1 there. EXCLUDED-MODULE keeps this file printed on every run while removing it from the actionable count. If an in-scope caller is ever added, this verdict is wrong and must go back to ACTIONABLE. Batching it needs the importer's chunk-bisect semantics rebuilt, which exist to attribute an import failure to the offending row rather than failing the batch."
+    },
+    "/party/party-legacy-orgs.ts": {
+      "verdict": "BATCHED",
+      "note": "Both sites the old note named are fixed. adoptOrganisation per unadopted id became adoptOrganisations plus one partyIdsOfCrmOrgs preload (about 6N -> 5 + G), and parentColumnOf per derived row became one crmOrgIdsOfParties read (N -> 1). One deliberate behaviour improvement: the parent map is seeded with the parties this call is minting, so a subsidiary and its parent arriving unadopted in the same set now resolve regardless of id order, where the old loop only resolved it when the parent happened to come first. What the detector still matches is the groupByPayload UPDATE loop, which is batched by construction."
+    },
+    "/party/party-legacy-seam.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "the loop walks a merge chain bounded by MAX_MERGE_HOPS with an explicit cycle guard; it is a chain walk, not a per-row fan-out"
+    },
+    "/party/party-legacy-writer.ts": {
+      "verdict": "BATCHED",
+      "note": "The real site is fixed: claimIdentifiers per moved row became claimIdentifiersOfParties, one insert(partyIdentifiers) ... onConflictDoNothing per group, deduplicated on (kind, normalised_value) across the whole set because the unique index is (org, kind, normalised_value) and ON CONFLICT cannot resolve two conflicting rows inside one INSERT (21000). First-claimant-wins is exactly what the per-party loop did. N inserts per group -> 1. What the detector still matches is site A, the groupByPayload loop, which is batched by construction. countMirroredRows was deleted in the same change: a non-exported function with zero callers in the file and zero references in the repository."
+    },
+    "/party/party-roles.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "identifiersOfParty per candidate is replaced by identifiersOfParties, one inArray read over the subject plus every candidate with an explicit .limit(IDENTIFIER_READ_LIMIT), grouped in memory: 1+N -> 1. Fixing that exposed a second real site the old note never named, an insert(partyDuplicateCandidates) that upserted once per queued candidate in the same loop. The loop now collects QueuedCandidate[] and issues one multi-row insert ... onConflictDoUpdate with RETURNING mapping candidate ids back by (low, high): Q upserts -> 1. The auto-merge branch stays sequential because a merge can remove the subject, and blockers stays insert-only."
+    },
+    "/payroll/jobs/payroll-jobs.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "N+1 removed 2026-09-03 (commit e3bdd8c6). The old FALSE-POSITIVE excuse â€” 'the per-job UPDATE is the compare-and-set claim; batching it would let two workers claim the same job' â€” was wrong: the claim predicate is `status = 'PENDING'`, which does the claiming just as well over a multi-key WHERE, and a row another worker took is simply absent from RETURNING. claimPending now selects the candidate ids and issues ONE `UPDATE ... WHERE id IN (...) AND status = 'PENDING' RETURNING *`, with attempt incremented as `coalesce(attempt, 0) + 1` in SQL rather than written back from the value its own SELECT read (which is what let a concurrent worker's increment be overwritten, so fail()'s maxAttempts ceiling was unreachable for a twice-claimed job). FIFO order restored after RETURNING. No loop in the file issues a database call. Pinned by payroll-jobs-claim-batch.spec.ts."
+    },
+    "/payroll/payout/batch-creator.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "idempotency lookup batched via inArray into a Map, and items returned from the insert instead of re-read; the 23505 race handler is a bounded exceptional path"
+    },
+    "/payroll/payout/locking.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "N+1 removed 2026-09-03 (commit 48a44741). writeTdsYtdLedger issued one INSERT ... ON CONFLICT DO UPDATE into payroll_tds_ytd_ledger per run employee inside the lock transaction; it is now two bulk upserts, one per subject kind, each carrying the arbiter's predicate as targetWhere because both unique indexes are PARTIAL since migration 0393 and an ON CONFLICT with no matching WHERE cannot infer a partial index (each per-row statement was raising 42P10). The run's subjects are collapsed in a Map first, because a multi-row DO UPDATE raises 21000 on an intra-statement duplicate. The `for (const emp of emps)` loop that remains builds those Maps in memory and issues nothing. Pinned by locking-tds-ledger-bulk.spec.ts."
+    },
+    "/payroll/runs/inputs.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "reimportInputs batches the per-payee pullAttendanceInputs into pullAttendanceInputsByUser and replaces the per-row upsert loop with one multi-row INSERT ... ON CONFLICT DO UPDATE; membershipIds still resolved once via inArray"
+    },
+    "/payroll/runs/lib/input-puller.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "pullAttendanceInputsByUser walks PAYROLL_INPUT_PULL_CHUNK=200 payee chunks; each iteration is one batched inArray read (locked snapshots) plus at most two live attendance/leave reads, so round-trips are ceil(users/200)*3, not one per payee. Asserted by runs/__tests__/reimport-inputs-call-count.spec.ts"
+    },
+    "/payroll/runs/loan-recovery.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "N per-loan updates became two conditional inArray updates; the EMI increment is now atomic SQL rather than an absolute write"
+    },
+    "/payroll/runs/run-result-persister.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "one bulk INSERT ... ON CONFLICT DO UPDATE RETURNING; the conflict target is uniform across rows so semantics are unchanged"
+    },
+    "/payroll/setup/policy-mutation.service.ts": {
+      "verdict": "BATCHED",
+      "note": "Re-verdicted 2026-09-03 (ticket 21, sixth pass). WAS ACTIONABLE: one salary_components INSERT per component when activating a policy. Now one multi-row INSERT per SALARY_COMPONENT_INSERT_CHUNK (200) rows, so the detector still matches the chunk loop and is supposed to â€” that is what BATCHED means. `components` comes from a tenant-owned template's defaultComponents JSON, so the length is caller-controlled and a chunk is required, not one unbounded statement. Multi-row ON CONFLICT (org_id, code) DO NOTHING semantics executed against a database (scratch_t21f): a pre-existing conflict and an intra-statement duplicate both behave exactly as the per-row loop did."
+    },
+    "/payroll/setup/templates.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "existing system template keys read once into a Set, missing seeds inserted in one bulk insert"
+    },
+    "/platform/platform-operator-access.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "grants grouped by org into one transaction each with batched update and audit insert; the loop still detected iterates unique orgs, not grants"
+    },
+    "/quotes/quotes-lifecycle.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "for(;;) keyset export drain — gt(quotes.id, afterId) + .orderBy(asc(quotes.id)).limit(EXPORT_PAGE) — one SELECT per page, never per row. Same shape as /audit-log/audit-log.service.ts."
+    },
+    "/rbac/role-grant-reconciler.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "all three sites are bounded pagination: a chunked INSERT_CHUNK_SIZE grant insert and two for(;;) keyset drains"
+    },
+    "/rbac/roles.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "one inArray slug read plus one transaction doing batched role and permission inserts with a single bumpPermissionsVersion"
+    },
+    "/rbac/seed-system-roles.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "seedSystemRolesForOrg: per-role-template insert is intentional seed behavior, not request-path N+1"
+    },
+    "/realtime/web-push.service.ts": {
+      "verdict": "BATCHED",
+      "note": "fanout loop batches recipients at PUSH_SUBSCRIPTION_BATCH=200 and calls loadSubscriptionsForPage once per page (one DB call for all userIds in the slice). The loop replaced a per-member approach that issued one SELECT per recipient, which was the actual N+1. The file's own comment (line 184) documents the transition: 5,000 members went from 5,000 SELECTs to 25."
+    },
+    "/sessions/sessions.service.ts": {
+      "verdict": "BATCHED",
+      "note": "Re-verdicted 2026-09-03 (ticket 21, sixth pass). WAS FALSE-POSITIVE naming only the redis.del(...batch) prune loop. There are now two chunk loops and both are batched by construction: pruneExpiredRevocations DELs REVOCATION_PRUNE_BATCH (200) keys per variadic call, and tombstone() writes one MSET plus one variadic ZADD per REVOCATION_WRITE_CHUNK (256) ids where it previously issued two Redis commands per session id (500 sessions cost 1,000 round trips, now 4). BATCHED rather than FALSE-POSITIVE because the loop really does issue a round trip â€” one per chunk, which is the bounded form."
+    },
+    "/settings/settings.service.ts": {
+      "verdict": "BATCHED",
+      "note": "First seen 2026-09-03. getSectionProvenance runs `Promise.all(sections.map((section) => this.db.select(...).from(auditLogs).leftJoin(users).where(like(auditLogs.action, `${section}.%`)).orderBy(desc(createdAt)).limit(1)))` â€” one query per section. `sections` is NOT caller-sized: settingsProvenanceQuerySchema types it as `z.enum(SETTINGS_PROVENANCE_SECTIONS)`, so the fan-out is capped by the enum and cannot grow with data. Worth collapsing to one DISTINCT ON query eventually; bounded today."
+    },
+    "/storage/storage-key-catalog.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "collectOrgFileKeys and collectUserFileKeys each became one UNION ALL, with user FK columns discovered from pg_constraint; the loops still detected are bounded cursor drains in drainPages"
+    },
+    "/support/core/support-macros.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "verified by reading it: the loop returns on the first matching rule, so at most one member lookup per invocation regardless of rule count"
+    },
+    "/support/core/support-sla.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "The prescription in the old note was already implemented: escalations are grouped by target level into idsByNewLevel and issued as one inArray UPDATE per level, at most 2. What the detector matches is that group loop itself, which is the target shape. Residual recorded rather than hidden: tryAutoReassign still issues a membership findFirst plus an UPDATE per repeat-breach ticket, because each ticket routes to a different assignee. That site is invisible to this detector (the per-row work is a service call) and is tracked here rather than in the ACTIONABLE-UNDETECTED ratchet only because it is named in this note."
+    },
+    "/support/core/support-ticket-erasure.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "for(;;) keyset drain over support_tickets; one query per page"
+    },
+    "/surveys/survey-builder.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "N+1 removed 2026-09-03: reorder() issued one UPDATE per section and one per question of the request payload. Both are now a single bulkUpdateFromValues keyed on id, with the existing org_id + survey_id predicates preserved (survey_id rides in extraWhere). Duplicate ids are collapsed to the last occurrence first, because the helper refuses a repeated key and the per-row loop it replaced was last-write-wins. Pinned by three cases in src/db/__tests__/db-call-count-contract.spec.ts, bite-proved against the pre-fix service."
+    },
+    "/surveys/survey-forms.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "create: bulk insert sections, then flatMap questions, bulk insert, then flatMap choices, bulk insert â€” 3 queries instead of N+M+K"
+    },
+    "/surveys/survey-participant.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "ticket 21 removed the N+1: import wrote one INSERT ... RETURNING per participant. Now one multi-row insert per PARTICIPANT_INSERT_CHUNK, raw access tokens paired back by RETURNING order. The detector sees the chunk stepper. Proved by db-call-count-contract.spec.ts: one insert at both 1 and 50 participants"
+    },
+    "/surveys/survey-version.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "cloneVersionStructure: bulk insert sections (id-map from pairs), bulk insert questions (id-map), bulk insert all choices (flatMap), bulk insert logic rules"
+    },
+    "/timesheets/core/approvals-bulk.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "N+1-FIXED 2026-09-07: bulkApprove rewritten as a set-based operation matching the bulkReject pattern — one inArray SELECT for candidates, one activeDelegationsToActor read, one assertOrganizationActor call, one settings read, then a single transaction with inArray UPDATEs, one billable-entries SELECT, one rateResolver.resolveMany, bounded rateGroup UPDATEs, and audit.recordMany. approveSinglePeriod is no longer called per period."
+    },
+    "/timesheets/core/approvals.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "the loop is over rateGroups â€” one UPDATE per distinct rate shape, covering every timesheet in that group"
+    },
+    "/timesheets/core/exceptions-detector.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "chunked bulk insert â€” the loop steps by INSERT_CHUNK_SIZE and each iteration writes a whole batch with onConflictDoNothing"
+    },
+    "/users/user-ops.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "The unitMoves block is set-based across all unit kinds: the organization_members read was loop-invariant and is hoisted, the org_unit_members existence read uses inArray(orgUnits.kind, movedKinds), then one delete and one multi-row insert built with flatMap. K kinds (at most 3) and M memberships (at most 200): K identical membership SELECTs plus up to 3K statements -> 4 statements, independent of K. All four keep eq(orgId), and onConflictDoNothing plus the delete-then-insert ordering are preserved."
+    },
+    "/webhooks/webhooks-dispatch.service.ts": {
+      "verdict": "BATCHED",
+      "note": "First seen 2026-09-03 (ticket 21, sixth pass), and it is the fix, not the defect. run() used to open one outbound call per active endpoint through an unbounded Promise.allSettled, each writing its own webhook_logs row. It now walks the endpoints in waves of WEBHOOK_DISPATCH_CHUNK (8): the wave bounds concurrent sockets â€” each lives up to WEBHOOK_MAX_ATTEMPTS x WEBHOOK_TIMEOUT_MS â€” and flushes ONE multi-row insert per wave, so the crash window stays one chunk. The `for (let i = 0; i < active.length; i += CHUNK)` opener is what the detector matches."
+    },
+    "/workflows/engine/execution-advance.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "isStillRunning is the cancellation-propagation probe the box 7 clause asks for â€” it must be re-checked between steps or a cancelled execution keeps advancing. It is one indexed LIMIT 1 read per step, and steps are bounded by the workflow definition"
+    },
+    "/workflows/engine/workflow-runner.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "The retry branch was already one bulkUpdateFromValues; the remaining dead-letter tail is now deadLetterExecutions(tx, orgId, targets) in execution-advance.ts, one UPDATE workflow_executions ... FROM (VALUES ...) AS v(id, status, dlq_reason, completed_at, context) with duration_ms computed from started_at, scoped on org_id and status=running. N exhausted executions, bounded by STUCK_BATCH=50: N -> 1. The singular deadLetterExecution and the plural share one statement builder (deadLetterWrite + DEAD_LETTER_COLUMNS) so the two cannot drift on which columns a dead-letter write sets, and a spec asserts the singular's SET keys equal the batched statement's SET column list. A repeated id throws rather than silently losing one execution's reason, because a duplicate VALUES key joins twice and Postgres keeps one row arbitrarily."
+    },
+    "/workflows/engine/workflow-schedule-tick.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "each due schedule triggers a different workflow; the call in the loop is that schedule's own trigger, not a repeated lookup"
+    },
+    "@common/cache/cache.service.ts": {
+      "verdict": "BATCHED",
+      "note": "NEWLY VISIBLE 2026-09-03 with src/common. Both sites stride by INVALIDATE_KEY_CHUNK (`i += CHUNK`) and issue ONE call per chunk â€” invalidateMany sends one variadic DEL, invalidateNamespaceMany one pipeline. This is the chunked bulk form the clause asks for; the file's own comments record that it replaced the per-key round trip it is now mistaken for."
+    },
+    "@common/db/bulk-update.ts": {
+      "verdict": "BATCHED",
+      "note": "NEWLY VISIBLE 2026-09-03 with src/common. `for (let offset = 0; offset < rows.length; offset += chunkSize)` issues one UPDATE ... FROM (VALUES ...) per chunk of BULK_UPDATE_CHUNK (500) rows. This helper IS the batching primitive the rest of the gate's ACTIONABLE entries are told to use."
+    },
+    "@common/db/expand-contract-compat.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "NEWLY VISIBLE 2026-09-03 with src/common. The `.map()` builds SQL expressions and the `for` walks a value list; neither issues a round trip. No database call is made in this file at all â€” it composes fragments for a caller."
+    },
+    "@common/org/sync-org-unit-placement.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "NEWLY VISIBLE 2026-09-03 with src/common. The outer loop iterates Object.entries(placement) â€” the fixed set of org-unit kinds, a product constant, not tenant data. The inner `for (const row of existing)` deletes rows selected by (membershipId, orgId, orgUnits.kind), which is one person's placement in one kind: at most a handful, and normally one."
+    },
+    "@common/outbox/external-effect-ledger.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "The db call inside the loop is inside forEachOrg, which issues one transaction per tenant org — exactly the pattern for-each-org.ts was designed for (RLS requires per-tenant transactions). The loop body reads a single aggregate row per org, not one row per item. Same shape as @common/tenant/for-each-org.ts (already FALSE-POSITIVE)."
+    },
+    "@common/outbox/outbox-writer.ts": {
+      "verdict": "BATCHED",
+      "note": "NEWLY VISIBLE 2026-09-03 with src/common. `for (let offset = 0; offset < inputs.length; offset += OUTBOX_EMIT_CHUNK)` issues one multi-row INSERT per chunk, not one per event."
+    },
+    "@common/tenant/for-each-org.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "NEWLY VISIBLE 2026-09-03: src/common entered this gate's corpus for the first time, and this is the file the whole asynchronous substrate runs through. The detector is right that the sweep loop issues one round trip per row â€” and the row is a TENANT, so the round trip is required, not accidental: each org gets its own withTenant transaction because the GUC that RLS reads is per-transaction, and a cross-org batch has no tenant context and is denied 42501. The file's own docblock records that this is why discovery moved inside the loop. What IS actionable here is the unbounded enumeration on the line above it, which is banked separately in unbounded-reads-classification.json."
+    },
+    "@common/tenant/org-admin-recipients.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "getOrgAdminUserIds is a keyset drain: each loop iteration issues one SELECT for the next page of ADMIN_PAGE_SIZE=500 admins (not one per row). The loop query IS the next page query. Classified STREAM rather than N+1: bounded in practice (few orgs have >500 admins) and correctness requires reading all admins rather than capping."
+    },
+    "@db/seeds/ai-credit-packs.seed.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "NEWLY VISIBLE 2026-09-03: src/db entered this gate's corpus for the first time. Iterates the imported const array DEFAULT_AI_CREDIT_PACKS â€” literal-bounded, and a one-shot seed script that is never on a request path."
+    },
+    "@db/seeds/demo-coupons.seed.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "NEWLY VISIBLE 2026-09-03 with src/db. Iterates the imported const array DEMO_COUPONS â€” literal-bounded, one-shot seed script."
+    },
+    "@db/seeds/marketplace-apps.seed.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "NEWLY VISIBLE 2026-09-03 with src/db. Iterates the imported const array APPS â€” literal-bounded, one-shot seed script."
+    }
+  }
+}

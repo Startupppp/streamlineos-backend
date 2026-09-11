@@ -41,7 +41,8 @@ export class RecruitmentCandidateDocsService {
           eq(candidateDocuments.orgId, orgId),
         ),
       )
-      .orderBy(desc(candidateDocuments.createdAt));
+      .orderBy(desc(candidateDocuments.createdAt))
+      .limit(100);
   }
 
   async generateDocument(
@@ -110,7 +111,7 @@ export class RecruitmentCandidateDocsService {
       .limit(1);
     if (!doc) throw new NotFoundException("Document not found");
 
-    void this.markDocumentViewed(documentId);
+    void this.markDocumentViewed(orgId, documentId);
 
     return { htmlContent: doc.htmlContent, title: doc.title };
   }
@@ -142,7 +143,8 @@ export class RecruitmentCandidateDocsService {
           eq(candidateDocuments.orgId, orgId),
         ),
       )
-      .orderBy(desc(candidateDocuments.createdAt));
+      .orderBy(desc(candidateDocuments.createdAt))
+      .limit(100);
   }
 
   async generateRolloutDocuments(
@@ -169,7 +171,8 @@ export class RecruitmentCandidateDocsService {
           eq(documentTemplates.orgId, orgId),
           eq(documentTemplates.isActive, true),
         ),
-      );
+      )
+      .limit(input.templateIds.length);
     if (templates.length === 0) {
       throw new NotFoundException(
         "No active templates found for the provided IDs",
@@ -262,12 +265,12 @@ export class RecruitmentCandidateDocsService {
     return { documents: generatedDocs, count: generatedDocs.length };
   }
 
-  private async markDocumentViewed(documentId: number): Promise<void> {
+  private async markDocumentViewed(orgId: string, documentId: number): Promise<void> {
     try {
       await this.db
         .update(candidateDocuments)
         .set({ viewedAt: new Date() })
-        .where(eq(candidateDocuments.id, documentId));
+        .where(and(eq(candidateDocuments.id, documentId), eq(candidateDocuments.orgId, orgId)));
     } catch (err) {
       this.logger.warn(`markDocumentViewed failed for document ${documentId}: ${err instanceof Error ? err.message : String(err)}`);
     }

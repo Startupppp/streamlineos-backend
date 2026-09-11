@@ -1,10 +1,14 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, asc, eq } from "drizzle-orm";
 import { invoiceItems, invoices } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
+import { PG_CHECK_VIOLATION, isCheckViolation } from "../../common/db/postgres-error";
 import { InvoicesPostingService } from "./invoices-posting.service";
+import { gstSplit, resolveSupplierStateCode } from "./lib/invoice-helpers";
+import { computeInvoiceTotals, resolveLineItems } from "./lib/invoice-line-tax";
+import { canPatchInvoiceStatus } from "./lib/invoice-transitions";
 import type { UpdateInvoiceInput } from "./dto/invoice-write.schemas";
 
 @Injectable()
@@ -27,8 +31,16 @@ export class InvoicesUpdateService {
     if (!existing) throw new NotFoundException("Invoice not found");
 
     if (input.status) {
-      const willPost =
-        input.status === "ISSUED" && existing.status !== "ISSUED";
+      if (!canPatchInvoiceStatus(existing.status, input.status)) {
+        throw new ConflictException(
+          `Invoice in status ${existing.status} cannot move to ${input.status}`,
+        );
+      }
+      // The transition table admits ISSUED only from DRAFT, so this is always
+      // the first issue. Nothing is seeded here: the chart is seeded once, by
+      // accounting setup, when the organisation enables accounting.
+      const willPost = input.status === "ISSUED";
+
       await this.db.transaction(async (tx) => {
         await tx
           .update(invoices)
@@ -102,32 +114,54 @@ export class InvoicesUpdateService {
     if (input.notes !== undefined) updateData.notes = input.notes;
 
     if (input.lineItems) {
-      const newLineItems = input.lineItems;
-      const subtotal = Number(
-        newLineItems.reduce((sum, item) => sum + item.amount, 0).toFixed(2),
-      );
-      const taxRate = input.taxRate ?? Number(existing.taxRate ?? 0);
-      const discount = input.discount ?? Number(existing.discount ?? 0);
-      const taxAmount = Number((subtotal * (taxRate / 100)).toFixed(2));
-      const total = Number((subtotal + taxAmount - discount).toFixed(2));
+      const requested = input.lineItems;
+      // Read the same way the ISSUE branch above does, so the split written now
+      // is the split read back then.
+      const supplierStateCode = await resolveSupplierStateCode(this.db, orgId);
+      const placeOfSupplyStateCode = existing.placeOfSupply ?? supplierStateCode;
+      const blendedRate = input.taxRate ?? Number(existing.taxRate ?? 0);
+      const discountInput = input.discount ?? Number(existing.discount ?? 0);
 
-      updateData.subtotal = subtotal.toString();
-      updateData.taxRate = taxRate.toString();
-      updateData.taxAmount = taxAmount.toString();
-      updateData.discount = discount.toString();
-      updateData.total = total.toString();
+      await this.guardImmutability(async () => this.db.transaction(async (tx) => {
+        const stored = await tx
+          .select({
+            gstRate: invoiceItems.gstRate,
+            hsnSacCode: invoiceItems.hsnSacCode,
+          })
+          .from(invoiceItems)
+          .where(eq(invoiceItems.invoiceId, invoiceId))
+          .orderBy(asc(invoiceItems.lineOrder), asc(invoiceItems.id));
 
-      await this.db.transaction(async (tx) => {
+        const lines = resolveLineItems(requested, stored);
+        // Rupees throughout; gstRate/taxRate are percentages.
+        const totals = computeInvoiceTotals(lines, blendedRate, discountInput);
+        const split = gstSplit(
+          totals.taxPool,
+          supplierStateCode,
+          placeOfSupplyStateCode,
+        );
+
+        updateData.subtotal = totals.subtotal.toFixed(2);
+        updateData.taxRate = totals.taxRate.toFixed(2);
+        updateData.taxAmount = totals.taxPool.toFixed(2);
+        updateData.discount = totals.discount.toFixed(2);
+        updateData.total = totals.total.toFixed(2);
+        // The split is part of the same fact as taxAmount. Leaving it at its
+        // create-time value is what unbalanced the journal at issue.
+        updateData.cgstAmount = split.cgst.toFixed(4);
+        updateData.sgstAmount = split.sgst.toFixed(4);
+        updateData.igstAmount = split.igst.toFixed(4);
+
         await tx.delete(invoiceItems).where(eq(invoiceItems.invoiceId, invoiceId));
-        if (newLineItems.length > 0) {
+        if (lines.length > 0) {
           await tx.insert(invoiceItems).values(
-            newLineItems.map((li, idx) => ({
+            lines.map((li, idx) => ({
               invoiceId,
               description: li.description,
-              hsnSacCode: null,
+              hsnSacCode: li.hsnSacCode,
               quantity: li.quantity.toFixed(4),
               rate: li.rate.toFixed(4),
-              gstRate: "0.00",
+              gstRate: li.gstRate.toFixed(2),
               amount: li.amount.toFixed(4),
               lineOrder: idx,
             })),
@@ -137,7 +171,7 @@ export class InvoicesUpdateService {
           .update(invoices)
           .set(updateData)
           .where(and(eq(invoices.id, invoiceId), eq(invoices.orgId, orgId)));
-      });
+      }));
     } else {
       await this.db
         .update(invoices)
@@ -155,5 +189,38 @@ export class InvoicesUpdateService {
     });
 
     return { success: true, posted: false };
+  }
+
+  /**
+   * `existing.status` is read before the transaction opens, so a concurrent issue can flip the
+   * invoice out of DRAFT between the guard above and the writes below. The database triggers
+   * (`trg_invoice_immutability`, `trg_invoice_item_immutability`) are what actually stop the edit
+   * at that point, and they raise `check_violation`. Unmapped that reached the client as a 500,
+   * which reads as "the server is broken" rather than "somebody issued this invoice while you were
+   * editing it".
+   */
+  private async guardImmutability<T>(body: () => Promise<T>): Promise<T> {
+    try {
+      return await body();
+    } catch (error) {
+      if (!isCheckViolation(error)) throw error;
+      throw new ConflictException(
+        InvoicesUpdateService.checkViolationMessage(error) ??
+          "This invoice is no longer a draft and can no longer be edited",
+      );
+    }
+  }
+
+  /** The driver error carrying the SQLSTATE sits below Drizzle's wrapper, and only it has the text. */
+  private static checkViolationMessage(error: unknown): string | undefined {
+    let current: unknown = error;
+    for (let depth = 0; current !== null && typeof current === "object" && depth < 6; depth += 1) {
+      if (Reflect.get(current, "code") === PG_CHECK_VIOLATION) {
+        const message: unknown = Reflect.get(current, "message");
+        if (typeof message === "string" && message.length > 0) return message;
+      }
+      current = Reflect.get(current, "cause");
+    }
+    return undefined;
   }
 }

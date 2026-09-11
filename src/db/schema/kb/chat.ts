@@ -1,6 +1,6 @@
 import { pgTable, serial, text, jsonb, timestamp, index, integer, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users, organizationMembers } from "../common/auth";
+import { organizations, organizationMembers } from "../common/auth";
 
 export const KB_CHAT_ROLES = ["user", "assistant"] as const;
 export type KbChatRole = (typeof KB_CHAT_ROLES)[number];
@@ -17,19 +17,14 @@ export const kbChatConversations = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    userMembershipId: integer("user_membership_id"),
+    userMembershipId: integer("user_membership_id").notNull(),
     title: text("title"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [
-    index("idx_kb_chat_conversations_org_user_updated").on(table.orgId, table.userId, table.updatedAt),
-    index("idx_kb_chat_conversations_org_mbr").on(table.orgId, table.userMembershipId),
     unique("uniq_kb_chat_conversations_org_id").on(table.orgId, table.id),
-    foreignKey({ columns: [table.orgId, table.userMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_chat_conv_org_user_mbr" }).onDelete("set null"),
+    foreignKey({ columns: [table.orgId, table.userMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_chat_conv_org_user_mbr" }).onDelete("cascade"),
   ],
 );
 
@@ -40,23 +35,19 @@ export const kbChatMessages = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    userMembershipId: integer("user_membership_id"),
+    userMembershipId: integer("user_membership_id").notNull(),
     role: text("role").$type<KbChatRole>().notNull(),
     content: text("content").notNull(),
     citations: jsonb("citations").$type<KbChatCitation[]>(),
-    conversationId: integer("conversation_id").references(() => kbChatConversations.id, { onDelete: "cascade" }),
+    conversationId: integer("conversation_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
-    index("idx_kb_chat_messages_org_user_id").on(table.orgId, table.userId, table.id),
     index("idx_kb_chat_messages_org_mbr").on(table.orgId, table.userMembershipId),
     index("idx_kb_chat_messages_conversation_id").on(table.conversationId),
     unique("uniq_kb_chat_messages_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.conversationId], foreignColumns: [kbChatConversations.orgId, kbChatConversations.id], name: "fk_kb_chat_messages_org_conversation" }).onDelete("cascade"),
-    foreignKey({ columns: [table.orgId, table.userMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_chat_msg_org_user_mbr" }).onDelete("set null"),
+    foreignKey({ columns: [table.orgId, table.userMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_chat_msg_org_user_mbr" }).onDelete("cascade"),
   ],
 );
 
@@ -64,10 +55,6 @@ export const kbChatConversationsRelations = relations(kbChatConversations, ({ on
   organization: one(organizations, {
     fields: [kbChatConversations.orgId],
     references: [organizations.id],
-  }),
-  user: one(users, {
-    fields: [kbChatConversations.userId],
-    references: [users.id],
   }),
   membership: one(organizationMembers, {
     fields: [kbChatConversations.orgId, kbChatConversations.userMembershipId],
@@ -80,10 +67,6 @@ export const kbChatMessagesRelations = relations(kbChatMessages, ({ one }) => ({
   organization: one(organizations, {
     fields: [kbChatMessages.orgId],
     references: [organizations.id],
-  }),
-  user: one(users, {
-    fields: [kbChatMessages.userId],
-    references: [users.id],
   }),
   membership: one(organizationMembers, {
     fields: [kbChatMessages.orgId, kbChatMessages.userMembershipId],

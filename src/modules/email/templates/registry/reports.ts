@@ -3,9 +3,9 @@ import {
   getMonthlyExpenseReportTemplate,
   getWeeklyRecapEmailTemplate,
 } from "../index";
-import type { TemplateEntry } from "./_shared";
+import { EMAIL_TEMPLATE_VERSION, defineTemplateFamily } from "./_shared";
 
-export const reportsTemplates: Record<string, TemplateEntry> = {
+export const reportsTemplates = defineTemplateFamily({
   "reports.weekly_attendance": {
     category: "Reports",
     name: "Weekly Attendance Report",
@@ -93,4 +93,4 @@ export const reportsTemplates: Record<string, TemplateEntry> = {
         aiNarrative: "Strong week with 3 deals converted and 12 new inbound leads.",
       }),
   },
-};
+}, EMAIL_TEMPLATE_VERSION);

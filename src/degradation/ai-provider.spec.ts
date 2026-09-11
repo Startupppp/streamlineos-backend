@@ -166,12 +166,12 @@ describe("AiCreditsReservationService — idempotent release on provider failure
   });
 
   it.skip(
-    "integration: releasing a RESERVED reservation restores the org wallet balance — needs OutboxPublisherService / AiCreditsReservationService driven end to end; those services open their own transactions via runInNewTenantTransaction, so their writes cannot be rolled back on a database shared with concurrent sessions — asserting hand-written SQL state instead proves only that Postgres stores what was written",
+    "integration: releasing a RESERVED reservation restores the org wallet balance — persisted refund, owner-scope, and rollback probes are unimplemented; a provider-isolated seeded harness exists but requires an approved disposable database at the current migration head",
     () => {},
   );
 
   it.skip(
-    "integration: a sweep of expired reservations restores credits to all wallets atomically — same blocker as above",
+    "integration: sweeping expired reservations restores credits atomically within each tenant — persisted refund and rollback probes are unimplemented; tenants commit or roll back independently and require an approved disposable database at the current migration head",
     () => {},
   );
 });

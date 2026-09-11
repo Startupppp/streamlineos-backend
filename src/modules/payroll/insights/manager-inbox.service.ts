@@ -5,7 +5,7 @@ import {
   NotFoundException,
   BadRequestException,
 } from "@nestjs/common";
-import { and, count, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -103,6 +103,7 @@ export class ManagerInboxService {
       : await this.db
           .select({
             id: users.id,
+            membershipId: organizationMembers.id,
             name: users.name,
             email: users.email,
           })
@@ -114,7 +115,8 @@ export class ManagerInboxService {
               eq(organizationMembers.orgId, orgId),
               eq(organizationMembers.status, "ACTIVE"),
             ),
-          );
+          )
+          .limit(directReportIds.length);
 
     const honestyNote =
       "Team payroll inbox is limited to your direct reports. Approving claims requires hr:expenses:approve; loans require hr:expenses:approve or hr:loans:manage. You cannot approve your own requests.";
@@ -138,40 +140,42 @@ export class ManagerInboxService {
     }
 
     const reportIds = reports.map((r) => r.id);
+    const reportMembershipIds = reports.map((r) => r.membershipId);
+    const userIdByMembershipId = new Map(reports.map((r) => [r.membershipId, r.id]));
     const nameByUser = new Map(reports.map((r) => [r.id, r.name]));
 
     const [reimbRows, loanRows, pubs, taxRows, pendingReimbList, pendingLoanList] =
       await Promise.all([
         this.db
           .select({
-            userId: reimbursements.userId,
+            membershipId: reimbursements.userMembershipId,
             total: count(),
           })
           .from(reimbursements)
           .where(
             and(
               eq(reimbursements.orgId, orgId),
-              inArray(reimbursements.userId, reportIds),
+              inArray(reimbursements.userMembershipId, reportMembershipIds),
               eq(reimbursements.status, "PENDING"),
             ),
           )
-          .groupBy(reimbursements.userId),
+          .groupBy(reimbursements.userMembershipId),
         this.db
           .select({
-            userId: salaryLoans.userId,
+            membershipId: salaryLoans.userMembershipId,
             total: count(),
           })
           .from(salaryLoans)
           .where(
             and(
               eq(salaryLoans.orgId, orgId),
-              inArray(salaryLoans.userId, reportIds),
+              inArray(salaryLoans.userMembershipId, reportMembershipIds),
               eq(salaryLoans.status, "PENDING"),
             ),
           )
-          .groupBy(salaryLoans.userId),
+          .groupBy(salaryLoans.userMembershipId),
         this.db
-          .select({
+          .selectDistinctOn([payslipPublications.userId], {
             userId: payslipPublications.userId,
             publicationId: payslipPublications.id,
             publishedAt: payslipPublications.publishedAt,
@@ -191,9 +195,10 @@ export class ManagerInboxService {
               eq(payslipPublications.status, "PUBLISHED"),
             ),
           )
-          .orderBy(desc(payslipPublications.publishedAt)),
+          .orderBy(asc(payslipPublications.userId), desc(payslipPublications.publishedAt))
+          .limit(reportIds.length),
         this.db
-          .select({
+          .selectDistinctOn([taxDeclarations.userId], {
             userId: taxDeclarations.userId,
             status: taxDeclarations.status,
             createdAt: taxDeclarations.createdAt,
@@ -202,11 +207,11 @@ export class ManagerInboxService {
           .where(
             and(eq(taxDeclarations.orgId, orgId), inArray(taxDeclarations.userId, reportIds)),
           )
-          .orderBy(desc(taxDeclarations.createdAt)),
+          .orderBy(asc(taxDeclarations.userId), desc(taxDeclarations.createdAt)),
         this.db
           .select({
             id: reimbursements.id,
-            userId: reimbursements.userId,
+            membershipId: reimbursements.userMembershipId,
             category: reimbursements.category,
             amount: reimbursements.amount,
             description: reimbursements.description,
@@ -216,7 +221,7 @@ export class ManagerInboxService {
           .where(
             and(
               eq(reimbursements.orgId, orgId),
-              inArray(reimbursements.userId, reportIds),
+              inArray(reimbursements.userMembershipId, reportMembershipIds),
               eq(reimbursements.status, "PENDING"),
             ),
           )
@@ -225,7 +230,7 @@ export class ManagerInboxService {
         this.db
           .select({
             id: salaryLoans.id,
-            userId: salaryLoans.userId,
+            membershipId: salaryLoans.userMembershipId,
             amount: salaryLoans.amount,
             reason: salaryLoans.reason,
             totalEmis: salaryLoans.totalEmis,
@@ -235,7 +240,7 @@ export class ManagerInboxService {
           .where(
             and(
               eq(salaryLoans.orgId, orgId),
-              inArray(salaryLoans.userId, reportIds),
+              inArray(salaryLoans.userMembershipId, reportMembershipIds),
               eq(salaryLoans.status, "PENDING"),
             ),
           )
@@ -243,8 +248,18 @@ export class ManagerInboxService {
           .limit(50),
       ]);
 
-    const reimbByUser = new Map(reimbRows.map((r) => [r.userId, Number(r.total)]));
-    const loanByUser = new Map(loanRows.map((r) => [r.userId, Number(r.total)]));
+    const reimbByUser = new Map<string, number>();
+    for (const row of reimbRows) {
+      if (row.membershipId === null) continue;
+      const userId = userIdByMembershipId.get(row.membershipId);
+      if (userId) reimbByUser.set(userId, Number(row.total));
+    }
+    const loanByUser = new Map<string, number>();
+    for (const row of loanRows) {
+      if (row.membershipId === null) continue;
+      const userId = userIdByMembershipId.get(row.membershipId);
+      if (userId) loanByUser.set(userId, Number(row.total));
+    }
 
     const latestPayslipByUser = new Map<
       string,
@@ -289,25 +304,35 @@ export class ManagerInboxService {
       (a, b) => b.actionCount - a.actionCount || (a.name ?? "").localeCompare(b.name ?? ""),
     );
 
-    const pendingReimbursements: ManagerPendingReimbursement[] = pendingReimbList.map((r) => ({
-      id: r.id,
-      userId: r.userId,
-      userName: nameByUser.get(r.userId) ?? null,
-      category: r.category,
-      amount: r.amount,
-      description: r.description,
-      createdAt: r.createdAt,
-    }));
+    const pendingReimbursements: ManagerPendingReimbursement[] = pendingReimbList.flatMap((r) => {
+      if (r.membershipId === null) return [];
+      const userId = userIdByMembershipId.get(r.membershipId);
+      if (!userId) return [];
+      return [{
+        id: r.id,
+        userId,
+        userName: nameByUser.get(userId) ?? null,
+        category: r.category,
+        amount: r.amount,
+        description: r.description,
+        createdAt: r.createdAt,
+      }];
+    });
 
-    const pendingLoans: ManagerPendingLoan[] = pendingLoanList.map((l) => ({
-      id: l.id,
-      userId: l.userId,
-      userName: nameByUser.get(l.userId) ?? null,
-      amount: l.amount,
-      reason: l.reason,
-      totalEmis: l.totalEmis,
-      createdAt: l.createdAt,
-    }));
+    const pendingLoans: ManagerPendingLoan[] = pendingLoanList.flatMap((l) => {
+      if (l.membershipId === null) return [];
+      const userId = userIdByMembershipId.get(l.membershipId);
+      if (!userId) return [];
+      return [{
+        id: l.id,
+        userId,
+        userName: nameByUser.get(userId) ?? null,
+        amount: l.amount,
+        reason: l.reason,
+        totalEmis: l.totalEmis,
+        createdAt: l.createdAt,
+      }];
+    });
 
     const totals = {
       pendingReimbursements: members.reduce((s, m) => s + m.pendingReimbursements, 0),

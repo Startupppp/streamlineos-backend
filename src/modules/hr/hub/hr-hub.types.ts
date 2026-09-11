@@ -33,7 +33,7 @@ export interface HrHubSections {
   leaveCalendar: HrHubSection<Output<LeavesService["calendar"]>> | null;
   pendingWfh: HrHubSection<Output<WfhService["pending"]>> | null;
   probation: HrHubSection<Output<ProbationService["listDueForReview"]>> | null;
-  resignations: HrHubSection<Output<ExitService["list"]>> | null;
+  resignations: HrHubSection<Output<ExitService["hubDigest"]>> | null;
   documentStats: HrHubSection<Output<DocumentsService["stats"]>> | null;
   holidays: HrHubSection<Output<HrHolidaysService["listByYear"]>> | null;
   attendanceStatus: HrHubSection<Output<AttendanceService["teamStatus"]>> | null;

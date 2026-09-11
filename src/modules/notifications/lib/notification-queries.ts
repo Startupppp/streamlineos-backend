@@ -9,28 +9,35 @@ import {
   lt,
   lte,
   gt,
+  gte,
   ilike,
   or,
 } from "drizzle-orm";
 import {
   notifications,
   notificationReadWatermarks,
+  organizationMembers,
 } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
+import { buildIdCursorPage } from "../../../common/pagination/cursor";
 import type { ListInput } from "../dto/notification.schemas";
 import { ASSIGNED_EVENT_KEYS, MENTION_EVENT_KEYS } from "../inbox-section-keys";
-import { attachTicketContext } from "./notification-ticket-context";
+import { notificationWindowEnd, notificationWindowStart } from "../notification-read-window";
 
 /**
  * The inbox queries, and the row shape they return.
  *
  * Split from the service because the service is now only a cache: `list` and
  * `unreadCount` wrap these two in `cached`, and everything that decides WHAT is
- * in an inbox — the section filters, the read watermark, the ticket context
- * joined onto matching rows — is here. The watermark is why the two halves
- * cannot be collapsed: `fetchLastReadId` is read by both the list and the
- * count, and a count computed from a different watermark than the list would
- * show a badge for rows the list does not have.
+ * in an inbox — the recipient's membership, the retention window, the section
+ * filters and the read watermark — is here. The watermark is why the two
+ * halves cannot be collapsed: `resolveRecipient` is read by both the list and
+ * the count, and a count computed from a different watermark than the list
+ * would show a badge for rows the list does not have.
+ *
+ * The ticket context a row may carry is attached by the service after the
+ * cache (`notification-ticket-context.ts`), because it depends on who is
+ * reading and a cached page is shared by every read of the same filters.
  *
  * Plain `db` parameters rather than a deps bag: the cache stays on the service,
  * which is the layer that knows the key.
@@ -60,17 +67,37 @@ const LIST_COLUMNS = {
   createdAt: notifications.createdAt,
 } as const;
 
-async function fetchLastReadId(db: Db, orgId: string, userId: string): Promise<number> {
-  const [wm] = await db
-    .select({ lastReadId: notificationReadWatermarks.lastReadNotificationId })
-    .from(notificationReadWatermarks)
-    .where(
+/**
+ * The tenant authority and the read watermark are one row apart, so they are one
+ * statement: resolving them separately cost three round trips per read, because
+ * the watermark lookup re-resolved the membership it was already given.
+ */
+async function resolveRecipient(
+  db: Db,
+  orgId: string,
+  userId: string,
+): Promise<{ membershipId: number; lastReadId: number }> {
+  const [recipient] = await db
+    .select({
+      membershipId: organizationMembers.id,
+      lastReadId: notificationReadWatermarks.lastReadNotificationId,
+    })
+    .from(organizationMembers)
+    .leftJoin(
+      notificationReadWatermarks,
       and(
-        eq(notificationReadWatermarks.orgId, orgId),
-        eq(notificationReadWatermarks.userId, userId),
+        eq(notificationReadWatermarks.orgId, organizationMembers.orgId),
+        eq(notificationReadWatermarks.membershipId, organizationMembers.id),
       ),
-    );
-  return wm?.lastReadId ?? 0;
+    )
+    .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)));
+  if (!recipient) throw new Error("Organization membership required");
+  return { membershipId: recipient.membershipId, lastReadId: recipient.lastReadId ?? 0 };
+}
+
+function retentionWindow(): { start: Date; end: Date } {
+  const now = new Date();
+  return { start: notificationWindowStart(now), end: notificationWindowEnd(now) };
 }
 
 export async function queryNotifications(
@@ -79,11 +106,14 @@ export async function queryNotifications(
   userId: string,
   filters: ListInput & { section: string },
 ) {
-  const lastReadId = await fetchLastReadId(db, orgId, userId);
+  const { membershipId, lastReadId } = await resolveRecipient(db, orgId, userId);
+  const window = retentionWindow();
 
   const conditions = [
     eq(notifications.orgId, orgId),
-    eq(notifications.userId, userId),
+    eq(notifications.membershipId, membershipId),
+    gte(notifications.createdAt, window.start),
+    lt(notifications.createdAt, window.end),
     isNull(notifications.deletedAt),
   ];
 
@@ -166,22 +196,27 @@ export async function queryNotifications(
     .from(notifications)
     .where(and(...conditions))
     .orderBy(desc(notifications.id))
-    .limit(filters.limit);
+    // One row past the page: its presence is what `hasMore` is read from, which is
+    // cheaper here than a second COUNT over an unbounded notification table.
+    .limit(filters.limit + 1);
 
-  return attachTicketContext(db, 
-    orgId,
-    rows.map((row) => ({
-      ...row,
-      isRead: row.isRead || (lastReadId > 0 && row.id <= lastReadId),
-    })),
-  );
+  const page = buildIdCursorPage(rows, filters.limit, (row) => row.id);
+  const data = page.data.map((row) => ({
+    ...row,
+    isRead: row.isRead || (lastReadId > 0 && row.id <= lastReadId),
+  }));
+
+  return { data, hasMore: page.hasMore, nextCursor: page.nextCursor };
 }
 
 export async function queryUnreadCount(db: Db, orgId: string, userId: string) {
-  const lastReadId = await fetchLastReadId(db, orgId, userId);
+  const { membershipId, lastReadId } = await resolveRecipient(db, orgId, userId);
+  const window = retentionWindow();
   const conditions = [
     eq(notifications.orgId, orgId),
-    eq(notifications.userId, userId),
+    eq(notifications.membershipId, membershipId),
+    gte(notifications.createdAt, window.start),
+    lt(notifications.createdAt, window.end),
     eq(notifications.isRead, false),
     isNull(notifications.deletedAt),
     isNull(notifications.archivedAt),

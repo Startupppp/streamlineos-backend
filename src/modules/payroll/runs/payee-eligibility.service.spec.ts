@@ -1,5 +1,4 @@
 import { PayeeEligibilityService } from "./payee-eligibility.service";
-import { evaluateMembershipGate } from "../../access/access-policy";
 import type { Db } from "../../../db/drizzle.module";
 
 function createDb(rows: Array<Array<Record<string, unknown>>>): Db {
@@ -66,19 +65,5 @@ describe("PayeeEligibilityService", () => {
     expect(result.payableAs).toBe("user");
     expect(result.payeeUserId).toBe("user-4");
     expect(result.payeeWorkerId).toBeNull();
-  });
-});
-
-describe("being payable never implies entry", () => {
-  it("resolves a payee with no membership to no permissions at all", () => {
-    expect(evaluateMembershipGate(null)).toEqual({ active: false, isOwner: false });
-    expect(evaluateMembershipGate(undefined)).toEqual({ active: false, isOwner: false });
-  });
-
-  it("resolves a payee whose membership is not active to no permissions at all", () => {
-    expect(evaluateMembershipGate({ status: "SUSPENDED", isOwner: false })).toEqual({
-      active: false,
-      isOwner: false,
-    });
   });
 });

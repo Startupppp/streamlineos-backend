@@ -30,7 +30,7 @@ export class WorkflowAiNodeHandler implements AiJobHandler, OnModuleInit {
     const nodeType = payload["nodeType"];
     if (!isAiNodeType(nodeType)) {
       const err = `Invalid or missing nodeType: ${String(nodeType)}`;
-      await this.aiJobs.fail(job.id, err);
+      await this.aiJobs.fail(orgId, job.id, err);
       return { ok: false, error: err };
     }
 
@@ -46,11 +46,11 @@ export class WorkflowAiNodeHandler implements AiJobHandler, OnModuleInit {
         automationPayload,
       );
       const output: Record<string, unknown> = { ...result };
-      await this.aiJobs.complete(job.id, output);
+      await this.aiJobs.complete(orgId, job.id, output);
       return output;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Workflow AI node execution failed";
-      await this.aiJobs.fail(job.id, message);
+      await this.aiJobs.fail(orgId, job.id, message);
       return { ok: false, error: message };
     }
   }

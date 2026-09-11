@@ -19,8 +19,6 @@ const RESEND_TIMEOUT_MS = 30_000;
 const ZEPTOMAIL_DEFAULT_URL = "https://api.zeptomail.in/v1.1/email";
 
 export type {
-  EmailAttachment,
-  EmailDispatcher,
   EmailOptions,
   Provider,
 } from "./email-provider-selection";
@@ -38,7 +36,17 @@ function zeptomailToken(raw: string | undefined): string | undefined {
     : `Zoho-enczapikey ${trimmed}`;
 }
 
+/**
+ * `jest-e2e.json` loads the real `.env` through `dotenv/config`, so an e2e run
+ * booted the app with a live ZeptoMail token and any spec reaching the real
+ * `EmailService` delivered mail to real recipients — 14 provider-accepted sends
+ * in one sweep before this guard. A test run must not be able to construct a
+ * sender at all; refusing here rather than in a setup file means no new config,
+ * suite or harness can reintroduce it.
+ */
 export function buildEmailClients(config: AppConfig): EmailClients {
+  if (process.env.NODE_ENV === "test" && process.env.EMAIL_ALLOW_LIVE_SEND !== "1")
+    return { resend: null, zeptomail: null };
   const token = zeptomailToken(config.ZEPTOMAIL_TOKEN);
   return {
     resend: config.RESEND_API_KEY ? new Resend(config.RESEND_API_KEY) : null,

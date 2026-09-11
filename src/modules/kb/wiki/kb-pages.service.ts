@@ -18,6 +18,7 @@ import { NotificationsService } from "../../notifications/notifications.service"
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { extractMentionUserIds } from "./kb-page-content.util";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { KB_PAGE_SEARCH_MAX_LIMIT } from "./dto/kb-pages.schemas";
 import type { CreatePageInput, UpdatePageInput } from "./dto/kb-pages.schemas";
 import { pageVisibleTo } from "../retrieval/kb-page-visibility";
 import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
@@ -25,8 +26,16 @@ import { shouldResetTrust } from "./kb-page-governance.util";
 import { resyncPageLinks, snapshotIfNeeded } from "./kb-page-edit.util";
 import { assertPageAccessible } from "../retrieval/kb-page-access.util";
 import { actingMembershipId } from "../../../common/auth/principal";
+import { KB_PAGE_COLUMNS, type KbPageRow } from "./kb-page-columns";
 
-type PageRow = typeof kbPages.$inferSelect;
+type PageRow = KbPageRow;
+
+export interface KbPageSearchHit {
+  id: number;
+  title: string;
+  icon: string | null;
+  snippet: string;
+}
 
 @Injectable()
 export class KbPagesService {
@@ -108,7 +117,7 @@ export class KbPagesService {
         lastEditedByMembershipId: this.membershipId(user),
         projectId: input.projectId ?? null,
       })
-      .returning();
+      .returning(KB_PAGE_COLUMNS);
     if (!page) throw new Error("Failed to create page");
     return page;
   }
@@ -122,6 +131,7 @@ export class KbPagesService {
     const projectIds = await this.getAccessibleProjectIds(user);
     const page = await this.db.query.kbPages.findFirst({
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt), pageVisibleTo(user, projectIds)),
+      columns: { fts: false },
     });
     if (!page) throw new NotFoundException("Page not found");
 
@@ -152,6 +162,7 @@ export class KbPagesService {
     await assertPageAccessible(this.db, user, pageId);
     const orgId = user.orgId;
     const current = await this.db.query.kbPages.findFirst({
+      columns: { id: true, isLocked: true, trustState: true, content: true },
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
     });
     if (!current) throw new NotFoundException("Page not found");
@@ -206,6 +217,14 @@ export class KbPagesService {
       values.trustState = "unverified";
     }
 
+    /**
+     * `content_revision` tracks the body alone, so the precondition is demanded — and applied —
+     * exactly where an unguarded write destroys work. `updatePageSchema` refuses a body without
+     * it, which is what makes the unguarded content write unrepresentable rather than merely
+     * discouraged; a rename or a status change is not gated on someone else's typing.
+     */
+    const revisionGuard = contentChanged ? input.expectedContentRevision : undefined;
+
     const result = await this.db.transaction(async (tx) => {
       const [updated] = await tx
         .update(kbPages)
@@ -214,9 +233,21 @@ export class KbPagesService {
           ...(contentChanged ? { contentRevision: sql`content_revision + 1` } : {}),
           ...(aclChanged ? { aclRevision: sql`acl_revision + 1` } : {}),
         })
-        .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
-        .returning();
-      if (!updated) throw new NotFoundException("Page not found");
+        .where(
+          and(
+            eq(kbPages.id, pageId),
+            eq(kbPages.orgId, orgId),
+            ...(revisionGuard === undefined ? [] : [eq(kbPages.contentRevision, revisionGuard)]),
+          ),
+        )
+        .returning(KB_PAGE_COLUMNS);
+      if (!updated) {
+        if (revisionGuard === undefined) throw new NotFoundException("Page not found");
+        throw new HttpException(
+          { message: "Page was modified by another editor. Reload to see the latest version.", code: "STALE_REVISION" },
+          HttpStatus.CONFLICT,
+        );
+      }
 
       if (contentChanged && input.content !== undefined) {
         await snapshotIfNeeded(tx, orgId, updated, user.userId, input.changeSummary ?? null, false, this.membershipId(user));
@@ -256,7 +287,25 @@ export class KbPagesService {
     return result;
   }
 
-  async search(user: CurrentUserContext, q: string): Promise<{ id: number; title: string; icon: string | null; snippet: string }[]> {
+  /**
+   * A bounded top-N, and it says so.
+   *
+   * This was a hard `.limit(20)` returning a plain array: a query matching 500 pages and a
+   * query matching 20 came back identical, so a user who could not find their page had no
+   * way to learn that the list was cut rather than complete. Twenty stays the ceiling — the
+   * 400th-best match for a `ts_rank` prefix query is not a result anyone scrolls to, and
+   * paging a rank ordering means re-ranking every page — but the cut is now reported, and
+   * `KB_PAGE_SEARCH_MAX_LIMIT` is where the number lives instead of being buried in a
+   * `.limit()` call.
+   *
+   * `limit + 1` is fetched so `hasMore` costs nothing: the sentinel row is discarded and
+   * its only job is to answer the question.
+   */
+  async search(
+    user: CurrentUserContext,
+    q: string,
+    limit: number = KB_PAGE_SEARCH_MAX_LIMIT,
+  ): Promise<{ items: KbPageSearchHit[]; hasMore: boolean; limit: number }> {
     const words = q
       .trim()
       .split(/\s+/)
@@ -267,7 +316,7 @@ export class KbPagesService {
         return w.length > 0;
       })
       .slice(0, 8);
-    if (words.length === 0) return [];
+    if (words.length === 0) return { items: [], hasMore: false, limit };
     const orgId = user.orgId;
     const prefixQuery = words.map(function toPrefix(w) {
       return `${w}:*`;
@@ -291,8 +340,9 @@ export class KbPagesService {
         ),
       )
       .orderBy(sql`ts_rank(${kbPages}.fts, ${tsquery}) desc`)
-      .limit(20);
-    return rows;
+      .limit(limit + 1);
+    const hasMore = rows.length > limit;
+    return { items: hasMore ? rows.slice(0, limit) : rows, hasMore, limit };
   }
 
   async setVisibility(
@@ -328,7 +378,7 @@ export class KbPagesService {
           aclRevision: sql`acl_revision + 1`,
         })
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
-        .returning();
+        .returning(KB_PAGE_COLUMNS);
       if (!updated) throw new NotFoundException("Page not found");
 
       await OutboxWriter.emit(tx, {
@@ -391,7 +441,7 @@ export class KbPagesService {
       )
       SELECT id, title FROM ancestors ORDER BY depth DESC
     `);
-    return (rows as Array<Record<string, unknown>>).map((row) => ({
+    return rows.map((row) => ({
       id: Number(row.id),
       title: String(row.title ?? ""),
     }));

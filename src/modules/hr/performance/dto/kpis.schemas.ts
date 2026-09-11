@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const decimalString = z
   .string()
@@ -20,7 +21,7 @@ export const createKpiSchema = z.object({
   unit: z.string().trim().max(50, "Unit must be at most 50 characters").optional(),
   target: decimalString.optional(),
   weight: decimalString.optional(),
-});
+}).strict();
 
 export const updateKpiSchema = z.object({
   name: z.string().trim().min(1).max(200, "KPI name must be at most 200 characters").optional(),
@@ -30,7 +31,7 @@ export const updateKpiSchema = z.object({
   target: decimalString.optional(),
   weight: decimalString.optional(),
   isActive: z.boolean().optional(),
-});
+}).strict();
 
 const competencyLevelSchema = z.object({
   level: z.coerce.number().int().positive(),
@@ -47,14 +48,14 @@ export const createFrameworkSchema = z.object({
   description: z.string().trim().max(2000, "Description must be at most 2000 characters").optional(),
   ratingScale: z.coerce.number().int().min(2, "Rating scale must be at least 2").max(10, "Rating scale must be at most 10").optional(),
   levels: z.array(competencyLevelSchema).max(20, "At most 20 levels are allowed").optional(),
-});
+}).strict();
 
 export const updateFrameworkSchema = z.object({
   name: z.string().trim().min(1).max(200, "Framework name must be at most 200 characters").optional(),
   description: z.string().trim().max(2000, "Description must be at most 2000 characters").optional(),
   ratingScale: z.coerce.number().int().min(2, "Rating scale must be at least 2").max(10, "Rating scale must be at most 10").optional(),
   levels: z.array(competencyLevelSchema).max(20, "At most 20 levels are allowed").optional(),
-});
+}).strict();
 
 export const createCompetencySchema = z.object({
   name: z
@@ -69,10 +70,16 @@ export const createCompetencySchema = z.object({
     .max(100, "Category must be at most 100 characters"),
   description: z.string().trim().max(2000, "Description must be at most 2000 characters").optional(),
   weight: decimalString.optional(),
-});
+}).strict();
 
 export type CreateKpiInput = z.infer<typeof createKpiSchema>;
 export type UpdateKpiInput = z.infer<typeof updateKpiSchema>;
 export type CreateFrameworkInput = z.infer<typeof createFrameworkSchema>;
 export type UpdateFrameworkInput = z.infer<typeof updateFrameworkSchema>;
 export type CreateCompetencyInput = z.infer<typeof createCompetencySchema>;
+
+export const listCompetenciesSchema = z.object({
+  cursor: z.string().trim().min(1).max(2048).optional(),
+  limit: pageSizeField(50, 100),
+}).strict();
+export type ListCompetenciesInput = z.infer<typeof listCompetenciesSchema>;

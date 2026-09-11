@@ -19,6 +19,8 @@ import {
   type ListDocumentTypesInput,
 } from "./dto/document-types.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { documentTypeListPageSchema, documentTypeRowSchema } from "./dto/config-response.schemas";
 import { z } from "zod";
 
 const documentTypeIdParams = z.object({ documentTypeId: z.coerce.number().int().positive() }).strict();
@@ -32,6 +34,7 @@ export class HrDocumentTypesController {
   ) {}
 
   @Get()
+  @ResponseSchema(documentTypeListPageSchema)
   @AuthorizedInService("a three-key check in the handler: hr:documents:view scope=all, hr:documents:view or self:onboarding-docs")
   @Validate({ query: listDocumentTypesSchema })
   async list(
@@ -48,6 +51,7 @@ export class HrDocumentTypesController {
   }
 
   @Get(":documentTypeId")
+  @ResponseSchema(documentTypeRowSchema)
   @AuthorizedInService("a three-key check in the handler: hr:documents:view scope=all, hr:documents:view or self:onboarding-docs")
   @Validate({ params: documentTypeIdParams })
   async getOne(

@@ -99,7 +99,7 @@ export class PayoutBatchesService {
       .orderBy(desc(payrollBankBatches.generatedAt), desc(payrollBankBatches.id))
       .limit(pageLimit + 1);
 
-    return buildCursorPage(rows as BatchRow[], pageLimit, (row) => ({
+    return buildCursorPage(rows, pageLimit, (row) => ({
       sortValue: (row.generatedAt ?? new Date(0)).toISOString(),
       id: String(row.id),
     }));
@@ -159,12 +159,23 @@ export class PayoutBatchesService {
       .limit(pageLimit + 1);
 
     return {
-      batch: batch[0] as BatchRow,
-      items: buildIdCursorPage(itemRows as BatchItemRow[], pageLimit, (row) => row.id),
+      batch: batch[0],
+      items: buildIdCursorPage(itemRows, pageLimit, (row) => row.id),
     };
   }
 
-  async getFile(orgId: string, batchId: number) {
+  /**
+   * The bank file lists every payee's UNMASKED account number and IFSC. It used
+   * to leave the authenticated session as a one-hour presigned URL that the
+   * client opened in a new tab: the link outlived the screen, sat in browser
+   * history, needed no session to redeem, and carried no `Cache-Control`.
+   *
+   * It streams through the API instead — the shape
+   * `payroll-export.controller.ts` already uses — so possession of a URL is
+   * never possession of the file, and the only credential that opens it is the
+   * caller's own `payroll:bank:manage`.
+   */
+  async downloadFile(orgId: string, batchId: number) {
     const batch = await this.db
       .select({ id: payrollBankBatches.id, fileKey: payrollBankBatches.fileKey, batchNumber: payrollBankBatches.batchNumber })
       .from(payrollBankBatches)
@@ -175,8 +186,10 @@ export class PayoutBatchesService {
     if (!batch[0].fileKey || !this.storage.isConfigured())
       throw new NotFoundException("File not available for this batch");
 
-    const url = await this.storage.getFileUrl(orgId, batch[0].fileKey, 3600);
-    return { url, batchNumber: batch[0].batchNumber };
+    return {
+      file: await this.storage.getFileStream(orgId, batch[0].fileKey),
+      fileName: `${batch[0].batchNumber}.csv`,
+    };
   }
 
   async getBankDetails(orgId: string, employeeUserId: string, actorId: string) {

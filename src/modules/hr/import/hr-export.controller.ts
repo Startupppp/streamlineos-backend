@@ -28,15 +28,16 @@ import {
   exportJobIdSchema,
   type CreateEmployeeExportJobInput,
 } from "./dto/export-job.dto";
-import {
-  HrExportJobsService,
-  type HrExportJobView,
-} from "./hr-export-jobs.service";
+import { HrExportJobsService } from "./hr-export-jobs.service";
+import type { HrExportJobView } from "./hr-export-jobs.types";
 import { HrExportWorkerService } from "./hr-export-worker.service";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ApiOkResponse } from "@nestjs/swagger";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { hrExportJobViewSchema } from "./dto/import-response.schemas";
 import { z } from "zod";
 
-const exportJobIdParams = z.object({ exportJobId: z.string().min(1) }).strict();
+const exportJobIdParams = z.object({ exportJobId: z.string().uuid() }).strict();
 
 @RequireModule("hr")
 @RequirePermission("hr:export:manage")
@@ -50,6 +51,7 @@ export class HrExportController {
   ) {}
 
   @Post()
+  @ResponseSchema(hrExportJobViewSchema)
   @HttpCode(HttpStatus.ACCEPTED)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("hr:employee-export")
@@ -60,13 +62,17 @@ export class HrExportController {
     @Headers("idempotency-key") idempotencyKey: string,
     @CurrentUser() user: CurrentUserContext,
   ): Promise<HrExportJobView> {
-    const scope = await resolveEmployeesScope(this.access, user);
+    const read = await resolveEmployeesScope(this.access, user);
+    const scope = read.rawScope(
+      "HrExportJobsService.create persists and later narrows the requested DataScope for a background export job — not a row predicate, and outside this migration's lane",
+    );
     const job = await this.jobs.create(user, body, scope, idempotencyKey);
     this.worker.wake();
     return job;
   }
 
   @Get(":exportJobId")
+  @ResponseSchema(hrExportJobViewSchema)
   @Validate({ params: exportJobIdParams })
   get(
     @Param("exportJobId") exportJobId: string,
@@ -76,6 +82,7 @@ export class HrExportController {
   }
 
   @Get(":exportJobId/download")
+  @ApiOkResponse({ description: "Employee data CSV file download", content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } } })
   @UseGuards(RateLimitGuard)
   @UseRateLimit("hr:employee-export")
   @Validate({ params: exportJobIdParams })

@@ -1,7 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { notifications } from "../../db/schema";
+import { notifications, organizationMembers } from "../../db/schema";
+import { and, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import type { Principal } from "../../common/auth/principal";
 import type {
   ListInput,
   SnoozeInput,
@@ -18,14 +20,9 @@ import { isNotificationCategory } from "./notifications.types";
 import type {
   AnnounceInput,
   CreateNotificationInput,
-  NotificationCategoryValue,
 } from "./notifications.types";
 
-export type {
-  AnnounceInput,
-  CreateNotificationInput,
-  NotificationCategoryValue,
-};
+export type { AnnounceInput, CreateNotificationInput };
 
 @Injectable()
 export class NotificationsService {
@@ -38,11 +35,19 @@ export class NotificationsService {
   ) {}
 
   async create(input: CreateNotificationInput) {
+    // userId is an identity/display address; delivery authority is the tenant membership.
+    const [member] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, input.orgId), eq(organizationMembers.userId, input.userId)))
+      .limit(1);
+    if (!member) throw new Error("Organization membership required");
     const [notification] = await this.db
       .insert(notifications)
       .values({
         orgId: input.orgId,
         userId: input.userId,
+        membershipId: member.id,
         type: input.type ?? "INFO",
         priority: input.priority ?? "NORMAL",
         category: input.category ?? "SYSTEM",
@@ -154,8 +159,8 @@ export class NotificationsService {
     );
   }
 
-  list(orgId: string, userId: string, filters: ListInput) {
-    return this.read.list(orgId, userId, filters);
+  list(orgId: string, userId: string, filters: ListInput, principal?: Principal) {
+    return this.read.list(orgId, userId, filters, principal);
   }
 
   unreadCount(orgId: string, userId: string) {

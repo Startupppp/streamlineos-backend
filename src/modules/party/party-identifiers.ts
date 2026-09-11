@@ -121,9 +121,6 @@ export async function claimIdentifiers(
   for (const claim of claims) {
     const normalisedValue = normaliseIdentifier(claim.kind, claim.value);
     if (!normalisedValue) continue;
-    // Deduplicated in memory as well as in the index: ON CONFLICT DO NOTHING
-    // cannot resolve two conflicting rows inside one INSERT, and Postgres
-    // raises 21000 rather than dropping one.
     const key = `${claim.kind}:${normalisedValue}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -324,5 +321,5 @@ export async function restoreIdentifiers(
 }
 
 function isKnownKind(row: { kind: string; value: string }): row is IdentifierClaim {
-  return (IDENTIFIER_KINDS as readonly string[]).includes(row.kind);
+  return IDENTIFIER_KINDS.some((kind) => kind === row.kind);
 }

@@ -46,29 +46,19 @@ export type TargetEntity = ImportEntity;
 
 export type ConnectorProvider = "salesforce" | "hubspot" | "zoho" | "pipedrive";
 
-export const CONNECTOR_PROVIDERS: readonly ConnectorProvider[] = [
-  "salesforce",
-  "hubspot",
-  "zoho",
-  "pipedrive",
-];
+export const CONNECTOR_PROVIDERS = ["salesforce", "hubspot", "zoho", "pipedrive"] as const;
 
 export function isConnectorProvider(value: string): value is ConnectorProvider {
-  return (CONNECTOR_PROVIDERS as readonly string[]).includes(value);
+  return CONNECTOR_PROVIDERS.some((provider) => provider === value);
 }
 
 /** The four streams every one of these products has, whatever it calls them. */
 export type ConnectorStream = "accounts" | "contacts" | "deals" | "activities";
 
-export const CONNECTOR_STREAMS: readonly ConnectorStream[] = [
-  "accounts",
-  "contacts",
-  "deals",
-  "activities",
-];
+export const CONNECTOR_STREAMS = ["accounts", "contacts", "deals", "activities"] as const;
 
 export function isConnectorStream(value: string): value is ConnectorStream {
-  return (CONNECTOR_STREAMS as readonly string[]).includes(value);
+  return CONNECTOR_STREAMS.some((stream) => stream === value);
 }
 
 /**
@@ -222,7 +212,7 @@ export function readCell(record: unknown, apiField: string): string {
   let cursor: unknown = record;
   for (const part of apiField.split(".")) {
     if (cursor === null || typeof cursor !== "object") return "";
-    cursor = (cursor as Record<string, unknown>)[part];
+    cursor = Reflect.get(cursor, part);
   }
 
   if (cursor === null || cursor === undefined) return "";

@@ -49,11 +49,11 @@ export const createWidgetSchema = z.object({
       label: z.string().optional(),
     })
     .optional(),
-});
+}).strict();
 
 export const updateWidgetSchema = createWidgetSchema.partial().extend({
   isActive: z.boolean().optional(),
-});
+}).strict();
 
 export const listSubmissionsQuerySchema = z.object({
   page: pageNumberField,
@@ -63,13 +63,13 @@ export const listSubmissionsQuerySchema = z.object({
   status: z.enum(["open", "in_progress", "resolved", "archived"]).optional(),
   assigneeId: z.string().optional(),
   search: z.string().optional(),
-});
+}).strict();
 
 export const updateSubmissionSchema = z.object({
   status: z.enum(["open", "in_progress", "resolved", "archived"]).optional(),
   priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
   assigneeId: z.string().nullable().optional(),
-});
+}).strict();
 
 export const publicSubmitSchema = z.object({
   type: z.enum(["bug", "idea", "feature", "question", "praise", "other"]),
@@ -89,8 +89,8 @@ export const publicAiAssistSchema = z.object({
   networkLogs: z.array(feedbucketNetworkEntrySchema).max(50).optional(),
 });
 
-export const publicSubmitDeclSchema = publicSubmitSchema.partial().default({});
-export const publicAiAssistDeclSchema = publicAiAssistSchema.partial().default({});
+export const publicSubmitDeclSchema = publicSubmitSchema.partial().strict().default({});
+export const publicAiAssistDeclSchema = publicAiAssistSchema.partial().strict().default({});
 
 export type CreateWidgetInput = z.infer<typeof createWidgetSchema>;
 export type UpdateWidgetInput = z.infer<typeof updateWidgetSchema>;

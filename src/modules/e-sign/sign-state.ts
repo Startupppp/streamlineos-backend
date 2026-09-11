@@ -1,3 +1,15 @@
+export type SignSessionState =
+  | "active"
+  | "not_your_turn"
+  | "expired"
+  | "revoked"
+  | "recipient_completed"
+  | "recipient_declined"
+  | "envelope_voided"
+  | "envelope_expired"
+  | "envelope_declined"
+  | "envelope_completed";
+
 export type SignEnvelopeStatus =
   | "draft"
   | "ready_to_send"

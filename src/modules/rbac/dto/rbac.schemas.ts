@@ -1,28 +1,24 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
 
 /** "team" resolves teammates from org_unit_members (kind = TEAM) inside applyScope. */
 export const dataScopeSchema = z.enum(["all", "team", "own", "none"]);
-
-export const rolePermissionsQuerySchema = z.object({
-  role: z.string().min(1).max(100),
-});
 
 export const assignRolePermissionSchema = z.object({
   roleId: z.number().int().positive(),
   permissionKey: z.string().min(1).max(120),
   scope: dataScopeSchema.default("all"),
-});
+}).strict();
 
 export const revokeRolePermissionSchema = z.object({
   roleId: z.number().int().positive(),
   permissionKey: z.string().min(1).max(120),
-});
+}).strict();
 
 export const updateRoleSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   permissions: z.array(z.string().min(1).max(120)).max(300).optional(),
-});
+}).strict();
 
 export const materializeTemplateSchema = z
   .object({ templateId: z.string().min(1).max(64) })
@@ -35,37 +31,36 @@ export const setRolePermissionsSchema = z.object({
       z.object({
         permissionKey: z.string().min(1).max(120),
         scope: dataScopeSchema.default("all"),
-      }),
+      }).strict(),
     )
     .max(500),
-});
+}).strict();
 
 export const roleMemberSchema = z.discriminatedUnion("principalType", [
   z.object({
     principalType: z.literal("user"),
     principalId: z.string().min(1).max(255),
-  }),
+  }).strict(),
   z.object({
     principalType: z.literal("group"),
     principalId: z.string().uuid(),
-  }),
+  }).strict(),
 ]);
 
 export const simulationCandidatesQuerySchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(20),
   search: z.string().trim().max(100).optional(),
-});
+}).strict();
 
 export const listRolesQuerySchema = z
   .object({
-    page: pageNumberField,
+    cursor: z.string().optional(),
     limit: pageSizeField(20),
     search: z.string().trim().max(100).optional(),
   })
   .strict();
 
-export type RolePermissionsQuery = z.infer<typeof rolePermissionsQuerySchema>;
 export type AssignRolePermissionInput = z.infer<typeof assignRolePermissionSchema>;
 export type RevokeRolePermissionInput = z.infer<typeof revokeRolePermissionSchema>;
 export type UpdateRoleInput = z.infer<typeof updateRoleSchema>;
@@ -74,31 +69,3 @@ export type SetRolePermissionsInput = z.infer<typeof setRolePermissionsSchema>;
 export type RoleMemberInput = z.infer<typeof roleMemberSchema>;
 export type SimulationCandidatesQuery = z.infer<typeof simulationCandidatesQuerySchema>;
 export type ListRolesQuery = z.infer<typeof listRolesQuerySchema>;
-
-export interface DiscoveryPermissionEntry {
-  name: string;
-  resource: string;
-  action: string;
-  description: string;
-  moduleKey: string | null;
-  scopable: boolean;
-}
-
-export interface DiscoveryGrantableResult {
-  grantableKeys: string[];
-  assignableRanks: number[];
-  allowedModules: string[] | null;
-}
-
-export interface DiscoveryTemplateEntry {
-  id: string;
-  name: string;
-  slug: string;
-  permissionCount: number;
-}
-
-export interface DiscoveryMemberEntry {
-  userId: string;
-  name: string | null;
-  email: string;
-}

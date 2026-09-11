@@ -1,136 +1,146 @@
-import { ForbiddenException, NotFoundException } from "@nestjs/common";
-import type { Db } from "../../../db/drizzle.module";
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
+import { Test } from "@nestjs/testing";
+import { DRIZZLE } from "../../../db/drizzle.constants";
+import { CacheService } from "../../../common/cache/cache.service";
+import { AccessService } from "../../access/access.service";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { organizationMembers, projectStatuses, tickets, workflowTransitions } from "../../../db/schema";
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 
-const OWNER_ORG = "org-owner";
-const PROJECT_ID = 10;
+const actor: CurrentUserContext = {
+  orgId: "11111111-1111-4111-8111-111111111111", userId: "owner", role: "OWNER",
+  isOrgOwner: true, sessionId: "session", tokenScopes: null, principal: humanSessionPrincipal(1, true),
+};
 
-function buildSelectChain(resolvedValue: unknown) {
-  const whereFn = jest.fn().mockResolvedValue(resolvedValue);
-  const fromFn = jest.fn().mockReturnValue({ where: whereFn });
-  const selectFn = jest.fn().mockReturnValue({ from: fromFn });
-  return { selectFn, fromFn, whereFn };
-}
-
-function makeTransactionMock(
-  existenceRows: Array<{ id: number }>,
-  statusRows: Array<{ name: string }>,
-  updateRows: Array<{ id: number }>,
-) {
-  let selectCallIndex = 0;
-  const selectResponses = [existenceRows, statusRows];
-
-  const selectFn = jest.fn().mockImplementation(() => {
-    const value = selectResponses[selectCallIndex] ?? statusRows;
-    selectCallIndex++;
-    return {
-      from: jest.fn().mockReturnValue({
-        where: jest.fn().mockResolvedValue(value),
+async function harness(size = 1, allowed = true, missingProject = false) {
+  const rows = Array.from({ length: size }, (_, i) => ({ id: i + 1, status: "TODO", version: 1, allowed,
+    rank: String((i + 1) * 1000), assigneeMembershipId: null, dueDate: null, priority: "MEDIUM", points: null, epicId: null, sprintId: null,
+  }));
+  const statuses: Array<{ id: number; name: string; wipLimit: number | null }> = [{ id: 1, name: "TODO", wipLimit: null }, { id: 2, name: "DONE", wipLimit: null }];
+  const occupancy = { count: 0 };
+  const transitions: Array<{ fromStatusId: number; toStatusId: number; requiredFields: string[]; requiresApproval: boolean; allowedRoles: string[] }> = [];
+  const select = jest.fn((selection: Record<string, unknown>) => {
+    let data: unknown = rows;
+    const chain: {
+      from: jest.Mock; where: jest.Mock; orderBy: jest.Mock; for: jest.Mock;
+      innerJoin: jest.Mock; limit: jest.Mock;
+      then: (resolve: (value: unknown) => unknown) => Promise<unknown>;
+    } = {
+      from: jest.fn((table: unknown) => {
+        data = table === tickets ? ("count" in selection ? [occupancy] : rows) : table === projectStatuses ? statuses : table === workflowTransitions ? transitions : table === organizationMembers ? [{ id: 9 }] : [];
+        return chain;
       }),
+      where: jest.fn().mockReturnThis(), orderBy: jest.fn().mockReturnThis(), for: jest.fn().mockReturnThis(),
+      innerJoin: jest.fn().mockReturnThis(), limit: jest.fn(() => Promise.resolve(data)),
+      then: (resolve: (value: unknown) => unknown) => Promise.resolve(data).then(resolve),
     };
+    return chain;
   });
-
-  const updateFn = jest.fn().mockReturnValue({
-    set: jest.fn().mockReturnValue({
-      where: jest.fn().mockReturnValue({
-        returning: jest.fn().mockResolvedValue(updateRows),
-      }),
-    }),
-  });
-
-  const executeFn = jest.fn().mockResolvedValue([{ count: "0" }]);
-
-  const tx = { select: selectFn, update: updateFn, execute: executeFn };
-
-  return { tx };
-}
-
-function makeDb(memberRow: unknown, tx: unknown) {
-  return {
+  const set = jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(rows) }) });
+  const values = jest.fn().mockResolvedValue(undefined);
+  const remove = jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) });
+  const db = { select, update: jest.fn(() => ({ set })), insert: jest.fn(() => ({ values })), delete: remove,
+    execute: jest.fn(async () => statuses.map(status => ({ name: status.name, wip_limit: status.wipLimit, current_count: occupancy.count, status_exists: true, has_statuses: true }))), transaction: jest.fn(),
     query: {
-      projectMembers: {
-        findFirst: jest.fn().mockResolvedValue(memberRow),
-      },
+      projects: { findFirst: jest.fn().mockResolvedValue(missingProject ? undefined : { id: 1 }) },
+      organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 9 }) },
     },
-    transaction: jest.fn().mockImplementation(
-      async (cb: (t: unknown) => Promise<unknown>) => cb(tx),
-    ),
-  } as unknown as Db;
+  };
+  db.transaction.mockImplementation(async (callback: (tx: typeof db) => Promise<unknown>) => callback(db));
+  const module = await Test.createTestingModule({ providers: [ProjectsTicketsQueryService,
+    { provide: DRIZZLE, useValue: db }, { provide: CacheService, useValue: { del: jest.fn().mockResolvedValue(undefined) } },
+    { provide: AccessService, useValue: { scopeFor: jest.fn().mockResolvedValue("all"), resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } },
+  ] }).compile();
+  return { module, db, rows, statuses, occupancy, transitions, set, values, service: module.get(ProjectsTicketsQueryService) };
 }
 
-beforeEach(() => {
-  jest.resetAllMocks();
-});
-
-describe("ProjectsTicketsQueryService.bulkUpdate — ROW-74 isolation", () => {
-  it("DENY — cross-tenant ticket IDs resolve empty; NotFoundException is thrown (404 semantics)", async () => {
-    const { tx } = makeTransactionMock([], [{ name: "TODO" }], []);
-    const db = makeDb({ id: 1 }, tx);
-    const cache = { del: jest.fn().mockResolvedValue(undefined) } as never;
-    const svc = new ProjectsTicketsQueryService(db, cache);
-    const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: false } as never;
-
-    await expect(
-      svc.bulkUpdate(u, PROJECT_ID, { ticketIds: [9999], status: "TODO" }),
-    ).rejects.toThrow(NotFoundException);
+describe("Build bulk mutations: fail-whole authorization and fixed query budgets", () => {
+  it("returns404 for a foreign project before checking membership", async () => {
+    const h = await harness(1, true, true);
+    try {
+      await expect(h.service.bulkUpdate({ ...actor, isOrgOwner: false }, 99, { ticketIds: [1], priority: "HIGH" })).rejects.toThrow(NotFoundException);
+      expect(h.db.select).not.toHaveBeenCalled();
+      expect(h.set).not.toHaveBeenCalled();
+    } finally { await h.module.close(); }
   });
 
-  it("CONTROL — same-org ticket IDs resolve; update returns affected count", async () => {
-    const ticketRows = [{ id: 1 }, { id: 2 }];
-    const { tx } = makeTransactionMock(ticketRows, [{ name: "TODO" }], ticketRows);
-    const db = makeDb({ id: 1 }, tx);
-    const cache = { del: jest.fn().mockResolvedValue(undefined) } as never;
-    const svc = new ProjectsTicketsQueryService(db, cache);
-    const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: false } as never;
-
-    const result = await svc.bulkUpdate(u, PROJECT_ID, {
-      ticketIds: [1, 2],
-      status: "TODO",
-    });
-
-    expect(result.updated).toBe(2);
-    expect(result.ticketIds).toEqual([1, 2]);
-    expect(db.transaction).toHaveBeenCalledTimes(1);
+  it("rejects a mixed tenant batch without any update", async () => {
+    const h = await harness();
+    try {
+      await expect(h.service.bulkUpdate(actor, 1, { ticketIds: [1, 999], priority: "HIGH" })).rejects.toThrow(NotFoundException);
+      expect(h.set).not.toHaveBeenCalled();
+    } finally { await h.module.close(); }
   });
 
-  it("DENY — partial cross-org batch (1 valid + 1 cross-org) throws NotFoundException", async () => {
-    const { tx } = makeTransactionMock([{ id: 1 }], [{ name: "TODO" }], [{ id: 1 }]);
-    const db = makeDb({ id: 1 }, tx);
-    const cache = { del: jest.fn() } as never;
-    const svc = new ProjectsTicketsQueryService(db, cache);
-    const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: false } as never;
-
-    await expect(
-      svc.bulkUpdate(u, PROJECT_ID, { ticketIds: [1, 9999], status: "TODO" }),
-    ).rejects.toThrow(NotFoundException);
+  it("returns403 for a same-tenant ticket outside DataScope", async () => {
+    const h = await harness(1, false);
+    try {
+      await expect(h.service.bulkUpdate(actor, 1, { ticketIds: [1], priority: "HIGH" })).rejects.toThrow(ForbiddenException);
+      expect(h.set).not.toHaveBeenCalled();
+    } finally { await h.module.close(); }
   });
 
-  it("DENY — non-project-member is rejected with ForbiddenException before transaction starts", async () => {
-    const { tx } = makeTransactionMock([], [], []);
-    const db = makeDb(null, tx);
-    const cache = { del: jest.fn() } as never;
-    const svc = new ProjectsTicketsQueryService(db, cache);
-    const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: false } as never;
-
-    await expect(
-      svc.bulkUpdate(u, PROJECT_ID, { ticketIds: [1], status: "TODO" }),
-    ).rejects.toThrow(ForbiddenException);
-
-    expect(db.transaction).not.toHaveBeenCalled();
+  it.each([1, 100])("updates %i assignments with one lookup, one update, and two link writes", async (size) => {
+    const h = await harness(size);
+    try {
+      const result = await h.service.bulkUpdate(actor, 1, { ticketIds: h.rows.map((row) => row.id), assigneeId: "member" });
+      expect(result.updated).toBe(size);
+      expect(h.db.select).toHaveBeenCalledTimes(1);
+      expect(h.db.query.organizationMembers.findFirst).toHaveBeenCalledTimes(1);
+      expect(h.set).toHaveBeenCalledTimes(1);
+      expect(h.set).toHaveBeenCalledWith(expect.objectContaining({ version: expect.anything(), assigneeMembershipId: 9 }));
+      expect(h.db.delete).toHaveBeenCalledTimes(1);
+      expect(h.values).toHaveBeenCalledTimes(1);
+      expect(h.values.mock.calls[0]?.[0]).toHaveLength(size);
+    } finally { await h.module.close(); }
   });
 
-  it("CONTROL — org owner bypasses membership check and enters transaction", async () => {
-    const ticketRows = [{ id: 1 }];
-    const { tx } = makeTransactionMock(ticketRows, [], ticketRows);
-    const db = makeDb(null, tx);
-    const cache = { del: jest.fn().mockResolvedValue(undefined) } as never;
-    const svc = new ProjectsTicketsQueryService(db, cache);
-    const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true } as never;
+  it("validates required fields from the batched read and does not query each ticket", async () => {
+    const h = await harness(100);
+    h.transitions.push({ fromStatusId: 1, toStatusId: 2, requiredFields: ["dueDate"], requiresApproval: false, allowedRoles: [] });
+    try {
+      await expect(h.service.bulkUpdate(actor, 1, { ticketIds: h.rows.map((row) => row.id), status: "DONE" })).rejects.toThrow(BadRequestException);
+      expect(h.db.select).toHaveBeenCalledTimes(3);
+      expect(h.set).not.toHaveBeenCalled();
+    } finally { await h.module.close(); }
+  });
 
-    await expect(
-      svc.bulkUpdate(u, PROJECT_ID, { ticketIds: [1], priority: "HIGH" }),
-    ).resolves.not.toThrow();
+  it.each([1, 100])("writes %i status events in one outbox insert", async (size) => {
+    const h = await harness(size);
+    try {
+      await h.service.bulkUpdate(actor, 1, { ticketIds: h.rows.map((row) => row.id), status: "DONE" });
+      expect(h.db.select).toHaveBeenCalledTimes(3);
+      expect(h.values).toHaveBeenCalledTimes(1);
+      expect(h.values.mock.calls[0]?.[0]).toHaveLength(size);
+    } finally { await h.module.close(); }
+  });
 
-    expect(db.transaction).toHaveBeenCalledTimes(1);
+  it("counts the whole incoming batch against WIP before any write", async () => {
+    const h = await harness(2);
+    const done = h.statuses.find((status) => status.name === "DONE");
+    if (!done) throw new Error("Missing status fixture");
+    done.wipLimit = 3;
+    h.occupancy.count = 2;
+    try {
+      await expect(h.service.bulkUpdate(actor, 1, { ticketIds: [1, 2], status: "DONE" })).rejects.toThrow(ConflictException);
+      expect(h.db.select).toHaveBeenCalledTimes(3);
+      expect(h.set).not.toHaveBeenCalled();
+      expect(h.db.execute).toHaveBeenCalledTimes(3);
+      expect(h.db.execute.mock.invocationCallOrder[0]).toBeLessThan(h.db.select.mock.invocationCallOrder[0] ?? Infinity);
+    } finally { await h.module.close(); }
+  });
+
+  it("accepts exactly remaining WIP capacity with one aggregate query", async () => {
+    const h = await harness(100);
+    const done = h.statuses.find((status) => status.name === "DONE");
+    if (!done) throw new Error("Missing status fixture");
+    done.wipLimit = 101;
+    h.occupancy.count = 1;
+    try {
+      await expect(h.service.bulkUpdate(actor, 1, { ticketIds: h.rows.map((row) => row.id), status: "DONE" })).resolves.toMatchObject({ updated: 100 });
+      expect(h.db.select).toHaveBeenCalledTimes(3);
+      expect(h.db.execute).toHaveBeenCalledTimes(3);
+    } finally { await h.module.close(); }
   });
 });

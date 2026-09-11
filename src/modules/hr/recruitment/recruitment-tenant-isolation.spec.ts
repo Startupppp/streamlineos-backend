@@ -1,3 +1,4 @@
+import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { RecruitmentAutomationService } from "./recruitment-automation.service";
 import { RecruitmentCalibrationService } from "./recruitment-calibration.service";
@@ -16,6 +17,11 @@ import { RecruitmentReferralChecksService } from "./recruitment-referral-checks.
 import { RecruitmentRequisitionsService } from "./recruitment-requisitions.service";
 import { RecruitmentSourcingService } from "./recruitment-sourcing.service";
 import { RecruitmentTalentPoolsService } from "./recruitment-talent-pools.service";
+import { RecruitmentVendorSourcingService } from "./recruitment-vendor-sourcing.service";
+
+const cleanQuarantine = {
+  getStatusForKey: async () => "clean" as const,
+} as unknown as import("../../storage/file-quarantine.service").FileQuarantineService;
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean")
@@ -37,13 +43,13 @@ type ChainBuilder = {
   then: <T>(resolve: (rows: unknown[]) => T) => Promise<T>;
 };
 
-function makeChainBuilder(rows: unknown[]): { builder: ChainBuilder; where: jest.Mock } {
+function makeChainBuilder(rows: unknown[], visibleRows = rows): { builder: ChainBuilder; where: jest.Mock } {
   const where = jest.fn();
   const builder: ChainBuilder = {
     from: jest.fn(), leftJoin: jest.fn(), innerJoin: jest.fn(), where,
     orderBy: jest.fn(), groupBy: jest.fn(), limit: jest.fn(), offset: jest.fn(),
     having: jest.fn(), as: jest.fn().mockReturnValue({}),
-    then: <T>(resolve: (rows: unknown[]) => T) => Promise.resolve(rows).then(resolve),
+    then: <T>(resolve: (rows: unknown[]) => T) => Promise.resolve(visibleRows).then(resolve),
   };
   builder.from.mockReturnValue(builder);
   builder.leftJoin.mockReturnValue(builder);
@@ -57,12 +63,13 @@ function makeChainBuilder(rows: unknown[]): { builder: ChainBuilder; where: jest
   return { builder, where };
 }
 
-function makeDb(rows: unknown[]): { db: Db; where: jest.Mock; findMany: jest.Mock; findFirst: jest.Mock } {
-  const { builder, where } = makeChainBuilder(rows);
+function makeDb(rows: unknown[], visibleRows = rows): { db: Db; where: jest.Mock; findMany: jest.Mock; findFirst: jest.Mock } {
+  const { builder, where } = makeChainBuilder(rows, visibleRows);
   const findMany = jest.fn().mockResolvedValue(rows);
   const findFirst = jest.fn().mockResolvedValue(rows[0] ?? null);
   const db = {
     select: jest.fn().mockReturnValue(builder),
+    selectDistinct: jest.fn().mockReturnValue(builder),
     execute: jest.fn().mockResolvedValue([]),
     insert: jest.fn().mockReturnValue({
       values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }),
@@ -116,6 +123,21 @@ const OWNER = "org-owner";
 const ATTACKER = "org-attacker";
 
 describe("HR Recruitment services — cross-tenant isolation", () => {
+  describe("RecruitmentVendorSourcingService", () => {
+    it("hides a vendor owned by another org from the requesting org (DENY — cross-tenant isolation)", async () => {
+      const foreignVendor = { id: 17, orgId: OWNER, name: "Owner-only vendor" };
+      const { db, where } = makeDb([foreignVendor], []);
+      const svc = new RecruitmentVendorSourcingService(db);
+
+      const result = await svc.listVendors(ATTACKER);
+
+      expect(foreignVendor.orgId).toBe(OWNER);
+      expect(result).toHaveLength(0);
+      expect(where).toHaveBeenCalled();
+      expect(where.mock.calls.flatMap((call: unknown[]) => call).flatMap((arg) => sqlValues(arg))).toContain(ATTACKER);
+    });
+  });
+
   describe("RecruitmentAutomationService", () => {
     it("scopes automations to the requesting org (DENY — cross-tenant isolation)", async () => {
       const { db, findMany } = makeDb([]);
@@ -136,13 +158,14 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
   });
 
   describe("RecruitmentCalibrationService", () => {
-    it("scopes calibration to the requesting org (DENY — cross-tenant isolation)", async () => {
-      const { db, findMany } = makeDb([]);
+    it("refuses a candidate outside the requesting org (DENY — 404, not an empty list)", async () => {
+      const { db, findMany, findFirst } = makeDb([]);
       const svc = new RecruitmentCalibrationService(db);
-      const result = await svc.listCalibration(ATTACKER, 1);
-      expect(result).toHaveLength(0);
-      expect(findMany).toHaveBeenCalled();
-      const call = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
+
+      await expect(svc.listCalibration(ATTACKER, 1)).rejects.toThrow(NotFoundException);
+
+      expect(findMany).not.toHaveBeenCalled();
+      const call = findFirst.mock.calls[0]?.[0] as { where?: unknown } | undefined;
       expect(sqlValues(call?.where)).toContain(ATTACKER);
     });
 
@@ -158,7 +181,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
     it("hides candidate AI score for a different org (DENY — cross-tenant isolation)", async () => {
       const { db, findFirst } = makeDb([]);
       const svc = new RecruitmentCandidateAiService(db, {} as never);
-      await expect(svc.aiScore(ATTACKER, 1, "user-1")).rejects.toThrow();
+      await expect(svc.aiScore(ATTACKER, 1, "user-1")).rejects.toThrow(NotFoundException);
       expect(findFirst).toHaveBeenCalled();
       const call = findFirst.mock.calls[0]?.[0] as { where?: unknown } | undefined;
       expect(sqlValues(call?.where)).toContain(ATTACKER);
@@ -178,7 +201,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
     it("hides candidate documents for a different org (DENY — cross-tenant isolation)", async () => {
       const { db, findFirst } = makeDb([]);
       const svc = new RecruitmentCandidateDocsService(db, {} as never);
-      await expect(svc.listDocuments(ATTACKER, 1)).rejects.toThrow();
+      await expect(svc.listDocuments(ATTACKER, 1)).rejects.toThrow(NotFoundException);
       expect(findFirst).toHaveBeenCalled();
       const call = findFirst.mock.calls[0]?.[0] as { where?: unknown } | undefined;
       expect(sqlValues(call?.where)).toContain(ATTACKER);
@@ -197,36 +220,37 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
   });
 
   describe("RecruitmentCandidateOpsService", () => {
+    // The dedupe probe moved off db.query.candidates.findMany (which read the
+    // whole organisation) onto a request-bounded selectDistinct; the tenant
+    // predicate it must carry is unchanged, so the assertion follows the call.
     it("scopes candidate lookup to the requesting org during bulk import (DENY — cross-tenant isolation)", async () => {
-      const { db, findMany } = makeDb([]);
+      const { db, where } = makeDb([]);
       const cache = makeCacheMock();
       const svc = new RecruitmentCandidateOpsService(
-        db, {} as never, cache as never, {} as never, {} as never,
+        db, {} as never, cache as never, {} as never, {} as never, {} as never,
       );
       await svc.bulkImport(ATTACKER, { rows: [] });
-      expect(findMany).toHaveBeenCalled();
-      const call = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
-      expect(sqlValues(call?.where)).toContain(ATTACKER);
+      expect(where).toHaveBeenCalled();
+      expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
     });
 
     it("uses the owning org for candidate deduplication (CONTROL)", async () => {
-      const { db, findMany } = makeDb([{ email: "existing@example.com" }]);
+      const { db, where } = makeDb([{ email: "existing@example.com" }]);
       const cache = makeCacheMock();
       const svc = new RecruitmentCandidateOpsService(
-        db, {} as never, cache as never, {} as never, {} as never,
+        db, {} as never, cache as never, {} as never, {} as never, {} as never,
       );
       await svc.bulkImport(OWNER, { rows: [] });
-      expect(findMany).toHaveBeenCalled();
-      const call = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
-      expect(sqlValues(call?.where)).toContain(OWNER);
+      expect(where).toHaveBeenCalled();
+      expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
     });
   });
 
   describe("RecruitmentCandidateVaultService", () => {
     it("hides vault for a different org (DENY — cross-tenant isolation)", async () => {
       const { db, findFirst } = makeDb([]);
-      const svc = new RecruitmentCandidateVaultService(db);
-      await expect(svc.listVault(ATTACKER, 1)).rejects.toThrow();
+      const svc = new RecruitmentCandidateVaultService(db, cleanQuarantine);
+      await expect(svc.listVault(ATTACKER, 1)).rejects.toThrow(NotFoundException);
       expect(findFirst).toHaveBeenCalled();
       const call = findFirst.mock.calls[0]?.[0] as { where?: unknown } | undefined;
       expect(sqlValues(call?.where)).toContain(ATTACKER);
@@ -234,7 +258,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
 
     it("returns vault documents for the owning org (CONTROL)", async () => {
       const { db, findMany } = makeDb([{ id: 1, orgId: OWNER }]);
-      const svc = new RecruitmentCandidateVaultService(db);
+      const svc = new RecruitmentCandidateVaultService(db, cleanQuarantine);
       const result = await svc.listVault(OWNER, 1);
       expect(result).toHaveLength(1);
     });
@@ -248,8 +272,8 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
         db, cache as never, {} as never, {} as never,
         {} as never, {} as never, {} as never, {} as never,
       );
-      const result = await svc.list(ATTACKER, { page: 1, pageSize: 10, limit: 10, offset: 0, status: undefined, source: undefined, jobId: undefined, search: undefined });
-      expect(result.items).toHaveLength(0);
+      const result = await svc.list(ATTACKER, { limit: 10, cursor: undefined, status: undefined, source: undefined, jobId: undefined, search: undefined });
+      expect(result.data).toHaveLength(0);
       expect(findMany).toHaveBeenCalled();
       const call = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
       expect(sqlValues(call?.where)).toContain(ATTACKER);
@@ -262,8 +286,8 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
         db, cache as never, {} as never, {} as never,
         {} as never, {} as never, {} as never, {} as never,
       );
-      const result = await svc.list(OWNER, { page: 1, pageSize: 10, limit: 10, offset: 0, status: undefined, source: undefined, jobId: undefined, search: undefined });
-      expect(result.items).toHaveLength(1);
+      const result = await svc.list(OWNER, { limit: 10, cursor: undefined, status: undefined, source: undefined, jobId: undefined, search: undefined });
+      expect(result.data).toHaveLength(1);
     });
   });
 
@@ -288,14 +312,15 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
   });
 
   describe("RecruitmentJobBoardsService", () => {
-    it("scopes job board postings to the requesting org (DENY — cross-tenant isolation)", async () => {
-      const { db, where } = makeDb([]);
+    it("refuses a job posting outside the requesting org (DENY — 404, not an empty list)", async () => {
+      const { db, where, findFirst } = makeDb([]);
       const svc = new RecruitmentJobBoardsService(db);
-      const result = await svc.list(ATTACKER, 1);
-      expect(result).toHaveLength(0);
-      expect(where).toHaveBeenCalled();
-      const allValues = where.mock.calls.flatMap((call: unknown[]) => call).flatMap((arg) => sqlValues(arg));
-      expect(allValues).toContain(ATTACKER);
+
+      await expect(svc.list(ATTACKER, 1)).rejects.toThrow(NotFoundException);
+
+      expect(where).not.toHaveBeenCalled();
+      const call = findFirst.mock.calls[0]?.[0] as { where?: unknown } | undefined;
+      expect(sqlValues(call?.where)).toContain(ATTACKER);
     });
 
     it("returns job board postings for the owning org (CONTROL)", async () => {
@@ -311,7 +336,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
       const { db, findMany } = makeDb([]);
       const cache = makeCacheMock();
       const svc = new RecruitmentJobsService(db, cache as never, {} as never);
-      const result = await svc.list(ATTACKER, { page: 1, pageSize: 10, limit: 10, offset: 0, status: undefined });
+      const result = await svc.list(ATTACKER, { pageSize: 10, limit: 10, status: undefined, cursor: undefined });
       expect(result.items).toHaveLength(0);
       expect(findMany).toHaveBeenCalled();
       const call = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
@@ -322,7 +347,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
       const { db } = makeDb([{ id: 1, orgId: OWNER }]);
       const cache = makeCacheMock();
       const svc = new RecruitmentJobsService(db, cache as never, {} as never);
-      const result = await svc.list(OWNER, { page: 1, pageSize: 10, limit: 10, offset: 0, status: undefined });
+      const result = await svc.list(OWNER, { pageSize: 10, limit: 10, status: undefined, cursor: undefined });
       expect(result.items).toHaveLength(1);
     });
   });
@@ -331,7 +356,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
     it("scopes offers to the requesting org (DENY — cross-tenant isolation)", async () => {
       const { db, where } = makeDb([]);
       const svc = new RecruitmentOffersService(db, {} as never, {} as never, {} as never);
-      const result = await svc.listAllOffers(ATTACKER, { page: 1, pageSize: 10 });
+      const result = await svc.listAllOffers(ATTACKER, { pageSize: 10 });
       expect(result.items).toHaveLength(0);
       expect(where).toHaveBeenCalled();
       expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
@@ -340,8 +365,22 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
     it("returns offers for the owning org (CONTROL)", async () => {
       const { db } = makeDb([{ id: 1, orgId: OWNER }]);
       const svc = new RecruitmentOffersService(db, {} as never, {} as never, {} as never);
-      const result = await svc.listAllOffers(OWNER, { page: 1, pageSize: 10 });
+      const result = await svc.listAllOffers(OWNER, { pageSize: 10 });
       expect(result.items).toHaveLength(1);
+    });
+
+    it("trims the keyset sentinel and exposes an opaque next cursor", async () => {
+      const rows = [
+        { id: 2, orgId: OWNER, createdAt: new Date("2026-08-20T09:00:00.000Z") },
+        { id: 1, orgId: OWNER, createdAt: new Date("2026-08-20T08:00:00.000Z") },
+      ];
+      const { db } = makeDb(rows);
+      const svc = new RecruitmentOffersService(db, {} as never, {} as never, {} as never);
+      const result = await svc.listAllOffers(OWNER, { pageSize: 1 });
+
+      expect(result.items).toEqual([rows[0]]);
+      expect(result.pagination).toMatchObject({ limit: 1, hasMore: true });
+      expect(result.pagination.nextCursor).toEqual(expect.any(String));
     });
   });
 
@@ -389,7 +428,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
     it("hides reference checks for a different org (DENY — cross-tenant isolation)", async () => {
       const { db, findFirst } = makeDb([]);
       const svc = new RecruitmentReferralChecksService(db);
-      await expect(svc.listReferenceChecks(ATTACKER, 1)).rejects.toThrow();
+      await expect(svc.listReferenceChecks(ATTACKER, 1)).rejects.toThrow(NotFoundException);
       expect(findFirst).toHaveBeenCalled();
       const call = findFirst.mock.calls[0]?.[0] as { where?: unknown } | undefined;
       expect(sqlValues(call?.where)).toContain(ATTACKER);
@@ -427,7 +466,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
   describe("RecruitmentSourcingService", () => {
     it("scopes referrals to the requesting org (DENY — cross-tenant isolation)", async () => {
       const { db, findMany } = makeDb([]);
-      const svc = new RecruitmentSourcingService(db, {} as never);
+      const svc = new RecruitmentSourcingService(db, {} as never, {} as never);
       const result = await svc.listReferrals(ATTACKER, "user-1", true);
       expect(result).toHaveLength(0);
       expect(findMany).toHaveBeenCalled();
@@ -437,9 +476,24 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
 
     it("returns referrals for the owning org (CONTROL)", async () => {
       const { db } = makeDb([{ id: 1, orgId: OWNER }]);
-      const svc = new RecruitmentSourcingService(db, {} as never);
+      const svc = new RecruitmentSourcingService(db, {} as never, {} as never);
       const result = await svc.listReferrals(OWNER, "user-1", true);
       expect(result).toHaveLength(1);
+    });
+  });
+
+  describe("RecruitmentVendorSourcingService", () => {
+    it("hides a vendor owned by another org before listing its submissions (DENY â€” cross-tenant isolation)", async () => {
+      const { db, findFirst } = makeDb([]);
+      findFirst.mockImplementation(({ where }: { where?: unknown }) =>
+        Promise.resolve(sqlValues(where).includes(ATTACKER) ? null : { id: 1, orgId: OWNER }),
+      );
+      const svc = new RecruitmentVendorSourcingService(db);
+
+      await expect(svc.listSubmissions(ATTACKER, 1, false)).rejects.toThrow(NotFoundException);
+      expect(findFirst).toHaveBeenCalled();
+      const call = findFirst.mock.calls[0]?.[0] as { where?: unknown } | undefined;
+      expect(sqlValues(call?.where)).toContain(ATTACKER);
     });
   });
 

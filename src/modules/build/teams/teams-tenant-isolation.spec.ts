@@ -26,7 +26,9 @@ describe("TeamsService — cross-tenant isolation", () => {
       .mockResolvedValueOnce(firstCallRows)
       .mockResolvedValue(subsequentRows);
     const where = jest.fn().mockReturnValue({ limit });
-    const from = jest.fn().mockReturnValue({ where, innerJoin: jest.fn().mockReturnValue({ where }) });
+    const innerJoin2 = jest.fn().mockReturnValue({ where });
+    const innerJoin1 = jest.fn().mockReturnValue({ innerJoin: innerJoin2, where });
+    const from = jest.fn().mockReturnValue({ where, innerJoin: innerJoin1 });
     const select = jest.fn().mockReturnValue({ from });
     return { db: { select } as unknown as Db, where };
   }

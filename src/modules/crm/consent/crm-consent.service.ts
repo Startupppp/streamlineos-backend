@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, inArray } from "drizzle-orm";
 import { crmContactChannelConsent } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -17,6 +17,7 @@ import {
   readConsentForContact,
   readContactEmail,
 } from "./lib/crm-consent-reads";
+import { logger } from "../../../common/logger/logger.service";
 
 export type {
   ConsentChannel,
@@ -146,6 +147,42 @@ export class CrmConsentService {
    */
   async record(orgId: string, input: ConsentRecordInput): Promise<void> {
     await recordConsentChange(this.db, this.audit, orgId, input);
+  }
+
+  /**
+   * The opt-out a signed unsubscribe link carries, for the public routes.
+   *
+   * A token naming a contact outside its own organisation (or one that no
+   * longer resolves) writes nothing and is answered like every other token, so
+   * the public endpoint is not an oracle for whether a contact exists. The
+   * refusal is still logged, because a signed token that resolves nowhere is
+   * worth being able to see.
+   */
+  async recordUnsubscribe(input: {
+    orgId: string;
+    contactId: number;
+    channel: ConsentChannel;
+  }): Promise<void> {
+    try {
+      await this.record(input.orgId, {
+        contactId: input.contactId,
+        channel: input.channel,
+        status: "OPTED_OUT",
+        source: "UNSUBSCRIBE_LINK",
+        legalBasis: "CONSENT",
+        recordedByUserId: null,
+      });
+    } catch (error) {
+      if (!(error instanceof NotFoundException)) throw error;
+      logger.warn("crm.consent.unsubscribe.unresolved", {
+        orgId: input.orgId,
+        contactId: input.contactId,
+        channel: input.channel,
+        outcome: "answered 200 without recording",
+        reason:
+          "signed token names a contact that is absent, soft-deleted, or not in the signed org",
+      });
+    }
   }
 
   /**

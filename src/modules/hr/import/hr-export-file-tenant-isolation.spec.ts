@@ -7,6 +7,7 @@ jest.mock("../../../common/tenant", () => ({
 
 import type { Db } from "../../../db/drizzle.module";
 import { HrExportFileService } from "./hr-export-file.service";
+import { ScopedRead } from "../../access/scoped-read";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -55,9 +56,7 @@ describe("HrExportFileService — cross-tenant isolation", () => {
     const mockStorage = { uploadFileStream: jest.fn(), deleteFile: jest.fn() };
     const svc = new HrExportFileService(db, mockStorage as never);
     const input = {
-      orgId: ATTACKER,
-      actorUserId: "actor-1",
-      scope: "all" as const,
+      read: ScopedRead.of(ATTACKER, "actor-1", "all"),
       filters: {},
     };
     const proto: Record<string, (...args: unknown[]) => Promise<unknown>> = Object.getPrototypeOf(svc);
@@ -71,9 +70,7 @@ describe("HrExportFileService — cross-tenant isolation", () => {
     const mockStorage = { uploadFileStream: jest.fn(), deleteFile: jest.fn() };
     const svc = new HrExportFileService(db, mockStorage as never);
     const input = {
-      orgId: OWNER,
-      actorUserId: "actor-2",
-      scope: "all" as const,
+      read: ScopedRead.of(OWNER, "actor-2", "all"),
       filters: {},
     };
     const proto: Record<string, (...args: unknown[]) => Promise<unknown>> = Object.getPrototypeOf(svc);

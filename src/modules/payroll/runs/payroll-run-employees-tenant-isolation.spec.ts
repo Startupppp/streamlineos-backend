@@ -2,7 +2,7 @@ import type { Db } from "../../../db/drizzle.module";
 import { PayrollRunEmployeesService } from "./payroll-run-employees.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { ListRunEmployeesQuery } from "./dto/runs.schemas";
-import type { DataScope } from "../../access/access.types";
+import { ScopedRead } from "../../access/scoped-read";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -35,14 +35,13 @@ describe("PayrollRunEmployeesService — cross-tenant isolation", () => {
   }
 
   const audit = { log: jest.fn() } as unknown as AuditService;
-  const scope: DataScope = "all";
   const listQuery: ListRunEmployeesQuery = { limit: 25 } as ListRunEmployeesQuery;
 
   it("listRunEmployees scopes run check to the attacker org — cross-tenant isolation", async () => {
     const { db, where } = makeSelectDb([]);
     const svc = new PayrollRunEmployeesService(db, audit);
 
-    const result = await svc.listRunEmployees(ATTACKER_ORG, RUN_ID, listQuery, scope, ACTOR);
+    const result = await svc.listRunEmployees(ScopedRead.of(ATTACKER_ORG, ACTOR, "all"), RUN_ID, listQuery);
 
     expect(result).toBeNull();
     expect(where).toHaveBeenCalled();

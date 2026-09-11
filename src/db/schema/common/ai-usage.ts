@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, jsonb, integer, index, unique, numeric, varchar, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, jsonb, integer, index, unique, numeric, varchar } from "drizzle-orm/pg-core";
 import { organizations, users } from "./auth";
 
 export const aiUsageLogs = pgTable("ai_usage_logs", {

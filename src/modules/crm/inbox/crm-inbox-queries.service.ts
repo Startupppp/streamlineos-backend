@@ -5,8 +5,7 @@ import { businessParties, leadPartyMap } from "../../../db/schema/party";
 import { PARTY_OF_LEAD, leadStatus } from "../crm-party-reads";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import type { DataScope } from "../../access/access.types";
-import { applyScope } from "../../access/apply-scope";
+import type { ScopedRead } from "../../access/scoped-read";
 import { CrmInboxAiActionsService, type AiAction } from "./crm-inbox-ai-actions.service";
 
 export interface InboxItem {
@@ -62,7 +61,9 @@ export class CrmInboxQueriesService {
     private readonly aiActions: CrmInboxAiActionsService,
   ) {}
 
-  async getInbox(orgId: string, userId: string, scope: DataScope): Promise<InboxResponse> {
+  async getInbox(read: ScopedRead): Promise<InboxResponse> {
+    const orgId = read.orgId;
+    const userId = read.actorId;
     const now = new Date();
     const todayStart = startOfDay(now);
     const todayEnd = endOfDay(now);
@@ -70,8 +71,16 @@ export class CrmInboxQueriesService {
     const fourteenDaysAgo = new Date(now.getTime() - INBOX_ACTIVITY_LOOKBACK_MS);
     const fourHoursFromNow = new Date(now.getTime() + INBOX_SLA_HORIZON_MS);
 
-    const scopeFilter = applyScope(scope, orgId, userId, { ownerColumn: tasks.assigneeId });
-    const leadScopeFilter = applyScope(scope, orgId, userId, { ownerColumn: businessParties.ownerUserId });
+    const scopeFilter = read.compose(
+      { tenant: tasks.orgId, scope: { columns: { ownerColumn: tasks.assigneeId } } },
+      ({ sql: where }) => where,
+      () => sql`false`,
+    );
+    const leadScopeFilter = read.compose(
+      { tenant: businessParties.organizationId, scope: { columns: { ownerColumn: businessParties.ownerUserId } } },
+      ({ sql: where }) => where,
+      () => sql`false`,
+    );
 
     const { terminalLeadKeys, openStageKeys } = await this.aiActions.resolveMetadata(orgId);
 
@@ -97,7 +106,7 @@ export class CrmInboxQueriesService {
           type: tasks.type,
         })
         .from(tasks)
-        .where(and(eq(tasks.orgId, orgId), eq(tasks.status, "pending"), gte(tasks.dueDate, todayStart), lte(tasks.dueDate, todayEnd), isNull(tasks.snoozedUntil), scopeFilter))
+        .where(and(eq(tasks.status, "pending"), gte(tasks.dueDate, todayStart), lte(tasks.dueDate, todayEnd), isNull(tasks.snoozedUntil), scopeFilter))
         .orderBy(tasks.dueDate)
         .limit(10),
 
@@ -112,7 +121,7 @@ export class CrmInboxQueriesService {
           type: tasks.type,
         })
         .from(tasks)
-        .where(and(eq(tasks.orgId, orgId), eq(tasks.status, "pending"), lt(tasks.dueDate, todayStart), isNull(tasks.snoozedUntil), scopeFilter))
+        .where(and(eq(tasks.status, "pending"), lt(tasks.dueDate, todayStart), isNull(tasks.snoozedUntil), scopeFilter))
         .orderBy(tasks.dueDate)
         .limit(10),
 
@@ -175,7 +184,7 @@ export class CrmInboxQueriesService {
             .from(deals)
             .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), inArray(deals.stage, openStageKeys), not(sql`EXISTS (SELECT 1 FROM deal_activities da WHERE da.deal_id = ${deals.id} AND da.created_at >= ${fourteenDaysAgo.toISOString()})`)))
             .limit(10)
-        : Promise.resolve([] as { id: number; name: string; stage: string; assignedToId: string | null }[]),
+        : Promise.resolve<{ id: number; name: string; stage: string; assignedToId: string | null }[]>([]),
 
       this.db
         .select({
@@ -191,7 +200,7 @@ export class CrmInboxQueriesService {
         .orderBy(desc(businessParties.assignedAt))
         .limit(10),
 
-      this.aiActions.computeAiActions(orgId, userId, scope, terminalLeadKeys, openStageKeys),
+      this.aiActions.computeAiActions(read, terminalLeadKeys, openStageKeys),
     ]);
 
     return {
@@ -321,7 +330,9 @@ export class CrmInboxQueriesService {
     };
   }
 
-  async getCounts(orgId: string, userId: string, scope: DataScope): Promise<InboxCounts> {
+  async getCounts(read: ScopedRead): Promise<InboxCounts> {
+    const orgId = read.orgId;
+    const userId = read.actorId;
     const now = new Date();
     const todayStart = startOfDay(now);
     const todayEnd = endOfDay(now);
@@ -329,8 +340,16 @@ export class CrmInboxQueriesService {
     const fourteenDaysAgo = new Date(now.getTime() - INBOX_ACTIVITY_LOOKBACK_MS);
     const fourHoursFromNow = new Date(now.getTime() + INBOX_SLA_HORIZON_MS);
 
-    const scopeFilter = applyScope(scope, orgId, userId, { ownerColumn: tasks.assigneeId });
-    const leadScopeFilter = applyScope(scope, orgId, userId, { ownerColumn: businessParties.ownerUserId });
+    const scopeFilter = read.compose(
+      { tenant: tasks.orgId, scope: { columns: { ownerColumn: tasks.assigneeId } } },
+      ({ sql: where }) => where,
+      () => sql`false`,
+    );
+    const leadScopeFilter = read.compose(
+      { tenant: businessParties.organizationId, scope: { columns: { ownerColumn: businessParties.ownerUserId } } },
+      ({ sql: where }) => where,
+      () => sql`false`,
+    );
 
     const { terminalLeadKeys, openStageKeys } = await this.aiActions.resolveMetadata(orgId);
 
@@ -344,8 +363,8 @@ export class CrmInboxQueriesService {
       stuckDealsCount,
       newlyAssignedCount,
     ] = await Promise.all([
-      this.db.select({ n: sql<number>`count(*)` }).from(tasks).where(and(eq(tasks.orgId, orgId), eq(tasks.status, "pending"), gte(tasks.dueDate, todayStart), lte(tasks.dueDate, todayEnd), isNull(tasks.snoozedUntil), scopeFilter)).then((r) => Number(r[0]?.n ?? 0)),
-      this.db.select({ n: sql<number>`count(*)` }).from(tasks).where(and(eq(tasks.orgId, orgId), eq(tasks.status, "pending"), lt(tasks.dueDate, todayStart), isNull(tasks.snoozedUntil), scopeFilter)).then((r) => Number(r[0]?.n ?? 0)),
+      this.db.select({ n: sql<number>`count(*)` }).from(tasks).where(and(eq(tasks.status, "pending"), gte(tasks.dueDate, todayStart), lte(tasks.dueDate, todayEnd), isNull(tasks.snoozedUntil), scopeFilter)).then((r) => Number(r[0]?.n ?? 0)),
+      this.db.select({ n: sql<number>`count(*)` }).from(tasks).where(and(eq(tasks.status, "pending"), lt(tasks.dueDate, todayStart), isNull(tasks.snoozedUntil), scopeFilter)).then((r) => Number(r[0]?.n ?? 0)),
       this.db.select({ n: sql<number>`count(*)` }).from(leadPartyMap).innerJoin(businessParties, PARTY_OF_LEAD).where(and(eq(leadPartyMap.organizationId, orgId), not(inArray(leadStatus, terminalLeadKeys)), lte(businessParties.nextFollowUpAt, now), isNull(businessParties.deletedAt), leadScopeFilter)).then((r) => Number(r[0]?.n ?? 0)),
       this.db.select({ n: sql<number>`count(*)` }).from(leadEmails).where(and(eq(leadEmails.orgId, orgId), eq(leadEmails.direction, "received"), gte(leadEmails.sentAt, fortyEightHoursAgo))).then((r) => Number(r[0]?.n ?? 0)),
       this.db.select({ n: sql<number>`count(*)` }).from(dealMeetings).where(and(eq(dealMeetings.orgId, orgId), eq(dealMeetings.status, "scheduled"), gte(dealMeetings.scheduledAt, todayStart), lte(dealMeetings.scheduledAt, todayEnd))).then((r) => Number(r[0]?.n ?? 0)),

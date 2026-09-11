@@ -7,6 +7,7 @@ import { PaymentWebhookReceiverService } from "./payment-webhook-receiver.servic
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { ApiOkResponse } from "@nestjs/swagger";
 
 const providerKeyenvironmentorgIdParams = z.object({ providerKey: z.string().min(1), environment: z.string().min(1), orgId: z.string().min(1) }).strict();
 
@@ -16,6 +17,7 @@ export class PaymentWebhooksPublicController {
   constructor(private readonly webhooks: PaymentWebhookReceiverService) {}
 
   @Post(":providerKey/:environment/:orgId")
+  @ApiOkResponse({ description: "Webhook received", content: { "application/json": { schema: { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"], additionalProperties: false } } } })
   @BodylessAction()
   @UseGuards(RateLimitGuard)
   @UseRateLimit("billing:webhook")

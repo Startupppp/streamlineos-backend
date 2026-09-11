@@ -24,7 +24,8 @@ import {
 } from "./dto/meetings.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { actionItemRowSchema, convertToTaskResultSchema } from "./dto/meetings-response.schemas";
 
 const projectAndMeetingIdParams = z.object({ projectId: z.coerce.number().int().positive(), meetingId: z.coerce.number().int().positive() }).strict();
 const projectMeetingAndItemIdParams = z.object({ projectId: z.coerce.number().int().positive(), meetingId: z.coerce.number().int().positive(), itemId: z.coerce.number().int().positive() }).strict();
@@ -38,6 +39,7 @@ export class ActionItemsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:meetings:manage")
+  @ResponseSchema(actionItemRowSchema)
   @Validate({ params: projectAndMeetingIdParams, body: createActionItemSchema })
   createItem(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -50,6 +52,7 @@ export class ActionItemsController {
 
   @Patch(":itemId")
   @RequirePermission("build:meetings:manage")
+  @ResponseSchema(actionItemRowSchema)
   @Validate({ params: projectMeetingAndItemIdParams, body: updateActionItemSchema })
   updateItem(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -64,6 +67,7 @@ export class ActionItemsController {
   @Delete(":itemId")
   @RequirePermission("build:meetings:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: projectMeetingAndItemIdParams })
   deleteItem(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -78,6 +82,7 @@ export class ActionItemsController {
   @BodylessAction()
   @HttpCode(201)
   @RequirePermission("build:meetings:manage")
+  @ResponseSchema(convertToTaskResultSchema)
   @Validate({ params: projectMeetingAndItemIdParams })
   convertToTask(
     @Param("projectId", ParseIntPipe) projectId: number,

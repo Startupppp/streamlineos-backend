@@ -1,4 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { unsubscribePayloadSchema } from "./dto/consent.schemas";
+import type { z } from "zod";
 
 /**
  * Stateless, signed unsubscribe tokens.
@@ -14,11 +16,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  */
 const VERSION = "u1";
 
-export interface UnsubscribePayload {
-  orgId: string;
-  contactId: number;
-  channel: "EMAIL" | "SMS" | "WHATSAPP" | "PHONE" | "POST";
-}
+export type UnsubscribePayload = z.infer<typeof unsubscribePayloadSchema>;
 
 function key(): Buffer {
   const raw = process.env.ENCRYPTION_KEY;
@@ -52,21 +50,8 @@ export function verifyUnsubscribeToken(token: string): UnsubscribePayload | null
 
   try {
     const parsed: unknown = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
-    if (typeof parsed !== "object" || parsed === null) return null;
-
-    const { orgId, contactId, channel } = parsed as Record<string, unknown>;
-    if (typeof orgId !== "string" || orgId.length === 0) return null;
-    if (typeof contactId !== "number" || !Number.isInteger(contactId) || contactId <= 0) return null;
-    if (
-      channel !== "EMAIL" &&
-      channel !== "SMS" &&
-      channel !== "WHATSAPP" &&
-      channel !== "PHONE" &&
-      channel !== "POST"
-    )
-      return null;
-
-    return { orgId, contactId, channel };
+    const result = unsubscribePayloadSchema.safeParse(parsed);
+    return result.success ? result.data : null;
   } catch {
     return null;
   }

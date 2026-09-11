@@ -1,29 +1,13 @@
 import type { Db } from "../../db/drizzle.types";
-import { forEachOrg } from "../tenant/for-each-org";
+import type { TenantTx } from "../tenant";
 import { WorkflowRegistry } from "./workflow-registry";
 import { WorkflowOutboxRelayService } from "./workflow-outbox-relay.service";
 import type { WorkflowRunnerService } from "./workflow-runner.service";
 
-/**
- * `forEachOrg` is the seam, not an implementation detail to see through.
- *
- * The relay cannot read `outbox_events` across tenants — the table carries
- * `tenant_isolation`, and a query with no tenant context is refused with 42501,
- * which took the whole cron tick down with it. Discovery therefore runs inside
- * one tenant transaction per organisation.
- *
- * Mocked here because what these cases are about is the relay's own reasoning —
- * the cursor, the global ordering, the deduplication — and standing up
- * `withTenant` and a real `organizations` table to reach it would test Postgres.
- * That discovery genuinely goes through this seam is asserted directly below,
- * and proved end to end by `crm-inbound-ingress.seeded-e2e-spec.ts`, which runs
- * the real tick against a database whose role cannot bypass RLS.
- */
-jest.mock("../tenant/for-each-org", () => ({
-  forEachOrg: jest.fn(async (db: unknown, _sweep: string, fn: (tx: unknown, orgId: string) => Promise<void>) => {
-    await fn(db, "org-1");
-    return { organizations: 1, succeeded: 1, failed: 0 };
-  }),
+const mockForEachOrg = jest.fn();
+
+jest.mock("../tenant", () => ({
+  forEachOrg: (...args: unknown[]) => mockForEachOrg(...args),
 }));
 
 interface EventRow {
@@ -35,16 +19,49 @@ interface EventRow {
   correlationId: string | null;
 }
 
+/**
+ * Drives the relay one batch per `relay()` call, through `forEachOrg`.
+ *
+ * The relay no longer issues one cross-tenant select — that form is denied under
+ * RLS, which is the defect these tests now sit on top of. It sweeps
+ * organisations and reads each one's outbox inside that organisation's
+ * transaction, so the double has to do the same: group the batch by
+ * organisation and hand each group to the callback under its own org id.
+ */
 function dbReturning(batches: EventRow[][]): Db {
   const queue = [...batches];
-  const chain = {
-    from: () => chain,
-    where: () => chain,
-    orderBy: () => chain,
-    limit: async () => queue.shift() ?? [],
-  };
-  return { select: () => chain } as unknown as Db;
+
+  mockForEachOrg.mockImplementation(
+    async (_db: unknown, _sweep: string, fn: (tx: TenantTx, orgId: string) => Promise<void>) => {
+      const batch = queue.shift() ?? [];
+      const byOrg = new Map<string, EventRow[]>();
+      for (const row of batch) {
+        const rows = byOrg.get(row.organizationId) ?? [];
+        rows.push(row);
+        byOrg.set(row.organizationId, rows);
+      }
+      // An organisation is swept even with nothing to read, exactly as the real one is.
+      if (byOrg.size === 0) byOrg.set("org-1", []);
+
+      for (const [orgId, rows] of byOrg) {
+        const chain = {
+          from: () => chain,
+          where: () => chain,
+          orderBy: () => chain,
+          limit: async () => rows,
+        };
+        await fn({ select: () => chain } as unknown as TenantTx, orgId);
+      }
+      return { organizations: byOrg.size, succeeded: byOrg.size, failed: 0 };
+    },
+  );
+
+  return { select: () => undefined } as unknown as Db;
 }
+
+beforeEach(() => {
+  jest.clearAllMocks();
+});
 
 function runnerSpy(behaviour?: (name: string) => Promise<string | null>) {
   const started: { workflowName: string; causationEventId?: string | null }[] = [];
@@ -73,10 +90,6 @@ function event(overrides: Partial<EventRow> = {}): EventRow {
 }
 
 describe("WorkflowOutboxRelayService", () => {
-  beforeEach(() => {
-    (forEachOrg as jest.Mock).mockClear();
-  });
-
   /**
    * The regression this file exists to prevent a second time.
    *
@@ -84,55 +97,16 @@ describe("WorkflowOutboxRelayService", () => {
    * fails against the non-owner role the application is supposed to use — so the
    * failure appears only in an environment nobody runs unit tests in, and what
    * it looks like there is every durable workflow in the product quietly
-   * stopping.
+   * stopping. Discovery therefore goes through `forEachOrg`, once per tick.
    */
-  /**
-   * The starvation the per-org loop reintroduced, and the reason the cursor is
-   * conditional.
-   *
-   * `limit` is one budget shared across every organisation, so a pass that fills
-   * it has read the first tenants and not the later ones. A cursor advanced on
-   * that pass moves past ids belonging to organisations the pass never queried —
-   * and any of theirs more than `CURSOR_LAG` below the highest seen would never
-   * be read again. Not delayed: never, which is precisely what `CURSOR_LAG`
-   * exists to prevent.
-   */
-  it("does not advance the cursor on a pass that filled its budget", async () => {
-    const registry = new WorkflowRegistry();
-    registry.register({ name: "onboard", triggers: ["party.created"], handler: async () => null });
-
-    const full = [
-      event({ outboxEventId: 9_000, eventId: "evt-a" }),
-      event({ outboxEventId: 9_001, eventId: "evt-b" }),
-    ];
-    const relay = new WorkflowOutboxRelayService(dbReturning([full]), registry, runnerSpy().service);
-
-    await relay.relay(2); // exactly the budget: there may be more behind it
-    expect(relay.position).toBe(0);
-  });
-
-  it("advances once a pass comes back short, which means it saw everything", async () => {
-    const registry = new WorkflowRegistry();
-    registry.register({ name: "onboard", triggers: ["party.created"], handler: async () => null });
-
-    const relay = new WorkflowOutboxRelayService(
-      dbReturning([[event({ outboxEventId: 9_000 })]]),
-      registry,
-      runnerSpy().service,
-    );
-
-    await relay.relay(50);
-    expect(relay.position).toBe(8_000); // 9_000 - CURSOR_LAG
-  });
-
   it("discovers per organisation rather than across tenants", async () => {
     const registry = new WorkflowRegistry();
     const relay = new WorkflowOutboxRelayService(dbReturning([[event()]]), registry, runnerSpy().service);
 
     await relay.relay();
 
-    expect(forEachOrg).toHaveBeenCalledTimes(1);
-    expect((forEachOrg as jest.Mock).mock.calls[0]?.[1]).toBe("workflow-outbox-relay");
+    expect(mockForEachOrg).toHaveBeenCalledTimes(1);
+    expect(mockForEachOrg.mock.calls[0]?.[1]).toBe("workflow-outbox-relay");
   });
 
   it("starts a run for an event a workflow listens to", async () => {

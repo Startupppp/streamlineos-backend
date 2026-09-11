@@ -12,6 +12,8 @@ const DEPT_ID_2 = "dept-uuid-2222-0000-0000-000000000002";
 const USER_ID_A = "user-aaaa-0000-0000-0000-000000000002";
 const USER_ID_B = "user-bbbb-0000-0000-0000-000000000003";
 
+const PAGE_SIZE = 500;
+
 const mockCache = {
   cached: jest.fn(),
   cachedVersioned: jest.fn(),
@@ -52,16 +54,27 @@ describe("BroadcastsService — department audience recipient resolution", () =>
   };
   let memberWhere: jest.Mock;
 
+  /**
+   * First db.select call: returns dept target ids from broadcastAudienceTargets.
+   * Subsequent calls: drive from organizationMembers with where → orderBy → limit.
+   * memberWhere is the WHERE mock for the member-resolution pages.
+   */
   function mockReads(targetIds: string[], members: Array<{ userId: string }>) {
-    memberWhere = jest.fn().mockResolvedValue(members);
+    const memberPage = members.map((m, i) => ({ userId: m.userId, id: i + 1 }));
+
+    const memberLimit = jest.fn().mockResolvedValueOnce(memberPage).mockResolvedValue([]);
+    const memberOrderBy = jest.fn().mockReturnValue({ limit: memberLimit });
+    memberWhere = jest.fn().mockReturnValue({ orderBy: memberOrderBy });
+    const memberFrom = jest.fn().mockReturnValue({ where: memberWhere });
+
     const junctionWhere = jest.fn().mockResolvedValue(targetIds.map((targetId) => ({ targetId })));
-    mockDb.select.mockReturnValue({
-      from: jest.fn().mockReturnValue({
-        where: junctionWhere,
-        innerJoin: jest.fn().mockReturnValue({ where: memberWhere }),
-      }),
-    });
-    return { junctionWhere };
+    const junctionFrom = jest.fn().mockReturnValue({ where: junctionWhere });
+
+    mockDb.select
+      .mockReturnValueOnce({ from: junctionFrom })
+      .mockReturnValue({ from: memberFrom });
+
+    return { junctionWhere, memberLimit };
   }
 
   function mockPublish(recipientCount: number) {
@@ -135,6 +148,16 @@ describe("BroadcastsService — department audience recipient resolution", () =>
     await svc.publish(ORG_ID, ACTOR_ID, 1);
 
     expect(memberWhere).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses a bounded limit on each member-page query", async () => {
+    mockDb.query.broadcasts.findFirst.mockResolvedValue(makeBroadcast());
+    const { memberLimit } = mockReads([DEPT_ID_1], [{ userId: USER_ID_A }]);
+    mockPublish(1);
+
+    await svc.publish(ORG_ID, ACTOR_ID, 1);
+
+    expect(memberLimit).toHaveBeenCalledWith(PAGE_SIZE);
   });
 
   it("does not call dispatch.emit when the broadcast has only IN_APP channel", async () => {

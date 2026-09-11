@@ -2,16 +2,20 @@ import { KbIndexingService } from "./kb-indexing.service";
 
 function makeEmbeddings(configured = true) {
   return {
-    isConfigured: jest.fn().mockReturnValue(configured),
-    embedQuery: jest.fn().mockResolvedValue(new Array(1536).fill(0.1)),
-    toVectorLiteral: jest.fn((v: number[]) => `[${v.join(",")}]`),
+    isEmbeddingConfigured: jest.fn().mockReturnValue(configured),
+    embedBatchWithCredit: jest
+      .fn()
+      .mockImplementation(({ texts }: { texts: string[] }) => Promise.resolve({
+        ok: true,
+        vectors: texts.map(() => new Array(1536).fill(0.1) as number[]),
+      })),
   };
 }
 
 function makeCheckpoint() {
   return {
     loadCheckpoints: jest.fn().mockResolvedValue(new Map()),
-    saveCheckpoint: jest.fn().mockResolvedValue(undefined),
+    saveCheckpoints: jest.fn().mockResolvedValue(undefined),
     clearCheckpoints: jest.fn().mockResolvedValue(undefined),
   };
 }
@@ -25,28 +29,31 @@ function collectLeaves(node: unknown, seen = new WeakSet<object>()): unknown[] {
 }
 
 function makeDb(page: Record<string, unknown> | null) {
-  const deleteWhere = jest.fn().mockResolvedValue(undefined);
-  const dbDelete = jest.fn().mockReturnValue({ where: deleteWhere });
-  const txDelete = jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) });
+  const txDeleteWhere = jest.fn().mockResolvedValue(undefined);
+  const txDelete = jest.fn().mockReturnValue({ where: txDeleteWhere });
   const txInsert = jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) });
+  const dbDelete = jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) });
+
+  const query = {
+    kbPages: { findFirst: jest.fn().mockResolvedValue(page) },
+    kbArticles: { findFirst: jest.fn().mockResolvedValue(page) },
+  };
+  const select = jest.fn().mockReturnValue({
+    from: jest.fn().mockReturnValue({
+      where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+    }),
+  });
 
   return {
     db: {
-      select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({
-          where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
-        }),
-      }),
+      select,
       delete: dbDelete,
-      query: {
-        kbPages: { findFirst: jest.fn().mockResolvedValue(page) },
-        kbArticles: { findFirst: jest.fn().mockResolvedValue(page) },
-      },
+      query,
       transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => unknown) =>
-        fn({ delete: txDelete, insert: txInsert }),
+        fn({ delete: txDelete, insert: txInsert, execute: jest.fn().mockResolvedValue([]), query, select }),
       ),
     },
-    deleteWhere,
+    deleteWhere: txDeleteWhere,
     dbDelete,
     txDelete,
     txInsert,
@@ -58,7 +65,7 @@ const PAGE_ID = 42;
 
 describe("KB lifecycle — de-index on archive or soft-delete", () => {
   it("calls db.delete (removePageChunks) when the page is archived", async () => {
-    const { db, dbDelete, deleteWhere } = makeDb({
+    const { db, txDelete, deleteWhere } = makeDb({
       status: "archived",
       deletedAt: null,
       contentText: "some text",
@@ -73,7 +80,7 @@ describe("KB lifecycle — de-index on archive or soft-delete", () => {
     const svc = new KbIndexingService(db as never, makeEmbeddings() as never, makeCheckpoint() as never);
     await svc.indexPage(ORG, PAGE_ID);
 
-    expect(dbDelete).toHaveBeenCalledTimes(1);
+    expect(txDelete).toHaveBeenCalledTimes(1);
     const whereArg = deleteWhere.mock.calls[0]?.[0];
     const leaves = collectLeaves(whereArg);
     expect(leaves).toContain(ORG);
@@ -81,7 +88,7 @@ describe("KB lifecycle — de-index on archive or soft-delete", () => {
   });
 
   it("calls db.delete (removePageChunks) when the page has deletedAt set", async () => {
-    const { db, dbDelete, deleteWhere } = makeDb({
+    const { db, txDelete, deleteWhere } = makeDb({
       status: "published",
       deletedAt: new Date("2026-01-01"),
       contentText: "some content",
@@ -96,7 +103,7 @@ describe("KB lifecycle — de-index on archive or soft-delete", () => {
     const svc = new KbIndexingService(db as never, makeEmbeddings() as never, makeCheckpoint() as never);
     await svc.indexPage(ORG, PAGE_ID);
 
-    expect(dbDelete).toHaveBeenCalledTimes(1);
+    expect(txDelete).toHaveBeenCalledTimes(1);
     const whereArg = deleteWhere.mock.calls[0]?.[0];
     const leaves = collectLeaves(whereArg);
     expect(leaves).toContain(ORG);
@@ -124,7 +131,7 @@ describe("KB lifecycle — de-index on archive or soft-delete", () => {
   });
 
   it("calls db.delete (removeArticleChunks) for a non-published article", async () => {
-    const { db, dbDelete, deleteWhere } = makeDb({
+    const { db, txDelete, deleteWhere } = makeDb({
       status: "draft",
       contentText: "draft content",
       aclRevision: 1,
@@ -134,7 +141,7 @@ describe("KB lifecycle — de-index on archive or soft-delete", () => {
     const svc = new KbIndexingService(db as never, makeEmbeddings() as never, makeCheckpoint() as never);
     await svc.indexArticle(ORG, PAGE_ID);
 
-    expect(dbDelete).toHaveBeenCalledTimes(1);
+    expect(txDelete).toHaveBeenCalledTimes(1);
     const whereArg = deleteWhere.mock.calls[0]?.[0];
     const leaves = collectLeaves(whereArg);
     expect(leaves).toContain(ORG);

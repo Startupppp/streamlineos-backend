@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq, isNull, or } from "drizzle-orm";
-import { projectMembers, tickets, workItemRelations } from "../../../db/schema";
+import { organizationMembers, projectMembers, tickets, workItemRelations } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -18,15 +18,16 @@ export class ProjectsTicketRelationsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   private async requireMember(
+    orgId: string,
     projectId: number,
     userId: string,
   ): Promise<void> {
-    const member = await this.db.query.projectMembers.findFirst({
-      where: and(
-        eq(projectMembers.projectId, projectId),
-        eq(projectMembers.userId, userId),
-      ),
-    });
+    const [member] = await this.db
+      .select({ id: projectMembers.id })
+      .from(projectMembers)
+      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.id, projectMembers.membershipId), eq(organizationMembers.userId, userId)))
+      .where(and(eq(projectMembers.orgId, orgId), eq(projectMembers.projectId, projectId)))
+      .limit(1);
     if (!member) throw new ForbiddenException("Not a project member.");
   }
 
@@ -84,8 +85,8 @@ export class ProjectsTicketRelationsService {
     projectId: number,
     ticketId: number,
   ) {
-    await this.requireMember(projectId, u.userId);
     await this.requireProjectTicket(u.orgId, projectId, ticketId);
+    await this.requireMember(u.orgId, projectId, u.userId);
 
     const relatedTicketSelect = {
       columns: {
@@ -96,18 +97,22 @@ export class ProjectsTicketRelationsService {
         priority: true,
         type: true,
         points: true,
-        assigneeId: true,
+        assigneeMembershipId: true,
         projectId: true,
       },
       with: {
         assignee: {
-          columns: {
-            id: true,
-            name: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            image: true,
+          with: {
+            user: {
+              columns: {
+                id: true,
+                name: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                image: true,
+              },
+            },
           },
         },
         project: {
@@ -133,10 +138,12 @@ export class ProjectsTicketRelationsService {
 
     return relations.map((r) => {
       const isSource = r.workItemId === ticketId;
+      const related = isSource ? r.relatedWorkItem : r.workItem;
+      const { assignee, ...rest } = related;
       return {
         id: r.id,
         relationType: r.relationType,
-        relatedTicket: isSource ? r.relatedWorkItem : r.workItem,
+        relatedTicket: { ...rest, assignee: assignee?.user ?? null },
         direction: isSource ? "outgoing" : "incoming",
       };
     });
@@ -148,8 +155,8 @@ export class ProjectsTicketRelationsService {
     ticketId: number,
     body: AddRelationInput,
   ) {
-    await this.requireMember(projectId, u.userId);
     await this.requireProjectTicket(u.orgId, projectId, ticketId);
+    await this.requireMember(u.orgId, projectId, u.userId);
 
     if (body.relatedTicketId === ticketId) {
       throw new BadRequestException("A ticket cannot relate to itself.");
@@ -235,8 +242,8 @@ export class ProjectsTicketRelationsService {
     ticketId: number,
     relatedId: number,
   ) {
-    await this.requireMember(projectId, u.userId);
     await this.requireProjectTicket(u.orgId, projectId, ticketId);
+    await this.requireMember(u.orgId, projectId, u.userId);
 
     if (!relatedId)
       throw new BadRequestException("relatedId query param required.");

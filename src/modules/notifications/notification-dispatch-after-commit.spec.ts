@@ -12,6 +12,7 @@ import {
   type TenantContext,
 } from "../../common/tenant/tenant-context";
 import { NotificationDispatchService } from "./notification-dispatch.service";
+import { NotificationDispatchPersistenceService } from "./notification-dispatch-persistence.service";
 import { NotificationEventRegistryService } from "./notification-event-registry.service";
 import { NotificationRoutingService } from "./notification-routing.service";
 import { NotificationsService } from "./notifications.service";
@@ -72,8 +73,11 @@ describe("NotificationDispatchService durability", () => {
     }),
     execute: jest.fn().mockResolvedValue([]),
     insert: jest.fn().mockImplementation(() => ({
-      values: jest.fn().mockImplementation((v: Record<string, unknown>) => {
-        insertedValues.push(v);
+      values: jest.fn().mockImplementation((v: Record<string, unknown> | Array<Record<string, unknown>>) => {
+        if (Array.isArray(v))
+          for (const row of v) insertedValues.push(row);
+        else
+          insertedValues.push(v);
         return { onConflictDoNothing: jest.fn().mockResolvedValue(undefined) };
       }),
     })),
@@ -96,6 +100,7 @@ describe("NotificationDispatchService durability", () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         NotificationDispatchService,
+        NotificationDispatchPersistenceService,
         { provide: DRIZZLE, useValue: db },
         { provide: NotificationEventRegistryService, useValue: { resolveDefinition } },
         { provide: NotificationRoutingService, useValue: { routeMany: jest.fn() } },

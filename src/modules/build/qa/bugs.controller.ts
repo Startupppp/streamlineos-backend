@@ -28,6 +28,8 @@ import {
 } from "./dto/bugs.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { bugRowSchema } from "./dto/qa-response.schemas";
 
 const bugIdParams = z.object({ bugId: z.coerce.number().int().positive() }).strict();
 
@@ -39,17 +41,19 @@ export class BugsController {
 
   @Get()
   @RequirePermission("build:bugs:view")
+  @ResponseSchema(z.array(bugRowSchema))
   @Validate({ query: bugListQuerySchema })
   listBugs(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Query() query: BugListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listBugs(u.orgId, projectId, query);
+    return this.svc.listBugs(u, projectId, query);
   }
 
   @Get(":bugId")
   @RequirePermission("build:bugs:view")
+  @ResponseSchema(bugRowSchema)
   @Validate({ params: bugIdParams })
   getBug(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -62,17 +66,19 @@ export class BugsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:bugs:create")
+  @ResponseSchema(bugRowSchema)
   @Validate({ body: createBugSchema })
   createBug(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body() body: CreateBugInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createBug(u.orgId, u.userId, projectId, body);
+    return this.svc.createBug(u, projectId, body);
   }
 
   @Patch(":bugId")
   @RequirePermission("build:bugs:update")
+  @ResponseSchema(bugRowSchema)
   @Validate({ params: bugIdParams, body: updateBugSchema })
   updateBug(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -86,6 +92,7 @@ export class BugsController {
   @Delete(":bugId")
   @RequirePermission("build:bugs:delete")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: bugIdParams })
   deleteBug(
     @Param("projectId", ParseIntPipe) projectId: number,

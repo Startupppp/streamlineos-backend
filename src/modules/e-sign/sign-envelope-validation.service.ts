@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { SignRecipientsService } from "./sign-recipients.service";
 import { SELF_SERVE_AUTH_METHODS, isSelfServeAuthMethod } from "./dto/e-sign.schemas";
+import { systemEnvelopeScope } from "./sign-envelope-scope";
 
 const SIGNING_RECIPIENT_TYPES = [
   "signer",
@@ -16,7 +17,7 @@ const SIGNING_RECIPIENT_TYPES = [
 type SigningRecipientType = (typeof SIGNING_RECIPIENT_TYPES)[number];
 
 export function isSigningType(type: string): type is SigningRecipientType {
-  return (SIGNING_RECIPIENT_TYPES as readonly string[]).includes(type);
+  return SIGNING_RECIPIENT_TYPES.some((recipientType) => recipientType === type);
 }
 
 export interface EnvelopeValidationResult {
@@ -33,6 +34,7 @@ export class SignEnvelopeValidationService {
 
   async validate(orgId: string, envelopeId: number): Promise<EnvelopeValidationResult> {
     const envelope = await this.db.query.signEnvelopes.findFirst({
+      columns: { id: true, routingMode: true, expiresAt: true },
       where: and(eq(signEnvelopes.id, envelopeId), eq(signEnvelopes.orgId, orgId)),
     });
     if (!envelope) throw new NotFoundException("Envelope not found");
@@ -40,14 +42,16 @@ export class SignEnvelopeValidationService {
     const errors: string[] = [];
 
     const documents = await this.db.query.signDocuments.findMany({
+      columns: { id: true },
       where: and(
         eq(signDocuments.orgId, orgId),
         eq(signDocuments.envelopeId, envelopeId),
       ),
+      limit: 1,
     });
     if (documents.length === 0) errors.push("Envelope has no document");
 
-    const recipientRows = await this.recipients.listForEnvelope(orgId, envelopeId);
+    const recipientRows = await this.recipients.listForEnvelope(systemEnvelopeScope(orgId), null, envelopeId);
     const signingRecipients = recipientRows.filter((r) => isSigningType(r.recipientType));
     if (signingRecipients.length === 0) errors.push("Envelope has no signer");
 

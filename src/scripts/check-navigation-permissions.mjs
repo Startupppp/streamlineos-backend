@@ -15,10 +15,11 @@ import { join, resolve, relative } from "node:path";
 import { describeFrontendRoot, resolveFrontendRoot } from "./frontend-root.mjs";
 import { fileURLToPath } from "node:url";
 import {
-  BACKEND_ROOT,
-  WORKSPACE_ROOT,
-  resolveBackendModulesDir,
-} from "./lib/repo-roots.mjs";
+  FRONTEND_ROOT,
+  frontendAvailable,
+  frontendUnreachableReason,
+  reportUnreachable,
+} from "./check-repo-paths.mjs";
 import {
   loadBackendCatalog,
   loadModuleManifest,
@@ -74,28 +75,21 @@ export function checkNavRoutePilot(pilotEntry, navRoutes) {
 
 const args = process.argv.slice(2);
 
-// Roots are RESOLVED, not assumed. This gate hardcoded a `<root>/backend` +
-// `<root>/frontend` monorepo layout the checkout does not use, so it exited 2
-// for a missing prerequisite on every run and never once compared a navigation
-// entry against a permission key. See src/scripts/lib/repo-roots.mjs.
-const REPO_ROOT = WORKSPACE_ROOT;
-/**
- * The frontend comes from the paired-worktree resolver in frontend-root.mjs:
- * this backend is `inv-wt-backend`, so its frontend is `inv-wt-frontend`, NOT
- * `streamlineos-frontend` — comparing against the wrong worktree would report
- * another branch's navigation as drift. One resolver answers both "where" and
- * "which checkout", so the line printed before the verdict names the checkout
- * that was actually read.
- */
-const FRONTEND = resolveFrontendRoot(BACKEND_ROOT);
-const FRONTEND_ROOT = FRONTEND.root;
-const FRONTEND_CANDIDATES = FRONTEND.candidatesTried;
-const { root: RESOLVED_MODULES_DIR } = resolveBackendModulesDir();
-const BACKEND_MODULES_DIR = RESOLVED_MODULES_DIR ?? join(BACKEND_ROOT, "src", "modules");
-const NAV_DIR =
-  FRONTEND_ROOT === null
-    ? join(REPO_ROOT, "frontend", "components", "layout", "sidebar")
-    : join(FRONTEND_ROOT, "components", "layout", "sidebar");
+const SCRIPT_DIR = fileURLToPath(new URL(".", import.meta.url));
+// scripts/ -> src/ -> backend root. The frontend is found by marker, not depth.
+const REPO_ROOT = resolve(SCRIPT_DIR, "../..");
+const BACKEND_MODULES_DIR = join(REPO_ROOT, "src", "modules");
+const NAV_DIR = frontendAvailable
+  ? join(FRONTEND_ROOT, "components", "layout", "sidebar")
+  : null;
+const MIN_CONTROLLER_FILES = 100;
+const MIN_ROUTE_REFS = 200;
+const MIN_NAV_FILES = 5;
+const MIN_NAV_GATES = 50;
+
+function isVacuousScan(fileCount, refCount) {
+  return fileCount < MIN_CONTROLLER_FILES || refCount < MIN_ROUTE_REFS;
+}
 
 const SPEC_RE = /\.(spec|e2e-spec|test)\.ts$/;
 const NAV_FILE_RE = /^sidebar-(home-nav|nav-groups-.+|nav-routes-.+)\.ts$/;
@@ -285,14 +279,12 @@ try {
   process.exit(2);
 }
 
-/**
- * Printed on every run, pass or fail. This gate compares two repositories, and
- * a finding only means something if you know which two checkouts produced it —
- * an unpaired frontend is on whatever branch it happens to be on, and a
- * "missing" backend route may simply live on a branch this one has not merged.
- * After the self-test on purpose, so the self-test's JSON stays parseable.
- */
-process.stdout.write(`${describeFrontendRoot(FRONTEND)}\n`);
+if (!frontendAvailable)
+  reportUnreachable(
+    "check-navigation-permissions",
+    "the whole gate — every navigation permission gate lives in the frontend",
+    frontendUnreachableReason(),
+  );
 
 if (!existsSync(NAV_DIR)) {
   process.stderr.write(`Cannot read frontend navigation manifest dir: ${NAV_DIR}\n`);
@@ -317,9 +309,18 @@ for (const { file, src } of files)
     else unresolvedRouteArgs++;
   }
 
+if (isVacuousScan(files.length, enforced.size + unresolvedRouteArgs)) {
+  process.stderr.write(
+    `check-navigation-permissions: vacuity guard — scanned ${files.length} files (floor ${MIN_CONTROLLER_FILES}) under ${BACKEND_MODULES_DIR} and found ${enforced.size + unresolvedRouteArgs} @RequirePermission usages (floor ${MIN_ROUTE_REFS}); every nav gate would read as unenforced because the scan is broken.\n`,
+  );
+  process.exit(2);
+}
+
 const navFiles = readdirSync(NAV_DIR).filter((n) => NAV_FILE_RE.test(n));
-if (navFiles.length === 0) {
-  process.stderr.write(`No navigation manifest files matched in ${NAV_DIR}\n`);
+if (navFiles.length < MIN_NAV_FILES) {
+  process.stderr.write(
+    `check-navigation-permissions: vacuity guard — ${navFiles.length} navigation manifest file(s) matched ${NAV_FILE_RE} in ${NAV_DIR} (floor ${MIN_NAV_FILES}).\n`,
+  );
   process.exit(2);
 }
 
@@ -327,6 +328,13 @@ const gates = [];
 for (const name of navFiles) {
   const full = join(NAV_DIR, name);
   gates.push(...parseNavGates(readFileSync(full, "utf8"), full));
+}
+
+if (gates.length < MIN_NAV_GATES) {
+  process.stderr.write(
+    `check-navigation-permissions: vacuity guard — parsed ${gates.length} navigation permission gate(s) from ${navFiles.length} manifest file(s) (floor ${MIN_NAV_GATES}); the manifest parser is broken.\n`,
+  );
+  process.exit(2);
 }
 
 // -- report ------------------------------------------------------------------

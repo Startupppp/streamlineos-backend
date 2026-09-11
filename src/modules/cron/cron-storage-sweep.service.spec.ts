@@ -1,0 +1,251 @@
+jest.mock("../../common/tenant", () => ({
+  forEachOrg: jest.fn(
+    async (
+      _db: unknown,
+      _sweep: string,
+      fn: (tx: unknown, orgId: string) => Promise<void>,
+    ) => {
+      for (const id of (globalThis as { __sweepOrgIds?: string[] }).__sweepOrgIds ?? [])
+        await fn({}, id);
+      return { organizations: ((globalThis as { __sweepOrgIds?: string[] }).__sweepOrgIds ?? []).length };
+    },
+  ),
+}));
+
+import { CronStorageSweepService } from "./cron-storage-sweep.service";
+import type { StorageMultipartService } from "../storage/storage-multipart.service";
+import type { FileQuarantineService } from "../storage/file-quarantine.service";
+import type { StorageService } from "../storage/storage.service";
+import type { StoragePendingPurgeService } from "../storage/storage-pending-purge.service";
+import type { Db } from "../../db/drizzle.module";
+
+const ORG_A = "org-aaaaaaaa-0000-4000-8000-000000000001";
+const ORG_B = "org-bbbbbbbb-0000-4000-8000-000000000002";
+const KB_BUCKET = "kb-files";
+
+function makeOrgsDb(orgIds: string[]): Db {
+  (globalThis as { __sweepOrgIds?: string[] }).__sweepOrgIds = orgIds;
+  const selectBuilder = {
+    from: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockResolvedValue(orgIds.map((id) => ({ id }))),
+  };
+  return { select: jest.fn().mockReturnValue(selectBuilder) } as unknown as Db;
+}
+
+function makeServices() {
+  const mockMultipart: jest.Mocked<Pick<StorageMultipartService, "sweepAbandonedUploadsForOrgs">> = {
+    sweepAbandonedUploadsForOrgs: jest.fn().mockResolvedValue(0),
+  };
+  const mockQuarantine: jest.Mocked<
+    Pick<FileQuarantineService, "listForSweep" | "softDelete">
+  > = {
+    listForSweep: jest.fn().mockResolvedValue([]),
+    softDelete: jest.fn().mockResolvedValue(undefined),
+  };
+  const mockStorage: jest.Mocked<
+    Pick<StorageService, "deleteFile" | "deleteFileIfPresent">
+  > = {
+    deleteFile: jest.fn().mockResolvedValue(undefined),
+    deleteFileIfPresent: jest.fn().mockResolvedValue(true),
+  };
+  const mockPendingPurge: jest.Mocked<
+    Pick<StoragePendingPurgeService, "listForRetry" | "markConfirmed" | "markFailed">
+  > = {
+    listForRetry: jest.fn().mockResolvedValue([]),
+    markConfirmed: jest.fn().mockResolvedValue(undefined),
+    markFailed: jest.fn().mockResolvedValue(undefined),
+  };
+  return { mockMultipart, mockQuarantine, mockStorage, mockPendingPurge };
+}
+
+function buildService(orgIds: string[]) {
+  const db = makeOrgsDb(orgIds);
+  const { mockMultipart, mockQuarantine, mockStorage, mockPendingPurge } = makeServices();
+  const svc = new CronStorageSweepService(
+    db,
+    mockMultipart as never,
+    mockQuarantine as never,
+    mockStorage as never,
+    mockPendingPurge as never,
+    { R2_KB_BUCKET_NAME: KB_BUCKET } as never,
+  );
+  return { svc, db, mockMultipart, mockQuarantine, mockStorage, mockPendingPurge };
+}
+
+describe("CronStorageSweepService.sweep — the multipart sweep is driven once, over every active org", () => {
+  it("hands every active org to ONE multipart sweep — no caller had caused this to run before, and the per-org call was one outbound list per tenant", async () => {
+    const { svc, mockMultipart } = buildService([ORG_A, ORG_B]);
+
+    await svc.sweep();
+
+    expect(mockMultipart.sweepAbandonedUploadsForOrgs).toHaveBeenCalledTimes(1);
+    expect(mockMultipart.sweepAbandonedUploadsForOrgs).toHaveBeenCalledWith([ORG_A, ORG_B]);
+  });
+
+  it("queries infected/error and stale pending_scan records per org", async () => {
+    const { svc, mockQuarantine } = buildService([ORG_A]);
+
+    await svc.sweep();
+
+    expect(mockQuarantine.listForSweep).toHaveBeenCalledWith(
+      ORG_A,
+      ["infected", "error"],
+      expect.any(Date),
+      expect.any(Number),
+    );
+    expect(mockQuarantine.listForSweep).toHaveBeenCalledWith(
+      ORG_A,
+      ["pending_scan"],
+      expect.any(Date),
+      expect.any(Number),
+    );
+  });
+
+  it("soft-deletes expired quarantine records and deletes S3 objects", async () => {
+    const staleRecord = { id: "qr-1", storageKey: "org-1/uploads/file.pdf" };
+    const { svc, mockQuarantine, mockStorage } = buildService([ORG_A]);
+    mockQuarantine.listForSweep.mockResolvedValueOnce([staleRecord]).mockResolvedValue([]);
+
+    await svc.sweep();
+
+    expect(mockStorage.deleteFile).toHaveBeenCalledWith(ORG_A, staleRecord.storageKey);
+    expect(mockQuarantine.softDelete).toHaveBeenCalledWith(staleRecord.id);
+  });
+
+  it("reports the count of aborted uploads in the result", async () => {
+    const { svc, mockMultipart } = buildService([ORG_A, ORG_B]);
+    mockMultipart.sweepAbandonedUploadsForOrgs.mockResolvedValueOnce(4);
+
+    const result = await svc.sweep();
+
+    expect(result.multipartAborted).toBe(4);
+    expect(result.organizations).toBe(2);
+  });
+
+  it("keeps the tenant-scoped half of the sweep when the object store is unreachable", async () => {
+    const { svc, mockMultipart, mockPendingPurge } = buildService([ORG_A, ORG_B]);
+    mockMultipart.sweepAbandonedUploadsForOrgs.mockRejectedValueOnce(new Error("S3 unreachable"));
+
+    const result = await svc.sweep();
+
+    expect(result.multipartAborted).toBe(0);
+    expect(result.organizations).toBe(2);
+    expect(mockPendingPurge.listForRetry).toHaveBeenCalledWith(ORG_A, expect.any(Number));
+    expect(mockPendingPurge.listForRetry).toHaveBeenCalledWith(ORG_B, expect.any(Number));
+  });
+
+  it("keeps the quarantine record when the S3 delete fails, so an infected key stays blocked", async () => {
+    const { svc, mockQuarantine, mockStorage } = buildService([ORG_A]);
+    mockQuarantine.listForSweep
+      .mockResolvedValueOnce([{ id: "q-1", storageKey: `${ORG_A}/uploads/infected.exe` }] as never)
+      .mockResolvedValueOnce([] as never);
+    mockStorage.deleteFile.mockRejectedValueOnce(new Error("S3 unreachable"));
+
+    const result = await svc.sweep();
+
+    expect(mockQuarantine.softDelete).not.toHaveBeenCalled();
+    expect(result.quarantineExpired).toBe(0);
+    expect(result.s3ObjectsDeleted).toBe(0);
+    expect(result.deleteFailures).toBe(1);
+  });
+
+  it("soft-deletes the quarantine record only after the object is gone", async () => {
+    const { svc, mockQuarantine, mockStorage } = buildService([ORG_A]);
+    mockQuarantine.listForSweep
+      .mockResolvedValueOnce([{ id: "q-2", storageKey: `${ORG_A}/uploads/infected.exe` }] as never)
+      .mockResolvedValueOnce([] as never);
+
+    const result = await svc.sweep();
+
+    expect(mockStorage.deleteFile).toHaveBeenCalledWith(ORG_A, `${ORG_A}/uploads/infected.exe`);
+    expect(mockQuarantine.softDelete).toHaveBeenCalledWith("q-2");
+    expect(result).toMatchObject({ quarantineExpired: 1, s3ObjectsDeleted: 1, deleteFailures: 0 });
+  });
+});
+
+describe("CronStorageSweepService.sweep — storage_pending_purge is drained", () => {
+  it("retries every pending row and confirms it once the object is gone", async () => {
+    const { svc, mockStorage, mockPendingPurge } = buildService([ORG_A]);
+    mockPendingPurge.listForRetry.mockResolvedValueOnce([
+      { id: "pp-1", storageKey: `${ORG_A}/uploads/a.pdf`, purpose: "org-purge", bucket: "default" },
+      { id: "pp-2", storageKey: `${ORG_A}/uploads/b.pdf`, purpose: "e-sign:document:delete", bucket: null },
+    ]);
+
+    const result = await svc.sweep();
+
+    expect(mockStorage.deleteFileIfPresent).toHaveBeenCalledWith(
+      ORG_A,
+      `${ORG_A}/uploads/a.pdf`,
+      undefined,
+    );
+    expect(mockStorage.deleteFileIfPresent).toHaveBeenCalledWith(
+      ORG_A,
+      `${ORG_A}/uploads/b.pdf`,
+      undefined,
+    );
+    expect(mockPendingPurge.markConfirmed).toHaveBeenCalledWith(ORG_A, "pp-1");
+    expect(mockPendingPurge.markConfirmed).toHaveBeenCalledWith(ORG_A, "pp-2");
+    expect(result.pendingPurgeConfirmed).toBe(2);
+    expect(result.pendingPurgeFailed).toBe(0);
+  });
+
+  it("scans for retryable rows in every active organization", async () => {
+    const { svc, mockPendingPurge } = buildService([ORG_A, ORG_B]);
+
+    await svc.sweep();
+
+    expect(mockPendingPurge.listForRetry).toHaveBeenCalledWith(ORG_A, expect.any(Number));
+    expect(mockPendingPurge.listForRetry).toHaveBeenCalledWith(ORG_B, expect.any(Number));
+  });
+
+  it("keeps the row and records the reason when the object delete fails", async () => {
+    const { svc, mockPendingPurge, mockStorage } = buildService([ORG_A]);
+    mockPendingPurge.listForRetry.mockResolvedValueOnce([
+      { id: "pp-3", storageKey: `${ORG_A}/uploads/c.pdf`, purpose: "org-purge", bucket: "default" },
+    ]);
+    mockStorage.deleteFileIfPresent.mockRejectedValueOnce(new Error("R2 unreachable"));
+
+    const result = await svc.sweep();
+
+    expect(mockPendingPurge.markConfirmed).not.toHaveBeenCalled();
+    expect(mockPendingPurge.markFailed).toHaveBeenCalledWith(
+      ORG_A,
+      "pp-3",
+      expect.stringContaining("R2 unreachable"),
+    );
+    expect(result.pendingPurgeFailed).toBe(1);
+    expect(result.pendingPurgeConfirmed).toBe(0);
+  });
+
+  it("never confirms a row before its object is deleted", async () => {
+    const order: string[] = [];
+    const { svc, mockPendingPurge, mockStorage } = buildService([ORG_A]);
+    mockPendingPurge.listForRetry.mockResolvedValueOnce([
+      { id: "pp-4", storageKey: `${ORG_A}/uploads/d.pdf`, purpose: "org-purge", bucket: "default" },
+    ]);
+    mockStorage.deleteFileIfPresent.mockImplementation(async () => {
+      order.push("object-deleted");
+      return true;
+    });
+    mockPendingPurge.markConfirmed.mockImplementation(async () => {
+      order.push("row-confirmed");
+    });
+
+    await svc.sweep();
+
+    expect(order).toEqual(["object-deleted", "row-confirmed"]);
+  });
+
+  it("carries on sweeping the org when the pending-purge scan itself fails", async () => {
+    const { svc, mockPendingPurge, mockQuarantine } = buildService([ORG_A]);
+    mockPendingPurge.listForRetry.mockRejectedValueOnce(new Error("42501"));
+
+    const result = await svc.sweep();
+
+    expect(mockQuarantine.listForSweep).toHaveBeenCalled();
+    expect(result.pendingPurgeConfirmed).toBe(0);
+    expect(result.pendingPurgeFailed).toBe(0);
+    expect(result.organizations).toBe(1);
+  });
+});

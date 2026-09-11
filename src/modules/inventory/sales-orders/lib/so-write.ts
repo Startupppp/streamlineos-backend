@@ -146,7 +146,7 @@ export async function createSalesOrder(
   const orderable = await loadOrderableVariants(deps.db, orgId, variantIds);
 
   const so = await deps.db.transaction(async (tx) => {
-    const [header] = await (tx as Db)
+    const [header] = await tx
       .insert(invSalesOrders)
       .values({
         orgId,
@@ -168,7 +168,7 @@ export async function createSalesOrder(
       })
       .returning();
 
-    await (tx as Db).insert(invSoLines).values(
+    await tx.insert(invSoLines).values(
       data.lines.map((line) => toSoLineValues(orgId, header.id, line, orderable)),
     );
 
@@ -262,17 +262,17 @@ export async function updateSalesOrder(
       // Tenant predicate on the delete too: leaning on RLS alone is exactly
       // what made the lookup above dangerous, and RLS is inert under the
       // owner role.
-      await (tx as Db)
+      await tx
         .delete(invSoLines)
         .where(and(eq(invSoLines.orgId, orgId), eq(invSoLines.soId, soId)));
 
-      await (tx as Db).insert(invSoLines).values(
+      await tx.insert(invSoLines).values(
         (data.lines ?? []).map((line) => toSoLineValues(orgId, soId, line, orderable)),
       );
     }
 
     if (Object.keys(patch).length > 0) {
-      await (tx as Db)
+      await tx
         .update(invSalesOrders)
         .set({ ...patch, updatedAt: new Date() })
         .where(

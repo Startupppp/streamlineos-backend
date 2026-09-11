@@ -7,6 +7,7 @@ import { AiModule } from "../../ai/core/ai.module";
 import { NotificationsModule } from "../../notifications/notifications.module";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
 import { SupportKbController } from "./support-kb.controller";
+import { SupportKbEngagementController } from "./support-kb-engagement.controller";
 import { SupportMacrosController } from "./support-macros.controller";
 import { SupportWorkspaceController } from "./support-workspace.controller";
 import { SupportRealtimeController } from "./support-realtime.controller";
@@ -20,6 +21,7 @@ import { SupportReportsController } from "./support-reports.controller";
 import { SupportCustomFieldsController } from "./support-custom-fields.controller";
 import { SupportTicketsController } from "./support-tickets.controller";
 import { SupportKbService } from "./support-kb.service";
+import { SupportKbEngagementService } from "./support-kb-engagement.service";
 import { SupportMacrosService } from "./support-macros.service";
 import { SupportWorkspaceService } from "./support-workspace.service";
 import { SupportRealtimeService } from "./support-realtime.service";
@@ -29,6 +31,8 @@ import { SupportChannelsService } from "./support-channels.service";
 import { SupportCsatService } from "./support-csat.service";
 import { SupportAiService } from "./support-ai.service";
 import { SupportAiTriageService } from "./support-ai-triage.service";
+import { SupportAiTriageDataService } from "./support-ai-triage-data.service";
+import { SupportAiTriageAnalysisService } from "./support-ai-triage-analysis.service";
 import { SupportAiTranslationService } from "./support-ai-translation.service";
 import { SupportAiSettingsService } from "./support-ai-settings.service";
 import { SupportAiEmbeddingsHelper } from "./support-ai-embeddings.helper";
@@ -50,6 +54,7 @@ import { SupportTicketResolvedConsumer } from "./support-ticket-resolved-consume
   imports: [BillingModule, KbModule, RealtimeModule, AutomationModule, AiModule, NotificationsModule, OutboxModule],
   controllers: [
     SupportKbController,
+    SupportKbEngagementController,
     SupportMacrosController,
     SupportWorkspaceController,
     SupportRealtimeController,
@@ -65,6 +70,7 @@ import { SupportTicketResolvedConsumer } from "./support-ticket-resolved-consume
   ],
   providers: [
     SupportKbService,
+    SupportKbEngagementService,
     SupportMacrosService,
     SupportWorkspaceService,
     SupportRealtimeService,
@@ -73,6 +79,8 @@ import { SupportTicketResolvedConsumer } from "./support-ticket-resolved-consume
     SupportChannelsService,
     SupportCsatService,
     SupportAiService,
+    SupportAiTriageDataService,
+    SupportAiTriageAnalysisService,
     SupportAiTriageService,
     SupportAiTranslationService,
     SupportAiSettingsService,

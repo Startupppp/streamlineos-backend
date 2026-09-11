@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import { and, eq, ne } from "drizzle-orm";
-import { ticketAssignees } from "../../../db/schema";
+import { organizationMembers, ticketAssignees } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { InboxConsumer } from "../../../common/outbox/inbox-consumer";
@@ -71,13 +71,14 @@ export class BuildTicketStatusChangedConsumerService
       parseResult.data;
 
     const assigneeRows = await this.db
-      .select({ userId: ticketAssignees.userId })
+      .select({ userId: organizationMembers.userId, membershipId: ticketAssignees.membershipId })
       .from(ticketAssignees)
+      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, ticketAssignees.orgId), eq(organizationMembers.id, ticketAssignees.membershipId)))
       .where(
         and(
           eq(ticketAssignees.orgId, orgId),
           eq(ticketAssignees.ticketId, ticketId),
-          ne(ticketAssignees.userId, actorUserId),
+          ne(organizationMembers.userId, actorUserId),
         ),
       );
 

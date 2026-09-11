@@ -15,6 +15,7 @@ import { EmailWebhookService, type EmailWebhookProvider } from "./email-webhook.
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { ApiOkResponse } from "@nestjs/swagger";
 
 const providerParams = z.object({ provider: z.string().min(1) }).strict();
 
@@ -39,6 +40,7 @@ export class EmailWebhookController {
 
   @Post(":provider")
   @BodylessAction()
+  @ApiOkResponse({ description: "Webhook acknowledged", content: { "application/json": { schema: { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"], additionalProperties: false } } } })
   @Validate({ params: providerParams })
   async handle(
     @Param("provider") provider: string,

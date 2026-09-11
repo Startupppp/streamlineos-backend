@@ -467,7 +467,7 @@ const BASELINE_JOURNAL_INTEGRITY = new Set([
   "journal-order:0613_delegations_and_overrides_drop_user_columns.sql", // after 0678b: applied on Neon+inv ledgers+crm ledgers; 0678b on inv ledgers
   "journal-order:0659b_timesheets_lifecycle_seq_and_attendance_draft.sql", // after 0674a: applied on crm ledgers; 0674a on nowhere
   "journal-order:0656_communication_tenant_rls.sql", // after 0659b: applied on Neon+inv ledgers; 0659b on crm ledgers
-  "journal-order:0466_drop_legacy_accounting.sql", // after 0916_: applied on crm ledgers; 0916_ on Neon
+  "journal-order:0466_drop_legacy_accounting.sql", // after 1096_: applied on crm ledgers; 1096_ on Neon
 ]);
 
 // ─── check functions ──────────────────────────────────────────────────────────

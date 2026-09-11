@@ -15,12 +15,12 @@ import {
 } from "../../../common/tenant";
 import { StorageService } from "../../storage/storage.service";
 import { HrExportFileService } from "./hr-export-file.service";
+import { HrExportJobsService } from "./hr-export-jobs.service";
 import {
-  HrExportJobsService,
   HrExportProcessingError,
   isHrExportWorkerEnabled,
   type HrExportJobRow,
-} from "./hr-export-jobs.service";
+} from "./hr-export-jobs.types";
 
 const POLL_INTERVAL_MS = 30_000;
 const STALE_JOB_MS = 15 * 60_000;
@@ -123,15 +123,14 @@ export class HrExportWorkerService implements OnModuleInit, OnModuleDestroy {
     let generatedFileKey: string | null = null;
     try {
       const scope = await this.jobs.resolveExecutionScope(job);
+      const rawScope = scope.rawScope("persists and audits the resolved execution scope, not a row predicate");
       await this.inTenant(job.orgId, () =>
-        this.jobs.restrictExecutionScope(job.id, scope),
+        this.jobs.restrictExecutionScope(job.id, rawScope),
       );
       const generated = await this.files.generate(
         {
           exportJobId: job.id,
-          orgId: job.orgId,
-          actorUserId: job.requestedBy,
-          scope,
+          read: scope,
           filters: job.filters,
           createdAt: job.createdAt,
         },
@@ -149,7 +148,7 @@ export class HrExportWorkerService implements OnModuleInit, OnModuleDestroy {
           orgId: job.orgId,
           resourceType: "hr_export_job",
           resourceId: job.id,
-          metadata: { entity: "employees", rowCount: generated.rowCount, scope },
+          metadata: { entity: "employees", rowCount: generated.rowCount, scope: rawScope },
         });
         return true;
       });

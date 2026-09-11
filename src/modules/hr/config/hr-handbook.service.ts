@@ -4,17 +4,18 @@ import { handbookVersions } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CreateHandbookInput, UpdateHandbookInput } from "./dto/handbook.schemas";
+import { hasPatchValues } from "../../../common/db/patch-values";
 
 type HandbookExisting = { id: number; publishedAt: Date | null };
 
-interface HandbookUpdateData {
+type HandbookUpdateData = {
   publishedAt?: Date | null;
   publishedBy?: string | null;
   changelog?: string;
   title?: string;
   version?: string;
   documentUrl?: string | null;
-}
+};
 
 @Injectable()
 export class HrHandbookService {
@@ -101,10 +102,11 @@ export class HrHandbookService {
       updateData.changelog = input.changelog;
     }
 
-    await this.db
-      .update(handbookVersions)
-      .set(updateData)
-      .where(and(eq(handbookVersions.id, existing.id), eq(handbookVersions.orgId, orgId)));
+    if (hasPatchValues(updateData))
+      await this.db
+        .update(handbookVersions)
+        .set(updateData)
+        .where(and(eq(handbookVersions.id, existing.id), eq(handbookVersions.orgId, orgId)));
 
     return { success: true };
   }

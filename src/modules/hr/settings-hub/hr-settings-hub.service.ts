@@ -4,8 +4,10 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { hrPolicies, hrTemplates, hrWorkflowDefinitions } from "../../../db/schema";
 import { HrPolicyEvaluationService } from "../policies/hr-policy-evaluation.service";
-import { HR_POLICY_TYPES } from "./hr-settings-hub.constants";
+import { HR_POLICY_TYPES } from "../policies/dto/hr-policy.schemas";
 import type { PolicyType } from "../policies/hr-policy-types";
+
+const VERSION_LINEAGE_LIMIT = 500;
 
 @Injectable()
 export class HrSettingsHubService {
@@ -82,7 +84,8 @@ export class HrSettingsHubService {
           isNull(hrPolicies.deletedAt),
         ),
       )
-      .orderBy(desc(hrPolicies.version));
+      .orderBy(desc(hrPolicies.version))
+      .limit(VERSION_LINEAGE_LIMIT);
 
     return { entity: "policy", name, items: all };
   }
@@ -121,7 +124,8 @@ export class HrSettingsHubService {
           isNull(hrTemplates.deletedAt),
         ),
       )
-      .orderBy(desc(hrTemplates.version));
+      .orderBy(desc(hrTemplates.version))
+      .limit(VERSION_LINEAGE_LIMIT);
 
     return { entity: "template", name, items: all };
   }
@@ -152,9 +156,11 @@ export class HrSettingsHubService {
           eq(hrWorkflowDefinitions.orgId, orgId),
           eq(hrWorkflowDefinitions.name, root.name),
           eq(hrWorkflowDefinitions.objectType, root.objectType),
+          isNull(hrWorkflowDefinitions.deletedAt),
         ),
       )
-      .orderBy(desc(hrWorkflowDefinitions.version));
+      .orderBy(desc(hrWorkflowDefinitions.version))
+      .limit(VERSION_LINEAGE_LIMIT);
 
     return { entity: "workflow", name: root.name, items: all };
   }

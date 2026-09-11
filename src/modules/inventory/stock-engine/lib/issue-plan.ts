@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { type Db } from "../../../../db/drizzle.module";
 import { addDec, subDec, mulDec, divDec, cmpDec } from "../decimal";
 import { INV_ERRORS } from "../stock-engine.types";
+import { assertNever } from "../../../../common/types/assert-never";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -194,8 +195,7 @@ function issueUnitCost(input: PlannedIssueInput, layerUnitCost: string): string 
     case "STANDARD":
       return input.standardCost ?? layerUnitCost;
     default: {
-      const exhaustive: never = input.costingMethod;
-      return exhaustive;
+      return assertNever(input.costingMethod);
     }
   }
 }

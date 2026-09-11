@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { APP_CONFIG } from "../../../config/config.module";
 import type { AppConfig } from "../../../config/env.validation";
 import type { NotificationChannelProvider } from "./notification-provider.interface";
@@ -7,6 +7,12 @@ import { EmailProviderService, isTransientError } from "../../email/email.provid
 import { getEmailTemplate, escapeHtml } from "../../email/templates/base";
 import { renderButton } from "../../email/templates/components";
 import { createUnsubscribeToken } from "../../email/unsubscribe-token";
+import { logger } from "../../../common/logger/logger.service";
+import { z } from "zod";
+
+const emailAttachmentsSchema = z.array(
+  z.object({ filename: z.string(), contentBase64: z.string(), type: z.string() }),
+);
 
 /**
  * COMP-002. RFC 8058 one-click unsubscribe headers, so a mail client can offer the
@@ -70,7 +76,6 @@ function buildHtml(input: ProviderSendInput): string {
 @Injectable()
 export class NotificationEmailProvider implements NotificationChannelProvider {
   readonly channel: NotificationChannel = "EMAIL";
-  private readonly logger = new Logger(NotificationEmailProvider.name);
 
   constructor(
     private readonly emailProvider: EmailProviderService,
@@ -95,7 +100,12 @@ export class NotificationEmailProvider implements NotificationChannelProvider {
 
   async send(input: ProviderSendInput): Promise<ProviderSendResult> {
     if (input.sandbox) {
-      this.logger.debug(`SANDBOX EMAIL -> ${input.recipientAddress ?? "no-address"}: ${input.title}`);
+      logger.debug("sandbox email not dispatched", {
+        orgId: input.orgId,
+        userId: input.userId,
+        channel: this.channel,
+        hasAddressOnFile: input.recipientAddress != null,
+      });
       return { status: "SENT", providerMessageId: "sandbox-email", providerResponse: { sandbox: true } };
     }
     if (!input.recipientAddress) {
@@ -105,14 +115,15 @@ export class NotificationEmailProvider implements NotificationChannelProvider {
       return { status: "FAILED", failureCode: "NO_PROVIDER", failureMessage: "No email provider configured", retryable: false };
     }
     try {
+      const parsedAttachments = emailAttachmentsSchema.safeParse(input.metadata?.attachments);
       await this.emailProvider.dispatchEmail({
         to: input.recipientAddress,
         subject: input.title,
         html: buildHtml(input),
         organizationId: input.orgId,
         headers: unsubscribeHeaders(input, this.config.PUBLIC_API_URL),
-        attachments: Array.isArray(input.metadata?.attachments)
-          ? (input.metadata.attachments as Array<{ filename: string; contentBase64: string; type: string }>).map((a) => ({
+        attachments: parsedAttachments.success
+          ? parsedAttachments.data.map((a) => ({
               filename: a.filename,
               content: Buffer.from(a.contentBase64, "base64"),
               type: a.type,

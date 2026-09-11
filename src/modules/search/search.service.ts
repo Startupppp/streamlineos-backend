@@ -14,11 +14,10 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { applyScope } from "../access/apply-scope";
-import { authorize, type AccessResolver } from "../access/authorize";
-import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
 import { logger } from "../../common/logger/logger.service";
+import { actingMembershipId } from "../../common/auth/principal";
+import { resolveSearchAccess, type SearchAccess } from "./search-scope";
 
 const UNDEFINED_FUNCTION = "42883";
 
@@ -28,28 +27,8 @@ function isUndefinedFunction(err: unknown): boolean {
   return code === UNDEFINED_FUNCTION;
 }
 
-/**
- * Global search, reading identity from Party.
- *
- * Under RLS the `textlike` operator behind ILIKE is not leakproof, so the
- * planner skips the GIN/trigram index entirely. Each branch resolves candidates
- * through a SECURITY DEFINER id-probe (migrations 0275, 0425, 0475) owned by
- * the BYPASSRLS role. The probe returns ids only; the caller's query still runs
- * under RLS with its own DataScope and scope predicate. When the probe returns
- * more than the cap the term is too broad for an id list to pay for itself and
- * the branch falls back to plain ILIKE — independently of the other branches.
- */
-
 export type SearchResultType = "lead" | "deal" | "contact" | "client" | "ticket";
 
-/**
- * The party of the lead a contact came from, for the "own" scope only.
- *
- * A second reference to `business_parties` in the same query, so it needs a name
- * of its own. `converted_from_party_id` points straight at it — 0265 gave Party
- * the association `contacts.lead_id` was holding — so the map that used to sit
- * between them is gone from this predicate.
- */
 const leadOwnerParty = alias(businessParties, "search_lead_owner_party");
 
 const PARTY_SEARCH_CAP = 500;
@@ -70,34 +49,17 @@ export interface SearchResponse {
   total: number;
 }
 
-export interface SearchAccess {
-  leads: DataScope | null;
-  deals: DataScope | null;
-  contacts: DataScope | null;
-  clients: DataScope | null;
-  build: DataScope | null;
-}
+// Kinds that have a SECURITY DEFINER id-probe SDF.
+type SdfKind = "lead" | "deal" | "contact" | "client" | "ticket";
 
-export async function resolveSearchAccess(
-  access: AccessResolver,
-  user: CurrentUserContext,
-): Promise<SearchAccess> {
-  const [leadResult, dealResult, contactResult, clientResult, buildResult] =
-    await Promise.all([
-      authorize(access, user, "crm:leads:view"),
-      authorize(access, user, "crm:deals:read"),
-      authorize(access, user, "crm:contacts:view"),
-      authorize(access, user, "crm:clients:read"),
-      authorize(access, user, "build:tickets:view"),
-    ]);
-  return {
-    leads: leadResult.allow ? leadResult.scope : null,
-    deals: dealResult.allow ? dealResult.scope : null,
-    contacts: contactResult.allow ? contactResult.scope : null,
-    clients: clientResult.allow ? clientResult.scope : null,
-    build: buildResult.allow ? buildResult.scope : null,
-  };
-}
+/**
+ * Outcome of a per-kind SDF probe after the combined UNION ALL.
+ *
+ *   ids === null           — ILIKE fallback (over cap or combined probe failed)
+ *   ids.length === 0       — no matches; caller must skip the hydration query
+ *   ids.length > 0         — caller uses an inArray condition
+ */
+type KindProbe = { ids: readonly string[] } | { ids: null };
 
 @Injectable()
 export class SearchService {
@@ -128,90 +90,75 @@ export class SearchService {
     );
   }
 
-  private async probeIds(
-    statement: SQL<unknown>,
-    probeName: string,
-  ): Promise<Record<string, unknown>[] | null> {
+  private async probeAllIds(
+    access: SearchAccess,
+    q: string,
+    needsTicketProbe: boolean,
+  ): Promise<ReadonlyMap<SdfKind, KindProbe>> {
+    type Part = { kind: SdfKind; stmt: SQL<unknown>; cap: number };
+    const parts: Part[] = [];
+
+    if (access.leads !== null)
+      parts.push({ kind: "lead", stmt: sql`SELECT 'lead' AS kind, id FROM app.search_lead_party_ids(${q}, ${PARTY_SEARCH_CAP + 1}) AS id`, cap: PARTY_SEARCH_CAP });
+    if (access.deals !== null)
+      parts.push({ kind: "deal", stmt: sql`SELECT 'deal' AS kind, id::text FROM app.search_deal_ids(${q}, ${DEAL_SEARCH_CAP + 1}) AS id`, cap: DEAL_SEARCH_CAP });
+    if (access.contacts !== null)
+      parts.push({ kind: "contact", stmt: sql`SELECT 'contact' AS kind, id FROM app.search_contact_party_ids(${q}, ${PARTY_SEARCH_CAP + 1}) AS id`, cap: PARTY_SEARCH_CAP });
+    if (access.clients !== null)
+      parts.push({ kind: "client", stmt: sql`SELECT 'client' AS kind, id FROM app.search_client_party_ids(${q}, ${PARTY_SEARCH_CAP + 1}) AS id`, cap: PARTY_SEARCH_CAP });
+    if (needsTicketProbe && access.build !== null)
+      parts.push({ kind: "ticket", stmt: sql`SELECT 'ticket' AS kind, id::text FROM app.search_ticket_ids(${q}, ${TICKET_ID_CAP + 1}) AS id`, cap: TICKET_ID_CAP });
+
+    const result = new Map<SdfKind, KindProbe>();
+    if (parts.length === 0) return result;
+
+    const unionStmt = sql.join(parts.map((p) => p.stmt), sql` UNION ALL `);
+    let rawRows: Record<string, unknown>[];
     try {
-      return await this.db.execute(statement);
+      rawRows = await this.db.execute(unionStmt);
     } catch (err: unknown) {
       if (!isUndefinedFunction(err)) throw err;
-      logger.error(`search probe ${probeName} is missing; falling back to an unindexed scan`, {
-        cause: err instanceof Error ? err.message : String(err),
-      });
-      return null;
+      logger.error(
+        "search_*_ids combined probe returned 42883; all active kinds fall back to ILIKE",
+        { cause: err instanceof Error ? err.message : String(err) },
+      );
+      for (const { kind } of parts) result.set(kind, { ids: null });
+      return result;
     }
+
+    const byKind = new Map<string, string[]>();
+    for (const row of rawRows) {
+      const kind = String(row["kind"] ?? "");
+      const id = String(row["id"] ?? "");
+      const bucket = byKind.get(kind);
+      if (bucket) bucket.push(id);
+      else byKind.set(kind, [id]);
+    }
+
+    for (const { kind, cap } of parts) {
+      const ids = byKind.get(kind) ?? [];
+      result.set(kind, ids.length > cap ? { ids: null } : { ids });
+    }
+    return result;
   }
 
-  private async leadCondition(q: string, pattern: string): Promise<SQL<unknown>> {
-    const fallback =
-      or(
-        ilike(businessParties.name, pattern),
-        ilike(businessParties.email, pattern),
-        ilike(businessParties.phone, pattern),
-        ilike(businessParties.companyName, pattern),
-      ) ?? sql`false`;
-    const rows = await this.probeIds(
-      sql`SELECT app.search_lead_party_ids(${q}, ${PARTY_SEARCH_CAP + 1}) AS id`,
-      "search_lead_party_ids",
-    );
-    if (rows === null) return fallback;
-    if (rows.length > PARTY_SEARCH_CAP) return fallback;
-    if (rows.length === 0) return sql`false`;
-    return inArray(businessParties.partyId, rows.map((r) => String(r["id"])));
+  private toPartyCond(probe: KindProbe | undefined, fallback: SQL<unknown>): SQL<unknown> | null {
+    if (probe === undefined || probe.ids === null) return fallback;
+    if (probe.ids.length === 0) return null;
+    return inArray(businessParties.partyId, [...probe.ids]);
   }
 
-  private async dealCondition(q: string, pattern: string): Promise<SQL<unknown>> {
-    const fallback = or(ilike(deals.name, pattern), ilike(deals.contactPerson, pattern)) ?? sql`false`;
-    const rows = await this.probeIds(
-      sql`SELECT app.search_deal_ids(${q}, ${DEAL_SEARCH_CAP + 1}) AS id`,
-      "search_deal_ids",
-    );
-    if (rows === null) return fallback;
-    if (rows.length > DEAL_SEARCH_CAP) return fallback;
-    if (rows.length === 0) return sql`false`;
-    return inArray(deals.id, rows.map((r) => Number(r["id"])));
+  private toDealCond(probe: KindProbe | undefined, pattern: string): SQL<unknown> | null {
+    if (probe === undefined || probe.ids === null)
+      return or(ilike(deals.name, pattern), ilike(deals.contactPerson, pattern)) ?? sql`false`;
+    if (probe.ids.length === 0) return null;
+    return inArray(deals.id, probe.ids.map(Number));
   }
 
-  private async contactPartyCondition(q: string, pattern: string): Promise<SQL<unknown>> {
-    const fallback =
-      or(
-        ilike(businessParties.name, pattern),
-        ilike(businessParties.email, pattern),
-        ilike(businessParties.companyName, pattern),
-      ) ?? sql`false`;
-    const rows = await this.probeIds(
-      sql`SELECT app.search_contact_party_ids(${q}, ${PARTY_SEARCH_CAP + 1}) AS id`,
-      "search_contact_party_ids",
-    );
-    if (rows === null) return fallback;
-    if (rows.length > PARTY_SEARCH_CAP) return fallback;
-    if (rows.length === 0) return sql`false`;
-    return inArray(businessParties.partyId, rows.map((r) => String(r["id"])));
-  }
-
-  private async clientPartyCondition(q: string, pattern: string): Promise<SQL<unknown>> {
-    const fallback =
-      or(ilike(businessParties.name, pattern), ilike(businessParties.companyName, pattern)) ?? sql`false`;
-    const rows = await this.probeIds(
-      sql`SELECT app.search_client_party_ids(${q}, ${PARTY_SEARCH_CAP + 1}) AS id`,
-      "search_client_party_ids",
-    );
-    if (rows === null) return fallback;
-    if (rows.length > PARTY_SEARCH_CAP) return fallback;
-    if (rows.length === 0) return sql`false`;
-    return inArray(businessParties.partyId, rows.map((r) => String(r["id"])));
-  }
-
-  private async ticketTitleCondition(q: string, pattern: string): Promise<SQL<unknown>> {
-    const rows = await this.probeIds(
-      sql`SELECT app.search_ticket_ids(${q}, ${TICKET_ID_CAP + 1}) AS id`,
-      "search_ticket_ids",
-    );
-    if (rows === null) return ilike(tickets.title, pattern);
-    if (rows.length > TICKET_ID_CAP) return ilike(tickets.title, pattern);
-    if (rows.length === 0) return sql`false`;
-    return inArray(tickets.id, rows.map((r) => Number(r["id"])));
+  private toTicketCond(probe: KindProbe | undefined, pattern: string): SQL<unknown> | null {
+    if (probe === undefined || probe.ids === null) return ilike(tickets.title, pattern);
+    if (probe.ids.length === 0) return null;
+    return inArray(tickets.id, probe.ids.map(Number));
   }
 
   private async executeSearch(
@@ -243,54 +190,56 @@ export class SearchService {
      * `leads.assigned_to_id`: a mirror column deciding who may see a record is the
      * one place a lagging copy would be a disclosure rather than a display glitch.
      */
-    const contactAccess = access.contacts;
-    const contactScope =
-      contactAccess === "all"
-        ? sql`true`
-        : contactAccess
-          ? or(
-              exists(
-                this.db
-                  .select({ value: sql`1` })
-                  .from(leadOwnerParty)
-                  .where(
-                    and(
-                      eq(leadOwnerParty.organizationId, orgId),
-                      eq(leadOwnerParty.partyId, businessParties.convertedFromPartyId),
-                      applyScope(contactAccess, orgId, userId, {
-                        ownerColumn: leadOwnerParty.ownerUserId,
-                      }),
-                    ),
-                  ),
+    // Not built at all for a caller who may read no contacts: they should issue no query, not even a subquery.
+    const contactOwnPredicate = access.contacts === null ? sql`false` :
+      or(
+        exists(
+          this.db
+            .select({ value: sql`1` })
+            .from(leadOwnerParty)
+            .where(
+              and(
+                eq(leadOwnerParty.organizationId, orgId),
+                eq(leadOwnerParty.partyId, businessParties.convertedFromPartyId),
+                eq(leadOwnerParty.ownerUserId, userId),
               ),
-              exists(
-                this.db
-                  .select({ value: sql`1` })
-                  .from(deals)
-                  .where(
-                    and(
-                      eq(deals.orgId, orgId), isNull(deals.deletedAt),
-                      eq(deals.id, businessParties.primaryDealId),
-                      applyScope(contactAccess, orgId, userId, {
-                        ownerColumn: deals.assignedToId,
-                      }),
-                    ),
-                  ),
+            ),
+        ),
+        exists(
+          this.db
+            .select({ value: sql`1` })
+            .from(deals)
+            .where(
+              and(
+                eq(deals.orgId, orgId), isNull(deals.deletedAt),
+                eq(deals.id, businessParties.primaryDealId),
+                eq(deals.assignedToId, userId),
               ),
-            )
-          : sql`false`;
+            ),
+        ),
+      ) ?? sql`false`;
 
-    const [leadCond, dealCond, contactCond, clientCond, ticketTitleCond] = await Promise.all([
-      access.leads ? this.leadCondition(q, pattern) : Promise.resolve(sql`false`),
-      access.deals ? this.dealCondition(q, pattern) : Promise.resolve(sql`false`),
-      access.contacts ? this.contactPartyCondition(q, pattern) : Promise.resolve(sql`false`),
-      access.clients ? this.clientPartyCondition(q, pattern) : Promise.resolve(sql`false`),
-      needsTicketProbe ? this.ticketTitleCondition(q, pattern) : Promise.resolve(sql`false`),
-    ]);
+    const buildOwnPredicate = (() => {
+      if (access.build === null) return sql`false`;
+      const membershipId = actingMembershipId(user.principal);
+      return membershipId === null ? sql`false` : eq(tickets.assigneeMembershipId, membershipId);
+    })();
+
+    const probes = await this.probeAllIds(access, q, needsTicketProbe);
+
+    const leadFallback = or(ilike(businessParties.name, pattern), ilike(businessParties.email, pattern), ilike(businessParties.phone, pattern), ilike(businessParties.companyName, pattern)) ?? sql`false`;
+    const contactFallback = or(ilike(businessParties.name, pattern), ilike(businessParties.email, pattern), ilike(businessParties.companyName, pattern)) ?? sql`false`;
+    const clientFallback = or(ilike(businessParties.name, pattern), ilike(businessParties.companyName, pattern)) ?? sql`false`;
+
+    const leadCond = this.toPartyCond(probes.get("lead"), leadFallback);
+    const dealCond = this.toDealCond(probes.get("deal"), pattern);
+    const contactCond = this.toPartyCond(probes.get("contact"), contactFallback);
+    const clientCond = this.toPartyCond(probes.get("client"), clientFallback);
+    const ticketTitleCond = this.toTicketCond(probes.get("ticket"), pattern);
 
     const ticketKey = keyMatch?.[1];
     const ticketNumStr = keyMatch?.[2];
-    const ticketWhere =
+    const ticketWhere: SQL<unknown> | null =
       ticketKey !== undefined && ticketNumStr !== undefined
         ? and(ilike(projects.key, ticketKey), eq(tickets.ticketNumber, Number(ticketNumStr))) ?? sql`false`
         : numericTicket !== null
@@ -298,122 +247,121 @@ export class SearchService {
           : ticketTitleCond;
 
     const [leadResults, dealResults, contactResults, clientResults, ticketResults] = await Promise.all([
-      access.leads
-        ? this.db
-        .select({
-          id: leadPartyMap.leadId,
-          name: businessParties.name,
-          email: businessParties.email,
-          company: businessParties.companyName,
-          status: leadStatus,
-        })
-        .from(leadPartyMap)
-        .innerJoin(businessParties, PARTY_OF_LEAD)
-        .where(
-          and(
-            eq(leadPartyMap.organizationId, orgId),
-            eq(businessParties.organizationId, orgId),
-            isNull(businessParties.deletedAt),
-            applyScope(access.leads, orgId, userId, {
-              ownerColumn: businessParties.ownerUserId,
-            }),
-            leadCond,
-          ),
-        )
-        .orderBy(desc(businessParties.updatedAt), desc(leadPartyMap.leadId))
-        .limit(maxPer)
+      access.leads !== null && leadCond !== null
+        ? access.leads.read(
+            {
+              tenant: businessParties.organizationId,
+              scope: { columns: { ownerColumn: businessParties.ownerUserId } },
+              and: [eq(leadPartyMap.organizationId, orgId), isNull(businessParties.deletedAt), leadCond],
+            },
+            async ({ sql: where }) =>
+              this.db
+                .select({
+                  id: leadPartyMap.leadId,
+                  name: businessParties.name,
+                  email: businessParties.email,
+                  company: businessParties.companyName,
+                  status: leadStatus,
+                })
+                .from(leadPartyMap)
+                .innerJoin(businessParties, PARTY_OF_LEAD)
+                .where(where)
+                .orderBy(desc(businessParties.updatedAt), desc(leadPartyMap.leadId))
+                .limit(maxPer),
+            () => [],
+          )
         : Promise.resolve([]),
 
-      access.deals
-        ? this.db
-        .select({ id: deals.id, name: deals.name, value: deals.value, stage: deals.stage, contactPerson: deals.contactPerson })
-        .from(deals)
-        .where(
-          and(
-            eq(deals.orgId, orgId), isNull(deals.deletedAt),
-            applyScope(access.deals, orgId, userId, {
-              ownerColumn: deals.assignedToId,
-            }),
-            dealCond,
-          ),
-        )
-        .limit(maxPer)
+      access.deals !== null && dealCond !== null
+        ? access.deals.read(
+            {
+              tenant: deals.orgId,
+              scope: { columns: { ownerColumn: deals.assignedToId } },
+              and: [isNull(deals.deletedAt), dealCond],
+            },
+            async ({ sql: where }) =>
+              this.db
+                .select({ id: deals.id, name: deals.name, value: deals.value, stage: deals.stage, contactPerson: deals.contactPerson })
+                .from(deals)
+                .where(where)
+                .limit(maxPer),
+            () => [],
+          )
         : Promise.resolve([]),
 
-      access.contacts
-        ? this.db
-        .select({
-          id: contactPartyMap.contactId,
-          name: businessParties.name,
-          email: businessParties.email,
-          company: businessParties.companyName,
-        })
-        .from(contactPartyMap)
-        .innerJoin(businessParties, PARTY_OF_CONTACT)
-        .where(
-          and(
-            eq(contactPartyMap.organizationId, orgId),
-            eq(businessParties.organizationId, orgId),
-            isNull(businessParties.deletedAt),
-            contactScope,
-            contactCond,
-          ),
-        )
-        .orderBy(desc(businessParties.updatedAt), desc(contactPartyMap.contactId))
-        .limit(maxPer)
+      access.contacts !== null && contactCond !== null
+        ? access.contacts.read(
+            {
+              tenant: businessParties.organizationId,
+              scope: { own: contactOwnPredicate },
+              and: [eq(contactPartyMap.organizationId, orgId), isNull(businessParties.deletedAt), contactCond],
+            },
+            async ({ sql: where }) =>
+              this.db
+                .select({
+                  id: contactPartyMap.contactId,
+                  name: businessParties.name,
+                  email: businessParties.email,
+                  company: businessParties.companyName,
+                })
+                .from(contactPartyMap)
+                .innerJoin(businessParties, PARTY_OF_CONTACT)
+                .where(where)
+                .orderBy(desc(businessParties.updatedAt), desc(contactPartyMap.contactId))
+                .limit(maxPer),
+            () => [],
+          )
         : Promise.resolve([]),
 
-      access.clients
-        ? this.db
-        .select({
-          id: clientPartyMap.clientId,
-          name: businessParties.name,
-          company: businessParties.companyName,
-          // `clients.status` mirrors the record's own status, not the pipeline
-          // stage, and Party declares it NOT NULL -- so no coalesce here.
-          status: businessParties.status,
-        })
-        .from(clientPartyMap)
-        .innerJoin(businessParties, PARTY_OF_CLIENT)
-        .where(
-          and(
-            eq(clientPartyMap.organizationId, orgId),
-            eq(businessParties.organizationId, orgId),
-            isNull(businessParties.deletedAt),
-            applyScope(access.clients, orgId, userId, {
-              ownerColumn: businessParties.ownerUserId,
-            }),
-            clientCond,
-          ),
-        )
-        .orderBy(desc(businessParties.updatedAt), desc(clientPartyMap.clientId))
-        .limit(maxPer)
+      access.clients !== null && clientCond !== null
+        ? access.clients.read(
+            {
+              tenant: businessParties.organizationId,
+              scope: { columns: { ownerColumn: businessParties.ownerUserId } },
+              and: [eq(clientPartyMap.organizationId, orgId), isNull(businessParties.deletedAt), clientCond],
+            },
+            async ({ sql: where }) =>
+              this.db
+                .select({
+                  id: clientPartyMap.clientId,
+                  name: businessParties.name,
+                  company: businessParties.companyName,
+                  // `clients.status` mirrors the record's own status, not the pipeline
+                  // stage, and Party declares it NOT NULL -- so no coalesce here.
+                  status: businessParties.status,
+                })
+                .from(clientPartyMap)
+                .innerJoin(businessParties, PARTY_OF_CLIENT)
+                .where(where)
+                .orderBy(desc(businessParties.updatedAt), desc(clientPartyMap.clientId))
+                .limit(maxPer),
+            () => [],
+          )
         : Promise.resolve([]),
 
-      access.build
-        ? this.db
-        .select({
-          id: tickets.id,
-          title: tickets.title,
-          status: tickets.status,
-          projectId: tickets.projectId,
-          ticketNumber: tickets.ticketNumber,
-          projectKey: projects.key,
-        })
-        .from(tickets)
-        .innerJoin(projects, eq(projects.id, tickets.projectId))
-        .where(
-          and(
-            eq(tickets.orgId, orgId),
-            eq(projects.orgId, orgId),
-            isNull(tickets.deletedAt),
-            applyScope(access.build, orgId, userId, {
-              ownerColumn: tickets.assigneeId,
-            }),
-            ticketWhere,
-          ),
-        )
-        .limit(maxPer)
+      access.build !== null && ticketWhere !== null
+        ? access.build.read(
+            {
+              tenant: tickets.orgId,
+              scope: { own: buildOwnPredicate },
+              and: [eq(projects.orgId, orgId), isNull(tickets.deletedAt), ticketWhere],
+            },
+            async ({ sql: where }) =>
+              this.db
+                .select({
+                  id: tickets.id,
+                  title: tickets.title,
+                  status: tickets.status,
+                  projectId: tickets.projectId,
+                  ticketNumber: tickets.ticketNumber,
+                  projectKey: projects.key,
+                })
+                .from(tickets)
+                .innerJoin(projects, eq(projects.id, tickets.projectId))
+                .where(where)
+                .limit(maxPer),
+            () => [],
+          )
         : Promise.resolve([]),
     ]);
 

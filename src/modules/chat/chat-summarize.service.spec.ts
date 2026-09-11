@@ -35,6 +35,9 @@ function buildDb(memberResult: unknown, messagesResult: unknown[]) {
       organizationMembers: {
         findFirst: jest.fn().mockResolvedValue({ id: 1 }),
       },
+      chatChannels: {
+        findFirst: jest.fn().mockResolvedValue({ id: 5, isPrivate: false }),
+      },
       chatChannelMembers: {
         findFirst: jest.fn().mockResolvedValue(memberResult),
       },

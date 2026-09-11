@@ -8,6 +8,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
@@ -23,61 +24,74 @@ import {
   type UpdateCommentInput,
 } from "./dto/kb-comments.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
-import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { BodylessAction, ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
+import {
+  kbArticleCommentListSchema,
+  kbArticleCommentSchema,
+  kbArticleCommentWithAuthorSchema,
+} from "./dto/kb-helpcenter-response.schemas";
 import { z } from "zod";
+import { kbCommentCursorQuerySchema } from "../core/dto/kb.schemas";
 
 const articleIdParams = z.object({ articleId: z.coerce.number().int().positive() }).strict();
 const commentIdParams = z.object({ commentId: z.coerce.number().int().positive() }).strict();
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
-@RequireModule("kb")
 export class KbCommentsController {
   constructor(private readonly comments: KbCommentsService) {}
 
   @Get("articles/:articleId/comments")
   @RequirePermission("kb:articles:view")
-  @Validate({ params: articleIdParams })
+  @Validate({ params: articleIdParams, query: kbCommentCursorQuerySchema })
+  @ResponseSchema(kbArticleCommentListSchema)
   async list(
     @Param("articleId", ParseIntPipe) articleId: number,
+    @Query("afterCreatedAt") afterCreatedAt: string | undefined,
+    @Query("afterId") afterId: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return await this.comments.list(u.orgId, articleId);
+    const cursor = afterCreatedAt && afterId
+      ? { sortValue: afterCreatedAt, id: afterId }
+      : undefined;
+    return this.comments.list(u, articleId, cursor);
   }
 
   @Post("articles/:articleId/comments")
   @RequirePermission("kb:articles:create")
   @HttpCode(201)
   @Validate({ params: articleIdParams, body: createCommentSchema })
+  @ResponseSchema(kbArticleCommentSchema)
   async create(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Body() body: CreateCommentInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return await this.comments.create(u.orgId, articleId, u.userId, body);
+    return this.comments.create(u, articleId, body);
   }
 
   @Patch("comments/:commentId")
   @RequirePermission("kb:articles:update")
   @Validate({ params: commentIdParams, body: updateCommentSchema })
+  @ResponseSchema(kbArticleCommentSchema)
   async update(
     @Param("commentId", ParseIntPipe) commentId: number,
     @Body() body: UpdateCommentInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return await this.comments.update(u.orgId, commentId, u.userId, body);
+    return this.comments.update(u, commentId, body);
   }
 
   @Delete("comments/:commentId")
   @HttpCode(204)
+  @NoContentResponse()
   @RequirePermission("kb:articles:update")
   @Validate({ params: commentIdParams })
   async remove(
     @Param("commentId", ParseIntPipe) commentId: number,
     @CurrentUser() u: CurrentUserContext,
-  ): Promise<unknown> {
-    return await this.comments.remove(u.orgId, commentId, u.userId);
+  ): Promise<void> {
+    await this.comments.remove(u, commentId);
   }
 
   @Post("comments/:commentId/resolve")
@@ -85,10 +99,11 @@ export class KbCommentsController {
   @RequirePermission("kb:articles:update")
   @HttpCode(200)
   @Validate({ params: commentIdParams })
+  @ResponseSchema(kbArticleCommentSchema)
   async resolve(
     @Param("commentId", ParseIntPipe) commentId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return await this.comments.resolve(u.orgId, commentId);
+    return this.comments.resolve(u, commentId);
   }
 }

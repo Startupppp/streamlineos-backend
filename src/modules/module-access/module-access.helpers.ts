@@ -11,7 +11,6 @@ export {
   resolveModuleAuthorityFacts,
 } from "./module-standing";
 export { resolveActorRankContext } from "../../common/rbac/resolve-actor-rank";
-export type { ModuleAuthorityFacts } from "./module-standing";
 
 /**
  * Write authority is intentionally structural. A module-scoped effective

@@ -16,7 +16,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import type { Request, Response } from "express";
-import type { DataScope } from "../access/access.types";
+import { readRequestScopedRead } from "../organization/core/read-request-scope";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { Universal } from "../../common/auth/universal.decorator";
 import { PermissionGuard } from "../access/permission.guard";
@@ -24,6 +24,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { CalendarService } from "./calendar.service";
+import { CalendarSyncStatusService } from "./calendar-sync-status.service";
 import { ExternalCalendarEventsService } from "./external-calendar-events.service";
 import { CalendarSourceRegistry } from "./calendar-source.registry";
 import { CalendarSourcePreferencesService } from "./calendar-source-preferences.service";
@@ -50,7 +51,27 @@ import {
   upsertOccurrenceExceptionSchema,
   type UpsertOccurrenceExceptionInput,
 } from "./dto/occurrence-exception.schemas";
+import { ApiOkResponse } from "@nestjs/swagger";
 import { Validate } from "../../common/validation/validate.decorator";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  calendarAttendeeListResponseSchema,
+  calendarCreateEventResponseSchema,
+  calendarDeleteEventResponseSchema,
+  calendarEventDetailSchema,
+  calendarEventsResponseSchema,
+  calendarOccurrenceExceptionResponseSchema,
+  calendarRsvpResponseSchema,
+  calendarSourcePreferenceResponseSchema,
+  calendarSourcesResponseSchema,
+  calendarUpdateEventResponseSchema,
+  externalCalendarEventsResponseSchema,
+} from "./dto/calendar-response.schemas";
+import {
+  syncCancelResponseSchema,
+  syncRetryResponseSchema,
+  syncStatusResponseSchema,
+} from "./dto/sync-status.schemas";
 import { z } from "zod";
 
 const eventIdParams = z.object({ eventId: z.coerce.number().int().positive() }).strict();
@@ -84,11 +105,13 @@ export class CalendarController {
     private readonly externalEvents: ExternalCalendarEventsService,
     private readonly registry: CalendarSourceRegistry,
     private readonly sourcePreferences: CalendarSourcePreferencesService,
+    private readonly calendarSyncStatus: CalendarSyncStatusService,
   ) {}
 
   @Get("events")
   @Universal()
   @Validate({ query: listEventsSchema })
+  @ResponseSchema(calendarEventsResponseSchema)
   getEvents(
     @Query() query: ListEventsInput,
     @CurrentUser() u: CurrentUserContext,
@@ -104,6 +127,7 @@ export class CalendarController {
   @Get("external-events")
   @Universal()
   @Validate({ query: externalEventsQuerySchema })
+  @ResponseSchema(externalCalendarEventsResponseSchema)
   getExternalEvents(
     @Query() query: ExternalEventsQueryInput,
     @CurrentUser() u: CurrentUserContext,
@@ -116,10 +140,24 @@ export class CalendarController {
     );
   }
 
+  @Get("events/:eventId")
+  @Universal()
+  @Validate({ params: eventIdParams })
+  @ResponseSchema(calendarEventDetailSchema)
+  async getEvent(
+    @Param("eventId", ParseIntPipe) eventId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const event = await this.calendar.getEvent(u.orgId, u.userId, eventId);
+    if (!event) throw new NotFoundException("Event not found");
+    return event;
+  }
+
   @Post("events")
   @Universal()
   @HttpCode(201)
   @Validate({ body: createEventSchema })
+  @ResponseSchema(calendarCreateEventResponseSchema)
   createEvent(
     @Body() body: CreateEventInput,
     @CurrentUser() u: CurrentUserContext,
@@ -130,6 +168,7 @@ export class CalendarController {
   @Put("events/:eventId")
   @Universal()
   @Validate({ params: eventIdParams, body: updateEventSchema })
+  @ResponseSchema(calendarUpdateEventResponseSchema)
   async updateEvent(
     @Param("eventId", ParseIntPipe) eventId: number,
     @Body() body: UpdateEventInput,
@@ -149,6 +188,7 @@ export class CalendarController {
   @Delete("events/:eventId")
   @Universal()
   @Validate({ params: eventIdParams })
+  @ResponseSchema(calendarDeleteEventResponseSchema)
   async removeEvent(
     @Param("eventId", ParseIntPipe) eventId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -162,6 +202,7 @@ export class CalendarController {
   @Universal()
   @HttpCode(200)
   @Validate({ params: eventIdParams, body: rsvpSchema })
+  @ResponseSchema(calendarRsvpResponseSchema)
   async rsvp(
     @Param("eventId", ParseIntPipe) eventId: number,
     @Body() body: RsvpInput,
@@ -176,6 +217,7 @@ export class CalendarController {
   @Universal()
   @HttpCode(200)
   @Validate({ params: eventIdoccurrenceStartParams, body: upsertOccurrenceExceptionSchema })
+  @ResponseSchema(calendarOccurrenceExceptionResponseSchema)
   async upsertOccurrenceException(
     @Param("eventId", ParseIntPipe) eventId: number,
     @Param("occurrenceStart") occurrenceStart: string,
@@ -197,6 +239,7 @@ export class CalendarController {
   @Universal()
   @HttpCode(200)
   @Validate({ params: eventIdoccurrenceStartParams })
+  @ResponseSchema(calendarOccurrenceExceptionResponseSchema)
   async cancelOccurrence(
     @Param("eventId", ParseIntPipe) eventId: number,
     @Param("occurrenceStart") occurrenceStart: string,
@@ -212,10 +255,53 @@ export class CalendarController {
     return row;
   }
 
+  @Get("events/:eventId/sync-status")
+  @Universal()
+  @Validate({ params: eventIdParams })
+  @ResponseSchema(syncStatusResponseSchema)
+  getSyncStatus(
+    @Param("eventId", ParseIntPipe) eventId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.calendarSyncStatus.getSyncStatus(u.orgId, u.userId, eventId);
+  }
+
+  @Post("events/:eventId/sync-retry")
+  @BodylessAction()
+  @Universal()
+  @HttpCode(200)
+  @Validate({ params: eventIdParams })
+  @ResponseSchema(syncRetryResponseSchema)
+  retrySync(
+    @Param("eventId", ParseIntPipe) eventId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.calendarSyncStatus.retrySync(u.orgId, u.userId, eventId);
+  }
+
+  /**
+   * The cancellation half of the queue's lifecycle. `sync-retry` revives a terminal job;
+   * this withdraws one that has not been dispatched yet, which the queue had no way to
+   * express at all. `Universal` and the creator check inside the service match
+   * `sync-retry` exactly — seeing an event is not standing to change what it pushes.
+   */
+  @Delete("events/:eventId/sync-queue")
+  @Universal()
+  @HttpCode(200)
+  @Validate({ params: eventIdParams })
+  @ResponseSchema(syncCancelResponseSchema)
+  cancelSync(
+    @Param("eventId", ParseIntPipe) eventId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.calendarSyncStatus.cancelSync(u.orgId, u.userId, eventId);
+  }
+
   @Get("events/:eventId/rsvp")
   @UseGuards(PermissionGuard)
   @RequirePermission("calendar:read")
   @Validate({ params: eventIdParams })
+  @ResponseSchema(calendarAttendeeListResponseSchema)
   async listAttendees(
     @Param("eventId", ParseIntPipe) eventId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -226,20 +312,21 @@ export class CalendarController {
   }
 
   @Get("export")
+  @ApiOkResponse({ description: "CSV file download of calendar events", content: { "text/csv": { schema: { type: "string" } } } })
   @UseGuards(PermissionGuard)
   @RequirePermission("calendar:events:export")
   @Validate({ query: exportSchema })
   async exportEvents(
     @Query() query: ExportInput,
     @CurrentUser() u: CurrentUserContext,
-    @Req() req: Request & { rbacScope?: DataScope },
+    @Req() req: Request,
     @Res() res: Response,
   ) {
     const fromDate = new Date(query.from);
     const toDate = new Date(query.to);
-    const scope: DataScope = req.rbacScope ?? "none";
+    const read = readRequestScopedRead(req, u);
 
-    const events = await this.calendar.exportEvents(u.orgId, u.userId, fromDate, toDate, scope);
+    const events = await this.calendar.exportEvents(read, fromDate, toDate);
 
     const headers = [
       "Title",
@@ -276,6 +363,7 @@ export class CalendarController {
 
   @Get("sources")
   @Universal()
+  @ResponseSchema(calendarSourcesResponseSchema)
   getSources(@CurrentUser() u: CurrentUserContext) {
     const now = new Date();
     const ctx: CalendarSourceContext = {
@@ -283,7 +371,6 @@ export class CalendarController {
       userId: u.userId,
       start: now,
       end: now,
-      scope: "all",
     };
     return this.registry.getToggleList(ctx);
   }
@@ -292,6 +379,7 @@ export class CalendarController {
   @Universal()
   @HttpCode(200)
   @Validate({ params: sourceKeyParams, body: setSourcePreferenceSchema })
+  @ResponseSchema(calendarSourcePreferenceResponseSchema)
   async setSourcePreference(
     @Param("sourceKey") sourceKey: string,
     @Body() body: SetSourcePreferenceInput,

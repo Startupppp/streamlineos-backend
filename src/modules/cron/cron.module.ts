@@ -1,9 +1,12 @@
 /*
-  The four finance modules and `CronFinanceService` are absent deliberately.
+  The four finance modules, `CronFinanceController` and `CronFinanceService` are
+  absent deliberately.
 
   They belonged to `modules/finance`, which the accounting rewrite replaced with
-  the `gl_*` kernel; the scheduled work they registered has no counterpart there
-  yet. Everything else main schedules is registered exactly as before.
+  the `gl_*` kernel; the scheduled work they registered — recurring journal /
+  invoice / bill flushes, AR/AP/tax due checks, asset depreciation — has no
+  counterpart there yet. Everything else main schedules is registered exactly as
+  before.
 */
 
 import { Module } from "@nestjs/common";
@@ -33,18 +36,24 @@ import { HrGovernanceModule } from "../hr/governance/hr-governance.module";
 import { CronBillingController } from "./cron-billing.controller";
 import { CronInvitationExpiryController } from "./cron-invitation-expiry.controller";
 import { CronHrController } from "./cron-hr.controller";
+import { CronHrNotificationsController } from "./cron-hr-notifications.controller";
 import { CronPlatformController } from "./cron-platform.controller";
+import { CronCalendarController } from "./cron-calendar.controller";
+import { CronGdprController } from "./cron-gdpr.controller";
 import { CronNotificationsController } from "./cron-notifications.controller";
+import { CronNotificationRetentionController } from "./cron-notification-retention.controller";
 import { CronOutboxController } from "./cron-outbox.controller";
 import { CronSignController } from "./cron-sign.controller";
 import { CronSupportController } from "./cron-support.controller";
 import { ReportingModule } from "../reporting/reporting.module";
 import { DealsModule } from "../deals/deals.module";
 import { CronCrmForecastService } from "./cron-crm-forecast.service";
+import { CronKbController } from "./cron-kb.controller";
 import { CronBuildController } from "./cron-build.controller";
 import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
 import { CronNotificationRetentionService } from "./cron-notification-retention.service";
 import { NotificationRetentionService } from "../notifications/notification-retention.service";
+import { PartitionMaintenanceService } from "../notifications/partition-maintenance.service";
 import { CronAttendanceService } from "./cron-attendance.service";
 import { CronBillingService } from "./cron-billing.service";
 import { CronInvitationExpiryService } from "./cron-invitation-expiry.service";
@@ -75,6 +84,7 @@ import { CronHrRetentionService } from "./cron-hr-retention.service";
 import { CronBuildSnapshotsService } from "./cron-build-snapshots.service";
 import { CronKbChunkRetentionService } from "./cron-kb-chunk-retention.service";
 import { CronKbChatRetentionService } from "./cron-kb-chat-retention.service";
+import { CronKbTelemetryRetentionService } from "./cron-kb-telemetry-retention.service";
 import { CronOrganizationService } from "./cron-organization.service";
 import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
 import { CronLeaseService } from "./cron-lease.service";
@@ -85,6 +95,19 @@ import { OutboxModule } from "../../common/outbox/outbox.module";
 import { SessionsModule } from "../sessions/sessions.module";
 import { EmploymentFactsModule } from "../directory/employment-facts.module";
 import { CalendarModule } from "../calendar/calendar.module";
+import { PlatformModule } from "../platform/platform.module";
+import { CronOperatorAccessService } from "./cron-operator-access.service";
+import { CronHelpdeskRetentionService } from "./cron-helpdesk-retention.service";
+import { CronMailRetentionService } from "./cron-mail-retention.service";
+import { CronAnnouncementsRetentionService } from "./cron-announcements-retention.service";
+import { CronStorageSweepService } from "./cron-storage-sweep.service";
+import { CronStorageController } from "./cron-storage.controller";
+import { CronOutboxRetentionService } from "./cron-outbox-retention.service";
+import { CronNotificationOutboxRetentionService } from "./cron-notification-outbox-retention.service";
+import { CronRetentionSchedulerService } from "./cron-retention-scheduler.service";
+import { CronOutboxWorkerService } from "./cron-outbox-worker.service";
+import { CronSweepFailureSinkService } from "./cron-sweep-failure-sink.service";
+import { CronGdprExportRetentionService } from "./cron-gdpr-export-retention.service";
 
 @Module({
   imports: [
@@ -124,18 +147,24 @@ import { CalendarModule } from "../calendar/calendar.module";
     DealsModule,
     OutboxModule,
     SessionsModule,
-    ESignModule,
+    PlatformModule,
   ],
   controllers: [
     CronBillingController,
     CronHrController,
+    CronHrNotificationsController,
     CronPlatformController,
+    CronCalendarController,
+    CronGdprController,
     CronNotificationsController,
+    CronNotificationRetentionController,
     CronOutboxController,
     CronSignController,
     CronSupportController,
+    CronKbController,
     CronBuildController,
     CronInvitationExpiryController,
+    CronStorageController,
   ],
   providers: [
     CronAttendanceService,
@@ -157,6 +186,7 @@ import { CalendarModule } from "../calendar/calendar.module";
     CronNotificationDeliveryService,
     CronNotificationRetentionService,
     NotificationRetentionService,
+    PartitionMaintenanceService,
     CronCrmTasksService,
     CronCrmLifecycleService,
     CronSignService,
@@ -168,10 +198,22 @@ import { CalendarModule } from "../calendar/calendar.module";
     CronBuildSnapshotsService,
     CronKbChunkRetentionService,
     CronKbChatRetentionService,
+    CronKbTelemetryRetentionService,
     CronOrganizationService,
     CronOrgPurgeWorkerService,
     CronLeaseService,
     CronAiUsageRetentionService,
+    CronOperatorAccessService,
+    CronHelpdeskRetentionService,
+    CronMailRetentionService,
+    CronAnnouncementsRetentionService,
+    CronStorageSweepService,
+    CronOutboxRetentionService,
+    CronNotificationOutboxRetentionService,
+    CronGdprExportRetentionService,
+    CronSweepFailureSinkService,
+    CronRetentionSchedulerService,
+    CronOutboxWorkerService,
   ],
 })
 export class CronModule {}

@@ -15,25 +15,25 @@ import {
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
-import { AiConfirmationService, type ProposeResult } from "../../confirmation/ai-confirmation.service";
+import { AiConfirmationService } from "../../confirmation/ai-confirmation.service";
+import type { ProposeResult } from "../../confirmation/ai-confirmation.helpers";
 import { ComposioGateway, ComposioToolError } from "../../../integrations/core/composio.gateway";
 import { unwrapAiResult } from "./gateway-result.util";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import type { TenantTx } from "../../../../common/tenant/with-tenant";
 import { agendaOutputSchema, followUpOutputSchema, type AgendaOutput, type FollowUpOutput } from "../dto/meetings-output.schemas";
-
-const MAX_NOTES = 2000;
-
-function trunc(s: string | null | undefined): string {
-  if (!s) return "";
-  return s.length > MAX_NOTES ? s.slice(0, MAX_NOTES) + "…" : s;
-}
-
-interface MeetingAttendee {
-  userId: string;
-  name: string | null;
-  status: string;
-}
+import type { AiTextStream } from "../gateway/ai-gateway-stream.helper";
+import {
+  agendaSources,
+  agendaStreamPrompt,
+  agendaStructuredPrompt,
+  followUpPrompt,
+  followUpSources,
+  followUpStreamPrompt,
+  type MeetingAttendeeContext,
+  type MeetingContextOptions,
+  type MeetingSource,
+} from "./meetings-prep-prompt";
 
 interface MeetingEventContext {
   id: number;
@@ -50,7 +50,7 @@ interface MeetingEventContext {
   linkedDealId: number | null;
   externalEventId: string | null;
   integrationConnectionId: number | null;
-  attendees: MeetingAttendee[];
+  attendees: MeetingAttendeeContext[];
 }
 
 @Injectable()
@@ -132,12 +132,16 @@ export class MeetingsPrepService {
       );
   }
 
-  async draftAgenda(
+  /**
+   * Loads the event, its attendees and the caller's calendar connections once.
+   * Both representations of a prep — the buffered structured one and the
+   * streamed prose one — start here, so they always describe the same meeting.
+   */
+  private async loadPrepContext(
     orgId: string,
     userId: string,
     rawEventId: string,
-    opts: { includeCrmContext?: boolean; includeProjectContext?: boolean },
-  ): Promise<{ agenda: AgendaOutput; connectedIntegrations: boolean }> {
+  ): Promise<{ event: MeetingEventContext; connectedIntegrations: boolean }> {
     const eventId = this.parseEventId(rawEventId);
     const { event, connections } = await runInTenantTransaction(
       this.db,
@@ -150,49 +154,21 @@ export class MeetingsPrepService {
       },
       { orgId },
     );
+    return { event, connectedIntegrations: connections.length > 0 };
+  }
 
-    const hasConnections = connections.length > 0;
-
-    const attendeeList =
-      event.attendees.length > 0
-        ? event.attendees.map((a) => `- ${a.name ?? a.userId} (${a.status})`).join("\n")
-        : "No confirmed attendees found.";
-
-    const crmContext =
-      opts.includeCrmContext && (event.linkedLeadId ?? event.linkedDealId)
-        ? `CRM Link: ${event.linkedLeadId ? `Lead #${event.linkedLeadId}` : `Deal #${event.linkedDealId}`}`
-        : "";
-
-    const userPrompt = `Generate a structured meeting agenda for the following meeting.
-
-MEETING DETAILS:
-- Title: ${event.title}
-- Date/Time: ${event.startDate.toLocaleString("en-IN", { dateStyle: "full", timeStyle: "short" })}
-- Duration: ${Math.round((event.endDate.getTime() - event.startDate.getTime()) / 60000)} minutes
-- Location: ${event.location ?? "Not specified"}
-- Meeting URL: ${event.meetingUrl ?? "Not specified"}
-- Description: ${trunc(event.description)}
-- Existing Agenda Notes: ${trunc(event.agenda)}
-${crmContext ? `\n${crmContext}` : ""}
-
-ATTENDEES:
-${attendeeList}
-
-Generate:
-1. A clear meeting agenda with timed sections
-2. 3-5 key topics to cover
-3. Suggested total duration
-4. Preparation notes for the organizer
-5. Citations referencing the data sources used (meeting details, attendee list, CRM context if present)`;
+  async draftAgenda(
+    orgId: string,
+    userId: string,
+    rawEventId: string,
+    opts: MeetingContextOptions,
+  ): Promise<{ agenda: AgendaOutput; connectedIntegrations: boolean }> {
+    const { event, connectedIntegrations } = await this.loadPrepContext(orgId, userId, rawEventId);
 
     const result = await this.gateway.invokeStructured({
       actor: { orgId, userId },
       feature: "meetings.prep",
-      prompt: {
-        system:
-          "You are an executive assistant preparing meeting agendas. Generate structured, actionable agendas that help teams run efficient meetings. Be concise and time-aware.",
-        user: userPrompt,
-      },
+      prompt: agendaStructuredPrompt(event, opts),
       schema: agendaOutputSchema,
       tier: "standard",
       maxTokens: 1024,
@@ -200,7 +176,43 @@ Generate:
     });
 
     const agenda = unwrapAiResult(result);
-    return { agenda, connectedIntegrations: hasConnections };
+    return { agenda, connectedIntegrations };
+  }
+
+  /**
+   * The streamed prep. One paid call, the same context assembly, and the real
+   * sources handed back beside the stream so the route can put them on the wire
+   * before the body — a stream the user stops halfway still keeps its citations.
+   */
+  async streamAgenda(
+    orgId: string,
+    userId: string,
+    rawEventId: string,
+    opts: MeetingContextOptions,
+    signal?: AbortSignal,
+  ): Promise<AiTextStream & { sources: MeetingSource[] }> {
+    const { event } = await this.loadPrepContext(orgId, userId, rawEventId);
+
+    const stream = await this.gateway.streamTextWithUsage({
+      actor: { orgId, userId },
+      feature: "meetings.prep",
+      prompt: agendaStreamPrompt(event, opts),
+      maxTokens: 1024,
+      charge: true,
+      ...(signal !== undefined ? { signal } : {}),
+    });
+
+    return { ...stream, sources: agendaSources(event, opts) };
+  }
+
+  /**
+   * Both representations of a follow-up start here, so they always describe the
+   * same meeting. `loadEvent` filters on `orgId`, so another tenant's event is a
+   * 404 rather than a 403 — a cross-tenant miss must not confirm the row exists.
+   */
+  private loadFollowUpEvent(orgId: string, rawEventId: string): Promise<MeetingEventContext> {
+    const eventId = this.parseEventId(rawEventId);
+    return runInTenantTransaction(this.db, (tx) => this.loadEvent(orgId, eventId, tx), { orgId });
   }
 
   async draftFollowUp(
@@ -210,50 +222,12 @@ Generate:
     meetingNotes: string | undefined,
     actionItems: string[] | undefined,
   ): Promise<{ followUp: FollowUpOutput; eventTitle: string }> {
-    const eventId = this.parseEventId(rawEventId);
-    const event = await runInTenantTransaction(
-      this.db,
-      (tx) => this.loadEvent(orgId, eventId, tx),
-      { orgId },
-    );
-
-    const attendeeList =
-      event.attendees.length > 0
-        ? event.attendees.map((a) => a.name ?? a.userId).join(", ")
-        : "Not specified";
-
-    const notesSection = meetingNotes
-      ? `\nMEETING NOTES FROM ORGANIZER:\n${trunc(meetingNotes)}`
-      : "";
-
-    const itemsSection =
-      actionItems && actionItems.length > 0
-        ? `\nIDENTIFIED ACTION ITEMS:\n${actionItems.map((i) => `- ${i}`).join("\n")}`
-        : "";
-
-    const userPrompt = `Generate a professional post-meeting follow-up email for the following meeting.
-
-MEETING DETAILS:
-- Title: ${event.title}
-- Date: ${event.startDate.toLocaleDateString("en-IN", { dateStyle: "full" })}
-- Attendees: ${attendeeList}
-${notesSection}
-${itemsSection}
-
-Generate:
-1. A clear email subject line
-2. A professional follow-up email body (in markdown)
-3. A structured list of action items with assignees and due dates where identifiable
-4. A suggested next meeting date if a follow-up is needed`;
+    const event = await this.loadFollowUpEvent(orgId, rawEventId);
 
     const result = await this.gateway.invokeStructured({
       actor: { orgId, userId },
       feature: "meetings.follow-up",
-      prompt: {
-        system:
-          "You are an executive assistant generating post-meeting follow-up emails. Write clear, professional follow-ups that summarize outcomes and clearly assign action items.",
-        user: userPrompt,
-      },
+      prompt: followUpPrompt(event, meetingNotes, actionItems),
       schema: followUpOutputSchema,
       tier: "standard",
       maxTokens: 1024,
@@ -262,6 +236,35 @@ Generate:
 
     const followUp = unwrapAiResult(result);
     return { followUp, eventTitle: event.title };
+  }
+
+  /**
+   * The streamed follow-up. Same context, same feature key, same gateway, so it
+   * is metered, breaker-guarded and concurrency-capped exactly as the buffered
+   * sibling is — an unmetered streaming route would be a money leak. The signal
+   * is the route's, so a client hang-up releases the reservation instead of
+   * paying for tokens nobody will read.
+   */
+  async streamFollowUp(
+    orgId: string,
+    userId: string,
+    rawEventId: string,
+    meetingNotes: string | undefined,
+    actionItems: string[] | undefined,
+    signal?: AbortSignal,
+  ): Promise<AiTextStream & { sources: MeetingSource[] }> {
+    const event = await this.loadFollowUpEvent(orgId, rawEventId);
+
+    const stream = await this.gateway.streamTextWithUsage({
+      actor: { orgId, userId },
+      feature: "meetings.follow-up",
+      prompt: followUpStreamPrompt(event, meetingNotes, actionItems),
+      maxTokens: 1024,
+      charge: true,
+      ...(signal !== undefined ? { signal } : {}),
+    });
+
+    return { ...stream, sources: followUpSources(event, meetingNotes, actionItems) };
   }
 
   async proposeSendFollowUp(
@@ -305,7 +308,7 @@ Generate:
     const rawPayload = confirmed.payload;
     const eventId = Number(rawPayload["eventId"]);
     const followUpBody = String(rawPayload["followUpBody"] ?? "");
-    const channel = String(rawPayload["channel"] ?? "none") as "calendar" | "none";
+    const channel = String(rawPayload["channel"] ?? "none") === "calendar" ? "calendar" : "none";
 
     const event = await runInTenantTransaction(
       this.db,

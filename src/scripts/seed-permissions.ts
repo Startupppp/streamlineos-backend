@@ -1,6 +1,7 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { PermissionCatalogSyncService } from "../modules/rbac/permission-catalog-sync.service";
+import { RoleGrantReconcilerService } from "../modules/rbac/role-grant-reconciler.service";
 import type { Db } from "../db/drizzle.module";
 
 function loadDatabaseUrl(): string {
@@ -14,7 +15,10 @@ async function main(): Promise<void> {
   const db = drizzle(client) as unknown as Db;
 
   try {
-    const service = new PermissionCatalogSyncService(db);
+    const service = new PermissionCatalogSyncService(
+      db,
+      new RoleGrantReconcilerService(db),
+    );
     const cleanupRetired = process.argv.includes("--cleanup-retired");
     const { catalogSize, staleKeys, deletedKeys, retainedKeys } =
       await service.sync({ cleanupRetired });

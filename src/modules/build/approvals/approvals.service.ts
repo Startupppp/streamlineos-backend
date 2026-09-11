@@ -6,8 +6,8 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
-import { projectApprovals, projects } from "../../../db/schema";
+import { and, eq, inArray, isNull } from "drizzle-orm";
+import { projectApprovals } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -24,15 +24,16 @@ import {
   organizationActorHttpError,
 } from "../../../common/organization/organization-actor";
 import type { OrganizationActor } from "../../../common/organization/organization-actor";
+import { assertProjectAccess } from "../core/project-access";
+import { loadApproval } from "./approval-lookup";
 import type {
   CreateApprovalInput,
   DecideApprovalInput,
-  ListApprovalsQuery,
   UpdateApprovalInput,
 } from "./dto/approvals.schemas";
 
 type ApprovalPatch = Partial<
-  Pick<typeof projectApprovals.$inferInsert, "approverId" | "approverMembershipId" | "dueAt" | "status">
+  Pick<typeof projectApprovals.$inferInsert, "approverMembershipId" | "dueAt" | "status">
 >;
 
 const DECIDABLE = new Set<string>(["pending", "escalated", "changes_requested"]);
@@ -69,92 +70,16 @@ export class ApprovalsService {
     );
   }
 
-  private async assertProject(orgId: string, projectId: number): Promise<void> {
-    const p = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-      columns: { id: true },
-    });
-    if (!p) throw new NotFoundException("Project not found");
-  }
-
-  private async loadApproval(orgId: string, projectId: number, approvalId: number) {
-    const row = await this.db.query.projectApprovals.findFirst({
-      where: and(
-        eq(projectApprovals.id, approvalId),
-        eq(projectApprovals.orgId, orgId),
-        eq(projectApprovals.projectId, projectId),
-        isNull(projectApprovals.deletedAt),
-      ),
-    });
-    if (!row) throw new NotFoundException("Approval not found");
-    return row;
-  }
-
-  async getInbox(orgId: string, membershipId: number) {
-    return this.db
-      .select({
-        id: projectApprovals.id,
-        projectId: projectApprovals.projectId,
-        projectName: projects.name,
-        projectKey: projects.key,
-        entityType: projectApprovals.entityType,
-        entityId: projectApprovals.entityId,
-        title: projectApprovals.title,
-        status: projectApprovals.status,
-        level: projectApprovals.level,
-        dueAt: projectApprovals.dueAt,
-        requestedById: projectApprovals.requestedById,
-        decidedAt: projectApprovals.decidedAt,
-      })
-      .from(projectApprovals)
-      .innerJoin(projects, eq(projects.id, projectApprovals.projectId))
-      .where(
-        and(
-          eq(projectApprovals.orgId, orgId),
-          eq(projectApprovals.approverMembershipId, membershipId),
-          or(
-            eq(projectApprovals.status, "pending"),
-            eq(projectApprovals.status, "escalated"),
-          ),
-          isNull(projectApprovals.deletedAt),
-        ),
-      )
-      .orderBy(sql`${projectApprovals.dueAt} ASC NULLS LAST`)
-      .limit(100);
-  }
-
-  async listApprovals(orgId: string, projectId: number, query: ListApprovalsQuery) {
-    await this.assertProject(orgId, projectId);
-    return this.db
-      .select()
-      .from(projectApprovals)
-      .where(
-        and(
-          eq(projectApprovals.orgId, orgId),
-          eq(projectApprovals.projectId, projectId),
-          isNull(projectApprovals.deletedAt),
-          query.status ? eq(projectApprovals.status, query.status) : undefined,
-          query.entityType ? eq(projectApprovals.entityType, query.entityType) : undefined,
-        ),
-      )
-      .orderBy(sql`${projectApprovals.dueAt} ASC NULLS LAST`)
-      .limit(100);
-  }
-
-  async getApproval(orgId: string, projectId: number, approvalId: number) {
-    return this.loadApproval(orgId, projectId, approvalId);
-  }
-
   async createApproval(
-    orgId: string,
-    userId: string,
+    u: CurrentUserContext,
     projectId: number,
     input: CreateApprovalInput,
   ) {
+    const { orgId, userId } = u;
     if (input.approverId === userId) {
       throw new BadRequestException("Approver cannot be the requester");
     }
-    await this.assertProject(orgId, projectId);
+    await assertProjectAccess(this.db, this.access, u, projectId);
 
     let approverActor: OrganizationActor;
     try {
@@ -170,7 +95,7 @@ export class ApprovalsService {
         eq(projectApprovals.projectId, projectId),
         eq(projectApprovals.entityType, input.entityType),
         eq(projectApprovals.entityId, input.entityId),
-        eq(projectApprovals.approverId, input.approverId),
+        eq(projectApprovals.approverMembershipId, approverActor.membershipId),
         inArray(projectApprovals.status, ["pending", "requested", "escalated"]),
         isNull(projectApprovals.deletedAt),
       ),
@@ -191,7 +116,6 @@ export class ApprovalsService {
         entityId: input.entityId,
         title: input.title,
         reason: input.reason ?? null,
-        approverId: input.approverId,
         approverMembershipId: approverActor.membershipId,
         dueAt: input.dueAt ?? null,
         level: input.level ?? 1,
@@ -228,7 +152,7 @@ export class ApprovalsService {
     input: DecideApprovalInput,
   ) {
     const { orgId, userId } = user;
-    const approval = await this.loadApproval(orgId, projectId, approvalId);
+    const approval = await loadApproval(this.db, orgId, projectId, approvalId);
 
     const callerMid = actingMembershipId(user.principal);
     if (approval.approverMembershipId !== callerMid || callerMid === null) {
@@ -270,13 +194,12 @@ export class ApprovalsService {
     approvalId: number,
     input: UpdateApprovalInput,
   ) {
-    await this.loadApproval(orgId, projectId, approvalId);
+    await loadApproval(this.db, orgId, projectId, approvalId);
 
     const patch: ApprovalPatch = {};
     if (input.approverId !== undefined) {
       try {
         const actor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId: input.approverId });
-        patch.approverId = input.approverId;
         patch.approverMembershipId = actor.membershipId;
       } catch (e) {
         if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
@@ -327,7 +250,7 @@ export class ApprovalsService {
   }
 
   async softDeleteApproval(orgId: string, projectId: number, approvalId: number) {
-    await this.loadApproval(orgId, projectId, approvalId);
+    await loadApproval(this.db, orgId, projectId, approvalId);
     await this.db
       .update(projectApprovals)
       .set({ deletedAt: new Date() })

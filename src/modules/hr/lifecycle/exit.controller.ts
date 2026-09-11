@@ -39,11 +39,22 @@ import {
 } from "./dto/hr-lifecycle.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { StorageService } from "../../storage/storage.service";
+import { parseStorageKey } from "../../storage/storage-key";
 import { AuditService } from "../../../common/audit/audit.service";
 import { resolveExitAdmin } from "./exit-scope";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  resignationListSchema,
+  resignationSchema,
+  exitAnalyticsSchema,
+  experienceLetterCreateResponseSchema,
+  exitLetterSchema,
+  uploadedFileUrlSchema,
+  resignationProgressSchema,
+  successSchema,
+} from "./dto/lifecycle-response.schemas";
 
 const resignationIdParams = z.object({ resignationId: z.coerce.number().int().positive() }).strict();
 
@@ -65,6 +76,7 @@ export class ExitController {
   }
 
   @Get()
+  @ResponseSchema(resignationListSchema)
   @RequirePermission("hr:exit:view")
   @Validate({ query: listResignationsQuerySchema })
   async list(
@@ -75,6 +87,7 @@ export class ExitController {
   }
 
   @Post()
+  @ResponseSchema(resignationSchema)
   @HttpCode(201)
   @RequirePermission("hr:exit:create")
   @Validate({ body: resignationCreateSchema })
@@ -87,10 +100,11 @@ export class ExitController {
         "The organization owner cannot submit a resignation through this system.",
       );
     }
-    return this.exitWrite.create(currentUser.orgId, currentUser.userId, body);
+    return this.exitWrite.create(currentUser.orgId, currentUser.userId, actingMembershipId(currentUser.principal), body);
   }
 
   @Patch(":resignationId/hr-review")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:exit:manage")
   @Validate({ params: resignationIdParams, body: resignationHrReviewSchema })
   hrReview(
@@ -102,6 +116,7 @@ export class ExitController {
   }
 
   @Patch(":resignationId/final-review")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:exit:approve")
   @Validate({ params: resignationIdParams, body: resignationFinalReviewSchema })
   finalReview(
@@ -113,6 +128,7 @@ export class ExitController {
   }
 
   @Patch(":resignationId")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:exit:view")
   @Validate({ params: resignationIdParams, body: resignationUpdateSchema })
   async update(
@@ -122,19 +138,21 @@ export class ExitController {
   ) {
     return this.exitWrite.update(
       currentUser.orgId,
-      { userId: currentUser.userId, role: currentUser.role, isApprover: await this.isExitAdmin(currentUser) },
+      { userId: currentUser.userId, membershipId: actingMembershipId(currentUser.principal), role: currentUser.role, isApprover: await this.isExitAdmin(currentUser) },
       resignationId,
       body,
     );
   }
 
   @Get("analytics")
+  @ResponseSchema(exitAnalyticsSchema)
   @RequirePermission("hr:exit:manage")
   getAnalytics(@CurrentUser() currentUser: CurrentUserContext) {
     return this.exit.getAnalytics(currentUser.orgId);
   }
 
   @Post("experience-letter")
+  @ResponseSchema(experienceLetterCreateResponseSchema)
   @HttpCode(201)
   @RequirePermission("hr:exit:manage")
   @Validate({ body: experienceLetterSchema })
@@ -146,16 +164,24 @@ export class ExitController {
   }
 
   @Get(":resignationId/letter")
+  @ResponseSchema(exitLetterSchema)
   @RequirePermission("hr:exit:view")
   @Validate({ params: resignationIdParams })
   async getLetter(
     @Param("resignationId", ParseIntPipe) resignationId: number,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.exit.getLetter(currentUser.orgId, currentUser.userId, await this.isExitAdmin(currentUser), resignationId);
+    return this.exit.getLetter(
+      currentUser.orgId,
+      currentUser.userId,
+      await this.isExitAdmin(currentUser),
+      resignationId,
+      actingMembershipId(currentUser.principal),
+    );
   }
 
   @Get(":resignationId/file")
+  @ResponseSchema(uploadedFileUrlSchema)
   @RequirePermission("hr:exit:view")
   @Validate({ params: resignationIdParams })
   async getUploadedLetter(
@@ -167,14 +193,21 @@ export class ExitController {
       currentUser.userId,
       await this.isExitAdmin(currentUser),
       resignationId,
+      actingMembershipId(currentUser.principal),
     );
     const fileKey = this.storage.getFileKeyFromUrl(record.fileUrl);
     if (!this.storage.isValidFileKey(fileKey)) {
       throw new NotFoundException("Resignation letter is unavailable.");
     }
+    const { folderRoot } = parseStorageKey(fileKey, currentUser.orgId);
+    if (folderRoot !== "resignations") {
+      throw new NotFoundException("Resignation letter is unavailable.");
+    }
 
     const expiresIn = 300;
-    const url = await this.storage.getFileUrl(currentUser.orgId, fileKey, expiresIn);
+    const url = await this.storage.getFileUrl(currentUser.orgId, fileKey, expiresIn, undefined, {
+      preauthorized: true,
+    });
     await this.audit.logCritical({
       action: "hr.resignation_letter_viewed",
       userId: currentUser.userId,
@@ -186,16 +219,18 @@ export class ExitController {
   }
 
   @Get(":resignationId/progress")
+  @ResponseSchema(resignationProgressSchema)
   @RequirePermission("hr:exit:view")
   @Validate({ params: resignationIdParams })
   async getProgress(
     @Param("resignationId", ParseIntPipe) resignationId: number,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.exit.getProgress(currentUser.orgId, currentUser.userId, await this.isExitAdmin(currentUser), resignationId);
+    return this.exit.getProgress(currentUser.orgId, currentUser.userId, await this.isExitAdmin(currentUser), resignationId, actingMembershipId(currentUser.principal));
   }
 
   @Patch(":resignationId/withdraw")
+  @ResponseSchema(successSchema)
   @BodylessAction()
   @RequirePermission("hr:exit:view")
   @Validate({ params: resignationIdParams })
@@ -203,16 +238,17 @@ export class ExitController {
     @Param("resignationId", ParseIntPipe) resignationId: number,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.exit.withdraw(currentUser.orgId, currentUser.userId, await this.isExitAdmin(currentUser), resignationId);
+    return this.exit.withdraw(currentUser.orgId, currentUser.userId, await this.isExitAdmin(currentUser), resignationId, actingMembershipId(currentUser.principal));
   }
 
   @Get(":resignationId")
+  @ResponseSchema(resignationSchema)
   @RequirePermission("hr:exit:view")
   @Validate({ params: resignationIdParams })
   async getDetail(
     @Param("resignationId", ParseIntPipe) resignationId: number,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.exit.getDetail(currentUser.orgId, currentUser.userId, await this.isExitAdmin(currentUser), resignationId);
+    return this.exit.getDetail(currentUser.orgId, currentUser.userId, await this.isExitAdmin(currentUser), resignationId, actingMembershipId(currentUser.principal));
   }
 }

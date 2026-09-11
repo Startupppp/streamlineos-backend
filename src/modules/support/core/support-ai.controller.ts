@@ -7,6 +7,7 @@ import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
@@ -17,31 +18,29 @@ import {
   translateMessageSchema,
   supportAiReportFiltersSchema,
   updateSupportAiSettingsSchema,
+  improveReplyBodySchema,
+  translateDraftBodySchema,
   type ResolveAiSuggestionInput,
   type TranslateMessageInput,
   type SupportAiReportFiltersInput,
   type UpdateSupportAiSettingsInput,
+  type ImproveReplyBody,
+  type TranslateDraftBody,
 } from "./dto/support.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  supportAiSettingsSchema,
+  supportAiSuggestionListSchema,
+  supportAiSuggestionNullableSchema,
+  supportAiSuggestionRowSchema,
+  supportAiTranslationSchema,
+  supportAiImproveReplySchema,
+  supportAiReportSchema,
+} from "./dto/support-ai-response.schemas";
 
 const ticketIdParams = z.object({ ticketId: z.coerce.number().int().positive() }).strict();
 const suggestionIdParams = z.object({ suggestionId: z.coerce.number().int().positive() }).strict();
-
-const improveReplyBodySchema = z.object({
-  ticketId: z.number().int().positive(),
-  content: z.string().trim().min(1).max(10000),
-  macroId: z.number().int().positive().optional(),
-});
-
-const translateDraftBodySchema = z.object({
-  ticketId: z.number().int().positive(),
-  language: z.string().trim().min(2).max(50),
-  content: z.string().trim().max(10000).optional(),
-});
-
-type ImproveReplyBody = z.infer<typeof improveReplyBodySchema>;
-type TranslateDraftBody = z.infer<typeof translateDraftBodySchema>;
 
 @RequireModule("support")
 @Controller("support")
@@ -55,6 +54,7 @@ export class SupportAiController {
 
   @Get("settings")
   @RequirePermission("support:settings:manage")
+  @ResponseSchema(supportAiSettingsSchema)
   getSettings(@CurrentUser() u: CurrentUserContext) {
     return this.settingsSvc.getSettings(u.orgId);
   }
@@ -62,6 +62,7 @@ export class SupportAiController {
   @Patch("settings")
   @RequirePermission("support:settings:manage")
   @Validate({ body: updateSupportAiSettingsSchema })
+  @ResponseSchema(supportAiSettingsSchema)
   async updateSettings(
     @Body() body: UpdateSupportAiSettingsInput,
     @CurrentUser() u: CurrentUserContext,
@@ -75,6 +76,7 @@ export class SupportAiController {
   @Get(":ticketId/ai/suggestions")
   @RequirePermission("support:tickets:view")
   @Validate({ params: ticketIdParams })
+  @ResponseSchema(supportAiSuggestionListSchema)
   listSuggestions(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     return this.ai.listSuggestions(u.orgId, ticketId);
   }
@@ -86,9 +88,10 @@ export class SupportAiController {
   @UseRateLimit("ai:invoke")
   @HttpCode(200)
   @Validate({ params: ticketIdParams })
+  @ResponseSchema(supportAiSuggestionNullableSchema)
   async analyze(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
-    return this.ai.analyzeTicket(u.orgId, ticketId);
+    return this.ai.analyzeTicket(u.orgId, ticketId, u.userId);
   }
 
   @Post(":ticketId/ai/find-duplicates")
@@ -98,6 +101,7 @@ export class SupportAiController {
   @UseRateLimit("ai:invoke")
   @HttpCode(200)
   @Validate({ params: ticketIdParams })
+  @ResponseSchema(supportAiSuggestionNullableSchema)
   async findDuplicates(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     return this.ai.findDuplicates(u.orgId, ticketId);
@@ -110,6 +114,7 @@ export class SupportAiController {
   @UseRateLimit("ai:invoke")
   @HttpCode(200)
   @Validate({ params: ticketIdParams })
+  @ResponseSchema(supportAiSuggestionNullableSchema)
   async suggestKbArticles(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     return this.ai.suggestKbArticles(u, ticketId);
@@ -122,6 +127,7 @@ export class SupportAiController {
   @UseRateLimit("ai:invoke")
   @HttpCode(200)
   @Validate({ params: ticketIdParams })
+  @ResponseSchema(supportAiSuggestionNullableSchema)
   async suggestReply(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     await this.planLimits.assertFeature(u.orgId, "ai.reply-suggestion");
     return this.ai.suggestReply(u, ticketId);
@@ -134,9 +140,15 @@ export class SupportAiController {
   @UseRateLimit("ai:invoke")
   @HttpCode(200)
   @Validate({ params: ticketIdParams })
+  @ResponseSchema(supportAiSuggestionNullableSchema)
   async suggestMacro(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     await this.planLimits.assertFeature(u.orgId, "ai.reply-suggestion");
-    return this.ai.suggestMacro(u.orgId, u.userId, ticketId);
+    return this.ai.suggestMacro(
+      u.orgId,
+      u.userId,
+      ticketId,
+      actingMembershipId(u.principal),
+    );
   }
 
   @Post(":ticketId/ai/translate")
@@ -145,6 +157,7 @@ export class SupportAiController {
   @UseRateLimit("ai:invoke")
   @HttpCode(200)
   @Validate({ params: ticketIdParams, body: translateMessageSchema })
+  @ResponseSchema(supportAiTranslationSchema)
   async translateMessage(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Body() body: TranslateMessageInput,
@@ -161,6 +174,7 @@ export class SupportAiController {
   @UseRateLimit("ai:invoke")
   @HttpCode(200)
   @Validate({ params: ticketIdParams })
+  @ResponseSchema(supportAiSuggestionNullableSchema)
   async generateHandoffSummary(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     return this.ai.generateHandoffSummary(u, ticketId);
@@ -173,6 +187,7 @@ export class SupportAiController {
   @UseRateLimit("ai:invoke")
   @HttpCode(200)
   @Validate({ params: ticketIdParams })
+  @ResponseSchema(supportAiSuggestionNullableSchema)
   async findRootCauseCluster(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     return this.ai.findRootCauseCluster(u.orgId, ticketId, u.userId);
@@ -184,6 +199,7 @@ export class SupportAiController {
   @UseRateLimit("ai:invoke")
   @HttpCode(200)
   @Validate({ body: improveReplyBodySchema })
+  @ResponseSchema(supportAiImproveReplySchema)
   async improveReply(
     @Body() body: ImproveReplyBody,
     @CurrentUser() u: CurrentUserContext,
@@ -198,17 +214,26 @@ export class SupportAiController {
   @UseRateLimit("ai:invoke")
   @HttpCode(200)
   @Validate({ body: translateDraftBodySchema })
+  @ResponseSchema(supportAiTranslationSchema)
   async translateDraft(
     @Body() body: TranslateDraftBody,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.reply-suggestion");
-    return this.ai.translateDraft(u.orgId, body.ticketId, body.language, body.content, u.userId);
+    return this.ai.translateDraft(
+      u.orgId,
+      body.ticketId,
+      body.language,
+      body.content,
+      u.userId,
+      actingMembershipId(u.principal),
+    );
   }
 
   @Get("ai/report")
   @RequirePermission("support:ai:view")
   @Validate({ query: supportAiReportFiltersSchema })
+  @ResponseSchema(supportAiReportSchema)
   getAiReport(
     @Query() query: SupportAiReportFiltersInput,
     @CurrentUser() u: CurrentUserContext,
@@ -220,6 +245,7 @@ export class SupportAiController {
   @RequirePermission("support:tickets:reply")
   @HttpCode(200)
   @Validate({ params: suggestionIdParams, body: resolveAiSuggestionSchema })
+  @ResponseSchema(supportAiSuggestionRowSchema)
   resolveSuggestion(
     @Param("suggestionId", ParseIntPipe) suggestionId: number,
     @Body() body: ResolveAiSuggestionInput,

@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { eq, and } from "drizzle-orm";
+import { eq, and, count } from "drizzle-orm";
 import { notificationTemplates } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -7,6 +7,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { NOTIF_CACHE } from "./notification-cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
+import { buildListResponse } from "../../common/pagination/pagination";
 import type {
   CreateTemplateInput,
   UpdateTemplateInput,
@@ -33,19 +34,30 @@ export class NotificationTemplatesService {
     );
   }
 
-  private queryTemplates(orgId: string, filters: ListTemplatesInput) {
-    return this.db.query.notificationTemplates.findMany({
-      where: and(
-        eq(notificationTemplates.orgId, orgId),
-        filters.channel ? eq(notificationTemplates.channel, filters.channel) : undefined,
-        filters.category ? eq(notificationTemplates.category, filters.category) : undefined,
-        filters.isActive !== undefined
-          ? eq(notificationTemplates.isActive, filters.isActive)
-          : undefined,
-      ),
-      orderBy: (t, { desc }) => [desc(t.updatedAt)],
-      limit: filters.limit,
-      offset: filters.offset,
+  private async queryTemplates(orgId: string, filters: ListTemplatesInput) {
+    const where = and(
+      eq(notificationTemplates.orgId, orgId),
+      filters.channel ? eq(notificationTemplates.channel, filters.channel) : undefined,
+      filters.category ? eq(notificationTemplates.category, filters.category) : undefined,
+      filters.isActive !== undefined
+        ? eq(notificationTemplates.isActive, filters.isActive)
+        : undefined,
+    );
+
+    const [rows, [totalRow]] = await Promise.all([
+      this.db.query.notificationTemplates.findMany({
+        where,
+        orderBy: (t, { desc }) => [desc(t.updatedAt)],
+        limit: filters.limit,
+        offset: filters.offset,
+      }),
+      this.db.select({ total: count() }).from(notificationTemplates).where(where),
+    ]);
+
+    // This list pages by `offset`, so the envelope's page number is derived from it.
+    return buildListResponse(rows, Number(totalRow?.total ?? 0), {
+      page: filters.limit > 0 ? Math.floor(filters.offset / filters.limit) + 1 : 1,
+      pageSize: filters.limit,
     });
   }
 

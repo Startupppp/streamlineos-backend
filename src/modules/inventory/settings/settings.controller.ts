@@ -19,7 +19,14 @@ import {
 } from "./dto/settings.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  invSettingsResponseSchema,
+  listNumberSequencesResponseSchema,
+  updateNumberSequenceResponseSchema,
+  healthResponseSchema,
+  expireReservationsResponseSchema,
+} from "./dto/settings-response.schemas";
 
 const sequenceIdParams = z.object({ sequenceId: z.coerce.number().int().positive() }).strict();
 
@@ -33,6 +40,7 @@ export class InvSettingsController {
   ) {}
 
   @Get()
+  @ResponseSchema(invSettingsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:settings:manage")
   getSettings(@CurrentUser() u: CurrentUserContext) {
@@ -52,6 +60,7 @@ export class InvSettingsController {
   }
 
   @Patch()
+  @ResponseSchema(invSettingsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:settings:manage")
   @Validate({ body: updateSettingsSchema })
@@ -63,6 +72,7 @@ export class InvSettingsController {
   }
 
   @Get("number-sequences")
+  @ResponseSchema(listNumberSequencesResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:settings:manage")
   listNumberSequences(@CurrentUser() u: CurrentUserContext) {
@@ -70,6 +80,7 @@ export class InvSettingsController {
   }
 
   @Patch("number-sequences/:sequenceId")
+  @ResponseSchema(updateNumberSequenceResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:settings:manage")
   @Validate({ params: sequenceIdParams, body: updateNumberSequenceSchema })
@@ -82,6 +93,7 @@ export class InvSettingsController {
   }
 
   @Get("health")
+  @ResponseSchema(healthResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:settings:manage")
   getHealth(@CurrentUser() u: CurrentUserContext) {
@@ -114,6 +126,7 @@ export class InvSettingsController {
 
   @Post("maintenance/expire-reservations")
   @BodylessAction()
+  @ResponseSchema(expireReservationsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:settings:manage")
   expireReservations(@CurrentUser() u: CurrentUserContext) {

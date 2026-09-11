@@ -1,4 +1,10 @@
-import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, eq, sql } from "drizzle-orm";
 import { invoices, payments, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -8,14 +14,37 @@ import type { DbOrTx } from "../accounting/kernel/sequence.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { InvoicesLifecycleService } from "./invoices-lifecycle.service";
 import { InvoicesPostingService } from "./invoices-posting.service";
+import {
+  compareDecimals,
+  decimalFromNumber,
+  formatDecimal,
+  roundDecimal,
+  subtractDecimals,
+  toDecimal,
+} from "../accounting/core/money.util";
 import type { RecordPaymentInput } from "./dto/invoice-write.schemas";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { logSideEffectFailure } from "../../common/logger/side-effect";
 
+/**
+ * `payments.amount` is `numeric(12,2)`, so a receipt can only ever be recorded to
+ * the paisa. Pinning the request amount to that scale once — and comparing the
+ * outstanding balance at the same scale — is what keeps the payment register and
+ * the journal recording one quantity instead of two.
+ */
+export const PAYMENT_SCALE = 2;
+
+function sumOfPayments() {
+  return sql<string>`COALESCE(sum(${payments.amount}), 0)::text`;
+}
+
+function maxPayable(invoiceTotal: string | null, totalPaid: string | null | undefined): string {
+  const remaining = subtractDecimals(toDecimal(invoiceTotal), toDecimal(totalPaid));
+  return roundDecimal(remaining, PAYMENT_SCALE);
+}
+
 @Injectable()
 export class InvoicesPaymentService {
-  private readonly classLogger = new Logger(InvoicesPaymentService.name);
-
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly posting: InvoicesPostingService,
@@ -27,7 +56,7 @@ export class InvoicesPaymentService {
   private async createPayment(
     orgId: string,
     invoiceId: number,
-    data: RecordPaymentInput & { createdBy: string },
+    data: RecordPaymentInput & { createdBy: string; settledAmount: string },
     tx: DbOrTx,
   ) {
     const [payment] = await tx
@@ -35,7 +64,7 @@ export class InvoicesPaymentService {
       .values({
         orgId,
         invoiceId,
-        amount: data.amount.toFixed(2),
+        amount: data.settledAmount,
         paymentDate: data.paymentDate,
         paymentMethod: data.paymentMethod,
         referenceNumber: data.referenceNumber ?? null,
@@ -63,16 +92,16 @@ export class InvoicesPaymentService {
       throw new BadRequestException("Cannot record payment on voided invoice");
     }
 
-    const [{ totalPaid }] = await this.db
-      .select({
-        totalPaid: sql<number>`COALESCE(sum(${payments.amount}::numeric), 0)::float`,
-      })
+    const settledAmount = roundDecimal(decimalFromNumber(input.amount), PAYMENT_SCALE);
+
+    const [paidRow] = await this.db
+      .select({ totalPaid: sumOfPayments() })
       .from(payments)
       .where(and(eq(payments.invoiceId, invoiceId), eq(payments.orgId, orgId)));
-    const remaining = Number(invoice.total ?? 0) - totalPaid;
-    if (input.amount > remaining + 0.01) {
+    const payable = maxPayable(invoice.total, paidRow?.totalPaid);
+    if (compareDecimals(settledAmount, payable) > 0) {
       throw new BadRequestException(
-        `Payment amount ${input.amount.toFixed(2)} exceeds outstanding balance ${remaining.toFixed(2)}`,
+        `Payment amount ${formatDecimal(settledAmount, PAYMENT_SCALE)} exceeds outstanding balance ${formatDecimal(payable, PAYMENT_SCALE)}`,
       );
     }
 
@@ -90,10 +119,33 @@ export class InvoicesPaymentService {
     }
 
     const created = await this.db.transaction(async (tx) => {
+      // The check above ran before the lock. Two receipts racing for the same
+      // outstanding balance both pass it, so the invoice row is locked and the
+      // balance re-read before anything is written.
+      const [lockedInvoice] = await tx
+        .select({ total: invoices.total, status: invoices.status })
+        .from(invoices)
+        .where(and(eq(invoices.id, invoiceId), eq(invoices.orgId, orgId)))
+        .for("update")
+        .limit(1);
+      if (!lockedInvoice) throw new NotFoundException("Invoice not found");
+      if (lockedInvoice.status === "VOIDED")
+        throw new ConflictException("Cannot record payment on voided invoice");
+
+      const [lockedPaid] = await tx
+        .select({ totalPaid: sumOfPayments() })
+        .from(payments)
+        .where(and(eq(payments.invoiceId, invoiceId), eq(payments.orgId, orgId)));
+      const lockedPayable = maxPayable(lockedInvoice.total, lockedPaid?.totalPaid);
+      if (compareDecimals(settledAmount, lockedPayable) > 0)
+        throw new ConflictException(
+          `Payment amount ${formatDecimal(settledAmount, PAYMENT_SCALE)} exceeds outstanding balance ${formatDecimal(lockedPayable, PAYMENT_SCALE)} — another payment landed first`,
+        );
+
       const payment = await this.createPayment(
         orgId,
         invoiceId,
-        { ...input, createdBy: userId },
+        { ...input, createdBy: userId, settledAmount },
         tx,
       );
 
@@ -107,7 +159,7 @@ export class InvoicesPaymentService {
           paymentDate: input.paymentDate,
           paymentMethod: input.paymentMethod,
           currency: invoice.currency,
-          amount: input.amount,
+          amount: Number(settledAmount),
         },
         tx,
       );
@@ -115,7 +167,14 @@ export class InvoicesPaymentService {
       return payment;
     });
 
-    await this.postArFxGainLoss(orgId, userId, invoice, input.amount, input.paymentDate);
+    await this.postArFxGainLoss(
+      orgId,
+      userId,
+      invoice,
+      created.id,
+      settledAmount,
+      input.paymentDate,
+    );
 
     const members = await this.db
       .select({ userId: organizationMembers.userId })
@@ -134,7 +193,7 @@ export class InvoicesPaymentService {
           entityType: "invoice",
           entityId: String(invoiceId),
           title: "Payment received",
-          message: `Payment of ${input.amount.toFixed(2)} received for invoice ${invoice.invoiceNumber}`,
+          message: `Payment of ${formatDecimal(settledAmount, PAYMENT_SCALE)} received for invoice ${invoice.invoiceNumber}`,
         })
         .catch(logSideEffectFailure("invoice.payment_received notification", { invoiceId, orgId }));
     if (!registerAfterCommit(emit)) void emit();
@@ -154,36 +213,37 @@ export class InvoicesPaymentService {
   /**
    * Realised FX when a foreign-currency invoice settles.
    *
-   * Fire-and-forget on purpose: the payment is already recorded and a missing
-   * rate must not undo it. The rewrite dropped the old
-   * `accounting_settings.base_currency` read and the invoice's stored
-   * `exchange_rate` — the first has no successor table, and the second was never
-   * written by the create path, so it was always 1. Both rates now come from the
-   * book's own `gl_fx_rates`.
+   * A missing rate must not undo the payment, and it does not: `postRealizedFx`
+   * reports it and posts nothing, as it does for an organisation without
+   * accounting. Anything else — a closed period, a chart without an FX role —
+   * propagates, so a receipt is never recorded without the entry that clears its
+   * FX residue. The rewrite dropped the old `accounting_settings.base_currency`
+   * read and the invoice's stored `exchange_rate` — the first has no successor
+   * table, and the second was never written by the create path, so it was always
+   * 1. Both rates now come from the book's own `gl_fx_rates`.
+   *
+   * The entry is keyed on the payment, so each receipt against an invoice clears
+   * its own residue.
    */
   private async postArFxGainLoss(
     orgId: string,
     userId: string,
     invoice: { id: number; currency: string; createdAt: Date | null },
-    settledAmount: number,
+    paymentId: number,
+    settledAmount: string,
     paymentDateIso: string,
   ): Promise<void> {
-    try {
-      await this.posting.postRealizedFx(
-        orgId,
-        userId,
-        {
-          id: invoice.id,
-          currency: invoice.currency,
-          issueDate: (invoice.createdAt ?? new Date()).toISOString().slice(0, 10),
-        },
-        settledAmount,
-        paymentDateIso,
-      );
-    } catch (err) {
-      this.classLogger.warn(
-        `Realised FX post failed for invoice ${invoice.id}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+    await this.posting.postRealizedFx(
+      orgId,
+      userId,
+      {
+        id: invoice.id,
+        currency: invoice.currency,
+        issueDate: (invoice.createdAt ?? new Date()).toISOString().slice(0, 10),
+      },
+      paymentId,
+      Number(settledAmount),
+      paymentDateIso,
+    );
   }
 }

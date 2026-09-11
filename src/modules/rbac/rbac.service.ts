@@ -1,10 +1,17 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { administeringModuleOf } from "../../common/rbac/module-vocabulary";
 import {
   organizationMembers,
+  roles,
   rolePermissionGrants,
   users,
 } from "../../db/schema";
@@ -12,11 +19,14 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { markRoleAdministered } from "./mark-role-administered";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import {
   assertPermissionsGrantable,
-  buildPermissionModuleMap,
+  buildPermissionAdministeringModuleMap,
+  canGrantToRank,
   isDelegablePermission,
+  isImmutableSystemRole,
   ORG_ADMIN_PERMISSION_KEY,
   RESERVED_PROPAGATION_KEYS,
   ROLE_RANK,
@@ -33,12 +43,14 @@ import {
 } from "./permissions";
 import type {
   AssignRolePermissionInput,
+  RevokeRolePermissionInput,
+} from "./dto/rbac.schemas";
+import type {
   DiscoveryGrantableResult,
   DiscoveryMemberEntry,
   DiscoveryPermissionEntry,
   DiscoveryTemplateEntry,
-  RevokeRolePermissionInput,
-} from "./dto/rbac.schemas";
+} from "./dto/rbac-response.schemas";
 import { AccessService } from "../access/access.service";
 import { ROLE_TEMPLATES } from "./role-templates.constants";
 
@@ -70,6 +82,35 @@ export class RbacService {
     return DISCOVERABLE_PERMISSIONS;
   }
 
+  /**
+   * Resolves the target role inside the actor's own organisation.
+   *
+   * The single-key grant paths took `roleId` straight from the body and never
+   * loaded the role, which cost three things at once. A role id from another
+   * tenant reached the insert and surfaced as a 500 from the composite
+   * `(org_id, role_id)` foreign key rather than the 404 a cross-tenant miss owes
+   * (root CLAUDE.md §4); `isImmutableSystemRole` was never consulted, so the
+   * org-level `ORG_ADMIN` and `MEMBER` rows that `setRolePermissions` refuses to
+   * touch were writable here; and with no rank or module key there was nothing
+   * to pass to `assertPermissionsGrantable`, so the two writers over the same
+   * table enforced different rules.
+   */
+  private async resolveRoleInOrg(
+    orgId: string,
+    roleId: number,
+  ): Promise<{ id: number; isSystem: boolean; rank: number; moduleKey: string | null }> {
+    const role = await this.db.query.roles.findFirst({
+      where: and(eq(roles.id, roleId), eq(roles.orgId, orgId)),
+      columns: { id: true, isSystem: true, rank: true, moduleKey: true },
+    });
+    if (!role) throw new NotFoundException("Role not found");
+    if (isImmutableSystemRole(role))
+      throw new ForbiddenException(
+        "Organization-level system roles cannot be modified",
+      );
+    return role;
+  }
+
   async assignRolePermission(
     actor: CurrentUserContext,
     input: AssignRolePermissionInput,
@@ -86,14 +127,23 @@ export class RbacService {
       );
     }
 
+    const role = await this.resolveRoleInOrg(actor.orgId, input.roleId);
+
     if (!actor.isOrgOwner) {
-      const resolved = await this.access.resolveUserPermissions(
-        actor.orgId,
-        actor.userId,
-      );
+      const [resolved, { bestRank, allowedModules }] = await Promise.all([
+        this.access.resolveUserPermissions(actor.orgId, actor.userId),
+        resolveActorRankContext(this.db, actor.orgId, actor.userId),
+      ]);
       assertPermissionsGrantable(
-        { isOrgOwner: false, grantable: toGrantableSet(resolved) },
+        {
+          isOrgOwner: false,
+          grantable: toGrantableSet(resolved),
+          bestRank,
+          allowedModules,
+        },
         [input.permissionKey],
+        { rank: role.rank, moduleKey: role.moduleKey },
+        buildPermissionAdministeringModuleMap([input.permissionKey]),
       );
     }
 
@@ -114,6 +164,7 @@ export class RbacService {
           ],
           set: { scope: input.scope },
         });
+      await markRoleAdministered(tx, actor.orgId, input.roleId);
       await bumpPermissionsVersion(tx, actor.orgId);
     }, { orgId: actor.orgId });
 
@@ -133,6 +184,8 @@ export class RbacService {
       );
     }
 
+    await this.resolveRoleInOrg(actor.orgId, input.roleId);
+
     await runInTenantTransaction(this.db, async (tx) => {
       await tx
         .delete(rolePermissionGrants)
@@ -143,6 +196,7 @@ export class RbacService {
             eq(rolePermissionGrants.permissionKey, input.permissionKey),
           ),
         );
+      await markRoleAdministered(tx, actor.orgId, input.roleId);
       await bumpPermissionsVersion(tx, actor.orgId);
     }, { orgId: actor.orgId });
 
@@ -162,7 +216,7 @@ export class RbacService {
         resource: p.resource,
         action: p.action,
         description: p.description,
-        moduleKey: p.name.indexOf(":") === -1 ? null : p.name.slice(0, p.name.indexOf(":")),
+        moduleKey: administeringModuleOf(p.name),
         scopable: isScopable(p.name),
       }));
     }
@@ -178,7 +232,7 @@ export class RbacService {
         resource: p.resource,
         action: p.action,
         description: p.description,
-        moduleKey: p.name.indexOf(":") === -1 ? null : p.name.slice(0, p.name.indexOf(":")),
+        moduleKey: administeringModuleOf(p.name),
         scopable: isScopable(p.name),
       }));
   }
@@ -201,7 +255,7 @@ export class RbacService {
 
     const grantable = toGrantableSet(resolved);
     const canPropagateReserved = grantable.has(ORG_ADMIN_PERMISSION_KEY);
-    const permMeta = buildPermissionModuleMap(PERMISSIONS.map((p) => p.name));
+    const administeringModules = buildPermissionAdministeringModuleMap(PERMISSIONS.map((p) => p.name));
 
     const grantableKeys = PERMISSIONS
       .map((p) => p.name)
@@ -212,14 +266,20 @@ export class RbacService {
           return false;
         }
         if (allowedModules !== null) {
-          const mod = permMeta.get(key);
-          if (!mod || !allowedModules.has(mod)) return false;
+          const administeringModule = administeringModules.get(key);
+          if (!administeringModule || !allowedModules.has(administeringModule)) return false;
         }
         return true;
       });
 
+    const targetModules: (string | null)[] =
+      allowedModules === null ? [null] : Array.from(allowedModules);
     const assignableRanks = ([ROLE_RANK.MODULE_ADMIN, ROLE_RANK.MODULE_CUSTOM, ROLE_RANK.FUNCTIONAL] as number[])
-      .filter((rank) => rank > bestRank);
+      .filter((rank) =>
+        targetModules.some((moduleKey) =>
+          canGrantToRank(bestRank, allowedModules, rank, moduleKey),
+        ),
+      );
 
     return {
       grantableKeys,

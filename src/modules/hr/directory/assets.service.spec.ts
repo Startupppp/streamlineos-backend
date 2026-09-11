@@ -6,7 +6,9 @@ describe("AssetsService.updateAssetReturn — terminal status guard", () => {
     return {
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
-          where: jest.fn().mockResolvedValue([{ id: 1, orgId: "org-1", status: existingStatus }]),
+          where: jest.fn().mockReturnValue({
+            limit: jest.fn().mockResolvedValue([{ id: 1, orgId: "org-1", status: existingStatus }]),
+          }),
         }),
       }),
       update: jest.fn().mockReturnValue({

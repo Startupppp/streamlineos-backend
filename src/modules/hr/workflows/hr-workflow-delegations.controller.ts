@@ -14,6 +14,11 @@ import {
 } from "./dto/workflow.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  workflowDelegationWithUserSchema,
+  workflowDelegationRowSchema,
+} from "./dto/workflow-response.schemas";
 
 const delegationIdParams = z.object({ delegationId: z.coerce.number().int().positive() }).strict();
 
@@ -24,6 +29,7 @@ export class HrWorkflowDelegationsController {
   constructor(private readonly delegationsService: HrWorkflowDelegationsService) {}
 
   @Get("mine")
+  @ResponseSchema(z.array(workflowDelegationWithUserSchema))
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:view")
   myDelegations(@CurrentUser() u: CurrentUserContext) {
@@ -31,6 +37,7 @@ export class HrWorkflowDelegationsController {
   }
 
   @Get()
+  @ResponseSchema(z.array(workflowDelegationWithUserSchema))
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:manage")
   orgDelegations(@CurrentUser() u: CurrentUserContext) {
@@ -38,6 +45,7 @@ export class HrWorkflowDelegationsController {
   }
 
   @Post()
+  @ResponseSchema(workflowDelegationRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:view")
   @Validate({ body: CreateDelegationSchema })
@@ -49,6 +57,7 @@ export class HrWorkflowDelegationsController {
   }
 
   @Patch(":delegationId")
+  @ResponseSchema(workflowDelegationRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:view")
   @Validate({ params: delegationIdParams, body: UpdateDelegationSchema })
@@ -57,10 +66,11 @@ export class HrWorkflowDelegationsController {
     @Param("delegationId", ParseIntPipe) delegationId: number,
     @Body() body: UpdateDelegationDto,
   ) {
-    return this.delegationsService.update(u.orgId, u.userId, delegationId, body);
+    return this.delegationsService.update(u, delegationId, body);
   }
 
   @Delete(":delegationId")
+  @NoContentResponse()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:view")
   @HttpCode(204)
@@ -69,6 +79,6 @@ export class HrWorkflowDelegationsController {
     @CurrentUser() u: CurrentUserContext,
     @Param("delegationId", ParseIntPipe) delegationId: number,
   ) {
-    return this.delegationsService.remove(u.orgId, u.userId, delegationId);
+    return this.delegationsService.remove(u, delegationId);
   }
 }

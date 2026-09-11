@@ -217,8 +217,7 @@ export function planReversal(
       return refuse("not-reversible", "A message that has already gone cannot be taken back.");
 
     default: {
-      const exhaustive: never = decision.kind;
-      return refuse("unsupported-kind", `Unknown action type: ${String(exhaustive)}`);
+      return refuse("unsupported-kind", `Unknown action type: ${String(decision.kind satisfies never)}`);
     }
   }
 }

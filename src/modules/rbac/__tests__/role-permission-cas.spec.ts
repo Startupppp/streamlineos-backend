@@ -77,7 +77,10 @@ function makeService(
   role: typeof baseRole | undefined,
   txMock: ReturnType<typeof makeTx>,
 ): RolePermissionService {
-  const cache = { invalidate: jest.fn().mockResolvedValue(undefined) } as unknown as CacheService;
+  const cache = {
+    invalidate: jest.fn().mockResolvedValue(undefined),
+    invalidateMany: jest.fn().mockResolvedValue(undefined),
+  } as unknown as CacheService;
   const audit = { log: jest.fn() } as unknown as AuditService;
   const access = {
     resolveUserPermissions: jest.fn().mockResolvedValue(new Map()),
@@ -103,7 +106,10 @@ describe("RolePermissionService.setRolePermissions — CAS", () => {
   });
 
   it("two sequential saves with the returned version both succeed", async () => {
-    const cache = { invalidate: jest.fn().mockResolvedValue(undefined) } as unknown as CacheService;
+    const cache = {
+      invalidate: jest.fn().mockResolvedValue(undefined),
+      invalidateMany: jest.fn().mockResolvedValue(undefined),
+    } as unknown as CacheService;
     const audit = { log: jest.fn() } as unknown as AuditService;
     const access = {
       resolveUserPermissions: jest.fn().mockResolvedValue(new Map()),

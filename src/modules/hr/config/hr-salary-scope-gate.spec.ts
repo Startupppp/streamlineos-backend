@@ -1,5 +1,5 @@
 import { HrSalaryStructuresController } from "./hr-salary-structures.controller";
-import { CRM_HR_ROLE_TEMPLATES } from "../../rbac/role-templates-crm-hr.constants";
+import { HR_ROLE_TEMPLATES } from "../../rbac/role-templates-hr.constants";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { SalaryStructureListQuery } from "./dto/salary-structures.schemas";
 
@@ -96,7 +96,7 @@ describe("hr:salary subject filter cannot be widened by a plain viewer", () => {
   });
 
   it("proves gating on hr:salary:manage would be a no-op, because it is co-granted with view", () => {
-    const templatesGrantingView = CRM_HR_ROLE_TEMPLATES.filter((template) =>
+    const templatesGrantingView = HR_ROLE_TEMPLATES.filter((template) =>
       template.permissions.includes("hr:salary:view"),
     );
 

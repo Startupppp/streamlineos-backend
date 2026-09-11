@@ -1,3 +1,5 @@
+import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { ScopedRead } from "../../access/scoped-read";
 import { ForbiddenException } from "@nestjs/common";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
@@ -10,7 +12,7 @@ const ATTACKER_ORG = "org-attacker";
 const ARTICLE_ID = 4242;
 
 function actor(orgId: string): CurrentUserContext {
-  return { userId: "user-1", orgId } as CurrentUserContext;
+  return { userId: "user-1", orgId, principal: humanSessionPrincipal(1, false) } as CurrentUserContext;
 }
 
 function sqlValues(where: SQL | undefined): unknown[] {
@@ -85,7 +87,7 @@ describe("KbArticleQueryService — cross-tenant isolation", () => {
   it("DENY: list is bound to the caller's org and to their accessible spaces", async () => {
     const { service, capturedWheres } = build([7, 9]);
 
-    await service.list(actor(ATTACKER_ORG), listQuery);
+    await service.list(actor(ATTACKER_ORG), listQuery, ScopedRead.of(ATTACKER_ORG, "u-1", "all"));
 
     const params = capturedWheres.flatMap(sqlValues);
     expect(params).toContain(ATTACKER_ORG);
@@ -97,7 +99,7 @@ describe("KbArticleQueryService — cross-tenant isolation", () => {
   it("DENY: list issues no query at all when the caller can reach no space", async () => {
     const { service, capturedWheres, db } = build([]);
 
-    const result = await service.list(actor(ATTACKER_ORG), listQuery);
+    const result = await service.list(actor(ATTACKER_ORG), listQuery, ScopedRead.of(ATTACKER_ORG, "u-1", "all"));
 
     expect(result.items).toEqual([]);
     expect(result.hasMore).toBe(false);
@@ -109,7 +111,7 @@ describe("KbArticleQueryService — cross-tenant isolation", () => {
   it("DENY: scope none issues no query and never consults accessible spaces", async () => {
     const { service, access, db } = build([7]);
 
-    const result = await service.list(actor(ATTACKER_ORG), listQuery, "none");
+    const result = await service.list(actor(ATTACKER_ORG), listQuery, ScopedRead.of(ATTACKER_ORG, "u-1", "none"));
 
     expect(result.items).toEqual([]);
     expect(db.select).not.toHaveBeenCalled();

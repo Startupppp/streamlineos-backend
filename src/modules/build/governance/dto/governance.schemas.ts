@@ -15,7 +15,7 @@ export const createRiskSchema = z.object({
   ownerId: z.string().min(1).optional(),
   mitigation: z.string().optional(),
   linkedTicketId: z.number().int().positive().optional(),
-});
+}).strict();
 
 export const updateRiskSchema = z.object({
   title: z.string().min(1).max(500).optional(),
@@ -26,11 +26,11 @@ export const updateRiskSchema = z.object({
   ownerId: z.string().min(1).nullish(),
   mitigation: z.string().nullish(),
   linkedTicketId: z.number().int().positive().nullish(),
-});
+}).strict();
 
 export const listRisksQuerySchema = z.object({
   status: z.enum(riskStatusEnum.enumValues).optional(),
-});
+}).strict();
 
 export const createDecisionSchema = z.object({
   title: z.string().min(1).max(500),
@@ -42,7 +42,7 @@ export const createDecisionSchema = z.object({
   decidedAt: z.coerce.date().optional(),
   revisitAt: z.coerce.date().optional(),
   linkedTicketId: z.number().int().positive().optional(),
-});
+}).strict();
 
 export const updateDecisionSchema = z.object({
   title: z.string().min(1).max(500).optional(),
@@ -54,11 +54,11 @@ export const updateDecisionSchema = z.object({
   decidedAt: z.coerce.date().nullish(),
   revisitAt: z.coerce.date().nullish(),
   linkedTicketId: z.number().int().positive().nullish(),
-});
+}).strict();
 
 export const listDecisionsQuerySchema = z.object({
   status: z.enum(decisionStatusEnum.enumValues).optional(),
-});
+}).strict();
 
 export type CreateRiskInput = z.infer<typeof createRiskSchema>;
 export type UpdateRiskInput = z.infer<typeof updateRiskSchema>;

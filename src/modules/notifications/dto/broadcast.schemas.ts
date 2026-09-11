@@ -9,9 +9,9 @@ const STATUSES = ["DRAFT", "SCHEDULED", "QUEUED", "SENDING", "SENT", "CANCELLED"
 
 const audienceSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("all") }),
-  z.object({ type: z.literal("roles"), roleIds: z.array(z.string()).min(1) }),
-  z.object({ type: z.literal("departments"), departmentIds: z.array(z.string()).min(1) }),
-  z.object({ type: z.literal("users"), userIds: z.array(z.string()).min(1) }),
+  z.object({ type: z.literal("roles"), roleIds: z.array(z.string()).min(1).max(50) }),
+  z.object({ type: z.literal("departments"), departmentIds: z.array(z.string()).min(1).max(200) }),
+  z.object({ type: z.literal("users"), userIds: z.array(z.string()).min(1).max(200) }),
 ]);
 
 export const createBroadcastSchema = z.object({
@@ -23,19 +23,19 @@ export const createBroadcastSchema = z.object({
   channels: z.array(z.enum(CHANNELS)).min(1).default(["IN_APP"]),
   audience: audienceSchema,
   scheduledAt: z.string().datetime().optional(),
-});
+}).strict();
 
-export const updateBroadcastSchema = createBroadcastSchema.partial();
+export const updateBroadcastSchema = createBroadcastSchema.partial().strict();
 
 export const listBroadcastsSchema = z.object({
   status: z.enum(STATUSES).optional(),
   limit: pageSizeField(20),
   cursor: z.coerce.number().optional(),
-});
+}).strict();
 
 export const listBroadcastInboxSchema = z.object({
   limit: pageSizeField(20),
-});
+}).strict();
 
 export type CreateBroadcastInput = z.infer<typeof createBroadcastSchema>;
 export type UpdateBroadcastInput = z.infer<typeof updateBroadcastSchema>;

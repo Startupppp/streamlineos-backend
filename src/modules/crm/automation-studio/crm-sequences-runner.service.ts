@@ -8,6 +8,7 @@ import { PARTY_OF_LEAD } from "../crm-party-reads";
 import { logger } from "../../../common/logger/logger.service";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { CrmOutboundEmailService, contactUnsubscribe } from "../consent/crm-outbound-email.service";
+import { isTaskEntityType } from "./types";
 
 interface FlushResult {
   processed: number;
@@ -98,8 +99,8 @@ export class CrmSequencesRunnerService {
     const leadCheckIds: number[] = [];
     for (const enrollment of enrollments) {
       const rawStopOn = seqStopOnMap.get(enrollment.sequenceId);
-      if (!rawStopOn || typeof rawStopOn !== "object") continue;
-      if ((rawStopOn as Record<string, unknown>)["converted"] !== true) continue;
+      if (!rawStopOn) continue;
+      if (rawStopOn["converted"] !== true) continue;
       if (enrollment.entityType !== "lead") continue;
       const leadId = parseInt(enrollment.entityId, 10);
       if (Number.isFinite(leadId)) leadCheckIds.push(leadId);
@@ -122,12 +123,8 @@ export class CrmSequencesRunnerService {
     for (const enrollment of enrollments) {
       try {
         const rawStopOn = seqStopOnMap.get(enrollment.sequenceId);
-        if (rawStopOn && typeof rawStopOn === "object") {
-          const { stop, reason } = this.evaluateStopOn(
-            rawStopOn as Record<string, unknown>,
-            enrollment,
-            convertedLeadKeys,
-          );
+        if (rawStopOn) {
+          const { stop, reason } = this.evaluateStopOn(rawStopOn, enrollment, convertedLeadKeys);
           if (stop) {
             await this.db
               .update(crmSequenceEnrollments)
@@ -219,10 +216,11 @@ export class CrmSequencesRunnerService {
       }
       case "call_task": {
         const dueInDays = typeof cfg["dueInDays"] === "number" ? cfg["dueInDays"] : 1;
+        const upperEntityType = entityType.toUpperCase();
         await this.db.insert(tasks).values({
           orgId,
           title: String(cfg["taskTitle"] ?? "Follow-up call"),
-          entityType: entityType.toUpperCase() as "LEAD" | "DEAL" | "CONTACT",
+          entityType: isTaskEntityType(upperEntityType) ? upperEntityType : null,
           entityId: parseInt(entityId, 10),
           type: "CALL",
           assigneeId: typeof cfg["assigneeId"] === "string" ? cfg["assigneeId"] : null,
@@ -231,10 +229,11 @@ export class CrmSequencesRunnerService {
         return;
       }
       case "whatsapp_task": {
+        const upperEntityType = entityType.toUpperCase();
         await this.db.insert(tasks).values({
           orgId,
           title: String(cfg["taskTitle"] ?? "WhatsApp follow-up"),
-          entityType: entityType.toUpperCase() as "LEAD" | "DEAL" | "CONTACT",
+          entityType: isTaskEntityType(upperEntityType) ? upperEntityType : null,
           entityId: parseInt(entityId, 10),
           type: "WHATSAPP",
           assigneeId: typeof cfg["assigneeId"] === "string" ? cfg["assigneeId"] : null,

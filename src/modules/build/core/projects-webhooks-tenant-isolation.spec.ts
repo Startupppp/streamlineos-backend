@@ -2,6 +2,7 @@ import type { Db } from "../../../db/drizzle.module";
 import { NotFoundException } from "@nestjs/common";
 import { ProjectsWebhooksService } from "./projects-webhooks.service";
 import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
+import { runWithTenantContext } from "../../../common/tenant/tenant-context";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -36,25 +37,27 @@ function makeSelectChain(result: unknown = []): Db["select"] {
 }
 
 describe("ProjectsWebhooksService — cross-tenant isolation", () => {
-  it("listWebhooks scopes WHERE to the requesting org (cross-tenant isolation — attacker gets empty list)", async () => {
+  it("listWebhooks refuses a project the requesting org does not own (404, not an empty 200)", async () => {
     const where = jest.fn().mockReturnValue({ orderBy: jest.fn().mockResolvedValue([]) });
+    const projectFindFirst = jest.fn().mockResolvedValue(undefined);
     const db = {
+      query: { projects: { findFirst: projectFindFirst } },
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }),
     } as unknown as Db;
     const svc = new ProjectsWebhooksService(db);
 
-    const result = await svc.listWebhooks(ATTACKER_ORG, 1);
+    await expect(svc.listWebhooks(ATTACKER_ORG, 1)).rejects.toThrow(NotFoundException);
 
-    expect(where).toHaveBeenCalled();
-    const predicate = where.mock.calls[0]?.[0];
+    expect(where).not.toHaveBeenCalled();
+    const predicate = projectFindFirst.mock.calls[0]?.[0]?.where;
     expect(sqlValues(predicate)).toContain(ATTACKER_ORG);
     expect(sqlValues(predicate)).not.toContain(OWNER_ORG);
-    expect(result).toHaveLength(0);
   });
 
   it("listWebhooks returns webhooks for the owning org (control — same-tenant access works)", async () => {
     const fakeWebhook = { id: 1, orgId: OWNER_ORG, projectId: 1, url: "https://x.com", events: [], isActive: true, createdAt: new Date() };
     const db = {
+      query: { projects: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) } },
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({ orderBy: jest.fn().mockResolvedValue([fakeWebhook]) }),
@@ -84,15 +87,22 @@ describe("ProjectsWebhooksService — cross-tenant isolation", () => {
 describe("ProjectsWebhooksDispatchService — cross-tenant isolation", () => {
   it("run scopes webhook query to the requesting org (cross-tenant isolation)", async () => {
     const where = jest.fn().mockResolvedValue([]);
-    const db = {
+    const tx = {
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }),
       insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }) }),
       update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
-    } as unknown as Db;
-    const svc = new ProjectsWebhooksDispatchService(db);
+    };
+    const svc = new ProjectsWebhooksDispatchService({} as Db);
 
-    svc.dispatch(ATTACKER_ORG, 1, "ticket.created", { id: 1, projectId: 1, actor: "u1", timestamp: new Date().toISOString() });
-    await new Promise((r) => setImmediate(r));
+    await runWithTenantContext(
+      { orgId: ATTACKER_ORG, audience: "INTERNAL", tx: tx as never },
+      () => svc.dispatch(ATTACKER_ORG, 1, "ticket.created", {
+        id: 1,
+        projectId: 1,
+        actor: "u1",
+        timestamp: new Date().toISOString(),
+      }),
+    );
 
     if (where.mock.calls.length > 0) {
       const predicate = where.mock.calls[0]?.[0];

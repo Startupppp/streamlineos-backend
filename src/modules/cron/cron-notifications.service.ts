@@ -7,14 +7,6 @@ import { logger } from "../../common/logger/logger.service";
 import { birthdaySubject, birthdayMessage } from "../hr/lifecycle/hr-notification-texts";
 import { forEachOrg, type TenantTx } from "../../common/tenant";
 
-interface BroadcastInput {
-  type?: "INFO" | "SUCCESS" | "WARNING" | "ERROR";
-  title: string;
-  message: string;
-  link?: string;
-  metadata?: Record<string, unknown>;
-}
-
 @Injectable()
 export class CronNotificationsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
@@ -52,31 +44,30 @@ export class CronNotificationsService {
           ),
         );
 
-      for (const birthdayUser of birthdayMembers) {
+      if (birthdayMembers.length === 0) return;
+
+      const celebrations = birthdayMembers.map((birthdayUser) => {
         const displayName =
           birthdayUser.firstName && birthdayUser.lastName
             ? `${birthdayUser.firstName} ${birthdayUser.lastName}`
             : birthdayUser.name || birthdayUser.email;
+        return {
+          title: birthdaySubject(displayName ?? ""),
+          message: birthdayMessage(displayName ?? ""),
+          metadata: { category: "birthday", birthdayUserId: birthdayUser.id },
+        };
+      });
 
-        try {
-          await this.notifyAllMembers(tx, orgId, {
-            type: "INFO",
-            title: birthdaySubject(displayName ?? ""),
-            message: birthdayMessage(displayName ?? ""),
-            metadata: {
-              category: "birthday",
-              birthdayUserId: birthdayUser.id,
-            },
-          });
-          birthdayCount++;
-        } catch (error) {
-          logger.error("Failed to create birthday in-app notifications", {
-            userId: birthdayUser.id,
-            orgId,
-            error,
-          });
-          throw error;
-        }
+      try {
+        await this.announceToOrg(tx, orgId, celebrations);
+        birthdayCount += celebrations.length;
+      } catch (error) {
+        logger.error("Failed to create birthday in-app notifications", {
+          orgId,
+          celebrants: birthdayMembers.map((birthdayUser) => birthdayUser.id),
+          error,
+        });
+        throw error;
       }
     });
 
@@ -85,24 +76,22 @@ export class CronNotificationsService {
     return { birthdayCount, leaveCount, anniversaryCount };
   }
 
-  private async notifyAllMembers(tx: TenantTx, orgId: string, opts: BroadcastInput): Promise<void> {
-    const members = await tx
-      .select({ userId: organizationMembers.userId })
-      .from(organizationMembers)
-      .where(eq(organizationMembers.orgId, orgId));
-
-    if (members.length === 0) return;
-
-    await tx.insert(notifications).values(
-      members.map((m) => ({
-        orgId,
-        userId: m.userId,
-        type: opts.type ?? "INFO",
-        title: opts.title,
-        message: opts.message,
-        link: opts.link,
-        metadata: opts.metadata,
-      })),
-    );
+  private async announceToOrg(
+    tx: TenantTx,
+    orgId: string,
+    announcements: ReadonlyArray<{
+      title: string;
+      message: string;
+      metadata: Record<string, unknown>;
+    }>,
+  ): Promise<void> {
+    await tx.execute(sql`
+      INSERT INTO ${notifications} (org_id, user_id, title, message, metadata)
+      SELECT ${orgId}, ${organizationMembers.userId}, c.title, c.message, c.metadata
+      FROM ${organizationMembers}
+      CROSS JOIN jsonb_to_recordset(${JSON.stringify(announcements)}::jsonb)
+        AS c(title text, message text, metadata jsonb)
+      WHERE ${eq(organizationMembers.orgId, orgId)}
+    `);
   }
 }

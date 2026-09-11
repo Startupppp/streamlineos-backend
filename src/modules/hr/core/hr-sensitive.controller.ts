@@ -21,6 +21,8 @@ import { HrSensitiveService } from "./hr-sensitive.service";
 import { updateSensitiveSchema, type UpdateSensitiveInput } from "./dto/hr-core.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { sensitiveRowSchema } from "./dto/core-response.schemas";
 
 const employeeIdParams = z.object({ employeeId: z.coerce.number().int().positive() }).strict();
 
@@ -31,6 +33,7 @@ export class HrSensitiveController {
   constructor(private readonly sensitive: HrSensitiveService) {}
 
   @Get(":employeeId/sensitive")
+  @ResponseSchema(sensitiveRowSchema)
   @RequirePermission("hr:sensitive:view")
   @Validate({ params: employeeIdParams })
   get(
@@ -43,6 +46,7 @@ export class HrSensitiveController {
   }
 
   @Patch(":employeeId/sensitive")
+  @ResponseSchema(sensitiveRowSchema)
   @RequirePermission("hr:sensitive:manage")
   @Validate({ params: employeeIdParams, body: updateSensitiveSchema })
   update(

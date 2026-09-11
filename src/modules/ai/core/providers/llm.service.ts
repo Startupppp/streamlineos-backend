@@ -66,12 +66,6 @@ interface TextOptions {
   temperature?: number;
 }
 
-interface JsonOptions {
-  model?: ModelTier;
-  system: string;
-  user: string;
-}
-
 interface ModelSpec {
   temperature: number;
   timeoutMs: number;
@@ -81,6 +75,20 @@ interface ModelSpec {
 interface Attempted<R> {
   result: R;
   model: string;
+}
+
+type CallOptions = { signal?: AbortSignal };
+
+/**
+ * Called once per provider attempt beyond the first, across both backoff retries
+ * and model fallback. Retries are otherwise invisible above this class: they are
+ * folded into one latency number, so a call that answered on its third attempt
+ * reads as a single slow provider rather than two failures and a recovery.
+ */
+type RetryObserver = () => void;
+
+function callConfig(signal: AbortSignal | undefined): CallOptions {
+  return signal === undefined ? {} : { signal };
 }
 
 const FAST_TIMEOUT_MS = 30_000;
@@ -151,17 +159,24 @@ export class LlmService {
     tier: ModelTier | undefined,
     invoke: (model: ChatOpenAI, modelId: string) => Promise<R>,
     spec: ModelSpec,
+    signal?: AbortSignal,
+    onRetry?: RetryObserver,
   ): Promise<Attempted<R>> {
     const chain = this.chainFor(tier);
     let lastError: unknown = new Error("AI provider produced no result");
+    let first = true;
 
     for (const modelId of chain) {
       for (let attempt = 0; attempt <= this.policy.maxRetriesPerModel; attempt += 1) {
+        signal?.throwIfAborted();
+        if (!first) onRetry?.();
+        first = false;
         try {
           const result = await invoke(this.model(modelId, spec), modelId);
           return { result, model: modelId };
         } catch (error: unknown) {
           lastError = error;
+          if (signal?.aborted) throw error;
           const kind = classifyLlmError(error);
 
           if (kind === "fatal") throw this.toServiceError(error);
@@ -249,33 +264,25 @@ export class LlmService {
     return typeof result.content === "string" ? result.content : JSON.stringify(result.content);
   }
 
-  async invokeJson<T>(opts: JsonOptions): Promise<T> {
-    const { result } = await this.attempt(
-      opts.model,
-      (model) =>
-        model.invoke([
-          { role: "system", content: `${opts.system}\n\nRespond with valid JSON only.` },
-          { role: "user", content: opts.user },
-        ]),
-      this.specFor(opts.model),
-    );
-    const text = typeof result.content === "string" ? result.content : "";
-    const cleaned = text.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
-    return JSON.parse(cleaned) as T;
-  }
-
-  async invokeTextWithUsage(opts: TextOptions & { maxTokens?: number }): Promise<LlmTextResult> {
+  async invokeTextWithUsage(
+    opts: TextOptions & { maxTokens?: number; signal?: AbortSignal; onRetry?: RetryObserver },
+  ): Promise<LlmTextResult> {
     const { result, model } = await this.attempt(
       opts.model,
       (client) =>
-        client.invoke([
-          { role: "system", content: opts.system },
-          { role: "user", content: opts.user },
-        ]),
+        client.invoke(
+          [
+            { role: "system", content: opts.system },
+            { role: "user", content: opts.user },
+          ],
+          callConfig(opts.signal),
+        ),
       this.specFor(opts.model, {
         temperature: opts.temperature ?? 0.3,
         ...(opts.maxTokens !== undefined ? { maxTokens: opts.maxTokens } : {}),
       }),
+      opts.signal,
+      opts.onRetry,
     );
 
     const text = typeof result.content === "string" ? result.content : JSON.stringify(result.content);
@@ -283,16 +290,21 @@ export class LlmService {
   }
 
   async invokeStructuredWithUsage<T extends z.ZodTypeAny>(
-    opts: InvokeOptions<T> & { maxTokens?: number },
+    opts: InvokeOptions<T> & { maxTokens?: number; signal?: AbortSignal; onRetry?: RetryObserver },
   ): Promise<LlmStructuredResult<z.infer<T>>> {
     const { result, model } = await this.attempt(
       opts.model,
       (client) =>
-        this.structured(client, opts, true).invoke([
-          { role: "system", content: opts.system },
-          { role: "user", content: opts.user },
-        ]),
+        this.structured(client, opts, true).invoke(
+          [
+            { role: "system", content: opts.system },
+            { role: "user", content: opts.user },
+          ],
+          callConfig(opts.signal),
+        ),
       this.specFor(opts.model, opts.maxTokens !== undefined ? { maxTokens: opts.maxTokens } : {}),
+      opts.signal,
+      opts.onRetry,
     );
 
     const parsed: z.infer<T> = opts.schema.parse(result.parsed);
@@ -301,7 +313,7 @@ export class LlmService {
   }
 
   async invokeStructuredWithImageWithUsage<T extends z.ZodTypeAny>(
-    opts: InvokeWithImageOptions<T> & { maxTokens?: number },
+    opts: InvokeWithImageOptions<T> & { maxTokens?: number; signal?: AbortSignal; onRetry?: RetryObserver },
   ): Promise<LlmStructuredResult<z.infer<T>>> {
     if (opts.images.length === 0) return this.invokeStructuredWithUsage(opts);
 
@@ -309,11 +321,16 @@ export class LlmService {
     const { result, model } = await this.attempt(
       opts.model,
       (client) =>
-        this.structured(client, opts, true).invoke([
-          new SystemMessage(opts.system),
-          new HumanMessage({ content: humanContent }),
-        ]),
+        this.structured(client, opts, true).invoke(
+          [
+            new SystemMessage(opts.system),
+            new HumanMessage({ content: humanContent }),
+          ],
+          callConfig(opts.signal),
+        ),
       this.specFor(opts.model, opts.maxTokens !== undefined ? { maxTokens: opts.maxTokens } : {}),
+      opts.signal,
+      opts.onRetry,
     );
 
     const parsed: z.infer<T> = opts.schema.parse(result.parsed);

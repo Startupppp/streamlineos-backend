@@ -1,9 +1,13 @@
 import { ExecutionContext, ForbiddenException, UnauthorizedException } from "@nestjs/common";
 import { createHash } from "crypto";
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { ApiKeyGuard } from "./api-key.guard";
 import type { Db } from "../../db/drizzle.module";
 import type { RateLimitService } from "../ratelimit/rate-limit.service";
 import type { EntitlementsService } from "../../modules/access/entitlements.service";
+
+const dialect = new PgDialect();
 
 function ctxWith(headers: Record<string, string>): { ctx: ExecutionContext; req: { headers: Record<string, string>; apiKey?: unknown } } {
   const req: { headers: Record<string, string>; apiKey?: unknown } = { headers };
@@ -11,9 +15,19 @@ function ctxWith(headers: Record<string, string>): { ctx: ExecutionContext; req:
   return { ctx, req };
 }
 
-function makeDb(row: Record<string, unknown> | undefined): Db {
+function makeDb(
+  row: Record<string, unknown> | undefined,
+  captureWhere?: (where: SQL | undefined) => void,
+): Db {
   return {
-    query: { apiKeys: { findFirst: jest.fn().mockResolvedValue(row) } },
+    query: {
+      apiKeys: {
+        findFirst: jest.fn((args: { where?: SQL }) => {
+          captureWhere?.(args?.where);
+          return Promise.resolve(row);
+        }),
+      },
+    },
     update: () => ({ set: () => ({ where: () => Promise.resolve() }) }),
   } as unknown as Db;
 }
@@ -41,6 +55,26 @@ describe("ApiKeyGuard", () => {
     const g = new ApiKeyGuard(makeDb(undefined), makeRl(true), makeEntitlements());
     const { ctx } = ctxWith({ "x-api-key": "raw" });
     await expect(g.canActivate(ctx)).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it("looks up the key by hash AND non-revoked status in the same WHERE", async () => {
+    let captured: SQL | undefined;
+    const g = new ApiKeyGuard(
+      makeDb(undefined, (where) => {
+        captured = where;
+      }),
+      makeRl(true),
+      makeEntitlements(),
+    );
+    const { ctx } = ctxWith({ "x-api-key": "raw" });
+    await expect(g.canActivate(ctx)).rejects.toBeInstanceOf(UnauthorizedException);
+
+    if (!captured) throw new Error("guard did not query with a WHERE clause");
+    const { sql: rendered, params } = dialect.sqlToQuery(captured);
+    const expectedHash = createHash("sha256").update("raw").digest("hex");
+    expect(rendered).toContain("is_revoked");
+    expect(params).toContain(false);
+    expect(params).toContain(expectedHash);
   });
 
   it("401 when key expired", async () => {

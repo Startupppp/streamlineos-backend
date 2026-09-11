@@ -1,5 +1,5 @@
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, asc, desc, eq, gt } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -10,6 +10,8 @@ import {
 import { HrPolicyEvaluationService } from "../policies/hr-policy-evaluation.service";
 import { HrBenefitsPlansService } from "./hr-benefits-plans.service";
 import type { EnrollInput, WaiveInput, CreateDependentInput, PatchDependentInput } from "./dto/benefits.schemas";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
+import { HR_SCAN_PAGE, HR_SCAN_MAX_PAGES } from "../hr-read-limits";
 
 @Injectable()
 export class HrBenefitsEnrollmentService {
@@ -36,7 +38,8 @@ export class HrBenefitsEnrollmentService {
     return { eligible, planId, planName: plan.name, policy: policy?.rules ?? null };
   }
 
-  async enroll(orgId: string, userId: string, data: EnrollInput) {
+  async enroll(orgId: string, userId: string, membershipId: number | null, data: EnrollInput) {
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
     const [plan] = await this.db
       .select()
       .from(hrBenefitPlans)
@@ -59,6 +62,7 @@ export class HrBenefitsEnrollmentService {
           orgId,
           planId: data.planId,
           userId,
+          userMembershipId: membershipId,
           status: "active",
           effectiveFrom: data.effectiveFrom ?? null,
           dependentsCovered: data.dependentsCovered ?? 0,
@@ -66,21 +70,22 @@ export class HrBenefitsEnrollmentService {
         .returning();
       return enrollment;
     } catch (err: unknown) {
-      if ((err as { code?: string }).code === "23505") {
+      if (isUniqueViolation(err)) {
         throw new ConflictException("You are already enrolled in this plan");
       }
       throw err;
     }
   }
 
-  async waive(orgId: string, userId: string, data: WaiveInput) {
+  async waive(orgId: string, userId: string, membershipId: number | null, data: WaiveInput) {
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
     const [existing] = await this.db
       .select()
       .from(hrBenefitEnrollments)
       .where(
         and(
           eq(hrBenefitEnrollments.orgId, orgId),
-          eq(hrBenefitEnrollments.userId, userId),
+          eq(hrBenefitEnrollments.userMembershipId, membershipId),
           eq(hrBenefitEnrollments.planId, data.planId),
         ),
       )
@@ -97,12 +102,13 @@ export class HrBenefitsEnrollmentService {
 
     const [enrollment] = await this.db
       .insert(hrBenefitEnrollments)
-      .values({ orgId, planId: data.planId, userId, status: "waived" })
+      .values({ orgId, planId: data.planId, userId, userMembershipId: membershipId, status: "waived" })
       .returning();
     return enrollment;
   }
 
-  async getMyBenefits(orgId: string, userId: string) {
+  async getMyBenefits(orgId: string, userId: string, membershipId: number | null) {
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
     const [enrollmentRows, dependents] = await Promise.all([
       this.db
         .select({
@@ -114,32 +120,39 @@ export class HrBenefitsEnrollmentService {
         .where(
           and(
             eq(hrBenefitEnrollments.orgId, orgId),
-            eq(hrBenefitEnrollments.userId, userId),
+            eq(hrBenefitEnrollments.userMembershipId, membershipId),
           ),
         )
         .orderBy(desc(hrBenefitEnrollments.enrolledAt))
         .limit(50),
-      this.db
-        .select({
-          id: hrDependents.id,
-          orgId: hrDependents.orgId,
-          userId: hrDependents.userId,
-          name: hrDependents.name,
-          relationship: hrDependents.relationship,
-          dateOfBirth: hrDependents.dateOfBirth,
-          isCovered: hrDependents.isCovered,
-          createdAt: hrDependents.createdAt,
-        })
-        .from(hrDependents)
-        .where(and(eq(hrDependents.orgId, orgId), eq(hrDependents.userId, userId)))
-        .orderBy(hrDependents.name),
+      this.scanDependents(orgId, membershipId),
     ]);
 
     const enrollments = enrollmentRows.map((r) => ({ ...r.enrollment, plan: r.plan }));
     return { enrollments, dependents };
   }
 
-  async listDependents(orgId: string, userId: string) {
+
+  /**
+   * Every dependent of one person. Drained by the primary key, which is a total order,
+   * so the cursor needs no tie-breaker; `name` is not unique and could not be one.
+   * Ordering is applied after the walk so the result matches the ORDER BY name this
+   * replaced, without a cap that silently drops a dependent.
+   */
+  private async scanDependents(orgId: string, membershipId: number) {
+    const rows: Awaited<ReturnType<typeof this.dependentPage>> = [];
+    let afterId = 0;
+    for (let page = 0; page < HR_SCAN_MAX_PAGES; page += 1) {
+      const batch = await this.dependentPage(orgId, membershipId, afterId);
+      rows.push(...batch);
+      const last = batch[batch.length - 1];
+      if (batch.length < HR_SCAN_PAGE || last === undefined) break;
+      afterId = last.id;
+    }
+    return rows.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  private dependentPage(orgId: string, membershipId: number, afterId: number) {
     return this.db
       .select({
         id: hrDependents.id,
@@ -152,20 +165,33 @@ export class HrBenefitsEnrollmentService {
         createdAt: hrDependents.createdAt,
       })
       .from(hrDependents)
-      .where(and(eq(hrDependents.orgId, orgId), eq(hrDependents.userId, userId)))
-      .orderBy(hrDependents.name)
-      .limit(200);
+      .where(
+        and(
+          eq(hrDependents.orgId, orgId),
+          eq(hrDependents.userMembershipId, membershipId),
+          gt(hrDependents.id, afterId),
+        ),
+      )
+      .orderBy(asc(hrDependents.id))
+      .limit(HR_SCAN_PAGE);
   }
 
-  async addDependent(orgId: string, userId: string, data: CreateDependentInput) {
+  async listDependents(orgId: string, userId: string, membershipId: number | null) {
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
+    return this.scanDependents(orgId, membershipId);
+  }
+
+  async addDependent(orgId: string, userId: string, membershipId: number | null, data: CreateDependentInput) {
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
     const [dep] = await this.db
       .insert(hrDependents)
-      .values({ ...data, orgId, userId })
+      .values({ ...data, orgId, userId, userMembershipId: membershipId })
       .returning();
     return dep;
   }
 
-  async updateDependent(orgId: string, userId: string, depId: number, data: PatchDependentInput) {
+  async updateDependent(orgId: string, userId: string, membershipId: number | null, depId: number, data: PatchDependentInput) {
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
     const [existing] = await this.db
       .select({ id: hrDependents.id })
       .from(hrDependents)
@@ -173,7 +199,7 @@ export class HrBenefitsEnrollmentService {
         and(
           eq(hrDependents.id, depId),
           eq(hrDependents.orgId, orgId),
-          eq(hrDependents.userId, userId),
+          eq(hrDependents.userMembershipId, membershipId),
         ),
       )
       .limit(1);
@@ -183,12 +209,13 @@ export class HrBenefitsEnrollmentService {
     const [updated] = await this.db
       .update(hrDependents)
       .set({ ...data, updatedAt: new Date() })
-      .where(and(eq(hrDependents.id, depId), eq(hrDependents.orgId, orgId), eq(hrDependents.userId, userId)))
+      .where(and(eq(hrDependents.id, depId), eq(hrDependents.orgId, orgId), eq(hrDependents.userMembershipId, membershipId)))
       .returning();
     return updated;
   }
 
-  async deleteDependent(orgId: string, userId: string, depId: number) {
+  async deleteDependent(orgId: string, userId: string, membershipId: number | null, depId: number) {
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
     const [existing] = await this.db
       .select({ id: hrDependents.id })
       .from(hrDependents)
@@ -196,7 +223,7 @@ export class HrBenefitsEnrollmentService {
         and(
           eq(hrDependents.id, depId),
           eq(hrDependents.orgId, orgId),
-          eq(hrDependents.userId, userId),
+          eq(hrDependents.userMembershipId, membershipId),
         ),
       )
       .limit(1);
@@ -205,7 +232,7 @@ export class HrBenefitsEnrollmentService {
 
     await this.db
       .delete(hrDependents)
-      .where(and(eq(hrDependents.id, depId), eq(hrDependents.orgId, orgId), eq(hrDependents.userId, userId)));
+      .where(and(eq(hrDependents.id, depId), eq(hrDependents.orgId, orgId), eq(hrDependents.userMembershipId, membershipId)));
     return { ok: true };
   }
 }

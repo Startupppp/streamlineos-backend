@@ -51,7 +51,6 @@ import { AccessModule } from "./modules/access/access.module";
 import { DealsModule } from "./modules/deals/deals.module";
 import { OrganizationRootModule } from "./modules/organization/organization.module";
 import { OwnershipModule } from "./modules/ownership/ownership.module";
-import { BranchesModule } from "./modules/branches/branches.module";
 import { CustomerExecutiveModule } from "./modules/customer-executive/customer-executive.module";
 import { OfferFulfillmentModule } from "./modules/offer-fulfillment/offer-fulfillment.module";
 import { SupportRootModule } from "./modules/support/support.module";
@@ -114,6 +113,7 @@ import { MeService } from "./me/me.service";
 import { InboxController } from "./me/inbox.controller";
 import { BuildModule } from "./modules/build/build.module";
 import { ZodValidationInterceptor } from "./common/validation/zod-validation.interceptor";
+import { ResponseContractInterceptor } from "./common/openapi/response-contract.interceptor";
 import { DataQualityModule } from "./modules/data-quality/data-quality.module";
 import { IssuesModule } from "./modules/issues/issues.module";
 import { RecordLayoutsModule } from "./modules/record-layouts/record-layouts.module";
@@ -162,7 +162,6 @@ import { EmploymentFactsModule } from "./modules/directory/employment-facts.modu
     DealsModule,
     OrganizationRootModule,
     OwnershipModule,
-    BranchesModule,
     BuildModule,
     OfferFulfillmentModule,
     SupportRootModule,
@@ -251,6 +250,10 @@ import { EmploymentFactsModule } from "./modules/directory/employment-facts.modu
     { provide: APP_INTERCEPTOR, useClass: ZodValidationInterceptor },
     { provide: APP_INTERCEPTOR, useClass: TenantContextInterceptor },
     { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
+    // Last, so it is innermost on the response path and sees the value the handler
+    // returned rather than one a later interceptor reshaped. It tolerates the
+    // `{ success, data }` envelope either way — see its docblock.
+    { provide: APP_INTERCEPTOR, useClass: ResponseContractInterceptor },
   ],
 })
 export class AppModule {}

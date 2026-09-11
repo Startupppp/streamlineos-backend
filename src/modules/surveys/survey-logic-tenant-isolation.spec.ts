@@ -63,6 +63,42 @@ describe("SurveyLogicService — cross-tenant isolation", () => {
     } as unknown as Db;
     const svc = new SurveyLogicService(db, makeVersions(ATTACKER_ORG));
 
+    await expect(svc.patch(ATTACKER_ORG, 1, 99, { sortOrder: 4 })).rejects.toThrow(NotFoundException);
+    expect(where).toHaveBeenCalledTimes(1);
+    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER_ORG);
+  });
+
+  /*
+   * An all-optional PATCH body that arrives empty takes the read-back branch
+   * rather than an UPDATE, so the tenant predicate has to be asserted on a
+   * second statement builder. A stub carrying only `update` made this branch
+   * die with `this.db.select is not a function` rather than exercise it.
+   */
+  it("scopes the empty-body read-back to the caller's org (isolation)", async () => {
+    const limit = jest.fn().mockResolvedValue([]);
+    const where = jest.fn().mockReturnValue({ limit });
+    const from = jest.fn().mockReturnValue({ where });
+    const db = {
+      select: jest.fn().mockReturnValue({ from }),
+    } as unknown as Db;
+    const svc = new SurveyLogicService(db, makeVersions(ATTACKER_ORG));
+
     await expect(svc.patch(ATTACKER_ORG, 1, 99, {})).rejects.toThrow(NotFoundException);
+    expect(where).toHaveBeenCalledTimes(1);
+    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER_ORG);
+  });
+
+  it("returns the row for an empty body under the owning org (control — same-tenant)", async () => {
+    const rule = { id: 99, orgId: OWNER_ORG, surveyId: 1 };
+    const limit = jest.fn().mockResolvedValue([rule]);
+    const where = jest.fn().mockReturnValue({ limit });
+    const from = jest.fn().mockReturnValue({ where });
+    const db = {
+      select: jest.fn().mockReturnValue({ from }),
+    } as unknown as Db;
+    const svc = new SurveyLogicService(db, makeVersions(OWNER_ORG));
+
+    await expect(svc.patch(OWNER_ORG, 1, 99, {})).resolves.toEqual(rule);
+    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER_ORG);
   });
 });

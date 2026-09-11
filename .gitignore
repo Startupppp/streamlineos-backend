@@ -26,3 +26,21 @@ backups/
 *.BASE
 *.LOCAL
 *.REMOTE
+.artifacts/
+
+# Agent-harness daemon state. 12 files were committed here, including a daemon.pid
+# holding one contributor's live process id; the frontend already ignores this path.
+.claude-flow
+
+.chain-gaps
+.lane-*
+.seed-bite.log
+
+# Throwaway diagnostic and one-off patch scripts. Two were committed by accident
+# (.tmp-probe.mjs, .tmp-ticket-patch3.py) in a shared working tree.
+.tmp-*
+
+dist-local/
+
+# Agent scratch probes: local-only, may hold credentials in the process env. Never commit.
+.scratch-billing-verify/

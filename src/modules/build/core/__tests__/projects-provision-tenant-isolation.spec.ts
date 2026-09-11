@@ -32,6 +32,12 @@ function makeMockDb(overrides: Partial<{ queryResult: unknown; transactionRows: 
     return cb(tx);
   });
 
+  const membershipRow = { id: 1, orgId: OWNER_ORG, userId: USER_ID, role: "MEMBER", isOwner: false, status: "ACTIVE" };
+  const makeFromWhere = (rows: unknown[]) => ({ from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(rows) }) });
+  const selectMock = jest.fn()
+    .mockReturnValueOnce(makeFromWhere([membershipRow]))
+    .mockReturnValue(makeFromWhere([]));
+
   return {
     query: {
       deals: {
@@ -39,27 +45,26 @@ function makeMockDb(overrides: Partial<{ queryResult: unknown; transactionRows: 
       },
     },
     transaction: transactionMock,
+    select: selectMock,
   };
 }
 
 function makeServices() {
-  const cache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined) };
   const audit = { log: jest.fn() };
   const planLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
   const dispatch = { emit: jest.fn().mockResolvedValue(undefined) };
   const pmWorkspaces = { resolveDefaultWorkspaceId: jest.fn().mockResolvedValue("ws-1") };
-  return { cache, audit, planLimits, dispatch, pmWorkspaces };
+  return { audit, planLimits, dispatch, pmWorkspaces };
 }
 
 describe("ProjectsProvisionService — cross-tenant isolation", () => {
   describe("createFromDeal", () => {
     it("DENY — deal belonging to a different org is not found → NotFoundException", async () => {
       const db = makeMockDb({ queryResult: null });
-      const { cache, audit, planLimits, dispatch, pmWorkspaces } = makeServices();
+      const { audit, planLimits, dispatch, pmWorkspaces } = makeServices();
 
       const svc = new ProjectsProvisionService(
         db as never,
-        cache as never,
         audit as never,
         planLimits as never,
         dispatch as never,
@@ -95,11 +100,10 @@ describe("ProjectsProvisionService — cross-tenant isolation", () => {
         transactionRows: [{ id: 10, orgId: OWNER_ORG, key: "MYD-001", name: "My Deal Project" }],
       });
 
-      const { cache, audit, planLimits, dispatch, pmWorkspaces } = makeServices();
+      const { audit, planLimits, dispatch, pmWorkspaces } = makeServices();
 
       const svc = new ProjectsProvisionService(
         db as never,
-        cache as never,
         audit as never,
         planLimits as never,
         dispatch as never,
@@ -144,10 +148,9 @@ describe("ProjectsProvisionService — cross-tenant isolation", () => {
         },
       );
 
-      const { cache, audit, planLimits, dispatch, pmWorkspaces } = makeServices();
+      const { audit, planLimits, dispatch, pmWorkspaces } = makeServices();
       const svc = new ProjectsProvisionService(
         db as never,
-        cache as never,
         audit as never,
         planLimits as never,
         dispatch as never,

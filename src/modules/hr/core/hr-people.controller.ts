@@ -36,7 +36,12 @@ import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  personRowSchema,
+  personListPageSchema,
+  backfillResponseSchema,
+} from "./dto/core-response.schemas";
 
 const personIdParams = z.object({ personId: z.coerce.number().int().positive() }).strict();
 
@@ -52,6 +57,7 @@ export class HrPeopleController {
   ) {}
 
   @Get()
+  @ResponseSchema(personListPageSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
   @Validate({ query: listPeopleSchema })
@@ -59,25 +65,16 @@ export class HrPeopleController {
     @Query() query: ListPeopleInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const scope = await resolveEmployeesScope(this.access, currentUser);
-    if (query.page !== undefined) {
-      return this.employeeRecordLists.listPeoplePage(
-        currentUser.orgId,
-        currentUser.userId,
-        { page: query.page, limit: query.limit, search: query.search },
-        scope,
-      );
-    }
+    const read = await resolveEmployeesScope(this.access, currentUser);
     return this.employeeRecordLists.listPeopleCursor(
-      currentUser.orgId,
-      currentUser.userId,
+      read,
       { cursor: query.cursor, limit: query.limit, search: query.search },
-      scope,
     );
   }
 
   @Post("backfill-from-members")
   @BodylessAction()
+  @ResponseSchema(backfillResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @Idempotent("hr.people.backfill-from-members")
@@ -92,6 +89,7 @@ export class HrPeopleController {
   }
 
   @Get(":personId")
+  @ResponseSchema(personRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
   @Validate({ params: personIdParams })
@@ -99,19 +97,15 @@ export class HrPeopleController {
     @Param("personId", ParseIntPipe) personId: number,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const scope = await resolveEmployeesScope(this.access, currentUser);
-    return this.people.getOne(
-      currentUser.orgId,
-      currentUser.userId,
-      personId,
-      scope,
-    );
+    const read = await resolveEmployeesScope(this.access, currentUser);
+    return this.people.getOne(read, personId);
   }
 
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @HttpCode(201)
+  @ResponseSchema(personRowSchema)
   @Validate({ body: createPersonSchema })
   create(
     @Body() body: CreatePersonInput,
@@ -121,6 +115,7 @@ export class HrPeopleController {
   }
 
   @Patch(":personId")
+  @ResponseSchema(personRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @Validate({ params: personIdParams, body: updatePersonSchema })
@@ -139,6 +134,7 @@ export class HrPeopleController {
 
   @Delete(":personId")
   @HttpCode(204)
+  @NoContentResponse()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @Validate({ params: personIdParams })

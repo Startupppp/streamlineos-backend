@@ -1,76 +1,37 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
-import {
-  auditLogs,
-  hrDataRequests,
-  hrEmployments,
-  hrLegalHolds,
-  hrPeople,
-  organizationMembers,
-  users,
-} from "../../db/schema";
+import { and, eq } from "drizzle-orm";
+import { hrDataRequests, organizationMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import type { DataScope } from "../access/access.types";
-
-export interface SubjectExportResult {
-  exportedAt: string;
-  subject: {
-    userId: string;
-    email: string;
-    name: string | null;
-  };
-  memberships: Array<{
-    orgId: string;
-    role: string;
-    status: string;
-    joinedAt: Date | null;
-  }>;
-  employment: Array<{
-    orgId: string;
-    lifecycleStatus: string;
-    departmentId: string | null;
-    designation: string | null;
-    joiningDate: string | null;
-    lastWorkingDay: string | null;
-  }>;
-  dataRequests: Array<{
-    id: number;
-    orgId: string;
-    type: string;
-    status: string;
-    reason: string | null;
-    createdAt: Date;
-  }>;
-  legalHolds: Array<{
-    id: number;
-    orgId: string;
-    reason: string;
-    status: string;
-    placedAt: Date;
-    releasedAt: Date | null;
-  }>;
-  auditEntriesPresent: boolean;
-  exportIncomplete: string[];
-}
+import type { ScopedRead } from "../access/scoped-read";
+import {
+  SYNC_EXPORT_CAP,
+  fetchSyncAuditEntries,
+  fetchSyncDataRequests,
+  fetchSyncEmployment,
+  fetchSyncLegalHolds,
+  type SubjectExportResult,
+} from "./gdpr-sync-export-fetchers";
 
 @Injectable()
 export class GdprService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async exportSubjectData(
+    read: ScopedRead,
     subjectUserId: string,
-    callerUserId: string,
-    callerOrgId: string,
-    callerScope: DataScope,
   ): Promise<SubjectExportResult> {
-    if (callerScope === "none")
+    if (read.denied)
       throw new ForbiddenException("Export requires a resolved data scope");
 
-    if (subjectUserId !== callerUserId && callerScope !== "all")
+    const isAll =
+      read.rawScope("exporting another subject's data is an authorization gate on which subject may be read, not a row predicate") === "all";
+    if (subjectUserId !== read.actorId && !isAll)
       throw new ForbiddenException(
         "Exporting another person's data requires organisation-wide scope (hr:employees:view with all scope)",
       );
+
+    const callerOrgId = read.orgId;
 
     const memberships = await this.db
       .select({
@@ -97,92 +58,43 @@ export class GdprService {
 
     if (!subject) throw new NotFoundException("Subject not found");
 
-    const hrPersonRows = await this.db
-      .select({
-        orgId: hrPeople.orgId,
-        hrPersonId: hrPeople.id,
-      })
-      .from(hrPeople)
-      .where(
-        and(
-          eq(hrPeople.userId, subjectUserId),
-          eq(hrPeople.orgId, callerOrgId),
-          isNull(hrPeople.deletedAt),
-        ),
-      );
+    // This endpoint is the bounded, synchronous subset. The exhaustive extract is
+    // POST /gdpr/export-async/me, which keyset-drains every source in
+    // REQUIRED_GDPR_EXPORT_SOURCES with no cap; these notes name what it adds so a
+    // subject is never told a source is unavailable when it is.
+    const exportIncomplete: string[] = [
+      `this synchronous export caps every section at ${SYNC_EXPORT_CAP} records — POST /gdpr/export-async/me returns every record`,
+      "blob storage: object keys are enumerated only by the async export",
+      "chat_messages, mail_message_metadata, notifications, documents, expenses and payroll sources are included only in the async export",
+    ];
 
-    const employment: SubjectExportResult["employment"] = [];
-    for (const person of hrPersonRows) {
-      const rows = await this.db
-        .select({
-          orgId: hrPeople.orgId,
-          lifecycleStatus: hrEmployments.lifecycleStatus,
-          departmentId: hrEmployments.departmentId,
-          designation: hrEmployments.designation,
-          joiningDate: hrEmployments.joiningDate,
-          lastWorkingDay: hrEmployments.lastWorkingDay,
-        })
-        .from(hrEmployments)
-        .innerJoin(hrPeople, eq(hrEmployments.personId, hrPeople.id))
-        .where(
-          and(
-            eq(hrEmployments.personId, person.hrPersonId),
-            eq(hrPeople.orgId, callerOrgId),
-            isNull(hrEmployments.deletedAt),
-          ),
-        );
-      for (const r of rows)
-        employment.push({
-          orgId: r.orgId,
-          lifecycleStatus: r.lifecycleStatus,
-          departmentId: r.departmentId ?? null,
-          designation: r.designation ?? null,
-          joiningDate: r.joiningDate ?? null,
-          lastWorkingDay: r.lastWorkingDay ?? null,
-        });
-    }
+    const employment = await fetchSyncEmployment(
+      this.db,
+      subjectUserId,
+      callerOrgId,
+      exportIncomplete,
+    );
 
-    const dataRequests = await this.db
-      .select({
-        id: hrDataRequests.id,
-        orgId: hrDataRequests.orgId,
-        type: hrDataRequests.type,
-        status: hrDataRequests.status,
-        reason: hrDataRequests.reason,
-        createdAt: hrDataRequests.createdAt,
-      })
-      .from(hrDataRequests)
-      .where(
-        and(
-          eq(hrDataRequests.subjectUserId, subjectUserId),
-          eq(hrDataRequests.orgId, callerOrgId),
-          isNull(hrDataRequests.deletedAt),
-        ),
-      );
+    const dataRequests = await fetchSyncDataRequests(
+      this.db,
+      subjectUserId,
+      callerOrgId,
+      exportIncomplete,
+    );
 
-    const legalHoldsRows = await this.db
-      .select({
-        id: hrLegalHolds.id,
-        orgId: hrLegalHolds.orgId,
-        reason: hrLegalHolds.reason,
-        status: hrLegalHolds.status,
-        placedAt: hrLegalHolds.placedAt,
-        releasedAt: hrLegalHolds.releasedAt,
-      })
-      .from(hrLegalHolds)
-      .where(
-        and(
-          eq(hrLegalHolds.subjectUserId, subjectUserId),
-          eq(hrLegalHolds.orgId, callerOrgId),
-          isNull(hrLegalHolds.deletedAt),
-        ),
-      );
+    const legalHoldsRows = await fetchSyncLegalHolds(
+      this.db,
+      subjectUserId,
+      callerOrgId,
+      exportIncomplete,
+    );
 
-    const [auditEntry] = await this.db
-      .select({ id: auditLogs.id })
-      .from(auditLogs)
-      .where(and(eq(auditLogs.userId, subjectUserId), eq(auditLogs.orgId, callerOrgId)))
-      .limit(1);
+    const auditEntries = await fetchSyncAuditEntries(
+      this.db,
+      subjectUserId,
+      callerOrgId,
+      exportIncomplete,
+    );
 
     return {
       exportedAt: new Date().toISOString(),
@@ -210,12 +122,17 @@ export class GdprService {
         placedAt: h.placedAt,
         releasedAt: h.releasedAt ?? null,
       })),
-      auditEntriesPresent: Boolean(auditEntry),
-      exportIncomplete: [
-        "audit_logs: existence confirmed only — full extract requires elevated tooling",
-        "blob storage: R2 object keys require R2_ENDPOINT + credentials (see purge-user.mjs)",
-        "chat_messages, mail_messages: not included — contact support under regulatory order",
-      ],
+      auditEntries: auditEntries.map((entry) => ({
+        ...entry,
+        targetId: entry.targetId ?? null,
+        targetType: entry.targetType ?? null,
+        actorUserId: entry.actorUserId ?? null,
+        resourceType: entry.resourceType ?? null,
+        resourceId: entry.resourceId ?? null,
+        metadata: entry.metadata ?? null,
+      })),
+      auditEntriesPresent: auditEntries.length > 0,
+      exportIncomplete,
     };
   }
 
@@ -224,14 +141,16 @@ export class GdprService {
     subjectUserId: string,
     requestedBy: string,
     reason: string | undefined,
+    exportIncomplete: string[],
   ): Promise<number> {
+    const status = exportIncomplete.length > 0 ? "partial" : "completed";
     const [row] = await this.db
       .insert(hrDataRequests)
       .values({
         orgId,
         subjectUserId,
         type: "export",
-        status: "completed",
+        status,
         requestedBy,
         reason: reason ?? null,
         completedAt: new Date(),

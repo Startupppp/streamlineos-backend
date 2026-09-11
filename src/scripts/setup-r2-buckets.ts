@@ -80,10 +80,13 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    "\nNext: in the Cloudflare dashboard enable public access on the KB bucket,",
+    "\nKeep the KB bucket PRIVATE. KB objects are served through GET /storage/image,",
   );
   console.log(
-    "then set R2_KB_PUBLIC_URL to its public/CDN URL so uploaded images display.",
+    "which resolves the attachment row and applies the page ACL; a publicly readable",
+  );
+  console.log(
+    "bucket serves every KB object to anyone holding the URL and bypasses that check.",
   );
   console.log(
     "Public-read CORS is set so in-browser capture (snapDOM) can embed R2 images.",

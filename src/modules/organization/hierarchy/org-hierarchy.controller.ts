@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  Delete,
   Get,
   HttpCode,
   Param,
@@ -13,7 +12,7 @@ import {
 } from "@nestjs/common";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
-import { readRequestScope } from "../core/read-request-scope";
+import { readRequestScopedRead } from "../core/read-request-scope";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
@@ -28,17 +27,13 @@ import {
   updateOrgDepartmentSchema,
   createOrgTeamSchema,
   updateOrgTeamSchema,
-  moveOrgTeamSchema,
-  moveBusinessUnitSchema,
-  moveOrgBranchSchema,
-  moveOrgDepartmentSchema,
   createOrgLocationSchema,
   updateOrgLocationSchema,
   createCostCenterSchema,
   updateCostCenterSchema,
   listQuerySchema,
+  branchOptionsQuerySchema,
   dependencyPreviewParamsSchema,
-  dependencyPreviewQuerySchema,
   type CreateBusinessUnitInput,
   type UpdateBusinessUnitInput,
   type CreateOrgBranchInput,
@@ -47,27 +42,41 @@ import {
   type UpdateOrgDepartmentInput,
   type CreateOrgTeamInput,
   type UpdateOrgTeamInput,
-  type MoveOrgTeamInput,
-  type MoveBusinessUnitInput,
-  type MoveOrgBranchInput,
-  type MoveOrgDepartmentInput,
   type CreateOrgLocationInput,
   type UpdateOrgLocationInput,
   type CreateCostCenterInput,
   type UpdateCostCenterInput,
   type ListQueryInput,
+  type BranchOptionsQueryInput,
   type DependencyPreviewParamsInput,
-  type DependencyPreviewQueryInput,
 } from "./dto/org-hierarchy.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { z } from "zod";
-
-const businessUnitIdParams = z.object({ businessUnitId: z.string().min(1) }).strict();
-const branchIdParams = z.object({ branchId: z.string().min(1) }).strict();
-const departmentIdParams = z.object({ departmentId: z.string().min(1) }).strict();
-const teamIdParams = z.object({ teamId: z.string().min(1) }).strict();
-const locationIdParams = z.object({ locationId: z.string().min(1) }).strict();
-const costCenterIdParams = z.object({ costCenterId: z.string().min(1) }).strict();
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  hierarchyOverviewResponseSchema,
+  hierarchyTreeResponseSchema,
+  dependencyPreviewResponseSchema,
+  businessUnitListResponseSchema,
+  businessUnitResponseSchema,
+  branchListResponseSchema,
+  branchResponseSchema,
+  departmentListResponseSchema,
+  departmentResponseSchema,
+  teamListResponseSchema,
+  teamResponseSchema,
+  locationListResponseSchema,
+  locationResponseSchema,
+  costCenterListResponseSchema,
+  costCenterResponseSchema,
+} from "./dto/org-hierarchy-response.schemas";
+import {
+  businessUnitIdParams,
+  branchIdParams,
+  departmentIdParams,
+  teamIdParams,
+  locationIdParams,
+  costCenterIdParams,
+} from "./org-hierarchy-params";
 
 @Controller("org-hierarchy")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -76,41 +85,40 @@ export class OrgHierarchyController {
 
   @RequirePermission("settings:view")
   @Get("overview")
+  @ResponseSchema(hierarchyOverviewResponseSchema)
   getHierarchy(
     @CurrentUser() currentUser: CurrentUserContext,
     @Req() request: Request,
   ) {
     return this.service.getHierarchy(currentUser.orgId, {
-      actorUserId: currentUser.userId,
-      scope: readRequestScope(request),
+      discriminator: readRequestScopedRead(request, currentUser).discriminator,
     });
   }
 
   @RequirePermission("settings:view")
   @Get("tree")
+  @ResponseSchema(hierarchyTreeResponseSchema)
   getTree(
     @CurrentUser() currentUser: CurrentUserContext,
     @Req() request: Request,
   ) {
     return this.service.getTree(currentUser.orgId, {
-      actorUserId: currentUser.userId,
-      scope: readRequestScope(request),
+      discriminator: readRequestScopedRead(request, currentUser).discriminator,
     });
   }
 
   @RequirePermission("settings:view")
   @Get("dependencies/:unitKind/:unitId")
-  @Validate({ params: dependencyPreviewParamsSchema, query: dependencyPreviewQuerySchema })
+  @ResponseSchema(dependencyPreviewResponseSchema)
+  @Validate({ params: dependencyPreviewParamsSchema })
   getDependencyPreview(
     @Param() params: DependencyPreviewParamsInput,
-    @Query() query: DependencyPreviewQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.getDependencyPreview(
       u.orgId,
       params.unitId,
       params.unitKind,
-      query.mode,
     );
   }
 
@@ -118,6 +126,7 @@ export class OrgHierarchyController {
 
   @RequirePermission("settings:view")
   @Get("business-units")
+  @ResponseSchema(businessUnitListResponseSchema)
   @Validate({ query: listQuerySchema })
   listBusinessUnits(
     @Query() query: ListQueryInput,
@@ -127,6 +136,7 @@ export class OrgHierarchyController {
   }
 
   @Post("business-units")
+  @ResponseSchema(businessUnitResponseSchema)
   @HttpCode(201)
   @RequirePermission("settings:organization:manage")
   @Validate({ body: createBusinessUnitSchema })
@@ -138,6 +148,7 @@ export class OrgHierarchyController {
   }
 
   @Patch("business-units/:businessUnitId")
+  @ResponseSchema(businessUnitResponseSchema)
   @RequirePermission("settings:organization:manage")
   @Validate({ params: businessUnitIdParams, body: updateBusinessUnitSchema })
   updateBusinessUnit(
@@ -153,21 +164,11 @@ export class OrgHierarchyController {
     );
   }
 
-  @Delete("business-units/:businessUnitId")
-  @RequirePermission("settings:organization:manage")
-  @Validate({ params: businessUnitIdParams })
-  async deleteBusinessUnit(
-    @Param("businessUnitId") businessUnitId: string,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    await this.service.deleteBusinessUnit(u.orgId, u.userId, businessUnitId);
-    return { message: "Business unit retired; its history was preserved" };
-  }
-
   // ─── Org Branches ───────────────────────────────────────────────────
 
   @RequirePermission("settings:view")
   @Get("branches")
+  @ResponseSchema(branchListResponseSchema)
   @Validate({ query: listQuerySchema })
   listOrgBranches(
     @Query() query: ListQueryInput,
@@ -176,7 +177,20 @@ export class OrgHierarchyController {
     return this.service.listOrgBranches(u.orgId, query);
   }
 
+  // The dropdown door onto the same rows. `branch:view` is an employee-self-service grant, so a form that only needs branch choices never has to hold `settings:view`.
+  @RequirePermission("branch:view")
+  @Get("branches/options")
+  @ResponseSchema(branchListResponseSchema)
+  @Validate({ query: branchOptionsQuerySchema })
+  listOrgBranchOptions(
+    @Query() query: BranchOptionsQueryInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.service.listOrgBranchOptions(u.orgId, query);
+  }
+
   @Post("branches")
+  @ResponseSchema(branchResponseSchema)
   @HttpCode(201)
   @RequirePermission("settings:organization:manage")
   @Validate({ body: createOrgBranchSchema })
@@ -188,6 +202,7 @@ export class OrgHierarchyController {
   }
 
   @Patch("branches/:branchId")
+  @ResponseSchema(branchResponseSchema)
   @RequirePermission("settings:organization:manage")
   @Validate({ params: branchIdParams, body: updateOrgBranchSchema })
   updateOrgBranch(
@@ -198,21 +213,11 @@ export class OrgHierarchyController {
     return this.service.updateOrgBranch(u.orgId, u.userId, branchId, body);
   }
 
-  @Delete("branches/:branchId")
-  @RequirePermission("settings:organization:manage")
-  @Validate({ params: branchIdParams })
-  async deleteOrgBranch(
-    @Param("branchId") branchId: string,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    await this.service.deleteOrgBranch(u.orgId, u.userId, branchId);
-    return { message: "Branch retired; its history was preserved" };
-  }
-
   // ─── Departments ────────────────────────────────────────────────────
 
   @RequirePermission("settings:view")
   @Get("departments")
+  @ResponseSchema(departmentListResponseSchema)
   @Validate({ query: listQuerySchema })
   listDepartments(
     @Query() query: ListQueryInput,
@@ -222,6 +227,7 @@ export class OrgHierarchyController {
   }
 
   @Post("departments")
+  @ResponseSchema(departmentResponseSchema)
   @HttpCode(201)
   @RequirePermission("settings:organization:manage")
   @Validate({ body: createOrgDepartmentSchema })
@@ -233,6 +239,7 @@ export class OrgHierarchyController {
   }
 
   @Patch("departments/:departmentId")
+  @ResponseSchema(departmentResponseSchema)
   @RequirePermission("settings:organization:manage")
   @Validate({ params: departmentIdParams, body: updateOrgDepartmentSchema })
   updateDepartment(
@@ -243,21 +250,11 @@ export class OrgHierarchyController {
     return this.service.updateDepartment(u.orgId, u.userId, departmentId, body);
   }
 
-  @Delete("departments/:departmentId")
-  @RequirePermission("settings:organization:manage")
-  @Validate({ params: departmentIdParams })
-  async deleteDepartment(
-    @Param("departmentId") departmentId: string,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    await this.service.deleteDepartment(u.orgId, u.userId, departmentId);
-    return { message: "Department retired; its history was preserved" };
-  }
-
   // ─── Teams ──────────────────────────────────────────────────────────
 
   @RequirePermission("settings:view")
   @Get("teams")
+  @ResponseSchema(teamListResponseSchema)
   @Validate({ query: listQuerySchema })
   listTeams(
     @Query() query: ListQueryInput,
@@ -267,6 +264,7 @@ export class OrgHierarchyController {
   }
 
   @Post("teams")
+  @ResponseSchema(teamResponseSchema)
   @HttpCode(201)
   @RequirePermission("settings:organization:manage")
   @Validate({ body: createOrgTeamSchema })
@@ -278,6 +276,7 @@ export class OrgHierarchyController {
   }
 
   @Patch("teams/:teamId")
+  @ResponseSchema(teamResponseSchema)
   @RequirePermission("settings:organization:manage")
   @Validate({ params: teamIdParams, body: updateOrgTeamSchema })
   updateTeam(
@@ -288,21 +287,11 @@ export class OrgHierarchyController {
     return this.service.updateTeam(u.orgId, u.userId, teamId, body);
   }
 
-  @Delete("teams/:teamId")
-  @RequirePermission("settings:organization:manage")
-  @Validate({ params: teamIdParams })
-  async deleteTeam(
-    @Param("teamId") teamId: string,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    await this.service.deleteTeam(u.orgId, u.userId, teamId);
-    return { message: "Team retired; its history was preserved" };
-  }
-
   // ─── Locations ──────────────────────────────────────────────────────
 
   @RequirePermission("settings:view")
   @Get("locations")
+  @ResponseSchema(locationListResponseSchema)
   @Validate({ query: listQuerySchema })
   listLocations(
     @Query() query: ListQueryInput,
@@ -312,6 +301,7 @@ export class OrgHierarchyController {
   }
 
   @Post("locations")
+  @ResponseSchema(locationResponseSchema)
   @HttpCode(201)
   @RequirePermission("settings:organization:manage")
   @Validate({ body: createOrgLocationSchema })
@@ -323,6 +313,7 @@ export class OrgHierarchyController {
   }
 
   @Patch("locations/:locationId")
+  @ResponseSchema(locationResponseSchema)
   @RequirePermission("settings:organization:manage")
   @Validate({ params: locationIdParams, body: updateOrgLocationSchema })
   updateLocation(
@@ -333,21 +324,11 @@ export class OrgHierarchyController {
     return this.service.updateLocation(u.orgId, u.userId, locationId, body);
   }
 
-  @Delete("locations/:locationId")
-  @RequirePermission("settings:organization:manage")
-  @Validate({ params: locationIdParams })
-  async deleteLocation(
-    @Param("locationId") locationId: string,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    await this.service.deleteLocation(u.orgId, u.userId, locationId);
-    return { message: "Location retired; its history was preserved" };
-  }
-
   // ─── Cost Centers ────────────────────────────────────────────────────
 
   @RequirePermission("settings:view")
   @Get("cost-centers")
+  @ResponseSchema(costCenterListResponseSchema)
   @Validate({ query: listQuerySchema })
   listCostCenters(
     @Query() query: ListQueryInput,
@@ -357,6 +338,7 @@ export class OrgHierarchyController {
   }
 
   @Post("cost-centers")
+  @ResponseSchema(costCenterResponseSchema)
   @HttpCode(201)
   @RequirePermission("settings:organization:manage")
   @Validate({ body: createCostCenterSchema })
@@ -368,6 +350,7 @@ export class OrgHierarchyController {
   }
 
   @Patch("cost-centers/:costCenterId")
+  @ResponseSchema(costCenterResponseSchema)
   @RequirePermission("settings:organization:manage")
   @Validate({ params: costCenterIdParams, body: updateCostCenterSchema })
   updateCostCenter(
@@ -376,72 +359,5 @@ export class OrgHierarchyController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.updateCostCenter(u.orgId, u.userId, costCenterId, body);
-  }
-
-  @Delete("cost-centers/:costCenterId")
-  @RequirePermission("settings:organization:manage")
-  @Validate({ params: costCenterIdParams })
-  async deleteCostCenter(
-    @Param("costCenterId") costCenterId: string,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    await this.service.deleteCostCenter(u.orgId, u.userId, costCenterId);
-    return { message: "Cost center retired; its history was preserved" };
-  }
-
-  @Patch("business-units/:businessUnitId/move")
-  @RequirePermission("settings:organization:manage")
-  @Validate({ params: businessUnitIdParams, body: moveBusinessUnitSchema })
-  moveBusinessUnit(
-    @Param("businessUnitId") businessUnitId: string,
-    @Body() body: MoveBusinessUnitInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.service.moveBusinessUnit(
-      u.orgId,
-      businessUnitId,
-      body.parentId ?? null,
-    );
-  }
-
-  @Patch("branches/:branchId/move")
-  @RequirePermission("settings:organization:manage")
-  @Validate({ params: branchIdParams, body: moveOrgBranchSchema })
-  moveBranch(
-    @Param("branchId") branchId: string,
-    @Body() body: MoveOrgBranchInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.service.moveBranch(
-      u.orgId,
-      branchId,
-      body.businessUnitId ?? null,
-    );
-  }
-
-  @Patch("departments/:departmentId/move")
-  @RequirePermission("settings:organization:manage")
-  @Validate({ params: departmentIdParams, body: moveOrgDepartmentSchema })
-  moveDepartment(
-    @Param("departmentId") departmentId: string,
-    @Body() body: MoveOrgDepartmentInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.service.moveDepartment(
-      u.orgId,
-      departmentId,
-      body.branchId ?? null,
-    );
-  }
-
-  @Patch("teams/:teamId/move")
-  @RequirePermission("settings:organization:manage")
-  @Validate({ params: teamIdParams, body: moveOrgTeamSchema })
-  moveTeam(
-    @Param("teamId") teamId: string,
-    @Body() body: MoveOrgTeamInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.service.moveTeam(u.orgId, teamId, body.departmentId);
   }
 }

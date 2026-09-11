@@ -52,17 +52,32 @@ function makeDb(subtreeIds: number[]) {
 }
 
 const makeAudit = () => ({ log: jest.fn() });
-const makePlanLimits = () => ({});
+const makeStorage = () => ({ deleteFileIfPresent: jest.fn().mockResolvedValue(true) });
+const KB_BUCKET = "kb-files";
+const makeConfig = () => ({ R2_KB_BUCKET_NAME: KB_BUCKET });
+
+/**
+ * The one assertion the first two tests rest on, extracted so the bite can run
+ * it against a transaction that deleted no chunks and prove it fails there.
+ */
+function assertChunksDeletedInTx(txDelete: jest.Mock): void {
+  const chunkDeleteCall = txDelete.mock.calls.find(([table]: [unknown]) => table === kbArticleChunks);
+  expect(chunkDeleteCall).toBeDefined();
+}
 
 describe("KbPageTreeService.softDelete — chunk purge is inside the transaction", () => {
   it("calls tx.delete on kbArticleChunks inside the transaction for the soft-deleted subtree", async () => {
     const { db, txDelete } = makeDb([42, 43]);
-    const svc = new KbPageTreeService(db as never, makeAudit() as never);
+    const svc = new KbPageTreeService(
+      db as never,
+      makeAudit() as never,
+      makeStorage() as never,
+      makeConfig() as never,
+    );
 
     await svc.softDelete(makeUser(), 42);
 
-    const chunkDeleteCall = txDelete.mock.calls.find(([table]: [unknown]) => table === kbArticleChunks);
-    expect(chunkDeleteCall).toBeDefined();
+    assertChunksDeletedInTx(txDelete);
   });
 
   it("does NOT call db.delete (outside transaction) for chunks after softDelete", async () => {
@@ -83,7 +98,12 @@ describe("KbPageTreeService.softDelete — chunk purge is inside the transaction
     });
 
     void origTransaction;
-    const svc = new KbPageTreeService(db as never, makeAudit() as never);
+    const svc = new KbPageTreeService(
+      db as never,
+      makeAudit() as never,
+      makeStorage() as never,
+      makeConfig() as never,
+    );
 
     await svc.softDelete(makeUser(), 42);
 
@@ -91,7 +111,16 @@ describe("KbPageTreeService.softDelete — chunk purge is inside the transaction
     expect(txActualDelete).toHaveBeenCalledWith(kbArticleChunks);
   });
 
-  it("bites: if tx.delete is not called for chunks, the chunk-inside-tx assertion fails", () => {
-    expect(kbArticleChunks).toBeDefined();
+  it("bites: the assertion fails when the subtree resolves empty and no chunk delete runs", async () => {
+    const { db, txDelete } = makeDb([]);
+    const svc = new KbPageTreeService(
+      db as never,
+      makeAudit() as never,
+      makeStorage() as never,
+      makeConfig() as never,
+    );
+
+    await expect(svc.softDelete(makeUser(), 42)).resolves.toEqual({ deletedCount: 0 });
+    expect(() => assertChunksDeletedInTx(txDelete)).toThrow();
   });
 });

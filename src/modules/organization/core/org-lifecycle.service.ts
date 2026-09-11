@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, isNull, ne } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import {
   accountOrganizationIndex,
   organizationLegalHolds,
@@ -20,12 +20,17 @@ import {
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
-import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
+import { bustMembershipsAfterOrgTeardown } from "../../../common/org/membership-bust";
 import { OrgMembershipService } from "./org-membership.service";
 import { InvitationLifecycleService } from "./invitation-lifecycle.service";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
-import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import {
+  runInNewTenantTransaction,
+  runInTenantTransaction,
+} from "../../../common/tenant/run-in-tenant-transaction";
 import { withIdentity } from "../../../common/tenant/with-identity";
+import { repairLastActiveOrgIds } from "./lifecycle/last-active-org-repair";
+import { nextActiveOrgIdsQuery } from "./lifecycle/next-active-org";
 import { OrganizationSagaService } from "./lifecycle/organization-saga.service";
 
 @Injectable()
@@ -60,19 +65,14 @@ export class OrgLifecycleService {
     const members = await db
       .select({ userId: organizationMembers.userId })
       .from(organizationMembers)
-      .where(eq(organizationMembers.orgId, orgId));
+      .where(eq(organizationMembers.orgId, orgId))
+      .limit(10000);
     return members.map((m) => m.userId);
   }
 
   private async bustMembersMembership(orgId: string, memberUserIds: string[]): Promise<void> {
-    await Promise.all(
-      memberUserIds.map((memberUserId) =>
-        Promise.all([
-          bustMembershipStatusCache(this.cache, memberUserId, orgId),
-          this.cache.invalidate(CACHE_KEYS.userSession(memberUserId)),
-        ]),
-      ),
-    );
+    await bustMembershipsAfterOrgTeardown(this.cache, memberUserIds);
+    await this.cache.invalidateMany(memberUserIds.map(CACHE_KEYS.userSession));
   }
 
   private async revokeMembersAccess(orgId: string, memberUserIds: string[]): Promise<void> {
@@ -81,69 +81,30 @@ export class OrgLifecycleService {
     }
   }
 
-  private async findNextActiveOrgId(
-    db: DbOrTx,
-    userId: string,
-    excludeOrgId: string,
-  ): Promise<string | null> {
-    const [remaining] = await db
-      .select({ orgId: organizationMembers.orgId })
-      .from(organizationMembers)
-      .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
-      .where(
-        and(
-          eq(organizationMembers.userId, userId),
-          eq(organizationMembers.status, "ACTIVE"),
-          eq(organizations.status, "ACTIVE"),
-          isNull(organizations.deletedAt),
-          ne(organizationMembers.orgId, excludeOrgId),
-        ),
-      )
-      .orderBy(desc(organizationMembers.joinedAt))
-      .limit(1);
-    return remaining?.orgId ?? null;
-  }
-
   private async resolveReplacementOrgIds(
     orgId: string,
     memberUserIds: string[],
   ): Promise<Map<string, string | null>> {
-    const replacements = new Map<string, string | null>();
-    for (const memberUserId of memberUserIds) {
-      const nextOrgId = await withIdentity(this.db, memberUserId, (tx) =>
-        this.findNextActiveOrgId(tx, memberUserId, orgId),
+    const replacements = new Map<string, string | null>(
+      memberUserIds.map((memberUserId) => [memberUserId, null]),
+    );
+    if (memberUserIds.length === 0) return replacements;
+    const rows = await runInTenantTransaction(
+      this.db,
+      (tx) => tx.execute(nextActiveOrgIdsQuery(memberUserIds)),
+      { orgId },
+    );
+    for (const row of rows) {
+      const memberUserId = typeof row.user_id === "string" ? row.user_id : null;
+      if (memberUserId === null) continue;
+      replacements.set(
+        memberUserId,
+        typeof row.next_org_id === "string" ? row.next_org_id : null,
       );
-      replacements.set(memberUserId, nextOrgId);
     }
     return replacements;
   }
 
-  private async repairLastActiveOrgIds(
-    db: DbOrTx,
-    orgId: string,
-    replacements: Map<string, string | null>,
-  ): Promise<void> {
-    for (const [memberUserId, nextOrgId] of replacements) {
-      await db
-        .update(users)
-        .set({ lastActiveOrgId: nextOrgId })
-        .where(
-          and(
-            eq(users.id, memberUserId),
-            eq(users.lastActiveOrgId, orgId),
-          ),
-        );
-      await db
-        .update(accountOrganizationIndex)
-        .set({ organizationStatus: "ARCHIVED" })
-        .where(
-          and(
-            eq(accountOrganizationIndex.userId, memberUserId),
-            eq(accountOrganizationIndex.orgId, orgId),
-          ),
-        );
-    }
-  }
 
   async listArchivedOwnedOrganizations(userId: string) {
     const rows = await withIdentity(this.db, userId, (tx) =>
@@ -163,7 +124,8 @@ export class OrgLifecycleService {
             eq(organizations.status, "ARCHIVED"),
           ),
         )
-        .orderBy(desc(organizationMembers.joinedAt)),
+        .orderBy(desc(organizationMembers.joinedAt))
+        .limit(100),
     );
 
     return rows.map((row) => ({
@@ -230,11 +192,15 @@ export class OrgLifecycleService {
           runInTenantTransaction(
             this.db,
             async (tx) => {
-              await this.repairLastActiveOrgIds(tx, orgId, replacements);
+              await repairLastActiveOrgIds(tx, orgId, replacements);
               await tx
                 .update(organizations)
                 .set({ status: "ARCHIVED", deletedAt: new Date() })
                 .where(eq(organizations.id, orgId));
+              await tx
+                .update(accountOrganizationIndex)
+                .set({ organizationStatus: "ARCHIVED" })
+                .where(eq(accountOrganizationIndex.orgId, orgId));
             },
             { orgId },
           ),
@@ -290,7 +256,13 @@ export class OrgLifecycleService {
     if (row.orgStatus !== "ARCHIVED") {
       throw new BadRequestException("Organization is not archived");
     }
-    const activeLegalHoldForRestore = await this.hasActiveLegalHold(orgId);
+    // `POST /organization/restore` is @NoTenantTransaction(), so this needs its own GUC — the
+    // archive path gets one only because it passes the surrounding transaction's `tx`.
+    const activeLegalHoldForRestore = await runInNewTenantTransaction(
+      this.db,
+      orgId,
+      (tx) => this.hasActiveLegalHold(orgId, tx),
+    );
     const transition = assertTransitionAllowed(
       "RESTORE",
       row.statusV2 ?? "ARCHIVED",
@@ -340,20 +312,25 @@ export class OrgLifecycleService {
       throw err;
     }
 
-    await Promise.all([
-      this.bustMembersMembership(orgId, memberUserIds),
-      withIdentity(this.db, userId, (tx) =>
-        tx
-          .update(accountOrganizationIndex)
-          .set({ organizationStatus: "ACTIVE", lastActivatedAt: new Date() })
-          .where(
-            and(
-              eq(accountOrganizationIndex.userId, userId),
-              eq(accountOrganizationIndex.orgId, orgId),
-            ),
+    // A replay skips the step that collected member ids, and an empty list busts nobody — the
+    // restoring owner then reads a 60s-old session with no org and lands back in the wizard.
+    if (memberUserIds.length === 0)
+      memberUserIds = await runInNewTenantTransaction(this.db, orgId, (tx) =>
+        this.listMemberUserIds(tx, orgId),
+      );
+
+    await withIdentity(this.db, userId, (tx) =>
+      tx
+        .update(accountOrganizationIndex)
+        .set({ organizationStatus: "ACTIVE", lastActivatedAt: new Date() })
+        .where(
+          and(
+            eq(accountOrganizationIndex.userId, userId),
+            eq(accountOrganizationIndex.orgId, orgId),
           ),
-      ),
-    ]);
+        ),
+    );
+    await this.bustMembersMembership(orgId, memberUserIds);
 
     this.audit.log({
       action: "org.restored",

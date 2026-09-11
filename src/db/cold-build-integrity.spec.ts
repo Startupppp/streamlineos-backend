@@ -236,25 +236,62 @@ describe("PEND-DB — the two irreversible steps stay opt-in", () => {
     for (const b of dropBlocks) expect(b).toContain("app.allow_legacy_identity_drop");
   });
 
-  it("finds no non-party module reading the legacy tables, so the drop is an owner's decision", () => {
-    // This used to assert the opposite: thirteen accounting and finance
-    // services still read `clients`, which is what made the opt-in the right
-    // shape. The merge with the CRM lane deleted every one of them (the gl_*
-    // rewrite) and moved the rest onto parties, so the list is now empty and is
-    // held empty: a new reader of `leads`/`clients`/`contacts`/
-    // `crm_organizations` outside the party module fails here. The drop itself
-    // stays behind `app.allow_legacy_identity_drop` (above) until an owner
-    // decides to take it; 0278's header still says "thirteen", and is left
-    // byte-identical because its content hash is its identity.
-    expect(liveReadersOfLegacyTables()).toEqual([]);
+  it("names every reader of the legacy tables, because each one blocks the drop", () => {
+    // This used to assert the opposite and then assert zero. Thirteen accounting
+    // and finance services once read `clients`, which is what made the opt-in
+    // the right shape; the gl_* rewrite deleted them and the CRM lane moved the
+    // rest onto parties. Zero stopped being a safe claim the moment main's lanes
+    // merged back in: a module that still reads `leads`/`clients`/`contacts`/
+    // `crm_organizations` is exactly what an owner must know about before
+    // running 0278 under `app.allow_legacy_identity_drop`, and a bare
+    // `toEqual([])` tells them nothing but "the list grew".
+    //
+    // So the readers are named. A reader that is not listed fails here and must
+    // either move onto the Party or be added below with the reason it still
+    // reads — it is then a recorded blocker of the drop rather than a surprise
+    // inside it. 0278's header still says "thirteen", and is left byte-identical
+    // because its content hash is its identity.
+    const unknownModules = liveReadersOfLegacyTables().filter(
+      (path) => !(path in KNOWN_LEGACY_READERS),
+    );
+    expect(unknownModules).toEqual([]);
+
+    const unknownSchema = schemaFilesReferencingLegacyTables().filter(
+      (path) => !(path in KNOWN_LEGACY_SCHEMA_REFERENCES),
+    );
+    expect(unknownSchema).toEqual([]);
   });
 });
+
+/**
+ * Non-party modules known to read a legacy identity table, and why. Each entry
+ * blocks the opt-in 0278 drop until it moves onto the Party. Empty at the merge
+ * of main into the inventory integration head: main's one remaining reader,
+ * `finance/ar/statements.service.ts`, went with the gl_* rewrite.
+ */
+const KNOWN_LEGACY_READERS: Readonly<Record<string, string>> = {};
+
+/**
+ * Schema files outside `crm/` and `party/` that hold a Drizzle reference to a
+ * legacy identity table. A foreign key into `clients` is a blocker in the same
+ * way a reader is: 0278 cannot drop a table another table still points at.
+ */
+const KNOWN_LEGACY_SCHEMA_REFERENCES: Readonly<Record<string, string>> = {
+  "src/db/schema/build/ticket-core.ts":
+    "Build's ticket core (fenced, owned by the Build lane) keys a ticket's client on `clients.id`.",
+  "src/db/schema/support/agent-routing.ts":
+    "Support agent routing names `clients` for its customer reference.",
+};
+
+const LEGACY_TABLE_SYMBOL = String.raw`(?:clients|contacts|leads|crmOrganizations)`;
 
 /** Non-party modules that still query the legacy CRM identity tables. */
 function liveReadersOfLegacyTables(): string[] {
   const roots = [resolve(process.cwd(), "src", "modules")];
   const found: string[] = [];
-  const query = /\b(?:from|innerJoin|leftJoin|insert|update|delete)\(\s*clients\b|\.clients\.find(?:Many|First)/;
+  const query = new RegExp(
+    String.raw`\b(?:from|innerJoin|leftJoin|rightJoin|insert|update|delete)\(\s*${LEGACY_TABLE_SYMBOL}\b|\.${LEGACY_TABLE_SYMBOL}\.find(?:Many|First)`,
+  );
   const walk = (dir: string) => {
     for (const entry of readdirSync(dir)) {
       const path = join(dir, entry);
@@ -262,12 +299,34 @@ function liveReadersOfLegacyTables(): string[] {
         if (entry === "__tests__" || entry === "party") continue;
         walk(path);
       } else if (path.endsWith(".ts") && !path.endsWith(".spec.ts")) {
-        if (query.test(readFileSync(path, "utf8"))) found.push(path);
+        if (query.test(readFileSync(path, "utf8"))) found.push(relative(process.cwd(), path));
       }
     }
   };
   for (const r of roots) walk(r);
-  return found;
+  return found.sort();
+}
+
+/** Schema files outside crm/ and party/ that import a legacy identity table. */
+function schemaFilesReferencingLegacyTables(): string[] {
+  const root = resolve(process.cwd(), "src", "db", "schema");
+  const found: string[] = [];
+  const reference = new RegExp(
+    String.raw`import\s*\{[^}]*\b${LEGACY_TABLE_SYMBOL}\b[^}]*\}\s*from\s*["'][^"']*crm/(?:contacts|leads)["']`,
+  );
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir)) {
+      const path = join(dir, entry);
+      if (statSync(path).isDirectory()) {
+        if (entry === "crm" || entry === "party") continue;
+        walk(path);
+      } else if (path.endsWith(".ts") && !path.endsWith(".spec.ts")) {
+        if (reference.test(readFileSync(path, "utf8"))) found.push(relative(process.cwd(), path));
+      }
+    }
+  };
+  walk(root);
+  return found.sort();
 }
 
 describe("PEND-DB — 0320's org_id walk cannot depend on heap order", () => {

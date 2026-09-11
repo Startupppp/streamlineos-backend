@@ -4,12 +4,15 @@ import {
   intakeItems,
   projectMilestones,
   projectViews,
-  projects,
   tickets,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { assertProjectAccess } from "../core/project-access";
 import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
+import { reserveTicketCapacity } from "../core/build-ticket-capacity";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import type {
@@ -21,21 +24,18 @@ import type {
   UpdateMilestoneInput,
   UpdateViewInput,
 } from "./dto/workspace.schemas";
-
-async function assertProject(db: Db, orgId: string, projectId: number): Promise<void> {
-  const project = await db.query.projects.findFirst({
-    where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-    columns: { id: true },
-  });
-  if (!project) throw new NotFoundException("Project not found");
-}
+import { assertProjectInOrg } from "../core/project-access";
 
 @Injectable()
 export class MilestonesService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly access: AccessService,
+  ) {}
 
-  async listMilestones(orgId: string, projectId: number) {
-    await assertProject(this.db, orgId, projectId);
+  async listMilestones(u: CurrentUserContext, projectId: number) {
+    const { orgId } = u;
+    await assertProjectAccess(this.db, this.access, u, projectId);
     return this.db.query.projectMilestones.findMany({
       where: and(eq(projectMilestones.projectId, projectId), eq(projectMilestones.orgId, orgId), isNull(projectMilestones.deletedAt)),
       orderBy: [asc(projectMilestones.targetDate)],
@@ -43,8 +43,9 @@ export class MilestonesService {
     });
   }
 
-  async createMilestone(orgId: string, userId: string, projectId: number, input: CreateMilestoneInput) {
-    await assertProject(this.db, orgId, projectId);
+  async createMilestone(u: CurrentUserContext, projectId: number, input: CreateMilestoneInput) {
+    const { orgId, userId } = u;
+    await assertProjectAccess(this.db, this.access, u, projectId);
     const [milestone] = await this.db
       .insert(projectMilestones)
       .values({
@@ -86,6 +87,7 @@ export class IntakeService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listIntake(orgId: string, projectId: number, query: IntakeListQuery) {
+    await assertProjectInOrg(this.db, orgId, projectId);
     const { limit, cursor } = query;
     const pos = decodeCursor(cursor);
 
@@ -125,6 +127,9 @@ export class IntakeService {
   }
 
   async createIntake(orgId: string, projectId: number, input: CreateIntakeInput) {
+    // `listIntake` above resolves the project; this did not, so a cross-tenant `:projectId`
+    // reached the INSERT and the composite tenant FK refused it with an uncaught 23503.
+    await assertProjectInOrg(this.db, orgId, projectId);
     const [item] = await this.db
       .insert(intakeItems)
       .values({
@@ -146,7 +151,8 @@ export class IntakeService {
     const [item] = await this.db
       .select()
       .from(intakeItems)
-      .where(and(eq(intakeItems.id, requestId), eq(intakeItems.orgId, orgId)));
+      .where(and(eq(intakeItems.id, requestId), eq(intakeItems.orgId, orgId)))
+      .limit(1);
 
     if (!item) throw new NotFoundException("Intake request not found");
     if (item.status !== "pending") {
@@ -155,6 +161,7 @@ export class IntakeService {
 
     if (input.status === "accepted") {
       return this.db.transaction(async (tx) => {
+        await reserveTicketCapacity(tx, orgId, item.projectId, [{ status: "TODO", count: 1 }]);
         const ticketNumber = await allocateTicketNumbers(tx, orgId, item.projectId);
 
         const description =
@@ -218,7 +225,8 @@ export class IntakeService {
 export class ViewsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listViews(orgId: string, userId: string, projectId: number) {
+  async listViews(orgId: string, userId: string, projectId: number) {
+    await assertProjectInOrg(this.db, orgId, projectId);
     return this.db
       .select()
       .from(projectViews)
@@ -234,6 +242,8 @@ export class ViewsService {
   }
 
   async createView(orgId: string, userId: string, projectId: number, input: CreateViewInput) {
+    // `listViews` above resolves the project; this did not — same uncaught 23503 as `createIntake`.
+    await assertProjectInOrg(this.db, orgId, projectId);
     const [view] = await this.db
       .insert(projectViews)
       .values({

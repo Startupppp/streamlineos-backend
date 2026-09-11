@@ -21,7 +21,9 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { AccessService } from "../access/access.service";
 import { ContactsService } from "./contacts.service";
+import { resolveContactsViewScope } from "./contacts-scope";
 import { buildVcard, vcardFilename } from "./vcard";
 import {
   bulkImportContactsSchema,
@@ -38,7 +40,16 @@ import {
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Deprecated } from "../../common/deprecation/deprecated.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
+import { NoTenantTransaction } from "../../common/tenant/no-tenant-transaction.decorator";
 import { z } from "zod";
+import { ResponseSchema, NoContentResponse } from "../../common/openapi/zod-operation-contracts";
+import { ApiOkResponse } from "@nestjs/swagger";
+import {
+  contactListSchema,
+  contactDetailSchema,
+  bulkImportSchema,
+  contactSearchSchema,
+} from "./dto/contacts-response.schemas";
 
 const contactIdParams = z.object({ contactId: z.coerce.number().int().positive() }).strict();
 
@@ -46,22 +57,28 @@ const contactIdParams = z.object({ contactId: z.coerce.number().int().positive()
 @Controller("contacts")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ContactsController {
-  constructor(private readonly contacts: ContactsService) {}
+  constructor(
+    private readonly contacts: ContactsService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get()
   @RequirePermission("crm:contacts:view")
+  @ResponseSchema(contactListSchema)
   @Validate({ query: listSchema })
-  list(
+  async list(
     @Query() filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.contacts.list(u.orgId, filters);
+    const read = await resolveContactsViewScope(this.access, u);
+    return this.contacts.list(read, filters);
   }
 
   @Deprecated({ sunset: "2026-10-25", link: "/party/parties/:partyId/contacts" })
   @Post()
   @HttpCode(201)
   @RequirePermission("crm:contacts:manage")
+  @ResponseSchema(contactDetailSchema)
   @Validate({ body: createSchema })
   create(
     @Body() body: CreateInput,
@@ -73,6 +90,7 @@ export class ContactsController {
   @Post("bulk-import")
   @HttpCode(201)
   @RequirePermission("crm:contacts:manage")
+  @ResponseSchema(bulkImportSchema)
   @Validate({ body: bulkImportContactsSchema })
   bulkImport(
     @Body() body: BulkImportContactsInput,
@@ -83,13 +101,16 @@ export class ContactsController {
 
   @Get("export")
   @RequirePermission("crm:contacts:view")
+  @NoTenantTransaction()
+  @ApiOkResponse({ description: "CSV file stream", content: { "text/csv": { schema: { type: "string" } } } })
   @Header("Content-Type", "text/csv; charset=utf-8")
   @Header("Content-Disposition", 'attachment; filename="contacts-export.csv"')
   async exportCsv(
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ): Promise<void> {
-    for await (const chunk of this.contacts.exportCsvChunks(u.orgId)) {
+    const read = await resolveContactsViewScope(this.access, u);
+    for await (const chunk of this.contacts.exportCsvChunks(read)) {
       if (res.destroyed) return;
       if (!res.write(chunk)) await once(res, "drain");
     }
@@ -98,16 +119,19 @@ export class ContactsController {
 
   @Get("search")
   @RequirePermission("crm:contacts:view")
+  @ResponseSchema(contactSearchSchema)
   @Validate({ query: searchSchema })
-  search(
+  async search(
     @Query() query: SearchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.contacts.search(u.orgId, query.q);
+    const read = await resolveContactsViewScope(this.access, u);
+    return this.contacts.search(read, query.q);
   }
 
   @Get(":contactId")
   @RequirePermission("crm:contacts:view")
+  @ResponseSchema(contactDetailSchema)
   @Validate({ params: contactIdParams })
   async get(
     @Param("contactId", ParseIntPipe) contactId: number,
@@ -121,6 +145,7 @@ export class ContactsController {
   @Deprecated({ sunset: "2026-10-25", link: "/party/contacts/:partyContactId" })
   @Patch(":contactId")
   @RequirePermission("crm:contacts:manage")
+  @ResponseSchema(contactDetailSchema)
   @Validate({ params: contactIdParams, body: updateSchema })
   async update(
     @Param("contactId", ParseIntPipe) contactId: number,
@@ -136,6 +161,7 @@ export class ContactsController {
   @Delete(":contactId")
   @HttpCode(204)
   @RequirePermission("crm:contacts:manage")
+  @NoContentResponse()
   @Validate({ params: contactIdParams })
   async remove(
     @Param("contactId", ParseIntPipe) contactId: number,
@@ -146,6 +172,7 @@ export class ContactsController {
 
   @Get(":contactId/vcard")
   @RequirePermission("crm:contacts:view")
+  @ApiOkResponse({ description: "vCard file", content: { "text/vcard": { schema: { type: "string" } } } })
   @Validate({ params: contactIdParams })
   async vcard(
     @Param("contactId", ParseIntPipe) contactId: number,

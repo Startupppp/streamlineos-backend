@@ -25,9 +25,13 @@ import {
 } from "./dto/inv-returns.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import {
+  listVendorReturnsResponseSchema,
+  getVendorReturnResponseSchema,
+} from "./dto/returns-response.schemas";
 
 const returnIdParams = z.object({ returnId: z.coerce.number().int().positive() }).strict();
 
@@ -38,6 +42,7 @@ export class VendorReturnsController {
   constructor(private readonly service: VendorReturnsService) {}
 
   @Get()
+  @ResponseSchema(listVendorReturnsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendor-returns:manage")
   @Validate({ query: listReturnsSchema })
@@ -49,6 +54,7 @@ export class VendorReturnsController {
   }
 
   @Get(":returnId")
+  @ResponseSchema(getVendorReturnResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendor-returns:manage")
   @Validate({ params: returnIdParams })
@@ -60,6 +66,7 @@ export class VendorReturnsController {
   }
 
   @Post()
+  @ResponseSchema(getVendorReturnResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendor-returns:manage")
   @Idempotent("inventory.vendor-return.create")
@@ -87,6 +94,7 @@ export class VendorReturnsController {
   }
 
   @Post(":returnId/post")
+  @ResponseSchema(getVendorReturnResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendor-returns:manage")
   @HttpCode(HttpStatus.OK)
@@ -101,6 +109,7 @@ export class VendorReturnsController {
 
   @Post(":returnId/cancel")
   @BodylessAction()
+  @ResponseSchema(getVendorReturnResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendor-returns:manage")
   @Idempotent("inventory.vendor-return.cancel")

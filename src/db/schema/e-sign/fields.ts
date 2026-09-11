@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, boolean, jsonb, timestamp, index, unique } from "drizzle-orm/pg-core";
+import { boolean, foreignKey, index, integer, jsonb, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../common/auth";
 import { signFieldTypeEnum } from "./enums";
@@ -11,9 +11,9 @@ export const signFields = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    envelopeId: integer("envelope_id").references(() => signEnvelopes.id, { onDelete: "cascade" }).notNull(),
-    documentId: integer("document_id").references(() => signDocuments.id, { onDelete: "cascade" }).notNull(),
-    recipientId: integer("recipient_id").references(() => signRecipients.id, { onDelete: "cascade" }).notNull(),
+    envelopeId: integer("envelope_id").notNull(),
+    documentId: integer("document_id").notNull(),
+    recipientId: integer("recipient_id").notNull(),
     fieldType: signFieldTypeEnum("field_type").notNull(),
     label: text("label"),
     pageNumber: integer("page_number").notNull(),
@@ -41,6 +41,9 @@ export const signFields = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.documentId], foreignColumns: [signDocuments.orgId, signDocuments.id], name: "fk_sign_fields_document_id_org" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.envelopeId], foreignColumns: [signEnvelopes.orgId, signEnvelopes.id], name: "fk_sign_fields_envelope_id_org" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.recipientId], foreignColumns: [signRecipients.orgId, signRecipients.id], name: "fk_sign_fields_recipient_id_org" }).onDelete("cascade"),
     index("idx_sign_fields_org_envelope").on(table.orgId, table.envelopeId),
     index("idx_sign_fields_document").on(table.documentId),
     index("idx_sign_fields_recipient").on(table.recipientId),

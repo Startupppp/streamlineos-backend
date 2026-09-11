@@ -8,12 +8,22 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { BillingService } from "./billing.service";
 import { MarketplaceService } from "./marketplace.service";
 import { AiCreditsService } from "./ai-credits.service";
+import { AiCreditsPacksService } from "./ai-credits-packs.service";
 import { AiCreditsUsageService } from "./ai-credits-usage.service";
 import { PaymentProviderResolver } from "../payments/payment-provider-resolver.service";
 import { aiCreditsUsageQuerySchema, autoTopUpSchema, listTransactionsSchema, purchaseAiPackSchema, type PurchaseAiPackInput } from "./dto/ai-credits.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  appListResponseSchema,
+  appInstallationResponseSchema,
+  aiCreditsWalletResponseSchema,
+  aiCreditsTransactionPageSchema,
+  aiCreditsUsageResponseSchema,
+  autoTopUpResponseSchema,
+  purchaseAiCreditsResponseSchema,
+} from "./dto/billing-marketplace-response.schemas";
 
 const appIdParams = z.object({ appId: z.coerce.number().int().positive() }).strict();
 
@@ -24,6 +34,7 @@ export class BillingMarketplaceController {
     private readonly billing: BillingService,
     private readonly marketplace: MarketplaceService,
     private readonly aiCredits: AiCreditsService,
+    private readonly aiCreditPacks: AiCreditsPacksService,
     private readonly aiCreditsUsage: AiCreditsUsageService,
     private readonly providers: PaymentProviderResolver,
   ) {}
@@ -31,6 +42,7 @@ export class BillingMarketplaceController {
   @Get("marketplace/apps")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:marketplace:view")
+  @ResponseSchema(appListResponseSchema)
   listApps(@CurrentUser() u: CurrentUserContext) {
     return this.marketplace.listApps(u.orgId);
   }
@@ -41,6 +53,7 @@ export class BillingMarketplaceController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:marketplace:install")
   @Validate({ params: appIdParams })
+  @ResponseSchema(appInstallationResponseSchema)
   installApp(
     @Param("appId", ParseIntPipe) appId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -52,6 +65,7 @@ export class BillingMarketplaceController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:marketplace:install")
   @Validate({ params: appIdParams })
+  @ResponseSchema(appInstallationResponseSchema)
   uninstallApp(
     @Param("appId", ParseIntPipe) appId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -65,6 +79,7 @@ export class BillingMarketplaceController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:marketplace:install")
   @Validate({ params: appIdParams })
+  @ResponseSchema(appInstallationResponseSchema)
   startTrial(
     @Param("appId", ParseIntPipe) appId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -75,6 +90,7 @@ export class BillingMarketplaceController {
   @Get("ai-credits")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:ai-credits:view")
+  @ResponseSchema(aiCreditsWalletResponseSchema)
   async getAiCredits(@CurrentUser() u: CurrentUserContext) {
     const [wallet, packs] = await Promise.all([
       this.aiCredits.getWallet(u.orgId),
@@ -87,17 +103,19 @@ export class BillingMarketplaceController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:ai-credits:view")
   @Validate({ query: listTransactionsSchema })
+  @ResponseSchema(aiCreditsTransactionPageSchema)
   listAiCreditTransactions(
     @Query() query: ReturnType<typeof listTransactionsSchema.parse>,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.aiCredits.listTransactions(u.orgId, query.page, query.limit);
+    return this.aiCreditPacks.listTransactions(u.orgId, query);
   }
 
   @Get("ai-credits/usage")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:ai-credits:view")
   @Validate({ query: aiCreditsUsageQuerySchema })
+  @ResponseSchema(aiCreditsUsageResponseSchema)
   getAiCreditsUsage(
     @Query() query: ReturnType<typeof aiCreditsUsageQuerySchema.parse>,
     @CurrentUser() u: CurrentUserContext,
@@ -110,6 +128,7 @@ export class BillingMarketplaceController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:ai-credits:purchase")
   @Validate({ body: autoTopUpSchema })
+  @ResponseSchema(autoTopUpResponseSchema)
   async configureAutoTopUp(
     @Body() body: ReturnType<typeof autoTopUpSchema.parse>,
     @CurrentUser() u: CurrentUserContext,
@@ -128,6 +147,7 @@ export class BillingMarketplaceController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:ai-credits:purchase")
   @Validate({ body: purchaseAiPackSchema })
+  @ResponseSchema(purchaseAiCreditsResponseSchema)
   async purchaseAiCredits(
     @Body() body: PurchaseAiPackInput,
     @CurrentUser() u: CurrentUserContext,

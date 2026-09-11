@@ -3,13 +3,7 @@ import { and, asc, count, desc, eq, inArray, isNotNull, isNull, lt, lte, notInAr
 import { AccessService } from "../access/access.service";
 import { leadActivities, users, crmOptions } from "../../db/schema";
 import { businessParties, leadPartyMap } from "../../db/schema/party";
-import {
-  LEAD_PARTY_COLUMNS,
-  LEAD_PARTY_JOIN,
-  leadPartyScope,
-  pushLeadPartyViewScope,
-} from "./lead-party-reader";
-import { applyScope } from "../access/apply-scope";
+import { LEAD_PARTY_COLUMNS, LEAD_PARTY_JOIN } from "./lead-party-reader";
 import { resolveLeadStatusSemantics } from "./lead-status-semantics";
 import type {
   AnalyticsQuery,
@@ -17,25 +11,15 @@ import type {
 } from "./dto/lead-reports.schemas";
 import { type Db } from "../../db/drizzle.module";
 import { DRIZZLE } from "../../db/drizzle.constants";
-import type { DataScope } from "../access/access.types";
+import type { ScopedRead } from "../access/scoped-read";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { CacheService } from "../../common/cache/cache.service";
 import { LeadsReportsTeamService } from "./leads-reports-team.service";
-import { getLeadAnalytics, type LeadAnalyticsDeps } from "./lib/lead-analytics-report";
-
-/**
- * Who a lead report is about.
- *
- * The same shape `getLeadAnalytics` has always taken, named because four more
- * reports now take it. It is not optional on those four: every one of them is
- * reached from a route gated on `crm:leads:view`, the controller resolves the
- * scope for all of them, and a parameter that can be left off is a parameter
- * that gets left off.
- */
-export interface LeadsViewScope {
-  scope: DataScope;
-  userId: string;
-}
+import {
+  getLeadAnalytics,
+  visibleLeadsWhere,
+  type LeadAnalyticsDeps,
+} from "./lib/lead-analytics-report";
 
 /**
  * The cache entry belongs to whoever may read it.
@@ -48,10 +32,12 @@ export interface LeadsViewScope {
  * shared entry; `own` and `team` fan out per caller, because that is what they
  * mean. Nothing changes for an organisation that grants nobody a narrowed scope:
  * every read still lands on the one `:all` entry.
+ *
+ * `ScopedRead.discriminator` is exactly that key: `all` and `none` as
+ * themselves, `own` and `team` with the caller appended.
  */
-function scopedCacheKey(key: string, view: LeadsViewScope): string {
-  if (view.scope === "all" || view.scope === "none") return `${key}:${view.scope}`;
-  return `${key}:${view.scope}:${view.userId}`;
+function scopedCacheKey(key: string, read: ScopedRead): string {
+  return `${key}:${read.discriminator}`;
 }
 
 /**
@@ -78,6 +64,10 @@ function scopedCacheKey(key: string, view: LeadsViewScope): string {
  * carrying name, email, phone, company and free-text follow-up notes, and they
  * were returning every lead in the organisation to a rep restricted to their
  * own. Those are the two that leaked records rather than totals.
+ *
+ * Every one of them takes the caller's `ScopedRead`, so the tenant predicate and
+ * the scope predicate arrive together (`visibleLeadsWhere`) and no report can
+ * be handed a scope it did not resolve.
  */
 @Injectable()
 export class LeadsReportsService {
@@ -93,12 +83,8 @@ export class LeadsReportsService {
     return { db: this.db, access: this.access };
   }
 
-  getLeadAnalytics(
-    orgId: string,
-    filters: AnalyticsQuery,
-    viewScope?: { scope: DataScope; userId: string },
-  ) {
-    return getLeadAnalytics(this.analyticsDeps, orgId, filters, viewScope);
+  getLeadAnalytics(read: ScopedRead, filters: AnalyticsQuery) {
+    return getLeadAnalytics(this.analyticsDeps, read, filters);
   }
 
   /**
@@ -118,10 +104,11 @@ export class LeadsReportsService {
    * person who did the work, it is indexed, and at `all` the predicate is `true`
    * so the tile is unchanged.
    */
-  getDashboardMetrics(orgId: string, view: LeadsViewScope) {
+  getDashboardMetrics(read: ScopedRead) {
+    const orgId = read.orgId;
     return this.cache.cachedVersioned(
       `leads:${orgId}`,
-      scopedCacheKey("dashboard-metrics", view),
+      scopedCacheKey("dashboard-metrics", read),
       async () => {
         const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
 
@@ -134,14 +121,22 @@ export class LeadsReportsService {
         const semantics = resolveLeadStatusSemantics(statusOptions);
         const terminalKeys = [...semantics.convertedKeys, ...semantics.lostKeys];
 
-        const byStatusWhere = leadPartyScope(orgId);
-        pushLeadPartyViewScope(byStatusWhere, orgId, view.scope, view.userId);
-
-        const followUpWhere = leadPartyScope(orgId);
-        pushLeadPartyViewScope(followUpWhere, orgId, view.scope, view.userId);
-        followUpWhere.push(
+        const byStatusWhere = visibleLeadsWhere(read);
+        const followUpWhere = visibleLeadsWhere(
+          read,
           notInArray(LEAD_PARTY_COLUMNS.status, terminalKeys),
           lt(LEAD_PARTY_COLUMNS.updatedAt, threeDaysAgo),
+        );
+        // Narrowed on who LOGGED the activity (see above), through the same
+        // ScopedRead, so the tenant and the scope still arrive together.
+        const activityWhere = read.compose(
+          {
+            tenant: leadActivities.orgId,
+            scope: { columns: { ownerColumn: leadActivities.userId } },
+            and: [inArray(leadActivities.type, ["call", "meeting", "site_visit"])],
+          },
+          (where) => where.sql,
+          () => sql`false`,
         );
 
         const [leadCounts, activityCounts, followUpCount] = await Promise.all([
@@ -149,26 +144,18 @@ export class LeadsReportsService {
             .select({ status: LEAD_PARTY_COLUMNS.status, cnt: count() })
             .from(leadPartyMap)
             .innerJoin(businessParties, LEAD_PARTY_JOIN)
-            .where(and(...byStatusWhere))
+            .where(byStatusWhere)
             .groupBy(LEAD_PARTY_COLUMNS.status),
           this.db
             .select({ type: leadActivities.type, cnt: count() })
             .from(leadActivities)
-            .where(
-              and(
-                eq(leadActivities.orgId, orgId),
-                inArray(leadActivities.type, ["call", "meeting", "site_visit"]),
-                applyScope(view.scope, orgId, view.userId, {
-                  ownerColumn: leadActivities.userId,
-                }),
-              ),
-            )
+            .where(activityWhere)
             .groupBy(leadActivities.type),
           this.db
             .select({ cnt: count() })
             .from(leadPartyMap)
             .innerJoin(businessParties, LEAD_PARTY_JOIN)
-            .where(and(...followUpWhere))
+            .where(followUpWhere)
             .then((r) => r[0]?.cnt ?? 0),
         ]);
 
@@ -215,10 +202,11 @@ export class LeadsReportsService {
    * version also handed a restricted rep the size of the whole pipeline by
    * channel.
    */
-  getSourceReport(orgId: string, view: LeadsViewScope) {
+  getSourceReport(read: ScopedRead) {
+    const orgId = read.orgId;
     return this.cache.cachedVersioned(
       `leads:${orgId}`,
-      scopedCacheKey("source-report", view),
+      scopedCacheKey("source-report", read),
       async () => {
         const statusOptions = await this.db.select().from(crmOptions)
           .where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status")));
@@ -228,8 +216,7 @@ export class LeadsReportsService {
           sql`, `,
         );
 
-        const where = leadPartyScope(orgId);
-        pushLeadPartyViewScope(where, orgId, view.scope, view.userId);
+        const where = visibleLeadsWhere(read);
 
         const rows = await this.db
           .select({
@@ -240,7 +227,7 @@ export class LeadsReportsService {
           })
           .from(leadPartyMap)
           .innerJoin(businessParties, LEAD_PARTY_JOIN)
-          .where(and(...where))
+          .where(where)
           .groupBy(LEAD_PARTY_COLUMNS.source)
           .orderBy(sql`count(*) desc`);
 
@@ -269,8 +256,8 @@ export class LeadsReportsService {
     return this.teamReports.getSalesTeamCapacity(orgId);
   }
 
-  getLeadSlaAlerts(orgId: string, opts: { ownScope?: boolean; userId?: string }) {
-    return this.teamReports.getLeadSlaAlerts(orgId, opts);
+  getLeadSlaAlerts(read: ScopedRead) {
+    return this.teamReports.getLeadSlaAlerts(read);
   }
 
   /**
@@ -282,15 +269,14 @@ export class LeadsReportsService {
    * leads with contact details attached, from a route gated on the very key that
    * was supposed to be narrowing them.
    */
-  async getFollowUps(orgId: string, query: FollowUpsQuery, view: LeadsViewScope) {
+  async getFollowUps(read: ScopedRead, query: FollowUpsQuery) {
     const maxResults = Math.min(query.limit ?? 20, 100);
 
-    const conditions = leadPartyScope(orgId);
-    pushLeadPartyViewScope(conditions, orgId, view.scope, view.userId);
-    conditions.push(isNotNull(LEAD_PARTY_COLUMNS.followUpDate));
-    if (query.overdue === "true") {
-      conditions.push(lte(LEAD_PARTY_COLUMNS.followUpDate, new Date()));
-    }
+    const conditions = visibleLeadsWhere(
+      read,
+      isNotNull(LEAD_PARTY_COLUMNS.followUpDate),
+      query.overdue === "true" ? lte(LEAD_PARTY_COLUMNS.followUpDate, new Date()) : undefined,
+    );
 
     const results = await this.db
       .select({
@@ -310,7 +296,7 @@ export class LeadsReportsService {
       .from(leadPartyMap)
       .innerJoin(businessParties, LEAD_PARTY_JOIN)
       .leftJoin(users, eq(LEAD_PARTY_COLUMNS.assignedToId, users.id))
-      .where(and(...conditions))
+      .where(conditions)
       .orderBy(asc(LEAD_PARTY_COLUMNS.followUpDate), asc(LEAD_PARTY_COLUMNS.id))
       .limit(maxResults);
 
@@ -327,15 +313,15 @@ export class LeadsReportsService {
    * as `getFollowUps` and the same cost: a rep restricted to their own leads was
    * reading the organisation's book, contact details and notes included.
    */
-  async getUnverifiedLeads(orgId: string, view: LeadsViewScope) {
+  async getUnverifiedLeads(read: ScopedRead) {
+    const orgId = read.orgId;
     const statusOptions = await this.db.select().from(crmOptions)
       .where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status")));
     const semantics = resolveLeadStatusSemantics(statusOptions);
     const activeKeys = semantics.activeKeys.length > 0 ? semantics.activeKeys : ["NEW"];
 
-    const where = leadPartyScope(orgId);
-    pushLeadPartyViewScope(where, orgId, view.scope, view.userId);
-    where.push(
+    const where = visibleLeadsWhere(
+      read,
       inArray(LEAD_PARTY_COLUMNS.status, activeKeys),
       isNull(LEAD_PARTY_COLUMNS.verifiedById),
     );
@@ -350,7 +336,7 @@ export class LeadsReportsService {
       .from(leadPartyMap)
       .innerJoin(businessParties, LEAD_PARTY_JOIN)
       .leftJoin(users, eq(LEAD_PARTY_COLUMNS.assignedToId, users.id))
-      .where(and(...where))
+      .where(where)
       .orderBy(desc(LEAD_PARTY_COLUMNS.createdAt), desc(LEAD_PARTY_COLUMNS.id))
       .limit(100);
 

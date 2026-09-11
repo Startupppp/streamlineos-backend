@@ -24,6 +24,7 @@ import type {
   CreateTemplateInput,
 } from "./dto/projects.schemas";
 import { DEFAULT_PROJECT_STATUSES } from "./lib/default-statuses";
+import { resolveOrganizationActorsByUserIds } from "../../../common/organization/organization-actor";
 
 
 function normalizeTicketType(
@@ -137,6 +138,12 @@ export class ProjectsTemplatesService {
     await this.planLimits.assertWithinLimit(orgId, "projects");
 
     const pmWorkspaceId = await this.pmWorkspaces.resolveDefaultWorkspaceId(orgId);
+    const requestedManagerId = input.managerId ?? userId;
+    const actors = await resolveOrganizationActorsByUserIds(this.db, orgId, [userId, requestedManagerId]);
+    const creator = actors.get(userId);
+    const manager = actors.get(requestedManagerId);
+    if (!creator || !manager)
+      throw new NotFoundException("Project actors must be active members of this organization");
 
     const namePart = input.name
       .replace(/[^a-zA-Z]/g, "")
@@ -155,7 +162,7 @@ export class ProjectsTemplatesService {
         name: input.name,
         description: input.description ?? template.description ?? null,
         key,
-        managerId: input.managerId ?? userId,
+        managerMembershipId: manager.membershipId,
         startDate: input.startDate ? new Date(input.startDate) : null,
         endDate: input.endDate ? new Date(input.endDate) : null,
       })
@@ -166,7 +173,7 @@ export class ProjectsTemplatesService {
 
     await this.db
       .insert(projectMembers)
-      .values({ orgId, projectId: project.id, userId, role: "OWNER" });
+      .values({ orgId, projectId: project.id, membershipId: creator.membershipId, role: "OWNER" });
 
     await this.db.insert(projectStatuses).values(
       DEFAULT_PROJECT_STATUSES.map((s) => ({

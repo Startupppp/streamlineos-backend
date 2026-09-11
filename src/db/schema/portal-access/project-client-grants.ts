@@ -1,13 +1,4 @@
-import {
-  pgTable,
-  text,
-  integer,
-  boolean,
-  timestamp,
-  index,
-  uniqueIndex,
-  foreignKey,
-} from "drizzle-orm/pg-core";
+import { pgTable, text, integer, boolean, timestamp, index, foreignKey } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
 import { organizations } from "../common/auth";
 import { partyContacts } from "../party/party-contacts";
@@ -26,9 +17,7 @@ export const projectClientGrants = pgTable(
       .notNull(),
     portalMembershipId: text("portal_membership_id").notNull(),
     partyContactId: text("party_contact_id").notNull(),
-    projectId: integer("project_id")
-      .references(() => projects.id, { onDelete: "cascade" })
-      .notNull(),
+    projectId: integer("project_id").notNull(),
     pmWorkspaceId: text("pm_workspace_id"),
     canViewMilestones: boolean("can_view_milestones").notNull().default(false),
     canViewTasks: boolean("can_view_tasks").notNull().default(false),
@@ -44,10 +33,6 @@ export const projectClientGrants = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    uniqueIndex("uniq_project_client_grants_org_grant").on(
-      table.organizationId,
-      table.projectClientGrantId,
-    ),
     index("idx_project_client_grants_membership").on(
       table.organizationId,
       table.portalMembershipId,
@@ -56,6 +41,11 @@ export const projectClientGrants = pgTable(
       table.organizationId,
       table.projectId,
     ),
+    foreignKey({
+      columns: [table.organizationId, table.projectId],
+      foreignColumns: [projects.orgId, projects.id],
+      name: "fk_project_client_grants_project_id_org",
+    }).onDelete("cascade"),
     foreignKey({
       columns: [
         table.organizationId,

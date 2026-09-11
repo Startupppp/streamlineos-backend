@@ -17,11 +17,9 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
-import {
-  bumpPermissionsVersion,
-  type DbOrTx,
-} from "../../../common/rbac/access-invalidate";
+import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { withMembershipMutations } from "../../../common/org/membership-mutations";
 import { withIdentity } from "../../../common/tenant/with-identity";
 import { runOutsideTenantContext } from "../../../common/tenant/tenant-context";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
@@ -98,7 +96,8 @@ export class OrgMembershipStatusService {
             ),
           )
           .where(and(eq(users.id, userId), isNull(users.deletedAt)))
-          .orderBy(desc(organizationMembers.joinedAt)),
+        .orderBy(desc(organizationMembers.joinedAt))
+        .limit(100),
       ),
     );
 
@@ -184,25 +183,6 @@ export class OrgMembershipStatusService {
 
     const membershipStatus = userStatusToMembershipStatus(status);
     const now = new Date();
-    const membershipUpdate =
-      status === "active"
-        ? {
-            status: membershipStatus,
-            activatedAt: now,
-            suspendedAt: null,
-            leftAt: null,
-          }
-        : status === "suspended"
-          ? {
-              status: membershipStatus,
-              suspendedAt: now,
-              leftAt: null,
-            }
-          : {
-              status: membershipStatus,
-              leftAt: now,
-              suspendedAt: null,
-            };
 
     const lastActiveOrgChange = await this.planLastActiveOrganizationChange(
       memberUserId,
@@ -210,49 +190,47 @@ export class OrgMembershipStatusService {
       status,
     );
 
-    await runInTenantTransaction(
-      this.db,
-      async (tx) => {
-        if (status !== "active") {
-          const ownedModuleKeys = await queryOwnedModuleKeys(tx, orgId, member.id);
-          if (ownedModuleKeys.length > 0) {
-            throw new BadRequestException(
-              `Transfer module ownership before this action. Owned modules: ${ownedModuleKeys.join(", ")}.`,
-            );
+    await withMembershipMutations(this.cache, (membership) =>
+      runInTenantTransaction(
+        this.db,
+        async (tx) => {
+          if (status !== "active") {
+            const ownedModuleKeys = await queryOwnedModuleKeys(tx, orgId, member.id);
+            if (ownedModuleKeys.length > 0) {
+              throw new BadRequestException(
+                `Transfer module ownership before this action. Owned modules: ${ownedModuleKeys.join(", ")}.`,
+              );
+            }
+
+            const privilegedRoles = await queryPrivilegedRoleNames(tx, orgId, member.id);
+            if (privilegedRoles.length > 0) {
+              throw new BadRequestException(
+                `Remove administrative role(s) before this action: ${privilegedRoles.join(", ")}.`,
+              );
+            }
           }
 
-          const privilegedRoles = await queryPrivilegedRoleNames(tx, orgId, member.id);
-          if (privilegedRoles.length > 0) {
-            throw new BadRequestException(
-              `Remove administrative role(s) before this action: ${privilegedRoles.join(", ")}.`,
-            );
+          await membership.setLifecycleStatus(tx, {
+            orgId,
+            userId: memberUserId,
+            status: membershipStatus,
+            occurredAt: now,
+          });
+          if (status !== "active") {
+            await tx
+              .delete(orgUnitMembers)
+              .where(
+                and(
+                  eq(orgUnitMembers.membershipId, member.id),
+                  eq(orgUnitMembers.orgId, orgId),
+                ),
+              );
           }
-        }
 
-        await tx
-          .update(organizationMembers)
-          .set(membershipUpdate)
-          .where(
-            and(
-              eq(organizationMembers.userId, memberUserId),
-              eq(organizationMembers.orgId, orgId),
-            ),
-          );
-        if (status !== "active") {
-          await tx
-            .delete(orgUnitMembers)
-            .where(
-              and(
-                eq(orgUnitMembers.membershipId, member.id),
-                eq(orgUnitMembers.orgId, orgId),
-              ),
-            );
-        }
-
-        await this.applyLastActiveOrganizationChange(tx, memberUserId, lastActiveOrgChange);
-        await bumpPermissionsVersion(tx, orgId);
-      },
-      { orgId },
+          await this.applyLastActiveOrganizationChange(tx, memberUserId, lastActiveOrgChange);
+        },
+        { orgId },
+      ),
     );
 
     if (status !== "active") {

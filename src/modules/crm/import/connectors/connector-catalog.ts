@@ -88,7 +88,7 @@ export function streamFor(
  * that is the wrong window — so the rule throughout is that the request is kept
  * to the smallest thing that can be wrong.
  */
-export const CONNECTOR_WIRING_BLOCKERS: readonly string[] = [
+const CONNECTOR_WIRING_BLOCKERS: readonly string[] = [
   "IntegrationToolkit has no CRM member, so a connection cannot be finalised",
   "ComposioGateway.authConfigIdFor has no CRM auth config",
   "ComposioGateway.getAccountEmail has no CRM branch, so a connection has no label",

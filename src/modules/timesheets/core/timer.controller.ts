@@ -24,7 +24,9 @@ import {
   type ConvertTimerInput,
 } from "./dto/timer.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../../common/openapi/response-envelopes";
+import { timerSchema, timerNullableResponseSchema, entrySchema } from "./dto/timesheets-response.schemas";
 import { z } from "zod";
 
 const timerIdParams = z.object({ timerId: z.coerce.number().int().positive() }).strict();
@@ -49,6 +51,7 @@ export class TimerController {
 
   @Get("active")
   @RequirePermission("timesheets:entries:view")
+  @ResponseSchema(timerNullableResponseSchema)
   getActive(@CurrentUser() u: CurrentUserContext) {
     return this.timer.getActive(u);
   }
@@ -58,6 +61,7 @@ export class TimerController {
   @RequirePermission("timesheets:entries:create")
   @Validate({ body: startTimerSchema })
   @Idempotent("timesheets.timer.start", { required: false })
+  @ResponseSchema(timerSchema)
   start(
     @Body() body: StartTimerInput,
     @CurrentUser() u: CurrentUserContext,
@@ -70,6 +74,7 @@ export class TimerController {
   @HttpCode(200)
   @RequirePermission("timesheets:entries:create")
   @Validate({ params: timerIdParams })
+  @ResponseSchema(timerSchema)
   pause(
     @Param("timerId", ParseIntPipe) timerId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -82,6 +87,7 @@ export class TimerController {
   @HttpCode(200)
   @RequirePermission("timesheets:entries:create")
   @Validate({ params: timerIdParams })
+  @ResponseSchema(timerSchema)
   resume(
     @Param("timerId", ParseIntPipe) timerId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -95,6 +101,7 @@ export class TimerController {
   @RequirePermission("timesheets:entries:create")
   @Validate({ params: timerIdParams })
   @Idempotent("timesheets.timer.stop", { required: false })
+  @ResponseSchema(timerSchema)
   stop(
     @Param("timerId", ParseIntPipe) timerId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -108,6 +115,7 @@ export class TimerController {
   @RequirePermission("timesheets:entries:create")
   @Validate({ params: timerIdParams })
   @Idempotent("timesheets.timer.discard", { required: false })
+  @ResponseSchema(successSchema)
   discard(
     @Param("timerId", ParseIntPipe) timerId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -120,6 +128,7 @@ export class TimerController {
   @RequirePermission("timesheets:entries:create")
   @Validate({ params: timerIdParams, body: convertTimerSchema })
   @Idempotent("timesheets.timer.convert", { required: false })
+  @ResponseSchema(entrySchema)
   convert(
     @Param("timerId", ParseIntPipe) timerId: number,
     @Body() body: ConvertTimerInput,

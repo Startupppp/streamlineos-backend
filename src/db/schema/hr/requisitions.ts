@@ -1,5 +1,5 @@
-import { pgTable, text, serial, timestamp, decimal, integer, index, unique } from "drizzle-orm/pg-core";
-import { organizations, users } from "../common/auth";
+import { decimal, foreignKey, index, integer, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
+import { organizations } from "../common/auth";
 import { jobPostings } from "./hiring-core";
 
 export const jobRequisitions = pgTable("job_requisitions", {
@@ -11,20 +11,24 @@ export const jobRequisitions = pgTable("job_requisitions", {
   headcount: integer("headcount").default(1).notNull(),
   budgetMin: decimal("budget_min", { precision: 15, scale: 2 }),
   budgetMax: decimal("budget_max", { precision: 15, scale: 2 }),
-  hiringManagerId: text("hiring_manager_id").references(() => users.id),
+  hiringManagerId: text("hiring_manager_id"),
+  hiringManagerMembershipId: integer("hiring_manager_membership_id"),
   priority: text("priority").default("MEDIUM").notNull(),
   type: text("type").default("FULL_TIME").notNull(),
   status: text("status").default("DRAFT").notNull(),
-  requestedBy: text("requested_by").references(() => users.id).notNull(),
-  approverId: text("approver_id").references(() => users.id),
+  requestedBy: text("requested_by").notNull(),
+  requestedByMembershipId: integer("requested_by_membership_id"),
+  approverId: text("approver_id"),
+  approverMembershipId: integer("approver_membership_id"),
   approvedAt: timestamp("approved_at"),
   rejectionReason: text("rejection_reason"),
   justification: text("justification"),
   targetDate: text("target_date"),
-  linkedJobId: integer("linked_job_id").references(() => jobPostings.id, { onDelete: "set null" }),
+  linkedJobId: integer("linked_job_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.linkedJobId], foreignColumns: [jobPostings.orgId, jobPostings.id], name: "fk_job_requisitions_linked_job_id_org" }).onDelete("set null"),
   unique("uniq_job_requisitions_org_id").on(table.orgId, table.id),
   index("idx_requisitions_org_status").on(table.orgId, table.status),
   index("idx_requisitions_hiring_manager").on(table.hiringManagerId),

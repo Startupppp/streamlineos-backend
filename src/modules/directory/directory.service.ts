@@ -20,6 +20,10 @@ import type {
   UpdatePersonInput,
 } from "./dto/directory.schemas";
 import { DirectoryIdentityService } from "./directory-identity.service";
+import {
+  DIRECTORY_PERSON_COLUMNS,
+  toDirectoryPerson,
+} from "./directory-person-projection";
 import { WorkerEngagementsService } from "./worker-engagements.service";
 import { isUniqueViolation } from "../../common/db/postgres-error";
 
@@ -85,7 +89,7 @@ export class DirectoryService {
       searchCondition,
     );
     const rows = await this.db
-      .select()
+      .select(DIRECTORY_PERSON_COLUMNS)
       .from(organizationPeople)
       .where(conditions)
       .orderBy(asc(organizationPeople.organizationPersonId))
@@ -105,7 +109,18 @@ export class DirectoryService {
   }
 
   async getPerson(organizationId: string, organizationPersonId: string) {
-    const person = await this.loadPerson(organizationId, organizationPersonId);
+    const [person] = await this.db
+      .select(DIRECTORY_PERSON_COLUMNS)
+      .from(organizationPeople)
+      .where(
+        and(
+          eq(organizationPeople.organizationPersonId, organizationPersonId),
+          eq(organizationPeople.organizationId, organizationId),
+          isNull(organizationPeople.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!person) throw new NotFoundException("Person not found");
     return this.identities.resolvePersonAccess(organizationId, person);
   }
 
@@ -159,7 +174,10 @@ export class DirectoryService {
         lastName: row.lastName,
       },
     });
-    return this.identities.resolvePersonAccess(organizationId, row);
+    return this.identities.resolvePersonAccess(
+      organizationId,
+      toDirectoryPerson(row),
+    );
   }
 
   async updatePerson(
@@ -246,7 +264,10 @@ export class DirectoryService {
       resourceId: organizationPersonId,
       metadata: { organizationPersonId },
     });
-    return this.identities.resolvePersonAccess(organizationId, updated);
+    return this.identities.resolvePersonAccess(
+      organizationId,
+      toDirectoryPerson(updated),
+    );
   }
 
   async softDeletePerson(

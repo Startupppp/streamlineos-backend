@@ -65,10 +65,21 @@ const MODULE_MEMBER_KEY_SCOPE_OVERRIDE: Record<string, "own" | "team" | "all"> =
  * Named here rather than only in the backfill, so a newly seeded organisation
  * and a backfilled one resolve to the same capability; migration 0226 exists
  * because that invariant was broken once already.
+ *
+ * `integrations:git:*` is the same shape for Build. Repository connections are
+ * the Build module's own settings page (`/build/settings/integrations`) and
+ * `git_connections.project_id` points at a Build project, but the keys sit in
+ * the `integrations` namespace, so `moduleScopedPermissions("build")` skips
+ * them. Until this entry existed the page was gated on `settings:manage` —
+ * organisation administration — and a `BUILD_MODULE_ADMIN` could not open their
+ * own module's integrations. The pair is deliberately narrow: it reaches
+ * repository connections and nothing else in `integrations`, and `RoleGrantReconciler`
+ * delivers it to organisations that already exist.
  */
 const MODULE_ADMIN_EXTRA_KEYS: Readonly<Record<string, readonly string[]>> = {
   hr: ["settings:view", "settings:organization:manage"],
   crm: ["settings:record-layouts:manage"],
+  build: ["integrations:git:view", "integrations:git:manage"],
 };
 
 const MODULE_MEMBER_EXTRA_KEYS: Readonly<Record<string, readonly string[]>> = {
@@ -100,7 +111,7 @@ export function buildOrgMemberPermissionKeys(dbCatalog: Set<string>): string[] {
   return (ROLE_DEFAULT_PERMISSIONS["MEMBER"] ?? []).filter((key) => dbCatalog.has(key));
 }
 
-interface RoleSpec {
+export interface SeededRoleSpec {
   readonly slug: string;
   readonly name: string;
   readonly rank: number;
@@ -110,13 +121,18 @@ interface RoleSpec {
 
 /**
  * Every system role a new organisation gets, decided without touching the
- * database.
+ * database, and the only definition of what each seeded slug is supposed to
+ * hold.
  *
  * Pure and exported so the shape of the ladder can be asserted directly, rather
  * than inferred from how many times an insert mock was called.
+ * `RoleGrantReconcilerService` reads the same function (as `buildSeededRoleSpecs`)
+ * so an organisation seeded before a rung was widened converges on what a fresh
+ * one gets — the invariant `MODULE_ADMIN_EXTRA_KEYS` states and that migration
+ * 0226 exists because it was broken once.
  */
-export function systemRoleSpecs(dbCatalog: Set<string>): RoleSpec[] {
-  const specs: RoleSpec[] = [
+export function systemRoleSpecs(dbCatalog: Set<string>): SeededRoleSpec[] {
+  const specs: SeededRoleSpec[] = [
     {
       slug: "ORG_ADMIN",
       name: "Org Admin",
@@ -160,10 +176,21 @@ export function systemRoleSpecs(dbCatalog: Set<string>): RoleSpec[] {
   return [...bySlug.values()];
 }
 
+/** The name `RoleGrantReconcilerService` imports; the same function as `systemRoleSpecs`. */
+export const buildSeededRoleSpecs = systemRoleSpecs;
+
+/**
+ * `MODULE_MEMBER_KEY_SCOPE_OVERRIDE` applies only to the member rung, so the
+ * scope a grant is seeded at is a function of the slug and the key. Exported so
+ * the reconciler seats a backfilled grant at the same scope the seeder would.
+ */
 export function scopeForGrant(slug: string, permissionKey: string): "own" | "team" | "all" {
   if (!slug.endsWith("_MODULE_MEMBER")) return "all";
   return MODULE_MEMBER_KEY_SCOPE_OVERRIDE[permissionKey] ?? "all";
 }
+
+/** The name `RoleGrantReconcilerService` imports; the same function as `scopeForGrant`. */
+export const seededGrantScope = scopeForGrant;
 
 /**
  * How many grant rows go in one statement.

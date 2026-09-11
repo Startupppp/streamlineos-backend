@@ -1,8 +1,7 @@
 import { ConflictException, NotFoundException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
 import { coupons, couponRedemptions } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
-import { getPostgresErrorCode } from "../../../common/db/postgres-error";
 import {
   evaluateCoupon,
   COUPON_NOT_FOUND,
@@ -14,6 +13,13 @@ import {
   type Plan,
   type UpdateCouponInput,
 } from "./dto/billing.schemas";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
+
+// A coupon is redeemable by the organisation that owns it, or by everyone when it is a
+// platform-wide coupon (`org_id IS NULL`). Every read applies this predicate.
+function redeemableBy(orgId: string) {
+  return or(isNull(coupons.orgId), eq(coupons.orgId, orgId));
+}
 
 // Every read goes through `evaluate`, so checkout, validation and redemption cannot disagree.
 export class BillingCoupons {
@@ -27,7 +33,11 @@ export class BillingCoupons {
     baseAmountPaise: number,
   ): Promise<CouponEvaluation> {
     const coupon = await this.db.query.coupons.findFirst({
-      where: and(eq(coupons.id, couponId), eq(coupons.isActive, true)),
+      where: and(
+        eq(coupons.id, couponId),
+        eq(coupons.isActive, true),
+        redeemableBy(orgId),
+      ),
     });
     const alreadyRedeemed = coupon
       ? await this.db.query.couponRedemptions.findFirst({
@@ -61,8 +71,16 @@ export class BillingCoupons {
     message: string;
   }> {
     const normalizedCode = code.trim().toUpperCase();
+    // `code` is unique per tenant and unique among platform coupons, but not across the
+    // two, so an organisation may own a code that also exists platform-wide. Its own
+    // coupon wins: `org_id IS NULL` sorts false-before-true, putting the tenant row first.
     const coupon = await this.db.query.coupons.findFirst({
-      where: and(eq(coupons.code, normalizedCode), eq(coupons.isActive, true)),
+      where: and(
+        eq(coupons.code, normalizedCode),
+        eq(coupons.isActive, true),
+        redeemableBy(orgId),
+      ),
+      orderBy: [asc(sql`${coupons.orgId} IS NULL`), asc(coupons.id)],
     });
 
     if (!coupon) {
@@ -106,20 +124,26 @@ export class BillingCoupons {
     };
   }
 
-  async list() {
+  async list(orgId: string) {
     const all = await this.db.query.coupons.findMany({
+      where: redeemableBy(orgId),
       orderBy: (c, { desc: d }) => [d(c.createdAt)],
-      with: { redemptions: true },
+      with: {
+        redemptions: {
+          where: eq(couponRedemptions.orgId, orgId),
+        },
+      },
       limit: 100,
     });
     return all;
   }
 
-  async create(data: CreateCouponInput) {
+  async create(orgId: string, data: CreateCouponInput) {
     try {
       const [created] = await this.db
         .insert(coupons)
         .values({
+          orgId,
           code: data.code.toUpperCase(),
           type: data.type,
           value: String(data.value),
@@ -130,10 +154,10 @@ export class BillingCoupons {
         .returning();
       return created;
     } catch (err: unknown) {
-      // `coupons.code` is unique platform-wide, and the caller supplies it.
-      // Read through the helper: Drizzle leaves the SQLSTATE on `.cause`, so
-      // `err.code` was undefined and a duplicate code was a 500.
-      if (getPostgresErrorCode(err) === "23505") {
+      // `coupons.code` is unique per tenant and among platform coupons, and the
+      // caller supplies it. Read through the helper: Drizzle leaves the SQLSTATE
+      // on `.cause`, so `err.code` was undefined and a duplicate code was a 500.
+      if (isUniqueViolation(err)) {
         throw new ConflictException(
           `A coupon with the code ${data.code.toUpperCase()} already exists`,
         );
@@ -142,7 +166,7 @@ export class BillingCoupons {
     }
   }
 
-  async update(id: number, data: UpdateCouponInput) {
+  async update(orgId: string, id: number, data: UpdateCouponInput) {
     const [updated] = await this.db
       .update(coupons)
       .set({
@@ -159,17 +183,19 @@ export class BillingCoupons {
         ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
         updatedAt: new Date(),
       })
-      .where(eq(coupons.id, id))
+      .where(and(eq(coupons.id, id), eq(coupons.orgId, orgId)))
       .returning();
     if (!updated) throw new NotFoundException("Coupon not found");
     return updated;
   }
 
-  async remove(id: number) {
-    await this.db
+  async remove(orgId: string, id: number) {
+    const [removed] = await this.db
       .update(coupons)
       .set({ isActive: false, updatedAt: new Date() })
-      .where(eq(coupons.id, id));
+      .where(and(eq(coupons.id, id), eq(coupons.orgId, orgId)))
+      .returning({ id: coupons.id });
+    if (!removed) throw new NotFoundException("Coupon not found");
     return { success: true };
   }
 }

@@ -1,15 +1,4 @@
-import {
-  pgTable,
-  serial,
-  text,
-  integer,
-  jsonb,
-  timestamp,
-  index,
-  uniqueIndex,
-  varchar,
-  unique,
-} from "drizzle-orm/pg-core";
+import { foreignKey, index, integer, jsonb, pgTable, serial, text, timestamp, unique, uniqueIndex, varchar } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { kbArticles } from "./kb";
@@ -34,7 +23,7 @@ export const supportKnowledgeGaps = pgTable(
     ticketCount: integer("ticket_count").default(0).notNull(),
     sampleTicketIds: jsonb("sample_ticket_ids").$type<number[]>().default([]).notNull(),
     status: text("status").default("OPEN").notNull(),
-    proposedArticleId: integer("proposed_article_id").references(() => kbArticles.id, { onDelete: "set null" }),
+    proposedArticleId: integer("proposed_article_id"),
     draftedBy: text("drafted_by").references(() => users.id, { onDelete: "set null" }),
     reviewedBy: text("reviewed_by").references(() => users.id, { onDelete: "set null" }),
     evidence: jsonb("evidence")
@@ -45,9 +34,9 @@ export const supportKnowledgeGaps = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.proposedArticleId], foreignColumns: [kbArticles.orgId, kbArticles.id], name: "fk_support_knowledge_gaps_proposed_article_id_org" }).onDelete("set null"),
     uniqueIndex("uniq_support_knowledge_gaps_org_cluster").on(table.orgId, table.clusterKey),
     index("idx_support_knowledge_gaps_org_status_created").on(table.orgId, table.status, table.createdAt),
-    index("idx_support_knowledge_gaps_org").on(table.orgId),
     unique("uniq_support_knowledge_gaps_org_id").on(table.orgId, table.id),
   ],
 );

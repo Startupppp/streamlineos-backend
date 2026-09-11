@@ -28,6 +28,8 @@ interface StoredMessage {
   createdAt: Date;
   content: string;
   metadata: Record<string, unknown> | null;
+  /** `with: { reactions }` is part of the message read now; a `many` relation is always an array. */
+  reactions: [];
 }
 
 class MessageStore {
@@ -47,6 +49,7 @@ class MessageStore {
       createdAt: at ?? new Date(Date.UTC(2024, 0, 1, 0, 0, id)),
       content: `m${id}`,
       metadata: null,
+      reactions: [],
     };
     this.rows.push(row);
     return row;

@@ -49,6 +49,21 @@ function isEmpty(value: PartyFieldValue): boolean {
   return value === null || value === undefined || (typeof value === "string" && !value.trim());
 }
 
+function isFieldValue(value: unknown): value is PartyFieldValue {
+  return (
+    value === null ||
+    value === undefined ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  );
+}
+
+function toFieldValue(value: unknown, field: string): PartyFieldValue {
+  if (!isFieldValue(value)) throw new Error(`Unexpected non-scalar value for mergeable field "${field}"`);
+  return value;
+}
+
 export interface MergeableRecord {
   readonly customFields?: Record<string, unknown> | null;
   readonly [field: string]: unknown;
@@ -59,8 +74,8 @@ export function planMerge(survivor: MergeableRecord, merged: MergeableRecord): M
   const conflicts: Partial<Record<MergeableField, FieldConflict>> = {};
 
   for (const field of MERGEABLE_FIELDS) {
-    const keep = survivor[field] as PartyFieldValue;
-    const other = merged[field] as PartyFieldValue;
+    const keep = toFieldValue(survivor[field], field);
+    const other = toFieldValue(merged[field], field);
 
     if (isEmpty(other)) continue;
 

@@ -36,10 +36,6 @@ describe("AblyService — realtime adapter absent (no key configured)", () => {
     await expect(service.publishHuddleEvent("org-1", 1, "join", {})).resolves.not.toThrow();
   });
 
-  it("publishHuddleSignal is a no-op", async () => {
-    await expect(service.publishHuddleSignal("org-1", 1, "user-2", {})).resolves.not.toThrow();
-  });
-
   it("publishToUser without requireConfigured is a no-op", async () => {
     await expect(service.publishToUser("org-1", "user-1", "event", {})).resolves.not.toThrow();
   });
@@ -173,7 +169,7 @@ describeWithDb("AblyService — realtime adapter present but publishing fails (f
   });
 
   it.skip(
-    "unblocked by: a real Ably account with a valid API key so a test client can subscribe to a channel and verify it receives messages from the DB lastReadAt watermark after reconnecting — the subscription and message history retrieval require Ably infrastructure that is not available in this environment",
+    "integration: a test client receives messages from the DB lastReadAt watermark after reconnecting — Ably configuration exists but is unverified; the subscription/history probe and authorized disposable Ably/database acceptance are not available",
     () => {},
   );
 });

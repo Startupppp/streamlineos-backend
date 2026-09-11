@@ -20,6 +20,29 @@ export const CRM_WORKSPACE_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Log, edit, complete and remove activities on the timeline",
   },
+  /*
+   * Custom field definitions are CRM-owned: `custom_field_definitions` is shared
+   * with Support, HR and Build, but the four routes that reach it constrain both
+   * their reads and their writes to `lead | deal | contact`. They were served at
+   * the global `/settings/custom-fields` path behind `settings:custom-fields:*`,
+   * a pair no seeded rung and no template carries, so a CRM_MODULE_ADMIN could
+   * not open CRM's own screen. Naming them in the `crm` namespace is what puts
+   * them on the module rung: `moduleScopedPermissions("crm")` picks them up with
+   * no MODULE_ADMIN_EXTRA_KEYS entry, and `RoleGrantReconcilerService` delivers
+   * them to organisations that already exist.
+   */
+  {
+    name: "crm:custom-fields:view",
+    resource: "crm:custom-fields",
+    action: "view",
+    description: "View CRM custom field definitions",
+  },
+  {
+    name: "crm:custom-fields:manage",
+    resource: "crm:custom-fields",
+    action: "manage",
+    description: "Create, edit and remove CRM custom field definitions",
+  },
   {
     name: "crm:settings:view",
     resource: "crm:settings",

@@ -25,18 +25,20 @@ export interface AuditEventParams {
 
 type DbLike = Pick<Db, "insert" | "select">;
 
+const AUDIT_INSERT_CHUNK = 500;
+
 /** JSON.stringify with recursively sorted object keys, so hashes survive
  *  Postgres jsonb round-trips (jsonb does not preserve key order). */
 export function stableStringify(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
-  const withToJson = value as { toJSON?: () => unknown };
-  if (typeof withToJson.toJSON === "function") {
-    return stableStringify(withToJson.toJSON());
+  const toJson: unknown = Reflect.get(value, "toJSON");
+  if (typeof toJson === "function") {
+    return stableStringify(toJson.call(value));
   }
   if (Array.isArray(value)) {
     return `[${value.map((v) => stableStringify(v === undefined ? null : v)).join(",")}]`;
   }
-  const entries = Object.entries(value as Record<string, unknown>)
+  const entries = Object.entries(value)
     .filter(([, v]) => v !== undefined)
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`);
@@ -82,12 +84,53 @@ export class TimesheetsAuditService {
       entityType: params.entityType,
       entityId: params.entityId,
       action: params.action,
-      before: (params.before ?? null) as Record<string, unknown> | null,
-      after: (params.after ?? null) as Record<string, unknown> | null,
+      before: params.before ?? null,
+      after: params.after ?? null,
       reason: params.reason ?? null,
       prevHash,
       rowHash,
     });
+  }
+
+  /**
+   * The chained form of `record`. The hash chain is sequential by definition, so a
+   * bulk action wrote one SELECT plus one INSERT per subject; here the tail hash is
+   * read once and the chain is extended in memory, which is exactly what a per-row
+   * loop would have produced because every link is derived from its predecessor.
+   * The multi-row INSERT keeps VALUES order, so `id` order matches chain order.
+   */
+  async recordMany(dbOrTx: DbLike, paramsList: readonly AuditEventParams[]): Promise<void> {
+    const first = paramsList[0];
+    if (!first) return;
+
+    const [last] = await dbOrTx
+      .select({ rowHash: timesheetAuditEvents.rowHash })
+      .from(timesheetAuditEvents)
+      .where(eq(timesheetAuditEvents.orgId, first.orgId))
+      .orderBy(desc(timesheetAuditEvents.id))
+      .limit(1);
+
+    let prevHash = last?.rowHash ?? null;
+    const rows = paramsList.map((params) => {
+      const rowHash = computeAuditRowHash(prevHash, params);
+      const row = {
+        orgId: params.orgId,
+        actorMembershipId: params.actorMembershipId ?? null,
+        entityType: params.entityType,
+        entityId: params.entityId,
+        action: params.action,
+        before: params.before ?? null,
+        after: params.after ?? null,
+        reason: params.reason ?? null,
+        prevHash,
+        rowHash,
+      };
+      prevHash = rowHash;
+      return row;
+    });
+
+    for (let offset = 0; offset < rows.length; offset += AUDIT_INSERT_CHUNK)
+      await dbOrTx.insert(timesheetAuditEvents).values(rows.slice(offset, offset + AUDIT_INSERT_CHUNK));
   }
 
   recordWithDb(params: AuditEventParams): Promise<void> {

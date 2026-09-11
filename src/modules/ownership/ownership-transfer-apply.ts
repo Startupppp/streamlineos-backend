@@ -13,7 +13,8 @@ import {
 import { type Db } from "../../db/drizzle.module";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
-import { syncStructuralRoleAssignment } from "../../common/rbac/sync-structural-role";
+import { withMembershipMutations } from "../../common/org/membership-mutations";
+import type { CacheService } from "../../common/cache/cache.service";
 import {
   assertModuleOwnerRoleAssigned,
   revokeModuleOwnerRole,
@@ -21,96 +22,92 @@ import {
 
 export async function applyOrgTransfer(
   db: Db,
+  cache: CacheService,
   orgId: string,
   transferId: string,
   fromMembershipId: number,
   toMembershipId: number,
 ): Promise<string> {
-  return db.transaction(async (tx) => {
-    const [org] = await tx
-      .select({ ownerMembershipId: organizations.ownerMembershipId })
-      .from(organizations)
-      .where(eq(organizations.id, orgId))
-      .for("update");
-    if (!org) throw new NotFoundException("Organization not found");
+  return withMembershipMutations(cache, (membership) =>
+    db.transaction(async (tx) => {
+      const [org] = await tx
+        .select({ ownerMembershipId: organizations.ownerMembershipId })
+        .from(organizations)
+        .where(eq(organizations.id, orgId))
+        .for("update");
+      if (!org) throw new NotFoundException("Organization not found");
 
-    const memberships = await tx
-      .select({
-        id: organizationMembers.id,
-        userId: organizationMembers.userId,
-        isOwner: organizationMembers.isOwner,
-        status: organizationMembers.status,
-      })
-      .from(organizationMembers)
-      .where(
-        and(
-          eq(organizationMembers.orgId, orgId),
-          or(
-            eq(organizationMembers.id, fromMembershipId),
-            eq(organizationMembers.id, toMembershipId),
+      const memberships = await tx
+        .select({
+          id: organizationMembers.id,
+          userId: organizationMembers.userId,
+          isOwner: organizationMembers.isOwner,
+          status: organizationMembers.status,
+        })
+        .from(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.orgId, orgId),
+            or(
+              eq(organizationMembers.id, fromMembershipId),
+              eq(organizationMembers.id, toMembershipId),
+            ),
           ),
-        ),
-      )
-      .for("update");
+        )
+        .for("update");
 
-    const fromMember = memberships.find((m) => m.id === fromMembershipId);
-    const toMember = memberships.find((m) => m.id === toMembershipId);
+      const fromMember = memberships.find((m) => m.id === fromMembershipId);
+      const toMember = memberships.find((m) => m.id === toMembershipId);
 
-    if (!fromMember)
-      throw new BadRequestException("Initiating member no longer exists");
-    const isCurrentOwner =
-      fromMember.isOwner ||
-      (org.ownerMembershipId != null &&
-        org.ownerMembershipId === fromMember.id);
-    if (!isCurrentOwner) {
-      throw new BadRequestException(
-        "Organization ownership changed since this transfer was initiated; it can no longer be accepted",
-      );
-    }
-    if (!toMember || toMember.status !== "ACTIVE") {
-      throw new BadRequestException(
-        "Recipient membership is no longer active",
-      );
-    }
+      if (!fromMember)
+        throw new BadRequestException("Initiating member no longer exists");
+      const isCurrentOwner =
+        fromMember.isOwner ||
+        (org.ownerMembershipId != null &&
+          org.ownerMembershipId === fromMember.id);
+      if (!isCurrentOwner) {
+        throw new BadRequestException(
+          "Organization ownership changed since this transfer was initiated; it can no longer be accepted",
+        );
+      }
+      if (!toMember || toMember.status !== "ACTIVE") {
+        throw new BadRequestException(
+          "Recipient membership is no longer active",
+        );
+      }
 
-    await tx
-      .update(organizationMembers)
-      .set({ isOwner: false, role: ORG_MEMBER_ROLES.ORG_ADMIN })
-      .where(eq(organizationMembers.id, fromMember.id));
-    await syncStructuralRoleAssignment(
-      tx,
-      orgId,
-      fromMember.id,
-      ORG_MEMBER_ROLES.ORG_ADMIN,
-    );
-    await tx
-      .update(organizationMembers)
-      .set({ isOwner: true, role: "OWNER", status: "ACTIVE" })
-      .where(eq(organizationMembers.id, toMember.id));
-    await tx
-      .update(organizations)
-      .set({ ownerMembershipId: toMember.id })
-      .where(eq(organizations.id, orgId));
+      await membership.transferOrgOwnership(tx, {
+        orgId,
+        from: { membershipId: fromMember.id, userId: fromMember.userId },
+        to: { membershipId: toMember.id, userId: toMember.userId },
+        demotedRole: ORG_MEMBER_ROLES.ORG_ADMIN,
+        ownerRole: "OWNER",
+      });
+      await tx
+        .update(organizations)
+        .set({ ownerMembershipId: toMember.id })
+        .where(eq(organizations.id, orgId));
 
-    const [accepted] = await tx
-      .update(ownershipTransfers)
-      .set({ status: "ACCEPTED", respondedAt: new Date() })
-      .where(
-        and(
-          eq(ownershipTransfers.id, transferId),
-          eq(ownershipTransfers.orgId, orgId),
-          eq(ownershipTransfers.status, "PENDING"),
-        ),
-      )
-      .returning({ id: ownershipTransfers.id });
-    if (!accepted)
-      throw new ConflictException(
-        "Transfer is no longer pending; a concurrent response committed first",
-      );
+      const [accepted] = await tx
+        .update(ownershipTransfers)
+        .set({ status: "ACCEPTED", respondedAt: new Date() })
+        .where(
+          and(
+            eq(ownershipTransfers.id, transferId),
+            eq(ownershipTransfers.orgId, orgId),
+            eq(ownershipTransfers.status, "PENDING"),
+          ),
+        )
+        .returning({ id: ownershipTransfers.id });
+      if (!accepted)
+        throw new ConflictException(
+          "Transfer is no longer pending; a concurrent response committed first",
+        );
 
-    await bumpPermissionsVersion(tx, orgId);
-    return fromMember.userId;
-  });
+      await bumpPermissionsVersion(tx, orgId);
+      return fromMember.userId;
+    }),
+  );
 }
 
 export async function applyModuleTransfer(

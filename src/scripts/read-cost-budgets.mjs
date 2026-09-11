@@ -19,7 +19,42 @@
  * params(fixtures) returns null to skip a budget when a required fixture is absent
  * (e.g. no payroll runs exist in the seed). A skipped budget is reported as SKIP,
  * never PASS.
+ *
+ * VACUOUS BUDGETS. The runner also fails a budget whose query returns zero rows. A budget over an
+ * empty result set satisfies every ceiling trivially and no plan assertion it declares can ever
+ * fire, so reporting it as PASS is the exact failure this catalog exists to prevent — it measures
+ * nothing while reading as measured. Six budgets were doing this when the guard was added.
+ * `allowEmptyResult: true` waives it and REQUIRES `allowEmptyReason` alongside; use it only where
+ * an empty result is the correct steady state, never to silence a fixture that stopped matching.
+ *
+ * EXCLUSIONS. `excluded: "<reason>"` skips a budget entirely and is reported as EXCL, which proves
+ * nothing at all. Ten entries carried "CRM/Inventory module not seeded on scratch_e2e"; the perf
+ * seed populates both across four tenants, so the exclusions were removed rather than renewed. An
+ * exclusion is a claim about the database, and a stale claim is indistinguishable from coverage.
  */
+
+const DAY_MS = 86_400_000;
+
+/**
+ * The `notifications` read window, mirroring `src/modules/notifications/notification-read-window.ts`.
+ *
+ * `notifications` is RANGE-partitioned on `created_at`. A budget with no `created_at` predicate
+ * plans a Merge Append over every declared partition and measures partition pruning that the
+ * service does not have to pay for — the opposite of what the ceiling is for. Kept in step with
+ * NOTIFICATION_RETENTION_POLICY.notifications.retainDays (180) by hand, because this catalog is
+ * plain ESM and the policy is TypeScript; changing the retention window without changing this
+ * makes the budget measure a wider window than the service reads.
+ */
+const NOTIFICATION_RETAIN_DAYS = 180;
+
+export function notificationReadWindow(now = new Date()) {
+  const cutoff = new Date(now.getTime() - NOTIFICATION_RETAIN_DAYS * DAY_MS);
+  const monthStart = Date.UTC(cutoff.getUTCFullYear(), cutoff.getUTCMonth(), 1);
+  return {
+    start: new Date(monthStart - DAY_MS).toISOString(),
+    end: new Date(now.getTime() + DAY_MS).toISOString(),
+  };
+}
 
 export const BUDGETS = [
   {
@@ -27,14 +62,14 @@ export const BUDGETS = [
     ceiling: 5_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM build.tickets WHERE org_id = $1 AND deleted_at IS NULL`,
-    params: (f) => (f.projectId ? [f.orgId, f.projectId, f.userId] : null),
+    params: (f) => (f.projectId && f.membershipId ? [f.orgId, f.projectId, f.membershipId] : null),
     sql: `
       SELECT t.id, count(*) OVER () total
       FROM build.tickets t
       WHERE t.org_id = $1 AND t.project_id = $2 AND t.deleted_at IS NULL
-        AND (t.assignee_id = $3 OR t.reporter_id = $3
+        AND (t.assignee_membership_id = $3 OR t.reporter_membership_id = $3
              OR EXISTS (SELECT 1 FROM build.ticket_assignees ta
-                        WHERE ta.org_id = $1 AND ta.user_id = $3 AND ta.ticket_id = t.id))
+                        WHERE ta.org_id = $1 AND ta.membership_id = $3 AND ta.ticket_id = t.id))
       ORDER BY t.rank ASC, t.created_at DESC, t.id ASC
       LIMIT 50 OFFSET 0`,
     // ticket_assignees is accessed via a hashed SubPlan (one-time materialization of the user's
@@ -49,16 +84,16 @@ export const BUDGETS = [
     ceiling: 30_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM build.ticket_assignees WHERE org_id = $1`,
-    params: (f) => [f.orgId, f.userId],
+    params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
     sql: `
       SELECT u.id, count(*) OVER () total FROM (
         (SELECT t.id, t.due_date, t.priority
          FROM build.tickets t INNER JOIN build.projects p ON p.id = t.project_id
-         WHERE t.org_id = $1 AND p.status <> 'ARCHIVED' AND t.deleted_at IS NULL AND t.assignee_id = $2)
+         WHERE t.org_id = $1 AND p.status <> 'ARCHIVED' AND t.deleted_at IS NULL AND t.assignee_membership_id = $2)
         UNION
         (SELECT t.id, t.due_date, t.priority
          FROM build.tickets t INNER JOIN build.projects p ON p.id = t.project_id
-         INNER JOIN build.ticket_assignees ta ON ta.ticket_id = t.id AND ta.org_id = $1 AND ta.user_id = $2
+         INNER JOIN build.ticket_assignees ta ON ta.ticket_id = t.id AND ta.org_id = $1 AND ta.membership_id = $2
          WHERE t.org_id = $1 AND p.status <> 'ARCHIVED' AND t.deleted_at IS NULL)
       ) u
       ORDER BY u.due_date ASC NULLS LAST,
@@ -77,7 +112,7 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM build.tickets WHERE org_id = $1 AND deleted_at IS NULL`,
     params: (f) => (f.projectId ? [f.orgId, f.projectId] : null),
     sql: `
-      SELECT t.id, t.title, t.status, t.priority, t.assignee_id, t.rank,
+      SELECT t.id, t.title, t.status, t.priority, t.assignee_membership_id, t.rank,
              count(*) OVER () total
       FROM build.tickets t
       WHERE t.org_id = $1 AND t.project_id = $2 AND t.deleted_at IS NULL
@@ -92,17 +127,17 @@ export const BUDGETS = [
     ceiling: 20_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM build.tickets WHERE org_id = $1 AND deleted_at IS NULL`,
-    params: (f) => [f.orgId, f.userId],
+    params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
     sql: `
       SELECT t.id, t.title, t.status, t.priority, t.due_date,
              count(*) OVER () total
       FROM build.tickets t
       INNER JOIN build.projects p ON p.id = t.project_id
-      WHERE t.org_id = $1 AND t.assignee_id = $2
+      WHERE t.org_id = $1 AND t.assignee_membership_id = $2
         AND t.deleted_at IS NULL AND p.status <> 'ARCHIVED'
       ORDER BY t.due_date ASC NULLS LAST, t.created_at DESC
       LIMIT 50 OFFSET 0`,
-    // idx_tickets_org_assignee_status (org_id, assignee_id, status) exists for production use.
+    // idx_tickets_org_assignee_status (org_id, assignee_membership_id, status) exists for production use.
     // Seed data has only 2 users sharing 20 000 tickets, so each user has ~34% of all rows and
     // the planner correctly prefers a seq scan. The block ceiling (20 000) guards correctness;
     // the index assertion fires naturally once realistic data exists.
@@ -114,11 +149,21 @@ export const BUDGETS = [
     minRows: 100,
     maxScanRows: 2_000,
     rowCountSql: `SELECT count(*)::int FROM notifications WHERE org_id = $1 AND deleted_at IS NULL`,
-    params: (f) => [f.orgId, f.userId],
+    // Migration 0520 moved the recipient authority from `user_id` to `membership_id`, and the live
+    // indexes followed the service rather than this catalog: there is no `(org_id, user_id, …)`
+    // index left. Filtering the old column measured a plan the application never runs — 3,860-6,267
+    // rows scanned in each of 11 partitions — and would have stayed flat through both the fix and
+    // any future regression. A budget that does not track the code it bounds is not a budget.
+    params: (f) => {
+      if (!f.membershipId) return null;
+      const w = notificationReadWindow();
+      return [f.orgId, f.membershipId, w.start, w.end];
+    },
     sql: `
       SELECT id, title, message, is_read, category, source_module, link, created_at
       FROM notifications
-      WHERE org_id = $1 AND user_id = $2
+      WHERE org_id = $1 AND membership_id = $2
+        AND created_at >= $3::timestamptz AND created_at < $4::timestamptz
         AND deleted_at IS NULL AND archived_at IS NULL
       ORDER BY id DESC
       LIMIT 50`,
@@ -131,11 +176,82 @@ export const BUDGETS = [
     ceiling: 3_000,
     minRows: 100,
     rowCountSql: `SELECT count(*)::int FROM notifications WHERE org_id = $1 AND deleted_at IS NULL`,
-    params: (f) => [f.orgId, f.userId],
+    // Same 0520 drift as notifications-list, same remedy — see the note there.
+    params: (f) => {
+      if (!f.membershipId) return null;
+      const w = notificationReadWindow();
+      return [f.orgId, f.membershipId, w.start, w.end];
+    },
     sql: `
       SELECT count(*)::int
       FROM notifications
-      WHERE org_id = $1 AND user_id = $2
+      WHERE org_id = $1 AND membership_id = $2
+        AND created_at >= $3::timestamptz AND created_at < $4::timestamptz
+        AND is_read = false AND deleted_at IS NULL AND archived_at IS NULL`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "notifications" },
+    ],
+  },
+  {
+    /**
+     * `GET /me/inbox/unified` — `UnifiedInboxService.fetchNotifications`.
+     *
+     * PRD-C145 names the Inbox list path explicitly, and until now nothing measured it: the
+     * unified inbox had no route budget, no benchmark and no read-cost budget, so its ceiling
+     * was assumed rather than enforced. It is NOT the same statement as `notifications-list` —
+     * it carries the actor LEFT JOIN to `users` and, unlike that budget, has no `created_at`
+     * window, so it walks every monthly partition of `notifications` through Merge Append
+     * rather than the two or three a window reaches.
+     *
+     * The recipient predicate is `membership_id`, matching `idx_notifications_list_cursor`
+     * `(org_id, membership_id, id DESC) WHERE deleted_at IS NULL AND archived_at IS NULL`.
+     * Keyed on `user_id` the same read measured 2,043 blocks and grew with the tenant; the
+     * seq-scan assertion is what keeps it from drifting back.
+     */
+    id: "inbox-unified-notifications-page",
+    ceiling: 5_000,
+    minRows: 100,
+    maxScanRows: 2_000,
+    rowCountSql: `SELECT count(*)::int FROM notifications WHERE org_id = $1 AND deleted_at IS NULL`,
+    params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
+    sql: `
+      SELECT n.id, n.title, n.message, n.is_read, n.category, n.source_module, n.link,
+             n.created_at, u.id AS actor_user_id, u.name AS actor_name, u.image AS actor_image
+      FROM notifications n
+      LEFT JOIN users u ON u.id = n.actor_user_id
+      WHERE n.org_id = $1 AND n.membership_id = $2
+        AND n.deleted_at IS NULL AND n.archived_at IS NULL
+      ORDER BY n.id DESC
+      LIMIT 50`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "notifications" },
+    ],
+  },
+  {
+    /**
+     * `GET /me/inbox/unified/count` — `UnifiedInboxService.countNotificationUnread`. The
+     * unread/count half of the same PRD-C145 clause, and the twin of a defect already fixed
+     * once on `GET /notifications/unread-count`, which measured 10,234 blocks on `user_id`
+     * and 16 on `membership_id`. The badge is issued on every authenticated page load, so an
+     * unenforced ceiling here is the most expensive kind.
+     */
+    id: "inbox-unified-unread-count",
+    ceiling: 3_000,
+    minRows: 100,
+    /**
+     * A COUNT has no LIMIT to bound it, so `maxScanRows` is the only bound this budget can
+     * carry — without one the entry declared a block ceiling and nothing about plan shape.
+     * Keyed on `membership_id` the plan touches 0 rows on the reference tenant; keyed on
+     * `user_id` it touched 2,046 across the monthly partitions at 10,234 blocks. 500 admits
+     * a real unread backlog and fails that regression.
+     */
+    maxScanRows: 500,
+    rowCountSql: `SELECT count(*)::int FROM notifications WHERE org_id = $1 AND deleted_at IS NULL`,
+    params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
+    sql: `
+      SELECT count(*)::int
+      FROM notifications
+      WHERE org_id = $1 AND membership_id = $2
         AND is_read = false AND deleted_at IS NULL AND archived_at IS NULL`,
     planAssertions: [
       { kind: "forbid-seq-scan", relation: "notifications" },
@@ -156,7 +272,14 @@ export const BUDGETS = [
       WHERE c.org_id = $1 AND m.archived_at IS NULL AND c.is_archived = false
       ORDER BY c.last_message_at DESC
       LIMIT 50`,
-    planAssertions: [],
+    planAssertions: [
+      // The growing side of this join is chat_channel_members, not chat_channels: a tenant has
+      // tens of channels and thousands of memberships. Before this the budget asserted nothing
+      // about plan shape, so a membership Seq Scan would still have passed under an 8,000-block
+      // ceiling. Measured on scratch_perf_seed at head as streamline_app with the tenant GUC:
+      // 11 warm blocks, 2 rows scanned for 2 returned.
+      { kind: "forbid-seq-scan", relation: "chat_channel_members" },
+    ],
   },
   {
     id: "chat-messages-page",
@@ -170,7 +293,12 @@ export const BUDGETS = [
       WHERE org_id = $1 AND channel_id = $2 AND is_deleted = false
       ORDER BY created_at DESC
       LIMIT 50`,
-    planAssertions: [],
+    planAssertions: [
+      // 12,000 messages on the reference tenant. Measured: 10 warm blocks, 50 rows scanned for a
+      // 50-row page — the (org_id, channel_id, created_at DESC) access path. A Seq Scan here is
+      // O(channel history) for one screen and is the regression this asserts against.
+      { kind: "forbid-seq-scan", relation: "chat_messages" },
+    ],
   },
   {
     id: "chat-channel-members",
@@ -184,7 +312,87 @@ export const BUDGETS = [
       WHERE m.org_id = $1 AND m.channel_id = $2
       ORDER BY m.joined_at ASC
       LIMIT 100`,
-    planAssertions: [],
+    planAssertions: [
+      // Measured: 9 warm blocks, 500 rows scanned for a 100-row page. The 5x over-scan is the
+      // seed's two 500-member channels being ordered by joined_at with no matching index prefix;
+      // it is inside the ceiling and is recorded here rather than silently tolerated.
+      { kind: "forbid-seq-scan", relation: "chat_channel_members" },
+    ],
+  },
+  {
+    /**
+     * `GET /chat/ably-token` and `GET /support/ably-token` —
+     * `ChatChannelListService.listMemberChannelIds`, the only read either token route makes.
+     *
+     * PRD-C145 names the realtime-token paths, and they had no budget of any kind: no entry
+     * here, no benchmark and no key in contracts/route-budgets.json matching /ably|token/.
+     * The read used to have no LIMIT at all — `AblyService.createChatTokenRequest` grants at
+     * most `MAX_CAPABILITY_CHANNELS` (500) of whatever it is handed, so a member of 50,000
+     * channels paid for 50,000 rows on every token mint to have 49,500 discarded in memory.
+     * `maxScanRows` is what pins that: at 600 it admits the 501 rows the bounded read may
+     * legitimately touch and fails the moment the LIMIT is removed again.
+     *
+     * The seq-scan assertion names `chat_channel_members` and NOT `chat_channels`, for the
+     * same reason `chat-channel-list` gives: memberships are the growing side (thousands per
+     * tenant) while `chat_channels` is 56 rows over 2 pages on this seed, where a sequential
+     * read is the planner's correct choice and asserting against it would pin table size
+     * rather than plan shape.
+     */
+    id: "chat-realtime-token-channel-ids",
+    ceiling: 4_000,
+    minRows: 50,
+    maxScanRows: 600,
+    rowCountSql: `SELECT count(*)::int FROM chat_channels WHERE org_id = $1 AND is_archived = false`,
+    params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
+    sql: `
+      SELECT chat_channels.id
+      FROM chat_channel_members
+      INNER JOIN chat_channels ON chat_channels.id = chat_channel_members.channel_id
+      WHERE chat_channels.org_id = $1
+        AND chat_channel_members.membership_id = $2
+        AND chat_channels.is_archived = false
+      LIMIT 501`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "chat_channel_members" },
+    ],
+  },
+  {
+    /**
+     * `GET /support/ably-token` — `SupportRealtimeService.createTokenRequest`, the scoped
+     * branch. The chat token route and this one are two DIFFERENT statements against two
+     * different tables, so `chat-realtime-token-channel-ids` does not cover it: a caller
+     * whose `support:tickets:view` DataScope is narrower than `all` gets one Ably channel
+     * per ticket it can see, read here from `support_tickets` by assignee membership.
+     *
+     * PRD-C145 names the realtime-token paths and both of them were unbudgeted. The read is
+     * already bounded at `MAX_SCOPED_CHANNELS` (200), and `maxScanRows: 300` is what pins
+     * that: it admits the rows a bounded lookup may legitimately touch and fails the moment
+     * the LIMIT or the covering index goes away.
+     *
+     * The seq-scan assertion names `support_tickets` — the growing side, 3,000 rows on this
+     * seed — and the plan reaches it through `idx_support_tickets_org_assignee_actor`
+     * `(org_id, assignee_membership_id, …)`, driven by a single-row index lookup on
+     * `organization_members`. Keyed without the membership subselect the same read is a scan
+     * of every ticket in the tenant.
+     */
+    id: "support-realtime-token-ticket-ids",
+    ceiling: 4_000,
+    minRows: 100,
+    maxScanRows: 300,
+    rowCountSql: `SELECT count(*)::int FROM support_tickets WHERE org_id = $1`,
+    params: (f) => (f.userId ? [f.orgId, f.userId] : null),
+    sql: `
+      SELECT id
+      FROM support_tickets
+      WHERE org_id = $1
+        AND assignee_membership_id IN (
+          SELECT id FROM organization_members
+          WHERE org_id = $1 AND user_id = $2 AND status = 'ACTIVE'
+        )
+      LIMIT 200`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "support_tickets" },
+    ],
   },
   {
     id: "kb-page-id-probe-sdf",
@@ -246,12 +454,16 @@ export const BUDGETS = [
     ceiling: 5_000,
     minRows: 30,
     rowCountSql: `SELECT count(*)::int FROM kb_page_visits WHERE org_id = $1`,
-    params: (f) => [f.orgId, f.userId],
+    // Same membership migration as the notification budgets: KbPageVisitsService.getRecent filters
+    // `kbPageVisits.membershipId`, and `idx_kb_page_visits_org_membership_visited` is the index
+    // that serves it. The catalog filtered `user_id`, which is a different plan on a different
+    // index and so a ceiling over a query the application does not issue.
+    params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
     sql: `
       SELECT pv.page_id, pv.visited_at, p.title, p.space_id
       FROM kb_page_visits pv
       INNER JOIN kb_pages p ON p.id = pv.page_id
-      WHERE pv.org_id = $1 AND pv.user_id = $2
+      WHERE pv.org_id = $1 AND pv.membership_id = $2
         AND p.deleted_at IS NULL
       ORDER BY pv.visited_at DESC
       LIMIT 20`,
@@ -359,13 +571,19 @@ export const BUDGETS = [
     id: "leave-requests-mine",
     ceiling: 5_000,
     minRows: 20,
-    rowCountSql: `SELECT count(*)::int FROM leave_requests WHERE org_id = $1`,
-    params: (f) => [f.orgId, f.userId],
+    rowCountSql: `SELECT count(*)::int FROM leave_requests WHERE org_id = $1 AND user_membership_id = $2`,
+    rowCountParams: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
+    // LeavesService.my filters `user_membership_id` and orders by `id DESC` (cursor pagination on
+    // id, not on created_at). This budget filtered `user_id` and ordered by `created_at`, so it
+    // measured `idx_leave_requests_user_id` and a sort the endpoint never performs, while
+    // `idx_leave_requests_org_user_membership` — the index that actually serves the route — went
+    // unexercised.
+    params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
     sql: `
       SELECT id, status, start_date, end_date, created_at
       FROM leave_requests
-      WHERE org_id = $1 AND user_id = $2
-      ORDER BY created_at DESC
+      WHERE org_id = $1 AND user_membership_id = $2
+      ORDER BY id DESC
       LIMIT 50`,
     planAssertions: [
       { kind: "forbid-seq-scan", relation: "leave_requests" },
@@ -376,13 +594,16 @@ export const BUDGETS = [
     ceiling: 5_000,
     minRows: 30,
     maxScanRows: 200,
-    rowCountSql: `SELECT count(*)::int FROM attendance WHERE org_id = $1`,
-    params: (f) => [f.orgId, f.userId],
+    rowCountSql: `SELECT count(*)::int FROM attendance WHERE org_id = $1 AND user_membership_id = $2`,
+    rowCountParams: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
+    // EmployeeAttendanceService.history filters `user_membership_id` and orders by
+    // (date DESC, created_at DESC). Same membership migration as the notification budgets.
+    params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
     sql: `
       SELECT id, date, status, check_in, check_out
       FROM attendance
-      WHERE org_id = $1 AND user_id = $2
-      ORDER BY date DESC
+      WHERE org_id = $1 AND user_membership_id = $2
+      ORDER BY date DESC, created_at DESC
       LIMIT 31`,
     planAssertions: [
       { kind: "forbid-seq-scan", relation: "attendance" },
@@ -403,6 +624,8 @@ export const BUDGETS = [
     planAssertions: [],
   },
   {
+    // DRIFTED, and NOT correctable here yet — see the note on leads-active below. `queryContacts`
+    // reads `contact_party_map INNER JOIN business_parties`; `contacts` is the legacy mirror.
     id: "contacts-list",
     ceiling: 8_000,
     minRows: 50,
@@ -417,6 +640,19 @@ export const BUDGETS = [
     planAssertions: [],
   },
   {
+    // DRIFTED at the table, not the column, and BLOCKED on the fixture rather than on this file.
+    // `LeadsReadService.list` reads `lead_party_map INNER JOIN business_parties` through
+    // `LEAD_PARTY_COLUMNS` (ticket 02 made Party canonical and `leads` a derived mirror), so this
+    // budget and leads-assigned-to-me below bound a table the module no longer selects from — the
+    // same defect class as the 0520 notification budgets, one level up.
+    //
+    // Re-pointing them at Party today would make them VACUOUS, which is worse: measured on the
+    // perf seed at head, `lead_party_map` and `contact_party_map` hold 0 rows and
+    // `business_parties.owner_user_id` is NULL on all 22,240 rows, while `leads` and `contacts`
+    // hold 8,896 each. The seed writes the mirror and not the canonical side. Fix the seed first
+    // (test/perf + scripts/seed-*), then move these three budgets and re-measure; the mapping is
+    // leads.assigned_to_id -> business_parties.owner_user_id, .status -> coalesce(lifecycle_stage,
+    // 'NEW'), .score -> qualification_score, ORDER BY created_at DESC, lead_id DESC.
     id: "leads-active",
     ceiling: 10_000,
     minRows: 50,
@@ -432,6 +668,7 @@ export const BUDGETS = [
     planAssertions: [],
   },
   {
+    // Same Party drift and the same fixture block as leads-active — see the note there.
     id: "leads-assigned-to-me",
     ceiling: 8_000,
     minRows: 50,
@@ -782,7 +1019,11 @@ export const BUDGETS = [
       WHERE sm.org_id = $1 AND m.is_deleted = false
       ORDER BY sm.saved_at DESC
       LIMIT 50`,
-    planAssertions: [],
+    planAssertions: [
+      // chat_messages is the growing side (12,000 rows); chat_saved_messages is the small one.
+      // Measured: 81 warm blocks, 230 rows scanned for 25 returned.
+      { kind: "forbid-seq-scan", relation: "chat_messages" },
+    ],
   },
   /**
    * D1 — one hop of the lot/serial genealogy walk.
@@ -903,7 +1144,7 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM support_tickets WHERE org_id = $1`,
     params: (f) => [f.orgId],
     sql: `
-      SELECT id, title, status, priority, assignee_id, sla_deadline, created_at,
+      SELECT id, title, status, priority, assignee_membership_id, sla_deadline, created_at,
              count(*) OVER () total
       FROM support_tickets
       WHERE org_id = $1 AND status IN ('OPEN', 'IN_PROGRESS', 'WAITING')
@@ -916,12 +1157,12 @@ export const BUDGETS = [
     ceiling: 8_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM support_tickets WHERE org_id = $1`,
-    params: (f) => (f.userId ? [f.orgId, f.userId] : null),
+    params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
     sql: `
       SELECT id, title, status, priority, sla_deadline, created_at,
              count(*) OVER () total
       FROM support_tickets
-      WHERE org_id = $1 AND assignee_id = $2
+      WHERE org_id = $1 AND assignee_membership_id = $2
         AND status NOT IN ('RESOLVED', 'CLOSED')
       ORDER BY sla_deadline ASC NULLS LAST, created_at DESC
       LIMIT 50 OFFSET 0`,
@@ -943,22 +1184,25 @@ export const BUDGETS = [
   },
   {
     // Self-service timesheet view — every employee hits this on every timesheet page load.
-    // Service: build/execution/timesheets.service.ts listTimeEntries with scope='own'
-    // applyScope adds user_id = caller, so the WHERE is always (org_id, user_id).
-    // idx_timesheets_org_user_date on (org_id, user_id, date) covers this exactly.
+    // Service: build/execution/timesheets.service.ts listTimeEntries with scope='own'.
+    // applyMembershipScope adds user_membership_id = actingMembershipId(user.principal), so the
+    //   WHERE is (org_id, user_membership_id) and the membership id arrives on the request
+    //   principal — the service issues no organization_members lookup for it. This budget used to
+    //   resolve it with a scalar subquery and to name idx_timesheets_org_user_date on
+    //   (org_id, user_id, date), an index that does not exist at head: it charged the route for a
+    //   membership probe it does not make and described a plan on a column the table stopped
+    //   filtering on.
+    // idx_timesheets_org_user_membership_date on (org_id, user_membership_id, date) covers this.
     // SQL verified against listTimeEntries with scope resolved to 'own'.
     id: "timesheets-mine",
     ceiling: 3_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM timesheets WHERE org_id = $1`,
-    params: (f) => (f.userId ? [f.orgId, f.userId] : null),
+    params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
     sql: `
       SELECT id, date, hours, status, description, project_id, ticket_id, voided_at
       FROM timesheets
-      WHERE org_id = $1
-        AND user_membership_id = (
-          SELECT id FROM organization_members WHERE org_id = $1 AND user_id = $2 AND status = 'ACTIVE' LIMIT 1
-        )
+      WHERE org_id = $1 AND user_membership_id = $2
       ORDER BY date DESC
       LIMIT 50 OFFSET 0`,
     planAssertions: [],
@@ -967,21 +1211,30 @@ export const BUDGETS = [
     // Mail inbox cached list — first page served from mail_message_metadata on every inbox load.
     // Service: mail/mail-metadata.service.ts listCached (called by mail.service.ts listMessages
     //   on first page when no search and single account selected).
-    // idx_mail_metadata_list on (org_id, user_id, folder, date DESC) covers this exactly.
-    // SQL verified against listCached: WHERE org_id, user_id, folder ORDER BY date DESC LIMIT.
-    // PROVISIONAL ceiling — measure with actual mail seed; mail is not seeded by default.
+    // idx_mail_metadata_list_keyset on (org_id, user_membership_id, folder, date DESC, id DESC)
+    //   covers this exactly. Migration 1022 made the page keyset-pageable and DROPPED
+    //   idx_mail_metadata_list, which this comment used to name on a column (user_id) the table no
+    //   longer filters on; the ORDER BY here carried the same lag — listCached orders by
+    //   (date DESC, id DESC) so the cursor cannot repeat or skip a row at a page boundary, and a
+    //   budget ordering by date alone measures a prefix scan the route does not run.
+    // SQL verified against listCached: WHERE org_id, user_membership_id, folder
+    //   ORDER BY date DESC, id DESC LIMIT.
     id: "mail-inbox-cached",
     ceiling: 5_000,
-    minRows: 10,
+    // 10 rows satisfied the floor while guaranteeing a Seq Scan: on a single-page
+    // table the planner will never prefer an index, so forbid-seq-scan could only
+    // ever fail. A floor that lets a budget "measure" a plan the data cannot
+    // produce is worse than no budget.
+    minRows: 2_000,
     rowCountSql: `SELECT count(*)::int FROM mail_message_metadata WHERE org_id = $1`,
-    params: (f) => (f.hasMailMessages && f.userId ? [f.orgId, f.userId] : null),
+    params: (f) => (f.hasMailMessages && f.membershipId ? [f.orgId, f.membershipId] : null),
     sql: `
-      SELECT message_id, thread_id, account_id, subject, sender_email, sender_name,
+      SELECT id, message_id, thread_id, account_id, subject, sender_email, sender_name,
              date, is_read, is_starred, has_attachment, labels, folder, synced_at
       FROM mail_message_metadata
-      WHERE org_id = $1 AND user_id = $2 AND folder = 'inbox'
-      ORDER BY date DESC
-      LIMIT 50`,
+      WHERE org_id = $1 AND user_membership_id = $2 AND folder = 'inbox'
+      ORDER BY date DESC, id DESC
+      LIMIT 51`,
     planAssertions: [
       { kind: "forbid-seq-scan", relation: "mail_message_metadata" },
     ],
@@ -992,7 +1245,7 @@ export const BUDGETS = [
     //   (scope != 'mine'). Two queries: member project lookup + ticket page. Budget combines
     //   them into one subquery IN so the planner sees the full cost.
     // SQL verified against getAllWork + pageFilteredWork with default sort (rank ASC, id ASC).
-    // idx_project_members_org_user on (org_id, user_id) covers the subquery.
+    // idx_project_members_org_member_membership on (org_id, membership_id) covers the subquery.
     // idx_tickets_org_project_rank on (org_id, project_id, rank) covers the outer scan,
     //   executed as BitmapOr across member projects.
     // PROVISIONAL ceiling — measure with actual seed data at realistic member project count.
@@ -1000,7 +1253,7 @@ export const BUDGETS = [
     ceiling: 30_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM build.tickets WHERE org_id = $1 AND deleted_at IS NULL`,
-    params: (f) => (f.userId ? [f.orgId, f.userId] : null),
+    params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
     sql: `
       SELECT t.id, t.title, t.status, t.priority, t.type, t.due_date, t.rank,
              t.created_at, t.updated_at,
@@ -1010,7 +1263,7 @@ export const BUDGETS = [
       WHERE t.org_id = $1
         AND t.project_id IN (
           SELECT pm.project_id FROM build.project_members pm
-          WHERE pm.org_id = $1 AND pm.user_id = $2
+          WHERE pm.org_id = $1 AND pm.membership_id = $2
         )
         AND p.status <> 'ARCHIVED'
         AND t.deleted_at IS NULL
@@ -1155,17 +1408,39 @@ export const BUDGETS = [
   },
   {
     id: "dashboard-personal-my-tasks",
+    // The status list mirrors DEFAULT_PROJECT_STATUSES / ACTIVE_TICKET_STATUSES, which the
+    // application writes in UPPER_SNAKE. Do NOT retune it to a fixture's vocabulary — that makes
+    // the budget measure a query the application never runs.
+    //
+    // If this budget reports VACUOUS on your database, the database is stale, not the predicate.
+    // seed-perf-scratch.mjs used to write title-case ('Todo', 'In Progress'); it writes UPPER_SNAKE
+    // at head and carries LEGACY_STATUS_NAMES to rename an existing database's rows in place (the
+    // composite FK is ON UPDATE CASCADE, so the tickets follow). Rebuild or re-run the seed. A
+    // database built before that fix — `scratch_perf_seed` is one — still holds title-case rows,
+    // and every ceiling here reads as satisfied over an empty result set. That is what the
+    // vacuous-result guard exists to catch, and it does: measured on a seed at head this budget
+    // returns 10 rows on all three measurable tenants, `vacuous: false`.
+    //
+    // The scan-rows ceiling is 200, tightened from 1,000. While the covering index was missing this
+    // walked 1,801 rows to return 10, because the planner took idx_tickets_org_updated_live
+    // (org_id, updated_at DESC) for the ORDER BY and declined idx_tickets_org_assignee_status,
+    // which cannot order. Migration 1027 added
+    // (org_id, assignee_membership_id, updated_at DESC) WHERE deleted_at IS NULL and it now scans
+    // 19 / 21 / 22 rows on the 89.93 / 9.00 / 0.90 percent tenants — 45x below the ceiling that was
+    // meant to bound it, which is a guard that has stopped guarding. 200 keeps 9x headroom over the
+    // worst measured tenant and still trips an order of magnitude below the 1,801 a declined index
+    // costs. Tightened, never raised.
     ceiling: 2_000,
     minRows: 50,
-    maxScanRows: 1_000,
+    maxScanRows: 200,
     rowCountSql: `SELECT count(*)::int FROM build.tickets WHERE org_id = $1 AND deleted_at IS NULL`,
-    params: (f) => (f.userId ? [f.orgId, f.userId] : null),
+    params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
     sql: `
       SELECT t.id, t.title, t.status, t.priority, t.updated_at,
              p.id AS project_id, p.name AS project_name
       FROM build.tickets t
       LEFT JOIN build.projects p ON p.id = t.project_id
-      WHERE t.org_id = $1 AND t.assignee_id = $2 AND t.deleted_at IS NULL
+      WHERE t.org_id = $1 AND t.assignee_membership_id = $2 AND t.deleted_at IS NULL
         AND t.status IN ('TODO', 'IN_PROGRESS', 'IN_REVIEW')
       ORDER BY t.updated_at DESC
       LIMIT 10`,
@@ -1175,18 +1450,28 @@ export const BUDGETS = [
   },
   {
     id: "dashboard-my-issues",
+    // Declares a scan-rows ceiling now, which it did not. This is
+    // dashboard-personal-my-tasks without the status filter — the same tenant+assignee read on the
+    // same index — and while the covering index was missing it walked 1,801 rows to return 10 and
+    // reported PASS on buffers alone, because a budget with no maxScanRows cannot see a plan
+    // regression that stays inside its block ceiling. 200 is the ceiling: measured post-1027 it
+    // scans 10 / 21 / 22 rows on the 89.93 / 9.00 / 0.90 percent tenants, so 200 leaves 9x headroom
+    // and still trips at an order of magnitude below the 1,801 the declined index cost.
     ceiling: 2_000,
     minRows: 50,
+    maxScanRows: 200,
     rowCountSql: `SELECT count(*)::int FROM build.tickets WHERE org_id = $1 AND deleted_at IS NULL`,
-    params: (f) => (f.userId ? [f.orgId, f.userId] : null),
+    params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
     sql: `
       SELECT t.id, t.title, t.status, t.priority, t.type, t.ticket_number, t.updated_at,
              p.id AS project_id, p.name AS project_name, p.key AS project_key,
-             u.id AS assignee_id, u.first_name, u.last_name, u.image
+             om.user_id AS assignee_id, u.first_name, u.last_name, u.image
       FROM build.tickets t
       LEFT JOIN build.projects p ON p.id = t.project_id
-      LEFT JOIN users u ON u.id = t.assignee_id
-      WHERE t.org_id = $1 AND t.assignee_id = $2 AND t.deleted_at IS NULL
+      LEFT JOIN organization_members om
+        ON om.org_id = t.org_id AND om.id = t.assignee_membership_id
+      LEFT JOIN users u ON u.id = om.user_id
+      WHERE t.org_id = $1 AND t.assignee_membership_id = $2 AND t.deleted_at IS NULL
       ORDER BY t.updated_at DESC
       LIMIT 10`,
     planAssertions: [
@@ -1197,44 +1482,133 @@ export const BUDGETS = [
     id: "dashboard-personal-calendar-events",
     ceiling: 500,
     minRows: 1,
+    maxScanRows: 200,
     rowCountSql: `SELECT count(*)::int FROM calendar_events WHERE org_id = $1`,
-    params: (f) => (f.hasCalendarEvents && f.userId ? [f.orgId, f.userId] : null),
+    // Mirrors DashboardPersonalService.upcomingEvents, NOT `GET /calendar/events` — that route runs
+    // CalendarEventSourceLoader and has its own budget (calendar-events-visible-batch).
+    //
+    // The attendee test is a LEFT JOIN LATERAL, not an EXISTS, and that is load-bearing. With an
+    // EXISTS the planner is free to de-correlate it into a hashed SubPlan that materialises every
+    // attendee row the caller owns (39,114 on the 89.93% tenant) before LIMIT 3 can stop anything:
+    // measured 1,140 blocks. Worse, whether it does so depends on whether a non-'org' event lands
+    // in the first three rows, which moves with the wall clock — the same query on the same fixture
+    // measured 6 blocks on one run and 1,140 on the next, so the recorded number was a coin toss
+    // rather than a budget. A LATERAL is structural: it is probed once per candidate row through
+    // event_attendees_event_membership_unique and the planner cannot hash it. Measured after the
+    // fix: 18 blocks in the cheap window, 20 in the worst-case window — a stable quantity.
+    // maxScanRows bites at 39,114 if the LATERAL is ever turned back into an EXISTS.
+    params: (f) =>
+      f.hasCalendarEvents && f.userId && f.membershipId ? [f.orgId, f.userId, f.membershipId] : null,
     sql: `
-      SELECT id, title, start_date, end_date, category
+      SELECT calendar_events.id, calendar_events.title, calendar_events.start_date,
+             calendar_events.end_date, calendar_events.category
       FROM calendar_events
-      WHERE org_id = $1 AND start_date >= NOW()
+      LEFT JOIN LATERAL (
+        SELECT 1 AS hit FROM event_attendees
+        WHERE event_attendees.org_id = $1 AND event_attendees.event_id = calendar_events.id
+          AND event_attendees.membership_id = $3 AND event_attendees.status <> 'declined'
+        LIMIT 1
+      ) attended_event ON true
+      WHERE calendar_events.org_id = $1 AND calendar_events.start_date >= NOW()
         AND (
-          visibility = 'org'
+          calendar_events.visibility = 'org'
           OR EXISTS (
             SELECT 1 FROM organization_members om
-            WHERE om.org_id = $1 AND om.id = calendar_events.created_by_membership_id
+            WHERE om.org_id = calendar_events.org_id
+              AND om.id = calendar_events.created_by_membership_id
               AND om.user_id = $2 AND om.status = 'ACTIVE'
           )
-          OR EXISTS (
-            SELECT 1 FROM event_attendees ea
-            INNER JOIN organization_members om2
-              ON ea.org_id = om2.org_id AND ea.membership_id = om2.id
-            WHERE ea.org_id = $1 AND ea.event_id = calendar_events.id
-              AND om2.user_id = $2 AND om2.status = 'ACTIVE' AND ea.status != 'declined'
-          )
+          OR hit IS NOT NULL
         )
-      ORDER BY start_date ASC
+      ORDER BY calendar_events.start_date ASC
       LIMIT 3`,
     planAssertions: [
       { kind: "forbid-seq-scan", relation: "calendar_events" },
+      { kind: "forbid-hashed-subplan", relation: "event_attendees" },
     ],
   },
   {
+    id: "calendar-events-visible-batch",
+    ceiling: 2_000,
+    minRows: 50,
+    rowCountSql: `SELECT count(*)::int FROM calendar_events WHERE org_id = $1`,
+    // The dominant statement of `GET /calendar/events`: the recurring branch of
+    // CalendarEventSourceLoader's candidate page. Until 2026-09-03 that route's budget was
+    // linked to dashboard-personal-calendar-events, so the calendar route was charged for the
+    // dashboard's statement and this one had never been measured at all; when it was, it
+    // measured 7,063 blocks against this ceiling and the ceiling was deliberately left alone.
+    //
+    // The 7,063 was one query: both range branches under an OR, three left joins and the
+    // 18-column projection. The recurring arm has no lower bound on start_date, so the
+    // planner walked idx_calendar_events_org_date from the tenant's first event and fetched
+    // the heap tuple for every candidate before the window filter could reject it — 3,610
+    // rows scanned to keep 517, four times a sequential scan of a 1,731-page table.
+    //
+    // The loader now issues four statements per page and this is the most expensive of them.
+    // Measured on the same database and fixture, worst statement per tenant:
+    //   89.93%  697   9.00%  700   0.90%  46
+    // and the companions are cand-nonrec 295/31/5, rsvp 501/14/21, fetch 322/136/21.
+    //
+    // The two plan assertions are the load-bearing part, because neither failure mode this
+    // budget guards is reliably visible in a block count. forbid-hashed-subplan pins that the
+    // caller's attendance stays a correlated probe: as an EXISTS the planner de-correlates it
+    // and materialises all 39,114 attendee rows of the fixture membership before the OR can
+    // short-circuit on visibility = 'org', which is O(the caller's attendance) rather than
+    // O(page) and therefore invisible on every tenant but this one.
+    params: (f) => {
+      if (!f.hasCalendarEvents || !f.membershipId) return null;
+      const now = new Date();
+      const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+      const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+      return [f.orgId, f.membershipId, start.toISOString(), end.toISOString()];
+    },
+    sql: `
+      SELECT ce.id, ce.start_date
+      FROM calendar_events ce
+      WHERE ce.org_id = $1
+        AND ce.rrule IS NOT NULL
+        AND ce.start_date < $4::timestamptz
+        AND (ce.recurrence_end IS NULL OR ce.recurrence_end > $3::timestamptz)
+        AND (
+          ce.visibility = 'org'
+          OR ce.created_by_membership_id = $2
+          OR (SELECT ea.id FROM event_attendees ea
+              WHERE ea.org_id = ce.org_id AND ea.event_id = ce.id
+                AND ea.membership_id = $2 LIMIT 1) IS NOT NULL
+        )
+      ORDER BY ce.start_date ASC, ce.id ASC
+      LIMIT 500`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "calendar_events" },
+      { kind: "forbid-hashed-subplan", relation: "event_attendees" },
+    ],
+  },
+{
     id: "dashboard-personal-notifications-count",
     ceiling: 3_000,
     minRows: 1,
     rowCountSql: `SELECT count(*)::int FROM notifications WHERE org_id = $1 AND deleted_at IS NULL`,
-    params: (f) => (f.userId ? [f.orgId, f.userId] : null),
+    // `GET /dashboard/personal` calls NotificationsReadService.unreadCount, so this budget must be
+    // the same query as notifications-unread-count — including the partition window. It carried the
+    // pre-0520 `user_id` predicate and no window, and measured 11,044 blocks for it.
+    params: (f) => {
+      if (!f.membershipId) return null;
+      const w = notificationReadWindow();
+      return [f.orgId, f.membershipId, w.start, w.end];
+    },
     sql: `
       SELECT count(*)::int
       FROM notifications
-      WHERE org_id = $1 AND user_id = $2 AND is_read = false`,
-    planAssertions: [],
+      WHERE org_id = $1 AND membership_id = $2
+        AND created_at >= $3::timestamptz AND created_at < $4::timestamptz
+        AND is_read = false AND deleted_at IS NULL AND archived_at IS NULL`,
+    planAssertions: [
+      // 235,297 notifications on the reference tenant. Its two siblings over the same table
+      // (notifications-list, notifications-unread-count) already forbid a Seq Scan; this one did
+      // not, which is exactly how it Seq Scanned at 11,377 blocks before the 22c predicate fix and
+      // still sat inside its 3,000-block ceiling afterwards. Measured now: 16 warm blocks.
+      { kind: "forbid-seq-scan", relation: "notifications" },
+    ],
   },
   {
     id: "dashboard-stats-attendance-count",
@@ -1273,7 +1647,9 @@ export const BUDGETS = [
     id: "dashboard-leaves-today",
     ceiling: 2_000,
     minRows: 5,
-    rowCountSql: `SELECT count(*)::int FROM leave_requests WHERE org_id = $1`,
+    // CURRENT_DATE, not $2: the count binds [orgId] alone unless the budget declares
+    // rowCountParams. `params` below still passes today to the measured query, which does get it.
+    rowCountSql: `SELECT count(*)::int FROM leave_requests WHERE org_id = $1 AND status = 'APPROVED' AND start_date <= CURRENT_DATE AND end_date >= CURRENT_DATE`,
     params: (f) => {
       const today = new Date().toISOString().slice(0, 10);
       return [f.orgId, today];
@@ -1294,15 +1670,20 @@ export const BUDGETS = [
     ceiling: 2_000,
     minRows: 1,
     rowCountSql: `SELECT count(*)::int FROM attendance WHERE org_id = $1`,
-    params: (f) => {
-      const today = new Date().toISOString().slice(0, 10);
-      return [f.orgId, today];
-    },
+    // The date is anchored to the seed's own latest attendance day, not to wall-clock today.
+    // DashboardStatsService reads `today`, and against a static seed that predicate matches
+    // nothing from the day after the seed was built — measured 2026-09-03 on a seed whose last
+    // attendance row is 2026-09-02, which is how this budget reached the manifest holding
+    // measuredBufferBlocks 41 while returning 0 rows. A budget that goes vacuous on a calendar
+    // boundary is a time bomb, not a budget; the anchor is an InitPlan constant, so the
+    // predicate the route issues (a.date = <one day>) is unchanged.
+    params: (f) => [f.orgId],
     sql: `
       SELECT a.user_id, u.name, u.image, a.check_in, a.check_out, a.status, a.created_at
       FROM attendance a
       INNER JOIN users u ON a.user_id = u.id
-      WHERE a.org_id = $1 AND a.date = $2`,
+      WHERE a.org_id = $1
+        AND a.date = (SELECT max(date) FROM attendance WHERE org_id = $1)`,
     planAssertions: [
       { kind: "forbid-seq-scan", relation: "attendance" },
     ],
@@ -1326,12 +1707,12 @@ export const BUDGETS = [
     ceiling: 2_000,
     minRows: 1,
     rowCountSql: `SELECT count(*)::int FROM build.project_members WHERE org_id = $1`,
-    params: (f) => (f.userId ? [f.orgId, f.userId] : null),
+    params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
     sql: `
       SELECT p.id, p.name, p.status, p.created_at
       FROM build.projects p
       INNER JOIN build.project_members pm
-        ON pm.project_id = p.id AND pm.org_id = $1 AND pm.user_id = $2
+        ON pm.project_id = p.id AND pm.org_id = $1 AND pm.membership_id = $2
       WHERE p.org_id = $1 AND p.deleted_at IS NULL
       ORDER BY p.id DESC
       LIMIT 5`,
@@ -1343,6 +1724,7 @@ export const REQUIRED_BUDGET_IDS = new Set([
   "dashboard-personal-my-tasks",
   "dashboard-my-issues",
   "dashboard-personal-calendar-events",
+  "calendar-events-visible-batch",
   "dashboard-personal-notifications-count",
   "dashboard-stats-attendance-count",
   "dashboard-announcements",

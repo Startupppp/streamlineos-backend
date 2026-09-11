@@ -11,6 +11,7 @@ import {
   unique,
   foreignKey,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { organizations, organizationMembers } from "../common/auth";
 
 export const mailMessageMetadata = pgTable(
@@ -36,12 +37,20 @@ export const mailMessageMetadata = pgTable(
   (table) => [
     uniqueIndex("uniq_mail_metadata_account_msg").on(table.accountId, table.messageId),
     unique("uniq_mail_metadata_org_id").on(table.orgId, table.id),
-    index("idx_mail_metadata_list").on(
+    index("idx_mail_metadata_list_keyset").on(
       table.orgId,
       table.userMembershipId,
       table.folder,
       table.date.desc(),
+      table.id.desc(),
     ),
+    index("idx_mail_metadata_search_trgm").using(
+      "gin",
+      sql`(coalesce(${table.subject}, '') || chr(1) || coalesce(${table.senderName}, '') || chr(1) || coalesce(${table.senderEmail}, '')) gin_trgm_ops`,
+    ),
+    index("idx_mail_metadata_unread_count")
+      .on(table.orgId, table.userMembershipId, table.folder, table.accountId)
+      .where(sql`${table.isRead} = false`),
     index("idx_mail_metadata_thread").on(table.orgId, table.userMembershipId, table.threadId),
     index("idx_mail_metadata_account_sync").on(table.accountId, table.syncedAt.desc()),
     index("idx_mail_metadata_search").on(table.orgId, table.userMembershipId, table.syncedAt.desc()),

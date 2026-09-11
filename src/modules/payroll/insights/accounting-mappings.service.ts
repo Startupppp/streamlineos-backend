@@ -3,26 +3,32 @@ import { eq, and, asc } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { payrollAccountingMappings, salaryComponents } from "../../../db/schema";
-
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as Record<string, unknown>).code === "23505"
-  );
-}
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 @Injectable()
 export class AccountingMappingsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async list(orgId: string) {
-    return this.db
-      .select()
+    const rows = await this.db
+      .select({
+        id: payrollAccountingMappings.id,
+        orgId: payrollAccountingMappings.orgId,
+        componentId: payrollAccountingMappings.componentId,
+        category: payrollAccountingMappings.category,
+        ledgerName: payrollAccountingMappings.ledgerName,
+        costCenterSource: payrollAccountingMappings.costCenterSource,
+        notes: payrollAccountingMappings.notes,
+        createdAt: payrollAccountingMappings.createdAt,
+        updatedAt: payrollAccountingMappings.updatedAt,
+      })
       .from(payrollAccountingMappings)
       .where(eq(payrollAccountingMappings.orgId, orgId))
-      .orderBy(asc(payrollAccountingMappings.id));
+      .orderBy(asc(payrollAccountingMappings.id))
+      .limit(501);
+    if (rows.length > 500)
+      throw new ConflictException("Accounting mappings exceed the supported 500-row configuration bound");
+    return rows;
   }
 
   async create(
@@ -35,17 +41,18 @@ export class AccountingMappingsService {
       notes?: string;
     },
   ) {
-    const hasComponent = data.componentId !== undefined;
+    const { componentId } = data;
+    const hasComponent = componentId !== undefined;
     const hasCategory = data.category !== undefined;
     if (hasComponent === hasCategory) {
       throw new BadRequestException("Exactly one of componentId or category must be provided");
     }
 
-    if (hasComponent) {
+    if (componentId !== undefined) {
       const comp = await this.db
         .select({ id: salaryComponents.id })
         .from(salaryComponents)
-        .where(and(eq(salaryComponents.id, data.componentId!), eq(salaryComponents.orgId, orgId)))
+        .where(and(eq(salaryComponents.id, componentId), eq(salaryComponents.orgId, orgId)))
         .limit(1);
       if (comp.length === 0) throw new NotFoundException("Salary component not found");
     }
@@ -93,7 +100,7 @@ export class AccountingMappingsService {
 
     if (existing.length === 0) throw new NotFoundException("Accounting mapping not found");
 
-    const setValues: Partial<typeof payrollAccountingMappings.$inferInsert> = {};
+    const setValues: Partial<typeof payrollAccountingMappings.$inferInsert> = { updatedAt: new Date() };
     if (data.componentId !== undefined) setValues.componentId = data.componentId;
     if (data.category !== undefined) setValues.category = data.category;
     if (data.ledgerName !== undefined) setValues.ledgerName = data.ledgerName;

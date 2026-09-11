@@ -224,7 +224,6 @@ export const crmImportRows = pgTable(
     // A retry that re-planned would otherwise double every row, and the preview
     // would stop matching the commit.
     uniqueIndex("uniq_crm_import_rows_line").on(t.organizationId, t.crmImportId, t.rowNumber),
-    index("idx_crm_import_rows_import").on(t.organizationId, t.crmImportId, t.rowNumber),
     index("idx_crm_import_rows_committed")
       .on(t.organizationId, t.crmImportId)
       .where(sql`${t.committedAt} IS NOT NULL`),

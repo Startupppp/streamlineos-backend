@@ -42,3 +42,8 @@ export type UpdateSequenceInput = z.infer<typeof updateSequenceSchema>;
 export type CreateSequenceStepInput = z.infer<typeof createSequenceStepSchema>;
 export type ReorderSequenceStepsInput = z.infer<typeof reorderSequenceStepsSchema>;
 export type EnrollInSequenceInput = z.infer<typeof enrollInSequenceSchema>;
+
+export const listEnrollmentsQuerySchema = z.object({
+  cursor: z.string().min(1).max(2048).optional(),
+}).strict();
+export type ListEnrollmentsQueryInput = z.infer<typeof listEnrollmentsQuerySchema>;

@@ -5,16 +5,52 @@ import {
   ExecutionContext,
   Inject,
   Injectable,
+  InternalServerErrorException,
   NestInterceptor,
   UnprocessableEntityException,
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { createHash } from "node:crypto";
 import { Observable, of } from "rxjs";
-import { tap } from "rxjs/operators";
+import { concatMap, tap } from "rxjs/operators";
 import type { CurrentUserContext } from "../auth/backend-claims";
+import { logger } from "../logger/logger.service";
+import { getTenantContext } from "../tenant/tenant-context";
 import { IDEMPOTENCY_COMMAND, IDEMPOTENCY_OPTIONAL } from "./idempotency.constants";
 import { COMMAND_FENCE_STORE, type CommandFenceStore } from "./command-fence-store";
+
+/** Attempts at the completion write when there is no transaction to be atomic with. */
+const COMPLETION_ATTEMPTS = 3;
+const COMPLETION_RETRY_MS = 50;
+
+interface FencedRequest {
+  headers: Record<string, unknown>;
+  method?: string;
+  params?: unknown;
+  query?: unknown;
+  body?: unknown;
+  user?: CurrentUserContext;
+}
+
+/**
+ * Key order is part of a hash, and Express hands `params` and `query` back in
+ * whatever order the URL happened to use, so they are sorted before hashing —
+ * otherwise `?a=1&b=2` and `?b=2&a=1` would be two different commands.
+ */
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (typeof value !== "object" || value === null) return value;
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(value).sort()) {
+    const child: unknown = Reflect.get(value, key);
+    out[key] = canonical(child);
+  }
+  return out;
+}
+
+function sha256(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
 
 /**
  * Enforces the sensitive-command idempotency contract for any handler decorated with
@@ -25,14 +61,17 @@ import { COMMAND_FENCE_STORE, type CommandFenceStore } from "./command-fence-sto
  *
  * Persistence is delegated to {@link CommandFenceStore} (real: DrizzleCommandFenceStore;
  * tests: InMemoryCommandFenceStore). The interceptor owns all policy: header validation,
- * request hashing, and the four ClaimResult branches. A store failure propagates as-is —
- * the fence is fail-closed because these are sensitive commands where a double-execution
- * is worse than a client retry. The store writes every fence row in the org's tenant
- * transaction (the request's own, or a fresh one on a `@NoTenantTransaction()` route).
+ * request hashing, the four ClaimResult branches, and what a failed completion write
+ * costs. A store failure propagates as-is — the fence is fail-closed because these are
+ * sensitive commands where a double-execution is worse than a client retry. The store
+ * writes every fence row in the org's tenant transaction (the request's own, or a fresh
+ * one on a `@NoTenantTransaction()` route).
  *
- * The request hash covers the command name, the route params and the body — see
- * {@link IdempotencyInterceptor.hashRequest}. `@Idempotent(name, { required: false })`
- * lets a keyless request through unfenced instead of answering 400.
+ * The request hash covers the command name, the method, the route params, the query and
+ * the body; the pre-widening `{ commandName, body }` hash still travels as
+ * `legacyRequestHash` so a fence written before the widening replays across the deploy.
+ * `@Idempotent(name, { required: false })` lets a keyless request through unfenced
+ * instead of answering 400.
  */
 @Injectable()
 export class IdempotencyInterceptor implements NestInterceptor {
@@ -51,12 +90,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
     );
     if (!commandName) return next.handle();
 
-    const req = context.switchToHttp().getRequest<{
-      headers: Record<string, unknown>;
-      params?: Record<string, unknown>;
-      body?: unknown;
-      user?: CurrentUserContext;
-    }>();
+    const req = context.switchToHttp().getRequest<FencedRequest>();
 
     const rawKey = req.headers["idempotency-key"];
     const idempotencyKey = typeof rawKey === "string" ? rawKey.trim() : "";
@@ -88,11 +122,37 @@ export class IdempotencyInterceptor implements NestInterceptor {
     }
 
     const user = req.user;
-    // No tenant context (e.g. an unauthenticated command) — the fence keys on the org, so skip.
-    if (!user?.orgId || !user.userId) return next.handle();
+    /*
+     * The fence keys on the organisation, so without one there is nothing to key on.
+     * This used to fall through to the handler, which ran a command declared sensitive
+     * with no fence at all and no signal that it had happened. No route reaches it today
+     * — `JwtAuthGuard` rejects an org-less request 403 unless the handler carries
+     * `@AllowNoOrg()`, and no `@Idempotent` handler does — so failing closed costs
+     * nothing now and stops the next `@Public` or `@AllowNoOrg` fenced route from
+     * silently running unprotected.
+     */
+    if (!user?.orgId || !user.userId) {
+      throw new InternalServerErrorException(
+        `The command "${commandName}" is fenced but the request carries no organisation context`,
+      );
+    }
 
     const audience = user.sessionId?.startsWith("pat:") ? "pat" : "internal";
-    const requestHash = this.hashRequest(commandName, req.params, req.body);
+    /*
+     * Path params, method and query are part of the request's identity. Hashing only
+     * `{commandName, body}` meant one key replayed across `/credit-notes/:a/post` and
+     * `/credit-notes/:b/post` — same empty body, same command — and the client got the
+     * first note's response while the second was never posted.
+     */
+    const requestHash = sha256({
+      v: 2,
+      commandName,
+      method: (req.method ?? "").toUpperCase(),
+      params: canonical(req.params ?? null),
+      query: canonical(req.query ?? null),
+      body: canonical(req.body ?? null),
+    });
+    const legacyRequestHash = sha256({ commandName, body: req.body ?? null });
 
     const claim = await this.store.claim({
       orgId: user.orgId,
@@ -100,6 +160,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
       idempotencyKey,
       commandName,
       requestHash,
+      legacyRequestHash,
       principalId: user.userId,
     });
 
@@ -124,61 +185,72 @@ export class IdempotencyInterceptor implements NestInterceptor {
     const fenceId = claim.fenceId;
     return next.handle().pipe(
       tap({
-        next: (data: unknown) => {
-          const res = context
-            .switchToHttp()
-            .getResponse<{ statusCode?: number }>();
-          void this.store.complete(user.orgId, fenceId, res?.statusCode ?? 200, data);
-        },
         error: () => {
-          void this.store.fail(user.orgId, fenceId);
+          /*
+           * Inside a tenant transaction the claim row rolls back with the command it
+           * fenced, so there is nothing left to stamp and an UPDATE on an aborting
+           * transaction only raises a second, misleading error. Outside one the claim
+           * is durable and must be stamped, or the retry waits out a stale lease.
+           */
+          if (getTenantContext()) return;
+          void this.store.fail(fenceId, user.orgId);
         },
+      }),
+      concatMap(async (data: unknown) => {
+        const res = context
+          .switchToHttp()
+          .getResponse<{ statusCode?: number }>();
+        await this.recordCompletion(fenceId, res?.statusCode ?? 200, data, commandName, user.orgId);
+        return data;
       }),
     );
   }
 
   /**
-   * The identity of a command: its name, the resource it addresses, and its body.
+   * The completion write, and what its failure is allowed to cost.
    *
-   * The route params are in here because without them the hash cannot tell two
-   * resources apart. `POST /timesheets/timer/:timerId/stop` carries no body, so
-   * under `{ commandName, body }` alone every stop of every timer hashed
-   * identically — a caller that reuses one key stops timer 11, then calls stop
-   * on timer 22 and is replayed the first response. Timer 22 keeps running and
-   * the caller is told it stopped. Sixty-nine fenced routes across the platform
-   * are param-carrying with no body and shared exactly that defect; posting two
-   * different AR invoices under one key had the same shape.
+   * Inside a tenant transaction it is awaited and its failure propagates: the fence
+   * stamp and the command's own writes are the same transaction, so the alternative
+   * to committing both is committing neither. That is what makes a lost completion
+   * write incapable of licensing a second transfer — the first one did not happen.
    *
-   * Params can only ever narrow the hash, never widen it: a retry is the same
-   * request to the same URL, so its params are identical to the original's by
-   * construction. Nothing here relies on them being excluded — no two fenced
-   * routes share a command name across differing param shapes, so no
-   * cross-route dedupe is disturbed.
-   *
-   * Two details are load-bearing:
-   *
-   *   - **Keys are sorted.** `JSON.stringify` follows insertion order, and
-   *     Express builds `req.params` in the order the segments appear in the
-   *     path. Sorting means the hash depends on the params themselves rather
-   *     than on how the route happens to be spelled.
-   *   - **An empty params object is omitted entirely**, so a route with no
-   *     params hashes byte-identically to what it hashed before params were
-   *     considered at all. That is what keeps this change from invalidating
-   *     the live fences of the 83 param-free routes — see the spec, which
-   *     pins the format so the property cannot regress silently.
+   * Outside one the command has already committed on its own, and failing the response
+   * would report an error for work that succeeded. There it is retried and then logged
+   * at error — the previous behaviour was an empty `catch` with no log at all, so a pool
+   * exhausted exactly as handlers finished would have double-executed money commands
+   * invisibly.
    */
-  private hashRequest(
+  private async recordCompletion(
+    fenceId: number,
+    responseStatus: number,
+    data: unknown,
     commandName: string,
-    params: Record<string, unknown> | undefined,
-    body: unknown,
-  ): string {
-    const source = params ?? {};
-    const keys = Object.keys(source).sort();
-    const canonical: Record<string, unknown> = { commandName };
-    if (keys.length > 0) {
-      canonical.params = Object.fromEntries(keys.map((k) => [k, String(source[k])]));
+    orgId: string,
+  ): Promise<void> {
+    if (getTenantContext()) {
+      await this.store.complete(fenceId, responseStatus, data, orgId);
+      return;
     }
-    canonical.body = body ?? null;
-    return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
+
+    for (let attempt = 1; attempt <= COMPLETION_ATTEMPTS; attempt++) {
+      try {
+        await this.store.complete(fenceId, responseStatus, data, orgId);
+        return;
+      } catch (error: unknown) {
+        if (attempt === COMPLETION_ATTEMPTS) {
+          logger.error(
+            "[idempotency] the fence was never stamped COMPLETED; a retry on this key will re-execute the command",
+            {
+              fenceId,
+              commandName,
+              attempts: attempt,
+              error: error instanceof Error ? error.message : String(error),
+            },
+          );
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, COMPLETION_RETRY_MS * attempt));
+      }
+    }
   }
 }

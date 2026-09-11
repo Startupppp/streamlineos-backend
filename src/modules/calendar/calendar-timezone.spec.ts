@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { calendarEvents } from "../../db/schema/common/calendar-events";
 import {
   createEventSchema,
@@ -20,34 +21,50 @@ describe("calendar_events — recurrence columns are removed from the schema", (
     expect("recurringRule" in calendarEvents).toBe(false);
   });
 
-  it("createEventSchema output does not carry isRecurring even when supplied", () => {
+  function rejectedKeys(result: { success: boolean; error?: z.ZodError }): string[] {
+    if (result.success || !result.error) return [];
+    return result.error.issues.flatMap((issue) =>
+      issue.code === "unrecognized_keys" ? issue.keys : [],
+    );
+  }
+
+  it("createEventSchema rejects isRecurring rather than silently stripping it", () => {
     const result = createEventSchema.safeParse({
       ...VALID_CREATE_BASE,
       isRecurring: true,
     });
-    expect(result.success).toBe(true);
-    if (result.success) expect("isRecurring" in result.data).toBe(false);
+    expect(result.success).toBe(false);
+    expect(rejectedKeys(result)).toContain("isRecurring");
   });
 
-  it("createEventSchema output does not carry recurringRule even when supplied", () => {
+  it("createEventSchema rejects recurringRule rather than silently stripping it", () => {
     const result = createEventSchema.safeParse({
       ...VALID_CREATE_BASE,
       recurringRule: "FREQ=WEEKLY",
     });
-    expect(result.success).toBe(true);
-    if (result.success) expect("recurringRule" in result.data).toBe(false);
+    expect(result.success).toBe(false);
+    expect(rejectedKeys(result)).toContain("recurringRule");
   });
 
-  it("updateEventSchema output does not carry isRecurring even when supplied", () => {
+  it("updateEventSchema rejects isRecurring rather than silently stripping it", () => {
     const result = updateEventSchema.safeParse({ isRecurring: false });
-    expect(result.success).toBe(true);
-    if (result.success) expect("isRecurring" in result.data).toBe(false);
+    expect(result.success).toBe(false);
+    expect(rejectedKeys(result)).toContain("isRecurring");
   });
 
-  it("updateEventSchema output does not carry recurringRule even when supplied", () => {
+  it("updateEventSchema rejects recurringRule rather than silently stripping it", () => {
     const result = updateEventSchema.safeParse({ recurringRule: "FREQ=DAILY" });
-    expect(result.success).toBe(true);
-    if (result.success) expect("recurringRule" in result.data).toBe(false);
+    expect(result.success).toBe(false);
+    expect(rejectedKeys(result)).toContain("recurringRule");
+  });
+
+  it("both schemas still accept the canonical rrule recurrence fields", () => {
+    const created = createEventSchema.safeParse({
+      ...VALID_CREATE_BASE,
+      rrule: "FREQ=WEEKLY;BYDAY=MO",
+    });
+    expect(created.success).toBe(true);
+    expect(updateEventSchema.safeParse({ rrule: "FREQ=DAILY" }).success).toBe(true);
   });
 });
 

@@ -3,6 +3,7 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  InternalServerErrorException,
 } from "@nestjs/common";
 import { and, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -28,9 +29,14 @@ import type {
   PayrollToggles,
   PayrollPolicyConfig,
   TemplateComponentDef,
-  PayrollToggleKey,
 } from "../payroll.types";
-import { DEFAULT_PAYROLL_TOGGLES } from "../payroll.types";
+import { DEFAULT_PAYROLL_TOGGLES, isPayrollToggleKey } from "../payroll.types";
+import {
+  normalizePayrollToggles,
+  toPayrollPolicyConfig,
+  toTemplateComponentDefs,
+} from "../dto/payroll.schemas";
+import { DEFAULT_PAYROLL_POLICY_CONFIG } from "./payroll-policy-defaults.constants";
 import {
   buildDefaultConfig,
   calendarEventsForMonth,
@@ -38,6 +44,13 @@ import {
   assertBelongsToOrg,
 } from "./lib/policy-builders";
 import { buildActivationChecklist } from "./lib/policy-checklist";
+
+/**
+ * `components` comes from a tenant-owned template's `defaultComponents` JSON, so
+ * its length is caller-controlled. One INSERT per chunk keeps the statement
+ * payload bounded while the whole activation stays in one transaction.
+ */
+const SALARY_COMPONENT_INSERT_CHUNK = 200;
 
 @Injectable()
 export class PolicyMutationService {
@@ -102,11 +115,7 @@ export class PolicyMutationService {
           where: eq(payrollPolicyVersions.id, activeVersionId),
           columns: { config: true },
         });
-        const rawCurrentConfig = activeVersion?.config;
-        const currentConfig: PayrollPolicyConfig =
-          rawCurrentConfig && typeof rawCurrentConfig === "object"
-            ? (rawCurrentConfig as PayrollPolicyConfig)
-            : ({} as PayrollPolicyConfig);
+        const currentConfig = toPayrollPolicyConfig(activeVersion?.config) ?? DEFAULT_PAYROLL_POLICY_CONFIG;
         const fxRates = Object.fromEntries(
           Object.entries(fxRatesInput).map(([code, rate]) => [code, String(rate)]),
         );
@@ -146,15 +155,8 @@ export class PolicyMutationService {
       }
     } else if (input.templateId) {
       const tpl = await this.templatesService.getById(u.orgId, input.templateId);
-      const rawActivateComponents = tpl.defaultComponents;
-      components = Array.isArray(rawActivateComponents)
-        ? (rawActivateComponents as TemplateComponentDef[])
-        : [];
-      const rawActivateToggles = tpl.defaultToggles;
-      baseToggles =
-        rawActivateToggles && typeof rawActivateToggles === "object"
-          ? { ...DEFAULT_PAYROLL_TOGGLES, ...(rawActivateToggles as Partial<PayrollToggles>) }
-          : { ...DEFAULT_PAYROLL_TOGGLES };
+      components = toTemplateComponentDefs(tpl.defaultComponents);
+      baseToggles = normalizePayrollToggles(tpl.defaultToggles);
       templateKey = tpl.key ?? `custom-${tpl.id}`;
       templateSnapshot = tpl;
     }
@@ -188,41 +190,42 @@ export class PolicyMutationService {
           createdBy: u.userId,
         })
         .returning();
+      if (!newVersion) throw new InternalServerErrorException("Failed to create payroll policy version");
 
       if (templateKey) {
         await tx.insert(payrollTemplateActivations).values({
           orgId: u.orgId,
-          policyVersionId: newVersion!.id,
+          policyVersionId: newVersion.id,
           templateKey,
           snapshot: templateSnapshot,
           activatedBy: u.userId,
         });
       }
 
-      for (const comp of components) {
+      const componentRows = components.map((comp) => ({
+        orgId: u.orgId,
+        code: comp.code,
+        name: comp.name,
+        type: comp.type,
+        calcMethod: comp.calcMethod,
+        amount: comp.amount ?? null,
+        percent: comp.percent ?? null,
+        formula: comp.formula ?? null,
+        taxable: comp.taxable,
+        showOnPayslip: comp.showOnPayslip,
+        includeInCtc: comp.includeInCtc,
+        isStatutory: comp.isStatutory,
+        statutoryKey: comp.statutoryKey ?? null,
+        sortOrder: comp.sortOrder,
+        isActive: true,
+      }));
+      for (let i = 0; i < componentRows.length; i += SALARY_COMPONENT_INSERT_CHUNK)
         await tx
           .insert(salaryComponents)
-          .values({
-            orgId: u.orgId,
-            code: comp.code,
-            name: comp.name,
-            type: comp.type,
-            calcMethod: comp.calcMethod,
-            amount: comp.amount ?? null,
-            percent: comp.percent ?? null,
-            formula: comp.formula ?? null,
-            taxable: comp.taxable,
-            showOnPayslip: comp.showOnPayslip,
-            includeInCtc: comp.includeInCtc,
-            isStatutory: comp.isStatutory,
-            statutoryKey: comp.statutoryKey ?? null,
-            sortOrder: comp.sortOrder,
-            isActive: true,
-          })
+          .values(componentRows.slice(i, i + SALARY_COMPONENT_INSERT_CHUNK))
           .onConflictDoNothing({
             target: [salaryComponents.orgId, salaryComponents.code],
           });
-      }
 
       const calendarInserts = calendarEventsForMonth(
         policyId,
@@ -235,7 +238,7 @@ export class PolicyMutationService {
 
       await tx
         .update(payrollPolicies)
-        .set({ status: "ACTIVE", activeVersionId: newVersion!.id })
+        .set({ status: "ACTIVE", activeVersionId: newVersion.id })
         .where(eq(payrollPolicies.id, policyId));
 
       return { policyVersion: newVersion, componentCount: components.length };
@@ -267,52 +270,16 @@ export class PolicyMutationService {
         })
       : null;
 
-    const rawActiveToggles = activeVersion?.toggles;
-    const rawActiveConfig = activeVersion?.config;
     const newToggles: PayrollToggles = {
-      ...(rawActiveToggles && typeof rawActiveToggles === "object"
-        ? (rawActiveToggles as PayrollToggles)
-        : DEFAULT_PAYROLL_TOGGLES),
+      ...normalizePayrollToggles(activeVersion?.toggles),
       ...(input.toggleOverrides ?? {}),
     };
 
-    let baseConfig: PayrollPolicyConfig;
-    if (rawActiveConfig && typeof rawActiveConfig === "object") {
-      baseConfig = rawActiveConfig as PayrollPolicyConfig;
-    } else {
-      baseConfig = {
-        components: [],
-        rounding: { mode: "NEAREST", precision: 2 },
-        approvalChain: [],
-        payslipLayout: "CLASSIC",
-        calendar: {
-          attendanceCutoffDay: 20,
-          reimbursementCutoffDay: 20,
-          declarationCutoffDay: 15,
-          previewDay: 22,
-          approvalDeadlineDay: 25,
-          publishOffsetDays: 1,
-        },
-        statutory: {
-          pfEmployeePercent: "12",
-          pfEmployerPercent: "12",
-          pfWageCeiling: null,
-          esiEmployeePercent: "0.75",
-          esiEmployerPercent: "3.25",
-          esiWageCeiling: null,
-          professionalTaxMonthly: "200.00",
-          tdsMode: "DECLARATION",
-          tdsFlatPercent: null,
-        },
-        overtime: { multiplier: "1.50", basis: "BASIC" },
-        varianceThresholdPercent: 20,
-      };
-    }
-
+    const baseConfig = toPayrollPolicyConfig(activeVersion?.config) ?? DEFAULT_PAYROLL_POLICY_CONFIG;
     const newConfig: PayrollPolicyConfig = { ...baseConfig, ...(input.config ?? {}) };
 
     const hasRiskyChange = input.toggleOverrides
-      ? Object.keys(input.toggleOverrides).some((k) => RISKY_TOGGLES.has(k as PayrollToggleKey))
+      ? Object.keys(input.toggleOverrides).some((k) => isPayrollToggleKey(k) && RISKY_TOGGLES.has(k))
       : false;
 
     if (hasRiskyChange && !input.reason) {

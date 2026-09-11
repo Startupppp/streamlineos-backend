@@ -74,8 +74,8 @@ export function calendarEventsForMonth(
   payDay: number,
 ): Array<typeof payrollCalendarEvents.$inferInsert> {
   const [year, month] = startMonth.split("-").map(Number);
-  const base = new Date(year!, month! - 1, 1);
-  const nextMonthBase = new Date(year!, month!, 1);
+  const base = new Date(year, month - 1, 1);
+  const nextMonthBase = new Date(year, month, 1);
 
   function dayOfMonth(day: number, ref: Date): Date {
     const d = new Date(ref);

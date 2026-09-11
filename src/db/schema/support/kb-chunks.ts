@@ -29,15 +29,10 @@ export const kbArticleChunks = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    articleId: integer("article_id").references(() => kbArticles.id, { onDelete: "cascade" }),
-    pageId: integer("page_id").references(() => kbPages.id, { onDelete: "cascade" }),
-    attachmentId: integer("attachment_id").references(
-      () => kbArticleAttachments.id,
-      { onDelete: "cascade" },
-    ),
-    sourceId: integer("source_id").references(() => kbSources.id, {
-      onDelete: "cascade",
-    }),
+    articleId: integer("article_id"),
+    pageId: integer("page_id"),
+    attachmentId: integer("attachment_id"),
+    sourceId: integer("source_id"),
     source: text("source").notNull(),
     chunkIndex: integer("chunk_index").notNull(),
     content: text("content").notNull(),

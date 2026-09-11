@@ -28,10 +28,7 @@ export const portalInvitations = pgTable(
     email: text("email").notNull(),
     tokenHash: text("token_hash").notNull(),
     status: portalInvitationStatusEnum("status").notNull().default("PENDING"),
-    inviterMembershipId: integer("inviter_membership_id").references(
-      () => organizationMembers.id,
-      { onDelete: "set null" },
-    ),
+    inviterMembershipId: integer("inviter_membership_id"),
     acceptedPortalMembershipId: text("accepted_portal_membership_id"),
     expiresAt: timestamp("expires_at").notNull(),
     revokedAt: timestamp("revoked_at"),
@@ -42,10 +39,6 @@ export const portalInvitations = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    uniqueIndex("uniq_portal_invitations_org_invitation").on(
-      table.organizationId,
-      table.portalInvitationId,
-    ),
     uniqueIndex("uniq_portal_invitations_org_email_audience_pending")
       .on(table.organizationId, table.email, table.audience)
       .where(sql`status = 'PENDING'`),
@@ -69,5 +62,10 @@ export const portalInvitations = pgTable(
       ],
       name: "fk_portal_invitations_org_accepted_membership",
     }).onDelete("no action"),
+    foreignKey({
+      columns: [table.organizationId, table.inviterMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_portal_invitations_inviter_membership_id_org",
+    }).onDelete("set null"),
   ],
 );

@@ -6,6 +6,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  UnprocessableEntityException,
 } from "@nestjs/common";
 import { and, count, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -13,15 +14,28 @@ import type { Db } from "../../../db/drizzle.module";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { hrFormSubmissions } from "../../../db/schema/hr/forms";
 import { hrWorkflowObjectTypeEnum } from "../../../db/schema/hr/workflow-engine";
+
+function isHrWorkflowObjectType(value: string): value is (typeof hrWorkflowObjectTypeEnum.enumValues)[number] {
+  return hrWorkflowObjectTypeEnum.enumValues.some((v) => v === value);
+}
+
+function toNonEmptyStringTuple(values: string[]): [string, ...string[]] {
+  const [first, ...rest] = values;
+  if (first === undefined) throw new Error("Expected at least one option value");
+  return [first, ...rest];
+}
 import { HrAuditService } from "../core/hr-audit.service";
 import { HrWorkflowEngineService } from "../workflows/hr-workflow-engine.service";
 import { HrFormsService } from "./hr-forms.service";
-import type {
-  ListSubmissionsQuery,
-  SubmitHrFormInput,
-  UpdateSubmissionStatusInput,
+import {
+  hrFormFieldSchema,
+  type ListSubmissionsQuery,
+  type SubmitHrFormInput,
+  type UpdateSubmissionStatusInput,
 } from "./dto/hr-forms.schemas";
 import type { HrFormField } from "../../../db/schema/hr/forms";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 
 @Injectable()
 export class HrFormsSubmissionsService {
@@ -55,7 +69,7 @@ export class HrFormsSubmissionsService {
           break;
         case "select":
           schema = field.options?.length
-            ? z.enum(field.options.map((o) => o.value) as [string, ...string[]])
+            ? z.enum(toNonEmptyStringTuple(field.options.map((o) => o.value)))
             : z.string();
           break;
         case "multi_select":
@@ -118,7 +132,9 @@ export class HrFormsSubmissionsService {
           throw new BadRequestException("Form is not active");
         }
 
-        const visibleFields = form.schema.filter((f) => this.evaluateConditional(f, input.data));
+        const schemaParsed = z.array(hrFormFieldSchema).safeParse(form.schema);
+        if (!schemaParsed.success) throw new UnprocessableEntityException("Form schema is invalid");
+        const visibleFields = schemaParsed.data.filter((f) => this.evaluateConditional(f, input.data));
 
         const validator = this.buildZodValidator(visibleFields);
         const parseResult = validator.safeParse(input.data);
@@ -151,11 +167,10 @@ export class HrFormsSubmissionsService {
           return [sub];
         });
 
-        const validWorkflowTypes = new Set<string>(hrWorkflowObjectTypeEnum.enumValues);
-        if (form.workflowObjectType && submittedByUserId && validWorkflowTypes.has(form.workflowObjectType)) {
+        if (form.workflowObjectType && submittedByUserId && isHrWorkflowObjectType(form.workflowObjectType)) {
           this.workflowEngine.startWorkflow({
             orgId,
-            objectType: form.workflowObjectType as typeof hrWorkflowObjectTypeEnum.enumValues[number],
+            objectType: form.workflowObjectType,
             objectId: String(submission.id),
             requestedByUserId: submittedByUserId,
             subjectEmployeeId: input.subjectEmployeeId ? String(input.subjectEmployeeId) : submittedByUserId,
@@ -182,29 +197,32 @@ export class HrFormsSubmissionsService {
 
   async listSubmissions(orgId: string, formId: number, query: ListSubmissionsQuery, canViewSensitive: boolean) {
     await this.formsService.loadForm(orgId, formId);
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
-    const offset = (page - 1) * limit;
+    const limit = Math.min(query.limit ?? 20, 100);
 
     const conditions = [eq(hrFormSubmissions.orgId, orgId), eq(hrFormSubmissions.formId, formId)];
     if (query.status) conditions.push(eq(hrFormSubmissions.status, query.status));
-    const where = and(...conditions);
+    const baseWhere = and(...conditions);
+    const position = decodeCursor(query.cursor);
+    const where = and(
+      baseWhere,
+      position
+        ? keysetBeforeId(hrFormSubmissions.createdAt, hrFormSubmissions.id, position)
+        : undefined,
+    );
 
     const [rows, [total]] = await Promise.all([
-      this.db.select().from(hrFormSubmissions).where(where).orderBy(desc(hrFormSubmissions.createdAt)).limit(limit).offset(offset),
-      this.db.select({ count: count() }).from(hrFormSubmissions).where(where),
+      this.db.select().from(hrFormSubmissions).where(where).orderBy(desc(hrFormSubmissions.createdAt), desc(hrFormSubmissions.id)).limit(limit + 1),
+      this.db.select({ count: count() }).from(hrFormSubmissions).where(baseWhere),
     ]);
+    const page = buildCursorPage(rows, limit, (submission) => ({
+      sortValue: submission.createdAt.toISOString(),
+      id: String(submission.id),
+    }));
+    const data = canViewSensitive
+      ? page.data
+      : page.data.map((submission) => this.maskSensitiveData(submission));
 
-    if (!canViewSensitive) {
-      return {
-        data: rows.map((r) => this.maskSensitiveData(r)),
-        total: total?.count ?? 0,
-        page,
-        limit,
-      };
-    }
-
-    return { data: rows, total: total?.count ?? 0, page, limit };
+    return { data, total: total?.count ?? 0, pagination: page.pagination };
   }
 
   async getMySubmissions(orgId: string, userId: string) {
@@ -250,8 +268,11 @@ export class HrFormsSubmissionsService {
   }
 
   private maskSensitiveData(sub: typeof hrFormSubmissions.$inferSelect) {
+    const snapshotParsed = z.array(hrFormFieldSchema).safeParse(sub.formSchemaSnapshot);
     const sensitiveKeys = new Set(
-      sub.formSchemaSnapshot.filter((f) => f.sensitive).map((f) => f.key),
+      snapshotParsed.success
+        ? snapshotParsed.data.filter((f) => f.sensitive).map((f) => f.key)
+        : Object.keys(sub.data),
     );
     if (sensitiveKeys.size === 0) return sub;
     const maskedData = { ...sub.data };

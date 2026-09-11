@@ -13,7 +13,7 @@ type VerificationQueueItem = {
   categoryId: number | null;
   title: string;
   slug: string;
-  ownerId: string | null;
+  ownerMembershipId: number | null;
   reviewIntervalDays: number | null;
   lastVerifiedAt: Date | null;
   updatedAt: Date;
@@ -69,7 +69,7 @@ export class KbVerificationService {
         categoryId: kbArticles.categoryId,
         title: kbArticles.title,
         slug: kbArticles.slug,
-        ownerId: kbArticles.ownerId,
+        ownerMembershipId: kbArticles.ownerMembershipId,
         reviewIntervalDays: kbArticles.reviewIntervalDays,
         lastVerifiedAt: kbArticles.lastVerifiedAt,
         updatedAt: kbArticles.updatedAt,

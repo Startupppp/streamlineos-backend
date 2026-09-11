@@ -7,7 +7,7 @@
  * so the feed never claims something will happen that was stopped.
  */
 import { ConflictException, NotFoundException } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.types";
 import { autonomousDecisions, autonomyHolds, quotes } from "../../../db/schema";
 import type { HoldDeps } from "../autonomy-hold.types";
@@ -145,7 +145,8 @@ export async function cancelHoldsInFlight(
     )
     .returning({ decisionId: autonomyHolds.autonomousDecisionId });
 
-  for (const row of cancelled) {
+  const decisionIds = cancelled.map((row) => row.decisionId);
+  for (let i = 0; i < decisionIds.length; i += DECISION_REVERSAL_CHUNK)
     await db
       .update(autonomousDecisions)
       .set({
@@ -157,10 +158,14 @@ export async function cancelHoldsInFlight(
       .where(
         and(
           eq(autonomousDecisions.organizationId, organizationId),
-          eq(autonomousDecisions.autonomousDecisionId, row.decisionId),
+          inArray(
+            autonomousDecisions.autonomousDecisionId,
+            decisionIds.slice(i, i + DECISION_REVERSAL_CHUNK),
+          ),
         ),
       );
-  }
 
   return cancelled.length;
 }
+
+const DECISION_REVERSAL_CHUNK = 500;

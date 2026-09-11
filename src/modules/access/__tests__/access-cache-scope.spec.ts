@@ -1,4 +1,6 @@
+import { membershipStubFromDb } from "../../../../test/helpers/membership-state-stub";
 import { AccessService } from "../access.service";
+import { AccessVersionCache } from "../access-version-cache";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import type { Db } from "../../../db/drizzle.module";
 import type { CacheService } from "../../../common/cache/cache.service";
@@ -9,6 +11,18 @@ import {
   UNIVERSAL_MEMBER_PERMISSIONS,
 } from "../../rbac/permissions";
 import { makeMfaPolicyStub } from "../../../../test/helpers/mfa-policy-stub";
+import {
+  primeRelocationTrafficTracker,
+  resetRelocationTrafficTracker,
+  REFRESH_INTERVAL_MS,
+} from "../../../common/relocation/relocation-traffic-tracker";
+
+beforeAll(() => {
+  primeRelocationTrafficTracker([], Date.now() + REFRESH_INTERVAL_MS * 100);
+});
+afterAll(() => {
+  resetRelocationTrafficTracker();
+});
 
 const ACTIVE_MEMBER_BASELINE_PERMISSIONS = new Set([
   ...UNIVERSAL_MEMBER_PERMISSIONS,
@@ -73,14 +87,20 @@ function makeSelectChain(result: unknown[]): {
   from: jest.Mock;
   where: jest.Mock;
   innerJoin: jest.Mock;
+  orderBy: jest.Mock;
+  limit: jest.Mock;
 } {
   const chain = {
     from: jest.fn(),
-    where: jest.fn().mockResolvedValue(result),
+    where: jest.fn(),
     innerJoin: jest.fn(),
+    orderBy: jest.fn(),
+    limit: jest.fn().mockResolvedValue(result),
   };
   chain.from.mockReturnValue(chain);
   chain.innerJoin.mockReturnValue(chain);
+  chain.orderBy.mockReturnValue(chain);
+  chain.where.mockReturnValue(chain);
   return chain;
 }
 
@@ -127,11 +147,14 @@ function buildService(
     getEffectiveModuleMap: jest.fn().mockResolvedValue({}),
   } as unknown as EntitlementsService;
 
+  const wrappedDb = withTenantTransactionMock(defaultDb) as unknown as Db;
   return new AccessService(
-    withTenantTransactionMock(defaultDb) as unknown as Db,
+    wrappedDb,
     cache,
     entitlements,
     makeMfaPolicyStub(),
+    new AccessVersionCache(wrappedDb, cache),
+    membershipStubFromDb(defaultDb),
   );
 }
 
@@ -175,11 +198,14 @@ describe("AccessService.resolveUserPermissions - org-scoped Redis cache key", ()
       getEffectiveModuleMap: jest.fn().mockResolvedValue({}),
     } as unknown as EntitlementsService;
 
+    const wrappedDb2 = withTenantTransactionMock(db) as unknown as Db;
     const svc = new AccessService(
-      withTenantTransactionMock(db) as unknown as Db,
+      wrappedDb2,
       cache as unknown as CacheService,
       entitlements,
       makeMfaPolicyStub(),
+      new AccessVersionCache(wrappedDb2, cache as unknown as CacheService),
+      membershipStubFromDb(db),
     );
 
     await svc.resolveUserPermissions("org-alpha", "user-1");
@@ -234,17 +260,23 @@ describe("AccessService.resolveUserPermissions - org-scoped Redis cache key", ()
       getEffectiveModuleMap: jest.fn().mockResolvedValue({}),
     } as unknown as EntitlementsService;
 
+    const dbForA = buildDbForOrg(10) as unknown as Db;
+    const dbForB = buildDbForOrg(20) as unknown as Db;
     const svcA = new AccessService(
-      buildDbForOrg(10) as unknown as Db,
+      dbForA,
       cache as unknown as CacheService,
       entitlements,
       makeMfaPolicyStub(),
+      new AccessVersionCache(dbForA, cache as unknown as CacheService),
+      membershipStubFromDb(dbForA),
     );
     const svcB = new AccessService(
-      buildDbForOrg(20) as unknown as Db,
+      dbForB,
       cache as unknown as CacheService,
       entitlements,
       makeMfaPolicyStub(),
+      new AccessVersionCache(dbForB, cache as unknown as CacheService),
+      membershipStubFromDb(dbForB),
     );
 
     await svcA.resolveUserPermissions("org-a", "user-shared");

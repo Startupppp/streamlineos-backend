@@ -17,6 +17,7 @@ import { RequireModule } from "../../../../common/rbac/require-module.decorator"
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { PositionsTaxonomyService } from "./positions-taxonomy.service";
+import { PositionsTransitionsService } from "./positions-transitions.service";
 import {
   createPositionStatusSchema,
   updatePositionStatusSchema,
@@ -29,6 +30,8 @@ import {
 } from "./positions-taxonomy.dto";
 import { Validate } from "../../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema, NoContentResponse } from "../../../../common/openapi/zod-operation-contracts"
+import { listStatusesResponseSchema, createStatusResponseSchema, updateStatusResponseSchema, retireStatusResponseSchema, listTransitionsResponseSchema, createTransitionResponseSchema, updateTransitionResponseSchema } from "../dto/governance-response.schemas"
 
 const statusIdParams = z.object({ statusId: z.coerce.number().int().positive() }).strict();
 const transitionIdParams = z.object({ transitionId: z.coerce.number().int().positive() }).strict();
@@ -37,14 +40,19 @@ const transitionIdParams = z.object({ transitionId: z.coerce.number().int().posi
 @Controller("hr/governance/position-taxonomy")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class PositionsTaxonomyController {
-  constructor(private readonly service: PositionsTaxonomyService) {}
+  constructor(
+    private readonly service: PositionsTaxonomyService,
+    private readonly transitions: PositionsTransitionsService,
+  ) {}
 
+  @ResponseSchema(listStatusesResponseSchema)
   @Get("statuses")
   @RequirePermission("hr:positions:view")
   async listStatuses(@CurrentUser() user: CurrentUserContext) {
     return this.service.listStatuses(user.orgId);
   }
 
+  @ResponseSchema(createStatusResponseSchema)
   @Post("statuses")
   @RequirePermission("hr:positions:manage")
   @Validate({ body: createPositionStatusSchema })
@@ -56,6 +64,7 @@ export class PositionsTaxonomyController {
     return this.service.createStatus(user.orgId, body);
   }
 
+  @ResponseSchema(updateStatusResponseSchema)
   @Patch("statuses/:statusId")
   @RequirePermission("hr:positions:manage")
   @Validate({ params: statusIdParams, body: updatePositionStatusSchema })
@@ -68,6 +77,7 @@ export class PositionsTaxonomyController {
     return this.service.updateStatus(user.orgId, statusId, body);
   }
 
+  @ResponseSchema(retireStatusResponseSchema)
   @Delete("statuses/:statusId")
   @RequirePermission("hr:positions:manage")
   @HttpCode(200)
@@ -79,12 +89,14 @@ export class PositionsTaxonomyController {
     return this.service.retireStatus(user.orgId, statusId);
   }
 
+  @ResponseSchema(listTransitionsResponseSchema)
   @Get("transitions")
   @RequirePermission("hr:positions:view")
   async listTransitions(@CurrentUser() user: CurrentUserContext) {
-    return this.service.listTransitions(user.orgId);
+    return this.transitions.listTransitions(user.orgId);
   }
 
+  @ResponseSchema(createTransitionResponseSchema)
   @Post("transitions")
   @RequirePermission("hr:positions:manage")
   @Validate({ body: createPositionTransitionSchema })
@@ -93,9 +105,10 @@ export class PositionsTaxonomyController {
     @Body()
     body: CreatePositionTransitionInput,
   ) {
-    return this.service.createTransition(user.orgId, user.userId, body);
+    return this.transitions.createTransition(user.orgId, user.userId, body);
   }
 
+  @ResponseSchema(updateTransitionResponseSchema)
   @Patch("transitions/:transitionId")
   @RequirePermission("hr:positions:manage")
   @Validate({ params: transitionIdParams, body: updatePositionTransitionSchema })
@@ -105,9 +118,10 @@ export class PositionsTaxonomyController {
     @Body()
     body: UpdatePositionTransitionInput,
   ) {
-    return this.service.updateTransition(user.orgId, transitionId, body);
+    return this.transitions.updateTransition(user.orgId, transitionId, body);
   }
 
+  @NoContentResponse()
   @Delete("transitions/:transitionId")
   @RequirePermission("hr:positions:manage")
   @HttpCode(204)
@@ -116,6 +130,6 @@ export class PositionsTaxonomyController {
     @CurrentUser() user: CurrentUserContext,
     @Param("transitionId", ParseIntPipe) transitionId: number,
   ) {
-    await this.service.deleteTransition(user.orgId, transitionId);
+    await this.transitions.deleteTransition(user.orgId, transitionId);
   }
 }

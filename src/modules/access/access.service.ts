@@ -1,42 +1,30 @@
 import {
-  BadRequestException,
   Inject,
   Injectable,
-  NotFoundException,
   type OnModuleDestroy,
   type OnModuleInit,
 } from "@nestjs/common";
-import { eq, sql } from "drizzle-orm";
-import { accessVersions } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
-import { getTenantContext } from "../../common/tenant/tenant-context";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
-import { logger } from "../../common/logger/logger.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import type { AuthContext } from "../../common/auth/auth-context";
+import { MembershipStateService } from "../../common/auth/membership-state.service";
 import { subscribeVersionBump } from "../../common/rbac/access-invalidate";
-import { accessVersionChannel } from "../../common/rbac/access-version-channel";
 import type {
   AccessSnapshot,
   CachedPermissions,
   DataScope,
   PermsEntry,
-  VersionEntry,
 } from "./access.types";
 import { EntitlementsService } from "./entitlements.service";
 import { MfaPolicyService } from "./mfa-policy.service";
-import { ADMINISTRABLE_MODULES } from "../../common/rbac/module-vocabulary";
 import {
   applyUniversalGrants,
-  broadest,
-  moduleOf,
   stripDeniedModules,
 } from "./access-policy";
-import { isMissingRelationError } from "./access-error-utils";
-import { isPersonalTokenPermissionDelegable } from "../../common/rbac/personal-token-policy";
-import { assertNever } from "../../common/auth/principal";
 import {
   moduleAvailability,
   type ModuleAvailabilityResolver,
@@ -46,6 +34,7 @@ import {
   AccessPermissionResolver,
   membershipCacheKey,
   type MembershipAccessState,
+  type MembershipReader,
 } from "./access-permission.resolver";
 import {
   type Clock,
@@ -58,61 +47,19 @@ import {
 } from "./access-permission-members.resolver";
 import { AccessSnapshotResolver } from "./access-snapshot.resolver";
 import { DeniedModulesResolver } from "./denied-modules.resolver";
+import { resolvePrincipalScope } from "./access-principal-scope";
+import { AccessVersionCache } from "./access-version-cache";
 
 export {
   broadest,
-  evaluateMembershipGate,
-  isActiveAssignment,
-  isActiveDelegation,
-  isPlanGatedModule,
-  moduleOf,
   SCOPE_RANK,
 } from "./access-policy";
-export type {
-  DelegationRow,
-  MembershipGateResult,
-} from "./access-policy";
-const VERSION_CACHE_TTL_MS = 1_000;
-const SHARED_VERSION_TTL_SECONDS = 300;
+
 const PERMS_CACHE_TTL_MS = 30_000;
 const MEMBERSHIP_CACHE_TTL_MS = 15_000;
 
-function undefinedColumn(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) return false;
-  if ("code" in error && error.code === "42703") return true;
-  if ("cause" in error) return undefinedColumn(error.cause);
-  return false;
-}
-
-/**
- * An uninstalled module, and nothing else.
- *
- * This used to accept any error whose message contained "does not exist", which
- * is far too wide. It swallowed 42703 (a renamed column), 42883 (a missing
- * function), 42704 (a missing role) -- and, once the savepoint machinery
- * arrived, its own "savepoint access_read_N does not exist". Every one of those
- * degraded silently into an empty permission set, so a schema drift or a bug in
- * this file presented as "you have no permissions" with a warning that said a
- * table was absent.
- *
- * 42P01 is the only code that genuinely means "this module was never installed
- * here". Everything else is a fault, and a fault in authorization should be
- * loud.
- */
-
-function withinCeiling(ceiling: readonly string[], key: string): boolean {
-  return isPersonalTokenPermissionDelegable(key) && ceiling.includes(key);
-}
-
 @Injectable()
 export class AccessService implements OnModuleInit, OnModuleDestroy {
-  private static savepointSeq = 0;
-  private static readonly savepointChains = new WeakMap<
-    object,
-    Promise<unknown>
-  >();
-  private readonly missingAccessTablesLogged = new Set<string>();
-  private readonly versionCache = new Map<string, VersionEntry>();
   private readonly permsCache = new Map<string, PermsEntry>();
   private readonly membershipAccessCache = new Map<string, MembershipAccessState>();
   private readonly permResolveInFlight = new Map<string, Promise<Map<string, DataScope>>>();
@@ -129,29 +76,32 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     private readonly cache: CacheService,
     private readonly entitlements: EntitlementsService,
     private readonly mfaPolicy: MfaPolicyService,
+    private readonly accessVersionCache: AccessVersionCache,
+    private readonly membershipState: MembershipStateService,
   ) {
-    const safeAccessTableRead = <Result>(
+    const readAccessTable = <Result>(
       read: () => PromiseLike<Result>,
-      fallback: Result,
-    ): Promise<Result> => this.safeAccessTableRead(read, fallback);
+    ): Promise<Result> => this.readAccessTable(read);
     this.permissionResolver = new AccessPermissionResolver(
       () => this.db,
-      safeAccessTableRead,
+      readAccessTable,
       this.warnedUnknownKeys,
       this.membershipAccessCache,
       MEMBERSHIP_CACHE_TTL_MS,
+      (organizationId, memberUserId) =>
+        this.membershipState.resolve(memberUserId, organizationId),
       this.clock,
     );
     this.deniedModulesResolver = new DeniedModulesResolver(
       () => this.db,
-      safeAccessTableRead,
+      readAccessTable,
       (orgId) => this.getPermissionsVersion(orgId),
       (moduleKey) => this.entitlements.isCoreModule(moduleKey),
     );
     this.permissionMembersResolver = new AccessPermissionMembersResolver(
       db,
       cache,
-      safeAccessTableRead,
+      readAccessTable,
       (organizationId) => this.getPermissionsVersion(organizationId),
       (organizationId, moduleKey) =>
         this.isModuleEnabled(organizationId, moduleKey),
@@ -160,30 +110,25 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       entitlements,
       mfaPolicy,
       (organizationId) => this.getPermissionsVersion(organizationId),
-      (organizationId, memberUserId) =>
-        this.resolveUserPermissions(organizationId, memberUserId),
+      (organizationId, memberUserId, authContext) =>
+        this.resolveUserPermissions(organizationId, memberUserId, authContext),
       (organizationId, memberUserId) =>
         this.getUserDeniedModules(organizationId, memberUserId),
-      (organizationId, memberUserId) =>
-        this.canManageOrganizationMembership(organizationId, memberUserId),
+      (organizationId, memberUserId, authContext) =>
+        this.canManageOrganizationMembership(
+          organizationId,
+          memberUserId,
+          authContext,
+        ),
       (getModuleMap, getDeniedModules) =>
         this.buildModuleAvailabilityResolver(getModuleMap, getDeniedModules),
     );
   }
 
   onModuleInit(): void {
-    accessVersionChannel.useStore({
-      get: (orgId) => this.cache.get<number>(CACHE_KEYS.accessVersion(orgId)),
-      set: (orgId, version) =>
-        this.cache.set(
-          CACHE_KEYS.accessVersion(orgId),
-          version,
-          SHARED_VERSION_TTL_SECONDS,
-        ),
-      clear: (orgId) => this.cache.invalidate(CACHE_KEYS.accessVersion(orgId)),
-    });
+    this.accessVersionCache.configureStore();
     this.unsubscribeVersionBump = subscribeVersionBump((orgId) => {
-      this.versionCache.delete(orgId);
+      this.accessVersionCache.clearForOrg(orgId);
       this.deleteOrgEntries(this.membershipAccessCache, orgId);
       this.deleteOrgEntries(this.permsCache, orgId);
       this.deniedModulesResolver.clearForOrg(orgId);
@@ -206,127 +151,41 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private noteMissingAccessTables(error: unknown): void {
-    const message = error instanceof Error ? error.message : String(error);
-    // Keyed rather than latched. The old single boolean logged the first
-    // degradation ever seen and silenced every later one, so a second,
-    // unrelated drift left no trace at all.
-    const key = message.slice(0, 200);
-    if (this.missingAccessTablesLogged.has(key)) return;
-    this.missingAccessTablesLogged.add(key);
-    logger.warn("access: rbac read degraded, returning empty permission set", {
-      // A missing table means the module was never installed here; a missing
-      // column means the declaration and the database disagree, which is a
-      // bug rather than a configuration. Both degrade, but they are not the
-      // same event and the log should not call them the same thing.
-      kind: undefinedColumn(error) ? "column-drift" : "table-absent",
-      error: message,
-    });
-  }
-
-  private async safeAccessTableRead<T>(
-    read: () => PromiseLike<T>,
-    fallback: T,
-  ): Promise<T> {
-    const ambient = getTenantContext();
-    if (!ambient) {
-      // No enclosing transaction: a failed statement costs only itself.
-      try {
-        return await read();
-      } catch (error: unknown) {
-        if (!isMissingRelationError(error)) throw error;
-        this.noteMissingAccessTables(error);
-        return fallback;
-      }
-    }
-
-    const tx = ambient.tx;
-    return this.inSavepoint(tx, async () => {
-      // Generated from a counter and never from input, so `sql.raw` is the
-      // right tool — a savepoint name cannot be a bind parameter.
-      const savepoint = `access_read_${(AccessService.savepointSeq += 1)}`;
-      await tx.execute(sql.raw(`SAVEPOINT ${savepoint}`));
-      try {
-        const value = await read();
-        await tx.execute(sql.raw(`RELEASE SAVEPOINT ${savepoint}`));
-        return value;
-      } catch (error: unknown) {
-        await tx.execute(sql.raw(`ROLLBACK TO SAVEPOINT ${savepoint}`));
-        if (!isMissingRelationError(error)) throw error;
-        this.noteMissingAccessTables(error);
-        return fallback;
-      }
-    });
-  }
-  /**
-   * Savepoints are a stack, not a set: `RELEASE SAVEPOINT b` also discards
-   * every savepoint established after it. `computeUserPermissions` issues its
-   * reads through `Promise.all`, so two of them interleaved and the second
-   * tried to roll back to a name the first had already released — "savepoint
-   * access_read_3 does not exist", from code whose only job was to survive
-   * failure.
-   *
-   * Serializing them restores the nesting the stack requires. It costs
-   * nothing: these reads share one connection and were already serialized on
-   * the wire — only the savepoint bookkeeping was ever concurrent.
-   */
-  private inSavepoint<T>(tx: object, run: () => Promise<T>): Promise<T> {
-    const previous = AccessService.savepointChains.get(tx) ?? Promise.resolve();
-    const result = previous.then(run, run);
-    // The chain tracks completion, never outcome — one read's failure must not
-    // reject the next one's turn.
-    AccessService.savepointChains.set(
-      tx,
-      result.then(
-        () => undefined,
-        () => undefined,
-      ),
-    );
-    return result;
-  }
-
-  private async loadDurablePermissionsVersion(orgId: string): Promise<number> {
-    const row = await runInTenantTransaction(
-      this.db,
-      () =>
-        this.safeAccessTableRead(
-          () =>
-            this.db.query.accessVersions.findFirst({
-              where: eq(accessVersions.orgId, orgId),
-              columns: { permissionsVersion: true },
-            }),
-          undefined,
-        ),
-      { orgId },
-    );
-    return row?.permissionsVersion ?? 1;
+  // Every RBAC read THROWS on failure: an empty grants list reads as "holds nothing", and an empty denied-modules list fails OPEN. Pinned by access-read-failure-throws.spec.ts.
+  private async readAccessTable<T>(read: () => PromiseLike<T>): Promise<T> {
+    return read();
   }
 
   async getPermissionsVersion(orgId: string): Promise<number> {
-    const cached = this.versionCache.get(orgId);
-    if (cached && cached.expiresAt > Date.now()) return cached.version;
+    return this.accessVersionCache.getVersion(orgId);
+  }
 
-    const version = await accessVersionChannel.read(orgId, () =>
-      this.loadDurablePermissionsVersion(orgId),
-    );
+  /** Only a context bound to this exact actor and tenant may answer for them. */
+  private contextFor(
+    orgId: string,
+    userId: string,
+    ctx?: AuthContext,
+  ): AuthContext | undefined {
+    if (!ctx || ctx.actor.orgId !== orgId || ctx.actor.userId !== userId)
+      return undefined;
+    return ctx;
+  }
 
-    this.versionCache.set(orgId, {
-      version,
-      expiresAt: Date.now() + VERSION_CACHE_TTL_MS,
-    });
-    if (this.versionCache.size > 2000) {
-      const now = Date.now();
-      for (const [key, entry] of this.versionCache) {
-        if (entry.expiresAt <= now) this.versionCache.delete(key);
-      }
-    }
-    return version;
+  private membershipFrom(
+    orgId: string,
+    userId: string,
+    ctx?: AuthContext,
+  ): MembershipReader | undefined {
+    const bound = this.contextFor(orgId, userId, ctx);
+    return bound ? () => bound.membership() : undefined;
   }
 
   async resolveUserPermissions(
     orgId: string,
     userId: string,
+    ctx?: AuthContext,
   ): Promise<Map<string, DataScope>> {
+    const membership = this.membershipFrom(orgId, userId, ctx);
     const version = await this.getPermissionsVersion(orgId);
     const permsKey = `${orgId}:${userId}:${version}`;
     const cachedPerms = this.permsCache.get(permsKey);
@@ -364,7 +223,12 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
         if (local && local.expiresAt > this.clock.now().getTime()) {
           map = new Map(Object.entries(local.perms));
         } else {
-          const resolved = await this.resolveWithValidity(orgId, userId, version);
+          const resolved = await this.resolveWithValidity(
+            orgId,
+            userId,
+            version,
+            membership,
+          );
           this.permsCache.set(txPermsKey, {
             perms: resolved.perms,
             expiresAt: resolved.validUntil,
@@ -377,14 +241,15 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
           }
           map = new Map(Object.entries(resolved.perms));
         }
-        const membership = await this.permissionResolver.getMembershipAccessState(
+        const state = await this.permissionResolver.getMembershipAccessState(
           orgId,
           userId,
           version,
+          membership,
         );
-        if (!membership.active) return new Map();
+        if (!state.active) return new Map();
         applyUniversalGrants(map);
-        if (membership.isOwnerOrAdmin) return map;
+        if (state.isOwnerOrAdmin) return map;
         const denied = await this.deniedModulesResolver.resolve(orgId, userId);
         stripDeniedModules(map, denied);
         return map;
@@ -403,6 +268,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
   async canManageOrganizationMembership(
     orgId: string,
     userId: string,
+    ctx?: AuthContext,
   ): Promise<boolean> {
     const version = await this.getPermissionsVersion(orgId);
     const cached = this.membershipAccessCache.get(
@@ -410,6 +276,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     );
     if (cached && cached.expiresAt > Date.now()) return cached.isOwnerOrAdmin;
 
+    const membership = this.membershipFrom(orgId, userId, ctx);
     return runInTenantTransaction(
       this.db,
       async () =>
@@ -418,6 +285,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
             orgId,
             userId,
             version,
+            membership,
           )
         ).isOwnerOrAdmin,
       { orgId },
@@ -486,20 +354,43 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     return this.entitlements.getPlanLockedModules(orgId);
   }
 
+  private static readonly SNAPSHOT_CACHE_TTL_SECONDS = CACHE_TTL.SHORT;
+
   async getAccessSnapshot(
     orgId: string,
     userId: string,
     currentUserContext: CurrentUserContext,
+    ctx?: AuthContext,
   ): Promise<AccessSnapshot> {
-    return runInTenantTransaction(
-      this.db,
-      () =>
-        this.snapshotResolver.computeAccessSnapshot(
-          orgId,
-          userId,
-          currentUserContext,
-        ),
-      { orgId },
+    const bound = this.contextFor(orgId, userId, ctx);
+    const compute = (): Promise<AccessSnapshot> =>
+      runInTenantTransaction(
+        this.db,
+        () =>
+          this.snapshotResolver.computeAccessSnapshot(
+            orgId,
+            userId,
+            currentUserContext,
+            bound,
+          ),
+        { orgId },
+      );
+
+    // Two token-attenuated callers with the same (orgId, userId) get different snapshots, so this path is never cached.
+    if (currentUserContext.tokenScopes !== null) return compute();
+
+    const version = await this.getPermissionsVersion(orgId);
+    const localKey = CACHE_KEYS.accessSnapshot(
+      userId,
+      version,
+      currentUserContext.isOrgOwner,
+    );
+    return this.cache.cachedForOrgWith<AccessSnapshot>(
+      orgId,
+      localKey,
+      compute,
+      () => AccessService.SNAPSHOT_CACHE_TTL_SECONDS,
+      AccessService.SNAPSHOT_CACHE_TTL_SECONDS,
     );
   }
 
@@ -507,6 +398,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     orgId: string,
     userId: string,
     version: number,
+    membership?: MembershipReader,
   ): Promise<CachedPermissions> {
     const localKey = `access:perms:${userId}:v${version}`;
     const fill = async (): Promise<CachedPermissions> => {
@@ -515,6 +407,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
         orgId,
         userId,
         version,
+        membership,
       );
       return {
         perms: resolved.perms,
@@ -560,37 +453,28 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  async scopeFor(user: CurrentUserContext, key: string): Promise<DataScope> {
-    const principal = user.principal;
-    switch (principal.kind) {
-      case "account-only":
-        return "none";
-      case "system-job":
-        return principal.ceiling.includes(key) ? "all" : "none";
-      case "human-session":
-        return this.membershipCapability(user, principal.isOrgOwner, key);
-      case "personal-token":
-        if (!withinCeiling(principal.ceiling, key)) return "none";
-        return this.membershipCapability(user, principal.isOrgOwner, key);
-      case "agent-token":
-        if (!withinCeiling(principal.ceiling, key)) return "none";
-        return (
-          (await this.resolveUserPermissions(user.orgId, user.userId)).get(
-            key,
-          ) ?? "none"
-        );
-      default:
-        return assertNever(principal);
-    }
+  async scopeFor(
+    user: CurrentUserContext,
+    key: string,
+    ctx?: AuthContext,
+  ): Promise<DataScope> {
+    return resolvePrincipalScope(user.principal, key, (isOrgOwner) =>
+      this.membershipCapability(user, isOrgOwner, key, ctx),
+    );
   }
 
   private async membershipCapability(
     user: CurrentUserContext,
     isOrgOwner: boolean,
     key: string,
+    ctx?: AuthContext,
   ): Promise<DataScope> {
     if (isOrgOwner) return "all";
-    const resolved = await this.resolveUserPermissions(user.orgId, user.userId);
+    const resolved = await this.resolveUserPermissions(
+      user.orgId,
+      user.userId,
+      ctx,
+    );
     return resolved.get(key) ?? "none";
   }
 

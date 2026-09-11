@@ -59,7 +59,9 @@ export function assignedOrParticipatingIds(
       (SELECT ${tickets.id} AS id, ${params.carry}
        FROM ${tickets}
        INNER JOIN ${projects} ON ${projects.id} = ${tickets.projectId}
-       WHERE ${where} AND ${tickets.assigneeId} = ${params.userId})
+       WHERE ${where} AND ${tickets.assigneeMembershipId} IN (
+         SELECT id FROM organization_members WHERE org_id = ${params.orgId} AND user_id = ${params.userId}
+       ))
       UNION
       (SELECT ${tickets.id} AS id, ${params.carry}
        FROM ${tickets}
@@ -67,7 +69,9 @@ export function assignedOrParticipatingIds(
        INNER JOIN ${ticketAssignees} ta
          ON ta.ticket_id = ${tickets.id}
         AND ta.org_id = ${params.orgId}
-        AND ta.user_id = ${params.userId}
+        AND ta.membership_id IN (
+          SELECT id FROM organization_members WHERE org_id = ${params.orgId} AND user_id = ${params.userId}
+        )
        WHERE ${where})
     ) u
     WHERE ${cursorFilter}
@@ -86,7 +90,9 @@ export function mineCountSql(
       (SELECT ${tickets.id} AS id
        FROM ${tickets}
        INNER JOIN ${projects} ON ${projects.id} = ${tickets.projectId}
-       WHERE ${w} AND ${tickets.assigneeId} = ${userId})
+       WHERE ${w} AND ${tickets.assigneeMembershipId} IN (
+         SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${userId}
+       ))
       UNION
       (SELECT ${tickets.id} AS id
        FROM ${tickets}
@@ -94,7 +100,9 @@ export function mineCountSql(
        INNER JOIN ${ticketAssignees} ta
          ON ta.ticket_id = ${tickets.id}
         AND ta.org_id = ${orgId}
-        AND ta.user_id = ${userId}
+        AND ta.membership_id IN (
+          SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${userId}
+        )
        WHERE ${w})
     ) u`;
 }
@@ -103,7 +111,7 @@ export function readIds(rows: Record<string, unknown>[]): number[] {
   return rows.map((row) => Number(row["id"]));
 }
 
-export function readIdsAndTotal(rows: Record<string, unknown>[]): {
+function readIdsAndTotal(rows: Record<string, unknown>[]): {
   ids: number[];
   total: number;
 } {

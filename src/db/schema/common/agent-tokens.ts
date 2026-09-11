@@ -1,12 +1,12 @@
 import { pgTable, serial, text, timestamp, integer, index, unique, uniqueIndex, foreignKey } from "drizzle-orm/pg-core";
 import { organizations } from "./auth";
-import { users } from "./auth";
 import { organizationMembers } from "./auth";
 
 export const agentTokens = pgTable("agent_tokens", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  // Historical identity projection only. issuerMembershipId is the authority key.
+  userId: text("user_id").notNull(),
   issuerMembershipId: integer("issuer_membership_id").notNull(),
   scopes: text("scopes").array().notNull().default([]),
   name: text("name").notNull(),

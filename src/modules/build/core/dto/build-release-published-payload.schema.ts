@@ -8,6 +8,6 @@ export const buildReleasePublishedPayloadSchema = z.object({
   version: z.string().nullable(),
 });
 
-export type BuildReleasePublishedPayload = z.infer<
+type BuildReleasePublishedPayload = z.infer<
   typeof buildReleasePublishedPayloadSchema
 >;

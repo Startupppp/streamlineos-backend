@@ -21,56 +21,22 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { HrOrgCatalogService } from "./hr-org-catalog.service";
 import { z } from "zod";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../../common/openapi/response-envelopes";
+import {
+  jobRoleRowSchema,
+  jobLevelRowSchema,
+  headcountItemSchema,
+} from "./dto/core-response.schemas";
+import {
+  createCatalogSchema,
+  updateCatalogSchema,
+  type CreateCatalogInput,
+  type UpdateCatalogInput,
+} from "./dto/hr-core.schemas";
 
 const roleIdParams = z.object({ roleId: z.coerce.number().int().positive() }).strict();
 const levelIdParams = z.object({ levelId: z.coerce.number().int().positive() }).strict();
-
-const catalogNameSchema = z
-  .string()
-  .trim()
-  .transform((v) => v.replace(/\s+/g, " "))
-  .pipe(
-    z
-      .string()
-      .min(2, "Name must be at least 2 characters")
-      .max(100, "Name must be at most 100 characters")
-      .refine((v) => /[a-zA-Z]/.test(v), "Name must contain at least one letter")
-      .refine(
-        (v) => !/[^\p{L}\p{N}\s]{2,}/u.test(v),
-        "Name cannot have consecutive special characters",
-      ),
-  );
-
-const catalogCodeSchema = z
-  .union([
-    z.literal("").transform(() => undefined),
-    z
-      .string()
-      .trim()
-      .transform((v) => v.toUpperCase())
-      .pipe(
-        z
-          .string()
-          .min(1, "Code must be at least 1 character")
-          .max(20, "Code must be at most 20 characters")
-          .regex(
-            /^[A-Z0-9][A-Z0-9_-]*$/,
-            "Code can only use letters, numbers, hyphens, and underscores",
-          ),
-      ),
-  ])
-  .optional();
-
-const createCatalogSchema = z.object({
-  name: catalogNameSchema,
-  code: catalogCodeSchema,
-  description: z.string().trim().max(500).optional(),
-});
-
-const updateCatalogSchema = createCatalogSchema.partial();
-
-type CreateCatalogInput = z.infer<typeof createCatalogSchema>;
-type UpdateCatalogInput = z.infer<typeof updateCatalogSchema>;
 
 @RequireModule("hr")
 @Controller("hr/org")
@@ -79,6 +45,7 @@ export class HrOrgCatalogController {
   constructor(private readonly catalog: HrOrgCatalogService) {}
 
   @Get("roles")
+  @ResponseSchema(z.array(jobRoleRowSchema))
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
   listJobRoles(@CurrentUser() u: CurrentUserContext) {
@@ -89,6 +56,7 @@ export class HrOrgCatalogController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @HttpCode(201)
+  @ResponseSchema(jobRoleRowSchema)
   @Validate({ body: createCatalogSchema })
   createJobRole(
     @Body() body: CreateCatalogInput,
@@ -98,6 +66,7 @@ export class HrOrgCatalogController {
   }
 
   @Patch("roles/:roleId")
+  @ResponseSchema(jobRoleRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @Validate({ params: roleIdParams, body: updateCatalogSchema })
@@ -111,6 +80,7 @@ export class HrOrgCatalogController {
 
   @Delete("roles/:roleId")
   @HttpCode(204)
+  @NoContentResponse()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @Validate({ params: roleIdParams })
@@ -122,6 +92,7 @@ export class HrOrgCatalogController {
   }
 
   @Get("levels")
+  @ResponseSchema(z.array(jobLevelRowSchema))
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
   listJobLevels(@CurrentUser() u: CurrentUserContext) {
@@ -132,6 +103,7 @@ export class HrOrgCatalogController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @HttpCode(201)
+  @ResponseSchema(jobLevelRowSchema)
   @Validate({ body: createCatalogSchema })
   createJobLevel(
     @Body() body: CreateCatalogInput,
@@ -141,6 +113,7 @@ export class HrOrgCatalogController {
   }
 
   @Patch("levels/:levelId")
+  @ResponseSchema(jobLevelRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @Validate({ params: levelIdParams, body: updateCatalogSchema })
@@ -154,6 +127,7 @@ export class HrOrgCatalogController {
 
   @Delete("levels/:levelId")
   @HttpCode(204)
+  @NoContentResponse()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @Validate({ params: levelIdParams })
@@ -165,6 +139,7 @@ export class HrOrgCatalogController {
   }
 
   @Get("headcount")
+  @ResponseSchema(z.array(headcountItemSchema))
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
   getHeadcount(

@@ -30,7 +30,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
-import type { DataScope } from "../../access/access.types";
+import { ScopedRead } from "../../access/scoped-read";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { CostVisibilityService } from "../stock-engine/cost-visibility";
@@ -51,13 +51,8 @@ export class InvProductCrudService {
   ) {}
 
   /** @see lib/product-reads.ts */
-  async listProducts(
-    orgId: string,
-    query: ListProductsInput,
-    scope?: DataScope,
-    userId?: string,
-  ) {
-    return listProducts(this.productDeps, orgId, query, scope, userId);
+  async listProducts(read: ScopedRead, query: ListProductsInput) {
+    return listProducts(this.productDeps, read, query);
   }
 
   /** @see lib/product-reads.ts */

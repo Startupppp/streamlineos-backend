@@ -1,39 +1,19 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, eq, gte, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
-import { livePersonOfUser, orgUnitInOrg, primaryEmploymentOfPerson } from "../../directory/employment-query";
+import { and, eq, inArray, isNotNull, isNull, lte } from "drizzle-orm";
+import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
 import {
-  hrEmployeeSensitiveFields,
   hrEmployments,
   hrPeople,
   organizationMembers,
-  orgUnitMembers,
   orgUnits,
   users,
-  attendance,
-  wfhRequests,
   jobPostings,
-  shiftTemplates,
-  employeeShiftAssignments,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
-
-const FALLBACK_LATE_CHECKIN_HOUR = 9;
-const FALLBACK_LATE_CHECKIN_MINUTE = 30;
-
-function getWorkingDaysSoFar(year: number, month: number): number {
-  const today = new Date();
-  const isCurrentMonth = today.getFullYear() === year && today.getMonth() + 1 === month;
-  const lastDay = isCurrentMonth ? today.getDate() : new Date(year, month, 0).getDate();
-  let working = 0;
-  for (let d = 1; d <= lastDay; d++) {
-    const dow = new Date(year, month - 1, d).getDay();
-    if (dow !== 0 && dow !== 6) working++;
-  }
-  return working;
-}
+import { buildAttendanceAnalytics } from "./hr-dashboard-attendance";
 
 @Injectable()
 export class HrDashboardReportsService {
@@ -46,6 +26,17 @@ export class HrDashboardReportsService {
     return this.cache.cached(`hr:dashboard:headcount-trends:${orgId}`, () => this.buildHeadcountTrends(orgId), CACHE_TTL.LONG);
   }
 
+  /**
+   * The 12-month headcount series, over the SAME population the dashboard's headcount tile counts.
+   *
+   * The tile (`hr-dashboard.service.ts`) and every other headcount read in this folder count
+   * `organization_members ⨝ users WHERE users.is_active`, and this read counted the join with no
+   * predicate at all, so a deactivated or soft-deleted user — `users.service.ts` sets
+   * `is_active = false`, `user_status = 'deleted'` and `deleted_at` together — kept contributing to
+   * the trend forever and the last point of the series could exceed the tile beside it. The
+   * predicate was only ever implicit: it lived on the attendance read that shared this file until
+   * that read moved to `hr-dashboard-attendance.ts`.
+   */
   private async buildHeadcountTrends(orgId: string) {
     const now = new Date();
 
@@ -65,7 +56,15 @@ export class HrDashboardReportsService {
       .innerJoin(users, eq(organizationMembers.userId, users.id))
       .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
       .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
-      .where(and(eq(organizationMembers.orgId, orgId), isNotNull(hrEmployments.joiningDate), lte(hrEmployments.joiningDate, windowEnd)));
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          eq(users.isActive, true),
+          isNotNull(hrEmployments.joiningDate),
+          lte(hrEmployments.joiningDate, windowEnd),
+        ),
+      )
+      .limit(10_000);
 
     const countByMonthEnd = new Map<string, number>();
     for (const r of joiningRows) {
@@ -104,7 +103,8 @@ export class HrDashboardReportsService {
         updatedAt: jobPostings.updatedAt,
       })
       .from(jobPostings)
-      .where(and(eq(jobPostings.orgId, orgId), eq(jobPostings.status, "FILLED"), isNotNull(jobPostings.updatedAt)));
+      .where(and(eq(jobPostings.orgId, orgId), eq(jobPostings.status, "FILLED"), isNotNull(jobPostings.updatedAt)))
+      .limit(10_000);
 
     if (!filledJobs.length) {
       return { avgDaysOverall: null, byDepartment: [] };
@@ -136,7 +136,8 @@ export class HrDashboardReportsService {
       const rows = await this.db
         .select({ id: orgUnits.id, name: orgUnits.name })
         .from(orgUnits)
-        .where(inArray(orgUnits.id, deptIds));
+        .where(and(inArray(orgUnits.id, deptIds), eq(orgUnits.orgId, orgId), isNull(orgUnits.deletedAt)))
+        .limit(Math.max(deptIds.length, 1));
       deptNames = Object.fromEntries(rows.map((r) => [r.id, r.name]));
     }
 
@@ -152,175 +153,6 @@ export class HrDashboardReportsService {
   }
 
   attendanceAnalytics(orgId: string) {
-    return this.cache.cached(`hr:dashboard:attendance-analytics:${orgId}`, () => this.buildAttendanceAnalytics(orgId), CACHE_TTL.SHORT);
-  }
-
-  private async buildAttendanceAnalytics(orgId: string) {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth() + 1;
-    const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
-    const monthEnd = `${year}-${String(month).padStart(2, "0")}-${String(new Date(year, month, 0).getDate()).padStart(2, "0")}`;
-
-    const workingDaysSoFar = getWorkingDaysSoFar(year, month);
-
-    const lateThresholdMinutes = await this.resolveLateThresholdMinutes(orgId, monthStart);
-
-    const [activeMembers, monthlyAttendance, lateArrivals, wfhApproved, overtimeRecords, deptAttendance] =
-      await Promise.all([
-        this.db
-          .select({ count: count() })
-          .from(organizationMembers)
-          .innerJoin(users, eq(organizationMembers.userId, users.id))
-          .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true))),
-
-        this.db
-          .select({ count: count() })
-          .from(attendance)
-          .where(
-            and(
-              eq(attendance.orgId, orgId),
-              gte(attendance.date, monthStart),
-              lte(attendance.date, monthEnd),
-              inArray(attendance.status, ["PRESENT", "HALF_DAY", "LATE"]),
-            ),
-          ),
-
-        this.db
-          .select({ count: count() })
-          .from(attendance)
-          .where(
-            and(
-              eq(attendance.orgId, orgId),
-              gte(attendance.date, monthStart),
-              lte(attendance.date, monthEnd),
-              sql`EXTRACT(HOUR FROM ${attendance.checkIn}) * 60 + EXTRACT(MINUTE FROM ${attendance.checkIn}) > ${lateThresholdMinutes}`,
-            ),
-          ),
-
-        this.db
-          .select({ count: count() })
-          .from(wfhRequests)
-          .where(
-            and(
-              eq(wfhRequests.orgId, orgId),
-              eq(wfhRequests.status, "APPROVED"),
-              gte(wfhRequests.date, monthStart),
-              lte(wfhRequests.date, monthEnd),
-            ),
-          ),
-
-        this.db
-          .select({ count: count() })
-          .from(attendance)
-          .where(
-            and(
-              eq(attendance.orgId, orgId),
-              gte(attendance.date, monthStart),
-              lte(attendance.date, monthEnd),
-              eq(attendance.isOvertime, true),
-            ),
-          ),
-
-        this.db
-          .select({ departmentName: orgUnits.name, presentCount: count(attendance.id) })
-          .from(orgUnits)
-          .leftJoin(orgUnitMembers, eq(orgUnitMembers.orgUnitId, orgUnits.id))
-          .leftJoin(organizationMembers, eq(organizationMembers.id, orgUnitMembers.membershipId))
-          .leftJoin(
-            attendance,
-            and(
-              eq(attendance.userId, organizationMembers.userId),
-              eq(attendance.orgId, orgId),
-              gte(attendance.date, monthStart),
-              lte(attendance.date, monthEnd),
-              inArray(attendance.status, ["PRESENT", "HALF_DAY", "LATE"]),
-            ),
-          )
-          .where(and(eq(orgUnits.orgId, orgId), isNull(orgUnits.deletedAt), eq(orgUnits.kind, "DEPARTMENT")))
-          .groupBy(orgUnits.id, orgUnits.name)
-          .orderBy(sql`count(${attendance.id}) desc`),
-      ]);
-
-    const totalEmployees = Number(activeMembers[0]?.count ?? 0);
-    const totalPresentLogs = Number(monthlyAttendance[0]?.count ?? 0);
-    const expectedLogs = totalEmployees * workingDaysSoFar;
-    const attendancePct = expectedLogs > 0 ? Math.round((totalPresentLogs / expectedLogs) * 100) : 0;
-    const absenteeismPct = 100 - attendancePct;
-
-    return {
-      month: `${year}-${String(month).padStart(2, "0")}`,
-      workingDaysSoFar,
-      totalEmployees,
-      attendancePct,
-      absenteeismPct: Math.max(0, absenteeismPct),
-      lateArrivals: Number(lateArrivals[0]?.count ?? 0),
-      wfhApproved: Number(wfhApproved[0]?.count ?? 0),
-      overtimeInstances: Number(overtimeRecords[0]?.count ?? 0),
-      byDepartment: deptAttendance.map((d) => ({
-        name: d.departmentName,
-        presentCount: Number(d.presentCount),
-        expectedCount: workingDaysSoFar,
-      })),
-    };
-  }
-
-  private async resolveLateThresholdMinutes(orgId: string, referenceDate: string): Promise<number> {
-    const rows = await this.db
-      .select({
-        startTime: shiftTemplates.startTime,
-        graceMinutes: shiftTemplates.gracePeriodMinutes,
-      })
-      .from(employeeShiftAssignments)
-      .innerJoin(shiftTemplates, eq(shiftTemplates.id, employeeShiftAssignments.shiftId))
-      .where(
-        and(
-          eq(employeeShiftAssignments.orgId, orgId),
-          eq(employeeShiftAssignments.isActive, true),
-          lte(employeeShiftAssignments.effectiveFrom, referenceDate),
-          eq(shiftTemplates.isActive, true),
-          or(
-            isNull(employeeShiftAssignments.effectiveTo),
-            gte(employeeShiftAssignments.effectiveTo, referenceDate),
-          ),
-        ),
-      )
-      .limit(1);
-
-    const row = rows[0];
-    if (row?.startTime) {
-      const [hStr, mStr] = row.startTime.split(":");
-      const startMinutes = Number(hStr) * 60 + Number(mStr);
-      const grace = Number(row.graceMinutes ?? 15);
-      return startMinutes + grace;
-    }
-
-    return FALLBACK_LATE_CHECKIN_HOUR * 60 + FALLBACK_LATE_CHECKIN_MINUTE;
-  }
-
-  exportRows(orgId: string) {
-    return this.db
-      .select({
-        userId: organizationMembers.userId,
-        role: organizationMembers.role,
-        joinedAt: organizationMembers.joinedAt,
-        name: users.name,
-        firstName: users.firstName,
-        lastName: users.lastName,
-        email: users.email,
-        gender: users.gender,
-        dateOfBirth: users.dateOfBirth,
-        joiningDate: hrEmployments.joiningDate,
-        taxId: hrEmployeeSensitiveFields.taxId,
-        departmentName: orgUnits.name,
-      })
-      .from(organizationMembers)
-      .innerJoin(users, eq(users.id, organizationMembers.userId))
-      .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
-      .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
-      .leftJoin(hrEmployeeSensitiveFields, and(eq(hrEmployeeSensitiveFields.employmentId, hrEmployments.id), eq(hrEmployeeSensitiveFields.orgId, orgId)))
-      .leftJoin(orgUnitMembers, and(eq(orgUnitMembers.membershipId, organizationMembers.id), eq(orgUnitMembers.orgId, orgId)))
-      .leftJoin(orgUnits, orgUnitInOrg(orgId, orgUnitMembers.orgUnitId))
-      .where(eq(organizationMembers.orgId, orgId));
+    return this.cache.cached(`hr:dashboard:attendance-analytics:${orgId}`, () => buildAttendanceAnalytics(this.db, orgId), CACHE_TTL.SHORT);
   }
 }

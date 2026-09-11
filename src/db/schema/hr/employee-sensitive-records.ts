@@ -1,17 +1,5 @@
 import { sql } from "drizzle-orm";
-import {
-  bigint,
-  check,
-  foreignKey,
-  index,
-  integer,
-  jsonb,
-  pgTable,
-  primaryKey,
-  text,
-  timestamp,
-  unique,
-} from "drizzle-orm/pg-core";
+import { bigint, check, foreignKey, integer, jsonb, pgTable, primaryKey, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { organizations } from "../common/auth";
 import { hrEmployeeSensitiveFields } from "./core-people";
 
@@ -42,11 +30,6 @@ export const hrEmployeeSensitiveDisciplinaryRecords = pgTable(
       columns: [table.organizationId, table.disciplinaryRecordId],
     }),
     unique("uniq_hr_sensitive_disciplinary_parent_order").on(
-      table.organizationId,
-      table.sensitiveFieldsId,
-      table.sourceOrdinal,
-    ),
-    index("idx_hr_sensitive_disciplinary_parent").on(
       table.organizationId,
       table.sensitiveFieldsId,
       table.sourceOrdinal,
@@ -90,11 +73,6 @@ export const hrEmployeeSensitiveGrievanceRecords = pgTable(
       columns: [table.organizationId, table.grievanceRecordId],
     }),
     unique("uniq_hr_sensitive_grievance_parent_order").on(
-      table.organizationId,
-      table.sensitiveFieldsId,
-      table.sourceOrdinal,
-    ),
-    index("idx_hr_sensitive_grievance_parent").on(
       table.organizationId,
       table.sensitiveFieldsId,
       table.sourceOrdinal,

@@ -1,15 +1,26 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq, isNull, ne, sql } from "drizzle-orm";
+import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { and, asc, eq, gt, isNull, ne, sql } from "drizzle-orm";
 import {
-  kbArticleChunks,
   kbArticles,
   kbPages,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { EmbeddingsService, EMBEDDING_MODEL } from "../../ai/core/providers/embeddings.service";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import type { TenantTx } from "../../../db/drizzle.types";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
+import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { sha256, chunkText } from "./kb-chunk-utils";
 import { KbIngestionCheckpointService } from "./kb-ingestion-checkpoint.service";
+import { embedChunksWithResumption } from "./kb-embedding-resumption";
+import { indexArticleContent } from "./kb-article-indexing";
+import {
+  deleteArticleChunks,
+  deletePageChunks,
+  loadPageChunkState,
+  replacePageBodyChunks,
+  updatePageChunkAcl,
+} from "./kb-chunk-repository";
 
 export function isPageIndexable(page: {
   status: string;
@@ -18,261 +29,125 @@ export function isPageIndexable(page: {
   return page.status !== "archived" && page.deletedAt === null;
 }
 
+const REINDEX_ALL_BATCH_SIZE = 100;
+
+export interface ReindexAllPagesResult {
+  reindexed: number;
+  nextPageId: number | null;
+}
+
 @Injectable()
 export class KbIndexingService {
   private readonly logger = new Logger(KbIndexingService.name);
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly embeddings: EmbeddingsService,
+    private readonly aiGateway: AiGatewayService,
     private readonly checkpoint: KbIngestionCheckpointService,
   ) {}
 
-  private async getPageChunkState(
-    orgId: string,
-    pageId: number,
-  ): Promise<{
-    contentHash: string | null;
-    pageVisibility: string | null;
-    pageProjectId: number | null;
-    pageCreatedById: string | null;
-    pageCreatedByMembershipId: number | null;
-    aclRevision: number | null;
-  } | null> {
-    const [existing] = await this.db
-      .select({
-        contentHash: kbArticleChunks.contentHash,
-        pageVisibility: kbArticleChunks.pageVisibility,
-        pageProjectId: kbArticleChunks.pageProjectId,
-        pageCreatedById: kbArticleChunks.pageCreatedById,
-        pageCreatedByMembershipId: kbArticleChunks.pageCreatedByMembershipId,
-        aclRevision: kbArticleChunks.aclRevision,
-      })
-      .from(kbArticleChunks)
-      .where(
-        and(
-          eq(kbArticleChunks.orgId, orgId),
-          eq(kbArticleChunks.pageId, pageId),
-          eq(kbArticleChunks.source, "page_body"),
-        ),
-      )
-      .limit(1);
-
-    return existing ?? null;
-  }
-
-  private async embedWithResumption(
+  private embed(
     orgId: string,
     contentType: string,
     contentId: number,
     contentHash: string,
     chunks: string[],
+    signal?: AbortSignal,
   ): Promise<number[][]> {
-    const cached = await this.checkpoint.loadCheckpoints(
-      orgId,
-      contentType,
-      contentId,
-      contentHash,
+    return embedChunksWithResumption(
+      { aiGateway: this.aiGateway, checkpoint: this.checkpoint, logger: this.logger },
+      { orgId, contentType, contentId, contentHash, chunks, signal },
     );
-
-    const resumedFrom = cached.size > 0 ? Math.min(...cached.keys()) : chunks.length;
-    if (cached.size > 0)
-      this.logger.log("KB ingestion resuming from checkpoint", {
-        orgId,
-        contentType,
-        contentId,
-        cachedChunks: cached.size,
-        totalChunks: chunks.length,
-        resumedFrom,
-      });
-
-    const embeddings: number[][] = [];
-    for (let i = 0; i < chunks.length; i++) {
-      const hit = cached.get(i);
-      if (hit !== undefined) {
-        embeddings.push(hit);
-        continue;
-      }
-      const emb = await this.embeddings.embedQuery(chunks[i]);
-      await this.checkpoint.saveCheckpoint(
-        orgId,
-        contentType,
-        contentId,
-        contentHash,
-        i,
-        chunks[i],
-        emb,
-      );
-      embeddings.push(emb);
-      if ((i + 1) % 10 === 0 || i === chunks.length - 1)
-        this.logger.log("KB ingestion chunk progress", {
-          orgId,
-          contentType,
-          contentId,
-          embedded: i + 1,
-          total: chunks.length,
-        });
-    }
-    return embeddings;
   }
 
-  async indexArticle(orgId: string, articleId: number): Promise<void> {
-    const article = await this.db.query.kbArticles.findFirst({
-      where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)),
-      columns: {
-        status: true,
-        contentText: true,
-        contentRevision: true,
-        aclRevision: true,
-      },
-    });
-
-    if (
-      !article ||
-      article.status !== "published" ||
-      !article.contentText?.trim() ||
-      !this.embeddings.isConfigured()
-    ) {
-      await this.removeArticleChunks(orgId, articleId);
-      return;
-    }
-
-    const chunks = chunkText(article.contentText);
-    const contentHash = sha256(article.contentText);
-
-    if (chunks.length === 0) {
-      await this.removeArticleChunks(orgId, articleId);
-      return;
-    }
-
-    const [firstExisting] = await this.db
-      .select({ contentHash: kbArticleChunks.contentHash })
-      .from(kbArticleChunks)
-      .where(
-        and(
-          eq(kbArticleChunks.orgId, orgId),
-          eq(kbArticleChunks.articleId, articleId),
-          eq(kbArticleChunks.source, "article_body"),
-        ),
-      )
-      .limit(1);
-
-    if (firstExisting?.contentHash === contentHash) return;
-
-    this.logger.log("KB article indexing started", {
-      orgId,
-      articleId,
-      chunks: chunks.length,
-    });
-
-    const embeddings = await this.embedWithResumption(
-      orgId,
-      "article",
-      articleId,
-      contentHash,
-      chunks,
+  async indexArticle(orgId: string, articleId: number, signal?: AbortSignal): Promise<void> {
+    return indexArticleContent(
+      { db: this.db, aiGateway: this.aiGateway, checkpoint: this.checkpoint, logger: this.logger },
+      orgId, articleId, signal,
     );
-
-    const contentRevision = article.contentRevision;
-    const aclRevision = article.aclRevision;
-
-    await this.db.transaction(async (tx) => {
-      await tx
-        .delete(kbArticleChunks)
-        .where(
-          and(
-            eq(kbArticleChunks.articleId, articleId),
-            eq(kbArticleChunks.orgId, orgId),
-            eq(kbArticleChunks.source, "article_body"),
-          ),
-        );
-
-      await tx.insert(kbArticleChunks).values(
-        chunks.map((chunk, index) => ({
-          orgId,
-          articleId,
-          pageId: null,
-          attachmentId: null,
-          source: "article_body" as const,
-          chunkIndex: index,
-          content: chunk,
-          contentHash,
-          tokens: Math.ceil(chunk.length / 4),
-          embedding: embeddings[index],
-          embeddingModel: EMBEDDING_MODEL,
-          contentRevision,
-          aclRevision,
-        })),
-      );
-
-      await this.checkpoint.clearCheckpoints(tx, orgId, "article", articleId);
-    });
-
-    this.logger.log("KB article indexing committed", {
-      orgId,
-      articleId,
-      chunks: chunks.length,
-    });
   }
 
-  async indexPage(orgId: string, pageId: number): Promise<number> {
-    const page = await this.db.query.kbPages.findFirst({
-      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)),
-      columns: {
-        status: true,
-        visibility: true,
-        deletedAt: true,
-        contentText: true,
-        projectId: true,
-        createdById: true,
-        createdByMembershipId: true,
-        aclRevision: true,
-        contentRevision: true,
-      },
-    });
+  /**
+   * The HTTP entry point for a reindex, as distinct from the internal one.
+   *
+   * `indexPage` treats a page it cannot find as "nothing to index": it drops any stale chunks and
+   * returns 0. That is right for the internal callers — a content event may arrive after the page
+   * was deleted — and wrong for a request, because `POST /kb/pages/:pageId/reindex` then answered
+   * 200 `{"reindexed":true}` for another organisation's page id and for an id belonging to no
+   * organisation alike. Measured live by the cross-tenant sweep. Nothing crossed (every statement
+   * inside is org-bound) but the caller is told a page was reindexed that does not exist, and the
+   * 404 the contract requires is absent.
+   *
+   * A page in the trash is "not found" for this route too: `deleted_at` is set, `isPageIndexable`
+   * refuses it, and `KbPageTreeService.softDelete` already deleted its chunks inside the same
+   * transaction as the `deleted_at` write. Resolving a soft-deleted page here answered 200
+   * `{"reindexed":true}` for a page the caller can no longer see or index.
+   */
+  async reindexPageOnRequest(orgId: string, pageId: number): Promise<number> {
+    const page = await runInTenantTransaction(
+      this.db,
+      async (tx) =>
+        tx.query.kbPages.findFirst({
+          where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
+          columns: { id: true },
+        }),
+      { orgId },
+    );
+    if (!page) throw new NotFoundException("Page not found");
+    return this.indexPage(orgId, pageId);
+  }
+
+  async indexPage(orgId: string, pageId: number, signal?: AbortSignal): Promise<number> {
+    const page = await runInTenantTransaction(this.db, async (tx) =>
+      tx.query.kbPages.findFirst({
+        where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)),
+        columns: {
+          status: true,
+          visibility: true,
+          deletedAt: true,
+          contentText: true,
+          projectId: true,
+          createdById: true,
+          createdByMembershipId: true,
+          aclRevision: true,
+          contentRevision: true,
+        },
+      }),
+    { orgId });
 
     if (
       !page ||
       !isPageIndexable(page) ||
       !page.contentText?.trim() ||
-      !this.embeddings.isConfigured()
+      !this.aiGateway.isEmbeddingConfigured()
     ) {
       await this.removePageChunks(orgId, pageId);
       return 0;
     }
 
-    const stored = await this.getPageChunkState(orgId, pageId);
+    const stored = await loadPageChunkState(this.db, orgId, pageId);
     const contentHash = sha256(page.contentText);
-    const aclRevision = page.aclRevision;
+    const acl = {
+      pageVisibility: page.visibility,
+      pageProjectId: page.projectId,
+      pageCreatedById: page.createdById,
+      pageCreatedByMembershipId: page.createdByMembershipId,
+      aclRevision: page.aclRevision,
+    };
     const contentRevision = page.contentRevision;
 
     if (stored !== null && stored.contentHash === contentHash) {
       const aclChanged =
-        stored.pageVisibility !== page.visibility ||
-        stored.pageProjectId !== page.projectId ||
-        stored.pageCreatedById !== page.createdById ||
-        stored.pageCreatedByMembershipId !== page.createdByMembershipId ||
-        stored.aclRevision !== aclRevision;
+        stored.pageVisibility !== acl.pageVisibility ||
+        stored.pageProjectId !== acl.pageProjectId ||
+        stored.pageCreatedById !== acl.pageCreatedById ||
+        stored.pageCreatedByMembershipId !== acl.pageCreatedByMembershipId ||
+        stored.aclRevision !== acl.aclRevision;
 
       if (!aclChanged) return 0;
 
       this.logger.log("KB page ACL updated (content unchanged)", { orgId, pageId });
-      await this.db
-        .update(kbArticleChunks)
-        .set({
-          pageVisibility: page.visibility,
-          pageProjectId: page.projectId,
-          pageCreatedById: page.createdById,
-          pageCreatedByMembershipId: page.createdByMembershipId,
-          aclRevision,
-        })
-        .where(
-          and(
-            eq(kbArticleChunks.pageId, pageId),
-            eq(kbArticleChunks.orgId, orgId),
-            eq(kbArticleChunks.source, "page_body"),
-          ),
-        );
+      await updatePageChunkAcl(this.db, orgId, pageId, acl);
       return 0;
     }
 
@@ -289,49 +164,24 @@ export class KbIndexingService {
       chunks: chunks.length,
     });
 
-    const embeddings = await this.embedWithResumption(
+    const embeddings = await this.embed(
       orgId,
       "page",
       pageId,
       contentHash,
       chunks,
+      signal,
     );
 
-    await this.db.transaction(async (tx) => {
-      await tx
-        .delete(kbArticleChunks)
-        .where(
-          and(
-            eq(kbArticleChunks.pageId, pageId),
-            eq(kbArticleChunks.orgId, orgId),
-            eq(kbArticleChunks.source, "page_body"),
-          ),
-        );
-
-      await tx.insert(kbArticleChunks).values(
-        chunks.map((chunk, index) => ({
-          orgId,
-          articleId: null,
-          pageId,
-          attachmentId: null,
-          source: "page_body" as const,
-          chunkIndex: index,
-          content: chunk,
-          contentHash,
-          tokens: Math.ceil(chunk.length / 4),
-          embedding: embeddings[index],
-          embeddingModel: EMBEDDING_MODEL,
-          pageVisibility: page.visibility,
-          pageProjectId: page.projectId,
-          pageCreatedById: page.createdById,
-          pageCreatedByMembershipId: page.createdByMembershipId,
-          aclRevision,
-          contentRevision,
-        })),
-      );
-
-      await this.checkpoint.clearCheckpoints(tx, orgId, "page", pageId);
-    });
+    await replacePageBodyChunks(
+      this.db,
+      orgId,
+      pageId,
+      chunks,
+      embeddings,
+      { ...acl, contentHash, contentRevision },
+      (tx) => this.checkpoint.clearCheckpoints(tx, orgId, "page", pageId),
+    );
 
     this.logger.log("KB page indexing committed", {
       orgId,
@@ -343,25 +193,27 @@ export class KbIndexingService {
   }
 
   async removeArticleChunks(orgId: string, articleId: number): Promise<void> {
-    await this.db
-      .delete(kbArticleChunks)
-      .where(
-        and(
-          eq(kbArticleChunks.articleId, articleId),
-          eq(kbArticleChunks.orgId, orgId),
-        ),
-      );
+    await deleteArticleChunks(this.db, orgId, articleId);
   }
 
   async removePageChunks(orgId: string, pageId: number): Promise<void> {
-    await this.db
-      .delete(kbArticleChunks)
-      .where(
-        and(
-          eq(kbArticleChunks.pageId, pageId),
-          eq(kbArticleChunks.orgId, orgId),
-        ),
-      );
+    await deletePageChunks(this.db, orgId, pageId);
+  }
+
+  async bumpSpaceAclRevision(orgId: string, spaceId: number): Promise<void> {
+    await Promise.all([
+      this.db
+        .update(kbPages)
+        .set({ aclRevision: sql`acl_revision + 1` })
+        .where(and(eq(kbPages.orgId, orgId), eq(kbPages.spaceId, spaceId))),
+      this.db
+        .update(kbArticles)
+        .set({ aclRevision: sql`acl_revision + 1` })
+        .where(and(eq(kbArticles.orgId, orgId), eq(kbArticles.spaceId, spaceId))),
+    ]);
+
+    const deferred = registerAfterCommit(() => this.syncAclRevisionForSpace(orgId, spaceId));
+    if (!deferred) await this.syncAclRevisionForSpace(orgId, spaceId);
   }
 
   async syncAclRevisionForSpace(orgId: string, spaceId: number): Promise<void> {
@@ -387,19 +239,44 @@ export class KbIndexingService {
     ]);
   }
 
-  async reindexAllPages(orgId?: string): Promise<{ reindexed: number }> {
+  /**
+   * `POST /kb/pages/reindex-all` is `@NoTenantTransaction()`, so there is no ambient context to
+   * borrow and this listing must open its own. `this.db.select(...)` on the bare pool has no
+   * tenant GUC, and `kb_pages`' policy resolves the org through `app.current_org_id_or_null()`,
+   * which returns NULL rather than raising — so the unwrapped listing matched nothing and the
+   * route reported `reindexed: 0` for a tenant full of pages. Measured, not assumed:
+   * `kb-page-reindex-placement.db.spec.ts` pins both halves.
+   * `runInTenantTransaction` with an explicit `orgId` reuses an ambient transaction when there
+   * is one (the outbox-driven callers) and opens a short one when there is not, so both entry
+   * paths hold a connection for the listing only, never across the embedding round trips below.
+   */
+  async reindexAllPages(orgId?: string, afterPageId = 0): Promise<ReindexAllPagesResult> {
     const where = orgId
-      ? and(eq(kbPages.orgId, orgId), ne(kbPages.status, "archived"), isNull(kbPages.deletedAt))
-      : and(ne(kbPages.status, "archived"), isNull(kbPages.deletedAt));
+      ? and(eq(kbPages.orgId, orgId), gt(kbPages.id, afterPageId), ne(kbPages.status, "archived"), isNull(kbPages.deletedAt))
+      : and(gt(kbPages.id, afterPageId), ne(kbPages.status, "archived"), isNull(kbPages.deletedAt));
 
-    const pages = await this.db
-      .select({ id: kbPages.id, orgId: kbPages.orgId })
-      .from(kbPages)
-      .where(where);
+    const listPages = async (tx: TenantTx) =>
+      tx
+        .select({ id: kbPages.id, orgId: kbPages.orgId })
+        .from(kbPages)
+        .where(where)
+        .orderBy(asc(kbPages.id))
+        .limit(REINDEX_ALL_BATCH_SIZE + 1);
 
-    for (const page of pages)
+    // No `orgId` means the platform-wide sweep, which has no single tenant to open for and
+    // runs under a caller that already established one.
+    const pages = orgId
+      ? await runInTenantTransaction(this.db, listPages, { orgId })
+      : await runInTenantTransaction(this.db, listPages);
+
+    const batch = pages.slice(0, REINDEX_ALL_BATCH_SIZE);
+
+    for (const page of batch)
       await this.indexPage(page.orgId, page.id);
 
-    return { reindexed: pages.length };
+    return {
+      reindexed: batch.length,
+      nextPageId: pages.length > REINDEX_ALL_BATCH_SIZE ? (batch.at(-1)?.id ?? null) : null,
+    };
   }
 }

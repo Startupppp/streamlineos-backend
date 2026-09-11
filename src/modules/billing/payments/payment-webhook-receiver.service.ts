@@ -1,6 +1,7 @@
 import {
   Inject,
   Injectable,
+  Logger,
 } from "@nestjs/common";
 import { createHash } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
@@ -14,22 +15,22 @@ import {
 import { PaymentProviderResolver } from "./payment-provider-resolver.service";
 import { PaymentAnalyticsService } from "./payment-analytics.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
-import { normalizedPaymentWebhookEventSchema } from "./dto/webhook.schemas";
+import { normalizedPaymentWebhookEventSchema, rawEntitySchema } from "./dto/webhook.schemas";
 
 function redactPayload(
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
   const summary: Record<string, unknown> = {};
   for (const entityKey of Object.keys(payload)) {
-    const entity = (
-      payload[entityKey] as { entity?: Record<string, unknown> } | undefined
-    )?.entity;
+    const wrapper = payload[entityKey];
+    const entity =
+      wrapper && typeof wrapper === "object" && "entity" in wrapper ? wrapper.entity : undefined;
     if (!entity || typeof entity !== "object") continue;
     summary[entityKey] = {
-      id: entity.id,
-      status: entity.status,
-      amount: entity.amount,
-      currency: entity.currency,
+      id: Reflect.get(entity, "id"),
+      status: Reflect.get(entity, "status"),
+      amount: Reflect.get(entity, "amount"),
+      currency: Reflect.get(entity, "currency"),
     };
   }
   return summary;
@@ -37,6 +38,8 @@ function redactPayload(
 
 @Injectable()
 export class PaymentWebhookReceiverService {
+  private readonly logger = new Logger(PaymentWebhookReceiverService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly providers: PaymentProviderResolver,
@@ -71,10 +74,14 @@ export class PaymentWebhookReceiverService {
           .where(
             environment
               ? and(
+                  eq(paymentWebhookEndpoints.orgId, orgId),
                   eq(paymentWebhookEndpoints.providerId, provider.id),
                   eq(paymentWebhookEndpoints.environment, environment),
                 )
-              : eq(paymentWebhookEndpoints.providerId, provider.id),
+              : and(
+                  eq(paymentWebhookEndpoints.orgId, orgId),
+                  eq(paymentWebhookEndpoints.providerId, provider.id),
+                ),
           );
       },
       { orgId },
@@ -168,6 +175,7 @@ export class PaymentWebhookReceiverService {
           .from(paymentWebhookEndpoints)
           .where(
             and(
+              eq(paymentWebhookEndpoints.orgId, params.orgId),
               eq(paymentWebhookEndpoints.providerId, provider.id),
               eq(paymentWebhookEndpoints.environment, params.environment),
             ),
@@ -255,7 +263,12 @@ export class PaymentWebhookReceiverService {
               lastVerifiedAt: new Date(),
               failureReason: null,
             })
-            .where(eq(paymentWebhookEndpoints.id, endpoint.id));
+            .where(
+              and(
+                eq(paymentWebhookEndpoints.orgId, params.orgId),
+                eq(paymentWebhookEndpoints.id, endpoint.id),
+              ),
+            );
         },
         { orgId: params.orgId },
       );
@@ -285,10 +298,8 @@ export class PaymentWebhookReceiverService {
     for (const key of Object.keys(payload)) {
       const wrapper = payload[key];
       if (wrapper && typeof wrapper === "object" && "entity" in wrapper) {
-        const entity = (wrapper as { entity?: unknown }).entity;
-        if (entity && typeof entity === "object") {
-          return entity as Record<string, unknown>;
-        }
+        const parsed = rawEntitySchema.safeParse(wrapper.entity);
+        if (parsed.success) return parsed.data;
       }
     }
     return null;
@@ -305,24 +316,31 @@ export function validateNormalizedPaymentWebhook(normalized: {
   });
 }
 
+/**
+ * The webhook idempotency key, and it comes only from signed material.
+ *
+ * The signature is an HMAC over `rawBody` alone (adapters/razorpay.adapter.ts), and the
+ * route carrying the header is `@Public()`, so `header` is unsigned input that any caller
+ * holding one captured body can vary at will. It may CROSS-CHECK the signed envelope; it
+ * may never BE the key. When it was the key, N forged headers over one signed body opened
+ * N rows through `uq_payment_webhook_events_provider_env_event` and posted N journal
+ * entries, because the ledger dedupe in finance-posting.service.ts is keyed on this id.
+ *
+ * With no id in the envelope — the ordinary Razorpay shape — the digest of the signed body
+ * is the key. It is stable, so a genuine provider retry of the same body still dedupes.
+ */
 export function resolveProviderEventId(
   header: string | undefined,
   normalized: { providerEventId?: string },
   rawBody: string,
 ): { ok: true; id: string } | { ok: false } {
   const supplied = header?.trim();
-  if (
-    supplied &&
-    normalized.providerEventId &&
-    supplied !== normalized.providerEventId
-  ) {
+  const signedId = normalized.providerEventId?.trim();
+  if (supplied && signedId && supplied !== signedId) {
     return { ok: false };
   }
   return {
     ok: true,
-    id:
-      supplied ||
-      normalized.providerEventId ||
-      createHash("sha256").update(rawBody).digest("hex"),
+    id: signedId || createHash("sha256").update(rawBody).digest("hex"),
   };
 }

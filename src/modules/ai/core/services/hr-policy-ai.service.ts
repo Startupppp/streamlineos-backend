@@ -2,12 +2,12 @@ import { Inject, Injectable } from "@nestjs/common";
 import { sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
-import { policyQaPrompt } from "../prompts/hr.prompts";
+import { policyQaPrompt, policyQaStreamPrompt } from "../prompts/hr.prompts";
 import {
   PolicyQaSchema,
   type PolicyQaResult,
 } from "../dto/output.schemas";
-import { AiGatewayService } from "../gateway/ai-gateway.service";
+import { AiGatewayService, type AiTextStream } from "../gateway/ai-gateway.service";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import { unwrapAiResult } from "./gateway-result.util";
 import { redactSensitiveData } from "../redaction.util";
@@ -44,7 +44,11 @@ export class HrPolicyAiService {
     const policies = await runInTenantTransaction(
       this.db,
       async (tx) => {
-        const rows = await tx.execute(sql`
+        const rows = await tx.execute<{
+          id: number;
+          policy_type: string;
+          name: string | null;
+        }>(sql`
           SELECT id, policy_type, name
           FROM hr_policies
           WHERE org_id = ${orgId}
@@ -53,10 +57,10 @@ export class HrPolicyAiService {
           ORDER BY priority DESC, created_at DESC
           LIMIT 20
         `);
-        return (rows as Array<Record<string, unknown>>).map((p) => ({
+        return rows.map((p) => ({
           id: Number(p.id),
           policyType: String(p.policy_type),
-          scopeType: null as string | null,
+          scopeType: null,
           name: p.name ? String(p.name) : null,
         }));
       },
@@ -93,6 +97,59 @@ export class HrPolicyAiService {
       advisory: true,
       disclaimer: HR_POLICY_AI_CAPABILITY.honestyLabel,
     };
+  }
+
+  async streamPolicyQa(
+    orgId: string,
+    userId: string,
+    question: string,
+    signal: AbortSignal,
+  ): Promise<{ aiStream: AiTextStream; citations: PolicyEvidenceCitation[] }> {
+    const safeQuestion = redactSensitiveData(question);
+
+    const policies = await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const rows = await tx.execute<{
+          id: number;
+          policy_type: string;
+          name: string | null;
+        }>(sql`
+          SELECT id, policy_type, name
+          FROM hr_policies
+          WHERE org_id = ${orgId}
+            AND status = 'active'
+            AND deleted_at IS NULL
+          ORDER BY priority DESC, created_at DESC
+          LIMIT 20
+        `);
+        return rows.map((p) => ({
+          id: Number(p.id),
+          policyType: String(p.policy_type),
+          scopeType: null,
+          name: p.name ? String(p.name) : null,
+        }));
+      },
+      { orgId },
+    );
+
+    const prompt = policyQaStreamPrompt({ question: safeQuestion, policies });
+
+    const aiStream = await this.gateway.streamTextWithUsage({
+      actor: { orgId, userId },
+      feature: "hr.policy-qa",
+      prompt: { system: prompt.system, user: prompt.user },
+      maxTokens: 1024,
+      charge: true,
+      signal,
+    });
+
+    const citations = sanitizePolicyCitations(
+      policies.map((p) => ({ policyType: p.policyType, policyId: p.id, snippet: "" })),
+      policies,
+    );
+
+    return { aiStream, citations };
   }
 
   policyQaCapabilities() {

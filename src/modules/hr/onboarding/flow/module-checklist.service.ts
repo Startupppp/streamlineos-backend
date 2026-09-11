@@ -1,5 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, inArray } from "drizzle-orm";
+import { bulkUpdateFromValues, type BulkUpdateRow } from "../../../../common/db/bulk-update";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { moduleSetupChecklistItems, moduleSetupChecklists } from "../../../../db/schema";
@@ -159,32 +160,38 @@ export class ModuleChecklistService {
 
   /** Idempotently creates a checklist + seeded items for each module key. Safe to call repeatedly. */
   async ensureChecklistsForModules(orgId: string, moduleKeys: readonly string[]) {
-    for (const moduleKey of moduleKeys) {
-      const seeds = CHECKLIST_SEEDS[moduleKey];
-      if (!seeds) continue;
+    const seedableKeys = moduleKeys.filter((k) => Boolean(CHECKLIST_SEEDS[k]));
+    if (seedableKeys.length === 0) return;
 
-      const existing = await this.db.query.moduleSetupChecklists.findFirst({
-        where: and(eq(moduleSetupChecklists.orgId, orgId), eq(moduleSetupChecklists.moduleKey, moduleKey)),
-      });
-      if (existing) continue;
+    const existing = await this.db.query.moduleSetupChecklists.findMany({
+      limit: 100,
+      where: and(eq(moduleSetupChecklists.orgId, orgId), inArray(moduleSetupChecklists.moduleKey, seedableKeys)),
+      columns: { moduleKey: true },
+    });
+    const existingKeys = new Set(existing.map((c) => c.moduleKey));
 
+    const missingKeys = seedableKeys.filter((k) => !existingKeys.has(k));
+    for (const moduleKey of missingKeys) {
+      const seeds = CHECKLIST_SEEDS[moduleKey]!;
       await this.db.transaction(async (tx) => {
         const [checklist] = await tx
           .insert(moduleSetupChecklists)
           .values({ orgId, moduleKey, status: "not_started", progress: 0 })
           .returning();
 
-        for (const [index, seed] of seeds.entries()) {
-          await tx.insert(moduleSetupChecklistItems).values({
-            orgId,
-            checklistId: checklist.id,
-            itemKey: seed.itemKey,
-            title: seed.title,
-            description: seed.description,
-            actionHref: seed.actionHref,
-            required: seed.required,
-            sortOrder: index,
-          });
+        if (checklist && seeds.length > 0) {
+          await tx.insert(moduleSetupChecklistItems).values(
+            seeds.map((seed, index) => ({
+              orgId,
+              checklistId: checklist.id,
+              itemKey: seed.itemKey,
+              title: seed.title,
+              description: seed.description,
+              actionHref: seed.actionHref,
+              required: seed.required,
+              sortOrder: index,
+            })),
+          );
         }
       });
     }
@@ -202,6 +209,7 @@ export class ModuleChecklistService {
     if (!seeds) return;
     const seedByKey = new Map(seeds.map((s, index) => [s.itemKey, { ...s, sortOrder: index }]));
 
+    const staleByOrg = new Map<string, BulkUpdateRow[]>();
     for (const item of items) {
       const seed = seedByKey.get(item.itemKey);
       if (!seed) continue;
@@ -213,17 +221,34 @@ export class ModuleChecklistService {
         item.sortOrder !== seed.sortOrder;
       if (!stale) continue;
 
-      await this.db
-        .update(moduleSetupChecklistItems)
-        .set({
-          title: seed.title,
-          description: seed.description ?? null,
-          actionHref: seed.actionHref ?? null,
-          required: seed.required,
-          sortOrder: seed.sortOrder,
-        })
-        .where(eq(moduleSetupChecklistItems.id, item.id));
+      const rows = staleByOrg.get(item.orgId) ?? [];
+      rows.push({
+        key: item.id,
+        values: [
+          seed.title,
+          seed.description ?? null,
+          seed.actionHref ?? null,
+          seed.required,
+          seed.sortOrder,
+        ],
+      });
+      staleByOrg.set(item.orgId, rows);
     }
+
+    for (const [orgId, rows] of staleByOrg)
+      await bulkUpdateFromValues(this.db, {
+        table: moduleSetupChecklistItems,
+        orgId,
+        key: { column: "id", type: "integer" },
+        columns: [
+          { column: "title", type: "text" },
+          { column: "description", type: "text" },
+          { column: "action_href", type: "text" },
+          { column: "required", type: "boolean" },
+          { column: "sort_order", type: "integer" },
+        ],
+        rows,
+      });
   }
 
   /**
@@ -237,6 +262,7 @@ export class ModuleChecklistService {
     const visibleModuleKeys = await this.resolveVisibleModuleKeys(orgId);
     await this.ensureChecklistsForModules(orgId, visibleModuleKeys);
     const checklists = await this.db.query.moduleSetupChecklists.findMany({
+      limit: 100,
       where: eq(moduleSetupChecklists.orgId, orgId),
       with: { items: true },
     });
@@ -287,6 +313,7 @@ export class ModuleChecklistService {
 
   private async recomputeProgress(checklistId: number) {
     const items = await this.db.query.moduleSetupChecklistItems.findMany({
+      limit: 100,
       where: eq(moduleSetupChecklistItems.checklistId, checklistId),
     });
     const total = items.length;

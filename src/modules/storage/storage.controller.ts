@@ -5,8 +5,9 @@ import {
   ForbiddenException,
   Get,
   Inject,
-  InternalServerErrorException,
+  Logger,
   NotFoundException,
+  PayloadTooLargeException,
   Post,
   Query,
   Res,
@@ -18,26 +19,33 @@ import {
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
-import { ilike } from "drizzle-orm";
+import { createHash } from "crypto";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AuditService } from "../../common/audit/audit.service";
 import { MultipartAction } from "../../common/openapi/zod-operation-contracts";
+import {
+  runInNewTenantTransaction,
+  runOutsideTenantContext,
+} from "../../common/tenant";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import {
-  documents,
-  onboardingDocuments,
-  expenses,
-  reimbursements,
-  handbookVersions,
-  payslipPublications,
-  candidateDocumentsVault,
-} from "../../db/schema";
-import { StorageService, type FileStreamResult } from "./storage.service";
+  StorageService,
+  type FileStreamResult,
+  type UploadJobResult,
+} from "./storage.service";
 import { validateMagicBytes } from "./file-signatures";
+import { isSensitiveFolderRoot, sanitizeFolder } from "./storage-key";
+import { assertKeyReadable } from "./storage-read-authorization";
+import { FileQuarantineService } from "./file-quarantine.service";
+import { MediaTransformRunner } from "./media-transform.runner";
+import { ApiOkResponse } from "@nestjs/swagger";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { storageUploadResponseSchema } from "./dto/storage-response.schemas";
 import { AccessService } from "../access/access.service";
 import { AvScanner } from "../../common/security/av-scan";
 import { Validate } from "../../common/validation/validate.decorator";
@@ -49,50 +57,8 @@ import {
 } from "./dto/storage.schemas";
 
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
-
-const SENSITIVE_KEY_PREFIXES = [
-  "payroll/",
-  "payslips/",
-  "hr-documents/",
-  "documents/",
-  "hr/",
-  "onboarding/",
-  "onboarding-docs/",
-  "candidate-vault/",
-  "candidates/",
-  "esign/",
-  "e-sign/",
-  "signatures/",
-  "bank-batches/",
-  "resignations/",
-];
-
-function isSensitiveKey(fileKey: string): boolean {
-  const normalized = fileKey.replace(/^\/+/, "").toLowerCase();
-  return SENSITIVE_KEY_PREFIXES.some((prefix) => normalized.startsWith(prefix));
-}
-
-const ORG_NAMESPACED_KEY_FOLDERS = ["kb-media"];
-
-/**
- * Some folders carry the owning organisation in the key itself, so ownership is
- * provable without a table. Without this, `resolveFileOwner` returns null for
- * them and the cross-org check is skipped entirely.
- */
-function orgFromNamespacedKey(fileKey: string): string | null {
-  const [folder, orgId] = fileKey.replace(/^\/+/, "").split("/");
-  if (!folder || !orgId) return null;
-  return ORG_NAMESPACED_KEY_FOLDERS.includes(folder) ? orgId : null;
-}
-
-type FileOwner = {
-  orgId: string;
-  access: "GENERIC" | "HR_DOCUMENT" | "ONBOARDING_DOCUMENT" | "PAYSLIP" | "CANDIDATE_VAULT";
-};
-
-function requiresDedicatedAccess(owner: FileOwner): boolean {
-  return owner.access !== "GENERIC";
-}
+const ORG_QUOTA_BYTES = 5 * 1024 * 1024 * 1024;
+const USER_QUOTA_BYTES = 500 * 1024 * 1024;
 
 const ALLOWED_UPLOAD_TYPES = [
   "image/jpeg",
@@ -119,71 +85,248 @@ const GENERIC_SENSITIVE_UPLOAD_PERMISSIONS: Readonly<
 @Controller("storage")
 @UseGuards(JwtAuthGuard)
 export class StorageController {
+  private readonly logger = new Logger(StorageController.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly storage: StorageService,
     private readonly audit: AuditService,
     private readonly access: AccessService,
     private readonly avScanner: AvScanner,
+    private readonly quarantine: FileQuarantineService,
+    private readonly transforms: MediaTransformRunner,
   ) {}
 
   @Post("upload")
   @MultipartAction({ file: "file", fields: { folder: "string" } })
+  @ResponseSchema(storageUploadResponseSchema)
   @AuthorizedInService("assertUploadAllowed")
-  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: MAX_UPLOAD_SIZE } }))
+  @UseInterceptors(
+    FileInterceptor("file", { limits: { fileSize: MAX_UPLOAD_SIZE } }),
+  )
   async upload(
     @UploadedFile() file: Express.Multer.File | undefined,
     @Body("folder") folderField: string | undefined,
     @CurrentUser() u: CurrentUserContext,
-  ): Promise<{ url: string; key: string; size: number; mimeType: string }> {
-    if (!this.storage.isConfigured()) {
+  ): Promise<UploadJobResult> {
+    if (!this.storage.isConfigured())
       throw new ServiceUnavailableException("File storage is not available");
-    }
     if (!file) throw new BadRequestException("No file provided");
 
-    const rawFolder = folderField && folderField.length > 0 ? folderField : "uploads";
-    const folder = rawFolder.replace(/[^a-zA-Z0-9_-]/g, "-");
-    await this.assertUploadAllowed(folder, u);
+    const folder = sanitizeFolder(
+      folderField && folderField.length > 0 ? folderField : "uploads",
+    );
 
-    if (file.size > MAX_UPLOAD_SIZE) throw new BadRequestException("File too large (max 10MB)");
-    if (!ALLOWED_UPLOAD_TYPES.includes(file.mimetype)) {
+    if (file.size > MAX_UPLOAD_SIZE)
+      throw new BadRequestException("File too large (max 10MB)");
+    if (!ALLOWED_UPLOAD_TYPES.includes(file.mimetype))
       throw new BadRequestException("File type not allowed");
-    }
-    if (!validateMagicBytes(file.buffer, file.mimetype)) {
-      throw new BadRequestException("File content does not match declared type");
-    }
-
-    const scanResult = await this.avScanner.scan(file.buffer, file.originalname, file.mimetype);
-    if (scanResult.status === "infected")
-      throw new UnprocessableEntityException(`Upload rejected: malware detected (${scanResult.threat})`);
-    if (scanResult.status === "error")
-      throw new ServiceUnavailableException("Malware scan unavailable — upload rejected");
-
-    try {
-      const result = await this.storage.uploadCompressed(
-        u.orgId,
-        file.buffer,
-        folder,
-        file.originalname,
-        file.mimetype,
+    if (!validateMagicBytes(file.buffer, file.mimetype))
+      throw new BadRequestException(
+        "File content does not match declared type",
       );
-      this.audit.log({
-        action: "file.upload",
-        userId: u.userId,
-        orgId: u.orgId,
-        metadata: { fileKey: result.key, fileSize: result.size, mimeType: result.mimeType },
+
+    if (!this.transforms.hasCapacity())
+      throw new ServiceUnavailableException(
+        "Upload processing is saturated — retry shortly",
+      );
+
+    const { orgId, userId } = u;
+    const body = file.buffer;
+    const originalName = file.originalname;
+    const originalMimeType = file.mimetype;
+    const fileSize = file.size;
+
+    await runInTenantTransaction(
+      this.db,
+      async () => {
+        await this.assertUploadAllowed(folder, u);
+
+        const [orgUsed, userUsed] = await Promise.all([
+          this.quarantine.getTotalUsageBytes(orgId),
+          this.quarantine.getTotalUsageBytesForUser(orgId, userId),
+        ]);
+        if (orgUsed + fileSize > ORG_QUOTA_BYTES)
+          throw new PayloadTooLargeException(
+            "Organization storage quota exceeded",
+          );
+        if (userUsed + fileSize > USER_QUOTA_BYTES)
+          throw new PayloadTooLargeException("User storage quota exceeded");
+      },
+      { orgId },
+    );
+
+    const scanResult = await this.avScanner.scan(
+      body,
+      originalName,
+      originalMimeType,
+    );
+    if (scanResult.status === "infected")
+      throw new UnprocessableEntityException(
+        `Upload rejected: malware detected (${scanResult.threat})`,
+      );
+    if (scanResult.status === "error")
+      throw new ServiceUnavailableException(
+        "Malware scan unavailable — upload rejected",
+      );
+
+    const { key, plannedMimeType, quarantineId, declaredSha256 } =
+      await runInTenantTransaction(
+        this.db,
+        async () => {
+          const { key, plannedMimeType } = await this.storage.planUpload(
+            orgId,
+            body,
+            folder,
+            originalName,
+            originalMimeType,
+          );
+          const sha256 = createHash("sha256").update(body).digest("hex");
+
+          const quarantineId = await this.quarantine.begin({
+            orgId,
+            storageKey: key,
+            filename: originalName,
+            mimeType: plannedMimeType,
+            fileSizeBytes: fileSize,
+            sha256,
+            uploadedBy: userId,
+          });
+
+          return { key, plannedMimeType, quarantineId, declaredSha256: sha256 };
+        },
+        { orgId },
+      );
+
+    const enqueue = async (): Promise<void> => {
+      const accepted = this.transforms.submit({
+        name: "storage.upload.compress",
+        orgId,
+        run: () =>
+          runOutsideTenantContext(() =>
+            this.publishUpload({
+              orgId,
+              userId,
+              quarantineId,
+              key,
+              body,
+              originalName,
+              originalMimeType,
+            }),
+          ),
+        compensate: () =>
+          runOutsideTenantContext(() =>
+            this.retractUpload(orgId, quarantineId, key),
+          ),
       });
-      return result;
-    } catch (error) {
-      if (error instanceof BadRequestException || error instanceof ServiceUnavailableException) {
-        throw error;
-      }
-      throw new InternalServerErrorException("Failed to upload file");
-    }
+      if (!accepted)
+        await runOutsideTenantContext(() =>
+          this.retractUpload(orgId, quarantineId, key),
+        ).catch((error: unknown) => {
+          this.logger.error(
+            "Upload retraction failed after a refused transform",
+            {
+              orgId,
+              quarantineId,
+              reason: error instanceof Error ? error.message : String(error),
+            },
+          );
+        });
+    };
+
+    await enqueue();
+
+    return {
+      quarantineId,
+      status: "pending_scan",
+      key,
+      mimeType: plannedMimeType,
+      size: fileSize,
+      sha256: declaredSha256,
+    };
+  }
+
+  /**
+   * Compresses, puts the object down, records what the object actually holds,
+   * then releases it from quarantine. The order is the point: nothing is
+   * reachable until the row that gates it says clean, and the measured size and
+   * type replace the planned ones so the quota is accounted on the bytes that
+   * were stored rather than the bytes that arrived.
+   *
+   * The release opens its OWN tenant transaction and the object write stays
+   * outside it. This runs on the transform runner, after the request that
+   * submitted it has committed and returned, so the ambient handle is dead and
+   * `file_quarantine_records` carries an RLS policy that fails closed without
+   * the GUC — a release written on the request's context never lands, leaving a
+   * scanned, stored object blocked forever. Holding the transaction across
+   * `compressToKey` would be the opposite mistake: a pooled connection pinned
+   * for the length of an object-store outage.
+   */
+  private async publishUpload(job: {
+    orgId: string;
+    userId: string;
+    quarantineId: string;
+    key: string;
+    body: Buffer;
+    originalName: string;
+    originalMimeType: string;
+  }): Promise<void> {
+    const stored = await this.storage.compressToKey(
+      job.orgId,
+      job.body,
+      job.key,
+      job.originalName,
+      job.originalMimeType,
+    );
+
+    await runInNewTenantTransaction(this.db, job.orgId, async () => {
+      await this.quarantine.recordMeasuredObject(job.quarantineId, {
+        fileSizeBytes: stored.size,
+        mimeType: stored.mimeType,
+      });
+      await this.quarantine.markClean(job.quarantineId);
+    });
+
+    this.audit.log({
+      action: "file.upload",
+      userId: job.userId,
+      orgId: job.orgId,
+      metadata: {
+        fileKey: job.key,
+        fileSize: stored.size,
+        mimeType: stored.mimeType,
+      },
+    });
+  }
+
+  /**
+   * The object goes first. `isKeyBlocked` ignores a soft-deleted row, so
+   * dropping the row before the bytes are gone would publish exactly the
+   * half-written file this path exists to retract. Each row write opens its own
+   * tenant transaction for the same reason `publishUpload` does, and the two
+   * stay separate so the object delete never runs inside one.
+   */
+  private async retractUpload(
+    orgId: string,
+    quarantineId: string,
+    key: string,
+  ): Promise<void> {
+    await runInNewTenantTransaction(this.db, orgId, () =>
+      this.quarantine.markError(quarantineId),
+    );
+    await this.storage.deleteFileIfPresent(orgId, key).catch(() => false);
+    await runInNewTenantTransaction(this.db, orgId, () =>
+      this.quarantine.softDelete(quarantineId),
+    );
   }
 
   @Get("download")
-  @AuthorizedInService("resolveFileOwner")
+  @AuthorizedInService("assertKeyReadable")
+  @ApiOkResponse({
+    schema: { type: "string", format: "binary" },
+    description:
+      "Binary file stream (attachment=1) or JSON { url } signed-URL redirect",
+  })
   @Validate({ query: downloadQuerySchema })
   async download(
     @Query() queryParams: DownloadQueryInput,
@@ -194,30 +337,44 @@ export class StorageController {
       throw new ServiceUnavailableException("Cloud storage not configured");
     }
 
-    const { url: urlParam, key: keyParam, expiresIn, attachment: attachmentParam } = queryParams;
+    const {
+      url: urlParam,
+      key: keyParam,
+      expiresIn,
+      attachment: attachmentParam,
+    } = queryParams;
     const attachment = attachmentParam === "1";
 
-    const fileKey = keyParam || (urlParam ? this.storage.getFileKeyFromUrl(urlParam) : "");
+    const fileKey =
+      keyParam || (urlParam ? this.storage.getFileKeyFromUrl(urlParam) : "");
     if (!fileKey || !this.storage.isValidFileKey(fileKey)) {
       throw new BadRequestException("Invalid file reference");
     }
 
     const orgId = u.orgId;
 
-    const fileOwner = await this.resolveFileOwner(fileKey);
-    if (fileOwner !== null) {
-      if (fileOwner.orgId !== orgId) throw new NotFoundException("File not found");
-      if (requiresDedicatedAccess(fileOwner)) throw new ForbiddenException("Access denied");
-    } else if (isSensitiveKey(fileKey)) {
-      throw new NotFoundException("File not found");
-    }
+    await assertKeyReadable(
+      this.db,
+      this.quarantine,
+      fileKey,
+      u,
+      "File not found",
+    );
 
-    this.audit.log({ action: "file.download", userId: u.userId, orgId, metadata: { fileKey } });
+    this.audit.log({
+      action: "file.download",
+      userId: u.userId,
+      orgId,
+      metadata: { fileKey },
+    });
 
     if (attachment) {
       const stream = await this.openStream(orgId, fileKey, "File not found");
       const filename = this.storage.getFileNameFromKey(fileKey);
-      res.setHeader("Content-Type", stream.contentType || this.storage.getMimeType(fileKey));
+      res.setHeader(
+        "Content-Type",
+        stream.contentType || this.storage.getMimeType(fileKey),
+      );
       res.setHeader(
         "Content-Disposition",
         `attachment; filename="${filename.replace(/"/g, "%22")}"`,
@@ -226,12 +383,24 @@ export class StorageController {
       return;
     }
 
-    const signedUrl = await this.storage.getFileUrl(orgId, fileKey, expiresIn);
+    const signedUrl = await this.storage.getFileUrl(
+      orgId,
+      fileKey,
+      expiresIn,
+      undefined,
+      {
+        preauthorized: true,
+      },
+    );
     res.json({ url: signedUrl });
   }
 
   @Get("image")
-  @AuthorizedInService("resolveFileOwner")
+  @AuthorizedInService("assertKeyReadable")
+  @ApiOkResponse({
+    schema: { type: "string", format: "binary" },
+    description: "Binary image stream",
+  })
   @Validate({ query: imageQuerySchema })
   async image(
     @Query() queryParams: ImageQueryInput,
@@ -246,51 +415,24 @@ export class StorageController {
       throw new ServiceUnavailableException("Storage not available");
     }
 
-    const fileOwner = await this.resolveFileOwner(keyParam);
-    if (fileOwner !== null) {
-      if (fileOwner.orgId !== u.orgId) throw new NotFoundException("Not found");
-      if (requiresDedicatedAccess(fileOwner)) throw new ForbiddenException("Access denied");
-    } else if (isSensitiveKey(keyParam)) {
-      throw new NotFoundException("Not found");
-    }
+    await assertKeyReadable(this.db, this.quarantine, keyParam, u, "Not found");
 
     const stream = await this.openStream(u.orgId, keyParam, "Not found");
-    res.setHeader("Content-Type", stream.contentType || this.storage.getMimeType(keyParam));
-    res.setHeader("Cache-Control", "public, max-age=86400, immutable");
+    res.setHeader(
+      "Content-Type",
+      stream.contentType || this.storage.getMimeType(keyParam),
+    );
+    /**
+     * `immutable` told the browser not to revalidate for a day, which outlives
+     * both a replacement of the object under the same key and a revocation of
+     * the permission that `assertKeyReadable` just checked — the revoked viewer
+     * keeps serving the image from its own cache and no further request reaches
+     * this handler. `Vary` is the companion: the bearer token is the only thing
+     * separating two viewers of the same URL.
+     */
+    res.setHeader("Cache-Control", "private, max-age=60, must-revalidate");
+    res.setHeader("Vary", "Authorization, Cookie");
     this.pipe(stream.body, res);
-  }
-
-  /**
-   * Storage keys aren't org-namespaced, so this is the only place cross-org ownership can be
-   * checked. Protected resource types are denied here even for the same tenant and must use
-   * their permission- and record-scoped download endpoint. Omitting a table means a file cannot be proven to belong to any
-   * org: callers treat an unresolved sensitive key as a denial, so a missing table locks its
-   * own file type out rather than exposing it. Returns the owning orgId, or null if untracked.
-   */
-  private async resolveFileOwner(fileKey: string): Promise<FileOwner | null> {
-    const namespacedOrgId = orgFromNamespacedKey(fileKey);
-    if (namespacedOrgId) return { orgId: namespacedOrgId, access: "GENERIC" };
-
-    const like = `%${fileKey}%`;
-    const [doc, onboardingDoc, expense, reimbursement, handbookVersion, payslip, vaultDoc] =
-      await Promise.all([
-        this.db.query.documents.findFirst({ where: ilike(documents.fileUrl, like) }),
-        this.db.query.onboardingDocuments.findFirst({ where: ilike(onboardingDocuments.fileUrl, like) }),
-        this.db.query.expenses.findFirst({ where: ilike(expenses.receiptUrl, like) }),
-        this.db.query.reimbursements.findFirst({ where: ilike(reimbursements.receiptUrl, like) }),
-        this.db.query.handbookVersions.findFirst({ where: ilike(handbookVersions.documentUrl, like) }),
-        this.db.query.payslipPublications.findFirst({ where: ilike(payslipPublications.pdfUrl, like) }),
-        this.db.query.candidateDocumentsVault.findFirst({
-          where: ilike(candidateDocumentsVault.fileUrl, like),
-        }),
-      ]);
-    if (doc) return { orgId: doc.orgId, access: "HR_DOCUMENT" };
-    if (onboardingDoc) return { orgId: onboardingDoc.orgId, access: "ONBOARDING_DOCUMENT" };
-    if (payslip) return { orgId: payslip.orgId, access: "PAYSLIP" };
-    if (vaultDoc) return { orgId: vaultDoc.orgId, access: "CANDIDATE_VAULT" };
-    const genericOrgId =
-      expense?.orgId ?? reimbursement?.orgId ?? handbookVersion?.orgId ?? null;
-    return genericOrgId ? { orgId: genericOrgId, access: "GENERIC" } : null;
   }
 
   private async assertUploadAllowed(
@@ -298,10 +440,11 @@ export class StorageController {
     user: CurrentUserContext,
   ): Promise<void> {
     const required = GENERIC_SENSITIVE_UPLOAD_PERMISSIONS[folder];
-    const isSensitive = isSensitiveKey(`${folder}/file`);
-    if (!isSensitive) return;
+    const folderRoot = folder.split("/", 1)[0] ?? folder;
+    if (!isSensitiveFolderRoot(folderRoot)) return;
     if (user.isOrgOwner && required) return;
-    if (!required) throw new ForbiddenException("Use the feature-specific upload endpoint");
+    if (!required)
+      throw new ForbiddenException("Use the feature-specific upload endpoint");
 
     const permissions = await this.access.resolveUserPermissions(
       user.orgId,

@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, ne, sql } from "drizzle-orm";
 import { formatInTimeZone } from "date-fns-tz";
 import { attendance, geofences, organizations } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -14,6 +14,7 @@ import {
   type PreparedAttendanceCommand,
 } from "./attendance-event-writer.service";
 import { calculateDistanceMeters } from "./attendance-clock-location";
+import { requireOrganizationMembershipId } from "./organization-membership";
 
 interface BusinessClockContext {
   businessDate: string;
@@ -79,6 +80,7 @@ export class AttendanceClockService {
     input: CheckInInput,
     idempotencyKey: string,
   ) {
+    const userMembershipId = await requireOrganizationMembershipId(this.db, organizationId, userId);
     const clockContext = await this.getBusinessClockContext(organizationId);
     const policy = await this.policyService.getAttendanceRules(
       organizationId,
@@ -104,7 +106,8 @@ export class AttendanceClockService {
             eq(geofences.orgId, organizationId),
             eq(geofences.isActive, true),
           ),
-        );
+        )
+        .limit(100);
       const matchedGeofence = geofenceRows.find(
         (geofence) =>
           calculateDistanceMeters(
@@ -148,7 +151,7 @@ export class AttendanceClockService {
         .from(attendance)
         .where(
           and(
-            eq(attendance.userId, userId),
+            eq(attendance.userMembershipId, userMembershipId),
             eq(attendance.date, clockContext.businessDate),
             eq(attendance.orgId, organizationId),
             isNull(attendance.checkOut),
@@ -165,7 +168,7 @@ export class AttendanceClockService {
         .from(attendance)
         .where(
           and(
-            eq(attendance.userId, userId),
+            eq(attendance.userMembershipId, userMembershipId),
             eq(attendance.date, clockContext.businessDate),
             eq(attendance.orgId, organizationId),
           ),
@@ -189,6 +192,7 @@ export class AttendanceClockService {
       await transaction.insert(attendance).values({
         orgId: organizationId,
         userId,
+        userMembershipId,
         date: clockContext.businessDate,
         checkIn: occurredAt,
         status: "PRESENT",
@@ -235,6 +239,7 @@ export class AttendanceClockService {
     userId: string,
     idempotencyKey: string,
   ) {
+    const userMembershipId = await requireOrganizationMembershipId(this.db, organizationId, userId);
     const clockContext = await this.getBusinessClockContext(organizationId);
     const overtimeRules = await this.policyService.getOvertimeRules(
       organizationId,
@@ -270,7 +275,7 @@ export class AttendanceClockService {
         .from(attendance)
         .where(
           and(
-            eq(attendance.userId, userId),
+            eq(attendance.userMembershipId, userMembershipId),
             eq(attendance.date, clockContext.businessDate),
             eq(attendance.orgId, organizationId),
             isNull(attendance.checkOut),
@@ -316,28 +321,19 @@ export class AttendanceClockService {
         durationMilliseconds / 3_600_000 - totalBreakHours,
       );
 
-      const dailyAttendanceRows = await transaction
-        .select({
-          attendanceId: attendance.id,
-          workHours: attendance.workHours,
-        })
+      const [dailyAttendance] = await transaction
+        .select({ previousWorkHours: sql<number>`COALESCE(SUM(${attendance.workHours}), 0)`.mapWith(Number) })
         .from(attendance)
         .where(
           and(
-            eq(attendance.userId, userId),
+            eq(attendance.userMembershipId, userMembershipId),
             eq(attendance.date, clockContext.businessDate),
             eq(attendance.orgId, organizationId),
+            ne(attendance.id, attendanceSession.attendanceId),
           ),
         );
 
-      let previousWorkHours = 0;
-      for (const dailyAttendanceRow of dailyAttendanceRows) {
-        if (
-          dailyAttendanceRow.attendanceId !== attendanceSession.attendanceId
-        ) {
-          previousWorkHours += Number(dailyAttendanceRow.workHours || 0);
-        }
-      }
+      const previousWorkHours = dailyAttendance?.previousWorkHours ?? 0;
 
       const totalDailyWork = previousWorkHours + sessionWorkHours;
       const isOvertime = totalDailyWork > dailyThresholdHours;
@@ -370,6 +366,7 @@ export class AttendanceClockService {
     userId: string,
     idempotencyKey: string,
   ) {
+    const userMembershipId = await requireOrganizationMembershipId(this.db, organizationId, userId);
     const clockContext = await this.getBusinessClockContext(organizationId);
 
     await this.db.transaction(async (transaction) => {
@@ -399,7 +396,7 @@ export class AttendanceClockService {
         .from(attendance)
         .where(
           and(
-            eq(attendance.userId, userId),
+            eq(attendance.userMembershipId, userMembershipId),
             eq(attendance.date, clockContext.businessDate),
             eq(attendance.orgId, organizationId),
             isNull(attendance.checkOut),

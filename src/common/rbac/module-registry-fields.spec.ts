@@ -1,26 +1,17 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { MODULE_MANIFEST_VERSION, MODULE_REGISTRY } from "./module-registry";
+import { frontendPath } from "../testing/repo-paths";
 
 const RBAC_DIR = join(__dirname);
 const MODULES_BASE = join(__dirname, "../../modules");
 const SCHEMA_BASE = join(__dirname, "../../db/schema");
-/**
- * The frontend checkout, wherever it sits beside this one.
- *
- * The path here was `<monorepo>/frontend/...`, which is not where the frontend
- * is — it lives under `streamlineos-frontend/frontend/` — so this read threw
- * ENOENT and took the whole suite with it rather than checking anything. Both
- * layouts are tried; when neither is present the `beforeAll` below names the
- * failure, and "readable and non-empty" fails with it rather than an ENOENT.
- */
-const FRONTEND_NAV_TYPES =
-  [
-    "../../../../streamlineos-frontend/frontend/components/layout/sidebar/sidebar-nav-types.ts",
-    "../../../../frontend/components/layout/sidebar/sidebar-nav-types.ts",
-  ]
-    .map((candidate) => join(__dirname, candidate))
-    .find(existsSync) ?? "";
+const FRONTEND_NAV_TYPES = frontendPath(
+  "components",
+  "layout",
+  "sidebar",
+  "sidebar-nav-types.ts",
+);
 
 function parseProductKeyUnion(source: string): Set<string> {
   const match = source.match(/type\s+ProductKey\s*=([^;]+)/s);

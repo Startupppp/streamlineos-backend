@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { MailAddress, MailAttachment } from "../../dto/mail-schemas";
+import type { MailAddress, MailAttachment } from "../../dto/mail-response.schemas";
 
 /**
  * Gmail's wire dialect, decoded.

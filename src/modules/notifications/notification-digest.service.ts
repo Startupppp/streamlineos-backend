@@ -1,9 +1,10 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq, isNull, lte, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 import {
   notificationDigestItems,
   notificationDigestRuns,
   notificationPreferences,
+  organizationMembers,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -16,6 +17,8 @@ export interface DigestFlushResult {
   itemsFlushed: number;
   notificationsCreated: number;
 }
+
+const DIGEST_FLUSH_CHUNK = 500;
 
 const WINDOW_MS: Record<string, number> = {
   hourly: 60 * 60 * 1000,
@@ -55,8 +58,7 @@ export class NotificationDigestService {
    */
   async enqueue(input: {
     orgId: string;
-    userId: string;
-    membershipId?: number | null;
+    membershipId: number;
     channel: NotificationChannel;
     eventKey: string;
     entityType?: string | null;
@@ -72,8 +74,7 @@ export class NotificationDigestService {
       .insert(notificationDigestItems)
       .values({
         orgId: input.orgId,
-        userId: input.userId,
-        membershipId: input.membershipId ?? null,
+        membershipId: input.membershipId,
         channel: input.channel,
         eventKey: input.eventKey,
         entityType: input.entityType ?? null,
@@ -87,7 +88,7 @@ export class NotificationDigestService {
       .onConflictDoUpdate({
         target: [
           notificationDigestItems.orgId,
-          notificationDigestItems.userId,
+          notificationDigestItems.membershipId,
           notificationDigestItems.channel,
           notificationDigestItems.coalesceKey,
         ],
@@ -113,8 +114,15 @@ export class NotificationDigestService {
 
     await forEachOrg(this.db, "notification-digest-flush", async (tx, orgId) => {
       const due = await tx
-        .select()
+        .select({ item: notificationDigestItems, userId: organizationMembers.userId })
         .from(notificationDigestItems)
+        .innerJoin(
+          organizationMembers,
+          and(
+            eq(organizationMembers.orgId, notificationDigestItems.orgId),
+            eq(organizationMembers.id, notificationDigestItems.membershipId),
+          ),
+        )
         .where(
           and(
             eq(notificationDigestItems.orgId, orgId),
@@ -129,79 +137,112 @@ export class NotificationDigestService {
       // text: splitting the key back apart on ":" would corrupt any id containing one.
       const byUser = new Map<
         string,
-        { userId: string; channel: NotificationChannel; items: typeof due }
+        { membershipId: number; userId: string; channel: NotificationChannel; items: Array<(typeof due)[number]["item"]> }
       >();
-      for (const item of due) {
-        const key = `${item.userId}\u0000${item.channel}`;
+      for (const row of due) {
+        const item = row.item;
+        const key = `${item.membershipId}\u0000${item.channel}`;
         const bucket = byUser.get(key);
         if (bucket) bucket.items.push(item);
-        else byUser.set(key, { userId: item.userId, channel: item.channel, items: [item] });
+        else byUser.set(key, {
+          membershipId: item.membershipId,
+          userId: row.userId,
+          channel: item.channel,
+          items: [item],
+        });
       }
 
-      for (const { userId, channel, items } of byUser.values()) {
-        const first = items[0];
-        if (!first) continue;
-        // The latest deadline in the batch, not an arbitrary member's: windowEnd is the
-        // once-per-window uniqueness key, so it has to be a deterministic function of
-        // the batch or two concurrent sweeps would each insert their own "window".
-        const windowEnd = items.reduce(
-          (latest, i) => (i.deliverAfter > latest ? i.deliverAfter : latest),
-          first.deliverAfter,
-        );
+      // The latest deadline in each batch, not an arbitrary member's: windowEnd is the
+      // once-per-window uniqueness key, so it has to be a deterministic function of
+      // the batch or two concurrent sweeps would each insert their own "window".
+      const windows = [...byUser.values()]
+        .filter((bucket) => bucket.items.length > 0)
+        .map((bucket) => ({
+          ...bucket,
+          windowEnd: bucket.items.reduce(
+            (latest, i) => (i.deliverAfter > latest ? i.deliverAfter : latest),
+            bucket.items[0]?.deliverAfter ?? now,
+          ),
+        }));
+      if (windows.length === 0) return;
 
-        const inserted = await tx
-          .insert(notificationDigestRuns)
-          .values({
+      /*
+       * One insert for every ripe window instead of one per user. The conflict
+       * key is (org, user, channel, windowEnd), so the returned rows are exactly
+       * the windows this sweep won — a concurrent sweep's windows come back
+       * absent, which is the same signal the per-row RETURNING gave.
+       */
+      const claimed = await tx
+        .insert(notificationDigestRuns)
+        .values(
+          windows.map((w) => ({
             orgId,
-            userId,
-            channel,
-            windowEnd,
-            itemCount: items.length,
-          })
-          .onConflictDoNothing({
-            target: [
-              notificationDigestRuns.orgId,
-              notificationDigestRuns.userId,
-              notificationDigestRuns.channel,
-              notificationDigestRuns.windowEnd,
-            ],
-          })
-          .returning({ id: notificationDigestRuns.id });
+            userId: w.userId,
+            channel: w.channel,
+            windowEnd: w.windowEnd,
+            itemCount: w.items.length,
+          })),
+        )
+        .onConflictDoNothing({
+          target: [
+            notificationDigestRuns.orgId,
+            notificationDigestRuns.userId,
+            notificationDigestRuns.channel,
+            notificationDigestRuns.windowEnd,
+          ],
+        })
+        .returning({
+          userId: notificationDigestRuns.userId,
+          channel: notificationDigestRuns.channel,
+          windowEnd: notificationDigestRuns.windowEnd,
+        });
+      const claimedKeys = new Set(
+        claimed.map((row) => `${row.userId}\u0000${row.channel}\u0000${row.windowEnd.getTime()}`),
+      );
 
-        // Already flushed by a concurrent sweep — mark the items and move on.
-        if (inserted.length > 0) {
+      for (const w of windows) {
+        const first = w.items[0];
+        if (!first) continue;
+        if (claimedKeys.has(`${w.userId}\u0000${w.channel}\u0000${w.windowEnd.getTime()}`)) {
           await this.notifications.create({
             orgId,
-            userId,
+            userId: w.userId,
             category: "SYSTEM",
             sourceModule: "notifications",
-            title: summarise(items),
-            message: items
+            title: summarise(w.items),
+            message: w.items
               .slice(0, 10)
               .map((i) => (i.occurrenceCount > 1 ? `${i.title} (${i.occurrenceCount}×)` : i.title))
               .join("\n"),
-            link: items.length === 1 ? (first.link ?? undefined) : "/notifications",
+            link: w.items.length === 1 ? (first.link ?? undefined) : "/notifications",
           });
           result.notificationsCreated += 1;
         }
+        result.itemsFlushed += w.items.length;
+        result.windows += 1;
+      }
 
+      /*
+       * The flush is one statement for every item the sweep read, keyed on the
+       * ids it already holds. Per-channel scoping is preserved because those ids
+       * ARE the (membership, channel) rows the buckets were built from — the
+       * predicate the loop rebuilt per bucket selected the same set.
+       */
+      const flushIds = due.map((row) => row.item.id);
+      for (let offset = 0; offset < flushIds.length; offset += DIGEST_FLUSH_CHUNK)
         await tx
           .update(notificationDigestItems)
           .set({ flushedAt: now })
           .where(
             and(
               eq(notificationDigestItems.orgId, orgId),
-              eq(notificationDigestItems.userId, userId),
-              // Scoped to this channel: without it, flushing a user's EMAIL bucket also
-              // marks their IN_APP items delivered, and those notifications never arrive.
-              eq(notificationDigestItems.channel, channel),
+              inArray(
+                notificationDigestItems.id,
+                flushIds.slice(offset, offset + DIGEST_FLUSH_CHUNK),
+              ),
               isNull(notificationDigestItems.flushedAt),
-              lte(notificationDigestItems.deliverAfter, now),
             ),
           );
-        result.itemsFlushed += items.length;
-        result.windows += 1;
-      }
     });
 
     if (result.windows > 0) {

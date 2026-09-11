@@ -251,28 +251,64 @@ function undefinedFunctionError(): Error {
   });
 }
 
+/**
+ * Maps each SDF function name to its branch index so the combined UNION ALL
+ * mock can detect which kinds are active from the compiled SQL text.
+ */
+const SDF_TO_KIND: readonly [string, number][] = [
+  ["search_lead_party_ids", LEAD],
+  ["search_deal_ids", DEAL],
+  ["search_contact_party_ids", CONTACT],
+  ["search_client_party_ids", CLIENT],
+  ["search_ticket_ids", TICKET],
+];
+
 async function run(options: RunOptions): Promise<Run> {
   const conditions: (SQL | undefined)[] = [];
   const probeCalls: ProbeCall[] = [];
-  let probeIndex = 0;
   let selectIndex = 0;
 
   const db = {
     execute: (statement: SQL) => {
       const { text, params } = compile(statement);
       probeCalls.push({ text, params });
-      const branch = PROBE_ORDER[probeIndex++] ?? TICKET;
-      const outcome = options.probeFor(branch, options.term);
-      if (outcome.kind === "missing") return Promise.reject(undefinedFunctionError());
-      return Promise.resolve(outcome.ids.map((id) => ({ id })));
+
+      // Detect which SDF functions appear in the combined UNION ALL statement.
+      const activeKinds: number[] = [];
+      for (const [fnName, kind] of SDF_TO_KIND) {
+        if (text.includes(fnName)) activeKinds.push(kind);
+      }
+
+      // A single 42883 from any kind fails the whole combined statement.
+      for (const kind of activeKinds) {
+        if (options.probeFor(kind, options.term).kind === "missing")
+          return Promise.reject(undefinedFunctionError());
+      }
+
+      // Collect { kind, id } rows for all active kinds.
+      const rows: { kind: string; id: string }[] = [];
+      for (const kind of activeKinds) {
+        const outcome = options.probeFor(kind, options.term);
+        if (outcome.kind === "rows") {
+          const name = BRANCHES[kind]?.name ?? String(kind);
+          for (const id of outcome.ids) rows.push({ kind: name, id: String(id) });
+        }
+      }
+      return Promise.resolve(rows);
     },
-    select: () => {
-      const index = selectIndex++;
+    /**
+     * The contact owner arm is an `exists(...)` subquery, which also goes through
+     * `select()`. Only the branch queries take a slot, or the subqueries would
+     * shift every branch's index and the columns assertion would read the wrong one.
+     */
+    select: (fields?: Record<string, unknown>) => {
+      const isSubquery = fields !== undefined && Object.keys(fields).length === 1 && "value" in fields;
+      const index = isSubquery ? -1 : selectIndex++;
       const builder = {
         from: () => builder,
         innerJoin: () => builder,
         where: (condition: SQL) => {
-          conditions[index] = condition;
+          if (index >= 0) conditions[index] = condition;
           return builder;
         },
         orderBy: () => builder,
@@ -305,12 +341,6 @@ async function run(options: RunOptions): Promise<Run> {
   return { response, conditions, probeCalls };
 }
 
-/**
- * `executeSearch` builds its five branch conditions in one `Promise.all`, so the
- * probes fire — and the selects run — in this order.
- */
-const PROBE_ORDER: readonly number[] = [LEAD, DEAL, CONTACT, CLIENT, TICKET];
-
 const ALL_MISSING = (): ProbeOutcome => ({ kind: "missing" });
 
 async function captureFallbackConditions(term: string): Promise<(SQL | undefined)[]> {
@@ -339,19 +369,20 @@ describe("global search — probe path and ILIKE fallback are equivalent", () =>
     }
   });
 
-  it("asks each probe for cap + 1", async () => {
+  it("asks each probe for cap + 1 in a single combined UNION ALL statement", async () => {
     const result = await run({
       term: TERM,
       probeFor: () => ({ kind: "rows", ids: [1] }),
       rowsFor: () => [],
     });
 
-    expect(result.probeCalls).toHaveLength(BRANCHES.length);
+    expect(result.probeCalls).toHaveLength(1);
+    const call = result.probeCalls[0]!;
     for (const branch of BRANCHES) {
-      const call = result.probeCalls[branch.index];
-      expect(call?.text).toContain(`app.${branch.probeFunction}(`);
-      expect(call?.params).toEqual([TERM, branch.capPlusOne]);
+      expect(call.text).toContain(`app.${branch.probeFunction}(`);
     }
+    expect(call.params).toContain(PARTY_CAP_PLUS_ONE);
+    expect(call.params).toContain(TICKET_CAP_PLUS_ONE);
   });
 
   it("passes the raw term to both sides, so a wildcard is treated identically", async () => {
@@ -437,34 +468,33 @@ describe("global search — a branch falls back on its own", () => {
     }
   });
 
-  it("one missing probe does not push the other branches onto the fallback", async () => {
+  it("a missing SDF in the combined probe causes all active kinds to fall back to ILIKE", async () => {
     const result = await run({
       term: TERM,
       probeFor: (branch) => (branch === DEAL ? { kind: "missing" } : { kind: "rows", ids: [1] }),
       rowsFor: () => [],
     });
 
-    const dealCondition = result.conditions[DEAL];
-    const leadCondition = result.conditions[LEAD];
-    expect(dealCondition).toBeDefined();
-    expect(leadCondition).toBeDefined();
-    if (!dealCondition || !leadCondition) return;
-    expect(compile(dealCondition).text).toContain("ilike");
-    expect(compile(leadCondition).text).not.toContain("ilike");
+    // The combined UNION ALL statement fails as a unit on 42883.
+    // Every active kind falls back to its ILIKE condition.
+    for (const branch of BRANCHES) {
+      const condition = result.conditions[branch.index];
+      expect(condition).toBeDefined();
+      if (!condition) continue;
+      expect(compile(condition).text).toContain("ilike");
+    }
   });
 
-  it("a probe with no rows yields no candidates rather than a scan", async () => {
+  it("a probe with no rows skips hydration entirely — no conditions are captured", async () => {
     const result = await run({
       term: "zzzznothing",
       probeFor: () => ({ kind: "rows", ids: [] }),
       rowsFor: () => [],
     });
 
+    // Zero ids → toPartyCond/toDealCond/toTicketCond return null → db.select() is never called.
     for (const branch of BRANCHES) {
-      const condition = result.conditions[branch.index];
-      expect(condition).toBeDefined();
-      if (!condition) continue;
-      expect(compile(condition).text).not.toContain("ilike");
+      expect(result.conditions[branch.index]).toBeUndefined();
     }
     expect(result.response).toEqual({ results: [], total: 0 });
   });

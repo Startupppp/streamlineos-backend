@@ -1,4 +1,4 @@
-import { Module, forwardRef } from "@nestjs/common";
+import { Module } from "@nestjs/common";
 import { CrmAutomationStudioModule } from "../automation-studio/crm-automation-studio.module";
 import { BillingModule } from "../../billing/core/billing.module";
 import { CrmCampaignsController } from "./crm-campaigns.controller";
@@ -48,7 +48,7 @@ import { AttributionModule } from "../../attribution/attribution.module";
   // exposes beside the first/last-touch pair it replaces. The edge runs one way
   // — attribution reaches back into CRM only for the shared "won" definition in
   // `won-stage-keys.ts`, which is a function, not this module.
-  imports: [forwardRef(() => CrmAutomationStudioModule), BillingModule, CrmConsentModule, NotificationsModule, PartyModule, AttributionModule],
+  imports: [CrmAutomationStudioModule, BillingModule, CrmConsentModule, NotificationsModule, PartyModule, AttributionModule],
   controllers: [
     CrmCampaignsController,
     CrmOrganizationsController,

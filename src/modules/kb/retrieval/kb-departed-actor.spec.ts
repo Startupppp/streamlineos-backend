@@ -120,12 +120,12 @@ describe("KB departed-actor authority — KbAccessService.assertCanViewArticle",
     await expect(svc.assertCanViewArticle(user, row)).rejects.toThrow("Article not found");
   });
 
-  it("still grants access via userId when membershipId on the restriction row is null (backfill not yet run)", async () => {
+  it("denies access when restriction row has null membershipId and null role (neither path matches — fail-closed)", async () => {
     const db = makeDb([{ userId: "user-departed", membershipId: null, role: null }]);
     const svc = new KbAccessService(db as never, makeCache() as never, makeAccess() as never);
     const user = makeUser({ userId: "user-departed", principal: humanSessionPrincipal(42, false) });
     const row = { id: 1, orgId: "org-1", spaceId: null };
-    await expect(svc.assertCanViewArticle(user, row)).resolves.toBeUndefined();
+    await expect(svc.assertCanViewArticle(user, row)).rejects.toThrow("Article not found");
   });
 
   it("confers NO authority when departed actor is account-only and restriction row's membershipId is cleared", async () => {

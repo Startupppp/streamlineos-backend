@@ -22,17 +22,28 @@ import {
   updateHrAutomationRuleSchema,
   testHrAutomationSchema,
   toggleHrAutomationRuleSchema,
+  listHrAutomationRulesSchema,
   listRunsSchema,
   type CreateHrAutomationRuleInput,
   type UpdateHrAutomationRuleInput,
   type TestHrAutomationInput,
   type ToggleHrAutomationRuleInput,
+  type ListHrAutomationRulesInput,
   type ListRunsInput,
 } from "./dto/hr-automation.schemas";
 import { HR_AUTOMATION_EVENTS, HR_EVENT_FIELD_DOCS, HR_EVENT_SAMPLE_PAYLOADS } from "./hr-automation-events";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  automationEventsListSchema,
+  automationRuleListSchema,
+  automationRuleDetailSchema,
+  automationRunListSchema,
+  automationTestResultSchema,
+  successSchema,
+} from "./dto/automation-response.schemas";
 
 const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
 
@@ -43,6 +54,7 @@ export class HrAutomationsController {
   constructor(private readonly engine: HrAutomationEngineService) {}
 
   @Get("events")
+  @ResponseSchema(automationEventsListSchema)
   @RequirePermission("hr:automations:view")
   getEvents() {
     return {
@@ -55,39 +67,34 @@ export class HrAutomationsController {
   }
 
   @Get()
+  @ResponseSchema(automationRuleListSchema)
   @RequirePermission("hr:automations:view")
+  @Validate({ query: listHrAutomationRulesSchema })
   list(
     @CurrentUser() u: CurrentUserContext,
-    @Query("page") page?: string,
-    @Query("limit") limit?: string,
-    @Query("search") search?: string,
-    @Query("triggerEvent") triggerEvent?: string,
-    @Query("isEnabled") isEnabled?: string,
+    @Query() query: ListHrAutomationRulesInput,
   ) {
-    const pageNum = Math.max(1, parseInt(page ?? "1", 10) || 1);
-    const limitNum = Math.min(100, Math.max(1, parseInt(limit ?? "50", 10) || 50));
-    const enabledFilter = isEnabled === "true" ? true : isEnabled === "false" ? false : undefined;
-
     return this.engine.listRules(u.orgId, {
-      search,
-      triggerEvent,
-      isEnabled: enabledFilter,
-      page: pageNum,
-      limit: limitNum,
+      search: query.search,
+      triggerEvent: query.triggerEvent,
+      isEnabled: query.isEnabled,
+      limit: query.limit,
     });
   }
 
   @Get("runs")
+  @ResponseSchema(automationRunListSchema)
   @RequirePermission("hr:automations:view")
   @Validate({ query: listRunsSchema })
   listAllRuns(
     @CurrentUser() u: CurrentUserContext,
     @Query() query: ListRunsInput,
   ) {
-    return this.engine.listRuns(u.orgId, { page: query.page, limit: query.limit });
+    return this.engine.listRuns(u.orgId, { cursor: query.cursor, limit: query.limit });
   }
 
   @Get(":ruleId")
+  @ResponseSchema(automationRuleDetailSchema)
   @RequirePermission("hr:automations:view")
   @Validate({ params: ruleIdParams })
   getOne(
@@ -98,6 +105,7 @@ export class HrAutomationsController {
   }
 
   @Post()
+  @ResponseSchema(automationRuleDetailSchema)
   @HttpCode(201)
   @RequirePermission("hr:automations:manage")
   @Validate({ body: createHrAutomationRuleSchema })
@@ -109,6 +117,7 @@ export class HrAutomationsController {
   }
 
   @Patch(":ruleId")
+  @ResponseSchema(automationRuleDetailSchema)
   @RequirePermission("hr:automations:manage")
   @Validate({ params: ruleIdParams, body: updateHrAutomationRuleSchema })
   update(
@@ -120,6 +129,7 @@ export class HrAutomationsController {
   }
 
   @Post(":ruleId/toggle")
+  @ResponseSchema(automationRuleDetailSchema)
   @HttpCode(200)
   @RequirePermission("hr:automations:manage")
   @Validate({ params: ruleIdParams, body: toggleHrAutomationRuleSchema })
@@ -132,6 +142,7 @@ export class HrAutomationsController {
   }
 
   @Delete(":ruleId")
+  @NoContentResponse()
   @HttpCode(204)
   @RequirePermission("hr:automations:manage")
   @Validate({ params: ruleIdParams })
@@ -143,6 +154,7 @@ export class HrAutomationsController {
   }
 
   @Post(":ruleId/test")
+  @ResponseSchema(automationTestResultSchema)
   @HttpCode(200)
   @RequirePermission("hr:automations:manage")
   @Validate({ params: ruleIdParams, body: testHrAutomationSchema })
@@ -155,6 +167,7 @@ export class HrAutomationsController {
   }
 
   @Get(":ruleId/runs")
+  @ResponseSchema(automationRunListSchema)
   @RequirePermission("hr:automations:view")
   @Validate({ params: ruleIdParams, query: listRunsSchema })
   listRuns(
@@ -162,6 +175,6 @@ export class HrAutomationsController {
     @CurrentUser() u: CurrentUserContext,
     @Query() query: ListRunsInput,
   ) {
-    return this.engine.listRuns(u.orgId, { ruleId, page: query.page, limit: query.limit });
+    return this.engine.listRuns(u.orgId, { ruleId, cursor: query.cursor, limit: query.limit });
   }
 }

@@ -121,6 +121,23 @@ describe("createTenantAwareDb", () => {
     });
   });
 
+  it("never opens a transaction of its own — it borrows the ambient tx or falls through to the pool", async () => {
+    proxy.select();
+
+    const ctx: TenantContext = {
+      orgId: "org-1",
+      audience: "INTERNAL",
+      tx: fakeTx as unknown as TenantTx,
+    };
+
+    await service.run(ctx, async () => {
+      proxy.select();
+      proxy.query.someTable.findFirst();
+    });
+
+    expect(fakeDb.transaction).not.toHaveBeenCalled();
+  });
+
   it("binds methods to the transaction so that `this` inside the method is the tx", async () => {
     const capturedReceiver: { value: object | undefined } = { value: undefined };
     const txWithCapture: FakeTx = {

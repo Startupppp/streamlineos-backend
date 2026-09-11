@@ -1,43 +1,89 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { Redis } from "@upstash/redis";
-import { randomUUID } from "node:crypto";
 import { withSpan } from "../observability/tracing";
-import { getRegionRegistry, hasRegionRegistry } from "../region/region-registry";
+import { CacheFiller } from "./cache-fill";
+import { CacheRegionRouter } from "./cache-region-router";
+import type { ExactCacheKey } from "./cache-keys";
 
 export const REDIS = "REDIS";
+export const REDIS_COMMAND_TIMEOUT = "REDIS_COMMAND_TIMEOUT";
 
+/**
+ * The cache's public surface: key naming, namespace generations, org scoping and
+ * invalidation.
+ *
+ * Two collaborators carry the parts that are their own subject and are testable
+ * without this class. `CacheFiller` (`cache-fill.ts`) owns everything about
+ * turning a miss into a value once — single-flight, the distributed fill lease,
+ * TTL jitter and the degraded-outage memo. `CacheRegionRouter`
+ * (`cache-region-router.ts`) owns which Redis an org's entries live in and what
+ * its keys are prefixed with. Both are constructed here and neither imports this
+ * file, so the dependency runs one way and no file exists only to forward calls.
+ */
 @Injectable()
 export class CacheService {
   private readonly logger = new Logger(CacheService.name);
-  private readonly inFlight = new Map<string, Promise<unknown>>();
-  private readonly regionalRedis = new Map<string, Redis>();
 
-  private static readonly FILL_LEASE_SECONDS = 10;
-  private static readonly FILL_WAIT_MS = 2_000;
-  private static readonly FILL_POLL_MS = 50;
+  private readonly fill: CacheFiller;
+  private readonly region: CacheRegionRouter;
 
-  constructor(@Inject(REDIS) private readonly redis: Redis | null) {}
+  private static readonly INVALIDATE_ATTEMPTS = 3;
+  private static readonly INVALIDATE_BACKOFF_MS = 20;
 
-  async cached<T>(key: string, fetcher: () => Promise<T>, ttlSeconds = 300): Promise<T> {
-    return this.cachedWithRedis(this.redis, key, fetcher, ttlSeconds);
+  /**
+   * A read that fails on a Redis error degrades to the database and is correct.
+   * An *invalidation* that fails leaves a stale entry serving, so it is the one
+   * operation that must not be dropped on the first error. Failures are retried,
+   * and a final failure is an error with a stable marker rather than a warning,
+   * because a silently swallowed invalidation makes the next outage invisible.
+   */
+  private static readonly DROPPED_MARKER = "cache.invalidation.dropped";
+
+  private droppedInvalidations = 0;
+
+  constructor(
+    @Inject(REDIS) private readonly redis: Redis | null,
+    @Inject(REDIS_COMMAND_TIMEOUT) private readonly commandTimeoutMs = 3_000,
+  ) {
+    this.fill = new CacheFiller((operation) => this.timedRedis(operation));
+    this.region = new CacheRegionRouter(redis, commandTimeoutMs);
   }
 
-  private async cachedWithRedis<T>(
-    redis: Redis | null,
-    key: string,
-    fetcher: () => Promise<T>,
-    ttlSeconds: number | ((result: T) => number),
-  ): Promise<T> {
-    const existing = this.inFlight.get(key);
-    if (existing) return existing as Promise<T>;
+  /** Dropped invalidations since boot. A non-zero value means stale entries may be serving. */
+  get droppedInvalidationCount(): number {
+    return this.droppedInvalidations;
+  }
 
-    const request = this.loadOrFetch(redis, key, fetcher, ttlSeconds);
-    this.inFlight.set(key, request);
-    try {
-      return await request;
-    } finally {
-      if (this.inFlight.get(key) === request) this.inFlight.delete(key);
+  /** Entries served from the degraded-path memo since boot. Non-zero means Redis was unreachable. */
+  get outageMemoServedCount(): number {
+    return this.fill.outageMemoServedCount;
+  }
+
+  private async invalidateWithRetry(
+    label: string,
+    target: string,
+    operation: () => Promise<unknown>,
+  ): Promise<void> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= CacheService.INVALIDATE_ATTEMPTS; attempt++) {
+      try {
+        await this.timedRedis(operation);
+        return;
+      } catch (err) {
+        lastError = err;
+        if (attempt < CacheService.INVALIDATE_ATTEMPTS)
+          await this.delay(CacheService.INVALIDATE_BACKOFF_MS * attempt);
+      }
     }
+    this.droppedInvalidations++;
+    this.logger.error(
+      `${CacheService.DROPPED_MARKER} ${label} target=${target} attempts=${String(CacheService.INVALIDATE_ATTEMPTS)}`,
+      lastError,
+    );
+  }
+
+  async cached<T>(key: ExactCacheKey, fetcher: () => Promise<T>, ttlSeconds = 300): Promise<T> {
+    return this.fill.run(this.redis, key, fetcher, ttlSeconds);
   }
 
   /**
@@ -51,79 +97,15 @@ export class CacheService {
     ttlSeconds = 300,
   ): Promise<T> {
     const version = await this.namespaceVersionWithRedis(this.redis, namespace);
-    return this.cachedWithRedis(this.redis, `${namespace}:v${version}:${key}`, fetcher, ttlSeconds);
+    return this.fill.run(this.redis, `${namespace}:v${version}:${key}`, fetcher, ttlSeconds);
   }
 
   async invalidateNamespace(namespace: string): Promise<void> {
     const redis = this.redis;
     if (!redis) return;
-    try {
-      await this.timedRedis(() => redis.incr(this.namespaceVersionKey(namespace)));
-    } catch (err) {
-      this.logger.warn(`cache invalidateNamespace failed: ${namespace}`, err);
-      return;
-    }
-  }
-
-  private async loadOrFetch<T>(
-    redis: Redis | null,
-    key: string,
-    fetcher: () => Promise<T>,
-    ttlSeconds: number | ((result: T) => number),
-  ): Promise<T> {
-    if (!redis) return fetcher();
-    try {
-      const hit = await this.timedRedis(() => redis.get<T>(key));
-      if (hit !== null) return hit;
-    } catch {
-      return fetcher();
-    }
-
-    const leaseKey = `cache:fill-lease:${key}`;
-    const leaseToken = randomUUID();
-    let acquired: boolean;
-    try {
-      acquired = (await this.timedRedis(() => redis.set(leaseKey, leaseToken, {
-        ex: CacheService.FILL_LEASE_SECONDS,
-        nx: true,
-      }))) === "OK";
-    } catch {
-      return fetcher();
-    }
-
-    if (!acquired) {
-      const deadline = Date.now() + CacheService.FILL_WAIT_MS;
-      while (Date.now() < deadline) {
-        await this.delay(CacheService.FILL_POLL_MS);
-        try {
-          const filled = await this.timedRedis(() => redis.get<T>(key));
-          if (filled !== null) return filled;
-        } catch {
-          return fetcher();
-        }
-      }
-      return fetcher();
-    }
-
-    try {
-      const data = await fetcher();
-      const ttl = typeof ttlSeconds === "function" ? ttlSeconds(data) : ttlSeconds;
-      try {
-        await this.timedRedis(() => redis.set(key, data, { ex: ttl }));
-      } catch {
-        return data;
-      }
-      return data;
-    } finally {
-      try {
-        await this.timedRedis(() => redis.eval<[string], number>(
-          'if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) else return 0 end',
-          [leaseKey],
-          [leaseToken],
-        ));
-      } catch {
-      }
-    }
+    await this.invalidateWithRetry("invalidateNamespace", namespace, () =>
+      redis.incr(this.namespaceVersionKey(namespace)),
+    );
   }
 
   private namespaceVersionKey(namespace: string): string {
@@ -140,14 +122,27 @@ export class CacheService {
   }
 
   private timedRedis<T>(operation: () => Promise<T>): Promise<T> {
-    return withSpan('cache.roundtrip', operation, { attributes: { seam: 'cache.roundtrip' } });
+    return withSpan(
+      "cache.roundtrip",
+      () => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const deadline = new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`Redis command timed out after ${this.commandTimeoutMs}ms`)),
+            this.commandTimeoutMs,
+          );
+        });
+        return Promise.race([operation(), deadline]).finally(() => clearTimeout(timer));
+      },
+      { attributes: { seam: "cache.roundtrip" } },
+    );
   }
 
   private delay(milliseconds: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, milliseconds));
   }
 
-  async get<T>(key: string): Promise<T | null> {
+  async get<T>(key: ExactCacheKey): Promise<T | null> {
     const redis = this.redis;
     if (!redis) return null;
     try {
@@ -157,7 +152,7 @@ export class CacheService {
     }
   }
 
-  async set(key: string, value: unknown, ttlSeconds: number): Promise<void> {
+  async set(key: ExactCacheKey, value: unknown, ttlSeconds: number): Promise<void> {
     const redis = this.redis;
     if (!redis) return;
     try {
@@ -167,76 +162,109 @@ export class CacheService {
     }
   }
 
-  async invalidate(key: string): Promise<void> {
+  async invalidate(key: ExactCacheKey): Promise<void> {
+    this.fill.drop(key);
     const redis = this.redis;
     if (!redis) return;
-    try {
-      await this.timedRedis(() => redis.del(key));
-    } catch (err) {
-      this.logger.warn(`cache invalidate failed: ${key}`, err);
-      return;
+    await this.invalidateWithRetry("invalidate", key, () =>
+      redis.del(key, this.fill.leaseKey(key)),
+    );
+  }
+
+  /**
+   * One `DEL` for many keys instead of one round trip per key.
+   *
+   * `await Promise.all(users.map((u) => cache.invalidate(userSession(u.id))))`
+   * reads as batched and is not: it issues one Redis command per user, all
+   * concurrently against a single Upstash connection. Measured call sites before
+   * this existed — `rbac/role-member` and `rbac/role-permission` at `.limit(500)`,
+   * and `access/entitlements` at `.limit(10000)` — so one module toggle could fan
+   * out to ten thousand commands.
+   *
+   * `DEL` is variadic, so the same work is `ceil(n / INVALIDATE_KEY_CHUNK)`
+   * commands. The chunk exists because the Upstash REST transport puts the whole
+   * command in one request body, so an unbounded key list becomes an unbounded
+   * payload; 256 keys is well inside that limit and keeps a single failed chunk
+   * from dropping every invalidation in the batch.
+   *
+   * Duplicates are collapsed first: the caller's list is usually derived from
+   * rows, and `DEL k k` bills twice for one deletion.
+   */
+  private static readonly INVALIDATE_KEY_CHUNK = 256;
+
+  async invalidateMany(keys: readonly ExactCacheKey[]): Promise<void> {
+    for (const key of keys) this.fill.drop(key);
+    const redis = this.redis;
+    if (!redis) return;
+    const unique = [...new Set(keys.flatMap((key) => [key, this.fill.leaseKey(key)]))];
+    for (let i = 0; i < unique.length; i += CacheService.INVALIDATE_KEY_CHUNK) {
+      const chunk = unique.slice(i, i + CacheService.INVALIDATE_KEY_CHUNK);
+      const [head, ...rest] = chunk;
+      if (head === undefined) continue;
+      await this.invalidateWithRetry(
+        "invalidateMany",
+        `${String(chunk.length)} keys`,
+        () => redis.del(head, ...rest),
+      );
     }
   }
 
-  async del(key: string): Promise<void> {
+  /**
+   * The generation-counter half of the same problem: `invalidateNamespace` is an
+   * `INCR`, which cannot be folded into a `DEL`, so a per-user namespace bust
+   * stayed one round trip per user even after `invalidateMany`. A pipeline sends
+   * the whole chunk in one request.
+   */
+  async invalidateNamespaceMany(namespaces: readonly string[]): Promise<void> {
+    const redis = this.redis;
+    if (!redis) return;
+    const unique = [...new Set(namespaces)];
+    for (let i = 0; i < unique.length; i += CacheService.INVALIDATE_KEY_CHUNK) {
+      const chunk = unique.slice(i, i + CacheService.INVALIDATE_KEY_CHUNK);
+      if (chunk.length === 0) continue;
+      await this.invalidateWithRetry(
+        "invalidateNamespaceMany",
+        `${String(chunk.length)} namespaces`,
+        () => {
+          const pipeline = redis.pipeline();
+          for (const ns of chunk) pipeline.incr(this.namespaceVersionKey(ns));
+          return pipeline.exec();
+        },
+      );
+    }
+  }
+
+  async del(key: ExactCacheKey): Promise<void> {
     return this.invalidate(key);
   }
 
-  private applyJitter(baseTtl: number): number {
-    return Math.round(baseTtl * (0.85 + Math.random() * 0.3));
-  }
-
-  private async cellPrefixForOrg(orgId: string): Promise<string | null> {
-    if (!hasRegionRegistry()) return null;
-    try {
-      return await getRegionRegistry().cacheKeyPrefixForOrg(orgId);
-    } catch {
-      return null;
-    }
-  }
-
-  private async redisForOrg(orgId: string): Promise<Redis | null> {
-    if (!hasRegionRegistry()) return this.redis;
-    try {
-      const config = await getRegionRegistry().cacheConfigForOrg(orgId);
-      if (!config.upstashUrl || !config.upstashToken) return this.redis;
-      const existing = this.regionalRedis.get(config.upstashUrl);
-      if (existing) return existing;
-      const client = new Redis({ url: config.upstashUrl, token: config.upstashToken });
-      this.regionalRedis.set(config.upstashUrl, client);
-      return client;
-    } catch {
-      return this.redis;
-    }
-  }
-
-  async orgScopedKey(orgId: string, localKey: string): Promise<string> {
-    const prefix = await this.cellPrefixForOrg(orgId);
-    return prefix ? `${prefix}:${orgId}:${localKey}` : `${orgId}:${localKey}`;
+  async orgScopedKey(orgId: string, localKey: ExactCacheKey): Promise<string> {
+    return this.region.scopedKey(orgId, localKey);
   }
 
   async cachedForOrg<T>(
     orgId: string,
-    localKey: string,
+    localKey: ExactCacheKey,
     fetcher: () => Promise<T>,
     baseTtl = 300,
   ): Promise<T> {
-    const redis = await this.redisForOrg(orgId);
-    const key = await this.orgScopedKey(orgId, localKey);
-    return this.cachedWithRedis(redis, key, fetcher, this.applyJitter(baseTtl));
+    const redis = await this.region.redisForOrg(orgId);
+    const key = await this.region.scopedKey(orgId, localKey);
+    return this.fill.run(redis, key, fetcher, baseTtl);
   }
 
   async cachedForOrgWith<T>(
     orgId: string,
-    localKey: string,
+    localKey: ExactCacheKey,
     fetcher: () => Promise<T>,
     ttlFn: (result: T) => number,
     maxTtl: number,
   ): Promise<T> {
-    const redis = await this.redisForOrg(orgId);
-    const key = await this.orgScopedKey(orgId, localKey);
-    const bounded = (result: T): number => Math.min(Math.max(ttlFn(result), 1), maxTtl);
-    return this.cachedWithRedis(redis, key, fetcher, bounded);
+    const redis = await this.region.redisForOrg(orgId);
+    const key = await this.region.scopedKey(orgId, localKey);
+    const bounded = (result: T): number =>
+      Math.min(Math.max(this.fill.jitterTtl(ttlFn(result)), 1), maxTtl);
+    return this.fill.run(redis, key, fetcher, bounded);
   }
 
   async cachedVersionedForOrg<T>(
@@ -246,35 +274,51 @@ export class CacheService {
     fetcher: () => Promise<T>,
     baseTtl = 300,
   ): Promise<T> {
-    const redis = await this.redisForOrg(orgId);
-    const ns = await this.orgScopedKey(orgId, namespace);
+    const redis = await this.region.redisForOrg(orgId);
+    const ns = await this.region.scopedKey(orgId, namespace);
     const version = await this.namespaceVersionWithRedis(redis, ns);
-    return this.cachedWithRedis(redis, `${ns}:v${version}:${localKey}`, fetcher, this.applyJitter(baseTtl));
+    return this.fill.run(redis, `${ns}:v${version}:${localKey}`, fetcher, baseTtl);
   }
 
   async invalidateNamespaceForOrg(orgId: string, namespace: string): Promise<void> {
-    const redis = await this.redisForOrg(orgId);
-    const ns = await this.orgScopedKey(orgId, namespace);
+    const redis = await this.region.redisForOrg(orgId);
+    const ns = await this.region.scopedKey(orgId, namespace);
     if (!redis) return;
-    try {
-      await this.timedRedis(() => redis.incr(this.namespaceVersionKey(ns)));
-    } catch (err) {
-      this.logger.warn(`cache invalidateNamespaceForOrg failed: ${ns}`, err);
-      return;
-    }
+    await this.invalidateWithRetry("invalidateNamespaceForOrg", ns, () =>
+      redis.incr(this.namespaceVersionKey(ns)),
+    );
   }
 
-  async invalidateForOrg(orgId: string, localKey: string): Promise<void> {
-    const redis = await this.redisForOrg(orgId);
-    const prefix = await this.cellPrefixForOrg(orgId);
-    const key = prefix ? `${prefix}:${orgId}:${localKey}` : `${orgId}:${localKey}`;
+  async invalidateForOrg(orgId: string, localKey: ExactCacheKey): Promise<void> {
+    const redis = await this.region.redisForOrg(orgId);
+    const key = await this.region.scopedKey(orgId, localKey);
+    this.fill.drop(key);
     if (!redis) return;
-    try {
-      await this.timedRedis(() => redis.del(key));
-    } catch (err) {
-      this.logger.warn(`cache invalidateForOrg failed: ${key}`, err);
-      return;
-    }
+    await this.invalidateWithRetry("invalidateForOrg", key, () =>
+      redis.del(key, this.fill.leaseKey(key)),
+    );
   }
 
+  async invalidateManyForOrg(
+    orgId: string,
+    localKeys: readonly ExactCacheKey[],
+  ): Promise<void> {
+    const redis = await this.region.redisForOrg(orgId);
+    const scoped = await Promise.all(
+      [...new Set(localKeys)].map((localKey) => this.region.scopedKey(orgId, localKey)),
+    );
+    for (const key of scoped) this.fill.drop(key);
+    if (!redis) return;
+    const unique = [...new Set(scoped.flatMap((key) => [key, this.fill.leaseKey(key)]))];
+    for (let i = 0; i < unique.length; i += CacheService.INVALIDATE_KEY_CHUNK) {
+      const chunk = unique.slice(i, i + CacheService.INVALIDATE_KEY_CHUNK);
+      const [head, ...rest] = chunk;
+      if (head === undefined) continue;
+      await this.invalidateWithRetry(
+        "invalidateManyForOrg",
+        `${String(chunk.length)} keys`,
+        () => redis.del(head, ...rest),
+      );
+    }
+  }
 }

@@ -1,6 +1,11 @@
 import type { SQL } from "drizzle-orm";
 import { forEachOrg } from "../for-each-org";
 import { getTenantContext } from "../tenant-context";
+import {
+  getObservabilityContext,
+  runWithObservabilityContext,
+} from "../../observability/observability-context";
+import { logger } from "../../logger/logger.service";
 import type { Db } from "../../../db/drizzle.module";
 import {
   clearRegionRegistry,
@@ -32,16 +37,23 @@ function makeMockDb(orgIds: string[]): { db: Db; capture: ChainCapture; execute:
   interface SelectChain {
     from: jest.Mock<SelectChain, []>;
     where: jest.Mock<SelectChain, [SQL]>;
-    orderBy: jest.Mock<Promise<{ id: string }[]>, []>;
+    orderBy: jest.Mock<SelectChain, []>;
+    limit: jest.Mock<Promise<{ id: string }[]>, [number]>;
   }
 
+  let drained = 0;
   const chain: SelectChain = {
     from: jest.fn((): SelectChain => chain),
     where: jest.fn((condition: SQL): SelectChain => {
       capture.where = condition;
       return chain;
     }),
-    orderBy: jest.fn(() => Promise.resolve(rows)),
+    orderBy: jest.fn((): SelectChain => chain),
+    limit: jest.fn((pageSize: number) => {
+      const page = rows.slice(drained, drained + pageSize);
+      drained += page.length;
+      return Promise.resolve(page);
+    }),
   };
 
   const db = {
@@ -126,6 +138,123 @@ describe("forEachOrg", () => {
     await forEachOrg(db, "test-sweep", jest.fn());
 
     expect(getTenantContext()).toBeUndefined();
+  });
+});
+
+/**
+ * Ascending-id enumeration with a per-tick budget is a starvation machine: the
+ * lowest org id gets first refusal on every tick forever. Rotation is what makes
+ * "every tenant is reached within N ticks" true instead of "eventually, maybe".
+ */
+describe("forEachOrg — rotation makes the sweep resumable", () => {
+  it("starts at the organization after the cursor and wraps around to the ones before it", async () => {
+    const { db } = makeMockDb(["org-a", "org-b", "org-c", "org-d"]);
+    const seen: string[] = [];
+
+    const result = await forEachOrg(
+      db,
+      "test-sweep",
+      async (_tx, orgId) => { seen.push(orgId); },
+      "write",
+      { startAfterOrgId: "org-b" },
+    );
+
+    expect(seen).toEqual(["org-c", "org-d", "org-a", "org-b"]);
+    expect(result).toEqual({ organizations: 4, succeeded: 4, failed: 0 });
+  });
+
+  it("wraps to the lowest id when the cursor is at or past the highest", async () => {
+    const { db } = makeMockDb(["org-a", "org-b", "org-c"]);
+    const seen: string[] = [];
+
+    await forEachOrg(
+      db,
+      "test-sweep",
+      async (_tx, orgId) => { seen.push(orgId); },
+      "write",
+      { startAfterOrgId: "org-z" },
+    );
+
+    expect(seen).toEqual(["org-a", "org-b", "org-c"]);
+  });
+
+  it("enumerates in plain ascending order when no cursor is given", async () => {
+    const { db } = makeMockDb(["org-a", "org-b", "org-c"]);
+    const seen: string[] = [];
+
+    await forEachOrg(
+      db,
+      "test-sweep",
+      async (_tx, orgId) => { seen.push(orgId); },
+      "write",
+      { startAfterOrgId: null },
+    );
+
+    expect(seen).toEqual(["org-a", "org-b", "org-c"]);
+  });
+});
+
+describe("forEachOrg — the enumeration drains every page, not just the first", () => {
+  const pageSize = 500;
+
+  it("visits organizations past the first page", async () => {
+    const orgIds = Array.from({ length: pageSize + 137 }, (_, i) => `org-${String(i).padStart(4, "0")}`);
+    const { db } = makeMockDb(orgIds);
+    const seen: string[] = [];
+
+    const result = await forEachOrg(db, "test-sweep", async (_tx, orgId) => { seen.push(orgId); });
+
+    expect(seen).toHaveLength(orgIds.length);
+    expect(seen[0]).toBe(orgIds[0]);
+    expect(seen[seen.length - 1]).toBe(orgIds[orgIds.length - 1]);
+    expect(result.organizations).toBe(orgIds.length);
+  });
+
+  it("asks for one more page when the last one came back exactly full", async () => {
+    const orgIds = Array.from({ length: pageSize }, (_, i) => `org-${String(i).padStart(4, "0")}`);
+    const { db } = makeMockDb(orgIds);
+    const seen: string[] = [];
+
+    await forEachOrg(db, "test-sweep", async (_tx, orgId) => { seen.push(orgId); });
+
+    expect(seen).toHaveLength(pageSize);
+    expect(new Set(seen).size).toBe(pageSize);
+  });
+});
+
+describe("forEachOrg — stopWhen bounds the fanout", () => {
+  it("stops before opening the next organization's transaction, not merely before its work", async () => {
+    const { db, execute } = makeMockDb(["org-a", "org-b", "org-c", "org-d"]);
+    const seen: string[] = [];
+
+    const result = await forEachOrg(
+      db,
+      "test-sweep",
+      async (_tx, orgId) => { seen.push(orgId); },
+      "write",
+      { stopWhen: () => seen.length >= 2 },
+    );
+
+    expect(seen).toEqual(["org-a", "org-b"]);
+    // The GUC statement is the first thing inside withTenant's transaction, so
+    // its call count is the number of transactions actually opened.
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ organizations: 2, succeeded: 2, failed: 0 });
+  });
+
+  it("visits every organization when stopWhen never fires", async () => {
+    const { db, execute } = makeMockDb(["org-a", "org-b", "org-c"]);
+
+    const result = await forEachOrg(
+      db,
+      "test-sweep",
+      jest.fn(),
+      "write",
+      { stopWhen: () => false },
+    );
+
+    expect(execute).toHaveBeenCalledTimes(3);
+    expect(result).toEqual({ organizations: 3, succeeded: 3, failed: 0 });
   });
 });
 
@@ -247,5 +376,76 @@ describe("forEachOrg — cell-aware enumeration", () => {
 
     expect(seen).toEqual([]);
     expect(result.organizations).toBe(0);
+  });
+});
+
+describe("forEachOrg — background work states its tenant in the log context", () => {
+  it("names the organisation on every line the callback emits, not only in the caller's meta", async () => {
+    const { db } = makeMockDb(["org-a", "org-b"]);
+    const lines: Record<string, unknown>[] = [];
+    const spy = jest.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      lines.push(JSON.parse(String(chunk)) as Record<string, unknown>);
+      return true;
+    });
+
+    try {
+      await forEachOrg(db, "retention-sweep", async () => {
+        logger.info("purged a batch");
+      });
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(lines.map((line) => line["orgId"])).toEqual(["org-a", "org-b"]);
+    expect(lines.every((line) => line["route"] === "sweep:retention-sweep")).toBe(true);
+  });
+
+  it("carries the triggering request's correlation id through, so the sweep joins its cron call", async () => {
+    const { db } = makeMockDb(["org-a", "org-b"]);
+    const seen: (string | undefined)[] = [];
+
+    await runWithObservabilityContext(
+      { correlationId: "cid-cron-tick", route: "/cron/retention", method: "POST" },
+      () =>
+        forEachOrg(db, "retention-sweep", async () => {
+          seen.push(getObservabilityContext()?.correlationId);
+        }),
+    );
+
+    expect(seen).toEqual(["cid-cron-tick", "cid-cron-tick"]);
+  });
+
+  it("(bite proof) the ambient context is not mutated — the caller's orgId survives the sweep", async () => {
+    const { db } = makeMockDb(["org-a"]);
+
+    await runWithObservabilityContext(
+      { correlationId: "cid-cron-tick", orgId: "org-trigger" },
+      async () => {
+        await forEachOrg(db, "retention-sweep", async () => undefined);
+        expect(getObservabilityContext()?.orgId).toBe("org-trigger");
+      },
+    );
+  });
+
+  it("a failed organization's error line carries that organization at the top level", async () => {
+    const { db } = makeMockDb(["org-a"]);
+    const lines: Record<string, unknown>[] = [];
+    const spy = jest.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+      lines.push(JSON.parse(String(chunk)) as Record<string, unknown>);
+      return true;
+    });
+
+    let result;
+    try {
+      result = await forEachOrg(db, "retention-sweep", async () => {
+        throw new Error("boom");
+      });
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(result).toMatchObject({ organizations: 1, succeeded: 0, failed: 1 });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({ orgId: "org-a", route: "sweep:retention-sweep" });
   });
 });

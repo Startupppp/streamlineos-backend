@@ -1,5 +1,6 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { StorageController } from "./storage.controller";
+import { MediaTransformRunner } from "./media-transform.runner";
 import { StorageService } from "./storage.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
@@ -8,7 +9,6 @@ import type { AppConfig } from "../../config/env.validation";
 function makeStorageConfig(publicUrl?: string): AppConfig {
   return {
     NODE_ENV: "test",
-    RBAC_MIGRATION_MODE: "off",
     PORT: 1500,
     DATABASE_URL: "postgres://test",
     BACKEND_JWT_SECRET: "x".repeat(44),
@@ -40,6 +40,19 @@ function mockRes() {
   } as unknown as import("express").Response;
 }
 
+function tenantTransactionSupport(query: Record<string, unknown>) {
+  const tx = { query, execute: jest.fn().mockResolvedValue([]) };
+  const relocationTargets = {
+    from: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockResolvedValue([]),
+  };
+  return {
+    select: jest.fn().mockReturnValue(relocationTargets),
+    transaction: jest.fn(async (run: (tx: unknown) => Promise<unknown>) => run(tx)),
+  };
+}
+
 describe("StorageController.download — cross-org file isolation", () => {
   function buildDb(records: {
     documents?: { orgId: string };
@@ -50,19 +63,18 @@ describe("StorageController.download — cross-org file isolation", () => {
     payslipPublications?: { orgId: string };
     candidateDocumentsVault?: { orgId: string };
   }) {
-    return {
-      query: {
-        documents: { findFirst: jest.fn().mockResolvedValue(records.documents ?? null) },
-        onboardingDocuments: { findFirst: jest.fn().mockResolvedValue(records.onboardingDocuments ?? null) },
-        expenses: { findFirst: jest.fn().mockResolvedValue(records.expenses ?? null) },
-        reimbursements: { findFirst: jest.fn().mockResolvedValue(records.reimbursements ?? null) },
-        handbookVersions: { findFirst: jest.fn().mockResolvedValue(records.handbookVersions ?? null) },
-        payslipPublications: { findFirst: jest.fn().mockResolvedValue(records.payslipPublications ?? null) },
-        candidateDocumentsVault: {
-          findFirst: jest.fn().mockResolvedValue(records.candidateDocumentsVault ?? null),
-        },
+    const query = {
+      documents: { findFirst: jest.fn().mockResolvedValue(records.documents ?? null) },
+      onboardingDocuments: { findFirst: jest.fn().mockResolvedValue(records.onboardingDocuments ?? null) },
+      expenses: { findFirst: jest.fn().mockResolvedValue(records.expenses ?? null) },
+      reimbursements: { findFirst: jest.fn().mockResolvedValue(records.reimbursements ?? null) },
+      handbookVersions: { findFirst: jest.fn().mockResolvedValue(records.handbookVersions ?? null) },
+      payslipPublications: { findFirst: jest.fn().mockResolvedValue(records.payslipPublications ?? null) },
+      candidateDocumentsVault: {
+        findFirst: jest.fn().mockResolvedValue(records.candidateDocumentsVault ?? null),
       },
     };
+    return { query, ...tenantTransactionSupport(query) };
   }
 
   function buildStorage() {
@@ -77,15 +89,34 @@ describe("StorageController.download — cross-org file isolation", () => {
   const audit = { log: jest.fn() };
   const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Map()) };
 
-  it("404s a cross-org download of an onboarding document (existence oracle prevention)", async () => {
-    const db = buildDb({ onboardingDocuments: { orgId: "org-B" } });
+  function buildController(db: object) {
+    const storage = buildStorage();
+    const quarantine = {
+      isKeyBlocked: jest.fn().mockResolvedValue(false),
+      getTotalUsageBytes: jest.fn().mockResolvedValue(0),
+      getTotalUsageBytesForUser: jest.fn().mockResolvedValue(0),
+      begin: jest.fn().mockResolvedValue("qr-1"),
+      markClean: jest.fn(),
+      markInfected: jest.fn(),
+      markError: jest.fn(),
+      recordMeasuredObject: jest.fn(),
+      softDelete: jest.fn(),
+    };
     const controller = new StorageController(
       db as never,
-      buildStorage() as never,
+      storage as never,
       audit as never,
       access as never,
       { scan: jest.fn() } as never,
+      quarantine as never,
+      new MediaTransformRunner(),
     );
+    return { controller, storage };
+  }
+
+  it("404s a cross-org download of an onboarding document (existence oracle prevention)", async () => {
+    const db = buildDb({ onboardingDocuments: { orgId: "org-B" } });
+    const { controller } = buildController(db);
 
     await expect(
       controller.download({ key: "key123", expiresIn: 3600 }, ctx("org-A"), mockRes()),
@@ -94,13 +125,7 @@ describe("StorageController.download — cross-org file isolation", () => {
 
   it("404s a cross-org download of an expense receipt (existence oracle prevention)", async () => {
     const db = buildDb({ expenses: { orgId: "org-B" } });
-    const controller = new StorageController(
-      db as never,
-      buildStorage() as never,
-      audit as never,
-      access as never,
-      { scan: jest.fn() } as never,
-    );
+    const { controller } = buildController(db);
 
     await expect(
       controller.download({ key: "key123", expiresIn: 3600 }, ctx("org-A"), mockRes()),
@@ -109,28 +134,16 @@ describe("StorageController.download — cross-org file isolation", () => {
 
   it("requires the dedicated scoped endpoint for a same-org onboarding document", async () => {
     const db = buildDb({ onboardingDocuments: { orgId: "org-A" } });
-    const controller = new StorageController(
-      db as never,
-      buildStorage() as never,
-      audit as never,
-      access as never,
-      { scan: jest.fn() } as never,
-    );
+    const { controller } = buildController(db);
 
     await expect(
       controller.download({ key: "key123", expiresIn: 3600 }, ctx("org-A"), mockRes()),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it("allows a download when a NON-sensitive key isn't tracked in any known table", async () => {
+  it("allows a download when a non-sensitive, non-chat key isn't tracked in any known table", async () => {
     const db = buildDb({});
-    const controller = new StorageController(
-      db as never,
-      buildStorage() as never,
-      audit as never,
-      access as never,
-      { scan: jest.fn() } as never,
-    );
+    const { controller } = buildController(db);
     const res = mockRes();
 
     await controller.download({ key: "key123", expiresIn: 3600 }, ctx("org-A"), res);
@@ -140,13 +153,7 @@ describe("StorageController.download — cross-org file isolation", () => {
 
   it("404s a cross-org payslip download (existence oracle prevention)", async () => {
     const db = buildDb({ payslipPublications: { orgId: "org-B" } });
-    const controller = new StorageController(
-      db as never,
-      buildStorage() as never,
-      audit as never,
-      access as never,
-      { scan: jest.fn() } as never,
-    );
+    const { controller } = buildController(db);
 
     await expect(
       controller.download({ key: "payroll/run-9/payslip.pdf", expiresIn: 3600 }, ctx("org-A"), mockRes()),
@@ -155,13 +162,7 @@ describe("StorageController.download — cross-org file isolation", () => {
 
   it("404s a cross-org candidate-vault download (existence oracle prevention)", async () => {
     const db = buildDb({ candidateDocumentsVault: { orgId: "org-B" } });
-    const controller = new StorageController(
-      db as never,
-      buildStorage() as never,
-      audit as never,
-      access as never,
-      { scan: jest.fn() } as never,
-    );
+    const { controller } = buildController(db);
 
     await expect(
       controller.download({ key: "candidates/cv.pdf", expiresIn: 3600 }, ctx("org-A"), mockRes()),
@@ -170,13 +171,7 @@ describe("StorageController.download — cross-org file isolation", () => {
 
   it("404s an UNTRACKED sensitive key (fails closed, prevents existence oracle)", async () => {
     const db = buildDb({});
-    const controller = new StorageController(
-      db as never,
-      buildStorage() as never,
-      audit as never,
-      access as never,
-      { scan: jest.fn() } as never,
-    );
+    const { controller } = buildController(db);
 
     await expect(
       controller.download({ key: "payroll/unregistered.pdf", expiresIn: 3600 }, ctx("org-A"), mockRes()),
@@ -185,13 +180,7 @@ describe("StorageController.download — cross-org file isolation", () => {
 
   it("requires the dedicated scoped endpoint for a same-org payslip", async () => {
     const db = buildDb({ payslipPublications: { orgId: "org-A" } });
-    const controller = new StorageController(
-      db as never,
-      buildStorage() as never,
-      audit as never,
-      access as never,
-      { scan: jest.fn() } as never,
-    );
+    const { controller } = buildController(db);
 
     await expect(
       controller.download({ key: "payroll/run-9/payslip.pdf", expiresIn: 3600 }, ctx("org-A"), mockRes()),
@@ -211,13 +200,7 @@ describe("StorageController.download — cross-org file isolation", () => {
         organizationMembers: { findFirst: jest.fn().mockResolvedValue({ orgId: "org-B" }) },
       },
     };
-    const controller = new StorageController(
-      db as never,
-      buildStorage() as never,
-      audit as never,
-      access as never,
-      { scan: jest.fn() } as never,
-    );
+    const { controller } = buildController(db);
 
     await expect(
       controller.download({ key: "receipts/expense.pdf", expiresIn: 3600 }, ctx("org-A"), mockRes()),
@@ -226,14 +209,7 @@ describe("StorageController.download — cross-org file isolation", () => {
 
   it("ALLOW — same-org generic file download succeeds (control for cross-org denial)", async () => {
     const db = buildDb({ expenses: { orgId: "org-A" } });
-    const storage = buildStorage();
-    const controller = new StorageController(
-      db as never,
-      storage as never,
-      audit as never,
-      access as never,
-      { scan: jest.fn() } as never,
-    );
+    const { controller, storage } = buildController(db);
     const res = mockRes();
 
     await controller.download({ key: "receipts/expense.pdf", expiresIn: 3600 }, ctx("org-A"), res);
@@ -243,14 +219,7 @@ describe("StorageController.download — cross-org file isolation", () => {
 
   it("rejects a protected-folder upload without its feature permission", async () => {
     const db = buildDb({});
-    const storage = buildStorage();
-    const controller = new StorageController(
-      db as never,
-      storage as never,
-      audit as never,
-      access as never,
-      { scan: jest.fn() } as never,
-    );
+    const { controller, storage } = buildController(db);
     const file = {
       size: 4,
       mimetype: "application/pdf",
@@ -294,6 +263,8 @@ describe("StorageController.upload — interceptor fileSize limit matches MAX_UP
       audit as never,
       access as never,
       avScanner as never,
+      { isKeyBlocked: jest.fn().mockResolvedValue(false), getTotalUsageBytes: jest.fn().mockResolvedValue(0), getTotalUsageBytesForUser: jest.fn().mockResolvedValue(0), begin: jest.fn().mockResolvedValue("qr-1"), markClean: jest.fn(), markInfected: jest.fn(), markError: jest.fn() } as never,
+      new MediaTransformRunner(),
     );
 
     const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
@@ -315,22 +286,23 @@ describe("StorageController.upload — interceptor fileSize limit matches MAX_UP
   });
 
   it("accepts a file exactly at MAX_UPLOAD_SIZE boundary (10 MB) if type is valid", async () => {
-    const db = {
-      query: {
-        documents: { findFirst: jest.fn().mockResolvedValue(null) },
-        onboardingDocuments: { findFirst: jest.fn().mockResolvedValue(null) },
-        expenses: { findFirst: jest.fn().mockResolvedValue(null) },
-        reimbursements: { findFirst: jest.fn().mockResolvedValue(null) },
-        handbookVersions: { findFirst: jest.fn().mockResolvedValue(null) },
-        payslipPublications: { findFirst: jest.fn().mockResolvedValue(null) },
-        candidateDocumentsVault: { findFirst: jest.fn().mockResolvedValue(null) },
-      },
+    const query = {
+      documents: { findFirst: jest.fn().mockResolvedValue(null) },
+      onboardingDocuments: { findFirst: jest.fn().mockResolvedValue(null) },
+      expenses: { findFirst: jest.fn().mockResolvedValue(null) },
+      reimbursements: { findFirst: jest.fn().mockResolvedValue(null) },
+      handbookVersions: { findFirst: jest.fn().mockResolvedValue(null) },
+      payslipPublications: { findFirst: jest.fn().mockResolvedValue(null) },
+      candidateDocumentsVault: { findFirst: jest.fn().mockResolvedValue(null) },
     };
+    const db = { query, ...tenantTransactionSupport(query) };
     const storage = {
       isConfigured: jest.fn().mockReturnValue(true),
       isValidFileKey: jest.fn().mockReturnValue(true),
       getFileKeyFromUrl: jest.fn((v: string) => v),
-      uploadCompressed: jest.fn().mockResolvedValue({ url: "https://cdn.example.com/f.pdf", key: "uploads/f.pdf", size: 10 * 1024 * 1024, mimeType: "application/pdf" }),
+      planUpload: jest.fn().mockResolvedValue({ key: "org-A/uploads/f.pdf", plannedMimeType: "application/pdf" }),
+      compressToKey: jest.fn().mockResolvedValue({ size: 10 * 1024 * 1024, mimeType: "application/pdf", sha256: "aa" }),
+      deleteFileIfPresent: jest.fn().mockResolvedValue(true),
     };
     const audit = { log: jest.fn() };
     const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) };
@@ -342,6 +314,8 @@ describe("StorageController.upload — interceptor fileSize limit matches MAX_UP
       audit as never,
       access as never,
       avScanner as never,
+      { isKeyBlocked: jest.fn().mockResolvedValue(false), getTotalUsageBytes: jest.fn().mockResolvedValue(0), getTotalUsageBytesForUser: jest.fn().mockResolvedValue(0), begin: jest.fn().mockResolvedValue("qr-1"), markClean: jest.fn(), markInfected: jest.fn(), markError: jest.fn(), recordMeasuredObject: jest.fn(), softDelete: jest.fn() } as never,
+      new MediaTransformRunner(),
     );
 
     const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
@@ -364,7 +338,7 @@ describe("StorageController.upload — interceptor fileSize limit matches MAX_UP
 
 describe("StorageService private file references", () => {
   it("extracts only keys belonging to the configured storage base", () => {
-    const storage = new StorageService({} as never, makeStorageConfig("https://files.example.com"));
+    const storage = new StorageService({} as never, makeStorageConfig("https://files.example.com"), { isKeyBlocked: async () => false });
 
     expect(storage.getFileKeyFromUrl("https://files.example.com/onboarding-docs/a.pdf"))
       .toBe("onboarding-docs/a.pdf");
@@ -373,7 +347,7 @@ describe("StorageService private file references", () => {
   });
 
   it("rejects absolute URLs and traversal as object keys", () => {
-    const storage = new StorageService({} as never, makeStorageConfig());
+    const storage = new StorageService({} as never, makeStorageConfig(), { isKeyBlocked: async () => false });
 
     expect(storage.isValidFileKey("onboarding-docs/a.pdf")).toBe(true);
     expect(storage.isValidFileKey("https://attacker.example/a.pdf")).toBe(false);
@@ -382,10 +356,17 @@ describe("StorageService private file references", () => {
 });
 
 describe("StorageController — org-namespaced keys prove their own owner", () => {
-  function buildDb() {
+  function buildDb(kbAttachment: unknown = { pageId: 7, uploadedById: "u1" }) {
     const empty = { findFirst: jest.fn().mockResolvedValue(null) };
+    const selectChain: Record<string, jest.Mock> = {};
+    selectChain["from"] = jest.fn(() => selectChain);
+    selectChain["innerJoin"] = jest.fn(() => selectChain);
+    selectChain["where"] = jest.fn().mockResolvedValue([]);
     return {
+      select: jest.fn(() => selectChain),
       query: {
+        kbPageAttachments: { findFirst: jest.fn().mockResolvedValue(kbAttachment) },
+        kbPages: { findFirst: jest.fn().mockResolvedValue({ id: 7 }) },
         documents: empty,
         onboardingDocuments: empty,
         expenses: empty,
@@ -415,14 +396,16 @@ describe("StorageController — org-namespaced keys prove their own owner", () =
   const audit = { log: jest.fn() };
   const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) };
 
-  function build() {
+  function build(kbAttachment: unknown = { pageId: 7, uploadedById: "u1" }) {
     const storage = buildStorage();
     const controller = new StorageController(
-      buildDb() as never,
+      buildDb(kbAttachment) as never,
       storage as never,
       audit as never,
       access as never,
       { scan: jest.fn() } as never,
+      { isKeyBlocked: jest.fn().mockResolvedValue(false), getTotalUsageBytes: jest.fn().mockResolvedValue(0), getTotalUsageBytesForUser: jest.fn().mockResolvedValue(0), begin: jest.fn().mockResolvedValue("qr-1"), markClean: jest.fn(), markInfected: jest.fn(), markError: jest.fn() } as never,
+      new MediaTransformRunner(),
     );
     return { controller, storage };
   }
@@ -455,6 +438,13 @@ describe("StorageController — org-namespaced keys prove their own owner", () =
     const { controller, storage } = build();
     await controller.image({ key: KEY_A }, ctx("org-A"), mockRes());
     expect(storage.getFileStream).toHaveBeenCalledWith("org-A", KEY_A);
+  });
+
+  it("404s a kb-media key with no attachment row — an orphaned object is not readable", async () => {
+    const { controller } = build(null);
+    await expect(
+      controller.image({ key: KEY_A }, ctx("org-A"), mockRes()),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it("leaves untracked non-namespaced keys on their existing path", async () => {

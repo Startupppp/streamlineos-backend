@@ -127,7 +127,14 @@ describe("[seeded-e2e] CRM import round trip", () => {
       // `merge`, not a second `skip`: row 3 repeats row 1 under a different name
       // and the same address, and the planner folds it into that row rather than
       // discarding it. The bucket did not exist when this expectation was written.
-      expect(preview.summary).toMatchObject({ create: 2, update: 0, merge: 1, skip: 1, total: 4 });
+      expect(preview.summary).toMatchObject({
+        create: 2,
+        update: 0,
+        merge: 1,
+        skip: 1,
+        review: 0,
+        total: 4,
+      });
       expect(preview.needsConfirmation).toHaveLength(0);
 
       // ── The committed result matches the preview ────────────────────────
@@ -245,7 +252,15 @@ describe("[seeded-e2e] CRM import round trip", () => {
       .catch(() => undefined);
   }, 180_000);
 
-  it("refuses to commit the same import twice", async () => {
+  /**
+   * Two halves of one promise, because the commit is durable now.
+   *
+   * `startCommit` is what a person's second click reaches, and it refuses. But a
+   * workflow ATTEMPT re-executes its handler from the top, so `beginCommit` must
+   * not refuse — it has to report the phase already settled, or a retry after a
+   * deploy would fail a run whose work was already done.
+   */
+  it("refuses a second commit, while a retried run finds the phase settled", async () => {
     const preview = await inTenant(() =>
       imports.preview({
         organizationId: orgId,
@@ -260,6 +275,11 @@ describe("[seeded-e2e] CRM import round trip", () => {
     // status but `previewing` or `committing`, which is what stops a retried
     // request creating every row twice.
     await expect(inTenant(() => imports.startCommit(orgId, preview.crmImportId))).rejects.toThrow();
+    // Settled rather than re-walked: the batches a retried workflow step would
+    // re-enter find nothing left to write.
+    await expect(inTenant(() => imports.beginCommit(orgId, preview.crmImportId))).resolves.toMatchObject({
+      settled: true,
+    });
 
     await revert(preview.crmImportId);
   }, 180_000);

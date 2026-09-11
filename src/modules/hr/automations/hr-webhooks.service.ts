@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { createHmac, randomBytes } from "node:crypto";
-import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { hrWebhookSubscriptions, hrWebhookDeliveries } from "../../../db/schema/hr/webhooks";
@@ -19,6 +19,10 @@ import type {
   ListDeliveriesInput,
 } from "./dto/hr-webhook.schemas";
 import { checkWebhookUrl } from "../../../common/security/ssrf-guard";
+import { HR_SCAN_MAX_PAGES, HR_SCAN_PAGE, boundHrReadLimit } from "../hr-read-limits";
+import { buildListResponse } from "../../../common/pagination/pagination";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
+import { outboundTraceHeaders } from "../../../common/outbound/call-provider";
 
 const WEBHOOK_TIMEOUT_MS = 10_000;
 const MAX_ATTEMPTS = 5;
@@ -31,23 +35,30 @@ function backoffMs(attempt: number): number {
   return Math.min(60 * 60_000, Math.pow(2, attempt) * 60_000);
 }
 
+function isHrAutomationEvent(value: string): value is HrAutomationEvent {
+  return HR_AUTOMATION_EVENTS.some((event) => event === value);
+}
+
 @Injectable()
 export class HrWebhooksService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async listSubscriptions(orgId: string, page: number, limit: number) {
-    const offset = (page - 1) * limit;
-    const rows = await this.db.query.hrWebhookSubscriptions.findMany({
-      where: and(
-        eq(hrWebhookSubscriptions.orgId, orgId),
-        isNull(hrWebhookSubscriptions.deletedAt),
-      ),
-      orderBy: [desc(hrWebhookSubscriptions.createdAt)],
-      limit,
-      offset,
-      columns: { secret: false },
-    });
-    return rows;
+  async listSubscriptions(orgId: string, limit: number) {
+    limit = boundHrReadLimit(limit);
+    const where = and(
+      eq(hrWebhookSubscriptions.orgId, orgId),
+      isNull(hrWebhookSubscriptions.deletedAt),
+    );
+    const [rows, [totalRow]] = await Promise.all([
+      this.db.query.hrWebhookSubscriptions.findMany({
+        where,
+        orderBy: [desc(hrWebhookSubscriptions.createdAt)],
+        limit,
+        columns: { secret: false },
+      }),
+      this.db.select({ total: count() }).from(hrWebhookSubscriptions).where(where),
+    ]);
+    return buildListResponse(rows, Number(totalRow?.total ?? 0), { page: 1, pageSize: limit });
   }
 
   async getSubscription(orgId: string, id: number) {
@@ -82,7 +93,7 @@ export class HrWebhooksService {
         .returning();
       return { ...row, secret };
     } catch (err: unknown) {
-      if (err instanceof Error && err.message.includes("23505")) {
+      if (isUniqueViolation(err)) {
         throw new ConflictException(`A webhook named "${input.name}" already exists`);
       }
       throw err;
@@ -116,7 +127,7 @@ export class HrWebhooksService {
       return this.getSubscription(orgId, id);
     } catch (err: unknown) {
       if (err instanceof ConflictException || err instanceof NotFoundException) throw err;
-      if (err instanceof Error && err.message.includes("23505")) {
+      if (isUniqueViolation(err)) {
         throw new ConflictException("A webhook with that name already exists");
       }
       throw err;
@@ -140,17 +151,21 @@ export class HrWebhooksService {
   }
 
   async listDeliveries(orgId: string, subscriptionId: number, params: ListDeliveriesInput) {
+    const limit = boundHrReadLimit(params.limit);
     await this.getSubscription(orgId, subscriptionId);
-    const offset = (params.page - 1) * params.limit;
-    return this.db.query.hrWebhookDeliveries.findMany({
-      where: and(
-        eq(hrWebhookDeliveries.orgId, orgId),
-        eq(hrWebhookDeliveries.subscriptionId, subscriptionId),
-      ),
-      orderBy: [desc(hrWebhookDeliveries.createdAt)],
-      limit: params.limit,
-      offset,
-    });
+    const where = and(
+      eq(hrWebhookDeliveries.orgId, orgId),
+      eq(hrWebhookDeliveries.subscriptionId, subscriptionId),
+    );
+    const [rows, [totalRow]] = await Promise.all([
+      this.db.query.hrWebhookDeliveries.findMany({
+        where,
+        orderBy: [desc(hrWebhookDeliveries.createdAt), desc(hrWebhookDeliveries.id)],
+        limit,
+      }),
+      this.db.select({ total: count() }).from(hrWebhookDeliveries).where(where),
+    ]);
+    return buildListResponse(rows, Number(totalRow?.total ?? 0), { page: 1, pageSize: limit });
   }
 
   getEvents() {
@@ -173,7 +188,8 @@ export class HrWebhooksService {
     });
     if (!sub) throw new NotFoundException("Webhook subscription not found");
 
-    const sampleEvent: HrAutomationEvent = (sub.events[0] as HrAutomationEvent | undefined) ?? "employee.created";
+    const firstEvent = sub.events[0];
+    const sampleEvent: HrAutomationEvent = firstEvent !== undefined && isHrAutomationEvent(firstEvent) ? firstEvent : "employee.created";
     const payload = HR_EVENT_SAMPLE_PAYLOADS[sampleEvent] ?? {};
 
     const [delivery] = await this.db
@@ -217,12 +233,15 @@ export class HrWebhooksService {
       .set({ status: "pending", attempts: 0, error: null, lastAttemptAt: null })
       .where(eq(hrWebhookDeliveries.id, deliveryId));
 
+    if (!isHrAutomationEvent(delivery.event)) {
+      throw new BadRequestException("Delivery references an unknown automation event");
+    }
     void this.attemptDelivery(
       sub.id,
       sub.url,
       sub.secret,
       deliveryId,
-      delivery.event as HrAutomationEvent,
+      delivery.event,
       delivery.payload,
       0,
     );
@@ -240,45 +259,53 @@ export class HrWebhooksService {
     event: HrAutomationEvent,
     payload: Record<string, unknown>,
   ): Promise<void> {
-    const active = await this.db
-      .select()
-      .from(hrWebhookSubscriptions)
-      .where(
-        and(
-          eq(hrWebhookSubscriptions.orgId, orgId),
-          eq(hrWebhookSubscriptions.isActive, true),
-          isNull(hrWebhookSubscriptions.deletedAt),
-          or(
-            sql`${hrWebhookSubscriptions.events} = '{}'`,
-            sql`${hrWebhookSubscriptions.events} @> ARRAY[${event}]::text[]`,
+    let afterSubscriptionId = 0;
+    for (let page = 0; page < HR_SCAN_MAX_PAGES; page++) {
+      const active = await this.db
+        .select()
+        .from(hrWebhookSubscriptions)
+        .where(
+          and(
+            eq(hrWebhookSubscriptions.orgId, orgId),
+            eq(hrWebhookSubscriptions.isActive, true),
+            isNull(hrWebhookSubscriptions.deletedAt),
+            gt(hrWebhookSubscriptions.id, afterSubscriptionId),
+            or(
+              sql`${hrWebhookSubscriptions.events} = '{}'`,
+              sql`${hrWebhookSubscriptions.events} @> ARRAY[${event}]::text[]`,
+            ),
           ),
-        ),
-      )
-      .limit(200);
+        )
+        .orderBy(asc(hrWebhookSubscriptions.id))
+        .limit(HR_SCAN_PAGE);
 
-    if (active.length === 0) return;
+      if (active.length === 0) return;
 
-    const insertedDeliveries = await this.db
-      .insert(hrWebhookDeliveries)
-      .values(
-        active.map((s) => ({
-          orgId,
-          subscriptionId: s.id,
-          event,
-          payload,
-          status: "pending" as const,
-          attempts: 0,
-        })),
-      )
-      .returning();
+      const insertedDeliveries = await this.db
+        .insert(hrWebhookDeliveries)
+        .values(
+          active.map((s) => ({
+            orgId,
+            subscriptionId: s.id,
+            event,
+            payload,
+            status: "pending" as const,
+            attempts: 0,
+          })),
+        )
+        .returning();
 
-    await Promise.allSettled(
-      insertedDeliveries.map((delivery, i) => {
-        const sub = active[i];
-        if (!sub) return Promise.resolve();
-        return this.attemptDelivery(sub.id, sub.url, sub.secret, delivery.id, event, payload, 0);
-      }),
-    );
+      await Promise.allSettled(
+        insertedDeliveries.map((delivery, i) => {
+          const sub = active[i];
+          if (!sub) return Promise.resolve();
+          return this.attemptDelivery(sub.id, sub.url, sub.secret, delivery.id, event, payload, 0);
+        }),
+      );
+
+      if (active.length < HR_SCAN_PAGE) return;
+      afterSubscriptionId = active[active.length - 1].id;
+    }
   }
 
   private async attemptDelivery(
@@ -306,6 +333,7 @@ export class HrWebhooksService {
           "X-StreamlineOS-Signature": signature,
           "X-Webhook-Event": event,
           "X-Webhook-Timestamp": timestamp,
+          ...outboundTraceHeaders(),
         },
         body,
         signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
@@ -386,13 +414,13 @@ export class HrWebhooksService {
     await Promise.allSettled(
       eligible.map((d) => {
         const sub = subMap.get(d.subscriptionId);
-        if (!sub) return Promise.resolve();
+        if (!sub || !isHrAutomationEvent(d.event)) return Promise.resolve();
         return this.attemptDelivery(
           sub.id,
           sub.url,
           sub.secret,
           d.id,
-          d.event as HrAutomationEvent,
+          d.event,
           d.payload,
           d.attempts,
         );

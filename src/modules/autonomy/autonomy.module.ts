@@ -6,6 +6,7 @@ import { AutonomyService } from "./autonomy.service";
 import { AutonomyActionsService } from "./autonomy-actions.service";
 import { AutonomyReviewService } from "./autonomy-review.service";
 import { AutonomyScoringService } from "./autonomy-scoring.service";
+import { AutonomySettingsService } from "./autonomy-settings.service";
 import { AutonomyHoldService } from "./autonomy-hold.service";
 import { AutonomyHoldWorkflow } from "./autonomy-hold.workflow";
 import { AutonomyReversalService } from "./autonomy-reversal.service";
@@ -59,6 +60,7 @@ import { ColdOutboundAdminService } from "./cold-outbound-admin.service";
     AutonomyActionsService,
     AutonomyReversalService,
     AutonomyReviewService,
+    AutonomySettingsService,
     AutonomyScoringService,
     AutonomyHoldService,
     AutonomyHoldWorkflow,
@@ -73,13 +75,6 @@ import { ColdOutboundAdminService } from "./cold-outbound-admin.service";
      */
     OutboundWorkflow,
   ],
-  exports: [
-    AutonomyService,
-    AutonomyReviewService,
-    AutonomyScoringService,
-    AutonomyHoldService,
-    AutonomyRepairService,
-    OutboundService,
-  ],
+  exports: [AutonomyService, AutonomyScoringService, AutonomyRepairService, OutboundService],
 })
 export class AutonomyModule {}

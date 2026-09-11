@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  Delete,
   Get,
   HttpCode,
   Param,
@@ -28,6 +27,9 @@ import {
 import { HrOrgCatalogService } from "./hr-org-catalog.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../../common/openapi/response-envelopes";
+import { orgLocationSchema, orgTeamSchema } from "./dto/core-response.schemas";
 
 const locationIdParams = z.object({ locationId: z.string().min(1) }).strict();
 const teamIdParams = z.object({ teamId: z.string().min(1) }).strict();
@@ -38,12 +40,14 @@ export class HrOrgStructureCompatController {
   constructor(private readonly catalog: HrOrgCatalogService) {}
 
   @Get("locations")
+  @ResponseSchema(z.array(orgLocationSchema))
   @RequirePermission("settings:view")
   listLocations(@CurrentUser() user: CurrentUserContext) {
     return this.catalog.listLocations(user.orgId);
   }
 
   @Post("locations")
+  @ResponseSchema(orgLocationSchema)
   @RequirePermission("settings:organization:manage")
   @HttpCode(201)
   @Validate({ body: createOrgLocationSchema })
@@ -55,6 +59,7 @@ export class HrOrgStructureCompatController {
   }
 
   @Patch("locations/:locationId")
+  @ResponseSchema(orgLocationSchema)
   @RequirePermission("settings:organization:manage")
   @Validate({ params: locationIdParams, body: updateOrgLocationSchema })
   updateLocation(
@@ -70,24 +75,15 @@ export class HrOrgStructureCompatController {
     );
   }
 
-  @Delete("locations/:locationId")
-  @HttpCode(204)
-  @RequirePermission("settings:organization:manage")
-  @Validate({ params: locationIdParams })
-  deleteLocation(
-    @Param("locationId") locationId: string,
-    @CurrentUser() user: CurrentUserContext,
-  ) {
-    return this.catalog.deleteLocation(user.orgId, user.userId, locationId);
-  }
-
   @Get("teams")
+  @ResponseSchema(z.array(orgTeamSchema))
   @RequirePermission("settings:view")
   listTeams(@CurrentUser() user: CurrentUserContext) {
     return this.catalog.listTeams(user.orgId);
   }
 
   @Post("teams")
+  @ResponseSchema(orgTeamSchema)
   @RequirePermission("settings:organization:manage")
   @HttpCode(201)
   @Validate({ body: createOrgTeamSchema })
@@ -99,6 +95,7 @@ export class HrOrgStructureCompatController {
   }
 
   @Patch("teams/:teamId")
+  @ResponseSchema(orgTeamSchema)
   @RequirePermission("settings:organization:manage")
   @Validate({ params: teamIdParams, body: updateOrgTeamSchema })
   updateTeam(
@@ -107,16 +104,5 @@ export class HrOrgStructureCompatController {
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.catalog.updateTeam(user.orgId, user.userId, teamId, body);
-  }
-
-  @Delete("teams/:teamId")
-  @HttpCode(204)
-  @RequirePermission("settings:organization:manage")
-  @Validate({ params: teamIdParams })
-  deleteTeam(
-    @Param("teamId") teamId: string,
-    @CurrentUser() user: CurrentUserContext,
-  ) {
-    return this.catalog.deleteTeam(user.orgId, user.userId, teamId);
   }
 }

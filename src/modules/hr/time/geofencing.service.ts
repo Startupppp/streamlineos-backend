@@ -9,7 +9,11 @@ export class GeofencingService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async list(orgId: string) {
-    return this.db.select().from(geofences).where(and(eq(geofences.orgId, orgId), eq(geofences.isActive, true)));
+    return this.db
+      .select()
+      .from(geofences)
+      .where(and(eq(geofences.orgId, orgId), eq(geofences.isActive, true)))
+      .limit(100);
   }
 
   async create(orgId: string, data: { name: string; lat: string; lng: string; radiusMeters?: number }) {
@@ -25,6 +29,11 @@ export class GeofencingService {
   }
 
   async remove(orgId: string, id: number) {
-    await this.db.update(geofences).set({ isActive: false }).where(and(eq(geofences.id, id), eq(geofences.orgId, orgId)));
+    const [fence] = await this.db
+      .update(geofences)
+      .set({ isActive: false })
+      .where(and(eq(geofences.id, id), eq(geofences.orgId, orgId)))
+      .returning({ id: geofences.id });
+    if (!fence) throw new NotFoundException("Geofence not found");
   }
 }

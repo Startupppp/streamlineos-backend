@@ -7,7 +7,7 @@
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { timingSafeEqual } from "node:crypto";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { aiActionProposals } from "../../../db/schema/ai/ai-confirmation";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -20,57 +20,7 @@ import {
   sweepExpiredProposals,
   type ProposalLifecycleDeps,
 } from "./lib/proposal-lifecycle";
-
-export interface ProposeInput {
-  orgId: string;
-  userId: string;
-  action: string;
-  payload: Record<string, unknown>;
-  ttlSeconds?: number;
-  idempotencyKey?: string;
-}
-
-export interface ProposeResult {
-  proposalId: number;
-  token: string;
-  expiresAt: Date;
-}
-
-export interface ConfirmInput {
-  token: string;
-  actor: { orgId: string; userId: string };
-}
-
-export interface ConfirmResult {
-  proposalId: number;
-  action: string;
-  payload: Record<string, unknown>;
-}
-
-const MAX_TTL = 300;
-const DEFAULT_TTL = 120;
-
-function stableHash(payload: Record<string, unknown>): string {
-  const sorted = JSON.stringify(payload, Object.keys(payload).sort());
-  return createHash("sha256").update(sorted).digest("hex");
-}
-
-function computeHmac(
-  secret: string,
-  proposalId: number,
-  orgId: string,
-  userId: string,
-  action: string,
-  payloadHash: string,
-  expiresAtEpoch: number,
-): string {
-  const data = `${proposalId}:${orgId}:${userId}:${action}:${payloadHash}:${expiresAtEpoch}`;
-  return createHmac("sha256", secret).update(data).digest("hex");
-}
-
-function getSecret(): string {
-  return process.env.AI_CONFIRMATION_SECRET ?? process.env.BACKEND_JWT_SECRET ?? "";
-}
+import { computeHmac, DEFAULT_TTL, getSecret, MAX_TTL, stableHash, type ConfirmInput, type ConfirmResult, type ProposeInput, type ProposeResult } from "./ai-confirmation.helpers";
 
 /**
  * The token protocol for AI-proposed actions: `propose` mints a token bound by
@@ -230,7 +180,7 @@ export class AiConfirmationService {
       return {
         proposalId: row.id,
         action: row.action,
-        payload: (row.payload ?? {}) as Record<string, unknown>,
+        payload: row.payload ?? {},
       };
     }, { orgId: input.actor.orgId });
   }

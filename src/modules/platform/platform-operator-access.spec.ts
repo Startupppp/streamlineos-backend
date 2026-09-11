@@ -1,6 +1,7 @@
 import { ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../db/drizzle.constants";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { PlatformOperatorAccessService } from "./platform-operator-access.service";
 
 type ChainMock = Record<string, jest.Mock>;
@@ -10,6 +11,7 @@ function makeSelectChain(rows: unknown[]): ChainMock {
   chain.from = jest.fn().mockReturnValue(chain);
   chain.where = jest.fn().mockReturnValue(chain);
   chain.limit = jest.fn().mockResolvedValue(rows);
+  chain.then = jest.fn((resolve: (value: unknown[]) => unknown) => Promise.resolve(rows).then(resolve));
   return chain;
 }
 
@@ -23,7 +25,8 @@ function makeInsertChain(returning: unknown[]): ChainMock {
 function makeUpdateChain(): ChainMock {
   const chain: ChainMock = {};
   chain.set = jest.fn().mockReturnValue(chain);
-  chain.where = jest.fn().mockResolvedValue(undefined);
+  chain.where = jest.fn().mockReturnValue(chain);
+  chain.returning = jest.fn().mockResolvedValue([{ grantId: "grant-1" }]);
   return chain;
 }
 
@@ -33,34 +36,153 @@ function makeInsertLogChain(): ChainMock {
   return chain;
 }
 
+function makeTransactionDb<T extends Record<string, unknown>>(
+  db: T,
+  tx: Record<string, unknown>,
+): T & { transaction: jest.Mock } {
+  const transaction = {
+    execute: jest.fn().mockResolvedValue([]),
+    ...db,
+    ...tx,
+  };
+  return {
+    ...db,
+    transaction: jest.fn(async (callback: (value: typeof transaction) => Promise<unknown>) =>
+      callback(transaction)),
+  } as T & { transaction: jest.Mock };
+}
+
 async function buildService(db: unknown): Promise<PlatformOperatorAccessService> {
   const module = await Test.createTestingModule({
     providers: [
       PlatformOperatorAccessService,
       { provide: DRIZZLE, useValue: db },
+      { provide: NotificationDispatchService, useValue: { emit: jest.fn() } },
     ],
   }).compile();
   return module.get(PlatformOperatorAccessService);
 }
 
 describe("PlatformOperatorAccessService.createGrant", () => {
-  it("inserts with status=pending and returns grantId", async () => {
-    const insertChain = makeInsertChain([{ grantId: "grant-abc" }]);
-    const db = { insert: jest.fn().mockReturnValue(insertChain) };
+  it("inserts with status=pending, records the request, and returns grantId", async () => {
+    const grantInsert = makeInsertChain([{ grantId: "grant-abc" }]);
+    const auditInsert = makeInsertLogChain();
+    const membershipSelect = makeSelectChain([{ userId: "op-alice" }]);
+    const tx = {
+      select: jest.fn().mockReturnValue(membershipSelect),
+      insert: jest.fn()
+        .mockReturnValueOnce(grantInsert)
+        .mockReturnValueOnce(auditInsert),
+    };
+    const db = makeTransactionDb({}, tx);
     const svc = await buildService(db);
 
     const id = await svc.createGrant({
       operatorUserId: "op-alice",
       orgId: "org-1",
       incidentRef: "INC-001",
+      reason: "Customer incident investigation",
       grantedBy: "op-alice",
       scope: "read_customer_data",
       expiresAt: new Date(Date.now() + 3_600_000),
     });
 
     expect(id).toBe("grant-abc");
-    const valuesCall = insertChain.values.mock.calls[0]?.[0] as Record<string, unknown>;
+    const valuesCall = grantInsert.values.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(valuesCall.status).toBe("pending");
+    expect(auditInsert.values).toHaveBeenCalledWith(expect.objectContaining({
+      action: "grant.requested",
+      grantId: "grant-abc",
+      orgId: "org-1",
+    }));
+  });
+});
+
+describe("PlatformOperatorAccessService.createGrantAndLog", () => {
+  it("keeps grant creation inside the same transaction as its audit insert", async () => {
+    const auditFailure = new Error("audit database unavailable");
+    const grantInsert = {
+      values: jest.fn().mockReturnThis(),
+      returning: jest.fn().mockResolvedValue([{ grantId: "grant-atomic" }]),
+    };
+    const auditInsert = {
+      values: jest.fn().mockRejectedValue(auditFailure),
+    };
+    const membershipSelect = makeSelectChain([{ userId: "op-alice" }]);
+    const tx = {
+      select: jest.fn().mockReturnValue(membershipSelect),
+      insert: jest.fn()
+        .mockReturnValueOnce(grantInsert)
+        .mockReturnValueOnce(auditInsert),
+    };
+    const db = makeTransactionDb({}, tx);
+    const svc = await buildService(db);
+
+    await expect(
+      svc.createGrantAndLog(
+        {
+          operatorUserId: "op-alice",
+          orgId: "org-1",
+          incidentRef: "INC-ATOMIC",
+          reason: "Investigate customer incident",
+          grantedBy: "op-bob",
+          scope: "read_customer_data",
+          expiresAt: new Date(Date.now() + 60_000),
+        },
+        "203.0.113.10",
+        { requestedBy: "op-bob" },
+      ),
+    ).rejects.toBe(auditFailure);
+
+    expect(db.transaction).toHaveBeenCalledTimes(1);
+    expect(tx.insert).toHaveBeenCalledTimes(2);
+    expect(auditInsert.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "grant.requested",
+        grantId: "grant-atomic",
+        orgId: "org-1",
+      }),
+    );
+  });
+
+  it("keeps the mandatory notification intent in the grant transaction", async () => {
+    const grantInsert = makeInsertChain([{ grantId: "grant-notified" }]);
+    const auditInsert = makeInsertLogChain();
+    const notification = { emit: jest.fn().mockResolvedValue({ deferred: true }) };
+    const membershipSelect = makeSelectChain([{ userId: "op-alice" }]);
+    const tx = {
+      select: jest.fn().mockReturnValue(membershipSelect),
+      insert: jest.fn()
+        .mockReturnValueOnce(grantInsert)
+        .mockReturnValueOnce(auditInsert),
+    };
+    const db = makeTransactionDb({}, tx);
+    const module = await Test.createTestingModule({
+      providers: [
+        PlatformOperatorAccessService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: NotificationDispatchService, useValue: notification },
+      ],
+    }).compile();
+    const svc = module.get(PlatformOperatorAccessService);
+
+    await svc.createGrant({
+      operatorUserId: "op-alice",
+      orgId: "org-1",
+      incidentRef: "INC-NOTIFY",
+      reason: "Investigate customer incident",
+      grantedBy: "op-bob",
+      scope: "read_customer_data",
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    expect(notification.emit).toHaveBeenCalledWith(expect.objectContaining({
+      eventKey: "security.operator_access.requested",
+      orgId: "org-1",
+      entityId: "grant-notified",
+      notifySelf: true,
+    }));
+    expect(db.transaction).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -81,10 +203,11 @@ describe("PlatformOperatorAccessService.approveGrant", () => {
     };
     const selectChain = makeSelectChain([row]);
     const updateChain = makeUpdateChain();
-    return {
+    return makeTransactionDb({
       select: jest.fn().mockReturnValue(selectChain),
       update: jest.fn().mockReturnValue(updateChain),
-    };
+      insert: jest.fn().mockReturnValue(makeInsertLogChain()),
+    }, {});
   }
 
   it("(bite proof) self-approval throws ForbiddenException — removing the check would make this pass instead of throw", async () => {
@@ -103,6 +226,28 @@ describe("PlatformOperatorAccessService.approveGrant", () => {
     const setCall = updateDb.set.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(setCall.status).toBe("active");
     expect(setCall.approverId).toBe("op-bob");
+  });
+
+  it("conflicts when the conditional transition updates no row", async () => {
+    const selectChain = makeSelectChain([{
+      grantId: "grant-1",
+      grantedBy: "op-alice",
+      status: "pending",
+      orgId: "org-1",
+      operatorUserId: "op-alice",
+    }]);
+    const updateChain = makeUpdateChain();
+    updateChain.returning.mockResolvedValue([]);
+    const db = {
+      select: jest.fn().mockReturnValue(selectChain),
+      update: jest.fn().mockReturnValue(updateChain),
+      insert: jest.fn().mockReturnValue(makeInsertLogChain()),
+    };
+    const transactionalDb = makeTransactionDb(db, {});
+    const svc = await buildService(transactionalDb);
+
+    await expect(svc.approveGrant("grant-1", "op-bob")).rejects.toBeInstanceOf(ConflictException);
+    expect(updateChain.where).toHaveBeenCalledWith(expect.anything());
   });
 
   it("throws ConflictException when grant is not pending", async () => {
@@ -244,18 +389,20 @@ describe("PlatformOperatorAccessService.revokeGrant", () => {
     const selectChain = makeSelectChain([]);
     const db = { select: jest.fn().mockReturnValue(selectChain) };
     const svc = await buildService(db);
-    await expect(svc.revokeGrant("no-such", "too noisy")).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.revokeGrant("no-such", "too noisy", "op-system")).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it("sets revokedAt on an existing grant", async () => {
-    const selectChain = makeSelectChain([{ grantId: "grant-1" }]);
+    const selectChain = makeSelectChain([{ grantId: "grant-1", orgId: "org-1", operatorUserId: "op-alice" }]);
     const updateChain = makeUpdateChain();
     const db = {
       select: jest.fn().mockReturnValue(selectChain),
       update: jest.fn().mockReturnValue(updateChain),
+      insert: jest.fn().mockReturnValue(makeInsertLogChain()),
     };
-    const svc = await buildService(db);
-    await svc.revokeGrant("grant-1", "access no longer needed");
+    const transactionalDb = makeTransactionDb(db, {});
+    const svc = await buildService(transactionalDb);
+    await svc.revokeGrant("grant-1", "access no longer needed", "op-bob");
     const setCall = updateChain.set.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(setCall.revokedAt).toBeInstanceOf(Date);
     expect(setCall.revocationReason).toBe("access no longer needed");
@@ -267,14 +414,14 @@ describe("PlatformOperatorAccessService.rejectGrant", () => {
     const selectChain = makeSelectChain([]);
     const db = { select: jest.fn().mockReturnValue(selectChain) };
     const svc = await buildService(db);
-    await expect(svc.rejectGrant("no-such", "not justified")).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.rejectGrant("no-such", "not justified", "op-system")).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it("throws ConflictException when grant is already active", async () => {
     const selectChain = makeSelectChain([{ grantId: "grant-1", status: "active" }]);
     const db = { select: jest.fn().mockReturnValue(selectChain) };
     const svc = await buildService(db);
-    await expect(svc.rejectGrant("grant-1", "too late")).rejects.toBeInstanceOf(ConflictException);
+    await expect(svc.rejectGrant("grant-1", "too late", "op-system")).rejects.toBeInstanceOf(ConflictException);
   });
 
   it("(idempotent) returns without error and skips the update when already rejected", async () => {
@@ -285,22 +432,49 @@ describe("PlatformOperatorAccessService.rejectGrant", () => {
       update: jest.fn().mockReturnValue(updateChain),
     };
     const svc = await buildService(db);
-    await svc.rejectGrant("grant-1", "second rejection attempt");
+    await svc.rejectGrant("grant-1", "second rejection attempt", "op-system");
     expect(db.update).not.toHaveBeenCalled();
   });
 
   it("sets status=rejected on a pending grant", async () => {
-    const selectChain = makeSelectChain([{ grantId: "grant-1", status: "pending" }]);
+    const selectChain = makeSelectChain([{ grantId: "grant-1", status: "pending", orgId: "org-1", operatorUserId: "op-alice" }]);
     const updateChain = makeUpdateChain();
     const db = {
       select: jest.fn().mockReturnValue(selectChain),
       update: jest.fn().mockReturnValue(updateChain),
+      insert: jest.fn().mockReturnValue(makeInsertLogChain()),
     };
-    const svc = await buildService(db);
-    await svc.rejectGrant("grant-1", "not justified");
+    const transactionalDb = makeTransactionDb(db, {});
+    const svc = await buildService(transactionalDb);
+    await svc.rejectGrant("grant-1", "not justified", "op-bob");
     const setCall = updateChain.set.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(setCall.status).toBe("rejected");
     expect(setCall.revocationReason).toBe("not justified");
+  });
+});
+
+describe("PlatformOperatorAccessService.expirePendingGrants", () => {
+  it("expires only pending grants whose requested expiry has passed", async () => {
+    const selectChain = makeSelectChain([{ grantId: "grant-1", orgId: "org-1", operatorUserId: "op-alice" }]);
+    const updateChain = makeUpdateChain();
+    const db = makeTransactionDb({
+      select: jest.fn().mockReturnValue(selectChain),
+      update: jest.fn().mockReturnValue(updateChain),
+      insert: jest.fn().mockReturnValue(makeInsertLogChain()),
+    }, {});
+    const svc = await buildService(db);
+
+    await expect(svc.expirePendingGrants(new Date("2026-09-01T12:00:00.000Z"))).resolves.toBe(1);
+    expect(updateChain.set).toHaveBeenCalledWith({ status: "expired" });
+    expect(updateChain.where).toHaveBeenCalledWith(expect.anything());
+  });
+
+  it("returns zero when no stale pending rows are changed", async () => {
+    const selectChain = makeSelectChain([]);
+    const db = { select: jest.fn().mockReturnValue(selectChain) };
+    const svc = await buildService(db);
+
+    await expect(svc.expirePendingGrants()).resolves.toBe(0);
   });
 });
 

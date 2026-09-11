@@ -1,6 +1,10 @@
 import { Controller, Headers, Post } from "@nestjs/common";
 import { Public } from "../../../common/auth/public.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { workflowSweepResultSchema, schedulesTickResultSchema } from "../dto/workflow-response.schemas";
+import { z } from "zod";
+
+const schedulesTickOrSkippedSchema = z.union([schedulesTickResultSchema, z.object({ skipped: z.literal(true) })]);
 import { assertCronSecret } from "../../cron/cron-secret";
 import { CronLeaseService } from "../../cron/cron-lease.service";
 import {
@@ -25,6 +29,7 @@ export class WorkflowsCronController {
 
   @Post("workflow-executions-sweep")
   @BodylessAction()
+  @ResponseSchema(workflowSweepResultSchema)
   sweep(
     @Headers("authorization") authorization: string | undefined,
   ): Promise<WorkflowSweepResult> {
@@ -34,6 +39,7 @@ export class WorkflowsCronController {
 
   @Post("workflow-schedules-tick")
   @BodylessAction()
+  @ResponseSchema(schedulesTickOrSkippedSchema)
   async schedulesTick(
     @Headers("authorization") authorization: string | undefined,
   ): Promise<SchedulesTickResult | { skipped: true }> {

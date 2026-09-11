@@ -32,9 +32,19 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  automationRuleListSchema,
+  automationRuleRowSchema,
+  automationRunListSchema,
+  testRuleResultSchema,
+  successSchema as supportAutomationSuccessSchema,
+} from "./dto/support-automations-response.schemas";
 import { z } from "zod";
 
-const automationIdParams = z.object({ automationId: z.coerce.number().int().positive() }).strict();
+const automationIdParams = z
+  .object({ automationId: z.coerce.number().int().positive() })
+  .strict();
 
 const TICKET_TRIGGER_PREFIX = "ticket.";
 
@@ -50,48 +60,89 @@ export class SupportAutomationsController {
   @Get("automations")
   @RequirePermission("support:settings:manage")
   @Validate({ query: listSupportAutomationsQuerySchema })
+  @ResponseSchema(automationRuleListSchema)
   listAutomations(
     @Query() query: ListSupportAutomationsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.automations.listRules(u.orgId, { ...query, triggerPrefix: TICKET_TRIGGER_PREFIX });
+    return this.automations.listRules(u.orgId, {
+      ...query,
+      triggerPrefix: TICKET_TRIGGER_PREFIX,
+    });
   }
 
   @Post("automations")
   @RequirePermission("support:settings:manage")
   @HttpCode(201)
   @Validate({ body: createAutomationRuleSchema })
+  @ResponseSchema(automationRuleRowSchema)
   async createAutomation(
     @Body() body: CreateAutomationRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (!body.triggerEvent.startsWith(TICKET_TRIGGER_PREFIX)) {
-      throw new NotFoundException(`Support automations must use a "${TICKET_TRIGGER_PREFIX}*" trigger`);
+      throw new NotFoundException(
+        `Support automations must use a "${TICKET_TRIGGER_PREFIX}*" trigger`,
+      );
     }
     const result = await this.automations.createRule(u.orgId, u.userId, body);
-    await this.audit.record(u.orgId, u.userId, "automation", result.id, "created", body);
+    await this.audit.record(
+      u.orgId,
+      u.userId,
+      "automation",
+      result.id,
+      "created",
+      body,
+    );
     return result;
   }
 
   @Patch("automations/:automationId")
   @RequirePermission("support:settings:manage")
   @Validate({ params: automationIdParams, body: updateAutomationRuleSchema })
+  @ResponseSchema(automationRuleRowSchema)
   async updateAutomation(
     @Param("automationId", ParseIntPipe) automationId: number,
     @Body() body: UpdateAutomationRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.automations.updateRule(u.orgId, automationId, body);
-    await this.audit.record(u.orgId, u.userId, "automation", automationId, "updated", body);
+    const result = await this.automations.updateRule(
+      u.orgId,
+      automationId,
+      body,
+      TICKET_TRIGGER_PREFIX,
+    );
+    await this.audit.record(
+      u.orgId,
+      u.userId,
+      "automation",
+      automationId,
+      "updated",
+      body,
+    );
     return result;
   }
 
   @Delete("automations/:automationId")
   @RequirePermission("support:settings:manage")
   @Validate({ params: automationIdParams })
-  async deleteAutomation(@Param("automationId", ParseIntPipe) automationId: number, @CurrentUser() u: CurrentUserContext) {
-    const result = await this.automations.deleteRule(u.orgId, automationId);
-    await this.audit.record(u.orgId, u.userId, "automation", automationId, "deleted");
+  @ResponseSchema(supportAutomationSuccessSchema)
+  async deleteAutomation(
+    @Param("automationId", ParseIntPipe) automationId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const result = await this.automations.deleteRule(
+      u.orgId,
+      automationId,
+      TICKET_TRIGGER_PREFIX,
+    );
+    await this.audit.record(
+      u.orgId,
+      u.userId,
+      "automation",
+      automationId,
+      "deleted",
+    );
     return result;
   }
 
@@ -99,17 +150,31 @@ export class SupportAutomationsController {
   @RequirePermission("support:settings:manage")
   @HttpCode(200)
   @Validate({ params: automationIdParams, body: testAutomationSchema })
+  @ResponseSchema(testRuleResultSchema)
   testAutomation(
     @Param("automationId", ParseIntPipe) automationId: number,
     @Body() body: TestAutomationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.automations.testRule(u.orgId, automationId, body.payload);
+    return this.automations.testRule(
+      u.orgId,
+      automationId,
+      body.payload,
+      TICKET_TRIGGER_PREFIX,
+    );
   }
 
   @Get("automation-runs")
   @RequirePermission("support:settings:manage")
-  listAutomationRuns(@Query("automationId") automationId: string | undefined, @CurrentUser() u: CurrentUserContext) {
-    return this.automations.listRuns(u.orgId, automationId ? Number(automationId) : undefined);
+  @ResponseSchema(automationRunListSchema)
+  listAutomationRuns(
+    @Query("automationId") automationId: string | undefined,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.automations.listRuns(
+      u.orgId,
+      automationId ? Number(automationId) : undefined,
+      TICKET_TRIGGER_PREFIX,
+    );
   }
 }

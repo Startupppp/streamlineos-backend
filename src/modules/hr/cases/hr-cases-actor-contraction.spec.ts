@@ -1,10 +1,8 @@
 /**
  * HR Cases actor-contraction spec.
  *
- * Asserts that the dual-read predicates in list() and getById() honour the
- * new assignedToMembershipId column, and that a revoked member (membershipId
- * set to a value that no longer matches a live row) cannot satisfy the
- * predicate when the DB row already carries the new column value.
+ * Asserts that the canonical membership predicates in list() and getById()
+ * honour assignedToMembershipId and fail closed for account-only principals.
  *
  * Pattern: supply membershipId = 99 (simulated live member) vs membershipId = 77
  * (simulated revoked — the DB row has assignedToMembershipId = 99).
@@ -114,7 +112,7 @@ describe("HrCasesService – actor contraction dual-read", () => {
       expect(result.pagination.hasMore).toBe(false);
     });
 
-    it("falls back to userId-only predicate when membershipId is null", async () => {
+    it("fails closed when membershipId is null", async () => {
       const row = makeCase();
       const mockDb = {
         select: jest.fn().mockReturnValue({
@@ -131,15 +129,13 @@ describe("HrCasesService – actor contraction dual-read", () => {
 
       const service = new HrCasesService(mockDb as never, mockAudit as never);
 
-      const result = await service.list(
+      await expect(service.list(
         ORG_ID,
         MEMBER_USER_ID,
         false,
         baseListInput,
         null,
-      );
-
-      expect(result.data).toHaveLength(1);
+      )).rejects.toThrow("Organization membership required.");
     });
   });
 

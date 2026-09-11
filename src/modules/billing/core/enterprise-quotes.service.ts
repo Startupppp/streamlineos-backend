@@ -2,10 +2,13 @@ import { Inject, Injectable, NotFoundException, BadRequestException } from "@nes
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { eq, and, desc, count } from "drizzle-orm";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { enterpriseQuotes } from "../../../db/schema/billing/billing";
 import { users } from "../../../db/schema/common/auth";
 import { clientAccounts } from "../../../db/schema/crm/contacts";
 import { deals } from "../../../db/schema/crm/deals";
+import { PlanLimitsService } from "./plan-limits.service";
 import type {
   CreateEnterpriseQuoteInput,
   ApproveEnterpriseQuoteInput,
@@ -15,20 +18,25 @@ import type {
 
 @Injectable()
 export class EnterpriseQuotesService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly planLimits: PlanLimitsService,
+  ) {}
 
   private generateRef(seq: number): string {
     return `EQ-${String(seq).padStart(4, "0")}`;
   }
 
   async list(orgId: string, query: ListEnterpriseQuotesQuery) {
-    const offset = (query.page - 1) * query.limit;
-    const where = query.status
+    const cursor = decodeCursor(query.cursor);
+    const scope = query.status
       ? and(eq(enterpriseQuotes.orgId, orgId), eq(enterpriseQuotes.status, query.status))
       : eq(enterpriseQuotes.orgId, orgId);
+    const where = cursor
+      ? and(scope, keysetBeforeId(enterpriseQuotes.createdAt, enterpriseQuotes.id, cursor))
+      : scope;
 
-    const [items, [{ total }]] = await Promise.all([
-      this.db
+    const rows = await this.db
         .select({
           id: enterpriseQuotes.id,
           quoteRef: enterpriseQuotes.quoteRef,
@@ -47,18 +55,13 @@ export class EnterpriseQuotesService {
         .leftJoin(deals, eq(enterpriseQuotes.dealId, deals.id))
         .leftJoin(clientAccounts, eq(enterpriseQuotes.clientId, clientAccounts.id))
         .where(where)
-        .orderBy(desc(enterpriseQuotes.createdAt))
-        .limit(query.limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(enterpriseQuotes).where(where),
-    ]);
+        .orderBy(desc(enterpriseQuotes.createdAt), desc(enterpriseQuotes.id))
+        .limit(query.limit + 1);
 
-    return {
-      items,
-      total: Number(total),
-      page: query.page,
-      totalPages: Math.ceil(Number(total) / query.limit),
-    };
+    return buildCursorPage(rows, query.limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
   }
 
   async findOne(orgId: string, id: number) {
@@ -167,6 +170,8 @@ export class EnterpriseQuotesService {
       .update(enterpriseQuotes)
       .set({ status: "ACCEPTED", acceptedAt: new Date() })
       .where(and(eq(enterpriseQuotes.orgId, orgId), eq(enterpriseQuotes.id, id)));
+    // The accepted quote is what `fetchNegotiatedSeats` reads, so the entitlement cache is now stale.
+    await this.planLimits.bust(orgId);
     return { success: true };
   }
 }

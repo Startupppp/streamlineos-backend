@@ -8,13 +8,15 @@ import { randomBytes } from "node:crypto";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { hashToken } from "../../../common/security/token.util";
 import { withPublicToken } from "../../../common/tenant/with-public-token";
-import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import {
+  runInNewTenantTransaction,
+  runInTenantTransaction,
+} from "../../../common/tenant/run-in-tenant-transaction";
 import { getOrgAdminRecipients } from "../../../common/tenant/org-admin-recipients";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
-import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
@@ -49,6 +51,7 @@ export class InvitationAcceptanceService {
   private get joinDeps(): InvitationJoinDeps {
     return {
       db: this.db,
+      cache: this.cache,
       planLimits: this.planLimits,
       seatLedger: this.seatLedger,
     };
@@ -64,7 +67,6 @@ export class InvitationAcceptanceService {
       this.cache.invalidateForOrg(orgId, "rbac:members"),
       this.cache.invalidateForOrg(orgId, "module-access:candidates"),
       this.cache.invalidateForOrg(orgId, "users:stats"),
-      bustMembershipStatusCache(this.cache, userId, orgId),
     ]);
   }
 
@@ -145,11 +147,11 @@ export class InvitationAcceptanceService {
           autoLoginToken,
         );
 
-    await this.invalidateJoinCaches(invitedOrgId, joinedUserId);
-
-    void touchIndexLastActivated(this.joinDeps, invitedOrgId, joinedUserId).catch(
+    // Index first, then invalidate: the session resolves its org from this projection.
+    await touchIndexLastActivated(this.joinDeps, invitedOrgId, joinedUserId).catch(
       () => undefined,
     );
+    await this.invalidateJoinCaches(invitedOrgId, joinedUserId);
 
     await this.notifyAccepted(
       invitedOrgId,
@@ -217,13 +219,15 @@ export class InvitationAcceptanceService {
     inviterMembershipId: number | null,
   ): Promise<string | null> {
     if (inviterMembershipId === null) return null;
-    const row = await this.db.query.organizationMembers.findFirst({
-      where: and(
-        eq(organizationMembers.id, inviterMembershipId),
-        eq(organizationMembers.orgId, orgId),
-      ),
-      columns: { userId: true },
-    });
+    const row = await runInNewTenantTransaction(this.db, orgId, (tx) =>
+      tx.query.organizationMembers.findFirst({
+        where: and(
+          eq(organizationMembers.id, inviterMembershipId),
+          eq(organizationMembers.orgId, orgId),
+        ),
+        columns: { userId: true },
+      }),
+    );
     return row?.userId ?? null;
   }
 
@@ -235,8 +239,11 @@ export class InvitationAcceptanceService {
     joinedUserId: string,
   ): Promise<void> {
     const inviterUserId = await this.resolveInviterUserId(orgId, inviterMembershipId);
+    // Public route, so no ambient GUC; inside the callback the DRIZZLE proxy routes `this.db` to `tx`.
     const targetUserIds = (
-      await getOrgAdminRecipients(this.db, orgId, [inviterUserId])
+      await runInNewTenantTransaction(this.db, orgId, () =>
+        getOrgAdminRecipients(this.db, orgId, [inviterUserId]),
+      )
     ).filter((id) => id !== joinedUserId);
     if (targetUserIds.length === 0) return;
 
@@ -260,7 +267,9 @@ export class InvitationAcceptanceService {
     inviterMembershipId: number | null,
   ): Promise<void> {
     const inviterUserId = await this.resolveInviterUserId(orgId, inviterMembershipId);
-    const targetUserIds = await getOrgAdminRecipients(this.db, orgId, [inviterUserId]);
+    const targetUserIds = await runInNewTenantTransaction(this.db, orgId, () =>
+      getOrgAdminRecipients(this.db, orgId, [inviterUserId]),
+    );
     if (targetUserIds.length === 0) return;
 
     await this.dispatch.emit({

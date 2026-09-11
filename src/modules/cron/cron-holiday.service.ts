@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { holidays } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -33,12 +33,16 @@ export class CronHolidayService {
             ),
           );
 
-        for (const holiday of upcomingHolidays) {
+        if (upcomingHolidays.length > 0)
           await tx
             .update(holidays)
             .set({ notificationSent: true })
-            .where(and(eq(holidays.orgId, orgId), eq(holidays.id, holiday.id)));
-        }
+            .where(
+              and(
+                eq(holidays.orgId, orgId),
+                inArray(holidays.id, upcomingHolidays.map((holiday) => holiday.id)),
+              ),
+            );
 
         count += upcomingHolidays.length;
       });

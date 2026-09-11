@@ -124,6 +124,7 @@ function callAiAssist(opts: {
     opts.rateLimit,
     {} as never,
     makeDb(),
+    {} as never,
   );
 
   return ctrl.aiAssist(

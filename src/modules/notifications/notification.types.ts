@@ -27,6 +27,21 @@ export interface DispatchEventInput {
    * swallow the second comment on a ticket forever.
    */
   dedupeKey?: string;
+  /**
+   * The outbox row's own key, set ONLY by the two replay paths — the after-commit
+   * drain and `NotificationOutboxRelayService`. Never set by a caller.
+   *
+   * It exists because those paths used to pass the outbox key as `dedupeKey`, where
+   * `buildNotifIdempotencyKey` reads it as the delivery discriminator and it WON
+   * over the event's declared time window. Since the outbox key is a random UUID for
+   * any emission without an explicit key (which is 84 of 111 emit sites), the
+   * declared `dedupeWindowSeconds` could never apply: two identical emits seconds
+   * apart built two idempotency keys and produced two notifications. Separating the
+   * two lets the outbox key keep doing its job — making a REPLAY idempotent, which
+   * is the only thing that works for the 9 events declaring a zero window — without
+   * standing in for the window on every other event.
+   */
+  replayKey?: string;
   entityType?: string;
   entityId?: string;
   title?: string;

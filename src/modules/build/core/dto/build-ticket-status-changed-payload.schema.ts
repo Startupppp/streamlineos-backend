@@ -9,6 +9,6 @@ export const buildTicketStatusChangedPayloadSchema = z.object({
   actorUserId: z.string().min(1),
 });
 
-export type BuildTicketStatusChangedPayload = z.infer<
+type BuildTicketStatusChangedPayload = z.infer<
   typeof buildTicketStatusChangedPayloadSchema
 >;

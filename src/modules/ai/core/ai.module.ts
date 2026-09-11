@@ -6,7 +6,6 @@ import { KbRagController } from "./controllers/kb-rag.controller";
 import { ChatAssistantController } from "./controllers/chat-assistant.controller";
 import { ProjectsAiController } from "./controllers/projects-ai.controller";
 import { AiFeedbackController } from "./controllers/ai-feedback.controller";
-import { EmbeddingsService } from "./providers/embeddings.service";
 import { CrmScoringService } from "./services/crm-scoring.service";
 import { CrmContentService } from "./services/crm-content.service";
 import { CrmBriefService } from "./services/crm-brief.service";
@@ -21,12 +20,14 @@ import { HrRecruitmentAiService } from "./services/hr-recruitment-ai.service";
 import { HrPolicyAiService } from "./services/hr-policy-ai.service";
 import { HrHelpdeskAiService } from "./services/hr-helpdesk-ai.service";
 import { KbRagService } from "./services/kb-rag.service";
+import { KbRagRetrievalService } from "./services/kb-rag-retrieval.service";
 import { ChatAssistantService } from "./services/chat-assistant.service";
 import { ChatHistoryService } from "./services/chat-history.service";
 import { OrgFeaturesService } from "./services/org-features.service";
 import { ProjectsAiService } from "./services/projects-ai.service";
 import { TicketInsightsAiService } from "./services/ticket-insights-ai.service";
 import { TicketTriageAiService } from "./services/ticket-triage-ai.service";
+import { TicketDraftAiService } from "./services/ticket-draft-ai.service";
 import { MeetingActionAiService } from "./services/meeting-action-ai.service";
 import { HrCopilotTools } from "./hr-copilot-tools";
 import { WorkspaceCopilotTools } from "./workspace-copilot-tools";
@@ -55,12 +56,12 @@ import { BlogAiController } from "./controllers/blog-ai.controller";
 import { BlogAiService } from "./services/blog-ai.service";
 import { SurveyAiController } from "./controllers/survey-ai.controller";
 import { SurveyAiService } from "./services/survey-ai.service";
+import { AiRequestAbortInterceptor } from "./streaming";
 
 @Module({
   imports: [CalendarModule, ChatModule, BillingModule, AiConfirmationModule, ProjectsModule, IntegrationsModule, ExecutiveBriefModule, AiJobsModule, MailModule, AiGatewayModule],
   controllers: [CrmAiController, CrmCopilotController, HrAiController, KbRagController, ChatAssistantController, ProjectsAiController, AiFeedbackController, MeetingsAiController, BlogAiController, SurveyAiController],
   providers: [
-    EmbeddingsService,
     CrmScoringService,
     CrmContentService,
     CrmBriefService,
@@ -74,6 +75,7 @@ import { SurveyAiService } from "./services/survey-ai.service";
     HrRecruitmentAiService,
     HrPolicyAiService,
     HrHelpdeskAiService,
+    KbRagRetrievalService,
     KbRagService,
     ChatAssistantService,
     ChatHistoryService,
@@ -81,6 +83,7 @@ import { SurveyAiService } from "./services/survey-ai.service";
     ProjectsAiService,
     TicketInsightsAiService,
     TicketTriageAiService,
+    TicketDraftAiService,
     MeetingActionAiService,
     HrCopilotTools,
     WorkspaceCopilotTools,
@@ -101,7 +104,8 @@ import { SurveyAiService } from "./services/survey-ai.service";
     MeetingsPrepService,
     BlogAiService,
     SurveyAiService,
+    AiRequestAbortInterceptor,
   ],
-  exports: [AiGatewayModule, EmbeddingsService, OrgFeaturesService],
+  exports: [AiGatewayModule, OrgFeaturesService],
 })
 export class AiModule {}

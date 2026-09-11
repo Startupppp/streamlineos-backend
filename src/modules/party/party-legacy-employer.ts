@@ -104,6 +104,17 @@ export async function employerLegacyIds(
   return crmOrgIdsOfParties(db, organizationId, present);
 }
 
+export function linkedPartyId(
+  resolved: ReadonlyMap<number, string>,
+  legacyId: number | null,
+  unresolved: (id: number) => string,
+): string | null {
+  if (legacyId === null) return null;
+  const partyId = resolved.get(legacyId);
+  if (partyId) return partyId;
+  throw new Error(unresolved(legacyId));
+}
+
 /**
  * `contacts.organization_id` → the `employer_party_id` it means.
  *

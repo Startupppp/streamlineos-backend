@@ -1,3 +1,4 @@
+import { memberRowReader } from "../../../../test/helpers/membership-state-stub";
 import { AccessPermissionResolver } from "../access-permission.resolver";
 import { EMPLOYEE_SELF_SERVICE_GRANTS } from "../access-policy";
 import { isOrgOnlyPermission } from "../../../common/rbac/grantability";
@@ -39,21 +40,14 @@ function buildResolver(options: Options) {
     const link: Record<string, unknown> = {};
     link["from"] = () => link;
     link["innerJoin"] = () => link;
-    link["where"] = () => Promise.resolve(queue[cursor++] ?? []);
+    link["where"] = () => link;
+    link["orderBy"] = () => link;
+    link["limit"] = () => Promise.resolve(queue[cursor++] ?? []);
     return link;
   };
 
   const db = {
     query: {
-      organizationMembers: {
-        findFirst: () =>
-          Promise.resolve({
-            isOwner: options.isOwner ?? false,
-            status: "ACTIVE",
-            id: 42,
-            role: options.memberRole ?? "MEMBER",
-          }),
-      },
     },
     select: () => chain(),
   } as unknown as Db;
@@ -64,6 +58,7 @@ function buildResolver(options: Options) {
     new Set<string>(),
     new Map(),
     1000,
+    memberRowReader({ isOwner: options.isOwner ?? false, status: "ACTIVE", id: 42, role: options.memberRole ?? "MEMBER", }),
   );
 }
 

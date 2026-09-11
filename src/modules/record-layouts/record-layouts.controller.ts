@@ -13,6 +13,13 @@ import {
 import { RecordLayoutsService } from "./record-layouts.service";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  layoutGetSchema,
+  layoutSaveSchema,
+  layoutResetSchema,
+  layoutUsageSchema,
+} from "./dto/record-layouts-response.schemas";
 
 const layoutKeyParams = z.object({ layoutKey: layoutKeySchema }).strict();
 
@@ -22,6 +29,7 @@ export class RecordLayoutsController {
 
   @Get(":layoutKey")
   @Universal()
+  @ResponseSchema(layoutGetSchema)
   @Validate({ params: layoutKeyParams })
   get(
     @Param("layoutKey") layoutKey: string,
@@ -33,6 +41,7 @@ export class RecordLayoutsController {
   @Put(":layoutKey")
   @UseGuards(JwtAuthGuard, PermissionGuard)
   @RequirePermission("settings:record-layouts:manage")
+  @ResponseSchema(layoutSaveSchema)
   @Validate({ params: layoutKeyParams, body: saveLayoutAdjustmentSchema })
   save(
     @Param("layoutKey") layoutKey: string,
@@ -45,6 +54,7 @@ export class RecordLayoutsController {
   @Delete(":layoutKey")
   @UseGuards(JwtAuthGuard, PermissionGuard)
   @RequirePermission("settings:record-layouts:manage")
+  @ResponseSchema(layoutResetSchema)
   @Validate({ params: layoutKeyParams })
   reset(
     @Param("layoutKey") layoutKey: string,
@@ -56,6 +66,7 @@ export class RecordLayoutsController {
   @Get(":layoutKey/usage")
   @UseGuards(JwtAuthGuard, PermissionGuard)
   @RequirePermission("settings:record-layouts:manage")
+  @ResponseSchema(layoutUsageSchema)
   @Validate({ params: layoutKeyParams })
   usage(
     @Param("layoutKey") layoutKey: string,

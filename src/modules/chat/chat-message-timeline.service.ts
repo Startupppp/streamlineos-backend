@@ -4,8 +4,9 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, gt, lt } from "drizzle-orm";
+import { and, asc, desc, eq, gt, lt } from "drizzle-orm";
 import {
+  chatChannelMembers,
   chatChannels,
   chatMessages,
 } from "../../db/schema";
@@ -14,12 +15,14 @@ import type { Db } from "../../db/drizzle.module";
 import { buildIdCursorPage } from "../../common/pagination/cursor";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import type { EntityActor } from "../entity-reference/entity-reference.types";
-import {
-  enrich,
-  isMember,
-  resolveIdentities,
-  withResolvedReferences,
-} from "./lib/chat-timeline-enrich";
+import { SENDER_MEMBERSHIP_ID_ONLY } from "./chat-message-sender-shape";
+import { MESSAGE_REACTIONS_WITH } from "./chat-message-reaction-shape";
+import { hydrateTimelineMessages } from "./chat-timeline-hydration";
+
+const REPLY_PREVIEW_WITH = {
+  columns: { id: true, content: true },
+  with: { senderMembership: SENDER_MEMBERSHIP_ID_ONLY },
+} as const;
 
 @Injectable()
 export class ChatMessageTimelineService {
@@ -27,6 +30,23 @@ export class ChatMessageTimelineService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly entities: EntityReferenceService,
   ) {}
+
+  private async isMember(
+    channelId: number,
+    orgId: string,
+    membershipId?: number | null,
+  ): Promise<boolean> {
+    if (!membershipId) return false;
+    const m = await this.db.query.chatChannelMembers.findFirst({
+      where: and(
+        eq(chatChannelMembers.orgId, orgId),
+        eq(chatChannelMembers.channelId, channelId),
+        eq(chatChannelMembers.membershipId, membershipId),
+      ),
+      columns: { id: true },
+    });
+    return Boolean(m);
+  }
 
   async list(
     channelId: number,
@@ -43,7 +63,7 @@ export class ChatMessageTimelineService {
     });
     if (!channel) throw new NotFoundException("Channel not found");
 
-    if (!(await isMember(this.db, channelId, actor.orgId, actor.membershipId))) {
+    if (!(await this.isMember(channelId, actor.orgId, actor.membershipId))) {
       if (channel.type !== "PUBLIC")
         throw new NotFoundException("Channel not found");
       throw new ForbiddenException("You are not a member of this channel");
@@ -61,11 +81,10 @@ export class ChatMessageTimelineService {
       orderBy: [desc(chatMessages.channelPosition)],
       limit: safeLimit + 1,
       with: {
-        attachments: true,
-        senderMembership: { columns: { userId: true } },
-        replyTo: {
-          with: { senderMembership: { columns: { userId: true } } },
-        },
+        attachments: { columns: { id: true, fileName: true, fileUrl: true, fileKey: true, fileSize: true, mimeType: true } },
+        senderMembership: SENDER_MEMBERSHIP_ID_ONLY,
+        reactions: MESSAGE_REACTIONS_WITH,
+        replyTo: REPLY_PREVIEW_WITH,
       },
     });
 
@@ -74,22 +93,23 @@ export class ChatMessageTimelineService {
       safeLimit,
       (m) => m.channelPosition,
     );
-    const senderIds = new Set<string>();
-    for (const m of page.data) {
-      if (m.senderMembership?.userId) senderIds.add(m.senderMembership.userId);
-      if (m.replyTo?.senderMembership?.userId)
-        senderIds.add(m.replyTo.senderMembership.userId);
-    }
-    const identities = await resolveIdentities(this.db, actor.orgId, senderIds);
-    const enriched = page.data.reverse().map((m) => enrich(m, identities));
+    const messages = await hydrateTimelineMessages(
+      this.db, this.entities, actor, page.data.reverse(),
+    );
 
     return {
-      messages: await withResolvedReferences(this.entities, actor, enriched),
+      messages,
       nextCursor: page.nextCursor,
     };
   }
 
-  async poll(channelId: number, actor: EntityActor, since: Date) {
+  async poll(
+    channelId: number,
+    actor: EntityActor,
+    since: Date | undefined,
+    cursor: number | undefined,
+    limit: number,
+  ) {
     const channel = await this.db.query.chatChannels.findFirst({
       where: and(
         eq(chatChannels.id, channelId),
@@ -99,41 +119,68 @@ export class ChatMessageTimelineService {
     });
     if (!channel) throw new NotFoundException("Channel not found");
 
-    if (!(await isMember(this.db, channelId, actor.orgId, actor.membershipId))) {
+    if (!(await this.isMember(channelId, actor.orgId, actor.membershipId))) {
       if (channel.type !== "PUBLIC")
         throw new NotFoundException("Channel not found");
       throw new ForbiddenException("You are not a member of this channel");
     }
 
+    const safeLimit = Math.min(Math.max(1, limit), 100);
+    // `is_deleted = false` STAYS, against the audit's recommendation to drop it so a
+    // deletion arrives as a tombstone the way `list()` returns one. Two reasons, and the
+    // first is decisive:
+    //
+    // 1. It would not achieve what it was proposed for. `poll()` is a FORWARD-ONLY cursor
+    //    on `channel_position` (`> cursor`, or `created_at > since`). A message the client
+    //    has already received and rendered sits BEHIND its cursor, so deleting it can
+    //    never re-deliver it through this route whatever this predicate says. The stated
+    //    failure — "the polling client renders the pre-delete content forever" — is
+    //    unchanged by dropping the filter. Propagating a deletion the client already holds
+    //    needs the realtime `message:deleted` event or a deletions-since feed, which is a
+    //    different route, not a different predicate here.
+    //
+    // 2. It is a deliberate, documented contract: `chat-poll-pagination.spec.ts` asserts
+    //    "excludes deleted messages from every page" and its tenant-scope test fails the
+    //    query outright if `is_deleted` is absent.
+    //
+    // The residual is real and worth naming: a message deleted AHEAD of the client's
+    // cursor is skipped by `poll()` and returned as a tombstone by `list()`, so the two
+    // reads of one channel disagree by that row. That is a benign extra row appearing on
+    // a manual refetch, not stale content, and closing it properly means a deletion feed.
+    const conditions = [
+      eq(chatMessages.orgId, actor.orgId),
+      eq(chatMessages.channelId, channelId),
+      eq(chatMessages.isDeleted, false),
+    ];
+
+    if (cursor !== undefined) {
+      conditions.push(gt(chatMessages.channelPosition, cursor));
+    } else if (since !== undefined) {
+      conditions.push(gt(chatMessages.createdAt, since));
+    }
+
     const rawMessages = await this.db.query.chatMessages.findMany({
-      where: and(
-        eq(chatMessages.orgId, actor.orgId),
-        eq(chatMessages.channelId, channelId),
-        gt(chatMessages.createdAt, since),
-      ),
-      orderBy: [desc(chatMessages.createdAt)],
-      limit: 100,
+      where: and(...conditions),
+      orderBy: [asc(chatMessages.channelPosition)],
+      limit: safeLimit + 1,
       with: {
-        attachments: true,
-        senderMembership: { columns: { userId: true } },
-        replyTo: {
-          with: { senderMembership: { columns: { userId: true } } },
-        },
+        attachments: { columns: { id: true, fileName: true, fileUrl: true, fileKey: true, fileSize: true, mimeType: true } },
+        senderMembership: SENDER_MEMBERSHIP_ID_ONLY,
+        reactions: MESSAGE_REACTIONS_WITH,
+        replyTo: REPLY_PREVIEW_WITH,
       },
     });
 
-    const senderIds = new Set<string>();
-    for (const m of rawMessages) {
-      if (m.senderMembership?.userId) senderIds.add(m.senderMembership.userId);
-      if (m.replyTo?.senderMembership?.userId)
-        senderIds.add(m.replyTo.senderMembership.userId);
-    }
-    const identities = await resolveIdentities(this.db, actor.orgId, senderIds);
-    const enriched = rawMessages
-      .reverse()
-      .map((m) => enrich(m, identities));
+    const page = buildIdCursorPage(rawMessages, safeLimit, (m) => m.channelPosition);
+    const messages = await hydrateTimelineMessages(
+      this.db, this.entities, actor, page.data,
+    );
 
-    return withResolvedReferences(this.entities, actor, enriched);
+    return {
+      messages,
+      nextCursor: page.nextCursor,
+      hasMore: page.hasMore,
+    };
   }
 
   async listThreadReplies(
@@ -148,18 +195,17 @@ export class ChatMessageTimelineService {
         eq(chatMessages.orgId, actor.orgId),
       ),
       with: {
-        attachments: true,
-        senderMembership: { columns: { userId: true } },
-        replyTo: {
-          with: { senderMembership: { columns: { userId: true } } },
-        },
+        attachments: { columns: { id: true, fileName: true, fileUrl: true, fileKey: true, fileSize: true, mimeType: true } },
+        senderMembership: SENDER_MEMBERSHIP_ID_ONLY,
+        reactions: MESSAGE_REACTIONS_WITH,
+        replyTo: REPLY_PREVIEW_WITH,
       },
     });
 
     if (!rawParent) throw new NotFoundException("Message not found");
 
     if (
-      !(await isMember(this.db, 
+      !(await this.isMember(
         rawParent.channelId,
         actor.orgId,
         actor.membershipId,
@@ -189,42 +235,25 @@ export class ChatMessageTimelineService {
       orderBy: [desc(chatMessages.channelPosition)],
       limit: safeLimit + 1,
       with: {
-        attachments: true,
-        senderMembership: { columns: { userId: true } },
-        replyTo: {
-          with: { senderMembership: { columns: { userId: true } } },
-        },
+        attachments: { columns: { id: true, fileName: true, fileUrl: true, fileKey: true, fileSize: true, mimeType: true } },
+        senderMembership: SENDER_MEMBERSHIP_ID_ONLY,
+        reactions: MESSAGE_REACTIONS_WITH,
+        replyTo: REPLY_PREVIEW_WITH,
       },
     });
 
-    const senderIds = new Set<string>();
-    if (rawParent.senderMembership?.userId)
-      senderIds.add(rawParent.senderMembership.userId);
-    if (rawParent.replyTo?.senderMembership?.userId)
-      senderIds.add(rawParent.replyTo.senderMembership.userId);
     const page = buildIdCursorPage(
       rawReplies,
       safeLimit,
       (r) => r.channelPosition,
     );
-    for (const r of page.data) {
-      if (r.senderMembership?.userId) senderIds.add(r.senderMembership.userId);
-      if (r.replyTo?.senderMembership?.userId)
-        senderIds.add(r.replyTo.senderMembership.userId);
-    }
+    const [parentMessage, ...replies] = await hydrateTimelineMessages(
+      this.db, this.entities, actor, [rawParent, ...page.data.reverse()],
+    );
 
-    const identities = await resolveIdentities(this.db, actor.orgId, senderIds);
-    const parentMessage = enrich(rawParent, identities);
-    const enrichedReplies = page.data
-      .reverse()
-      .map((r) => enrich(r, identities));
-
-    const [resolvedParent] = await withResolvedReferences(this.entities, actor, [
-      parentMessage,
-    ]);
     return {
-      parentMessage: resolvedParent ?? parentMessage,
-      replies: await withResolvedReferences(this.entities, actor, enrichedReplies),
+      parentMessage,
+      replies,
       nextCursor: page.nextCursor,
     };
   }

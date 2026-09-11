@@ -75,8 +75,8 @@ export class StockEngineBatchService {
         await claimIdempotencyKey(
           tx,
           orgId,
-          commands[i]!.idempotencyKey,
-          requestHashes[i]!,
+          commands[i].idempotencyKey,
+          requestHashes[i],
         ),
       );
     }
@@ -84,8 +84,8 @@ export class StockEngineBatchService {
     const results: Array<StockEngineResult | undefined> = new Array(commands.length);
     const active: Array<{ index: number; cmd: StockEngineCommand; postingDate: string }> = [];
     for (let i = 0; i < commands.length; i++) {
-      const claim = claims[i]!;
-      const cmd = commands[i]!;
+      const claim = claims[i];
+      const cmd = commands[i];
       if (claim.kind === "replay") {
         results[i] = extractEngineResult(claim.stored);
       } else {

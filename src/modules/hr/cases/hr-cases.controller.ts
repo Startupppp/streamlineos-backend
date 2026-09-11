@@ -39,7 +39,15 @@ import {
 import { AccessService } from "../../access/access.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  hrCaseListSchema,
+  hrCaseSchema,
+  hrCaseNoteSchema,
+  hrCaseDocumentSchema,
+  anonymousCaseResponseSchema,
+  hrCaseStatsItemSchema,
+} from "./dto/cases-response.schemas";
 
 const caseIdParams = z.object({ caseId: z.coerce.number().int().positive() }).strict();
 
@@ -53,6 +61,7 @@ export class HrCasesController {
   ) {}
 
   @Get()
+  @ResponseSchema(hrCaseListSchema)
   @RequirePermission("hr:cases:view")
   @Validate({ query: listCasesSchema })
   async list(
@@ -64,12 +73,14 @@ export class HrCasesController {
   }
 
   @Get("stats")
+  @ResponseSchema(z.array(hrCaseStatsItemSchema))
   @RequirePermission("hr:cases:view")
   async stats(@CurrentUser() user: CurrentUserContext) {
     return this.cases.countByStatus(user.orgId);
   }
 
   @Get(":caseId")
+  @ResponseSchema(hrCaseSchema)
   @RequirePermission("hr:cases:view")
   @Validate({ params: caseIdParams })
   async getById(
@@ -81,6 +92,7 @@ export class HrCasesController {
   }
 
   @Post()
+  @ResponseSchema(hrCaseSchema)
   @HttpCode(201)
   @RequirePermission("hr:cases:manage")
   @Validate({ body: createCaseSchema })
@@ -89,10 +101,11 @@ export class HrCasesController {
     @Body() body: CreateCaseInput,
     @Req() req: Request,
   ) {
-    return this.cases.create(user.orgId, user.userId, body, req.ip);
+    return this.cases.create(user.orgId, user.userId, body, actingMembershipId(user.principal), req.ip);
   }
 
   @Post("anonymous")
+  @ResponseSchema(anonymousCaseResponseSchema)
   @HttpCode(201)
   @RequirePermission("hr:cases:view")
   @Validate({ body: anonymousReportSchema })
@@ -104,6 +117,7 @@ export class HrCasesController {
   }
 
   @Patch(":caseId")
+  @ResponseSchema(hrCaseSchema)
   @RequirePermission("hr:cases:manage")
   @Validate({ params: caseIdParams, body: updateCaseSchema })
   async update(
@@ -113,10 +127,11 @@ export class HrCasesController {
     @Req() req: Request,
   ) {
     const hasConfidential = await this.canConfidential(user);
-    return this.cases.update(user.orgId, caseId, user.userId, hasConfidential, body, req.ip);
+    return this.cases.update(user.orgId, caseId, user.userId, hasConfidential, body, actingMembershipId(user.principal), req.ip);
   }
 
   @Delete(":caseId")
+  @NoContentResponse()
   @RequirePermission("hr:cases:manage")
   @HttpCode(204)
   @Validate({ params: caseIdParams })
@@ -125,10 +140,11 @@ export class HrCasesController {
     @Param("caseId", ParseIntPipe) caseId: number,
   ) {
     const hasConfidential = await this.canConfidential(user);
-    await this.cases.softDelete(user.orgId, caseId, user.userId, hasConfidential);
+    await this.cases.softDelete(user.orgId, caseId, user.userId, hasConfidential, actingMembershipId(user.principal));
   }
 
   @Post(":caseId/investigate")
+  @ResponseSchema(hrCaseSchema)
   @BodylessAction()
   @RequirePermission("hr:cases:manage")
   @Validate({ params: caseIdParams })
@@ -138,10 +154,11 @@ export class HrCasesController {
     @Req() req: Request,
   ) {
     const hasConfidential = await this.canConfidential(user);
-    return this.cases.startInvestigation(user.orgId, caseId, user.userId, hasConfidential, req.ip);
+    return this.cases.startInvestigation(user.orgId, caseId, user.userId, hasConfidential, actingMembershipId(user.principal), req.ip);
   }
 
   @Get(":caseId/notes")
+  @ResponseSchema(z.array(hrCaseNoteSchema))
   @RequirePermission("hr:cases:view")
   @Validate({ params: caseIdParams })
   async listNotes(
@@ -149,10 +166,11 @@ export class HrCasesController {
     @Param("caseId", ParseIntPipe) caseId: number,
   ) {
     const hasConfidential = await this.canConfidential(user);
-    return this.cases.listNotes(user.orgId, caseId, user.userId, hasConfidential);
+    return this.cases.listNotes(user.orgId, caseId, user.userId, hasConfidential, actingMembershipId(user.principal));
   }
 
   @Post(":caseId/notes")
+  @ResponseSchema(hrCaseNoteSchema)
   @HttpCode(201)
   @RequirePermission("hr:cases:manage")
   @Validate({ params: caseIdParams, body: createNoteSchema })
@@ -163,10 +181,11 @@ export class HrCasesController {
     @Req() req: Request,
   ) {
     const hasConfidential = await this.canConfidential(user);
-    return this.cases.addNote(user.orgId, caseId, user.userId, hasConfidential, body, req.ip);
+    return this.cases.addNote(user.orgId, caseId, user.userId, hasConfidential, body, actingMembershipId(user.principal), req.ip);
   }
 
   @Get(":caseId/documents")
+  @ResponseSchema(z.array(hrCaseDocumentSchema))
   @RequirePermission("hr:cases:view")
   @Validate({ params: caseIdParams })
   async listDocuments(
@@ -174,10 +193,11 @@ export class HrCasesController {
     @Param("caseId", ParseIntPipe) caseId: number,
   ) {
     const hasConfidential = await this.canConfidential(user);
-    return this.cases.listDocuments(user.orgId, caseId, user.userId, hasConfidential);
+    return this.cases.listDocuments(user.orgId, caseId, user.userId, hasConfidential, actingMembershipId(user.principal));
   }
 
   @Post(":caseId/documents")
+  @ResponseSchema(hrCaseDocumentSchema)
   @HttpCode(201)
   @RequirePermission("hr:cases:manage")
   @Validate({ params: caseIdParams, body: addDocumentSchema })
@@ -188,7 +208,7 @@ export class HrCasesController {
     @Req() req: Request,
   ) {
     const hasConfidential = await this.canConfidential(user);
-    return this.cases.addDocument(user.orgId, caseId, user.userId, hasConfidential, body, req.ip);
+    return this.cases.addDocument(user.orgId, caseId, user.userId, hasConfidential, body, actingMembershipId(user.principal), req.ip);
   }
 
   private async canConfidential(user: CurrentUserContext): Promise<boolean> {

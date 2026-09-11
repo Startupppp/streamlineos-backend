@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, timestamp, index, unique } from "drizzle-orm/pg-core";
+import { foreignKey, index, integer, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../common/auth";
 import { signSignatureAssetTypeEnum, signSignatureMethodEnum } from "./enums";
@@ -10,8 +10,8 @@ export const signSignatureAssets = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    envelopeId: integer("envelope_id").references(() => signEnvelopes.id, { onDelete: "cascade" }).notNull(),
-    recipientId: integer("recipient_id").references(() => signRecipients.id, { onDelete: "cascade" }).notNull(),
+    envelopeId: integer("envelope_id").notNull(),
+    recipientId: integer("recipient_id").notNull(),
     assetType: signSignatureAssetTypeEnum("asset_type").notNull(),
     method: signSignatureMethodEnum("method").notNull(),
     imageFileKey: text("image_file_key"),
@@ -20,6 +20,8 @@ export const signSignatureAssets = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.envelopeId], foreignColumns: [signEnvelopes.orgId, signEnvelopes.id], name: "fk_sign_signature_assets_envelope_id_org" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.recipientId], foreignColumns: [signRecipients.orgId, signRecipients.id], name: "fk_sign_signature_assets_recipient_id_org" }).onDelete("cascade"),
     index("idx_sign_signature_assets_recipient").on(table.recipientId),
     index("idx_sign_signature_assets_org_envelope").on(table.orgId, table.envelopeId),
     unique("uniq_sign_signature_assets_org_id").on(table.orgId, table.id),

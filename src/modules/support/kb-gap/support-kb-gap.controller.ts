@@ -23,12 +23,21 @@ import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { AiJobsService } from "../../ai/jobs/ai-jobs.service";
 import { SupportKbGapService } from "./support-kb-gap.service";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  gapListResponseSchema,
+  detectGapsJobSchema,
+  proposeDraftResponseSchema,
+  dismissGapResponseSchema,
+} from "./dto/support-kb-gap-response.schemas";
+import {
+  listGapsQuerySchema,
+  dismissGapPatchSchema,
+  type ListGapsQuery,
+  type DismissGapPatchInput,
+} from "./dto/support-kb-gap.schemas";
 
 const gapIdParams = z.object({ gapId: z.coerce.number().int().positive() }).strict();
-
-const patchSchema = z.object({ action: z.literal("dismiss") });
-type PatchInput = z.infer<typeof patchSchema>;
 
 @RequireModule("support")
 @Controller("support/knowledge-gaps")
@@ -41,20 +50,20 @@ export class SupportKbGapController {
 
   @Get()
   @RequirePermission("support:knowledge-gaps:view")
+  @Validate({ query: listGapsQuerySchema })
+  @ResponseSchema(gapListResponseSchema)
   listGaps(
     @CurrentUser() u: CurrentUserContext,
-    @Query("cursor") cursor?: string,
-    @Query("limit") limit?: string,
+    @Query() query: ListGapsQuery,
   ) {
-    const parsedCursor = cursor ? parseInt(cursor, 10) : undefined;
-    const parsedLimit = limit ? Math.min(parseInt(limit, 10), 100) : 50;
-    return this.service.listGaps(u.orgId, parsedCursor, parsedLimit);
+    return this.service.listGaps(u.orgId, query.cursor, query.limit);
   }
 
   @Post("detect")
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("support:knowledge-gaps:manage")
+  @ResponseSchema(detectGapsJobSchema)
   detectGaps(@CurrentUser() u: CurrentUserContext) {
     const idempotencyKey = `gap-detect:${u.orgId}:${new Date().toISOString().slice(0, 10)}`;
     return this.aiJobs.enqueue({
@@ -73,6 +82,7 @@ export class SupportKbGapController {
   @UseRateLimit("ai:invoke")
   @RequirePermission("support:knowledge-gaps:manage")
   @Validate({ params: gapIdParams })
+  @ResponseSchema(proposeDraftResponseSchema)
   async proposeDraft(
     @Param("gapId", ParseIntPipe) gapId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -83,11 +93,12 @@ export class SupportKbGapController {
 
   @Patch(":gapId")
   @RequirePermission("support:knowledge-gaps:manage")
-  @Validate({ params: gapIdParams, body: patchSchema })
+  @Validate({ params: gapIdParams, body: dismissGapPatchSchema })
+  @ResponseSchema(dismissGapResponseSchema)
   patchGap(
     @Param("gapId", ParseIntPipe) gapId: number,
     @CurrentUser() u: CurrentUserContext,
-    @Body() body: PatchInput,
+    @Body() body: DismissGapPatchInput,
   ) {
     if (body.action === "dismiss") {
       return this.service.dismissGap(u.orgId, gapId);

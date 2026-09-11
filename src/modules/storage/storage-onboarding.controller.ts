@@ -6,12 +6,12 @@ import {
   Inject,
   Post,
   ServiceUnavailableException,
+  UnprocessableEntityException,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
-import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
@@ -22,11 +22,14 @@ import { MultipartAction } from "../../common/openapi/zod-operation-contracts";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { documents, onboardingSteps } from "../../db/schema";
-import { registerAfterCommit } from "../../common/tenant/tenant-context";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { StorageService } from "./storage.service";
-import { onboardingDocTypeSchema } from "./dto/storage.schemas";
-
-const uploadBodySchema = z.object({ type: onboardingDocTypeSchema });
+import { MediaTransformRunner } from "./media-transform.runner";
+import { AvScanner } from "../../common/security/av-scan";
+import { validateMagicBytes } from "./file-signatures";
+import { onboardingDocTypeSchema, uploadBodySchema } from "./dto/storage.schemas";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { onboardingDocumentResponseSchema } from "./dto/storage-response.schemas";
 
 const ALLOWED_TYPES = [
   "application/pdf",
@@ -42,9 +45,12 @@ export class OnboardingDocumentsController {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly storage: StorageService,
+    private readonly avScanner: AvScanner,
+    private readonly transforms: MediaTransformRunner,
   ) {}
 
   @Post("documents")
+  @ResponseSchema(onboardingDocumentResponseSchema)
   @Universal()
   @HttpCode(201)
   @MultipartAction({ file: "file", fields: { type: "string" }, requiredFields: ["type"] })
@@ -74,60 +80,87 @@ export class OnboardingDocumentsController {
         "File type not allowed. Use PDF, JPEG, PNG, or WebP.",
       );
     }
+    if (!validateMagicBytes(file.buffer, file.mimetype)) {
+      throw new BadRequestException("File content does not match declared type");
+    }
     if (file.size > MAX_SIZE)
       throw new BadRequestException("File size must be under 5MB");
 
-    const { key, url, compressedBuffer, compressedMimeType, size } =
-      await this.storage.compressAndPreGenerateKey(
-        file.buffer,
-        "onboarding",
-        file.originalname,
-        file.mimetype,
-      );
+    if (!this.transforms.hasCapacity())
+      throw new ServiceUnavailableException("Upload processing is saturated — retry shortly");
+
+    const scanResult = await this.avScanner.scan(file.buffer, file.originalname, file.mimetype);
+    if (scanResult.status === "infected")
+      throw new UnprocessableEntityException(`Upload rejected: malware detected (${scanResult.threat})`);
+    if (scanResult.status === "error")
+      throw new ServiceUnavailableException("Malware scan unavailable — upload rejected");
+
+    const { key, plannedMimeType } = await this.storage.planUpload(
+      u.orgId,
+      file.buffer,
+      "onboarding",
+      file.originalname,
+      file.mimetype,
+    );
 
     const stepName = `Upload ${type}`;
+    const orgId = u.orgId;
+    const userId = u.userId;
+    const originalname = file.originalname;
+    const mimetype = file.mimetype;
+    const buffer = file.buffer;
+    const fileSize = file.size;
 
-    await this.db.transaction(async (tx) => {
-      await tx.insert(documents).values({
-        orgId: u.orgId,
-        userId: u.userId,
-        name: file.originalname,
-        type,
-        fileUrl: url,
-        fileSize: size,
-        mimeType: compressedMimeType,
-        uploadedBy: u.userId,
-      });
-      const existing = await tx.query.onboardingSteps.findFirst({
-        where: and(
-          eq(onboardingSteps.userId, u.userId),
-          eq(onboardingSteps.stepName, stepName),
-        ),
-      });
-      if (existing) {
-        await tx
-          .update(onboardingSteps)
-          .set({ status: "COMPLETED", completedAt: new Date() })
-          .where(eq(onboardingSteps.id, existing.id));
-      } else {
-        await tx.insert(onboardingSteps).values({
-          userId: u.userId,
-          orgId: u.orgId,
-          stepName,
-          status: "COMPLETED",
-          completedAt: new Date(),
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        await tx.insert(documents).values({
+          orgId,
+          userId,
+          name: originalname,
+          type,
+          fileUrl: key,
+          fileSize,
+          mimeType: plannedMimeType,
+          uploadedBy: userId,
         });
-      }
+        const existing = await tx.query.onboardingSteps.findFirst({
+          where: and(
+            eq(onboardingSteps.orgId, orgId),
+            eq(onboardingSteps.userId, userId),
+            eq(onboardingSteps.stepName, stepName),
+          ),
+          columns: { id: true },
+        });
+        if (existing) {
+          await tx
+            .update(onboardingSteps)
+            .set({ status: "COMPLETED", completedAt: new Date() })
+            .where(and(eq(onboardingSteps.orgId, orgId), eq(onboardingSteps.id, existing.id)));
+        } else {
+          await tx.insert(onboardingSteps).values({
+            userId,
+            orgId,
+            stepName,
+            status: "COMPLETED",
+            completedAt: new Date(),
+          });
+        }
+      },
+      { orgId },
+    );
+
+    this.transforms.submit({
+      name: "onboarding.document.compress",
+      orgId,
+      run: async () => {
+        await this.storage.compressToKey(orgId, buffer, key, originalname, mimetype);
+      },
+      compensate: async () => {
+        await this.storage.deleteFileIfPresent(orgId, key);
+      },
     });
 
-    const uploadDeferred = registerAfterCommit(async () => {
-      await this.storage.uploadToKey(u.orgId, compressedBuffer, key, compressedMimeType);
-    });
-
-    if (!uploadDeferred) {
-      await this.storage.uploadToKey(u.orgId, compressedBuffer, key, compressedMimeType);
-    }
-
-    return { url };
+    return { url: key };
   }
 }

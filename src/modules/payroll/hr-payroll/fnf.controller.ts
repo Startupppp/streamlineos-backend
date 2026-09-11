@@ -30,6 +30,8 @@ import {
   type ListPageQueryInput,
 } from "./dto/payroll.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { fnfListResponseSchema, fnfRowSchema } from "./dto/hr-payroll-response.schemas";
 import { z } from "zod";
 
 const fnfIdParams = z.object({ fnfId: z.coerce.number().int().positive() }).strict();
@@ -46,6 +48,7 @@ export class HrPayrollFnfController {
   @Get()
   @RequirePermission("hr:payroll:view")
   @Validate({ query: listPageQuerySchema })
+  @ResponseSchema(fnfListResponseSchema)
   async list(
     @CurrentUser() u: CurrentUserContext,
     @Query() query: ListPageQueryInput,
@@ -62,6 +65,7 @@ export class HrPayrollFnfController {
   @RequirePermission("hr:exit:manage")
   @HttpCode(201)
   @Validate({ body: createFnfSchema })
+  @ResponseSchema(fnfRowSchema)
   async create(
     @Body() body: CreateFnfInput,
     @CurrentUser() u: CurrentUserContext,
@@ -74,6 +78,7 @@ export class HrPayrollFnfController {
   @Patch(":fnfId")
   @RequirePermission("hr:exit:manage")
   @Validate({ params: fnfIdParams, body: patchFnfSchema })
+  @ResponseSchema(fnfRowSchema)
   async update(
     @Param("fnfId", ParseIntPipe) fnfId: number,
     @Body() body: PatchFnfInput,

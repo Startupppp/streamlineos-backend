@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
   leaveBalances,
   leaveRequests,
@@ -65,21 +65,25 @@ export class LeavesApprovalService {
     _input: UpdateLeaveInput,
   ) {
     const scope = await resolveLeavesViewScope(this.access, currentUser);
-    if (scope === "none") {
+    if (scope.denied) {
       throw new ForbiddenException("Only admins can approve or reject leave requests.");
     }
+    const approvalWhere = scope.compose(
+      {
+        tenant: leaveRequests.orgId,
+        scope: leaveApprovalScope(
+          currentUser.principal != null ? actingMembershipId(currentUser.principal) : null,
+        ),
+      },
+      ({ sql: where }) => where,
+      () => sql`false`,
+    );
 
     const transition = await this.db.transaction(async (tx) => {
       const [current] = await tx
         .select()
         .from(leaveRequests)
-        .where(
-          and(
-            eq(leaveRequests.id, leaveRequestId),
-            eq(leaveRequests.orgId, currentUser.orgId),
-            leaveApprovalScope(scope, currentUser.orgId, currentUser.userId, currentUser.principal != null ? actingMembershipId(currentUser.principal) : null),
-          ),
-        )
+        .where(and(eq(leaveRequests.id, leaveRequestId), approvalWhere))
         .limit(1)
         .for("update");
       if (!current) return null;
@@ -105,10 +109,9 @@ export class LeavesApprovalService {
         .where(
           and(
             eq(leaveRequests.id, leaveRequestId),
-            eq(leaveRequests.orgId, currentUser.orgId),
             eq(leaveRequests.status, current.status),
             eq(leaveRequests.rowVersion, current.rowVersion),
-            leaveApprovalScope(scope, currentUser.orgId, currentUser.userId, currentUser.principal != null ? actingMembershipId(currentUser.principal) : null),
+            approvalWhere,
           ),
         )
         .returning({ id: leaveRequests.id });
@@ -132,19 +135,21 @@ export class LeavesApprovalService {
             current.isHalfDay,
           );
 
-          const [balanceRecord] = await tx
-            .select()
-            .from(leaveBalances)
-            .where(
-              and(
-                eq(leaveBalances.userId, current.userId),
-                eq(leaveBalances.leaveTypeId, current.leaveTypeId),
-                eq(leaveBalances.orgId, currentUser.orgId),
-                eq(leaveBalances.year, this.leaveYear(current.startDate)),
-              ),
-            )
-            .limit(1)
-            .for("update");
+          const [balanceRecord] = current.userMembershipId == null
+            ? []
+            : await tx
+              .select()
+              .from(leaveBalances)
+              .where(
+                and(
+                  eq(leaveBalances.userMembershipId, current.userMembershipId),
+                  eq(leaveBalances.leaveTypeId, current.leaveTypeId),
+                  eq(leaveBalances.orgId, currentUser.orgId),
+                  eq(leaveBalances.year, this.leaveYear(current.startDate)),
+                ),
+              )
+              .limit(1)
+              .for("update");
 
           if (balanceRecord) {
             const prevLopDays = Number(current.lopDays ?? 0);
@@ -210,9 +215,19 @@ export class LeavesApprovalService {
     input: ApproveLeaveInput,
   ) {
     const scope = await resolveLeavesViewScope(this.access, currentUser);
-    if (scope === "none") {
+    if (scope.denied) {
       throw new ForbiddenException("You do not have permission to approve leave requests.");
     }
+    const approvalWhere = scope.compose(
+      {
+        tenant: leaveRequests.orgId,
+        scope: leaveApprovalScope(
+          currentUser.principal != null ? actingMembershipId(currentUser.principal) : null,
+        ),
+      },
+      ({ sql: where }) => where,
+      () => sql`false`,
+    );
 
     let approverMembershipId: number;
     try {
@@ -233,13 +248,7 @@ export class LeavesApprovalService {
       const [current] = await tx
         .select()
         .from(leaveRequests)
-        .where(
-          and(
-            eq(leaveRequests.id, leaveRequestId),
-            eq(leaveRequests.orgId, currentUser.orgId),
-            leaveApprovalScope(scope, currentUser.orgId, currentUser.userId, currentUser.principal != null ? actingMembershipId(currentUser.principal) : null),
-          ),
-        )
+        .where(and(eq(leaveRequests.id, leaveRequestId), approvalWhere))
         .limit(1)
         .for("update");
       if (!current) throw new NotFoundException("Leave request not found.");
@@ -263,10 +272,9 @@ export class LeavesApprovalService {
         .where(
           and(
             eq(leaveRequests.id, leaveRequestId),
-            eq(leaveRequests.orgId, currentUser.orgId),
             eq(leaveRequests.status, "PENDING"),
             eq(leaveRequests.rowVersion, current.rowVersion),
-            leaveApprovalScope(scope, currentUser.orgId, currentUser.userId, currentUser.principal != null ? actingMembershipId(currentUser.principal) : null),
+            approvalWhere,
           ),
         )
         .returning({ id: leaveRequests.id });
@@ -289,19 +297,21 @@ export class LeavesApprovalService {
           current.endDate,
           current.isHalfDay,
         );
-        const [balanceRecord] = await tx
-          .select()
-          .from(leaveBalances)
-          .where(
-            and(
-              eq(leaveBalances.userId, current.userId),
-              eq(leaveBalances.leaveTypeId, current.leaveTypeId),
-              eq(leaveBalances.orgId, currentUser.orgId),
-              eq(leaveBalances.year, this.leaveYear(current.startDate)),
-            ),
-          )
-          .limit(1)
-          .for("update");
+        const [balanceRecord] = current.userMembershipId == null
+          ? []
+          : await tx
+            .select()
+            .from(leaveBalances)
+            .where(
+              and(
+                eq(leaveBalances.userMembershipId, current.userMembershipId),
+                eq(leaveBalances.leaveTypeId, current.leaveTypeId),
+                eq(leaveBalances.orgId, currentUser.orgId),
+                eq(leaveBalances.year, this.leaveYear(current.startDate)),
+              ),
+            )
+            .limit(1)
+            .for("update");
 
         if (balanceRecord) {
           const available = Number(balanceRecord.balance);
@@ -369,9 +379,19 @@ export class LeavesApprovalService {
     input: RejectLeaveInput,
   ) {
     const scope = await resolveLeavesViewScope(this.access, currentUser);
-    if (scope === "none") {
+    if (scope.denied) {
       throw new ForbiddenException("You do not have permission to reject leave requests.");
     }
+    const approvalWhere = scope.compose(
+      {
+        tenant: leaveRequests.orgId,
+        scope: leaveApprovalScope(
+          currentUser.principal != null ? actingMembershipId(currentUser.principal) : null,
+        ),
+      },
+      ({ sql: where }) => where,
+      () => sql`false`,
+    );
 
     let approverMembershipId: number;
     try {
@@ -391,13 +411,7 @@ export class LeavesApprovalService {
       const [current] = await tx
         .select()
         .from(leaveRequests)
-        .where(
-          and(
-            eq(leaveRequests.id, leaveRequestId),
-            eq(leaveRequests.orgId, currentUser.orgId),
-            leaveApprovalScope(scope, currentUser.orgId, currentUser.userId, currentUser.principal != null ? actingMembershipId(currentUser.principal) : null),
-          ),
-        )
+        .where(and(eq(leaveRequests.id, leaveRequestId), approvalWhere))
         .limit(1)
         .for("update");
       if (!current) throw new NotFoundException("Leave request not found.");
@@ -422,10 +436,9 @@ export class LeavesApprovalService {
         .where(
           and(
             eq(leaveRequests.id, leaveRequestId),
-            eq(leaveRequests.orgId, currentUser.orgId),
             eq(leaveRequests.status, "PENDING"),
             eq(leaveRequests.rowVersion, current.rowVersion),
-            leaveApprovalScope(scope, currentUser.orgId, currentUser.userId, currentUser.principal != null ? actingMembershipId(currentUser.principal) : null),
+            approvalWhere,
           ),
         )
         .returning({ id: leaveRequests.id });

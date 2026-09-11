@@ -109,7 +109,7 @@ export class CrmTerritoriesService {
       if (input.name !== undefined) scalarUpdate.name = input.name;
       if (input.description !== undefined) scalarUpdate.description = input.description ?? null;
       if (input.isActive !== undefined) scalarUpdate.isActive = input.isActive;
-      if (input.criteria !== undefined) scalarUpdate.criteria = input.criteria as typeof territories.$inferInsert["criteria"];
+      if (input.criteria !== undefined) scalarUpdate.criteria = input.criteria;
       if (input.priority !== undefined) scalarUpdate.priority = input.priority;
 
       const [updated] = await tx

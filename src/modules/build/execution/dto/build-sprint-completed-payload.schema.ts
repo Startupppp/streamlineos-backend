@@ -8,6 +8,6 @@ export const buildSprintCompletedPayloadSchema = z.object({
   actorUserId: z.string().nullable(),
 });
 
-export type BuildSprintCompletedPayload = z.infer<
+type BuildSprintCompletedPayload = z.infer<
   typeof buildSprintCompletedPayloadSchema
 >;

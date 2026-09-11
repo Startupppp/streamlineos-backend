@@ -1,0 +1,945 @@
+{
+  "note": "Every top-level integer constant in every backend gate script, with the direction it may move. check:baseline-integrity fails on an unregistered constant (which is what a rename looks like), a stale registration (the other half of a rename), and any move in the unsafe direction. ratchet = may only decrease. floor = may only increase; lowering a floor is how a gate goes blind while printing OK. pinned = may not change without re-registering, used where the safe direction is genuinely not obvious.",
+  "measured": "2026-09-06",
+  "entries": {
+    "baselines/authz-deny.json": {
+      "uncoveredRatchet": {
+        "value": 2196,
+        "direction": "ratchet",
+        "owner": "backend platform owner",
+        "reason": "Authorization-gated handlers with no deny test. Set at the measured committed number 2453 by 204aca63 and LOWERED to 2443, 2441, 2231, then 2221 as deny specs landed; never raised. RECONCILED 2231 -> 2221 on 2026-09-11: the baseline file (baselines/authz-deny.json) had already been hand-edited to 2221 while this registry still read 2231; this entry now matches the committed baseline. The true measured value at the time of this reconciliation is 2199 (a further 22 bankable) -- deliberately NOT banked here, since lowering further is a separate decision from reconciling a stale registration. The 2026-09-08 drop of 210 is 51 handlers newly covered by three real specs (billing 30, payroll ESS 14, payroll module 13) plus attribution the refreshed handler list picked up; each spec drives the real PermissionGuard through supertest with an AccessService whose scopeFor returns none, so removing @UseGuards(PermissionGuard) turns 403 into 200 and the spec fails -- bite-proved on EssController. Coverage is still only 1018/3249 (31%); this ratchet is a floor to walk down, not a score."
+      }
+    },
+    "baselines/bare-throw.json": {
+      "ratchet": {
+        "value": 1,
+        "direction": "ratchet",
+        "owner": "degradation/platform DB and CRM/inventory release owner",
+        "reason": "search-index.spec.ts:231 (inside the APP_DATABASE_URL-gated describe, the one site of 220 execution triage could not reach) and inv-engine-misc-isolation-stock.spec.ts:194 (inventory, accepted residual R-9). Banked 2 -> 1 on 2026-09-06 after the gate reported the improvement."
+      }
+    },
+    "baselines/query-projection-baseline.json": {
+      "countPathsAllowed": {
+        "value": 0,
+        "direction": "ratchet"
+      },
+      "existencePathsAllowed": {
+        "value": 0,
+        "direction": "ratchet"
+      },
+      "existenceDeferredAllowed": {
+        "value": 7,
+        "direction": "ratchet",
+        "owner": "perf/db owner",
+        "reason": "Existence checks deferred rather than projected. A hard zero on the other three paths; this one carries the remaining seven."
+      },
+      "heavyColumnReadsAllowed": {
+        "value": 0,
+        "direction": "ratchet"
+      }
+    },
+    "baselines/vacuous-assertions.json": {
+      "ratchets.NO_ASSERTION": {
+        "value": 1,
+        "direction": "ratchet",
+        "owner": "CRM/inventory release owner",
+        "reason": "inv-engine-misc-isolation-ai.spec.ts:133 \u2014 inventory, accepted residual R-9, review 2026-12-01."
+      },
+      "ratchets.TAUTOLOGY": {
+        "value": 2,
+        "direction": "ratchet",
+        "owner": "payroll/RBAC and security owner",
+        "reason": "prd-e2e-journey.spec.ts:153 (needs the access layer's role fixtures) and operator-access.spec.ts:77 (deliberate: no operator-access mechanism exists to test, and the spec keeps the absence visible)."
+      },
+      "ratchets.COND_ASSERT": {
+        "value": 0,
+        "direction": "ratchet"
+      },
+      "ratchets.FLOATING_ASSERT": {
+        "value": 0,
+        "direction": "ratchet"
+      },
+      "ratchets.FOCUSED": {
+        "value": 0,
+        "direction": "ratchet"
+      },
+      "ratchets.EARLY_RETURN": {
+        "value": 4,
+        "direction": "ratchet",
+        "owner": "platform DB \u00b7 platform \u00b7 surveys \u00b7 timesheets",
+        "reason": "Lowered 5 -> 4 on 2026-09-11 after removing tenant-relationship-integrity.spec.ts's always-null live-DB adapter and early return. Its four design tests now explicitly make no SQL claim; a requested live mode fails closed and directs operators to the guarded dedicated DB probe. The prior five-site baseline was established after two earlier repairs; four existing environment/domain guards remain."
+      }
+    },
+    "check-ai-charge-declared.mjs": {
+      "ANTI_VACUITY_MIN": {
+        "value": 80,
+        "direction": "floor"
+      }
+    },
+    "check-authz-deny.mjs": {
+      "MIN_CONTROLLERS": {
+        "value": 150,
+        "direction": "floor"
+      },
+      "MIN_GATED": {
+        "value": 800,
+        "direction": "floor"
+      },
+      "MIN_DENY_SPECS": {
+        "value": 50,
+        "direction": "floor"
+      }
+    },
+    "check-bare-throw.mjs": {
+      "MIN_SPEC_FILES": {
+        "value": 1500,
+        "direction": "floor"
+      },
+      "MIN_THROW_MATCHERS": {
+        "value": 500,
+        "direction": "floor"
+      },
+      "MIN_RISK_TESTS": {
+        "value": 50,
+        "direction": "floor"
+      }
+    },
+    "check-baseline-integrity.mjs": {
+      "MIN_GATE_SCRIPTS": {
+        "value": 40,
+        "direction": "floor"
+      },
+      "MIN_CONSTANTS": {
+        "value": 100,
+        "direction": "floor"
+      },
+      "MIN_BASELINE_JSON_FILES": {
+        "value": 5,
+        "direction": "floor"
+      },
+      "MIN_JSON_RATCHETS": {
+        "value": 5,
+        "direction": "floor"
+      }
+    },
+    "check-bounded-contracts.mjs": {
+      "PAGE_SIZE_CAP": {
+        "value": 100,
+        "direction": "ratchet",
+        "owner": "api/platform owner",
+        "reason": "The hard per-page cap every list contract is checked against. Raising it widens every unbounded-read surface at once."
+      }
+    },
+    "check-cache-invalidation.mjs": {
+      "MIN_SERVICE_FILES": {
+        "value": 30,
+        "direction": "floor"
+      },
+      "MIN_WRITE_SITES": {
+        "value": 100,
+        "direction": "floor"
+      },
+      "MIN_INVALIDATE_SITES": {
+        "value": 200,
+        "direction": "floor"
+      }
+    },
+    "check-conflict-target-inference.ts": {
+      "MIN_TARGETED_SITES": {
+        "value": 100,
+        "direction": "floor",
+        "owner": "check-conflict-target-inference owner (NOT v2 ticket 30)",
+        "reason": "Anti-vacuity floor declared by that gate's own header (\"Floors, not targets. A rename of `onConflictDoNothing`, a move of the schema folder or a broken table registry would otherwise leave this gate scanning nothing and reporting clean.\"). Registered as a FLOOR at its authored value by v2 ticket 30 on 2026-09-03 -- the gate landed in package.json during that session, unregistered and unwired, and check:baseline-integrity is blocking. Ticket 30 registered the direction, not the number: it does not own this gate. Lower bound on ON CONFLICT sites the scan must find."
+      },
+      "MIN_RESOLVED_SITES": {
+        "value": 100,
+        "direction": "floor",
+        "owner": "check-conflict-target-inference owner (NOT v2 ticket 30)",
+        "reason": "Anti-vacuity floor declared by that gate's own header (\"Floors, not targets. A rename of `onConflictDoNothing`, a move of the schema folder or a broken table registry would otherwise leave this gate scanning nothing and reporting clean.\"). Registered as a FLOOR at its authored value by v2 ticket 30 on 2026-09-03 -- the gate landed in package.json during that session, unregistered and unwired, and check:baseline-integrity is blocking. Ticket 30 registered the direction, not the number: it does not own this gate. Lower bound on sites whose conflict target must resolve."
+      },
+      "MIN_PARTIAL_INDEX_TARGETS": {
+        "value": 5,
+        "direction": "floor",
+        "owner": "check-conflict-target-inference owner (NOT v2 ticket 30)",
+        "reason": "Anti-vacuity floor declared by that gate's own header (\"Floors, not targets. A rename of `onConflictDoNothing`, a move of the schema folder or a broken table registry would otherwise leave this gate scanning nothing and reporting clean.\"). Registered as a FLOOR at its authored value by v2 ticket 30 on 2026-09-03 -- the gate landed in package.json during that session, unregistered and unwired, and check:baseline-integrity is blocking. Ticket 30 registered the direction, not the number: it does not own this gate. Lower bound on partial-index targets the scan must find."
+      }
+    },
+    "check-date-in-sql-template.ts": {
+      "MIN_SQL_TEMPLATES": {
+        "value": 50,
+        "direction": "floor",
+        "owner": "backend platform owner",
+        "reason": "Anti-vacuity floor: the scan must find at least this many sql`` templates or it reports a clean sweep because its collector stopped matching. The live scan sees roughly 1,900, so 50 is a collapse detector, not a target. Raising it is tightening; lowering it needs a reason."
+      }
+    },
+    "check-db-call-count.mjs": {
+      "LOOP_BODY_LOOKFORWARD": {
+        "value": 30,
+        "direction": "floor"
+      },
+      "MIN_FILES": {
+        "value": 200,
+        "direction": "floor"
+      },
+      "MIN_MODULES": {
+        "value": 40,
+        "direction": "floor"
+      },
+      "MIN_COMMON_FILES": {
+        "value": 150,
+        "direction": "floor",
+        "owner": "perf/db owner",
+        "reason": "Per-root floor for src/common, which joined this gate's corpus on 2026-09-03 (190 measured). Six files there carry loop-internal DB calls and had never been classified, because the gate read src/modules only."
+      },
+      "MIN_DB_FILES": {
+        "value": 300,
+        "direction": "floor",
+        "owner": "perf/db owner",
+        "reason": "Per-root floor for src/db, which joined this gate's corpus on 2026-09-03 (362 measured)."
+      },
+      "MIN_INSPECTED_LOOPS": {
+        "value": 2600,
+        "direction": "floor"
+      },
+      "ACTIONABLE_UNDETECTED_BASELINE": {
+        "value": 0,
+        "direction": "ratchet",
+        "owner": "perf/db owner",
+        "reason": "Banked 3 -> 0 on 2026-09-07. This class is 'a real N+1 the detector's patterns cannot match because the per-row work is a service call', and all three were resolved: hr-effective-change-applier (reads hoisted to two inArray preloads; its per-row WRITES stay proportional on purpose and are classified PARTIALLY-BATCHED, not claimed fixed), leave-approver (the Promise.all 'fix' was withdrawn - it deleted an early exit and made a one-resolution path always resolve up to 100; the sequential loop is restored and classified BOUNDED), and approvals-bulk. All three now carry query-count regression specs that were bite-proved by reintroducing the N+1. Earlier note, kept because the raise it records is why this gate exists: introduced by c0daca5b while UNDETECTED_CLAIM_BASELINE went 2 -> 0 in the same file, a net 2 -> 3."
+      },
+      "UNDETECTED_CLAIM_BASELINE": {
+        "value": 0,
+        "direction": "ratchet"
+      }
+    },
+    "check-declaration-column-drift.ts": {
+      "MIN_DECLARED_TABLES": {
+        "value": 700,
+        "direction": "floor"
+      },
+      "MIN_DECLARED_COLUMNS": {
+        "value": 5000,
+        "direction": "floor"
+      },
+      "MIN_LIVE_COLUMNS": {
+        "value": 5000,
+        "direction": "floor"
+      }
+    },
+    "check-drop-column-safety.mjs": {
+      "MIN_MIGRATION_FILES": {
+        "value": 100,
+        "direction": "floor"
+      },
+      "MIN_SCHEMA_FILES": {
+        "value": 50,
+        "direction": "floor"
+      },
+      "MIN_DROPS": {
+        "value": 1,
+        "direction": "floor"
+      }
+    },
+    "check-envelope-consistency.mjs": {
+      "MAX_HOPS": {
+        "value": 8,
+        "direction": "ratchet",
+        "owner": "api/platform owner",
+        "reason": "New constant, not a rename \u2014 registered 2026-09-04 when this gate's reach went from 2 of 336 paginated GETs to the whole corpus. It caps how many times the payload classifier will follow a return expression through a callback wrapper (runInTenantTransaction, cachedVersioned, withTenant and friends) before giving up and reporting `unresolved`. A ratchet because RAISING it is the dangerous direction: a deeper walk resolves more handlers and so makes the gate look better without any code improving, and an unbounded walk would recurse on a cyclic re-export. Lowering it is safe \u2014 it only turns resolved handlers back into honestly-unresolved ones."
+      }
+    },
+    "check-evidence-redaction.mjs": {
+      "MIN_SEALS": {
+        "value": 2,
+        "direction": "floor"
+      },
+      "MIN_FILES_SCANNED": {
+        "value": 40,
+        "direction": "floor"
+      },
+      "MIN_PATTERNS": {
+        "value": 10,
+        "direction": "floor"
+      }
+    },
+    "check-evidence-seal.mjs": {
+      "MIN_SEALS": {
+        "value": 2,
+        "direction": "floor"
+      },
+      "MIN_SEALED_FILES": {
+        "value": 20,
+        "direction": "floor"
+      }
+    },
+    "check-file-sizes.mjs": {
+      "LIMIT": {
+        "value": 500,
+        "direction": "ratchet",
+        "owner": "release owner",
+        "reason": "CLAUDE.md \u00a77's hard review limit. Policy, not debt; raising it would retire the rule by arithmetic."
+      },
+      "MIN_FILES": {
+        "value": 2000,
+        "direction": "floor",
+        "owner": "release owner (gate integrity)",
+        "reason": "Anti-vacuity floor on files scanned. RAISED 50 -> 2000 and banked 2026-09-03 by v2 ticket 30. A tightening: the old 50 was 1.4% of the 3,606 scannable files and was proved in a tmpdir to let an unreadable src/modules through with a clean pass. Measured at head: 3,574 files scanned."
+      }
+    },
+    "check-fire-and-forget.mjs": {
+      "MIN_FILES": {
+        "value": 1500,
+        "direction": "floor"
+      },
+      "TIER2_RATCHET": {
+        "value": 279,
+        "direction": "ratchet",
+        "owner": "backend platform owner",
+        "reason": "198 floating promises + 81 swallowed rejections, measured hermetically at head 2026-09-03. Lowered 283 -> 279 in the same pass that registered it."
+      }
+    },
+    "check-gate-wiring.mjs": {
+      "MIN_GATES": {
+        "value": 90,
+        "direction": "floor",
+        "owner": "release owner (gate integrity)",
+        "reason": "Anti-vacuity floor on the number of check:* gates the matcher resolves. RAISED 60 -> 90 and banked 2026-09-03 by v2 ticket 30. Raising a floor is a TIGHTENING, not a raise to turn a regression green: it forces the scan to reach more before it may report clean. Measured at head: 99 gates resolved, so the floor sits ~9% below with no slack for a matcher that stops resolving."
+      },
+      "MIN_JOBS": {
+        "value": 11,
+        "direction": "floor",
+        "owner": "release owner (gate integrity)",
+        "reason": "Anti-vacuity floor on jobs resolved. NOT a rename of MIN_GATES and not a raise: it measures a different dimension, and before 2026-09-03 it was unregistered rather than lower. A workflow ruled unreachable, or a jobs: block that stops parsing, drops this number -- which is the failure mode it exists to catch. Measured at head: 15 jobs."
+      },
+      "MIN_RUN_STEPS": {
+        "value": 118,
+        "direction": "floor",
+        "owner": "release owner (gate integrity)",
+        "reason": "Anti-vacuity floor on run: steps resolved. Same reasoning as MIN_JOBS: a new dimension, registered rather than raised. Measured at head: 160 run steps."
+      }
+    },
+    "check-hardcoded-secrets.mjs": {
+      "MIN_FILES": {
+        "value": 1500,
+        "direction": "floor"
+      },
+      "MIN_CREDENTIAL_LENGTH": {
+        "value": 12,
+        "direction": "ratchet",
+        "owner": "security owner",
+        "reason": "Minimum length a matched string must have to be called a credential. Raising it makes the detector match fewer strings, so the safe direction is down."
+      }
+    },
+    "check-hr-pagination-gate.mjs": {
+      "MIN_FILES": {
+        "value": 60,
+        "direction": "floor"
+      },
+      "BASELINE": {
+        "value": 0,
+        "direction": "ratchet",
+        "owner": "hr owner",
+        "reason": "HR list endpoints still unpaginated. Lowered 87 -> 60 by 7723ef819, then 60 -> 33 -> 18 -> 9 on 2026-09-07, then 9 -> 2 on 2026-09-08 when b75fd0da7 put keyset cursors on 7 HR lists, and 2 -> 0 the same day; never raised. Every reduction was a deleted dead parameter, a keyset cursor or a bounded drain - no .limit() value was moved out of the gate 101-500 detection window in either direction, and 20 such raises attempted mid-session were reverted. The last 2 were the same defect twice: employee-analytics.service.ts:122 and employees.service.ts:307 each read users by inArray over the ids returned by getDirectReportUserIds and then capped the result at a literal 500. That cap was redundant and was the only thing the gate saw - getDirectReportUserIds already caps at DIRECT_REPORT_ID_CAP and returns distinct ids, and users.id is the primary key, so the row count cannot exceed the id list. Both now limit to the id-list length, which is exact rather than arbitrary and removes a silent truncation the 500 could have caused for a manager with more than 500 reports."
+      }
+    },
+    "check-hr-table-freeze.mjs": {
+      "MIN_FILES": {
+        "value": 50,
+        "direction": "floor"
+      }
+    },
+    "check-import-direction.mjs": {
+      "MIN_FILES": {
+        "value": 50,
+        "direction": "floor"
+      }
+    },
+    "check-kebab-case.mjs": {
+      "MIN_ENTRIES": {
+        "value": 500,
+        "direction": "floor"
+      }
+    },
+    "check-lifecycle-predicates.mjs": {
+      "MIN_TABLES": {
+        "value": 500,
+        "direction": "floor"
+      },
+      "MIN_LIFECYCLE_TABLES": {
+        "value": 50,
+        "direction": "floor"
+      },
+      "MIN_READ_SITES": {
+        "value": 500,
+        "direction": "floor"
+      },
+      "JOIN_CANDIDATE_BASELINE": {
+        "value": 230,
+        "direction": "ratchet",
+        "owner": "backend platform owner",
+        "reason": "Joined reads with no lifecycle predicate. Lowered 335 -> 230 on 2026-09-08 by retiring a false-positive class rather than repricing it: the scanner only rescued a predicate named in the SAME FILE, so a read calling an exported helper that builds it (livePersonOfEmployment, which is isNull(people.deletedAt) behind a name) was reported as unpredicated correct code. classifyReadSite now takes a helper map and returns OK-HELPER. The rescue is deliberately narrow - the helper body must name the table symbol AND contain isNull(<alias>.<lifecycle prop>) - so it cannot bless a read whose helper predicates a different table."
+      },
+      "PRIMARY_CANDIDATE_BASELINE": {
+        "value": 69,
+        "direction": "ratchet",
+        "owner": "backend platform owner",
+        "reason": "Primary reads with no lifecycle predicate. Fixed at source rather than baselined when it drifted to 76 (ticket 35 S10). Drifted to 77 on 2026-09-08; the two new sites (bulk-onboarding-plan.ts and employee-onboarding.service.ts) were NOT defects - both predicate through liveEmployment()/livePersonOfEmployment(), which the in-file rescue could not see. Lowered 75 -> 69 by teaching the scanner to follow those helpers instead of raising the ceiling to admit correct code."
+      }
+    },
+    "check-log-secrets.mjs": {
+      "MIN_SOURCE_FILES": {
+        "value": 500,
+        "direction": "floor"
+      }
+    },
+    "check-membership-artifact-parity.ts": {
+      "MIN_ARTIFACTS": {
+        "value": 250,
+        "direction": "floor"
+      },
+      "MIN_ENFORCED": {
+        "value": 150,
+        "direction": "floor"
+      },
+      "MIN_LIVE_MEMBERSHIP_FKS": {
+        "value": 100,
+        "direction": "floor"
+      }
+    },
+    "check-migration-discipline.mjs": {
+      "MIN_SQL_FILES": {
+        "value": 380,
+        "direction": "floor"
+      }
+    },
+    "check-migration-immutability.mjs": {
+      "MIN_SEALED_ENTRIES": {
+        "value": 600,
+        "direction": "floor",
+        "owner": "backend platform owner",
+        "reason": "Entries the migration seal must cover before a clean result means anything. Set at 600 against a journal of 684; the journal is append-only, so this may only rise."
+      }
+    },
+    "check-migration-rollback.mjs": {
+      "MIN_SQL_FILES": {
+        "value": 380,
+        "direction": "floor"
+      },
+      "BASELINE_CUTOFF": {
+        "value": 839,
+        "direction": "ratchet",
+        "owner": "migrations owner",
+        "reason": "Migration index below which a rollback script is not required. Raising it exempts more migrations from the requirement."
+      }
+    },
+    "check-mock-surface.mjs": {
+      "MIN_SPEC_FILES": {
+        "value": 50,
+        "direction": "floor"
+      }
+    },
+    "check-membership-writes.mjs": {
+      "MIN_FILES": {
+        "value": 500,
+        "direction": "floor",
+        "owner": "backend authorization owner",
+        "reason": "Register the existing anti-vacuity scan floor on 2026-09-10. The gate source and value are unchanged; fewer scanned files must never make membership-write ownership appear clean."
+      },
+      "MIN_OWNER_WRITES": {
+        "value": 8,
+        "direction": "floor",
+        "owner": "backend authorization owner",
+        "reason": "Register the existing minimum owner-write census on 2026-09-10. This is a detector coverage floor, not a permitted-violation budget; the source threshold and zero outside-owner policy are unchanged."
+      }
+    },
+    "check-module-di.mjs": {
+      "MIN_MODULE_FILES": {
+        "value": 100,
+        "direction": "floor"
+      },
+      "RUNTIME_SOURCE_FLOOR": {
+        "value": 500,
+        "direction": "floor"
+      },
+      "REACHABLE_MODULE_FLOOR": {
+        "value": 100,
+        "direction": "floor"
+      },
+      "REGISTERED_CLASS_FLOOR": {
+        "value": 500,
+        "direction": "floor"
+      },
+      "DECORATED_CLASS_FLOOR": {
+        "value": 500,
+        "direction": "floor"
+      },
+      "MAX_UNREGISTERED": {
+        "value": 0,
+        "direction": "ratchet"
+      }
+    },
+    "check-module-gate.mjs": {
+      "CONTROLLER_MIN": {
+        "value": 200,
+        "direction": "floor"
+      }
+    },
+    "check-module-registration.mjs": {
+      "MIN_MODULES": {
+        "value": 50,
+        "direction": "floor"
+      }
+    },
+    "check-n1-growing-loops.mjs": {
+      "MAX_GROWING_SITES": {
+        "value": 102,
+        "direction": "ratchet",
+        "owner": "perf/db owner",
+        "reason": "Growing-collection loop sites. Never raised; lowered 106 -> 102 while this registry was being written, which is how the shared working tree moves under a measurement \u2014 the value here is HEAD's, not the tree's."
+      },
+      "MIN_LOOP_NODES": {
+        "value": 4800,
+        "direction": "floor"
+      },
+      "MIN_FILES": {
+        "value": 1800,
+        "direction": "floor"
+      },
+      "MIN_COMMON_FILES": {
+        "value": 150,
+        "direction": "floor",
+        "owner": "perf/db owner",
+        "reason": "Per-root floor for src/common, which joined this gate's corpus on 2026-09-03 (190 measured). It carries 3 of the 100 growing sites, all previously outside the scan."
+      },
+      "MIN_DB_FILES": {
+        "value": 300,
+        "direction": "floor",
+        "owner": "perf/db owner",
+        "reason": "Per-root floor for src/db, which joined this gate's corpus on 2026-09-03 (362 measured)."
+      }
+    },
+    "check-namespace-coverage.mjs": {
+      "MIN_SERVICE_FILES": {
+        "value": 30,
+        "direction": "floor"
+      },
+      "MIN_READ_NAMESPACES": {
+        "value": 5,
+        "direction": "floor"
+      }
+    },
+    "check-navigation-permissions.mjs": {
+      "MIN_CONTROLLER_FILES": {
+        "value": 100,
+        "direction": "floor"
+      },
+      "MIN_ROUTE_REFS": {
+        "value": 200,
+        "direction": "floor"
+      },
+      "MIN_NAV_FILES": {
+        "value": 5,
+        "direction": "floor"
+      },
+      "MIN_NAV_GATES": {
+        "value": 50,
+        "direction": "floor"
+      }
+    },
+    "check-openapi-coverage.mjs": {
+      "MIN_OPERATIONS": {
+        "value": 3000,
+        "direction": "floor"
+      },
+      "MIN_ERROR_SHAPE_PCT": {
+        "value": 95,
+        "direction": "floor"
+      },
+      "RESPONSE_SCHEMA_UNCOVERED_CEILING": {
+        "value": 0,
+        "direction": "ratchet",
+        "owner": "every module lane that owns a controller; coordinated by the API contract owner (ticket 04)",
+        "reason": "Operations declaring NO response body schema. Registered 2026-09-03 by v2 ticket 30 at the TRUE measured figure, 3,617 of 3,642 uncovered (25 covered, 0.69%). The gate previously required 100% and reported 3642/3642 (100%) -- because its predicate accepted a bare 2xx response KEY, which NestJS auto-generates with no content for every handler, so the condition was true for every operation the moment the document was generated. Actual coverage of the property it claimed was 1 in 3,642 (0.027%). This is NOT a baseline raised to turn a regression green: it is the first honest measurement of a number that was never measured, and the 100%% requirement was NOT restored only because demanding it would red the pipeline on ~3,617 handlers across every module lane. Lower it as coverage lands; raising it retires the rule by arithmetic. LOWERED 3617 -> 3613 on 2026-09-04 by v2 ticket 04: the ratchet had been BREACHED at 3,621 because six newly added operations carried no response schema, and it was not raised to absorb them -- ten handlers were given a real @ResponseSchema(...) instead (POST/PUT /calendar/events, PATCH/DELETE /calendar/events/{eventId}/occurrences/{occurrenceStart}, and all six /platform/operator-access operations), each compared against the real handler return by ResponseContractInterceptor under NODE_ENV=test. 3,613 was MEASURED by rebuilding the document in memory from the working tree via generateOpenApiJson() and running this gate's own predicate over it (3,651 operations, 38 covered). It is provisional in one respect and the next reader must know it: the COMMITTED openapi.json still predates both those schemas and three routes other lanes added, so it measures 3,621 and this gate stays RED until the single end-of-wave regenerate -- at which point the figure must be RE-MEASURED and lowered again if it lands below 3,613, never raised if it lands above. CLOSED 2026-09-07: LOWERED 3611 -> 0. Every one of the 3,666 operations now declares a response body schema, measured by regenerating openapi.json from the working tree and running this gate over it. Two mechanisms were added to make the count honest rather than merely large: @NoContentResponse() stamps a 204 as deliberate and fails CLOSED (a handler that claims no content while carrying a @ResponseSchema, or without @HttpCode(204), ends up with NO contract rather than a false one), and isVacuousSchema() rejects a root that says nothing -- {}, a bare {type:\"object\"}, an open additionalProperties record, an array of those, or an allOf/anyOf/oneOf whose every member is vacuous -- so a handler cannot be counted as covered by declaring z.record(z.string(), z.unknown()). Three schemas that had been parked as loose records were written out against their real handler returns in the same change (CRM import preview, leads import batch, org-hierarchy tree). The ceiling is now a hard 100% requirement: any new handler without a response contract reds this gate."
+      }
+    },
+    "check-openapi-path-params.mjs": {
+      "MIN_OPERATIONS": {
+        "value": 500,
+        "direction": "floor"
+      }
+    },
+    "check-outbox-consumers.mjs": {
+      "MIN_FILES": {
+        "value": 500,
+        "direction": "floor"
+      },
+      "MIN_EMITTED": {
+        "value": 5,
+        "direction": "floor"
+      },
+      "MIN_CONSUMED": {
+        "value": 5,
+        "direction": "floor"
+      },
+      "MIN_REGISTERED_PROVIDERS": {
+        "value": 200,
+        "direction": "floor"
+      }
+    },
+    "check-over-300.mjs": {
+      "LIMIT": {
+        "value": 300,
+        "direction": "ratchet",
+        "owner": "release owner",
+        "reason": "CLAUDE.md \u00a77's 300-line target. Policy, not debt."
+      },
+      "BASELINE": {
+        "value": 390,
+        "direction": "ratchet",
+        "owner": "release owner",
+        "reason": "Files over 300 lines. Was RAISED ONCE, 392 -> 394 by c3f0b73db -- the one upward move in either repository this release has not justified away. LOWERED BACK to 392 and banked 2026-09-03 by v2 ticket 30 as ticket 37's splits landed. LOWERED to 390 on 2026-09-08: the gate had drifted RED at 414, and 26 files were split along a responsibility seam (cron controllers by product domain, DTO contract files by owning controller, services by read/write) taking the count to 390 of 4,086 production files. Two of the 414 crossed 300 during that window from work outside this change (hr/core/person-employment-sync.service.ts, hr/time/attendance-read.service.ts) and are counted in the 390."
+      },
+      "MIN_FILES": {
+        "value": 50,
+        "direction": "floor"
+      }
+    },
+    "check-owner-authority.mjs": {
+      "GATE_LOOKAHEAD_LINES": {
+        "value": 4,
+        "direction": "floor"
+      }
+    },
+    "check-permission-keys.mjs": {
+      "MIN_CONTROLLER_FILES": {
+        "value": 100,
+        "direction": "floor"
+      },
+      "MIN_ROUTE_REFS": {
+        "value": 200,
+        "direction": "floor"
+      },
+      "MIN_UNION_KEYS": {
+        "value": 100,
+        "direction": "floor"
+      }
+    },
+    "check-placement-bypass.mjs": {
+      "MIN_BYPASS_SITES": {
+        "value": 30,
+        "direction": "floor"
+      },
+      "PROVIDER_REACH_MAX_DEPTH": {
+        "value": 5,
+        "direction": "pinned",
+        "owner": "check-placement-bypass owner (NOT v2 ticket 30)",
+        "reason": "Traversal depth cap for provider reach. Registered PINNED, not as a ratchet or a floor, by v2 ticket 30 on 2026-09-03: ticket 30 does not own this script and did not reason about which direction is safe here, and `pinned` is the honest default -- it asserts no direction and forces whoever changes the constant to re-register it with a direction and a reason. Lowering it shrinks the corpus the gate reaches, which is the vacuity risk; raising it only costs time. Reclassify when the owning ticket lands."
+      }
+    },
+    "check-plan-limit-enforcement.mjs": {
+      "MIN_KEYS": {
+        "value": 14,
+        "direction": "floor",
+        "owner": "billing owner",
+        "reason": "Anti-vacuity floor on the LimitKey union parsed out of plan-entitlements.constants.ts. Registered at the measured value on 2026-09-08 when this gate was written: the union carries exactly 14 keys today. A floor, not a hardcoded copy of the 14 names -- the gate derives the actual key list from source on every run, so a 15th key raises this number for free and the gate keeps covering it; only a broken parser could make the count fall, which is exactly what this floor catches."
+      },
+      "MIN_CALL_SITES": {
+        "value": 30,
+        "direction": "floor",
+        "owner": "billing owner",
+        "reason": "Anti-vacuity floor on assertWithinLimit call sites found across src. Measured 37 at authoring time; set with headroom below that so the gate does not false-positive on a handful of legitimate call sites moving between files, while still catching a regex/collector break that would silently empty the scan."
+      },
+      "MIN_SCANNED_FILES": {
+        "value": 2000,
+        "direction": "floor",
+        "owner": "billing owner",
+        "reason": "Anti-vacuity floor on the number of source files the walk visits before filtering to the ones that mention assertWithinLimit. Measured 4097 at authoring time; a collapsed walkTs (wrong root, an early filter) would drop this near zero long before the call-site count itself moved."
+      },
+      "MIN_CANDIDATES_INSERTS": {
+        "value": 5,
+        "direction": "floor",
+        "owner": "billing owner",
+        "reason": "Anti-vacuity floor on the INVERSE check added 2026-09-08. The gate previously proved only that each LimitKey had at least one assertWithinLimit call site somewhere; it now walks every .insert(candidates) site and requires assertWithinLimit(\"hrCandidates\", ...) ahead of it in the same enclosing function body. Measured 9 sites at authoring time, floor set with headroom so ordinary refactoring does not false-positive. Without this floor a broken table matcher finds zero inserts and the inverse check reports clean over nothing \u2014 which is the exact shape of the gap it was written to close: hrCandidates had 1 covered site and 7 uncovered ones, two of them reachable from @Public() unauthenticated endpoints."
+      }
+    },
+    "check-public-object-urls.mjs": {
+      "MIN_PUBLIC_BASE_SITES": {
+        "value": 4,
+        "direction": "floor"
+      }
+    },
+    "check-query-projections.mjs": {
+      "MIN_FILES": {
+        "value": 2000,
+        "direction": "floor"
+      },
+      "CONSUMER_LOOKFORWARD": {
+        "value": 80,
+        "direction": "floor"
+      }
+    },
+    "check-redundant-objects.ts": {
+      "MIN_DECLARED_TABLES": {
+        "value": 700,
+        "direction": "floor",
+        "owner": "database architecture owner",
+        "reason": "Anti-vacuity floor on the Drizzle declaration scan: below this the schema walk has stopped resolving and every live index would read as redundant. The catalog declares well over 700 tables."
+      }
+    },
+    "check-referential-action-drift.ts": {
+      "MIN_DECLARED_FKS": {
+        "value": 1500,
+        "direction": "floor"
+      },
+      "MIN_LIVE_FKS": {
+        "value": 2000,
+        "direction": "floor"
+      }
+    },
+    "check-relation-hydration.mjs": {
+      "MAX_UNPROJECTED_RELATIONS": {
+        "value": 186,
+        "direction": "ratchet",
+        "owner": "backend platform owner",
+        "reason": "Relation reads with no column projection. Never raised."
+      },
+      "MAX_UNPROJECTED_USERS": {
+        "value": 0,
+        "direction": "ratchet"
+      },
+      "MAX_CREDENTIAL_RELATIONS": {
+        "value": 0,
+        "direction": "ratchet"
+      },
+      "MIN_FILES": {
+        "value": 3400,
+        "direction": "floor"
+      },
+      "MIN_TABLES": {
+        "value": 850,
+        "direction": "floor"
+      },
+      "MIN_RELATION_TABLES": {
+        "value": 580,
+        "direction": "floor"
+      },
+      "MIN_QUERY_CALLS": {
+        "value": 1650,
+        "direction": "floor"
+      },
+      "MIN_RELATION_ENTRIES": {
+        "value": 530,
+        "direction": "floor"
+      }
+    },
+    "check-relation-key-reach.mjs": {
+      "MIN_BACKEND_FILES": {
+        "value": 2000,
+        "direction": "floor"
+      },
+      "MIN_FRONTEND_FILES": {
+        "value": 2500,
+        "direction": "floor"
+      },
+      "MIN_RELATION_KEYS": {
+        "value": 80,
+        "direction": "floor"
+      }
+    },
+    "check-request-transaction-cost.mjs": {
+      "COUNTER_READ_BORROWS": {
+        "value": 2,
+        "direction": "pinned"
+      }
+    },
+    "check-retention-coverage.mjs": {
+      "MIN_TABLES_SCANNED": {
+        "value": 200,
+        "direction": "floor"
+      },
+      "MIN_HIGH_GROWTH_TABLES": {
+        "value": 1,
+        "direction": "floor"
+      }
+    },
+    "check-route-budgets.mjs": {
+      "WATERMARK_CEILING": {
+        "value": 42,
+        "direction": "ratchet",
+        "owner": "backend platform owner",
+        "reason": "Ceiling on routes that may carry no declared budget. Measured at 42 when the watermark was introduced; it may only fall as budgets are declared, never rise."
+      }
+    },
+    "check-set-null-column-lists.ts": {
+      "MIN_DECLARED": {
+        "value": 100,
+        "direction": "floor"
+      },
+      "MIN_REQUIRING_COLUMN_LIST": {
+        "value": 20,
+        "direction": "floor"
+      }
+    },
+    "check-settings-route-e2e-coverage.mjs": {
+      "MIN_ROUTES": {
+        "value": 100,
+        "direction": "floor"
+      },
+      "RATCHET": {
+        "value": 150,
+        "direction": "floor",
+        "owner": "backend platform owner",
+        "reason": "LOWERED 159 -> 150 on 2026-09-11 after candidate C3 removed six DELETE and four PATCH .../move org-hierarchy routes (archiving is now PATCH with status: \"ARCHIVED\") and org-hierarchy-moves.controller.ts was deleted. Measured after repointing the permission-fence and archive-http specs at the surviving routes: 150 routes derived from the 12 in-scope controllers, 150 covered (100%). Per PRD-ORG-ACCESS-REMEDIATION-2026-09-10 the gate was already RED at 159 before C3 (reported 156/156, a pre-existing 4-route CONTROLLER_PATHS gap unrelated to this change) -- not independently re-measured against the pre-C3 tree here. This is a genuine shrink of the covered corpus, not a coverage regression. Never lower this to paper over missing coverage; only to match a route count that actually fell."
+      },
+      "MIN_CONTROLLERS": {
+        "value": 12,
+        "direction": "floor"
+      }
+    },
+    "check-tenant-indexes.mjs": {
+      "MIN_CATALOG_TENANT_TABLES": {
+        "value": 400,
+        "direction": "floor"
+      }
+    },
+    "check-tenant-isolation-coverage.mjs": {
+      "MIN_SERVICES": {
+        "value": 100,
+        "direction": "floor"
+      },
+      "MIN_TEST_FILES": {
+        "value": 5,
+        "direction": "floor"
+      }
+    },
+    "check-tenant-relationships.mjs": {
+      "MIN_TENANT_TABLES": {
+        "value": 400,
+        "direction": "floor"
+      }
+    },
+    "check-test-suppressions.mjs": {
+      "MIN_SPEC_FILES": {
+        "value": 200,
+        "direction": "floor"
+      },
+      "MIN_SITES": {
+        "value": 5,
+        "direction": "floor"
+      },
+      "QUARANTINE_BASELINE": {
+        "value": 6,
+        "direction": "ratchet",
+        "owner": "CRM/inventory release owner",
+        "reason": "6 describe.skip blocks in src/modules/ai/core/crm-copilot.service.phase2.spec.ts, all targeting CrmScoringService/CrmBriefService. Accepted residual R-9, blocker SCOPE, review 2026-12-01."
+      },
+      "CONDITIONAL_BASELINE": {
+        "value": 19,
+        "direction": "ratchet",
+        "owner": "backend platform owner",
+        "reason": "Lowered 20 -> 19 on 2026-09-11 after removing the vacuous tenant-integrity describe.skip selector. The AI-project mocked controller suite no longer needs a DB URL, and its three TODOs now execute. This retains the prior 29 -> 20 reduction from separating explicitly selected .db.spec.ts suites: unconfigured selected DB suites fail rather than silently skip. Current measured conditional sites plus aliases total 19; no suppression budget was raised."
+      }
+    },
+    "check-transaction-callbacks.mjs": {
+      "MIN_SPEC_FILES": {
+        "value": 200,
+        "direction": "floor"
+      },
+      "MIN_DOUBLES": {
+        "value": 100,
+        "direction": "floor"
+      },
+      "VOID_FILE_BASELINE": {
+        "value": 2,
+        "direction": "ratchet",
+        "owner": "CRM/inventory release owner",
+        "reason": "inv-replenishment.service.spec.ts and lead-status-tenant-isolation.spec.ts. Accepted residual R-9, blocker SCOPE. Lowered 9 -> 2 by 6ba5080ca."
+      }
+    },
+    "check-type-assertions.mjs": {
+      "SCAN_FLOOR_FILES": {
+        "value": 2000,
+        "direction": "floor"
+      },
+      "CEILING_FLOOR_TOTAL": {
+        "value": 380,
+        "direction": "floor",
+        "owner": "backend platform owner",
+        "reason": "Anti-vacuity tripwire, not a debt ratchet: it fails when the counter matches FEWER assertions than this, so it must follow the tree down or it accuses a working counter. Lowered 1000 -> 400 by 5d71a9dff against a bite proof, but ratchets.json was not updated in that commit, so check:baseline-integrity read the drift as an unsafe move. Reconciled 2026-09-07 after re-proving the mechanism: one planted `as number` moved the total 407 -> 408 and removing it returned it to 407, so the counter counts and the tree is genuinely at 407, down from the four figures the 1000 was set against. Lowered 400 -> 380 on 2026-09-08 for the same reason and to the same standard, measured 407 -> 394. The drop is a GAIN banked, not a regression: the N+1 batching pass rewrote four files and the casts went with the code that needed them - /leads/lead-triggers.ts 9 -> 2, where the round-robin read-modify-write became a single upsert and the per-rule assignment loop became a decided AssignmentPlan; /cron/cron-billing.service.ts 2 -> 0 and /hr/directory/employee-bulk-onboarding.service.ts 1 -> 0, whose per-row loops became preloaded maps plus one batched write; and /cron/cron-projects.service.ts 3 -> 0, where three non-null `!` were replaced by a real `template is RunnableTemplate` type predicate rather than moved. Verified against current source at AST level before the ledger was touched, and the assertions did not relocate: all six new bulk-onboarding/ helper files hold zero, and the gate reported zero grown and zero added files across the whole 4,080-file corpus. Bite proof re-run before this move, not inherited: one planted `BATCH_SIZE as number` in cron-projects.service.ts took the total 394 -> 395, `as X` 273 -> 274 and the file count 221 -> 222 and flipped that file's ledger verdict from \"no plain assertion left\" to \"tree 1\"; removing it returned all four."
+      },
+      "MIN_SELF_TEST_CHECKS": {
+        "value": 52,
+        "direction": "floor",
+        "reason": " Banked 43 -> 52 on 2026-09-06 after the gate reported the improvement."
+      },
+      "SCAN_FLOOR_SPEC_FILES": {
+        "value": 1500,
+        "direction": "floor",
+        "owner": "frontend platform owner",
+        "reason": "Anti-vacuity floor on the spec-file corpus the assertion scan walks; the live corpus is over 4,500, so this detects a collapsed glob rather than capping anything."
+      }
+    },
+    "check-unbounded-reads.mjs": {
+      "MIN_FILES": {
+        "value": 2700,
+        "direction": "floor",
+        "owner": "backend platform owner",
+        "reason": "RAISED from 500 to 2700 on 2026-09-03 when src/common and src/db joined the corpus (2,871 files measured across the three roots). At 500 the floor could not have detected either new root resolving to nothing."
+      },
+      "MIN_MODULES": {
+        "value": 40,
+        "direction": "floor"
+      },
+      "MIN_COMMON_FILES": {
+        "value": 150,
+        "direction": "floor",
+        "owner": "backend platform owner",
+        "reason": "Per-root floor for src/common (191 measured). An aggregate floor cannot tell one root resolving to nothing from the repository shrinking, which is how this gate stayed blind to the asynchronous substrate."
+      },
+      "MIN_DB_FILES": {
+        "value": 300,
+        "direction": "floor",
+        "owner": "backend platform owner",
+        "reason": "Per-root floor for src/db (364 measured)."
+      },
+      "MAX_SUPPRESSED_UNBOUNDED": {
+        "value": 649,
+        "direction": "ratchet",
+        "owner": "backend platform owner",
+        "reason": "Unbounded reads hidden behind a FALSE-POSITIVE verdict, counted as instances. A verdict is keyed per FILE and carries one sentence, so a read added to an already-blessed file inherits a justification never written about it - /clients/clients.service.ts' unbounded CSV export of every client in the org sat under 'client reads bounded by clientId+orgId (single-record lookups)' and no other check in the gate moved. Measured at 651 with no headroom; banked 651 -> 646 on 2026-09-06 after the gate reported the improvement. RAISED 646 -> 650 on 2026-09-08, the first upward move; every previous one was downward. The N+1 pass replaced per-row loops with batched statements, so round trips fell by orders of magnitude while the count of statements without a literal .limit() rose by four - one batched read replaces N reads that each carried .limit(1). The newly hidden reads, named as this reason requires: (1,2) /cron/cron-billing.service.ts - the trial_ends_at window read and the dunning milestone read, which replaced three windowed SELECTs per org and up to 3R milestone INSERTs; (3,4) /invoices/invoices-lifecycle.service.ts - loadFallbackRecipients, one ranked row_number() read capped at 5 recipients per org, which replaced one interleaved SELECT per overdue invoice; (5,6) @common/hr/sync-canonical-reporting-line.ts - the employments join at :32 and the open-lines read at :185 in syncCanonicalReportingLines, where a limit was REFUSED rather than forgotten: the only candidate bound is the id-set length, and if one person held two primary employments it would silently drop a different user's row and corrupt effective-dated reporting history, which the per-user .limit(1) it replaced could never do; (7) /gdpr/gdpr-sync-export-fetchers.ts - the ranked .as() subquery, which is a definition rather than an executed statement, and whose outer read carries an exact persons x (cap+1) limit. Offset by three reads the same pass removed: /cron/cron-notifications.service.ts (fan-out moved into the database), /kb/wiki/kb-page-duplicate.service.ts (the unscoped root re-read is gone) and /leads/lead-triggers.ts (the round-robin read-modify-write became one upsert). Net +4. Four further reads were BOUNDED in code in the same pass rather than suppressed, so they are absent from this number: both /ai/core/services/crm-tasks.service.ts reads now limit to their id-set length, the gdpr outer read to persons x (cap+1), and /cron/cron-projects.service.ts' status read uses DISTINCT ON (project_id) with a limit of the project count. Lower this the moment any of the seven above is bounded. Lowered 650 -> 649 on 2026-09-08: the dunning milestone read moved into /cron/cron-billing-dunning.ts when cron-billing.service.ts was split, and was BOUNDED rather than re-suppressed. It had read every dunning attempt ever recorded for the batch subscriptions while planAttempts only ever consults an entry current pastDueAt, so its row count grew with account age rather than with the batch; narrowing it to the periods actually in play caps it at one row per (entry, milestone) and the limit now states that. Six newly hidden reads remain."
+      },
+      "ORDER_BY_LOOKBACK": {
+        "value": 25,
+        "direction": "floor"
+      },
+      "STATEMENT_MAX_LINES": {
+        "value": 120,
+        "direction": "floor"
+      }
+    },
+    "check-unjoined-table-refs.mjs": {
+      "MIN_FILES": {
+        "value": 200,
+        "direction": "floor"
+      },
+      "MIN_CHAINS": {
+        "value": 200,
+        "direction": "floor"
+      }
+    },
+    "check-vacuous-assertions.mjs": {
+      "MIN_SPEC_FILES": {
+        "value": 1500,
+        "direction": "floor"
+      },
+      "MIN_TEST_CALLBACKS": {
+        "value": 8000,
+        "direction": "floor"
+      },
+      "MIN_EXPECTS": {
+        "value": 20000,
+        "direction": "floor"
+      }
+    }
+  }
+}

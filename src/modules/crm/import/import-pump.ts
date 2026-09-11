@@ -79,8 +79,8 @@ export class ImportPump {
         const outcome = await executeRun({
           run,
           registry: this.registry,
-          steps: createStepStore(this.db),
-          lifecycle: createLifecycleStore(this.db),
+          steps: createStepStore(this.db, run.organizationId),
+          lifecycle: createLifecycleStore(this.db, run.organizationId),
           withinStep: (stepName, fn) =>
             runInNewTenantTransaction(this.db, run.organizationId, () => {
               this.logger.debug(`${run.workflowName}/${stepName} — org ${run.organizationId}`);
@@ -107,18 +107,20 @@ export class ImportPump {
    *
    * `SKIP LOCKED` rather than a wait: if the cron worker is holding this run at
    * this instant, the right answer is "somebody else is on it", not a request
-   * queued behind a five-minute lease. The organisation is in the predicate as
-   * well as the identifier because `workflow_runs` is deliberately outside
-   * row-level security — a worker claims across tenants — so this is the only
-   * thing standing between a guessed identifier and another tenant's run.
+   * queued behind a five-minute lease. The organisation stays in the predicate as
+   * well as the identifier so a guessed identifier cannot reach another tenant's
+   * run even if the policy is ever relaxed.
    */
   private async claim(organizationId: string, workflowRunId: string): Promise<RunRecord | null> {
     const lease = leaseExpiry(new Date());
 
-    const claimed = await this.db.execute(sql`
+    // `advance()` runs under `runOutsideTenantContext`, and `workflow_runs` is under RLS despite
+    // the older comment here, so this claim needs a GUC of its own or it can never match a row.
+    const claimed = await runInNewTenantTransaction(this.db, organizationId, (tx) =>
+      tx.execute(sql`
       UPDATE workflow_runs SET
         status = 'RUNNING',
-        lease_expires_at = ${lease},
+        lease_expires_at = ${lease.toISOString()}::timestamptz,
         updated_at = now()
       WHERE workflow_run_id = (
         SELECT workflow_run_id FROM workflow_runs
@@ -131,16 +133,19 @@ export class ImportPump {
         FOR UPDATE SKIP LOCKED
       )
       RETURNING workflow_run_id, organization_id, workflow_name, input, attempt, max_attempts
-    `);
+    `),
+    );
 
-    const [row] = [...claimed] as Record<string, unknown>[];
+    const [row] = claimed;
     if (!row) return null;
 
+    const input = row.input;
+    const isPlainObject = input !== null && typeof input === "object" && !Array.isArray(input);
     return {
       workflowRunId: String(row.workflow_run_id),
       organizationId: String(row.organization_id),
       workflowName: String(row.workflow_name),
-      input: (row.input ?? {}) as Record<string, unknown>,
+      input: isPlainObject ? (input as Record<string, unknown>) : {},
       attempt: Number(row.attempt ?? 0),
       maxAttempts: Number(row.max_attempts ?? 5),
     };

@@ -9,7 +9,12 @@ import { throwOnAiFailure } from "./gateway-result.util";
 import { loadLeadContext, trunc } from "./crm-brief-loaders";
 import { CrmMeetingBriefService } from "./crm-meeting-brief.service";
 import { CrmNlSearchService } from "./crm-nl-search.service";
-import type { AccountSummaryInput, MeetingPrepInput, NlSearchInput } from "../dto/request.schemas";
+import type { AiInvokePrompt } from "../gateway/ai-gateway.types";
+import type { AiTextStream } from "../gateway/ai-gateway-stream.helper";
+import type { AccountSummaryInput, NlSearchInput } from "../dto/request.schemas";
+
+const ACCOUNT_SUMMARY_SYSTEM =
+  "You are an executive assistant preparing client briefing documents for an Indian investment firm. Generate concise, professional account summaries that help account managers and executives quickly understand the full picture of a client relationship. Be data-driven and specific.";
 
 interface CitationItem {
   id: string;
@@ -26,7 +31,14 @@ export class CrmBriefService {
     private readonly nlSearchService: CrmNlSearchService,
   ) {}
 
-  async accountSummary(orgId: string, input: AccountSummaryInput, userId?: string) {
+  /**
+   * Shared by the buffered route and its streaming sibling, so a tuned prompt
+   * cannot make the streamed summary disagree with the buffered one.
+   */
+  private async resolveAccountSummaryPrompt(
+    orgId: string,
+    input: AccountSummaryInput,
+  ): Promise<{ clientName: string; prompt: AiInvokePrompt }> {
     const ctx = await runInTenantTransaction(this.db, async (tx) => {
       const account = await tx.query.clientAccounts.findFirst({
         where: and(eq(clientAccounts.id, input.clientId), eq(clientAccounts.orgId, orgId)),
@@ -102,14 +114,19 @@ Please generate a comprehensive account summary with:
 5. Key Risks & Opportunities (any flags or upsell potential)
 6. Recommended Next Steps (2-3 specific actions for the account manager)`;
 
+    return {
+      clientName: account.clientName,
+      prompt: { system: ACCOUNT_SUMMARY_SYSTEM, user: userPrompt },
+    };
+  }
+
+  async accountSummary(orgId: string, input: AccountSummaryInput, userId?: string) {
+    const { clientName, prompt } = await this.resolveAccountSummaryPrompt(orgId, input);
+
     const result = await this.gateway.invokeText({
       actor: { orgId, userId: userId ?? null },
       feature: "crm.account-summary",
-      prompt: {
-        system:
-          "You are an executive assistant preparing client briefing documents for an Indian investment firm. Generate concise, professional account summaries that help account managers and executives quickly understand the full picture of a client relationship. Be data-driven and specific.",
-        user: userPrompt,
-      },
+      prompt,
       tier: "standard",
       maxTokens: 1024,
       charge: true,
@@ -117,11 +134,24 @@ Please generate a comprehensive account summary with:
     });
 
     if (!result.ok) throwOnAiFailure(result);
-    return { summary: result.data, clientName: account.clientName, generatedAt: new Date().toISOString() };
+    return { summary: result.data, clientName, generatedAt: new Date().toISOString() };
   }
 
-  async meetingPrep(orgId: string, input: MeetingPrepInput, userId?: string) {
-    return this.meetingBrief.meetingPrep(orgId, input, userId);
+  async streamAccountSummary(
+    orgId: string,
+    input: AccountSummaryInput,
+    userId: string,
+    signal?: AbortSignal,
+  ): Promise<AiTextStream> {
+    const { prompt } = await this.resolveAccountSummaryPrompt(orgId, input);
+    return this.gateway.streamTextWithUsage({
+      actor: { orgId, userId },
+      feature: "crm.account-summary",
+      prompt,
+      maxTokens: 1024,
+      charge: true,
+      ...(signal !== undefined ? { signal } : {}),
+    });
   }
 
   async nlSearch(orgId: string, input: NlSearchInput, userId?: string) {
@@ -142,6 +172,23 @@ Please generate a comprehensive account summary with:
     userId?: string,
   ) {
     return this.meetingBrief.meetingFollowUpDraft(orgId, input, userId);
+  }
+
+  streamMeetingFollowUpDraft(
+    orgId: string,
+    input: {
+      meetingTitle: string;
+      attendeeType: "lead" | "client";
+      attendeeId: number;
+      outcome: string;
+      actionItems?: string[];
+      scheduledAt: string;
+      notes?: string;
+    },
+    userId: string,
+    signal?: AbortSignal,
+  ): Promise<AiTextStream> {
+    return this.meetingBrief.streamMeetingFollowUpDraft(orgId, input, userId, signal);
   }
 
   async accountSummaryWithCitations(orgId: string, input: AccountSummaryInput, userId?: string) {

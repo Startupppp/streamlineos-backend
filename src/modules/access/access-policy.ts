@@ -5,7 +5,12 @@ import {
   ROLE_DEFAULT_PERMISSIONS,
   UNIVERSAL_MEMBER_PERMISSION_GRANTS,
 } from "../rbac/permissions";
-import { isPlanGatedModule } from "../../common/rbac/module-vocabulary";
+import { isPlanGatedModule, namespaceOf } from "../../common/rbac/module-vocabulary";
+import {
+  isPlatformOnlyPermission,
+  PLATFORM_ONLY_PERMISSION_KEYS,
+} from "../../common/rbac/grantability";
+import { isPlatformAdmin } from "../../common/rbac/platform-operators";
 import type { DataScope } from "./access.types";
 import { MODULE_CATALOG } from "./entitlements.service";
 
@@ -73,29 +78,8 @@ export function isActiveAssignment(
   return assignment.expiresAt === null || assignment.expiresAt > currentTime;
 }
 
-export function moduleOf(permissionKey: string): string {
-  const separatorIndex = permissionKey.indexOf(":");
-  return separatorIndex === -1
-    ? permissionKey
-    : permissionKey.slice(0, separatorIndex);
-}
-
-export interface MembershipGateResult {
-  active: boolean;
-  isOwner: boolean;
-}
-
-export function evaluateMembershipGate(
-  membership: { status: string; isOwner: boolean } | null | undefined,
-): MembershipGateResult {
-  if (!membership || membership.status !== "ACTIVE") {
-    return { active: false, isOwner: false };
-  }
-  return { active: true, isOwner: membership.isOwner };
-}
-
 export const CATALOG_MODULES = Array.from(
-  new Set(PERMISSIONS.map((permission) => moduleOf(permission.name))),
+  new Set(PERMISSIONS.map((permission) => namespaceOf(permission.name))),
 );
 
 export const EMPTY_DENIED_MODULES: ReadonlySet<string> = new Set<string>();
@@ -114,10 +98,32 @@ export const EMPLOYEE_SELF_SERVICE_GRANTS: ReadonlyArray<{
   })),
 );
 
+/**
+ * Every catalog key a member of *an organization* can hold, at scope `all`.
+ *
+ * Platform-only keys are excluded on purpose: they administer resources the
+ * vendor owns globally, and this function is what the owner/org-admin
+ * short-circuit returns. Including them let every customer administrator edit
+ * and hard-delete the vendor's marketing blog, because a global table has no
+ * tenant column to stop them at the data layer.
+ */
 export function allCatalogScopes(): Record<string, DataScope> {
   const catalogScopes: Record<string, DataScope> = {};
-  for (const permission of PERMISSIONS) catalogScopes[permission.name] = "all";
+  for (const permission of PERMISSIONS) {
+    if (isPlatformOnlyPermission(permission.name)) continue;
+    catalogScopes[permission.name] = "all";
+  }
   return catalogScopes;
+}
+
+/** The platform-only keys, held only by the deployment's own operators. */
+export function platformCapabilityScopes(
+  userId: string,
+): Record<string, DataScope> {
+  if (!isPlatformAdmin(userId)) return {};
+  const scopes: Record<string, DataScope> = {};
+  for (const key of PLATFORM_ONLY_PERMISSION_KEYS) scopes[key] = "all";
+  return scopes;
 }
 
 export function deriveAccessViewImplication(
@@ -147,12 +153,13 @@ export function applyUniversalGrants(map: Map<string, DataScope>): Map<string, D
   return map;
 }
 
+// namespaceOf, never administeringModuleOf: a denial names `chat`, but Home administers `chat:*` and is never denied, so that swap would strip nothing.
 export function stripDeniedModules(
   map: Map<string, DataScope>,
   denied: ReadonlySet<string>,
 ): void {
   if (denied.size === 0) return;
   for (const key of Array.from(map.keys())) {
-    if (denied.has(moduleOf(key))) map.delete(key);
+    if (denied.has(namespaceOf(key))) map.delete(key);
   }
 }

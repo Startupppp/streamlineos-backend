@@ -1,13 +1,14 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { ChatMessagesService } from "./chat-messages.service";
+import { ChatMessageModerationService } from "./chat-message-moderation.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { AblyService } from "../realtime/ably.service";
 import { ChatReplyRemindersService } from "./chat-reply-reminders.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
-import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { MESSAGE_FANOUT_PROVIDER } from "./message-fanout.interface";
+import { StorageService } from "../storage/storage.service";
 
 const mockDb = {
   query: {
@@ -19,14 +20,17 @@ const mockDb = {
   },
   insert: jest.fn().mockReturnThis(),
   values: jest.fn().mockReturnThis(),
+  onConflictDoNothing: jest.fn().mockReturnThis(),
   returning: jest.fn().mockResolvedValue([{ id: 1, channelId: 1, senderId: "user1", content: "hello", createdAt: new Date(), replyToId: null }]),
   update: jest.fn().mockReturnThis(),
   set: jest.fn().mockReturnThis(),
   where: jest.fn().mockReturnThis(),
-  limit: jest.fn().mockResolvedValue([{ id: 1 }]),
+  limit: jest.fn().mockResolvedValue([{ membershipId: 10, id: 1 }]),
   delete: jest.fn().mockReturnThis(),
   select: jest.fn().mockReturnThis(),
   from: jest.fn().mockReturnThis(),
+  innerJoin: jest.fn().mockReturnThis(),
+  execute: jest.fn().mockResolvedValue([]),
   transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(mockDb)),
 };
 
@@ -44,13 +48,6 @@ const mockAbly = {
   publishChatMessage: jest.fn().mockResolvedValue(undefined),
 };
 const mockReplyReminders = { scheduleForMessage: jest.fn().mockResolvedValue(undefined) };
-const mockEntities = {
-  resolve: jest.fn().mockResolvedValue([]),
-  actionsFor: jest.fn().mockResolvedValue([]),
-  submitAction: jest.fn(),
-  isKnownType: jest.fn().mockReturnValue(true),
-};
-
 const mockOrgSettings = {
   getSettings: jest.fn().mockResolvedValue({ maxAttachmentSizeMb: 25 }),
 };
@@ -60,12 +57,20 @@ const mockFanout = {
   dispatchDeferred: jest.fn().mockResolvedValue(undefined),
 };
 
+const mockStorage = {
+  isValidFileKey: jest.fn().mockReturnValue(true),
+};
+
 describe("ChatMessagesService", () => {
   let service: ChatMessagesService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
     mockOrgSettings.getSettings.mockResolvedValue({ maxAttachmentSizeMb: 25 });
+    mockStorage.isValidFileKey.mockReturnValue(true);
+    mockDb.query.chatChannels.findFirst.mockResolvedValue({ id: 1, isPrivate: false });
+    mockDb.query.organizationMembers.findFirst.mockResolvedValue({ id: 10 });
+    mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ id: 10, role: "MEMBER" });
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ChatMessagesService,
@@ -74,7 +79,7 @@ describe("ChatMessagesService", () => {
         { provide: AblyService, useValue: mockAbly },
         { provide: ChatReplyRemindersService, useValue: mockReplyReminders },
         { provide: ChatOrgSettingsService, useValue: mockOrgSettings },
-        { provide: EntityReferenceService, useValue: mockEntities },
+        { provide: StorageService, useValue: mockStorage },
         { provide: MESSAGE_FANOUT_PROVIDER, useValue: mockFanout },
       ],
     }).compile();
@@ -82,11 +87,30 @@ describe("ChatMessagesService", () => {
   });
 
   describe("send", () => {
-    it("throws ForbiddenException if user is not a channel member", async () => {
+    it("throws NotFoundException for a non-member of a PRIVATE channel, never confirming it exists", async () => {
+      mockDb.query.chatChannels.findFirst.mockResolvedValue({ id: 1, isPrivate: true });
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValue(null);
+      await expect(
+        service.send(1, "user1", "org1", { content: "hello", attachments: [] }),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockDb.transaction).not.toHaveBeenCalled();
+    });
+
+    it("CONTROL: a non-member of a PUBLIC channel still gets ForbiddenException", async () => {
+      mockDb.query.chatChannels.findFirst.mockResolvedValue({ id: 1, isPrivate: false });
       mockDb.query.chatChannelMembers.findFirst.mockResolvedValue(null);
       await expect(
         service.send(1, "user1", "org1", { content: "hello", attachments: [] }),
       ).rejects.toThrow(ForbiddenException);
+      expect(mockDb.transaction).not.toHaveBeenCalled();
+    });
+
+    it("CONTROL: a channel in another organization is NotFoundException before membership is read", async () => {
+      mockDb.query.chatChannels.findFirst.mockResolvedValue(undefined);
+      await expect(
+        service.send(1, "user1", "org1", { content: "hello", attachments: [] }),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockDb.query.chatChannelMembers.findFirst).not.toHaveBeenCalled();
     });
 
     it("sanitizes XSS content before persisting", async () => {
@@ -95,12 +119,18 @@ describe("ChatMessagesService", () => {
       mockDb.query.users.findFirst.mockResolvedValue({ id: "user1", name: "Alice" });
 
       const maliciousContent = "<script>alert('xss')</script>hello";
-      await service.send(1, "user1", "org1", { content: maliciousContent, attachments: [] }).catch(() => {});
+      await expect(
+        service.send(1, "user1", "org1", { content: maliciousContent, attachments: [] }),
+      ).resolves.toBeDefined();
 
-      const insertValues = mockDb.values.mock.calls[0]?.[0] as { content?: string } | undefined;
-      if (insertValues?.content) {
-        expect(insertValues.content).not.toContain("<script>");
-      }
+      expect(mockDb.values).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ content: expect.stringContaining("hello") }),
+      );
+      expect(mockDb.values).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ content: expect.not.stringMatching(/<\/?script/i) }),
+      );
     });
 
     it("rejects an attachment larger than the org's configured max size", async () => {
@@ -113,8 +143,8 @@ describe("ChatMessagesService", () => {
           attachments: [
             {
               fileName: "huge.zip",
-              fileUrl: "https://example.com/huge.zip",
-              fileKey: "huge.zip",
+              fileUrl: "",
+              fileKey: "org1/chat/uuid-huge.zip",
               fileSize: 2 * 1024 * 1024,
               mimeType: "application/zip",
             },
@@ -135,14 +165,55 @@ describe("ChatMessagesService", () => {
           attachments: [
             {
               fileName: "small.png",
-              fileUrl: "https://example.com/small.png",
-              fileKey: "small.png",
+              fileUrl: "",
+              fileKey: "org1/chat/uuid-small.png",
               fileSize: 1024,
               mimeType: "image/png",
             },
           ],
         }),
       ).resolves.toBeDefined();
+    });
+
+    it("DENY: rejects an attachment whose fileKey does not start with the caller's orgId", async () => {
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ userId: "user1" });
+      mockOrgSettings.getSettings.mockResolvedValue({ maxAttachmentSizeMb: 25 });
+
+      await expect(
+        service.send(1, "user1", "org1", {
+          content: undefined,
+          attachments: [
+            {
+              fileName: "stolen.pdf",
+              fileUrl: "",
+              fileKey: "org-other/chat/uuid-stolen.pdf",
+              fileSize: 1024,
+              mimeType: "application/pdf",
+            },
+          ],
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it("DENY: rejects an attachment with a path-traversal fileKey", async () => {
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ userId: "user1" });
+      mockOrgSettings.getSettings.mockResolvedValue({ maxAttachmentSizeMb: 25 });
+      mockStorage.isValidFileKey.mockReturnValue(false);
+
+      await expect(
+        service.send(1, "user1", "org1", {
+          content: undefined,
+          attachments: [
+            {
+              fileName: "evil.pdf",
+              fileUrl: "",
+              fileKey: "org1/../secret/data.pdf",
+              fileSize: 1024,
+              mimeType: "application/pdf",
+            },
+          ],
+        }),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 
@@ -171,27 +242,47 @@ describe("ChatMessagesService", () => {
     });
   });
 
+});
+
+describe("ChatMessageModerationService", () => {
+  let moderation: ChatMessageModerationService;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    mockDb.query.chatChannels.findFirst.mockResolvedValue({ id: 1, isPrivate: false });
+    mockDb.query.organizationMembers.findFirst.mockResolvedValue({ id: 10 });
+    mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ id: 10, role: "MEMBER" });
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ChatMessageModerationService,
+        { provide: DRIZZLE, useValue: mockDb },
+        { provide: AblyService, useValue: mockAbly },
+      ],
+    }).compile();
+    moderation = module.get(ChatMessageModerationService);
+  });
+
   describe("edit", () => {
     it("throws NotFoundException if message does not exist", async () => {
       mockDb.query.chatMessages.findFirst.mockResolvedValue(null);
-      await expect(service.edit(999, "user1", "org1", "new content")).rejects.toThrow(NotFoundException);
+      await expect(moderation.edit(999, 1, "user1", "org1", "new content")).rejects.toThrow(NotFoundException);
     });
 
     it("throws ForbiddenException if user is not the message owner", async () => {
       mockDb.query.chatMessages.findFirst.mockResolvedValue({ id: 1, senderMembershipId: 99, isDeleted: false });
-      await expect(service.edit(1, "user1", "org1", "new content")).rejects.toThrow(ForbiddenException);
+      await expect(moderation.edit(1, 1, "user1", "org1", "new content")).rejects.toThrow(ForbiddenException);
     });
   });
 
   describe("remove", () => {
     it("throws NotFoundException if message does not exist", async () => {
       mockDb.query.chatMessages.findFirst.mockResolvedValue(null);
-      await expect(service.remove(999, "user1", false, "org1")).rejects.toThrow(NotFoundException);
+      await expect(moderation.remove(999, 1, "user1", false, "org1")).rejects.toThrow(NotFoundException);
     });
 
     it("throws ForbiddenException if user is not the owner and not admin", async () => {
       mockDb.query.chatMessages.findFirst.mockResolvedValue({ id: 1, senderMembershipId: 99, isDeleted: false, channelId: 1 });
-      await expect(service.remove(1, "user1", false, "org1")).rejects.toThrow(ForbiddenException);
+      await expect(moderation.remove(1, 1, "user1", false, "org1")).rejects.toThrow(ForbiddenException);
     });
   });
 });

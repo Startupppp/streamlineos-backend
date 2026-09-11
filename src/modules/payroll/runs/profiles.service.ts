@@ -1,18 +1,20 @@
-import { BadRequestException, ConflictException, Injectable, Inject } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, ne } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { getPostgresErrorCode } from "../../../common/db/postgres-error";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 import { logger } from "../../../common/logger/logger.service";
 import {
   employeeSalaryProfiles,
   employeeSalaryProfileComponents,
+  organizationMembers,
 } from "../../../db/schema";
 import {
   assertPayrollPayeeEligible,
   assertPayrollWorkerPayeeEligible,
 } from "../lib/payroll-payee-eligibility";
-import type { DataScope } from "../../access/access.types";
+import { workerBelongsToOrg } from "../../directory/person-seam";
+import type { ScopedRead } from "../../access/scoped-read";
 import type { ListProfilesQuery, CreateProfileInput, PatchProfileInput } from "./dto/runs.schemas";
 import { AuditService } from "../../../common/audit/audit.service";
 import { SalaryProfilesRepository } from "./salary-profiles.repository";
@@ -25,11 +27,34 @@ export class ProfilesService {
     private readonly profiles: SalaryProfilesRepository,
   ) {}
 
-  async listProfiles(orgId: string, query: ListProfilesQuery, scope: DataScope, userId: string) {
-    return this.profiles.list(orgId, query, scope, userId);
+  async listProfiles(read: ScopedRead, query: ListProfilesQuery) {
+    return this.profiles.list(read, query);
+  }
+
+  /**
+   * The worker half of `assertEmployeeInOrg`, which the worker-addressed reads never had.
+   *
+   * `GET /payroll/workers/:workerId/history` filtered salary profiles on `orgId` and `workerId` and
+   * never resolved the worker, so another organisation's `:workerId` — and one belonging to nobody
+   * — both answered **200 with an empty array**. Measured live: control 200 / cross-tenant 200 /
+   * absent 200. The seam re-asserts `orgId` on every query, and backend/CLAUDE.md §1 says an
+   * unresolved subject is surfaced as 404, never 403.
+   */
+  private async assertWorkerInOrg(orgId: string, workerId: string): Promise<void> {
+    if (!(await workerBelongsToOrg(this.db, orgId, workerId)))
+      throw new NotFoundException("Worker not found in this organization");
+  }
+
+  private async assertEmployeeInOrg(orgId: string, employeeUserId: string): Promise<void> {
+    const member = await this.db.query.organizationMembers.findFirst({
+      columns: { id: true },
+      where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, employeeUserId)),
+    });
+    if (!member) throw new NotFoundException("Employee not found in this organization");
   }
 
   async getProfile(orgId: string, employeeUserId: string) {
+    await this.assertEmployeeInOrg(orgId, employeeUserId);
     return this.profiles.findByUser(orgId, employeeUserId);
   }
 
@@ -133,7 +158,7 @@ export class ProfilesService {
           .returning();
         inserted = row;
       } catch (err) {
-        if (getPostgresErrorCode(err) !== "23505") {
+        if (!isUniqueViolation(err)) {
           logger.error("profiles.createWorkerProfile: insert failed unexpectedly", {
             orgId,
             cause: err instanceof Error ? err.message : String(err),
@@ -181,6 +206,7 @@ export class ProfilesService {
   }
 
   async getProfileByWorker(orgId: string, workerId: string) {
+    await this.assertWorkerInOrg(orgId, workerId);
     return this.profiles.findByWorker(orgId, workerId);
   }
 
@@ -276,7 +302,7 @@ export class ProfilesService {
           .returning();
         inserted = row;
       } catch (err) {
-        if (getPostgresErrorCode(err) !== "23505") {
+        if (!isUniqueViolation(err)) {
           logger.error("profiles.createEmployeeProfile: insert failed unexpectedly", {
             orgId,
             cause: err instanceof Error ? err.message : String(err),
@@ -306,7 +332,7 @@ export class ProfilesService {
             })),
           );
         } catch (err) {
-          if (getPostgresErrorCode(err) !== "23505") {
+          if (!isUniqueViolation(err)) {
             logger.error("profiles.createProfile: component insert failed unexpectedly", {
               orgId,
               cause: err instanceof Error ? err.message : String(err),
@@ -335,10 +361,12 @@ export class ProfilesService {
   }
 
   async listHistory(orgId: string, employeeUserId: string) {
+    await this.assertEmployeeInOrg(orgId, employeeUserId);
     return this.profiles.historyByUser(orgId, employeeUserId);
   }
 
   async listHistoryByWorker(orgId: string, workerId: string) {
+    await this.assertWorkerInOrg(orgId, workerId);
     return this.profiles.historyByWorker(orgId, workerId);
   }
 

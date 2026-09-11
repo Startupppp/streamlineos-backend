@@ -25,6 +25,19 @@ const EmailTemplateAiOutputSchema = z.object({
   body: z.string(),
 });
 
+const EMAIL_TEMPLATE_COLUMNS = {
+  id: emailTemplates.id,
+  orgId: emailTemplates.orgId,
+  name: emailTemplates.name,
+  subject: emailTemplates.subject,
+  body: emailTemplates.body,
+  category: emailTemplates.category,
+  variables: emailTemplates.variables,
+  createdBy: emailTemplates.createdBy,
+  createdAt: emailTemplates.createdAt,
+  updatedAt: emailTemplates.updatedAt,
+} as const;
+
 @Injectable()
 export class HrEmailTemplatesService {
   constructor(
@@ -34,10 +47,11 @@ export class HrEmailTemplatesService {
 
   list(orgId: string) {
     return this.db
-      .select()
+      .select(EMAIL_TEMPLATE_COLUMNS)
       .from(emailTemplates)
       .where(eq(emailTemplates.orgId, orgId))
-      .orderBy(desc(emailTemplates.createdAt));
+      .orderBy(desc(emailTemplates.createdAt))
+      .limit(100);
   }
 
   async create(orgId: string, userId: string, input: CreateEmailTemplateInput) {

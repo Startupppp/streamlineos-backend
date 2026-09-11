@@ -47,7 +47,7 @@ function createHarness(permissionEntries: Array<[string, DataScope]> = []) {
   const leaves = { calendar: methodMock() };
   const wfh = { pending: methodMock() };
   const probation = { listDueForReview: methodMock() };
-  const exit = { list: methodMock() };
+  const exit = { hubDigest: methodMock() };
   const documents = { stats: methodMock() };
   const holidays = { listByYear: methodMock() };
   const attendance = { teamStatus: methodMock() };
@@ -112,7 +112,7 @@ describe("HrHubService", () => {
     expect(harness.leaves.calendar).not.toHaveBeenCalled();
     expect(harness.wfh.pending).not.toHaveBeenCalled();
     expect(harness.probation.listDueForReview).not.toHaveBeenCalled();
-    expect(harness.exit.list).not.toHaveBeenCalled();
+    expect(harness.exit.hubDigest).not.toHaveBeenCalled();
     expect(harness.documents.stats).not.toHaveBeenCalled();
     expect(harness.holidays.listByYear).not.toHaveBeenCalled();
     expect(harness.attendance.teamStatus).not.toHaveBeenCalled();
@@ -139,11 +139,10 @@ describe("HrHubService", () => {
     expect(harness.analytics.getCommandCenter).toHaveBeenCalledTimes(1);
     expect(harness.dashboard.metrics).toHaveBeenCalledTimes(1);
     expect(harness.dashboard.onboardingStatus).toHaveBeenCalledTimes(1);
-    expect(harness.documents.stats).toHaveBeenCalledWith(
-      "org-1",
-      "user-1",
-      "own",
-    );
+    const [documentsRead] = (harness.documents.stats as jest.Mock).mock.calls[0];
+    expect(documentsRead.orgId).toBe("org-1");
+    expect(documentsRead.actorId).toBe("user-1");
+    expect(documentsRead.rawScope("spec reads the resolved value")).toBe("own");
     expect(harness.interviews.list).toHaveBeenCalledTimes(1);
     expect(harness.recruitmentReports.stats).toHaveBeenCalledTimes(1);
     expect(harness.leaves.calendar).not.toHaveBeenCalled();
@@ -172,15 +171,10 @@ describe("HrHubService", () => {
     expect(harness.leaves.calendar).toHaveBeenCalledWith("org-1", 8, 2026);
     expect(harness.holidays.listByYear).toHaveBeenCalledWith("org-1", 2026);
     expect(harness.attendance.teamStatus).toHaveBeenCalledWith(USER, {
-      page: 1,
       limit: 1,
     });
-    expect(harness.exit.list).toHaveBeenCalledWith(
-      "org-1",
-      "user-1",
-      true,
-      { page: 1, limit: 5 },
-    );
+    expect(harness.exit.hubDigest).toHaveBeenCalledTimes(1);
+    expect(harness.exit.hubDigest).toHaveBeenCalledWith("org-1", "user-1", true);
     expect(harness.opsInbox.getOpsInbox).toHaveBeenCalledWith(
       "org-1",
       "user-1",

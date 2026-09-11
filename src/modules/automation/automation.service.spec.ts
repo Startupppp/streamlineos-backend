@@ -1,5 +1,6 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
+import { AutomationActionExecutor } from "./automation-action-executor.service";
 import { AutomationService } from "./automation.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { AutomationEmailService } from "./automation-email.service";
@@ -18,7 +19,7 @@ const mockDb = {
     from: jest.fn().mockReturnValue({
       where: jest.fn().mockReturnValue(
         Object.assign(Promise.resolve([{ total: 0 }]), {
-          limit: jest.fn().mockResolvedValue([{ status: "ACTIVE" }]),
+          limit: jest.fn().mockResolvedValue([{ id: "mbr-42", status: "ACTIVE" }]),
         }),
       ),
     }),
@@ -54,6 +55,7 @@ describe("AutomationService — support_* actions", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AutomationService,
+        AutomationActionExecutor,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: NotificationsService, useValue: mockNotifications },
         { provide: AutomationEmailService, useValue: mockEmail },
@@ -77,7 +79,7 @@ describe("AutomationService — support_* actions", () => {
     expect(result.matched).toBe(true);
     expect(result.actionResults).toEqual([{ type: "support_assign_ticket", ok: true }]);
     expect(mockDb.update).toHaveBeenCalled();
-    expect(mockDb.set).toHaveBeenCalledWith(expect.objectContaining({ assigneeId: "agent-1" }));
+    expect(mockDb.set).toHaveBeenCalledWith(expect.objectContaining({ assigneeMembershipId: "mbr-42" }));
   });
 
   it("support_set_priority updates the ticket's priority", async () => {
@@ -99,7 +101,7 @@ describe("AutomationService — support_* actions", () => {
     );
 
     expect(result.actionResults).toEqual([{ type: "support_add_tag", ok: true }]);
-    expect(mockDb.values).toHaveBeenCalledWith({ ticketId: 42, tagId: 7 });
+    expect(mockDb.values).toHaveBeenCalledWith({ orgId: "org1", ticketId: 42, tagId: 7 });
     expect(mockDb.onConflictDoNothing).toHaveBeenCalled();
   });
 
@@ -158,6 +160,7 @@ describe("AutomationService — rule CRUD", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AutomationService,
+        AutomationActionExecutor,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: NotificationsService, useValue: mockNotifications },
         { provide: AutomationEmailService, useValue: mockEmail },
@@ -294,6 +297,7 @@ describe("AutomationService.runAutomationsForEvent() — batch writes", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AutomationService,
+        AutomationActionExecutor,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: NotificationsService, useValue: mockNotifications },
         { provide: AutomationEmailService, useValue: mockEmail },
@@ -391,8 +395,10 @@ describe("AutomationService.runAutomationsForEvent() — batch writes", () => {
   });
 });
 
-describe("AutomationService — support_add_tag org-scoping", () => {
-  let service: AutomationService;
+// Isolation proof for src/modules/automation/automation-action-executor.service.ts:
+// these tests execute the extracted owner, rejecting a foreign tag and inactive assignees.
+describe("AutomationActionExecutor — support_add_tag org-scoping", () => {
+  let service: AutomationActionExecutor;
 
   function makeModule(tagLookupResult: Array<{ id: number }>) {
     jest.clearAllMocks();
@@ -422,7 +428,7 @@ describe("AutomationService — support_add_tag org-scoping", () => {
   async function buildService(localDb: unknown) {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        AutomationService,
+        AutomationActionExecutor,
         { provide: DRIZZLE, useValue: localDb },
         { provide: NotificationsService, useValue: { create: jest.fn() } },
         { provide: AutomationEmailService, useValue: { send: jest.fn() } },
@@ -431,7 +437,7 @@ describe("AutomationService — support_add_tag org-scoping", () => {
         { provide: AiNodeExecutorService, useValue: { executeNode: jest.fn() } },
       ],
     }).compile();
-    return module.get(AutomationService);
+    return module.get(AutomationActionExecutor);
   }
 
   it("proof — skipping the tag lookup (always inserts) lets a foreign tag be applied", async () => {
@@ -445,7 +451,7 @@ describe("AutomationService — support_add_tag org-scoping", () => {
     );
 
     expect(result.ok).toBe(true);
-    expect(insertTracker).toContainEqual({ ticketId: 10, tagId: 99 });
+    expect(insertTracker).toContainEqual({ orgId: "org-a", ticketId: 10, tagId: 99 });
   });
 
   it("rejects a tagId that does not belong to the caller's org (cross-org tag isolation)", async () => {
@@ -473,11 +479,11 @@ describe("AutomationService — support_add_tag org-scoping", () => {
     );
 
     expect(result.ok).toBe(true);
-    expect(insertTracker).toContainEqual({ ticketId: 42, tagId: 7 });
+    expect(insertTracker).toContainEqual({ orgId: "org-a", ticketId: 42, tagId: 7 });
   });
 });
 
-describe("AutomationService — W-6: live membership check on assigneeId", () => {
+describe("AutomationActionExecutor — W-6: live membership check on assigneeId", () => {
   async function buildServiceWithMemberLookup(memberRow: { status: string } | null) {
     jest.clearAllMocks();
 
@@ -504,7 +510,7 @@ describe("AutomationService — W-6: live membership check on assigneeId", () =>
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        AutomationService,
+        AutomationActionExecutor,
         { provide: DRIZZLE, useValue: localDb },
         { provide: NotificationsService, useValue: { create: jest.fn() } },
         { provide: AutomationEmailService, useValue: { send: jest.fn() } },
@@ -514,7 +520,7 @@ describe("AutomationService — W-6: live membership check on assigneeId", () =>
       ],
     }).compile();
 
-    return { service: module.get(AutomationService), localDb };
+    return { service: module.get(AutomationActionExecutor), localDb };
   }
 
   it("proof — skipping the membership check (active member) lets support_assign_ticket succeed", async () => {
@@ -599,7 +605,7 @@ describe("AutomationService — W-6: live membership check on assigneeId", () =>
     };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        AutomationService,
+        AutomationActionExecutor,
         { provide: DRIZZLE, useValue: localDb },
         { provide: NotificationsService, useValue: { create: jest.fn() } },
         { provide: AutomationEmailService, useValue: { send: jest.fn() } },
@@ -608,7 +614,7 @@ describe("AutomationService — W-6: live membership check on assigneeId", () =>
         { provide: AiNodeExecutorService, useValue: { executeNode: jest.fn() } },
       ],
     }).compile();
-    const service = module.get(AutomationService);
+    const service = module.get(AutomationActionExecutor);
 
     const result = await service.executeAction(
       "org-a",

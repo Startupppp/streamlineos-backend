@@ -1,5 +1,6 @@
 import { Logger } from "@nestjs/common";
-import { and, eq, inArray, not, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "../../../../db/drizzle.module";
 import {
   payrollRuns,
@@ -10,17 +11,17 @@ import {
   organizationMembers,
 } from "../../../../db/schema";
 import type { AuditService } from "../../../../common/audit/audit.service";
-import type { PayrollPostingService } from "../../payroll-posting.service";
-import { systemActor } from "../../../../common/auth/system-actor";
 import type { JournalOutboxService } from "../../insights/journal-outbox.service";
 import { registerAfterCommit } from "../../../../common/tenant/tenant-context";
 import { logSideEffectFailure } from "../../../../common/logger/side-effect";
 import { runInNewTenantTransaction } from "../../../../common/tenant";
+import { resolveRunCoverage } from "./payout-run-coverage";
+import { OutboxWriter } from "../../../../common/outbox/outbox-writer";
+import { PAYROLL_RUN_PAYOUT_POSTING_INTENT_EVENT } from "../payroll-payout-posting-intent.consumer";
 
 export interface RunCompletionDeps {
   db: Db;
   audit: AuditService;
-  payrollPosting: PayrollPostingService;
   journalOutbox?: JournalOutboxService;
   logger: Logger;
 }
@@ -110,42 +111,9 @@ export async function checkRunCompletion(
 
   const runId = batch.runId;
 
-  const allBatches = await deps.db
-    .select({ id: payrollBankBatches.id })
-    .from(payrollBankBatches)
-    .where(and(eq(payrollBankBatches.orgId, orgId), eq(payrollBankBatches.runId, runId)));
-
-  const batchIds = allBatches.map(b => b.id);
-  if (batchIds.length === 0) return;
-
-  const pendingItems = await deps.db
-    .select({ id: payrollBankBatchItems.id })
-    .from(payrollBankBatchItems)
-    .where(
-      and(
-        eq(payrollBankBatchItems.orgId, orgId),
-        inArray(payrollBankBatchItems.batchId, batchIds),
-        not(eq(payrollBankBatchItems.status, "PAID")),
-        not(eq(payrollBankBatchItems.status, "FAILED")),
-        not(eq(payrollBankBatchItems.status, "HELD")),
-      ),
-    )
-    .limit(1);
-
-  if (pendingItems.length > 0) return;
-
-  const paidRunEmployees = await deps.db
-    .select({ runEmployeeId: payrollBankBatchItems.runEmployeeId })
-    .from(payrollBankBatchItems)
-    .where(
-      and(
-        eq(payrollBankBatchItems.orgId, orgId),
-        inArray(payrollBankBatchItems.batchId, batchIds),
-        eq(payrollBankBatchItems.status, "PAID"),
-      ),
-    );
-
-  const paidRunEmployeeIds = paidRunEmployees.map((r) => r.runEmployeeId);
+  const coverage = await resolveRunCoverage(deps.db, orgId, runId);
+  if (coverage === null) return;
+  const { paidRunEmployeeIds, payableSubjects, disbursedNet } = coverage;
 
   const paidByMember = await deps.db.query.organizationMembers.findFirst({
     where: and(eq(organizationMembers.userId, actorId), eq(organizationMembers.orgId, orgId)),
@@ -155,10 +123,15 @@ export async function checkRunCompletion(
 
   const now = new Date();
   let runMarkedPaid = false;
+  let paidMonth: string | null = null;
 
   await deps.db.transaction(async (tx) => {
     const [currentRun] = await tx
-      .select({ status: payrollRuns.status })
+      .select({
+        status: payrollRuns.status,
+        month: payrollRuns.month,
+        netTotal: payrollRuns.netTotal,
+      })
       .from(payrollRuns)
       .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)))
       .limit(1);
@@ -185,18 +158,44 @@ export async function checkRunCompletion(
         );
     }
 
+    // netDisbursed is recorded beside paidCount so the gap between a run's
+    // netTotal and what accounting was told to discharge is legible on the run
+    // itself, not something a reader has to re-derive from bank batch items.
     await tx.insert(payrollRunEvents).values({
       orgId,
       runId,
       type: "MARKED_PAID",
       actorId,
-      metadata: { paidCount: paidRunEmployeeIds.length },
+      metadata: {
+        paidCount: paidRunEmployeeIds.length,
+        payableCount: payableSubjects,
+        netDisbursed: disbursedNet,
+        netTotal: currentRun.netTotal ?? "0",
+      },
     });
 
+    await OutboxWriter.emit(tx, {
+      eventId: randomUUID(),
+      organizationId: orgId,
+      aggregateType: "payroll_run",
+      aggregateId: String(runId),
+      aggregateVersion: 2,
+      eventType: PAYROLL_RUN_PAYOUT_POSTING_INTENT_EVENT,
+      payload: {
+        runId,
+        month: currentRun.month,
+        net: disbursedNet,
+        actorUserId: actorId,
+        orgId,
+      },
+      occurredAt: now,
+    });
+
+    paidMonth = currentRun.month;
     runMarkedPaid = true;
   });
 
-  if (runMarkedPaid) {
+  if (runMarkedPaid && paidMonth) {
     deps.audit.log({
       action: "payroll.marked_paid",
       userId: actorId,
@@ -206,30 +205,11 @@ export async function checkRunCompletion(
       metadata: { paidCount: paidRunEmployeeIds.length },
     });
 
-    const paidRun = await deps.db
-      .select({ month: payrollRuns.month, netTotal: payrollRuns.netTotal })
-      .from(payrollRuns)
-      .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)))
-      .limit(1);
-
-    if (paidRun[0]) {
-      const { month, netTotal } = paidRun[0];
-      const postTask = () =>
-        deps.payrollPosting.postPaid(
-          systemActor("payroll.run.payout-posting", orgId, actorId),
-          runId,
-          month,
-          netTotal ?? "0",
-        );
-      if (!registerAfterCommit(postTask))
-        void postTask().catch((err: unknown) =>
-          deps.logger.error("payroll paid posting fallback failed", { runId, month, err }),
-        );
-      const snapshotTask = () =>
-        autoSnapshotJournal(deps, orgId, actorId, month, runId).catch(
-          logSideEffectFailure("payroll auto-snapshot journal", { orgId, runId }),
-        );
-      if (!registerAfterCommit(snapshotTask)) void snapshotTask();
-    }
+    const month = paidMonth;
+    const snapshotTask = () =>
+      autoSnapshotJournal(deps, orgId, actorId, month, runId).catch(
+        logSideEffectFailure("payroll auto-snapshot journal", { orgId, runId }),
+      );
+    if (!registerAfterCommit(snapshotTask)) void snapshotTask();
   }
 }

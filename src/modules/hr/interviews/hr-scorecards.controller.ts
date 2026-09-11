@@ -29,6 +29,12 @@ import {
 } from "./dto/hr-interviews.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  scorecardTemplateSchema,
+  scorecardAnalyticsSchema,
+  successSchema,
+} from "./dto/interviews-response.schemas";
 
 const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
@@ -39,6 +45,7 @@ export class HrScorecardsController {
   constructor(private readonly scorecards: HrScorecardsService) {}
 
   @Get("scorecard-templates")
+  @ResponseSchema(z.array(scorecardTemplateSchema))
   @RequirePermission("hr:interviews:view")
   listTemplates(@CurrentUser() u: CurrentUserContext) {
     return this.scorecards.listTemplates(u.orgId);
@@ -46,6 +53,7 @@ export class HrScorecardsController {
 
   @Post("scorecard-templates")
   @HttpCode(201)
+  @ResponseSchema(scorecardTemplateSchema)
   @RequirePermission("hr:interviews:manage")
   @Validate({ body: createScorecardTemplateSchema })
   createTemplate(
@@ -56,6 +64,7 @@ export class HrScorecardsController {
   }
 
   @Patch("scorecard-templates/:templateId")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:interviews:manage")
   @Validate({ params: templateIdParams, body: updateScorecardTemplateSchema })
   updateTemplate(
@@ -67,6 +76,7 @@ export class HrScorecardsController {
   }
 
   @Delete("scorecard-templates/:templateId")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:interviews:manage")
   @Validate({ params: templateIdParams })
   deleteTemplate(
@@ -77,6 +87,7 @@ export class HrScorecardsController {
   }
 
   @Get("scorecard-analytics")
+  @ResponseSchema(scorecardAnalyticsSchema)
   @RequirePermission("hr:interviews:view")
   @Validate({ query: scorecardAnalyticsQuerySchema })
   analytics(

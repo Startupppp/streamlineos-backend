@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /**
  * Ratchet gate: count of backend production TypeScript files over 300 lines
- * must not increase beyond the baseline set on 2026-08-31.
+ * must not increase beyond the baseline, first set on 2026-08-31, lowered to
+ * 392 on 2026-09-03 and to 390 on 2026-09-08, each time by splitting files
+ * along a responsibility seam. The baseline may only ever move DOWN.
  *
  * Scans: src/**\/*.ts excluding *.spec.ts, *.e2e-spec.ts, *.d.ts (same scope as check-file-sizes.mjs).
  * Passes when actual count <= BASELINE. Fails when it increases.
@@ -11,7 +13,8 @@
  *   --self-test   Run internal assertions and exit (no file scan).
  */
 
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, relative, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -27,6 +30,10 @@ const LIMIT = 300;
  * this gate had never measured. Of the 413, 349 are inventory-lane files and 64
  * came from the other lanes; none grew in the merge, and the five files the
  * merge did push past 300 were split back under.
+ *
+ * origin/main carried 390 for its own tree when it was merged in on 2026-09-11.
+ * Neither number describes the merged tree; re-measure it and set this to the
+ * measured count.
  */
 const BASELINE = 413;
 const MIN_FILES = 50;
@@ -85,13 +92,45 @@ function runSelfTests() {
   assert("BASELINE is a positive integer", Number.isInteger(BASELINE) && BASELINE > 0);
   assert("LIMIT is 300", LIMIT === 300);
   assert("MIN_FILES is a positive integer", Number.isInteger(MIN_FILES) && MIN_FILES > 0);
-  assert("countLines counts lines in a string", (() => {
-    const fake = "a\nb\nc\n";
-    const parts = fake.split("\n");
-    const count = fake.endsWith("\n") ? parts.length - 1 : parts.length;
-    return count === 3;
-  })());
 
+  // The scan itself, against known-bad files on disk. Asserting on the constants
+  // alone left a broken collectFiles() reporting zero crossings and still passing.
+  const fixture = mkdtempSync(join(tmpdir(), "over-300-self-test-"));
+  try {
+    mkdirSync(join(fixture, "nested"), { recursive: true });
+    writeFileSync(join(fixture, "nested", "over.ts"), "x\n".repeat(301));
+    writeFileSync(join(fixture, "exactly-at-limit.ts"), "x\n".repeat(300));
+    writeFileSync(join(fixture, "under.ts"), "x\n".repeat(12));
+    writeFileSync(join(fixture, "over.spec.ts"), "x\n".repeat(400));
+    writeFileSync(join(fixture, "over.e2e-spec.ts"), "x\n".repeat(400));
+    writeFileSync(join(fixture, "over.d.ts"), "x\n".repeat(400));
+    writeFileSync(join(fixture, "over.js"), "x\n".repeat(400));
+
+    const collected = collectFiles(fixture).map((f) => f.replace(/\\/g, "/"));
+    const overLimit = collected.filter((f) => countLines(f) > LIMIT);
+
+    assert("collectFiles recurses into subdirectories", collected.some((f) => f.endsWith("/nested/over.ts")));
+    assert("a 301-line file is over the limit", overLimit.some((f) => f.endsWith("/nested/over.ts")));
+    assert("a file at exactly 300 lines is not over the limit", !overLimit.some((f) => f.endsWith("/exactly-at-limit.ts")));
+    assert("an under-limit file is not counted", !overLimit.some((f) => f.endsWith("/under.ts")));
+    assert("countLines does not count the trailing newline as a line", countLines(join(fixture, "under.ts")) === 12);
+    assert("spec files are excluded from the scan", !collected.some((f) => f.endsWith(".spec.ts")));
+    assert("e2e-spec files are excluded from the scan", !collected.some((f) => f.endsWith(".e2e-spec.ts")));
+    assert("declaration files are excluded from the scan", !collected.some((f) => f.endsWith(".d.ts")));
+    assert("non-TypeScript files are excluded from the scan", !collected.some((f) => f.endsWith(".js")));
+    assert("the vacuity guard would fire on this fixture", collected.length < MIN_FILES);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+
+  assert(
+    "the gate resolves a real source tree — a broken resolvePath must fail loudly, not scan nothing",
+    existsSync(SRC) && existsSync(join(SRC, "modules")),
+  );
+  assert(
+    "BACKEND_ROOT resolves to the repository root, not somewhere outside it",
+    existsSync(join(BACKEND_ROOT, "package.json")),
+  );
   if (failed > 0) {
     console.error(`check-over-300 self-tests: ${failed} failed, ${passed} passed`);
     process.exit(1);

@@ -39,7 +39,6 @@ export const invLots = pgTable("inv_lots", {
 }, (table) => [
   uniqueIndex("uniq_inv_lots_org_variant_number").on(table.orgId, table.productVariantId, table.lotNumber),
   unique("uniq_inv_lots_org_id").on(table.orgId, table.id),
-  index("idx_inv_lots_org").on(table.orgId),
   index("idx_inv_lots_variant").on(table.productVariantId),
   index("idx_inv_lots_expiry").on(table.expiryDate),
   index("idx_inv_lots_status").on(table.orgId, table.status),
@@ -62,7 +61,6 @@ export const invSerialNumbers = pgTable("inv_serial_numbers", {
 }, (table) => [
   uniqueIndex("uniq_inv_serials_org_variant_number").on(table.orgId, table.productVariantId, table.serialNumber),
   unique("uniq_inv_serial_numbers_org_id").on(table.orgId, table.id),
-  index("idx_inv_serials_org").on(table.orgId),
   index("idx_inv_serials_variant").on(table.productVariantId),
   index("idx_inv_serials_status").on(table.orgId, table.status),
   index("idx_inv_serials_location").on(table.currentLocationId),

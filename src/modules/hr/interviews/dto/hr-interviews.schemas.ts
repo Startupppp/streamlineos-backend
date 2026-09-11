@@ -1,11 +1,11 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField, optionalPageNumberField, optionalPageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const upsertSlaSchema = z.object({
   stage: z.string().min(1),
   maxHours: z.number().int().positive(),
   warningHours: z.number().int().positive(),
-});
+}).strict();
 export type UpsertSlaInput = z.infer<typeof upsertSlaSchema>;
 
 export const interviewListSchema = z
@@ -13,51 +13,32 @@ export const interviewListSchema = z
     candidateId: z.coerce.number().int().positive().optional(),
     upcoming: z.enum(["true", "false"]).optional(),
     relevant: z.enum(["true", "false"]).optional(),
-    page: optionalPageNumberField(),
-    pageSize: optionalPageSizeField(),
-    /** @deprecated prefer page/pageSize */
-    limit: optionalPageSizeField(),
-    /** @deprecated prefer page/pageSize */
-    offset: z.coerce.number().int().min(0).optional(),
+    limit: pageSizeField(20, 100),
   })
-  .transform((q) => {
-    const pageSize = q.pageSize ?? q.limit ?? 20;
-    const page =
-      q.page ?? (q.offset != null ? Math.floor(q.offset / pageSize) + 1 : 1);
-    return {
-      candidateId: q.candidateId,
-      upcoming: q.upcoming,
-      relevant: q.relevant,
-      page,
-      pageSize,
-      limit: pageSize,
-      offset: (page - 1) * pageSize,
-    };
-  });
-export type InterviewListInput = z.output<typeof interviewListSchema>;
+  .strict();
+export type InterviewListInput = z.infer<typeof interviewListSchema>;
 
 export const selfInterviewListSchema = z.object({
   page: pageNumberField,
   pageSize: pageSizeField(20, 100),
-});
+}).strict();
 export type SelfInterviewListInput = z.infer<typeof selfInterviewListSchema>;
 
 export const hiringFlowListSchema = z.object({
   limit: pageSizeField(50, 100),
-  offset: z.coerce.number().min(0).default(0),
-});
+}).strict();
 export type HiringFlowListInput = z.infer<typeof hiringFlowListSchema>;
 
 export const createHiringFlowSchema = z.object({
   name: z.string().min(1, "Name is required").max(100),
   isDefault: z.boolean().optional().default(false),
-});
+}).strict();
 export type CreateHiringFlowInput = z.infer<typeof createHiringFlowSchema>;
 
 export const updateHiringFlowSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   isDefault: z.boolean().optional(),
-});
+}).strict();
 export type UpdateHiringFlowInput = z.infer<typeof updateHiringFlowSchema>;
 
 const roundTypeEnum = z.enum([
@@ -80,7 +61,7 @@ export const createRoundSchema = z.object({
   scorecardTemplateId: z.coerce.number().int().optional(),
   interviewerRoleRestriction: z.string().max(100).optional(),
   autoAdvanceThreshold: z.coerce.number().int().min(0).max(100).optional(),
-});
+}).strict();
 export type CreateRoundInput = z.infer<typeof createRoundSchema>;
 
 export const updateRoundSchema = z.object({
@@ -94,21 +75,21 @@ export const updateRoundSchema = z.object({
   interviewerRoleRestriction: z.string().max(100).nullable().optional(),
   autoAdvanceThreshold: z.coerce.number().int().min(0).max(100).nullable().optional(),
   orderIndex: z.coerce.number().int().min(0).optional(),
-});
+}).strict();
 export type UpdateRoundInput = z.infer<typeof updateRoundSchema>;
 
 export const createOfferTemplateSchema = z.object({
   name: z.string().min(1).max(200).trim(),
   htmlContent: z.string().min(1),
   isDefault: z.boolean().optional().default(false),
-});
+}).strict();
 export type CreateOfferTemplateInput = z.infer<typeof createOfferTemplateSchema>;
 
 export const updateOfferTemplateSchema = z.object({
   name: z.string().min(1).max(200).trim().optional(),
   htmlContent: z.string().min(1).optional(),
   isDefault: z.boolean().optional(),
-});
+}).strict();
 export type UpdateOfferTemplateInput = z.infer<typeof updateOfferTemplateSchema>;
 
 export const generateOfferPdfSchema = z.object({
@@ -118,7 +99,7 @@ export const generateOfferPdfSchema = z.object({
   joiningDate: z.string().optional().default(""),
   validUntil: z.string().optional().default(""),
   orgName: z.string().optional().default(""),
-});
+}).strict();
 export type GenerateOfferPdfInput = z.infer<typeof generateOfferPdfSchema>;
 
 export const offerLetterSchema = z.object({
@@ -126,7 +107,7 @@ export const offerLetterSchema = z.object({
   jobPostingId: z.number().int().positive(),
   salary: z.string().min(1),
   startDate: z.string().min(1),
-});
+}).strict();
 export type OfferLetterInput = z.infer<typeof offerLetterSchema>;
 
 const criterionSchema = z.object({
@@ -137,15 +118,14 @@ const criterionSchema = z.object({
 export const createScorecardTemplateSchema = z.object({
   name: z.string().min(1),
   criteria: z.array(criterionSchema).min(1),
-  isBlindMode: z.boolean().optional(),
-});
+}).strict();
 export type CreateScorecardTemplateInput = z.infer<typeof createScorecardTemplateSchema>;
 
 export const updateScorecardTemplateSchema = z
   .object({
     name: z.string().min(1).max(200),
     criteria: z.array(criterionSchema).min(1),
-  })
+  }).strict()
   .partial();
 export type UpdateScorecardTemplateInput = z.infer<typeof updateScorecardTemplateSchema>;
 
@@ -153,7 +133,7 @@ export const scorecardAnalyticsQuerySchema = z.object({
   days: z.coerce.number().int().min(7).max(365).default(90),
   jobId: z.coerce.number().int().positive().optional(),
   roundType: z.enum(["HR", "PHONE", "VIDEO", "ONSITE", "TECHNICAL", "FINAL"]).optional(),
-});
+}).strict();
 export type ScorecardAnalyticsQueryInput = z.infer<typeof scorecardAnalyticsQuerySchema>;
 
 const reportFiltersSchema = z.object({
@@ -167,7 +147,7 @@ export const generateReportSchema = z.object({
   entity: z.enum(["candidates", "jobs", "interviews", "offers"]),
   fields: z.array(z.string()).min(1),
   filters: reportFiltersSchema.default({}),
-});
+}).strict();
 export type GenerateReportInput = z.infer<typeof generateReportSchema>;
 
 export const createScheduledReportSchema = z.object({
@@ -179,16 +159,16 @@ export const createScheduledReportSchema = z.object({
   }),
   schedule: z.enum(["WEEKLY", "MONTHLY"]),
   recipients: z.array(z.string().email()).min(1),
-});
+}).strict();
 export type CreateScheduledReportInput = z.infer<typeof createScheduledReportSchema>;
 
 export const interviewerAvailabilityQuerySchema = z.object({
   date: z.string().optional(),
   interviewerIds: z.string().optional(),
-});
+}).strict();
 export type InterviewerAvailabilityQuery = z.infer<typeof interviewerAvailabilityQuerySchema>;
 
 export const interviewerPerformanceQuerySchema = z.object({
   days: z.coerce.number().int().min(1).max(365).optional(),
-});
+}).strict();
 export type InterviewerPerformanceQuery = z.infer<typeof interviewerPerformanceQuerySchema>;

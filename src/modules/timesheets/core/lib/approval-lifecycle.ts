@@ -1,9 +1,3 @@
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  NotFoundException,
-} from "@nestjs/common";
 import { and, eq, inArray } from "drizzle-orm";
 import { logger } from "../../../../common/logger/logger.service";
 import { organizationMembers, timesheetPeriods } from "../../../../db/schema";
@@ -120,13 +114,4 @@ export function periodOwnerUserIdOrWarn(
     },
   );
   return null;
-}
-
-export function isExpectedApprovalSkip(error: unknown): boolean {
-  return (
-    error instanceof ConflictException ||
-    error instanceof NotFoundException ||
-    error instanceof ForbiddenException ||
-    error instanceof BadRequestException
-  );
 }

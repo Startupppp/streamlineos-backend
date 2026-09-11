@@ -14,6 +14,8 @@ import {
   type UpdateCoreSettingsInput,
 } from "./dto/settings.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { timesheetSettingsSchema, settingsHistoryListResponseSchema } from "./dto/timesheets-response.schemas";
 
 @RequireModule("timesheets")
 @Controller("timesheets/settings")
@@ -23,6 +25,7 @@ export class TimesheetSettingsController {
 
   @Get()
   @RequirePermission("timesheets:settings:view")
+  @ResponseSchema(timesheetSettingsSchema)
   get(@CurrentUser() u: CurrentUserContext) {
     return this.settings.getSettings(u.orgId);
   }
@@ -30,6 +33,7 @@ export class TimesheetSettingsController {
   @Get("history")
   @RequirePermission("timesheets:settings:view")
   @Validate({ query: settingsHistoryQuerySchema })
+  @ResponseSchema(settingsHistoryListResponseSchema)
   history(
     @Query() query: SettingsHistoryQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -40,6 +44,7 @@ export class TimesheetSettingsController {
   @Patch()
   @RequirePermission("timesheets:settings:manage")
   @Validate({ body: updateCoreSettingsSchema })
+  @ResponseSchema(timesheetSettingsSchema)
   update(
     @Body() body: UpdateCoreSettingsInput,
     @CurrentUser() u: CurrentUserContext,

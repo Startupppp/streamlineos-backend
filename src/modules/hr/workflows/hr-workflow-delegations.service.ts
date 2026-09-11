@@ -1,5 +1,5 @@
-import { Inject, Injectable, NotFoundException, BadRequestException } from "@nestjs/common";
-import { and, eq, desc, or } from "drizzle-orm";
+import { Inject, Injectable, NotFoundException, BadRequestException, ForbiddenException } from "@nestjs/common";
+import { and, eq, desc } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { hrWorkflowDelegations } from "../../../db/schema/hr/workflow-engine";
@@ -7,6 +7,7 @@ import { users } from "../../../db/schema";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import type { CreateDelegationDto, UpdateDelegationDto } from "./dto/workflow.schemas";
+import { requireOrganizationMembershipId } from "../time/organization-membership";
 
 @Injectable()
 export class HrWorkflowDelegationsService {
@@ -14,9 +15,7 @@ export class HrWorkflowDelegationsService {
 
   async myDelegations(u: CurrentUserContext) {
     const membershipId = actingMembershipId(u.principal);
-    const delegatorPredicate = membershipId != null
-      ? or(eq(hrWorkflowDelegations.delegatorMembershipId, membershipId), eq(hrWorkflowDelegations.delegatorUserId, u.userId))!
-      : eq(hrWorkflowDelegations.delegatorUserId, u.userId);
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
     return this.db
       .select({
         id: hrWorkflowDelegations.id,
@@ -34,7 +33,10 @@ export class HrWorkflowDelegationsService {
       })
       .from(hrWorkflowDelegations)
       .leftJoin(users, eq(users.id, hrWorkflowDelegations.delegateUserId))
-      .where(and(eq(hrWorkflowDelegations.orgId, u.orgId), delegatorPredicate))
+      .where(and(
+        eq(hrWorkflowDelegations.orgId, u.orgId),
+        eq(hrWorkflowDelegations.delegatorMembershipId, membershipId),
+      ))
       .orderBy(desc(hrWorkflowDelegations.createdAt))
       .limit(50);
   }
@@ -69,12 +71,18 @@ export class HrWorkflowDelegationsService {
     if (endsAt <= startsAt) throw new BadRequestException("endsAt must be after startsAt");
     if (dto.delegateUserId === u.userId) throw new BadRequestException("Cannot delegate to yourself");
 
-    const membershipId = actingMembershipId(u.principal);
+    const delegatorMembershipId = actingMembershipId(u.principal);
+    if (delegatorMembershipId == null) throw new ForbiddenException("Organization membership required.");
+    const delegateMembershipId = await requireOrganizationMembershipId(this.db, u.orgId, dto.delegateUserId);
+    if (delegateMembershipId === delegatorMembershipId) {
+      throw new BadRequestException("Cannot delegate to yourself");
+    }
     const [delegation] = await this.db.insert(hrWorkflowDelegations).values({
       orgId: u.orgId,
       delegatorUserId: u.userId,
-      delegatorMembershipId: membershipId,
+      delegatorMembershipId,
       delegateUserId: dto.delegateUserId,
+      delegateMembershipId,
       objectType: dto.objectType ?? null,
       startsAt,
       endsAt,
@@ -85,13 +93,15 @@ export class HrWorkflowDelegationsService {
     return delegation;
   }
 
-  async update(orgId: string, userId: string, id: number, dto: UpdateDelegationDto) {
+  async update(u: CurrentUserContext, id: number, dto: UpdateDelegationDto) {
+    const membershipId = actingMembershipId(u.principal);
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
     const [existing] = await this.db.select()
       .from(hrWorkflowDelegations)
       .where(and(
         eq(hrWorkflowDelegations.id, id),
-        eq(hrWorkflowDelegations.orgId, orgId),
-        eq(hrWorkflowDelegations.delegatorUserId, userId),
+        eq(hrWorkflowDelegations.orgId, u.orgId),
+        eq(hrWorkflowDelegations.delegatorMembershipId, membershipId),
       ))
       .limit(1);
 
@@ -104,19 +114,25 @@ export class HrWorkflowDelegationsService {
 
     const [updated] = await this.db.update(hrWorkflowDelegations)
       .set(updates)
-      .where(and(eq(hrWorkflowDelegations.id, id), eq(hrWorkflowDelegations.orgId, orgId)))
+      .where(and(
+        eq(hrWorkflowDelegations.id, id),
+        eq(hrWorkflowDelegations.orgId, u.orgId),
+        eq(hrWorkflowDelegations.delegatorMembershipId, membershipId),
+      ))
       .returning();
 
     return updated;
   }
 
-  async remove(orgId: string, userId: string, id: number) {
+  async remove(u: CurrentUserContext, id: number) {
+    const membershipId = actingMembershipId(u.principal);
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
     const [existing] = await this.db.select()
       .from(hrWorkflowDelegations)
       .where(and(
         eq(hrWorkflowDelegations.id, id),
-        eq(hrWorkflowDelegations.orgId, orgId),
-        eq(hrWorkflowDelegations.delegatorUserId, userId),
+        eq(hrWorkflowDelegations.orgId, u.orgId),
+        eq(hrWorkflowDelegations.delegatorMembershipId, membershipId),
       ))
       .limit(1);
 
@@ -124,6 +140,10 @@ export class HrWorkflowDelegationsService {
 
     await this.db.update(hrWorkflowDelegations)
       .set({ active: false })
-      .where(and(eq(hrWorkflowDelegations.id, id), eq(hrWorkflowDelegations.orgId, orgId)));
+      .where(and(
+        eq(hrWorkflowDelegations.id, id),
+        eq(hrWorkflowDelegations.orgId, u.orgId),
+        eq(hrWorkflowDelegations.delegatorMembershipId, membershipId),
+      ));
   }
 }

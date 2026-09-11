@@ -8,3 +8,5 @@ export const gdprAsyncExportBodySchema = z
   .strict();
 
 export type GdprAsyncExportBody = z.infer<typeof gdprAsyncExportBodySchema>;
+
+export const gdprExportJobIdParams = z.object({ jobId: z.string().uuid() }).strict();

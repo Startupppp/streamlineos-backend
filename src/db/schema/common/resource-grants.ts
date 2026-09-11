@@ -36,7 +36,6 @@ export const resourceGrants = pgTable(
       t.principalId,
     ),
     // "who can see this record?"
-    index("idx_resource_grants_resource").on(t.orgId, t.resourceType, t.resourceId),
     // "what can this principal see?" — the query the bespoke tables cannot answer
     index("idx_resource_grants_principal").on(t.orgId, t.principalType, t.principalId),
   ],

@@ -8,12 +8,33 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { sql } from "drizzle-orm";
+import type { Redis } from "@upstash/redis";
 import { DB_POOL_CONFIG, DRIZZLE } from "../db/drizzle.constants";
 import { type Db } from "../db/drizzle.module";
 import { poolTelemetry, type PoolTelemetrySnapshot } from "../db/pool-telemetry";
+import {
+  queryTelemetry,
+  type QueryFingerprintStat,
+  type QueryTelemetrySnapshot,
+} from "../db/query-telemetry";
 import type { ResolvedPoolConfig } from "../db/pool.config";
 import { Public } from "../common/auth/public.decorator";
-import { drainBacklog } from "../common/workflow/workflow-store";
+import { ResponseSchema } from "../common/openapi/zod-operation-contracts";
+import { CacheService, REDIS } from "../common/cache/cache.service";
+import { openProvidersAcrossBreakers } from "../common/outbound/provider-circuit-breaker";
+import { logger } from "../common/logger/logger.service";
+import { cacheCheck, databaseCheck, providerCheck, queueCheck } from "./dependency-checks";
+import { resolveReadinessConfig, type ReadinessConfig } from "./readiness.config";
+import { ReadinessService } from "./readiness.service";
+import type { ReadinessSnapshot } from "./readiness.types";
+import { shutdownState } from "./shutdown-state";
+import { aggregateWorkflowBacklog } from "./workflow-backlog";
+import {
+  healthCheckSchema,
+  readinessSnapshotSchema,
+  workflowHealthSchema,
+  databasePoolHealthSchema,
+} from "./dto/health-response.schemas";
 
 /**
  * A run that has been due for longer than this means nothing is draining.
@@ -26,17 +47,18 @@ import { drainBacklog } from "../common/workflow/workflow-store";
 const DRAIN_STALL_SECONDS = 300;
 const SCHEDULE_STALL_SECONDS = 300;
 
-const SETTLING_DELAY_MS = Math.max(
-  0,
-  parseInt(process.env["SHUTDOWN_SETTLING_DELAY_MS"] ?? "5000", 10),
-);
-
 interface WorkflowHealth {
   status: "ok" | "stalled";
   due: number;
   oldestDueSeconds: number | null;
   overdueSchedules: number;
   oldestOverdueScheduleSeconds: number | null;
+  leased: number;
+  retrying: number;
+  deadLettered: number;
+  cancelled: number;
+  organizations: number;
+  failedOrganizations: number;
   /** Present only when stalled, because it is the one thing to do about it. */
   hint?: string;
 }
@@ -46,37 +68,99 @@ interface PoolHealth {
   latencyMs: number;
   endpoint: { host: string; pooled: boolean; role: ResolvedPoolConfig["role"] };
   pool: PoolTelemetrySnapshot;
+  queries: QueryTelemetrySnapshot;
+  slowestFingerprints: QueryFingerprintStat[];
 }
 
 @Public()
 @Controller("health")
 export class HealthController implements BeforeApplicationShutdown {
-  private isShuttingDown = false;
+  private readonly config: ReadinessConfig = resolveReadinessConfig();
+  private readonly readiness: ReadinessService;
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     @Inject(DB_POOL_CONFIG) private readonly poolConfig: ResolvedPoolConfig,
-  ) {}
+    @Inject(REDIS) redis: Redis | null,
+    private readonly cache: CacheService,
+  ) {
+    this.readiness = new ReadinessService(
+      [
+        databaseCheck(() => this.db.execute(sql`select 1`)),
+        cacheCheck(redis, () => this.cache.droppedInvalidationCount),
+        queueCheck(redis, this.config.queueHeartbeatJobs, this.config.queueStallSeconds, () =>
+          Date.now(),
+        ),
+        /**
+         * The PROCESS-level view, not `sharedProviderBreaker`.
+         *
+         * `sharedProviderBreaker` is only `callProvider`'s default argument and
+         * every production call site overrides it with a private instance, so
+         * this check read a permanently empty map: it could not report a
+         * provider down, and an operator who set
+         * `READINESS_REQUIRED_PROVIDERS` got a check that renders and never
+         * denies. `openProvidersAcrossBreakers` aggregates every breaker in the
+         * process, so a breaker added later is covered with no wiring here.
+         */
+        providerCheck(
+          this.config.requiredProviders,
+          (now) => openProvidersAcrossBreakers(now),
+          () => Date.now(),
+        ),
+      ],
+      this.config,
+    );
+  }
 
-  async beforeApplicationShutdown(_signal?: string): Promise<void> {
-    this.isShuttingDown = true;
-    await new Promise<void>((resolve) => setTimeout(resolve, SETTLING_DELAY_MS));
+  /**
+   * Fails readiness first, then stops accepting, then waits for in-flight work.
+   *
+   * The settling delay is the window the load balancer needs to observe the 503
+   * and take this replica out of rotation; refusing requests before it has is how
+   * a rolling deploy drops traffic. Only once nothing new can arrive is waiting
+   * for quiescence meaningful — and it happens here, in `beforeApplicationShutdown`,
+   * because `DrizzleModule.onApplicationShutdown` ends the connection pool and
+   * Nest does not run that until every hook at this stage has resolved.
+   */
+  async beforeApplicationShutdown(signal?: string): Promise<void> {
+    shutdownState.beginDrain();
+    this.readiness.invalidate();
+    await delay(this.config.settlingDelayMs);
+
+    shutdownState.stopAccepting();
+    const { drained, remaining } = await shutdownState.awaitQuiescence(this.config.drainTimeoutMs);
+    if (drained) {
+      logger.info("Shutdown drain complete — no requests in flight", { signal: signal ?? null });
+      return;
+    }
+    logger.warn("Shutdown drain timed out with requests still in flight", {
+      signal: signal ?? null,
+      remaining,
+      drainTimeoutMs: this.config.drainTimeoutMs,
+    });
   }
 
   @Get()
+  @ResponseSchema(healthCheckSchema)
   health(): { status: "ok" } {
     return { status: "ok" };
   }
 
   @Get("ready")
-  async ready(): Promise<{ status: "ready" }> {
-    if (this.isShuttingDown) throw new ServiceUnavailableException("Shutting down");
-    try {
-      await this.db.execute(sql`select 1`);
-      return { status: "ready" };
-    } catch {
-      throw new ServiceUnavailableException("Database is not ready");
-    }
+  @ResponseSchema(readinessSnapshotSchema)
+  async ready(): Promise<ReadinessSnapshot> {
+    if (shutdownState.isDraining())
+      throw new ServiceUnavailableException("Shutting down — no longer accepting new work");
+
+    const snapshot = await this.readiness.read();
+    if (snapshot.status === "unready")
+      throw new ServiceUnavailableException({
+        statusCode: 503,
+        error: "Service Unavailable",
+        message: "One or more required dependencies are unavailable",
+        readiness: snapshot,
+      });
+    return snapshot;
   }
 
   /**
@@ -93,14 +177,14 @@ export class HealthController implements BeforeApplicationShutdown {
    * background work runs.
    */
   @Get("workflows")
+  @ResponseSchema(workflowHealthSchema)
   async workflows(
     @Headers("x-internal-secret") secret: string | undefined,
   ): Promise<WorkflowHealth> {
-    const expected = process.env.INTERNAL_API_SECRET;
-    if (!expected || secret !== expected) throw new UnauthorizedException();
+    assertInternalSecret(secret);
 
     const [backlog, scheduleRows] = await Promise.all([
-      drainBacklog(this.db),
+      aggregateWorkflowBacklog(this.db),
       this.db.execute(sql`
         SELECT count(*)::int AS overdue,
                COALESCE(EXTRACT(EPOCH FROM (now() - min(next_run_at)))::int, 0) AS oldest
@@ -136,16 +220,22 @@ export class HealthController implements BeforeApplicationShutdown {
       oldestDueSeconds: backlog.oldestDueSeconds,
       overdueSchedules,
       oldestOverdueScheduleSeconds,
+      leased: backlog.leased,
+      retrying: backlog.retrying,
+      deadLettered: backlog.deadLettered,
+      cancelled: backlog.cancelled,
+      organizations: backlog.organizations,
+      failedOrganizations: backlog.failedOrganizations,
       ...(hints.length ? { hint: hints.join(" ") } : {}),
     };
   }
 
   @Get("db")
+  @ResponseSchema(databasePoolHealthSchema)
   async databasePool(
     @Headers("x-internal-secret") secret: string | undefined,
   ): Promise<PoolHealth> {
-    const expected = process.env.INTERNAL_API_SECRET;
-    if (!expected || secret !== expected) throw new UnauthorizedException();
+    assertInternalSecret(secret);
 
     const startedAt = Date.now();
     await this.db.execute(sql`select 1`);
@@ -160,6 +250,22 @@ export class HealthController implements BeforeApplicationShutdown {
         role: this.poolConfig.role,
       },
       pool,
+      queries: queryTelemetry.snapshot(),
+      /*
+       * Shapes only. `fingerprintQuery` normalises every literal and `$n`
+       * placeholder to `?` before a shape is ever stored, so this endpoint
+       * cannot disclose a bind value even though it is the slow-query view.
+       */
+      slowestFingerprints: queryTelemetry.topFingerprints(),
     };
   }
+}
+
+function assertInternalSecret(secret: string | undefined): void {
+  const expected = process.env.INTERNAL_API_SECRET;
+  if (!expected || secret !== expected) throw new UnauthorizedException();
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }

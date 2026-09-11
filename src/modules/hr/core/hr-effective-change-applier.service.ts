@@ -47,6 +47,8 @@ function numberValue(value: Record<string, unknown>, key: string): number {
   return field;
 }
 
+type EmploymentRow = { id: number; userId: string | null };
+
 @Injectable()
 export class HrEffectiveChangeApplierService {
   constructor(
@@ -98,35 +100,87 @@ export class HrEffectiveChangeApplierService {
         .limit(limit)
         .for("update");
 
-      for (const change of due) {
-        await this.applyOne(tx, orgId, change);
-        const [marked] = await tx
+      if (due.length > 0) {
+        const uniqueEmploymentIds = [...new Set(due.map(c => c.employmentId))];
+        const employmentRows = await tx
+          .select({ id: hrEmployments.id, userId: hrPeople.userId })
+          .from(hrEmployments)
+          .innerJoin(
+            hrPeople,
+            and(eq(hrPeople.orgId, hrEmployments.orgId), eq(hrPeople.id, hrEmployments.personId)),
+          )
+          .where(
+            and(
+              inArray(hrEmployments.id, uniqueEmploymentIds),
+              eq(hrEmployments.orgId, orgId),
+              isNull(hrEmployments.deletedAt),
+              isNull(hrPeople.deletedAt),
+            ),
+          )
+          .limit(uniqueEmploymentIds.length)
+          .for("update");
+        const employmentById = new Map<number, EmploymentRow>(
+          employmentRows.map(e => [e.id, e]),
+        );
+
+        const neededJobLevelIds: number[] = [];
+        for (const change of due) {
+          if (change.changeType === "job_level")
+            neededJobLevelIds.push(numberValue(recordValue(change.newValue), "jobLevelId"));
+        }
+        const activeJobLevelIds = new Set<number>();
+        const uniqueJobLevelIds = [...new Set(neededJobLevelIds)];
+        if (uniqueJobLevelIds.length > 0) {
+          const levels = await tx
+            .select({ id: hrJobLevels.id })
+            .from(hrJobLevels)
+            .where(
+              and(
+                inArray(hrJobLevels.id, uniqueJobLevelIds),
+                eq(hrJobLevels.orgId, orgId),
+                eq(hrJobLevels.isActive, true),
+              ),
+            )
+            .limit(uniqueJobLevelIds.length);
+          for (const level of levels) activeJobLevelIds.add(level.id);
+        }
+
+        for (const change of due)
+          await this.applyOne(tx, orgId, change, employmentById, activeJobLevelIds);
+
+        const marked = await tx
           .update(hrEffectiveDatedChanges)
           .set({ status: "applied", appliedAt: new Date(), updatedAt: new Date() })
           .where(
             and(
-              eq(hrEffectiveDatedChanges.id, change.id),
+              inArray(
+                hrEffectiveDatedChanges.id,
+                due.map((change) => change.id),
+              ),
               eq(hrEffectiveDatedChanges.orgId, orgId),
               eq(hrEffectiveDatedChanges.status, "approved"),
               isNull(hrEffectiveDatedChanges.appliedAt),
             ),
           )
           .returning({ id: hrEffectiveDatedChanges.id });
-        if (!marked) throw new ConflictException("The effective change was already processed.");
+        if (marked.length !== due.length)
+          throw new ConflictException("The effective change was already processed.");
+      }
 
-        await this.audit.log(
-          {
-            orgId,
-            actorId,
+      await this.audit.logMany(
+        {
+          orgId,
+          actorId,
+          entries: due.map((change) => ({
             entityType: "hr_effective_dated_changes",
             entityId: String(change.id),
             action: "applied",
             before: change.oldValue,
             after: change.newValue,
-          },
-          tx,
-        );
-      }
+          })),
+        },
+        tx,
+      );
 
       return { applied: due.length, hasMore: due.length === limit };
     });
@@ -142,24 +196,10 @@ export class HrEffectiveChangeApplierService {
       effectiveFrom: string;
       effectiveTo: string;
     },
+    employmentById: Map<number, EmploymentRow>,
+    activeJobLevelIds: Set<number>,
   ): Promise<void> {
-    const [employment] = await tx
-      .select({ id: hrEmployments.id, userId: hrPeople.userId })
-      .from(hrEmployments)
-      .innerJoin(
-        hrPeople,
-        and(eq(hrPeople.orgId, hrEmployments.orgId), eq(hrPeople.id, hrEmployments.personId)),
-      )
-      .where(
-        and(
-          eq(hrEmployments.id, change.employmentId),
-          eq(hrEmployments.orgId, orgId),
-          isNull(hrEmployments.deletedAt),
-          isNull(hrPeople.deletedAt),
-        ),
-      )
-      .limit(1)
-      .for("update");
+    const employment = employmentById.get(change.employmentId);
     if (!employment) throw new NotFoundException("Employment not found.");
 
     const value = recordValue(change.newValue);
@@ -192,18 +232,8 @@ export class HrEffectiveChangeApplierService {
 
     if (change.changeType === "job_level") {
       const jobLevelId = numberValue(value, "jobLevelId");
-      const [level] = await tx
-        .select({ id: hrJobLevels.id })
-        .from(hrJobLevels)
-        .where(
-          and(
-            eq(hrJobLevels.id, jobLevelId),
-            eq(hrJobLevels.orgId, orgId),
-            eq(hrJobLevels.isActive, true),
-          ),
-        )
-        .limit(1);
-      if (!level) throw new BadRequestException("Invalid job level selection.");
+      if (!activeJobLevelIds.has(jobLevelId))
+        throw new BadRequestException("Invalid job level selection.");
       await this.updateEmployment(tx, orgId, change.employmentId, { jobLevelId });
       return;
     }
@@ -222,7 +252,7 @@ export class HrEffectiveChangeApplierService {
 
     if (change.changeType === "manager") {
       const managerEmploymentId = numberValue(value, "managerEmploymentId");
-      await this.applyManager(tx, orgId, change, managerEmploymentId);
+      await this.applyManager(orgId, change, tx, managerEmploymentId);
       return;
     }
 
@@ -254,9 +284,9 @@ export class HrEffectiveChangeApplierService {
   }
 
   private async applyManager(
-    tx: Db,
     orgId: string,
     change: { employmentId: number; effectiveFrom: string; effectiveTo: string },
+    tx: Db,
     managerEmploymentId: number,
   ): Promise<void> {
     if (managerEmploymentId === change.employmentId) {

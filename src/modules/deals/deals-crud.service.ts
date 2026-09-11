@@ -1,8 +1,7 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { logSideEffectFailure } from "../../common/logger/side-effect";
-import { and, desc, eq, isNull, type SQL } from "drizzle-orm";
-import { applyScope } from "../access/apply-scope";
-import type { DataScope } from "../access/access.types";
+import { and, count, desc, eq, isNull, sql, type SQL } from "drizzle-orm";
+import type { ScopedRead } from "../access/scoped-read";
 import { deals, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -19,12 +18,25 @@ import {
   bulkUpdate,
   type DealBulkDeps,
 } from "./lib/deal-bulk-ops";
+import { buildListResponse } from "../../common/pagination/pagination";
 import type {
   CreateDealInput,
   DealBulkDeleteInput,
   DealBulkUpdateInput,
   ListDealsInput,
 } from "./dto/deals.schemas";
+
+/** The owner column every `crm:deals:read` narrowing uses: the list, one deal, a clone's source. */
+const DEAL_OWNER_SCOPE = { columns: { ownerColumn: deals.assignedToId } };
+
+/** The caller's deals as a predicate; `false` when the scope denies, so the lookup finds nothing. */
+function dealReadScope(read: ScopedRead): SQL {
+  return read.compose(
+    { tenant: deals.orgId, scope: DEAL_OWNER_SCOPE },
+    ({ sql: where }) => where,
+    () => sql`false`,
+  );
+}
 
 @Injectable()
 export class DealsCrudService {
@@ -37,31 +49,47 @@ export class DealsCrudService {
     private readonly planLimits: PlanLimitsService,
   ) {}
 
-  listDeals(orgId: string, userId: string, query: ListDealsInput, scope: DataScope) {
-    const hash = Buffer.from(JSON.stringify({ ...query, userId, scope })).toString("base64");
+  listDeals(read: ScopedRead, query: ListDealsInput) {
+    const orgId = read.orgId;
+    const hash = Buffer.from(JSON.stringify({ ...query, scope: read.discriminator })).toString("base64");
     return this.cache.cachedVersioned(
       `deals:list:${orgId}`,
       hash,
       async () => {
-        const conditions: SQL[] = [
-          eq(deals.orgId, orgId), isNull(deals.deletedAt),
-          applyScope(scope, orgId, userId, { ownerColumn: deals.assignedToId }),
-        ];
-        if (query.stage) conditions.push(eq(deals.stage, query.stage));
-        if (query.assignedToId) conditions.push(eq(deals.assignedToId, query.assignedToId));
+        const filters: SQL[] = [];
+        if (query.stage) filters.push(eq(deals.stage, query.stage));
+        if (query.assignedToId) filters.push(eq(deals.assignedToId, query.assignedToId));
+        const pageSize = query.limit ?? 50;
+        const offset = query.offset ?? 0;
+        // This list pages by `offset`, so the envelope's page number is derived from it.
+        const page = { page: pageSize > 0 ? Math.floor(offset / pageSize) + 1 : 1, pageSize };
 
-        const rows = await this.db.query.deals.findMany({
-          where: and(...conditions),
-          with: {
-            assignedTo: { columns: { id: true, name: true, image: true } },
+        return read.read(
+          {
+            tenant: deals.orgId,
+            scope: DEAL_OWNER_SCOPE,
+            and: [isNull(deals.deletedAt), ...filters],
           },
-          orderBy: [desc(deals.updatedAt)],
-          limit: query.limit ?? 50,
-          offset: query.offset ?? 0,
-        });
-        // `lead` and `client` come from Party now; see `deal-party-projection.ts`.
-        // One extra statement for the page, not one per deal.
-        return withPartyLabels(this.db, orgId, rows);
+          async ({ sql: where }) => {
+            const [rows, [totalRow]] = await Promise.all([
+              this.db.query.deals.findMany({
+                where,
+                with: {
+                  assignedTo: { columns: { id: true, name: true, image: true } },
+                },
+                orderBy: [desc(deals.updatedAt)],
+                limit: pageSize,
+                offset,
+              }),
+              this.db.select({ total: count() }).from(deals).where(where),
+            ]);
+            // `lead` and `client` come from Party now; see `deal-party-projection.ts`.
+            // One extra statement for the page, not one per deal.
+            const labelled = await withPartyLabels(this.db, orgId, rows);
+            return buildListResponse(labelled, Number(totalRow?.total ?? 0), page);
+          },
+          () => buildListResponse([], 0, page),
+        );
       },
       CACHE_TTL.SHORT,
     );
@@ -139,8 +167,8 @@ export class DealsCrudService {
    * One deal, behind the SAME scope `listDeals` applies.
    *
    * `crm:deals:read` is declared `scopable: true`, and ninety lines above this
-   * `listDeals` honours it — `applyScope(..., { ownerColumn: deals.assignedToId })`,
-   * so a rep granted `own` sees only the deals assigned to them. This applied
+   * `listDeals` honours it — the owner predicate over `deals.assignedToId` — so a
+   * rep granted `own` sees only the deals assigned to them. This applied
    * nothing. Same file, same entity: the list narrowed and reading one by id did
    * not, so an organisation that had granted `own` to restrict a rep had not
    * restricted them at all, and believed it had.
@@ -149,13 +177,13 @@ export class DealsCrudService {
    * controller turns it into 404, which is the same answer a deal in another
    * org gives, so this does not become an oracle for which deals exist.
    */
-  async getDeal(orgId: string, userId: string, dealId: number, scope: DataScope) {
+  async getDeal(orgId: string, _userId: string, dealId: number, read: ScopedRead) {
     const deal = await this.db.query.deals.findFirst({
       where: and(
         eq(deals.id, dealId),
         eq(deals.orgId, orgId),
         isNull(deals.deletedAt),
-        applyScope(scope, orgId, userId, { ownerColumn: deals.assignedToId }),
+        dealReadScope(read),
       ),
       with: {
         assignedTo: { columns: { id: true, name: true, image: true } },
@@ -214,7 +242,7 @@ export class DealsCrudService {
    * deal slots. The copy keeps `assignedToId`, so it lands in that colleague's
    * pipeline, which makes it quiet as well as wrong.
    */
-  async cloneDeal(orgId: string, userId: string, dealId: number, scope: DataScope) {
+  async cloneDeal(orgId: string, _userId: string, dealId: number, read: ScopedRead) {
     await this.planLimits.assertWithinLimit(orgId, "crmDeals");
 
     const existing = await this.db.query.deals.findFirst({
@@ -222,7 +250,7 @@ export class DealsCrudService {
         eq(deals.id, dealId),
         eq(deals.orgId, orgId),
         isNull(deals.deletedAt),
-        applyScope(scope, orgId, userId, { ownerColumn: deals.assignedToId }),
+        dealReadScope(read),
       ),
     });
     if (!existing) throw new NotFoundException("Deal not found");

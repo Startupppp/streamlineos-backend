@@ -5,16 +5,14 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, eq, gt, isNull, sql } from "drizzle-orm";
 import {
-  accountOrganizationIndex,
   candidateOffers,
   leaveBlackoutDates,
   onboardingTasks,
   organizationLegalHolds,
   organizationMembers,
   organizations,
-  users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -22,17 +20,20 @@ import { assertTransitionAllowed } from "./lifecycle/organization-lifecycle-tran
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
-import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
+import { bustMembershipsAfterOrgTeardown } from "../../../common/org/membership-bust";
 import { OrgMembershipService } from "./org-membership.service";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
-import { withIdentity } from "../../../common/tenant/with-identity";
+import { repairLastActiveOrgIds } from "./lifecycle/last-active-org-repair";
+import { nextActiveOrgIdsQuery } from "./lifecycle/next-active-org";
 import { unplaceOrganization } from "../../../common/region/placement-lookup";
 import {
   getRegionRegistry,
   hasRegionRegistry,
 } from "../../../common/region/region-registry";
 import { OrganizationSagaService } from "./lifecycle/organization-saga.service";
+
+const MEMBER_PAGE_SIZE = 500;
 
 @Injectable()
 export class OrgPurgeService {
@@ -61,23 +62,36 @@ export class OrgPurgeService {
     return hold !== undefined;
   }
 
+  /**
+   * Keyset-drained: the previous `.limit(10000)` left every member past the
+   * ten-thousandth with live org-scoped access while the purge reported success.
+   */
   private async listMemberUserIds(db: DbOrTx, orgId: string): Promise<string[]> {
-    const members = await db
-      .select({ userId: organizationMembers.userId })
-      .from(organizationMembers)
-      .where(eq(organizationMembers.orgId, orgId));
-    return members.map((m) => m.userId);
+    const memberUserIds: string[] = [];
+    let cursor: number | null = null;
+    for (;;) {
+      const page: Array<{ id: number; userId: string }> = await db
+        .select({ id: organizationMembers.id, userId: organizationMembers.userId })
+        .from(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.orgId, orgId),
+            ...(cursor === null ? [] : [gt(organizationMembers.id, cursor)]),
+          ),
+        )
+        .orderBy(asc(organizationMembers.id))
+        .limit(MEMBER_PAGE_SIZE);
+      for (const member of page) memberUserIds.push(member.userId);
+      if (page.length < MEMBER_PAGE_SIZE) return memberUserIds;
+      const last = page[page.length - 1];
+      if (!last || last.id === cursor) return memberUserIds;
+      cursor = last.id;
+    }
   }
 
   private async bustMembersMembership(orgId: string, memberUserIds: string[]): Promise<void> {
-    await Promise.all(
-      memberUserIds.map((memberUserId) =>
-        Promise.all([
-          bustMembershipStatusCache(this.cache, memberUserId, orgId),
-          this.cache.invalidate(CACHE_KEYS.userSession(memberUserId)),
-        ]),
-      ),
-    );
+    await bustMembershipsAfterOrgTeardown(this.cache, memberUserIds);
+    await this.cache.invalidateMany(memberUserIds.map(CACHE_KEYS.userSession));
   }
 
   private async revokeMembersAccess(orgId: string, memberUserIds: string[]): Promise<void> {
@@ -86,69 +100,30 @@ export class OrgPurgeService {
     }
   }
 
-  private async findNextActiveOrgId(
-    db: DbOrTx,
-    userId: string,
-    excludeOrgId: string,
-  ): Promise<string | null> {
-    const [remaining] = await db
-      .select({ orgId: organizationMembers.orgId })
-      .from(organizationMembers)
-      .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
-      .where(
-        and(
-          eq(organizationMembers.userId, userId),
-          eq(organizationMembers.status, "ACTIVE"),
-          eq(organizations.status, "ACTIVE"),
-          isNull(organizations.deletedAt),
-          ne(organizationMembers.orgId, excludeOrgId),
-        ),
-      )
-      .orderBy(desc(organizationMembers.joinedAt))
-      .limit(1);
-    return remaining?.orgId ?? null;
-  }
-
   private async resolveReplacementOrgIds(
     orgId: string,
     memberUserIds: string[],
   ): Promise<Map<string, string | null>> {
-    const replacements = new Map<string, string | null>();
-    for (const memberUserId of memberUserIds) {
-      const nextOrgId = await withIdentity(this.db, memberUserId, (tx) =>
-        this.findNextActiveOrgId(tx, memberUserId, orgId),
+    const replacements = new Map<string, string | null>(
+      memberUserIds.map((memberUserId) => [memberUserId, null]),
+    );
+    if (memberUserIds.length === 0) return replacements;
+    const rows = await runInTenantTransaction(
+      this.db,
+      (tx) => tx.execute(nextActiveOrgIdsQuery(memberUserIds)),
+      { orgId },
+    );
+    for (const row of rows) {
+      const memberUserId = typeof row.user_id === "string" ? row.user_id : null;
+      if (memberUserId === null) continue;
+      replacements.set(
+        memberUserId,
+        typeof row.next_org_id === "string" ? row.next_org_id : null,
       );
-      replacements.set(memberUserId, nextOrgId);
     }
     return replacements;
   }
 
-  private async repairLastActiveOrgIds(
-    db: DbOrTx,
-    orgId: string,
-    replacements: Map<string, string | null>,
-  ): Promise<void> {
-    for (const [memberUserId, nextOrgId] of replacements) {
-      await db
-        .update(users)
-        .set({ lastActiveOrgId: nextOrgId })
-        .where(
-          and(
-            eq(users.id, memberUserId),
-            eq(users.lastActiveOrgId, orgId),
-          ),
-        );
-      await db
-        .update(accountOrganizationIndex)
-        .set({ organizationStatus: "ARCHIVED" })
-        .where(
-          and(
-            eq(accountOrganizationIndex.userId, memberUserId),
-            eq(accountOrganizationIndex.orgId, orgId),
-          ),
-        );
-    }
-  }
 
   async deleteOrg(orgId: string, userId: string, confirmation: string) {
     const [org] = await runInTenantTransaction(
@@ -228,7 +203,7 @@ export class OrgPurgeService {
             await runInTenantTransaction(
               this.db,
               async (tx) => {
-                await this.repairLastActiveOrgIds(tx, orgId, replacements);
+                await repairLastActiveOrgIds(tx, orgId, replacements);
                 await tx.delete(candidateOffers).where(eq(candidateOffers.orgId, orgId));
                 await tx
                   .delete(leaveBlackoutDates)

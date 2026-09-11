@@ -27,10 +27,12 @@ import {
   patchBonusSchema,
   type CreateBonusInput,
   type PatchBonusInput,
-  listPageQuerySchema,
-  type ListPageQueryInput,
+  cursorListQuerySchema,
+  type CursorListQueryInput,
 } from "./dto/payroll.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { bonusListResponseSchema, bonusCreatedSchema } from "./dto/hr-payroll-response.schemas";
 import { z } from "zod";
 
 const bonusIdParams = z.object({ bonusId: z.coerce.number().int().positive() }).strict();
@@ -46,23 +48,31 @@ export class BonusesController {
 
   @Get()
   @RequirePermission("hr:payroll:view")
-  @Validate({ query: listPageQuerySchema })
+  @Validate({ query: cursorListQuerySchema })
+  @ResponseSchema(bonusListResponseSchema)
   async list(
     @CurrentUser() u: CurrentUserContext,
-    @Query() query: ListPageQueryInput,
+    @Query() query: CursorListQueryInput,
   ) {
     let isAdmin = u.isOrgOwner;
     if (!isAdmin) {
       const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
       isAdmin = perms.has("hr:payroll:approve");
     }
-    return this.bonuses.listBonuses(u.orgId, u.userId, actingMembershipId(u.principal), isAdmin, query.page ?? 1, query.limit ?? 100);
+    return this.bonuses.listBonuses(
+      u.orgId,
+      actingMembershipId(u.principal),
+      isAdmin,
+      query.cursor,
+      query.limit ?? 100,
+    );
   }
 
   @Post()
   @RequirePermission("hr:bonuses:manage")
   @HttpCode(201)
   @Validate({ body: createBonusSchema })
+  @ResponseSchema(bonusCreatedSchema)
   create(
     @Body() body: CreateBonusInput,
     @CurrentUser() u: CurrentUserContext,
@@ -73,6 +83,7 @@ export class BonusesController {
   @Patch(":bonusId")
   @RequirePermission("hr:bonuses:manage")
   @Validate({ params: bonusIdParams, body: patchBonusSchema })
+  @ResponseSchema(bonusCreatedSchema)
   async update(
     @Param("bonusId", ParseIntPipe) bonusId: number,
     @Body() body: PatchBonusInput,

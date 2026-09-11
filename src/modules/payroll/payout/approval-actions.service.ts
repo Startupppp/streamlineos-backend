@@ -22,14 +22,11 @@ import {
 import { AccessService } from "../../access/access.service";
 import { logger } from "../../../common/logger/logger.service";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
-import {
-  DEFAULT_PAYROLL_TOGGLES,
-  type PayrollToggles,
-} from "../payroll.types";
+import { normalizePayrollToggles } from "../dto/payroll.schemas";
 import { PayrollNotificationsService } from "../insights/payroll-notifications.service";
 import { AuditService } from "../../../common/audit/audit.service";
-import { GenerateService } from "../runs/generate.service";
 import { PayrollApproverResolverService } from "./payroll-approver-resolver.service";
+import { LockingService } from "./locking.service";
 
 @Injectable()
 export class ApprovalActionsService {
@@ -38,8 +35,8 @@ export class ApprovalActionsService {
     private readonly access: AccessService,
     private readonly notifications: PayrollNotificationsService,
     private readonly audit: AuditService,
-    private readonly generate: GenerateService,
     private readonly resolver: PayrollApproverResolverService,
+    private readonly locking: LockingService,
   ) {}
 
   async approveStage(
@@ -64,11 +61,14 @@ export class ApprovalActionsService {
       }),
     ]);
 
-    if (!approval || !run) throw new NotFoundException("Payroll run or approval not found");
+    if (!approval || !run)
+      throw new NotFoundException("Payroll run or approval not found");
 
-    if (approval.status !== "PENDING") throw new ConflictException("Approval already acted on");
+    if (approval.status !== "PENDING")
+      throw new ConflictException("Approval already acted on");
 
-    if (run.status !== "PENDING_APPROVAL") throw new ConflictException("Run is not pending approval");
+    if (run.status !== "PENDING_APPROVAL")
+      throw new ConflictException("Run is not pending approval");
 
     const allStages = await this.db
       .select({
@@ -78,8 +78,20 @@ export class ApprovalActionsService {
         stageName: payrollApprovals.stageName,
       })
       .from(payrollApprovals)
-      .where(and(eq(payrollApprovals.runId, runId), eq(payrollApprovals.orgId, orgId)))
-      .orderBy(asc(payrollApprovals.stage));
+      .where(
+        and(
+          eq(payrollApprovals.runId, runId),
+          eq(payrollApprovals.orgId, orgId),
+        ),
+      )
+      .orderBy(asc(payrollApprovals.stage))
+      .limit(21);
+
+    if (allStages.length > 20) {
+      throw new ConflictException(
+        "Payroll approval workflow exceeds the supported 20-stage bound",
+      );
+    }
 
     const nextPending = allStages.find((s) => s.status === "PENDING");
 
@@ -88,7 +100,10 @@ export class ApprovalActionsService {
     }
 
     const memberRow = await this.db.query.organizationMembers.findFirst({
-      where: and(eq(organizationMembers.userId, userId), eq(organizationMembers.orgId, orgId)),
+      where: and(
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.orgId, orgId),
+      ),
       columns: { isOwner: true },
     });
     const isOrgOwner = memberRow?.isOwner === true;
@@ -96,7 +111,9 @@ export class ApprovalActionsService {
     if (!isOrgOwner) {
       const perms = await this.access.resolveUserPermissions(orgId, userId);
       if (!perms.has(approval.requiredPermission)) {
-        throw new ForbiddenException(`Missing required permission: ${approval.requiredPermission}`);
+        throw new ForbiddenException(
+          `Missing required permission: ${approval.requiredPermission}`,
+        );
       }
     }
 
@@ -114,57 +131,78 @@ export class ApprovalActionsService {
       );
     }
 
-    const stageActor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId }).catch((e: unknown) => {
-      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+    const stageActor = await assertOrganizationActor(this.db, orgId, {
+      kind: "user",
+      userId,
+    }).catch((e: unknown) => {
+      if (e instanceof OrganizationActorError)
+        throw organizationActorHttpError(e);
       throw e;
     });
 
-    const isLastStage = allStages.every((s) => s.id === approvalId || s.status === "APPROVED");
-    const rawRunToggles = run.policyVersion?.toggles;
-    const runToggles: PayrollToggles = rawRunToggles && typeof rawRunToggles === "object"
-      ? { ...DEFAULT_PAYROLL_TOGGLES, ...(rawRunToggles as Partial<PayrollToggles>) }
-      : { ...DEFAULT_PAYROLL_TOGGLES };
+    const isLastStage = allStages.every(
+      (s) => s.id === approvalId || s.status === "APPROVED",
+    );
+    const runToggles = normalizePayrollToggles(run.policyVersion?.toggles);
     const lockAfterApproval = runToggles.lockAfterApproval !== false;
 
     const nextStage = !isLastStage
-      ? (allStages.find((s) => s.id !== approvalId && s.status === "PENDING") ?? null)
+      ? (allStages.find((s) => s.id !== approvalId && s.status === "PENDING") ??
+        null)
       : null;
 
     const nextStageApprovers = nextStage
-      ? await this.resolver.resolveApprovers(orgId, nextStage.requiredPermission)
+      ? await this.resolver.resolveApprovers(
+          orgId,
+          nextStage.requiredPermission,
+        )
       : [];
 
     const result = await this.db.transaction(async (tx) => {
       await tx
         .update(payrollApprovals)
-        .set({ status: "APPROVED", actedByMembershipId: stageActor.membershipId, actedAt: new Date(), comment: comment ?? null })
-        .where(and(eq(payrollApprovals.id, approvalId), eq(payrollApprovals.orgId, orgId)));
+        .set({
+          status: "APPROVED",
+          actedByMembershipId: stageActor.membershipId,
+          actedAt: new Date(),
+          comment: comment ?? null,
+        })
+        .where(
+          and(
+            eq(payrollApprovals.id, approvalId),
+            eq(payrollApprovals.orgId, orgId),
+          ),
+        );
 
       if (isLastStage) {
         if (lockAfterApproval) {
-          await tx
-            .update(payrollRuns)
-            .set({
-              status: "LOCKED",
-              lockedAt: new Date(),
-              lockedBy: userId,
-              lockedByMembershipId: stageActor.membershipId,
-              approvedAt: new Date(),
-              approvedByMembershipId: stageActor.membershipId,
-            })
-            .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
-
-          await tx.insert(payrollRunEvents).values([
-            { orgId, runId, type: "APPROVED", actorId: userId },
-            { orgId, runId, type: "LOCKED", actorId: userId },
-          ]);
-
-          await this.generate.postPayrollLock(orgId, runId, tx);
+          await this.locking.commitLock(tx, {
+            orgId,
+            userId,
+            runId,
+            run: {
+              month: run.month,
+              status: run.status,
+              grossTotal: run.grossTotal,
+              deductionTotal: run.deductionTotal,
+              netTotal: run.netTotal,
+              employerCostTotal: run.employerCostTotal,
+            },
+            membershipId: stageActor.membershipId,
+            now: new Date(),
+            alsoMarkApproved: true,
+          });
         } else {
           await tx
             .update(payrollRuns)
-            .set({ status: "APPROVED", approvedAt: new Date(), approvedByMembershipId: stageActor.membershipId })
-            .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
+            .set({
+              status: "APPROVED",
+              approvedAt: new Date(),
+              approvedByMembershipId: stageActor.membershipId,
+            })
+            .where(
+              and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)),
+            );
 
           await tx.insert(payrollRunEvents).values({
             orgId,
@@ -189,9 +227,16 @@ export class ApprovalActionsService {
       const notifyNext = () =>
         Promise.all(
           nextStageApprovers.map((approverId) =>
-            this.notifications.notifyApprovalPending(orgId, approverId, runId, stageName),
+            this.notifications.notifyApprovalPending(
+              orgId,
+              approverId,
+              runId,
+              stageName,
+            ),
           ),
-        ).catch((e: unknown) => logger.error("notifyApprovalPending failed", { error: String(e) }));
+        ).catch((e: unknown) =>
+          logger.error("notifyApprovalPending failed", { error: String(e) }),
+        );
       if (!registerAfterCommit(notifyNext)) void notifyNext();
     }
 
@@ -203,7 +248,11 @@ export class ApprovalActionsService {
       targetId: String(runId),
       targetType: "payroll_run",
       requestId: requestId ?? null,
-      metadata: { approvalId, stageName: approval.stageName, resultingStatus: result.runStatus },
+      metadata: {
+        approvalId,
+        stageName: approval.stageName,
+        resultingStatus: result.runStatus,
+      },
     });
 
     return result;
@@ -231,12 +280,17 @@ export class ApprovalActionsService {
       }),
     ]);
 
-    if (!approval || !run) throw new NotFoundException("Payroll run or approval not found");
+    if (!approval || !run)
+      throw new NotFoundException("Payroll run or approval not found");
 
-    if (approval.status !== "PENDING") throw new ConflictException("Approval already acted on");
+    if (approval.status !== "PENDING")
+      throw new ConflictException("Approval already acted on");
 
     const memberRow = await this.db.query.organizationMembers.findFirst({
-      where: and(eq(organizationMembers.userId, userId), eq(organizationMembers.orgId, orgId)),
+      where: and(
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.orgId, orgId),
+      ),
       columns: { isOwner: true },
     });
     const isOrgOwner = memberRow?.isOwner === true;
@@ -244,7 +298,9 @@ export class ApprovalActionsService {
     if (!isOrgOwner) {
       const perms = await this.access.resolveUserPermissions(orgId, userId);
       if (!perms.has(approval.requiredPermission)) {
-        throw new ForbiddenException(`Missing required permission: ${approval.requiredPermission}`);
+        throw new ForbiddenException(
+          `Missing required permission: ${approval.requiredPermission}`,
+        );
       }
     }
 
@@ -261,8 +317,12 @@ export class ApprovalActionsService {
       );
     }
 
-    const rejectActor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId }).catch((e: unknown) => {
-      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+    const rejectActor = await assertOrganizationActor(this.db, orgId, {
+      kind: "user",
+      userId,
+    }).catch((e: unknown) => {
+      if (e instanceof OrganizationActorError)
+        throw organizationActorHttpError(e);
       throw e;
     });
 
@@ -272,8 +332,20 @@ export class ApprovalActionsService {
         status: payrollApprovals.status,
       })
       .from(payrollApprovals)
-      .where(and(eq(payrollApprovals.runId, runId), eq(payrollApprovals.orgId, orgId)))
-      .orderBy(asc(payrollApprovals.stage));
+      .where(
+        and(
+          eq(payrollApprovals.runId, runId),
+          eq(payrollApprovals.orgId, orgId),
+        ),
+      )
+      .orderBy(asc(payrollApprovals.stage))
+      .limit(21);
+
+    if (allStages.length > 20) {
+      throw new ConflictException(
+        "Payroll approval workflow exceeds the supported 20-stage bound",
+      );
+    }
 
     const nextPending = allStages.find((s) => s.status === "PENDING");
 
@@ -284,8 +356,18 @@ export class ApprovalActionsService {
     const result = await this.db.transaction(async (tx) => {
       await tx
         .update(payrollApprovals)
-        .set({ status: "REJECTED", actedByMembershipId: rejectActor.membershipId, actedAt: new Date(), comment })
-        .where(and(eq(payrollApprovals.id, approvalId), eq(payrollApprovals.orgId, orgId)));
+        .set({
+          status: "REJECTED",
+          actedByMembershipId: rejectActor.membershipId,
+          actedAt: new Date(),
+          comment,
+        })
+        .where(
+          and(
+            eq(payrollApprovals.id, approvalId),
+            eq(payrollApprovals.orgId, orgId),
+          ),
+        );
 
       await tx
         .update(payrollRuns)

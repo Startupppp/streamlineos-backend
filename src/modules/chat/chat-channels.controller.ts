@@ -24,31 +24,43 @@ import { ChatChannelMembersService } from "./chat-channel-members.service";
 import { ChatTypingService } from "./chat-typing.service";
 import {
   addMemberSchema,
+  channelListQuerySchema,
   createChannelSchema,
+  memberRoleSchema,
   muteChannelSchema,
   notificationPreferenceSchema,
   updateChannelSchema,
   type AddMemberInput,
+  type ChannelListQuery,
   type CreateChannelInput,
   type MuteChannelInput,
   type NotificationPreferenceInput,
   type UpdateChannelInput,
 } from "./dto/chat.schemas";
-import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { z } from "zod";
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagger";
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse, ApiOkResponse } from "@nestjs/swagger";
 import { actorOf } from "../entity-reference/entity-actor";
 import { Validate } from "../../common/validation/validate.decorator";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  channelDetailSchema,
+  channelFilesResponseSchema,
+  channelListResponseSchema,
+  channelMembersListResponseSchema,
+  channelMuteResponseSchema,
+  channelNotifPrefResponseSchema,
+  channelOkSchema,
+  channelPublicListResponseSchema,
+  channelSuccessSchema,
+  channelTypingResponseSchema,
+} from "./dto/chat-channels-response.schemas";
 
 const entityTypeentityIdParams = z.object({ entityType: z.string().min(1), entityId: z.string().min(1) }).strict();
 const channelIdParams = z.object({ channelId: z.coerce.number().int().positive() }).strict();
 const channelIduserIdParams = z.object({ channelId: z.coerce.number().int().positive(), userId: z.string().min(1) }).strict();
-const memberRoleSchema = z.object({ role: z.enum(["ADMIN", "MEMBER"]) }).strict();
 
 @ApiTags("Chat Channels")
 @ApiBearerAuth()
-@RequireModule("chat")
 @Controller("chat/channels")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ChatChannelsController {
@@ -61,30 +73,37 @@ export class ChatChannelsController {
   @ApiOperation({ summary: "List channels the current user is a member of" })
   @ApiResponse({ status: 200, description: "OK" })
   @Get()
+  @ResponseSchema(channelListResponseSchema)
   @RequirePermission("chat:channels:read")
-  list(@CurrentUser() u: CurrentUserContext) {
-    return this.channels.getMyChannels(actorOf(u));
+  @Validate({ query: channelListQuerySchema })
+  list(@CurrentUser() u: CurrentUserContext, @Query() query: ChannelListQuery) {
+    return this.channels.getMyChannels(actorOf(u), query.cursor, query.limit);
   }
 
   @ApiOperation({ summary: "List archived channels for the current user" })
   @ApiResponse({ status: 200, description: "OK" })
   @Get("archived")
+  @ResponseSchema(channelListResponseSchema)
   @RequirePermission("chat:channels:read")
-  listArchived(@CurrentUser() u: CurrentUserContext) {
-    return this.channels.getArchivedChannels(actorOf(u));
+  @Validate({ query: channelListQuerySchema })
+  listArchived(@CurrentUser() u: CurrentUserContext, @Query() query: ChannelListQuery) {
+    return this.channels.getArchivedChannels(actorOf(u), query.cursor, query.limit);
   }
 
   @ApiOperation({ summary: "List public channels available to join" })
   @ApiResponse({ status: 200, description: "OK" })
   @Get("public")
+  @ResponseSchema(channelPublicListResponseSchema)
   @RequirePermission("chat:channels:read")
-  listPublic(@CurrentUser() u: CurrentUserContext) {
-    return this.channels.listPublicChannels(u.orgId, u.userId);
+  @Validate({ query: channelListQuerySchema })
+  listPublic(@CurrentUser() u: CurrentUserContext, @Query() query: ChannelListQuery) {
+    return this.channels.listPublicChannels(u.orgId, u.userId, query.cursor, query.limit);
   }
 
   @ApiOperation({ summary: "Get or create the entity-linked channel for a given entity" })
   @ApiResponse({ status: 200, description: "OK" })
   @Get("entity/:entityType/:entityId")
+  @ResponseSchema(channelDetailSchema.nullable())
   @RequirePermission("chat:channels:read")
   @Validate({ params: entityTypeentityIdParams })
   getByEntity(
@@ -97,7 +116,8 @@ export class ChatChannelsController {
 
   @ApiOperation({ summary: "Create a new channel or return existing DM/entity channel" })
   @ApiResponse({ status: 201, description: "Channel created" })
-  @ApiResponse({ status: 200, description: "Existing channel returned" })
+  @ApiOkResponse({ description: "Existing channel returned" })
+  @ResponseSchema(channelDetailSchema)
   @Post()
   @RequirePermission("chat:channels:write")
   @Validate({ body: createChannelSchema })
@@ -115,6 +135,7 @@ export class ChatChannelsController {
   @ApiResponse({ status: 200, description: "OK" })
   @ApiResponse({ status: 404, description: "Not found" })
   @Get(":channelId")
+  @ResponseSchema(channelDetailSchema)
   @RequirePermission("chat:channels:read")
   @Validate({ params: channelIdParams })
   async getOne(
@@ -129,6 +150,7 @@ export class ChatChannelsController {
   @ApiOperation({ summary: "Update channel name, description or type" })
   @ApiResponse({ status: 200, description: "OK" })
   @Patch(":channelId")
+  @ResponseSchema(channelOkSchema)
   @RequirePermission("chat:channels:write")
   @Validate({ params: channelIdParams, body: updateChannelSchema })
   update(
@@ -139,21 +161,26 @@ export class ChatChannelsController {
     return this.members.updateChannel(channelId, u.userId, body, u.orgId);
   }
 
-  @ApiOperation({ summary: "List members of a channel" })
+  @ApiOperation({ summary: "List members of a channel with keyset pagination" })
   @ApiResponse({ status: 200, description: "OK" })
   @Get(":channelId/members")
+  @ResponseSchema(channelMembersListResponseSchema)
   @RequirePermission("chat:channels:read")
-  @Validate({ params: channelIdParams })
+  @Validate({ params: channelIdParams, query: channelListQuerySchema })
   listMembers(
     @Param("channelId", ParseIntPipe) channelId: number,
+    @Query() query: ChannelListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.members.listMembers(channelId, u.userId, u.orgId);
+    const raw = query.cursor !== undefined ? parseInt(query.cursor, 10) : undefined;
+    const cursor = typeof raw === "number" && !Number.isNaN(raw) ? raw : undefined;
+    return this.members.listMembers(channelId, u.userId, u.orgId, cursor, query.limit);
   }
 
   @ApiOperation({ summary: "Add a member to a channel" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/members")
+  @ResponseSchema(channelOkSchema)
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
   @Validate({ params: channelIdParams, body: addMemberSchema })
@@ -168,6 +195,7 @@ export class ChatChannelsController {
   @ApiOperation({ summary: "Recompute an entity channel's display name" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/refresh-name")
+  @ResponseSchema(channelSuccessSchema)
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
@@ -183,6 +211,7 @@ export class ChatChannelsController {
   @ApiOperation({ summary: "Remove a member from a channel" })
   @ApiResponse({ status: 200, description: "OK" })
   @Delete(":channelId/members/:userId")
+  @ResponseSchema(channelOkSchema)
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
   @Validate({ params: channelIduserIdParams })
@@ -199,6 +228,7 @@ export class ChatChannelsController {
   })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/join")
+  @ResponseSchema(channelOkSchema)
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
@@ -213,6 +243,7 @@ export class ChatChannelsController {
   @ApiOperation({ summary: "Leave a channel" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/leave")
+  @ResponseSchema(channelOkSchema)
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
@@ -227,6 +258,7 @@ export class ChatChannelsController {
   @ApiOperation({ summary: "Archive a channel for the current user" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/archive")
+  @ResponseSchema(channelOkSchema)
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
@@ -238,6 +270,7 @@ export class ChatChannelsController {
   @ApiOperation({ summary: "Unarchive a channel for the current user" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/unarchive")
+  @ResponseSchema(channelOkSchema)
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
@@ -249,6 +282,7 @@ export class ChatChannelsController {
   @ApiOperation({ summary: "Mark a channel as read up to now" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/read")
+  @ResponseSchema(channelOkSchema)
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:messages:read")
@@ -263,6 +297,7 @@ export class ChatChannelsController {
   @ApiOperation({ summary: "Mark a channel as unread" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/mark-unread")
+  @ResponseSchema(channelOkSchema)
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
@@ -274,6 +309,7 @@ export class ChatChannelsController {
   @ApiOperation({ summary: "Mute a channel for the current user" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/mute")
+  @ResponseSchema(channelMuteResponseSchema)
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
   @Validate({ params: channelIdParams, body: muteChannelSchema })
@@ -288,6 +324,7 @@ export class ChatChannelsController {
   @ApiOperation({ summary: "Unmute a channel for the current user" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/unmute")
+  @ResponseSchema(channelOkSchema)
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
@@ -302,6 +339,7 @@ export class ChatChannelsController {
   @ApiOperation({ summary: "Add a channel to the current user's favorites" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/favorite")
+  @ResponseSchema(channelOkSchema)
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
@@ -313,6 +351,7 @@ export class ChatChannelsController {
   @ApiOperation({ summary: "Remove a channel from the current user's favorites" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/unfavorite")
+  @ResponseSchema(channelOkSchema)
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
@@ -324,6 +363,7 @@ export class ChatChannelsController {
   @ApiOperation({ summary: "Set the current user's notification preference for a channel" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/notification-preference")
+  @ResponseSchema(channelNotifPrefResponseSchema)
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
   @Validate({ params: channelIdParams, body: notificationPreferenceSchema })
@@ -338,6 +378,7 @@ export class ChatChannelsController {
   @ApiOperation({ summary: "List files shared in a channel with cursor pagination" })
   @ApiResponse({ status: 200, description: "OK" })
   @Get(":channelId/files")
+  @ResponseSchema(channelFilesResponseSchema)
   @RequirePermission("chat:messages:read")
   @Validate({ params: channelIdParams })
   listFiles(
@@ -356,6 +397,7 @@ export class ChatChannelsController {
   @ApiOperation({ summary: "Set current user as typing in a channel" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/typing")
+  @ResponseSchema(channelOkSchema)
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
@@ -371,6 +413,7 @@ export class ChatChannelsController {
   @ApiOperation({ summary: "Get users currently typing in a channel" })
   @ApiResponse({ status: 200, description: "OK" })
   @Get(":channelId/typing")
+  @ResponseSchema(channelTypingResponseSchema)
   @RequirePermission("chat:messages:read")
   @Validate({ params: channelIdParams })
   getTyping(
@@ -383,12 +426,13 @@ export class ChatChannelsController {
   @ApiOperation({ summary: "Update a channel member's role (ADMIN/MEMBER)" })
   @ApiResponse({ status: 200, description: "OK" })
   @Patch(":channelId/members/:userId/role")
+  @ResponseSchema(channelOkSchema)
   @RequirePermission("chat:channels:write")
   @Validate({ params: channelIduserIdParams, body: memberRoleSchema })
   updateRole(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Param("userId") targetUserId: string,
-    @Body() body: { role: string },
+    @Body() body: z.infer<typeof memberRoleSchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.members.updateMemberRole(channelId, targetUserId, u.userId, u.orgId, body.role);

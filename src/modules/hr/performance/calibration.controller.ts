@@ -13,6 +13,8 @@ import {
 } from "./dto/calibration.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts"
+import { listCalibrationEntriesResponseSchema, upsertCalibrationEntryResponseSchema, getNineBoxResponseSchema } from "./dto/calibration-response.schemas"
 
 const cycleIdParams = z.object({ cycleId: z.coerce.number().int().positive() }).strict();
 
@@ -22,6 +24,7 @@ const cycleIdParams = z.object({ cycleId: z.coerce.number().int().positive() }).
 export class CalibrationController {
   constructor(private readonly calibrationService: CalibrationService) {}
 
+  @ResponseSchema(listCalibrationEntriesResponseSchema)
   @Get("cycles/:cycleId/entries")
   @RequirePermission("hr:performance:manage")
   @Validate({ params: cycleIdParams })
@@ -32,6 +35,7 @@ export class CalibrationController {
     return this.calibrationService.listEntries(user.orgId, cycleId);
   }
 
+  @ResponseSchema(upsertCalibrationEntryResponseSchema)
   @Post("cycles/:cycleId/entries")
   @HttpCode(201)
   @RequirePermission("hr:performance:manage")
@@ -50,6 +54,7 @@ export class CalibrationController {
     );
   }
 
+  @ResponseSchema(getNineBoxResponseSchema)
   @Get("nine-box")
   @RequirePermission("hr:performance:manage")
   getNineBox(

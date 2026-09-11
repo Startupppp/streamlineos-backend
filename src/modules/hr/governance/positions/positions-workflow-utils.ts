@@ -51,11 +51,13 @@ async function fetchTransitionsAndStatuses(
           eq(hrPositionTransitions.orgId, orgId),
           isNull(hrPositionTransitions.deletedAt),
         ),
-      ),
+      )
+      .limit(500),
     db
       .select({ id: hrPositionStatuses.id, name: hrPositionStatuses.name })
       .from(hrPositionStatuses)
-      .where(eq(hrPositionStatuses.orgId, orgId)),
+      .where(eq(hrPositionStatuses.orgId, orgId))
+      .limit(100),
   ]);
   return { transitions, statuses };
 }

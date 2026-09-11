@@ -1,6 +1,7 @@
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { NotificationDispatchService } from "./notification-dispatch.service";
+import { NotificationDispatchPersistenceService } from "./notification-dispatch-persistence.service";
 import { NotificationEventRegistryService } from "./notification-event-registry.service";
 import { NotificationRoutingService } from "./notification-routing.service";
 import { NotificationsService } from "./notifications.service";
@@ -83,6 +84,7 @@ describe("NotificationDispatchService — suppression recorded, not silently dro
     const moduleRef = await Test.createTestingModule({
       providers: [
         NotificationDispatchService,
+        NotificationDispatchPersistenceService,
         { provide: DRIZZLE, useValue: db },
         { provide: NotificationEventRegistryService, useValue: { resolveDefinition } },
         {

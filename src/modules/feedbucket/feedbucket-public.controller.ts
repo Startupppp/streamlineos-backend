@@ -21,11 +21,12 @@ import {
 } from "@nestjs/platform-express";
 import type { Request } from "express";
 import { Public } from "../../common/auth/public.decorator";
-import { MultipartAction } from "../../common/openapi/zod-operation-contracts";
+import { MultipartAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { InsufficientAiCreditsException } from "../../common/http/api-exceptions";
 import { FeedbucketPublicService } from "./feedbucket-public.service";
 import { FeedbucketAiService } from "./feedbucket-ai.service";
 import { StorageService } from "../storage/storage.service";
+import { MediaTransformRunner } from "../storage/media-transform.runner";
 import { NotificationsService } from "../notifications/notifications.service";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { ProjectsTicketsService } from "../build/core/projects-tickets.service";
@@ -35,12 +36,17 @@ import type { Db } from "../../db/drizzle.module";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { resolveClientIp } from "../../common/http/client-ip";
+import {
+  feedbucketPublicConfigSchema,
+  feedbucketPublicSubmitSchema,
+  feedbucketPublicAiAssistSchema,
+} from "./dto/feedbucket-response.schemas";
 import {
   MAX_RECORDING_BYTES,
   MAX_SCREENSHOT_BYTES,
   assertOriginAllowed,
   assertScreenshotAcceptable,
-  clientIp,
   normalizeMultipartBody,
 } from "./lib/feedbucket-public-request";
 import {
@@ -62,12 +68,14 @@ export class FeedbucketPublicController {
     private readonly rateLimitService: RateLimitService,
     private readonly ticketsService: ProjectsTicketsService,
     @Inject(DRIZZLE) private readonly db: Db,
+    private readonly transforms: MediaTransformRunner,
   ) {}
 
   private get submitDeps(): FeedbucketSubmitDeps {
     return {
       db: this.db,
       storage: this.storage,
+      transforms: this.transforms,
       notifications: this.notifications,
       ticketsService: this.ticketsService,
       logger: this.logger,
@@ -78,11 +86,12 @@ export class FeedbucketPublicController {
 
   @Get(":publicKey/config")
   @Validate({ params: publicKeyParams })
+  @ResponseSchema(feedbucketPublicConfigSchema)
   async config(@Param("publicKey") publicKey: string, @Req() req: Request) {
     const widget = await this.publicService.resolveWidget(publicKey);
     if (!widget) throw new NotFoundException("Widget not found");
 
-    const ip = clientIp(req);
+    const ip = resolveClientIp(req);
     const rlResult = await this.rateLimitService.check(
       "feedbucket:widget-config",
       `${widget.id}:${ip ?? "anon"}`,
@@ -104,6 +113,7 @@ export class FeedbucketPublicController {
 
   @Post(":publicKey")
   @HttpCode(200)
+  @ResponseSchema(feedbucketPublicSubmitSchema)
   @MultipartAction({
     file: "screenshot",
     fileRequired: false,
@@ -122,7 +132,7 @@ export class FeedbucketPublicController {
   @Validate({ params: publicKeyParams, body: publicSubmitDeclSchema })
   async submit(
     @Param("publicKey") publicKey: string,
-    @Body() rawBody: Record<string, unknown>,
+    @Body() rawBody: z.infer<typeof publicSubmitDeclSchema>,
     @UploadedFiles()
     files: {
       screenshot?: Express.Multer.File[];
@@ -135,7 +145,7 @@ export class FeedbucketPublicController {
 
     assertOriginAllowed(widget, req);
 
-    const ip = clientIp(req);
+    const ip = resolveClientIp(req);
     const rlResult = await this.rateLimitService.check(
       "feedbucket:widget-submit",
       `${widget.id}:${ip ?? "anon"}`,
@@ -154,6 +164,7 @@ export class FeedbucketPublicController {
 
   @Post(":publicKey/ai-assist")
   @HttpCode(200)
+  @ResponseSchema(feedbucketPublicAiAssistSchema)
   @MultipartAction({
     file: "screenshot",
     fileRequired: false,
@@ -167,7 +178,7 @@ export class FeedbucketPublicController {
   @Validate({ params: publicKeyParams, body: publicAiAssistDeclSchema })
   async aiAssist(
     @Param("publicKey") publicKey: string,
-    @Body() rawBody: Record<string, unknown>,
+    @Body() rawBody: z.infer<typeof publicAiAssistDeclSchema>,
     @UploadedFile() screenshot: Express.Multer.File | undefined,
     @Req() req: Request,
   ) {
@@ -179,7 +190,7 @@ export class FeedbucketPublicController {
 
     assertOriginAllowed(widget, req);
 
-    const ip = clientIp(req);
+    const ip = resolveClientIp(req);
     const perIpResult = await this.rateLimitService.check(
       "feedbucket:ai-assist",
       `${widget.id}:${ip ?? "anon"}`,

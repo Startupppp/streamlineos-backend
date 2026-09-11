@@ -1,14 +1,4 @@
-import {
-  pgTable,
-  bigint,
-  text,
-  integer,
-  boolean,
-  timestamp,
-  uniqueIndex,
-  index,
-  foreignKey,
-} from "drizzle-orm/pg-core";
+import { pgTable, bigint, text, integer, boolean, timestamp, uniqueIndex, foreignKey } from "drizzle-orm/pg-core";
 import { organizations } from "../common/auth";
 import { calendarEvents } from "../common/calendar-events";
 
@@ -22,7 +12,6 @@ export const calendarEventExceptions = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     eventId: integer("event_id")
-      .references(() => calendarEvents.id, { onDelete: "cascade" })
       .notNull(),
     occurrenceStart: timestamp("occurrence_start", { withTimezone: true }).notNull(),
     isCancelled: boolean("is_cancelled").notNull().default(false),
@@ -41,7 +30,6 @@ export const calendarEventExceptions = pgTable(
       table.eventId,
       table.occurrenceStart,
     ),
-    index("idx_cal_exc_org_event").on(table.orgId, table.eventId),
     foreignKey({
       columns: [table.orgId, table.eventId],
       foreignColumns: [calendarEvents.orgId, calendarEvents.id],

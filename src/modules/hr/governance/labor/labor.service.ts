@@ -1,6 +1,7 @@
 import {
   Inject,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, gte, isNull, lte } from "drizzle-orm";
@@ -8,7 +9,7 @@ import { decodeCursor, buildCursorPage } from "../../../../common/pagination/cur
 import { keysetBeforeId } from "../../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
-import { hrUnionMemberships, hrCollectiveAgreements, hrLaborCases } from "../../../../db/schema/hr/governance";
+import { hrUnionMemberships, hrCollectiveAgreements } from "../../../../db/schema/hr/governance";
 import { HrAuditService } from "../../core/hr-audit.service";
 import type {
   CreateUnionMembershipInput,
@@ -22,6 +23,7 @@ import type {
   UpdateLaborCaseInput,
   ListLaborCasesInput,
 } from "./labor.dto";
+import * as laborCases from "./labor-cases";
 
 @Injectable()
 export class LaborService {
@@ -65,17 +67,19 @@ export class LaborService {
       })
       .returning();
 
+    if (!row) throw new InternalServerErrorException("Failed to create union membership");
+
     await this.audit.log({
       orgId,
       actorId,
       entityType: "hr_union_membership",
-      entityId: String(row!.id),
+      entityId: String(row.id),
       action: "union_membership.created",
       after: { userId: input.userId, unionName: input.unionName },
       ipAddress,
     });
 
-    return row!;
+    return row;
   }
 
   async updateMembership(orgId: string, membershipId: number, actorId: string, input: UpdateUnionMembershipInput, ipAddress?: string) {
@@ -93,6 +97,8 @@ export class LaborService {
       .where(and(eq(hrUnionMemberships.orgId, orgId), eq(hrUnionMemberships.id, membershipId)))
       .returning();
 
+    if (!updated) throw new InternalServerErrorException("Failed to update union membership");
+
     await this.audit.log({
       orgId,
       actorId,
@@ -104,7 +110,7 @@ export class LaborService {
       ipAddress,
     });
 
-    return updated!;
+    return updated;
   }
 
   async deleteMembership(orgId: string, membershipId: number, actorId: string, ipAddress?: string) {
@@ -156,7 +162,8 @@ export class LaborService {
           lte(hrCollectiveAgreements.expiresAt, cutoff),
         ),
       )
-      .orderBy(hrCollectiveAgreements.expiresAt);
+      .orderBy(hrCollectiveAgreements.expiresAt)
+      .limit(100);
 
     return { data, daysWindow: input.days };
   }
@@ -175,12 +182,14 @@ export class LaborService {
       })
       .returning();
 
+    if (!row) throw new InternalServerErrorException("Failed to create collective agreement");
+
     await this.audit.log({
-      orgId, actorId, entityType: "hr_collective_agreement", entityId: String(row!.id),
+      orgId, actorId, entityType: "hr_collective_agreement", entityId: String(row.id),
       action: "collective_agreement.created", after: { title: input.title, unionName: input.unionName }, ipAddress,
     });
 
-    return row!;
+    return row;
   }
 
   async updateAgreement(orgId: string, agreementId: number, actorId: string, input: UpdateCollectiveAgreementInput, ipAddress?: string) {
@@ -200,9 +209,11 @@ export class LaborService {
       .where(and(eq(hrCollectiveAgreements.orgId, orgId), eq(hrCollectiveAgreements.id, agreementId)))
       .returning();
 
+    if (!updated) throw new InternalServerErrorException("Failed to update collective agreement");
+
     await this.audit.log({ orgId, actorId, entityType: "hr_collective_agreement", entityId: String(agreementId), action: "collective_agreement.updated", before: { status: existing.status }, after: input, ipAddress });
 
-    return updated!;
+    return updated;
   }
 
   async deleteAgreement(orgId: string, agreementId: number, actorId: string, ipAddress?: string) {
@@ -217,74 +228,19 @@ export class LaborService {
   }
 
   async listLaborCases(orgId: string, input: ListLaborCasesInput) {
-    const { cursor, limit, status, unionName } = input;
-    const pos = decodeCursor(cursor);
-
-    const conditions = [eq(hrLaborCases.orgId, orgId), isNull(hrLaborCases.deletedAt)];
-    if (status) conditions.push(eq(hrLaborCases.status, status));
-    if (unionName) conditions.push(eq(hrLaborCases.unionName, unionName));
-    if (pos) conditions.push(keysetBeforeId(hrLaborCases.createdAt, hrLaborCases.id, pos));
-
-    const rows = await this.db
-      .select()
-      .from(hrLaborCases)
-      .where(and(...conditions))
-      .orderBy(desc(hrLaborCases.createdAt), desc(hrLaborCases.id))
-      .limit(limit + 1);
-
-    return buildCursorPage(rows, limit, (row) => ({
-      sortValue: row.createdAt.toISOString(),
-      id: String(row.id),
-    }));
+    return laborCases.listLaborCases(this.db, orgId, input);
   }
 
   async createLaborCase(orgId: string, actorId: string, input: CreateLaborCaseInput, ipAddress?: string) {
-    const [row] = await this.db
-      .insert(hrLaborCases)
-      .values({
-        orgId,
-        unionName: input.unionName,
-        subject: input.subject,
-        description: input.description,
-        status: input.status ?? "open",
-        createdBy: actorId,
-      })
-      .returning();
-
-    await this.audit.log({ orgId, actorId, entityType: "hr_labor_case", entityId: String(row!.id), action: "labor_case.created", after: { subject: input.subject, unionName: input.unionName }, ipAddress });
-
-    return row!;
+    return laborCases.createLaborCase(this.db, this.audit, orgId, actorId, input, ipAddress);
   }
 
   async updateLaborCase(orgId: string, caseId: number, actorId: string, input: UpdateLaborCaseInput, ipAddress?: string) {
-    const existing = await this.getLaborCaseById(orgId, caseId);
-
-    const [updated] = await this.db
-      .update(hrLaborCases)
-      .set({
-        ...(input.unionName !== undefined && { unionName: input.unionName }),
-        ...(input.subject !== undefined && { subject: input.subject }),
-        ...(input.description !== undefined && { description: input.description }),
-        ...(input.status !== undefined && { status: input.status }),
-        updatedAt: new Date(),
-      })
-      .where(and(eq(hrLaborCases.orgId, orgId), eq(hrLaborCases.id, caseId)))
-      .returning();
-
-    await this.audit.log({ orgId, actorId, entityType: "hr_labor_case", entityId: String(caseId), action: "labor_case.updated", before: { status: existing.status }, after: input, ipAddress });
-
-    return updated!;
+    return laborCases.updateLaborCase(this.db, this.audit, orgId, caseId, actorId, input, ipAddress);
   }
 
   async deleteLaborCase(orgId: string, caseId: number, actorId: string, ipAddress?: string) {
-    await this.getLaborCaseById(orgId, caseId);
-
-    await this.db
-      .update(hrLaborCases)
-      .set({ deletedAt: new Date() })
-      .where(and(eq(hrLaborCases.orgId, orgId), eq(hrLaborCases.id, caseId)));
-
-    await this.audit.log({ orgId, actorId, entityType: "hr_labor_case", entityId: String(caseId), action: "labor_case.deleted", ipAddress });
+    return laborCases.deleteLaborCase(this.db, this.audit, orgId, caseId, actorId, ipAddress);
   }
 
   private async getMembershipById(orgId: string, id: number) {
@@ -296,12 +252,6 @@ export class LaborService {
   private async getAgreementById(orgId: string, id: number) {
     const [row] = await this.db.select().from(hrCollectiveAgreements).where(and(eq(hrCollectiveAgreements.orgId, orgId), eq(hrCollectiveAgreements.id, id), isNull(hrCollectiveAgreements.deletedAt))).limit(1);
     if (!row) throw new NotFoundException("Collective agreement not found");
-    return row;
-  }
-
-  private async getLaborCaseById(orgId: string, id: number) {
-    const [row] = await this.db.select().from(hrLaborCases).where(and(eq(hrLaborCases.orgId, orgId), eq(hrLaborCases.id, id), isNull(hrLaborCases.deletedAt))).limit(1);
-    if (!row) throw new NotFoundException("Labor case not found");
     return row;
   }
 }

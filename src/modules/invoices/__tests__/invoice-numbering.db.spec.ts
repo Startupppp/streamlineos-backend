@@ -1,8 +1,11 @@
 /**
  * Real-database test for invoice number race-safety.
  *
- * Runs when DATABASE_URL is set, like every other `*.db.spec.ts`.
- * Run with: DATABASE_URL=... pnpm test:db --testPathPattern="invoice-numbering.db"
+ * Runs when DATABASE_URL is set, like every other `*.db.spec.ts`, and refuses
+ * any URL `requireApprovedDatabaseUrl` does not approve (an approved host and
+ * ALLOW_DESTRUCTIVE_DB_TESTS=1).
+ * Run with: DATABASE_URL=... ALLOW_DESTRUCTIVE_DB_TESTS=1 pnpm test:db --testPathPattern="invoice-numbering.db"
+ * or: pnpm test:db-specs (filter with --testPathPattern="invoice-numbering.db").
  *
  * The service uses pg_advisory_xact_lock(hashtext(orgId || 'invoice')) inside
  * the transaction, then counts ALL org invoices (unfiltered — no status or
@@ -15,12 +18,19 @@
  * here with genuine concurrent Postgres transactions.
  */
 import { randomUUID } from "node:crypto";
-import { dbSpecClient, dbSpecSuite, dbSpecUrl } from "../../../test/db-spec-gate";
+import { dbSpecClient, dbSpecSuite } from "../../../test/db-spec-gate";
+import { requireApprovedDatabaseUrl } from "../../../test/db-spec-guard";
 
 const describeDb = dbSpecSuite();
 
+// `dbSpecClient` requires TLS only for a Neon host, so the same spec runs
+// against a local verification database without a PGSSLMODE switch.
 function connect() {
-  return dbSpecClient(dbSpecUrl("DATABASE_URL", "APP_DATABASE_URL"), { max: 10 });
+  const raw = requireApprovedDatabaseUrl({
+    spec: "invoice-numbering.db.spec.ts",
+    vars: ["DATABASE_URL", "APP_DATABASE_URL"],
+  });
+  return dbSpecClient(raw, { max: 10 });
 }
 
 describeDb("invoice numbering — real database", () => {

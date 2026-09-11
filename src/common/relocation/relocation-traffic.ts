@@ -64,7 +64,7 @@ export function assertRetireGateOpen(
     throw new RelocationTransitionError("ILLEGAL_TRANSITION", result.reason);
 }
 
-export async function initTargetTrafficWindow(
+async function initTargetTrafficWindow(
   db: Db,
   orgId: string,
   cellId: string,
@@ -102,7 +102,7 @@ export async function recordTargetRequest(
     });
 }
 
-export async function readTargetTraffic(
+async function readTargetTraffic(
   db: Db,
   orgId: string,
   cellId: string,

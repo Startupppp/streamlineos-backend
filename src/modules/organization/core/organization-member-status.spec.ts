@@ -24,6 +24,11 @@ import {
   type AfterCommitHook,
 } from "../../../common/tenant/tenant-context";
 
+jest.mock("../../../common/auth/membership-state.service", () => ({
+  bustMembershipStatusCache: jest.fn().mockResolvedValue(undefined),
+  bustMembershipStatusCacheMany: jest.fn().mockResolvedValue(undefined),
+}));
+
 const ORG_ID = "org-1";
 const ACTOR_ID = "actor-1";
 const MEMBER_ID = "member-1";
@@ -217,7 +222,7 @@ describe("OrgMembershipService — module-ownership guards", () => {
     it("rejects removal of a member who owns modules and names which modules", async () => {
       const tx = buildTxMock([
         { result: [{ isOwner: false, id: 7 }], endWithLimit: true },
-        { result: [{ moduleKey: "hr" }, { moduleKey: "crm" }] },
+        { result: [{ moduleKey: "hr" }, { moduleKey: "crm" }], endWithLimit: true },
       ]);
       const db = {
         update: jest.fn().mockReturnValue({
@@ -275,6 +280,7 @@ describe("OrgMembershipService — module-ownership guards", () => {
     it("succeeds for a non-owner who owns no modules", async () => {
       const tx = buildTxMock([
         { result: [{ isOwner: false, id: 5 }], endWithLimit: true },
+        { result: [], endWithLimit: true },
         { result: [] },
         { result: [] },
       ]);
@@ -319,9 +325,41 @@ describe("OrgMembershipService — module-ownership guards", () => {
       );
     });
 
+    it("refuses to remove the only admin of a knowledge space", async () => {
+      const tx = buildTxMock([
+        { result: [{ isOwner: false, id: 5 }], endWithLimit: true },
+        { result: [], endWithLimit: true },
+        { result: [] },
+        { result: [{ name: "Engineering Handbook" }] },
+      ]);
+      const db = {
+        delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+        query: {
+          users: {
+            findFirst: jest.fn().mockResolvedValue({ email: "member@example.com" }),
+          },
+        },
+        transaction: jest.fn().mockImplementation(
+          async (fn: (tx: unknown) => Promise<unknown>) => fn(tx),
+        ),
+        update: jest.fn().mockReturnValue({
+          set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+        }),
+      };
+      const svc = await buildService(db);
+
+      await expect(svc.removeMember(ORG_ID, ACTOR_ID, MEMBER_ID)).rejects.toThrow(
+        /Engineering Handbook/,
+      );
+
+      const deleted = tx.delete.mock.calls.map((call) => call[0]);
+      expect(deleted).not.toContain(organizationMembers);
+    });
+
     it("clears the member's ownership transfers before deleting the membership row", async () => {
       const tx = buildTxMock([
         { result: [{ isOwner: false, id: 5 }], endWithLimit: true },
+        { result: [], endWithLimit: true },
         { result: [] },
         { result: [] },
       ]);
@@ -358,7 +396,7 @@ describe("OrgMembershipService — module-ownership guards", () => {
       const tx = buildTxMock([
         { result: [{ isOwner: false }] },
         { result: [{ id: 9 }], endWithLimit: true },
-        { result: [{ moduleKey: "build" }] },
+        { result: [{ moduleKey: "build" }], endWithLimit: true },
       ]);
       const db = {
         update: jest.fn().mockReturnValue({
@@ -417,7 +455,7 @@ describe("OrgMembershipService — module-ownership guards", () => {
     it("rejects leaving when the member owns modules and names which modules", async () => {
       const findFirst = jest.fn().mockResolvedValue({ isOwner: false, id: 3 });
       const tx = buildTxMock([
-        { result: [{ moduleKey: "inventory" }] },
+        { result: [{ moduleKey: "inventory" }], endWithLimit: true },
       ]);
       const db = {
         update: jest.fn().mockReturnValue({
@@ -452,7 +490,7 @@ describe("OrgMembershipService — module-ownership guards", () => {
     it("rejects suspension when the member owns modules and names which modules", async () => {
       const findFirst = jest.fn().mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 4 });
       const tx = buildTxMock([
-        { result: [{ moduleKey: "payroll" }] },
+        { result: [{ moduleKey: "payroll" }], endWithLimit: true },
       ]);
       const db = {
         update: jest.fn().mockReturnValue({
@@ -482,7 +520,7 @@ describe("OrgMembershipService — module-ownership guards", () => {
         id: 4,
       });
       const tx = buildTxMock([
-        { result: [] },
+        { result: [], endWithLimit: true },
         { result: [] },
       ]);
       const db = {
@@ -518,7 +556,7 @@ describe("OrgMembershipService — module-ownership guards", () => {
       expect(tx.update).not.toHaveBeenCalledWith(users);
       expect(afterCommit.length).toBeGreaterThanOrEqual(1);
 
-      await afterCommit[0]?.();
+      for (const hook of afterCommit) await hook();
       expect(
         cacheInvalidate.mock.calls.filter(
           ([key]) => key === CACHE_KEYS.userSession(MEMBER_ID),

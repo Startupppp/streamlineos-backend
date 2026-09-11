@@ -1,3 +1,5 @@
+import { Logger } from "@nestjs/common";
+
 export type AccessVersionListener = (orgId: string) => void;
 
 /**
@@ -12,6 +14,7 @@ export interface AccessVersionStore {
 }
 
 export class AccessVersionChannel {
+  private readonly logger = new Logger(AccessVersionChannel.name);
   private store: AccessVersionStore | null = null;
   private readonly listeners = new Set<AccessVersionListener>();
 
@@ -39,8 +42,10 @@ export class AccessVersionChannel {
     if (!this.store) return;
     try {
       await this.store.clear(orgId);
-    } catch {
-      return;
+    } catch (error: unknown) {
+      this.logger.error(
+        `Access revocation for org ${orgId} did not reach the shared channel; other instances keep the previous version until its TTL expires: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 

@@ -1,17 +1,23 @@
-import type { INestApplication } from "@nestjs/common";
+import { VersioningType, type INestApplication } from "@nestjs/common";
+import { VERSION_NEUTRAL } from "@nestjs/common/interfaces";
 import { Test } from "@nestjs/testing";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
-import { SignJWT } from "jose";
 import { AppModule } from "src/app.module";
 import { AllExceptionsFilter } from "src/common/http/all-exceptions.filter";
-import { INTERNAL_TOKEN_AUDIENCE, INTERNAL_TOKEN_ISSUER } from "src/common/auth/backend-claims";
+import { ResponseTransformInterceptor } from "src/common/interceptors/response-transform.interceptor";
+import { API_VERSION_CURRENT } from "src/common/http/api-version";
+import { JwtKeyringService } from "src/common/auth/jwt-keyring.service";
 import * as schema from "src/db/schema";
 import type { Db } from "src/db/drizzle.module";
+import { assertDisposableDatabase } from "test/helpers/disposable-database";
+import { assertSeededProcessIsolation } from "test/helpers/seeded-process-environment";
 import { PayrollJobsWorkerService } from "src/modules/payroll/jobs/payroll-jobs-worker.service";
 import { PayrollCalendarReminderScheduler } from "src/modules/payroll/insights/payroll-calendar-reminder.scheduler";
 import { EmailProviderService } from "src/modules/email/email.provider";
 import { CapturingMailTransport } from "./mail-capture";
+
+export { assertDisposableDatabase };
 
 export const SEEDED_HARNESS = "[seeded-e2e]" as const;
 
@@ -25,6 +31,7 @@ export interface SeededE2eApp {
    * this instead: `seeded.mail.to(addr)`, `.withSubject(...)`, `.last()`.
    */
   mail: CapturingMailTransport;
+  keyring: JwtKeyringService;
   close(): Promise<void>;
 }
 
@@ -39,14 +46,32 @@ export interface SeededE2eAppOptions {
    * string and refuses everything, which is a green suite for a dead endpoint.
    */
   rawBody?: boolean;
+  /**
+   * Reproduce `main.ts`'s HTTP layer — URI versioning and `ResponseTransformInterceptor`.
+   *
+   * Off by default, because every existing seeded spec asserts against the shape it already gets
+   * and the envelope interceptor changes it. On for a spec that MEASURES the response rather than
+   * asserting on it: response bytes taken without the envelope are bytes of a payload the
+   * application never actually sends, and a route the frontend reaches at /v1/... is a route this
+   * harness would otherwise 404 on and record as unmeasurable.
+   *
+   * `compression()` is deliberately NOT reproduced: a gzip ratio is a property of the payload's
+   * entropy and of the deployment, so recording it would make the byte figure un-reproducible.
+   */
+  readonly mirrorHttpStack?: boolean;
 }
+
+/** The name the HTTP-stack option was introduced under; the same shape. */
+export type SeededE2eOptions = SeededE2eAppOptions;
 
 export async function createSeededE2eApp(
   options: SeededE2eAppOptions = {},
 ): Promise<SeededE2eApp> {
+  assertSeededProcessIsolation(process.env);
   const ownerUrl = process.env.DATABASE_URL;
   if (!ownerUrl) throw new Error("DATABASE_URL must be set for seeded e2e tests");
-  process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
+  const target = assertDisposableDatabase(ownerUrl);
+  if (!target.ok) throw new Error(`[seeded-e2e] ${target.reason}`);
 
   /**
    * Two payroll workers start sweeping on `onModuleInit` with no env gate and
@@ -90,15 +115,27 @@ export async function createSeededE2eApp(
     .compile();
   const app = moduleRef.createNestApplication({ rawBody: options.rawBody === true });
   app.useGlobalFilters(new AllExceptionsFilter());
+  if (options.mirrorHttpStack === true) {
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: [API_VERSION_CURRENT, VERSION_NEUTRAL] });
+    app.useGlobalInterceptors(new ResponseTransformInterceptor());
+  }
   await app.init();
 
   const seedClient = postgres(ownerUrl, { prepare: false, max: 3 });
   const seedDb: Db = drizzle(seedClient, { schema });
 
+  const keyring = app.get(JwtKeyringService);
+  if (!keyring.isReady())
+    throw new Error(
+      "[seeded-e2e] JwtKeyringService loaded no keys — set AUTH_SIGNING_KEYS. " +
+        "Without it every request returns 401 and the failure reads as an authorization defect.",
+    );
+
   return {
     app,
     seedDb,
     mail,
+    keyring,
     async close() {
       await app.close();
       await seedClient.end({ timeout: 5 });
@@ -106,17 +143,16 @@ export async function createSeededE2eApp(
   };
 }
 
+/**
+ * Signs through the application's own keyring rather than forging a token: the backend
+ * verifies EdDSA only, so the previous HS256 `BACKEND_JWT_SECRET` token was rejected and
+ * every seeded request returned 401.
+ */
 export async function signSeededToken(
+  seeded: SeededE2eApp,
   userId: string,
   orgId: string,
   sessionId = `seeded-${crypto.randomUUID()}`,
 ): Promise<string> {
-  const secret = process.env.BACKEND_JWT_SECRET ?? "x".repeat(44);
-  return new SignJWT({ sub: userId, orgId, sessionId })
-    .setProtectedHeader({ alg: "HS256" })
-    .setIssuer(INTERNAL_TOKEN_ISSUER)
-    .setAudience(INTERNAL_TOKEN_AUDIENCE)
-    .setIssuedAt()
-    .setExpirationTime("10m")
-    .sign(new TextEncoder().encode(secret));
+  return seeded.keyring.signToken({ sub: userId, orgId, sessionId });
 }

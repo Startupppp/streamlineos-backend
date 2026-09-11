@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, ne, sql } from "drizzle-orm";
 import {
   kbSpaces,
   kbSpaceMembers,
@@ -13,15 +13,23 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import type { TenantTx } from "../../../db/drizzle.types";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbAccessService } from "../core/kb-access.service";
+import { KbIndexingService } from "../retrieval/kb-indexing.service";
 import { actingMembershipId } from "../../../common/auth/principal";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
+import { kbSpaceOwnerScope } from "../core/kb-scope";
 import { kbSlugify } from "../core/kb.util";
+import { randomUUID } from "node:crypto";
+import { OutboxWriter } from "../../../common/outbox/outbox-writer";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import type {
   CreateSpaceInput,
   UpdateSpaceInput,
 } from "../core/dto/kb.schemas";
+
+const SPACE_CONTENT_BATCH_SIZE = 500;
 
 type SpaceRow = typeof kbSpaces.$inferSelect;
 
@@ -43,26 +51,22 @@ export class KbSpacesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: KbAccessService,
+    private readonly indexing: KbIndexingService,
   ) {}
 
-  async list(
-    user: CurrentUserContext,
-    scope?: DataScope,
-  ): Promise<SpaceListItem[]> {
-    if (scope === "none") return [];
+  async list(user: CurrentUserContext, scope: ScopedRead): Promise<SpaceListItem[]> {
+    if (scope.denied) return [];
 
     const ids = await this.access.getAccessibleSpaceIds(user);
     if (ids.length === 0) return [];
 
-    const baseConditions = [
-      eq(kbSpaces.orgId, user.orgId),
-      inArray(kbSpaces.id, ids),
-      isNull(kbSpaces.deletedAt),
-    ];
-    if (scope === "own" || scope === "team") {
-      const membershipId = actingMembershipId(user.principal) ?? 0;
-      baseConditions.push(eq(kbSpaces.createdByMembershipId, membershipId));
-    }
+    const domain = [inArray(kbSpaces.id, ids), isNull(kbSpaces.deletedAt)];
+    const membershipId = actingMembershipId(user.principal) ?? 0;
+    const where = scope.compose(
+      { tenant: kbSpaces.orgId, scope: kbSpaceOwnerScope(membershipId), and: domain },
+      ({ sql: composed }) => composed,
+      () => sql`false`,
+    );
 
     const spaces = await this.db
       .select({
@@ -77,7 +81,7 @@ export class KbSpacesService {
         updatedAt: kbSpaces.updatedAt,
       })
       .from(kbSpaces)
-      .where(and(...baseConditions))
+      .where(where)
       .orderBy(desc(kbSpaces.updatedAt));
     const counts = await this.db
       .select({
@@ -95,9 +99,8 @@ export class KbSpacesService {
 
   async create(
     orgId: string,
-    userId: string,
     input: CreateSpaceInput,
-    membershipId?: number,
+    membershipId: number,
   ): Promise<SpaceRow> {
     const slug = kbSlugify(input.name);
     if (!slug) throw new ConflictException("Invalid space name");
@@ -118,15 +121,13 @@ export class KbSpacesService {
           audience: input.audience,
           icon: input.icon ?? null,
           isPublicHelpCenter: input.isPublicHelpCenter ?? false,
-          createdById: userId,
-          createdByMembershipId: membershipId ?? null,
+          createdByMembershipId: membershipId,
         })
         .returning();
       await tx.insert(kbSpaceMembers).values({
         orgId,
         spaceId: space.id,
-        userId,
-        membershipId: membershipId ?? null,
+        membershipId,
         spaceRole: "admin",
       });
       return space;
@@ -186,38 +187,98 @@ export class KbSpacesService {
       .where(and(eq(kbSpaces.id, spaceId), eq(kbSpaces.orgId, orgId)))
       .returning();
     if (!updated) throw new NotFoundException("Space not found");
-    if (aclChanged) {
-      await Promise.all([
-        this.db
-          .update(kbPages)
-          .set({ aclRevision: sql`acl_revision + 1` })
-          .where(and(eq(kbPages.orgId, orgId), eq(kbPages.spaceId, spaceId))),
-        this.db
-          .update(kbArticles)
-          .set({ aclRevision: sql`acl_revision + 1` })
-          .where(
-            and(eq(kbArticles.orgId, orgId), eq(kbArticles.spaceId, spaceId)),
-          ),
-      ]);
-    }
+    if (aclChanged) await this.indexing.bumpSpaceAclRevision(orgId, spaceId);
     await this.access.invalidateAccessibleSpaceIds(orgId);
     return updated;
   }
 
   async remove(orgId: string, spaceId: number): Promise<{ success: boolean }> {
-    const [deleted] = await this.db
-      .update(kbSpaces)
-      .set({ deletedAt: new Date() })
-      .where(
-        and(
-          eq(kbSpaces.id, spaceId),
-          eq(kbSpaces.orgId, orgId),
-          isNull(kbSpaces.deletedAt),
-        ),
-      )
-      .returning({ id: kbSpaces.id });
-    if (!deleted) throw new NotFoundException("Space not found");
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const [deleted] = await tx
+          .update(kbSpaces)
+          .set({ deletedAt: new Date() })
+          .where(
+            and(
+              eq(kbSpaces.id, spaceId),
+              eq(kbSpaces.orgId, orgId),
+              isNull(kbSpaces.deletedAt),
+            ),
+          )
+          .returning({ id: kbSpaces.id });
+        if (!deleted) throw new NotFoundException("Space not found");
+
+        await this.emitContentDeletes(tx, orgId, "article", (afterId) =>
+          tx
+            .select({ id: kbArticles.id })
+            .from(kbArticles)
+            .where(
+              and(
+                eq(kbArticles.orgId, orgId),
+                eq(kbArticles.spaceId, spaceId),
+                gt(kbArticles.id, afterId),
+              ),
+            )
+            .orderBy(asc(kbArticles.id))
+            .limit(SPACE_CONTENT_BATCH_SIZE),
+        );
+        await this.emitContentDeletes(tx, orgId, "page", (afterId) =>
+          tx
+            .select({ id: kbPages.id })
+            .from(kbPages)
+            .where(
+              and(
+                eq(kbPages.orgId, orgId),
+                eq(kbPages.spaceId, spaceId),
+                gt(kbPages.id, afterId),
+              ),
+            )
+            .orderBy(asc(kbPages.id))
+            .limit(SPACE_CONTENT_BATCH_SIZE),
+        );
+      },
+      { orgId },
+    );
     await this.access.invalidateAccessibleSpaceIds(orgId);
     return { success: true };
+  }
+
+  /**
+   * Keyset-batched inside the space's own transaction: the events must commit
+   * with the soft delete, so they cannot move to a transaction of their own, but
+   * a space holding tens of thousands of pages must not be read into one array.
+   */
+  private async emitContentDeletes(
+    tx: TenantTx,
+    orgId: string,
+    contentType: "article" | "page",
+    nextBatch: (afterId: number) => Promise<{ id: number }[]>,
+  ): Promise<void> {
+    const aggregateType = contentType === "article" ? "kb_article" : "kb_page";
+    let afterId = 0;
+    for (;;) {
+      const rows = await nextBatch(afterId);
+      const last = rows[rows.length - 1];
+      if (last === undefined) break;
+      afterId = last.id;
+
+      const occurredAt = new Date();
+      await OutboxWriter.emitMany(
+        tx,
+        rows.map((row) => ({
+          eventId: randomUUID(),
+          organizationId: orgId,
+          aggregateType,
+          aggregateId: String(row.id),
+          aggregateVersion: occurredAt.getTime(),
+          eventType: "kb.content.delete",
+          payload: { contentType, contentId: row.id },
+          occurredAt,
+        })),
+      );
+
+      if (rows.length < SPACE_CONTENT_BATCH_SIZE) break;
+    }
   }
 }

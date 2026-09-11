@@ -109,7 +109,7 @@ export class BillingPaymentState {
             lastFailedPaymentId: paymentId,
           },
         })
-        .where(eq(subscriptions.id, existing.id));
+        .where(and(eq(subscriptions.id, existing.id), eq(subscriptions.orgId, orgId)));
       await tx
         .insert(dunningAttempts)
         .values({

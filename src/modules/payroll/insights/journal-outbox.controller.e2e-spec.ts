@@ -29,14 +29,14 @@ const mockBatch = {
   exportedAt: null,
   reversedAt: null,
   reconciledAt: null,
-  createdAt: new Date().toISOString(),
+  createdAt: new Date(),
   lines: [
     { lineNo: 1, account: "Salary Expense", description: "Basic", debit: "1000.00", credit: "0.00", costCenter: null },
   ],
 };
 
 const mockOutbox = {
-  list: jest.fn().mockResolvedValue({ data: [mockBatch], total: 1, page: 1, limit: 25 }),
+  list: jest.fn().mockResolvedValue({ data: [mockBatch], pagination: { limit: 25, hasMore: false, nextCursor: null } }),
   get: jest.fn().mockResolvedValue(mockBatch),
   createBatch: jest.fn().mockResolvedValue(mockBatch),
   markPosted: jest.fn().mockResolvedValue(mockBatch),

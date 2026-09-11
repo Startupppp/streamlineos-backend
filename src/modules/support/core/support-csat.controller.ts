@@ -12,6 +12,13 @@ import { submitCsatSchema, type SubmitCsatInput } from "./dto/support.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  csatReportSchema,
+  csatByTokenSchema,
+  csatSubmitResultSchema,
+} from "../../csat/dto/csat-response.schemas";
+import { resolveClientIpOr } from "../../../common/http/client-ip";
 
 const tokenParams = z.object({ token: z.string().min(1) }).strict();
 
@@ -24,7 +31,7 @@ export class SupportCsatController {
   ) {}
 
   private getIp(req: { ip?: string; headers: Record<string, string> }): string {
-    return req.headers["x-forwarded-for"]?.split(",")?.[0]?.trim() ?? req.ip ?? "unknown";
+    return resolveClientIpOr(req, "unknown");
   }
 
   private async enforceRateLimit(tier: string, identifier: string): Promise<void> {
@@ -36,6 +43,7 @@ export class SupportCsatController {
   @Get("reports/csat")
   @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
   @RequirePermission("support:reports:view")
+  @ResponseSchema(csatReportSchema)
   getCsatReport(@CurrentUser() u: CurrentUserContext) {
     return this.csat.getReport(u.orgId);
   }
@@ -44,6 +52,7 @@ export class SupportCsatController {
   @Public()
   @Get("csat/:token")
   @Validate({ params: tokenParams })
+  @ResponseSchema(csatByTokenSchema)
   async getCsatRequest(
     @Param("token") token: string,
     @Request() req: { ip?: string; headers: Record<string, string> },
@@ -56,6 +65,7 @@ export class SupportCsatController {
   @Post("csat/:token")
   @HttpCode(200)
   @Validate({ params: tokenParams, body: submitCsatSchema })
+  @ResponseSchema(csatSubmitResultSchema)
   async submitCsat(
     @Param("token") token: string,
     @Body() body: SubmitCsatInput,

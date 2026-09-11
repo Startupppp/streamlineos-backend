@@ -1,21 +1,42 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, count, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { aliasedTable } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
-import { businessParties, partyDuplicateCandidates, partyRoles } from "../../db/schema";
+import {
+  businessParties,
+  partyDuplicateCandidates,
+  partyIdentifiers,
+  partyRoles,
+} from "../../db/schema";
 import { AuditService } from "../../common/audit/audit.service";
 import { assessDuplicate, type PartyFingerprint } from "./party-duplicates";
-import { identifiersOfParty, partiesSharingIdentifiers } from "./party-identifiers";
+import {
+  IDENTIFIER_KINDS,
+  partiesSharingIdentifiers,
+  type IdentifierClaim,
+} from "./party-identifiers";
 import { orderPair } from "./party-merge-plan";
 import { PartyMergeService } from "./party-merge.service";
+import { assertPartyInOrg } from "./party-tenant";
 
 /** How many potential matches one detection pass will consider. */
 const CANDIDATE_LIMIT = 25;
 
+const IDENTIFIER_READ_LIMIT = (CANDIDATE_LIMIT + 1) * 32;
+
 export interface DetectionResult {
   autoMerged: { survivorPartyId: string; mergedPartyId: string }[];
   queued: { candidateId: string; otherPartyId: string; score: number }[];
+}
+
+interface QueuedCandidate {
+  readonly otherPartyId: string;
+  readonly lowPartyId: string;
+  readonly highPartyId: string;
+  readonly score: number;
+  readonly signals: string[];
+  readonly blockers: string[];
 }
 
 @Injectable()
@@ -27,6 +48,7 @@ export class PartyRolesService {
   ) {}
 
   async listRoles(organizationId: string, partyId: string): Promise<string[]> {
+    await assertPartyInOrg(this.db, organizationId, partyId);
     const rows = await this.db
       .select({ role: partyRoles.role })
       .from(partyRoles)
@@ -150,12 +172,17 @@ export class PartyRolesService {
       )
       .limit(CANDIDATE_LIMIT);
 
-    const subjectIdentifiers = await identifiersOfParty(this.db, organizationId, partyId);
+    const identifiers = await this.identifiersOfParties(organizationId, [
+      partyId,
+      ...others.map((other) => other.partyId),
+    ]);
+
+    const queued: QueuedCandidate[] = [];
 
     for (const other of others) {
       const assessment = assessDuplicate(
-        toFingerprint(subject, subjectIdentifiers),
-        toFingerprint(other, await identifiersOfParty(this.db, organizationId, other.partyId)),
+        toFingerprint(subject, identifiers.get(partyId) ?? []),
+        toFingerprint(other, identifiers.get(other.partyId) ?? []),
       );
 
       if (assessment.verdict === "distinct") continue;
@@ -178,31 +205,58 @@ export class PartyRolesService {
       }
 
       const { low, high } = orderPair(partyId, other.partyId);
-      const [candidate] = await this.db
-        .insert(partyDuplicateCandidates)
-        .values({
-          organizationId,
-          lowPartyId: low,
-          highPartyId: high,
-          score: assessment.score,
-          signals: [...assessment.signals],
-          blockers: [...assessment.blockers],
-        })
-        .onConflictDoUpdate({
-          target: [
-            partyDuplicateCandidates.organizationId,
-            partyDuplicateCandidates.lowPartyId,
-            partyDuplicateCandidates.highPartyId,
-          ],
-          set: { score: assessment.score, signals: [...assessment.signals] },
-        })
-        .returning({ candidateId: partyDuplicateCandidates.candidateId });
+      queued.push({
+        otherPartyId: other.partyId,
+        lowPartyId: low,
+        highPartyId: high,
+        score: assessment.score,
+        signals: [...assessment.signals],
+        blockers: [...assessment.blockers],
+      });
+    }
 
-      if (candidate)
+    if (queued.length === 0) return result;
+
+    const written = await this.db
+      .insert(partyDuplicateCandidates)
+      .values(
+        queued.map((entry) => ({
+          organizationId,
+          lowPartyId: entry.lowPartyId,
+          highPartyId: entry.highPartyId,
+          score: entry.score,
+          signals: entry.signals,
+          blockers: entry.blockers,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: [
+          partyDuplicateCandidates.organizationId,
+          partyDuplicateCandidates.lowPartyId,
+          partyDuplicateCandidates.highPartyId,
+        ],
+        set: { score: sql`excluded.score`, signals: sql`excluded.signals` },
+      })
+      .returning({
+        candidateId: partyDuplicateCandidates.candidateId,
+        lowPartyId: partyDuplicateCandidates.lowPartyId,
+        highPartyId: partyDuplicateCandidates.highPartyId,
+      });
+
+    const candidateIdByPair = new Map(
+      written.map((row): [string, string] => [
+        `${row.lowPartyId}:${row.highPartyId}`,
+        row.candidateId,
+      ]),
+    );
+
+    for (const entry of queued) {
+      const candidateId = candidateIdByPair.get(`${entry.lowPartyId}:${entry.highPartyId}`);
+      if (candidateId)
         result.queued.push({
-          candidateId: candidate.candidateId,
-          otherPartyId: other.partyId,
-          score: assessment.score,
+          candidateId,
+          otherPartyId: entry.otherPartyId,
+          score: entry.score,
         });
     }
 
@@ -343,6 +397,38 @@ export class PartyRolesService {
     });
   }
 
+  private async identifiersOfParties(
+    organizationId: string,
+    partyIds: readonly string[],
+  ): Promise<Map<string, IdentifierClaim[]>> {
+    const grouped = new Map<string, IdentifierClaim[]>();
+    const ids = [...new Set(partyIds)];
+    if (ids.length === 0) return grouped;
+
+    const rows = await this.db
+      .select({
+        partyId: partyIdentifiers.partyId,
+        kind: partyIdentifiers.kind,
+        value: partyIdentifiers.normalisedValue,
+      })
+      .from(partyIdentifiers)
+      .where(
+        and(
+          eq(partyIdentifiers.organizationId, organizationId),
+          inArray(partyIdentifiers.partyId, ids),
+        ),
+      )
+      .limit(IDENTIFIER_READ_LIMIT);
+
+    for (const row of rows) {
+      if (!isKnownKind(row)) continue;
+      const claims = grouped.get(row.partyId);
+      if (claims) claims.push({ kind: row.kind, value: row.value });
+      else grouped.set(row.partyId, [{ kind: row.kind, value: row.value }]);
+    }
+    return grouped;
+  }
+
   private async requireParty(organizationId: string, partyId: string) {
     const [row] = await this.db
       .select()
@@ -359,6 +445,10 @@ export class PartyRolesService {
     if (!row) throw new NotFoundException("Party not found");
     return row;
   }
+}
+
+function isKnownKind(row: { kind: string; value: string }): row is IdentifierClaim {
+  return IDENTIFIER_KINDS.some((kind) => kind === row.kind);
 }
 
 function toFingerprint(

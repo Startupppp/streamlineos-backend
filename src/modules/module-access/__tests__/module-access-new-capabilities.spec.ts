@@ -520,6 +520,7 @@ describe("ModuleAccessOwnershipService authority", () => {
       );
     const invalidate = jest.fn().mockResolvedValue(undefined);
     const invalidateNamespace = jest.fn().mockResolvedValue(undefined);
+    const invalidateNamespaceForOrg = jest.fn().mockResolvedValue(undefined);
 
     const m = await Test.createTestingModule({
       providers: [
@@ -545,7 +546,7 @@ describe("ModuleAccessOwnershipService authority", () => {
         },
         {
           provide: CacheService,
-          useValue: { cached, invalidate, invalidateNamespace },
+          useValue: { cached, invalidate, invalidateNamespace, invalidateNamespaceForOrg },
         },
         { provide: AuditService, useValue: { log: jest.fn() } },
       ],

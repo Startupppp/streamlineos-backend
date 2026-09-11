@@ -1,7 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, desc, eq, gte, lte, sql } from "drizzle-orm";
-import { applyScope } from "../../access/apply-scope";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import {
   backgroundVerifications,
   certifications,
@@ -27,22 +26,26 @@ interface CalendarEvent {
 export class ComplianceService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listAcknowledgments(orgId: string, userId: string, scope: DataScope) {
-    const conditions = [
-      eq(policyAcknowledgments.orgId, orgId),
-      applyScope(scope, orgId, userId, { ownerColumn: policyAcknowledgments.userId }),
-    ];
-
-    return this.db.query.policyAcknowledgments.findMany({
-      where: and(...conditions),
-      with: { document: true, user: { columns: { id: true, name: true } } },
-      orderBy: [desc(policyAcknowledgments.createdAt)],
-      limit: 100,
-    });
+  listAcknowledgments(read: ScopedRead) {
+    return read.read(
+      {
+        tenant: policyAcknowledgments.orgId,
+        scope: { columns: { ownerColumn: policyAcknowledgments.userId } },
+      },
+      ({ sql: where }) =>
+        this.db.query.policyAcknowledgments.findMany({
+          where,
+          with: { document: true, user: { columns: { id: true, name: true } } },
+          orderBy: [desc(policyAcknowledgments.createdAt)],
+          limit: 100,
+        }),
+      () => [],
+    );
   }
 
   async sendAcknowledgments(orgId: string, input: SendAckInput) {
     const doc = await this.db.query.documents.findFirst({
+      columns: { id: true },
       where: and(eq(documents.id, input.documentId), eq(documents.orgId, orgId)),
     });
     if (!doc) throw new NotFoundException("Document not found.");
@@ -60,6 +63,7 @@ export class ComplianceService {
 
   async acknowledge(orgId: string, userId: string, input: AckInput) {
     const existing = await this.db.query.policyAcknowledgments.findFirst({
+      columns: { id: true },
       where: and(
         eq(policyAcknowledgments.id, input.acknowledgmentId),
         eq(policyAcknowledgments.orgId, orgId),
@@ -210,18 +214,18 @@ export class ComplianceService {
 
     const events: CalendarEvent[] = [
       ...expiringDocs
-        .filter((d) => d.expiryDate !== null)
+        .filter((d): d is typeof d & { expiryDate: string } => d.expiryDate !== null)
         .map((d) => ({
-          date: d.expiryDate as string,
+          date: d.expiryDate,
           type: "document_expiry" as const,
           title: `Document expiring: ${d.name}`,
           entityId: d.id,
           entityName: d.name,
         })),
       ...expiringCerts
-        .filter((c) => c.expiryDate !== null)
+        .filter((c): c is typeof c & { expiryDate: string } => c.expiryDate !== null)
         .map((c) => ({
-          date: c.expiryDate as string,
+          date: c.expiryDate,
           type: "certification_expiry" as const,
           title: `Certification expiring: ${c.name}`,
           entityId: c.id,

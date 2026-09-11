@@ -1,6 +1,9 @@
 import { Injectable } from "@nestjs/common";
 import { appUrl } from "./app-url";
-import { EmailSendersBase } from "./email-senders.base";
+import {
+  EmailSendersBase,
+  invitationEmailOptions,
+} from "./email-senders.base";
 import { EmailProviderService } from "./email.provider";
 import { getTrialReminderEmail } from "./templates/platform";
 import { EmailOutboxService } from "./email-outbox.service";
@@ -49,6 +52,16 @@ export class EmailService extends EmailSendersBase {
 
   override sendEmail(options: EmailOptions): Promise<void> {
     return this.outbox.enqueueAndTry(options);
+  }
+
+  async queueInvitationEmail(
+    email: string,
+    token: string,
+    organizationName: string,
+  ): Promise<void> {
+    await this.outbox.enqueueOnly(
+      invitationEmailOptions(email, token, organizationName),
+    );
   }
 
   sendExpenseSubmittedEmail(
@@ -120,18 +133,19 @@ export class EmailService extends EmailSendersBase {
     dateRange: string,
     orgName: string,
     rows: { department: string; name: string; totalHours: string; autoCheckoutDays: number; overtimeDays: number; daysPresent: number }[],
-    recipientEmails: string[],
+    recipients: ReadonlyArray<{ email: string; userId: string }>,
     organizationId: string,
   ): Promise<number> {
-    if (recipientEmails.length === 0) return 0;
+    if (recipients.length === 0) return 0;
     const subject = `Attendance report — ${dateRange}`;
     const html = getAttendanceReportTemplate(dateRange, orgName, rows);
     return this.outbox.enqueueForDelivery(
-      recipientEmails.map((email) => ({
-        to: email,
+      recipients.map((recipient) => ({
+        to: recipient.email,
         subject,
         html,
         organizationId,
+        recipientUserId: recipient.userId,
       })),
     );
   }

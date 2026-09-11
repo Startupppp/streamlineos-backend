@@ -3,6 +3,7 @@ import { getBrandName } from "./branding";
 import { EmailProviderService, type EmailOptions } from "./email.provider";
 import {
   getVerificationEmailTemplate,
+  getVerificationEmailSubject,
   getMagicLinkEmailTemplate,
   getWelcomeEmailTemplate,
   getInvitationEmailTemplate,
@@ -35,11 +36,11 @@ export abstract class EmailSendersBase {
     return this.emailProvider.dispatchEmail(options);
   }
 
-  sendVerificationEmail(email: string, token: string): Promise<void> {
+  sendVerificationEmail(email: string, token: string, locale = "en"): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: "Verify your email address",
-      html: getVerificationEmailTemplate(`${appUrl()}/verify-email?token=${token}&email=${encodeURIComponent(email)}`),
+      subject: getVerificationEmailSubject(locale),
+      html: getVerificationEmailTemplate(`${appUrl()}/verify-email?token=${token}&email=${encodeURIComponent(email)}`, locale),
     });
   }
 
@@ -57,11 +58,9 @@ export abstract class EmailSendersBase {
     organizationName: string,
     inviterName?: string,
   ): Promise<void> {
-    return this.sendEmail({
-      to: email,
-      subject: `You've been invited to join ${organizationName}`,
-      html: getInvitationEmailTemplate(`${appUrl()}/invitation/${token}`, organizationName, inviterName),
-    });
+    return this.sendEmail(
+      invitationEmailOptions(email, token, organizationName, inviterName),
+    );
   }
 
   sendInvitationRevokedEmail(email: string, organizationName: string): Promise<void> {
@@ -349,4 +348,21 @@ export abstract class EmailSendersBase {
       html: getOnboardingTaskEmailTemplate(recipientName, employeeName, taskRole, taskCount),
     });
   }
+}
+
+export function invitationEmailOptions(
+  email: string,
+  token: string,
+  organizationName: string,
+  inviterName?: string,
+): EmailOptions {
+  return {
+    to: email,
+    subject: `You've been invited to join ${organizationName}`,
+    html: getInvitationEmailTemplate(
+      `${appUrl()}/invitation/${token}`,
+      organizationName,
+      inviterName,
+    ),
+  };
 }

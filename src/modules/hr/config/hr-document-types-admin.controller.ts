@@ -24,6 +24,8 @@ import {
   type UpdateDocumentTypeInput,
 } from "./dto/document-types.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { documentTypeRowSchema, successSchema } from "./dto/config-response.schemas";
 import { z } from "zod";
 
 const documentTypeIdParams = z.object({ documentTypeId: z.coerce.number().int().positive() }).strict();
@@ -35,6 +37,7 @@ export class HrDocumentTypesAdminController {
   constructor(private readonly documentTypes: HrDocumentTypesService) {}
 
   @Post()
+  @ResponseSchema(documentTypeRowSchema)
   @RequirePermission("hr:documents:manage")
   @HttpCode(201)
   @Validate({ body: createDocumentTypeSchema })
@@ -46,6 +49,7 @@ export class HrDocumentTypesAdminController {
   }
 
   @Patch(":documentTypeId")
+  @ResponseSchema(documentTypeRowSchema)
   @RequirePermission("hr:documents:manage")
   @Validate({ params: documentTypeIdParams, body: updateDocumentTypeSchema })
   async update(
@@ -59,6 +63,7 @@ export class HrDocumentTypesAdminController {
   }
 
   @Delete(":documentTypeId")
+  @NoContentResponse()
   @HttpCode(204)
   @RequirePermission("hr:documents:manage")
   @Validate({ params: documentTypeIdParams })

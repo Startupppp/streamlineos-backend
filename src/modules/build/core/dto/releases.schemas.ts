@@ -27,7 +27,7 @@ export const createReleaseSchema = z.object({
   description: z.string().max(10000, "Release notes must be 10,000 characters or fewer").optional().nullable(),
   status: z.enum(["draft", "released", "archived"]).default("draft"),
   releaseDate: z.string().optional().nullable(),
-});
+}).strict();
 
 export const updateReleaseSchema = z.object({
   name: releaseNameSchema.optional(),
@@ -35,11 +35,11 @@ export const updateReleaseSchema = z.object({
   description: z.string().max(10000, "Release notes must be 10,000 characters or fewer").optional().nullable(),
   status: z.enum(["draft", "released", "archived"]).optional(),
   releaseDate: z.string().optional().nullable(),
-});
+}).strict();
 
 export const addReleaseTicketSchema = z.object({
   ticketId: z.number().int(),
-});
+}).strict();
 
 export type CreateReleaseInput = z.infer<typeof createReleaseSchema>;
 export type UpdateReleaseInput = z.infer<typeof updateReleaseSchema>;

@@ -50,6 +50,26 @@ describe("total rewards", () => {
     expect(stmt.summary.completeness).toBe("rich");
   });
 
+  it("accumulates employer annual benefit in exact integer paise across multiple plans", () => {
+    const benefits = Array.from({ length: 10 }, (_, i) => ({
+      planName: `Plan ${i}`,
+      category: "health",
+      premiumCents: 30,
+      employerContributionPct: 100,
+      status: "active",
+    }));
+    const stmt = buildTotalRewardsStatement({
+      asOf: new Date("2026-07-01"),
+      cash: { annualCtc: null, ytdGross: 0, ytdNet: 0, activeLoanBalance: 0 },
+      benefits,
+      equity: [],
+      leave: [],
+    });
+    expect(stmt.benefits.estimatedEmployerAnnual).toBe("36.00");
+    expect(10 * 30 * 12).toBe(3600);
+    expect(parseFloat("0.30") * 12 === 3.6).toBe(false);
+  });
+
   it("marks partial when salary profile missing", () => {
     const stmt = buildTotalRewardsStatement({
       cash: {

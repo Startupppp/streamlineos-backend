@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { and, asc, count, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { attendance } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -8,6 +8,14 @@ import { formatDateOnly, getTodayString } from "../../../common/date";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { resolveAttendanceScope } from "./attendance-scope";
 import { AttendancePolicyService } from "./attendance-policy.service";
+import { requireOrganizationMembershipId } from "./organization-membership";
+import { buildTupleCursorPage, decodeTupleCursor } from "../../../common/pagination/cursor";
+import {
+  keysetBeforeTuple,
+  keysetInteger,
+  keysetTextValue,
+  keysetTimestamp,
+} from "../../../common/pagination/keyset";
 
 type AttendanceStatus = "OFFLINE" | "PRESENT" | "ON_BREAK" | "CHECKED_OUT";
 
@@ -20,12 +28,13 @@ export class AttendanceReadService {
   ) {}
 
   async status(orgId: string, userId: string) {
+    const userMembershipId = await requireOrganizationMembershipId(this.db, orgId, userId);
     const today = getTodayString();
     const now = new Date();
 
     const todayLogs = await this.db.query.attendance.findMany({
       where: and(
-        eq(attendance.userId, userId),
+        eq(attendance.userMembershipId, userMembershipId),
         eq(attendance.date, today),
         eq(attendance.orgId, orgId),
       ),
@@ -66,7 +75,7 @@ export class AttendanceReadService {
     }
 
     const logs = await this.db.query.attendance.findMany({
-      where: and(eq(attendance.userId, userId), eq(attendance.orgId, orgId)),
+      where: and(eq(attendance.userMembershipId, userMembershipId), eq(attendance.orgId, orgId)),
       orderBy: [desc(attendance.createdAt)],
       limit: 10,
     });
@@ -108,44 +117,58 @@ export class AttendanceReadService {
   ) {
     const userId = requestedUserId ?? u.userId;
     const scope = await resolveAttendanceScope(this.access, u);
-    if (scope !== "all" && userId !== u.userId) {
+    if (!scope.unrestricted && userId !== u.userId) {
       throw new ForbiddenException(
         "Not authorized to view other users' logs.",
       );
     }
-    return this.getAttendanceLogs(u.orgId, userId, year, month);
+    const userMembershipId = await requireOrganizationMembershipId(this.db, u.orgId, userId);
+    return this.getAttendanceLogs(u.orgId, userMembershipId, year, month);
   }
 
-  async history(orgId: string, userId: string, page: number, limit: number) {
-    const where = and(
+  /**
+   * Attendance grows by one row per person per day, so this is the deepest
+   * list in HR and the one an OFFSET hurt most. The sort is three columns —
+   * `date` is not unique per membership (no unique index backs it, only
+   * `idx_attendance_org_user_membership_date`), so `created_at` breaks the day
+   * tie and the serial id breaks the rest. All three are in the cursor; a
+   * two-column one would skip a row every time two records share a day and a
+   * millisecond.
+   */
+  async history(orgId: string, userId: string, cursor: string | undefined, limit: number) {
+    const userMembershipId = await requireOrganizationMembershipId(this.db, orgId, userId);
+    const conditions = [
       eq(attendance.orgId, orgId),
-      eq(attendance.userId, userId),
-    );
-    const offset = (page - 1) * limit;
-    const [data, totalRows] = await Promise.all([
-      this.db.query.attendance.findMany({
-        where,
-        orderBy: [desc(attendance.date), desc(attendance.createdAt)],
-        limit,
-        offset,
-      }),
-      this.db.select({ total: count() }).from(attendance).where(where),
+      eq(attendance.userMembershipId, userMembershipId),
+    ];
+
+    const position = decodeTupleCursor(cursor, 3);
+    if (position) {
+      conditions.push(
+        keysetBeforeTuple([
+          { column: attendance.date, value: keysetTextValue(position[0] ?? "") },
+          { column: attendance.createdAt, value: keysetTimestamp(position[1] ?? "") },
+          { column: attendance.id, value: keysetInteger(position[2] ?? "") },
+        ]),
+      );
+    }
+
+    const rows = await this.db.query.attendance.findMany({
+      where: and(...conditions),
+      orderBy: [desc(attendance.date), desc(attendance.createdAt), desc(attendance.id)],
+      limit: limit + 1,
+    });
+
+    return buildTupleCursorPage(rows, limit, (row) => [
+      row.date,
+      row.createdAt.toISOString(),
+      String(row.id),
     ]);
-    const total = totalRows[0]?.total ?? 0;
-    return {
-      data,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
   }
 
   private getAttendanceLogs(
     orgId: string,
-    userId: string,
+    userMembershipId: number,
     year?: number,
     month?: number,
   ) {
@@ -154,7 +177,7 @@ export class AttendanceReadService {
       const endDate = new Date(year, month + 1, 0);
       return this.db.query.attendance.findMany({
         where: and(
-          eq(attendance.userId, userId),
+          eq(attendance.userMembershipId, userMembershipId),
           eq(attendance.orgId, orgId),
           gte(attendance.date, formatDateOnly(startDate)),
           lte(attendance.date, formatDateOnly(endDate)),
@@ -165,7 +188,7 @@ export class AttendanceReadService {
     }
 
     return this.db.query.attendance.findMany({
-      where: and(eq(attendance.userId, userId), eq(attendance.orgId, orgId)),
+      where: and(eq(attendance.userMembershipId, userMembershipId), eq(attendance.orgId, orgId)),
       orderBy: [desc(attendance.createdAt)],
       limit: 30,
     });
@@ -178,7 +201,7 @@ export class AttendanceReadService {
     month: number,
   ) {
     const scope = await resolveAttendanceScope(this.access, u);
-    if (scope !== "all" && targetUserId !== u.userId) {
+    if (!scope.unrestricted && targetUserId !== u.userId) {
       throw new ForbiddenException(
         "Not authorized to view other users' attendance.",
       );
@@ -189,9 +212,10 @@ export class AttendanceReadService {
     const lastDay = new Date(year, month + 1, 0).getDate();
     const endDate = `${year}-${mm}-${String(lastDay).padStart(2, "0")}`;
 
+    const targetMembershipId = await requireOrganizationMembershipId(this.db, u.orgId, targetUserId);
     return this.db.query.attendance.findMany({
       where: and(
-        eq(attendance.userId, targetUserId),
+        eq(attendance.userMembershipId, targetMembershipId),
         eq(attendance.orgId, u.orgId),
         gte(attendance.date, startDate),
         lte(attendance.date, endDate),
@@ -203,13 +227,14 @@ export class AttendanceReadService {
 
   async heatmap(u: CurrentUserContext, targetUserId: string, year: number) {
     const scope = await resolveAttendanceScope(this.access, u);
-    if (scope !== "all" && targetUserId !== u.userId) {
+    if (!scope.unrestricted && targetUserId !== u.userId) {
       throw new ForbiddenException(
         "Not authorized to view other users' attendance.",
       );
     }
 
     const orgId = u.orgId;
+    const targetMembershipId = await requireOrganizationMembershipId(this.db, orgId, targetUserId);
     const startDate = `${year}-01-01`;
     const endDate = `${year}-12-31`;
 
@@ -223,7 +248,7 @@ export class AttendanceReadService {
       .where(
         and(
           eq(attendance.orgId, orgId),
-          eq(attendance.userId, targetUserId),
+          eq(attendance.userMembershipId, targetMembershipId),
           gte(attendance.date, startDate),
           lte(attendance.date, endDate),
         ),

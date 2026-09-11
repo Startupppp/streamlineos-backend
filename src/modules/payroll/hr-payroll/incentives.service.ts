@@ -10,15 +10,22 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
+import { divideDecimals, roundDecimal, toDecimal } from "../../accounting/core/money.util";
 import type {
   ApproveIncentiveInput,
   IncentivesQueryInput,
 } from "./dto/payroll.schemas";
+import { buildCursorPage } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
+import {
+  decodePayrollTimestampCursor,
+  payrollCursorPosition,
+} from "../payroll-cursor";
 
 type IncentiveStatus = (typeof incentiveStatusEnum.enumValues)[number];
 
 function isIncentiveStatus(value: string): value is IncentiveStatus {
-  return (incentiveStatusEnum.enumValues as readonly string[]).includes(value);
+  return incentiveStatusEnum.enumValues.some((v) => v === value);
 }
 
 @Injectable()
@@ -29,22 +36,26 @@ export class IncentivesService {
   ) {}
 
   async getIncentives(orgId: string, params: IncentivesQueryInput) {
-    const page = params.page ?? 1;
     const limit = Math.min(params.limit ?? 20, 100);
-    const offset = (page - 1) * limit;
+    const status = params.status && isIncentiveStatus(params.status) ? params.status : null;
+    const cursorScope = ["incentives", orgId, status] as const;
+    const position = decodePayrollTimestampCursor(params.cursor, cursorScope);
 
     const conditions = [eq(incentives.orgId, orgId)];
-    if (params.status && isIncentiveStatus(params.status)) {
-      conditions.push(eq(incentives.status, params.status));
+    if (status) {
+      conditions.push(eq(incentives.status, status));
+    }
+    if (position) {
+      conditions.push(
+        keysetBeforeId(incentives.createdAt, incentives.id, {
+          sortValue: position.createdAt,
+          id: String(position.id),
+        }),
+      );
     }
 
-    const [[countResult], rows] = await Promise.all([
-      this.db
-        .select({ count: sql<number>`count(*)` })
-        .from(incentives)
-        .where(and(...conditions)),
-      this.db
-        .select({
+    const rows = await this.db
+      .select({
           id: incentives.id,
           orgId: incentives.orgId,
           salesRepId: incentives.salesRepId,
@@ -58,19 +69,19 @@ export class IncentivesService {
           createdAt: incentives.createdAt,
           salesRepName: users.name,
           salesRepImage: users.image,
-        })
-        .from(incentives)
-        .innerJoin(users, eq(incentives.salesRepId, users.id))
-        .where(and(...conditions))
-        .orderBy(desc(incentives.createdAt))
-        .limit(limit)
-        .offset(offset),
-    ]);
+      })
+      .from(incentives)
+      .innerJoin(users, eq(incentives.salesRepId, users.id))
+      .where(and(...conditions))
+      .orderBy(desc(incentives.createdAt), desc(incentives.id))
+      .limit(limit + 1);
 
-    const total = Number(countResult?.count ?? 0);
+    const page = buildCursorPage(rows, limit, (row) =>
+      payrollCursorPosition(cursorScope, [row.createdAt.toISOString()], row.id),
+    );
 
     return {
-      incentives: rows.map((r) => ({
+      incentives: page.data.map((r) => ({
         id: r.id,
         orgId: r.orgId,
         salesRepId: r.salesRepId,
@@ -88,9 +99,7 @@ export class IncentivesService {
           image: r.salesRepImage,
         },
       })),
-      total,
-      page,
-      totalPages: Math.ceil(total / limit),
+      pagination: page.pagination,
     };
   }
 
@@ -105,21 +114,21 @@ export class IncentivesService {
         totalRevenue: sql<string>`COALESCE(SUM(${incentives.calculatedAmount}), '0')`,
         approvedCount: sql<string>`COUNT(*) FILTER (WHERE ${incentives.status} IN ('APPROVED', 'ADDED_TO_PAYROLL'))`,
         pendingCount: sql<string>`COUNT(*) FILTER (WHERE ${incentives.status} = 'PENDING')`,
-        thisMonth: sql<string>`COALESCE(SUM(CASE WHEN ${incentives.createdAt} >= ${monthStart} THEN ${incentives.calculatedAmount} ELSE 0 END), '0')`,
+        thisMonth: sql<string>`COALESCE(SUM(CASE WHEN ${incentives.createdAt} >= ${monthStart.toISOString()}::timestamptz THEN ${incentives.calculatedAmount} ELSE 0 END), '0')`,
       })
       .from(incentives)
       .where(eq(incentives.orgId, orgId));
 
-    const totalRevenue = Number(stats?.totalRevenue ?? 0);
+    const totalRevenue = toDecimal(stats?.totalRevenue);
     const approved = Number(stats?.approvedCount ?? 0);
     const pending = Number(stats?.pendingCount ?? 0);
-    const thisMonth = Number(stats?.thisMonth ?? 0);
+    const thisMonth = toDecimal(stats?.thisMonth);
 
     return {
-      thisMonth: thisMonth.toFixed(2),
-      totalRevenue: totalRevenue.toFixed(2),
+      thisMonth: roundDecimal(thisMonth, 2),
+      totalRevenue: roundDecimal(totalRevenue, 2),
       avgPerConversion:
-        approved > 0 ? (totalRevenue / approved).toFixed(2) : "0.00",
+        approved > 0 ? roundDecimal(divideDecimals(totalRevenue, String(approved)), 2) : "0.00",
       pending,
       approved,
     };
@@ -197,6 +206,7 @@ export class IncentivesService {
   ): Promise<{ ok: boolean }> {
     await this.assertCanApprove(actor);
     const existing = await this.db.query.incentives.findFirst({
+      columns: { id: true },
       where: and(
         eq(incentives.id, incentiveId),
         eq(incentives.orgId, actor.orgId),

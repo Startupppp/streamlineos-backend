@@ -4,6 +4,8 @@ import { signDocuments, signEnvelopes, signFields, signRecipients } from "../../
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { SignAuditService } from "./sign-audit.service";
+import { mustGetVisibleEnvelope } from "./sign-envelope-scope";
+import type { ScopedRead } from "../access/scoped-read";
 import { isEnvelopeEditable } from "./sign-state";
 import type { CreateFieldInput, UpdateFieldInput } from "./dto/e-sign.schemas";
 import type { RequestActorContext } from "../../common/audit/actor-context";
@@ -53,6 +55,7 @@ export class SignFieldsService {
     }
 
     const recipient = await this.db.query.signRecipients.findFirst({
+      columns: { id: true },
       where: and(eq(signRecipients.id, input.recipientId), eq(signRecipients.orgId, orgId), eq(signRecipients.envelopeId, envelopeId)),
     });
     if (!recipient) throw new BadRequestException("Recipient does not belong to this envelope");
@@ -103,7 +106,29 @@ export class SignFieldsService {
   async update(orgId: string, fieldId: number, input: UpdateFieldInput, actor: RequestActorContext) {
     const field = await this.get(orgId, fieldId);
     await this.loadEditableEnvelope(orgId, field.envelopeId);
-    if (Object.keys(input).length > 0) this.validateFieldRules({ ...field, ...input } as CreateFieldInput);
+    if (Object.keys(input).length > 0) {
+      const merged: CreateFieldInput = {
+        documentId: field.documentId,
+        recipientId: field.recipientId,
+        fieldType: input.fieldType ?? field.fieldType,
+        label: input.label ?? field.label ?? undefined,
+        pageNumber: input.pageNumber ?? field.pageNumber,
+        x: input.x ?? field.x,
+        y: input.y ?? field.y,
+        width: input.width ?? field.width,
+        height: input.height ?? field.height,
+        required: input.required ?? field.required,
+        readonly: input.readonly ?? field.readonly,
+        orderIndex: input.orderIndex ?? field.orderIndex,
+        groupId: input.groupId ?? field.groupId ?? undefined,
+        defaultValue: input.defaultValue ?? field.defaultValue ?? undefined,
+        optionsJson: input.optionsJson ?? field.optionsJson ?? undefined,
+        validationType: input.validationType ?? field.validationType ?? undefined,
+        validationRulesJson: input.validationRulesJson ?? field.validationRulesJson ?? undefined,
+        conditionalRulesJson: input.conditionalRulesJson ?? field.conditionalRulesJson ?? undefined,
+      };
+      this.validateFieldRules(merged);
+    }
 
     const [updated] = await this.db
       .update(signFields)
@@ -153,9 +178,15 @@ export class SignFieldsService {
     return field;
   }
 
-  async listForEnvelope(orgId: string, envelopeId: number) {
+  /**
+   * The envelope is resolved before the fields are, so an envelope in another
+   * organization answers 404 rather than an empty 200 — an empty list would
+   * still separate "this envelope has no fields" from "this envelope is not yours".
+   */
+  async listForEnvelope(read: ScopedRead, membershipId: number | null, envelopeId: number) {
+    await mustGetVisibleEnvelope(this.db, read, membershipId, envelopeId, "Envelope not found");
     return this.db.query.signFields.findMany({
-      where: and(eq(signFields.orgId, orgId), eq(signFields.envelopeId, envelopeId)),
+      where: and(eq(signFields.orgId, read.orgId), eq(signFields.envelopeId, envelopeId)),
       orderBy: (f, { asc }) => [asc(f.pageNumber), asc(f.orderIndex)],
       limit: 100,
     });

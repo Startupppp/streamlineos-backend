@@ -215,9 +215,13 @@ export class WhatsAppIngressService {
            * for: a single message the seam rejects would roll back every
            * message filed before it, and the provider would be told the whole
            * delivery failed.
+           *
+           * The binding's organisation is also the caller's tenant for the
+           * seam: a delivery carries no session, and the binding is what the
+           * signature was verified against.
            */
           const outcome = await runInTenant(binding.organizationId, () =>
-            this.ingress.accept(result.event),
+            this.ingress.accept(result.event, binding.organizationId),
           );
           if (outcome.status === "duplicate") duplicate += 1;
           else delivered += 1;

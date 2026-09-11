@@ -1,5 +1,6 @@
-import type { INestApplication } from "@nestjs/common";
+import { NotFoundException, type INestApplication } from "@nestjs/common";
 import request from "supertest";
+import { randomUUID } from "node:crypto";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { ALL_MODULES, signToken } from "test/helpers/sign-token";
 import { PaymentProviderSetupService } from "./payment-provider-setup.service";
@@ -9,10 +10,24 @@ import { PaymentReadinessService } from "./payment-readiness.service";
 import { PaymentAuditService } from "./payment-audit.service";
 import { PaymentManualMethodsService } from "./payment-manual-methods.service";
 
+const stubProviderRow = {
+  id: 1,
+  orgId: "org_1",
+  providerKey: "razorpay",
+  displayName: "Razorpay",
+  status: "test_mode_ready",
+  environment: "test",
+  isPrimary: true,
+  supportedCurrencies: ["INR"],
+  supportedPaymentMethods: ["card", "upi"],
+  createdAt: new Date("2026-01-01T00:00:00.000Z"),
+  updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+};
+
 const stubProviders = {
   getCatalog: jest.fn().mockResolvedValue([]),
   listProviders: jest.fn().mockResolvedValue([]),
-  getProvider: jest.fn().mockResolvedValue({ id: 1, key: "razorpay" }),
+  getProvider: jest.fn().mockResolvedValue({ ...stubProviderRow, credentials: [] }),
   createProvider: jest.fn().mockResolvedValue({ id: 1 }),
   updateProvider: jest.fn().mockResolvedValue({ id: 1 }),
   disableProvider: jest.fn().mockResolvedValue(undefined),
@@ -187,10 +202,22 @@ describe("Payments controller auth/RBAC (e2e)", () => {
       enabledModules: ALL_MODULES,
     });
     stubProviders.getProvider.mockRejectedValueOnce(
-      Object.assign(new Error("Not found"), { status: 404 }),
+      new NotFoundException("Payment provider not configured: razorpay"),
     );
     const res = await call("get", "/payments/providers/razorpay")
       .set("Authorization", `Bearer ${token}`);
-    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(404);
+  });
+
+  it("200 on GET /payments/providers/razorpay with payments:providers:view — ResponseContractInterceptor validates paymentProviderWithCredentialsSchema", async () => {
+    const token = await signToken({
+      permissions: ["payments:providers:view"],
+      enabledModules: ALL_MODULES,
+    });
+    const res = await request(app.getHttpServer())
+      .get("/payments/providers/razorpay")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ providerKey: "razorpay", orgId: "org_1", isPrimary: true, credentials: [] });
   });
 });

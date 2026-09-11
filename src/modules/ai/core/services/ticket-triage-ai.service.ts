@@ -12,18 +12,8 @@ import {
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 import { unwrapAiResult } from "./gateway-result.util";
 import { assertTicket } from "./ticket-ai-assertions";
-import {
-  improveDescriptionDraft,
-  suggestFieldsFromDraft,
-  suggestTitleFromDraft,
-  type TicketDraftAiDeps,
-} from "./lib/ticket-draft-ai";
+import { TEXT_LIMIT, stripHtml } from "./ticket-ai-text";
 
-const TEXT_LIMIT = 2000;
-
-function stripHtml(value: string): string {
-  return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
-}
 
 @Injectable()
 export class TicketTriageAiService {
@@ -146,39 +136,5 @@ Suggest a checklist title and 4-10 items.`;
       title,
       items: dedupedItems,
     };
-  }
-
-  /** @see lib/ticket-draft-ai.ts */
-  async suggestTitleFromDraft(
-    orgId: string,
-    userId: string,
-    projectId: number,
-    draft: { title?: string; description?: string },
-  ) {
-    return suggestTitleFromDraft(this.draftDeps, orgId, userId, projectId, draft);
-  }
-
-  /** @see lib/ticket-draft-ai.ts */
-  async improveDescriptionDraft(
-    orgId: string,
-    userId: string,
-    projectId: number,
-    draft: { title?: string; description?: string },
-  ) {
-    return improveDescriptionDraft(this.draftDeps, orgId, userId, projectId, draft);
-  }
-
-  /** @see lib/ticket-draft-ai.ts */
-  async suggestFieldsFromDraft(
-    orgId: string,
-    userId: string,
-    projectId: number,
-    draft: { title?: string; description?: string },
-  ) {
-    return suggestFieldsFromDraft(this.draftDeps, orgId, userId, projectId, draft);
-  }
-
-  private get draftDeps(): TicketDraftAiDeps {
-    return { db: this.db, gateway: this.gateway, audit: this.audit };
   }
 }

@@ -36,6 +36,14 @@ import {
 } from "./dto/campaigns.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
+import {
+  campaignsListSchema,
+  campaignSchema,
+  campaignRoiSchema,
+  campaignLeadsSchema,
+  campaignAttributionSchema,
+} from "./dto/crm-campaigns-response.schemas";
 
 const campaignIdParams = z.object({ campaignId: z.coerce.number().int().positive() }).strict();
 
@@ -51,6 +59,7 @@ export class CrmCampaignsController {
 
   @Get()
   @RequirePermission("crm:campaigns:view")
+  @ResponseSchema(campaignsListSchema)
   @Validate({ query: campaignListSchema })
   list(
     @Query() query: CampaignListQuery,
@@ -62,6 +71,7 @@ export class CrmCampaignsController {
   @Post()
   @RequirePermission("crm:campaigns:manage")
   @HttpCode(201)
+  @ResponseSchema(campaignSchema)
   @Idempotent("crm.campaign.create")
   @Validate({ body: campaignCreateSchema })
   create(
@@ -73,12 +83,14 @@ export class CrmCampaignsController {
 
   @Get("attribution/first-touch")
   @RequirePermission("crm:reports:view")
+  @ResponseSchema(z.array(campaignAttributionSchema))
   firstTouch(@CurrentUser() u: CurrentUserContext) {
     return this.attribution.getFirstTouchAttribution(u.orgId);
   }
 
   @Get("attribution/last-touch")
   @RequirePermission("crm:reports:view")
+  @ResponseSchema(z.array(campaignAttributionSchema))
   lastTouch(@CurrentUser() u: CurrentUserContext) {
     return this.attribution.getLastTouchAttribution(u.orgId);
   }
@@ -103,6 +115,7 @@ export class CrmCampaignsController {
 
   @Get(":campaignId/roi")
   @RequirePermission("crm:campaigns:view")
+  @ResponseSchema(campaignRoiSchema)
   @Validate({ params: campaignIdParams })
   roi(
     @Param("campaignId", ParseIntPipe) campaignId: number,
@@ -113,6 +126,7 @@ export class CrmCampaignsController {
 
   @Get(":campaignId/leads")
   @RequirePermission("crm:campaigns:view")
+  @ResponseSchema(campaignLeadsSchema)
   @Validate({ params: campaignIdParams })
   campaignLeads(
     @Param("campaignId", ParseIntPipe) campaignId: number,
@@ -124,6 +138,7 @@ export class CrmCampaignsController {
 
   @Patch(":campaignId")
   @RequirePermission("crm:campaigns:manage")
+  @ResponseSchema(campaignSchema)
   @Validate({ params: campaignIdParams, body: campaignUpdateSchema })
   update(
     @Param("campaignId", ParseIntPipe) campaignId: number,
@@ -136,6 +151,7 @@ export class CrmCampaignsController {
   @Delete(":campaignId")
   @HttpCode(204)
   @RequirePermission("crm:campaigns:manage")
+  @NoContentResponse()
   @Validate({ params: campaignIdParams })
   async remove(
     @Param("campaignId", ParseIntPipe) campaignId: number,

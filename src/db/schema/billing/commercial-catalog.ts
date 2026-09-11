@@ -2,6 +2,7 @@ import { relations, sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  foreignKey,
   index,
   integer,
   pgTable,
@@ -26,7 +27,6 @@ export const billingProducts = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [
-    index("idx_billing_products_slug").on(t.slug),
     index("idx_billing_products_active").on(t.isActive),
   ],
 );
@@ -46,7 +46,6 @@ export const billingPlans = pgTable(
   },
   (t) => [
     uniqueIndex("uq_billing_plans_product_slug").on(t.productId, t.slug),
-    index("idx_billing_plans_product").on(t.productId),
     index("idx_billing_plans_tier").on(t.planTier),
   ],
 );
@@ -86,7 +85,6 @@ export const billingPlanEntitlements = pgTable(
   },
   (t) => [
     uniqueIndex("uq_billing_plan_ent_plan_key_from").on(t.planId, t.featureKey, t.effectiveFrom),
-    index("idx_billing_plan_ent_plan").on(t.planId),
     index("idx_billing_plan_ent_key").on(t.featureKey),
   ],
 );
@@ -108,7 +106,6 @@ export const orgEntitlementOverrides = pgTable(
   (t) => [
     uniqueIndex("uq_org_ent_overrides_org_key_from").on(t.orgId, t.featureKey, t.effectiveFrom),
     uniqueIndex("uq_org_ent_overrides_idem").on(t.orgId, t.idempotencyKey).where(sql`idempotency_key IS NOT NULL`),
-    index("idx_org_ent_overrides_org_key").on(t.orgId, t.featureKey),
     unique("uniq_org_entitlement_overrides_org_id").on(t.orgId, t.id),
   ],
 );
@@ -117,7 +114,7 @@ export const subscriptionItems = pgTable(
   "subscription_items",
   {
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
-    subscriptionId: integer("subscription_id").notNull().references(() => subscriptions.id, { onDelete: "cascade" }),
+    subscriptionId: integer("subscription_id").notNull(),
     orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
     priceVersionId: bigint("price_version_id", { mode: "number" }).notNull().references(() => billingPriceVersions.id, { onDelete: "restrict" }),
     quantity: integer("quantity").notNull().default(1),
@@ -129,6 +126,7 @@ export const subscriptionItems = pgTable(
     index("idx_sub_items_org_sub").on(t.orgId, t.subscriptionId),
     index("idx_sub_items_org_active").on(t.orgId, t.effectiveFrom),
     unique("uniq_subscription_items_org_id").on(t.orgId, t.id),
+    foreignKey({ columns: [t.orgId, t.subscriptionId], foreignColumns: [subscriptions.orgId, subscriptions.id], name: "fk_sub_items_org_sub" }).onDelete("cascade"),
   ],
 );
 

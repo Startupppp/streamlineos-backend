@@ -43,7 +43,7 @@ function buildDb(captured: Captured) {
 async function capture(cursor: string | undefined, direction: "asc" | "desc" = "desc"): Promise<Captured> {
   const captured: Captured = { where: undefined, orderBy: [] };
   const db = buildDb(captured);
-  const svc = new WorkflowsExecutionService(db);
+  const svc = new WorkflowsExecutionService(db, {} as never);
   await svc.listExecutions("org-a", "wf-1", {
     cursor,
     limit: 20,
@@ -56,7 +56,7 @@ async function capture(cursor: string | undefined, direction: "asc" | "desc" = "
 async function captureAll(cursor: string | undefined, direction: "asc" | "desc" = "desc"): Promise<Captured> {
   const captured: Captured = { where: undefined, orderBy: [] };
   const db = buildDb(captured);
-  const svc = new WorkflowsExecutionService(db);
+  const svc = new WorkflowsExecutionService(db, {} as never);
   await svc.listAllExecutions("org-a", {
     cursor,
     limit: 20,

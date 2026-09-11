@@ -28,6 +28,8 @@ import {
 } from "./dto/forms.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { formRowSchema } from "./dto/forms-response.schemas";
 
 const formIdParams = z.object({ formId: z.coerce.number().int().positive() }).strict();
 
@@ -39,40 +41,44 @@ export class FormsController {
 
   @Get()
   @RequirePermission("build:forms:view")
+  @ResponseSchema(z.array(formRowSchema))
   @Validate({ query: listFormsQuerySchema })
   listForms(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Query() query: ListFormsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listForms(u.orgId, projectId, query);
+    return this.svc.listForms(u, projectId, query);
   }
 
   @Get(":formId")
   @RequirePermission("build:forms:view")
+  @ResponseSchema(formRowSchema)
   @Validate({ params: formIdParams })
   getForm(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("formId", ParseIntPipe) formId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getForm(u.orgId, projectId, formId);
+    return this.svc.getForm(u, projectId, formId);
   }
 
   @Post()
   @HttpCode(201)
   @RequirePermission("build:forms:manage")
+  @ResponseSchema(formRowSchema)
   @Validate({ body: createFormSchema })
   createForm(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body() body: CreateFormInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createForm(u.orgId, u.userId, projectId, body);
+    return this.svc.createForm(u, projectId, body);
   }
 
   @Patch(":formId")
   @RequirePermission("build:forms:manage")
+  @ResponseSchema(formRowSchema)
   @Validate({ params: formIdParams, body: updateFormSchema })
   updateForm(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -80,18 +86,19 @@ export class FormsController {
     @Body() body: UpdateFormInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.updateForm(u.orgId, u.userId, projectId, formId, body);
+    return this.svc.updateForm(u, projectId, formId, body);
   }
 
   @Delete(":formId")
   @RequirePermission("build:forms:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: formIdParams })
   deleteForm(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("formId", ParseIntPipe) formId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.deleteForm(u.orgId, u.userId, projectId, formId);
+    return this.svc.deleteForm(u, projectId, formId);
   }
 }

@@ -1,7 +1,7 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { customFieldDefinitions } from "../../../db/schema/custom-field-engine";
-import { supportTicketCustomFieldValues } from "../../../db/schema";
+import { supportTicketCustomFieldValues, supportTickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { getPostgresErrorCode } from "../../../common/db/postgres-error";
@@ -163,6 +163,11 @@ export class SupportCustomFieldsService {
   }
 
   async getFieldValues(orgId: string, ticketId: number) {
+    const ticket = await this.db.query.supportTickets.findFirst({
+      columns: { id: true },
+      where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
+    });
+    if (!ticket) throw new NotFoundException("Ticket not found");
     return this.db
       .select({
         fieldId: supportTicketCustomFieldValues.fieldDefinitionId,

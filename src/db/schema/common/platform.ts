@@ -6,6 +6,7 @@ import {
   integer,
   boolean,
   jsonb,
+  foreignKey,
   index,
   unique,
   uniqueIndex,
@@ -222,7 +223,7 @@ export const operatorAccessLog = pgTable(
     logId: uuid("log_id").defaultRandom().primaryKey(),
     grantId: uuid("grant_id")
       .notNull()
-      .references(() => operatorAccessGrants.grantId),
+      ,
     operatorUserId: text("operator_user_id").notNull(),
     orgId: text("org_id").notNull(),
     action: text("action").notNull(),
@@ -231,6 +232,7 @@ export const operatorAccessLog = pgTable(
     accessedAt: timestamp("accessed_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.grantId], foreignColumns: [operatorAccessGrants.orgId, operatorAccessGrants.grantId], name: "fk_operator_access_log_grant_id_org" }),
     index("idx_oal_grant").on(table.grantId),
     index("idx_oal_org_time").on(table.orgId, table.accessedAt),
   ],

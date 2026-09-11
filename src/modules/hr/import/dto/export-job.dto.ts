@@ -17,5 +17,5 @@ export const createEmployeeExportJobSchema = z
 
 export const exportJobIdSchema = z.string().uuid();
 
-export type EmployeeExportFiltersInput = z.infer<typeof employeeExportFiltersSchema>;
+type EmployeeExportFiltersInput = z.infer<typeof employeeExportFiltersSchema>;
 export type CreateEmployeeExportJobInput = z.infer<typeof createEmployeeExportJobSchema>;

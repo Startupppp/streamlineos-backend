@@ -1,34 +1,53 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { eq, and, isNull, desc, or } from "drizzle-orm";
+import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { eq, and, isNull, desc, or, sql } from "drizzle-orm";
 import { notificationPreferences, notificationPolicyDefaults, notificationAuditLogs, notificationPreferenceRules, notificationSuppressionRules } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { UpdatePreferenceInput, EventPreferenceInput, CreateSuppressionInput } from "./dto/preference.schemas";
 import { NotificationEventRegistryService } from "./notification-event-registry.service";
+import { NotificationConsentService, type ConsentChannel } from "./notification-consent.service";
 import { ALL_CHANNELS, type NotificationChannel } from "./notification.types";
 
 type EventPrefMap = Record<string, { channels?: Record<string, boolean>; muted?: boolean; mode?: string }>;
 
-const DEFAULT_PREFERENCES = {
+interface NotificationPreferenceDefaults {
+  emailEnabled: boolean;
+  pushEnabled: boolean;
+  smsEnabled: boolean;
+  whatsappEnabled: boolean;
+  inAppEnabled: boolean;
+  soundEnabled: boolean;
+  quietHoursStart: string | null;
+  quietHoursEnd: string | null;
+  quietHoursWeekends: boolean;
+  allowCriticalOverride: boolean;
+  digestMode: "disabled" | "hourly" | "daily" | "weekly";
+  categories: Record<string, boolean>;
+  channelCategories: Record<string, Record<string, boolean>>;
+  eventPreferences: EventPrefMap;
+  modulePreferences: Record<string, { mode?: string; muted?: boolean }>;
+}
+
+const DEFAULT_PREFERENCES: NotificationPreferenceDefaults = {
   emailEnabled: true,
   pushEnabled: true,
   smsEnabled: false,
   whatsappEnabled: false,
   inAppEnabled: true,
   soundEnabled: true,
-  quietHoursStart: null as string | null,
-  quietHoursEnd: null as string | null,
+  quietHoursStart: null,
+  quietHoursEnd: null,
   quietHoursWeekends: true,
   allowCriticalOverride: true,
-  digestMode: "disabled" as "disabled" | "hourly" | "daily" | "weekly",
-  categories: {} as Record<string, boolean>,
-  channelCategories: {} as Record<string, Record<string, boolean>>,
-  eventPreferences: {} as EventPrefMap,
-  modulePreferences: {} as Record<string, { mode?: string; muted?: boolean }>,
+  digestMode: "disabled",
+  categories: {},
+  channelCategories: {},
+  eventPreferences: {},
+  modulePreferences: {},
 };
 
 function isNotificationChannel(value: string): value is NotificationChannel {
-  return (ALL_CHANNELS as readonly string[]).includes(value);
+  return ALL_CHANNELS.some((channel) => channel === value);
 }
 
 @Injectable()
@@ -36,6 +55,7 @@ export class NotificationPreferencesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly registry: NotificationEventRegistryService,
+    private readonly consents: NotificationConsentService,
   ) {}
 
   private memberPredicate(userId: string, membershipId: number | null | undefined) {
@@ -64,7 +84,7 @@ export class NotificationPreferencesService {
     return {
       ...prefs,
       inherited: {
-        defaultChannels: (orgPolicy?.defaultChannels as string[] | undefined) ?? [],
+        defaultChannels: orgPolicy?.defaultChannels ?? [],
         canUserOverride: orgPolicy?.canUserOverride ?? true,
       },
     };
@@ -80,9 +100,12 @@ export class NotificationPreferencesService {
   }
 
   async update(orgId: string, userId: string, dto: UpdatePreferenceInput, membershipId?: number | null) {
+    // The only unique index left on this table is (org_id, membership_id), so a row
+    // without a membership can neither be targeted by the upsert nor read back.
+    if (membershipId == null) throw new ForbiddenException("Organization membership required");
     const provided = <K extends keyof UpdatePreferenceInput>(key: K) => dto[key] !== undefined;
 
-    const insertValues = { ...DEFAULT_PREFERENCES, userId, orgId, membershipId: membershipId ?? null, updatedBy: userId, ...dto };
+    const insertValues = { ...DEFAULT_PREFERENCES, userId, orgId, membershipId, updatedBy: userId, ...dto };
     const updateSet: Record<string, unknown> = { updatedAt: new Date(), updatedBy: userId };
     for (const key of Object.keys(dto) as Array<keyof UpdatePreferenceInput>) {
       if (provided(key)) updateSet[key] = dto[key];
@@ -91,7 +114,10 @@ export class NotificationPreferencesService {
     const [result] = await this.db
       .insert(notificationPreferences)
       .values(insertValues)
-      .onConflictDoUpdate({ target: notificationPreferences.userId, set: updateSet })
+      .onConflictDoUpdate({
+        target: [notificationPreferences.orgId, notificationPreferences.membershipId],
+        set: updateSet,
+      })
       .returning();
 
     // SCH-003 write cutover. Routing resolves mutes and category switches from
@@ -99,6 +125,17 @@ export class NotificationPreferencesService {
     // Without this projection the preference centre would still write, still show the
     // toggle as saved, and change nothing about what actually gets sent.
     await this.projectToRules(orgId, userId, dto, membershipId);
+
+    // COMP-003. Switching SMS or WhatsApp off is a withdrawal, not a mute. Leaving
+    // a GRANTED consent row standing behind an off toggle means the record of
+    // agreement and the person's stated wish disagree, and the record is what an
+    // auditor reads. Switching ON grants nothing: consent needs a destination and
+    // a toggle carries none, so the consent surface is where that is given.
+    const withdrawing: ConsentChannel[] = [];
+    if (dto.smsEnabled === false) withdrawing.push("SMS");
+    if (dto.whatsappEnabled === false) withdrawing.push("WHATSAPP");
+    if (withdrawing.length > 0)
+      await this.consents.withdrawChannels(orgId, userId, membershipId, withdrawing);
 
     await this.audit(orgId, userId, "preference.updated", { fields: Object.keys(dto) });
     return result;
@@ -118,7 +155,7 @@ export class NotificationPreferencesService {
     orgId: string,
     userId: string,
     dto: UpdatePreferenceInput,
-    membershipId?: number | null,
+    membershipId: number,
   ): Promise<void> {
     const writes: Array<{
       scopeType: "EVENT" | "MODULE" | "CATEGORY";
@@ -162,16 +199,27 @@ export class NotificationPreferencesService {
     const off = writes.filter((w) => !w.on);
     const on = writes.filter((w) => w.on);
 
-    for (const w of on) {
+    /*
+     * One DELETE for the whole ON set. The predicates differed only in the
+     * (scopeType, scopeKey, channel) triple, so a row-constructor IN list covers
+     * them in a single statement that still rides the
+     * (org_id, membership_id, scope_type, scope_key, channel) unique index —
+     * a preferences save was previously one round trip per channel per event.
+     */
+    if (on.length > 0) {
+      const scopes = sql.join(
+        on.map(
+          (w) => sql`(${w.scopeType}::text, ${w.scopeKey}::text, ${w.channel}::notification_channel)`,
+        ),
+        sql`, `,
+      );
       await this.db
         .delete(notificationPreferenceRules)
         .where(
           and(
             eq(notificationPreferenceRules.orgId, orgId),
-            eq(notificationPreferenceRules.userId, userId),
-            eq(notificationPreferenceRules.scopeType, w.scopeType),
-            eq(notificationPreferenceRules.scopeKey, w.scopeKey),
-            eq(notificationPreferenceRules.channel, w.channel),
+            eq(notificationPreferenceRules.membershipId, membershipId),
+            sql`(${notificationPreferenceRules.scopeType}, ${notificationPreferenceRules.scopeKey}, ${notificationPreferenceRules.channel}) IN (${scopes})`,
           ),
         );
     }
@@ -182,8 +230,7 @@ export class NotificationPreferencesService {
         .values(
           off.map((w) => ({
             orgId,
-            userId,
-            membershipId: membershipId ?? null,
+            membershipId,
             scopeType: w.scopeType,
             scopeKey: w.scopeKey,
             channel: w.channel,
@@ -194,7 +241,7 @@ export class NotificationPreferencesService {
         .onConflictDoUpdate({
           target: [
             notificationPreferenceRules.orgId,
-            notificationPreferenceRules.userId,
+            notificationPreferenceRules.membershipId,
             notificationPreferenceRules.scopeType,
             notificationPreferenceRules.scopeKey,
             notificationPreferenceRules.channel,
@@ -206,7 +253,7 @@ export class NotificationPreferencesService {
 
   async getEventCatalog(orgId: string, userId: string) {
     const [events, prefs] = await Promise.all([this.registry.listForOrg(orgId), this.get(orgId, userId)]);
-    const eventPrefs = (prefs.eventPreferences as EventPrefMap) ?? {};
+    const eventPrefs = prefs.eventPreferences;
     return events
       .filter((e) => e.userConfigurable || e.mandatory)
       .map((e) => ({
@@ -227,7 +274,7 @@ export class NotificationPreferencesService {
   async updateEventPreference(orgId: string, userId: string, eventKey: string, pref: EventPreferenceInput, membershipId?: number | null) {
     this.registry.assertKnown(eventKey);
     const current = await this.get(orgId, userId, membershipId);
-    const eventPrefs: EventPrefMap = { ...((current.eventPreferences as EventPrefMap) ?? {}) };
+    const eventPrefs: EventPrefMap = { ...current.eventPreferences };
     eventPrefs[eventKey] = { ...eventPrefs[eventKey], ...pref };
     const result = await this.update(orgId, userId, { eventPreferences: eventPrefs }, membershipId);
     return result;
@@ -288,7 +335,15 @@ export class NotificationPreferencesService {
         ),
       );
     if (!existing) throw new NotFoundException("Suppression rule not found");
-    await this.db.delete(notificationSuppressionRules).where(eq(notificationSuppressionRules.id, id));
+    await this.db
+      .delete(notificationSuppressionRules)
+      .where(
+        and(
+          eq(notificationSuppressionRules.id, id),
+          eq(notificationSuppressionRules.orgId, orgId),
+          eq(notificationSuppressionRules.userId, userId),
+        ),
+      );
     await this.audit(orgId, userId, "suppression.removed", { id });
     return { success: true };
   }

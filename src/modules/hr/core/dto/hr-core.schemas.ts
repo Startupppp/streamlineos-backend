@@ -1,14 +1,13 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField, optionalPageNumberField } from "../../../../common/pagination/list-query.schema";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
-export const paginationSchema = z.object({
+const paginationSchema = z.object({
   page: pageNumberField,
   limit: pageSizeField(20, 100),
 });
 
 const cursorListFields = {
   cursor: z.string().trim().min(1).max(2048).optional(),
-  page: optionalPageNumberField(),
   limit: pageSizeField(20),
 };
 
@@ -17,19 +16,11 @@ export const listPeopleSchema = z
     ...cursorListFields,
     search: z.string().trim().min(1).max(200).optional(),
   })
-  .strict()
-  .refine((query) => query.cursor === undefined || query.page === undefined, {
-    path: ["cursor"],
-    message: "Cursor and page pagination cannot be combined.",
-  });
+  .strict();
 
 export const listEmploymentsSchema = z
   .object(cursorListFields)
-  .strict()
-  .refine((query) => query.cursor === undefined || query.page === undefined, {
-    path: ["cursor"],
-    message: "Cursor and page pagination cannot be combined.",
-  });
+  .strict();
 
 export const createPersonSchema = z.object({
   firstName: z.string().min(1).max(100),
@@ -138,7 +129,7 @@ export const createEffectiveDateChangeSchema = z
   });
 
 export const listEffectiveDateChangesSchema = z.object({
-  cursor: z.string().optional(),
+  cursor: z.string().trim().min(1).max(2048).optional(),
   limit: pageSizeField(20, 100),
   employmentId: z.coerce.number().int().positive().optional(),
   changeType: z.enum([
@@ -146,7 +137,7 @@ export const listEffectiveDateChangesSchema = z.object({
     "employment_type", "compensation", "work_schedule", "policy_assignment",
   ]).optional(),
   status: z.enum(["draft", "approved", "applied"]).optional(),
-});
+}).strict();
 
 export const applyDueChangesSchema = z
   .object({
@@ -207,9 +198,9 @@ export const listAuditLogsSchema = z.object({
 
 export const historyTypeSchema = z.object({
   type: z.enum(["manager", "department"]),
-  page: pageNumberField,
+  cursor: z.string().trim().min(1).max(2048).optional(),
   limit: pageSizeField(20, 100),
-});
+}).strict();
 
 export type CreatePersonInput = z.infer<typeof createPersonSchema>;
 export type UpdatePersonInput = z.infer<typeof updatePersonSchema>;
@@ -225,3 +216,50 @@ export type ListTimelineInput = z.infer<typeof listTimelineSchema>;
 export type UpdateSensitiveInput = z.infer<typeof updateSensitiveSchema>;
 export type ListAuditLogsInput = z.infer<typeof listAuditLogsSchema>;
 export type HistoryTypeInput = z.infer<typeof historyTypeSchema>;
+
+const catalogNameSchema = z
+  .string()
+  .trim()
+  .transform((v) => v.replace(/\s+/g, " "))
+  .pipe(
+    z
+      .string()
+      .min(2, "Name must be at least 2 characters")
+      .max(100, "Name must be at most 100 characters")
+      .refine((v) => /[a-zA-Z]/.test(v), "Name must contain at least one letter")
+      .refine(
+        (v) => !/[^\p{L}\p{N}\s]{2,}/u.test(v),
+        "Name cannot have consecutive special characters",
+      ),
+  );
+
+const catalogCodeSchema = z
+  .union([
+    z.literal("").transform(() => undefined),
+    z
+      .string()
+      .trim()
+      .transform((v) => v.toUpperCase())
+      .pipe(
+        z
+          .string()
+          .min(1, "Code must be at least 1 character")
+          .max(20, "Code must be at most 20 characters")
+          .regex(
+            /^[A-Z0-9][A-Z0-9_-]*$/,
+            "Code can only use letters, numbers, hyphens, and underscores",
+          ),
+      ),
+  ])
+  .optional();
+
+export const createCatalogSchema = z.object({
+  name: catalogNameSchema,
+  code: catalogCodeSchema,
+  description: z.string().trim().max(500).optional(),
+});
+
+export const updateCatalogSchema = createCatalogSchema.partial();
+
+export type CreateCatalogInput = z.infer<typeof createCatalogSchema>;
+export type UpdateCatalogInput = z.infer<typeof updateCatalogSchema>;

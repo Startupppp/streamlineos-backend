@@ -17,6 +17,7 @@ export class LeaveTypesService {
     return this.db.query.leaveTypes.findMany({
       where: eq(leaveTypes.orgId, orgId),
       orderBy: [asc(leaveTypes.name)],
+      limit: 100,
     });
   }
 

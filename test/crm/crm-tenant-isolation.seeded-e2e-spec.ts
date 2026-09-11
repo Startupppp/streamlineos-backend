@@ -276,7 +276,7 @@ describeIfAppRole("[seeded-e2e] CRM tenant isolation, as the application role", 
      * The list above is the input to every case below, so a table missing from
      * it is not a failing test — it is an absent one, which reads as green.
      */
-    const enabled = await appSql.unsafe(
+    const enabled = await appSql.unsafe<{ table: string }[]>(
       `SELECT c.relname AS table
          FROM pg_class c
          JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -287,8 +287,8 @@ describeIfAppRole("[seeded-e2e] CRM tenant isolation, as the application role", 
       [CRM_TABLE_PATTERN],
     );
     const unproven = enabled
-      .map((row) => (row as unknown as { table: string }).table)
-      .filter((table: string) => !TENANT_TABLES.includes(table as (typeof TENANT_TABLES)[number]));
+      .map((row) => row.table)
+      .filter((table) => !TENANT_TABLES.includes(table as (typeof TENANT_TABLES)[number]));
     expect(unproven).toEqual([]);
   });
 

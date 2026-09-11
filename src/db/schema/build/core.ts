@@ -35,21 +35,14 @@ export const projects = build.table(
     name: text("name").notNull(),
     description: text("description"),
     key: text("key").notNull(),
-    clientId: text("client_id").references(() => users.id),
     clientMembershipId: integer("client_membership_id"),
-    managerId: text("manager_id").references(() => users.id),
     managerMembershipId: integer("manager_membership_id"),
     startDate: timestamp("start_date"),
     endDate: timestamp("end_date"),
     status: projectStatusEnum("status").default("ACTIVE").notNull(),
     priority: text("priority"),
-    dealId: integer("deal_id").references(() => deals.id, {
-      onDelete: "set null",
-    }),
-    managedProductId: integer("managed_product_id").references(
-      () => managedProducts.id,
-      { onDelete: "set null" },
-    ),
+    dealId: integer("deal_id"),
+    managedProductId: integer("managed_product_id"),
     pmWorkspaceId: text("pm_workspace_id").notNull(),
     budget: decimal("budget", { precision: 15, scale: 2 }),
     budgetMinor: bigint("budget_minor", { mode: "number" }),
@@ -66,6 +59,7 @@ export const projects = build.table(
       features?: Record<string, boolean>;
     }>(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    reportRevision: bigint("report_revision", { mode: "number" }).default(0).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -73,10 +67,11 @@ export const projects = build.table(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.managedProductId], foreignColumns: [managedProducts.orgId, managedProducts.id], name: "fk_projects_org_product" }).onDelete("set null"),
+    foreignKey({ columns: [table.orgId, table.dealId], foreignColumns: [deals.orgId, deals.id], name: "fk_projects_deal_id_org" }).onDelete("set null"),
     uniqueIndex("uniq_projects_org_key").on(table.orgId, table.key).where(sql`deleted_at IS NULL`),
     index("idx_projects_org_status").on(table.orgId, table.status).where(sql`deleted_at IS NULL`),
-    index("idx_projects_manager").on(table.managerId),
-    index("idx_projects_org_manager_membership").on(table.orgId, table.managerMembershipId),
+    index("idx_projects_manager").on(table.orgId, table.managerMembershipId),
     index("idx_projects_org_client_membership").on(table.orgId, table.clientMembershipId),
     index("idx_projects_deal").on(table.dealId),
     index("idx_projects_managed_product").on(table.managedProductId),
@@ -108,7 +103,6 @@ export const sprints = build.table(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     projectId: integer("project_id")
-      .references(() => projects.id, { onDelete: "cascade" })
       .notNull(),
     name: text("name").notNull(),
     startDate: timestamp("start_date").notNull(),
@@ -123,7 +117,10 @@ export const sprints = build.table(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_sprints_org_project" }).onDelete("cascade"),
     index("idx_sprints_project_status").on(table.projectId, table.status).where(sql`deleted_at IS NULL`),
+    index("idx_sprints_org_project_velocity_cursor").on(table.orgId, table.projectId, table.startDate.desc(), table.id.desc())
+      .where(sql`${table.deletedAt} IS NULL AND ${table.status} IN ('ACTIVE', 'COMPLETED')`),
     unique("uniq_sprints_org_id").on(table.orgId, table.id),
     check(
       "chk_sprints_status",
@@ -137,7 +134,7 @@ export const projectStatuses = build.table(
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
+    projectId: integer("project_id").notNull(),
     name: text("name").notNull(),
     order: integer("order").notNull().default(0),
     color: text("color"),
@@ -147,6 +144,7 @@ export const projectStatuses = build.table(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_project_statuses_org_project" }).onDelete("cascade"),
     index("idx_project_statuses_project").on(table.projectId),
     unique("uniq_project_statuses_org_id").on(table.orgId, table.id),
     unique("uniq_project_statuses_org_project_name").on(table.orgId, table.projectId, table.name),
@@ -158,7 +156,6 @@ export const cycles = build.table(
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     projectId: integer("project_id")
-      .references(() => projects.id, { onDelete: "cascade" })
       .notNull(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
@@ -178,6 +175,7 @@ export const cycles = build.table(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_cycles_org_project" }).onDelete("cascade"),
     index("idx_cycles_project").on(table.projectId),
     index("idx_cycles_org_status").on(table.orgId, table.status),
     unique("uniq_cycles_org_id").on(table.orgId, table.id),
@@ -189,7 +187,6 @@ export const modules = build.table(
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     projectId: integer("project_id")
-      .references(() => projects.id, { onDelete: "cascade" })
       .notNull(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
@@ -210,8 +207,8 @@ export const modules = build.table(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_modules_org_project" }).onDelete("cascade"),
     index("idx_modules_project").on(table.projectId),
-    index("idx_modules_org").on(table.orgId),
     unique("uniq_modules_org_id").on(table.orgId, table.id),
   ],
 );
@@ -247,7 +244,7 @@ export const projectTemplateTickets = build.table(
       .notNull(),
     templateId: integer("template_id")
       .notNull()
-      .references(() => projectTemplates.id, { onDelete: "cascade" }),
+      ,
     title: text("title").notNull(),
     description: text("description"),
     type: text("type").default("TASK").notNull(),
@@ -259,6 +256,7 @@ export const projectTemplateTickets = build.table(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.templateId], foreignColumns: [projectTemplates.orgId, projectTemplates.id], name: "fk_project_template_tickets_org_template" }).onDelete("cascade"),
     index("idx_project_template_tickets_template").on(table.templateId),
     index("idx_project_template_tickets_org_template").on(table.orgId, table.templateId),
     unique("uniq_project_template_tickets_org_id").on(table.orgId, table.id),

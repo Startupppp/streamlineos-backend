@@ -5,11 +5,7 @@ import { feedbucketSubmissions, feedbucketWidgets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import type { CreateWidgetInput, UpdateWidgetInput } from "./feedbucket.schemas";
-
-function isDuplicateKeyError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.includes("23505");
-}
+import { isUniqueViolation } from "../../common/db/postgres-error";
 
 @Injectable()
 export class FeedbucketWidgetsService {
@@ -35,7 +31,7 @@ export class FeedbucketWidgetsService {
         .returning();
       return widget;
     } catch (error: unknown) {
-      if (isDuplicateKeyError(error)) {
+      if (isUniqueViolation(error)) {
         throw new ConflictException("Widget key conflict, please try again");
       }
       throw error;

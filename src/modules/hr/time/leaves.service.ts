@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable, Optional } from "@nestjs/common";
-import { and, count, desc, eq, gte, inArray, lt, lte, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, gte, inArray, lt, lte, sql, type SQL } from "drizzle-orm";
 import {
   leaveBalances,
   leaveRequests,
@@ -17,8 +17,10 @@ import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { leaveApprovalScope, resolveLeavesViewScope } from "./leaves-scope";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import { LeaveLedgerService } from "./leave-ledger.service";
+import { requireOrganizationMembershipId } from "./organization-membership";
+import { HR_SCAN_MAX_PAGES, HR_SCAN_PAGE } from "../hr-read-limits";
 
 const TEAM_LEAVES_CAP = 500;
 
@@ -55,10 +57,11 @@ export class LeavesService {
     private readonly employment: EmploymentFactsService,
   ) {}
 
-  balance(orgId: string, userId: string) {
+  async balance(orgId: string, userId: string) {
+    const userMembershipId = await requireOrganizationMembershipId(this.db, orgId, userId);
     return this.db.query.leaveBalances.findMany({
       where: and(
-        eq(leaveBalances.userId, userId),
+        eq(leaveBalances.userMembershipId, userMembershipId),
         eq(leaveBalances.orgId, orgId),
         eq(leaveBalances.year, new Date().getFullYear()),
       ),
@@ -71,9 +74,11 @@ export class LeavesService {
     userId: string,
     query: { cursor?: number; limit: number },
   ) {
+    const userMembershipId = await requireOrganizationMembershipId(this.db, orgId, userId);
     const rows = await this.db.query.leaveRequests.findMany({
+      limit: query.limit + 1,
       where: and(
-        eq(leaveRequests.userId, userId),
+        eq(leaveRequests.userMembershipId, userMembershipId),
         eq(leaveRequests.orgId, orgId),
         query.cursor ? lt(leaveRequests.id, query.cursor) : undefined,
       ),
@@ -82,7 +87,6 @@ export class LeavesService {
         approver: { columns: { id: true, name: true, firstName: true, lastName: true } },
       },
       orderBy: [desc(leaveRequests.id)],
-      limit: query.limit + 1,
     });
     const hasMore = rows.length > query.limit;
     const data = hasMore ? rows.slice(0, query.limit) : rows;
@@ -100,17 +104,22 @@ export class LeavesService {
   async team(u: CurrentUserContext) {
     const scope = await resolveLeavesViewScope(this.access, u);
 
-    if (scope === "none") {
+    if (scope.denied) {
       throw new ForbiddenException("You do not have permission to view team leave requests.");
     }
 
     const orgId = u.orgId;
     const userId = u.userId;
-    const isAll = scope === "all";
+    const userMembershipId = await requireOrganizationMembershipId(this.db, orgId, userId);
+    const isAll = scope.unrestricted;
 
-    const baseConditions: SQL[] = isAll
-      ? [eq(leaveRequests.orgId, orgId)]
-      : [eq(leaveRequests.orgId, orgId), eq(leaveRequests.approverId, userId)];
+    const baseConditions: SQL[] = [
+      scope.compose(
+        { tenant: leaveRequests.orgId, scope: leaveApprovalScope(userMembershipId) },
+        ({ sql: where }) => where,
+        () => sql`false`,
+      ),
+    ];
 
     const pendingConditions: SQL[] = [...baseConditions, eq(leaveRequests.status, "PENDING")];
 
@@ -143,13 +152,23 @@ export class LeavesService {
     const reportingUserIds = await this.employment.getDirectReportUserIds(orgId, userId);
 
     if (reportingUserIds.length === 0) return base;
+    const reporteeMemberships = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.status, "ACTIVE"),
+        inArray(organizationMembers.userId, reportingUserIds),
+      ))
+      .limit(reportingUserIds.length);
+    if (reporteeMemberships.length === 0) return base;
     const alreadyFetchedIds = new Set(base.map((r) => r.id));
 
     const reporteeRequests = await this.db.query.leaveRequests.findMany({
       where: and(
         eq(leaveRequests.orgId, orgId),
         eq(leaveRequests.status, "PENDING"),
-        inArray(leaveRequests.userId, reportingUserIds),
+        inArray(leaveRequests.userMembershipId, reporteeMemberships.map((member) => member.id)),
       ),
       with: TEAM_RELATIONS,
       orderBy: [desc(leaveRequests.createdAt)],
@@ -173,6 +192,7 @@ export class LeavesService {
     weekEnd.setHours(23, 59, 59, 999);
 
     const rows = await this.db.query.leaveRequests.findMany({
+      limit: 100,
       where: and(
         eq(leaveRequests.orgId, orgId),
         eq(leaveRequests.status, "APPROVED"),
@@ -186,14 +206,12 @@ export class LeavesService {
             name: true,
             firstName: true,
             lastName: true,
-            email: true,
             image: true,
           },
         },
         leaveType: { columns: { id: true, name: true } },
       },
       orderBy: [desc(leaveRequests.startDate)],
-      limit: 100,
     });
 
     const facts = await this.employment.getFactsBatch(
@@ -211,25 +229,29 @@ export class LeavesService {
 
   async analytics(u: CurrentUserContext, year: number) {
     const scope = await resolveLeavesViewScope(this.access, u);
-    if (scope === "none") throw new ForbiddenException("Forbidden");
+    if (scope.denied) throw new ForbiddenException("Forbidden");
 
+    const actorMembershipId = await requireOrganizationMembershipId(this.db, u.orgId, u.userId);
     return this.cache.cachedVersioned(
       CACHE_KEYS.leaveAnalyticsNamespace(u.orgId),
-      scope === "all" ? `${scope}:${year}` : `${scope}:${u.userId}:${year}`,
-      () => this.queryAnalytics(u.orgId, u.userId, scope, year),
+      `${scope.discriminator}:${year}`,
+      () => this.queryAnalytics(scope, actorMembershipId, year),
       CACHE_TTL.MEDIUM,
     );
   }
 
   private async queryAnalytics(
-    orgId: string,
-    actorUserId: string,
-    scope: DataScope,
+    scope: ScopedRead,
+    actorMembershipId: number,
     year: number,
   ) {
     const yearStart = `${year}-01-01`;
     const yearEnd = `${year}-12-31`;
-    const visible = leaveApprovalScope(scope, orgId, actorUserId);
+    const visible = scope.compose(
+      { tenant: leaveRequests.orgId, scope: leaveApprovalScope(actorMembershipId) },
+      ({ sql: where }) => where,
+      () => sql`false`,
+    );
 
     const [byDept, monthly, byType, deptAvgDays] = await Promise.all([
       this.db
@@ -241,12 +263,11 @@ export class LeavesService {
           rejected: sql<number>`SUM(CASE WHEN ${leaveRequests.status} = 'REJECTED' THEN 1 ELSE 0 END)`.mapWith(Number),
         })
         .from(leaveRequests)
-        .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, leaveRequests.orgId), eq(organizationMembers.userId, leaveRequests.userId)))
+        .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, leaveRequests.orgId), eq(organizationMembers.id, leaveRequests.userMembershipId)))
         .innerJoin(orgUnitMembers, eq(orgUnitMembers.membershipId, organizationMembers.id))
         .innerJoin(orgUnits, eq(orgUnits.id, orgUnitMembers.orgUnitId))
         .where(
           and(
-            eq(leaveRequests.orgId, orgId),
             visible,
             gte(leaveRequests.startDate, yearStart),
             lte(leaveRequests.startDate, yearEnd),
@@ -264,7 +285,6 @@ export class LeavesService {
         .from(leaveRequests)
         .where(
           and(
-            eq(leaveRequests.orgId, orgId),
             visible,
             eq(leaveRequests.status, "APPROVED"),
             gte(leaveRequests.startDate, yearStart),
@@ -286,7 +306,6 @@ export class LeavesService {
         .innerJoin(leaveTypes, eq(leaveTypes.id, leaveRequests.leaveTypeId))
         .where(
           and(
-            eq(leaveRequests.orgId, orgId),
             visible,
             eq(leaveRequests.status, "APPROVED"),
             gte(leaveRequests.startDate, yearStart),
@@ -303,12 +322,11 @@ export class LeavesService {
           ), 1)`.mapWith(Number),
         })
         .from(leaveRequests)
-        .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, leaveRequests.orgId), eq(organizationMembers.userId, leaveRequests.userId)))
+        .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, leaveRequests.orgId), eq(organizationMembers.id, leaveRequests.userMembershipId)))
         .innerJoin(orgUnitMembers, eq(orgUnitMembers.membershipId, organizationMembers.id))
         .innerJoin(orgUnits, eq(orgUnits.id, orgUnitMembers.orgUnitId))
         .where(
           and(
-            eq(leaveRequests.orgId, orgId),
             visible,
             eq(leaveRequests.status, "APPROVED"),
             gte(leaveRequests.startDate, yearStart),
@@ -331,12 +349,13 @@ export class LeavesService {
     };
   }
 
-  async calendar(orgId: string, month: number, year: number) {
-    const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
-    const lastDay = new Date(year, month, 0).getDate();
-    const monthEnd = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
-
-    const rows = await this.db
+  /**
+   * One capped keyset page of a calendar month. The month is read whole — a day missing
+   * a colleague's leave is wrong, not short — so `calendar` walks these pages on the
+   * primary key rather than truncating at one oversized read.
+   */
+  private calendarPage(orgId: string, monthStart: string, monthEnd: string, afterId: number) {
+    return this.db
       .select({
         id: leaveRequests.id,
         userId: leaveRequests.userId,
@@ -356,9 +375,26 @@ export class LeavesService {
           eq(leaveRequests.orgId, orgId),
           lte(leaveRequests.startDate, monthEnd),
           gte(leaveRequests.endDate, monthStart),
+          gt(leaveRequests.id, afterId),
         ),
       )
-      .limit(500);
+      .orderBy(asc(leaveRequests.id))
+      .limit(HR_SCAN_PAGE);
+  }
+
+  async calendar(orgId: string, month: number, year: number) {
+    const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
+    const lastDay = new Date(year, month, 0).getDate();
+    const monthEnd = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+
+    const rows: Awaited<ReturnType<LeavesService["calendarPage"]>> = [];
+    let afterId = 0;
+    for (let page = 0; page < HR_SCAN_MAX_PAGES; page++) {
+      const chunk = await this.calendarPage(orgId, monthStart, monthEnd, afterId);
+      rows.push(...chunk);
+      if (chunk.length < HR_SCAN_PAGE) break;
+      afterId = chunk[chunk.length - 1].id;
+    }
 
     const leaveTypeIds = [
       ...new Set(rows.map((r) => r.leaveTypeId).filter((id): id is number => id !== null)),
@@ -368,7 +404,8 @@ export class LeavesService {
       const types = await this.db
         .select({ id: leaveTypes.id, name: leaveTypes.name })
         .from(leaveTypes)
-        .where(inArray(leaveTypes.id, leaveTypeIds));
+        .where(inArray(leaveTypes.id, leaveTypeIds))
+        .limit(leaveTypeIds.length);
       leaveTypeMap = new Map(types.map((t) => [t.id, t.name]));
     }
 

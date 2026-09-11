@@ -1,3 +1,4 @@
+import { ZodError } from "zod";
 import { parseCliOptions } from "./partition-options";
 
 const now = new Date("2026-08-11T00:00:00Z");
@@ -73,7 +74,7 @@ describe("HRMS partition CLI options", () => {
         now,
         "test",
       ),
-    ).toThrow();
+    ).toThrow(ZodError);
   });
 
   it("rejects production apply without its separate acknowledgement", () => {
@@ -127,7 +128,7 @@ describe("HRMS partition CLI options", () => {
         now,
         "test",
       ),
-    ).toThrow();
+    ).toThrow(ZodError);
   });
 
   it("rejects tables outside the fixed registry", () => {
@@ -141,6 +142,6 @@ describe("HRMS partition CLI options", () => {
         now,
         "test",
       ),
-    ).toThrow();
+    ).toThrow(ZodError);
   });
 });

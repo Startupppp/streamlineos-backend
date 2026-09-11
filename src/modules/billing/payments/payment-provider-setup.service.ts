@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { paymentProviderCredentials, paymentProviders } from "../../../db/schema";
@@ -35,9 +35,12 @@ export class PaymentProviderSetupService {
     return provider;
   }
 
-  private async credentialsFor(providerId: number) {
+  private async credentialsFor(orgId: string, providerId: number) {
     return this.db.query.paymentProviderCredentials.findMany({
-      where: eq(paymentProviderCredentials.providerId, providerId),
+      where: and(
+        eq(paymentProviderCredentials.orgId, orgId),
+        eq(paymentProviderCredentials.providerId, providerId),
+      ),
     });
   }
 
@@ -56,17 +59,34 @@ export class PaymentProviderSetupService {
       where: eq(paymentProviders.orgId, orgId),
     });
 
-    return Promise.all(
-      providers.map(async (p) => {
-        const creds = await this.credentialsFor(p.id);
-        return { ...p, credentials: creds.map((c) => this.toPublicCredential(c)) };
-      }),
-    );
+    if (providers.length === 0) return [];
+
+    // One read for every provider's credentials, not one per provider.
+    const creds = await this.db.query.paymentProviderCredentials.findMany({
+      where: and(
+        eq(paymentProviderCredentials.orgId, orgId),
+        inArray(
+          paymentProviderCredentials.providerId,
+          providers.map((p) => p.id),
+        ),
+      ),
+    });
+    const byProvider = new Map<number, typeof creds>();
+    for (const cred of creds) {
+      const bucket = byProvider.get(cred.providerId);
+      if (bucket) bucket.push(cred);
+      else byProvider.set(cred.providerId, [cred]);
+    }
+
+    return providers.map((p) => ({
+      ...p,
+      credentials: (byProvider.get(p.id) ?? []).map((c) => this.toPublicCredential(c)),
+    }));
   }
 
   async getProvider(orgId: string, providerKey: string) {
     const provider = await this.findProvider(orgId, providerKey);
-    const creds = await this.credentialsFor(provider.id);
+    const creds = await this.credentialsFor(orgId, provider.id);
     return { ...provider, credentials: creds.map((c) => this.toPublicCredential(c)) };
   }
 
@@ -114,7 +134,7 @@ export class PaymentProviderSetupService {
     const [updated] = await this.db
       .update(paymentProviders)
       .set(patch)
-      .where(eq(paymentProviders.id, provider.id))
+      .where(and(eq(paymentProviders.orgId, orgId), eq(paymentProviders.id, provider.id)))
       .returning();
 
     await this.audit.log({
@@ -137,7 +157,7 @@ export class PaymentProviderSetupService {
     const [updated] = await this.db
       .update(paymentProviders)
       .set({ status: "disabled" })
-      .where(eq(paymentProviders.id, provider.id))
+      .where(and(eq(paymentProviders.orgId, orgId), eq(paymentProviders.id, provider.id)))
       .returning();
 
     await this.audit.log({
@@ -166,6 +186,7 @@ export class PaymentProviderSetupService {
 
     const existing = await this.db.query.paymentProviderCredentials.findFirst({
       where: and(
+        eq(paymentProviderCredentials.orgId, orgId),
         eq(paymentProviderCredentials.providerId, provider.id),
         eq(paymentProviderCredentials.environment, input.environment),
       ),
@@ -186,7 +207,12 @@ export class PaymentProviderSetupService {
       ? await this.db
           .update(paymentProviderCredentials)
           .set(values)
-          .where(eq(paymentProviderCredentials.id, existing.id))
+          .where(
+            and(
+              eq(paymentProviderCredentials.id, existing.id),
+              eq(paymentProviderCredentials.orgId, orgId),
+            ),
+          )
           .returning()
       : await this.db
           .insert(paymentProviderCredentials)
@@ -200,7 +226,7 @@ export class PaymentProviderSetupService {
           : "needs_webhook"
         : provider.status;
     if (nextStatus !== provider.status) {
-      await this.db.update(paymentProviders).set({ status: nextStatus }).where(eq(paymentProviders.id, provider.id));
+      await this.db.update(paymentProviders).set({ status: nextStatus }).where(and(eq(paymentProviders.orgId, orgId), eq(paymentProviders.id, provider.id)));
     }
 
     await this.audit.log({
@@ -224,13 +250,22 @@ export class PaymentProviderSetupService {
     const provider = await this.findProvider(orgId, providerKey);
     const existing = await this.db.query.paymentProviderCredentials.findFirst({
       where: and(
+        eq(paymentProviderCredentials.orgId, orgId),
         eq(paymentProviderCredentials.providerId, provider.id),
         eq(paymentProviderCredentials.environment, environment),
       ),
+      columns: { id: true },
     });
     if (!existing) throw new NotFoundException(`No ${environment} credentials configured`);
 
-    await this.db.delete(paymentProviderCredentials).where(eq(paymentProviderCredentials.id, existing.id));
+    await this.db
+      .delete(paymentProviderCredentials)
+      .where(
+        and(
+          eq(paymentProviderCredentials.orgId, orgId),
+          eq(paymentProviderCredentials.id, existing.id),
+        ),
+      );
 
     await this.audit.log({
       orgId,

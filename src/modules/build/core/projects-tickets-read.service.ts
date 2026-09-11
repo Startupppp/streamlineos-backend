@@ -3,11 +3,11 @@ import { actingMembershipId } from "../../../common/auth/principal";
 import {
   and,
   asc,
-  count,
   desc,
   eq,
   gte,
   inArray,
+  isNotNull,
   isNull,
   lte,
   or,
@@ -20,18 +20,17 @@ import {
   projects,
   projectTeamAssignments,
   projectTeamMembers,
-  ticketAssignees,
   tickets,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetAfterValue } from "../../../common/pagination/keyset";
-import { totalOverWindow } from "../../../common/pagination/window-count";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { resolveTicketsScope } from "./tickets-scope";
+import { resolveTicketsScope, ticketScope } from "./tickets-scope";
 import type { TicketsListQuery } from "./dto/projects.schemas";
+import { queryTickets } from "./projects-tickets-read.query";
 
 const TRIGRAM_MIN_TERM_LENGTH = 3;
 
@@ -45,44 +44,67 @@ const TICKET_ORDERBY_COLUMNS = {
   rank: tickets.rank,
 } as const;
 
-const USER_COLS = {
-  id: true,
-  name: true,
-  firstName: true,
-  lastName: true,
-  email: true,
-  image: true,
-} as const;
+type TicketOrderBy = keyof typeof TICKET_ORDERBY_COLUMNS;
 
-const TICKET_LIST_COLUMNS = {
-  id: true,
-  orgId: true,
-  title: true,
-  type: true,
-  status: true,
-  priority: true,
-  projectId: true,
-  ticketNumber: true,
-  sprintId: true,
-  epicId: true,
-  assigneeId: true,
-  reporterId: true,
-  points: true,
-  storyPoints: true,
-  link: true,
-  rank: true,
-  parentTicketId: true,
-  originalEstimate: true,
-  timeSpent: true,
-  startDate: true,
-  dueDate: true,
-  moduleId: true,
-  cycleId: true,
-  sequenceId: true,
-  estimate: true,
-  createdAt: true,
-  updatedAt: true,
-} as const;
+interface TicketCursorSort {
+  primary: string | null;
+  createdAt: string;
+}
+
+function ticketCursorBoundary(
+  orderBy: Exclude<TicketOrderBy, "rank">,
+  direction: "asc" | "desc",
+  position: NonNullable<ReturnType<typeof decodeCursor>>,
+): SQL<unknown> | undefined {
+  const id = Number(position.id);
+  if (!Number.isSafeInteger(id) || id <= 0) return undefined;
+
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(String(position.sortValue));
+  } catch {
+    return undefined;
+  }
+  if (
+    typeof decoded !== "object" || decoded === null ||
+    !("primary" in decoded) || !("createdAt" in decoded) ||
+    !(decoded.primary === null || typeof decoded.primary === "string") ||
+    typeof decoded.createdAt !== "string"
+  ) {
+    return undefined;
+  }
+
+  if (Number.isNaN(Date.parse(decoded.createdAt))) return undefined;
+  const primaryColumn = TICKET_ORDERBY_COLUMNS[orderBy];
+  const primaryValue = decoded.primary;
+  const timestampPrimary = orderBy === "created" || orderBy === "updated";
+  if (timestampPrimary && primaryValue !== null && Number.isNaN(Date.parse(primaryValue))) return undefined;
+
+  const createdParam = sql`${decoded.createdAt}::timestamptz`;
+  const idParam = sql.param(id, tickets.id);
+  const tail = sql`(
+    ${tickets.createdAt} < ${createdParam}
+    OR (${tickets.createdAt} = ${createdParam} AND ${tickets.id} > ${idParam})
+  )`;
+
+  if (primaryValue === null) {
+    return direction === "asc"
+      ? and(isNull(primaryColumn), tail)
+      : or(and(isNull(primaryColumn), tail), isNotNull(primaryColumn));
+  }
+
+  const primaryParam = timestampPrimary ? sql`${primaryValue}::timestamptz` : sql.param(primaryValue, primaryColumn);
+  return direction === "asc"
+    ? sql`(
+        ${primaryColumn} > ${primaryParam}
+        OR ${primaryColumn} IS NULL
+        OR (${primaryColumn} = ${primaryParam} AND ${tail})
+      )`
+    : sql`(
+        ${primaryColumn} < ${primaryParam}
+        OR (${primaryColumn} = ${primaryParam} AND ${tail})
+      )`;
+}
 
 @Injectable()
 export class ProjectsTicketsReadService {
@@ -90,43 +112,6 @@ export class ProjectsTicketsReadService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
   ) {}
-
-  private queryTickets(
-    where: SQL<unknown> | undefined,
-    orderBy: SQL<unknown>[],
-    limit: number,
-    offset?: number,
-  ) {
-    return this.db.query.tickets.findMany({
-      where,
-      columns: TICKET_LIST_COLUMNS,
-      with: {
-        assignee: { columns: USER_COLS },
-        assignees: {
-          with: { user: { columns: USER_COLS } },
-        },
-        labels: {
-          with: {
-            label: {
-              columns: { id: true, name: true, color: true },
-            },
-          },
-        },
-        cycle: {
-          columns: {
-            id: true,
-            name: true,
-            status: true,
-            startDate: true,
-            endDate: true,
-          },
-        },
-      },
-      orderBy,
-      limit,
-      offset,
-    });
-  }
 
   async checkProjectAccess(
     orgId: string,
@@ -138,15 +123,12 @@ export class ProjectsTicketsReadService {
       this.access.resolveUserPermissions(orgId, userId),
       this.db.query.projects.findFirst({
         where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-        columns: { managerId: true, managerMembershipId: true },
+        columns: { managerMembershipId: true },
       }),
     ]);
     if (!project) return { hasAccess: false, role: null };
     if (perms.has("build:manage")) return { hasAccess: true, role: "OWNER" };
-    if (
-      (membershipId !== null && project.managerMembershipId === membershipId) ||
-      project.managerId === userId
-    )
+    if (membershipId !== null && project.managerMembershipId === membershipId)
       return { hasAccess: true, role: "MANAGER" };
     const membership = await this.db
       .select({ id: projectMembers.id, role: projectMembers.role })
@@ -154,6 +136,7 @@ export class ProjectsTicketsReadService {
       .innerJoin(
         organizationMembers,
         and(
+          eq(organizationMembers.id, projectMembers.membershipId),
           eq(organizationMembers.userId, userId),
           eq(organizationMembers.orgId, orgId),
           eq(organizationMembers.status, "ACTIVE"),
@@ -162,7 +145,7 @@ export class ProjectsTicketsReadService {
       .where(
         and(
           eq(projectMembers.projectId, projectId),
-          eq(projectMembers.userId, userId),
+          eq(projectMembers.orgId, orgId),
         ),
       )
       .limit(1);
@@ -174,13 +157,24 @@ export class ProjectsTicketsReadService {
       .from(projectTeamAssignments)
       .innerJoin(
         projectTeamMembers,
-        eq(projectTeamMembers.teamId, projectTeamAssignments.teamId),
+        and(
+          eq(projectTeamMembers.teamId, projectTeamAssignments.teamId),
+          eq(projectTeamMembers.orgId, projectTeamAssignments.orgId),
+        ),
+      )
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.id, projectTeamMembers.membershipId),
+          eq(organizationMembers.userId, userId),
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.status, "ACTIVE"),
+        ),
       )
       .where(
         and(
           eq(projectTeamAssignments.projectId, projectId),
           eq(projectTeamAssignments.orgId, orgId),
-          eq(projectTeamMembers.userId, userId),
         ),
       )
       .limit(1);
@@ -213,10 +207,9 @@ export class ProjectsTicketsReadService {
     );
     if (!hasAccess) throw new NotFoundException("Not found");
 
-    const scope = await resolveTicketsScope(this.access, u);
+    const read = await resolveTicketsScope(this.access, u);
 
     const {
-      page,
       limit,
       search,
       status,
@@ -234,19 +227,12 @@ export class ProjectsTicketsReadService {
       orderBy,
       orderDir,
     } = query;
-    const offset = (page - 1) * limit;
 
-    if (scope === "none")
-      return { data: [], total: 0, page, limit, totalPages: 0 };
-
-    const scopeClause =
-      scope !== "all"
-        ? or(
-            eq(tickets.assigneeId, u.userId),
-            eq(tickets.reporterId, u.userId),
-            sql`EXISTS (SELECT 1 FROM ${ticketAssignees} ta WHERE ta.org_id = ${u.orgId} AND ta.user_id = ${u.userId} AND ta.ticket_id = ${tickets.id})`,
-          )
-        : undefined;
+    if (read.denied)
+      return {
+        data: [],
+        pagination: { limit, nextCursor: null, hasMore: false },
+      };
 
     const filterConditions: SQL<unknown>[] = [];
 
@@ -288,14 +274,14 @@ export class ProjectsTicketsReadService {
       const realIds = resolved.filter((id) => id !== "__unassigned__");
       if (unassigned && realIds.length > 0) {
         const assigneeCondition = or(
-          isNull(tickets.assigneeId),
-          inArray(tickets.assigneeId, realIds),
+          isNull(tickets.assigneeMembershipId),
+          sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id IN (${sql.join(realIds.map((id) => sql`${id}`), sql`, `)}))`,
         );
         if (assigneeCondition) filterConditions.push(assigneeCondition);
       } else if (unassigned) {
-        filterConditions.push(isNull(tickets.assigneeId));
+        filterConditions.push(isNull(tickets.assigneeMembershipId));
       } else {
-        filterConditions.push(inArray(tickets.assigneeId, realIds));
+        filterConditions.push(sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id IN (${sql.join(realIds.map((id) => sql`${id}`), sql`, `)}))`);
       }
     }
 
@@ -324,12 +310,14 @@ export class ProjectsTicketsReadService {
     if (dueDateFrom) filterConditions.push(gte(tickets.dueDate, dueDateFrom));
     if (dueDateTo) filterConditions.push(lte(tickets.dueDate, dueDateTo));
 
-    const where = and(
-      eq(tickets.orgId, u.orgId),
-      eq(tickets.projectId, projectId),
-      isNull(tickets.deletedAt),
-      ...(scopeClause ? [scopeClause] : []),
-      ...filterConditions,
+    const where = read.compose(
+      {
+        tenant: tickets.orgId,
+        scope: ticketScope(read.orgId, read.actorId),
+        and: [eq(tickets.projectId, projectId), isNull(tickets.deletedAt), ...filterConditions],
+      },
+      ({ sql: where }) => where,
+      () => sql`false`,
     );
 
     const col = TICKET_ORDERBY_COLUMNS[orderBy];
@@ -339,42 +327,19 @@ export class ProjectsTicketsReadService {
 
     const sortExpr: SQL<unknown>[] =
       orderBy === "rank"
-        ? [asc(tickets.rank), desc(tickets.createdAt), asc(tickets.id)]
+        ? [asc(tickets.rank), asc(tickets.id)]
         : dir === "asc"
           ? [asc(col), desc(tickets.createdAt), asc(tickets.id)]
           : [desc(col), desc(tickets.createdAt), asc(tickets.id)];
 
-    if (query.paging === "cursor") {
-      return this.listTicketsByCursor(where, limit, query.cursor);
-    }
-
-    if (scope !== "all") {
-      const { ids, total } = await this.pageScopedTicketIds(
-        where,
-        sortExpr,
-        limit,
-        offset,
-      );
-      const data =
-        ids.length > 0
-          ? await this.queryTickets(inArray(tickets.id, ids), sortExpr, limit)
-          : [];
-      return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
-    }
-
-    const [dataResult, countResult] = await Promise.all([
-      this.queryTickets(where, sortExpr, limit, offset),
-      this.db.select({ total: count() }).from(tickets).where(where),
-    ]);
-
-    const total = Number(countResult[0]?.total ?? 0);
-    return {
-      data: dataResult,
-      total,
-      page,
+    return this.listTicketsByCursor(
+      where,
       limit,
-      totalPages: Math.ceil(total / limit),
-    };
+      query.cursor,
+      orderBy,
+      dir,
+      sortExpr,
+    );
   }
 
   /**
@@ -385,80 +350,84 @@ export class ProjectsTicketsReadService {
     where: SQL<unknown> | undefined,
     limit: number,
     cursor: string | undefined,
+    orderBy: TicketOrderBy,
+    direction: "asc" | "desc",
+    sortExpr: SQL<unknown>[],
   ) {
     const position = decodeCursor(cursor);
-    const bounded = position
-      ? and(where, keysetAfterValue(tickets.rank, tickets.id, position))
-      : where;
+    const boundary = position
+      ? orderBy === "rank"
+        ? keysetAfterValue(tickets.rank, tickets.id, position)
+        : ticketCursorBoundary(orderBy, direction, position)
+      : undefined;
+    const bounded = and(where, boundary);
+    const primaryColumn = TICKET_ORDERBY_COLUMNS[orderBy];
 
     const rows = await this.db
-      .select({ id: tickets.id, rank: tickets.rank, total: totalOverWindow })
+      .select({
+        id: tickets.id,
+        cursorPrimaryText: sql<string | null>`${primaryColumn}::text`,
+        rank: tickets.rank,
+        cursorCreatedAt: sql<string>`${tickets.createdAt}::text`,
+      })
       .from(tickets)
       .where(bounded)
-      .orderBy(asc(tickets.rank), asc(tickets.id))
+      .orderBy(...sortExpr)
       .limit(limit + 1);
 
     const page = buildCursorPage(rows, limit, (row) => ({
-      sortValue: row.rank ?? "",
+      sortValue:
+        orderBy === "rank"
+          ? row.rank ?? ""
+          : JSON.stringify({
+              primary: row.cursorPrimaryText,
+              createdAt: row.cursorCreatedAt,
+            } satisfies TicketCursorSort),
       id: String(row.id),
     }));
 
     const ids = page.data.map((row) => row.id);
     const data =
       ids.length > 0
-        ? await this.queryTickets(
+        ? await queryTickets(
+            this.db,
             inArray(tickets.id, ids),
-            [asc(tickets.rank), asc(tickets.id)],
+            sortExpr,
             limit,
           )
         : [];
 
-    return {
-      data,
-      total: position ? undefined : Number(page.data[0]?.total ?? 0),
-      limit,
-      nextCursor: page.pagination.nextCursor,
-      hasMore: page.pagination.hasMore,
-    };
+    return { data, pagination: page.pagination };
   }
 
-  private async pageScopedTicketIds(
-    where: SQL<unknown> | undefined,
-    sortExpr: SQL<unknown>[],
-    limit: number,
-    offset: number,
-  ): Promise<{ ids: number[]; total: number }> {
-    const rows = await this.db
-      .select({ id: tickets.id, total: sql<string>`count(*) OVER ()` })
-      .from(tickets)
-      .where(where)
-      .orderBy(...sortExpr)
-      .limit(limit)
-      .offset(offset);
+  async getColumnCounts(
+    u: CurrentUserContext,
+    projectId: number,
+  ): Promise<Record<string, number>> {
+    const { hasAccess } = await this.checkProjectAccess(
+      u.orgId,
+      u.userId,
+      projectId,
+      actingMembershipId(u.principal),
+    );
+    if (!hasAccess) throw new NotFoundException("Not found");
 
-    const first = rows[0];
-    if (first) return { ids: rows.map((row) => row.id), total: Number(first.total) };
+    const read = await resolveTicketsScope(this.access, u);
+    if (read.denied) return {};
 
-    if (offset === 0) return { ids: [], total: 0 };
-    const countResult = await this.db
-      .select({ total: count() })
-      .from(tickets)
-      .where(where);
-    return { ids: [], total: Number(countResult[0]?.total ?? 0) };
-  }
-
-  async getColumnCounts(orgId: string, projectId: number): Promise<Record<string, number>> {
-    const rows = await this.db
-      .select({ status: tickets.status, cnt: sql<string>`count(*)` })
-      .from(tickets)
-      .where(
-        and(
-          eq(tickets.orgId, orgId),
-          eq(tickets.projectId, projectId),
-          isNull(tickets.deletedAt),
-        ),
-      )
-      .groupBy(tickets.status);
+    const rows = await read.read(
+      {
+        tenant: tickets.orgId,
+        scope: ticketScope(read.orgId, read.actorId),
+        and: [eq(tickets.projectId, projectId), isNull(tickets.deletedAt)],
+      },
+      ({ sql: where }) => this.db
+        .select({ status: tickets.status, cnt: sql<string>`count(*)` })
+        .from(tickets)
+        .where(where)
+        .groupBy(tickets.status),
+      () => [],
+    );
     const result: Record<string, number> = {};
     for (const row of rows) {
       if (row.status) result[row.status] = Number(row.cnt);

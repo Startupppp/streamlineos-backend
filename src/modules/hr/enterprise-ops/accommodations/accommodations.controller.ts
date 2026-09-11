@@ -37,9 +37,11 @@ import {
 import { Idempotent } from "../../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema, NoContentResponse } from "../../../../common/openapi/zod-operation-contracts"
+import { listAccommodationsResponseSchema, getAccommodationResponseSchema, createAccommodationResponseSchema, updateAccommodationResponseSchema, approveAccommodationResponseSchema, listAccommodationTasksResponseSchema, createAccommodationTaskResponseSchema, updateAccommodationTaskResponseSchema } from "../dto/enterprise-ops-response.schemas"
 
-const accommodationIdParams = z.object({ accommodationId: z.string().min(1) }).strict();
-const accommodationIdtaskIdParams = z.object({ accommodationId: z.string().min(1), taskId: z.string().min(1) }).strict();
+const accommodationIdParams = z.object({ accommodationId: z.string().uuid() }).strict();
+const accommodationIdtaskIdParams = z.object({ accommodationId: z.string().uuid(), taskId: z.string().uuid() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/enterprise/ops/accommodations")
@@ -55,6 +57,7 @@ export class AccommodationsController {
     return perms.has("hr:sensitive:view");
   }
 
+  @ResponseSchema(listAccommodationsResponseSchema)
   @Get()
   @RequirePermission("hr:accommodations:view")
   @Validate({ query: listAccommodationsSchema })
@@ -66,6 +69,7 @@ export class AccommodationsController {
     return this.svc.list(user.orgId, query, sensitive);
   }
 
+  @ResponseSchema(getAccommodationResponseSchema)
   @Get(":accommodationId")
   @RequirePermission("hr:accommodations:view")
   @Validate({ params: accommodationIdParams })
@@ -77,6 +81,7 @@ export class AccommodationsController {
     return this.svc.getById(user.orgId, accommodationId, sensitive);
   }
 
+  @ResponseSchema(createAccommodationResponseSchema)
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:accommodations:manage")
@@ -89,6 +94,7 @@ export class AccommodationsController {
     return this.svc.create(user.orgId, user.userId, body, req.ip, req.headers["user-agent"]);
   }
 
+  @ResponseSchema(updateAccommodationResponseSchema)
   @Patch(":accommodationId")
   @RequirePermission("hr:accommodations:manage")
   @Validate({ params: accommodationIdParams, body: updateAccommodationSchema })
@@ -101,6 +107,7 @@ export class AccommodationsController {
     return this.svc.update(user.orgId, accommodationId, user.userId, body, req.ip, req.headers["user-agent"]);
   }
 
+  @NoContentResponse()
   @Delete(":accommodationId")
   @HttpCode(204)
   @RequirePermission("hr:accommodations:manage")
@@ -113,6 +120,7 @@ export class AccommodationsController {
     await this.svc.softDelete(user.orgId, accommodationId, user.userId, req.ip, req.headers["user-agent"]);
   }
 
+  @ResponseSchema(approveAccommodationResponseSchema)
   @Post(":accommodationId/approve")
   @Idempotent("hr.accommodation.approve")
   @RequirePermission("hr:accommodations:manage")
@@ -126,6 +134,7 @@ export class AccommodationsController {
     return this.svc.approve(user.orgId, accommodationId, user.userId, body, req.ip, req.headers["user-agent"]);
   }
 
+  @ResponseSchema(listAccommodationTasksResponseSchema)
   @Get(":accommodationId/tasks")
   @RequirePermission("hr:accommodations:view")
   @Validate({ params: accommodationIdParams })
@@ -136,6 +145,7 @@ export class AccommodationsController {
     return this.svc.listTasks(user.orgId, accommodationId);
   }
 
+  @ResponseSchema(createAccommodationTaskResponseSchema)
   @Post(":accommodationId/tasks")
   @HttpCode(201)
   @RequirePermission("hr:accommodations:manage")
@@ -148,6 +158,7 @@ export class AccommodationsController {
     return this.svc.createTask(user.orgId, accommodationId, body);
   }
 
+  @ResponseSchema(updateAccommodationTaskResponseSchema)
   @Patch(":accommodationId/tasks/:taskId")
   @RequirePermission("hr:accommodations:manage")
   @Validate({ params: accommodationIdtaskIdParams, body: updateAccommodationTaskSchema })
@@ -160,6 +171,7 @@ export class AccommodationsController {
     return this.svc.updateTask(user.orgId, accommodationId, taskId, body);
   }
 
+  @NoContentResponse()
   @Delete(":accommodationId/tasks/:taskId")
   @HttpCode(204)
   @RequirePermission("hr:accommodations:manage")

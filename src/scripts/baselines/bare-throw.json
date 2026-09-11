@@ -1,0 +1,6 @@
+{
+  "minReasonLength": 40,
+  "note": "Every entry here is a refusal test on a risk path that accepts ANY throw, so a crash in a mis-shaped double satisfies it as well as the refusal does. Registration is not absolution: it records who owns the gap. The ratchet may only go DOWN. Do not add an entry to make a red gate green — name the exception the test actually means. Sites off a risk path are counted as INFO and never registered: banking them would record noise as debt. `.not.toThrow()` and a `.parse()` subject are excluded by a stated rule, not by this file.",
+  "ratchet": 1,
+  "allowed": []
+}

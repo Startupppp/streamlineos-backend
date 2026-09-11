@@ -79,7 +79,7 @@ export const createTravelRequestSchema = z
           date: z.string().min(1).regex(DATE_RE, "Invalid itinerary date"),
           activity: z.string().trim().min(1).max(500),
           location: z.string().trim().min(1).max(255),
-        }),
+        }).strict(),
       )
       .default([]),
   })
@@ -95,7 +95,7 @@ export const createTravelRequestSchema = z
 
 export const rejectTravelRequestSchema = z.object({
   reason: z.string().trim().min(1).max(1000),
-});
+}).strict();
 
 export type CreateTravelRequestInput = z.infer<typeof createTravelRequestSchema>;
 export type RejectTravelRequestInput = z.infer<typeof rejectTravelRequestSchema>;

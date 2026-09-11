@@ -29,6 +29,7 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { DataScope } from "../../access/access.types";
 import { updateEmployeeSchema } from "./dto/hr-directory.schemas";
 import { EmployeeMutationsService } from "./employee-mutations.service";
+import { ScopedRead } from "../../access/scoped-read";
 
 function ctx(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
   return {
@@ -88,7 +89,7 @@ function buildService(scope: DataScope, targetMember: object | null = { userId: 
   };
   const service = new EmployeeMutationsService(
     db as never,
-    { invalidate: jest.fn() } as never,
+    { invalidate: jest.fn(), invalidateNamespace: jest.fn() } as never,
     { logCritical: jest.fn() } as never,
     { emit: jest.fn().mockResolvedValue(undefined) } as never,
     access as never,
@@ -208,7 +209,9 @@ describe("EmployeeMutationsService base response boundary", () => {
     });
     const skillsQuery = {
       from: jest.fn().mockReturnValue({
-        where: jest.fn().mockResolvedValue([]),
+        where: jest.fn().mockReturnValue({
+          limit: jest.fn().mockResolvedValue([]),
+        }),
       }),
     };
     const employmentQuery = {
@@ -229,7 +232,7 @@ describe("EmployeeMutationsService base response boundary", () => {
     };
     const service = new EmployeeMutationsService(
       db as never,
-      { invalidate: jest.fn() } as never,
+      { invalidate: jest.fn(), invalidateNamespace: jest.fn() } as never,
       { logCritical: jest.fn() } as never,
       { emit: jest.fn() } as never,
       {} as never,
@@ -237,10 +240,8 @@ describe("EmployeeMutationsService base response boundary", () => {
     );
 
     const response = await service.getEmployeeDetail(
-      "org-1",
-      "actor-1",
+      ScopedRead.of("org-1", "actor-1", "all"),
       "target-1",
-      "all",
     );
 
     expect(response).toMatchObject({ id: "target-1", email: "target@example.test" });

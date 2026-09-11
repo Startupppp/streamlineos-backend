@@ -1,8 +1,11 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger, Optional } from "@nestjs/common";
 import { and, desc, eq, inArray, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
 import { kbArticles, kbArticleChunks, kbArticleRestrictions, kbPages } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { CacheService } from "../../../common/cache/cache.service";
+import { resolveArticleKeywordSql } from "../core/kb-article-keyword-search";
+import { queryVectorChunkIds } from "./kb-vector-candidate-query";
 
 const RRF_CONSTANT = 60;
 const SNIPPET_LENGTH = 160;
@@ -11,7 +14,10 @@ const SNIPPET_LENGTH = 160;
 export class KbCandidateService {
   private readonly logger = new Logger(KbCandidateService.name);
 
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    @Optional() @Inject(CacheService) private readonly cache: CacheService | null = null,
+  ) {}
 
   async hasEmbeddedChunks(orgId: string): Promise<boolean> {
     const [row] = await this.db
@@ -22,18 +28,9 @@ export class KbCandidateService {
     return row !== undefined;
   }
 
-  async vectorChunkIds(vector: string, cap: number): Promise<number[]> {
-    if (cap === 0) return [];
-    await this.db.execute(sql`SET LOCAL hnsw.iterative_scan = relaxed_order`);
-    const annRows = await this.db.execute(
-      sql`SELECT id FROM public.kb_article_chunks ORDER BY embedding <=> ${vector}::vector LIMIT ${cap}`,
-    );
-    const annIds = annRows.map((r) => Number(r["id"]));
-    if (annIds.length > 0) return annIds;
-    const fenceRows = await this.db.execute(
-      sql`SELECT app.search_kb_chunk_ids(${vector}::vector, ${cap}) AS id`,
-    );
-    return fenceRows.map((r) => Number(r["id"]));
+  // Chosen before the query runs: an HNSW pass returns exactly `cap` rows even when it loses recall.
+  async vectorChunkIds(orgId: string, vector: string, cap: number): Promise<number[]> {
+    return queryVectorChunkIds(this.db, this.cache, orgId, vector, cap);
   }
 
   async articleKeywordCandidates(
@@ -42,6 +39,7 @@ export class KbCandidateService {
     query: string,
     pool: number,
     principal: { userId: string; membershipId: number | null; roleSlugs: string[] },
+    ownerScopeFilter: SQL | null,
     spaceId?: number,
   ): Promise<number[]> {
     const tsquery = sql`websearch_to_tsquery('english', ${query})`;
@@ -53,6 +51,7 @@ export class KbCandidateService {
       keywordCond,
       this.articleRestrictionFilter(orgId, principal),
     ];
+    if (ownerScopeFilter) conditions.push(ownerScopeFilter);
     if (spaceId) conditions.push(eq(kbArticles.spaceId, spaceId));
 
     const rows = await this.db
@@ -70,21 +69,25 @@ export class KbCandidateService {
     vector: string,
     pool: number,
     principal: { userId: string; membershipId: number | null; roleSlugs: string[] },
+    ownerScopeFilter: SQL | null,
     spaceId?: number,
   ): Promise<number[]> {
     try {
       const cap = pool * 4;
-      const chunkIds = await this.vectorChunkIds(vector, cap);
+      const chunkIds = await this.vectorChunkIds(orgId, vector, cap);
       if (chunkIds.length === 0) return [];
 
       const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
       const conditions: SQL[] = [
+        eq(kbArticleChunks.orgId, orgId),
+        eq(kbArticles.orgId, orgId),
         inArray(kbArticleChunks.id, chunkIds),
         isNotNull(kbArticleChunks.articleId),
         inArray(kbArticles.spaceId, spaceIds),
         eq(kbArticles.status, "published"),
         this.articleRestrictionFilter(orgId, principal),
       ];
+      if (ownerScopeFilter) conditions.push(ownerScopeFilter);
       if (spaceId) conditions.push(eq(kbArticles.spaceId, spaceId));
 
       const rows = await this.db
@@ -149,7 +152,7 @@ export class KbCandidateService {
   ): Promise<number[]> {
     try {
       const cap = pool * 4;
-      const chunkIds = await this.vectorChunkIds(vector, cap);
+      const chunkIds = await this.vectorChunkIds(orgId, vector, cap);
       if (chunkIds.length === 0) return [];
 
       const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
@@ -162,6 +165,8 @@ export class KbCandidateService {
         ))
         .where(
           and(
+            eq(kbArticleChunks.orgId, orgId),
+            eq(kbPages.orgId, orgId),
             inArray(kbArticleChunks.id, chunkIds),
             isNotNull(kbArticleChunks.pageId),
             chunkVisibility,
@@ -189,6 +194,19 @@ export class KbCandidateService {
     }
   }
 
+  /**
+   * The role half is `inArray`, not `= ANY(${roleSlugs})`.
+   *
+   * A bare JS array interpolated into a drizzle `sql` template does NOT become one array
+   * parameter — it expands to a parenthesised parameter LIST. `ANY(($1, $2))` is
+   * `op ANY/ALL (array) requires array on right side` and the one-slug case `ANY(($1))`
+   * is `malformed array literal`, so this predicate threw for every non-admin caller
+   * holding at least one role assignment, which is nearly every real user. It took down
+   * `GET /kb/search` and `POST /kb/ask` outright through `articleKeywordCandidates` and
+   * `resolveVisibleArticles`, and — worse, because it is silent — `articleVectorCandidates`
+   * swallowed the same throw in its own catch and answered with an empty candidate list,
+   * so semantic retrieval over restricted articles quietly returned nothing.
+   */
   articleRestrictionFilter(
     orgId: string,
     principal: { userId: string; membershipId: number | null; roleSlugs: string[] },
@@ -210,9 +228,9 @@ export class KbCandidateService {
         WHERE ${kar.articleId} = ${kbArticles.id}
           AND ${kar.orgId} = ${orgId}
           AND ${kar.level} = 'view'
-          AND (${membershipMatch}${kar.userId} = ${principal.userId} OR ${
+          AND (${membershipMatch}${
             principal.roleSlugs.length > 0
-              ? sql`${kar.role} = ANY(${principal.roleSlugs})`
+              ? inArray(kar.role, principal.roleSlugs)
               : sql`false`
           })
       )
@@ -220,12 +238,7 @@ export class KbCandidateService {
   }
 
   async resolveArticleKeywordCondition(q: string, tsquery: SQL, cap: number): Promise<SQL> {
-    const term = `%${q}%`;
-    const fallback = sql`(fts @@ ${tsquery} or (numnode(${tsquery}) = 0 and (${kbArticles.title} ilike ${term} or ${kbArticles.excerpt} ilike ${term} or ${kbArticles.contentText} ilike ${term})))`;
-    const rows = await this.db.execute(sql`SELECT app.search_kb_article_ids(${q}, ${cap + 1}) AS id`);
-    if (rows.length === 0 || rows.length > cap) return fallback;
-    const ids = rows.map((r) => Number(r["id"]));
-    return inArray(kbArticles.id, ids);
+    return resolveArticleKeywordSql(this.db, q, tsquery, cap);
   }
 
   keywordRank(tsquery: SQL): SQL<number> {

@@ -11,49 +11,49 @@ import type { Db } from "../../../db/drizzle.module";
 import { PAYROLL_TEMPLATE_SEEDS } from "./payroll-template-seeds";
 import { computeTemplatePreview } from "./lib/template-preview";
 import type { ListTemplatesInput, TemplatePreviewInput, DuplicateTemplateInput } from "./dto/setup.schemas";
-import { DEFAULT_PAYROLL_TOGGLES } from "../payroll.types";
-import type { TemplateComponentDef, PayrollToggles } from "../payroll.types";
-import { resolveWindowedTotal, totalOverWindow, withoutTotal } from "../../../common/pagination/window-count";
+import { normalizePayrollToggles, toTemplateComponentDefs } from "../dto/payroll.schemas";
+import type { PayrollToggles } from "../payroll.types";
+import { buildCursorPage } from "../../../common/pagination/cursor";
+import { keysetAfterValue } from "../../../common/pagination/keyset";
+import {
+  decodePayrollTextCursor,
+  payrollCursorPosition,
+} from "../payroll-cursor";
 
 type TemplateRow = typeof payrollTemplates.$inferSelect;
 
 export async function seedPayrollTemplates(db: Db): Promise<{ seeded: number; skipped: number }> {
-  let seeded = 0;
-  let skipped = 0;
+  const existingRows = await db
+    .select({ key: payrollTemplates.key })
+    .from(payrollTemplates)
+    .where(and(eq(payrollTemplates.isSystem, true), isNull(payrollTemplates.orgId)));
 
-  for (const seed of PAYROLL_TEMPLATE_SEEDS) {
-    const existing = await db.query.payrollTemplates.findFirst({
-      where: and(
-        eq(payrollTemplates.key, seed.key),
-        eq(payrollTemplates.isSystem, true),
-        isNull(payrollTemplates.orgId),
-      ),
-      columns: { id: true },
-    });
+  const existingKeys = new Set<string>(
+    existingRows.flatMap((r) => (r.key != null ? [r.key] : [])),
+  );
 
-    if (existing) {
-      skipped += 1;
-      continue;
-    }
+  const newSeeds = PAYROLL_TEMPLATE_SEEDS.filter((seed) => !existingKeys.has(seed.key));
 
-    await db.insert(payrollTemplates).values({
-      orgId: null,
-      key: seed.key,
-      name: seed.name,
-      description: seed.description,
-      bestFor: seed.bestFor,
-      complexity: seed.complexity,
-      badge: seed.badge ?? null,
-      category: seed.category,
-      isSystem: true,
-      isRecommended: seed.isRecommended,
-      defaultToggles: seed.defaultToggles,
-      defaultComponents: seed.defaultComponents,
-    });
-    seeded += 1;
+  if (newSeeds.length > 0) {
+    await db.insert(payrollTemplates).values(
+      newSeeds.map((seed) => ({
+        orgId: null,
+        key: seed.key,
+        name: seed.name,
+        description: seed.description,
+        bestFor: seed.bestFor,
+        complexity: seed.complexity,
+        badge: seed.badge ?? null,
+        category: seed.category,
+        isSystem: true,
+        isRecommended: seed.isRecommended,
+        defaultToggles: seed.defaultToggles,
+        defaultComponents: seed.defaultComponents,
+      })),
+    );
   }
 
-  return { seeded, skipped };
+  return { seeded: newSeeds.length, skipped: PAYROLL_TEMPLATE_SEEDS.length - newSeeds.length };
 }
 
 @Injectable()
@@ -89,13 +89,13 @@ export class PayrollTemplatesService {
     return recommendedKey != null && key === recommendedKey;
   }
 
-  async list(orgId: string, input: ListTemplatesInput & { country?: string }): Promise<{ items: (TemplateRow & { isRecommended: boolean })[]; total: number }> {
+  async list(orgId: string, input: ListTemplatesInput & { country?: string }) {
     await this.ensureSystemTemplatesExist();
 
-    const filters: SQL[] = [or(isNull(payrollTemplates.orgId), eq(payrollTemplates.orgId, orgId)) as SQL];
+    const filters: (SQL | undefined)[] = [or(isNull(payrollTemplates.orgId), eq(payrollTemplates.orgId, orgId))];
 
     if (input.category) {
-      filters.push(eq(payrollTemplates.category, input.category as TemplateRow["category"]));
+      filters.push(eq(payrollTemplates.category, input.category));
     }
     if (input.complexity) {
       filters.push(eq(payrollTemplates.complexity, input.complexity));
@@ -105,35 +105,45 @@ export class PayrollTemplatesService {
         or(
           ilike(payrollTemplates.name, `%${input.search}%`),
           ilike(payrollTemplates.description, `%${input.search}%`),
-        ) as SQL,
+        ),
       );
     }
 
-    const where = and(...filters);
-    const offset = (input.page - 1) * input.pageSize;
+    const country = input.country?.toUpperCase() ?? null;
+    const cursorScope = [
+      "templates",
+      orgId,
+      input.category ?? null,
+      input.complexity ?? null,
+      country,
+      input.search ?? null,
+    ] as const;
+    const position = decodePayrollTextCursor(input.cursor, cursorScope);
+    if (position) {
+      filters.push(
+        keysetAfterValue(payrollTemplates.name, payrollTemplates.id, {
+          sortValue: position.value,
+          id: String(position.id),
+        }),
+      );
+    }
 
     const rows = await this.db
-      .select({ ...getTableColumns(payrollTemplates), total: totalOverWindow })
+      .select(getTableColumns(payrollTemplates))
       .from(payrollTemplates)
-      .where(where)
+      .where(and(...filters))
       .orderBy(asc(payrollTemplates.name), asc(payrollTemplates.id))
-      .limit(input.pageSize)
-      .offset(offset);
+      .limit(input.limit + 1);
 
-    const total = await resolveWindowedTotal(rows, offset, async () => {
-      const [countRow] = await this.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(payrollTemplates)
-        .where(where);
-      return Number(countRow?.count ?? 0);
-    });
-
-    const items = withoutTotal(rows).map((row) => ({
+    const page = buildCursorPage(rows, input.limit, (row) =>
+      payrollCursorPosition(cursorScope, [row.name], row.id),
+    );
+    const items = page.data.map((row) => ({
       ...row,
-      isRecommended: this.computeIsRecommended(row, input.country),
+      isRecommended: this.computeIsRecommended(row, country ?? undefined),
     }));
 
-    return { items, total };
+    return { items, pagination: page.pagination };
   }
 
   async getById(orgId: string, templateId: number): Promise<TemplateRow> {
@@ -173,14 +183,10 @@ export class PayrollTemplatesService {
 
   async preview(orgId: string, templateId: number, input: TemplatePreviewInput) {
     const template = await this.getById(orgId, templateId);
-    const rawComponents = template.defaultComponents;
-    const components: TemplateComponentDef[] = Array.isArray(rawComponents) ? (rawComponents as TemplateComponentDef[]) : [];
-    const overrides: Partial<PayrollToggles> = input.toggleOverrides && typeof input.toggleOverrides === "object" ? (input.toggleOverrides as Partial<PayrollToggles>) : {};
-    const rawDefaultToggles = template.defaultToggles;
+    const components = toTemplateComponentDefs(template.defaultComponents);
     const effectiveToggles: PayrollToggles = {
-      ...DEFAULT_PAYROLL_TOGGLES,
-      ...(rawDefaultToggles && typeof rawDefaultToggles === "object" ? (rawDefaultToggles as Partial<PayrollToggles>) : {}),
-      ...overrides,
+      ...normalizePayrollToggles(template.defaultToggles),
+      ...(input.toggleOverrides ?? {}),
     };
     const preview = computeTemplatePreview(components, input.annualCtc);
     return { template: { id: template.id, key: template.key, name: template.name }, effectiveToggles, ...preview };

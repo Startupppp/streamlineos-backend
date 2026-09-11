@@ -13,6 +13,8 @@ describe("workflow run state", () => {
       resumeAt: null,
       variables: {},
       steps: 0,
+      infraAttempt: 0,
+      dlqReason: null,
     });
   });
 
@@ -22,6 +24,20 @@ describe("workflow run state", () => {
       resumeAt: NOW,
       variables: { score: 3 },
       steps: 4,
+      infraAttempt: 2,
+      dlqReason: null,
+    };
+    expect(readRunState(writeRunState(state))).toEqual(state);
+  });
+
+  it("round-trips a dlqReason when dead-lettered", () => {
+    const state = {
+      cursor: null,
+      resumeAt: null,
+      variables: {},
+      steps: 7,
+      infraAttempt: 8,
+      dlqReason: "connection reset by peer",
     };
     expect(readRunState(writeRunState(state))).toEqual(state);
   });
@@ -32,6 +48,8 @@ describe("workflow run state", () => {
       resumeAt: null,
       variables: {},
       steps: 0,
+      infraAttempt: 0,
+      dlqReason: null,
     });
   });
 

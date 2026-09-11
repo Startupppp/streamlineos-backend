@@ -1,4 +1,5 @@
 import { Body, Controller, Get, HttpCode, Patch, Post, Query, Res, UseGuards } from "@nestjs/common";
+import { z } from "zod";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -18,6 +19,9 @@ import {
 } from "./dto/work-logs.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { ApiOkResponse } from "@nestjs/swagger";
+import { timesheetRowSchema } from "./dto/time-wfh-shifts-response.schemas";
 
 @RequireModule("hr")
 @Controller("hr/work-logs")
@@ -26,6 +30,7 @@ export class WorkLogsController {
   constructor(private readonly workLogs: WorkLogsService) {}
 
   @Get()
+  @ResponseSchema(z.array(timesheetRowSchema))
   @RequirePermission("hr:attendance:view")
   @Validate({ query: listWorkLogsQuerySchema })
   async list(
@@ -37,6 +42,7 @@ export class WorkLogsController {
 
   @Post()
   @HttpCode(201)
+  @ResponseSchema(timesheetRowSchema)
   @RequirePermission("hr:attendance:view")
   @Validate({ body: postWorkLogSchema })
   create(
@@ -47,6 +53,7 @@ export class WorkLogsController {
   }
 
   @Patch("status")
+  @ResponseSchema(timesheetRowSchema)
   @RequirePermission("hr:attendance:manage")
   @Validate({ body: patchWorkLogStatusSchema })
   updateStatus(
@@ -57,6 +64,7 @@ export class WorkLogsController {
   }
 
   @Get("export")
+  @ApiOkResponse({ description: "CSV file download", schema: { type: "string", format: "binary" } })
   @RequirePermission("hr:attendance:view")
   @Validate({ query: exportWorkLogsQuerySchema })
   async exportCsv(

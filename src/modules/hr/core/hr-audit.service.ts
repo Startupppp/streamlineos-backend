@@ -4,6 +4,7 @@ import { hrAuditLogs } from "../../../db/schema/hr/core-audit";
 import { organizationMembers } from "../../../db/schema/common/auth";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
+import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import type { ListAuditLogsInput } from "./dto/hr-core.schemas";
 import {
   decodeAuditLogCursor,
@@ -11,6 +12,16 @@ import {
 } from "./hr-audit-cursor";
 
 type AuditLogRow = typeof hrAuditLogs.$inferSelect;
+
+export const HR_AUDIT_LOG_CHUNK = 500;
+
+export interface HrAuditEntry {
+  entityType: string;
+  entityId: string;
+  action: string;
+  before?: unknown;
+  after?: unknown;
+}
 
 type AuditLogPage = {
   data: AuditLogRow[];
@@ -26,7 +37,7 @@ export class HrAuditService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   private async resolveMembershipId(
-    db: Db,
+    db: DbOrTx,
     orgId: string,
     userId: string,
   ): Promise<number | null> {
@@ -66,11 +77,50 @@ export class HrAuditService {
       entityType: params.entityType,
       entityId: params.entityId,
       action: params.action,
-      before: (params.before ?? null) as Record<string, unknown> | null,
-      after: (params.after ?? null) as Record<string, unknown> | null,
+      before: params.before ?? null,
+      after: params.after ?? null,
       ipAddress: params.ipAddress ?? null,
       userAgent: params.userAgent ?? null,
     });
+  }
+
+  /**
+   * One multi-row INSERT for a batch that shares an organisation and an actor,
+   * which is the shape every sweep produces. `log` in a loop cost one INSERT per
+   * entry plus one membership lookup per entry for the same actor; this resolves
+   * the membership once and writes the batch under {@link HR_AUDIT_LOG_CHUNK}.
+   */
+  async logMany(
+    params: {
+      orgId: string;
+      actorId: string | null;
+      actorMembershipId?: number | null;
+      ipAddress?: string;
+      userAgent?: string;
+      entries: readonly HrAuditEntry[];
+    },
+    tx?: DbOrTx,
+  ): Promise<void> {
+    if (params.entries.length === 0) return;
+    const db = tx ?? this.db;
+    let membershipId = params.actorMembershipId ?? null;
+    if (membershipId === null && params.actorId !== null)
+      membershipId = await this.resolveMembershipId(db, params.orgId, params.actorId);
+
+    const rows = params.entries.map((entry) => ({
+      orgId: params.orgId,
+      actorMembershipId: membershipId,
+      entityType: entry.entityType,
+      entityId: entry.entityId,
+      action: entry.action,
+      before: entry.before ?? null,
+      after: entry.after ?? null,
+      ipAddress: params.ipAddress ?? null,
+      userAgent: params.userAgent ?? null,
+    }));
+
+    for (let offset = 0; offset < rows.length; offset += HR_AUDIT_LOG_CHUNK)
+      await db.insert(hrAuditLogs).values(rows.slice(offset, offset + HR_AUDIT_LOG_CHUNK));
   }
 
   async list(orgId: string, input: ListAuditLogsInput): Promise<AuditLogPage> {

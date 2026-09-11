@@ -1,8 +1,7 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { partyNamesFor } from "../../party/party-names";
-import { applyScope } from "../../access/apply-scope";
-import type { DataScope } from "../../access/access.types";
+import { ScopedRead } from "../../access/scoped-read";
 import { invSalesOrders, businessParties } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { InvNearExpiryPolicy } from "../stock-engine/stock-engine.types";
@@ -44,77 +43,70 @@ export class SoCoreService {
     };
   }
 
-  async listSos(
-    orgId: string,
-    filters: ListSoInput,
-    scope: DataScope = "all",
-    userId?: string,
-  ) {
-    if (scope === "none") return { items: [], total: 0, page: filters.page, totalPages: 0 };
-
+  async listSos(read: ScopedRead, filters: ListSoInput) {
+    const orgId = read.orgId;
     const { status, clientId, page, limit } = filters;
     const offset = (page - 1) * limit;
-    const scopeSuffix = scope !== "all" ? `:${scope}:${userId ?? ""}` : "";
-    const warehouses = userId ? await this.warehouseScope.forUser(orgId, userId) : null;
-    const hash = `${warehouses?.key ?? "all"}:${status ?? ""}:${clientId ?? ""}:${limit}:${offset}${scopeSuffix}`;
+    const warehouses = await this.warehouseScope.forUser(orgId, read.actorId);
+    const hash = `${warehouses?.key ?? "all"}:${status ?? ""}:${clientId ?? ""}:${limit}:${offset}:${read.discriminator}`;
 
     return this.cache.cachedVersioned(
       CACHE_KEYS.invSoNamespace(orgId),
       hash,
-      async () => {
-        const conditions = [eq(invSalesOrders.orgId, orgId)];
-        if (warehouses) conditions.push(soInScope(warehouses));
-        if (status) conditions.push(eq(invSalesOrders.status, status));
-        if (clientId) conditions.push(eq(invSalesOrders.clientId, clientId));
-        if (scope !== "all" && userId) {
-          conditions.push(
-            applyScope(scope, orgId, userId, {
-              ownerColumn: invSalesOrders.createdBy,
-            }),
-          );
-        }
-        const where = and(...conditions);
+      () =>
+        read.read(
+          {
+            tenant: invSalesOrders.orgId,
+            scope: { columns: { ownerColumn: invSalesOrders.createdBy } },
+            and: [
+              warehouses ? soInScope(warehouses) : undefined,
+              status ? eq(invSalesOrders.status, status) : undefined,
+              clientId ? eq(invSalesOrders.clientId, clientId) : undefined,
+            ],
+          },
+          async ({ sql: where }) => {
+            const [items, countResult] = await Promise.all([
+              this.db.query.invSalesOrders.findMany({
+                where,
+                orderBy: [desc(invSalesOrders.createdAt)],
+                limit,
+                offset,
+                with: {
+                  creator: { columns: { id: true, name: true } },
+                },
+              }),
+              this.db
+                .select({ count: sql<number>`count(*)::int` })
+                .from(invSalesOrders)
+                .where(where),
+            ]);
 
-        const [items, countResult] = await Promise.all([
-          this.db.query.invSalesOrders.findMany({
-            where,
-            orderBy: [desc(invSalesOrders.createdAt)],
-            limit,
-            offset,
-            with: {
-              creator: { columns: { id: true, name: true } },
-            },
-          }),
-          this.db
-            .select({ count: sql<number>`count(*)::int` })
-            .from(invSalesOrders)
-            .where(where),
-        ]);
+            /**
+             * The client's name from Party, not from `clients`. Ticket 08.
+             *
+             * `client_id` is still what the order is filed under and is still
+             * returned as `client.id`; only the name moved.
+             */
+            const names = await partyNamesFor(this.db, orgId, items.map((o) => o.clientPartyId));
+            const withClient = items.map((order) => ({
+              ...order,
+              client: order.clientId
+                ? {
+                    id: order.clientId,
+                    name: order.clientPartyId ? (names.get(order.clientPartyId) ?? null) : null,
+                  }
+                : null,
+            }));
 
-        /**
-         * The client's name from Party, not from `clients`. Ticket 08.
-         *
-         * `client_id` is still what the order is filed under and is still
-         * returned as `client.id`; only the name moved.
-         */
-        const names = await partyNamesFor(this.db, orgId, items.map((o) => o.clientPartyId));
-        const withClient = items.map((order) => ({
-          ...order,
-          client: order.clientId
-            ? {
-                id: order.clientId,
-                name: order.clientPartyId ? (names.get(order.clientPartyId) ?? null) : null,
-              }
-            : null,
-        }));
-
-        return {
-          items: withClient,
-          total: countResult[0]?.count ?? 0,
-          page,
-          totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit),
-        };
-      },
+            return {
+              items: withClient,
+              total: countResult[0]?.count ?? 0,
+              page,
+              totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit),
+            };
+          },
+          () => ({ items: [], total: 0, page, totalPages: 0 }),
+        ),
       CACHE_TTL.SHORT,
     );
   }

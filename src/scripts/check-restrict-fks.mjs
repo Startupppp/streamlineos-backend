@@ -150,6 +150,22 @@ function findEnclosingTable(content, fkBlockStart) {
  * From a schema file's content, return all RESTRICT FK entries referencing
  * organizationMembers, with their enclosing table names.
  */
+/**
+ * Postgres defaults an FK with no ON DELETE clause to NO ACTION, which blocks
+ * deletion exactly as RESTRICT does. The header of this gate has always claimed
+ * to cover "RESTRICT (or NO ACTION)"; the matcher only ever tested for
+ * `.onDelete("restrict")`, so 14 bare `foreignKey({})` blockers pointing at
+ * organizationMembers were outside the scan while it reported OK.
+ */
+export function isBlockingAction(action) {
+  if (action === null || action === undefined) return true;
+  return /^(?:restrict|no[ _-]?action)$/i.test(String(action).trim());
+}
+
+export function isNonBlockingAction(action) {
+  return !isBlockingAction(action);
+}
+
 function findRestrictFksInContent(content) {
   const found = [];
   let searchFrom = 0;
@@ -181,11 +197,11 @@ function findRestrictFksInContent(content) {
     const action = onDeleteMatch ? onDeleteMatch[1] : null;
     const fullBlock = action ? block + rest.slice(0, rest.indexOf(")") + 1) : block;
 
-    if (action === "restrict" && /organizationMembers/.test(block)) {
+    if (isBlockingAction(action) && /organizationMembers/.test(block)) {
       const nameMatch = block.match(/\bname\s*:\s*["']([^"']+)["']/);
       const constraintName = nameMatch ? nameMatch[1] : "(unknown)";
       const tableName = findEnclosingTable(content, blockStart);
-      found.push({ tableName, constraintName });
+      found.push({ tableName, constraintName, action: action ?? "no action (implicit)" });
     }
   }
 
@@ -340,6 +356,73 @@ export const MEMBERSHIP_ARTIFACTS = [
     (fk) => !covered1.has(fk.tableName ?? ""),
   );
   assert("no violation when table is in artifacts", coveredViolation.length, 0);
+
+  // NO ACTION blockers. A bare foreignKey({}) defaults to NO ACTION in Postgres
+  // and blocks member removal exactly as RESTRICT does; the matcher only ever
+  // tested for .onDelete("restrict"), so 14 of these were outside the scan while
+  // the gate reported OK. The real one it now finds is
+  // audit_logs.fk_audit_logs_org_actor_membership.
+  const BARE_FK_TO_ORG_MEMBERS = `
+export const quxTable = pgTable("qux_table", {
+  orgId: text("org_id").notNull(),
+  actorMembershipId: integer("actor_membership_id"),
+}, (table) => [
+  foreignKey({
+    columns: [table.orgId, table.actorMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_qux_table_actor",
+  }),
+  index("idx_qux_org").on(table.orgId),
+]);
+`;
+  const EXPLICIT_NO_ACTION_FK = `
+export const quuxTable = pgTable("quux_table", {
+  orgId: text("org_id").notNull(),
+  actorMembershipId: integer("actor_membership_id"),
+}, (table) => [
+  foreignKey({
+    columns: [table.orgId, table.actorMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_quux_table_actor",
+  }).onDelete("no action"),
+]);
+`;
+  const CASCADE_FK = `
+export const corgeTable = pgTable("corge_table", {
+  orgId: text("org_id").notNull(),
+  actorMembershipId: integer("actor_membership_id"),
+}, (table) => [
+  foreignKey({
+    columns: [table.orgId, table.actorMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_corge_table_actor",
+  }).onDelete("cascade"),
+]);
+`;
+
+  const bareFks = findRestrictFksInContent(BARE_FK_TO_ORG_MEMBERS);
+  assert("a bare foreignKey({}) to organizationMembers is a blocker", bareFks.length, 1);
+  assert("the bare blocker names its constraint", bareFks[0]?.constraintName, "fk_qux_table_actor");
+  assert("the bare blocker names its table", bareFks[0]?.tableName, "qux_table");
+  assert("the bare blocker records the implicit action", bareFks[0]?.action, "no action (implicit)");
+
+  const explicitNoActionFks = findRestrictFksInContent(EXPLICIT_NO_ACTION_FK);
+  assert("an explicit .onDelete(\"no action\") is a blocker", explicitNoActionFks.length, 1);
+  assert("CASCADE is not a blocker", findRestrictFksInContent(CASCADE_FK).length, 0);
+
+  assert("isBlockingAction: bare (null)", isBlockingAction(null), true);
+  assert("isBlockingAction: restrict", isBlockingAction("restrict"), true);
+  assert("isBlockingAction: no action", isBlockingAction("no action"), true);
+  assert("isBlockingAction: NO ACTION uppercase", isBlockingAction("NO ACTION"), true);
+  assert("isBlockingAction: no-action hyphen", isBlockingAction("no-action"), true);
+  assert("isBlockingAction: set null", isBlockingAction("set null"), false);
+  assert("isBlockingAction: cascade", isBlockingAction("cascade"), false);
+  assert("isBlockingAction: set default", isBlockingAction("set default"), false);
+
+  const bareUncovered = findRestrictFksInContent(BARE_FK_TO_ORG_MEMBERS).filter(
+    (fk) => !parseCoveredTables(ARTIFACT_NOT_COVERING_FOO).has(fk.tableName ?? ""),
+  );
+  assert("a bare blocker with no artifact ruling is a violation", bareUncovered.length, 1);
 
   console.log(`\nSelf-test: ${passed} passed, ${failed} failed`);
   return failed === 0;

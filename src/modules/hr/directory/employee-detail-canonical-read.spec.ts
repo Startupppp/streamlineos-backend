@@ -1,4 +1,5 @@
 import { EmployeeMutationsService } from "./employee-mutations.service";
+import { ScopedRead } from "../../access/scoped-read";
 
 describe("EmployeeMutationsService canonical employment reads", () => {
   it("reads employment facts from the organization's primary employment", async () => {
@@ -32,7 +33,7 @@ describe("EmployeeMutationsService canonical employment reads", () => {
       probationEndDate: null,
       confirmationDate: null,
     };
-    const skillsQuery = { from: jest.fn(), where: jest.fn().mockResolvedValue([]) };
+    const skillsQuery = { from: jest.fn(), where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) };
     skillsQuery.from.mockReturnValue(skillsQuery);
     const employmentQuery = {
       from: jest.fn(),
@@ -60,10 +61,8 @@ describe("EmployeeMutationsService canonical employment reads", () => {
     );
 
     const result = await service.getEmployeeDetail(
-      "org-1",
-      "actor-1",
+      ScopedRead.of("org-1", "actor-1", "all"),
       "user-1",
-      "all",
     );
 
     expect(result).toEqual(

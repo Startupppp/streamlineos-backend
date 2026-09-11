@@ -3,7 +3,6 @@ import { NotFoundException } from "@nestjs/common";
 import { ProjectsAnalyticsService } from "./projects-analytics.service";
 import { ProjectsWorkspaceMembersService } from "./projects-workspace-members.service";
 import { ProjectsBudgetService } from "./projects-budget.service";
-import type { CacheService } from "../../../common/cache/cache.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 import type { AccessService } from "../../access/access.service";
@@ -25,10 +24,10 @@ const ATTACKER_ORG = "org-attacker";
 const OWNER_ORG = "org-owner";
 
 function makeCtx(orgId: string): CurrentUserContext {
-  return { userId: "u1", orgId, isOrgOwner: false, sessionId: "s1" } as CurrentUserContext;
+  return { userId: "u1", orgId, isOrgOwner: false, sessionId: "s1", principal: { kind: "human-session", membershipId: 1, isOrgOwner: false } } as unknown as CurrentUserContext;
 }
 
-function makeAnalyticsDb(): { db: Db; capturedWheres: unknown[] } {
+function makeAnalyticsDb(): { db: Db; capturedWheres: unknown[]; projectFindFirst: jest.Mock } {
   const capturedWheres: unknown[] = [];
   const chain: Record<string, unknown> = {};
   const resolved = Promise.resolve([]);
@@ -42,15 +41,18 @@ function makeAnalyticsDb(): { db: Db; capturedWheres: unknown[] } {
   chain.then = (fn: (v: unknown[]) => unknown) => resolved.then(fn);
   chain.catch = (fn: (e: unknown) => unknown) => resolved.catch(fn);
   chain.finally = (fn: () => void) => resolved.finally(fn);
-  const db = { select: jest.fn().mockReturnValue(chain) } as unknown as Db;
-  return { db, capturedWheres };
+  const projectFindFirst = jest.fn().mockResolvedValue({ id: 1 });
+  const db = {
+    query: { projects: { findFirst: projectFindFirst } },
+    select: jest.fn().mockReturnValue(chain),
+  } as unknown as Db;
+  return { db, capturedWheres, projectFindFirst };
 }
 
 describe("ProjectsAnalyticsService — cross-tenant isolation", () => {
   it("getProjectAnalytics scopes queries to requesting org (cross-tenant isolation)", async () => {
     const { db, capturedWheres } = makeAnalyticsDb();
-    const cache = { cached: jest.fn().mockImplementation((_k: string, fn: () => unknown) => fn()) } as unknown as CacheService;
-    const svc = new ProjectsAnalyticsService(db, cache);
+    const svc = new ProjectsAnalyticsService(db);
 
     await svc.getProjectAnalytics(ATTACKER_ORG, 1);
 
@@ -60,10 +62,17 @@ describe("ProjectsAnalyticsService — cross-tenant isolation", () => {
     expect(allCallArgs).not.toContain(OWNER_ORG);
   });
 
+  it("getProjectAnalytics refuses a project the requesting org does not own (404, not an empty 200)", async () => {
+    const { db, projectFindFirst } = makeAnalyticsDb();
+    projectFindFirst.mockResolvedValue(undefined);
+    const svc = new ProjectsAnalyticsService(db);
+
+    await expect(svc.getProjectAnalytics(ATTACKER_ORG, 1)).rejects.toThrow(NotFoundException);
+  });
+
   it("getProjectAnalytics works for the owning org (control — same-tenant access works)", async () => {
     const { db } = makeAnalyticsDb();
-    const cache = { cached: jest.fn().mockImplementation((_k: string, fn: () => unknown) => fn()) } as unknown as CacheService;
-    const svc = new ProjectsAnalyticsService(db, cache);
+    const svc = new ProjectsAnalyticsService(db);
 
     const result = await svc.getProjectAnalytics(OWNER_ORG, 1);
     expect(result).toBeDefined();
@@ -77,7 +86,7 @@ describe("ProjectsWorkspaceMembersService — cross-tenant isolation", () => {
     });
     const db = {
       select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where }) }),
+        from: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where }) }) }),
       }),
     } as unknown as Db;
     const audit = {} as unknown as AuditService;
@@ -100,9 +109,9 @@ describe("ProjectsWorkspaceMembersService — cross-tenant isolation", () => {
       select: jest.fn().mockImplementation(() => {
         call++;
         if (call === 1) {
-          return { from: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([fakeMember]) }) }) }) }) };
+          return { from: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([fakeMember]) }) }) }) }) }) };
         }
-        return { from: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }) };
+        return { from: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }) }) };
       }),
     } as unknown as Db;
     const audit = {} as unknown as AuditService;

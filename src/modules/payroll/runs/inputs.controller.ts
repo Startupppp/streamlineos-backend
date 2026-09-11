@@ -19,6 +19,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { AccessService } from "../../access/access.service";
 import { resolvePayrollRunsViewScope } from "../payroll-scope";
 import { InputsService } from "./inputs.service";
@@ -29,7 +30,9 @@ import {
   type InputsQuery,
 } from "./dto/runs.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema, cursorPageSchema } from "../../../common/openapi/response-envelopes";
+import { inputItemSchema, reimportResponseSchema } from "./dto/runs-response.schemas";
 import { z } from "zod";
 
 const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
@@ -47,13 +50,14 @@ export class InputsController {
   @Get()
   @RequirePermission("payroll:runs:view")
   @Validate({ params: runIdParams, query: inputsQuerySchema })
+  @ResponseSchema(cursorPageSchema(inputItemSchema))
   async list(
     @Param("runId", ParseIntPipe) runId: number,
     @Query() query: InputsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolvePayrollRunsViewScope(this.access, u);
-    const result = await this.inputsService.listInputs(u.orgId, runId, query, scope, u.userId);
+    const read = await resolvePayrollRunsViewScope(this.access, u);
+    const result = await this.inputsService.listInputs(read, runId, query, actingMembershipId(u.principal));
     if (!result) throw new NotFoundException("Payroll run not found");
     return result;
   }
@@ -61,6 +65,7 @@ export class InputsController {
   @Patch(":inputId")
   @RequirePermission("payroll:runs:update")
   @Validate({ params: runAndInputIdParams, body: patchInputSchema })
+  @ResponseSchema(successSchema)
   async patchInput(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("inputId", ParseIntPipe) inputId: number,
@@ -81,6 +86,7 @@ export class InputsController {
   @HttpCode(200)
   @RequirePermission("payroll:runs:update")
   @Validate({ params: runIdParams })
+  @ResponseSchema(reimportResponseSchema)
   async reimport(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,

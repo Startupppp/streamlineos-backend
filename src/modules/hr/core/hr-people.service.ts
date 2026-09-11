@@ -1,17 +1,17 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, sql, type SQL } from "drizzle-orm";
 import { hrPeople, organizationPeople } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import type { CreatePersonInput, UpdatePersonInput } from "./dto/hr-core.schemas";
 import { HrAuditService } from "./hr-audit.service";
-import { applyScope } from "../../access/apply-scope";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import { getPostgresErrorDetails } from "../../../common/db/postgres-error";
 
 const PERSON_JOIN_COND = and(
   eq(organizationPeople.organizationId, hrPeople.orgId),
   eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
+  isNull(organizationPeople.deletedAt),
 );
 
 const PERSON_VIEW_COLUMNS = {
@@ -36,29 +36,36 @@ export class HrPeopleService {
     private readonly audit: HrAuditService,
   ) {}
 
-  async getOne(
-    orgId: string,
-    actorUserId: string,
-    personId: number,
-    scope: DataScope,
-  ) {
-    const [person] = await this.db
+  async getOne(read: ScopedRead, personId: number) {
+    const [person] = await read.read(
+      {
+        tenant: hrPeople.orgId,
+        scope: { columns: { ownerColumn: hrPeople.userId } },
+        and: [eq(hrPeople.id, personId), isNull(hrPeople.deletedAt)],
+      },
+      ({ sql: where }) => this.selectPersonView(where),
+      () => [],
+    );
+    if (!person) throw new NotFoundException("Person not found");
+    return person;
+  }
+
+  // The row this caller just wrote, echoed back. The write gate already authorised this exact person, so the read carries the tenant predicate and no scope arm.
+  private async readWrittenPerson(orgId: string, personId: number) {
+    const [person] = await this.selectPersonView(
+      and(eq(hrPeople.orgId, orgId), eq(hrPeople.id, personId), isNull(hrPeople.deletedAt)),
+    );
+    if (!person) throw new NotFoundException("Person not found");
+    return person;
+  }
+
+  private selectPersonView(where: SQL | undefined) {
+    return this.db
       .select(PERSON_VIEW_COLUMNS)
       .from(hrPeople)
       .innerJoin(organizationPeople, PERSON_JOIN_COND)
-      .where(
-        and(
-          eq(hrPeople.id, personId),
-          eq(hrPeople.orgId, orgId),
-          isNull(hrPeople.deletedAt),
-          applyScope(scope, orgId, actorUserId, {
-            ownerColumn: hrPeople.userId,
-          }),
-        ),
-      )
+      .where(where)
       .limit(1);
-    if (!person) throw new NotFoundException("Person not found");
-    return person;
   }
 
   private async getOneForMutation(orgId: string, personId: number) {
@@ -184,7 +191,7 @@ export class HrPeopleService {
       after: { organizationPersonId, workEmail },
     });
 
-    return this.getOne(orgId, actorId, created.id, "all");
+    return this.readWrittenPerson(orgId, created.id);
   }
 
   async update(orgId: string, personId: number, actorId: string, input: UpdatePersonInput) {
@@ -245,7 +252,7 @@ export class HrPeopleService {
       after: input,
     });
 
-    return this.getOne(orgId, actorId, personId, "all");
+    return this.readWrittenPerson(orgId, personId);
   }
 
   async remove(orgId: string, personId: number, actorId: string) {

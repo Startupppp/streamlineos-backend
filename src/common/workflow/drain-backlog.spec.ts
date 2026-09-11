@@ -1,5 +1,12 @@
 import { drainBacklog } from "./workflow-store";
 import type { Db } from "../../db/drizzle.module";
+import type { TenantTx } from "../tenant";
+
+const mockForEachOrg = jest.fn();
+
+jest.mock("../tenant", () => ({
+  forEachOrg: (...args: unknown[]) => mockForEachOrg(...args),
+}));
 
 /**
  * The check that turns a silent failure into a visible one.
@@ -19,9 +26,67 @@ import type { Db } from "../../db/drizzle.module";
  * which is what that looks like: the runtime has never executed anything.
  */
 describe("drainBacklog", () => {
-  /** Answers one `execute`, which is all this reads. */
-  const dbReturning = (row: Record<string, unknown>): Db =>
-    ({ execute: async () => [row] }) as unknown as Db;
+  /**
+   * One organisation answering one `execute`, which is all this reads.
+   *
+   * The backlog is swept per organisation rather than counted across all of
+   * them at once: `workflow_runs` carries a tenant policy and the cross-tenant
+   * form is denied outright as the application role.
+   */
+  const dbReturning = (row: Record<string, unknown>): Db => {
+    mockForEachOrg.mockImplementation(
+      async (_db: unknown, _sweep: string, fn: (tx: TenantTx, orgId: string) => Promise<void>) => {
+        await fn({ execute: async () => [row] } as unknown as TenantTx, "org-1");
+        return { organizations: 1, succeeded: 1, failed: 0 };
+      },
+    );
+    return {} as unknown as Db;
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  /**
+   * The sum across tenants, not one tenant's number.
+   *
+   * A per-organisation sweep that returned only the last organisation's count
+   * would report a backlog of one while thousands of runs sat due elsewhere —
+   * the same invisible stall this file exists to make visible, moved one level
+   * down.
+   */
+  it("sums the backlog across organisations and reports the oldest wait of any", async () => {
+    mockForEachOrg.mockImplementation(
+      async (_db: unknown, _sweep: string, fn: (tx: TenantTx, orgId: string) => Promise<void>) => {
+        const rows: Record<string, Record<string, unknown>> = {
+          "org-a": { due: 3, oldest: 120 },
+          "org-b": { due: 4, oldest: 942 },
+          "org-c": { due: 0, oldest: 0 },
+        };
+        for (const [orgId, row] of Object.entries(rows))
+          await fn({ execute: async () => [row] } as unknown as TenantTx, orgId);
+        return { organizations: 3, succeeded: 3, failed: 0 };
+      },
+    );
+
+    expect(await drainBacklog({} as unknown as Db)).toEqual({ due: 7, oldestDueSeconds: 942 });
+  });
+
+  /**
+   * An organisation with nothing due reports `oldest: 0`, and that zero is not a
+   * wait — folding it into the maximum would report a busy queue as fresh.
+   */
+  it("ignores the age reported by an organisation with nothing due", async () => {
+    mockForEachOrg.mockImplementation(
+      async (_db: unknown, _sweep: string, fn: (tx: TenantTx, orgId: string) => Promise<void>) => {
+        await fn({ execute: async () => [{ due: 0, oldest: 0 }] } as unknown as TenantTx, "org-a");
+        await fn({ execute: async () => [{ due: 2, oldest: 500 }] } as unknown as TenantTx, "org-b");
+        return { organizations: 2, succeeded: 2, failed: 0 };
+      },
+    );
+
+    expect(await drainBacklog({} as unknown as Db)).toEqual({ due: 2, oldestDueSeconds: 500 });
+  });
 
   it("reports nothing due when the queue is empty", async () => {
     expect(await drainBacklog(dbReturning({ due: 0, oldest: 0 }))).toEqual({

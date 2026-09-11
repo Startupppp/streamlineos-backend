@@ -8,6 +8,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { LeaveApproverService } from "./leave-approver.service";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
+import { requireOrganizationMembershipId } from "./organization-membership";
 
 @Injectable()
 export class LeavesPageService {
@@ -19,6 +20,7 @@ export class LeavesPageService {
 
   async pageData(orgId: string, userId: string) {
     const year = new Date().getFullYear();
+    const userMembershipId = await requireOrganizationMembershipId(this.db, orgId, userId);
 
     const balanceQuery = this.db
       .select({
@@ -32,15 +34,16 @@ export class LeavesPageService {
       .leftJoin(leaveTypes, eq(leaveBalances.leaveTypeId, leaveTypes.id))
       .where(
         and(
-          eq(leaveBalances.userId, userId),
+          eq(leaveBalances.userMembershipId, userMembershipId),
           eq(leaveBalances.orgId, orgId),
           eq(leaveBalances.year, year),
         ),
-      );
+      )
+      .limit(100);
 
     const [existingBalances, allTypes, facts] = await Promise.all([
       balanceQuery,
-      this.db.query.leaveTypes.findMany({ where: eq(leaveTypes.orgId, orgId) }),
+      this.db.query.leaveTypes.findMany({ limit: 100, where: eq(leaveTypes.orgId, orgId) }),
       this.employment.getFacts(orgId, userId),
     ]);
 

@@ -13,7 +13,7 @@ const REQUISITION_STATUSES = [
 
 export const requisitionListSchema = z.object({
   status: z.enum(REQUISITION_STATUSES).optional(),
-});
+}).strict();
 export type RequisitionListInput = z.infer<typeof requisitionListSchema>;
 
 export const createRequisitionSchema = z.object({
@@ -28,13 +28,13 @@ export const createRequisitionSchema = z.object({
   type: z.enum(EMPLOYMENT_TYPES).default("FULL_TIME"),
   justification: z.string().max(5000).optional(),
   targetDate: z.string().optional(),
-});
+}).strict();
 export type CreateRequisitionInput = z.infer<typeof createRequisitionSchema>;
 
-export const updateRequisitionSchema = createRequisitionSchema.partial();
+export const updateRequisitionSchema = createRequisitionSchema.partial().strict();
 export type UpdateRequisitionInput = z.infer<typeof updateRequisitionSchema>;
 
 export const rejectRequisitionSchema = z.object({
   reason: z.string().min(1, "Rejection reason is required").max(2000),
-});
+}).strict();
 export type RejectRequisitionInput = z.infer<typeof rejectRequisitionSchema>;

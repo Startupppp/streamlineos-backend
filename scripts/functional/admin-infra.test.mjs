@@ -27,10 +27,6 @@ const run = async () => {
     ["DELETE", "/organization/invitations"],
     ["GET", "/organization/settings"],
     ["PATCH", "/organization/settings"],
-    ["GET", "/branches"],
-    ["GET", "/branches/1"],
-    ["PATCH", "/branches/1"],
-    ["DELETE", "/branches/1"],
     ["GET", "/rbac/permissions"],
     ["GET", "/rbac/role-permissions?role=MEMBER"],
     ["POST", "/rbac/role-permissions"],
@@ -44,7 +40,6 @@ const run = async () => {
     ["GET", "/dashboard/stats"],
     ["GET", "/dashboard/announcements"],
     ["POST", "/dashboard/announcements"],
-    ["GET", "/settings/permissions"],
     ["GET", "/settings/api-keys"],
     ["POST", "/settings/api-keys"],
     ["GET", "/settings/automations"],
@@ -99,23 +94,9 @@ const run = async () => {
   check("PATCH /organization/settings owner bad-currency 400", await req("PATCH", "/organization/settings", { token: owner, body: { currency: "XXX" } }), 400);
 
   // ------------------------------------------------------------------ BRANCHES
-  const branchesRes = await req("GET", "/branches", { token: owner });
-  check("GET /branches owner", branchesRes, 200);
-  check("GET /branches member (auth-only)", await req("GET", "/branches", { token: member }), 200);
-  const firstBranchId = Array.isArray(branchesRes.body) && branchesRes.body[0] ? branchesRes.body[0].id : null;
-
-  if (firstBranchId != null) {
-    check("GET /branches/:id owner", await req("GET", "/branches/" + firstBranchId, { token: owner }), 200);
-  }
-  check("GET /branches/:id non-existent 404", await req("GET", "/branches/" + FAKE_ID, { token: owner }), 404);
-  check("GET /branches/:id non-numeric 400", await req("GET", "/branches/abc", { token: owner }), 400);
-
-  // PATCH/DELETE branches are role-gated to ["HR","CEO"]; OWNER now passes via
-  // hasRoleOrPrivileged, but member stays 403. Assert the member deny; skip owner
-  // mutation to avoid altering real branch rows.
-  check("PATCH /branches/:id member role-gate 403", await req("PATCH", "/branches/" + (firstBranchId ?? 1), { token: member, body: { name: "FN_TEST_branch" } }), 403);
-  check("PATCH /branches/:id non-numeric 400", await req("PATCH", "/branches/abc", { token: owner, body: { name: "x" } }), 400);
-  check("DELETE /branches/:id member role-gate 403", await req("DELETE", "/branches/" + (firstBranchId ?? 1), { token: member }), 403);
+  // Branch reads are owned by /org-hierarchy; the legacy /branches door is gone.
+  check("GET /org-hierarchy/branches/options member", await req("GET", "/org-hierarchy/branches/options", { token: member }), 200);
+  check("GET /org-hierarchy/branches/options rejects a status filter", await req("GET", "/org-hierarchy/branches/options?status=ARCHIVED", { token: owner }), 400);
 
   // ---------------------------------------------------------------------- RBAC
   check("GET /rbac/permissions owner", await req("GET", "/rbac/permissions", { token: owner }), 200);
@@ -207,8 +188,6 @@ const run = async () => {
 
   // ------------------------------------------------------------------ SETTINGS
   // Open (no @CheckAbility, no internal gate).
-  check("GET /settings/permissions owner", await req("GET", "/settings/permissions", { token: owner }), 200);
-  check("GET /settings/permissions member (open)", await req("GET", "/settings/permissions", { token: member }), 200);
   check("GET /settings/feature-flags owner", await req("GET", "/settings/feature-flags", { token: owner }), 200);
   check("GET /settings/feature-flags member (open)", await req("GET", "/settings/feature-flags", { token: member }), 200);
   // Internally gated (manage settings) though no @CheckAbility decorator.

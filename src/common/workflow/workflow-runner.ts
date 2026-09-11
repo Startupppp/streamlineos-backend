@@ -16,6 +16,8 @@ export interface RunRecord {
   readonly input: Record<string, unknown>;
   readonly attempt: number;
   readonly maxAttempts: number;
+  /** What the producer persisted, so the drain can report under it. */
+  readonly correlationId?: string | null;
 }
 
 export interface RunLifecycleStore {

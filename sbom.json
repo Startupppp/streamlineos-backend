@@ -1,10 +1,10 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.4",
-  "serialNumber": "urn:uuid:71a1d92b-fc54-4543-af35-5dbf2589910c",
+  "serialNumber": "urn:uuid:cd5432f9-1326-4987-95e7-c455f3297e16",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-09-01T00:23:19.567Z",
+    "timestamp": "2026-09-07T08:50:47.315Z",
     "component": {
       "type": "application",
       "name": "streamlineos-api",
@@ -11143,8 +11143,8 @@
     {
       "type": "library",
       "name": "fast-uri",
-      "version": "4.1.2",
-      "purl": "pkg:npm/fast-uri@4.1.2",
+      "version": "4.1.4",
+      "purl": "pkg:npm/fast-uri@4.1.4",
       "licenses": [
         {
           "license": {

@@ -1,43 +1,50 @@
 import { PgDialect } from "drizzle-orm/pg-core";
-import type { SQL } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { leaveApprovalScope } from "./leaves-scope";
+import { ScopedRead } from "../../access/scoped-read";
 import type { DataScope } from "../../access/access.types";
+import { leaveRequests } from "../../../db/schema";
 
 const dialect = new PgDialect();
-const render = (predicate: SQL) => dialect.sqlToQuery(predicate).sql;
+const render = (scope: DataScope) => {
+  const read = ScopedRead.of("org-1", "actor-1", scope);
+  const where = read.compose(
+    { tenant: leaveRequests.orgId, scope: leaveApprovalScope(1) },
+    ({ sql: whereSql }) => whereSql,
+    () => sql`false`,
+  );
+  return dialect.sqlToQuery(where).sql;
+};
 
 // c25-02: analytics resolved the caller's scope, refused only "none", then aggregated the whole organisation
 describe("leaveApprovalScope, the predicate leave analytics must apply", () => {
   const cases: DataScope[] = ["all", "team", "own", "none"];
 
   it.each(cases)("renders a predicate for %s", (scope) => {
-    expect(render(leaveApprovalScope(scope, "org-1", "u-1"))).toBeTruthy();
+    expect(render(scope)).toBeTruthy();
   });
 
-  it("does not narrow an all-scoped approver", () => {
-    expect(render(leaveApprovalScope("all", "org-1", "u-1"))).toBe("true");
+  it("does not narrow an all-scoped approver to a particular membership", () => {
+    expect(render("all")).not.toContain("approver_membership_id");
   });
 
   it("denies a none-scoped caller in SQL, not only at the guard", () => {
-    expect(render(leaveApprovalScope("none", "org-1", "u-1"))).toBe("false");
+    expect(render("none")).toContain("false");
   });
 
   it("narrows an own-scoped approver to requests they approve", () => {
-    const rendered = render(leaveApprovalScope("own", "org-1", "u-1"));
-    expect(rendered).toContain("approver_id");
-    expect(rendered).not.toBe("true");
+    const rendered = render("own");
+    expect(rendered).toContain("approver_membership_id");
+    expect(rendered).not.toContain('"approver_id"');
   });
 
   it("narrows a team-scoped approver, and still requires them as approver", () => {
-    const rendered = render(leaveApprovalScope("team", "org-1", "u-1"));
-    expect(rendered).toContain("approver_id");
-    expect(rendered).not.toBe("true");
+    const rendered = render("team");
+    expect(rendered).toContain("approver_membership_id");
   });
 
   // The bug was not a missing predicate, it was a predicate that never reached the query
   it("distinguishes own from all, which is the whole defect", () => {
-    expect(render(leaveApprovalScope("own", "org-1", "u-1"))).not.toBe(
-      render(leaveApprovalScope("all", "org-1", "u-1")),
-    );
+    expect(render("own")).not.toBe(render("all"));
   });
 });

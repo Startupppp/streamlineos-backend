@@ -8,6 +8,7 @@ import {
   buildOrgDashboardCacheKey,
 } from "./dashboard-cache-key";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { ScopedRead } from "../access/scoped-read";
 
 const ORG_A = "org-inv-test-a";
 const ORG_B = "org-inv-test-b";
@@ -39,6 +40,7 @@ describe("ITEM E — mutation invalidates ONLY the affected section prefix", () 
 
   function makeSpyCache() {
     const invalidatedKeys: string[] = [];
+    const invalidatedOrgs: string[] = [];
     const cache = {
       cached: jest.fn().mockImplementation(async (_k: string, f: () => Promise<unknown>) => f()),
       cachedForOrg: jest.fn().mockImplementation(async (_orgId: string, _k: string, f: () => Promise<unknown>) => f()),
@@ -46,12 +48,17 @@ describe("ITEM E — mutation invalidates ONLY the affected section prefix", () 
         invalidatedKeys.push(key);
         return Promise.resolve();
       }),
+      invalidateForOrg: jest.fn().mockImplementation((orgId: string, key: string) => {
+        invalidatedOrgs.push(orgId);
+        invalidatedKeys.push(key);
+        return Promise.resolve();
+      }),
     } as unknown as CacheService;
-    return { cache, invalidatedKeys };
+    return { cache, invalidatedKeys, invalidatedOrgs };
   }
 
   it("BITE: createAnnouncement invalidates ONLY the announcementsList cache key", async () => {
-    const { cache, invalidatedKeys } = makeSpyCache();
+    const { cache, invalidatedKeys, invalidatedOrgs } = makeSpyCache();
     const access = makeAccess();
     const db = makeDb();
     const actor = makeUser(ORG_A, USER_A);
@@ -65,10 +72,11 @@ describe("ITEM E — mutation invalidates ONLY the affected section prefix", () 
 
     expect(invalidatedKeys).toHaveLength(1);
     expect(invalidatedKeys[0]).toBe(CACHE_KEYS.announcementsList(ORG_A));
+    expect(invalidatedOrgs).toEqual([ORG_A]);
   });
 
   it("BITE: createAnnouncement does NOT invalidate stats, availability, or leave section keys", async () => {
-    const { cache, invalidatedKeys } = makeSpyCache();
+    const { cache, invalidatedKeys, invalidatedOrgs } = makeSpyCache();
     const access = makeAccess();
     const db = makeDb();
     const actor = makeUser(ORG_A, USER_A);
@@ -87,7 +95,7 @@ describe("ITEM E — mutation invalidates ONLY the affected section prefix", () 
   });
 
   it("BITE: deleteAnnouncement invalidates ONLY the announcementsList cache key", async () => {
-    const { cache, invalidatedKeys } = makeSpyCache();
+    const { cache, invalidatedKeys, invalidatedOrgs } = makeSpyCache();
     const access = makeAccess();
     const db = makeDb();
     const actor = makeUser(ORG_A, USER_A);
@@ -97,6 +105,7 @@ describe("ITEM E — mutation invalidates ONLY the affected section prefix", () 
 
     expect(invalidatedKeys).toHaveLength(1);
     expect(invalidatedKeys[0]).toBe(CACHE_KEYS.announcementsList(ORG_A));
+    expect(invalidatedOrgs).toEqual([ORG_A]);
   });
 });
 
@@ -117,7 +126,7 @@ describe("ITEM E — org switch makes all section cache entries unreachable (dif
     const cache = new CacheService(null);
     const access = makeAccess(1);
     const u = makeUser(ORG_A, USER_A);
-    const localKey = await buildScopedDashboardCacheKey(access, u, "pending-approvals", "own");
+    const localKey = await buildScopedDashboardCacheKey(access, u, "pending-approvals", ScopedRead.of(u.orgId, u.userId, "own"));
 
     const fullKeyA = await cache.orgScopedKey(ORG_A, localKey);
     const fullKeyB = await cache.orgScopedKey(ORG_B, localKey);
@@ -130,8 +139,8 @@ describe("ITEM E — org switch makes all section cache entries unreachable (dif
   it("BITE: permission-version bump changes the local scoped key (covers mid-session org switch)", async () => {
     const u = makeUser(ORG_A, USER_A);
     const [k1, k2] = await Promise.all([
-      buildScopedDashboardCacheKey(makeAccess(1), u, "attendance", "all"),
-      buildScopedDashboardCacheKey(makeAccess(2), u, "attendance", "all"),
+      buildScopedDashboardCacheKey(makeAccess(1), u, "attendance", ScopedRead.of(u.orgId, u.userId, "all")),
+      buildScopedDashboardCacheKey(makeAccess(2), u, "attendance", ScopedRead.of(u.orgId, u.userId, "all")),
     ]);
     expect(k1).not.toBe(k2);
   });
@@ -148,8 +157,8 @@ describe("ITEM E — org switch makes all section cache entries unreachable (dif
     const u1 = makeUser(ORG_A, USER_A);
     const u2 = makeUser(ORG_B, USER_B);
     const [k1, k2] = await Promise.all([
-      buildScopedDashboardCacheKey(makeAccess(3), u1, "attendance", "all"),
-      buildScopedDashboardCacheKey(makeAccess(7), u2, "attendance", "all"),
+      buildScopedDashboardCacheKey(makeAccess(3), u1, "attendance", ScopedRead.of(u1.orgId, u1.userId, "all")),
+      buildScopedDashboardCacheKey(makeAccess(7), u2, "attendance", ScopedRead.of(u2.orgId, u2.userId, "all")),
     ]);
     expect(k1).not.toBe(k2);
   });

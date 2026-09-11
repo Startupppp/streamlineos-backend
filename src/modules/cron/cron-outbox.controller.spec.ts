@@ -2,11 +2,28 @@ import { CronOutboxController } from "./cron-outbox.controller";
 
 jest.mock("./cron-secret", () => ({ assertCronSecret: jest.fn() }));
 
+const retentionMustNotRun = {
+  sweep: jest.fn(() => {
+    throw new Error("outbox retention must not run from the worker or evidence endpoints");
+  }),
+};
+
+const replayMustNotRun = {
+  replayDeadLetters: jest.fn(() => {
+    throw new Error("dead-letter replay must not run from the worker or evidence endpoints");
+  }),
+};
+
 describe("CronOutboxController", () => {
   it("leases and flushes the generic outbox through the scheduler entry point", async () => {
     const publisher = { flush: jest.fn().mockResolvedValue({ claimed: 1, delivered: 1, suppressed: 0, retried: 0, dead: 0, fenced: 0 }) };
     const lease = { withLease: jest.fn().mockImplementation(async (_key: string, _seconds: number, fn: () => Promise<unknown>) => ({ ran: true, result: await fn() })) };
-    const controller = new CronOutboxController(publisher as never, lease as never);
+    const controller = new CronOutboxController(
+      publisher as never,
+      lease as never,
+      retentionMustNotRun as never,
+      replayMustNotRun as never,
+    );
 
     const result = await controller.runPost(undefined);
 
@@ -18,7 +35,12 @@ describe("CronOutboxController", () => {
   it("skips a concurrent scheduler invocation when the lease is held", async () => {
     const publisher = { flush: jest.fn() };
     const lease = { withLease: jest.fn().mockResolvedValue({ ran: false }) };
-    const controller = new CronOutboxController(publisher as never, lease as never);
+    const controller = new CronOutboxController(
+      publisher as never,
+      lease as never,
+      retentionMustNotRun as never,
+      replayMustNotRun as never,
+    );
 
     await expect(controller.runGet(undefined)).resolves.toEqual({
       success: true, skipped: true, message: "outbox-events-worker already running",
@@ -35,12 +57,72 @@ describe("CronOutboxController", () => {
       report: jest.fn().mockResolvedValue(report),
     };
     const lease = { withLease: jest.fn() };
-    const controller = new CronOutboxController(publisher as never, lease as never);
+    const controller = new CronOutboxController(
+      publisher as never,
+      lease as never,
+      retentionMustNotRun as never,
+      replayMustNotRun as never,
+    );
 
     await expect(controller.metrics("Bearer secret")).resolves.toEqual({ pending: 1 });
     await expect(controller.report("Bearer secret")).resolves.toEqual(report);
     expect(publisher.metrics).toHaveBeenCalledTimes(1);
     expect(publisher.report).toHaveBeenCalledTimes(1);
     expect(lease.withLease).not.toHaveBeenCalled();
+  });
+
+  it("(failure-event) re-throws as InternalServerErrorException when the retention sweep throws — the lease service writes a durable failure record before propagating", async () => {
+    const publisher = { flush: jest.fn(), metrics: jest.fn(), report: jest.fn() };
+    const lease = {
+      withLease: jest.fn().mockImplementation(
+        async (_key: string, _seconds: number, fn: () => Promise<unknown>) => {
+          return { ran: true, result: await fn() };
+        },
+      ),
+    };
+    const retentionThrows = { sweep: jest.fn().mockRejectedValue(new Error("db timeout during sweep")) };
+    const controller = new CronOutboxController(
+      publisher as never,
+      lease as never,
+      retentionThrows as never,
+      replayMustNotRun as never,
+    );
+
+    await expect(controller.postOutboxEventsRetentionSweep(undefined)).rejects.toThrow("Internal server error");
+    expect(retentionThrows.sweep).toHaveBeenCalledTimes(1);
+    expect(lease.withLease).toHaveBeenCalledWith("outbox-events-retention-sweep", 1800, expect.any(Function));
+  });
+
+  it("drains the dead-letter queue under its own lease, and only when asked", async () => {
+    const publisher = { flush: jest.fn(), metrics: jest.fn(), report: jest.fn() };
+    const lease = {
+      withLease: jest.fn().mockImplementation(
+        async (_key: string, _seconds: number, fn: () => Promise<unknown>) => ({ ran: true, result: await fn() }),
+      ),
+    };
+    const replay = {
+      replayDeadLetters: jest.fn().mockResolvedValue({
+        organizationsProcessed: 2,
+        organizationsFailed: 0,
+        replayed: 3,
+        truncated: false,
+      }),
+    };
+    const controller = new CronOutboxController(
+      publisher as never,
+      lease as never,
+      retentionMustNotRun as never,
+      replay as never,
+    );
+
+    const result = await controller.postOutboxEventsReplayDead(
+      { eventType: "kb.content.index" },
+      "Bearer secret",
+    );
+
+    expect(result).toMatchObject({ success: true, replayed: 3 });
+    expect(replay.replayDeadLetters).toHaveBeenCalledWith({ eventType: "kb.content.index" });
+    expect(lease.withLease).toHaveBeenCalledWith("outbox-events-replay-dead", 600, expect.any(Function));
+    expect(publisher.flush).not.toHaveBeenCalled();
   });
 });

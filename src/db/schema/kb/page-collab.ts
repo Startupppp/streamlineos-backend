@@ -19,7 +19,7 @@ export const kbPageVersions = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    pageId: integer("page_id").references(() => kbPages.id, { onDelete: "cascade" }).notNull(),
+    pageId: integer("page_id").notNull(),
     versionNumber: integer("version_number").notNull(),
     title: text("title").notNull().default(""),
     content: jsonb("content").$type<KbPageContent>(),
@@ -42,7 +42,7 @@ export const kbPageComments = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    pageId: integer("page_id").references(() => kbPages.id, { onDelete: "cascade" }).notNull(),
+    pageId: integer("page_id").notNull(),
     authorId: text("author_id").references(() => users.id, { onDelete: "set null" }),
     parentId: integer("parent_id"),
     content: text("content").notNull(),
@@ -53,11 +53,6 @@ export const kbPageComments = pgTable(
   (table) => [
     index("idx_kb_page_comments_org_page").on(table.orgId, table.pageId),
     index("idx_kb_page_comments_parent").on(table.parentId),
-    foreignKey({
-      columns: [table.parentId],
-      foreignColumns: [table.id],
-      name: "fk_kb_page_comments_parent",
-    }).onDelete("cascade"),
     unique("uniq_kb_page_comments_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.pageId], foreignColumns: [kbPages.orgId, kbPages.id], name: "fk_kb_page_comments_org_page" }).onDelete("cascade"),
     foreignKey({ columns: [table.orgId, table.parentId], foreignColumns: [table.orgId, table.id], name: "fk_kb_page_comments_org_parent" }).onDelete("cascade"),
@@ -78,8 +73,8 @@ export const kbPageTemplates = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
-    index("idx_kb_page_templates_org").on(table.orgId),
     unique("uniq_kb_page_templates_org_id").on(table.orgId, table.id),
+    uniqueIndex("uniq_kb_page_templates_org_name").on(table.orgId, table.name),
   ],
 );
 

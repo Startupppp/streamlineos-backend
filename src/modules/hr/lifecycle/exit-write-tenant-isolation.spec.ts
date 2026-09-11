@@ -1,3 +1,4 @@
+import { ConflictException, NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { ExitWriteService } from "./exit-write.service";
 
@@ -79,8 +80,8 @@ describe("ExitWriteService — cross-tenant isolation", () => {
     const { db, findFirst, where } = makeDb([]);
     const { mockDispatch, mockAutomation, mockHrAutomation, mockResignationJobs, mockExitChecklist, mockPolicyEval, mockCompletionGuard, mockAccess } = makeDeps();
     const svc = new ExitWriteService(db, mockDispatch as never, mockAutomation as never, mockHrAutomation as never, mockResignationJobs as never, mockExitChecklist as never, mockPolicyEval as never, mockCompletionGuard as never, mockAccess as never);
-    const actor = { userId: "u1", role: "MEMBER", isApprover: false };
-    await expect(svc.update(ATTACKER, actor, 999, {})).rejects.toThrow();
+    const actor = { userId: "u1", membershipId: 1, role: "MEMBER", isApprover: false };
+    await expect(svc.update(ATTACKER, actor, 999, {})).rejects.toThrow(NotFoundException);
     expect(allQueryArgs(findFirst, where)).toContain(ATTACKER);
   });
 
@@ -89,7 +90,7 @@ describe("ExitWriteService — cross-tenant isolation", () => {
     const { db, findFirst, where } = makeDb([ROW]);
     const { mockDispatch, mockAutomation, mockHrAutomation, mockResignationJobs, mockExitChecklist, mockPolicyEval, mockCompletionGuard, mockAccess } = makeDeps();
     const svc = new ExitWriteService(db, mockDispatch as never, mockAutomation as never, mockHrAutomation as never, mockResignationJobs as never, mockExitChecklist as never, mockPolicyEval as never, mockCompletionGuard as never, mockAccess as never);
-    const actor = { userId: "u1", role: "MEMBER", isApprover: false };
+    const actor = { userId: "u1", membershipId: 1, role: "MEMBER", isApprover: false };
     await expect(svc.update(OWNER, actor, 1, {})).resolves.toBeDefined();
     expect(allQueryArgs(findFirst, where)).toContain(OWNER);
   });
@@ -100,7 +101,7 @@ describe("ExitWriteService — cross-tenant isolation", () => {
     const { mockDispatch, mockAutomation, mockHrAutomation, mockResignationJobs, mockExitChecklist, mockPolicyEval, mockCompletionGuard, mockAccess } = makeDeps();
     const svc = new ExitWriteService(db, mockDispatch as never, mockAutomation as never, mockHrAutomation as never, mockResignationJobs as never, mockExitChecklist as never, mockPolicyEval as never, mockCompletionGuard as never, mockAccess as never);
     const input = { reason: "personal", lastWorkingDate: new Date(Date.now() + 86400_000 * 30).toISOString().slice(0, 10) };
-    await expect(svc.create(ATTACKER, "actor-1", input as never)).rejects.toThrow();
+    await expect(svc.create(ATTACKER, "actor-1", 1, input as never)).rejects.toThrow(ConflictException);
     expect(allQueryArgs(findFirst, where)).toContain(ATTACKER);
   });
 });

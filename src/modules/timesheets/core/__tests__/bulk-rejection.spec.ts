@@ -9,6 +9,7 @@ import type { ApprovalsService } from "../approvals.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { Db } from "../../../../db/drizzle.module";
 import type { TimesheetsAuditService } from "../timesheets-audit.service";
+import type { RateResolverService } from "../rate-resolver.service";
 
 /**
  * `ApprovalsBulkService.bulkReject`, and the batch writes in
@@ -168,9 +169,16 @@ function harness(options: Options = {}) {
       audits.push({ handle, row });
       return Promise.resolve();
     },
+    /** The batch writes its audit rows as one chained INSERT; each row is still recorded. */
+    recordMany: (handle: unknown, rows: readonly Record<string, unknown>[]) => {
+      for (const row of rows) audits.push({ handle, row });
+      return Promise.resolve();
+    },
   } as unknown as TimesheetsAuditService;
 
   const approvals = {
+    /** The batch resolves the approver's delegations in one read; nobody here delegates. */
+    activeDelegationsToActor: () => Promise.resolve(new Set<number>()),
     assertCanActOnPeriod: (_u: unknown, period: { id: number }) => {
       if (options.forbid?.includes(period.id))
         return Promise.reject(new ForbiddenException("Not your approval"));
@@ -184,7 +192,8 @@ function harness(options: Options = {}) {
     },
   } as unknown as ApprovalsService;
 
-  const service = new ApprovalsBulkService(db, audit, approvals);
+  const rateResolver = { resolveMany: () => Promise.resolve([]) } as unknown as RateResolverService;
+  const service = new ApprovalsBulkService(db, audit, approvals, rateResolver);
   return { service, tx, updates, audits, outbox, notices, order, candidateWhere: () => candidateWhere };
 }
 

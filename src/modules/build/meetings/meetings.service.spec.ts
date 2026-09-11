@@ -1,8 +1,25 @@
-import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { MeetingsService } from "./meetings.service";
 import { ActionItemsService } from "./action-items.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { AuditService } from "../../../common/audit/audit.service";
+import type { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
+
+const MEMBERSHIP_ID = 7;
+
+function makeU(orgId: string, isOrgOwner = false): CurrentUserContext {
+  return {
+    userId: "user-7",
+    orgId,
+    role: "MEMBER",
+    isOrgOwner,
+    sessionId: "session-1",
+    tokenScopes: null,
+    principal: humanSessionPrincipal(MEMBERSHIP_ID, isOrgOwner),
+  };
+}
 
 const mockAudit = { log: jest.fn() } as unknown as AuditService;
 
@@ -23,8 +40,9 @@ describe("MeetingsService.addAttendee — member validation", () => {
       },
       select: jest.fn().mockReturnValue(memberChain),
     } as unknown as Db;
+    const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])) } as unknown as AccessService;
 
-    const svc = new MeetingsService(mockDb, mockAudit);
+    const svc = new MeetingsService(mockDb, mockAccess, mockAudit);
     await expect(
       svc.addAttendee("org-1", "actor-1", 1, 2, { userId: "non-member" }),
     ).rejects.toThrow(BadRequestException);
@@ -47,8 +65,9 @@ describe("MeetingsService.addAttendee — member validation", () => {
       select: jest.fn().mockReturnValue(memberChain),
       insert: jest.fn().mockReturnValue(insertChain),
     } as unknown as Db;
+    const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])) } as unknown as AccessService;
 
-    const svc = new MeetingsService(mockDb, mockAudit);
+    const svc = new MeetingsService(mockDb, mockAccess, mockAudit);
     const result = await svc.addAttendee("org-1", "actor-1", 1, 2, { userId: "member-user" });
     expect(result).toEqual({ meetingId: 2, userId: "member-user" });
   });
@@ -59,11 +78,35 @@ describe("MeetingsService.addAttendee — member validation", () => {
         projectMeetings: { findFirst: jest.fn().mockResolvedValue(undefined) },
       },
     } as unknown as Db;
+    const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])) } as unknown as AccessService;
 
-    const svc = new MeetingsService(mockDb, mockAudit);
+    const svc = new MeetingsService(mockDb, mockAccess, mockAudit);
     await expect(
       svc.addAttendee("org-1", "actor-1", 1, 999, { userId: "user-x" }),
     ).rejects.toThrow(NotFoundException);
+  });
+});
+
+describe("MeetingsService.listMeetings — bounded reads", () => {
+  it("rejects overflow instead of silently truncating the meeting list", async () => {
+    const overflow = Array.from({ length: 101 }, (_, id) => ({ id: id + 1 }));
+    const meetingQuery = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue(overflow),
+    };
+    const mockDb = {
+      query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
+      },
+      select: jest.fn().mockReturnValue(meetingQuery),
+    } as unknown as Db;
+    const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])) } as unknown as AccessService;
+
+    const svc = new MeetingsService(mockDb, mockAccess, mockAudit);
+    await expect(svc.listMeetings(makeU("org-1"), 1, {})).rejects.toThrow(BadRequestException);
+    expect(meetingQuery.limit).toHaveBeenCalledWith(101);
   });
 });
 
@@ -78,8 +121,9 @@ describe("MeetingsService.upsertStandup — caller-scoped write", () => {
       },
       insert: jest.fn().mockReturnValue({ values: insertValues }),
     } as unknown as Db;
+    const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])) } as unknown as AccessService;
 
-    const svc = new MeetingsService(mockDb, mockAudit);
+    const svc = new MeetingsService(mockDb, mockAccess, mockAudit);
     await svc.upsertStandup("org-1", "caller-1", 1, 2, {
       yesterday: "reviewed PRs",
       today: "writing tests",
@@ -97,8 +141,9 @@ describe("MeetingsService.upsertStandup — caller-scoped write", () => {
         projectMeetings: { findFirst: jest.fn().mockResolvedValue(undefined) },
       },
     } as unknown as Db;
+    const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])) } as unknown as AccessService;
 
-    const svc = new MeetingsService(mockDb, mockAudit);
+    const svc = new MeetingsService(mockDb, mockAccess, mockAudit);
     await expect(
       svc.upsertStandup("org-1", "caller-1", 1, 999, { today: "work" }),
     ).rejects.toThrow(NotFoundException);
@@ -200,5 +245,62 @@ describe("ActionItemsService.convertToTask", () => {
 
     const svc = new ActionItemsService(mockDb, mockAudit);
     await expect(svc.convertToTask("org-1", "user-1", 1, 999, 1)).rejects.toThrow(NotFoundException);
+  });
+});
+
+describe("MeetingsService — project membership gate (assertProjectAccess)", () => {
+  function makeNonMemberDb() {
+    const limit = jest.fn().mockResolvedValue([]);
+    const where = jest.fn().mockReturnValue({ limit });
+    const innerJoin = jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where }), where });
+    const from = jest.fn().mockReturnValue({ innerJoin, where });
+    return {
+      query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
+        projectMeetings: { findFirst: jest.fn() },
+      },
+      select: jest.fn().mockReturnValue({ from }),
+    } as unknown as Db;
+  }
+
+  function makeMemberDb() {
+    let callCount = 0;
+    const makeLimitChain = (rows: unknown[]) => {
+      const limit = jest.fn().mockResolvedValue(rows);
+      const where = jest.fn().mockReturnValue({ limit });
+      const innerJoin = jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where }), where });
+      return { from: jest.fn().mockReturnValue({ innerJoin, where }) };
+    };
+    const meetingsChain = {
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+        }),
+      }),
+    };
+    return {
+      query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
+        projectMeetings: { findFirst: jest.fn() },
+      },
+      select: jest.fn().mockImplementation(() => {
+        callCount++;
+        return callCount === 1 ? makeLimitChain([{ role: "MEMBER" }]) : meetingsChain;
+      }),
+    } as unknown as Db;
+  }
+
+  it("rejects a non-member with ForbiddenException", async () => {
+    const db = makeNonMemberDb();
+    const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService;
+    const svc = new MeetingsService(db, access, mockAudit);
+    await expect(svc.listMeetings(makeU("org-1"), 1, {})).rejects.toThrow(ForbiddenException);
+  });
+
+  it("allows a direct project member through the gate", async () => {
+    const db = makeMemberDb();
+    const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService;
+    const svc = new MeetingsService(db, access, mockAudit);
+    await expect(svc.listMeetings(makeU("org-1"), 1, {})).resolves.toEqual([]);
   });
 });

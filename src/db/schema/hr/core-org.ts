@@ -1,15 +1,4 @@
-import {
-  pgTable,
-  text,
-  serial,
-  timestamp,
-  boolean,
-  jsonb,
-  integer,
-  index,
-  uniqueIndex,
-  unique,
-} from "drizzle-orm/pg-core";
+import { boolean, foreignKey, index, integer, jsonb, pgTable, serial, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../common/auth";
 import { hrEmployments } from "./core-people";
@@ -27,7 +16,6 @@ export const hrJobRoles = pgTable("hr_job_roles", {
 }, (table) => [
   unique("uniq_hr_job_roles_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_job_roles_org_name").on(table.orgId, table.name),
-  index("idx_hr_job_roles_org").on(table.orgId),
 ]);
 
 export const hrJobLevels = pgTable("hr_job_levels", {
@@ -44,7 +32,6 @@ export const hrJobLevels = pgTable("hr_job_levels", {
 }, (table) => [
   unique("uniq_hr_job_levels_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_job_levels_org_name").on(table.orgId, table.name),
-  index("idx_hr_job_levels_org").on(table.orgId),
 ]);
 
 export const hrEmploymentCustomFieldValues = pgTable(
@@ -55,10 +42,8 @@ export const hrEmploymentCustomFieldValues = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     employmentId: integer("employment_id")
-      .references(() => hrEmployments.id, { onDelete: "cascade" })
       .notNull(),
     fieldDefinitionId: integer("field_definition_id")
-      .references(() => customFieldDefinitions.id, { onDelete: "cascade" })
       .notNull(),
     value: jsonb("value"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -68,6 +53,8 @@ export const hrEmploymentCustomFieldValues = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.fieldDefinitionId], foreignColumns: [customFieldDefinitions.orgId, customFieldDefinitions.id], name: "fk_hr_employment_custom_field_values_org_field_def" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.employmentId], foreignColumns: [hrEmployments.orgId, hrEmployments.id], name: "fk_hr_employment_custom_field_values_org_employment" }).onDelete("cascade"),
     uniqueIndex("uniq_hr_ecfv_employment_field").on(
       table.employmentId,
       table.fieldDefinitionId,

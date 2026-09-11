@@ -36,6 +36,7 @@ import { TimesheetExceptionsController } from "./exceptions.controller";
 import { ExceptionsDetectorService } from "./exceptions-detector.service";
 import { TimesheetsAiController } from "./timesheets-ai.controller";
 import { TimesheetsAiService } from "./timesheets-ai.service";
+import { TimesheetsBillingAiService } from "./timesheets-billing-ai.service";
 import { AiModule } from "../../ai/core/ai.module";
 import { AccountingKernelModule } from "../../accounting/kernel/accounting-kernel.module";
 import { NotificationsModule } from "../../notifications/notifications.module";
@@ -90,6 +91,7 @@ import { AttendanceDraftService } from "./attendance/attendance-draft.service";
     ExceptionsService,
     ExceptionsDetectorService,
     TimesheetsAiService,
+    TimesheetsBillingAiService,
     TimesheetRemindersSweepService,
     /**
      * TS-06. Registers itself for every timesheet lifecycle event type at boot.
@@ -107,7 +109,6 @@ import { AttendanceDraftService } from "./attendance/attendance-draft.service";
     { provide: TIMESHEET_ATTENDANCE_PORT, useClass: SchemaAttendanceAdapter },
   ],
   exports: [
-    EntriesService,
     SettingsService,
     ExceptionsDetectorService,
     EntriesPeriodService,

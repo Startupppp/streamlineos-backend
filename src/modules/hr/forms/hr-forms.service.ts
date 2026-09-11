@@ -14,6 +14,9 @@ import type {
   ListHrFormsQuery,
   UpdateHrFormInput,
 } from "./dto/hr-forms.schemas";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 type FormRow = typeof hrForms.$inferSelect;
 
@@ -32,27 +35,32 @@ export class HrFormsService {
   }
 
   async listForms(orgId: string, query: ListHrFormsQuery) {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
-    const offset = (page - 1) * limit;
+    const limit = Math.min(query.limit ?? 20, 100);
 
     const conditions = [eq(hrForms.orgId, orgId), isNull(hrForms.deletedAt)];
     if (query.status) conditions.push(eq(hrForms.status, query.status));
     if (query.audience) conditions.push(eq(hrForms.audience, query.audience));
-    const where = and(...conditions);
+    const baseWhere = and(...conditions);
+    const position = decodeCursor(query.cursor);
+    const where = and(
+      baseWhere,
+      position ? keysetBeforeId(hrForms.createdAt, hrForms.id, position) : undefined,
+    );
 
     const [rows, [total]] = await Promise.all([
       this.db
         .select()
         .from(hrForms)
         .where(where)
-        .orderBy(desc(hrForms.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ count: count() }).from(hrForms).where(where),
+        .orderBy(desc(hrForms.createdAt), desc(hrForms.id))
+        .limit(limit + 1),
+      this.db.select({ count: count() }).from(hrForms).where(baseWhere),
     ]);
-
-    return { data: rows, total: total?.count ?? 0, page, limit };
+    const page = buildCursorPage(rows, limit, (form) => ({
+      sortValue: form.createdAt.toISOString(),
+      id: String(form.id),
+    }));
+    return { data: page.data, total: total?.count ?? 0, pagination: page.pagination };
   }
 
   async getForm(orgId: string, formId: number) {
@@ -80,8 +88,8 @@ export class HrFormsService {
         createdBy: userId,
       })
       .returning()
-      .catch((err: { code?: string }) => {
-        if (err.code === "23505") throw new ConflictException("Form name or slug already exists");
+      .catch((err: unknown) => {
+        if (isUniqueViolation(err)) throw new ConflictException("Form name or slug already exists");
         throw err;
       });
     if (!row) throw new BadRequestException("Failed to create form");
@@ -100,7 +108,7 @@ export class HrFormsService {
       throw new BadRequestException("Public forms cannot contain sensitive fields");
     }
 
-    const patch: Partial<typeof hrForms.$inferInsert> = {};
+    const patch: Partial<typeof hrForms.$inferInsert> = { updatedAt: new Date() };
     if (input.name !== undefined) patch.name = input.name;
     if (input.slug !== undefined) patch.slug = input.slug;
     if (input.description !== undefined) patch.description = input.description ?? null;
@@ -113,8 +121,8 @@ export class HrFormsService {
       .set(patch)
       .where(and(eq(hrForms.id, formId), eq(hrForms.orgId, orgId)))
       .returning()
-      .catch((err: { code?: string }) => {
-        if (err.code === "23505") throw new ConflictException("Form name or slug already exists");
+      .catch((err: unknown) => {
+        if (isUniqueViolation(err)) throw new ConflictException("Form name or slug already exists");
         throw err;
       });
     if (!row) throw new NotFoundException("Form not found");

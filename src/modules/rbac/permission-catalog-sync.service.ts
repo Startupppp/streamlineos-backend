@@ -11,6 +11,7 @@ import {
 } from "../../db/schema";
 import { PERMISSIONS } from "./permissions";
 import { buildPermissionCatalogRows } from "./permission-catalog-rows";
+import { RoleGrantReconcilerService } from "./role-grant-reconciler.service";
 
 type SupportedScope = "all" | "team" | "own";
 
@@ -36,14 +37,34 @@ export function classifyRetiredPermissions(
 export class PermissionCatalogSyncService implements OnModuleInit {
   private readonly logger = new Logger(PermissionCatalogSyncService.name);
 
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly grantReconciler: RoleGrantReconcilerService,
+  ) {}
 
+  /**
+   * The reconciler is called from here rather than from its own lifecycle hook
+   * because the ordering is the whole point: a grant whose permission key is new
+   * in this release violates the foreign key to `permissions.name` until this
+   * sync has run, which is why a migration can never place one. A failed sync
+   * therefore skips the reconcile instead of reconciling against a stale catalog.
+   */
   async onModuleInit(): Promise<void> {
     try {
       await this.sync();
     } catch (error) {
       this.logger.error(
         `Permission catalog sync failed — grants for new permission keys will violate the foreign key until this succeeds: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return;
+    }
+    try {
+      await this.grantReconciler.reconcileAllOrganizations();
+    } catch (error) {
+      this.logger.error(
+        `Role grant reconcile failed — organisations seeded before the current role definitions keep the permissions they have: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
@@ -66,7 +87,7 @@ export class PermissionCatalogSyncService implements OnModuleInit {
     }
 
     const catalogModules = new Set(
-      (await this.db.select({ moduleKey: modulesCatalog.moduleKey }).from(modulesCatalog))
+      (await this.db.select({ moduleKey: modulesCatalog.moduleKey }).from(modulesCatalog).limit(100))
         .map((row) => row.moduleKey),
     );
 
@@ -104,7 +125,7 @@ export class PermissionCatalogSyncService implements OnModuleInit {
       .onConflictDoNothing();
 
     const catalogNames = new Set(PERMISSIONS.map((permission) => permission.name));
-    const stored = await this.db.select({ name: permissions.name }).from(permissions);
+    const stored = await this.db.select({ name: permissions.name }).from(permissions).limit(5000);
     const staleKeys = stored
       .map((row) => row.name)
       .filter((name) => !catalogNames.has(name))
@@ -118,6 +139,7 @@ export class PermissionCatalogSyncService implements OnModuleInit {
           .select({ name: permissions.name })
           .from(permissions)
           .where(inArray(permissions.name, staleKeys))
+          .limit(5000)
           .for("update");
         const lockedKeys = lockedRows.map((row) => row.name);
         const roleReferencedRows = await tx

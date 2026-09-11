@@ -1,10 +1,13 @@
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
 import { and, count, desc, eq, sql } from "drizzle-orm";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -26,6 +29,13 @@ import type {
   ListDeviceMappingsInput,
 } from "./dto/enterprise-comp.schemas";
 
+function decodePaginationCursor(cursor: string | undefined) {
+  if (cursor === undefined) return null;
+  const position = decodeCursor(cursor);
+  if (!position) throw new BadRequestException("Invalid pagination cursor");
+  return position;
+}
+
 @Injectable()
 export class DevicesService {
   constructor(
@@ -34,19 +44,25 @@ export class DevicesService {
   ) {}
 
   async listDevices(orgId: string, input: ListTimeDevicesInput) {
-    const { page, limit, status, type } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, status, type } = input;
     const conditions = [eq(hrTimeDevices.orgId, orgId)];
     if (status) conditions.push(eq(hrTimeDevices.status, status));
     if (type) conditions.push(eq(hrTimeDevices.type, type));
-    const where = and(...conditions);
+    const position = decodePaginationCursor(cursor);
+    if (position)
+      conditions.push(keysetBeforeId(hrTimeDevices.createdAt, hrTimeDevices.id, position));
 
-    const [data, totalResult] = await Promise.all([
-      this.db.select().from(hrTimeDevices).where(where).orderBy(desc(hrTimeDevices.createdAt)).limit(limit).offset(offset),
-      this.db.select({ total: count() }).from(hrTimeDevices).where(where),
-    ]);
-    const total = totalResult[0]?.total ?? 0;
-    return { data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+    const rows = await this.db
+      .select()
+      .from(hrTimeDevices)
+      .where(and(...conditions))
+      .orderBy(desc(hrTimeDevices.createdAt), desc(hrTimeDevices.id))
+      .limit(limit + 1);
+
+    return buildCursorPage(rows, limit, (device) => ({
+      sortValue: device.createdAt.toISOString(),
+      id: String(device.id),
+    }));
   }
 
   async createDevice(orgId: string, actorId: string, input: CreateTimeDeviceInput) {
@@ -97,19 +113,25 @@ export class DevicesService {
   }
 
   async listSyncLogs(orgId: string, input: ListSyncLogsInput) {
-    const { page, limit, deviceId, status } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, deviceId, status } = input;
     const conditions = [eq(hrDeviceSyncLogs.orgId, orgId)];
     if (deviceId) conditions.push(eq(hrDeviceSyncLogs.deviceId, deviceId));
     if (status) conditions.push(eq(hrDeviceSyncLogs.status, status));
-    const where = and(...conditions);
+    const position = decodePaginationCursor(cursor);
+    if (position)
+      conditions.push(keysetBeforeId(hrDeviceSyncLogs.syncedAt, hrDeviceSyncLogs.id, position));
 
-    const [data, totalResult] = await Promise.all([
-      this.db.select().from(hrDeviceSyncLogs).where(where).orderBy(desc(hrDeviceSyncLogs.syncedAt)).limit(limit).offset(offset),
-      this.db.select({ total: count() }).from(hrDeviceSyncLogs).where(where),
-    ]);
-    const total = totalResult[0]?.total ?? 0;
-    return { data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+    const rows = await this.db
+      .select()
+      .from(hrDeviceSyncLogs)
+      .where(and(...conditions))
+      .orderBy(desc(hrDeviceSyncLogs.syncedAt), desc(hrDeviceSyncLogs.id))
+      .limit(limit + 1);
+
+    return buildCursorPage(rows, limit, (log) => ({
+      sortValue: log.syncedAt.toISOString(),
+      id: String(log.id),
+    }));
   }
 
   async listFailedSyncs(orgId: string, limit = 50) {
@@ -171,18 +193,30 @@ export class DevicesService {
   }
 
   async listMappings(orgId: string, input: ListDeviceMappingsInput) {
-    const { page, limit, deviceId, userId } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, deviceId, userId } = input;
     const conditions = [eq(hrDeviceEmployeeMappings.orgId, orgId)];
     if (deviceId) conditions.push(eq(hrDeviceEmployeeMappings.deviceId, deviceId));
     if (userId) conditions.push(eq(hrDeviceEmployeeMappings.userId, userId));
-    const where = and(...conditions);
+    const position = decodePaginationCursor(cursor);
+    if (position)
+      conditions.push(
+        keysetBeforeId(
+          hrDeviceEmployeeMappings.createdAt,
+          hrDeviceEmployeeMappings.id,
+          position,
+        ),
+      );
 
-    const [data, totalResult] = await Promise.all([
-      this.db.select().from(hrDeviceEmployeeMappings).where(where).limit(limit).offset(offset),
-      this.db.select({ total: count() }).from(hrDeviceEmployeeMappings).where(where),
-    ]);
-    const total = totalResult[0]?.total ?? 0;
-    return { data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+    const rows = await this.db
+      .select()
+      .from(hrDeviceEmployeeMappings)
+      .where(and(...conditions))
+      .orderBy(desc(hrDeviceEmployeeMappings.createdAt), desc(hrDeviceEmployeeMappings.id))
+      .limit(limit + 1);
+
+    return buildCursorPage(rows, limit, (mapping) => ({
+      sortValue: mapping.createdAt.toISOString(),
+      id: String(mapping.id),
+    }));
   }
 }

@@ -166,7 +166,7 @@ describe("reconcileOffsets — mixed scenario", () => {
 
 describe("reconcileOffsets — guard", () => {
   it("throws if orgId is empty", () => {
-    expect(() => reconcileOffsets([], [], "")).toThrow();
+    expect(() => reconcileOffsets([], [], "")).toThrow("orgId is required for offset reconciliation");
   });
 });
 

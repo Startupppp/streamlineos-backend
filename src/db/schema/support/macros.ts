@@ -37,13 +37,11 @@ export const supportMacros = pgTable(
     visibility: text("visibility").default("org").notNull(),
     actions: jsonb("actions").$type<MacroActions>().default({}).notNull(),
     usageCount: integer("usage_count").default(0).notNull(),
-    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
     createdByMembershipId: integer("created_by_membership_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
-    index("idx_support_macros_org").on(table.orgId),
     unique("uniq_support_macros_org_id").on(table.orgId, table.id),
     index("idx_support_macros_org_created_actor").on(table.orgId, table.createdByMembershipId),
     foreignKey({
@@ -61,7 +59,6 @@ export const supportRoutingRules = pgTable(
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     name: text("name").notNull(),
     conditions: jsonb("conditions").$type<RoutingRuleCondition[]>().default([]).notNull(),
-    assigneeId: text("assignee_id").references(() => users.id, { onDelete: "set null" }),
     assigneeMembershipId: integer("assignee_membership_id"),
     setPriority: text("set_priority"),
     assignmentMode: text("assignment_mode").default("static").notNull(),

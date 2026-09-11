@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { subjects } from "../../../../db/schema";
-import type { EntityWriter } from "./entity-writer";
+import { recordOrNull, rowToRecord, stringOrNull, type EntityWriter } from "./entity-writer";
 
 /**
  * Landing a row as a subject.
@@ -65,7 +65,7 @@ export const SUBJECT_WRITER: EntityWriter = {
         )
         .limit(1);
 
-      return (subject as Record<string, unknown> | undefined) ?? null;
+      return subject ? rowToRecord(subject) : null;
     },
 
     async fillGaps(tx, context, recordId, before, row) {
@@ -90,7 +90,7 @@ export const SUBJECT_WRITER: EntityWriter = {
            * is most of them, most of the time.
            */
           customFields: {
-            ...((before.customFields as Record<string, unknown> | null) ?? {}),
+            ...(recordOrNull(before.customFields) ?? {}),
             ...(row.customFields ?? {}),
           },
         })
@@ -107,9 +107,9 @@ export const SUBJECT_WRITER: EntityWriter = {
         .update(subjects)
         .set({
           title: String(before.title ?? ""),
-          reference: (before.reference as string | null) ?? null,
-          status: (before.status as string | null) ?? null,
-          customFields: (before.customFields as Record<string, unknown> | null) ?? null,
+          reference: stringOrNull(before.reference),
+          status: stringOrNull(before.status),
+          customFields: recordOrNull(before.customFields),
         })
         .where(
           and(

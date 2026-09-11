@@ -60,7 +60,7 @@ export class VersionedCatalogService {
           lte(billingPriceVersions.effectiveFrom, now),
           or(
             isNull(billingPriceVersions.effectiveUntil),
-            sql`${billingPriceVersions.effectiveUntil} > ${now}`,
+            sql`${billingPriceVersions.effectiveUntil} > ${now.toISOString()}::timestamptz`,
           ),
         ),
       )
@@ -93,7 +93,7 @@ export class VersionedCatalogService {
           lte(billingPriceVersions.effectiveFrom, now),
           or(
             isNull(billingPriceVersions.effectiveUntil),
-            sql`${billingPriceVersions.effectiveUntil} > ${now}`,
+            sql`${billingPriceVersions.effectiveUntil} > ${now.toISOString()}::timestamptz`,
           ),
         ),
       )
@@ -221,7 +221,7 @@ export class VersionedCatalogService {
               lte(subscriptionItems.effectiveFrom, now),
               or(
                 isNull(subscriptionItems.effectiveUntil),
-                sql`${subscriptionItems.effectiveUntil} > ${now}`,
+                sql`${subscriptionItems.effectiveUntil} > ${now.toISOString()}::timestamptz`,
               ),
             ),
           )

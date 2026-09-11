@@ -30,6 +30,8 @@ import {
 } from "./dto/incidents.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { incidentRowSchema, incidentDetailSchema, incidentUpdateRowSchema } from "./dto/incidents-response.schemas";
 
 const incidentIdParams = z.object({ incidentId: z.coerce.number().int().positive() }).strict();
 
@@ -41,40 +43,44 @@ export class IncidentsController {
 
   @Get()
   @RequirePermission("build:incidents:view")
+  @ResponseSchema(z.array(incidentRowSchema))
   @Validate({ query: listIncidentsQuerySchema })
   listIncidents(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Query() query: ListIncidentsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listIncidents(u.orgId, projectId, query);
+    return this.svc.listIncidents(u, projectId, query);
   }
 
   @Get(":incidentId")
   @RequirePermission("build:incidents:view")
+  @ResponseSchema(incidentDetailSchema)
   @Validate({ params: incidentIdParams })
   getIncident(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("incidentId", ParseIntPipe) incidentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getIncident(u.orgId, projectId, incidentId);
+    return this.svc.getIncident(u, projectId, incidentId);
   }
 
   @Post()
   @HttpCode(201)
   @RequirePermission("build:incidents:manage")
+  @ResponseSchema(incidentRowSchema)
   @Validate({ body: createIncidentSchema })
   createIncident(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body() body: CreateIncidentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createIncident(u.orgId, u.userId, projectId, body);
+    return this.svc.createIncident(u, projectId, body);
   }
 
   @Patch(":incidentId")
   @RequirePermission("build:incidents:manage")
+  @ResponseSchema(incidentRowSchema)
   @Validate({ params: incidentIdParams, body: updateIncidentSchema })
   updateIncident(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -82,24 +88,26 @@ export class IncidentsController {
     @Body() body: UpdateIncidentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.updateIncident(u.orgId, u.userId, projectId, incidentId, body);
+    return this.svc.updateIncident(u, projectId, incidentId, body);
   }
 
   @Delete(":incidentId")
   @RequirePermission("build:incidents:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: incidentIdParams })
   deleteIncident(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("incidentId", ParseIntPipe) incidentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.deleteIncident(u.orgId, u.userId, projectId, incidentId);
+    return this.svc.deleteIncident(u, projectId, incidentId);
   }
 
   @Post(":incidentId/updates")
   @HttpCode(201)
   @RequirePermission("build:incidents:manage")
+  @ResponseSchema(incidentUpdateRowSchema)
   @Validate({ params: incidentIdParams, body: addIncidentUpdateSchema })
   addUpdate(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -107,6 +115,6 @@ export class IncidentsController {
     @Body() body: AddIncidentUpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.addUpdate(u.orgId, u.userId, projectId, incidentId, body);
+    return this.svc.addUpdate(u, projectId, incidentId, body);
   }
 }

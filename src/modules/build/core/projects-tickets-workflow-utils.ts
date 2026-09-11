@@ -2,7 +2,6 @@ import {
   BadRequestException,
   ConflictException,
 } from "@nestjs/common";
-import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import {
   and,
   count,
@@ -34,14 +33,15 @@ export type WorkflowStatusRow = {
 export type PrefetchedWorkflow = {
   transitions: WorkflowTransitionRow[];
   statuses: WorkflowStatusRow[];
+  ticketFields?: Map<number, Pick<typeof tickets.$inferSelect, "assigneeMembershipId" | "dueDate" | "priority" | "points" | "epicId" | "sprintId">>;
+  wipAlreadyChecked?: boolean;
 };
 
-async function fetchTransitionsAndStatuses(
+export async function fetchTransitionsAndStatuses(
   db: Db,
   orgId: string,
   projectId: number,
 ): Promise<PrefetchedWorkflow> {
-  try {
     const [transitions, statuses] = await Promise.all([
       db
         .select({
@@ -74,10 +74,6 @@ async function fetchTransitionsAndStatuses(
         ),
     ]);
     return { transitions, statuses };
-  } catch (err) {
-    logSideEffectFailure("workflow transition fetch", { orgId, projectId })(err);
-    return { transitions: [], statuses: [] };
-  }
 }
 
 export async function assertTransitionAllowed(
@@ -121,6 +117,22 @@ export async function assertTransitionAllowed(
 
   const bypassPrivilege = context.isOrgOwner;
 
+  const readTicketRequiredFields = () =>
+    db
+      .select({
+        assigneeMembershipId: tickets.assigneeMembershipId,
+        dueDate: tickets.dueDate,
+        priority: tickets.priority,
+        points: tickets.points,
+        epicId: tickets.epicId,
+        sprintId: tickets.sprintId,
+      })
+      .from(tickets)
+      .where(and(eq(tickets.id, context.ticketId), eq(tickets.orgId, orgId)))
+      .limit(1);
+
+  let ticketRows: Awaited<ReturnType<typeof readTicketRequiredFields>> | undefined;
+
   for (const transition of matchingTransitions) {
     if (transition.requiresApproval && !bypassPrivilege) {
       throw new BadRequestException(
@@ -147,26 +159,16 @@ export async function assertTransitionAllowed(
       Array.isArray(transition.requiredFields) &&
       transition.requiredFields.length > 0
     ) {
-      const ticketRows = await db
-        .select({
-          assigneeId: tickets.assigneeId,
-          dueDate: tickets.dueDate,
-          priority: tickets.priority,
-          points: tickets.points,
-          epicId: tickets.epicId,
-          sprintId: tickets.sprintId,
-        })
-        .from(tickets)
-        .where(
-          and(eq(tickets.id, context.ticketId), eq(tickets.orgId, orgId)),
-        )
-        .limit(1);
+      if (ticketRows === undefined) {
+        const prefetchedTicket = prefetched?.ticketFields?.get(context.ticketId);
+        ticketRows = prefetchedTicket ? [prefetchedTicket] : await readTicketRequiredFields();
+      }
 
       if (ticketRows.length > 0) {
         const row = ticketRows[0];
         const missing: string[] = [];
         for (const field of transition.requiredFields) {
-          if (field === "assigneeId" && !row.assigneeId) missing.push(field);
+          if (field === "assigneeId" && !row.assigneeMembershipId) missing.push(field);
           else if (field === "dueDate" && !row.dueDate) missing.push(field);
           else if (field === "priority" && !row.priority) missing.push(field);
           else if (
@@ -187,7 +189,7 @@ export async function assertTransitionAllowed(
   }
 
   const toStatus = idToStatus.get(resolvedTo);
-  if (toStatus?.wipLimit != null) {
+  if (toStatus?.wipLimit != null && !prefetched?.wipAlreadyChecked) {
     await assertWipLimit(
       db,
       orgId,

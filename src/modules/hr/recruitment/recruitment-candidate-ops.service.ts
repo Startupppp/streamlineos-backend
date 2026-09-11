@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   candidateApplications,
   candidateSlaTracking,
@@ -20,6 +20,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { EmailService } from "../../email/email.service";
 import { AutomationService } from "../../automation/automation.service";
+import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { getCandidateRejectionEmail } from "../../email/templates/recruitment";
 import type {
   BgvStatusInput,
@@ -39,14 +40,30 @@ export class RecruitmentCandidateOpsService {
     private readonly cache: CacheService,
     private readonly email: EmailService,
     private readonly automation: AutomationService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   async bulkImport(orgId: string, input: BulkImportInput) {
-    const existingCandidates = await this.db.query.candidates.findMany({
-      where: eq(candidates.orgId, orgId),
-      columns: { email: true },
-    });
-    const existingEmails = new Set(existingCandidates.map((c) => c.email.toLowerCase()));
+    // Bounded by the REQUEST, not the organisation: this used to select every
+    // candidate row the org holds, unlimited, to answer <=500 questions.
+    // `candidates` has no unique on (org_id, email), so the onConflictDoNothing()
+    // below can never fire and this probe IS the dedupe. lower() on both sides
+    // because email is stored verbatim at some insert sites; selectDistinct with
+    // limit(requested.length) is exact rather than truncating.
+    const requestedEmails = [
+      ...new Set(input.rows.map((row) => row.email.toLowerCase().trim())),
+    ];
+    const existingCandidates = await this.db
+      .selectDistinct({ email: sql<string>`lower(${candidates.email})` })
+      .from(candidates)
+      .where(
+        and(
+          eq(candidates.orgId, orgId),
+          inArray(sql`lower(${candidates.email})`, requestedEmails),
+        ),
+      )
+      .limit(requestedEmails.length);
+    const existingEmails = new Set(existingCandidates.map((c) => c.email));
 
     const results = { created: 0, skipped: 0, errors: [] as string[] };
     const toInsert: Array<typeof candidates.$inferInsert> = [];
@@ -76,6 +93,7 @@ export class RecruitmentCandidateOpsService {
     }
 
     if (toInsert.length > 0) {
+      await this.planLimits.assertWithinLimit(orgId, "hrCandidates", toInsert.length);
       const chunkSize = 50;
       for (let i = 0; i < toInsert.length; i += chunkSize) {
         const chunk = toInsert.slice(i, i + chunkSize);
@@ -102,12 +120,14 @@ export class RecruitmentCandidateOpsService {
       status: "NEW" as const,
     }));
 
+    await this.planLimits.assertWithinLimit(orgId, "hrCandidates", values.length);
     const inserted = await this.db.insert(candidates).values(values).returning({ id: candidates.id });
     await this.cache.invalidateNamespace(`hr:candidates:list:${orgId}`);
     return { imported: inserted.length };
   }
 
   async bulkReject(orgId: string, userId: string, input: BulkRejectInput) {
+    const requestedIds = [...new Set(input.candidateIds)];
     const existing = await this.db
       .select({
         id: candidates.id,
@@ -117,10 +137,11 @@ export class RecruitmentCandidateOpsService {
         status: candidates.status,
       })
       .from(candidates)
-      .where(and(inArray(candidates.id, input.candidateIds), eq(candidates.orgId, orgId)));
+      .where(and(inArray(candidates.id, requestedIds), eq(candidates.orgId, orgId)))
+      .limit(requestedIds.length);
 
-    if (existing.length === 0) {
-      throw new NotFoundException("No matching candidates found");
+    if (existing.length !== requestedIds.length) {
+      throw new NotFoundException("One or more candidate IDs not found in this organization");
     }
 
     const toReject = existing.filter((c) => c.status !== "REJECTED");
@@ -182,13 +203,15 @@ export class RecruitmentCandidateOpsService {
   }
 
   async bulkShortlist(orgId: string, userId: string, input: BulkShortlistInput) {
+    const requestedIds = [...new Set(input.candidateIds)];
     const existing = await this.db
       .select({ id: candidates.id, firstName: candidates.firstName, lastName: candidates.lastName, status: candidates.status })
       .from(candidates)
-      .where(and(inArray(candidates.id, input.candidateIds), eq(candidates.orgId, orgId)));
+      .where(and(inArray(candidates.id, requestedIds), eq(candidates.orgId, orgId)))
+      .limit(requestedIds.length);
 
-    if (existing.length === 0) {
-      throw new NotFoundException("No matching candidates found");
+    if (existing.length !== requestedIds.length) {
+      throw new NotFoundException("One or more candidate IDs not found in this organization");
     }
 
     const toShortlist = existing.filter((c) => c.status === "NEW");
@@ -222,6 +245,7 @@ export class RecruitmentCandidateOpsService {
   async getSla(orgId: string, candidateId: number) {
     await this.ensureCandidate(orgId, candidateId);
     return this.db.query.candidateSlaTracking.findMany({
+      limit: 100,
       where: and(eq(candidateSlaTracking.candidateId, candidateId), eq(candidateSlaTracking.orgId, orgId)),
       orderBy: (t, { asc }) => [asc(t.stage)],
     });

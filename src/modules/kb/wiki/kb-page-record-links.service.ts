@@ -1,12 +1,14 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull, ne } from "drizzle-orm";
 import { kbPageLinks, kbPages } from "../../../db/schema";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { CreateRecordLinkDto, RecordLinkByRecordQuery } from "./dto/kb-page-record-links.schemas";
 import { pageVisibleTo } from "../retrieval/kb-page-visibility";
 import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
+
 
 @Injectable()
 export class KbPageRecordLinksService {
@@ -34,32 +36,28 @@ export class KbPageRecordLinksService {
   async add(user: CurrentUserContext, pageId: number, dto: CreateRecordLinkDto) {
     await this.assertPageAccessible(user, pageId);
 
-    const existing = await this.db.query.kbPageLinks.findFirst({
-      where: and(
-        eq(kbPageLinks.sourcePageId, pageId),
-        eq(kbPageLinks.orgId, user.orgId),
-        eq(kbPageLinks.targetType, dto.targetType),
-        eq(kbPageLinks.targetId, dto.targetId),
-      ),
-    });
-    if (existing) throw new ConflictException("Record link already exists");
-
-    const [row] = await this.db
-      .insert(kbPageLinks)
-      .values({
-        orgId: user.orgId,
-        sourcePageId: pageId,
-        targetType: dto.targetType,
-        targetId: dto.targetId,
-        label: dto.label,
-      })
-      .returning({
-        id: kbPageLinks.id,
-        targetType: kbPageLinks.targetType,
-        targetId: kbPageLinks.targetId,
-        label: kbPageLinks.label,
-      });
-    return row;
+    try {
+      const [row] = await this.db
+        .insert(kbPageLinks)
+        .values({
+          orgId: user.orgId,
+          sourcePageId: pageId,
+          targetType: dto.targetType,
+          targetId: dto.targetId,
+          label: dto.label,
+        })
+        .returning({
+          id: kbPageLinks.id,
+          targetType: kbPageLinks.targetType,
+          targetId: kbPageLinks.targetId,
+          label: kbPageLinks.label,
+        });
+      return row;
+    } catch (err) {
+      if (isUniqueViolation(err))
+        throw new ConflictException("Record link already exists");
+      throw err;
+    }
   }
 
   async remove(user: CurrentUserContext, linkId: number) {

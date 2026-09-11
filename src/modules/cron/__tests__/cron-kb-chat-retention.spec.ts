@@ -159,6 +159,25 @@ describe("CronKbChatRetentionService — tenant isolation", () => {
     expect(rendered.params).toContain("org-1");
   });
 
+  it("excludes conversations covered by organization and subject legal holds", async () => {
+    const { captured } = makeTx({
+      settingsRow: { chatHistoryRetentionDays: 90 },
+      conversationBatches: [[]],
+    });
+    const svc = await buildSvc();
+
+    await svc.purgeExpiredConversations();
+
+    const rendered = dialect.sqlToQuery(captured.conversationsWhere!);
+    expect(rendered.sql).toContain('"organization_legal_holds"');
+    expect(rendered.sql).toContain('"hr_legal_holds"');
+    expect(rendered.sql).toContain('"subject_membership_id"');
+    expect(rendered.sql).toContain('"subject_user_id"');
+    expect(rendered.sql).toContain('"organization_members"');
+    expect(rendered.sql).toContain('"released_at" IS NULL');
+    expect(rendered.sql).toContain('"status" = \'active\'');
+  });
+
   it("does not include a different org's id in the conversations query (isolation — control)", async () => {
     const { captured } = makeTx({
       settingsRow: { chatHistoryRetentionDays: 90 },

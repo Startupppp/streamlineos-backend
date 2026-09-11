@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, count, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import {
   groupRoleAssignments,
   organizationMembers,
@@ -33,6 +33,8 @@ import type {
   ListGroupsQuery,
   RenameGroupInput,
 } from "./dto/principal-groups.schemas";
+import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
+import { keysetAfterValueUuid } from "../../common/pagination/keyset";
 
 @Injectable()
 export class PrincipalGroupsService {
@@ -54,10 +56,13 @@ export class PrincipalGroupsService {
   }
 
   async list(orgId: string, query: ListGroupsQuery) {
-    const offset = (query.page - 1) * query.limit;
+    const position = decodeCursor(query.cursor);
+    const where = and(
+      eq(principalGroups.orgId, orgId),
+      position ? keysetAfterValueUuid(principalGroups.name, principalGroups.id, position) : undefined,
+    );
 
-    const [rows, countRows] = await Promise.all([
-      this.db
+    const rows = await this.db
         .select({
           id: principalGroups.id,
           name: principalGroups.name,
@@ -78,29 +83,20 @@ export class PrincipalGroupsService {
           )`,
         })
         .from(principalGroups)
-        .where(eq(principalGroups.orgId, orgId))
-        .orderBy(asc(principalGroups.name))
-        .limit(query.limit)
-        .offset(offset),
-      this.db
-        .select({ value: count() })
-        .from(principalGroups)
-        .where(eq(principalGroups.orgId, orgId)),
-    ]);
-
-    const total = Number(countRows[0]?.value ?? 0);
+        .where(where)
+        .orderBy(asc(principalGroups.name), asc(principalGroups.id))
+        .limit(query.limit + 1);
+    const page = buildCursorPage(rows, query.limit, (row) => ({
+      sortValue: row.name,
+      id: row.id,
+    }));
     return {
-      data: rows.map((r) => ({
+      data: page.data.map((r) => ({
         ...r,
         memberCount: Number(r.memberCount),
         roleCount: Number(r.roleCount),
       })),
-      pagination: {
-        page: query.page,
-        limit: query.limit,
-        total,
-        totalPages: Math.ceil(total / query.limit),
-      },
+      pagination: page.pagination,
     };
   }
 

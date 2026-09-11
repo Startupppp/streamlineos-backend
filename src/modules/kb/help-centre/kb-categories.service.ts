@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, eq, ne } from "drizzle-orm";
+import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { kbCategories } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -151,31 +151,36 @@ export class KbCategoriesService {
   }
 
   private async depthOf(orgId: string, categoryId: number): Promise<number> {
-    let depth = 0;
-    let current: number | null = categoryId;
-    for (let i = 0; i <= KB_MAX_COLLECTION_DEPTH + 1 && current !== null; i += 1) {
-      const row: { parentId: number | null } | undefined = await this.db.query.kbCategories.findFirst({
-        where: and(eq(kbCategories.id, current), eq(kbCategories.orgId, orgId)),
-        columns: { parentId: true },
-      });
-      if (!row || row.parentId === null) break;
-      depth += 1;
-      current = row.parentId;
-    }
-    return depth;
+    const rows = await this.db.execute(sql`
+      WITH RECURSIVE chain AS (
+        SELECT id, parent_id, 0 AS depth
+        FROM kb_categories
+        WHERE id = ${categoryId} AND org_id = ${orgId}
+        UNION ALL
+        SELECT c.id, c.parent_id, chain.depth + 1
+        FROM kb_categories c
+        INNER JOIN chain ON c.id = chain.parent_id
+        WHERE c.org_id = ${orgId} AND chain.depth < ${KB_MAX_COLLECTION_DEPTH + 1}
+      )
+      SELECT COALESCE(MAX(depth), 0) AS depth FROM chain
+    `);
+    return Number(rows[0]?.depth ?? 0);
   }
 
   private async isAncestorOf(orgId: string, ancestorId: number, nodeId: number): Promise<boolean> {
-    let current: number | null = nodeId;
-    for (let i = 0; i <= KB_MAX_COLLECTION_DEPTH + 1 && current !== null; i += 1) {
-      if (current === ancestorId) return true;
-      const row: { parentId: number | null } | undefined = await this.db.query.kbCategories.findFirst({
-        where: and(eq(kbCategories.id, current), eq(kbCategories.orgId, orgId)),
-        columns: { parentId: true },
-      });
-      if (!row) break;
-      current = row.parentId;
-    }
-    return false;
+    const rows = await this.db.execute(sql`
+      WITH RECURSIVE chain AS (
+        SELECT id, parent_id, 0 AS depth
+        FROM kb_categories
+        WHERE id = ${nodeId} AND org_id = ${orgId}
+        UNION ALL
+        SELECT c.id, c.parent_id, chain.depth + 1
+        FROM kb_categories c
+        INNER JOIN chain ON c.id = chain.parent_id
+        WHERE c.org_id = ${orgId} AND chain.depth < ${KB_MAX_COLLECTION_DEPTH + 1}
+      )
+      SELECT 1 AS found FROM chain WHERE id = ${ancestorId} LIMIT 1
+    `);
+    return rows.length > 0;
   }
 }

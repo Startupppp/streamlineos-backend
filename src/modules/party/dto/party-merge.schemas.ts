@@ -13,5 +13,5 @@ export const partyRoleBodySchema = z
   })
   .strict();
 
-export type PartyMergeBody = z.infer<typeof partyMergeBodySchema>;
-export type PartyRoleBody = z.infer<typeof partyRoleBodySchema>;
+type PartyMergeBody = z.infer<typeof partyMergeBodySchema>;
+type PartyRoleBody = z.infer<typeof partyRoleBodySchema>;

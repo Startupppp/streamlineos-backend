@@ -1,4 +1,4 @@
-import { and, eq, isNull, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import {
   hrEmployments,
@@ -23,13 +23,13 @@ export type ReportingLineOutcome =
 const managerEmployments = alias(hrEmployments, "manager_employment");
 const managerPeople = alias(hrPeople, "manager_person");
 
-async function primaryEmploymentIdOf(
+async function primaryEmploymentIdsOf(
   db: DbOrTx,
   orgId: string,
-  userId: string,
-): Promise<number | null> {
-  const [row] = await db
-    .select({ id: hrEmployments.id })
+  userIds: readonly string[],
+): Promise<Map<string, number>> {
+  const rows = await db
+    .select({ userId: hrPeople.userId, employmentId: hrEmployments.id })
     .from(hrEmployments)
     .innerJoin(
       hrPeople,
@@ -40,12 +40,16 @@ async function primaryEmploymentIdOf(
         eq(hrEmployments.orgId, orgId),
         eq(hrEmployments.isPrimary, true),
         isNull(hrEmployments.deletedAt),
-        eq(hrPeople.userId, userId),
+        inArray(hrPeople.userId, [...userIds]),
         isNull(hrPeople.deletedAt),
       ),
-    )
-    .limit(1);
-  return row?.id ?? null;
+    );
+
+  const byUser = new Map<string, number>();
+  for (const row of rows)
+    if (row.userId !== null && !byUser.has(row.userId))
+      byUser.set(row.userId, row.employmentId);
+  return byUser;
 }
 
 async function managerEmploymentIdOf(
@@ -96,6 +100,15 @@ function dayBefore(isoDate: string): string {
   return previous.toISOString().slice(0, 10);
 }
 
+function openPrimaryLinesOf(orgId: string, employmentIds: readonly number[]) {
+  return and(
+    eq(hrReportingLines.orgId, orgId),
+    inArray(hrReportingLines.employmentId, [...employmentIds]),
+    eq(hrReportingLines.lineType, "primary"),
+    sql`${hrReportingLines.effectiveTo} = 'infinity'::date`,
+  );
+}
+
 export async function syncCanonicalReportingLine(
   db: DbOrTx,
   orgId: string,
@@ -104,81 +117,128 @@ export async function syncCanonicalReportingLine(
   effectiveFrom: string,
   createdBy: string | null,
 ): Promise<ReportingLineOutcome> {
-  const employmentId = await primaryEmploymentIdOf(db, orgId, userId);
-  if (employmentId === null) return { status: "unmappable", reason: "employment-missing" };
-
-  const openLine = and(
-    eq(hrReportingLines.orgId, orgId),
-    eq(hrReportingLines.employmentId, employmentId),
-    eq(hrReportingLines.lineType, "primary"),
-    sql`${hrReportingLines.effectiveTo} = 'infinity'::date`,
+  const outcomes = await syncCanonicalReportingLines(
+    db,
+    orgId,
+    [userId],
+    managerUserId,
+    effectiveFrom,
+    createdBy,
   );
+  return outcomes.get(userId) ?? { status: "unmappable", reason: "employment-missing" };
+}
+
+export async function syncCanonicalReportingLines(
+  db: DbOrTx,
+  orgId: string,
+  userIds: readonly string[],
+  managerUserId: string | null,
+  effectiveFrom: string,
+  createdBy: string | null,
+): Promise<Map<string, ReportingLineOutcome>> {
+  const outcomes = new Map<string, ReportingLineOutcome>();
+  const subjects = [...new Set(userIds)];
+  if (subjects.length === 0) return outcomes;
+
+  const employmentByUser = await primaryEmploymentIdsOf(db, orgId, subjects);
+
+  const usersByEmployment = new Map<number, string[]>();
+  for (const userId of subjects) {
+    const employmentId = employmentByUser.get(userId);
+    if (employmentId === undefined) {
+      outcomes.set(userId, { status: "unmappable", reason: "employment-missing" });
+      continue;
+    }
+    if (userId === managerUserId) {
+      outcomes.set(userId, { status: "unmappable", reason: "self-reference" });
+      continue;
+    }
+    const group = usersByEmployment.get(employmentId);
+    if (group) group.push(userId);
+    else usersByEmployment.set(employmentId, [userId]);
+  }
+
+  const employmentIds = [...usersByEmployment.keys()];
+  if (employmentIds.length === 0) return outcomes;
 
   if (managerUserId === null) {
     await db
       .update(hrReportingLines)
       .set({ effectiveTo: dayBefore(effectiveFrom) })
-      .where(openLine);
-    return { status: "cleared", employmentId };
+      .where(openPrimaryLinesOf(orgId, employmentIds));
+    for (const [employmentId, group] of usersByEmployment)
+      for (const userId of group) outcomes.set(userId, { status: "cleared", employmentId });
+    return outcomes;
   }
 
-  if (managerUserId === userId) return { status: "unmappable", reason: "self-reference" };
-
   const manager = await managerEmploymentIdOf(db, orgId, managerUserId);
-  if (manager === "not-a-member")
-    return { status: "unmappable", reason: "manager-not-in-organization" };
-  if (manager === "no-employment")
-    return { status: "unmappable", reason: "manager-has-no-employment" };
+  if (manager === "not-a-member" || manager === "no-employment") {
+    const reason: ReportingLineUnmappableReason =
+      manager === "not-a-member" ? "manager-not-in-organization" : "manager-has-no-employment";
+    for (const group of usersByEmployment.values())
+      for (const userId of group) outcomes.set(userId, { status: "unmappable", reason });
+    return outcomes;
+  }
 
-  const [existing] = await db
+  const openLines = await db
     .select({
       id: hrReportingLines.id,
+      employmentId: hrReportingLines.employmentId,
       managerEmploymentId: hrReportingLines.managerEmploymentId,
     })
     .from(hrReportingLines)
-    .where(openLine)
-    .limit(1);
+    .where(openPrimaryLinesOf(orgId, employmentIds));
 
-  if (existing?.managerEmploymentId === manager)
-    return { status: "unchanged", employmentId, managerEmploymentId: manager };
+  const openByEmployment = new Map<number, { id: number; managerEmploymentId: number }>();
+  for (const line of openLines)
+    if (!openByEmployment.has(line.employmentId))
+      openByEmployment.set(line.employmentId, {
+        id: line.id,
+        managerEmploymentId: line.managerEmploymentId,
+      });
 
-  if (existing)
+  const lineIdsToClose: number[] = [];
+  const newLines: Array<{
+    orgId: string;
+    employmentId: number;
+    managerEmploymentId: number;
+    lineType: "primary";
+    effectiveFrom: string;
+    createdBy: string | null;
+  }> = [];
+
+  for (const [employmentId, group] of usersByEmployment) {
+    const existing = openByEmployment.get(employmentId);
+    if (existing?.managerEmploymentId === manager) {
+      for (const userId of group)
+        outcomes.set(userId, { status: "unchanged", employmentId, managerEmploymentId: manager });
+      continue;
+    }
+    if (existing) lineIdsToClose.push(existing.id);
+    newLines.push({
+      orgId,
+      employmentId,
+      managerEmploymentId: manager,
+      lineType: "primary",
+      effectiveFrom,
+      createdBy,
+    });
+    for (const userId of group)
+      outcomes.set(userId, { status: "written", employmentId, managerEmploymentId: manager });
+  }
+
+  if (lineIdsToClose.length > 0)
     await db
       .update(hrReportingLines)
       .set({ effectiveTo: dayBefore(effectiveFrom) })
-      .where(and(eq(hrReportingLines.id, existing.id), eq(hrReportingLines.orgId, orgId)));
+      .where(
+        and(
+          eq(hrReportingLines.orgId, orgId),
+          inArray(hrReportingLines.id, lineIdsToClose),
+        ),
+      );
 
-  await db.insert(hrReportingLines).values({
-    orgId,
-    employmentId,
-    managerEmploymentId: manager,
-    lineType: "primary",
-    effectiveFrom,
-    createdBy,
-  });
+  if (newLines.length > 0) await db.insert(hrReportingLines).values(newLines);
 
-  return { status: "written", employmentId, managerEmploymentId: manager };
-}
-
-export async function currentManagerEmploymentId(
-  db: DbOrTx,
-  orgId: string,
-  employmentId: number,
-  onDate: string,
-): Promise<number | null> {
-  const [row] = await db
-    .select({ managerEmploymentId: hrReportingLines.managerEmploymentId })
-    .from(hrReportingLines)
-    .where(
-      and(
-        eq(hrReportingLines.orgId, orgId),
-        eq(hrReportingLines.employmentId, employmentId),
-        eq(hrReportingLines.lineType, "primary"),
-        sql`${hrReportingLines.effectiveFrom} <= ${onDate}::date`,
-        sql`${hrReportingLines.effectiveTo} >= ${onDate}::date`,
-        ne(hrReportingLines.managerEmploymentId, employmentId),
-      ),
-    )
-    .limit(1);
-  return row?.managerEmploymentId ?? null;
+  return outcomes;
 }

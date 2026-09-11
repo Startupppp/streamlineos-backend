@@ -21,6 +21,11 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import {
+  awaitedAuditWrites,
+  scanServiceAuditAwaits,
+  totalAuditWrites,
+} from "./audit-await-scan";
 
 const BACKEND_ROOT = join(__dirname, "../..");
 
@@ -95,19 +100,16 @@ const MUTATION_SERVICES_WITH_CRITICAL_AUDIT = [
   "modules/hr/lifecycle/termination.service.ts",
   "modules/hr/time/leaves-approval.service.ts",
   "modules/hr/time/leaves-write.service.ts",
-  "modules/organization/hierarchy/org-hierarchy-branches.service.ts",
-  "modules/organization/hierarchy/org-hierarchy-departments.service.ts",
+  "modules/organization/hierarchy/org-unit-crud.ts",
 ];
 
 describe("HRMS critical services — logCritical is called and awaited", () => {
   it.each(MUTATION_SERVICES_WITH_CRITICAL_AUDIT)(
     "awaits logCritical in %s",
     (relativePath) => {
-      const source = src(`src/${relativePath}`);
-      const criticalCalls = source.match(/this\.audit\.logCritical\(/g) ?? [];
-      const awaitedCalls = source.match(/await this\.audit\.logCritical\(/g) ?? [];
-      expect(criticalCalls.length).toBeGreaterThan(0);
-      expect(awaitedCalls).toHaveLength(criticalCalls.length);
+      const report = scanServiceAuditAwaits(join(BACKEND_ROOT, "src", relativePath));
+      expect(totalAuditWrites(report)).toBeGreaterThan(0);
+      expect(awaitedAuditWrites(report)).toBe(totalAuditWrites(report));
     },
   );
 });

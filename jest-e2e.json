@@ -1,16 +1,17 @@
 {
   "moduleFileExtensions": ["js", "json", "ts", "mjs", "cjs"],
   "rootDir": ".",
+  "roots": ["<rootDir>/src", "<rootDir>/test"],
   "testEnvironment": "node",
   "testTimeout": 60000,
   "workerIdleMemoryLimit": "1GB",
   "testRegex": "\\.e2e-spec\\.ts$",
-  "testPathIgnorePatterns": ["seeded-e2e-spec", "node_modules", "dist"],
-  "transform": { "^.+\\.(t|j|mj)s$": ["ts-jest", { "tsconfig": { "allowJs": true }, "diagnostics": false }] },
+  "testPathIgnorePatterns": ["seeded-e2e-spec", "node_modules", "dist", "\\.claude[\\\\/]worktrees"],
+  "transform": { "^.+\\.(t|j|mj)s$": ["ts-jest", { "tsconfig": { "allowJs": true, "isolatedModules": true }, "diagnostics": false }] },
   "transformIgnorePatterns": [
     "/node_modules/(?!(?:\\.pnpm/)?(?:@scure|otplib|@otplib|@noble|@composio|@openrouter|@ai-sdk|@workflow|@standard-schema|eventsource-parser|ai)[@/+])"
   ],
   "moduleNameMapper": { "^src/(.*)$": "<rootDir>/src/$1", "^test/(.*)$": "<rootDir>/test/$1" },
-  "setupFiles": ["dotenv/config"],
+  "setupFiles": ["dotenv/config", "<rootDir>/src/test/jest-e2e-setup.ts"],
   "testResultsProcessor": "./test/e2e-suite-exit-guard.cjs"
 }

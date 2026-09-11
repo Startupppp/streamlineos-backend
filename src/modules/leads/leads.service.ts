@@ -32,6 +32,7 @@ import type {
   UpdateInput,
   IngestInput,
 } from "./dto/lead.schemas";
+import { LEAD_QUALIFICATION_FIELD } from "./dto/lead.schemas";
 import {
   createMirroredLead,
   softDeleteMirroredLeads,
@@ -84,15 +85,15 @@ export class LeadsService {
     });
   }
 
-  async listLeads(orgId: string, filters?: ListFilters) {
+  async listLeads(orgId: string, filters: ListFilters) {
     return this.reads.listLeads(orgId, filters);
   }
 
-  async getBoard(orgId: string, opts?: BoardOpts) {
+  async getBoard(orgId: string, opts: BoardOpts) {
     return this.reads.getBoard(orgId, opts);
   }
 
-  async getStats(orgId: string, filters?: StatsFilters) {
+  async getStats(orgId: string, filters: StatsFilters) {
     return this.reads.getStats(orgId, filters);
   }
 
@@ -260,8 +261,12 @@ export class LeadsService {
       throw new BadRequestException(validation.errors.map((e) => e.message).join("; "));
     }
 
+    const { qualification, ...mirrored } = input;
     const updated = await updateMirroredLead(this.db, orgId, id, {
-      ...input,
+      ...mirrored,
+      ...(qualification
+        ? { customData: { ...(existing.customData ?? {}), [LEAD_QUALIFICATION_FIELD]: qualification } }
+        : {}),
       updatedAt: new Date(),
     });
 

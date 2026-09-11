@@ -1,0 +1,50 @@
+{
+  "minReasonLength": 40,
+  "note": "Every entry here is a test that RUNS, is GREEN, and cannot fail. Registration is not absolution: it records who owns the gap. Ratchets may only go DOWN. Do not add an entry to make a red gate green \u2014 give the test a real assertion instead. Suppressed tests (it.skip/it.todo/xit) are NOT this gate's business; they live in test-suppressions.json.",
+  "ratchets": {
+    "NO_ASSERTION": 1,
+    "TAUTOLOGY": 2,
+    "COND_ASSERT": 0,
+    "FLOATING_ASSERT": 0,
+    "FOCUSED": 0,
+    "EARLY_RETURN": 4
+  },
+  "allowed": [
+    {
+      "file": "src/modules/inventory/inv-engine-misc-isolation-ai.spec.ts",
+      "title": "processes insight for the owning org when found (isolation \u2014 control returns or calls AI)",
+      "class": "NO_ASSERTION",
+      "reason": "Inventory is excluded from the 10/10 release (accepted residual R-9, owner: CRM/inventory release owner, review 2026-12-01). Repairing it means editing a module this release does not cover. The test calls the service and ends; it asserts nothing about the org boundary its title claims."
+    },
+    {
+      "file": "src/modules/payroll/__tests__/prd-e2e-journey.spec.ts",
+      "title": "11. Manager scope is non-all DataScope (contract): self-only not all",
+      "class": "TAUTOLOGY",
+      "reason": "Scenarios 5 and 6 in this file were converted from expect(true).toBe(true) to real schema assertions. This one cannot follow them: it asserts a scope GRANTED TO A ROLE rather than a flag on a permission definition, so it needs the access layer's role fixtures rather than a table config read. Owner: payroll/RBAC. Unlike its siblings it names no index or catalog symbol to read."
+    },
+    {
+      "file": "test/security/operator-access.spec.ts",
+      "title": "PRODUCT-BLOCKED \u2014 no operator access mechanism: this spec documents the gap",
+      "class": "TAUTOLOGY",
+      "reason": "Deliberate: there is no operator-access mechanism to test, and the spec exists to keep the absence visible. Already recorded against ticket 35 box 8. It becomes a real test the moment an operator-access mechanism exists, and this registration is what will make that visible."
+    },
+    {
+      "file": "src/degradation/redis.spec.ts",
+      "title": "is higher than the raw declared limit outside production (DEV_LIMIT_MULTIPLIER)",
+      "class": "EARLY_RETURN",
+      "reason": "ENVIRONMENT guard: the assertion is about the DEV multiplier and is meaningless under NODE_ENV=production, where the multiplier is 1. The guard names the environment, not whether a double was reached. Owner: platform."
+    },
+    {
+      "file": "src/modules/surveys/surveys-module-gate.spec.ts",
+      "title": "%s: non-public controllers gate on @RequireModule('surveys') at class level",
+      "class": "EARLY_RETURN",
+      "reason": "DOMAIN guard inside an it.each over every controller: a wholly @Public() controller has no module gate to assert, so that case exempts itself. Real risk, recorded rather than waved away: if isClassPublic ever became true for every controller the whole suite would pass vacuously, and nothing asserts the exemption count. Owner: surveys."
+    },
+    {
+      "file": "src/modules/timesheets/core/timesheets-module-gate.spec.ts",
+      "title": "%s: every non-public controller gates on @RequireModule('timesheets') at class level",
+      "class": "EARLY_RETURN",
+      "reason": "DOMAIN guard inside an it.each over every controller, same shape and same recorded risk as the surveys module-gate spec: a wholly @Public() controller exempts its own case, and the exemption count is not asserted. Owner: timesheets."
+    }
+  ]
+}

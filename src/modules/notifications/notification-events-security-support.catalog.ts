@@ -1,5 +1,4 @@
 import {
-  IN_APP,
   IN_APP_EMAIL,
   IN_APP_PUSH,
   URGENT_ALLOWED_CHANNELS,
@@ -7,12 +6,20 @@ import {
 import { notificationEvent } from "./notification-event-factory";
 
 const e = notificationEvent;
-const IA = IN_APP;
 const IA_EMAIL = IN_APP_EMAIL;
 const IA_PUSH = IN_APP_PUSH;
 const ALLOWED_URGENT = URGENT_ALLOWED_CHANNELS;
 
 export const SECURITY_SUPPORT_NOTIFICATION_EVENTS = [
+  e("security.operator_access.requested", "security", "SECURITY", "Operator access requested", {
+    defaultPriority: "HIGH",
+    defaultType: "WARNING",
+    defaultChannels: IA_EMAIL,
+    allowedChannels: ALLOWED_URGENT,
+    mandatory: true,
+    userConfigurable: false,
+    quietHoursBehavior: "always_bypass",
+  }),
   e("security.login.new_device", "security", "SECURITY", "New device sign-in", {
     defaultPriority: "HIGH",
     defaultType: "WARNING",

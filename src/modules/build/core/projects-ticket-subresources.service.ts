@@ -7,6 +7,7 @@ import { and, desc, eq, isNull, lt } from "drizzle-orm";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import {
   organizationPeople,
+  organizationMembers,
   ticketActivityLog,
   ticketAttachments,
   ticketLabelMappings,
@@ -31,6 +32,9 @@ import type {
   CommentInput,
   UpdateRelatedLinkInput,
 } from "./dto/projects.schemas";
+import { assertTicketInOrg } from "./project-access";
+import { AccessService } from "../../access/access.service";
+import { assertTicketReadAccess, type TicketReadAccess } from "./build-ticket-read-access";
 
 const ACTION_LABELS: Record<string, string> = {
   created: "created this ticket",
@@ -59,6 +63,7 @@ export class ProjectsTicketSubresourcesService {
     private readonly checklistsService: ProjectsTicketChecklistsService,
     private readonly linksService: ProjectsTicketLinksService,
     private readonly relationsService: ProjectsTicketRelationsService,
+    @Inject(AccessService) private readonly access: TicketReadAccess,
   ) {}
 
   addComment(u: CurrentUserContext, ticketId: number, body: CommentInput) {
@@ -118,21 +123,13 @@ export class ProjectsTicketSubresourcesService {
   }
 
   async getActivity(
-    orgId: string,
+    actor: CurrentUserContext,
     projectId: number,
     ticketId: number,
     opts: { limit: number; cursor?: string },
   ) {
-    const ticket = await this.db.query.tickets.findFirst({
-      where: and(
-        eq(tickets.id, ticketId),
-        eq(tickets.projectId, projectId),
-        eq(tickets.orgId, orgId),
-        isNull(tickets.deletedAt),
-      ),
-      columns: { id: true },
-    });
-    if (!ticket) throw new NotFoundException("Ticket not found");
+    await assertTicketReadAccess(this.db, this.access, actor, projectId, ticketId);
+    const orgId = actor.orgId;
 
     const position = decodeCursor(opts.cursor);
     const rawId = position !== null ? Number(position.sortValue) : NaN;
@@ -190,27 +187,13 @@ export class ProjectsTicketSubresourcesService {
     }));
   }
 
-  getSubtasks(orgId: string, ticketId: number) {
+  async getSubtasks(orgId: string, ticketId: number) {
+    await assertTicketInOrg(this.db, orgId, ticketId);
     return this.db.query.tickets.findMany({
       where: and(eq(tickets.parentTicketId, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
-      columns: {
-        completionPercentage: false,
-        clientVisible: false,
-        isRecurring: false,
-        recurrenceRule: false,
-        recurrenceParentId: false,
-        recurrenceNextRunAt: false,
-      },
       with: {
         assignee: {
-          columns: {
-            id: true,
-            name: true,
-            firstName: true,
-            lastName: true,
-            image: true,
-            email: true,
-          },
+          with: { user: { columns: { id: true, name: true, firstName: true, lastName: true, image: true, email: true } } },
         },
       },
       limit: 200,
@@ -225,24 +208,32 @@ export class ProjectsTicketSubresourcesService {
     if (!ticket) throw new NotFoundException("Ticket not found");
   }
 
+  /**
+   * The `user` relation on `ticket_watchers` points at `organization_members`, not at a person, so
+   * this read shipped the membership row where the client's `TicketWatcher.user` declares a
+   * `TicketUser` and `w.userId` where the row only carries `membershipId`. `apiClient.get` is a
+   * cast, so both typechecks passed: every avatar in `watcher-list.tsx` fell back to "?" with the
+   * tooltip "Unknown", every `key={w.userId}` was `undefined`, and `isWatching` was permanently
+   * false — so the toggle could only ever add a watcher and un-watching was unreachable.
+   */
   async getWatchers(orgId: string, ticketId: number) {
     await this.requireTicket(orgId, ticketId);
-    return this.db.query.ticketWatchers.findMany({
+    const rows = await this.db.query.ticketWatchers.findMany({
       where: eq(ticketWatchers.ticketId, ticketId),
+      columns: { id: true, ticketId: true, createdAt: true },
       with: {
         user: {
-          columns: {
-            id: true,
-            name: true,
-            firstName: true,
-            lastName: true,
-            image: true,
-            email: true,
-          },
+          columns: { userId: true },
+          with: { user: { columns: { id: true, name: true, firstName: true, lastName: true, image: true, email: true } } },
         },
       },
       limit: 100,
     });
+    return rows.map(({ user: membership, ...watcher }) => ({
+      ...watcher,
+      userId: membership?.userId ?? null,
+      user: membership?.user ?? null,
+    }));
   }
 
   async addWatcher(
@@ -252,20 +243,32 @@ export class ProjectsTicketSubresourcesService {
   ) {
     await this.requireTicket(u.orgId, ticketId);
     const userId = body.userId ?? u.userId;
+    const [member] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, userId), eq(organizationMembers.status, "ACTIVE")))
+      .limit(1);
+    if (!member) throw new NotFoundException("Watcher is not an organization member");
     await this.db
       .insert(ticketWatchers)
-      .values({ orgId: u.orgId, ticketId, userId })
+      .values({ orgId: u.orgId, ticketId, membershipId: member.id })
       .onConflictDoNothing();
     return { success: true };
   }
 
   async removeWatcher(u: CurrentUserContext, ticketId: number) {
+    const [member] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, u.userId)))
+      .limit(1);
+    if (!member) return { success: true };
     await this.db
       .delete(ticketWatchers)
       .where(
         and(
           eq(ticketWatchers.ticketId, ticketId),
-          eq(ticketWatchers.userId, u.userId),
+          eq(ticketWatchers.membershipId, member.id),
         ),
       );
     return { success: true };

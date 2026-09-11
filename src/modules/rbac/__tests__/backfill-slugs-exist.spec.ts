@@ -2,6 +2,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ADMINISTRABLE_MODULES } from "../../../common/rbac/module-vocabulary";
 import { ROLE_TEMPLATES } from "../role-templates.constants";
+import { PERMISSIONS } from "../permissions";
+import { buildDesiredGrants } from "../role-grant-reconciler.service";
 
 /**
  * A permission backfill that names a role nobody has is a successful migration
@@ -103,6 +105,31 @@ describe("permission backfills name a role that can exist", () => {
     "0398_backfill_hr_admin_branch_hr_recruitment_grants.sql: HR_ADMIN",
   ];
 
+  /**
+   * A second, separate list — never an extension of the one above, and it earns
+   * its entries rather than excusing them.
+   *
+   * A backfill *migration* cannot deliver a key introduced in the same release
+   * at all: `role_permission_grants.permission_key` has a foreign key to
+   * `permissions.name`, and `permissions` is filled by
+   * `PermissionCatalogSyncService` at boot, after `db:migrate`. The `EXISTS`
+   * guard every backfill carries therefore skips the new key and nothing re-runs
+   * afterwards. `RoleGrantReconcilerService` is the mechanism that replaces
+   * them: it runs from that same sync, after the catalog exists, and converges
+   * every pristine seeded or template-materialised role on what the seeder and
+   * `ROLE_TEMPLATES` would produce today.
+   *
+   * So a migration listed here is a historical no-op whose *intent* is delivered
+   * — and the test below proves that, key by key, against the reconciler's own
+   * desired-grant computation. Drop a key from the template and this goes red;
+   * it cannot rot into a comment. Measured on a scratch database: `0990` insert
+   * 0 rows in an organisation seeded the way the product seeds one, and the
+   * reconciler then granted all six of its keys to `CUSTOMER_SUPPORT`.
+   */
+  const SUPERSEDED_BY_RECONCILER = [
+    "0990_support_template_grant_backfill.sql: CUSTOMER_SUPPORT",
+  ];
+
   it("no grant targets a slug the seeder never produces", () => {
     const offenders: string[] = [];
     for (const file of files) {
@@ -112,7 +139,40 @@ describe("permission backfills name a role that can exist", () => {
         if (!seededShape(slug)) offenders.push(`${file}: ${slug}`);
     }
 
-    expect(offenders.sort()).toEqual([...KNOWN_INERT_BACKFILLS].sort());
+    expect(offenders.sort()).toEqual(
+      [...KNOWN_INERT_BACKFILLS, ...SUPERSEDED_BY_RECONCILER].sort(),
+    );
+  });
+
+  it("every key a superseded backfill named is one the reconciler actually grants", () => {
+    const desired = buildDesiredGrants(new Set(PERMISSIONS.map((p) => p.name)));
+
+    const undelivered: string[] = [];
+    for (const entry of SUPERSEDED_BY_RECONCILER) {
+      const [file, slug] = entry.split(": ") as [string, string];
+      const granted = new Set(
+        (desired.get(slug) ?? []).map((grant) => grant.permissionKey),
+      );
+      for (const key of new Set(permissionKeysIn(executableSql(file))))
+        if (!granted.has(key)) undelivered.push(`${file}: ${slug}: ${key}`);
+    }
+
+    expect(undelivered.sort()).toEqual([]);
+  });
+
+  it("the reconciler still covers template slugs, which is what makes supersession possible", () => {
+    // `KNOWN_INERT_BACKFILLS` is the record of what happens when a grant names a
+    // slug nothing reaches. If the reconciler ever stops reading ROLE_TEMPLATES,
+    // every entry above silently becomes that again.
+    const desired = buildDesiredGrants(new Set(PERMISSIONS.map((p) => p.name)));
+    const templateSlugs = SUPERSEDED_BY_RECONCILER.map(
+      (entry) => entry.split(": ")[1]!,
+    );
+
+    for (const slug of templateSlugs) {
+      expect(seededShape(slug)).toBe(false);
+      expect(desired.get(slug)?.length ?? 0).toBeGreaterThan(0);
+    }
   });
 
   it("every key the inert backfills tried to grant is actually repaired", () => {

@@ -4,16 +4,17 @@ import { and, eq, isNotNull, lt } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { payrollJobs } from "../../../db/schema";
-import { PayrollJobsService, type PayrollJobType } from "./payroll-jobs.service";
+import { PayrollJobsService, isPayrollJobType, type PayrollJobType } from "./payroll-jobs.service";
 import { GenerateService } from "../runs/generate.service";
 import { PublishingService } from "../payout/publishing.service";
 import { PayrollFilingsService } from "../filings/filings.service";
 import { isTransientDbError } from "../../../common/db/transient-error";
 import { forEachOrg, withTenant, runWithTenantContext } from "../../../common/tenant";
+import { asRecord } from "../../../common/openapi/zod-operation-contracts";
 
 type ClaimedPayrollJob = typeof payrollJobs.$inferSelect;
 
-const POLL_MS = 5_000;
+const POLL_MS = 30_000;
 const BATCH_SIZE = 5;
 const STALE_LOCK_MS = 15 * 60 * 1_000;
 const RECLAIM_INTERVAL_MS = 60_000;
@@ -36,10 +37,12 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit(): void {
+    if (process.env.PAYROLL_JOBS_WORKER_ENABLED === "false") return;
     this.timer = setInterval(() => {
       void this.tick();
     }, POLL_MS);
-    setTimeout(() => void this.tick(), 2_000);
+    this.timer.unref();
+    setTimeout(() => void this.tick(), 2_000).unref();
   }
 
   onModuleDestroy(): void {
@@ -60,13 +63,15 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
     let failed = 0;
     for (const job of claimed) {
       try {
+        const jobType = job.jobType;
+        if (!isPayrollJobType(jobType)) throw new Error(`Unknown job type: ${jobType}`);
         await this.inTenant(job.orgId, async () => {
           await this.jobs.setProgress(job.orgId, job.id, 10);
-          const result = await this.execute(job.jobType as PayrollJobType, {
+          const result = await this.execute(jobType, {
             orgId: job.orgId,
             actorId: job.createdBy ?? "system",
             resourceId: job.resourceId,
-            payload: (job.payload ?? {}) as Record<string, unknown>,
+            payload: asRecord(job.payload) ?? {},
           });
           await this.jobs.succeed(job.orgId, job.id, result);
         });
@@ -234,6 +239,8 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
             ? { ...ctx.payload.exportPayload }
             : {},
           ruleVersion: typeof ctx.payload.ruleVersion === "string" ? ctx.payload.ruleVersion : undefined,
+          runId: typeof ctx.payload.runId === "number" ? ctx.payload.runId : undefined,
+          month: typeof ctx.payload.month === "string" ? ctx.payload.month : undefined,
         });
         return {
           filingId: row?.id,

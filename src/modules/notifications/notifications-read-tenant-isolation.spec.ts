@@ -1,3 +1,4 @@
+import { NotificationVisibilityRegistry } from "./notification-visibility.registry";
 import type { Db } from "../../db/drizzle.module";
 import { NotificationsReadService } from "./notifications-read.service";
 
@@ -22,14 +23,14 @@ function makeChain(rows: unknown[] = []): object {
   });
 }
 
-function makeFrom(allWhereArgs: unknown[]): object {
+function makeFrom(allWhereArgs: unknown[], rows: unknown[] = []): object {
   const where = jest.fn().mockImplementation((arg: unknown) => {
     allWhereArgs.push(arg);
-    return makeChain();
+    return makeChain(rows);
   });
   const self: Record<string, jest.Mock> = { where };
-  self["innerJoin"] = jest.fn().mockImplementation(() => makeFrom(allWhereArgs));
-  self["leftJoin"] = jest.fn().mockImplementation(() => makeFrom(allWhereArgs));
+  self["innerJoin"] = jest.fn().mockImplementation(() => makeFrom(allWhereArgs, rows));
+  self["leftJoin"] = jest.fn().mockImplementation(() => makeFrom(allWhereArgs, rows));
   return self;
 }
 
@@ -37,12 +38,17 @@ describe("NotificationsReadService — cross-tenant isolation", () => {
   const ATTACKER_ORG = "org-attacker";
   const OWNER_ORG = "org-owner";
 
-  function makeDb(): { db: Db; allWhereArgs: unknown[] } {
+function makeDb(): { db: Db; allWhereArgs: unknown[] } {
     const allWhereArgs: unknown[] = [];
+    let selectCalls = 0;
     const db = {
-      select: jest.fn().mockImplementation(() => ({
-        from: jest.fn().mockImplementation(() => makeFrom(allWhereArgs)),
-      })),
+      select: jest.fn().mockImplementation(() => {
+        selectCalls += 1;
+        const rows = selectCalls <= 1 ? [{ membershipId: 7, lastReadId: null }] : [];
+        return {
+          from: jest.fn().mockImplementation(() => makeFrom(allWhereArgs, rows)),
+        };
+      }),
     } as unknown as Db;
     return { db, allWhereArgs };
   }
@@ -50,7 +56,7 @@ describe("NotificationsReadService — cross-tenant isolation", () => {
   it("scopes notification list to the requesting org (tenant isolation)", async () => {
     const { db, allWhereArgs } = makeDb();
     const cache = { cachedVersioned: jest.fn().mockImplementation((_ns: unknown, _key: unknown, fn: () => unknown) => fn()) } as never;
-    const svc = new NotificationsReadService(db, cache);
+    const svc = new NotificationsReadService(db, cache, new NotificationVisibilityRegistry());
 
     await svc.list(ATTACKER_ORG, "user-1", { limit: 20, section: "ALL" as const, unreadOnly: false });
 
@@ -62,7 +68,7 @@ describe("NotificationsReadService — cross-tenant isolation", () => {
   it("returns notifications only for the requesting org (same-tenant control)", async () => {
     const { db } = makeDb();
     const cache = { cachedVersioned: jest.fn().mockImplementation((_ns: unknown, _key: unknown, fn: () => unknown) => fn()) } as never;
-    const svc = new NotificationsReadService(db, cache);
+    const svc = new NotificationsReadService(db, cache, new NotificationVisibilityRegistry());
 
     const result = await svc.list(OWNER_ORG, "user-1", { limit: 20, section: "ALL" as const, unreadOnly: false });
 

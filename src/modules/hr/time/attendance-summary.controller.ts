@@ -7,16 +7,20 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { AttendanceSummaryService } from "./attendance-summary.service";
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { attendanceSummaryResponseSchema } from "./dto/time-attendance-response.schemas";
 
-const attendanceSummaryQuerySchema = z.object({
-  periodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  periodEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  employeeId: z.string().optional(),
-  page: pageNumberField,
-  limit: pageSizeField(50, 100),
-});
+const attendanceSummaryQuerySchema = z
+  .object({
+    periodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    periodEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    employeeId: z.string().optional(),
+    cursor: z.string().trim().min(1).max(2048).optional(),
+    limit: pageSizeField(50, 100),
+  })
+  .strict();
 
 @RequireModule("hr")
 @Controller("hr/attendance/summary")
@@ -26,6 +30,7 @@ export class AttendanceSummaryController {
   constructor(private readonly summaryService: AttendanceSummaryService) {}
 
   @Get()
+  @ResponseSchema(attendanceSummaryResponseSchema)
   @Validate({ query: attendanceSummaryQuerySchema })
   getSummary(
     @Query() query: z.infer<typeof attendanceSummaryQuerySchema>,
@@ -35,7 +40,7 @@ export class AttendanceSummaryController {
       periodStart: query.periodStart,
       periodEnd: query.periodEnd,
       employeeId: query.employeeId,
-      page: query.page,
+      cursor: query.cursor,
       limit: query.limit,
     });
   }

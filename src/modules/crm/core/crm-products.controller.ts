@@ -27,6 +27,12 @@ import {
 } from "./dto/products.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  crmProductsListSchema,
+  crmProductSchema,
+} from "./dto/crm-products-response.schemas";
+import { successSchema } from "../../../common/openapi/response-envelopes";
 
 const productIdParams = z.object({ productId: z.coerce.number().int().positive() }).strict();
 
@@ -38,6 +44,7 @@ export class CrmProductsController {
 
   @Get("products")
   @RequirePermission("crm:products:manage")
+  @ResponseSchema(crmProductsListSchema)
   list(
     @Query("search") search: string | undefined,
     @CurrentUser() u: CurrentUserContext,
@@ -48,6 +55,7 @@ export class CrmProductsController {
   @Post("products")
   @RequirePermission("crm:products:manage")
   @HttpCode(201)
+  @ResponseSchema(crmProductSchema)
   @Validate({ body: createProductSchema })
   create(
     @Body() body: CreateProductInput,
@@ -58,6 +66,7 @@ export class CrmProductsController {
 
   @Patch("products/:productId")
   @RequirePermission("crm:products:manage")
+  @ResponseSchema(crmProductSchema)
   @Validate({ params: productIdParams, body: updateProductSchema })
   async update(
     @Param("productId", ParseIntPipe) productId: number,
@@ -72,6 +81,7 @@ export class CrmProductsController {
   @Delete("products/:productId")
   @HttpCode(200)
   @RequirePermission("crm:products:manage")
+  @ResponseSchema(successSchema)
   @Validate({ params: productIdParams })
   async remove(
     @Param("productId", ParseIntPipe) productId: number,

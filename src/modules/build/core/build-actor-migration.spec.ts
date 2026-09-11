@@ -66,10 +66,28 @@ describe("ProjectsMembersService.addMember — actor seam", () => {
     insert: jest.fn().mockReturnThis(),
     values: jest.fn().mockReturnThis(),
     returning: jest.fn().mockResolvedValue([{ id: 10, orgId: "org-1", projectId: 1, userId: "user-target", membershipId: 42, role: "CONTRIBUTOR", joinedAt: new Date() }]),
+    transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        insert: jest.fn().mockReturnValue({
+          values: jest.fn().mockReturnValue({
+            returning: jest.fn().mockResolvedValue([
+              { id: 10, orgId: "org-1", projectId: 1, membershipId: 42, role: "CONTRIBUTOR", joinedAt: new Date() },
+            ]),
+          }),
+        }),
+        select: jest.fn().mockReturnValue({
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+          }),
+        }),
+        execute: jest.fn().mockResolvedValue([]),
+      };
+      return cb(tx);
+    }),
   } as unknown as Db;
 
   const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])) } as unknown as AccessService;
-  const mockWebhooks = { dispatch: jest.fn() };
+  const mockWebhooks = { dispatch: jest.fn(), enqueue: jest.fn() };
   const mockStates = {};
   const mockLabels = {};
 
@@ -150,14 +168,19 @@ describe("ProjectsMembersService.addMember — actor seam", () => {
     await expect(rejection).rejects.not.toThrow(ForbiddenException);
   });
 
-  it("writes both userId and membershipId when the actor resolves successfully", async () => {
+  it("writes the membershipId the actor seam resolved, and no legacy userId column", async () => {
     (actorSeam.assertOrganizationActor as jest.Mock).mockResolvedValue(makeActor(42));
 
     const svc = makeSvc();
-    await svc.addMember(1, { userId: "user-target", role: "CONTRIBUTOR" }, makeUser({ isOrgOwner: true }));
+    const inserted = await svc.addMember(
+      1,
+      { userId: "user-target", role: "CONTRIBUTOR" },
+      makeUser({ isOrgOwner: true }),
+    );
 
-    const insertValues = (mockDb as unknown as { values: jest.Mock }).values.mock.calls[0]?.[0];
-    expect(insertValues).toMatchObject({ userId: "user-target", membershipId: 42 });
+    expect(actorSeam.assertOrganizationActor as jest.Mock).toHaveBeenCalled();
+    expect(inserted).toMatchObject({ membershipId: 42 });
+    expect(inserted).not.toHaveProperty("userId");
   });
 
   it("throws ConflictException when the user is already a project member", async () => {
@@ -189,6 +212,7 @@ describe("ProjectsTicketsCreateService.createTicket — actor seam", () => {
     const tx = {
       insert: jest.fn().mockReturnValue(insertChain),
       execute: jest.fn().mockResolvedValue([{ start: 1 }]),
+      select: jest.fn().mockReturnValue({ from: () => ({ where: () => ({ limit: async () => [] }) }) }),
     };
     return cb(tx);
   });
@@ -214,7 +238,7 @@ describe("ProjectsTicketsCreateService.createTicket — actor seam", () => {
   };
   const mockNotifications = { create: jest.fn() };
   const mockDispatch = { emit: jest.fn().mockResolvedValue(undefined) };
-  const mockWebhooks = { dispatch: jest.fn() };
+  const mockWebhooks = { dispatch: jest.fn(), enqueue: jest.fn() };
   const mockAutomation = { runForTicketEvent: jest.fn() };
   const mockCache = { del: jest.fn().mockResolvedValue(undefined) };
 
@@ -243,7 +267,7 @@ describe("ProjectsTicketsCreateService.createTicket — actor seam", () => {
     ).rejects.toThrow(NotFoundException);
   });
 
-  it("writes both assigneeId+assigneeMembershipId and reporterId+reporterMembershipId", async () => {
+  it("writes the resolved membership ids, and no legacy assigneeId column", async () => {
     const actorMap = new Map([
       ["user-caller", { membershipId: 5, userId: "user-caller", orgId: "org-1", role: "MEMBER", isOwner: false, organizationPersonId: null, resolvedVia: "user" as const }],
       ["user-assignee", { membershipId: 7, userId: "user-assignee", orgId: "org-1", role: "MEMBER", isOwner: false, organizationPersonId: null, resolvedVia: "user" as const }],
@@ -261,11 +285,11 @@ describe("ProjectsTicketsCreateService.createTicket — actor seam", () => {
     expect(txCall).toBeDefined();
     const innerInsert = insertChain.values.mock.calls[0]?.[0];
     expect(innerInsert).toMatchObject({
-      assigneeId: "user-assignee",
       assigneeMembershipId: 7,
       reporterId: "user-caller",
       reporterMembershipId: 5,
     });
+    expect(innerInsert).not.toHaveProperty("assigneeId");
   });
 });
 

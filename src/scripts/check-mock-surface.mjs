@@ -132,7 +132,19 @@ function extractTopLevelKeys(objText) {
   let i = 1; // skip the opening {
   let inStr = false, strChar = "", escaped = false;
   let inLineComment = false, inBlockComment = false;
-  let atBoundary = true; // right after { or a real property-separator , or newline
+  let atBoundary = true; // right after { or a real property-separator ,
+  /**
+   * A newline only starts a property when the line before it ENDED a property.
+   * It used to start one unconditionally, so a value continued onto the next line
+   * had its first token read as a key:
+   *
+   *   buildModuleAvailabilityResolver: (getModuleMap) =>
+   *     moduleAvailabilityResolver(...)      <-- recorded as a second key
+   *
+   * That reported a phantom against a double whose keys were all real, and a
+   * parser that invents keys is one that can also miss them.
+   */
+  let lastMeaningful = "{";
 
   const isTopLevel = () => braceDepth === 0 && parenDepth === 0 && bracketDepth === 0;
 
@@ -158,15 +170,18 @@ function extractTopLevelKeys(objText) {
     if (ch === "/" && objText[i + 1] === "*") { inBlockComment = true; i += 2; atBoundary = false; continue; }
     if (ch === "\"" || ch === "'" || ch === "`") { inStr = true; strChar = ch; i++; atBoundary = false; continue; }
 
-    if (ch === "{") { braceDepth++; i++; atBoundary = false; continue; }
-    if (ch === "}") { braceDepth--; i++; atBoundary = false; continue; }
-    if (ch === "(") { parenDepth++; i++; atBoundary = false; continue; }
-    if (ch === ")") { parenDepth--; i++; atBoundary = false; continue; }
-    if (ch === "[") { bracketDepth++; i++; atBoundary = false; continue; }
-    if (ch === "]") { bracketDepth--; i++; atBoundary = false; continue; }
+    if (ch === "{") { braceDepth++; i++; atBoundary = false; lastMeaningful = ch; continue; }
+    if (ch === "}") { braceDepth--; i++; atBoundary = false; lastMeaningful = ch; continue; }
+    if (ch === "(") { parenDepth++; i++; atBoundary = false; lastMeaningful = ch; continue; }
+    if (ch === ")") { parenDepth--; i++; atBoundary = false; lastMeaningful = ch; continue; }
+    if (ch === "[") { bracketDepth++; i++; atBoundary = false; lastMeaningful = ch; continue; }
+    if (ch === "]") { bracketDepth--; i++; atBoundary = false; lastMeaningful = ch; continue; }
 
-    if (ch === "," && isTopLevel()) { atBoundary = true; i++; continue; }
-    if (ch === "\n" && isTopLevel()) { atBoundary = true; i++; continue; }
+    if (ch === "," && isTopLevel()) { atBoundary = true; lastMeaningful = ch; i++; continue; }
+    if (ch === "\n") {
+      if (isTopLevel() && (lastMeaningful === "," || lastMeaningful === "{")) atBoundary = true;
+      i++; continue;
+    }
     if ((ch === " " || ch === "\t") && atBoundary) { i++; continue; }
 
     if (atBoundary && isTopLevel()) {

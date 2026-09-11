@@ -12,8 +12,7 @@ import type {
   ListManagedProductsQuery,
   UpdateManagedProductInput,
 } from "./dto/managed-products.schemas";
-
-const PG_UNIQUE_VIOLATION = "23505";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 type ManagedProductRow = typeof managedProducts.$inferSelect;
 type ManagedProductPatch = Partial<typeof managedProducts.$inferInsert>;
@@ -84,12 +83,7 @@ export class ManagedProductsService {
       })
       .returning()
       .catch((err: unknown) => {
-        if (
-          typeof err === "object" &&
-          err !== null &&
-          "code" in err &&
-          (err as { code: string }).code === PG_UNIQUE_VIOLATION
-        ) {
+        if (isUniqueViolation(err)) {
           throw new ConflictException(
             `A managed product with key "${input.key}" already exists in this organization.`,
           );

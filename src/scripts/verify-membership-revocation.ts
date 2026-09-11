@@ -10,8 +10,6 @@ import { runInNewTenantTransaction } from "../common/tenant/run-in-tenant-transa
 import {
   agentTokens,
   invitations,
-  kbSpaceGrants,
-  kbSpaces,
   organizationMembers,
   organizations,
   permissions,
@@ -46,6 +44,93 @@ const DELEGATION_ID = randomUUID();
 const INV_ID = randomUUID();
 const AGENT_TOKEN_HASH = createHash("sha256").update(`agent-${TS}`).digest("hex");
 const AGENT_TOKEN_PREFIX = `sat_${TS.slice(0, 10)}`;
+
+type CountRow = { n: unknown };
+const toN = (r: CountRow | undefined): number => Number(r?.n ?? 0);
+
+type ArtifactResult = { table: string; before: number; after: number; status: "PASS" | "FAIL" };
+
+function buildResults(
+  before: Record<string, number>,
+  after: Record<string, number>,
+): ArtifactResult[] {
+  return Object.keys(before).map((table) => ({
+    table,
+    before: before[table] ?? 0,
+    after: after[table] ?? 0,
+    status: (after[table] ?? 0) === 0 ? "PASS" : "FAIL",
+  }));
+}
+
+async function snapshot(
+  db: Db,
+  orgId: string,
+  membershipId: number,
+  userId: string,
+  email: string,
+): Promise<Record<string, number>> {
+  return runInNewTenantTransaction(db, orgId, async (tx) => {
+    const [ra] = await tx
+      .select({ n: count() })
+      .from(roleAssignments)
+      .where(and(eq(roleAssignments.orgId, orgId), eq(roleAssignments.organizationMembershipId, membershipId)));
+    const [upg] = await tx
+      .select({ n: count() })
+      .from(userPermissionGrants)
+      .where(and(eq(userPermissionGrants.orgId, orgId), eq(userPermissionGrants.organizationMembershipId, membershipId)));
+    const [pgm] = await tx
+      .select({ n: count() })
+      .from(principalGroupMembers)
+      .where(and(eq(principalGroupMembers.orgId, orgId), eq(principalGroupMembers.organizationMembershipId, membershipId)));
+    const [uma] = await tx
+      .select({ n: count() })
+      .from(userModuleAccess)
+      .where(and(eq(userModuleAccess.orgId, orgId), eq(userModuleAccess.organizationMembershipId, membershipId)));
+    const [ud] = await tx
+      .select({ n: count() })
+      .from(userDelegations)
+      .where(
+        and(
+          eq(userDelegations.orgId, orgId),
+          or(eq(userDelegations.delegatorMembershipId, membershipId), eq(userDelegations.delegateeMembershipId, membershipId)),
+        ),
+      );
+    const [udp] = await tx
+      .select({ n: count() })
+      .from(userDelegationPermissions)
+      .where(and(eq(userDelegationPermissions.orgId, orgId), eq(userDelegationPermissions.delegationId, DELEGATION_ID)));
+    const [at] = await tx
+      .select({ n: count() })
+      .from(agentTokens)
+      .where(and(eq(agentTokens.orgId, orgId), eq(agentTokens.issuerMembershipId, membershipId)));
+    const [rg] = await tx
+      .select({ n: count() })
+      .from(resourceGrants)
+      .where(and(eq(resourceGrants.orgId, orgId), eq(resourceGrants.principalType, "user"), eq(resourceGrants.principalId, userId)));
+    const [inv] = await tx
+      .select({ n: count() })
+      .from(invitations)
+      .where(
+        and(eq(invitations.orgId, orgId), eq(invitations.email, email), eq(invitations.status, "PENDING"), isNull(invitations.acceptedAt)),
+      );
+    return {
+      role_assignments: toN(ra),
+      user_permission_grants: toN(upg),
+      principal_group_members: toN(pgm),
+      user_module_access: toN(uma),
+      user_delegations: toN(ud),
+      user_delegation_permissions: toN(udp),
+      agent_tokens: toN(at),
+      resource_grants: toN(rg),
+      invitations_pending: toN(inv),
+    };
+  });
+}
+
+import {
+  checkArtifactFkDrift,
+  printUncoveredArtifacts,
+} from "./verify-membership-revocation-artifacts";
 
 async function main(): Promise<void> {
   const app = await NestFactory.createApplicationContext(RevocationContextModule, { logger: ["error"] });
@@ -135,17 +220,6 @@ async function main(): Promise<void> {
         tokenPrefix: AGENT_TOKEN_PREFIX,
       });
       await tx.insert(resourceGrants).values({ orgId: ORG_ID, resourceType: "project", resourceId: "fixture-999", principalType: "user", principalId: MEM_USER_ID, level: "viewer" });
-      const [spaceRow] = await tx
-        .insert(kbSpaces)
-        .values({
-          orgId: ORG_ID,
-          name: `Revoc Space ${TS}`,
-          slug: `revoc-space-${TS}`,
-          createdById: DEL_USER_ID,
-        })
-        .returning({ id: kbSpaces.id });
-      if (!spaceRow) throw new Error("kb space insert failed");
-      await tx.insert(kbSpaceGrants).values({ orgId: ORG_ID, spaceId: spaceRow.id, principalType: "user", principalId: MEM_USER_ID, permissionKey: "kb:spaces:view" });
       await tx.insert(invitations).values({
         id: INV_ID,
         email: MEM_EMAIL,
@@ -168,14 +242,13 @@ async function main(): Promise<void> {
     for (const [k, v] of Object.entries(before)) console.log(`  ${k.padEnd(30)} ${v}`);
 
     // Full removal path: explicit writes (agent_tokens revoke, delegation revoke,
-    // resource_grants delete, kb_space_grants delete, invitation revoke), then
+    // resource_grants delete, invitation revoke), then
     // membership DELETE which cascades the FK-linked artifacts.
     const now = new Date();
     await runInNewTenantTransaction(db, ORG_ID, async (tx) => {
       await tx.update(agentTokens).set({ revokedAt: now }).where(and(eq(agentTokens.orgId, ORG_ID), eq(agentTokens.issuerMembershipId, memId), isNull(agentTokens.revokedAt)));
       await tx.update(userDelegations).set({ status: "REVOKED", revokedAt: now }).where(and(eq(userDelegations.orgId, ORG_ID), eq(userDelegations.status, "ACTIVE"), or(eq(userDelegations.delegatorMembershipId, memId), eq(userDelegations.delegateeMembershipId, memId))));
       await tx.delete(resourceGrants).where(and(eq(resourceGrants.orgId, ORG_ID), eq(resourceGrants.principalType, "user"), eq(resourceGrants.principalId, MEM_USER_ID)));
-      await tx.delete(kbSpaceGrants).where(and(eq(kbSpaceGrants.orgId, ORG_ID), eq(kbSpaceGrants.principalType, "user"), eq(kbSpaceGrants.principalId, MEM_USER_ID)));
       await tx.update(invitations).set({ status: "REVOKED", revokedAt: now }).where(and(eq(invitations.orgId, ORG_ID), eq(invitations.email, MEM_EMAIL), eq(invitations.status, "PENDING"), isNull(invitations.acceptedAt)));
       await tx.delete(organizationMembers).where(and(eq(organizationMembers.userId, MEM_USER_ID), eq(organizationMembers.orgId, ORG_ID)));
     });

@@ -5,7 +5,8 @@ import {
   unwrapComposioData,
   type NormalizerConnectionMeta,
 } from "./mail-normalizers";
-import type { MailFolder, MailMessageDetail, MailMessageSummary } from "../dto/mail-schemas";
+import type { MailMessageDetail, MailMessageSummary } from "../dto/mail-response.schemas";
+import type { MailFolder } from "../dto/mail-schemas";
 import { z } from "zod";
 
 const gmailListResponseSchema = z.object({
@@ -142,21 +143,18 @@ export class GmailMailProvider {
   async replyToThread(
     userId: string,
     conn: NormalizerConnectionMeta,
-    threadId: string,
-    recipientEmail: string,
-    bodyHtml: string,
-    cc?: string[],
+    opts: { threadId: string; recipientEmail: string; bodyHtml: string; cc?: string[] },
   ): Promise<void> {
     await this.gateway.executeTool(
       "GMAIL_REPLY_TO_THREAD",
       userId,
       {
         user_id: "me",
-        thread_id: threadId,
-        recipient_email: recipientEmail,
-        message_body: bodyHtml,
+        thread_id: opts.threadId,
+        recipient_email: opts.recipientEmail,
+        message_body: opts.bodyHtml,
         is_html: true,
-        cc: cc ?? [],
+        cc: opts.cc ?? [],
       },
       conn.composioAccountId,
     );

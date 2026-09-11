@@ -7,8 +7,26 @@ import { OrgHierarchyService } from "./org-hierarchy.service";
 const ORG_ID = "org_test_001";
 const USER_ID = "user_test_001";
 
+const businessUnitPage = {
+  data: [
+    {
+      id: "bu_001",
+      orgId: ORG_ID,
+      parentId: null,
+      name: "Head Office",
+      code: "HO",
+      description: null,
+      status: "ACTIVE",
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      deletedAt: null,
+    },
+  ],
+  pageInfo: { limit: 25, hasMore: false, nextCursor: null },
+};
+
 const mockHierarchyService = {
-  listBusinessUnits: jest.fn().mockResolvedValue([]),
+  listBusinessUnits: jest.fn().mockResolvedValue(businessUnitPage),
   getTree: jest.fn().mockResolvedValue([]),
   getHierarchy: jest.fn().mockResolvedValue({}),
 };
@@ -72,19 +90,29 @@ describe("/org-hierarchy (e2e)", () => {
   });
 
   describe("Tenant isolation", () => {
-    it("lists only org-scoped data", async () => {
+    it("scopes the list to the org in the token, not to any client-supplied value", async () => {
+      mockHierarchyService.listBusinessUnits.mockClear();
+
       const res = await request(app.getHttpServer())
         .get("/org-hierarchy/business-units")
         .set("Authorization", `Bearer ${ownerToken}`);
+
       expect(res.status).toBe(200);
-      const data = res.body.data ?? res.body;
-      if (Array.isArray(data)) {
-        for (const item of data) {
-          if (item.orgId) {
-            expect(item.orgId).toBe(ORG_ID);
-          }
-        }
-      }
+      expect(mockHierarchyService.listBusinessUnits).toHaveBeenCalledTimes(1);
+      expect(mockHierarchyService.listBusinessUnits.mock.calls[0][0]).toBe(ORG_ID);
+
+      const data: Array<{ orgId: string }> = res.body.data;
+      expect(data).toHaveLength(1);
+      for (const item of data) expect(item.orgId).toBe(ORG_ID);
+    });
+
+    it("rejects a client-supplied orgId on the list query", async () => {
+      const res = await request(app.getHttpServer())
+        .get("/org-hierarchy/business-units")
+        .query({ orgId: "org_attacker" })
+        .set("Authorization", `Bearer ${ownerToken}`);
+
+      expect(res.status).toBe(400);
     });
   });
 });

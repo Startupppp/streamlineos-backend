@@ -10,7 +10,7 @@ export function isValidRrule(value: string): boolean {
   }
 }
 
-export const rruleField = z
+const rruleField = z
   .string()
   .refine(isValidRrule, "Must be a valid RFC 5545 RRULE string");
 
@@ -18,7 +18,7 @@ export const upsertOccurrenceExceptionSchema = z.object({
   modifiedTitle: z.string().min(2).max(100).optional(),
   modifiedStart: z.string().datetime().optional(),
   modifiedEnd: z.string().datetime().optional(),
-}).refine(
+}).strict().refine(
   (v) => {
     if (v.modifiedStart !== undefined && v.modifiedEnd !== undefined) {
       return new Date(v.modifiedEnd) > new Date(v.modifiedStart);

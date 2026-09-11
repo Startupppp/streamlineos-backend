@@ -3,9 +3,12 @@ import type { SQL } from "drizzle-orm";
 import { KbCandidateService } from "./kb-candidate.service";
 import { KbSearchService } from "./kb-search.service";
 import { KbMembersService } from "../wiki/kb-members.service";
+import { KbIndexingService } from "./kb-indexing.service";
 import { kbPages, kbArticles } from "../../../db/schema";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+
+const makeScopes = (scope = "all") => ({ scopeFor: jest.fn().mockResolvedValue(scope) });
 
 function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
   return {
@@ -21,9 +24,8 @@ function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
 }
 
 const makeEmbeddings = () => ({
-  isConfigured: jest.fn().mockReturnValue(false),
-  embedQuery: jest.fn(),
-  toVectorLiteral: jest.fn(),
+  isEmbeddingConfigured: jest.fn().mockReturnValue(false),
+  embedQueryWithCredit: jest.fn(),
 });
 
 const makeEvents = () => ({ record: jest.fn().mockResolvedValue(undefined) });
@@ -80,9 +82,8 @@ describe("KB cross-tenant isolation", () => {
     // retrieveTopSources returns immediately when embeddings are unconfigured, so
     // the shared makeEmbeddings() (isConfigured: false) made this unreachable.
     const embeddings = {
-      isConfigured: jest.fn().mockReturnValue(true),
-      embedQuery: jest.fn().mockResolvedValue([0.1, 0.2]),
-      toVectorLiteral: jest.fn().mockReturnValue("[0.1,0.2]"),
+      isEmbeddingConfigured: jest.fn().mockReturnValue(true),
+      embedQueryWithCredit: jest.fn().mockResolvedValue({ ok: true, vector: [0.1, 0.2], vectorLiteral: "[0.1,0.2]" }),
     };
 
     const svc = new KbSearchService(
@@ -91,6 +92,7 @@ describe("KB cross-tenant isolation", () => {
       embeddings as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
+      makeScopes() as never,
     );
 
     await svc.retrieveTopSources(makeUser({ orgId: "org-a" }), "how do I reset my password", 4);
@@ -134,6 +136,7 @@ describe("KB cross-tenant isolation", () => {
       makeEmbeddings() as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
+      makeScopes() as never,
     );
 
     const orgBUser = makeUser({ orgId: "org-b", userId: "user-b" });
@@ -169,9 +172,8 @@ describe("KB removed-member ACL revision mechanism", () => {
     };
   }
 
-  const makeIndexing = () => ({
-    syncAclRevisionForSpace: jest.fn().mockResolvedValue(undefined),
-  });
+  const makeIndexing = (db: unknown) =>
+    new KbIndexingService(db as never, undefined as never, undefined as never);
 
   it("removing a non-admin member bumps aclRevision on kbPages and kbArticles for that space", async () => {
     const member = {
@@ -187,7 +189,7 @@ describe("KB removed-member ACL revision mechanism", () => {
     const db = makeDb(member);
     const access = { invalidateAccessibleSpaceIds: jest.fn().mockResolvedValue(undefined) };
 
-    const svc = new KbMembersService(db as never, access as never, makeIndexing() as never);
+    const svc = new KbMembersService(db as never, access as never, makeIndexing(db) as never);
     const result = await svc.remove("org-1", 5, 10);
 
     expect(result.success).toBe(true);
@@ -218,7 +220,7 @@ describe("KB removed-member ACL revision mechanism", () => {
     };
     const access = { invalidateAccessibleSpaceIds: jest.fn().mockResolvedValue(undefined) };
 
-    const svc = new KbMembersService(db as never, access as never, makeIndexing() as never);
+    const svc = new KbMembersService(db as never, access as never, makeIndexing(db) as never);
     const result = await svc.remove("org-1", 7, 11);
 
     expect(result.success).toBe(true);

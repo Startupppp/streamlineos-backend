@@ -252,7 +252,9 @@ describe("member marketing is unrepresentable", () => {
     expect(() => assertMarketingRecipientAllowed({ kind: "org-member" }, createMarketingConsentProof())).toThrow(
       /no consent record exists for organisation members/,
     );
-    expect(() => assertMarketingRecipientAllowed({ kind: "org-member" }, undefined)).toThrow();
+    expect(() => assertMarketingRecipientAllowed({ kind: "org-member" }, undefined)).toThrow(
+      /no consent record exists for organisation members/,
+    );
   });
 
   it("allows a CRM contact only when the consent seam has already filtered it", () => {

@@ -4,6 +4,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { payrollRunEmployees, payrollRuns, users } from "../../../db/schema";
 import { PAYROLL_LOCKED_STATUSES, type VarianceSummary } from "../payroll.types";
+import { toCalculationSnapshot } from "../dto/payroll.schemas";
 import { fromPaise, toPaise } from "./lib/money";
 
 @Injectable()
@@ -46,18 +47,7 @@ export class PayrollRunVarianceService {
       .limit(10);
 
     const withBaselines = topMovers.map((m) => {
-      const snap = m.calculationSnapshot as {
-        variance?: {
-          baselineSource?: string | null;
-          inputBaseline?: {
-            lockedPaidDays: string | null;
-            lockedLopDays: string | null;
-            paidDaysDelta: number | null;
-            lopDaysDelta: number | null;
-          } | null;
-          netDeltaPercent?: number | null;
-        } | null;
-      } | null;
+      const snap = toCalculationSnapshot(m.calculationSnapshot);
       return {
         userId: m.userId,
         net: m.net,
@@ -100,7 +90,8 @@ export class PayrollRunVarianceService {
       this.db
         .select({ userId: payrollRunEmployees.userId, net: payrollRunEmployees.net })
         .from(payrollRunEmployees)
-        .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId))),
+        .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)))
+        .limit(1000),
     ]);
 
     if (!prevRun) return null;
@@ -108,7 +99,8 @@ export class PayrollRunVarianceService {
     const prevEmps = await this.db
       .select({ userId: payrollRunEmployees.userId, net: payrollRunEmployees.net })
       .from(payrollRunEmployees)
-      .where(and(eq(payrollRunEmployees.runId, prevRun.id), eq(payrollRunEmployees.orgId, orgId)));
+      .where(and(eq(payrollRunEmployees.runId, prevRun.id), eq(payrollRunEmployees.orgId, orgId)))
+      .limit(1000);
 
     const currentUserIds = new Set(currentEmps.map((employee) => employee.userId));
     const prevNetMap = new Map(prevEmps.map((employee) => [employee.userId, employee.net]));

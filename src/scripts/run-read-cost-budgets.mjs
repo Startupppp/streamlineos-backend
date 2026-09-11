@@ -3,6 +3,24 @@ import { fileURLToPath } from "node:url";
 import postgres from "postgres";
 import * as dotenv from "dotenv";
 import { BUDGETS, REQUIRED_BUDGET_IDS } from "./read-cost-budgets.mjs";
+import {
+  formatRoleProvenance,
+  resolveAppDatabaseUrl,
+  resolveSsl,
+  roleRefusal,
+} from "./benchmark-role-guard.mjs";
+
+export const KNOWN_ASSERTION_KINDS = new Set([
+  "require-index-only-scan",
+  "forbid-seq-scan",
+  "forbid-hashed-subplan",
+]);
+
+export function rowCountPlaceholders(sql) {
+  let highest = 0;
+  for (const match of sql.matchAll(/\$(\d+)/g)) highest = Math.max(highest, Number(match[1]));
+  return highest;
+}
 
 export function validateBudgets(budgets) {
   const errors = [];
@@ -15,8 +33,18 @@ export function validateBudgets(budgets) {
       errors.push(`${tag}: ceiling must be a finite non-negative number`);
     if (typeof b.minRows !== "number" || b.minRows < 1 || !Number.isFinite(b.minRows))
       errors.push(`${tag}: minRows must be a positive finite number`);
-    if (typeof b.rowCountSql !== "string" || !b.rowCountSql.trim())
+    if (typeof b.rowCountSql !== "string" || !b.rowCountSql.trim()) {
       errors.push(`${tag}: rowCountSql must be a non-empty string`);
+    } else if (rowCountPlaceholders(b.rowCountSql) > 1 && typeof b.rowCountParams !== "function") {
+      // The count runs with [orgId] alone unless the budget says otherwise, so a bare $2 here
+      // is not a narrower count — it is a bind error, and the budget measures nothing at all.
+      errors.push(
+        `${tag}: rowCountSql references $2 or beyond but declares no rowCountParams — the count ` +
+        `would be bound with [orgId] alone and fail at bind time`,
+      );
+    }
+    if (b.rowCountParams !== undefined && typeof b.rowCountParams !== "function")
+      errors.push(`${tag}: rowCountParams must be a function when present`);
     if (typeof b.sql !== "string" || !b.sql.trim())
       errors.push(`${tag}: sql must be a non-empty string`);
     if (typeof b.params !== "function")
@@ -28,6 +56,10 @@ export function validateBudgets(budgets) {
         const a = b.planAssertions[j];
         const atag = `${tag}.planAssertions[${j}]`;
         if (typeof a?.kind !== "string") errors.push(`${atag}: kind must be a string`);
+        else if (!KNOWN_ASSERTION_KINDS.has(a.kind))
+          errors.push(
+            `${atag}: unknown kind "${a.kind}" — known kinds are ${[...KNOWN_ASSERTION_KINDS].join(", ")}`,
+          );
         if (typeof a?.relation !== "string" || !a.relation)
           errors.push(`${atag}: relation must be a non-empty string`);
       }
@@ -36,18 +68,62 @@ export function validateBudgets(budgets) {
       if (typeof b.maxScanRows !== "number" || b.maxScanRows < 0 || !Number.isFinite(b.maxScanRows))
         errors.push(`${tag}: maxScanRows must be a finite non-negative number`);
     }
+    if (b.allowEmptyResult !== undefined) {
+      if (typeof b.allowEmptyResult !== "boolean")
+        errors.push(`${tag}: allowEmptyResult must be a boolean when present`);
+      else if (b.allowEmptyResult === true && (typeof b.allowEmptyReason !== "string" || !b.allowEmptyReason.trim()))
+        errors.push(
+          `${tag}: allowEmptyResult: true must carry allowEmptyReason — waiving the vacuous-result ` +
+          `guard without a written reason is how a budget stops measuring anything`,
+        );
+    }
   }
   return errors;
 }
 
-export function walk(node, out) {
+const QUAL_FIELDS = [
+  "Filter",
+  "Join Filter",
+  "Index Cond",
+  "Recheck Cond",
+  "Hash Cond",
+  "Merge Cond",
+  "One-Time Filter",
+  "TID Cond",
+];
+
+export function walk(node, out, subplanScope = null) {
+  const quals = QUAL_FIELDS.map((f) => node[f]).filter((v) => typeof v === "string").join(" ");
+  const scope = typeof node["Subplan Name"] === "string" ? node["Subplan Name"] : subplanScope;
   out.push({
     type: node["Node Type"],
     relation: node["Relation Name"] ?? null,
     index: node["Index Name"] ?? null,
+    quals,
+    subplanScope: scope,
   });
-  (node.Plans ?? []).forEach((child) => walk(child, out));
+  (node.Plans ?? []).forEach((child) => walk(child, out, scope));
   return out;
+}
+
+/**
+ * A hashed SubPlan is the planner de-correlating an `EXISTS`/`IN` and materialising the
+ * WHOLE inner relation before the outer qual can short-circuit. It shows up as
+ * `(hashed SubPlan N)` in the qual that references it, and the cost is O(inner relation),
+ * not O(page) — so it is invisible on a small tenant, invisible on a warm cache, and
+ * invisible in any fixture that happens not to reach the row that triggers it.
+ *
+ * That last property is why this assertion exists: `GET /calendar/events` and
+ * `GET /dashboard/personal` both carried one, and neither could be pinned by a block
+ * ceiling because whether the plan is reached depends on which rows fall in the window
+ * — the same query measured 6 blocks on one run and 1,140 on the next. The plan shape
+ * is order-independent where the number is not.
+ */
+export function hashedSubplanNames(nodes) {
+  const names = new Set();
+  for (const node of nodes)
+    for (const match of node.quals.matchAll(/hashed (SubPlan \d+|InitPlan \d+)/g)) names.add(match[1]);
+  return names;
 }
 
 export function extractScans(node, out = []) {
@@ -68,6 +144,32 @@ export function extractScans(node, out = []) {
   return out;
 }
 
+export function percentile(sorted, q) {
+  if (sorted.length === 0) return 0;
+  if (sorted.length === 1) return sorted[0];
+  const rank = q * (sorted.length - 1);
+  const lo = Math.floor(rank);
+  const hi = Math.ceil(rank);
+  if (lo === hi) return sorted[lo];
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (rank - lo);
+}
+
+export function summarise(samplesMs) {
+  const sorted = [...samplesMs].sort((a, b) => a - b);
+  return {
+    samples: sorted.length,
+    minMs: round3(sorted[0] ?? 0),
+    p50Ms: round3(percentile(sorted, 0.5)),
+    p95Ms: round3(percentile(sorted, 0.95)),
+    p99Ms: round3(percentile(sorted, 0.99)),
+    maxMs: round3(sorted[sorted.length - 1] ?? 0),
+  };
+}
+
+function round3(n) {
+  return Math.round(n * 1000) / 1000;
+}
+
 export function checkPlanAssertions(planAssertions, nodes, budgetId) {
   const failures = [];
   for (const assertion of planAssertions ?? []) {
@@ -81,6 +183,22 @@ export function checkPlanAssertions(planAssertions, nodes, budgetId) {
         failures.push(
           `${budgetId}: ${assertion.relation} resolved by ${node.type}, not Index Only Scan — tenant-led covering index missing or unusable`,
         );
+      }
+    } else if (assertion.kind === "forbid-hashed-subplan") {
+      const hashed = hashedSubplanNames(nodes);
+      const node = nodes.find((n) => n.relation === assertion.relation);
+      if (!node) {
+        failures.push(
+          `${budgetId}: no ${assertion.relation} node — query shape changed, assertion is vacuous`,
+        );
+      } else {
+        const offender = nodes.find(
+          (n) => n.relation === assertion.relation && n.subplanScope !== null && hashed.has(n.subplanScope),
+        );
+        if (offender)
+          failures.push(
+            `${budgetId}: ${assertion.relation} is scanned inside a hashed ${offender.subplanScope} — the planner materialises the whole relation before the outer qual can short-circuit, so the cost is O(relation) and not O(page)`,
+          );
       }
     } else if (assertion.kind === "forbid-seq-scan") {
       const node = nodes.find((n) => n.relation === assertion.relation);
@@ -96,7 +214,7 @@ export function checkPlanAssertions(planAssertions, nodes, budgetId) {
   return failures;
 }
 
-async function runBudget(budget, fixtures, dbUrl, ssl, orgId, assumeRole) {
+async function runBudget(budget, fixtures, dbUrl, ssl, orgId, samples) {
   const params = budget.params(fixtures);
   if (params === null)
     return { status: "skip", reason: "no fixture data for this budget" };
@@ -112,24 +230,42 @@ async function runBudget(budget, fixtures, dbUrl, ssl, orgId, assumeRole) {
       if (assumeRole) await tx.unsafe(`SET LOCAL ROLE ${assumeRole}`);
       await tx`SELECT set_config('app.organization_id', ${orgId}, true)`;
 
-      const [{ count }] = await tx.unsafe(budget.rowCountSql, [orgId]);
+      const countParams = budget.rowCountParams ? budget.rowCountParams(fixtures) : [orgId];
+      if (countParams === null)
+        return { status: "skip", reason: "no fixture data for this budget's row count" };
+      const [{ count }] = await tx.unsafe(budget.rowCountSql, countParams);
       const tableRows = Number(count);
       if (tableRows < budget.minRows)
         return { status: "seed-too-small", measured: tableRows, required: budget.minRows };
 
-      const plan1 = await tx.unsafe(`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${budget.sql}`, params);
-      const root1 = plan1[0]["QUERY PLAN"][0].Plan;
-      const hit1 = root1["Shared Hit Blocks"] ?? 0;
-      const read1 = root1["Shared Read Blocks"] ?? 0;
+      const explain = `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${budget.sql}`;
+      const roots = [];
+      const executionMs = [];
+      const planningMs = [];
+      for (let i = 0; i < samples; i++) {
+        const plan = await tx.unsafe(explain, params);
+        const wrapper = plan[0]["QUERY PLAN"][0];
+        roots.push(wrapper.Plan);
+        executionMs.push(wrapper["Execution Time"] ?? 0);
+        planningMs.push(wrapper["Planning Time"] ?? 0);
+      }
 
-      const plan2 = await tx.unsafe(`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${budget.sql}`, params);
-      const root2 = plan2[0]["QUERY PLAN"][0].Plan;
-      const hit2 = root2["Shared Hit Blocks"] ?? 0;
-      const read2 = root2["Shared Read Blocks"] ?? 0;
+      const blocksOf = (root) => ({
+        hitBlocks: root["Shared Hit Blocks"] ?? 0,
+        readBlocks: root["Shared Read Blocks"] ?? 0,
+        totalBlocks: (root["Shared Hit Blocks"] ?? 0) + (root["Shared Read Blocks"] ?? 0),
+      });
+      const root1 = roots[0];
+      const rootLast = roots[roots.length - 1];
 
       const nodes = walk(root1, []);
       const scans = extractScans(root1);
       const assertionFailures = checkPlanAssertions(budget.planAssertions, nodes, budget.id);
+
+      // The rows the query actually returned. A budget whose query matches nothing measures an
+      // empty result set: every ceiling it declares is trivially satisfied and no plan regression
+      // it exists to catch can ever fire. That is a vacuous budget, not a passing one.
+      const resultRows = root1["Actual Rows"] ?? 0;
 
       const scanRowViolations = [];
       if (budget.maxScanRows !== undefined) {
@@ -144,10 +280,15 @@ async function runBudget(budget, fixtures, dbUrl, ssl, orgId, assumeRole) {
 
       return {
         status: "measured",
-        run1: { hitBlocks: hit1, readBlocks: read1, totalBlocks: hit1 + read1 },
-        run2: { hitBlocks: hit2, readBlocks: read2, totalBlocks: hit2 + read2 },
+        run1: blocksOf(root1),
+        run2: blocksOf(rootLast),
+        warmBlocks: Math.min(...roots.map((r) => blocksOf(r).totalBlocks)),
+        latency: summarise(executionMs),
+        planningMs: summarise(planningMs),
+        coldMs: executionMs[0],
         scans,
         tableRows,
+        resultRows,
         assertionFailures,
         scanRowViolations,
       };
@@ -162,11 +303,12 @@ async function runBudget(budget, fixtures, dbUrl, ssl, orgId, assumeRole) {
 async function main() {
   dotenv.config({ path: resolve(process.cwd(), ".env") });
 
-  const url = process.env.APP_DATABASE_URL;
-  if (!url) {
-    console.error("APP_DATABASE_URL is required (the non-BYPASSRLS app role).");
+  const resolvedUrl = resolveAppDatabaseUrl(process.env);
+  if (!resolvedUrl.ok) {
+    console.error(resolvedUrl.why);
     process.exit(1);
   }
+  const url = resolvedUrl.url;
 
   const SELF_TEST = process.argv.includes("--self-test");
 
@@ -187,9 +329,49 @@ async function main() {
   const idsArg = process.argv.find((a) => a.startsWith("--ids="));
   const filterIds = idsArg ? new Set(idsArg.slice("--ids=".length).split(",").filter(Boolean)) : null;
 
-  const ssl = process.env.PGSSLMODE === "disable" ? false : "require";
+  const arg = (name, fallback) => {
+    const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
+    return hit === undefined ? fallback : hit.slice(name.length + 3);
+  };
+
+  const SAMPLES = Math.max(2, Number(arg("samples", "2")) || 2);
+  const JSON_OUT = arg("json", null);
+  const PROFILE = arg("profile", "reference");
+  if (PROFILE !== "reference" && PROFILE !== "minority") {
+    console.error(`--profile must be "reference" or "minority", got "${PROFILE}"`);
+    process.exit(1);
+  }
+  // On a minority tenant a budget whose org-scoped row count sits under its seed floor, or whose
+  // query matches nothing, is UNMEASURED — not a breach. The floor exists to stop a degenerate
+  // measurement being reported as a plan verdict; on a 0.18%-share tenant most floors are
+  // unreachable by construction, and calling that a failure buries the handful of real results.
+  // On the reference tenant both stay hard failures, so a shrinking seed can never go quiet.
+  const STRICT = process.env.STREAMLINE_STRICT_BUDGETS === "1" || process.argv.includes("--strict");
+
+  const ssl = resolveSsl(process.env);
   const db = postgres(url, { max: 1, prepare: false, ssl, onnotice: () => {} });
   const assumeRole = process.env.APP_DB_ROLE ?? "streamline_app";
+
+  // PRD-C079: the role is READ, never asserted. Every artifact this run writes carries the
+  // value observed here, and measure-route-budgets.mjs refuses an artifact without it.
+  const [connectedRole] = await db`
+    SELECT current_user AS name, r.rolbypassrls, r.rolsuper
+    FROM pg_roles r WHERE r.rolname = current_user`;
+  let deniedWithoutGuc = false;
+  try {
+    await db`SELECT count(*) FROM calendar_events`;
+  } catch (e) {
+    if (e?.code === "42501") deniedWithoutGuc = true;
+    else throw e;
+  }
+  const roleRefused = roleRefusal(connectedRole, deniedWithoutGuc);
+  if (roleRefused) {
+    console.error(roleRefused);
+    await db.end();
+    process.exit(1);
+  }
+  const ROLE_PROVENANCE = formatRoleProvenance(connectedRole);
+  if (!SELF_TEST) console.log(`role ${ROLE_PROVENANCE} · no-GUC read denied 42501`);
 
   let ORG = process.env.SEED_ORG_ID;
   if (!ORG) {
@@ -229,14 +411,55 @@ async function main() {
     //   uses Bitmap Heap Scan (not Index Only Scan), so this assertion always fails.
     // Breach type 3: scan-rows — maxScanRows 0; any real query scans at least 1 row.
     //
-    // All three must breach; if any passes or skips, the self-test is inconclusive.
+    // Breach type 4: seed floor — an unreachable minRows must report seed-too-small.
+    //
+    // Breach type 6: hashed SubPlan — a de-correlated sublink that materialises the whole
+    //   inner relation. Order-independent where a block ceiling is not.
+    //
+    // All six must breach; if any passes or skips, the self-test is inconclusive.
+    //
+    // The first three override minRows to 1. Inheriting the base budget's minRows
+    // made the seed-size check fire first and short-circuit all three, so on any
+    // database smaller than the base budget's seed the self-test reported
+    // INCONCLUSIVE and proved nothing about the guards it exists to test. The
+    // seed-size check is itself a guard, so it gets its own fixture rather than
+    // standing in front of the others.
     const selfTestBase = BUDGETS.find((b) => b.id === "org-members-list") ?? BUDGETS[0];
     const budgets = SELF_TEST
       ? [
-          { ...selfTestBase, id: "self-test-ceiling", ceiling: 0 },
-          { ...selfTestBase, id: "self-test-assertion",
+          { ...selfTestBase, id: "self-test-ceiling", ceiling: 0, minRows: 1 },
+          { ...selfTestBase, id: "self-test-assertion", minRows: 1,
             planAssertions: [{ kind: "require-index-only-scan", relation: "organization_members" }] },
-          { ...selfTestBase, id: "self-test-scan-rows", maxScanRows: 0 },
+          { ...selfTestBase, id: "self-test-scan-rows", maxScanRows: 0, minRows: 1 },
+          { ...selfTestBase, id: "self-test-seed-floor", minRows: Number.MAX_SAFE_INTEGER },
+          // Breach type 5: vacuous — a query that matches nothing. Every ceiling it declares is
+          // satisfied trivially, so without this guard an empty result set reports PASS.
+          {
+            ...selfTestBase,
+            id: "self-test-vacuous",
+            minRows: 1,
+            maxScanRows: undefined,
+            planAssertions: [],
+            sql: `SELECT id FROM organization_members WHERE org_id = $1 AND 1 = 0`,
+          },
+          // Breach type 6: hashed SubPlan. `NOT IN (SELECT …)` cannot be pulled up into a
+          // semi-join, so the planner de-correlates it and materialises the inner relation
+          // — the same shape that hid a 39,114-row scan inside GET /calendar/events behind
+          // a block count that only moved when the wall clock did.
+          {
+            ...selfTestBase,
+            id: "self-test-hashed-subplan",
+            minRows: 1,
+            maxScanRows: undefined,
+            planAssertions: [{ kind: "forbid-hashed-subplan", relation: "organization_members" }],
+            sql: `
+              SELECT id, user_id, role, is_owner, status, joined_at
+              FROM organization_members
+              WHERE org_id = $1 AND status = 'ACTIVE'
+                AND id NOT IN (SELECT id FROM organization_members WHERE org_id = $1 AND status <> 'ACTIVE')
+              ORDER BY joined_at DESC
+              LIMIT 100`,
+          },
         ]
       : filterIds
         ? BUDGETS.filter((b) => filterIds.has(b.id))
@@ -259,8 +482,12 @@ async function main() {
         GROUP BY project_id ORDER BY n DESC LIMIT 1`)) ?? [null];
 
     const [participant] = (await tryFixture((tx) => tx`
-        SELECT user_id, count(*)::int n FROM build.ticket_assignees
-        WHERE org_id = ${ORG} GROUP BY user_id ORDER BY n DESC LIMIT 1`)) ?? [null];
+        SELECT ta.membership_id, om.user_id, count(*)::int n
+        FROM build.ticket_assignees ta
+        INNER JOIN organization_members om ON om.org_id = ta.org_id AND om.id = ta.membership_id
+        WHERE ta.org_id = ${ORG}
+        GROUP BY ta.membership_id, om.user_id
+        ORDER BY n DESC, ta.membership_id ASC LIMIT 1`)) ?? [null];
 
     const [channel] = (await tryFixture((tx) => tx`
         SELECT channel_id, count(*)::int n FROM chat_messages
@@ -345,6 +572,7 @@ async function main() {
         projectId: project?.project_id ?? null,
         projectTickets: project?.n ?? 0,
         userId: participant?.user_id ?? null,
+        membershipId: participant?.membership_id ?? null,
         participationOrgWide: participant?.n ?? 0,
         channelId: channel?.channel_id ?? null,
         channelMessages: channel?.n ?? 0,
@@ -397,27 +625,52 @@ async function main() {
 
     const breaches = [];
     const unusable = [];
+    const unmeasured = [];
+    const vacuous = [];
+    const records = [];
     let skipped = 0;
+    let excluded = 0;
+    let passed = 0;
 
     for (const budget of budgets) {
-      const result = await runBudget(budget, fixtures, url, ssl, ORG, assumeRole);
+      if (budget.excluded) {
+        if (!SELF_TEST)
+          console.log(`EXCL  ${budget.id.padEnd(36)} (${budget.excluded})`);
+        excluded++;
+        records.push({ id: budget.id, outcome: "excluded", reason: budget.excluded });
+        continue;
+      }
+
+      const result = await runBudget(budget, fixtures, url, ssl, ORG, SAMPLES);
 
       if (result.status === "skip") {
         if (!SELF_TEST)
           console.log(`SKIP  ${budget.id.padEnd(36)} (${result.reason})`);
         else unusable.push(`${budget.id}: skipped — ${result.reason}`);
         skipped++;
+        records.push({ id: budget.id, outcome: "skip", reason: result.reason });
         continue;
       }
 
       if (result.status === "seed-too-small") {
-        const label = `FAIL  ${budget.id.padEnd(36)} seed too small (${result.measured} < ${result.required})`;
         const detail = `${budget.id}: seed too small — ${result.measured} rows, need ${result.required}`;
-        if (SELF_TEST) unusable.push(detail);
-        else {
+        if (SELF_TEST) {
+          if (budget.id === "self-test-seed-floor") breaches.push(detail);
+          else unusable.push(detail);
+        } else if (PROFILE === "minority") {
+          console.log(`UNMS  ${budget.id.padEnd(36)} below seed floor for this tenant (${result.measured} < ${result.required})`);
+          unmeasured.push(detail);
+        } else {
           breaches.push(detail);
-          console.error(label);
+          console.error(`FAIL  ${budget.id.padEnd(36)} seed too small (${result.measured} < ${result.required})`);
         }
+        records.push({
+          id: budget.id,
+          outcome: PROFILE === "minority" ? "unmeasured" : "fail",
+          reason: "seed-too-small",
+          tenantRows: result.measured,
+          minRows: result.required,
+        });
         continue;
       }
 
@@ -428,13 +681,18 @@ async function main() {
           breaches.push(`${budget.id}: ${result.message}`);
           console.error(label);
         }
+        records.push({ id: budget.id, outcome: "error", reason: result.message });
         continue;
       }
 
-      const { run1, run2, scans, tableRows, assertionFailures, scanRowViolations } = result;
+      const { run1, run2, scans, tableRows, resultRows, assertionFailures, scanRowViolations } = result;
       const totalBlocks = run1.totalBlocks;
       const overCeiling = totalBlocks > budget.ceiling;
-      const ok = !overCeiling && assertionFailures.length === 0 && scanRowViolations.length === 0;
+      const isVacuous = resultRows === 0 && budget.allowEmptyResult !== true;
+      const ok =
+        !overCeiling && !isVacuous &&
+        assertionFailures.length === 0 && scanRowViolations.length === 0;
+      if (ok && !SELF_TEST) passed++;
 
       if (!SELF_TEST) {
         const primaryScan = scans.length > 0
@@ -446,19 +704,49 @@ async function main() {
           ? `${((primaryScan.actualRows / scanTotal) * 100).toFixed(0)}%`
           : "n/a";
         const coldTag = run1.readBlocks > 0 ? "!" : " ";
+        const verdict = ok ? "PASS" : isVacuous && PROFILE === "minority" ? "UNMS" : "FAIL";
         console.log(
-          `${ok ? "PASS" : "FAIL"}  ${budget.id.padEnd(36)}` +
+          `${verdict}  ${budget.id.padEnd(36)}` +
           ` r1:h=${String(run1.hitBlocks).padStart(5)} rd=${String(run1.readBlocks).padStart(4)}${coldTag}` +
           ` r2:h=${String(run2.hitBlocks).padStart(5)} rd=${String(run2.readBlocks).padStart(4)}` +
-          `  ceil=${budget.ceiling}  tbl=${tableRows} scan=${scanTotal} sel=${sel}`,
+          `  ceil=${budget.ceiling}  tbl=${tableRows} rows=${resultRows} scan=${scanTotal} sel=${sel}` +
+          `  p50=${result.latency.p50Ms}ms p95=${result.latency.p95Ms}ms p99=${result.latency.p99Ms}ms`,
         );
         for (const f of assertionFailures) console.error(`        assertion: ${f}`);
         for (const f of scanRowViolations) console.error(`        scan-rows: ${f}`);
       }
 
+      records.push({
+        id: budget.id,
+        outcome: ok ? "pass" : isVacuous && PROFILE === "minority" ? "unmeasured" : "fail",
+        ceiling: budget.ceiling,
+        tenantRows: tableRows,
+        resultRows,
+        blocks: run1.totalBlocks,
+        warmBlocks: result.warmBlocks,
+        latency: result.latency,
+        planning: result.planningMs,
+        coldMs: result.coldMs,
+        assertionFailures,
+        scanRowViolations,
+        vacuous: isVacuous,
+      });
+
+      if (isVacuous) {
+        const detail =
+          `${budget.id}: query returned 0 rows — the budget measures an empty result set, ` +
+          `so its ceiling and plan assertions cannot fail (vacuous budget)`;
+        vacuous.push(detail);
+        if (SELF_TEST) {
+          if (budget.id === "self-test-vacuous") breaches.push(detail);
+          else unusable.push(detail);
+        } else if (PROFILE === "minority") unmeasured.push(detail);
+        else breaches.push(detail);
+      }
+
       if (overCeiling)
         breaches.push(`${budget.id}: ${totalBlocks} blocks > ceiling ${budget.ceiling}`);
-      else if (SELF_TEST && run1.totalBlocks === 0)
+      else if (SELF_TEST && run1.totalBlocks === 0 && budget.id !== "self-test-vacuous")
         unusable.push(`${budget.id}: run1.totalBlocks=0 — budget measured nothing`);
       for (const f of assertionFailures) breaches.push(f);
       for (const f of scanRowViolations) breaches.push(f);
@@ -477,13 +765,16 @@ async function main() {
         "self-test-ceiling",
         "self-test-assertion",
         "self-test-scan-rows",
+        "self-test-seed-floor",
+        "self-test-vacuous",
+        "self-test-hashed-subplan",
       ]);
       const breachedIds = new Set(
         breaches.map((b) => b.split(":")[0].trim()),
       );
       const missing = [...EXPECTED_BREACH_IDS].filter((id) => !breachedIds.has(id));
       if (missing.length === 0) {
-        console.log("SELF-TEST PASS: all 3 breach types detected — ceiling, plan-assertion, scan-rows");
+        console.log("SELF-TEST PASS: all 6 breach types detected — ceiling, plan-assertion, scan-rows, seed-floor, vacuous-result, hashed-subplan");
         process.exitCode = 0;
       } else {
         console.error(
@@ -495,17 +786,84 @@ async function main() {
       return;
     }
 
+    const declared = budgets.length;
+    // A vacuous budget ran, but over an empty result set: the number it produced is not a
+    // measurement of the read it claims to guard, so it does not count toward coverage.
+    // A seed-too-small budget did not run at all — `runBudget` returns before the EXPLAIN
+    // loop — so counting it as measured inflates coverage with budgets that measured nothing.
+    // On the reference profile it lands as outcome "fail", which is why it was being counted.
+    const belowSeedFloor = records.filter((r) => r.reason === "seed-too-small").length;
+    const measured = records.filter(
+      (r) =>
+        (r.outcome === "pass" || r.outcome === "fail") &&
+        r.vacuous !== true &&
+        r.reason !== "seed-too-small",
+    ).length;
+    const notMeasured = declared - measured;
+    const pct = declared > 0 ? ((measured / declared) * 100).toFixed(1) : "0.0";
+
+    console.log(
+      `\n--- Tally: ${passed} PASS / ${breaches.length} FAIL / ${unmeasured.length} UNMEASURED` +
+      ` / ${excluded} EXCL / ${skipped} SKIP ---`,
+    );
+    console.log(
+      `Coverage: ${measured}/${declared} declared read-cost budgets produced a non-empty measurement` +
+      ` on tenant ${ORG} (${pct}%), profile=${PROFILE}, samples=${SAMPLES}.` +
+      ` ${notMeasured} unmeasured (${vacuous.length} vacuous, ${belowSeedFloor} below seed floor,` +
+      ` ${skipped} no fixture, ${excluded} excluded) and therefore unenforced.`,
+    );
+    if (excluded > 0)
+      console.log(`${excluded} budget(s) excluded by declaration — an excluded budget proves nothing.`);
     if (skipped > 0)
-      console.log(`\n${skipped} budget(s) skipped (no fixture data — seed the relevant tables).`);
+      console.log(`${skipped} budget(s) skipped (no fixture data — seed the relevant tables).`);
+    if (vacuous.length > 0)
+      console.log(`${vacuous.length} budget(s) returned 0 rows (vacuous — measured an empty result set).`);
+
+    if (JSON_OUT) {
+      const { writeFileSync } = await import("node:fs");
+      writeFileSync(
+        JSON_OUT,
+        JSON.stringify(
+          {
+            generatedAt: new Date().toISOString(),
+            role: ROLE_PROVENANCE,
+            tenant: ORG,
+            profile: PROFILE,
+            samples: SAMPLES,
+            declared,
+            measured,
+            passed,
+            breaches: breaches.length,
+            unmeasured: unmeasured.length,
+            excluded,
+            skipped,
+            budgets: records,
+          },
+          null,
+          2,
+        ) + "\n",
+      );
+      console.log(`Wrote ${JSON_OUT}`);
+    }
 
     if (breaches.length > 0) {
       console.error(`\n${breaches.length} breach(es):`);
       for (const b of breaches) console.error(`  FAIL: ${b}`);
+      console.error(`STATUS: FAIL — ${measured}/${declared} measured, ${breaches.length} over ceiling or vacuous.`);
       process.exitCode = 1;
       return;
     }
 
-    console.log("\nAll budgets within ceiling.");
+    if (notMeasured > 0) {
+      console.log(
+        `STATUS: PARTIAL — ${measured}/${declared} budgets measured and within ceiling;` +
+        ` ${notMeasured} unmeasured, so this run does not prove they are within budget.`,
+      );
+      process.exitCode = STRICT ? 2 : 0;
+      return;
+    }
+
+    console.log(`STATUS: OK — all ${declared}/${declared} declared budgets measured and within ceiling.`);
   } finally {
     await db.end();
   }

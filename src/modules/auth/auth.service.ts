@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from "@nestjs/common";
 import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
 import { seedSystemRolesForOrg } from "../rbac/seed-system-roles";
@@ -17,7 +18,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import {
   accountOrganizationIndex,
-  organizationMembers,
+  accounts,
   organizations,
   subscriptions,
   users,
@@ -26,37 +27,36 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
-import { runWithTenantContext, withTenant } from "../../common/tenant";
+import { withMembershipMutations } from "../../common/org/membership-mutations";
 import { withIdentity } from "../../common/tenant/with-identity";
-import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import {
+  runInNewTenantTransaction,
+  runInTenantTransaction,
+} from "../../common/tenant/run-in-tenant-transaction";
+import { generateOrgSlug } from "../organization/core/bootstrap-cell-organization";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { seedDemoDataset } from "../onboarding-activation/seed-demo-dataset";
 import { SessionsService } from "../sessions/sessions.service";
-import { AuthTokensService } from "./auth-tokens.service";
+import { AuthMembershipResolverService } from "./auth-membership-resolver.service";
+import { AuthAnalyticsService } from "./auth-analytics.service";
 import { AccountOrganizationIndexService } from "../organization/core/account-organization-index.service";
-import { addDays } from "date-fns";
-import type { RegisterInput } from "./dto/auth.schemas";
+import { runWithTenantContext, withTenant } from "../../common/tenant";
+import type { RegisterInput, GoogleOAuthInput } from "./dto/auth.schemas";
+import type { AuthSessionData } from "./dto/auth-response.schemas";
+import { type EffectivePlan } from "../billing/core/plan-entitlements.constants";
+import { insertTrialSubscription } from "../billing/core/trial-subscription";
 import {
-  getTrialDays,
-  TRIAL_PLAN,
-} from "../billing/core/plan-entitlements.constants";
-import { placeOrganization } from "../../common/region/placement-lookup";
-import { LEGACY_CELL_ID } from "../../common/region/placement";
-import { chooseRegionForNewOrg } from "../../common/region/cell-admission";
+  placeOrganization,
+  unplaceOrganization,
+} from "../../common/region/placement-lookup";
+import { logger } from "../../common/logger/logger.service";
+import {
+  chooseRegionForNewOrg,
+  regionPlacementCoordinates,
+} from "../../common/region/cell-admission";
 import { regionForNewOrg } from "../../common/region/region-registry";
-
-function slugify(name: string): string {
-  return (
-    name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "")
-      .substring(0, 50) +
-    "-" +
-    Date.now().toString(36)
-  );
-}
+import { organizationRowExists } from "../organization/core/cell-organization-state";
 
 @Injectable()
 export class AuthService {
@@ -66,8 +66,9 @@ export class AuthService {
     private readonly cache: CacheService,
     private readonly audit: AuditService,
     private readonly entitlements: EntitlementsService,
-    private readonly authTokens: AuthTokensService,
+    private readonly membershipResolver: AuthMembershipResolverService,
     private readonly dispatch: NotificationDispatchService,
+    private readonly analytics: AuthAnalyticsService,
     private readonly accountOrgIndex: AccountOrganizationIndexService,
   ) {}
 
@@ -86,71 +87,82 @@ export class AuthService {
 
     const userId = randomUUID();
     const orgId = randomUUID();
+    const orgSlug = generateOrgSlug(input.companyName);
 
-    const region = (await chooseRegionForNewOrg(this.db, {
-      organizationId: orgId,
-      region: regionForNewOrg(input.country),
-    })).region;
-    await placeOrganization(this.db, { orgId, region });
-
-    await withTenant(this.db, { orgId, audience: "INTERNAL" }, async (tx) => {
-      const seqRows = await tx.execute(
-        sql`SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id`,
+    let placement: ReturnType<typeof regionPlacementCoordinates> | null = null;
+    let placementAttempted = false;
+    try {
+      placement = regionPlacementCoordinates(
+        await chooseRegionForNewOrg(this.db, {
+          organizationId: orgId,
+          region: regionForNewOrg(input.country),
+        }),
       );
+      const selectedPlacement = placement;
+      placementAttempted = true;
+      await placeOrganization(this.db, { orgId, ...selectedPlacement });
+      await withMembershipMutations(this.cache, (membership) =>
+        runInNewTenantTransaction(this.db, orgId, async (tx) => {
+          const ownerMembershipId = await membership.allocateMembershipId(tx);
 
-      const ownerMembershipId = Number(seqRows[0]?.id);
+          await tx.insert(organizations).values({
+            id: orgId,
+            region: selectedPlacement.region,
+            ownerMembershipId,
+            name: input.companyName,
+            slug: orgSlug,
+          });
 
-      if (!Number.isInteger(ownerMembershipId))
-        throw new Error("Failed to allocate owner membership id");
+          await tx.insert(users).values({
+            id: userId,
+            isActive: true,
+            email: normalizedEmail,
+            lastActiveOrgId: orgId,
+            emailVerified: new Date(),
+            firstName: input.firstName,
+            lastName: input.lastName ?? "",
+            name: input.lastName
+              ? `${input.firstName} ${input.lastName}`
+              : input.firstName,
+          });
 
-      await tx.insert(organizations).values({
-        id: orgId,
-        region,
-        ownerMembershipId,
-        name: input.companyName,
-        slug: slugify(input.companyName),
-      });
+          await membership.createOwnerMembership(tx, {
+            orgId,
+            userId,
+            membershipId: ownerMembershipId,
+            role: ORG_MEMBER_ROLES.OWNER,
+          });
 
-      await tx.insert(users).values({
-        id: userId,
-        /*
-          Closed until provisioning finishes, then opened at the end of
-          `register`. There is otherwise a window where the row exists and the
-          workspace has no roles in it, and a sign-in landing in that window
-          reaches a workspace that renders nothing. If provisioning throws the
-          door simply never opens, which is a state somebody can retry out of.
-        */
-        isActive: false,
-        email: normalizedEmail,
-        lastActiveOrgId: orgId,
-        emailVerified: new Date(),
-        firstName: input.firstName,
-        lastName: input.lastName ?? "",
-        name: input.lastName
-          ? `${input.firstName} ${input.lastName}`
-          : input.firstName,
-      });
+          await insertTrialSubscription(tx, orgId);
 
-      await tx.insert(organizationMembers).values({
-        orgId,
-        userId,
-        isOwner: true,
-        id: ownerMembershipId,
-        role: ORG_MEMBER_ROLES.OWNER,
-      });
+          await seedSystemRolesForOrg(this.db, orgId);
+          await provisionOrgModules(tx, orgId, DEFAULT_SKIP_MODULES, userId);
+          await seedDemoDataset(tx, orgId, userId);
+        }),
+      );
+    } catch (error) {
+      const organizationExists =
+        placementAttempted && placement
+          ? await organizationRowExists(this.db, orgId, placement.region).catch(
+              () => true,
+            )
+          : false;
+      if (placementAttempted && !organizationExists)
+        await unplaceOrganization(this.db, orgId).catch(
+          (compensationError: unknown) => {
+            logger.error("[register] placement compensation failed", {
+              orgId,
+              error:
+                compensationError instanceof Error
+                  ? compensationError.message
+                  : String(compensationError),
+            });
+          },
+        );
+      throw error;
+    }
 
-      const trialDays = getTrialDays();
-      await tx.insert(subscriptions).values({
-        orgId,
-        plan: TRIAL_PLAN,
-        status: "TRIAL",
-        trialEndsAt: addDays(new Date(), trialDays),
-        currentPeriodStart: new Date(),
-        currentPeriodEnd: addDays(new Date(), trialDays),
-      });
-    });
-
-    await this.provisionWorkspace(orgId, userId);
+    if (!placement) throw new Error("Organization placement was not selected");
 
     await withIdentity(this.db, userId, (tx) =>
       tx
@@ -158,10 +170,10 @@ export class AuthService {
         .values({
           userId,
           orgId,
-          cellId: LEGACY_CELL_ID,
-          region,
+          cellId: placement.cellId,
+          region: placement.region,
           organizationName: input.companyName,
-          organizationSlug: slugify(input.companyName),
+          organizationSlug: orgSlug,
           membershipRole: ORG_MEMBER_ROLES.OWNER,
           membershipStatus: "ACTIVE",
           organizationStatus: "ACTIVE",
@@ -170,12 +182,13 @@ export class AuthService {
           projectedAt: new Date(),
         })
         .onConflictDoUpdate({
-          target: [accountOrganizationIndex.userId, accountOrganizationIndex.orgId],
+          target: [
+            accountOrganizationIndex.userId,
+            accountOrganizationIndex.orgId,
+          ],
           set: { lastActivatedAt: new Date() },
         }),
     );
-
-    await this.openAccount(userId);
 
     this.audit.log({
       action: "user.registered",
@@ -205,9 +218,14 @@ export class AuthService {
   }
 
   /**
-   * The last step, deliberately: the account is created closed and opens only
-   * once provisioning has finished, so no sign-in can land in a workspace that
-   * has no roles in it yet.
+   * Opens an account that provisioning left closed.
+   *
+   * `register` now creates the user, the roles and the modules in one tenant
+   * transaction, so a new signup is never closed. An account from before that —
+   * created closed, with provisioning run afterwards and failing — is what
+   * `resumeProvisioning` finishes, and this is its last step, deliberately: the
+   * account opens only once provisioning has finished, so no sign-in can land in
+   * a workspace that has no roles in it yet.
    */
   private async openAccount(userId: string): Promise<void> {
     await this.db.update(users).set({ isActive: true }).where(eq(users.id, userId));
@@ -259,25 +277,157 @@ export class AuthService {
     this.audit.log({ action: "auth.logout_all", userId });
   }
 
-  async getSessionData(userId: string): Promise<{
-    userId: string;
-    email: string;
-    firstName: string | null;
-    lastName: string | null;
-    name: string | null;
-    image: string | null;
-    role: string | null;
-    isActive: boolean;
-    orgId: string | null;
-    cellId: string | null;
-    isOrgOwner: boolean;
-    enabledModules: string[];
-    orgOnboardingCompletedAt: string | null;
-    userOnboardingCompletedAt: string | null;
-    plan: string | null;
-    organizationAccess: "active" | "suspended" | "none";
-    suspendedOrganizationName: string | null;
-  }> {
+  async googleOAuth(
+    input: GoogleOAuthInput,
+    context: { userAgent?: string; ipAddress?: string },
+  ): Promise<{ userId: string; isNewUser: boolean; sessionId: string }> {
+    const normalizedEmail = input.email.toLowerCase().trim();
+
+    const existingAccount = await this.db.query.accounts.findFirst({
+      where: and(
+        eq(accounts.provider, "google"),
+        eq(accounts.providerAccountId, input.googleId),
+      ),
+      columns: { userId: true },
+    });
+
+    if (existingAccount) {
+      const accountUser = await this.db.query.users.findFirst({
+        where: eq(users.id, existingAccount.userId),
+        columns: { isActive: true, deletedAt: true },
+      });
+      if (
+        !accountUser ||
+        !accountUser.isActive ||
+        accountUser.deletedAt !== null
+      ) {
+        void this.analytics.logLoginEvent(
+          existingAccount.userId,
+          null,
+          "google_oauth.login",
+          false,
+          "account_inactive",
+          context,
+        );
+        throw new UnauthorizedException("Authentication failed");
+      }
+      const sessionId = await this.membershipResolver.createLoginSession(
+        existingAccount.userId,
+        context,
+      );
+      void this.analytics.logLoginEvent(
+        existingAccount.userId,
+        null,
+        "google_oauth.login",
+        true,
+        null,
+        context,
+      );
+      return { userId: existingAccount.userId, isNewUser: false, sessionId };
+    }
+
+    const existingUser = await this.db.query.users.findFirst({
+      where: sql`lower(${users.email}) = ${normalizedEmail}`,
+      columns: {
+        id: true,
+        emailVerified: true,
+        isActive: true,
+        deletedAt: true,
+      },
+    });
+
+    if (existingUser) {
+      if (!existingUser.isActive || existingUser.deletedAt !== null) {
+        void this.analytics.logLoginEvent(
+          existingUser.id,
+          null,
+          "google_oauth.login",
+          false,
+          "account_inactive",
+          context,
+        );
+        throw new UnauthorizedException("Authentication failed");
+      }
+      await this.db
+        .insert(accounts)
+        .values({
+          userId: existingUser.id,
+          type: "oauth",
+          provider: "google",
+          providerAccountId: input.googleId,
+        })
+        .onConflictDoNothing();
+
+      if (!existingUser.emailVerified) {
+        await this.db
+          .update(users)
+          .set({ emailVerified: new Date() })
+          .where(eq(users.id, existingUser.id));
+      }
+
+      const sessionId = await this.membershipResolver.createLoginSession(
+        existingUser.id,
+        context,
+      );
+      void this.analytics.logLoginEvent(
+        existingUser.id,
+        null,
+        "google_oauth.login",
+        true,
+        null,
+        context,
+      );
+      return { userId: existingUser.id, isNewUser: false, sessionId };
+    }
+
+    const userId = randomUUID();
+    const rawName = (input.name ?? normalizedEmail.split("@")[0]).trim();
+    const spaceIdx = rawName.indexOf(" ");
+    const firstName = spaceIdx === -1 ? rawName : rawName.slice(0, spaceIdx);
+    const lastName = spaceIdx === -1 ? "" : rawName.slice(spaceIdx + 1).trim();
+
+    await this.db.transaction(async (tx) => {
+      await tx.insert(users).values({
+        id: userId,
+        email: normalizedEmail,
+        name: rawName,
+        firstName,
+        lastName,
+        image: input.image || null,
+        isActive: true,
+        emailVerified: new Date(),
+      });
+
+      await tx.insert(accounts).values({
+        userId,
+        type: "oauth",
+        provider: "google",
+        providerAccountId: input.googleId,
+      });
+    });
+
+    this.audit.log({
+      action: "user.registered",
+      userId,
+      metadata: { email: normalizedEmail, provider: "google" },
+    });
+
+    const sessionId = await this.membershipResolver.createLoginSession(
+      userId,
+      context,
+    );
+    void this.analytics.logLoginEvent(
+      userId,
+      null,
+      "google_oauth.register",
+      true,
+      null,
+      context,
+    );
+    return { userId, isNewUser: true, sessionId };
+  }
+
+  async getSessionData(userId: string): Promise<AuthSessionData> {
     return this.cache.cached(
       CACHE_KEYS.userSession(userId),
       async () => {
@@ -310,21 +460,22 @@ export class AuthService {
 
         const preferredOrgId = preferred?.orgId ?? user.lastActiveOrgId ?? null;
 
-        const membership = await this.authTokens.resolveActiveMembership(
-          userId,
-          preferredOrgId,
-          { honorSuspendedPreference: true },
-        );
+        const membership =
+          await this.membershipResolver.resolveActiveMembership(
+            userId,
+            preferredOrgId,
+            { honorSuspendedPreference: true },
+          );
         const suspendedMembership = membership
           ? null
-          : await this.authTokens.resolveSuspendedMembership(
+          : await this.membershipResolver.resolveSuspendedMembership(
               userId,
               preferredOrgId,
             );
 
         let enabledModules: string[] = [];
         let orgOnboardingCompletedAt: string | null = null;
-        let plan: string | null = null;
+        let plan: EffectivePlan | null = null;
 
         const resolvedOrgId = membership?.orgId ?? null;
         const isOrgOwner = membership?.isOwner ?? false;
@@ -373,7 +524,7 @@ export class AuthService {
           enabledModules,
           orgOnboardingCompletedAt,
           userOnboardingCompletedAt:
-            user.onboardingCompletedAt?.toISOString() ?? null,
+            membership?.memberOnboardingCompletedAt?.toISOString() ?? null,
           plan,
           organizationAccess: membership
             ? "active"

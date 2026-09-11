@@ -34,13 +34,13 @@ export class ExitChecklistService {
     });
 
     if (template) {
-      const content = template.content as { items?: unknown[] };
-      const rawItems = Array.isArray(content.items) ? content.items : [];
+      const templateItems = template.content["items"];
+      const rawItems = Array.isArray(templateItems) ? templateItems : [];
       const items = rawItems.filter(
         (i): i is ChecklistItem =>
           i !== null &&
           typeof i === "object" &&
-          typeof (i as Record<string, unknown>)["title"] === "string",
+          typeof i["title"] === "string",
       );
 
       if (items.length > 0) {

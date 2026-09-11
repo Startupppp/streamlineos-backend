@@ -17,6 +17,6 @@ import { NotificationsModule } from "../notifications/notifications.module";
   ],
   controllers: [TasksController],
   providers: [TasksService, TaskNotificationsService, TasksCalendarSource, TaskSequencesService, TaskAnalyticsService],
-  exports: [TasksService, TaskSequencesService, TaskAnalyticsService],
+  exports: [TasksService],
 })
 export class TasksModule {}

@@ -97,6 +97,27 @@ describe("statutory export builders", () => {
     expect(art.rowCount).toBe(2);
   });
 
+  it("paise accumulation is exact for multi-employee contribution totals", () => {
+    const manyEmployees: EmployeeStatutorySourceRow[] = Array.from({ length: 5 }, (_, i) => ({
+      subjectKey: `p${i}`,
+      userId: `p${i}`,
+      workerId: null,
+      employeeNumber: `P00${i}`,
+      employeeName: `Payee ${i}`,
+      email: null,
+      gross: "30000.00",
+      net: "26000.00",
+      uan: `10098765432${i}`,
+      esiIpNumber: null,
+      pan: null,
+      lines: { EPF_EMPLOYEE: "1800.00", EPF_EMPLOYER: "1800.00" },
+    }));
+    const art = buildPfEcrExport(manyEmployees, { periodMonth: "2026-07", runId: 2, bundle });
+    expect(art.totals.employeeContribution).toBe("9000.00");
+    expect(art.totals.employerContribution).toBe("9000.00");
+    expect(5 * 180000).toBe(900000);
+  });
+
   it("dispatches all supported filing types", () => {
     for (const t of ["PF_ECR", "ESI", "PT", "TDS_24Q", "FORM16", "LWF"] as const) {
       const art = buildFilingExport(t, employees, {

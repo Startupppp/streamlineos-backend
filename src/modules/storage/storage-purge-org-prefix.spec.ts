@@ -49,7 +49,7 @@ function service(): StoragePurgeService {
     R2_ENDPOINT: "https://default.r2.example",
     NEXT_PUBLIC_R2_PUBLIC_URL: "https://files.example",
   };
-  const storageSvc = new StorageService({} as MediaCompressionService, config);
+  const storageSvc = new StorageService({} as MediaCompressionService, config, { isKeyBlocked: async () => false });
   return new StoragePurgeService(storageSvc);
 }
 

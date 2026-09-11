@@ -6,4 +6,4 @@ export const webhookQuerySchema = z
   })
   .strict();
 
-export type WebhookQuery = z.infer<typeof webhookQuerySchema>;
+type WebhookQuery = z.infer<typeof webhookQuerySchema>;

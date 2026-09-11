@@ -53,7 +53,25 @@ import {
 import type { RequestActorContext } from "../../../common/audit/actor-context";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  paymentProviderCatalogResponseSchema,
+  paymentProviderListResponseSchema,
+  paymentProviderRowSchema,
+  paymentProviderWithCredentialsSchema,
+  credentialSaveResponseSchema,
+  paymentTestTransactionListSchema,
+  paymentTestTransactionRowSchema,
+  paymentTestTransactionCreatedSchema,
+  webhookEndpointResponseSchema,
+  webhookEventListResponseSchema,
+  webhookEventRowResponseSchema,
+  paymentReadinessResponseSchema,
+  paymentAuditListResponseSchema,
+  paymentManualMethodListResponseSchema,
+  paymentManualMethodRowResponseSchema,
+  successSchema,
+} from "./dto/payments-response.schemas";
 
 const providerKeyParams = z.object({ providerKey: z.string().min(1) }).strict();
 const providerKeytransactionIdParams = z.object({ providerKey: z.string().min(1), transactionId: z.coerce.number().int().positive() }).strict();
@@ -90,6 +108,7 @@ export class PaymentsController {
   @Get("providers/catalog")
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:providers:view")
+  @ResponseSchema(paymentProviderCatalogResponseSchema)
   getCatalog() {
     return this.providers.getCatalog();
   }
@@ -97,6 +116,7 @@ export class PaymentsController {
   @Get("providers")
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:providers:view")
+  @ResponseSchema(paymentProviderListResponseSchema)
   listProviders(@CurrentUser() u: CurrentUserContext) {
     return this.providers.listProviders(u.orgId);
   }
@@ -106,6 +126,7 @@ export class PaymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:providers:manage")
   @Validate({ body: createProviderSchema })
+  @ResponseSchema(paymentProviderRowSchema)
   createProvider(
     @Body() body: CreateProviderInput,
     @CurrentUser() u: CurrentUserContext,
@@ -118,6 +139,7 @@ export class PaymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:providers:view")
   @Validate({ params: providerKeyParams })
+  @ResponseSchema(paymentProviderWithCredentialsSchema)
   getProvider(@Param("providerKey") providerKey: string, @CurrentUser() u: CurrentUserContext) {
     return this.providers.getProvider(u.orgId, providerKey);
   }
@@ -126,6 +148,7 @@ export class PaymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:providers:manage")
   @Validate({ params: providerKeyParams, body: updateProviderSchema })
+  @ResponseSchema(paymentProviderRowSchema)
   updateProvider(
     @Param("providerKey") providerKey: string,
     @Body() body: UpdateProviderInput,
@@ -141,6 +164,7 @@ export class PaymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:providers:manage")
   @Validate({ params: providerKeyParams })
+  @ResponseSchema(paymentProviderRowSchema)
   disableProvider(
     @Param("providerKey") providerKey: string,
     @CurrentUser() u: CurrentUserContext,
@@ -154,6 +178,7 @@ export class PaymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:credentials:manage")
   @Validate({ params: providerKeyParams, body: saveCredentialsSchema })
+  @ResponseSchema(credentialSaveResponseSchema)
   saveCredentials(
     @Param("providerKey") providerKey: string,
     @Body() body: SaveCredentialsInput,
@@ -163,11 +188,13 @@ export class PaymentsController {
     return this.providers.saveCredentials(u.orgId, providerKey, body, this.actorContext(u, req));
   }
 
+  // Published contract: same behaviour as /credentials, kept until a deprecation window runs.
   @Post("providers/:providerKey/credentials/rotate")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:credentials:manage")
   @Validate({ params: providerKeyParams, body: saveCredentialsSchema })
+  @ResponseSchema(credentialSaveResponseSchema)
   rotateCredentials(
     @Param("providerKey") providerKey: string,
     @Body() body: SaveCredentialsInput,
@@ -182,6 +209,7 @@ export class PaymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:credentials:manage")
   @Validate({ params: providerKeyParams, body: disconnectCredentialsSchema })
+  @ResponseSchema(successSchema)
   disconnectCredentials(
     @Param("providerKey") providerKey: string,
     @Body() body: DisconnectCredentialsInput,
@@ -195,6 +223,7 @@ export class PaymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:providers:view")
   @Validate({ params: providerKeyParams })
+  @ResponseSchema(paymentTestTransactionListSchema)
   listTestTransactions(@Param("providerKey") providerKey: string, @CurrentUser() u: CurrentUserContext) {
     return this.testTransactions.listForProvider(u.orgId, providerKey);
   }
@@ -204,6 +233,7 @@ export class PaymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:test:run")
   @Validate({ params: providerKeyParams, body: createTestTransactionSchema })
+  @ResponseSchema(paymentTestTransactionCreatedSchema)
   createTestTransaction(
     @Param("providerKey") providerKey: string,
     @Body() body: CreateTestTransactionInput,
@@ -217,6 +247,7 @@ export class PaymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:test:run")
   @Validate({ params: providerKeytransactionIdParams, body: verifyTestTransactionSchema })
+  @ResponseSchema(paymentTestTransactionRowSchema)
   verifyTestTransaction(
     @Param("providerKey") providerKey: string,
     @Param("transactionId", ParseIntPipe) transactionId: number,
@@ -232,6 +263,7 @@ export class PaymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:webhooks:manage")
   @Validate({ params: providerKeyParams, body: generateWebhookSchema })
+  @ResponseSchema(webhookEndpointResponseSchema)
   generateWebhook(
     @Param("providerKey") providerKey: string,
     @Body() body: GenerateWebhookInput,
@@ -246,6 +278,7 @@ export class PaymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:webhooks:manage")
   @Validate({ params: providerKeyParams, body: verifyWebhookSchema })
+  @ResponseSchema(webhookEndpointResponseSchema)
   verifyWebhook(
     @Param("providerKey") providerKey: string,
     @Body() body: VerifyWebhookInput,
@@ -260,6 +293,7 @@ export class PaymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:webhooks:view")
   @Validate({ params: providerKeyParams })
+  @ResponseSchema(webhookEventListResponseSchema)
   listWebhookEvents(@Param("providerKey") providerKey: string, @CurrentUser() u: CurrentUserContext) {
     return this.webhooks.listEvents(u.orgId, providerKey);
   }
@@ -270,6 +304,7 @@ export class PaymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:webhooks:manage")
   @Validate({ params: providerKeyeventIdParams })
+  @ResponseSchema(webhookEventRowResponseSchema)
   retryWebhookEvent(
     @Param("providerKey") providerKey: string,
     @Param("eventId", ParseIntPipe) eventId: number,
@@ -283,6 +318,7 @@ export class PaymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:providers:view")
   @Validate({ params: providerKeyParams })
+  @ResponseSchema(paymentReadinessResponseSchema)
   getReadiness(@Param("providerKey") providerKey: string, @CurrentUser() u: CurrentUserContext) {
     return this.readiness.getReadiness(u.orgId, providerKey);
   }
@@ -293,6 +329,7 @@ export class PaymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:live:activate")
   @Validate({ params: providerKeyParams })
+  @ResponseSchema(paymentProviderRowSchema)
   activateLive(
     @Param("providerKey") providerKey: string,
     @CurrentUser() u: CurrentUserContext,
@@ -305,6 +342,7 @@ export class PaymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:audit:view")
   @Validate({ params: providerKeyParams })
+  @ResponseSchema(paymentAuditListResponseSchema)
   async listProviderAudit(@Param("providerKey") providerKey: string, @CurrentUser() u: CurrentUserContext) {
     const provider = await this.providers.getProvider(u.orgId, providerKey);
     return this.audit.listForProvider(u.orgId, provider.id);
@@ -313,6 +351,7 @@ export class PaymentsController {
   @Get("audit")
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:audit:view")
+  @ResponseSchema(paymentAuditListResponseSchema)
   listAllAudit(@CurrentUser() u: CurrentUserContext) {
     return this.audit.listForOrg(u.orgId);
   }
@@ -320,6 +359,7 @@ export class PaymentsController {
   @Get("manual-methods")
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:providers:view")
+  @ResponseSchema(paymentManualMethodListResponseSchema)
   listManualMethods(@CurrentUser() u: CurrentUserContext) {
     return this.manualMethods.list(u.orgId);
   }
@@ -329,6 +369,7 @@ export class PaymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:manual-methods:manage")
   @Validate({ body: createManualMethodSchema })
+  @ResponseSchema(paymentManualMethodRowResponseSchema)
   createManualMethod(
     @Body() body: CreateManualMethodInput,
     @CurrentUser() u: CurrentUserContext,
@@ -341,6 +382,7 @@ export class PaymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:manual-methods:manage")
   @Validate({ params: methodIdParams, body: updateManualMethodSchema })
+  @ResponseSchema(paymentManualMethodRowResponseSchema)
   updateManualMethod(
     @Param("methodId", ParseIntPipe) methodId: number,
     @Body() body: UpdateManualMethodInput,
@@ -356,6 +398,7 @@ export class PaymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:manual-methods:manage")
   @Validate({ params: methodIdParams })
+  @ResponseSchema(paymentManualMethodRowResponseSchema)
   disableManualMethod(
     @Param("methodId", ParseIntPipe) methodId: number,
     @CurrentUser() u: CurrentUserContext,

@@ -1,6 +1,15 @@
-import { BadRequestException, ConflictException, Injectable, Inject } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Inject,
+} from "@nestjs/common";
 import { and, eq, desc, asc, gt, isNull, lt, or, type SQL } from "drizzle-orm";
-import { buildCursorPage, decodeCursor, type CursorPage } from "../../../common/pagination/cursor";
+import {
+  buildCursorPage,
+  decodeCursor,
+  type CursorPage,
+} from "../../../common/pagination/cursor";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -9,10 +18,18 @@ import {
   payrollPolicyVersions,
   organizationMembers,
 } from "../../../db/schema";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import { buildRunChecklist } from "./lib/checklist";
-import type { ListRunsQuery, ListRunEmployeesQuery, AddRunAdjustmentInput } from "./dto/runs.schemas";
-import type { PayrollChecklistItem, PayrollToggles, VarianceSummary } from "../payroll.types";
+import type {
+  ListRunsQuery,
+  ListRunEmployeesQuery,
+  AddRunAdjustmentInput,
+} from "./dto/runs.schemas";
+import type {
+  PayrollChecklistItem,
+  PayrollToggles,
+  VarianceSummary,
+} from "../payroll.types";
 import { AuditService } from "../../../common/audit/audit.service";
 import { PayrollEntitiesService } from "../entities/entities.service";
 import { describeCountryPack } from "../../hr/global/lib/country-pack-registry";
@@ -38,7 +55,14 @@ export class RunsService {
     reason: string | null,
     actorId: string,
   ): Promise<{ ok: boolean }> {
-    return this.employees.setEmployeeHold(orgId, runId, runEmployeeId, hold, reason, actorId);
+    return this.employees.setEmployeeHold(
+      orgId,
+      runId,
+      runEmployeeId,
+      hold,
+      reason,
+      actorId,
+    );
   }
 
   async addRunAdjustment(
@@ -48,7 +72,13 @@ export class RunsService {
     body: AddRunAdjustmentInput,
     actorId: string,
   ): Promise<{ ok: true } | { ok: false; reason: "not_found" | "locked" }> {
-    return this.employees.addRunAdjustment(orgId, runId, runEmployeeId, body, actorId);
+    return this.employees.addRunAdjustment(
+      orgId,
+      runId,
+      runEmployeeId,
+      body,
+      actorId,
+    );
   }
 
   async createRun(
@@ -69,7 +99,9 @@ export class RunsService {
     let statutoryRuleVersion: string | null = null;
     if (entityId != null) {
       const entity = await this.entities.getEntity(orgId, entityId);
-      const period = await this.entities.ensurePeriod(orgId, month, { entityId });
+      const period = await this.entities.ensurePeriod(orgId, month, {
+        entityId,
+      });
       periodId = period.id;
       const pack = describeCountryPack(entity.countryCode);
       statutoryRuleVersion =
@@ -79,7 +111,10 @@ export class RunsService {
       if (statutoryRuleVersion) {
         const ruleCountry = statutoryRuleVersion.split("-")[0] ?? "";
         if (ruleCountry.length === 2) {
-          this.entities.assertNoCountryContamination(entity.countryCode, ruleCountry);
+          this.entities.assertNoCountryContamination(
+            entity.countryCode,
+            ruleCountry,
+          );
         }
       }
     }
@@ -91,10 +126,17 @@ export class RunsService {
           entityId: payrollRuns.entityId,
         })
         .from(payrollRuns)
-        .where(and(eq(payrollRuns.id, opts.sourceRunId), eq(payrollRuns.orgId, orgId)))
+        .where(
+          and(
+            eq(payrollRuns.id, opts.sourceRunId),
+            eq(payrollRuns.orgId, orgId),
+          ),
+        )
         .limit(1);
       if (!source[0]) {
-        throw new BadRequestException("Source payroll run not found in this organization");
+        throw new BadRequestException(
+          "Source payroll run not found in this organization",
+        );
       }
       if (
         entityId != null &&
@@ -146,7 +188,10 @@ export class RunsService {
     const policyVersionId = policyVersion[0]?.id ?? null;
 
     const creatorMember = await this.db.query.organizationMembers.findFirst({
-      where: and(eq(organizationMembers.userId, userId), eq(organizationMembers.orgId, orgId)),
+      where: and(
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.orgId, orgId),
+      ),
       columns: { id: true },
     });
     const createdByMembershipId = creatorMember?.id ?? null;
@@ -176,19 +221,36 @@ export class RunsService {
     return { ok: true, runId };
   }
 
-  async listRuns(orgId: string, query: ListRunsQuery): Promise<CursorPage<{
-    id: number; month: string; status: string; runType: string; entityId: number | null;
-    statutoryRuleVersion: string | null; grossTotal: string | null; netTotal: string | null;
-    employeeCount: number | null; exceptionCount: number | null; createdAt: Date;
-  }>> {
+  async listRuns(
+    orgId: string,
+    query: ListRunsQuery,
+  ): Promise<
+    CursorPage<{
+      id: number;
+      month: string;
+      status: string;
+      runType: string;
+      entityId: number | null;
+      statutoryRuleVersion: string | null;
+      grossTotal: string | null;
+      netTotal: string | null;
+      employeeCount: number | null;
+      exceptionCount: number | null;
+      createdAt: Date;
+    }>
+  > {
     const pageLimit = Math.min(query.limit, 100);
     const pos = decodeCursor(query.cursor);
     const conditions: SQL[] = [eq(payrollRuns.orgId, orgId)];
-    if (query.entityId != null) conditions.push(eq(payrollRuns.entityId, query.entityId));
+    if (query.entityId != null)
+      conditions.push(eq(payrollRuns.entityId, query.entityId));
     const cursorCondition = pos
       ? or(
           lt(payrollRuns.month, pos.sortValue),
-          and(eq(payrollRuns.month, pos.sortValue), lt(payrollRuns.id, Number(pos.id))),
+          and(
+            eq(payrollRuns.month, pos.sortValue),
+            lt(payrollRuns.id, Number(pos.id)),
+          ),
         )
       : undefined;
     if (cursorCondition) conditions.push(cursorCondition);
@@ -210,7 +272,10 @@ export class RunsService {
       .where(and(...conditions))
       .orderBy(desc(payrollRuns.month), desc(payrollRuns.id))
       .limit(pageLimit + 1);
-    return buildCursorPage(rows, pageLimit, (row) => ({ sortValue: row.month, id: String(row.id) }));
+    return buildCursorPage(rows, pageLimit, (row) => ({
+      sortValue: row.month,
+      id: String(row.id),
+    }));
   }
 
   async getRunById(
@@ -232,7 +297,12 @@ export class RunsService {
 
     const [toggles, varianceSummary, payoutHealth] = await Promise.all([
       this.getTogglesForRun(orgId, run[0].policyVersionId),
-      this.variance.buildSummary(orgId, run[0].id, run[0].month, run[0].netTotal),
+      this.variance.buildSummary(
+        orgId,
+        run[0].id,
+        run[0].month,
+        run[0].netTotal,
+      ),
       this.employees.getPayoutHealth(orgId, run[0].id, run[0].status),
     ]);
 
@@ -242,13 +312,11 @@ export class RunsService {
   }
 
   async listRunEmployees(
-    orgId: string,
+    read: ScopedRead,
     runId: number,
     query: ListRunEmployeesQuery,
-    scope: DataScope,
-    userId: string,
   ) {
-    return this.employees.listRunEmployees(orgId, runId, query, scope, userId);
+    return this.employees.listRunEmployees(read, runId, query);
   }
 
   async getRunEmployee(orgId: string, runId: number, runEmployeeId: number) {
@@ -265,18 +333,39 @@ export class RunsService {
     currentMonth: string,
     currentNetTotal: string | null,
   ): Promise<VarianceSummary | null> {
-    return this.variance.buildSummary(orgId, runId, currentMonth, currentNetTotal);
+    return this.variance.buildSummary(
+      orgId,
+      runId,
+      currentMonth,
+      currentNetTotal,
+    );
   }
 
-  private async getTogglesForRun(orgId: string, policyVersionId: number | null): Promise<PayrollToggles | null> {
+  private async getTogglesForRun(
+    orgId: string,
+    policyVersionId: number | null,
+  ): Promise<PayrollToggles | null> {
     if (!policyVersionId) return null;
 
     const version = await this.db
-      .select({ toggles: payrollPolicyVersions.toggles, config: payrollPolicyVersions.config })
+      .select({
+        toggles: payrollPolicyVersions.toggles,
+        config: payrollPolicyVersions.config,
+      })
       .from(payrollPolicyVersions)
-      .where(and(eq(payrollPolicyVersions.id, policyVersionId), eq(payrollPolicyVersions.orgId, orgId)))
+      .where(
+        and(
+          eq(payrollPolicyVersions.id, policyVersionId),
+          eq(payrollPolicyVersions.orgId, orgId),
+        ),
+      )
       .limit(1);
 
-    return (version[0]?.toggles as PayrollToggles) ?? null;
+    const rawToggles = version[0]?.toggles;
+    return rawToggles &&
+      typeof rawToggles === "object" &&
+      !Array.isArray(rawToggles)
+      ? (rawToggles as PayrollToggles)
+      : null;
   }
 }

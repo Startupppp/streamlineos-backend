@@ -1,6 +1,7 @@
 import { Controller, Get, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
-import { Universal } from "../../common/auth/universal.decorator";
+import { PermissionGuard } from "../access/permission.guard";
+import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
@@ -10,14 +11,17 @@ import {
   type ListEmploymentFactsQuery,
 } from "./dto/employment-facts.schemas";
 import type { EmploymentFacts } from "./employment-facts.types";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { employmentFactsListSchema } from "./dto/directory-response.schemas";
 
 @Controller("directory/employment")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class EmploymentFactsController {
   constructor(private readonly facts: EmploymentFactsService) {}
 
   @Get()
-  @Universal()
+  @RequirePermission("settings:view")
+  @ResponseSchema(employmentFactsListSchema)
   @Validate({ query: listEmploymentFactsQuerySchema })
   async list(
     @Query() query: ListEmploymentFactsQuery,

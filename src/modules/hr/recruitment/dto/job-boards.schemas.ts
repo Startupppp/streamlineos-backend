@@ -10,7 +10,7 @@ export const createJobBoardPostingSchema = z.object({
   expiryDate: z.string().optional(),
   spend: z.number().min(0).optional(),
   notes: z.string().max(2000).optional(),
-});
+}).strict();
 export type CreateJobBoardPostingInput = z.infer<typeof createJobBoardPostingSchema>;
 
 export const updateJobBoardPostingSchema = z.object({
@@ -23,5 +23,5 @@ export const updateJobBoardPostingSchema = z.object({
   qualifiedCount: z.number().int().min(0).optional(),
   hiredCount: z.number().int().min(0).optional(),
   notes: z.string().max(2000).optional(),
-});
+}).strict();
 export type UpdateJobBoardPostingInput = z.infer<typeof updateJobBoardPostingSchema>;

@@ -4,12 +4,13 @@ import {
   Inject,
   Injectable,
   InternalServerErrorException,
+  NotFoundException,
 } from "@nestjs/common";
 import { ModuleRef } from "@nestjs/core";
 import { and, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { chatChannelMembers, chatMessages, organizationMembers, users } from "../../db/schema";
+import { chatChannelMembers, chatChannels, chatMessages, organizationMembers, users } from "../../db/schema";
 import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 
 const SUMMARIZE_LIMIT = 50;
@@ -25,6 +26,12 @@ export class ChatSummarizeService {
     channelId: number,
     actor: { orgId: string; userId: string },
   ): Promise<{ summary: string }> {
+    const channel = await this.db.query.chatChannels.findFirst({
+      where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, actor.orgId)),
+      columns: { id: true, isPrivate: true },
+    });
+    if (!channel) throw new NotFoundException("Channel not found");
+
     const orgMember = await this.db.query.organizationMembers.findFirst({
       where: and(eq(organizationMembers.orgId, actor.orgId), eq(organizationMembers.userId, actor.userId)),
       columns: { id: true },
@@ -40,7 +47,11 @@ export class ChatSummarizeService {
         })
       : null;
 
-    if (!member) throw new ForbiddenException("Not a member of this channel");
+    // A private channel must not confirm its own existence to a non-member.
+    if (!member) {
+      if (channel.isPrivate) throw new NotFoundException("Channel not found");
+      throw new ForbiddenException("Not a member of this channel");
+    }
 
     const rows = await this.db
       .select({

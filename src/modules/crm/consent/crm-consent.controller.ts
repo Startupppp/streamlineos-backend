@@ -5,7 +5,6 @@ import {
   Controller,
   Get,
   HttpCode,
-  NotFoundException,
   Param,
   Post,
   Query,
@@ -34,9 +33,13 @@ import {
   type UnsubscribeInput,
 } from "./dto/consent.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { z } from "zod";
-
-const contactIdParams = z.object({ contactId: z.string().min(1) }).strict();
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  consentListSchema,
+  consentEventListSchema,
+  consentCountMissingSchema,
+  successSchema,
+} from "./dto/crm-consent-response.schemas";
 
 @Controller("crm/consent")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -45,7 +48,8 @@ export class CrmConsentController {
 
   @Get("contacts/:contactId")
   @RequirePermission("crm:contacts:view")
-  @Validate({ params: contactIdParams })
+  @ResponseSchema(consentListSchema)
+  @Validate({ params: contactParamSchema })
   listForContact(
     @Param() params: ContactParam,
     @CurrentUser() u: CurrentUserContext,
@@ -65,6 +69,7 @@ export class CrmConsentController {
    */
   @Get("contacts/:contactId/events")
   @RequirePermission("crm:contacts:view")
+  @ResponseSchema(consentEventListSchema)
   listEvents(
     @Param(new ZodValidationPipe(contactParamSchema)) params: ContactParam,
     @Query(new ZodValidationPipe(consentEventsQuerySchema)) query: ConsentEventsQuery,
@@ -76,7 +81,8 @@ export class CrmConsentController {
   @Post("contacts/:contactId")
   @HttpCode(200)
   @RequirePermission("crm:contacts:manage")
-  @Validate({ params: contactIdParams, body: recordConsentSchema })
+  @ResponseSchema(successSchema)
+  @Validate({ params: contactParamSchema, body: recordConsentSchema })
   async record(
     @Param() params: ContactParam,
     @Body() body: RecordConsentInput,
@@ -98,6 +104,7 @@ export class CrmConsentController {
 
   @Get("missing")
   @RequirePermission("crm:contacts:view")
+  @ResponseSchema(consentCountMissingSchema)
   @Validate({ query: missingConsentQuerySchema })
   async countMissing(
     @Query() query: MissingConsentQuery,
@@ -119,6 +126,7 @@ export class CrmPublicConsentController {
   @Post("unsubscribe")
   @Public()
   @HttpCode(200)
+  @ResponseSchema(successSchema)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("crm:public-unsubscribe")
   @Validate({ body: unsubscribeSchema })
@@ -143,6 +151,7 @@ export class CrmPublicConsentController {
    */
   @Get("unsubscribe/:token")
   @Public()
+  @ResponseSchema(successSchema)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("crm:public-unsubscribe")
   async unsubscribeByLink(@Param("token") token: string) {
@@ -153,6 +162,7 @@ export class CrmPublicConsentController {
   @BodylessAction()
   @Public()
   @HttpCode(200)
+  @ResponseSchema(successSchema)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("crm:public-unsubscribe")
   async unsubscribeOneClick(@Param("token") token: string) {
@@ -163,23 +173,10 @@ export class CrmPublicConsentController {
     const payload = verifyUnsubscribeToken(token);
 
     // Always the same response, valid token or not. Distinguishing them would
-    // turn this endpoint into an oracle for whether a contact exists.
-    if (payload) {
-      try {
-        await this.consent.record(payload.orgId, {
-          contactId: payload.contactId,
-          channel: payload.channel,
-          status: "OPTED_OUT",
-          source: "UNSUBSCRIBE_LINK",
-          legalBasis: "CONSENT",
-          recordedByUserId: null,
-        });
-      } catch (error) {
-        // A token naming a contact outside its own organisation writes nothing,
-        // and gets the answer every other token gets.
-        if (!(error instanceof NotFoundException)) throw error;
-      }
-    }
+    // turn this endpoint into an oracle for whether a contact exists. A token
+    // naming a contact outside its own organisation writes nothing, and
+    // `recordUnsubscribe` answers it the way it answers every other token.
+    if (payload) await this.consent.recordUnsubscribe(payload);
 
     return { success: true };
   }

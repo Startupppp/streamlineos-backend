@@ -39,6 +39,21 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
+import {
+  crmOrgsListSchema,
+  crmOrgCreatedSchema,
+  crmOrgDuplicatePairSchema,
+  crmOrgPotentialDuplicatesSchema,
+  crmOrgWithContactsSchema,
+} from "./dto/crm-organizations-response.schemas";
+import {
+  orgMergeResultSchema,
+  orgHierarchyNodeSchema,
+  orgRollupSchema,
+  orgTimelineSchema,
+  orgRelatedLeadsSchema,
+} from "./dto/crm-org-insights-response.schemas";
 
 const organizationIdParams = z.object({ organizationId: z.coerce.number().int().positive() }).strict();
 
@@ -54,6 +69,7 @@ export class CrmOrganizationsController {
 
   @Get()
   @RequirePermission("crm:organizations:view")
+  @ResponseSchema(crmOrgsListSchema)
   @Validate({ query: organizationListSchema })
   list(
     @Query() query: OrganizationListInput,
@@ -65,6 +81,7 @@ export class CrmOrganizationsController {
   @Post()
   @RequirePermission("crm:organizations:manage")
   @HttpCode(201)
+  @ResponseSchema(crmOrgCreatedSchema)
   @Idempotent("crm.org.create")
   @Validate({ body: organizationCreateSchema })
   create(
@@ -76,6 +93,7 @@ export class CrmOrganizationsController {
 
   @Get("duplicates")
   @RequirePermission("crm:organizations:view")
+  @ResponseSchema(crmOrgDuplicatePairSchema)
   @Validate({ query: orgDuplicatesQuerySchema })
   getDuplicates(
     @Query() query: OrgDuplicatesQueryInput,
@@ -91,6 +109,7 @@ export class CrmOrganizationsController {
    */
   @Get("duplicate-check")
   @RequirePermission("crm:organizations:view")
+  @ResponseSchema(crmOrgPotentialDuplicatesSchema)
   @Validate({ query: orgDuplicateCheckSchema })
   checkDuplicate(
     @Query() query: OrgDuplicateCheckInput,
@@ -102,6 +121,7 @@ export class CrmOrganizationsController {
   @Post("merge")
   @HttpCode(200)
   @RequirePermission("crm:organizations:merge")
+  @ResponseSchema(orgMergeResultSchema)
   @Validate({ body: mergeOrgsSchema })
   mergeOrganizations(
     @Body() body: MergeOrgsInput,
@@ -112,6 +132,7 @@ export class CrmOrganizationsController {
 
   @Get(":organizationId")
   @RequirePermission("crm:organizations:view")
+  @ResponseSchema(crmOrgWithContactsSchema)
   @Validate({ params: organizationIdParams })
   async getOne(
     @Param("organizationId", ParseIntPipe) organizationId: number,
@@ -124,6 +145,7 @@ export class CrmOrganizationsController {
 
   @Patch(":organizationId")
   @RequirePermission("crm:organizations:manage")
+  @ResponseSchema(crmOrgWithContactsSchema)
   @Validate({ params: organizationIdParams, body: organizationUpdateSchema })
   async update(
     @Param("organizationId", ParseIntPipe) organizationId: number,
@@ -148,6 +170,7 @@ export class CrmOrganizationsController {
   @Delete(":organizationId")
   @HttpCode(204)
   @RequirePermission("crm:organizations:manage")
+  @NoContentResponse()
   @Validate({ params: organizationIdParams })
   async remove(
     @Param("organizationId", ParseIntPipe) organizationId: number,
@@ -159,6 +182,7 @@ export class CrmOrganizationsController {
 
   @Get(":organizationId/hierarchy")
   @RequirePermission("crm:organizations:view")
+  @ResponseSchema(orgHierarchyNodeSchema)
   @Validate({ params: organizationIdParams })
   async hierarchy(
     @Param("organizationId", ParseIntPipe) organizationId: number,
@@ -171,6 +195,7 @@ export class CrmOrganizationsController {
 
   @Get(":organizationId/related-leads")
   @RequirePermission("crm:organizations:view")
+  @ResponseSchema(orgRelatedLeadsSchema)
   @Validate({ params: organizationIdParams })
   async relatedLeads(
     @Param("organizationId", ParseIntPipe) organizationId: number,
@@ -183,6 +208,7 @@ export class CrmOrganizationsController {
 
   @Get(":organizationId/roll-up")
   @RequirePermission("crm:organizations:view")
+  @ResponseSchema(orgRollupSchema)
   @Validate({ params: organizationIdParams })
   rollUp(
     @Param("organizationId", ParseIntPipe) organizationId: number,
@@ -193,6 +219,7 @@ export class CrmOrganizationsController {
 
   @Get(":organizationId/timeline")
   @RequirePermission("crm:organizations:view")
+  @ResponseSchema(orgTimelineSchema)
   @Validate({ params: organizationIdParams })
   timeline(
     @Param("organizationId", ParseIntPipe) organizationId: number,

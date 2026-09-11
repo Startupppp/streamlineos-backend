@@ -95,7 +95,7 @@ export async function queryOrganizationList(
   const baseConditions = [
     isCompany(orgId),
     searchTerm ? ilike(businessParties.name, `%${escapeLike(searchTerm)}%`) : undefined,
-  ].filter(Boolean) as ReturnType<typeof and>[];
+  ].filter((condition): condition is NonNullable<typeof condition> => condition !== undefined);
   const where = position
     ? and(...baseConditions, keysetBefore(businessParties.createdAt, crmOrgPartyMap.crmOrganizationId, position))
     : and(...baseConditions);

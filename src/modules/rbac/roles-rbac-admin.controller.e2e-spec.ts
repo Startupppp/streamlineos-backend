@@ -4,6 +4,7 @@ import { createE2eApp, accessStub } from "test/helpers/e2e-app";
 import { ALL_MODULES, signToken } from "../../../test/helpers/sign-token";
 import { AccessService } from "../access/access.service";
 import { RolesService } from "./roles.service";
+import { RoleSeedService } from "./role-seed.service";
 import { RolesQueryService } from "./roles-query.service";
 import type { DataScope } from "../access/access.types";
 
@@ -58,6 +59,11 @@ describe("Roles RBAC admin endpoints (e2e)", () => {
           useValue: {
             getPermissionsMatrix: async (_orgId: string) => MATRIX_RESPONSE,
             getRoles: async () => [],
+          },
+        },
+        {
+          provide: RoleSeedService,
+          useValue: {
             listTemplates: () => [],
           },
         },

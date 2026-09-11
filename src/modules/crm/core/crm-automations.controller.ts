@@ -22,8 +22,10 @@ import { CrmAutomationsService } from "./crm-automations.service";
 import {
   createAutomationRuleSchema,
   updateAutomationRuleSchema,
+  automationRunsQuerySchema,
   type CreateAutomationRuleInput,
   type UpdateAutomationRuleInput,
+  type AutomationRunsQueryInput,
 } from "./dto/automation-rules.schemas";
 import {
   testAutomationRuleSchema,
@@ -31,7 +33,16 @@ import {
 } from "../automation-studio/dto/automation-studio.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  automationRulesListSchema,
+  automationRuleSingleSchema,
+  automationEventsListSchema,
+  automationActionsListSchema,
+  automationRunsPageSchema,
+  automationDryRunSchema,
+} from "./dto/crm-automations-response.schemas";
+import { successSchema } from "../../../common/openapi/response-envelopes";
 
 const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
 
@@ -43,6 +54,7 @@ export class CrmAutomationsController {
 
   @Get("automations")
   @RequirePermission("crm:automations:manage")
+  @ResponseSchema(automationRulesListSchema)
   list(@CurrentUser() u: CurrentUserContext) {
     return this.automations.list(u.orgId);
   }
@@ -50,6 +62,7 @@ export class CrmAutomationsController {
   @Post("automations")
   @RequirePermission("crm:automations:manage")
   @HttpCode(201)
+  @ResponseSchema(automationRuleSingleSchema)
   @Validate({ body: createAutomationRuleSchema })
   create(
     @Body() body: CreateAutomationRuleInput,
@@ -60,6 +73,7 @@ export class CrmAutomationsController {
 
   @Patch("automations/:ruleId")
   @RequirePermission("crm:automations:manage")
+  @ResponseSchema(automationRuleSingleSchema)
   @Validate({ params: ruleIdParams, body: updateAutomationRuleSchema })
   async update(
     @Param("ruleId", ParseIntPipe) ruleId: number,
@@ -74,6 +88,7 @@ export class CrmAutomationsController {
   @Delete("automations/:ruleId")
   @HttpCode(200)
   @RequirePermission("crm:automations:manage")
+  @ResponseSchema(successSchema)
   @Validate({ params: ruleIdParams })
   async remove(
     @Param("ruleId", ParseIntPipe) ruleId: number,
@@ -85,12 +100,14 @@ export class CrmAutomationsController {
 
   @Get("automation/events")
   @RequirePermission("crm:automations:manage")
+  @ResponseSchema(automationEventsListSchema)
   listEvents(@CurrentUser() u: CurrentUserContext) {
     return this.automations.listEvents(u.orgId);
   }
 
   @Get("automation/actions")
   @RequirePermission("crm:automations:manage")
+  @ResponseSchema(automationActionsListSchema)
   listActions(@CurrentUser() u: CurrentUserContext) {
     return this.automations.listActions(u.orgId);
   }
@@ -98,6 +115,7 @@ export class CrmAutomationsController {
   @Patch("automations/:ruleId/enable")
   @BodylessAction()
   @RequirePermission("crm:automations:manage")
+  @ResponseSchema(automationRuleSingleSchema)
   @Validate({ params: ruleIdParams })
   enable(
     @Param("ruleId", ParseIntPipe) ruleId: number,
@@ -109,6 +127,7 @@ export class CrmAutomationsController {
   @Patch("automations/:ruleId/disable")
   @BodylessAction()
   @RequirePermission("crm:automations:manage")
+  @ResponseSchema(automationRuleSingleSchema)
   @Validate({ params: ruleIdParams })
   disable(
     @Param("ruleId", ParseIntPipe) ruleId: number,
@@ -120,6 +139,7 @@ export class CrmAutomationsController {
   @Post("automations/:ruleId/test")
   @RequirePermission("crm:automations:manage")
   @HttpCode(200)
+  @ResponseSchema(automationDryRunSchema)
   @Validate({ params: ruleIdParams, body: testAutomationRuleSchema })
   testRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
@@ -131,12 +151,13 @@ export class CrmAutomationsController {
 
   @Get("automations/:ruleId/runs")
   @RequirePermission("crm:automations:manage")
-  @Validate({ params: ruleIdParams })
+  @ResponseSchema(automationRunsPageSchema)
+  @Validate({ params: ruleIdParams, query: automationRunsQuerySchema })
   getRuns(
     @Param("ruleId", ParseIntPipe) ruleId: number,
-    @Query("cursor") cursor: string | undefined,
+    @Query() query: AutomationRunsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.automations.getRuns(u.orgId, ruleId, cursor);
+    return this.automations.getRuns(u.orgId, ruleId, query.cursor);
   }
 }

@@ -12,7 +12,14 @@ import { Validate } from "../../common/validation/validate.decorator";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { SignBulkSendService } from "./sign-bulk-send.service";
 import { createBulkSendJobSchema, type CreateBulkSendJobInput } from "./dto/e-sign.schemas";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  createBulkJobResponseSchema,
+  listBulkJobsResponseSchema,
+  getBulkJobResponseSchema,
+  cancelBulkJobResponseSchema,
+  bulkJobErrorReportResponseSchema,
+} from "./dto/e-sign-response.schemas";
 
 const jobIdParams = z.object({ jobId: z.coerce.number().int().positive() }).strict();
 
@@ -42,6 +49,7 @@ export class SignBulkSendController {
   @HttpCode(201)
   @Idempotent("sign:bulk_send.create")
   @RequirePermission("sign:bulk_send:run")
+  @ResponseSchema(createBulkJobResponseSchema)
   @Validate({ body: createBulkSendJobSchema })
   create(@Body() body: CreateBulkSendJobInput, @CurrentUser() u: CurrentUserContext) {
     return this.bulkSend.createJob(u.orgId, actingMembershipId(u.principal), body);
@@ -49,12 +57,14 @@ export class SignBulkSendController {
 
   @Get("jobs")
   @RequirePermission("sign:bulk_send:run")
+  @ResponseSchema(listBulkJobsResponseSchema)
   list(@CurrentUser() u: CurrentUserContext) {
     return this.bulkSend.listJobs(u.orgId);
   }
 
   @Get("jobs/:jobId")
   @RequirePermission("sign:bulk_send:run")
+  @ResponseSchema(getBulkJobResponseSchema)
   @Validate({ params: jobIdParams })
   get(@Param("jobId", ParseIntPipe) jobId: number, @CurrentUser() u: CurrentUserContext) {
     return this.bulkSend.getJob(u.orgId, jobId);
@@ -63,6 +73,7 @@ export class SignBulkSendController {
   @Post("jobs/:jobId/cancel")
   @BodylessAction()
   @RequirePermission("sign:bulk_send:run")
+  @ResponseSchema(cancelBulkJobResponseSchema)
   @Validate({ params: jobIdParams })
   cancel(@Param("jobId", ParseIntPipe) jobId: number, @CurrentUser() u: CurrentUserContext) {
     return this.bulkSend.cancel(u.orgId, jobId, { userId: u.userId });
@@ -70,6 +81,7 @@ export class SignBulkSendController {
 
   @Get("jobs/:jobId/error-report")
   @RequirePermission("sign:bulk_send:run")
+  @ResponseSchema(bulkJobErrorReportResponseSchema)
   @Validate({ params: jobIdParams })
   errorReport(@Param("jobId", ParseIntPipe) jobId: number, @CurrentUser() u: CurrentUserContext) {
     return this.bulkSend.getErrorReport(u.orgId, jobId);

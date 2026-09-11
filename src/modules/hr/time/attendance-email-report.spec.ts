@@ -12,6 +12,10 @@ jest.mock("../../rbac/permissions", () => ({
   isScopable: jest.fn(() => true),
 }));
 
+jest.mock("./organization-membership", () => ({
+  requireOrganizationMembershipId: jest.fn().mockResolvedValue(1),
+}));
+
 import { AttendanceController } from "./attendance.controller";
 import { AttendanceService } from "./attendance.service";
 import { attendanceEmailReportSchema } from "./dto/attendance.schemas";
@@ -67,12 +71,12 @@ function reportSelect(rows: unknown[]) {
 
 function makeService(options: {
   scope?: "none" | "own" | "team" | "all";
-  recipientRows?: Array<{ email: string }>;
+  recipientRows?: Array<{ email: string; userId: string }>;
   reportRows?: unknown[];
 } = {}) {
   const orgQuery = orgSelect({ name: "Acme", timezone: "Asia/Kolkata" });
   const recipientQuery = recipientSelect(
-    options.recipientRows ?? [{ email: "manager@example.com" }],
+    options.recipientRows ?? [{ email: "manager@example.com", userId: "manager-1" }],
   );
   const reportQuery = reportSelect(
     options.reportRows ?? [
@@ -200,7 +204,7 @@ describe("AttendanceService.emailReport", () => {
       test.reportQuery.where.mock.calls[0]?.[0],
     );
     expect(whereSql.params).toEqual(
-      expect.arrayContaining(["org-1", "manager-1", "2020-01-01", "2020-01-31"]),
+      expect.arrayContaining(["org-1", 1, "2020-01-01", "2020-01-31"]),
     );
     expect(test.reportQuery.groupBy).toHaveBeenCalled();
     expect(test.reportQuery.limit).toHaveBeenCalledWith(101);
@@ -233,7 +237,7 @@ describe("AttendanceService.emailReport", () => {
           daysPresent: 20,
         }),
       ],
-      ["manager@example.com"],
+      [{ email: "manager@example.com", userId: "manager-1" }],
       "org-1",
     );
   });

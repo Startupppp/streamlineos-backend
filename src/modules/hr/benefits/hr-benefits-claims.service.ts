@@ -1,6 +1,12 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, desc, eq, gte, lte } from "drizzle-orm";
-import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
+import { buildCursorPage } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -9,23 +15,49 @@ import {
   hrLoanRepayments,
   hrBenefitPlans,
 } from "../../../db/schema/hr/benefits";
-import { auditLogs, users } from "../../../db/schema";
+import { auditLogs, organizationMembers, users } from "../../../db/schema";
 import type { SubmitClaimInput, ReviewClaimInput, ClaimsQuery } from "./dto/benefits.schemas";
+import { boundHrReadLimit } from "../hr-read-limits";
+import {
+  type ClaimsCursorScope,
+  decodeClaimsCursor,
+} from "./hr-benefits-claims.helpers";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 @Injectable()
 export class HrBenefitsClaimsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async listClaims(orgId: string, query: ClaimsQuery, requesterId: string, isAdmin: boolean) {
-    const { cursor, limit, status, userId } = query;
-    const pos = decodeCursor(cursor);
+  async listClaims(
+    orgId: string,
+    query: ClaimsQuery,
+    requesterId: string,
+    requesterMembershipId: number | null,
+    isAdmin: boolean,
+  ) {
+    if (requesterMembershipId == null) {
+      throw new BadRequestException("Organization membership required.");
+    }
+    const { cursor, status, userId } = query;
+    const limit = boundHrReadLimit(query.limit);
+    const cursorScope = {
+      orgId,
+      requesterMembershipId,
+      isAdmin,
+      status: status ?? null,
+      userId: isAdmin ? (userId ?? null) : requesterId,
+    };
+    const pos = decodeClaimsCursor(cursor, cursorScope);
+    const targetMembershipId = isAdmin && userId
+      ? await this.resolveMembershipId(orgId, userId)
+      : requesterMembershipId;
 
     const conditions = [eq(hrInsuranceClaims.orgId, orgId)];
     if (status) conditions.push(eq(hrInsuranceClaims.status, status));
     if (!isAdmin) {
-      conditions.push(eq(hrInsuranceClaims.userId, requesterId));
+      conditions.push(eq(hrInsuranceClaims.userMembershipId, requesterMembershipId));
     } else if (userId) {
-      conditions.push(eq(hrInsuranceClaims.userId, userId));
+      conditions.push(eq(hrInsuranceClaims.userMembershipId, targetMembershipId));
     }
     if (pos) conditions.push(keysetBeforeId(hrInsuranceClaims.submittedAt, hrInsuranceClaims.id, pos));
 
@@ -40,7 +72,14 @@ export class HrBenefitsClaimsService {
         plan: hrBenefitPlans,
       })
       .from(hrInsuranceClaims)
-      .leftJoin(users, eq(users.id, hrInsuranceClaims.userId))
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, hrInsuranceClaims.orgId),
+          eq(organizationMembers.id, hrInsuranceClaims.userMembershipId),
+        ),
+      )
+      .innerJoin(users, eq(users.id, organizationMembers.userId))
       .leftJoin(hrBenefitPlans, eq(hrBenefitPlans.id, hrInsuranceClaims.planId))
       .where(and(...conditions))
       .orderBy(desc(hrInsuranceClaims.submittedAt), desc(hrInsuranceClaims.id))
@@ -48,7 +87,14 @@ export class HrBenefitsClaimsService {
 
     const page = buildCursorPage(rows, limit, (row) => ({
       sortValue: row.claim.submittedAt.toISOString(),
-      id: String(row.claim.id),
+      id: JSON.stringify([
+        row.claim.id,
+        cursorScope.orgId,
+        cursorScope.requesterMembershipId,
+        cursorScope.isAdmin,
+        cursorScope.status,
+        cursorScope.userId,
+      ]),
     }));
 
     return {
@@ -57,13 +103,15 @@ export class HrBenefitsClaimsService {
     };
   }
 
-  async submitClaim(orgId: string, userId: string, data: SubmitClaimInput) {
+  async submitClaim(orgId: string, userId: string, membershipId: number | null, data: SubmitClaimInput) {
+    if (membershipId == null) throw new BadRequestException("Organization membership required.");
     try {
       const [claim] = await this.db
         .insert(hrInsuranceClaims)
         .values({
           orgId,
           userId,
+          userMembershipId: membershipId,
           planId: data.planId,
           claimNumber: data.claimNumber,
           amountCents: data.amountCents,
@@ -73,14 +121,21 @@ export class HrBenefitsClaimsService {
         .returning();
       return claim;
     } catch (err: unknown) {
-      if ((err as { code?: string }).code === "23505") {
+      if (isUniqueViolation(err)) {
         throw new ConflictException("A claim with this claim number already exists");
       }
       throw err;
     }
   }
 
-  async reviewClaim(orgId: string, claimId: number, reviewerId: string, data: ReviewClaimInput) {
+  async reviewClaim(
+    orgId: string,
+    claimId: number,
+    reviewerId: string,
+    reviewerMembershipId: number | null,
+    data: ReviewClaimInput,
+  ) {
+    if (reviewerMembershipId == null) throw new BadRequestException("Organization membership required.");
     const [existing] = await this.db
       .select()
       .from(hrInsuranceClaims)
@@ -103,6 +158,7 @@ export class HrBenefitsClaimsService {
           status: newStatus,
           decidedAt: newStatus !== "in_review" ? new Date() : null,
           decidedBy: newStatus !== "in_review" ? reviewerId : null,
+          decidedByMembershipId: newStatus !== "in_review" ? reviewerMembershipId : null,
           rejectionReason: data.rejectionReason ?? null,
           payoutRoute: data.payoutRoute ?? null,
           updatedAt: new Date(),
@@ -127,7 +183,14 @@ export class HrBenefitsClaimsService {
         plan: hrBenefitPlans,
       })
       .from(hrInsuranceClaims)
-      .leftJoin(users, eq(users.id, hrInsuranceClaims.userId))
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, hrInsuranceClaims.orgId),
+          eq(organizationMembers.id, hrInsuranceClaims.userMembershipId),
+        ),
+      )
+      .innerJoin(users, eq(users.id, organizationMembers.userId))
       .leftJoin(hrBenefitPlans, eq(hrBenefitPlans.id, hrInsuranceClaims.planId))
       .where(eq(hrInsuranceClaims.id, claimId))
       .limit(1);
@@ -187,5 +250,17 @@ export class HrBenefitsClaimsService {
       )
       .orderBy(hrLoanRepayments.dueDate)
       .limit(2000);
+  }
+
+  private async resolveMembershipId(orgId: string, userId: string): Promise<number> {
+    const member = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, userId),
+      ),
+      columns: { id: true },
+    });
+    if (!member) throw new NotFoundException("Claim subject is not a member of this organization");
+    return member.id;
   }
 }

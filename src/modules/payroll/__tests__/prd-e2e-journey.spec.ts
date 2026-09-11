@@ -13,6 +13,9 @@ import {
 } from "../runs/lib/statutory-registry";
 import { createRunSchema } from "../runs/dto/runs.schemas";
 import { PayrollJobsWorkerService } from "../jobs/payroll-jobs-worker.service";
+import { getTableConfig } from "drizzle-orm/pg-core";
+import { employeeSalaryProfiles } from "../../../db/schema/payroll/workforce";
+import { payrollRunAllocations } from "../../../db/schema/payroll/entities-periods";
 
 const rounding = { mode: "NEAREST" as const, precision: 0 as const };
 
@@ -45,13 +48,30 @@ describe("PRD E2E scenarios 1–12 (contract journey)", () => {
   });
 
   it("5. Salary revision requires unique effectiveFrom (schema contract via createRun-like validation path)", () => {
-    // Profile uniqueness is DB-enforced; revision supersedes ACTIVE and sets effectiveTo
-    expect(true).toBe(true);
+    // Asserted expect(true).toBe(true) under a title naming a schema contract.
+    // The contract is DB-enforced, and the declaration is readable here.
+    const { indexes } = getTableConfig(employeeSalaryProfiles);
+    const byUser = indexes.find((i) => i.config.name === "uniq_esp_org_user_effective_from");
+    expect(byUser).toBeDefined();
+    expect(byUser?.config.unique).toBe(true);
+    expect(byUser?.config.columns.map((c) => (c as { name: string }).name)).toEqual([
+      "org_id",
+      "user_id",
+      "effective_from",
+    ]);
   });
 
   it("6. Bonus/reimbursement/loan allocation uniqueness is unique(org,sourceType,sourceId)", () => {
-    // Schema: uniq_payroll_run_allocations_source — verified by migration 0292
-    expect(true).toBe(true);
+    // Asserted expect(true).toBe(true) under a title naming the exact index.
+    const { indexes } = getTableConfig(payrollRunAllocations);
+    const bySource = indexes.find((i) => i.config.name === "uniq_payroll_run_allocations_source");
+    expect(bySource).toBeDefined();
+    expect(bySource?.config.unique).toBe(true);
+    expect(bySource?.config.columns.map((c) => (c as { name: string }).name)).toEqual([
+      "org_id",
+      "source_type",
+      "source_id",
+    ]);
   });
 
   it("7. Contractor payroll does not receive employee PF/ESI", () => {
@@ -106,12 +126,14 @@ describe("PRD E2E scenarios 1–12 (contract journey)", () => {
         }),
       }),
     };
+    const enumeration = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([{ id: "o" }]),
+    };
     const db = {
-      select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockResolvedValue([{ id: "o" }]),
-      }),
+      select: jest.fn().mockReturnValue(enumeration),
       transaction: jest.fn().mockImplementation((fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
     };
     const worker = new PayrollJobsWorkerService(

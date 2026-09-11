@@ -6,8 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { addYears, differenceInDays, formatDateOnly, formatMonthDay, startOfDay } from "../../../common/date";
-import { applyScope } from "../../access/apply-scope";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import {
   livePersonOfUser,
   primaryEmploymentOfPerson,
@@ -38,45 +37,41 @@ export class CelebrationsService {
     private readonly cache: CacheService,
   ) {}
 
-  getAnniversaryFeed(
-    orgId: string,
-    actorUserId: string,
-    scope: DataScope,
-  ): Promise<FeedItem[]> {
+  getAnniversaryFeed(read: ScopedRead): Promise<FeedItem[]> {
     const today = new Date().toISOString().slice(0, 10);
-    return this.cache.cached(
-      `hr:anniversary-feed:${orgId}:${actorUserId}:${scope}:${today}`,
-      () => this.buildAnniversaryFeed(orgId, actorUserId, scope),
+    return this.cache.cachedVersionedForOrg(
+      read.orgId,
+      "hr:celebrations",
+      `anniversary:${read.discriminator}:${today}`,
+      () => this.buildAnniversaryFeed(read),
       CACHE_TTL.MEDIUM,
     );
   }
 
-  private async buildAnniversaryFeed(
-    orgId: string,
-    actorUserId: string,
-    scope: DataScope,
-  ): Promise<FeedItem[]> {
-    const members = await this.db
-      .select({
-        userId: organizationMembers.userId,
-        name: users.name,
-        image: users.image,
-        dateOfBirth: users.dateOfBirth,
-        joiningDate: hrEmployments.joiningDate,
-      })
-      .from(organizationMembers)
-      .leftJoin(users, eq(users.id, organizationMembers.userId))
-      .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
-      .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
-      .where(
-        and(
-          eq(organizationMembers.orgId, orgId),
-          applyScope(scope, orgId, actorUserId, {
-            ownerColumn: organizationMembers.userId,
-          }),
-        ),
-      )
-      .limit(1000);
+  private async buildAnniversaryFeed(read: ScopedRead): Promise<FeedItem[]> {
+    const orgId = read.orgId;
+    const members = await read.read(
+      {
+        tenant: organizationMembers.orgId,
+        scope: { columns: { ownerColumn: organizationMembers.userId } },
+      },
+      ({ sql: where }) =>
+        this.db
+          .select({
+            userId: organizationMembers.userId,
+            name: users.name,
+            image: users.image,
+            dateOfBirth: users.dateOfBirth,
+            joiningDate: hrEmployments.joiningDate,
+          })
+          .from(organizationMembers)
+          .leftJoin(users, eq(users.id, organizationMembers.userId))
+          .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+          .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+          .where(where)
+          .limit(1000),
+      () => [],
+    );
 
     const today = startOfDay(new Date());
     const items: FeedItem[] = [];
@@ -131,48 +126,48 @@ export class CelebrationsService {
     return items;
   }
 
-  getCelebrations(orgId: string, actorUserId: string, scope: DataScope) {
+  getCelebrations(read: ScopedRead) {
     const today = new Date().toISOString().slice(0, 10);
-    return this.cache.cached(
-      `hr:celebrations:${orgId}:${actorUserId}:${scope}:${today}`,
-      () => this.buildCelebrations(orgId, actorUserId, scope),
+    return this.cache.cachedVersionedForOrg(
+      read.orgId,
+      "hr:celebrations",
+      `${read.discriminator}:${today}`,
+      () => this.buildCelebrations(read),
       CACHE_TTL.MEDIUM,
     );
   }
 
-  private async buildCelebrations(
-    orgId: string,
-    actorUserId: string,
-    scope: DataScope,
-  ) {
+  private async buildCelebrations(read: ScopedRead) {
+    const orgId = read.orgId;
     const now = new Date();
     const month = now.getMonth() + 1;
     const day = now.getDate();
 
-    const members = await this.db
-      .select({
-        id: users.id,
-        name: users.name,
-        firstName: users.firstName,
-        lastName: users.lastName,
-        image: users.image,
-        dateOfBirth: users.dateOfBirth,
-        joiningDate: hrEmployments.joiningDate,
-      })
-      .from(organizationMembers)
-      .innerJoin(users, eq(organizationMembers.userId, users.id))
-      .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
-      .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
-      .where(
-        and(
-          eq(organizationMembers.orgId, orgId),
-          eq(users.isActive, true),
-          applyScope(scope, orgId, actorUserId, {
-            ownerColumn: organizationMembers.userId,
-          }),
-        ),
-      )
-      .limit(1000);
+    const members = await read.read(
+      {
+        tenant: organizationMembers.orgId,
+        scope: { columns: { ownerColumn: organizationMembers.userId } },
+        and: [eq(users.isActive, true)],
+      },
+      ({ sql: where }) =>
+        this.db
+          .select({
+            id: users.id,
+            name: users.name,
+            firstName: users.firstName,
+            lastName: users.lastName,
+            image: users.image,
+            dateOfBirth: users.dateOfBirth,
+            joiningDate: hrEmployments.joiningDate,
+          })
+          .from(organizationMembers)
+          .innerJoin(users, eq(organizationMembers.userId, users.id))
+          .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+          .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+          .where(where)
+          .limit(1000),
+      () => [],
+    );
 
     const birthdays: typeof members = [];
     const anniversaries: Array<(typeof members)[number] & { years: number }> = [];
@@ -210,34 +205,35 @@ export class CelebrationsService {
   }
 
   async getAvailability(
-    orgId: string,
-    actorUserId: string,
+    read: ScopedRead,
     userIds: string | undefined,
-    scope: DataScope,
   ): Promise<AvailabilityEntry[]> {
+    const orgId = read.orgId;
     const today = formatDateOnly(new Date());
 
     const requestedUserIds = userIds
       ?.split(",")
       .map((requestedUserId) => requestedUserId.trim())
       .filter(Boolean);
-    const memberConditions = [
-      eq(organizationMembers.orgId, orgId),
-      applyScope(scope, orgId, actorUserId, {
-        ownerColumn: organizationMembers.userId,
-      }),
-    ];
-    if (requestedUserIds?.length) {
-      memberConditions.push(
-        inArray(organizationMembers.userId, requestedUserIds.slice(0, 100)),
-      );
-    }
 
-    const members = await this.db
-      .select({ userId: organizationMembers.userId })
-      .from(organizationMembers)
-      .where(and(...memberConditions))
-      .limit(100);
+    const members = await read.read(
+      {
+        tenant: organizationMembers.orgId,
+        scope: { columns: { ownerColumn: organizationMembers.userId } },
+        and: [
+          requestedUserIds?.length
+            ? inArray(organizationMembers.userId, requestedUserIds.slice(0, 100))
+            : undefined,
+        ],
+      },
+      ({ sql: where }) =>
+        this.db
+          .select({ userId: organizationMembers.userId })
+          .from(organizationMembers)
+          .where(where)
+          .limit(100),
+      () => [],
+    );
     const userIdList = members.map((member) => member.userId);
 
     if (userIdList.length === 0) return [];
@@ -258,7 +254,8 @@ export class CelebrationsService {
           gte(leaveRequests.endDate, today),
           inArray(leaveRequests.userId, userIdList),
         ),
-      );
+      )
+      .limit(userIdList.length);
 
     const leaveByUser = new Map(activeLeaves.map((l) => [l.userId, l]));
 

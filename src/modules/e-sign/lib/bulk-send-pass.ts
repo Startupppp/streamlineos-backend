@@ -102,11 +102,12 @@ export async function runBulkSendPass(
       columnMapping,
       stored.rowNumber,
     );
-    if (row.error) {
+    const name = row.name;
+    if (row.error || !name) {
       await commitRow(deps.db, orgId, () =>
         deps.db
           .update(signBulkSendRows)
-          .set({ status: "failed", errorMessage: row.error, updatedAt: new Date() })
+          .set({ status: "failed", errorMessage: row.error ?? "Missing name", updatedAt: new Date() })
           .where(eq(signBulkSendRows.id, stored.id)),
       );
       failed++;
@@ -116,7 +117,7 @@ export async function runBulkSendPass(
     try {
       await commitRow(deps.db, orgId, async () => {
         const envelope = await deps.templates.instantiate(orgId, job.senderMembershipId, job.templateId, {
-          recipients: [{ roleName, name: row.name!, email: row.email, phone: row.phone }],
+          recipients: [{ roleName, name, email: row.email, phone: row.phone }],
         });
         await deps.envelopes.send(orgId, envelope.id, actor);
         await deps.db

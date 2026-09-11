@@ -99,7 +99,7 @@ function buildHarness(board: Board) {
         findMany: jest.fn(({ where }: { where: SQL }) => {
           const { params } = dialect.sqlToQuery(where);
           const ids = params.filter((p): p is number => typeof p === "number");
-          return Promise.resolve(ids.map((id) => ({ id, title: `T${id}` })));
+          return Promise.resolve(ids.map((id) => ({ id, title: `T${id}`, assignee: null, assignees: [] })));
         }),
       },
     },
@@ -124,13 +124,10 @@ async function pageThrough(harness: ReturnType<typeof buildHarness>, limit: numb
   const ids: number[] = [];
   let cursor: string | undefined;
   for (let guard = 0; guard < 50; guard++) {
-    const page = (await harness.service.listTickets(USER, PROJECT, cursorQuery(limit, cursor))) as {
-      data: { id: number }[];
-      nextCursor: string | null;
-    };
+    const page = await harness.service.listTickets(USER, PROJECT, cursorQuery(limit, cursor));
     ids.push(...page.data.map((t) => t.id));
-    if (!page.nextCursor) return ids;
-    cursor = page.nextCursor;
+    if (!page.pagination.nextCursor) return ids;
+    cursor = page.pagination.nextCursor;
   }
   throw new Error("paging did not terminate");
 }
@@ -173,47 +170,39 @@ describe("board paging by cursor — every ticket exactly once", () => {
     const limit = 10;
     const harness = buildHarness(new Board(limit + 1));
 
-    const first = (await harness.service.listTickets(USER, PROJECT, cursorQuery(limit))) as {
-      data: { id: number }[];
-      nextCursor: string | null;
-    };
+    const first = await harness.service.listTickets(USER, PROJECT, cursorQuery(limit));
     expect(first.data).toHaveLength(limit);
 
     const second = (await harness.service.listTickets(
       USER,
       PROJECT,
-      cursorQuery(limit, first.nextCursor ?? undefined),
-    )) as { data: { id: number }[]; nextCursor: string | null };
+      cursorQuery(limit, first.pagination.nextCursor ?? undefined),
+    ));
 
     expect(second.data).toHaveLength(1);
-    expect(second.nextCursor).toBeNull();
+    expect(second.pagination.nextCursor).toBeNull();
     expect(duplicates([...first.data, ...second.data].map((t) => t.id))).toEqual([]);
   });
 
   it("carries the total on the first page only, so a deep page pays for no count", async () => {
     const harness = buildHarness(new Board(25));
 
-    const first = (await harness.service.listTickets(USER, PROJECT, cursorQuery(10))) as {
-      total?: number;
-      nextCursor: string | null;
-    };
-    expect(first.total).toBe(25);
+    const first = await harness.service.listTickets(USER, PROJECT, cursorQuery(10));
+    expect(first.pagination.hasMore).toBe(true);
 
     const second = (await harness.service.listTickets(
       USER,
       PROJECT,
-      cursorQuery(10, first.nextCursor ?? undefined),
-    )) as { total?: number };
-    expect(second.total).toBeUndefined();
+      cursorQuery(10, first.pagination.nextCursor ?? undefined),
+    ));
+    expect(second.pagination).not.toHaveProperty("total");
   });
 
   it("treats a malformed cursor as the first page rather than an error", async () => {
     const board = new Board(5);
     const harness = buildHarness(board);
 
-    const page = (await harness.service.listTickets(USER, PROJECT, cursorQuery(10, "not-a-cursor"))) as {
-      data: { id: number }[];
-    };
+    const page = await harness.service.listTickets(USER, PROJECT, cursorQuery(10, "not-a-cursor"));
 
     expect(page.data.map((t) => t.id).sort((a, b) => a - b)).toEqual(board.rows.map((r) => r.id));
   });

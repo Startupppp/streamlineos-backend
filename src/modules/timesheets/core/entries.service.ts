@@ -18,6 +18,7 @@ import { EntriesReadService } from "./entries-read.service";
 import { EntriesPeriodService } from "./entries-period.service";
 import { roundHours } from "./lib/rounding";
 import { formatDateOnly, wholeDaysBetween } from "./lib/period.helpers";
+import { parseStoredRequiredFields } from "./dto/settings.schemas";
 import { sqlstateOf } from "../../../common/observability/error-classification";
 
 /** `unique_violation`. */
@@ -99,8 +100,7 @@ export class EntriesService {
       }
     }
 
-    const requiredFields =
-      (settings?.requiredFields as string[] | null) ?? [];
+    const requiredFields = parseStoredRequiredFields(settings?.requiredFields);
     if (
       requiredFields.includes("project") &&
       !input.projectId &&

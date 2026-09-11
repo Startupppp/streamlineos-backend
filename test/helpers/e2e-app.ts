@@ -25,10 +25,12 @@ import type { RegionDefinition } from "src/common/region/region.config";
 import type { Db } from "src/db/drizzle.types";
 import { DRIZZLE } from "src/db/drizzle.constants";
 import { API_VERSION_CURRENT } from "src/common/http/api-version";
-import {
-  COMMAND_FENCE_STORE,
-  InMemoryCommandFenceStore,
-} from "src/common/idempotency/command-fence-store";
+import { COMMAND_FENCE_STORE } from "src/common/idempotency/command-fence-store";
+import { InMemoryCommandFenceStore } from "src/common/idempotency/command-fence-store-memory";
+import { PayrollJobsWorkerService } from "src/modules/payroll/jobs/payroll-jobs-worker.service";
+import { PayrollCalendarReminderScheduler } from "src/modules/payroll/insights/payroll-calendar-reminder.scheduler";
+import { NotificationDeliveryWorker } from "src/modules/notifications/notification-delivery-worker.service";
+import { PermissionCatalogSyncService } from "src/modules/rbac/permission-catalog-sync.service";
 
 /**
  * Controller e2e specs assert the guard chain — 401 / 402 / 403 — and every one
@@ -106,33 +108,25 @@ const mfaPolicyStub = {
   invalidateUser: async (): Promise<void> => undefined,
 };
 
+function fixtureModuleAvailable(moduleKey: string): boolean {
+  return (
+    isCoreModuleKey(moduleKey) ||
+    current().enabledModules.includes(moduleKey.toLowerCase())
+  );
+}
+
 const entitlementsStub = {
   isModuleEnabled: async (_orgId: string, moduleKey: string): Promise<boolean> =>
-    current().enabledModules.includes(moduleKey.toLowerCase()),
+    fixtureModuleAvailable(moduleKey),
   getModuleMap: async (): Promise<Record<string, boolean>> =>
     Object.fromEntries(current().enabledModules.map((key) => [key, true])),
   getEffectiveModuleMap: async (): Promise<Record<string, boolean>> =>
     Object.fromEntries(current().enabledModules.map((key) => [key, true])),
-  // `ModuleGuard` resolves availability from four sources, not one. The two
-  // below keep a module's availability decided by the token's `enabledModules`,
-  // which is what every existing spec was written against.
-  //
-  // `isCoreModule` is the exception, and pinning it to `false` was wrong:
-  // `settings:` and `ownership:` are platform surfaces with no org-module toggle
-  // at all, so production answers `true` for them however the org is configured.
-  // A fixture answering `false` made every `settings:` and `ownership:` route
-  // 402, which is why the rbac, roles and ownership suites asserted 403 and got
-  // it.
-  //
-  // Narrower than `isCoreModuleKey`, deliberately. That predicate is also true
-  // for a *registered* module that is not plan-gated — `kb` is one — and using
-  // it here made kb unconditionally available, so the twelve kb suites asserting
-  // 402 for a disabled module got 403 instead. The line that matters to a
-  // fixture is whether the module is in the registry at all: an unregistered
-  // namespace has nothing to toggle, and everything else is decided by the
-  // token's `enabledModules`, which is what every spec was written against.
-  isCoreModule: (moduleKey: string): boolean =>
-    moduleDefinition(moduleIdFromStored(moduleKey)) === undefined,
+  // `ModuleGuard` resolves availability from four sources, not one. The three
+  // below are pinned to the identity answer so a module's availability is still
+  // decided by the token's `enabledModules` alone, which is what every existing
+  // spec was written against.
+  isCoreModule: isCoreModuleKey,
   getPlanLockedModules: async (): Promise<readonly string[]> => [],
   /**
    * Derived from the two answers above rather than given its own.
@@ -205,8 +199,7 @@ export const accessStub = {
   // Core modules first, as `EntitlementsService.getModuleState` answers them:
   // a platform surface with no org toggle is on however the org is configured.
   getModuleState: async (_orgId: string, moduleKey: string): Promise<boolean | undefined> => {
-    if (isCoreModuleKey(moduleKey)) return true;
-    return current().enabledModules.includes(moduleKey.toLowerCase()) ? true : undefined;
+    return fixtureModuleAvailable(moduleKey) ? true : undefined;
   },
   // The owner bypass first, exactly as `AccessService.scopeFor` does it: an org
   // owner holds everything and never consults the permission map. Without this
@@ -220,7 +213,7 @@ export const accessStub = {
   holds: async (user: unknown, permissionKey: string): Promise<boolean> =>
     isOwnerContext(user) || current().isOrgOwner || current().permissions.includes(permissionKey),
   moduleAvailability: async (_user: unknown, moduleKey: string) => {
-    return current().enabledModules.includes(moduleKey.toLowerCase())
+    return fixtureModuleAvailable(moduleKey)
       ? { available: true as const }
       : { available: false as const, reason: "org-disabled" as const };
   },
@@ -229,7 +222,7 @@ export const accessStub = {
     _userId: string,
     moduleKey: string,
   ) => {
-    return current().enabledModules.includes(moduleKey.toLowerCase())
+    return fixtureModuleAvailable(moduleKey)
       ? { available: true as const }
       : { available: false as const, reason: "org-disabled" as const };
   },
@@ -425,6 +418,14 @@ export async function createE2eApp(options: E2eAppOptions = {}): Promise<INestAp
   // every subsequent request regardless of the actual test intent. Disable it
   // here so every e2e suite starts with a clean counter state.
   process.env.ADMISSION_ENABLED = "false";
+  process.env.NOTIFICATIONS_INPROCESS_WORKER = "false";
+  process.env.HR_EXPORT_WORKER_ENABLED = "false";
+  process.env.PAYROLL_EXPORT_WORKER_ENABLED = "false";
+  process.env.EXPENSE_EXPORT_WORKER_ENABLED = "false";
+  process.env.FINANCE_REPORT_EXPORT_WORKER_ENABLED = "false";
+  process.env.GDPR_EXPORT_WORKER_ENABLED = "false";
+  process.env.OUTBOX_INPROCESS_WORKER = "false";
+  process.env.PAYROLL_JOBS_WORKER_ENABLED = "false";
 
   let builder: TestingModuleBuilder = Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(MembershipStateService)
@@ -436,7 +437,15 @@ export async function createE2eApp(options: E2eAppOptions = {}): Promise<INestAp
     .overrideProvider(MfaPolicyService)
     .useValue(mfaPolicyStub)
     .overrideProvider(COMMAND_FENCE_STORE)
-    .useValue(new InMemoryCommandFenceStore());
+    .useValue(new InMemoryCommandFenceStore())
+    .overrideProvider(PayrollJobsWorkerService)
+    .useValue({})
+    .overrideProvider(PayrollCalendarReminderScheduler)
+    .useValue({})
+    .overrideProvider(NotificationDeliveryWorker)
+    .useValue({})
+    .overrideProvider(PermissionCatalogSyncService)
+    .useValue({});
 
   for (const override of options.overrides ?? []) {
     const stub = HARNESS_STUBS.get(override.provide);

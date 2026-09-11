@@ -47,6 +47,7 @@ const EXPORT_JOB_FIELDS = {
   errorRows: invExportJobs.errorRows,
   errors: invExportJobs.errors,
   createdBy: invExportJobs.createdBy,
+  createdByMembershipId: invExportJobs.createdByMembershipId,
   createdAt: invExportJobs.createdAt,
   updatedAt: invExportJobs.updatedAt,
 } as const;

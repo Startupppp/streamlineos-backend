@@ -28,6 +28,8 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { commentRowSchema, commentEditResultSchema, reactionSchema } from "./dto/build-tickets-response.schemas";
 
 const projectIdticketIdParams = z.object({ projectId: z.string().min(1), ticketId: z.coerce.number().int().positive() }).strict();
 const projectIdticketIdcommentIdParams = z.object({ projectId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive(), commentId: z.coerce.number().int().positive() }).strict();
@@ -43,6 +45,7 @@ export class ProjectsTicketCommentsController {
   @Post(":projectId/tickets/:ticketId/comments")
   @RequirePermission("build:tickets:update")
   @HttpCode(201)
+  @ResponseSchema(commentRowSchema)
   @Validate({ params: projectIdticketIdParams, body: commentSchema })
   addComment(
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -54,6 +57,7 @@ export class ProjectsTicketCommentsController {
 
   @Get(":projectId/tickets/:ticketId/comments/:commentId")
   @RequirePermission("build:tickets:view")
+  @ResponseSchema(commentRowSchema)
   @Validate({ params: projectIdticketIdcommentIdParams })
   getComment(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -66,6 +70,7 @@ export class ProjectsTicketCommentsController {
 
   @Patch(":projectId/tickets/:ticketId/comments/:commentId")
   @RequirePermission("build:tickets:update")
+  @ResponseSchema(commentEditResultSchema)
   @Validate({ params: projectIdticketIdcommentIdParams, body: updateCommentSchema })
   editComment(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -80,6 +85,7 @@ export class ProjectsTicketCommentsController {
   @Delete(":projectId/tickets/:ticketId/comments/:commentId")
   @RequirePermission("build:tickets:update")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: projectIdticketIdcommentIdParams })
   deleteComment(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -93,6 +99,7 @@ export class ProjectsTicketCommentsController {
   @Post(":projectId/tickets/:ticketId/comments/:commentId/reactions")
   @RequirePermission("build:tickets:update")
   @HttpCode(201)
+  @ResponseSchema(reactionSchema)
   @Validate({ params: projectIdticketIdcommentIdParams_, body: addReactionSchema })
   addReaction(
     @Param("commentId", ParseIntPipe) commentId: number,
@@ -105,6 +112,7 @@ export class ProjectsTicketCommentsController {
   @Delete(":projectId/tickets/:ticketId/comments/:commentId/reactions/:emoji")
   @RequirePermission("build:tickets:update")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: projectIdticketIdcommentIdemojiParams })
   removeReaction(
     @Param("commentId", ParseIntPipe) commentId: number,

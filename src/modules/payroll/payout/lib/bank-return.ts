@@ -33,7 +33,7 @@ function splitCsvLine(line: string): string[] {
   let cur = "";
   let inQuotes = false;
   for (let i = 0; i < line.length; i++) {
-    const ch = line[i]!;
+    const ch = line[i];
     if (inQuotes) {
       if (ch === '"' && line[i + 1] === '"') {
         cur += '"';
@@ -92,7 +92,7 @@ export function parseBankReturnCsv(csvText: string): BankReturnParseResult {
     };
   }
 
-  const headerCells = splitCsvLine(rawLines[0]!).map(normalizeHeader);
+  const headerCells = splitCsvLine(rawLines[0]).map(normalizeHeader);
   const idx = {
     itemId: headerCells.findIndex((h) => h === "itemid" || h === "id" || h === "batchitemid"),
     userId: headerCells.findIndex((h) => h === "userid" || h === "employeeid" || h === "empid"),
@@ -131,7 +131,7 @@ export function parseBankReturnCsv(csvText: string): BankReturnParseResult {
 
   for (let i = 1; i < rawLines.length; i++) {
     const lineNo = i + 1;
-    const cells = splitCsvLine(rawLines[i]!);
+    const cells = splitCsvLine(rawLines[i]);
     const statusRaw = cells[idx.status] ?? "";
     const status = mapStatus(statusRaw);
     if (!status) {

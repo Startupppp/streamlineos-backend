@@ -1,9 +1,12 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull, or } from "drizzle-orm";
-import { organizationMembers, projectStatuses, projects, workflowTransitions } from "../../../db/schema";
+import { organizationMembers, projectStatuses, workflowTransitions } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
+import { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { assertProjectAccess } from "../core/project-access";
 import type { CreateTransitionInput, UpdateTransitionInput, WipLimitInput } from "./dto/workflow.schemas";
 
 type TransitionPatch = Partial<Pick<typeof workflowTransitions.$inferInsert,
@@ -13,16 +16,9 @@ type TransitionPatch = Partial<Pick<typeof workflowTransitions.$inferInsert,
 export class WorkflowService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
+    private readonly access: AccessService,
     private readonly audit: AuditService,
   ) {}
-
-  private async assertProject(orgId: string, projectId: number): Promise<void> {
-    const p = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-      columns: { id: true },
-    });
-    if (!p) throw new NotFoundException("Project not found");
-  }
 
   private async assertStatusInProject(orgId: string, projectId: number, statusId: number): Promise<void> {
     const s = await this.db.query.projectStatuses.findFirst({
@@ -51,8 +47,9 @@ export class WorkflowService {
     return row;
   }
 
-  async listTransitions(orgId: string, projectId: number) {
-    await this.assertProject(orgId, projectId);
+  async listTransitions(u: CurrentUserContext, projectId: number) {
+    const { orgId } = u;
+    await assertProjectAccess(this.db, this.access, u, projectId);
     return this.db
       .select()
       .from(workflowTransitions)
@@ -64,8 +61,9 @@ export class WorkflowService {
       .limit(500);
   }
 
-  async createTransition(orgId: string, userId: string, projectId: number, input: CreateTransitionInput) {
-    await this.assertProject(orgId, projectId);
+  async createTransition(u: CurrentUserContext, projectId: number, input: CreateTransitionInput) {
+    const { orgId, userId } = u;
+    await assertProjectAccess(this.db, this.access, u, projectId);
     await this.assertStatusInProject(orgId, projectId, input.toStatusId);
     if (input.fromStatusId != null) {
       await this.assertStatusInProject(orgId, projectId, input.fromStatusId);
@@ -102,13 +100,13 @@ export class WorkflowService {
   }
 
   async updateTransition(
-    orgId: string,
-    userId: string,
+    u: CurrentUserContext,
     projectId: number,
     transitionId: number,
     input: UpdateTransitionInput,
   ) {
-    await this.assertProject(orgId, projectId);
+    const { orgId, userId } = u;
+    await assertProjectAccess(this.db, this.access, u, projectId);
     await this.loadTransition(orgId, projectId, transitionId);
     const patch: TransitionPatch = {};
     if (input.fromStatusId !== undefined) {
@@ -142,8 +140,9 @@ export class WorkflowService {
     return updated;
   }
 
-  async deleteTransition(orgId: string, userId: string, projectId: number, transitionId: number) {
-    await this.assertProject(orgId, projectId);
+  async deleteTransition(u: CurrentUserContext, projectId: number, transitionId: number) {
+    const { orgId, userId } = u;
+    await assertProjectAccess(this.db, this.access, u, projectId);
     await this.loadTransition(orgId, projectId, transitionId);
     await this.db
       .update(workflowTransitions)
@@ -159,8 +158,9 @@ export class WorkflowService {
     });
   }
 
-  async getAllowedTransitions(orgId: string, projectId: number, fromStatusId: number) {
-    await this.assertProject(orgId, projectId);
+  async getAllowedTransitions(u: CurrentUserContext, projectId: number, fromStatusId: number) {
+    const { orgId } = u;
+    await assertProjectAccess(this.db, this.access, u, projectId);
     return this.db
       .select()
       .from(workflowTransitions)
@@ -176,8 +176,9 @@ export class WorkflowService {
       .limit(500);
   }
 
-  async updateWipLimit(orgId: string, userId: string, projectId: number, statusId: number, input: WipLimitInput) {
-    await this.assertProject(orgId, projectId);
+  async updateWipLimit(u: CurrentUserContext, projectId: number, statusId: number, input: WipLimitInput) {
+    const { orgId, userId } = u;
+    await assertProjectAccess(this.db, this.access, u, projectId);
     await this.assertStatusInProject(orgId, projectId, statusId);
     const [updated] = await this.db
       .update(projectStatuses)

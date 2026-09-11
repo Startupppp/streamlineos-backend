@@ -5,7 +5,7 @@ export const interviewQuestionListQuerySchema = z.object({
   role: z.string().optional(),
   difficulty: z.string().optional(),
   q: z.string().optional(),
-});
+}).strict();
 
 export const createInterviewQuestionSchema = z.object({
   question: z.string().min(1).max(300),
@@ -15,7 +15,7 @@ export const createInterviewQuestionSchema = z.object({
   tags: z.array(z.string().max(100)).max(5).default([]),
   sampleAnswer: z.string().max(200).optional(),
   keywords: z.array(z.string().max(100)).max(5).default([]),
-});
+}).strict();
 
 export const updateInterviewQuestionSchema = z.object({
   question: z.string().min(1).max(300).optional(),
@@ -26,7 +26,7 @@ export const updateInterviewQuestionSchema = z.object({
   sampleAnswer: z.string().max(200).nullable().optional(),
   keywords: z.array(z.string().max(100)).max(5).optional(),
   isActive: z.boolean().optional(),
-});
+}).strict();
 
 export type InterviewQuestionListQuery = z.infer<typeof interviewQuestionListQuerySchema>;
 export type CreateInterviewQuestionInput = z.infer<typeof createInterviewQuestionSchema>;

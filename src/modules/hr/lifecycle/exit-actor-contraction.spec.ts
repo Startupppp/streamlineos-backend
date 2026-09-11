@@ -1,8 +1,8 @@
 /**
  * ExitService – actor contraction spec.
  *
- * Verifies that list() uses dual-read (userMembershipId OR userId) when
- * membershipId is provided and the caller is not an admin.
+ * Verifies that list() uses membership identity for non-admin visibility and
+ * rejects account-only principals.
  */
 
 import { ExitService } from "./exit.service";
@@ -13,7 +13,7 @@ const USER_ID = "user-exit";
 const ACTIVE_MEMBERSHIP_ID = 11;
 
 function makeBaseParams(): ListResignationsQueryInput {
-  return { page: 1, limit: 20, status: undefined };
+  return { limit: 20, status: undefined };
 }
 
 function buildDbMock(rows: unknown[]) {
@@ -54,13 +54,13 @@ describe("ExitService – actor contraction dual-read", () => {
     expect(result.data).toHaveLength(0);
   });
 
-  it("falls back to userId-only predicate when membershipId is null", async () => {
+  it("fails closed when membershipId is null", async () => {
     const mockDb = buildDbMock([]);
     const service = new ExitService(mockDb as never, mockEmployment as never);
 
-    const result = await service.list(ORG_ID, USER_ID, false, makeBaseParams(), null);
-
-    expect(result.data).toHaveLength(0);
-    expect(mockDb.query.resignations.findMany).toHaveBeenCalled();
+    await expect(service.list(ORG_ID, USER_ID, false, makeBaseParams(), null)).rejects.toThrow(
+      "Organization membership required.",
+    );
+    expect(mockDb.query.resignations.findMany).not.toHaveBeenCalled();
   });
 });

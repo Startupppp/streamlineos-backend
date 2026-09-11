@@ -1,7 +1,7 @@
 
-import { boolean, index, integer, serial, pgTable, text, timestamp, unique, foreignKey } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
-import { organizations, users, organizationMembers } from "./auth";
+import { boolean, index, integer, serial, pgTable, text, timestamp, unique, uniqueIndex, foreignKey } from "drizzle-orm/pg-core";
+import { relations, sql } from "drizzle-orm";
+import { organizations, organizationMembers } from "./auth";
 
 export type IntegrationToolkit = "googlecalendar" | "outlook" | "gmail";
 export type IntegrationConnectionStatus = "active" | "needs_reauth" | "disabled";
@@ -14,9 +14,8 @@ export const userIntegrationConnections = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
+    // Retained solely for a stable account-label projection; membershipId owns access.
+    userId: text("user_id").notNull(),
     membershipId: integer("membership_id"),
     toolkit: text("toolkit").$type<IntegrationToolkit>().notNull(),
     composioConnectedAccountId: text("composio_connected_account_id").notNull(),
@@ -33,6 +32,9 @@ export const userIntegrationConnections = pgTable(
     index("idx_integration_connections_org_user").on(table.orgId, table.userId),
     index("idx_integration_connections_org_membership").on(table.orgId, table.membershipId),
     unique("uniq_user_integration_connections_org_id").on(table.orgId, table.id),
+    uniqueIndex("uq_integration_connections_org_scoped_toolkit")
+      .on(table.orgId, table.toolkit)
+      .where(sql`${table.scope} = 'org'`),
     foreignKey({
       name: "fk_user_integration_connections_actor",
       columns: [table.orgId, table.membershipId],
@@ -41,6 +43,4 @@ export const userIntegrationConnections = pgTable(
   ],
 );
 
-export const userIntegrationConnectionsRelations = relations(userIntegrationConnections, ({ one }) => ({
-  user: one(users, { fields: [userIntegrationConnections.userId], references: [users.id] }),
-}));
+export const userIntegrationConnectionsRelations = relations(userIntegrationConnections, () => ({}));

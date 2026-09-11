@@ -4,11 +4,12 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, isNotNull, isNull, ne, or } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import {
   projectWhiteboardShares,
   projectWhiteboards,
   projects,
+  organizationMembers,
   users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -52,13 +53,14 @@ export class WhiteboardsService {
   private async loadShares(whiteboardId: number): Promise<ShareEntry[]> {
     return this.db
       .select({
-        userId: projectWhiteboardShares.userId,
+        userId: organizationMembers.userId,
         role: projectWhiteboardShares.role,
         name: users.name,
         email: users.email,
       })
       .from(projectWhiteboardShares)
-      .innerJoin(users, eq(users.id, projectWhiteboardShares.userId))
+      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, projectWhiteboardShares.orgId), eq(organizationMembers.id, projectWhiteboardShares.membershipId)))
+      .innerJoin(users, eq(users.id, organizationMembers.userId))
       .where(eq(projectWhiteboardShares.whiteboardId, whiteboardId));
   }
 
@@ -106,7 +108,7 @@ export class WhiteboardsService {
         projectWhiteboardShares,
         and(
           eq(projectWhiteboardShares.whiteboardId, projectWhiteboards.id),
-          eq(projectWhiteboardShares.userId, u.userId),
+          sql`${projectWhiteboardShares.membershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id = ${u.userId} AND status = 'ACTIVE')`,
         ),
       )
       .where(
@@ -159,7 +161,7 @@ export class WhiteboardsService {
         projectWhiteboardShares,
         and(
           eq(projectWhiteboardShares.whiteboardId, projectWhiteboards.id),
-          eq(projectWhiteboardShares.userId, u.userId),
+          sql`${projectWhiteboardShares.membershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id = ${u.userId} AND status = 'ACTIVE')`,
         ),
       )
       .where(
@@ -209,7 +211,7 @@ export class WhiteboardsService {
         projectWhiteboardShares,
         and(
           eq(projectWhiteboardShares.whiteboardId, projectWhiteboards.id),
-          eq(projectWhiteboardShares.userId, u.userId),
+          sql`${projectWhiteboardShares.membershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id = ${u.userId} AND status = 'ACTIVE')`,
         ),
       )
       .where(and(eq(projectWhiteboards.orgId, u.orgId), isNull(projectWhiteboards.deletedAt), visibilityFilter))

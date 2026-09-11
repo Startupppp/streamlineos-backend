@@ -24,6 +24,11 @@ import type {
   PageDataInput,
   ReportInput,
 } from "./dto/expense.schemas";
+import {
+  canReadOthersExpenses,
+  expenseOwnerPredicate,
+  type ExpenseRead,
+} from "./expenses-scope";
 
 const ALL_EXPENSE_STATUSES_SET = new Set<string>([
   "DRAFT", "SUBMITTED", "PENDING", "APPROVED", "REJECTED", "REIMBURSEMENT_PENDING", "REIMBURSED", "PAID",
@@ -46,27 +51,25 @@ export class ExpensesService {
     private readonly audit: AuditService,
   ) {}
 
-  list(orgId: string, userId: string, isAdmin: boolean, filters: ListInput) {
-    const key = `${userId}:${isAdmin ? "admin" : "self"}:${filters.userId ?? ""}:${filters.status ?? ""}:${filters.page ?? ""}:${filters.limit ?? ""}:${filters.startDate ?? ""}:${filters.endDate ?? ""}`;
+  list(er: ExpenseRead, filters: ListInput) {
+    const key = `${er.read.discriminator}:${er.teamUserIds.join("|")}:${filters.userId ?? ""}:${filters.status ?? ""}:${filters.page ?? ""}:${filters.limit ?? ""}:${filters.startDate ?? ""}:${filters.endDate ?? ""}`;
     return this.cache.cachedVersioned(
-      CACHE_KEYS.expensesListNamespace(orgId),
+      CACHE_KEYS.expensesListNamespace(er.read.orgId),
       key,
-      () => this.getExpenses(orgId, userId, isAdmin, filters),
+      () => this.getExpenses(er, filters),
       CACHE_TTL.SHORT,
     );
   }
 
-  private async getExpenses(orgId: string, userId: string, isAdmin: boolean, filters: ListInput) {
+  private async getExpenses(er: ExpenseRead, filters: ListInput) {
+    const orgId = er.read.orgId;
     const page = filters.page ?? 1;
     const limit = filters.limit ?? 20;
     const offset = (page - 1) * limit;
 
     const conditions = [eq(expenses.orgId, orgId)];
-    if (!isAdmin) {
-      conditions.push(eq(expenses.userId, userId));
-    } else if (filters.userId) {
-      conditions.push(eq(expenses.userId, filters.userId));
-    }
+    const ownerPredicate = expenseOwnerPredicate(er, filters.userId);
+    if (ownerPredicate) conditions.push(ownerPredicate);
     if (filters.status) conditions.push(eq(expenses.status, filters.status));
     if (filters.startDate) conditions.push(gte(expenses.expenseDate, filters.startDate));
     if (filters.endDate) conditions.push(lte(expenses.expenseDate, filters.endDate));
@@ -179,14 +182,11 @@ export class ExpensesService {
     return category;
   }
 
-  private buildPageConditions(orgId: string, userId: string, isAdmin: boolean, filters: PageDataInput) {
-    const conditions = [eq(expenses.orgId, orgId)];
+  private buildPageConditions(er: ExpenseRead, filters: PageDataInput) {
+    const conditions = [eq(expenses.orgId, er.read.orgId)];
 
-    if (!isAdmin) {
-      conditions.push(eq(expenses.userId, userId));
-    } else if (filters.userId) {
-      conditions.push(eq(expenses.userId, filters.userId));
-    }
+    const ownerPredicate = expenseOwnerPredicate(er, filters.userId);
+    if (ownerPredicate) conditions.push(ownerPredicate);
 
     if (filters.month) {
       const [year, mon] = filters.month.split("-");
@@ -230,19 +230,22 @@ export class ExpensesService {
     return conditions;
   }
 
-  async getPageData(orgId: string, userId: string, isAdmin: boolean, filters: PageDataInput) {
+  async getPageData(er: ExpenseRead, filters: PageDataInput) {
+    const orgId = er.read.orgId;
+    const isAdmin = canReadOthersExpenses(er);
+    const pendingOwnerPredicate = expenseOwnerPredicate(er);
     const page = filters.page;
     const pageSize = filters.pageSize;
     const offset = (page - 1) * pageSize;
 
-    const conditions = this.buildPageConditions(orgId, userId, isAdmin, filters);
+    const conditions = this.buildPageConditions(er, filters);
     const baseFilters: PageDataInput = {
       page,
       pageSize,
       sortBy: filters.sortBy,
       sortOrder: filters.sortOrder,
     };
-    const baseConditions = this.buildPageConditions(orgId, userId, isAdmin, baseFilters);
+    const baseConditions = this.buildPageConditions(er, baseFilters);
 
     const sortColumns = {
       date: expenses.expenseDate,
@@ -263,7 +266,6 @@ export class ExpensesService {
           user: { columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true } },
           approver: { columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true } },
           expenseCategory: true,
-          project: true,
         },
         orderBy: [
           asc(sql`CASE ${expenses.status} WHEN 'PENDING' THEN 0 WHEN 'APPROVED' THEN 1 WHEN 'REJECTED' THEN 2 WHEN 'PAID' THEN 3 ELSE 4 END`),
@@ -289,12 +291,15 @@ export class ExpensesService {
         .where(and(...baseConditions)),
       isAdmin
         ? this.db.query.expenses.findMany({
-            where: and(eq(expenses.orgId, orgId), eq(expenses.status, "PENDING")),
+            where: and(
+              eq(expenses.orgId, orgId),
+              eq(expenses.status, "PENDING"),
+              ...(pendingOwnerPredicate ? [pendingOwnerPredicate] : []),
+            ),
             with: {
           user: { columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true } },
           approver: { columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true } },
           expenseCategory: true,
-          project: true,
         },
             orderBy: [desc(expenses.createdAt)],
             limit: 100,
@@ -324,7 +329,8 @@ export class ExpensesService {
         approvedCount: Number(s?.approvedCount) || 0,
         rejectedCount: Number(s?.rejectedCount) || 0,
         paidCount: Number(s?.paidCount) || 0,
-        avgExpenseAmount: s?.totalCount ? Number(s.totalAmount) / Number(s.totalCount) : 0,
+        avgExpenseAmount:
+          Number(s?.totalCount) > 0 ? Number(s?.totalAmount) / Number(s?.totalCount) : 0,
       },
       categories: categoryList,
       pagination: {
@@ -337,14 +343,17 @@ export class ExpensesService {
     };
   }
 
-  async getReport(orgId: string, userId: string, isAdmin: boolean, filters: ReportInput) {
+  async getReport(er: ExpenseRead, filters: ReportInput) {
+    const orgId = er.read.orgId;
+    const isAdmin = canReadOthersExpenses(er);
     const conditions = [
       eq(expenses.orgId, orgId),
       gte(expenses.expenseDate, filters.startDate),
       lte(expenses.expenseDate, filters.endDate),
     ];
 
-    if (!isAdmin) conditions.push(eq(expenses.userId, userId));
+    const ownerPredicate = expenseOwnerPredicate(er);
+    if (ownerPredicate) conditions.push(ownerPredicate);
 
     const [allExpenses, byCategory, byMonth, byStatus, topExpenses, byEmployee] = await Promise.all([
       this.db
@@ -419,7 +428,8 @@ export class ExpensesService {
         approvedAmount: Number(summary?.approvedAmount) || 0,
         rejectedAmount: Number(summary?.rejectedAmount) || 0,
         pendingAmount: Number(summary?.pendingAmount) || 0,
-        avgExpenseAmount: summary?.totalExpenses ? totalAmount / Number(summary.totalExpenses) : 0,
+        avgExpenseAmount:
+          Number(summary?.totalExpenses) > 0 ? totalAmount / Number(summary?.totalExpenses) : 0,
       },
       byCategory: byCategory.map((c) => ({
         category: c.category,

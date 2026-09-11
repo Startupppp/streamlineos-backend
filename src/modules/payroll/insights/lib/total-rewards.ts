@@ -1,7 +1,4 @@
-/**
- * Pure total-rewards aggregation helpers (Phase 8).
- * Cash + estimated employer benefits + equity units (not FMV-valued).
- */
+import { toPaise } from "../../runs/lib/money";
 
 export interface TotalRewardsCashInput {
   annualCtc: number | null;
@@ -119,15 +116,16 @@ export function buildTotalRewardsStatement(input: {
     };
   });
 
-  let employerAnnual: number | null = 0;
+  let employerAnnualPaise: number | null = 0;
   let anyBenefitEstimate = false;
   for (const line of benefitLines) {
     if (line.estimatedEmployerMonthly != null) {
       anyBenefitEstimate = true;
-      employerAnnual += parseFloat(line.estimatedEmployerMonthly) * 12;
+      employerAnnualPaise += toPaise(line.estimatedEmployerMonthly) * 12;
     }
   }
-  if (!anyBenefitEstimate) employerAnnual = null;
+  if (!anyBenefitEstimate) employerAnnualPaise = null;
+  const employerAnnual = employerAnnualPaise != null ? employerAnnualPaise / 100 : null;
 
   const equityLines = input.equity.map((e) => ({
     grantType: e.grantType,

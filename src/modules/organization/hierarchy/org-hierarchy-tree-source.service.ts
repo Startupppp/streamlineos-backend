@@ -2,7 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { DRIZZLE } from "../../../db/drizzle.constants";
-import { getPostgresErrorCode } from "../../../common/db/postgres-error";
+import { isUndefinedTable } from "../../../common/db/postgres-error";
 import type { Db } from "../../../db/drizzle.module";
 import { orgUnitClosure } from "../../../db/schema/common/org-unit-closure";
 import { organizationMembers } from "../../../db/schema/common/auth";
@@ -61,7 +61,7 @@ type ClosureTreeRow = OrgTreeRow & {
 
 // Drizzle wraps the driver error, so the SQLSTATE rides on `cause`, not the top level.
 function isMissingRelation(error: unknown): boolean {
-  return getPostgresErrorCode(error) === "42P01";
+  return isUndefinedTable(error);
 }
 
 const PROFILE_RELATION = "hrms_migration_profiles";
@@ -147,7 +147,8 @@ export class OrgHierarchyTreeSourceService {
       .select(ORG_TREE_READ_COLUMNS)
       .from(orgUnits)
       .leftJoin(headMember, eq(headMember.id, orgUnits.headMembershipId))
-      .where(this.treeFilter(orgId));
+      .where(this.treeFilter(orgId))
+      .limit(10000);
   }
 
   private loadClosureRows(orgId: string): Promise<ClosureTreeRow[]> {
@@ -172,7 +173,8 @@ export class OrgHierarchyTreeSourceService {
           eq(closureParentRows.depth, 1),
         ),
       )
-      .where(this.treeFilter(orgId));
+      .where(this.treeFilter(orgId))
+      .limit(10000);
   }
 
   private treeFilter(orgId: string) {

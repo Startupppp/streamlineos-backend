@@ -21,7 +21,6 @@ export const crmContactRoles = pgTable("crm_contact_roles", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  index("idx_crm_contact_roles_org").on(table.orgId),
   index("idx_crm_contact_roles_contact").on(table.contactId),
   index("idx_crm_contact_roles_entity").on(table.orgId, table.entityType, table.entityId),
   uniqueIndex("uniq_crm_contact_roles_combo").on(

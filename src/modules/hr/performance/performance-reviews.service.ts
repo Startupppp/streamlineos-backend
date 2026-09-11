@@ -5,10 +5,9 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { applyScope } from "../../access/apply-scope";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import {
   organizationMembers,
   performanceReviews,
@@ -148,14 +147,15 @@ export class PerformanceReviewsService {
   }
 
   async listReviews(
-    orgId: string,
-    actorUserId: string,
-    scope: DataScope,
+    read: ScopedRead,
     query: ListPerformanceReviewsInput,
   ) {
     const conditions: SQL[] = [
-      eq(performanceReviews.orgId, orgId),
-      applyScope(scope, orgId, actorUserId, { ownerColumn: performanceReviews.userId }),
+      read.compose(
+        { tenant: performanceReviews.orgId, scope: { columns: { ownerColumn: performanceReviews.userId } } },
+        ({ sql: where }) => where,
+        () => sql`false`,
+      ),
     ];
     if (query.userId) conditions.push(eq(performanceReviews.userId, query.userId));
     if (query.cycleId) conditions.push(eq(performanceReviews.cycleId, query.cycleId));
@@ -399,8 +399,8 @@ export class PerformanceReviewsService {
     return this.oneOnOnes.deleteOneOnOne(orgId, actorId, canManage, meetingId);
   }
 
-  listPips(orgId: string, userId: string, scope: DataScope) {
-    return this.pips.listPips(orgId, userId, scope);
+  listPips(read: ScopedRead) {
+    return this.pips.listPips(read);
   }
 
   createPip(orgId: string, managerId: string, input: CreatePipInput) {

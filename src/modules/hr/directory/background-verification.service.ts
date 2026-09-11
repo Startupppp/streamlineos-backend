@@ -16,6 +16,7 @@ export class BackgroundVerificationService {
   async list(orgId: string) {
     const rows = await this.db.query.backgroundVerifications.findMany({
       where: eq(backgroundVerifications.orgId, orgId),
+      limit: 100,
       with: {
         user: {
           columns: {
@@ -29,7 +30,6 @@ export class BackgroundVerificationService {
         },
       },
       orderBy: [desc(backgroundVerifications.createdAt)],
-      limit: 500,
     });
 
     const facts = await this.employmentFacts.getFactsBatch(
@@ -83,6 +83,7 @@ export class BackgroundVerificationService {
 
   async update(orgId: string, body: UpdateBgvInput) {
     const existing = await this.db.query.backgroundVerifications.findFirst({
+      columns: { id: true },
       where: and(eq(backgroundVerifications.id, body.id), eq(backgroundVerifications.orgId, orgId)),
     });
     if (!existing) throw new NotFoundException("Verification not found.");

@@ -106,15 +106,18 @@ export class SupportAiTranslationService {
     language: string,
     content?: string,
     userId?: string,
+    membershipId?: number | null,
   ) {
     if (!(await this.isAvailable(orgId))) return null;
     await this.getTicketOrThrow(orgId, ticketId);
     let body = content;
     if (!body && userId) {
+      if (membershipId == null) throw new BadRequestException("Organization membership required");
       const draft = await this.db.query.supportTicketDrafts.findFirst({
         where: and(
+          eq(supportTicketDrafts.orgId, orgId),
           eq(supportTicketDrafts.ticketId, ticketId),
-          eq(supportTicketDrafts.userId, userId),
+          eq(supportTicketDrafts.userMembershipId, membershipId),
         ),
         columns: { body: true },
       });

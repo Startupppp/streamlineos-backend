@@ -75,4 +75,4 @@ export const leadPriority = sql<string>`coalesce(${businessParties.priority}, 'W
 export const leadSource = sql<string>`coalesce(${businessParties.acquisitionSource}, 'other')`;
 
 /** `clients.health_score`, which defaults to 50 where Party leaves it unscored. */
-export const clientHealthScore = sql<number>`coalesce(${businessParties.healthScore}, 50)`;
+const clientHealthScore = sql<number>`coalesce(${businessParties.healthScore}, 50)`;

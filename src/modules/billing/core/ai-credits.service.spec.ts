@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AiCreditsService } from "./ai-credits.service";
 import { AiCreditsReservationService } from "./ai-credits-reservation.service";
 import { AiCreditsPacksService } from "./ai-credits-packs.service";
+import { milliToCredits } from "../../ai/core/billing/ai-model-pricing.constants";
 
 const mockPack = {
   id: 1,
@@ -38,6 +39,7 @@ function makeTx(walletBalance: number) {
     for: jest.fn().mockResolvedValue([{ ...mockWalletRow, balance: walletBalance - 550 }]),
     insert: jest.fn().mockReturnThis(),
     values: jest.fn().mockReturnThis(),
+    onConflictDoUpdate: jest.fn().mockReturnThis(),
     returning: jest.fn().mockResolvedValue([updatedWallet]),
     update: jest.fn().mockReturnThis(),
     set: jest.fn().mockReturnThis(),
@@ -147,6 +149,7 @@ describe("AiCreditsService.purchaseCreditsDirectly", () => {
       }),
       insert: jest.fn().mockReturnThis(),
       values: jest.fn().mockReturnThis(),
+      onConflictDoUpdate: jest.fn().mockReturnThis(),
       returning: jest.fn().mockResolvedValue([currentWalletRow]),
       update: jest.fn().mockReturnThis(),
       set: jest.fn().mockReturnThis(),
@@ -193,6 +196,7 @@ describe("AiCreditsService.grantPlanCredits — idempotency", () => {
       limit: jest.fn().mockResolvedValue(existingTxRow ? [existingTxRow] : []),
       insert: jest.fn().mockReturnThis(),
       values: jest.fn().mockReturnThis(),
+      onConflictDoUpdate: jest.fn().mockReturnThis(),
       returning: jest.fn().mockResolvedValue([{ ...mockWalletRow, balance: 500 }]),
       update: jest.fn().mockReturnThis(),
       set: jest.fn().mockReturnThis(),
@@ -234,6 +238,7 @@ describe("AiCreditsService.grantPlanCredits — idempotency", () => {
       for: jest.fn().mockResolvedValue([mockWalletRow]),
       insert: jest.fn().mockReturnThis(),
       values: jest.fn().mockReturnThis(),
+      onConflictDoUpdate: jest.fn().mockReturnThis(),
       returning: jest.fn().mockResolvedValue([{ ...mockWalletRow, balance: 500 }]),
       update: jest.fn().mockReturnThis(),
       set: jest.fn().mockReturnThis(),
@@ -446,82 +451,63 @@ describe("AiCreditsService.purchaseCreditsDirectly — DB backstop (23505)", () 
   });
 });
 
-describe("AiCreditsService.getWallet — trial grant on creation", () => {
-  let service: AiCreditsService;
+/**
+ * Wallet creation has exactly one implementation — the reservation service's
+ * `onConflictDoNothing … returning()` path, which is the only shape that keeps
+ * the trial grant to one row under a concurrent first call. `getWallet` must
+ * route through it rather than opening a second insert of its own, so what this
+ * asserts is the delegation; the grant's contents are proven against a real
+ * database in `ai-credits-reserve-race.seeded-e2e-spec.ts`.
+ */
+describe("AiCreditsService.getWallet — wallet creation is delegated, never duplicated", () => {
+  const recentChain = () => ({
+    from: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockResolvedValue([]),
+  });
 
-  it("inserts a PLAN_GRANT trial transaction when wallet does not exist", async () => {
-    const trialWallet = { ...mockWalletRow, balance: 100, lifetimeGranted: 100 };
-    const txMock = {
-      insert: jest.fn().mockReturnThis(),
-      values: jest.fn().mockReturnThis(),
-      returning: jest.fn().mockResolvedValue([trialWallet]),
-    };
-
+  async function buildWith(walletRows: unknown[], ensureWalletForOrg: jest.Mock) {
     let selectCallCount = 0;
-
-    const walletChain = {
-      from: jest.fn().mockReturnThis(),
-      where: jest.fn().mockResolvedValue([]),
-    };
-
-    const recentChain = {
-      from: jest.fn().mockReturnThis(),
-      where: jest.fn().mockReturnThis(),
-      orderBy: jest.fn().mockReturnThis(),
-      limit: jest.fn().mockResolvedValue([]),
-    };
-
     const dbMock = {
       select: jest.fn().mockImplementation(() => {
         selectCallCount++;
-        return selectCallCount === 1 ? walletChain : recentChain;
-      }),
-      transaction: jest.fn().mockImplementation(
-        (fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock),
-      ),
-    };
-
-    const module = await Test.createTestingModule({
-      providers: [AiCreditsService, AiCreditsReservationService, AiCreditsPacksService, { provide: DRIZZLE, useValue: dbMock }],
-    }).compile();
-    service = module.get(AiCreditsService);
-
-    await service.getWallet("new-org");
-
-    expect(dbMock.transaction).toHaveBeenCalledTimes(1);
-    expect(txMock.insert).toHaveBeenCalled();
-  });
-
-  it("does not create a transaction when wallet already exists", async () => {
-    let selectCallCount2 = 0;
-
-    const existingWalletChain = {
-      from: jest.fn().mockReturnThis(),
-      where: jest.fn().mockResolvedValue([mockWalletRow]),
-    };
-
-    const recentChain2 = {
-      from: jest.fn().mockReturnThis(),
-      where: jest.fn().mockReturnThis(),
-      orderBy: jest.fn().mockReturnThis(),
-      limit: jest.fn().mockResolvedValue([]),
-    };
-
-    const dbMock2 = {
-      select: jest.fn().mockImplementation(() => {
-        selectCallCount2++;
-        return selectCallCount2 === 1 ? existingWalletChain : recentChain2;
+        if (selectCallCount === 1)
+          return { from: jest.fn().mockReturnThis(), where: jest.fn().mockResolvedValue(walletRows) };
+        return recentChain();
       }),
       transaction: jest.fn(),
     };
-
     const module = await Test.createTestingModule({
-      providers: [AiCreditsService, AiCreditsReservationService, AiCreditsPacksService, { provide: DRIZZLE, useValue: dbMock2 }],
+      providers: [
+        AiCreditsService,
+        AiCreditsPacksService,
+        { provide: AiCreditsReservationService, useValue: { ensureWalletForOrg } },
+        { provide: DRIZZLE, useValue: dbMock },
+      ],
     }).compile();
-    service = module.get(AiCreditsService);
+    return { service: module.get(AiCreditsService), dbMock };
+  }
 
+  it("asks the reservation service for the wallet when there is none, and never inserts one itself", async () => {
+    const trialWallet = { ...mockWalletRow, balance: 100, lifetimeGranted: 100 };
+    const ensureWalletForOrg = jest.fn().mockResolvedValue(trialWallet);
+
+    const { service, dbMock } = await buildWith([], ensureWalletForOrg);
+    const result = await service.getWallet("new-org");
+
+    expect(ensureWalletForOrg).toHaveBeenCalledWith("new-org");
+    expect(dbMock.transaction).not.toHaveBeenCalled();
+    expect(result.wallet.balance).toBe(milliToCredits(trialWallet.balance));
+  });
+
+  it("does not create a wallet when one already exists", async () => {
+    const ensureWalletForOrg = jest.fn();
+
+    const { service, dbMock } = await buildWith([mockWalletRow], ensureWalletForOrg);
     await service.getWallet("org1");
 
-    expect(dbMock2.transaction).not.toHaveBeenCalled();
+    expect(ensureWalletForOrg).not.toHaveBeenCalled();
+    expect(dbMock.transaction).not.toHaveBeenCalled();
   });
 });

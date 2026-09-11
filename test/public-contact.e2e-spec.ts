@@ -1,6 +1,6 @@
 import { Test } from "@nestjs/testing";
-import type { INestApplication } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
+import type { NestExpressApplication } from "@nestjs/platform-express";
 import request from "supertest";
 import { AllExceptionsFilter } from "src/common/http/all-exceptions.filter";
 import { ZodValidationInterceptor } from "src/common/validation/zod-validation.interceptor";
@@ -8,6 +8,7 @@ import { APP_CONFIG } from "src/config/config.module";
 import { DRIZZLE } from "src/db/drizzle.constants";
 import { RateLimitGuard } from "src/common/ratelimit/rate-limit.guard";
 import { RateLimitService } from "src/common/ratelimit/rate-limit.service";
+import { trustProxySetting } from "src/common/http/trust-proxy";
 import { TurnstileService } from "src/common/security/turnstile.service";
 import { EmailService } from "src/modules/email/email.service";
 import { ContactService } from "src/modules/public/contact.service";
@@ -35,7 +36,7 @@ const validSubmission = {
 };
 
 describe("Public contact form (e2e)", () => {
-  let app: INestApplication;
+  let app: NestExpressApplication;
   const sendEmail = jest.fn<Promise<void>, [unknown]>();
   const checkRateLimit = jest.fn();
 
@@ -43,6 +44,7 @@ describe("Public contact form (e2e)", () => {
     process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
     process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
     process.env.CONTACT_NOTIFICATION_EMAIL = "contact-inbox@example.com";
+    process.env.TRUST_PROXY_HOPS = "1";
     delete process.env.TURNSTILE_SECRET_KEY;
 
     const moduleRef = await Test.createTestingModule({
@@ -87,7 +89,8 @@ describe("Public contact form (e2e)", () => {
       ],
     }).compile();
 
-    app = moduleRef.createNestApplication();
+    app = moduleRef.createNestApplication<NestExpressApplication>();
+    app.set("trust proxy", trustProxySetting());
     app.useGlobalFilters(new AllExceptionsFilter());
     app.useGlobalInterceptors(new ZodValidationInterceptor(app.get(Reflector)));
     await app.init();
@@ -104,6 +107,7 @@ describe("Public contact form (e2e)", () => {
   afterAll(async () => {
     delete process.env.CONTACT_NOTIFICATION_EMAIL;
     delete process.env.TURNSTILE_SECRET_KEY;
+    delete process.env.TRUST_PROXY_HOPS;
     await app.close();
   });
 

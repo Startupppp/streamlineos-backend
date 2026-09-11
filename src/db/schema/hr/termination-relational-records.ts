@@ -1,16 +1,5 @@
 import { sql } from "drizzle-orm";
-import {
-  bigint,
-  check,
-  foreignKey,
-  index,
-  integer,
-  pgTable,
-  primaryKey,
-  text,
-  timestamp,
-  unique,
-} from "drizzle-orm/pg-core";
+import { bigint, check, foreignKey, integer, pgTable, primaryKey, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { organizations } from "../common/auth";
 import { terminations } from "./offboarding";
 
@@ -41,11 +30,6 @@ export const terminationReasons = pgTable(
       table.reason,
     ),
     unique("uniq_termination_reasons_parent_order").on(
-      table.organizationId,
-      table.terminationId,
-      table.sortOrder,
-    ),
-    index("idx_termination_reasons_parent").on(
       table.organizationId,
       table.terminationId,
       table.sortOrder,
@@ -91,11 +75,6 @@ export const terminationSupportingDocuments = pgTable(
       table.legacyUrl,
     ),
     unique("uniq_termination_supporting_documents_order").on(
-      table.organizationId,
-      table.terminationId,
-      table.sortOrder,
-    ),
-    index("idx_termination_supporting_documents_parent").on(
       table.organizationId,
       table.terminationId,
       table.sortOrder,

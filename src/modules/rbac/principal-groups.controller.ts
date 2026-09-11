@@ -17,6 +17,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { PrincipalGroupsService } from "./principal-groups.service";
 import {
   addGroupMemberSchema,
@@ -31,6 +32,14 @@ import {
   type RenameGroupInput,
 } from "./dto/principal-groups.schemas";
 import { z } from "zod";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  principalGroupListResponseSchema,
+  createGroupResponseSchema,
+  groupMutationResponseSchema,
+  groupMembersResponseSchema,
+  groupAssignedRolesResponseSchema,
+} from "./dto/principal-groups-response.schemas";
 
 const groupIdParams = z.object({ groupId: z.string().min(1) }).strict();
 const groupIdmembershipIdParams = z.object({ groupId: z.string().min(1), membershipId: z.string().min(1) }).strict();
@@ -44,19 +53,23 @@ const UUID_RE = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
 export class PrincipalGroupsController {
   constructor(private readonly groups: PrincipalGroupsService) {}
 
+  @ResponseSchema(principalGroupListResponseSchema)
   @Get()
   @Validate({ query: listGroupsQuerySchema })
   list(@Query() query: ListGroupsQuery, @CurrentUser() u: CurrentUserContext) {
     return this.groups.list(u.orgId, query);
   }
 
+  @ResponseSchema(createGroupResponseSchema)
   @Post()
   @HttpCode(201)
+  @Idempotent("rbac.principalGroup.create")
   @Validate({ body: createGroupSchema })
   create(@Body() body: CreateGroupInput, @CurrentUser() u: CurrentUserContext) {
     return this.groups.create(u, body);
   }
 
+  @ResponseSchema(groupMutationResponseSchema)
   @Patch(":groupId")
   @Validate({ body: renameGroupSchema, params: groupIdParams })
   rename(
@@ -67,6 +80,7 @@ export class PrincipalGroupsController {
     return this.groups.rename(u, this.parseUuid(groupId), body);
   }
 
+  @ResponseSchema(groupMembersResponseSchema)
   @Get(":groupId/members")
   @Validate({ params: groupIdParams })
   getMembers(
@@ -76,8 +90,10 @@ export class PrincipalGroupsController {
     return this.groups.getMembers(u.orgId, this.parseUuid(groupId));
   }
 
+  @ResponseSchema(groupMutationResponseSchema)
   @Post(":groupId/members")
   @HttpCode(201)
+  @Idempotent("rbac.principalGroup.addMember")
   @Validate({ body: addGroupMemberSchema, params: groupIdParams })
   addMember(
     @Param("groupId") groupId: string,
@@ -87,6 +103,7 @@ export class PrincipalGroupsController {
     return this.groups.addMember(u, this.parseUuid(groupId), body);
   }
 
+  @ResponseSchema(groupMutationResponseSchema)
   @Delete(":groupId/members/:membershipId")
   @Validate({ params: groupIdmembershipIdParams })
   removeMember(
@@ -101,6 +118,7 @@ export class PrincipalGroupsController {
     );
   }
 
+  @ResponseSchema(groupAssignedRolesResponseSchema)
   @Get(":groupId/roles")
   @Validate({ params: groupIdParams })
   getAssignedRoles(
@@ -110,8 +128,10 @@ export class PrincipalGroupsController {
     return this.groups.getAssignedRoles(u.orgId, this.parseUuid(groupId));
   }
 
+  @ResponseSchema(groupMutationResponseSchema)
   @Post(":groupId/roles")
   @HttpCode(201)
+  @Idempotent("rbac.principalGroup.assignRole")
   @Validate({ body: assignGroupRoleSchema, params: groupIdParams })
   assignRole(
     @Param("groupId") groupId: string,
@@ -121,6 +141,7 @@ export class PrincipalGroupsController {
     return this.groups.assignRole(u, this.parseUuid(groupId), body);
   }
 
+  @ResponseSchema(groupMutationResponseSchema)
   @Delete(":groupId/roles/:roleId")
   @Validate({ params: groupIdroleIdParams })
   unassignRole(

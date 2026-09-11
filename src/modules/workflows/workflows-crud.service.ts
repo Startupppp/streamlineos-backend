@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, desc, eq, ilike, sql } from "drizzle-orm";
 import {
   workflows,
@@ -159,15 +159,25 @@ export class WorkflowsCrudService {
     });
     if (!existing) throw new NotFoundException("Workflow not found");
 
-    await this.db
-      .delete(workflows)
-      .where(and(eq(workflows.id, workflowId), eq(workflows.orgId, orgId)));
-
-    await this.db.insert(workflowAuditLogs).values({
-      orgId,
-      workflowId,
-      actorId: userId,
-      event: "deleted",
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(workflowAuditLogs)
+        .set({ workflowId: null })
+        .where(
+          and(
+            eq(workflowAuditLogs.workflowId, workflowId),
+            eq(workflowAuditLogs.orgId, orgId),
+          ),
+        );
+      await tx
+        .delete(workflows)
+        .where(and(eq(workflows.id, workflowId), eq(workflows.orgId, orgId)));
+      await tx.insert(workflowAuditLogs).values({
+        orgId,
+        actorId: userId,
+        event: "deleted",
+        metadata: { deletedWorkflowId: workflowId },
+      });
     });
   }
 
@@ -177,15 +187,64 @@ export class WorkflowsCrudService {
     workflowId: string,
     dto: PublishWorkflowDto,
   ) {
-    const workflow = await this.db.query.workflows.findFirst({
-      where: and(eq(workflows.id, workflowId), eq(workflows.orgId, orgId)),
-      columns: { id: true, version: true },
-    });
-    if (!workflow) throw new NotFoundException("Workflow not found");
-
-    const nextVersion = workflow.version + 1;
-
     return this.db.transaction(async (tx) => {
+      /**
+       * Read and compare-and-set inside ONE transaction.
+       *
+       * The read used to sit outside `db.transaction`, so the version it
+       * compared was already stale by the time the write ran, and the write
+       * matched on id alone. `workflow_versions` has no unique index on
+       * (org_id, workflow_id, version) either — only the pkey, uniq(org_id, id)
+       * and a plain btree on (workflow_id, version) — so two editors publishing
+       * in the same second both read version 3, both inserted a version-4 row
+       * with different definitions, and both succeeded. Whichever
+       * `workflows.version` update landed second decided which definition was
+       * live and the other publish was lost with a 200.
+       *
+       * The guard is now the UPDATE's own predicate: `version = expected`.
+       * Under READ COMMITTED the second transaction blocks on the row lock, then
+       * re-evaluates the predicate against the committed row and matches nothing,
+       * so it returns zero rows and we abort. That is the pattern
+       * `worker-engagements.service.ts:383` already uses.
+       *
+       * `expectedVersion` stays OPTIONAL in the DTO: making it required would be
+       * a breaking contract change, and — more to the point — it would leave the
+       * lost update in place for every caller that omits it, which today is the
+       * only caller there is. When it is absent we compare against the version we
+       * just read in this transaction, which still serialises two concurrent
+       * publishes. When it is supplied it additionally rejects a stale editor
+       * that loaded the workflow before someone else published.
+       */
+      const workflow = await tx.query.workflows.findFirst({
+        where: and(eq(workflows.id, workflowId), eq(workflows.orgId, orgId)),
+        columns: { id: true, version: true },
+      });
+      if (!workflow) throw new NotFoundException("Workflow not found");
+
+      const expectedVersion = dto.expectedVersion ?? workflow.version;
+      const nextVersion = expectedVersion + 1;
+
+      const [updated] = await tx
+        .update(workflows)
+        .set({
+          version: nextVersion,
+          status: "published",
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(workflows.id, workflowId),
+            eq(workflows.orgId, orgId),
+            eq(workflows.version, expectedVersion),
+          ),
+        )
+        .returning();
+
+      if (!updated)
+        throw new ConflictException(
+          "Workflow was modified by another user — refresh to see the latest version before publishing",
+        );
+
       const [version] = await tx
         .insert(workflowVersions)
         .values({
@@ -196,16 +255,6 @@ export class WorkflowsCrudService {
           publishedBy: userId,
           publishedAt: new Date(),
         })
-        .returning();
-
-      const [updated] = await tx
-        .update(workflows)
-        .set({
-          version: nextVersion,
-          status: "published",
-          updatedAt: new Date(),
-        })
-        .where(and(eq(workflows.id, workflowId), eq(workflows.orgId, orgId)))
         .returning();
 
       await tx.insert(workflowAuditLogs).values({

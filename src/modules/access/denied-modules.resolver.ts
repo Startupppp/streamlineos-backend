@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { organizationMembers, userModuleAccess } from "../../db/schema";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import type { Db } from "../../db/drizzle.module";
-import type { SafeAccessTableRead } from "./access-permission.resolver";
+import type { ReadAccessTable } from "./access-permission.resolver";
 
 const DENIED_MODULES_CACHE_TTL_MS = 15_000;
 
@@ -11,7 +11,7 @@ export class DeniedModulesResolver {
 
   constructor(
     private readonly getDb: () => Db,
-    private readonly safeRead: SafeAccessTableRead,
+    private readonly readTable: ReadAccessTable,
     private readonly getVersion: (orgId: string) => Promise<number>,
     private readonly isCoreModule: (moduleKey: string) => boolean,
   ) {}
@@ -32,7 +32,7 @@ export class DeniedModulesResolver {
     const rows = await runInTenantTransaction(
       db,
       () =>
-        this.safeRead(
+        this.readTable(
           () =>
             db
               .select({ moduleKey: userModuleAccess.moduleKey })
@@ -50,8 +50,8 @@ export class DeniedModulesResolver {
                   eq(organizationMembers.userId, userId),
                   eq(userModuleAccess.enabled, false),
                 ),
-              ),
-          [] as { moduleKey: string }[],
+              )
+              .limit(100),
         ),
       { orgId },
     );

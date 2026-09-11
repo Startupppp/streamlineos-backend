@@ -5,57 +5,19 @@ import {
   unwrapComposioData,
   type NormalizerConnectionMeta,
 } from "./mail-normalizers";
-import type { MailFolder, MailMessageDetail, MailMessageSummary } from "../dto/mail-schemas";
-import { z } from "zod";
-
-const outlookListResponseSchema = z.object({
-  value: z.array(z.unknown()).optional(),
-});
-
-const outlookAttachmentsResponseSchema = z.object({
-  value: z.array(z.unknown()).optional(),
-});
-
-const outlookSearchResponseSchema = z.object({
-  value: z.array(z.unknown()).optional(),
-});
-
-function folderToWellKnownName(folder: MailFolder): string {
-  switch (folder) {
-    case "inbox": return "Inbox";
-    case "sent": return "SentItems";
-    case "trash": return "DeletedItems";
-    case "archive": return "Archive";
-    case "starred": return "Inbox";
-  }
-}
-
-const OUTLOOK_SELECT_FIELDS = [
-  "id", "conversationId", "subject", "from", "toRecipients", "ccRecipients",
-  "isRead", "flag", "receivedDateTime", "hasAttachments", "bodyPreview",
-];
-
-const OUTLOOK_DETAIL_FIELDS = [...OUTLOOK_SELECT_FIELDS, "body"];
-
-export interface OutlookMessageWithLabels extends MailMessageSummary {
-  /**
-   * The message's categories, or `null` when the response did not carry the
-   * field at all.
-   *
-   * The distinction is the whole point: an empty array is "this person applied
-   * none", `null` is "the provider did not say", and a caller deciding whether
-   * a message is private has to treat the second as a refusal rather than as a
-   * yes.
-   */
-  labels: string[] | null;
-}
-
-function readCategories(item: unknown): string[] | null {
-  if (item === null || typeof item !== "object") return null;
-  const categories = (item as Record<string, unknown>).categories;
-  if (!Array.isArray(categories)) return null;
-  return categories.filter((category): category is string => typeof category === "string");
-}
+import type { MailMessageDetail, MailMessageSummary } from "../dto/mail-response.schemas";
+import type { MailFolder } from "../dto/mail-schemas";
+import {
+  folderToWellKnownName,
+  outlookAttachmentDownloadSchema,
+  outlookAttachmentsResponseSchema,
+  outlookListResponseSchema,
+  outlookSearchResponseSchema,
+  readCategories,
+  OUTLOOK_DETAIL_FIELDS,
+  OUTLOOK_SELECT_FIELDS,
+  type OutlookMessageWithLabels,
+} from "./outlook-mail-wire";
 
 @Injectable()
 export class OutlookMailProvider {
@@ -111,7 +73,11 @@ export class OutlookMailProvider {
       }
     }).filter((m): m is MailMessageSummary => m !== null);
 
-    const nextSkip = messages.length === limit ? skip + limit : null;
+    // Counted against what the server returned rather than what normalised, the
+    // same way `listMessagesForIngress` does: one message that fails to
+    // normalise makes `messages.length < limit` on a full page, which reads as
+    // "the mailbox is exhausted" and silently ends the scroll early.
+    const nextSkip = items.length === limit ? skip + limit : null;
     return { messages, nextSkip };
   }
 
@@ -256,16 +222,28 @@ export class OutlookMailProvider {
     await this.gateway.executeProxy(conn.composioAccountId, "POST", "/me/sendMail", payload);
   }
 
+  /**
+   * `to` overrides who the reply goes to.
+   *
+   * Graph's reply action takes a `message` of writeable properties to apply to
+   * the reply it builds; `ccRecipients` already rides there, and `toRecipients`
+   * is the same mechanism, so an explicitly chosen recipient needs no second
+   * protocol. Omitted, the key is left off the payload entirely rather than sent
+   * empty, so Graph keeps addressing the reply the way it always has.
+   */
   async replyToMessage(
     userId: string,
     conn: NormalizerConnectionMeta,
     messageId: string,
     bodyHtml: string,
     cc?: string[],
+    to?: string,
   ): Promise<void> {
     const ccRecipients = (cc ?? []).map((email) => ({ emailAddress: { address: email } }));
     const payload = {
-      message: { ccRecipients },
+      message: to
+        ? { ccRecipients, toRecipients: [{ emailAddress: { address: to } }] }
+        : { ccRecipients },
       comment: bodyHtml,
     };
     await this.gateway.executeProxy(conn.composioAccountId, "POST", `/me/messages/${messageId}/reply`, payload);
@@ -306,7 +284,8 @@ export class OutlookMailProvider {
       { user_id: "me", message_id: messageId, attachment_id: attachmentId, file_name: fileName },
       conn.composioAccountId,
     );
-    const data = unwrapComposioData(raw) as Record<string, unknown> | null;
+    const parsed = outlookAttachmentDownloadSchema.safeParse(unwrapComposioData(raw));
+    const data = parsed.success ? parsed.data : null;
     const downloadUrl = typeof data?.url === "string" ? data.url : (typeof data?.downloadUrl === "string" ? data.downloadUrl : "");
     return { downloadUrl, fileName };
   }

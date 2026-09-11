@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { ALL_PERMISSION_NAMES } from "../../../rbac/permissions";
 
 const PERMISSION_KEYS: ReadonlySet<string> = new Set(ALL_PERMISSION_NAMES);
@@ -29,13 +29,13 @@ export const createUserApiTokenSchema = z.object({
       (value) => value.getTime() <= Date.now() + 366 * 24 * 60 * 60 * 1000,
       { message: "Personal tokens cannot exceed one year" },
     ),
-});
+}).strict();
 
 export type CreateUserApiTokenInput = z.infer<typeof createUserApiTokenSchema>;
 
 export const listUserApiTokensSchema = z
   .object({
-    page: pageNumberField,
+    cursor: z.string().trim().min(1).max(2048).optional(),
     limit: pageSizeField(20),
   })
   .strict();

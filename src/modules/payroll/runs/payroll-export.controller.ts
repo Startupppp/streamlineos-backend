@@ -23,7 +23,9 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { ApiOkResponse } from "@nestjs/swagger";
+import { payrollRunExportJobSchema } from "./dto/profiles-response.schemas";
 import { PayrollRunExportService } from "./payroll-export.service";
 import { PayrollRunExportWorkerService } from "./payroll-export-worker.service";
 import { exportRunsQuerySchema, type ExportRunsQuery } from "./dto/runs.schemas";
@@ -45,6 +47,7 @@ export class PayrollExportController {
   @Idempotent("payroll.runs.export.create")
   @RequirePermission("payroll:reports:export")
   @Validate({ query: exportRunsQuerySchema })
+  @ResponseSchema(payrollRunExportJobSchema)
   async createExportJob(
     @Query() filters: ExportRunsQuery,
     @Headers("idempotency-key") idempotencyKey: string,
@@ -59,6 +62,7 @@ export class PayrollExportController {
   @Get("jobs/:jobId")
   @RequirePermission("payroll:reports:export")
   @Validate({ params: jobIdParams })
+  @ResponseSchema(payrollRunExportJobSchema)
   getExportJob(
     @Param("jobId") jobId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -71,6 +75,7 @@ export class PayrollExportController {
   @HttpCode(200)
   @RequirePermission("payroll:reports:export")
   @Validate({ params: jobIdParams })
+  @ResponseSchema(payrollRunExportJobSchema)
   cancelExportJob(
     @Param("jobId") jobId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -81,6 +86,7 @@ export class PayrollExportController {
   @Get("jobs/:jobId/download")
   @RequirePermission("payroll:reports:export")
   @Validate({ params: jobIdParams })
+  @ApiOkResponse({ description: "Binary file download", content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } } })
   async downloadExportJob(
     @Param("jobId") jobId: string,
     @CurrentUser() u: CurrentUserContext,

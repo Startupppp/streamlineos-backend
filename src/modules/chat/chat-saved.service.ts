@@ -6,6 +6,11 @@ import type { Db } from "../../db/drizzle.module";
 import { buildIdCursorPage } from "../../common/pagination/cursor";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import type { EntityActor } from "../entity-reference/entity-reference.types";
+import {
+  SENDER_MEMBERSHIP_WITH_USER,
+  flattenMessageSender,
+} from "./chat-message-sender-shape";
+import { MESSAGE_REACTIONS_WITH, foldReactions } from "./chat-message-reaction-shape";
 
 @Injectable()
 export class ChatSavedService {
@@ -15,7 +20,12 @@ export class ChatSavedService {
   ) {}
 
   async list(actor: EntityActor, cursor?: number, limit = 30) {
-    const safeLimit = Math.min(Math.max(1, limit), 100);
+    // `Math.min(Math.max(1, x), 100)` is NaN-transparent, and a NaN limit does not throw:
+    // drizzle emits the `limit` clause only for a finite non-negative number, so the clause
+    // silently disappears and the read becomes unbounded. The controller now rejects a
+    // non-numeric `?limit`; this second clamp is what makes the service safe for any
+    // caller, since it is a public method and the guarantee belongs with the query.
+    const safeLimit = Number.isFinite(limit) ? Math.min(Math.max(1, Math.trunc(limit)), 100) : 30;
     const membershipId = actor.membershipId;
     if (!membershipId) return { items: [], nextCursor: undefined };
     const conditions = [
@@ -33,9 +43,10 @@ export class ChatSavedService {
       with: {
         message: {
           with: {
-            senderMembership: { columns: { id: true }, with: { user: { columns: { id: true, name: true, image: true } } } },
+            senderMembership: SENDER_MEMBERSHIP_WITH_USER,
             channel: { columns: { id: true, name: true, type: true } },
             attachments: true,
+            reactions: MESSAGE_REACTIONS_WITH,
           },
         },
       },
@@ -44,7 +55,10 @@ export class ChatSavedService {
     const page = buildIdCursorPage(rows, safeLimit, (row) => row.id);
     const resolved = await this.entities.withResolvedReferences(
       actor,
-      page.data.map((row) => row.message),
+      page.data.map((row) => {
+        const { reactions, ...message } = row.message;
+        return { ...flattenMessageSender(message), reactions: foldReactions(reactions) };
+      }),
     );
     return {
       items: page.data.map((row, index) => ({ ...row, message: resolved[index] })),
@@ -67,6 +81,7 @@ export class ChatSavedService {
     if (!membershipId) throw new ForbiddenException("Access denied");
 
     const membership = await this.db.query.chatChannelMembers.findFirst({
+      columns: { id: true },
       where: and(
         eq(chatChannelMembers.orgId, actor.orgId),
         eq(chatChannelMembers.channelId, message.channelId),
@@ -85,14 +100,16 @@ export class ChatSavedService {
 
   async unsave(actor: EntityActor, messageId: number) {
     const membershipId = actor.membershipId;
-    if (!membershipId) return { ok: true };
-    await this.db
+    if (!membershipId) throw new NotFoundException("Saved message not found");
+    const removed = await this.db
       .delete(chatSavedMessages)
       .where(and(
         eq(chatSavedMessages.orgId, actor.orgId),
         eq(chatSavedMessages.membershipId, membershipId),
         eq(chatSavedMessages.messageId, messageId),
-      ));
+      ))
+      .returning({ messageId: chatSavedMessages.messageId });
+    if (removed.length === 0) throw new NotFoundException("Saved message not found");
     return { ok: true };
   }
 

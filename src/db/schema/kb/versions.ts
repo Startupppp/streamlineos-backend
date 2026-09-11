@@ -18,7 +18,7 @@ export const kbArticleVersions = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    articleId: integer("article_id").references(() => kbArticles.id, { onDelete: "cascade" }).notNull(),
+    articleId: integer("article_id").notNull(),
     versionNumber: integer("version_number").notNull(),
     title: text("title").notNull(),
     content: text("content").default("").notNull(),

@@ -1,4 +1,5 @@
 import type { Db } from "../../../db/drizzle.module";
+import { KbCitationVisibilityService } from "./kb-citation-visibility.service";
 import { KbAskService } from "./kb-ask.service";
 import { ACCOUNT_ONLY_PRINCIPAL } from "../../../common/auth/principal";
 
@@ -26,20 +27,29 @@ describe("KbAskService — cross-tenant isolation", () => {
 
   function makeDb(hasContent: boolean) {
     const executeArgs: unknown[] = [];
-    return {
-      db: {
-        execute: jest.fn().mockImplementation((sqlObj: unknown) => {
-          executeArgs.push(sqlObj);
-          return Promise.resolve(hasContent ? [{ one: 1 }] : []);
-        }),
-      } as unknown as Db,
-      executeArgs,
+    /**
+     * `transaction` invokes its callback with the double itself. KB Ask now
+     * carries `@NoTenantTransaction()`, so `runInTenantTransaction` really does
+     * open a `withTenant` transaction rather than reusing an ambient one, and a
+     * bare `jest.fn()` here would silently void every assertion inside it
+     * (backend/CLAUDE.md 8). withTenant issues its own `SELECT set_config(...)`
+     * through this same `execute`, which lands in `executeArgs` carrying the
+     * requesting org — so the isolation assertions below still hold: the
+     * attacker's org appears and the owner's never does.
+     */
+    const db: Record<string, unknown> = {
+      execute: jest.fn().mockImplementation((sqlObj: unknown) => {
+        executeArgs.push(sqlObj);
+        return Promise.resolve(hasContent ? [{ one: 1 }] : []);
+      }),
     };
+    db.transaction = jest.fn().mockImplementation((fn: (tx: unknown) => unknown) => fn(db));
+    return { db: db as unknown as Db, executeArgs };
   }
 
   it("scopes indexed-content check to the requesting org (cross-tenant isolation)", async () => {
     const { db, executeArgs } = makeDb(false);
-    const svc = new KbAskService(db, aiGateway, events, search, access);
+    const svc = new KbAskService(db, aiGateway, events, search, access, new KbCitationVisibilityService(db, access, search));
 
     await svc.ask(makeUser(ATTACKER), { question: "test?" } as never);
 
@@ -51,7 +61,7 @@ describe("KbAskService — cross-tenant isolation", () => {
 
   it("returns no-context answer for the owning org when no content exists (same-tenant control)", async () => {
     const { db } = makeDb(false);
-    const svc = new KbAskService(db, aiGateway, events, search, access);
+    const svc = new KbAskService(db, aiGateway, events, search, access, new KbCitationVisibilityService(db, access, search));
 
     const result = await svc.ask(makeUser(OWNER), { question: "test?" } as never);
 

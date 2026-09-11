@@ -4,13 +4,13 @@ import {
   OrganizationActorError,
   organizationActorHttpError,
 } from "../../../common/organization/organization-actor";
-import { and, gt, eq, gte, lte } from "drizzle-orm";
+import { and, gt, eq, gte, inArray, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { organizationMembers, timesheetPeriods, timesheetSettings, userDelegations } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { resolveApprovalScope, applyMembershipScope } from "./timesheets-core-scope";
+import { resolveApprovalScope, membershipScope } from "./timesheets-core-scope";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
@@ -27,7 +27,6 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 // ApprovalsBulkService, PeriodsService and PeriodsSubmitService import them from here.
 export {
   LIFECYCLE_RETURNING,
-  isExpectedApprovalSkip,
   lifecyclePayload,
   membershipUserIds,
   periodOwnerUserIdOrWarn,
@@ -53,31 +52,40 @@ export class ApprovalsService {
     return s;
   }
 
-  private async hasActiveDelegation(
+  /**
+   * The delegators who have an active delegation to this actor, out of a bounded
+   * set of approvers. A bulk endpoint resolves the whole page in one indexed
+   * multi-key read instead of one probe per period.
+   */
+  async activeDelegationsToActor(
     orgId: string,
-    approverMembershipId: number,
     actorMembershipId: number,
-  ): Promise<boolean> {
-    const [row] = await this.db
-      .select({ id: userDelegations.id })
+    approverMembershipIds: readonly number[],
+  ): Promise<ReadonlySet<number>> {
+    const wanted = [...new Set(approverMembershipIds)];
+    if (wanted.length === 0) return new Set<number>();
+    const now = new Date();
+    const rows = await this.db
+      .select({ delegatorMembershipId: userDelegations.delegatorMembershipId })
       .from(userDelegations)
       .where(
         and(
           eq(userDelegations.orgId, orgId),
-          eq(userDelegations.delegatorMembershipId, approverMembershipId),
+          inArray(userDelegations.delegatorMembershipId, wanted),
           eq(userDelegations.delegateeMembershipId, actorMembershipId),
           eq(userDelegations.status, "ACTIVE"),
-          lte(userDelegations.startsAt, new Date()),
-          gt(userDelegations.endsAt, new Date()),
+          lte(userDelegations.startsAt, now),
+          gt(userDelegations.endsAt, now),
         ),
       )
-      .limit(1);
-    return !!row;
+      .limit(wanted.length);
+    return new Set(rows.map((row) => row.delegatorMembershipId));
   }
 
   async assertCanActOnPeriod(
     u: CurrentUserContext,
     period: { userMembershipId: number | null; currentApproverMembershipId: number | null },
+    resolvedDelegations?: ReadonlySet<number>,
   ): Promise<void> {
     const membershipId = actingMembershipId(u.principal);
     const actor = {
@@ -92,11 +100,14 @@ export class ApprovalsService {
       period.userMembershipId !== membershipId &&
       membershipId !== null
     ) {
-      delegateeOfApprover = await this.hasActiveDelegation(
-        u.orgId,
-        period.currentApproverMembershipId,
-        membershipId,
-      );
+      delegateeOfApprover =
+        resolvedDelegations !== undefined
+          ? resolvedDelegations.has(period.currentApproverMembershipId)
+          : (
+              await this.activeDelegationsToActor(u.orgId, membershipId, [
+                period.currentApproverMembershipId,
+              ])
+            ).has(period.currentApproverMembershipId);
     }
 
     const decision = canActOnPeriod(actor, period, { delegateeOfApprover });
@@ -106,18 +117,13 @@ export class ApprovalsService {
   }
 
   async listApprovals(u: CurrentUserContext, query: ApprovalsQuery) {
-    const scope = await resolveApprovalScope(this.access, u);
+    const read = await resolveApprovalScope(this.access, u);
     const limit = Math.min(query.limit, 100);
     const pos = decodeCursor(query.cursor);
     const membershipId = actingMembershipId(u.principal);
 
-    const conditions = [
-      eq(timesheetPeriods.orgId, u.orgId),
-      eq(timesheetPeriods.status, query.status),
-      applyMembershipScope(scope, membershipId, timesheetPeriods.userMembershipId),
-    ];
-
-    if (query.userId && (scope === "all" || u.isOrgOwner)) {
+    let requestedMembershipId: number | undefined;
+    if (query.userId && (read.discriminator === "all" || u.isOrgOwner)) {
       const [qMember] = await this.db
         .select({ id: organizationMembers.id })
         .from(organizationMembers)
@@ -128,35 +134,43 @@ export class ApprovalsService {
           ),
         )
         .limit(1);
-      if (qMember) conditions.push(eq(timesheetPeriods.userMembershipId, qMember.id));
+      if (qMember) requestedMembershipId = qMember.id;
     }
-    if (query.startDate)
-      conditions.push(gte(timesheetPeriods.periodStart, query.startDate));
-    if (query.endDate)
-      conditions.push(lte(timesheetPeriods.periodEnd, query.endDate));
-    if (pos)
-      conditions.push(
-        keysetBeforeId(timesheetPeriods.submittedAt, timesheetPeriods.id, pos),
-      );
 
-    const rows = await listApprovalRows(this.db, conditions, limit);
+    return read.read(
+      {
+        tenant: timesheetPeriods.orgId,
+        scope: membershipScope(membershipId, timesheetPeriods.userMembershipId),
+        and: [
+          eq(timesheetPeriods.status, query.status),
+          requestedMembershipId !== undefined ? eq(timesheetPeriods.userMembershipId, requestedMembershipId) : undefined,
+          query.startDate ? gte(timesheetPeriods.periodStart, query.startDate) : undefined,
+          query.endDate ? lte(timesheetPeriods.periodEnd, query.endDate) : undefined,
+          pos ? keysetBeforeId(timesheetPeriods.submittedAt, timesheetPeriods.id, pos) : undefined,
+        ],
+      },
+      async ({ sql: where }) => {
+        const rows = await listApprovalRows(this.db, [where], limit);
 
-    const page = buildCursorPage(rows, limit, (r) => ({
-      sortValue: (r.submittedAt ?? r.createdAt).toISOString(),
-      id: String(r.id),
-    }));
+        const page = buildCursorPage(rows, limit, (r) => ({
+          sortValue: (r.submittedAt ?? r.createdAt).toISOString(),
+          id: String(r.id),
+        }));
 
-    return {
-      data: page.data.map((r) => ({
-        ...r,
-        user: {
-          membershipId: r.userMembershipId,
-          name: r.userName ?? r.userEmail,
-          email: r.userEmail,
-        },
-      })),
-      pagination: page.pagination,
-    };
+        return {
+          data: page.data.map((r) => ({
+            ...r,
+            user: {
+              membershipId: r.userMembershipId,
+              name: r.userName ?? r.userEmail,
+              email: r.userEmail,
+            },
+          })),
+          pagination: page.pagination,
+        };
+      },
+      () => ({ data: [], pagination: { limit, hasMore: false, nextCursor: null } }),
+    );
   }
 
   async approveSinglePeriod(u: CurrentUserContext, periodId: number) {
@@ -229,16 +243,11 @@ export class ApprovalsService {
      * membership no longer resolves.
      */
     if (ownerUserId) {
-      await this.notifications.emit({
-        orgId: u.orgId,
-        eventKey: "timesheets.period.approved",
-        actorUserId: u.userId,
-        targetUserIds: [ownerUserId],
-        entityType: "timesheet_period",
-        entityId: String(periodId),
+      await this.notifyPeriodApproved(u, {
+        periodId,
+        ownerUserId,
         title: `Timesheet approved: ${period.periodStart} to ${period.periodEnd}`,
         message: `Your timesheet for ${period.periodStart}–${period.periodEnd} (${period.totalHours}h) was approved.`,
-        link: `/timesheets/my-time?period=${periodId}`,
         variables: {
           periodId,
           periodStart: period.periodStart,
@@ -252,6 +261,35 @@ export class ApprovalsService {
   async approvePeriod(u: CurrentUserContext, periodId: number) {
     await this.approveSinglePeriod(u, periodId);
     return readApprovedPeriod(this.db, u.orgId, periodId);
+  }
+
+  /**
+   * TS-24. The worker hears that their week was signed off. Sent after the
+   * approving transaction commits, by the single approval above and once per
+   * worker by `ApprovalsBulkService.bulkApprove`.
+   */
+  async notifyPeriodApproved(
+    u: CurrentUserContext,
+    notice: {
+      periodId: number;
+      ownerUserId: string;
+      title: string;
+      message: string;
+      variables: Record<string, unknown>;
+    },
+  ): Promise<void> {
+    await this.notifications.emit({
+      orgId: u.orgId,
+      eventKey: "timesheets.period.approved",
+      actorUserId: u.userId,
+      targetUserIds: [notice.ownerUserId],
+      entityType: "timesheet_period",
+      entityId: String(notice.periodId),
+      title: notice.title,
+      message: notice.message,
+      link: `/timesheets/my-time?period=${notice.periodId}`,
+      variables: notice.variables,
+    });
   }
 
   /**

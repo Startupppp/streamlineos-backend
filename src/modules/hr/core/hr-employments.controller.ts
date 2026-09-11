@@ -34,6 +34,11 @@ import {
 } from "./dto/hr-core.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  employmentRowSchema,
+  employmentListPageSchema,
+} from "./dto/core-response.schemas";
 
 const employmentIdParams = z.object({ employmentId: z.coerce.number().int().positive() }).strict();
 
@@ -48,6 +53,7 @@ export class HrEmploymentsController {
   ) {}
 
   @Get()
+  @ResponseSchema(employmentListPageSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
   @Validate({ query: listEmploymentsSchema })
@@ -55,24 +61,15 @@ export class HrEmploymentsController {
     @Query() query: ListEmploymentsInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const scope = await resolveEmployeesScope(this.access, currentUser);
-    if (query.page !== undefined) {
-      return this.employeeRecordLists.listEmploymentsPage(
-        currentUser.orgId,
-        currentUser.userId,
-        { page: query.page, limit: query.limit },
-        scope,
-      );
-    }
+    const read = await resolveEmployeesScope(this.access, currentUser);
     return this.employeeRecordLists.listEmploymentsCursor(
-      currentUser.orgId,
-      currentUser.userId,
+      read,
       { cursor: query.cursor, limit: query.limit },
-      scope,
     );
   }
 
   @Get(":employmentId")
+  @ResponseSchema(employmentRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
   @Validate({ params: employmentIdParams })
@@ -80,19 +77,15 @@ export class HrEmploymentsController {
     @Param("employmentId", ParseIntPipe) employmentId: number,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const scope = await resolveEmployeesScope(this.access, currentUser);
-    return this.employments.getOne(
-      currentUser.orgId,
-      currentUser.userId,
-      employmentId,
-      scope,
-    );
+    const read = await resolveEmployeesScope(this.access, currentUser);
+    return this.employments.getOne(read, employmentId);
   }
 
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @HttpCode(201)
+  @ResponseSchema(employmentRowSchema)
   @Validate({ body: createEmploymentSchema })
   create(
     @Body() body: CreateEmploymentInput,
@@ -106,6 +99,7 @@ export class HrEmploymentsController {
   }
 
   @Patch(":employmentId")
+  @ResponseSchema(employmentRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @Validate({ params: employmentIdParams, body: updateEmploymentSchema })
@@ -123,6 +117,7 @@ export class HrEmploymentsController {
   }
 
   @Post(":employmentId/transition")
+  @ResponseSchema(employmentRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @HttpCode(200)
@@ -142,6 +137,7 @@ export class HrEmploymentsController {
 
   @Delete(":employmentId")
   @HttpCode(204)
+  @NoContentResponse()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @Validate({ params: employmentIdParams })

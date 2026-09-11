@@ -24,7 +24,7 @@ function makeChain(rows: unknown[] = []): ChainMethods {
 
 function makeCountChain(value: number): ChainMethods {
   const chain: ChainMethods = {};
-  for (const method of ["from", "where"]) {
+  for (const method of ["from", "innerJoin", "where"]) {
     chain[method] = jest.fn().mockImplementation(
       () => (method === "where" ? Promise.resolve([{ cnt: value }]) : chain),
     );
@@ -69,9 +69,28 @@ function makeAccess(mailPermission: boolean, approvalPermission = false): Access
   } as unknown as AccessService;
 }
 
+/**
+ * The unread badge is `MailService.countUnread` now, not a `listMessages` scan
+ * the caller counts itself, so the double has to answer at that boundary. It
+ * implements the real service's COLD path — count `!isRead` over the scan, and
+ * call the answer exact only when the scan did not fill its page — because that
+ * is the behaviour these properties are about; the mirrored path returns
+ * `exact: true` unconditionally and would make the boundary assertions vacuous.
+ */
+function scanUnread(messages: unknown[]) {
+  return jest.fn().mockImplementation(
+    (_orgId: string, _userId: string, _membershipId: number | null, _folder: string, scanLimit: number) =>
+      Promise.resolve({
+        unread: messages.filter((m) => (m as { isRead?: boolean }).isRead !== true).length,
+        exact: messages.length < scanLimit,
+      }),
+  );
+}
+
 function makeMail(messages: unknown[] = [], nextCursor: string | null = null): MailService {
   return {
     listMessages: jest.fn().mockResolvedValue({ messages, nextCursor, accountErrors: [] }),
+    countUnread: scanUnread(messages),
   } as unknown as MailService;
 }
 
@@ -82,6 +101,7 @@ function makeMailWithUnread(unreadMessages: unknown[]): MailService {
       nextCursor: null,
       accountErrors: [],
     }),
+    countUnread: scanUnread(unreadMessages),
   } as unknown as MailService;
 }
 

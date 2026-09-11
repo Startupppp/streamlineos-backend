@@ -20,7 +20,7 @@ export const createCustomFieldSchema = z.object({
   category: z.string().trim().max(100).optional(),
   sortOrder: z.number().int().min(0).default(0),
   isActive: z.boolean().default(true),
-});
+}).strict();
 
 export const updateCustomFieldSchema = z.object({
   label: z.string().trim().min(1).max(150).optional(),
@@ -29,7 +29,7 @@ export const updateCustomFieldSchema = z.object({
   category: z.string().trim().max(100).nullable().optional(),
   sortOrder: z.number().int().min(0).optional(),
   isActive: z.boolean().optional(),
-});
+}).strict();
 
 export const customFieldValueSchema = z.object({
   fieldId: z.number().int().positive(),
@@ -45,7 +45,7 @@ export const listTicketsSchema = z.object({
   snoozed: z.enum(["true", "false"]).optional().transform((v) => (v === undefined ? undefined : v === "true")),
   page: pageNumberField,
   limit: pageSizeField(50, 100),
-});
+}).strict();
 
 export const createTicketSchema = z.object({
   title: z
@@ -63,7 +63,7 @@ export const createTicketSchema = z.object({
   priority: ticketPrioritySchema.optional(),
   assigneeId: z.string().optional(),
   customFields: z.array(customFieldValueSchema).max(50).optional(),
-});
+}).strict();
 
 export const updateTicketSchema = z.object({
   status: ticketStatusSchema.optional(),
@@ -72,7 +72,7 @@ export const updateTicketSchema = z.object({
   queueId: z.number().int().positive().nullable().optional(),
   expectedUpdatedAt: z.coerce.date().optional(),
   customFields: z.array(customFieldValueSchema).max(50).optional(),
-});
+}).strict();
 
 const TICKET_ATTACHMENT_MAX_FILE_SIZE = 10 * 1024 * 1024;
 
@@ -110,12 +110,12 @@ export const replyMessageSchema = z.object({
     )
     .max(10, "Too many attachments")
     .optional(),
-});
+}).strict();
 
 export const listMacrosSchema = z.object({
   category: z.string().trim().optional(),
   search: z.string().trim().optional(),
-});
+}).strict();
 
 const macroVisibilitySchema = z.enum(["org", "team", "private"]);
 
@@ -132,7 +132,7 @@ export const createMacroSchema = z.object({
   category: z.string().trim().max(100).optional(),
   visibility: macroVisibilitySchema.default("org"),
   actions: macroActionsSchema.default({}),
-});
+}).strict();
 
 export const updateMacroSchema = z.object({
   title: z.string().trim().min(1).max(150).optional(),
@@ -140,11 +140,11 @@ export const updateMacroSchema = z.object({
   category: z.string().trim().max(100).nullable().optional(),
   visibility: macroVisibilitySchema.optional(),
   actions: macroActionsSchema.optional(),
-});
+}).strict();
 
 export const applyMacroSchema = z.object({
   ticketId: z.number().int().positive(),
-});
+}).strict();
 
 const routingConditionSchema = z.object({
   field: z.string().trim().min(1).max(50),
@@ -162,7 +162,10 @@ export const assignmentModeSchema = z.enum([
 
 export const createRoutingRuleSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(100),
-  conditions: z.array(routingConditionSchema).min(1, "At least one condition is required"),
+  // Capped for the same reason `candidateAgentIds` below is: this is an
+  // attacker-sized array that becomes per-ticket routing work on every inbound
+  // ticket. The `*Ids` sibling was capped because the gate could see its name.
+  conditions: z.array(routingConditionSchema).min(1, "At least one condition is required").max(50),
   assigneeId: z.string().trim().min(1).optional(),
   setPriority: ticketPrioritySchema.optional(),
   assignmentMode: assignmentModeSchema.default("static"),
@@ -170,11 +173,11 @@ export const createRoutingRuleSchema = z.object({
   requiredSkills: z.array(z.string().trim().min(1).max(50)).max(20).default([]),
   isEnabled: z.boolean().default(true),
   sortOrder: z.number().int().min(0).default(0),
-});
+}).strict();
 
 export const updateRoutingRuleSchema = z.object({
   name: z.string().trim().min(1).max(100).optional(),
-  conditions: z.array(routingConditionSchema).min(1).optional(),
+  conditions: z.array(routingConditionSchema).min(1).max(50).optional(),
   assigneeId: z.string().trim().min(1).nullable().optional(),
   setPriority: ticketPrioritySchema.nullable().optional(),
   assignmentMode: assignmentModeSchema.optional(),
@@ -182,19 +185,19 @@ export const updateRoutingRuleSchema = z.object({
   requiredSkills: z.array(z.string().trim().min(1).max(50)).max(20).optional(),
   isEnabled: z.boolean().optional(),
   sortOrder: z.number().int().min(0).optional(),
-});
+}).strict();
 
 export const setAgentSkillsSchema = z.object({
   skills: z.array(z.string().trim().min(1).max(50)).max(50),
-});
+}).strict();
 
 export const setAgentAvailabilitySchema = z.object({
   isAvailable: z.boolean(),
-});
+}).strict();
 
 export const addVipClientSchema = z.object({
   clientId: z.coerce.number().int().positive(),
-});
+}).strict();
 
 export const createQueueSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(100),
@@ -202,7 +205,7 @@ export const createQueueSchema = z.object({
   filter: z.record(z.string(), z.unknown()).default({}),
   sortOrder: z.number().int().min(0).default(0),
   isDefault: z.boolean().default(false),
-});
+}).strict();
 
 export const updateQueueSchema = z.object({
   name: z.string().trim().min(1).max(100).optional(),
@@ -210,7 +213,7 @@ export const updateQueueSchema = z.object({
   filter: z.record(z.string(), z.unknown()).optional(),
   sortOrder: z.number().int().min(0).optional(),
   isDefault: z.boolean().optional(),
-});
+}).strict();
 
 export const savedViewVisibilitySchema = z.enum(["personal", "team", "global"]);
 
@@ -219,41 +222,41 @@ export const createSavedViewSchema = z.object({
   filter: z.record(z.string(), z.unknown()).default({}),
   visibility: savedViewVisibilitySchema.default("personal"),
   sortOrder: z.number().int().min(0).default(0),
-});
+}).strict();
 
 export const updateSavedViewSchema = z.object({
   name: z.string().trim().min(1).max(100).optional(),
   filter: z.record(z.string(), z.unknown()).optional(),
   visibility: savedViewVisibilitySchema.optional(),
   sortOrder: z.number().int().min(0).optional(),
-});
+}).strict();
 
 export const createTagSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(50),
   color: z.string().trim().max(20).optional(),
-});
+}).strict();
 
 export const ticketLinkRelationSchema = z.enum(["duplicate", "related", "split"]);
 
 export const createTicketLinkSchema = z.object({
   linkedTicketId: z.number().int().positive(),
   relation: ticketLinkRelationSchema,
-});
+}).strict();
 
 export const mergeTicketSchema = z.object({
   intoTicketId: z.number().int().positive(),
-});
+}).strict();
 
 export const snoozeTicketSchema = z.object({
   snoozedUntil: z.coerce.date().refine((d) => d.getTime() > Date.now(), "Snooze date must be in the future"),
-});
+}).strict();
 
 export const externalEntityTypeSchema = z.enum(["project", "invoice", "calendar_event", "chat_channel"]);
 
 export const createExternalLinkSchema = z.object({
   entityType: externalEntityTypeSchema,
   entityId: z.number().int().positive(),
-});
+}).strict();
 
 export const splitTicketSchema = z.object({
   title: z
@@ -262,12 +265,12 @@ export const splitTicketSchema = z.object({
     .min(5, "Title must be at least 5 characters")
     .max(150, "Title must be at most 150 characters"),
   description: z.string().max(5000).optional(),
-});
+}).strict();
 
 export const upsertDraftSchema = z.object({
   body: z.string().max(10000),
   isInternal: z.boolean().default(false),
-});
+}).strict();
 
 export const PORTAL_TICKET_CATEGORIES = [
   "general",
@@ -298,7 +301,7 @@ export const createPortalTicketSchema = z.object({
     .max(5)
     .optional(),
   customFields: z.array(customFieldValueSchema).max(50).optional(),
-});
+}).strict();
 
 export const createPortalMessageSchema = z.object({
   body: z.string().trim().min(1, "Message is required").max(5000),
@@ -313,7 +316,7 @@ export const createPortalMessageSchema = z.object({
     )
     .max(5)
     .optional(),
-});
+}).strict();
 
 export const supportChannelTypeSchema = z.enum(["email", "chat", "whatsapp", "sms"]);
 
@@ -322,13 +325,14 @@ export const createSupportChannelSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(100),
   config: z.record(z.string(), z.unknown()).default({}),
   isActive: z.boolean().default(true),
-});
+}).strict();
 
 export const updateSupportChannelSchema = z.object({
   name: z.string().trim().min(1).max(100).optional(),
   config: z.record(z.string(), z.unknown()).optional(),
   isActive: z.boolean().optional(),
-});
+  rotateInboundSecret: z.boolean().optional(),
+}).strict();
 
 export const inboundEmailSchema = z.object({
   messageId: z.string().trim().min(1, "messageId is required").max(998),
@@ -348,7 +352,7 @@ export const inboundEmailSchema = z.object({
     )
     .max(10)
     .optional(),
-});
+}).strict();
 
 export const inboundWhatsAppSchema = z.object({
   messageId: z.string().trim().min(1, "messageId is required").max(998),
@@ -356,28 +360,28 @@ export const inboundWhatsAppSchema = z.object({
   from: z.string().trim().min(1, "from is required").max(32),
   fromName: z.string().trim().max(200).optional(),
   bodyText: z.string().max(4096),
-});
+}).strict();
 
 export const inboundSmsSchema = z.object({
   messageId: z.string().trim().min(1, "messageId is required").max(998),
   from: z.string().trim().min(1, "from is required").max(32),
   bodyText: z.string().max(1600),
-});
+}).strict();
 
 export const startChatSessionSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(200),
   email: z.string().trim().email().max(320).optional(),
   message: z.string().trim().min(1, "Message is required").max(4000),
-});
+}).strict();
 
 export const sendChatMessageSchema = z.object({
   body: z.string().trim().min(1, "Message is required").max(4000),
-});
+}).strict();
 
 export const submitCsatSchema = z.object({
   score: z.number().int().min(1).max(5),
   comment: z.string().trim().max(2000).optional(),
-});
+}).strict();
 
 export type TicketStatus = z.infer<typeof ticketStatusSchema>;
 export type TicketPriority = z.infer<typeof ticketPrioritySchema>;
@@ -385,6 +389,7 @@ export type ListTicketsInput = z.infer<typeof listTicketsSchema>;
 export type CreateTicketInput = z.infer<typeof createTicketSchema>;
 export type UpdateTicketInput = z.infer<typeof updateTicketSchema>;
 export type ReplyMessageInput = z.infer<typeof replyMessageSchema>;
+export type TicketAttachmentInput = NonNullable<ReplyMessageInput["attachments"]>[number];
 export type ListMacrosInput = z.infer<typeof listMacrosSchema>;
 export type CreateMacroInput = z.infer<typeof createMacroSchema>;
 export type UpdateMacroInput = z.infer<typeof updateMacroSchema>;

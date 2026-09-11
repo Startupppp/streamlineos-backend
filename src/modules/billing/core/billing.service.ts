@@ -22,11 +22,11 @@ import {
 import { BillingCoupons } from "./billing-coupons";
 import {
   type BillingCycle,
+  type ConfirmCheckoutInput,
   type CreateCouponInput,
   type Plan,
   type UpdateBillingProfileInput,
   type UpdateCouponInput,
-  type VerifyPaymentInput,
 } from "./dto/billing.schemas";
 import { buildPlanCatalog, TRIAL_PLAN } from "./plan-entitlements.constants";
 import { ExternalEffectLedger } from "../../../common/outbox/external-effect-ledger";
@@ -73,11 +73,7 @@ export class BillingService {
       paymentWebhooks: this.paymentWebhooks,
       paymentNotices: this.paymentNotices,
     });
-    this.marketplace = new BillingMarketplace(
-      this.aiCredits,
-      this.providers,
-      this.paymentActivation.currencyForOrg.bind(this.paymentActivation),
-    );
+    this.marketplace = new BillingMarketplace(this.aiCredits, this.providers);
     this.accountOverview = new BillingAccountOverview(
       this.db,
       this.planLimits,
@@ -106,7 +102,7 @@ export class BillingService {
     const adapter = await this.providers.resolveConfigured(orgId);
     return {
       subscription: subscription ?? null,
-      razorpayKeyId: adapter?.publicKeyId() ?? null,
+      publicKeyId: adapter?.publicKeyId() ?? null,
       isConfigured: adapter?.isReady() ?? false,
     };
   }
@@ -124,7 +120,7 @@ export class BillingService {
   async verifyAndActivate(
     orgId: string,
     userId: string,
-    input: VerifyPaymentInput,
+    input: ConfirmCheckoutInput,
   ) {
     return this.paymentActivation.verifyAndActivate(orgId, userId, input);
   }
@@ -133,20 +129,20 @@ export class BillingService {
     return this.couponAdmin.validate(code, orgId, plan);
   }
 
-  listCoupons() {
-    return this.couponAdmin.list();
+  listCoupons(orgId: string) {
+    return this.couponAdmin.list(orgId);
   }
 
-  createCoupon(data: CreateCouponInput) {
-    return this.couponAdmin.create(data);
+  createCoupon(orgId: string, data: CreateCouponInput) {
+    return this.couponAdmin.create(orgId, data);
   }
 
-  updateCoupon(id: number, data: UpdateCouponInput) {
-    return this.couponAdmin.update(id, data);
+  updateCoupon(orgId: string, id: number, data: UpdateCouponInput) {
+    return this.couponAdmin.update(orgId, id, data);
   }
 
-  deleteCoupon(id: number) {
-    return this.couponAdmin.remove(id);
+  deleteCoupon(orgId: string, id: number) {
+    return this.couponAdmin.remove(orgId, id);
   }
 
 
@@ -159,16 +155,15 @@ export class BillingService {
     return this.webhooks.handle(orgId, providerKey, rawBody, signature);
   }
 
-  handleRazorpayWebhook(
-    orgId: string,
-    rawBody: string,
-    signature: string,
-  ): Promise<WebhookResult> {
-    return this.webhooks.handle(orgId, "razorpay", rawBody, signature);
-  }
-
   listProvisioningFailures(orgId: string) {
     return this.webhooks.listProvisioningFailures(orgId);
+  }
+
+  redriveStuckProviderEvents(
+    orgId: string,
+    window: { minAgeMs: number; maxAgeMs: number; limit: number },
+  ) {
+    return this.webhooks.redriveUnprocessed(orgId, window);
   }
 
   getPlans() {

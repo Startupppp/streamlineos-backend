@@ -1,35 +1,26 @@
-import { Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
+import { Inject, Injectable, Optional } from "@nestjs/common";
+import { Redis } from "@upstash/redis";
 import { InsufficientAiCreditsException } from "../../../../common/http/api-exceptions";
-import { and, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
-import {
-  kbArticleAttachments,
-  kbArticleChunks,
-  kbArticles,
-  kbEvents,
-  kbSpaces,
-} from "../../../../db/schema";
-import { DRIZZLE } from "../../../../db/drizzle.constants";
-import { type Db } from "../../../../db/drizzle.module";
-import { EmbeddingsService } from "../providers/embeddings.service";
+import { streamText, type ToolSet } from "ai";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
-import { assertOrganizationActor } from "../../../../common/organization/organization-actor";
-import {
-  runInTenantTransaction,
-  runInNewTenantTransaction,
-} from "../../../../common/tenant/run-in-tenant-transaction";
+import { AI_CREDIT_LEDGER, type AiCreditLedger } from "../gateway/credit-ledger.interface";
+import { AiUsageService } from "./ai-usage.service";
+import { settleStream } from "../gateway/ai-gateway-stream-credit";
+import { getReserveEstimateMilli } from "../billing/ai-cost-catalog";
+import { resolveChatModel, resolveChatModelId } from "./chat-assistant-model";
+import { logger } from "../../../../common/logger/logger.service";
+import { KbRagRetrievalService, type KbAnswerSource } from "./kb-rag-retrieval.service";
+import { AiConcurrencyLimiter } from "../gateway/ai-concurrency-limiter";
+import { REDIS } from "../../../../common/cache/cache.service";
+import { AiStreamBreaker } from "../streaming/ai-stream-breaker";
+import { aiReservationIdempotencyKey } from "../streaming/ai-request-abort";
+import { resolveLlmRetryPolicy } from "../providers/llm-retry";
+import { AiCallMetrics } from "../telemetry/ai-call-metrics";
+import { AiConcurrencyLimitException, AiProviderUnavailableException } from "./ai-service-exceptions";
 
-const DEFAULT_TOP_K = 6;
-const SEARCH_POOL_K = DEFAULT_TOP_K * 4;
-const MIN_DISPLAY_SIMILARITY = 0.2;
-
-export interface KbAnswerSource {
-  articleId: number;
-  title: string;
-  slug: string;
-  attachmentId: number | null;
-  attachmentName: string | null;
-  similarity: number;
-}
+const KB_RAG_STREAM_FEATURE = "kb.public-ask";
+const KB_BREAKER_MESSAGE = "AI assistant is temporarily unavailable";
+const KB_NO_CONTEXT_ANSWER = "I couldn't find anything related to that in the knowledge base yet.";
 
 export interface KbAnswer {
   answer: string;
@@ -37,17 +28,13 @@ export interface KbAnswer {
   hasContext: boolean;
 }
 
-interface KbSearchResult {
-  id: number;
-  articleId: number;
-  attachmentId: number | null;
-  source: string;
-  content: string;
-  title: string;
-  slug: string;
-  attachmentName: string | null;
-  similarity: number;
-}
+export type KbStreamAnswer =
+  | { hasContext: false; answer: string; sources: KbAnswerSource[] }
+  | {
+      hasContext: true;
+      stream: ReturnType<typeof streamText<ToolSet>>;
+      sources: KbAnswerSource[];
+    };
 
 interface AnswerOptions {
   orgId: string;
@@ -55,188 +42,218 @@ interface AnswerOptions {
   articleId?: number;
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
+}
+
 @Injectable()
 export class KbRagService {
-  private readonly logger = new Logger(KbRagService.name);
+  private readonly breaker: AiStreamBreaker;
 
   constructor(
-    @Inject(DRIZZLE) private readonly db: Db,
-    private readonly embeddings: EmbeddingsService,
+    private readonly retrieval: KbRagRetrievalService,
     private readonly aiGateway: AiGatewayService,
-  ) {}
-
-  isEmbeddingConfigured(): boolean {
-    return this.embeddings.isConfigured();
-  }
-
-  // Runs the vector search inside a transaction using a precomputed embedding vector.
-  // All access predicates (tenant scope, published/public status, space audience) are unchanged.
-  private async fetchChunks(
-    orgId: string,
-    vector: string,
-    articleId?: number,
-  ): Promise<KbSearchResult[]> {
-    return runInTenantTransaction(
-      this.db,
-      async (tx) => {
-        const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
-        const conditions: SQL[] = [
-          eq(kbArticleChunks.orgId, orgId),
-          eq(kbArticles.status, "published"),
-          eq(kbArticles.visibility, "public"),
-          inArray(kbSpaces.audience, ["public", "mixed"]),
-          isNull(kbSpaces.deletedAt),
-        ];
-        if (articleId !== undefined) conditions.push(eq(kbArticleChunks.articleId, articleId));
-
-        const pool = await tx
-          .select({
-            id: kbArticleChunks.id,
-            articleId: kbArticles.id,
-            attachmentId: kbArticleChunks.attachmentId,
-            source: kbArticleChunks.source,
-            content: kbArticleChunks.content,
-            title: kbArticles.title,
-            slug: kbArticles.slug,
-            attachmentName: kbArticleAttachments.fileName,
-            similarity: sql<number>`(1 - (${distance}))::float8`,
-          })
-          .from(kbArticleChunks)
-          .innerJoin(kbArticles, eq(kbArticles.id, kbArticleChunks.articleId))
-          .innerJoin(kbSpaces, eq(kbArticles.spaceId, kbSpaces.id))
-          .leftJoin(kbArticleAttachments, eq(kbArticleAttachments.id, kbArticleChunks.attachmentId))
-          .where(and(...conditions))
-          .orderBy(distance)
-          .limit(SEARCH_POOL_K);
-
-        return pool.slice(0, DEFAULT_TOP_K);
-      },
-      { orgId },
-    );
-  }
-
-  private dedupeSources(results: KbSearchResult[]): KbAnswerSource[] {
-    const seen = new Set<string>();
-    const sources: KbAnswerSource[] = [];
-    for (const r of results) {
-      if (r.similarity < MIN_DISPLAY_SIMILARITY) continue;
-      const key = `${r.articleId}:${r.attachmentId ?? "body"}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      sources.push({
-        articleId: r.articleId,
-        title: r.title,
-        slug: r.slug,
-        attachmentId: r.attachmentId,
-        attachmentName: r.attachmentName,
-        similarity: r.similarity,
-      });
-    }
-    return sources;
-  }
-
-  private async hasPublishedPublicArticles(orgId: string): Promise<boolean> {
-    return runInTenantTransaction(
-      this.db,
-      async (tx) => {
-        const [row] = await tx
-          .select({ id: kbArticles.id })
-          .from(kbArticles)
-          .innerJoin(kbSpaces, eq(kbArticles.spaceId, kbSpaces.id))
-          .where(
-            and(
-              eq(kbArticles.orgId, orgId),
-              eq(kbArticles.status, "published"),
-              eq(kbArticles.visibility, "public"),
-              inArray(kbSpaces.audience, ["public", "mixed"]),
-              isNull(kbSpaces.deletedAt),
-            ),
-          )
-          .limit(1);
-        return Boolean(row);
-      },
-      { orgId },
-    );
-  }
-
-  private recordNoContext(orgId: string, question: string): void {
-    void runInNewTenantTransaction(this.db, orgId, async (tx) => {
-      await tx.insert(kbEvents).values({
-        orgId,
-        eventType: "ai_answer_no_context",
-        query: question,
-      });
-    }).catch((err: unknown) => {
-      this.logger.warn(`Failed to record ai_answer_no_context event: ${err}`);
+    @Inject(AI_CREDIT_LEDGER) private readonly ledger: AiCreditLedger,
+    private readonly usageSvc: AiUsageService,
+    private readonly concurrencyLimiter: AiConcurrencyLimiter,
+    @Optional() @Inject(REDIS) private readonly redis: Redis | null = null,
+  ) {
+    this.breaker = new AiStreamBreaker({
+      key: "kb",
+      unavailableMessage: KB_BREAKER_MESSAGE,
+      redis: this.redis,
     });
   }
 
+  isEmbeddingConfigured(): boolean {
+    return this.retrieval.isEmbeddingConfigured();
+  }
+
   private async runAnswer(opts: AnswerOptions): Promise<KbAnswer> {
-    // Embedding call is outside any transaction — it is slow and must not pin a pooled connection.
-    const vector = this.embeddings.toVectorLiteral(
-      await this.embeddings.embedQuery(opts.question),
-    );
-
-    const results = await this.fetchChunks(opts.orgId, vector, opts.articleId);
-
-    if (results.length === 0) {
-      this.recordNoContext(opts.orgId, opts.question);
-      return {
-        answer: "I couldn't find anything related to that in the knowledge base yet.",
-        sources: [],
-        hasContext: false,
-      };
+    const ctx = await this.retrieval.retrieveContext(opts.orgId, opts.question, opts.articleId);
+    if (!ctx) {
+      this.retrieval.recordNoContext(opts.orgId, opts.question);
+      return { answer: KB_NO_CONTEXT_ANSWER, sources: [], hasContext: false };
     }
 
-    const context = results
-      .map(
-        (r, i) =>
-          `[${i + 1}] ${r.title}${r.attachmentName ? ` — ${r.attachmentName}` : ""}\n${r.content}`,
-      )
-      .join("\n\n---\n\n");
+    const userMessage = `${ctx.userContext}\n\nQuestion: ${opts.question}`;
 
-    const system =
-      "You are a knowledge base assistant. Answer the user's question using ONLY the provided context excerpts. " +
-      "Be concise and accurate. Cite supporting excerpts inline using their bracket number, e.g. [1]. " +
-      "If the context does not contain the answer, clearly say you don't have that information in the knowledge base. " +
-      "Never invent facts that are not in the context.";
-
-    const user = `Context excerpts:\n\n${context}\n\nQuestion: ${opts.question}`;
-
-    // LLM call is outside any transaction.
     const gatewayResult = await this.aiGateway.invokeText({
       actor: { orgId: opts.orgId, userId: null },
       feature: "kb.public-ask",
       tier: "fast",
       maxTokens: 1024,
       charge: true,
-      prompt: { system, user },
+      prompt: { system: ctx.system, user: userMessage },
     });
 
     if (!gatewayResult.ok) {
-      if (gatewayResult.kind === "quota_exceeded") {
+      if (gatewayResult.kind === "quota_exceeded")
         throw new InsufficientAiCreditsException({ message: gatewayResult.message });
-      }
-      throw new ServiceUnavailableException("AI provider is temporarily unavailable");
+      if (gatewayResult.kind === "provider_unavailable") this.breaker.recordFailure();
+      throw new AiProviderUnavailableException();
     }
+
+    this.breaker.recordSuccess();
 
     return {
       answer: gatewayResult.data.trim(),
-      sources: this.dedupeSources(results),
+      sources: ctx.sources,
       hasContext: true,
     };
   }
 
   async answerQuestion(opts: AnswerOptions): Promise<KbAnswer> {
-    const hasArticles = await this.hasPublishedPublicArticles(opts.orgId);
+    await this.breaker.assertClosed();
+    const hasArticles = await this.retrieval.hasPublishedPublicArticles(opts.orgId);
     if (!hasArticles) {
-      this.recordNoContext(opts.orgId, opts.question);
+      this.retrieval.recordNoContext(opts.orgId, opts.question);
       return {
-        answer: "I couldn't find anything related to that in the knowledge base yet.",
+        answer: KB_NO_CONTEXT_ANSWER,
         sources: [],
         hasContext: false,
       };
     }
     return this.runAnswer(opts);
+  }
+
+  async streamAnswer(opts: AnswerOptions, signal?: AbortSignal): Promise<KbStreamAnswer> {
+    const call = AiCallMetrics.begin({
+      feature: KB_RAG_STREAM_FEATURE,
+      tier: "chat",
+      orgId: opts.orgId,
+    });
+    await this.breaker.assertClosed();
+    const hasArticles = await this.retrieval.hasPublishedPublicArticles(opts.orgId);
+    if (!hasArticles) {
+      this.retrieval.recordNoContext(opts.orgId, opts.question);
+      call.finish("ok", { promptTokens: 0, completionTokens: 0, creditsMilli: 0 });
+      return { hasContext: false, answer: KB_NO_CONTEXT_ANSWER, sources: [] };
+    }
+
+    const ctx = await this.retrieval.retrieveContext(
+      opts.orgId,
+      opts.question,
+      opts.articleId,
+      signal,
+    );
+    if (!ctx) {
+      this.retrieval.recordNoContext(opts.orgId, opts.question);
+      call.finish("ok", { promptTokens: 0, completionTokens: 0, creditsMilli: 0 });
+      return { hasContext: false, answer: KB_NO_CONTEXT_ANSWER, sources: [] };
+    }
+
+    const { sources, system, userContext } = ctx;
+    const userMessage = `${userContext}\n\nQuestion: ${opts.question}`;
+
+    const acquired = await call.queue(() => this.concurrencyLimiter.acquire(opts.orgId));
+    if (!acquired) {
+      call.finish("concurrency_exceeded");
+      throw new AiConcurrencyLimitException();
+    }
+
+    let concurrencyReleased = false;
+    const releaseConcurrency = () => {
+      if (concurrencyReleased) return;
+      concurrencyReleased = true;
+      this.concurrencyLimiter.release(opts.orgId);
+    };
+
+    let reservationId = 0;
+    try {
+      const reserveMilli = getReserveEstimateMilli(KB_RAG_STREAM_FEATURE);
+      const idempotencyKey = aiReservationIdempotencyKey(KB_RAG_STREAM_FEATURE, {
+        orgId: opts.orgId,
+        userId: null,
+      });
+      const reserved = await this.ledger.reserve({
+        orgId: opts.orgId,
+        userId: null,
+        feature: KB_RAG_STREAM_FEATURE,
+        credits: reserveMilli,
+        ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
+      });
+      reservationId = reserved.reservationId;
+    } catch (error) {
+      releaseConcurrency();
+      call.finish("quota_exceeded");
+      throw error;
+    }
+
+    let resolved = false;
+    const releaseReservation = (reason: string) => {
+      if (resolved) return;
+      resolved = true;
+      void this.ledger.release(reservationId, reason, opts.orgId).catch(() => undefined);
+    };
+
+    try {
+      const modelId = resolveChatModelId();
+      call.providerOpened();
+      const stream = streamText({
+        model: resolveChatModel(),
+        messages: [{ role: "user", content: userMessage }],
+        system,
+        maxOutputTokens: 1024,
+        maxRetries: resolveLlmRetryPolicy().maxRetriesPerModel,
+        ...(signal !== undefined ? { abortSignal: signal } : {}),
+        onChunk: () => call.firstToken(),
+        onError: ({ error }) => {
+          if (signal?.aborted === true || isAbortError(error)) return;
+          this.breaker.recordFailure();
+          logger.warn("KB RAG stream failed", {
+            error: error instanceof Error ? error.message : String(error),
+            orgId: opts.orgId,
+          });
+        },
+        onFinish: async ({ usage }) => {
+          if (resolved) return;
+          resolved = true;
+          releaseConcurrency();
+          this.breaker.recordSuccess();
+          const promptTokens = usage?.inputTokens ?? 0;
+          const completionTokens = usage?.outputTokens ?? 0;
+          const timings = call.finish("ok", {
+            model: modelId,
+            promptTokens,
+            completionTokens,
+          });
+          try {
+            await settleStream(this.ledger, this.usageSvc, {
+              reservationId,
+              model: modelId,
+              promptTokens,
+              completionTokens,
+              orgId: opts.orgId,
+              userId: null,
+              feature: KB_RAG_STREAM_FEATURE,
+              ...(timings.ttftMs !== undefined ? { ttftMs: timings.ttftMs } : {}),
+              appOverheadMs: timings.overheadMs,
+              timings,
+            });
+          } catch (err) {
+            logger.error("Failed to settle KB RAG stream", {
+              error: err instanceof Error ? (err.stack ?? err.message) : String(err),
+              orgId: opts.orgId,
+              reservationId,
+            });
+          }
+        },
+      });
+
+      void Promise.resolve(stream.finishReason).catch(() => {
+        releaseConcurrency();
+        releaseReservation("stream_aborted_no_settle");
+        call.finish(signal?.aborted === true ? "cancelled" : "provider_unavailable");
+      });
+
+      return { stream, sources, hasContext: true };
+    } catch (error) {
+      this.breaker.recordFailure();
+      releaseConcurrency();
+      releaseReservation("stream_setup_error");
+      call.finish("error");
+      throw error;
+    }
   }
 }

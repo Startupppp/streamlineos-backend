@@ -1,4 +1,5 @@
 import { INestApplication } from "@nestjs/common";
+import { assertNever } from "../../../common/types/assert-never";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { ALL_MODULES, signToken } from "../../../../test/helpers/sign-token";
@@ -24,8 +25,7 @@ describe("HR Directory auth/RBAC (e2e)", () => {
       case "delete":
         return agent.delete(path);
       default: {
-        const _exhaustive: never = method;
-        throw new Error(`Unsupported HTTP method: ${_exhaustive}`);
+        return assertNever(method);
       }
     }
   }

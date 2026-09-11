@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import {
   SQL,
   and,
@@ -18,6 +18,7 @@ import {
   organizationMembers,
   projectMembers,
   projects,
+  ticketAssignees,
   tickets,
   users,
 } from "../../../db/schema";
@@ -25,9 +26,8 @@ import { orgUnits } from "../../../db/schema/common/organization";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_TTL } from "../../../common/cache/cache-keys";
-import { applyScope } from "../../access/apply-scope";
-import type { DataScope } from "../../access/access.types";
+import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import type { ScopedRead } from "../../access/scoped-read";
 import {
   decodeEmployeeListCursor,
   encodeEmployeeListCursor,
@@ -47,8 +47,7 @@ export class EmployeesService {
   ) {}
 
   listEmployees(
-    orgId: string,
-    userId: string,
+    read: ScopedRead,
     opts: {
       cursor?: string;
       limit?: number;
@@ -57,7 +56,6 @@ export class EmployeesService {
       isActive?: "true" | "false" | "all";
       role?: string;
     },
-    scope: DataScope,
   ) {
     const search = opts.search;
     const limitN = opts.limit ?? 20;
@@ -65,17 +63,16 @@ export class EmployeesService {
     const departmentId = opts.departmentId;
     const role = opts.role?.trim() || undefined;
 
-    const key = `hr:employees:cursor:${orgId}:${userId}:${scope}:${opts.cursor ?? ""}:${limitN}:${search ?? ""}:${departmentId ?? ""}:${isActive}:${role ?? ""}`;
-    return this.cache.cached(
+    const key = `cursor:${read.discriminator}:${opts.cursor ?? ""}:${limitN}:${search ?? ""}:${departmentId ?? ""}:${isActive}:${role ?? ""}`;
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.hrEmployeesListNamespace(read.orgId),
       key,
       () =>
         this.getEmployeesPaginated(
-          orgId,
+          read,
           opts.cursor,
           limitN,
           search,
-          userId,
-          scope,
           departmentId,
           isActive,
           role,
@@ -84,96 +81,96 @@ export class EmployeesService {
     );
   }
 
-  async assertEmployeeVisible(
-    orgId: string,
-    actorUserId: string,
-    targetUserId: string,
-    scope: DataScope,
-  ): Promise<void> {
-    const [visible] = await this.db
-      .select({ userId: organizationMembers.userId })
-      .from(organizationMembers)
-      .where(
-        and(
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.userId, targetUserId),
-          applyScope(scope, orgId, actorUserId, {
-            ownerColumn: organizationMembers.userId,
-          }),
-        ),
-      )
-      .limit(1);
+  async assertEmployeeVisible(read: ScopedRead, targetUserId: string): Promise<void> {
+    const [visible] = await read.read(
+      {
+        tenant: organizationMembers.orgId,
+        scope: { columns: { ownerColumn: organizationMembers.userId } },
+        and: [eq(organizationMembers.userId, targetUserId)],
+      },
+      ({ sql: where }) =>
+        this.db
+          .select({ userId: organizationMembers.userId })
+          .from(organizationMembers)
+          .where(where)
+          .limit(1),
+      () => [],
+    );
 
     if (!visible) throw new NotFoundException("Employee not found");
   }
 
   private async getEmployeesPaginated(
-    orgId: string,
+    read: ScopedRead,
     encodedCursor: string | undefined,
     limit: number,
     search: string | undefined,
-    userId: string,
-    scope: DataScope,
     departmentId?: string,
     isActive: "true" | "false" | "all" = "true",
     role?: string,
   ) {
+    const orgId = read.orgId;
     const cursor = encodedCursor ? decodeEmployeeListCursor(encodedCursor) : undefined;
     const normalizedName = sql<string>`lower(coalesce(${users.name}, ''))`;
 
-    const baseConditions: SQL[] = [
-      eq(organizationMembers.orgId, orgId),
-      applyScope(scope, orgId, userId, { ownerColumn: organizationMembers.userId }),
-    ];
-    if (isActive === "true") baseConditions.push(eq(users.isActive, true));
-    else if (isActive === "false") baseConditions.push(eq(users.isActive, false));
-    if (departmentId != null) baseConditions.push(eq(hrEmployments.departmentId, departmentId));
-    if (role) baseConditions.push(eq(organizationMembers.role, role));
+    const extraConditions: (SQL | undefined)[] = [];
+    if (isActive === "true") extraConditions.push(eq(users.isActive, true));
+    else if (isActive === "false") extraConditions.push(eq(users.isActive, false));
+    if (departmentId != null) extraConditions.push(eq(hrEmployments.departmentId, departmentId));
+    if (role) extraConditions.push(eq(organizationMembers.role, role));
     if (cursor) {
-      baseConditions.push(
+      extraConditions.push(
         or(
           gt(normalizedName, cursor.name),
           and(
             eq(normalizedName, cursor.name),
             gt(users.id, cursor.employeeUserId),
           ),
-        )!,
+        ),
       );
     }
 
     const searchCondition = search ? await this.employeeSearchCondition(search) : undefined;
+    extraConditions.push(searchCondition);
 
-    const where = searchCondition ? and(...baseConditions, searchCondition) : and(...baseConditions);
-
-    const dataResult = await this.db
-      .select({
-          id: users.id,
-          cursorName: normalizedName,
-          name: users.name,
-          firstName: users.firstName,
-          lastName: users.lastName,
-          email: users.email,
-          role: organizationMembers.role,
-          orgDepartmentId: orgUnits.id,
-          orgDepartmentName: orgUnits.name,
-          image: users.image,
-          isActive: users.isActive,
-      })
-      .from(organizationMembers)
-      .innerJoin(users, eq(organizationMembers.userId, users.id))
-      .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
-      .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
-      .leftJoin(
-        orgUnits,
-        and(
-          eq(hrEmployments.departmentId, orgUnits.id),
-          eq(orgUnits.orgId, orgId),
-          eq(orgUnits.kind, "DEPARTMENT"),
-        ),
-      )
-      .where(where)
-      .orderBy(asc(normalizedName), asc(users.id))
-      .limit(limit + 1);
+    const dataResult = await read.read(
+      {
+        tenant: organizationMembers.orgId,
+        scope: { columns: { ownerColumn: organizationMembers.userId } },
+        and: extraConditions,
+      },
+      ({ sql: where }) =>
+        this.db
+          .select({
+              id: users.id,
+              cursorName: normalizedName,
+              name: users.name,
+              firstName: users.firstName,
+              lastName: users.lastName,
+              email: users.email,
+              role: organizationMembers.role,
+              orgDepartmentId: orgUnits.id,
+              orgDepartmentName: orgUnits.name,
+              image: users.image,
+              isActive: users.isActive,
+          })
+          .from(organizationMembers)
+          .innerJoin(users, eq(organizationMembers.userId, users.id))
+          .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+          .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+          .leftJoin(
+            orgUnits,
+            and(
+              eq(hrEmployments.departmentId, orgUnits.id),
+              eq(orgUnits.orgId, orgId),
+              eq(orgUnits.kind, "DEPARTMENT"),
+            ),
+          )
+          .where(where)
+          .orderBy(asc(normalizedName), asc(users.id))
+          .limit(limit + 1),
+      () => [],
+    );
 
     const hasMore = dataResult.length > limit;
     const pageRows = dataResult.slice(0, limit);
@@ -243,8 +240,14 @@ export class EmployeesService {
         role: projectMembers.role,
       })
       .from(projectMembers)
+      .innerJoin(organizationMembers, and(
+        eq(projectMembers.orgId, organizationMembers.orgId),
+        eq(projectMembers.membershipId, organizationMembers.id),
+        eq(organizationMembers.userId, userId),
+      ))
       .innerJoin(projects, eq(projectMembers.projectId, projects.id))
-      .where(and(eq(projectMembers.userId, userId), eq(projects.orgId, orgId)));
+      .where(and(eq(projectMembers.orgId, orgId), eq(projects.orgId, orgId)))
+      .limit(100);
   }
 
   async getTickets(orgId: string, userId: string) {
@@ -257,8 +260,14 @@ export class EmployeesService {
         projectId: tickets.projectId,
         ticketNumber: tickets.ticketNumber,
       })
-      .from(tickets)
-      .where(and(eq(tickets.assigneeId, userId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
+      .from(ticketAssignees)
+      .innerJoin(tickets, and(eq(ticketAssignees.ticketId, tickets.id), eq(ticketAssignees.orgId, tickets.orgId)))
+      .innerJoin(organizationMembers, and(
+        eq(ticketAssignees.orgId, organizationMembers.orgId),
+        eq(ticketAssignees.membershipId, organizationMembers.id),
+        eq(organizationMembers.userId, userId),
+      ))
+      .where(and(eq(ticketAssignees.orgId, orgId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
       .orderBy(desc(tickets.id))
       .limit(50);
 
@@ -290,7 +299,8 @@ export class EmployeesService {
           inArray(users.id, reportIds),
           eq(users.isActive, true),
         ),
-      );
+      )
+      .limit(reportIds.length);
 
     const factsMap = await this.employment.getFactsBatch(orgId, rows.map((r) => r.id));
     return rows.map((r) => ({ ...r, designation: factsMap.get(r.id)?.designation ?? null }));
@@ -302,21 +312,27 @@ export class EmployeesService {
     const employmentIlike = or(
       ilike(hrEmployments.employeeNumber, `%${search}%`),
       ilike(hrEmployments.designation, `%${search}%`),
-    )!;
+    );
+    if (!employmentIlike) throw new InternalServerErrorException("Failed to build employee search fallback");
     const rows = await this.db.execute(
       sql`SELECT app.search_hr_person_ids(${search}, ${EmployeesService.EMPLOYEE_SEARCH_CAP + 1}) AS id`,
     );
     if (rows.length === 0) return employmentIlike;
-    if (rows.length > EmployeesService.EMPLOYEE_SEARCH_CAP)
-      return or(
+    if (rows.length > EmployeesService.EMPLOYEE_SEARCH_CAP) {
+      const wideFallback = or(
         ilike(users.name, `%${search}%`),
         ilike(users.email, `%${search}%`),
         ilike(users.firstName, `%${search}%`),
         ilike(users.lastName, `%${search}%`),
         employmentIlike,
-      )!;
+      );
+      if (!wideFallback) throw new InternalServerErrorException("Failed to build employee search fallback");
+      return wideFallback;
+    }
     const ids = rows.map((r) => Number(r["id"]));
-    return or(inArray(hrPeople.id, ids), employmentIlike)!;
+    const condition = or(inArray(hrPeople.id, ids), employmentIlike);
+    if (!condition) throw new InternalServerErrorException("Failed to build employee search condition");
+    return condition;
   }
 
 }

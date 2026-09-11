@@ -112,8 +112,7 @@ export function planResolutionReversal(
         : { ok: true, action: "revert-and-reopen" };
 
     default: {
-      const exhaustive: never = resolution.reversibility;
-      return refuse("class-refuses", `Unknown reversibility class ${String(exhaustive)}.`);
+      return refuse("class-refuses", `Unknown reversibility class ${String(resolution.reversibility satisfies never)}.`);
     }
   }
 }

@@ -1,8 +1,21 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { feedbackCycles, feedbackCycleRequests, feedbackCycleResponses } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { organizationMembers } from "../../../db/schema";
+
+/**
+ * One submitted 360° response, exactly as `FeedbackResult.responses[]` is
+ * declared in `frontend/hooks/api/hr/feedback.ts`. Named so the two sides can be
+ * compared by eye — nothing typechecks across the repo boundary.
+ */
+export interface FeedbackResponsePayload {
+  requestId: number;
+  overallRating?: number;
+  submittedAt: string;
+  responses: { questionId: string; rating?: number; text?: string }[];
+}
 
 @Injectable()
 export class FeedbackService {
@@ -12,7 +25,9 @@ export class FeedbackService {
     return this.db
       .select()
       .from(feedbackCycles)
-      .where(eq(feedbackCycles.orgId, orgId));
+      .where(eq(feedbackCycles.orgId, orgId))
+      .orderBy(feedbackCycles.createdAt)
+      .limit(100);
   }
 
   createCycle(
@@ -45,7 +60,8 @@ export class FeedbackService {
     const requests = await this.db
       .select()
       .from(feedbackCycleRequests)
-      .where(eq(feedbackCycleRequests.cycleId, id));
+      .where(eq(feedbackCycleRequests.cycleId, id))
+      .limit(100);
 
     return { ...cycle[0], requests };
   }
@@ -85,7 +101,8 @@ export class FeedbackService {
           eq(feedbackCycleRequests.reviewerId, userId),
           eq(feedbackCycleRequests.status, "PENDING"),
         ),
-      );
+      )
+      .limit(100);
   }
 
   async submitResponse(
@@ -129,6 +146,51 @@ export class FeedbackService {
   }
 
   async getResults(orgId: string, subjectId: string) {
+    const subject = await this.db.query.organizationMembers.findFirst({
+      columns: { id: true },
+      where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, subjectId)),
+    });
+    if (!subject) throw new NotFoundException("Feedback subject not found in this organization");
+
+    /*
+     * The three headline numbers the 360° results panel renders, computed in one
+     * aggregate so none of them saturates at the row cap below.
+     *
+     * `total` must count EVERY request for the subject, not only the completed
+     * ones: the panel shows a completion rate, and a set already filtered to
+     * COMPLETED can only ever report 100%. The left join duplicates a request
+     * once per response, which is why the two counts are DISTINCT over the
+     * request id; `avg` is over response rows and each response joins exactly
+     * once, so it is the plain mean of the submitted overall ratings.
+     *
+     * count()/avg() come back from the driver as strings (bigint and numeric),
+     * so both are coerced here rather than trusted from the SQL generic.
+     */
+    const [totals] = await this.db
+      .select({
+        total: sql<string>`count(distinct ${feedbackCycleRequests.id})`,
+        completed: sql<string>`count(distinct ${feedbackCycleRequests.id}) filter (where ${feedbackCycleRequests.status} = 'COMPLETED')`,
+        avgRating: sql<string | null>`avg(${feedbackCycleResponses.overallRating})`,
+      })
+      .from(feedbackCycleRequests)
+      .innerJoin(feedbackCycles, eq(feedbackCycleRequests.cycleId, feedbackCycles.id))
+      .leftJoin(
+        feedbackCycleResponses,
+        and(
+          eq(feedbackCycleResponses.orgId, orgId),
+          eq(feedbackCycleResponses.requestId, feedbackCycleRequests.id),
+        ),
+      )
+      .where(
+        and(eq(feedbackCycleRequests.subjectId, subjectId), eq(feedbackCycles.orgId, orgId)),
+      );
+
+    const totalRequests = Number(totals?.total ?? 0);
+    const completedRequests = Number(totals?.completed ?? 0);
+    const rawAvg = totals?.avgRating ?? null;
+    const avgRating =
+      rawAvg === null ? undefined : Math.round(Number(rawAvg) * 100) / 100;
+
     const requests = await this.db
       .select({ id: feedbackCycleRequests.id, relationship: feedbackCycleRequests.relationship, status: feedbackCycleRequests.status })
       .from(feedbackCycleRequests)
@@ -139,16 +201,40 @@ export class FeedbackService {
           eq(feedbackCycles.orgId, orgId),
           eq(feedbackCycleRequests.status, "COMPLETED"),
         ),
-      );
-
-    if (requests.length === 0) return { subjectId, requests: [], responses: [] };
+      )
+      .limit(100);
 
     const requestIds = requests.map((r) => r.id);
-    const responses = await this.db
-      .select()
-      .from(feedbackCycleResponses)
-      .where(and(eq(feedbackCycleResponses.orgId, orgId), inArray(feedbackCycleResponses.requestId, requestIds)));
+    const responseRows =
+      requestIds.length === 0
+        ? []
+        : await this.db
+            .select({
+              requestId: feedbackCycleResponses.requestId,
+              overallRating: feedbackCycleResponses.overallRating,
+              submittedAt: feedbackCycleResponses.submittedAt,
+              responses: feedbackCycleResponses.responses,
+            })
+            .from(feedbackCycleResponses)
+            .where(
+              and(
+                eq(feedbackCycleResponses.orgId, orgId),
+                inArray(feedbackCycleResponses.requestId, requestIds),
+              ),
+            )
+            .limit(100);
 
-    return { subjectId, requests, responses };
+    // Flattened to the shape the client declares: `overallRating` absent rather
+    // than null, `submittedAt` an ISO string rather than a Date. One return, so
+    // the endpoint's type is one object rather than a union a caller has to
+    // narrow before it can read `responses`.
+    const responses: FeedbackResponsePayload[] = responseRows.map((row) => ({
+      requestId: row.requestId,
+      overallRating: row.overallRating ?? undefined,
+      submittedAt: row.submittedAt.toISOString(),
+      responses: row.responses,
+    }));
+
+    return { subjectId, totalRequests, completedRequests, avgRating, requests, responses };
   }
 }

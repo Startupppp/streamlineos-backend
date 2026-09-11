@@ -18,7 +18,7 @@ export const createChangeRequestSchema = z.object({
   estimateMinutes: z.number().int().nonnegative().optional(),
   budgetImpactCents: z.number().int().optional(),
   timelineImpactDays: z.number().int().optional(),
-});
+}).strict();
 
 export const updateChangeRequestSchema = z.object({
   title: z.string().min(1).max(500).optional(),
@@ -30,11 +30,11 @@ export const updateChangeRequestSchema = z.object({
   status: z.enum(crStatusValues).optional(),
   approvalOwnerId: z.string().optional(),
   decisionComment: z.string().optional(),
-});
+}).strict();
 
 export const listCrQuerySchema = z.object({
   status: z.enum(crStatusValues).optional(),
-});
+}).strict();
 
 export type CreateChangeRequestInput = z.infer<typeof createChangeRequestSchema>;
 export type UpdateChangeRequestInput = z.infer<typeof updateChangeRequestSchema>;

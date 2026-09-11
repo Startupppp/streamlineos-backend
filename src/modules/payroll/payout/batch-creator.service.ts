@@ -1,11 +1,12 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   InternalServerErrorException,
   Logger,
 } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, count, eq, inArray, ne } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.types";
 import {
@@ -24,10 +25,11 @@ import type { PayoutBatchFormat } from "./dto/payout.schemas";
 import { loadRunEmployeePayees } from "../lib/payroll-run-payee";
 import { defaultFormatFromCurrency, csvHeader, csvRow } from "./lib/payout-csv";
 import { toPaise, fromPaise } from "../runs/lib/money";
+import { PAYROLL_READ_CAP, requirePayrollReadWithinCap } from "../lib/query-bounds";
+import { isUniqueViolation, isUniqueViolationOn } from "../../../common/db/postgres-error";
 
-function isDuplicateKeyError(err: unknown): boolean {
-  return typeof err === "object" && err !== null && "code" in err && err.code === "23505";
-}
+const BATCH_ITEM_SUBJECT_CONSTRAINT = "uniq_payroll_bank_batch_items_batch_subject";
+const BATCH_ITEM_LIVE_SUBJECT_CONSTRAINT = "uniq_payroll_bank_batch_items_live_subject";
 
 type ItemData = {
   runEmployeeId: number;
@@ -75,7 +77,7 @@ export class BatchCreatorService {
       );
     }
 
-    const employees = await this.db
+    const employees = requirePayrollReadWithinCap(await this.db
       .select({
         id: payrollRunEmployees.id,
         userId: payrollRunEmployees.userId,
@@ -88,12 +90,13 @@ export class BatchCreatorService {
         holdReason: payrollRunEmployees.holdReason,
       })
       .from(payrollRunEmployees)
-      .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)));
+      .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)))
+      .limit(PAYROLL_READ_CAP + 1), "create payout batch employees");
 
     const payees = await loadRunEmployeePayees(this.db, orgId, runId, this.efService);
     const payeeByRunEmployee = new Map(payees.map((payee) => [payee.runEmployeeId, payee]));
 
-    const alreadyPaidRows = await this.db
+    const liveInstructionRows = requirePayrollReadWithinCap(await this.db
       .select({ runEmployeeId: payrollBankBatchItems.runEmployeeId })
       .from(payrollBankBatchItems)
       .innerJoin(payrollBankBatches, eq(payrollBankBatchItems.batchId, payrollBankBatches.id))
@@ -101,13 +104,14 @@ export class BatchCreatorService {
         and(
           eq(payrollBankBatches.runId, runId),
           eq(payrollBankBatches.orgId, orgId),
-          eq(payrollBankBatchItems.status, "PAID"),
+          ne(payrollBankBatchItems.status, "FAILED"),
         ),
-      );
-    const alreadyPaidRunEmployeeIds = new Set(alreadyPaidRows.map((r) => r.runEmployeeId));
+      )
+      .limit(PAYROLL_READ_CAP + 1), "create payout batch live instructions");
+    const alreadyInstructedRunEmployeeIds = new Set(liveInstructionRows.map((r) => r.runEmployeeId));
 
     const eligible = employees.filter((e) => {
-      if (alreadyPaidRunEmployeeIds.has(e.id)) return false;
+      if (alreadyInstructedRunEmployeeIds.has(e.id)) return false;
       if (e.status === "HELD" || e.holdReason) return false;
       const payee = payeeByRunEmployee.get(e.id);
       const bank = payee?.bankDetails ?? null;
@@ -115,8 +119,74 @@ export class BatchCreatorService {
       return toPaise(e.netPayoutCurrency ?? e.net) > 0;
     });
 
-    if (eligible.length === 0)
-      throw new BadRequestException("No eligible employees for payout batch — check validation");
+    // The idempotency lookup has to happen BEFORE the eligibility verdict.
+    // A replayed call re-reads the instructions its own first call wrote, so
+    // every payee is "already instructed" and `eligible` is empty — which used
+    // to 400 on exactly the runs the replay contract exists for. The sub-keys
+    // are therefore derived from every payee on the run, not from `eligible`.
+    const runCurrencyCodes = [
+      ...new Set(employees.map((e) => e.payoutCurrency ?? e.currency)),
+    ];
+
+    const preFetchedBatchMap = new Map<string, typeof payrollBankBatches.$inferSelect>();
+    const preFetchedItemsMap = new Map<number, Array<typeof payrollBankBatchItems.$inferSelect>>();
+
+    if (idempotencyKey) {
+      const allSubKeys = runCurrencyCodes.map((code) => `${idempotencyKey}-${code}`);
+      const preBatches = await this.db
+        .select()
+        .from(payrollBankBatches)
+        .where(and(eq(payrollBankBatches.orgId, orgId), inArray(payrollBankBatches.idempotencyKey, allSubKeys)))
+        .limit(allSubKeys.length + 1);
+      for (const b of preBatches)
+        if (b.idempotencyKey) preFetchedBatchMap.set(b.idempotencyKey, b);
+
+      if (preBatches.length > 0) {
+        const batchIds = preBatches.map((b) => b.id);
+        const preItems = requirePayrollReadWithinCap(
+          await this.db
+            .select()
+            .from(payrollBankBatchItems)
+            .where(inArray(payrollBankBatchItems.batchId, batchIds))
+            .limit(PAYROLL_READ_CAP + 1),
+          "prefetch payout batch items",
+        );
+        for (const item of preItems) {
+          const arr = preFetchedItemsMap.get(item.batchId) ?? [];
+          arr.push(item);
+          preFetchedItemsMap.set(item.batchId, arr);
+        }
+      }
+    }
+
+    if (eligible.length === 0) {
+      const replayedBatches = idempotencyKey
+        ? runCurrencyCodes.flatMap<BatchCreateResult>((currencyCode) => {
+            const batch = preFetchedBatchMap.get(`${idempotencyKey}-${currencyCode}`);
+            if (!batch) return [];
+            return [{
+              batch,
+              items: preFetchedItemsMap.get(batch.id) ?? [],
+              fileUrl: null,
+              currencyCode,
+              replayed: true,
+            }];
+          })
+        : [];
+      if (replayedBatches.length > 0) return this.summarize(replayedBatches);
+
+      // "Already instructed" and "nobody was ever eligible" are different
+      // operator situations: the first is resolved by opening the existing
+      // batch, the second by fixing bank details, holds or zero-net payees.
+      const instructedCount = employees.filter((e) =>
+        alreadyInstructedRunEmployeeIds.has(e.id),
+      ).length;
+      throw new BadRequestException(
+        instructedCount > 0
+          ? "Every payee on this run already has a live payout instruction — open the existing batch instead of generating another"
+          : "No eligible employees for payout batch — check validation",
+      );
+    }
 
     const groupMap = new Map<string, typeof eligible>();
     for (const emp of eligible) {
@@ -131,7 +201,7 @@ export class BatchCreatorService {
     const narrationLabel = `Salary ${month}`.trim();
 
     const [seqRow] = await this.db
-      .select({ count: payrollBankBatches.id })
+      .select({ count: count() })
       .from(payrollBankBatches)
       .where(and(eq(payrollBankBatches.orgId, orgId), eq(payrollBankBatches.runId, runId)));
     const baseSeq = seqRow?.count ?? 0;
@@ -144,13 +214,9 @@ export class BatchCreatorService {
       const subKey = idempotencyKey ? `${idempotencyKey}-${currencyCode}` : undefined;
 
       if (subKey) {
-        const existingBatch = await this.db.query.payrollBankBatches.findFirst({
-          where: and(eq(payrollBankBatches.orgId, orgId), eq(payrollBankBatches.idempotencyKey, subKey)),
-        });
+        const existingBatch = preFetchedBatchMap.get(subKey);
         if (existingBatch) {
-          const batchItems = await this.db.query.payrollBankBatchItems.findMany({
-            where: eq(payrollBankBatchItems.batchId, existingBatch.id),
-          });
+          const batchItems = preFetchedItemsMap.get(existingBatch.id) ?? [];
           results.push({ batch: existingBatch, items: batchItems, fileUrl: null, currencyCode, replayed: true });
           groupIdx++;
           continue;
@@ -189,8 +255,9 @@ export class BatchCreatorService {
       const now = new Date();
 
       let newBatch: typeof payrollBankBatches.$inferSelect | undefined;
+      let newBatchItems: Array<typeof payrollBankBatchItems.$inferSelect> = [];
       try {
-        const [created] = await this.db.transaction(async (tx) => {
+        const txResult = await this.db.transaction(async (tx) => {
           const [batch] = await tx
             .insert(payrollBankBatches)
             .values({
@@ -210,7 +277,7 @@ export class BatchCreatorService {
 
           if (!batch) throw new BadRequestException("Failed to create batch");
 
-          await tx.insert(payrollBankBatchItems).values(
+          const items = await tx.insert(payrollBankBatchItems).values(
             itemsData.map((item) => ({
               orgId,
               batchId: batch.id,
@@ -222,7 +289,7 @@ export class BatchCreatorService {
               ifsc: item.ifsc,
               status: "PENDING" as const,
             })),
-          );
+          ).returning();
 
           await tx.insert(payrollRunEvents).values({
             orgId,
@@ -240,18 +307,30 @@ export class BatchCreatorService {
             },
           });
 
-          return [batch];
+          return { batch, items };
         });
-        newBatch = created;
+        newBatch = txResult.batch;
+        newBatchItems = txResult.items;
       } catch (err: unknown) {
-        if (subKey && isDuplicateKeyError(err)) {
+        if (
+          isUniqueViolationOn(
+            err,
+            BATCH_ITEM_SUBJECT_CONSTRAINT,
+            BATCH_ITEM_LIVE_SUBJECT_CONSTRAINT,
+          )
+        )
+          throw new ConflictException(
+            "A payout instruction already exists for one of these payees on this run — refresh the batch list before generating another",
+          );
+        if (subKey && isUniqueViolation(err)) {
           const racedBatch = await this.db.query.payrollBankBatches.findFirst({
             where: and(eq(payrollBankBatches.orgId, orgId), eq(payrollBankBatches.idempotencyKey, subKey)),
           });
           if (racedBatch) {
-            const racedItems = await this.db.query.payrollBankBatchItems.findMany({
+            const racedItems = requirePayrollReadWithinCap(await this.db.query.payrollBankBatchItems.findMany({
               where: eq(payrollBankBatchItems.batchId, racedBatch.id),
-            });
+              limit: PAYROLL_READ_CAP + 1,
+            }), "replay raced payout batch items");
             results.push({ batch: racedBatch, items: racedItems, fileUrl: null, currencyCode, replayed: true });
             groupIdx++;
             continue;
@@ -286,14 +365,14 @@ export class BatchCreatorService {
           this.logger.warn("createBatch: no ambient tenant context; CSV upload skipped for batch", { batchId, orgId });
       }
 
-      const batchItems = await this.db.query.payrollBankBatchItems.findMany({
-        where: eq(payrollBankBatchItems.batchId, newBatch.id),
-      });
-
-      results.push({ batch: newBatch, items: batchItems, fileUrl: null, currencyCode, replayed: false });
+      results.push({ batch: newBatch, items: newBatchItems, fileUrl: null, currencyCode, replayed: false });
       groupIdx++;
     }
 
+    return this.summarize(results);
+  }
+
+  private summarize(results: BatchCreateResult[]) {
     const allReplayed = results.length > 0 && results.every((r) => r.replayed);
     const currencies = [...new Set(results.map((r) => r.currencyCode))];
     return {

@@ -19,13 +19,12 @@ export const payslipTemplates = pgTable("payslip_templates", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_payslip_templates_org_id").on(table.orgId, table.id),
-  index("idx_payslip_templates_org").on(table.orgId),
 ]);
 
 export const payrollBankBatches = pgTable("payroll_bank_batches", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  runId: integer("run_id").references(() => payrollRuns.id, { onDelete: "cascade" }).notNull(),
+  runId: integer("run_id").notNull(),
   batchNumber: text("batch_number").notNull(),
   status: payrollBankBatchStatusEnum("status").default("DRAFT").notNull(),
   format: text("format").notNull(),
@@ -39,6 +38,7 @@ export const payrollBankBatches = pgTable("payroll_bank_batches", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.runId], foreignColumns: [payrollRuns.orgId, payrollRuns.id], name: "fk_payroll_bank_batches_run_id_org" }).onDelete("cascade"),
   unique("uniq_payroll_bank_batches_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_payroll_bank_batches_org_number").on(table.orgId, table.batchNumber),
   uniqueIndex("uniq_payroll_bank_batches_org_idempotency_key").on(table.orgId, table.idempotencyKey),
@@ -48,8 +48,8 @@ export const payrollBankBatches = pgTable("payroll_bank_batches", {
 export const payrollBankBatchItems = pgTable("payroll_bank_batch_items", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  batchId: integer("batch_id").references(() => payrollBankBatches.id, { onDelete: "cascade" }).notNull(),
-  runEmployeeId: integer("run_employee_id").references(() => payrollRunEmployees.id, { onDelete: "cascade" }).notNull(),
+  batchId: integer("batch_id").notNull(),
+  runEmployeeId: integer("run_employee_id").notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "restrict" }),
   workerId: text("worker_id"),
   amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
@@ -62,9 +62,14 @@ export const payrollBankBatchItems = pgTable("payroll_bank_batch_items", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.batchId], foreignColumns: [payrollBankBatches.orgId, payrollBankBatches.id], name: "fk_payroll_bank_batch_items_batch_id_org" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.runEmployeeId], foreignColumns: [payrollRunEmployees.orgId, payrollRunEmployees.id], name: "fk_payroll_bank_batch_items_run_employee_id_org" }).onDelete("cascade"),
   unique("uniq_payroll_bank_batch_items_org_id").on(table.orgId, table.id),
+  uniqueIndex("uniq_payroll_bank_batch_items_batch_subject").on(table.orgId, table.batchId, table.runEmployeeId),
+  uniqueIndex("uniq_payroll_bank_batch_items_live_subject")
+    .on(table.orgId, table.runEmployeeId)
+    .where(sql`status <> 'FAILED'`),
   index("idx_payroll_bank_batch_items_batch_status").on(table.batchId, table.status),
-  index("idx_payroll_bank_batch_items_org").on(table.orgId),
   index("idx_payroll_bank_batch_items_org_worker").on(table.orgId, table.workerId),
   check(
     "chk_payroll_bank_batch_items_subject",

@@ -24,9 +24,9 @@ import {
   registerAfterCommit,
 } from "../../../../common/tenant/tenant-context";
 import { runInNewTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
-import { applyScope } from "../../../access/apply-scope";
 import { AccessService, broadest } from "../../../access/access.service";
-import type { DataScope } from "../../../access/access.types";
+import { ScopedRead } from "../../../access/scoped-read";
+import { onboardingTaskScopes } from "../../lifecycle/onboarding-scope";
 import { AutomationService } from "../../../automation/automation.service";
 import { HrAutomationEngineService } from "../../automations/hr-automation-engine.service";
 import { OnboardingProbationService } from "./onboarding-probation.service";
@@ -35,7 +35,9 @@ import { logger } from "../../../../common/logger/logger.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { UpdateTaskInput } from "./dto/onboarding.schemas";
 import { resolveCompatibleList } from "../../../../common/db/expand-contract-compat";
-import { loadOnboardingTaskDependencies } from "./onboarding-task-dependency-compat";
+  import { loadOnboardingTaskDependencies } from "./onboarding-task-dependency-compat";
+import { readHrKeysetBatches } from "../../shared/hr-keyset-batch";
+import { organizationMembers } from "../../../../db/schema";
 
 const TASKS_VIEW_PERMISSION = "hr:onboarding:tasks:view";
 const TASKS_COMPLETE_PERMISSION = "hr:onboarding:tasks:complete";
@@ -46,8 +48,8 @@ const ASSETS_MANAGE_PERMISSION = "hr:assets:manage";
 interface TaskAccess {
   canView: boolean;
   canComplete: boolean;
-  onboardingScope: DataScope;
-  employeeManageScope: DataScope;
+  onboardingScope: ScopedRead;
+  employeeManageScope: ScopedRead;
   canManageAssets: boolean;
 }
 
@@ -72,10 +74,7 @@ export class OnboardingTaskService {
     return {
       canView: permissions.has(TASKS_VIEW_PERMISSION),
       canComplete: permissions.has(TASKS_COMPLETE_PERMISSION),
-      onboardingScope:
-        permissions.get(ONBOARDING_MANAGE_PERMISSION) ?? "none",
-      employeeManageScope:
-        permissions.get(EMPLOYEES_MANAGE_PERMISSION) ?? "none",
+      ...onboardingTaskScopes(currentUser, permissions, EMPLOYEES_MANAGE_PERMISSION),
       canManageAssets: permissions.has(ASSETS_MANAGE_PERMISSION),
     };
   }
@@ -91,22 +90,26 @@ export class OnboardingTaskService {
       )!,
     ];
 
-    if (access.onboardingScope !== "none") {
+    if (!access.onboardingScope.denied) {
       // HR onboarding managers are the explicit administrative override, but
       // their configured own/team/all scope still applies to the employee.
       branches.push(
-        applyScope(access.onboardingScope, currentUser.orgId, currentUser.userId, {
-          ownerColumn: onboardingTasks.userId,
-        }),
+        access.onboardingScope.compose(
+          { tenant: onboardingTasks.orgId, scope: { columns: { ownerColumn: onboardingTasks.userId } } },
+          ({ sql: where }) => where,
+          () => sql`false`,
+        ),
       );
     }
-    if (access.employeeManageScope !== "none") {
+    if (!access.employeeManageScope.denied) {
       branches.push(
         and(
           eq(onboardingTasks.ownerRole, "MANAGER"),
-          applyScope(access.employeeManageScope, currentUser.orgId, currentUser.userId, {
-            ownerColumn: onboardingTasks.userId,
-          }),
+          access.employeeManageScope.compose(
+            { tenant: onboardingTasks.orgId, scope: { columns: { ownerColumn: onboardingTasks.userId } } },
+            ({ sql: where }) => where,
+            () => sql`false`,
+          ),
         )!,
       );
     }
@@ -123,11 +126,20 @@ export class OnboardingTaskService {
       throw new ForbiddenException("Forbidden");
     }
 
-    const subjectScope = broadest(
+    const subjectScope = ScopedRead.broadest(
       access.onboardingScope,
       access.employeeManageScope,
     );
-    if (currentUser.userId !== userId && subjectScope === "none") {
+    const subject = await this.db.query.organizationMembers.findFirst({
+      columns: { id: true },
+      where: and(
+        eq(organizationMembers.orgId, currentUser.orgId),
+        eq(organizationMembers.userId, userId),
+      ),
+    });
+    if (!subject) throw new NotFoundException("User not found in this organization");
+
+    if (currentUser.userId !== userId && subjectScope.denied) {
       throw new ForbiddenException("Forbidden");
     }
 
@@ -135,21 +147,29 @@ export class OnboardingTaskService {
       ? this.completionScope(currentUser, access)
       : sql<boolean>`false`;
 
-    const tasks = await this.db
-      .select({ ...getTableColumns(onboardingTasks), canComplete })
-      .from(onboardingTasks)
-      .where(
-        and(
-          eq(onboardingTasks.userId, userId),
-          eq(onboardingTasks.orgId, currentUser.orgId),
-          currentUser.userId === userId
-            ? eq(onboardingTasks.userId, currentUser.userId)
-            : applyScope(subjectScope, currentUser.orgId, currentUser.userId, {
-                ownerColumn: onboardingTasks.userId,
-              }),
-        ),
-      )
-      .orderBy(onboardingTasks.createdAt);
+    const tasks = await readHrKeysetBatches(
+      (afterId, batchSize) =>
+        this.db
+          .select({ ...getTableColumns(onboardingTasks), canComplete })
+          .from(onboardingTasks)
+          .where(
+            and(
+              eq(onboardingTasks.userId, userId),
+              eq(onboardingTasks.orgId, currentUser.orgId),
+              afterId ? sql`${onboardingTasks.id} > ${afterId}` : undefined,
+              currentUser.userId === userId
+                ? eq(onboardingTasks.userId, currentUser.userId)
+                : subjectScope.compose(
+                    { tenant: onboardingTasks.orgId, scope: { columns: { ownerColumn: onboardingTasks.userId } } },
+                    ({ sql: where }) => where,
+                    () => sql`false`,
+                  ),
+            ),
+          )
+          .orderBy(onboardingTasks.id)
+          .limit(batchSize),
+      (task) => task.id,
+    );
     const dependenciesByTaskId = await loadOnboardingTaskDependencies(
       this.db,
       currentUser.orgId,
@@ -269,7 +289,8 @@ export class OnboardingTaskService {
             eq(onboardingTasks.orgId, orgId),
             eq(onboardingTasks.status, "PENDING"),
           ),
-        );
+        )
+        .limit(1);
     if (pending.length > 0) return;
 
     try {
@@ -305,7 +326,8 @@ export class OnboardingTaskService {
       const hrUsers = await this.db
         .select({ id: users.id })
         .from(users)
-        .where(inArray(users.id, hrMembers.map((m) => m.userId)));
+        .where(inArray(users.id, hrMembers.map((m) => m.userId)))
+        .limit(hrMembers.length);
 
       await this.dispatch.emit({
         eventKey: "hr.onboarding.completed",

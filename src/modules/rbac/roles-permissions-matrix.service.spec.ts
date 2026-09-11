@@ -18,6 +18,7 @@ interface RoleSelectChain {
 interface GrantSelectChain {
   from: jest.Mock;
   where: jest.Mock;
+  limit: jest.Mock;
 }
 
 function buildRoleChain(resolvedValue: RoleRow[]): RoleSelectChain {
@@ -36,9 +37,11 @@ function buildRoleChain(resolvedValue: RoleRow[]): RoleSelectChain {
 function buildGrantChain(resolvedValue: GrantRow[]): GrantSelectChain {
   const chain: GrantSelectChain = {
     from: jest.fn(),
-    where: jest.fn().mockResolvedValue(resolvedValue),
+    where: jest.fn(),
+    limit: jest.fn().mockResolvedValue(resolvedValue),
   };
   chain.from.mockReturnValue(chain);
+  chain.where.mockReturnValue(chain);
   return chain;
 }
 

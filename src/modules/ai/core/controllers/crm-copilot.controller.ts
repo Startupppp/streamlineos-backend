@@ -7,9 +7,13 @@ import {
   ParseIntPipe,
   Post,
   Query,
+  Req,
+  Res,
   ServiceUnavailableException,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
+import type { Request, Response } from "express";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../../access/permission.guard";
@@ -23,58 +27,46 @@ import { LlmService } from "../providers/llm.service";
 import { CrmCopilotService } from "../services/crm-copilot.service";
 import { CrmBriefService } from "../services/crm-brief.service";
 import { Validate } from "../../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
+import { AiRequestAbortInterceptor, respondWithAiTextStream } from "../streaming";
+import { ApiOkResponse } from "@nestjs/swagger";
+import {
+  leadSummaryResponseSchema,
+  dealSummaryResponseSchema,
+  nextBestActionsResponseSchema,
+  emailDraftResponseSchema,
+  summarizeNotesResponseSchema,
+  objectionHandlerResponseSchema,
+  duplicateSuggestionsResponseSchema,
+  meetingFollowUpResponseSchema,
+  stalePipelineResponseSchema,
+  dataQualityResponseSchema,
+  leadSummaryWithCitationsResponseSchema,
+  dealSummaryWithCitationsResponseSchema,
+  accountSummaryWithCitationsResponseSchema,
+} from "../dto/ai-response.schemas";
+import {
+  nextBestActionsSchema,
+  emailDraftSchema,
+  summarizeNotesSchema,
+  objectionHelpSchema,
+  meetingFollowUpSchema,
+  accountSummaryWithCitationsSchema,
+  stalePipelineQuerySchema,
+  type MeetingFollowUpBodyInput,
+  type AccountSummaryWithCitationsInput,
+  type StalePipelineQuery,
+} from "../dto/request.schemas";
 
 const leadIdParams = z.object({ leadId: z.coerce.number().int().positive() }).strict();
 const dealIdParams = z.object({ dealId: z.coerce.number().int().positive() }).strict();
-
-const nextBestActionsSchema = z.object({
-  limit: z.number().int().min(1).max(20).default(10),
-  withEvidence: z.boolean().optional().default(true),
-});
-
-const emailDraftSchema = z.object({
-  entityType: z.enum(["lead", "deal"]),
-  entityId: z.number().int().positive(),
-  intent: z.string().min(1).max(1000),
-  tone: z.enum(["formal", "friendly", "urgent"]).default("friendly"),
-});
-
-const summarizeNotesSchema = z.object({
-  text: z.string().min(10).max(8000),
-});
-
-const objectionHelpSchema = z.object({
-  objection: z.string().min(1).max(2000),
-  context: z.string().max(1000).optional(),
-});
-
-const meetingFollowUpSchema = z.object({
-  meetingTitle: z.string().min(1).max(200),
-  attendeeType: z.enum(["lead", "client"]),
-  attendeeId: z.number().int().positive(),
-  outcome: z.string().min(1).max(3000),
-  actionItems: z.array(z.string().max(500)).max(20).optional(),
-  scheduledAt: z.string(),
-  notes: z.string().max(2000).optional(),
-});
-type MeetingFollowUpBodyInput = z.infer<typeof meetingFollowUpSchema>;
-
-const accountSummaryWithCitationsSchema = z.object({
-  clientId: z.number().int().positive(),
-});
-type AccountSummaryWithCitationsInput = z.infer<typeof accountSummaryWithCitationsSchema>;
-
-const stalePipelineQuerySchema = z.object({
-  inactiveDays: z.coerce.number().int().min(1).max(90).default(14),
-});
-type StalePipelineQuery = z.infer<typeof stalePipelineQuerySchema>;
 
 @Controller("ai/crm")
 @UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)
 @RequirePermission("crm:ai:use")
 @UseRateLimit("ai:invoke")
 @NoTenantTransaction()
+@UseInterceptors(AiRequestAbortInterceptor)
 export class CrmCopilotController {
   constructor(
     private readonly llm: LlmService,
@@ -91,6 +83,7 @@ export class CrmCopilotController {
   @Post("leads/:leadId/summary")
   @Validate({ params: leadIdParams })
   @BodylessAction()
+  @ResponseSchema(leadSummaryResponseSchema)
   async leadSummary(
     @Param("leadId", ParseIntPipe) leadId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -104,6 +97,7 @@ export class CrmCopilotController {
   @Post("deals/:dealId/summary")
   @Validate({ params: dealIdParams })
   @BodylessAction()
+  @ResponseSchema(dealSummaryResponseSchema)
   async dealSummary(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -113,6 +107,7 @@ export class CrmCopilotController {
   }
 
   @Post("next-best-actions")
+  @ResponseSchema(nextBestActionsResponseSchema)
   @Validate({ body: nextBestActionsSchema })
   nextBestActions(
     @Body() body: z.infer<typeof nextBestActionsSchema>,
@@ -123,6 +118,7 @@ export class CrmCopilotController {
   }
 
   @Post("email-draft")
+  @ResponseSchema(emailDraftResponseSchema)
   @Validate({ body: emailDraftSchema })
   emailDraft(
     @Body() body: z.infer<typeof emailDraftSchema>,
@@ -133,6 +129,7 @@ export class CrmCopilotController {
   }
 
   @Post("summarize-notes")
+  @ResponseSchema(summarizeNotesResponseSchema)
   @Validate({ body: summarizeNotesSchema })
   summarizeNotes(
     @Body() body: z.infer<typeof summarizeNotesSchema>,
@@ -143,6 +140,7 @@ export class CrmCopilotController {
   }
 
   @Post("objection-help")
+  @ResponseSchema(objectionHandlerResponseSchema)
   @Validate({ body: objectionHelpSchema })
   objectionHelp(
     @Body() body: z.infer<typeof objectionHelpSchema>,
@@ -155,6 +153,7 @@ export class CrmCopilotController {
   @Post("duplicate-suggestions/:leadId")
   @Validate({ params: leadIdParams })
   @BodylessAction()
+  @ResponseSchema(duplicateSuggestionsResponseSchema)
   duplicateSuggestions(
     @Param("leadId", ParseIntPipe) leadId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -164,6 +163,7 @@ export class CrmCopilotController {
   }
 
   @Post("meeting-follow-up")
+  @ResponseSchema(meetingFollowUpResponseSchema)
   @Validate({ body: meetingFollowUpSchema })
   async meetingFollowUp(
     @Body() body: MeetingFollowUpBodyInput,
@@ -173,7 +173,30 @@ export class CrmCopilotController {
     return this.brief.meetingFollowUpDraft(u.orgId, body, u.userId);
   }
 
+  @Post("meeting-follow-up/stream")
+  @ApiOkResponse({ description: "AI text stream", content: { "text/plain": { schema: { type: "string" } } } })
+  @Validate({ body: meetingFollowUpSchema })
+  async meetingFollowUpStream(
+    @Req() req: Request,
+    @Body() body: MeetingFollowUpBodyInput,
+    @CurrentUser() u: CurrentUserContext,
+    @Res() res: Response,
+  ): Promise<void> {
+    this.ensureLlm();
+    return respondWithAiTextStream(
+      req,
+      res,
+      {
+        feature: "crm.meeting-follow-up",
+        orgId: u.orgId,
+        route: "POST /ai/crm/meeting-follow-up/stream",
+      },
+      async (signal) => this.brief.streamMeetingFollowUpDraft(u.orgId, body, u.userId, signal),
+    );
+  }
+
   @Get("stale-pipeline")
+  @ResponseSchema(stalePipelineResponseSchema)
   @Validate({ query: stalePipelineQuerySchema })
   async stalePipeline(
     @Query() query: StalePipelineQuery,
@@ -184,6 +207,7 @@ export class CrmCopilotController {
   }
 
   @Get("data-quality")
+  @ResponseSchema(dataQualityResponseSchema)
   async dataQuality(@CurrentUser() u: CurrentUserContext) {
     this.ensureLlm();
     return this.copilot.dataQualityCopilot(u.orgId, u.userId);
@@ -192,6 +216,7 @@ export class CrmCopilotController {
   @Post("leads/:leadId/summary-with-citations")
   @Validate({ params: leadIdParams })
   @BodylessAction()
+  @ResponseSchema(leadSummaryWithCitationsResponseSchema)
   async leadSummaryWithCitations(
     @Param("leadId", ParseIntPipe) leadId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -205,6 +230,7 @@ export class CrmCopilotController {
   @Post("deals/:dealId/summary-with-citations")
   @Validate({ params: dealIdParams })
   @BodylessAction()
+  @ResponseSchema(dealSummaryWithCitationsResponseSchema)
   async dealSummaryWithCitations(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -214,6 +240,7 @@ export class CrmCopilotController {
   }
 
   @Post("account-summary-with-citations")
+  @ResponseSchema(accountSummaryWithCitationsResponseSchema)
   @Validate({ body: accountSummaryWithCitationsSchema })
   async accountSummaryWithCitations(
     @Body() body: AccountSummaryWithCitationsInput,

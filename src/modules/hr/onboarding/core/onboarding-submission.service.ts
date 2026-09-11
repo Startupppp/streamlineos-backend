@@ -40,12 +40,21 @@ export class OnboardingSubmissionService {
         )
         .limit(1)
         .for("update");
-      if (!membership) throw new NotFoundException("User not found in this organization.");
+      if (!membership)
+        throw new NotFoundException("User not found in this organization.");
 
       await this.completeFinalReview(tx, orgId, userId);
       await this.initializeLeaveBalances(tx, orgId, userId);
       await this.completeFlowSession(tx, orgId, userId);
-      await tx.update(users).set({ onboardingCompletedAt: new Date() }).where(eq(users.id, userId));
+      const completedAt = new Date();
+      await tx
+        .update(organizationMembers)
+        .set({ onboardingCompletedAt: completedAt })
+        .where(eq(organizationMembers.id, membership.id));
+      await tx
+        .update(users)
+        .set({ onboardingCompletedAt: completedAt })
+        .where(eq(users.id, userId));
       await tx.insert(onboardingAnalyticsEvents).values({
         orgId,
         userId,
@@ -67,7 +76,11 @@ export class OnboardingSubmissionService {
     return { success: true };
   }
 
-  private async completeFinalReview(tx: Db, orgId: string, userId: string): Promise<void> {
+  private async completeFinalReview(
+    tx: Db,
+    orgId: string,
+    userId: string,
+  ): Promise<void> {
     const [existing] = await tx
       .select({ id: onboardingSteps.id })
       .from(onboardingSteps)
@@ -85,7 +98,10 @@ export class OnboardingSubmissionService {
         .update(onboardingSteps)
         .set({ status: "COMPLETED", completedAt: new Date() })
         .where(
-          and(eq(onboardingSteps.id, existing.id), eq(onboardingSteps.orgId, orgId)),
+          and(
+            eq(onboardingSteps.id, existing.id),
+            eq(onboardingSteps.orgId, orgId),
+          ),
         );
       return;
     }
@@ -98,13 +114,18 @@ export class OnboardingSubmissionService {
     });
   }
 
-  private async initializeLeaveBalances(tx: Db, orgId: string, userId: string): Promise<void> {
+  private async initializeLeaveBalances(
+    tx: Db,
+    orgId: string,
+    userId: string,
+  ): Promise<void> {
     const year = new Date().getFullYear();
     const [types, balances] = await Promise.all([
       tx
         .select({ id: leaveTypes.id, daysPerYear: leaveTypes.daysPerYear })
         .from(leaveTypes)
-        .where(eq(leaveTypes.orgId, orgId)),
+        .where(eq(leaveTypes.orgId, orgId))
+        .limit(1_000),
       tx
         .select({ leaveTypeId: leaveBalances.leaveTypeId })
         .from(leaveBalances)
@@ -114,7 +135,8 @@ export class OnboardingSubmissionService {
             eq(leaveBalances.userId, userId),
             eq(leaveBalances.year, year),
           ),
-        ),
+        )
+        .limit(1_000),
     ]);
     const existingIds = new Set(balances.map((balance) => balance.leaveTypeId));
     const missing = types.filter((type) => !existingIds.has(type.id));
@@ -130,7 +152,11 @@ export class OnboardingSubmissionService {
     );
   }
 
-  private async completeFlowSession(tx: Db, orgId: string, userId: string): Promise<void> {
+  private async completeFlowSession(
+    tx: Db,
+    orgId: string,
+    userId: string,
+  ): Promise<void> {
     const [session] = await tx
       .select({ id: onboardingFlowSessions.id })
       .from(onboardingFlowSessions)
@@ -139,16 +165,27 @@ export class OnboardingSubmissionService {
           eq(onboardingFlowSessions.orgId, orgId),
           eq(onboardingFlowSessions.userId, userId),
           eq(onboardingFlowSessions.type, "employee_onboarding"),
-          inArray(onboardingFlowSessions.status, ["not_started", "in_progress", "completed"]),
+          inArray(onboardingFlowSessions.status, [
+            "not_started",
+            "in_progress",
+            "completed",
+          ]),
         ),
       )
-      .orderBy(desc(onboardingFlowSessions.createdAt), desc(onboardingFlowSessions.id))
+      .orderBy(
+        desc(onboardingFlowSessions.createdAt),
+        desc(onboardingFlowSessions.id),
+      )
       .limit(1)
       .for("update");
     if (session) {
       await tx
         .update(onboardingFlowSessions)
-        .set({ status: "completed", completedAt: new Date(), lastSeenAt: new Date() })
+        .set({
+          status: "completed",
+          completedAt: new Date(),
+          lastSeenAt: new Date(),
+        })
         .where(
           and(
             eq(onboardingFlowSessions.id, session.id),

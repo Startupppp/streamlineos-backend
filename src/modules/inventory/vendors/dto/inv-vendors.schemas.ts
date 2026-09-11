@@ -43,5 +43,5 @@ export type CreateVendorInput = z.infer<typeof createVendorSchema>;
 
 export const updateVendorSchema = createVendorSchema.partial().extend({
   isActive: z.boolean().optional(),
-});
+}).strict();
 export type UpdateVendorInput = z.infer<typeof updateVendorSchema>;

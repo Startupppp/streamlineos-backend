@@ -1,6 +1,9 @@
+import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { ScopedRead } from "../../access/scoped-read";
 import type { Db } from "../../../db/drizzle.module";
 import { KbSpacesService } from "./kb-spaces.service";
 import type { KbAccessService } from "../core/kb-access.service";
+import { KbIndexingService } from "../retrieval/kb-indexing.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -25,7 +28,14 @@ function makeChain(rows: unknown[] = []): object {
 }
 
 function makeUser(orgId: string): CurrentUserContext {
-  return { orgId, userId: "user-1", membershipId: 1, role: "MEMBER", isOwner: false } as never;
+  return {
+    orgId,
+    userId: "user-1",
+    membershipId: 1,
+    role: "MEMBER",
+    isOwner: false,
+    principal: humanSessionPrincipal(1, false),
+  } as never;
 }
 
 function makeService(orgId: string, rows: unknown[]): { svc: KbSpacesService; allWhereArgs: unknown[] } {
@@ -49,7 +59,8 @@ function makeService(orgId: string, rows: unknown[]): { svc: KbSpacesService; al
   const access = {
     getAccessibleSpaceIds: jest.fn().mockResolvedValue([1, 2, 3]),
   } as unknown as KbAccessService;
-  return { svc: new KbSpacesService(db, access), allWhereArgs };
+  const indexing = new KbIndexingService(db, undefined as never, undefined as never);
+  return { svc: new KbSpacesService(db, access, indexing), allWhereArgs };
 }
 
 describe("KbSpacesService — cross-tenant isolation", () => {
@@ -59,7 +70,7 @@ describe("KbSpacesService — cross-tenant isolation", () => {
   it("scopes space list to the requesting org (tenant isolation)", async () => {
     const { svc, allWhereArgs } = makeService(ATTACKER_ORG, []);
 
-    await svc.list(makeUser(ATTACKER_ORG));
+    await svc.list(makeUser(ATTACKER_ORG), ScopedRead.of(ATTACKER_ORG, "u-1", "all"));
 
     expect(allWhereArgs.length).toBeGreaterThan(0);
     const allVals = allWhereArgs.flatMap(w => sqlValues(w));
@@ -70,7 +81,7 @@ describe("KbSpacesService — cross-tenant isolation", () => {
     const space = { id: 1, orgId: OWNER_ORG, name: "General", slug: "general", articleCount: 0 };
     const { svc } = makeService(OWNER_ORG, [space]);
 
-    const result = await svc.list(makeUser(OWNER_ORG));
+    const result = await svc.list(makeUser(OWNER_ORG), ScopedRead.of(OWNER_ORG, "u-1", "all"));
 
     expect(result).toBeDefined();
   });

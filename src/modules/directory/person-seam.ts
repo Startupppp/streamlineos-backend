@@ -261,6 +261,31 @@ async function resolvePersonRecord(
   });
 }
 
+/**
+ * Whether this organisation holds this worker at all — existence, not payroll standing.
+ *
+ * `resolvePerson({ kind: "worker" })` answers a NARROWER question: `findPayeeWorkerById` filters on
+ * `is_payee = true`, so a worker the organisation employs but does not pay resolves `unresolved`.
+ * That is the right bar for "may this person be paid" and the wrong one for "does the caller's
+ * organisation hold the object named in this url" — a route that borrowed the second from the first
+ * would 404 its own tenant's non-payee worker, which is a behaviour change and not a tenant guard.
+ * Callers that need the payroll bar keep `assertPayrollWorkerPayeeEligible`.
+ */
+export async function workerBelongsToOrg(db: Db, orgId: string, workerId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ workerId: workers.workerId })
+    .from(workers)
+    .where(
+      and(
+        eq(workers.organizationId, orgId),
+        eq(workers.workerId, workerId),
+        isNull(workers.deletedAt),
+      ),
+    )
+    .limit(1);
+  return row !== undefined;
+}
+
 export function resolvePerson(
   db: Db,
   orgId: string,

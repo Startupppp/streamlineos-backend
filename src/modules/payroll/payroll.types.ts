@@ -81,6 +81,10 @@ export const PAYROLL_TOGGLE_KEYS = [
 export type PayrollToggleKey = (typeof PAYROLL_TOGGLE_KEYS)[number];
 export type PayrollToggles = Record<PayrollToggleKey, boolean>;
 
+export function isPayrollToggleKey(key: string): key is PayrollToggleKey {
+  return PAYROLL_TOGGLE_KEYS.some((k) => k === key);
+}
+
 export const DEFAULT_PAYROLL_TOGGLES: PayrollToggles = {
   pf: false,
   esi: false,
@@ -305,7 +309,7 @@ export const PAYROLL_RUN_TRANSITIONS: Record<PayrollRunStatus, readonly PayrollR
   DRAFT: ["PREVIEW_READY", "EXCEPTIONS_FOUND"],
   PREVIEW_READY: ["PENDING_APPROVAL", "DRAFT", "EXCEPTIONS_FOUND"],
   EXCEPTIONS_FOUND: ["PREVIEW_READY", "DRAFT", "PENDING_APPROVAL"],
-  PENDING_APPROVAL: ["APPROVED", "LOCKED", "PREVIEW_READY"],
+  PENDING_APPROVAL: ["APPROVED", "PREVIEW_READY"],
   APPROVED: ["LOCKED"],
   LOCKED: ["PAID", "REOPENED"],
   PAID: ["PAYSLIPS_PUBLISHED"],

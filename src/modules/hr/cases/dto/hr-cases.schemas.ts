@@ -12,14 +12,14 @@ export const createCaseSchema = z.object({
   details: z.string().min(10).max(10000),
   assignedTo: z.string().optional(),
   confidential: z.boolean().optional(),
-});
+}).strict();
 
 export const anonymousReportSchema = z.object({
   category: z.enum(["grievance", "harassment", "ethics", "workplace_conflict", "policy_violation", "other"]),
   severity: z.enum(["low", "medium", "high", "critical"]),
   summary: z.string().min(5).max(300),
   details: z.string().min(10).max(10000),
-});
+}).strict();
 
 export const updateCaseSchema = z.object({
   status: z.enum(["open", "under_investigation", "resolved", "closed", "dismissed"]).optional(),
@@ -29,7 +29,7 @@ export const updateCaseSchema = z.object({
   summary: z.string().min(5).max(300).optional(),
   details: z.string().min(10).max(10000).optional(),
   confidential: z.boolean().optional(),
-});
+}).strict();
 
 export const listCasesSchema = z.object({
   cursor: z.string().optional(),
@@ -42,18 +42,18 @@ export const listCasesSchema = z.object({
   severity: z.enum(["low", "medium", "high", "critical"]).optional(),
   search: z.string().max(200).optional(),
   assignedTo: z.string().optional(),
-});
+}).strict();
 
 export const createNoteSchema = z.object({
   note: z.string().min(1).max(10000),
   isConfidential: z.boolean().optional(),
-});
+}).strict();
 
 export const addDocumentSchema = z.object({
   name: z.string().min(1).max(255),
   url: z.string().url(),
   restricted: z.boolean().optional(),
-});
+}).strict();
 
 export const createDisciplinaryActionSchema = z.object({
   caseId: z.number().int().positive().optional(),
@@ -69,11 +69,11 @@ export const createDisciplinaryActionSchema = z.object({
   letterContext: z.record(z.string(), z.string()).optional(),
   /** Skip progressive ladder check (audited). */
   forceEscalate: z.boolean().optional(),
-});
+}).strict();
 
 export const acknowledgeDisciplinarySchema = z.object({
   note: z.string().max(1000).optional(),
-});
+}).strict();
 export type AcknowledgeDisciplinaryInput = z.infer<typeof acknowledgeDisciplinarySchema>;
 
 export const listDisciplinarySchema = z.object({
@@ -84,7 +84,7 @@ export const listDisciplinarySchema = z.object({
     "verbal_warning", "written_warning", "final_warning",
     "suspension", "termination_recommended",
   ]).optional(),
-});
+}).strict();
 
 export type CreateCaseInput = z.infer<typeof createCaseSchema>;
 export type AnonymousReportInput = z.infer<typeof anonymousReportSchema>;

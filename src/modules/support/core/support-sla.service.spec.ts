@@ -10,6 +10,7 @@ const mockDb = {
     supportBusinessHours: { findMany: jest.fn(), findFirst: jest.fn() },
     supportSlaPolicies: { findMany: jest.fn(), findFirst: jest.fn() },
     supportTickets: { findFirst: jest.fn(), findMany: jest.fn() },
+    organizationMembers: { findFirst: jest.fn() },
   },
   insert: jest.fn().mockReturnThis(),
   values: jest.fn().mockReturnThis(),
@@ -39,6 +40,7 @@ describe("SupportSlaService", () => {
     mockDb.where.mockReset();
     mockDb.where.mockReturnThis();
     mockDb.query.supportTickets.findMany.mockReset();
+    mockDb.query.organizationMembers.findFirst.mockResolvedValue({ id: 1 });
     mockMacros.applyRoutingRules.mockResolvedValue({});
 
     const module: TestingModule = await Test.createTestingModule({
@@ -152,7 +154,7 @@ describe("SupportSlaService", () => {
           title: "Broken checkout",
           status: "OPEN",
           createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
-          assigneeId: "agent1",
+          assigneeMembership: { user: { id: "agent1" } },
           firstRespondedAt: null,
           firstResponseDueAt: new Date(Date.now() - 1000), // breached
           slaDeadline: new Date(Date.now() + 20 * 60 * 60 * 1000),
@@ -206,7 +208,7 @@ describe("SupportSlaService", () => {
           category: "billing",
           priority: "URGENT",
           createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
-          assigneeId: "agent1",
+          assigneeMembership: { user: { id: "agent1" } },
           firstRespondedAt: null,
           firstResponseDueAt: new Date(Date.now() - 1000),
           slaDeadline: new Date(Date.now() + 20 * 60 * 60 * 1000),
@@ -215,9 +217,6 @@ describe("SupportSlaService", () => {
         },
       ]);
       mockMacros.applyRoutingRules.mockResolvedValueOnce({ assigneeId: "agent2" });
-      // 1st where() call = the auto-reassign UPDATE (stays chainable); 2nd = the managers SELECT (resolves to rows).
-      mockDb.where.mockReturnValueOnce(mockDb);
-      mockDb.where.mockResolvedValueOnce([{ userId: "owner1" }, { userId: "admin1" }]);
 
       const result = await service.runEscalations("org1");
 
@@ -230,7 +229,7 @@ describe("SupportSlaService", () => {
         "first_response_breached",
       );
       expect(mockDb.set).toHaveBeenCalledWith(
-        expect.objectContaining({ assigneeId: "agent2" }),
+        expect.objectContaining({ assigneeMembershipId: 1 }),
       );
       expect(mockNotifications.sendEscalationEmail).toHaveBeenCalledWith(
         "org1",
@@ -257,7 +256,7 @@ describe("SupportSlaService", () => {
           category: "billing",
           priority: "URGENT",
           createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
-          assigneeId: "agent1",
+          assigneeMembership: { user: { id: "agent1" } },
           firstRespondedAt: null,
           firstResponseDueAt: new Date(Date.now() - 1000),
           slaDeadline: new Date(Date.now() + 20 * 60 * 60 * 1000),
@@ -266,11 +265,10 @@ describe("SupportSlaService", () => {
         },
       ]);
       mockMacros.applyRoutingRules.mockResolvedValueOnce({ assigneeId: "agent1" });
-      mockDb.where.mockResolvedValueOnce([]);
 
       await service.runEscalations("org1");
 
-      expect(mockDb.set).not.toHaveBeenCalledWith(expect.objectContaining({ assigneeId: expect.anything() }));
+      expect(mockDb.set).not.toHaveBeenCalledWith(expect.objectContaining({ assigneeMembershipId: expect.anything() }));
     });
 
     it("skips notification when the ticket has no assignee, but still checks it", async () => {

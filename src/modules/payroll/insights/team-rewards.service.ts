@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { and, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -9,6 +9,10 @@ import { EssService } from "./ess.service";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import { analyzePayCompression } from "./lib/pay-compression";
 import { estimateEmployerMonthlyBenefit } from "./lib/total-rewards";
+
+const MAX_BENEFIT_ENROLLMENTS_PER_REPORT = 100;
+const MAX_EQUITY_GRANTS_PER_REPORT = 1_000;
+const MAX_ORG_PAY_COMPRESSION_PROFILES = 10_000;
 
 export interface TeamRewardsMemberRow {
   userId: string;
@@ -68,7 +72,8 @@ export class TeamRewardsService {
             inArray(employeeSalaryProfiles.userId, reportIds),
             eq(employeeSalaryProfiles.status, "ACTIVE"),
           ),
-        ),
+        )
+        .limit(reportIds.length + 1),
       this.db
         .select({
           userId: hrBenefitEnrollments.userId,
@@ -83,7 +88,8 @@ export class TeamRewardsService {
             inArray(hrBenefitEnrollments.userId, reportIds),
             eq(hrBenefitEnrollments.status, "active"),
           ),
-        ),
+        )
+        .limit(reportIds.length * MAX_BENEFIT_ENROLLMENTS_PER_REPORT + 1),
       this.db
         .select({
           userId: hrEquityGrants.userId,
@@ -96,8 +102,19 @@ export class TeamRewardsService {
             inArray(hrEquityGrants.userId, reportIds),
             eq(hrEquityGrants.status, "active"),
           ),
-        ),
+        )
+        .limit(reportIds.length * MAX_EQUITY_GRANTS_PER_REPORT + 1),
     ]);
+
+    if (profiles.length > reportIds.length) {
+      throw new ConflictException("Direct reports have duplicate active salary profiles");
+    }
+    if (enrollments.length > reportIds.length * MAX_BENEFIT_ENROLLMENTS_PER_REPORT) {
+      throw new ConflictException("Direct-report benefit enrollments exceed the supported analysis bound");
+    }
+    if (grants.length > reportIds.length * MAX_EQUITY_GRANTS_PER_REPORT) {
+      throw new ConflictException("Direct-report equity grants exceed the supported analysis bound");
+    }
 
     const ctcByUser = new Map(profiles.map((p) => [p.userId, p.annualCtc]));
     const benefitsByUser = new Map<string, { count: number; annual: number }>();
@@ -134,10 +151,10 @@ export class TeamRewardsService {
     });
 
     const compressionMembers = members
-      .filter((m) => m.annualCtc != null)
+      .filter((m): m is TeamRewardsMemberRow & { annualCtc: string } => m.annualCtc != null)
       .map((m) => ({
         userId: m.userId,
-        annualCtc: parseFloat(m.annualCtc!),
+        annualCtc: parseFloat(m.annualCtc),
         label: m.name,
       }));
     const missingCtcCount = members.filter((m) => m.annualCtc == null).length;
@@ -176,7 +193,14 @@ export class TeamRewardsService {
           eq(employeeSalaryProfiles.orgId, orgId),
           eq(employeeSalaryProfiles.status, "ACTIVE"),
         ),
+      )
+      .limit(MAX_ORG_PAY_COMPRESSION_PROFILES + 1);
+
+    if (rows.length > MAX_ORG_PAY_COMPRESSION_PROFILES) {
+      throw new ConflictException(
+        `Organization pay compression exceeds the supported ${MAX_ORG_PAY_COMPRESSION_PROFILES}-profile bound`,
       );
+    }
 
     const members = rows
       .filter((r): r is typeof r & { userId: string } => r.userId !== null)
@@ -200,7 +224,8 @@ export class TeamRewardsService {
     return this.db
       .select({ id: users.id, name: users.name, email: users.email })
       .from(users)
-      .where(inArray(users.id, reportIds));
+      .where(inArray(users.id, reportIds))
+      .limit(reportIds.length);
   }
 
   private async assertDirectReport(

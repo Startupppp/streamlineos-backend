@@ -11,20 +11,43 @@ import { storagePendingPurge } from "../../../../db/schema/common/storage-pendin
 import {
   enumerateFileKeyColumns,
   collectOrgFileKeys,
+  type OrgFileKey,
 } from "../../../storage/storage-key-catalog";
-import type { StorageService } from "../../../storage/storage.service";
+
+const OBJECT_DELETE_ATTEMPTS = 3;
+const PURGE_BOOKKEEPING_CHUNK = 200;
 
 export type PurgeAdapterResult = {
   state: "CONFIRMED" | "FAILED" | "NOT_APPLICABLE";
   detail: string;
 };
 
+export interface StoragePort {
+  deleteFile(orgId: string, key: string, bucketOverride?: string): Promise<void>;
+  fileExists?(orgId: string, key: string, bucketOverride?: string): Promise<boolean>;
+}
+
+/**
+ * The port plus the one thing the port cannot answer: which bucket the KB
+ * uploaders addressed. `kbBucket` is a REQUIRED property even where its value is
+ * `undefined` -- `undefined` is a resolution, not an absence. It means a
+ * single-bucket deployment, where `requireBucket` falls back to the default
+ * bucket and the KB uploads went there too. Required so it is passed
+ * deliberately rather than forgotten, because forgetting it is invisible: an
+ * S3-compatible delete of an absent key answers SUCCESS, and the `fileExists`
+ * that follows then confirms the object absent from a bucket it was never in.
+ */
+export interface PurgeStorage {
+  readonly port: StoragePort;
+  readonly kbBucket: string | undefined;
+}
+
 export type PurgeAdapterDef = {
   confirm: (
     orgId: string,
     purgeJobId: string,
     db: Db,
-    storage?: StorageService,
+    storage?: PurgeStorage,
   ) => Promise<PurgeAdapterResult>;
 };
 
@@ -52,10 +75,15 @@ export const PURGE_ADAPTER_REGISTRY: Record<PurgeAdapter, PurgeAdapterDef> = {
           state: "CONFIRMED",
           detail: "Organization row confirms PURGED status",
         };
+      if (org.statusV2 === "PURGE_SCHEDULED")
+        return {
+          state: "CONFIRMED",
+          detail:
+            "Organization is eligible; the purge orchestrator physically deletes the organization row after all adapters confirm",
+        };
       return {
         state: "FAILED",
-        detail:
-          "Physical row deletion not implemented; purge worker marks statusV2=PURGED but does not cascade-delete tenant data",
+        detail: `Organization is not purgeable from status ${org.statusV2 ?? "NULL"}`,
       };
     },
   },
@@ -80,7 +108,7 @@ export const PURGE_ADAPTER_REGISTRY: Record<PurgeAdapter, PurgeAdapterDef> = {
         };
       }
 
-      let keys: string[];
+      let keys: OrgFileKey[];
       try {
         keys = await collectOrgFileKeys(db, orgId, columns);
       } catch (err) {
@@ -97,72 +125,148 @@ export const PURGE_ADAPTER_REGISTRY: Record<PurgeAdapter, PurgeAdapterDef> = {
         };
       }
 
+      /*
+       * The bucket travels with the key from the column it was enumerated from,
+       * and both the delete and its verification take the same override. Passing
+       * it to the delete alone would be worse than passing it to neither: the
+       * object would be removed from the KB bucket and then looked for in the
+       * default one, which answers "absent" for a reason that has nothing to do
+       * with the delete.
+       */
+      const bucketFor = (file: OrgFileKey): string | undefined =>
+        file.bucket === "kb" ? storage.kbBucket : undefined;
+
       const failedKeys: string[] = [];
+      const confirmedKeys: OrgFileKey[] = [];
+      const failures: Array<{ file: OrgFileKey; reason: string }> = [];
 
-      for (const key of keys) {
+      const flushBookkeeping = async (): Promise<void> => {
+        if (confirmedKeys.length === 0 && failures.length === 0) return;
+        const confirmed = confirmedKeys.splice(0, confirmedKeys.length);
+        const failedRows = failures.splice(0, failures.length);
         try {
           await runInNewTenantTransaction(db, orgId, async (tx) => {
-            await tx
-              .insert(storagePendingPurge)
-              .values({
-                orgId,
-                storageKey: key,
-                purpose: "org-purge",
-                status: "pending",
-              })
-              .onConflictDoUpdate({
-                target: [storagePendingPurge.orgId, storagePendingPurge.storageKey],
-                set: { status: "pending", lastAttemptedAt: null, failedReason: null },
-              });
-          });
-        } catch (err) {
-          failedKeys.push(key);
-          continue;
-        }
-
-        try {
-          await storage.deleteFile(orgId, key);
-          await runInNewTenantTransaction(db, orgId, async (tx) => {
-            await tx
-              .update(storagePendingPurge)
-              .set({
-                status: "confirmed",
-                confirmedAt: new Date(),
-                lastAttemptedAt: new Date(),
-                attemptCount: sql`${storagePendingPurge.attemptCount} + 1`,
-              })
-              .where(
-                and(
-                  eq(storagePendingPurge.orgId, orgId),
-                  eq(storagePendingPurge.storageKey, key),
-                ),
-              );
-          });
-        } catch (err) {
-          failedKeys.push(key);
-          try {
-            await runInNewTenantTransaction(db, orgId, async (tx) => {
+            for (let i = 0; i < confirmed.length; i += PURGE_BOOKKEEPING_CHUNK)
               await tx
                 .update(storagePendingPurge)
                 .set({
-                  status: "failed",
-                  failedReason: String(err),
+                  status: "confirmed",
+                  confirmedAt: new Date(),
                   lastAttemptedAt: new Date(),
                   attemptCount: sql`${storagePendingPurge.attemptCount} + 1`,
                 })
                 .where(
                   and(
                     eq(storagePendingPurge.orgId, orgId),
-                    eq(storagePendingPurge.storageKey, key),
+                    inArray(
+                      storagePendingPurge.storageKey,
+                      confirmed.slice(i, i + PURGE_BOOKKEEPING_CHUNK).map((file) => file.key),
+                    ),
                   ),
                 );
-            });
-          } catch {
-          }
+
+            for (let i = 0; i < failedRows.length; i += PURGE_BOOKKEEPING_CHUNK)
+              await tx
+                .insert(storagePendingPurge)
+                .values(
+                  failedRows.slice(i, i + PURGE_BOOKKEEPING_CHUNK).map((row) => ({
+                    orgId,
+                    storageKey: row.file.key,
+                    purpose: "org-purge",
+                    bucket: row.file.bucket,
+                    status: "failed",
+                    failedReason: row.reason,
+                    lastAttemptedAt: new Date(),
+                  })),
+                )
+                .onConflictDoUpdate({
+                  target: [storagePendingPurge.orgId, storagePendingPurge.storageKey],
+                  set: {
+                    status: "failed",
+                    bucket: sql`excluded.bucket`,
+                    failedReason: sql`excluded.failed_reason`,
+                    lastAttemptedAt: new Date(),
+                    attemptCount: sql`${storagePendingPurge.attemptCount} + 1`,
+                  },
+                });
+          });
+        } catch {
         }
+      };
+
+      /*
+       * The pending row must exist before its object is deleted, or a crash
+       * between the two loses the only record that the object was ever ours to
+       * remove. That ordering is preserved — but it is one bulk upsert for the
+       * whole key set rather than one transaction per key, which is what this
+       * used to be: three transactions and two pooled-connection borrows for
+       * every single object.
+       */
+      try {
+        await runInNewTenantTransaction(db, orgId, async (tx) => {
+          for (let i = 0; i < keys.length; i += PURGE_BOOKKEEPING_CHUNK)
+            await tx
+              .insert(storagePendingPurge)
+              .values(
+                keys.slice(i, i + PURGE_BOOKKEEPING_CHUNK).map((file) => ({
+                  orgId,
+                  storageKey: file.key,
+                  purpose: "org-purge",
+                  bucket: file.bucket,
+                  status: "pending",
+                })),
+              )
+              .onConflictDoUpdate({
+                target: [storagePendingPurge.orgId, storagePendingPurge.storageKey],
+                // `excluded.bucket` heals a row registered before the column
+                // existed: a re-run of the purge is the only party that can.
+                set: {
+                  status: "pending",
+                  bucket: sql`excluded.bucket`,
+                  lastAttemptedAt: null,
+                  failedReason: null,
+                },
+              });
+        });
+      } catch (err) {
+        return {
+          state: "FAILED",
+          detail: `Failed to register ${keys.length} object-storage key(s) for purge: ${String(err)}`,
+        };
       }
 
-      let remaining: string[];
+      for (const file of keys) {
+        const bucket = bucketFor(file);
+        try {
+          let lastError: unknown;
+          for (let attempt = 1; attempt <= OBJECT_DELETE_ATTEMPTS; attempt++) {
+            try {
+              await storage.port.deleteFile(orgId, file.key, bucket);
+              lastError = undefined;
+              break;
+            } catch (err) {
+              lastError = err;
+            }
+          }
+          if (lastError !== undefined) throw lastError;
+
+          if (
+            typeof storage.port.fileExists === "function" &&
+            await storage.port.fileExists(orgId, file.key, bucket)
+          ) {
+            throw new Error("object remains after delete verification");
+          }
+          confirmedKeys.push(file);
+        } catch (err) {
+          failedKeys.push(file.key);
+          failures.push({ file, reason: String(err) });
+        }
+        if (confirmedKeys.length + failures.length >= PURGE_BOOKKEEPING_CHUNK)
+          await flushBookkeeping();
+      }
+      await flushBookkeeping();
+
+      let remaining: OrgFileKey[];
       try {
         remaining = await collectOrgFileKeys(db, orgId, columns);
       } catch (err) {
@@ -172,7 +276,7 @@ export const PURGE_ADAPTER_REGISTRY: Record<PurgeAdapter, PurgeAdapterDef> = {
         };
       }
 
-      if (remaining.length === 0)
+      if (failedKeys.length === 0 && remaining.length === 0)
         return {
           state: "CONFIRMED",
           detail: `All ${keys.length} object-storage key(s) deleted and verified absent`,

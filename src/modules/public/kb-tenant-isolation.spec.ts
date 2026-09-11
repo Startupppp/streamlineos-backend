@@ -50,7 +50,7 @@ describe("KbService — cross-tenant isolation", () => {
     } as unknown as Db;
 
     const svc = new KbService(db);
-    const result = await svc.list({ org: ATTACKER, page: 1, pageSize: 10 });
+    const result = await svc.list({ org: ATTACKER, pageSize: 10 });
 
     expect(result.articles).toHaveLength(0);
     expect(categoriesChain.where).toHaveBeenCalled();
@@ -71,8 +71,8 @@ describe("KbService — cross-tenant isolation", () => {
     } as unknown as Db;
 
     const svc = new KbService(db);
-    const result = await svc.list({ org: OWNER, page: 1, pageSize: 10 });
+    const result = await svc.list({ org: OWNER, pageSize: 10 });
 
-    expect(result).toHaveProperty("articles");
+    expect(result.articles).toHaveLength(1);
   });
 });

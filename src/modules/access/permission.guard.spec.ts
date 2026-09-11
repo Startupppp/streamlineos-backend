@@ -1,3 +1,4 @@
+import { testAuthContext } from "../../../test/helpers/module-guard-context";
 import { ForbiddenException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { ExecutionContextHost } from "@nestjs/core/helpers/execution-context-host";
@@ -83,8 +84,15 @@ describe("PermissionGuard", () => {
     handler: GuardTestController[keyof GuardTestController],
     currentUser: CurrentUserContext = user,
   ): ExecutionContextHost {
+    const actor = { ...currentUser };
+    const authContext = testAuthContext(actor, {
+      moduleAvailability: async (_actor, moduleKey) =>
+        (await getModuleState(actor.orgId, moduleKey)) === false
+          ? { available: false, reason: "org-disabled" }
+          : { available: true },
+    });
     return new ExecutionContextHost(
-      [{ user: { ...currentUser } }],
+      [{ user: actor, authContext }],
       GuardTestController,
       handler,
     );

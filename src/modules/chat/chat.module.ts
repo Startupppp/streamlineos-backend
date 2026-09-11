@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
 import { BillingModule } from "../billing/core/billing.module";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { ChatAttachmentsController } from "./chat-attachments.controller";
+import { ChatAttachmentsService } from "./chat-attachments.service";
 import { ChatActionsController } from "./chat-actions.controller";
 import { ChatEntityActionsController } from "./chat-entity-actions.controller";
 import { ChatChannelsController } from "./chat-channels.controller";
@@ -16,8 +18,10 @@ import { ChatOrgSettingsController } from "./chat-org-settings.controller";
 import { ChatSummarizeController } from "./chat-summarize.controller";
 import { ChatRealtimeController } from "./chat-realtime.controller";
 import { ChatChannelsService } from "./chat-channels.service";
+import { ChatChannelListService } from "./chat-channel-list.service";
 import { ChatChannelMembersService } from "./chat-channel-members.service";
 import { ChatMessagesService } from "./chat-messages.service";
+import { ChatMessageModerationService } from "./chat-message-moderation.service";
 import { ChatMessageTimelineService } from "./chat-message-timeline.service";
 import { ChatReactionsService } from "./chat-reactions.service";
 import { ChatMessageFanoutService } from "./chat-message-fanout.service";
@@ -34,6 +38,7 @@ import { ChatInviteLinksService } from "./chat-invite-links.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { ChatSummarizeService } from "./chat-summarize.service";
 import { RealtimeModule } from "../realtime/realtime.module";
+import { IntegrationsModule } from "../integrations/core/integrations.module";
 import { EntityReferenceModule } from "../entity-reference/entity-reference.module";
 import { OutboxModule } from "../../common/outbox/outbox.module";
 import { ChatFanoutOutboxConsumer } from "./chat-fanout-outbox.consumer";
@@ -41,8 +46,9 @@ import { MESSAGE_FANOUT_PROVIDER } from "./message-fanout.interface";
 import { OutboxBackedMessageFanoutProvider } from "./outbox-backed-message-fanout.provider";
 
 @Module({
-  imports: [BillingModule, NotificationsModule, RealtimeModule, EntityReferenceModule, OutboxModule],
+  imports: [BillingModule, NotificationsModule, RealtimeModule, IntegrationsModule, EntityReferenceModule, OutboxModule],
   controllers: [
+    ChatAttachmentsController,
     ChatActionsController,
     ChatEntityActionsController,
     ChatChannelsController,
@@ -59,13 +65,16 @@ import { OutboxBackedMessageFanoutProvider } from "./outbox-backed-message-fanou
     ChatRealtimeController,
   ],
   providers: [
+    ChatAttachmentsService,
     ChatMessageFanoutService,
     OutboxBackedMessageFanoutProvider,
     { provide: MESSAGE_FANOUT_PROVIDER, useExisting: OutboxBackedMessageFanoutProvider },
     ChatFanoutOutboxConsumer,
+    ChatChannelListService,
     ChatChannelsService,
     ChatChannelMembersService,
     ChatMessagesService,
+    ChatMessageModerationService,
     ChatMessageTimelineService,
     ChatReactionsService,
     ChatPresenceService,

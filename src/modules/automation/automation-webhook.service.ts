@@ -6,6 +6,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { checkWebhookUrl } from "../../common/security/ssrf-guard";
 import { type EventPayload } from "./automation.evaluator";
+import { outboundTraceHeaders } from "../../common/outbound/call-provider";
 
 const WEBHOOK_TIMEOUT_MS = 10_000;
 
@@ -18,8 +19,22 @@ export class AutomationWebhookService {
     eventName: string,
     payload: EventPayload,
   ): Promise<void> {
+    /**
+     * Projected, not `SELECT *`. The unprojected read pulled every column of
+     * every active endpoint — including columns delivery has no use for — into
+     * memory on a path that already holds the request's tenant transaction open.
+     * The sibling dispatcher reads exactly these four
+     * (`webhooks-dispatch.service.ts:127-132`).
+     *
+     * Deliberately still unbounded. A `LIMIT` here would stop delivering to
+     * endpoints an operator configured, without saying so; the real bound
+     * belongs on the delivery model, not the read — see
+     * `__tests__/automation-webhook-log-durability.spec.ts` for why the fan-out
+     * width cannot simply be narrowed while the caller holds a transaction.
+     */
     const endpoints = await this.db.query.webhookEndpoints.findMany({
       where: and(eq(webhookEndpoints.orgId, orgId), eq(webhookEndpoints.isActive, true)),
+      columns: { id: true, url: true, secret: true, events: true },
     });
 
     const active = endpoints.filter((endpoint) => {
@@ -70,6 +85,7 @@ export class AutomationWebhookService {
           "Content-Type": "application/json",
           "X-StreamlineOS-Signature": `sha256=${signature}`,
           "X-Webhook-Event": eventName,
+          ...outboundTraceHeaders(),
         },
         body,
         signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),

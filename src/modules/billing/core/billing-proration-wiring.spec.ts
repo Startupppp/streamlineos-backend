@@ -27,9 +27,9 @@ const PERIOD_START = new Date(NOW.getTime() - 10 * 24 * 60 * 60 * 1000);
 const PERIOD_END = new Date(NOW.getTime() + 20 * 24 * 60 * 60 * 1000);
 
 const UPGRADE_INPUT = {
-  razorpay_order_id: "order_test_1",
-  razorpay_payment_id: "pay_test_abc123",
-  razorpay_signature: FAKE_VALID_PAYMENT_SIG,
+  orderId: "order_test_1",
+  paymentId: "pay_test_abc123",
+  signature: FAKE_VALID_PAYMENT_SIG,
   plan: "PROFESSIONAL" as const,
 };
 

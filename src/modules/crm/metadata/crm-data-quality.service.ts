@@ -104,7 +104,7 @@ export class CrmDataQualityService {
         LIMIT ${OFFENDER_LIMIT}
       `,
     );
-    const offenders = (dups as Array<Record<string, unknown>>).map((r) => ({
+    const offenders = dups.map((r) => ({
       id: String(r["ids"] ?? ""),
       name: String(r["names"] ?? ""),
       detail: `Normalized: ${String(r["norm_name"] ?? "")}`,

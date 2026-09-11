@@ -32,7 +32,6 @@ export const roleAssignments = pgTable(
       .notNull(),
     organizationMembershipId: integer("organization_membership_id").notNull(),
     roleId: integer("role_id")
-      .references(() => roles.id, { onDelete: "cascade" })
       .notNull(),
     assignedByMembershipId: integer("assigned_by_membership_id"),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
@@ -44,10 +43,6 @@ export const roleAssignments = pgTable(
       table.orgId,
       table.organizationMembershipId,
       table.roleId,
-    ),
-    index("idx_role_assignments_org_membership").on(
-      table.orgId,
-      table.organizationMembershipId,
     ),
     index("idx_role_assignments_org_role").on(table.orgId, table.roleId),
     foreignKey({
@@ -62,7 +57,7 @@ export const roleAssignments = pgTable(
       name: "fk_role_assignments_assigner_membership",
       columns: [table.orgId, table.assignedByMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
-    }),
+    }).onDelete("set null"),
   ],
 );
 
@@ -74,7 +69,6 @@ export const rolePermissionGrants = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     roleId: integer("role_id")
-      .references(() => roles.id, { onDelete: "cascade" })
       .notNull(),
     permissionKey: text("permission_key")
       .references(() => permissions.name, { onDelete: "cascade" })
@@ -88,7 +82,6 @@ export const rolePermissionGrants = pgTable(
       table.roleId,
       table.permissionKey,
     ),
-    index("idx_role_permission_grants_org_role").on(table.orgId, table.roleId),
     foreignKey({
       columns: [table.orgId, table.roleId],
       foreignColumns: [roles.orgId, roles.id],
@@ -105,7 +98,6 @@ export const userPermissionGrants = pgTable(
       .notNull(),
     organizationMembershipId: integer("organization_membership_id").notNull(),
     permissionKey: text("permission_key")
-      .references(() => permissions.name, { onDelete: "cascade" })
       .notNull(),
     scope: dataScopeEnum("scope").default("all").notNull(),
     moduleKey: text("module_key").notNull(),
@@ -123,10 +115,6 @@ export const userPermissionGrants = pgTable(
       table.organizationMembershipId,
       table.permissionKey,
     ),
-    index("idx_user_permission_grants_org_membership").on(
-      table.orgId,
-      table.organizationMembershipId,
-    ),
     index("idx_user_permission_grants_org_module").on(
       table.orgId,
       table.moduleKey,
@@ -139,7 +127,7 @@ export const userPermissionGrants = pgTable(
       name: "fk_user_permission_grants_granter_membership",
       columns: [table.orgId, table.grantedByMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
-    }),
+    }).onDelete("set null"),
     foreignKey({
       name: "fk_user_permission_grants_module",
       columns: [table.moduleKey],

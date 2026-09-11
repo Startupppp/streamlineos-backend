@@ -5,10 +5,26 @@ import { PlatformAnalyticsService } from "./platform-analytics.service";
 import { PlatformAdminService } from "./platform-admin.service";
 import { PlatformOperatorAccessService } from "./platform-operator-access.service";
 import { PlatformOperatorAccessController } from "./platform-operator-access.controller";
+import { OperatorSessionGuard } from "./operator-session.guard";
+import { PlatformOperatorCustomerController } from "./platform-operator-customer.controller";
+import { PlatformOperatorCustomerService } from "./platform-operator-customer.service";
+import { NotificationsModule } from "../notifications/notifications.module";
 
 @Module({
-  controllers: [PlatformController, PlatformOperatorAccessController],
-  providers: [PlatformService, PlatformAnalyticsService, PlatformAdminService, PlatformOperatorAccessService],
-  exports: [PlatformService, PlatformAnalyticsService, PlatformAdminService, PlatformOperatorAccessService],
+  imports: [NotificationsModule],
+  controllers: [
+    PlatformController,
+    PlatformOperatorAccessController,
+    PlatformOperatorCustomerController,
+  ],
+  providers: [
+    PlatformService,
+    PlatformAnalyticsService,
+    PlatformAdminService,
+    PlatformOperatorAccessService,
+    PlatformOperatorCustomerService,
+    OperatorSessionGuard,
+  ],
+  exports: [PlatformOperatorAccessService],
 })
 export class PlatformModule {}

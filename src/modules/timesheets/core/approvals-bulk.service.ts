@@ -3,14 +3,22 @@ import { and, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
-import { timesheetPeriods } from "../../../db/schema";
+import { timesheetPeriods, timesheetSettings } from "../../../db/schema";
+import { actingMembershipId } from "../../../common/auth/principal";
+import {
+  assertOrganizationActor,
+  OrganizationActorError,
+  organizationActorHttpError,
+} from "../../../common/organization/organization-actor";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import {
   ApprovalsService,
-  isExpectedApprovalSkip,
   membershipUserIds,
   periodOwnerUserIdOrWarn,
 } from "./approvals.service";
+import { RateResolverService } from "./rate-resolver.service";
+import { canActOnPeriod } from "./lib/approval-guard";
+import { applyBulkApproval } from "./lib/approval-transition";
 import { applyBulkRejection, applyRejection } from "./lib/rejection-transition";
 import type {
   BulkApproveInput,
@@ -22,8 +30,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 /*
   The service decides who and whether: it reads the periods, runs the guard on
   each, resolves the owners, opens the transaction and sends the notices once it
-  commits. What a rejection writes inside that transaction is in
-  `lib/rejection-transition.ts`, beside `lib/approval-transition.ts`.
+  commits. What an approval or a rejection writes inside that transaction is in
+  `lib/approval-transition.ts` and `lib/rejection-transition.ts`.
 */
 @Injectable()
 export class ApprovalsBulkService {
@@ -31,6 +39,7 @@ export class ApprovalsBulkService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: TimesheetsAuditService,
     private readonly approvals: ApprovalsService,
+    private readonly rateResolver: RateResolverService,
   ) {}
 
   async rejectPeriod(
@@ -99,30 +108,142 @@ export class ApprovalsBulkService {
     return updated;
   }
 
+  /**
+   * A mixed-tenant id list must fail the whole request. Both bulk actions used
+   * to fold a foreign id into their ordinary skip path — the approve loop
+   * swallowed the `NotFoundException` as a skip, and the reject query narrows to
+   * the caller's org in the same predicate as the status filter — so the caller
+   * was told the request succeeded. Tenant membership is checked first and on
+   * its own, which leaves the per-period status and approver skips meaning what
+   * they say. A miss is 404, never 403.
+   */
+  private async assertPeriodsInOrg(orgId: string, periodIds: readonly number[]): Promise<number[]> {
+    const requestedIds = [...new Set(periodIds)];
+    const owned = await this.db
+      .select({ id: timesheetPeriods.id })
+      .from(timesheetPeriods)
+      .where(
+        and(eq(timesheetPeriods.orgId, orgId), inArray(timesheetPeriods.id, requestedIds)),
+      )
+      .limit(requestedIds.length);
+    if (owned.length !== requestedIds.length)
+      throw new NotFoundException("One or more period IDs not found in this organization");
+    return requestedIds;
+  }
+
   async bulkApprove(u: CurrentUserContext, input: BulkApproveInput) {
-    let approved = 0;
-    let skipped = 0;
-    for (const periodId of input.periodIds) {
-      try {
-        await this.approvals.approveSinglePeriod(u, periodId);
-        approved++;
-      } catch (error) {
-        if (isExpectedApprovalSkip(error)) {
-          skipped++;
-          continue;
-        }
-        logger.error("bulkApprove: failed to approve period", {
-          orgId: u.orgId,
-          periodId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        throw error;
-      }
+    const requestedIds = await this.assertPeriodsInOrg(u.orgId, input.periodIds);
+
+    const candidates = await this.db
+      .select({
+        id: timesheetPeriods.id,
+        userMembershipId: timesheetPeriods.userMembershipId,
+        currentApproverMembershipId: timesheetPeriods.currentApproverMembershipId,
+        periodStart: timesheetPeriods.periodStart,
+        periodEnd: timesheetPeriods.periodEnd,
+        totalHours: timesheetPeriods.totalHours,
+      })
+      .from(timesheetPeriods)
+      .where(
+        and(
+          eq(timesheetPeriods.orgId, u.orgId),
+          inArray(timesheetPeriods.id, requestedIds),
+          eq(timesheetPeriods.status, "SUBMITTED"),
+        ),
+      );
+
+    const membershipId = actingMembershipId(u.principal);
+    const delegations =
+      membershipId === null
+        ? new Set<number>()
+        : await this.approvals.activeDelegationsToActor(
+            u.orgId,
+            membershipId,
+            candidates
+              .map((p) => p.currentApproverMembershipId)
+              .filter((id): id is number => id !== null),
+          );
+
+    const actor = { membershipId, isOrgOwner: !!u.isOrgOwner };
+
+    const approvable: typeof candidates = [];
+    for (const p of candidates) {
+      const delegateeOfApprover =
+        p.currentApproverMembershipId !== null &&
+        membershipId !== null &&
+        p.currentApproverMembershipId !== membershipId &&
+        p.userMembershipId !== membershipId
+          ? delegations.has(p.currentApproverMembershipId)
+          : false;
+      const decision = canActOnPeriod(actor, p, { delegateeOfApprover });
+      if (decision.allowed) approvable.push(p);
     }
-    return { approved, skipped };
+
+    const skipped = requestedIds.length - approvable.length;
+    if (approvable.length === 0) return { approved: 0, skipped };
+
+    const ids = approvable.map((p) => p.id);
+
+    const approverActor = await assertOrganizationActor(this.db, u.orgId, {
+      kind: "user",
+      userId: u.userId,
+    }).catch((e: unknown) => {
+      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+      throw e;
+    });
+
+    const [settings] = await this.db
+      .select({ lockAfterApproval: timesheetSettings.lockAfterApproval })
+      .from(timesheetSettings)
+      .where(eq(timesheetSettings.orgId, u.orgId))
+      .limit(1);
+    const lockAfterApproval = settings?.lockAfterApproval ?? true;
+
+    const owners = await membershipUserIds(
+      this.db,
+      u.orgId,
+      approvable.map((p) => p.userMembershipId),
+    );
+
+    const now = new Date();
+    await this.db.transaction((tx) =>
+      applyBulkApproval(
+        tx,
+        { rateResolver: this.rateResolver, audit: this.audit },
+        u,
+        ids,
+        { approverActor, lockAfterApproval, owners, now },
+      ),
+    );
+
+    /**
+     * One notification per worker, after the batch commits — the same notice
+     * `approveSinglePeriod` sends, for the same reason bulk rejection sends one
+     * per period: one action for the approver is N pieces of news for N people.
+     */
+    for (const p of approvable) {
+      const ownerUserId =
+        p.userMembershipId === null ? undefined : owners.get(p.userMembershipId);
+      if (!ownerUserId) continue;
+      await this.approvals.notifyPeriodApproved(u, {
+        periodId: p.id,
+        ownerUserId,
+        title: `Timesheet approved: ${p.periodStart} to ${p.periodEnd}`,
+        message: `Your timesheet for ${p.periodStart}–${p.periodEnd} (${p.totalHours}h) was approved.`,
+        variables: {
+          periodId: p.id,
+          periodStart: p.periodStart,
+          periodEnd: p.periodEnd,
+          totalHours: p.totalHours,
+        },
+      });
+    }
+
+    return { approved: ids.length, skipped };
   }
 
   async bulkReject(u: CurrentUserContext, input: BulkRejectInput) {
+    const requestedIds = await this.assertPeriodsInOrg(u.orgId, input.periodIds);
     const candidates = await this.db
       .select({
         id: timesheetPeriods.id,
@@ -134,15 +255,27 @@ export class ApprovalsBulkService {
       .where(
         and(
           eq(timesheetPeriods.orgId, u.orgId),
-          inArray(timesheetPeriods.id, input.periodIds),
+          inArray(timesheetPeriods.id, requestedIds),
           eq(timesheetPeriods.status, "SUBMITTED"),
         ),
       );
 
+    const actorMembershipIdForDelegation = actingMembershipId(u.principal);
+    const delegations =
+      actorMembershipIdForDelegation === null
+        ? new Set<number>()
+        : await this.approvals.activeDelegationsToActor(
+            u.orgId,
+            actorMembershipIdForDelegation,
+            candidates
+              .map((p) => p.currentApproverMembershipId)
+              .filter((id): id is number => id !== null),
+          );
+
     const periods = [];
     for (const p of candidates) {
       try {
-        await this.approvals.assertCanActOnPeriod(u, p);
+        await this.approvals.assertCanActOnPeriod(u, p, delegations);
         periods.push(p);
       } catch (err) {
         if (!(err instanceof ForbiddenException)) {

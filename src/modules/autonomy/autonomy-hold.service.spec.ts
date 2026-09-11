@@ -31,11 +31,13 @@ import type { AutonomyScoringService } from "./autonomy-scoring.service";
 const ORG = "org-1";
 
 function query<T>(rows: T[]) {
-  return {
+  const chain = {
     then: (resolve: (value: T[]) => unknown, reject?: (error: unknown) => unknown) =>
       Promise.resolve(rows).then(resolve, reject),
+    orderBy: () => chain,
     limit: async () => rows,
   };
+  return chain;
 }
 
 function makeService(options: {

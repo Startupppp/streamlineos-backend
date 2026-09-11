@@ -20,7 +20,7 @@ import {
   chatSavedMessages,
   invitationEvents,
   invitations,
-  kbSpaceGrants,
+  kbSpaceMembers,
   organizationMembers,
   organizations,
   ownershipTransfers,
@@ -55,8 +55,8 @@ const mockRegisterAfterCommit = registerAfterCommit as jest.MockedFunction<
 >;
 const mockBustMembershipStatusCache =
   bustMembershipStatusCache as jest.MockedFunction<typeof bustMembershipStatusCache>;
-const mockOutboxWriterEmit = OutboxWriter.emit as jest.MockedFunction<
-  typeof OutboxWriter.emit
+const mockOutboxWriterEmitMany = OutboxWriter.emitMany as jest.MockedFunction<
+  typeof OutboxWriter.emitMany
 >;
 
 const ORG_ID = "org-abc";
@@ -143,6 +143,8 @@ async function buildService(opts: {
         useValue: {
           invalidate: mockCacheInvalidate,
           invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+          invalidateMany: jest.fn().mockResolvedValue(undefined),
+          invalidateNamespaceMany: jest.fn().mockResolvedValue(undefined),
         },
       },
       { provide: DRIZZLE, useValue: mockDb },
@@ -160,8 +162,12 @@ async function buildService(opts: {
 
   mockRunOutsideTenantContext.mockImplementation((fn) => fn());
   mockWithIdentity.mockImplementation((_db, _userId, fn) => {
-    const countRow = [{ n: otherActiveMemberships }];
-    const whereFn = jest.fn().mockResolvedValue(countRow);
+    // PRD-C073: the "is there another active membership?" probe is a bounded
+    // `select({ one: sql1 }) ... .limit(1)`, not an unbounded count(), so the double
+    // returns ROWS — one when another membership exists, none when it does not.
+    const rows = Array.from({ length: Math.min(otherActiveMemberships, 1) }, () => ({ one: 1 }));
+    const limitFn = jest.fn().mockResolvedValue(rows);
+    const whereFn = jest.fn().mockReturnValue({ limit: limitFn });
     const innerJoinFn = jest.fn().mockReturnValue({ where: whereFn });
     const fromFn = jest.fn().mockReturnValue({ innerJoin: innerJoinFn });
     const selectFn = jest.fn().mockReturnValue({ from: fromFn });
@@ -177,7 +183,7 @@ async function buildService(opts: {
 describe("OrgMembershipService.revokeOrgScopedAccess", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockOutboxWriterEmit.mockResolvedValue(undefined);
+    mockOutboxWriterEmitMany.mockResolvedValue(undefined);
   });
 
   describe("removal: revokes all expected artifacts", () => {
@@ -221,14 +227,18 @@ describe("OrgMembershipService.revokeOrgScopedAccess", () => {
       expect(deleteFn).toHaveBeenCalledWith(resourceGrants);
     });
 
-    it("deletes KB space grants for the user principal", async () => {
+    it("leaves KB space grants to the membership FK cascade instead of deleting them itself", async () => {
       const { tx, deleteFn } = buildTx();
       mockRunInTenantTransaction.mockImplementation((_db, fn) => fn(tx as unknown as Parameters<typeof fn>[0]));
       const { service } = await buildService();
 
       await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "removed");
 
-      expect(deleteFn).toHaveBeenCalledWith(kbSpaceGrants);
+      // kb_space_members carries ON DELETE CASCADE to organization_members (fk_kb_space_members_org_membership).
+      // revokeOrgScopedAccess revokes access without deleting the membership row, so the FK cascade
+      // fires only when the membership row is later deleted — this function correctly does not issue
+      // an explicit delete and defers to the cascade.
+      expect(deleteFn).not.toHaveBeenCalledWith(kbSpaceMembers);
     });
 
     it("revokes pending invitations for the member's email and inserts event records", async () => {
@@ -251,15 +261,18 @@ describe("OrgMembershipService.revokeOrgScopedAccess", () => {
       await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "removed");
 
       expect(updateFn).toHaveBeenCalledWith(userIntegrationConnections);
-      expect(mockOutboxWriterEmit).toHaveBeenCalledWith(
+      // One statement carrying one event per disabled connection, not one INSERT each.
+      expect(mockOutboxWriterEmitMany).toHaveBeenCalledWith(
         tx,
-        expect.objectContaining({
-          eventType: "integration.connection.disconnected",
-          payload: expect.objectContaining({
-            composioConnectedAccountId: conn.composioConnectedAccountId,
-            cause: "removed",
+        expect.arrayContaining([
+          expect.objectContaining({
+            eventType: "integration.connection.disconnected",
+            payload: expect.objectContaining({
+              composioConnectedAccountId: conn.composioConnectedAccountId,
+              cause: "removed",
+            }),
           }),
-        }),
+        ]),
       );
     });
 
@@ -271,7 +284,7 @@ describe("OrgMembershipService.revokeOrgScopedAccess", () => {
 
       await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "removed");
 
-      expect(mockOutboxWriterEmit).toHaveBeenCalled();
+      expect(mockOutboxWriterEmitMany).toHaveBeenCalled();
     });
 
     it("schedules realtime revocation post-commit via registerAfterCommit", async () => {
@@ -354,7 +367,9 @@ describe("OrgMembershipService.revokeOrgScopedAccess", () => {
 
       await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "suspended");
 
-      expect(deleteFn).not.toHaveBeenCalledWith(kbSpaceGrants);
+      // Suspension is reversible — kb_space_members rows are retained (onSuspension: "retain"
+      // in MEMBERSHIP_ARTIFACTS). No explicit delete should be issued for this table on suspension.
+      expect(deleteFn).not.toHaveBeenCalledWith(kbSpaceMembers);
     });
 
     it("does NOT revoke pending invitations on suspension", async () => {
@@ -513,7 +528,6 @@ describe("OrgMembershipService.revokeOrgScopedAccess", () => {
       await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "removed");
 
       expect(deleteFn).toHaveBeenCalledWith(resourceGrants);
-      expect(deleteFn).toHaveBeenCalledWith(kbSpaceGrants);
       expect(updateFn).toHaveBeenCalledWith(userIntegrationConnections);
     });
   });

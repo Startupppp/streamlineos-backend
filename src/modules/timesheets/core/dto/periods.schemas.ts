@@ -6,5 +6,5 @@ export const periodsQuerySchema = z.object({
   userId: z.string().optional(),
   status: timesheetPeriodStatusSchema.optional(),
   limit: pageSizeField(20),
-});
+}).strict();
 export type PeriodsQuery = z.infer<typeof periodsQuerySchema>;

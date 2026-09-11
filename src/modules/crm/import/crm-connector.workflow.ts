@@ -9,7 +9,6 @@ import {
 } from "./crm-connector.service";
 import { CONNECTOR_SYNC_WORKFLOW } from "./import-workflow-names";
 
-export { CONNECTOR_SYNC_WORKFLOW } from "./import-workflow-names";
 
 /**
  * Walking somebody else's CRM, durably.

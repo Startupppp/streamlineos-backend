@@ -9,6 +9,7 @@
  * when viewAll is false and the envelope belongs to a different sender.
  */
 
+import { ScopedRead } from "../../access/scoped-read";
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { SignEnvelopesService } from "../sign-envelopes.service";
@@ -71,27 +72,27 @@ function makeService(envelope: ReturnType<typeof makeEnvelope> | null) {
 describe("SignEnvelopesService.getFull — scope gate", () => {
   it("returns the envelope when viewAll is true regardless of sender", async () => {
     const svc = makeService(makeEnvelope(SENDER_MEMBERSHIP));
-    const result = await svc.getFull(ORG, ENVELOPE_ID, { membershipId: OTHER_MEMBERSHIP, viewAll: true });
+    const result = await svc.getFull(ScopedRead.of(ORG, "u-other", "all"), OTHER_MEMBERSHIP, ENVELOPE_ID);
     expect(result.envelope.id).toBe(ENVELOPE_ID);
   });
 
   it("returns the envelope when viewAll is false and the caller is the sender", async () => {
     const svc = makeService(makeEnvelope(SENDER_MEMBERSHIP));
-    const result = await svc.getFull(ORG, ENVELOPE_ID, { membershipId: SENDER_MEMBERSHIP, viewAll: false });
+    const result = await svc.getFull(ScopedRead.of(ORG, "u-sender", "own"), SENDER_MEMBERSHIP, ENVELOPE_ID);
     expect(result.envelope.id).toBe(ENVELOPE_ID);
   });
 
   it("throws ForbiddenException when viewAll is false and caller is NOT the sender — BOLA gate bites", async () => {
     const svc = makeService(makeEnvelope(SENDER_MEMBERSHIP));
     await expect(
-      svc.getFull(ORG, ENVELOPE_ID, { membershipId: OTHER_MEMBERSHIP, viewAll: false }),
+      svc.getFull(ScopedRead.of(ORG, "u-other", "own"), OTHER_MEMBERSHIP, ENVELOPE_ID),
     ).rejects.toThrow(ForbiddenException);
   });
 
   it("throws NotFoundException when the envelope does not exist in the org", async () => {
     const svc = makeService(null);
     await expect(
-      svc.getFull(ORG, ENVELOPE_ID, { membershipId: SENDER_MEMBERSHIP, viewAll: false }),
+      svc.getFull(ScopedRead.of(ORG, "u-sender", "own"), SENDER_MEMBERSHIP, ENVELOPE_ID),
     ).rejects.toThrow(NotFoundException);
   });
 
@@ -109,45 +110,42 @@ describe("SignEnvelopesController.get — scope forwarded from request", () => {
       principal: { kind: "human-session", membershipId: OTHER_MEMBERSHIP, isOrgOwner: false },
     }) as unknown as CurrentUserContext;
 
-  it("passes viewAll:true to getFull when rbacScope is 'all'", async () => {
+  it("forwards an unrestricted read to getFull when rbacScope is 'all'", async () => {
     const svc = { getFull: jest.fn().mockResolvedValue({ envelope: {}, documents: [], recipients: [], fields: [] }) } as unknown as SignEnvelopesService;
     const ctrl = new SignEnvelopesController(svc);
     const req = { rbacScope: "all" } as Request;
 
     await ctrl.get(ENVELOPE_ID, makeUser(), req);
 
-    expect(svc.getFull).toHaveBeenCalledWith(
-      ORG,
-      ENVELOPE_ID,
-      expect.objectContaining({ viewAll: true, membershipId: OTHER_MEMBERSHIP }),
-    );
+    const [read, membershipId, envelopeId] = (svc.getFull as jest.Mock).mock.calls[0];
+    expect(read.unrestricted).toBe(true);
+    expect(membershipId).toBe(OTHER_MEMBERSHIP);
+    expect(envelopeId).toBe(ENVELOPE_ID);
   });
 
-  it("passes viewAll:false to getFull when rbacScope is 'own'", async () => {
+  it("forwards a narrowed read to getFull when rbacScope is 'own'", async () => {
     const svc = { getFull: jest.fn().mockResolvedValue({ envelope: {}, documents: [], recipients: [], fields: [] }) } as unknown as SignEnvelopesService;
     const ctrl = new SignEnvelopesController(svc);
     const req = { rbacScope: "own" } as Request;
 
     await ctrl.get(ENVELOPE_ID, makeUser(), req);
 
-    expect(svc.getFull).toHaveBeenCalledWith(
-      ORG,
-      ENVELOPE_ID,
-      expect.objectContaining({ viewAll: false, membershipId: OTHER_MEMBERSHIP }),
-    );
+    const [read, membershipId, envelopeId] = (svc.getFull as jest.Mock).mock.calls[0];
+    expect(read.unrestricted).toBe(false);
+    expect(read.denied).toBe(false);
+    expect(membershipId).toBe(OTHER_MEMBERSHIP);
+    expect(envelopeId).toBe(ENVELOPE_ID);
   });
 
-  it("passes viewAll:false to getFull when rbacScope is absent — fails closed", async () => {
+  it("forwards a denied read when rbacScope is absent — fails closed", async () => {
     const svc = { getFull: jest.fn().mockResolvedValue({ envelope: {}, documents: [], recipients: [], fields: [] }) } as unknown as SignEnvelopesService;
     const ctrl = new SignEnvelopesController(svc);
     const req = {} as Request;
 
     await ctrl.get(ENVELOPE_ID, makeUser(), req);
 
-    expect(svc.getFull).toHaveBeenCalledWith(
-      ORG,
-      ENVELOPE_ID,
-      expect.objectContaining({ viewAll: false }),
-    );
+    const [read] = (svc.getFull as jest.Mock).mock.calls[0];
+    expect(read.unrestricted).toBe(false);
+    expect(read.denied).toBe(true);
   });
 });

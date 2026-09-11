@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, OnModuleInit, OnModuleDestroy } from "@nestjs/common";
+import { z } from "zod";
 import { APP_CONFIG } from "../../config/config.module";
 import type { AppConfig } from "../../config/env.validation";
 import { randomUUID } from "crypto";
@@ -17,8 +18,11 @@ import {
   backoffMinutesForAttempt,
   resolveDeliveryClassForEvent,
 } from "./notification-delivery-class";
+import { providerSendResultSchema, type ProviderSendResultParsed } from "./dto/provider-result.schemas";
+import { checkProviderCaps, type ProviderCaps } from "./notification-provider-caps";
 
 const BATCH_SIZE = 50;
+export const ORG_BATCH_CAP = Math.ceil(BATCH_SIZE / 5);
 
 /**
  * PIPE-010. Backoff was exact, so every delivery that failed against the same
@@ -32,17 +36,26 @@ function backoffMsWithJitter(minutes: number): number {
 }
 const STALE_LOCK_MS = 10 * 60 * 1000;
 
-export interface QueueRunResult {
-  processed: number;
-  sent: number;
-  failed: number;
-  dead: number;
-}
+import type {
+  ClaimedJob,
+  DeliveryRow,
+  Preflight,
+  Provider,
+  QueueRunResult,
+} from "./notification-delivery-types";
+import { resolveDeliveryPreflight } from "./notification-delivery-preflight";
 
-type ClaimedJob = { id: number; deliveryId: number; orgId: string };
-type DeliveryRow = typeof notificationDeliveries.$inferSelect;
-type Provider = NonNullable<ReturnType<NotificationProviderRegistry["get"]>>;
-type Preflight = { delivery: DeliveryRow; sandbox: boolean; attempt: number; provider: Provider };
+const deliveryMetadataSchema = z
+  .object({
+    title: z.string().optional(),
+    message: z.string().optional(),
+    link: z.string().nullable().optional(),
+    emailHtml: z.string().optional(),
+    attachments: z
+      .array(z.object({ filename: z.string(), contentBase64: z.string(), type: z.string() }))
+      .optional(),
+  })
+  .passthrough();
 
 @Injectable()
 export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy {
@@ -52,6 +65,12 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
   private draining = false;
   private transientStreak = 0;
   private readonly breaker = new NotificationCircuitBreaker();
+  /**
+   * Where the previous tick's budget ran out, so the next one starts after it.
+   * In-process rather than persisted: a lost cursor costs one unfair tick, and
+   * every claim is fenced by `for update skip locked` and its lock timestamp.
+   */
+  private cursorOrgId: string | null = null;
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
@@ -109,27 +128,32 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
     const result: QueueRunResult = { processed: 0, sent: 0, failed: 0, dead: 0 };
 
     const claimed: ClaimedJob[] = [];
+    let lastClaimedFromOrgId: string | null = null;
 
-    await forEachOrg(this.db, "notification-delivery-claim", async (tx, orgId) => {
-      const remaining = BATCH_SIZE - claimed.length;
-      if (remaining <= 0) return;
+    await forEachOrg(
+      this.db,
+      "notification-delivery-claim",
+      async (tx, orgId) => {
+        const remaining = BATCH_SIZE - claimed.length;
+        if (remaining <= 0) return;
+        const orgLimit = Math.min(remaining, ORG_BATCH_CAP);
 
-      // SCH-016: one statement with FOR UPDATE SKIP LOCKED, replacing a SELECT-ids
-      // then UPDATE-where-in pair. The old shape was *correct* — the status re-check
-      // in the UPDATE meant only one worker won — but two workers burned a round trip
-      // fighting over the same rows, and neither could make progress past a row the
-      // other held. SKIP LOCKED lets each take a disjoint set on the first try.
-      //
-      // The timestamps are passed as ISO strings with an explicit cast. A JS Date bound
-      // into a drizzle sql template reaches postgres.js where a string is expected and
-      // the statement dies with ERR_INVALID_ARG_TYPE — which failed this claim for EVERY
-      // organization, invisibly: forEachOrg logs and continues, and drizzle's message is
-      // only "Failed query", with the real reason on the error's cause.
-      const rows = await tx
-        .update(notificationQueue)
-        .set({ status: "LOCKED", lockedBy: this.workerId, lockedAt: new Date() })
-        .where(
-          sql`${notificationQueue.id} in (
+        // SCH-016: one statement with FOR UPDATE SKIP LOCKED, replacing a SELECT-ids
+        // then UPDATE-where-in pair. The old shape was *correct* — the status re-check
+        // in the UPDATE meant only one worker won — but two workers burned a round trip
+        // fighting over the same rows, and neither could make progress past a row the
+        // other held. SKIP LOCKED lets each take a disjoint set on the first try.
+        //
+        // The timestamps are passed as ISO strings with an explicit cast. A JS Date bound
+        // into a drizzle sql template reaches postgres.js where a string is expected and
+        // the statement dies with ERR_INVALID_ARG_TYPE — which failed this claim for EVERY
+        // organization, invisibly: forEachOrg logs and continues, and drizzle's message is
+        // only "Failed query", with the real reason on the error's cause.
+        const rows = await tx
+          .update(notificationQueue)
+          .set({ status: "LOCKED", lockedBy: this.workerId, lockedAt: new Date() })
+          .where(
+            sql`${notificationQueue.id} in (
             select id from ${notificationQueue}
             where org_id = ${orgId}
               and (
@@ -137,16 +161,37 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
                 or (status = 'LOCKED' and locked_at < ${staleBefore.toISOString()}::timestamptz)
               )
             order by run_at
-            limit ${remaining}
+            limit ${orgLimit}
             for update skip locked
           )`,
-        )
-        .returning({ id: notificationQueue.id, deliveryId: notificationQueue.deliveryId });
+          )
+          .returning({ id: notificationQueue.id, deliveryId: notificationQueue.deliveryId });
 
-      for (const row of rows) {
-        claimed.push({ id: row.id, deliveryId: row.deliveryId, orgId });
-      }
-    });
+        if (rows.length === 0) return;
+        for (const row of rows.slice(0, orgLimit)) {
+          claimed.push({ id: row.id, deliveryId: row.deliveryId, orgId });
+        }
+        lastClaimedFromOrgId = orgId;
+      },
+      "write",
+      {
+        /**
+         * ORG_BATCH_CAP alone bounds what one tenant may take, but `forEachOrg`
+         * enumerates ascending by org id with no rotation, so floor(50/10) = 5
+         * organizations are served every tick and they are always the SAME five.
+         * Measured over 8 tenants x 200 queued jobs x 5 ticks: orgs 01-05 each
+         * drained 50, orgs 06-08 drained nothing, in any tick. Starvation caused by
+         * where an org id sorts, not by tenant skew. The cursor makes the tenants a
+         * full tick could not reach the ones the next tick starts from.
+         */
+        startAfterOrgId: this.cursorOrgId,
+        stopWhen: () => claimed.length >= BATCH_SIZE,
+      },
+    );
+
+    // Only a tick that ran out of budget leaves a cursor: one that drained every
+    // tenant has no one to be fair to, and starting from the top keeps it deterministic.
+    this.cursorOrgId = claimed.length >= BATCH_SIZE ? lastClaimedFromOrgId : null;
 
     if (claimed.length === 0) return result;
 
@@ -188,112 +233,25 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
   }
 
   private async deliverJob(job: ClaimedJob, now: Date, result: QueueRunResult): Promise<void> {
-    const preflight = await this.inTenant(job.orgId, async (): Promise<Preflight | null> => {
-      const delivery = await this.db.query.notificationDeliveries.findFirst({
-        where: and(
-          eq(notificationDeliveries.id, job.deliveryId),
-          eq(notificationDeliveries.orgId, job.orgId),
-        ),
-      });
-
-      if (!delivery) {
-        await this.db
-          .update(notificationQueue)
-          .set({ status: "DONE", lastError: "delivery missing" })
-          .where(eq(notificationQueue.id, job.id));
-        return null;
-      }
-
-      // PIPE-012: a stale notification is worse than none — on recovery from a
-      // backlog it arrives as a flood of things that stopped mattering hours ago.
-      // CANCELLED, not DEAD: nothing failed, it simply expired.
-      if (delivery.expiresAt && delivery.expiresAt.getTime() <= Date.now()) {
-        await this.db
-          .update(notificationDeliveries)
-          .set({ status: "CANCELLED", failureCode: "EXPIRED", updatedAt: new Date() })
-          .where(eq(notificationDeliveries.id, delivery.id));
-        await this.db
-          .update(notificationQueue)
-          .set({ status: "DONE", lastError: "delivery expired before it was sent" })
-          .where(eq(notificationQueue.id, job.id));
-        return null;
-      }
-
-      // PIPE-015: a delivery can sit in the queue across a deactivation, a suspension
-      // or a removal — and under queue lag that window widens exactly when the system
-      // is busiest. Membership was checked at enqueue; re-check it here, immediately
-      // before handing the payload to a provider. CANCELLED, not DEAD: nothing failed,
-      // the recipient simply stopped being entitled to it.
-      //
-      // Dual-read: when delivery.membershipId is set (post-backfill rows), check that
-      // specific membership row directly — a user removed and re-invited gets a new
-      // membershipId, so the old delivery references a membership that is now INACTIVE.
-      // Legacy rows (membershipId IS NULL) fall back to the userId predicate so
-      // nothing is lost while the backfill settles.
-      let recipientStillActive: boolean;
-      if (typeof delivery.membershipId === "number") {
-        const memberRow = await this.db
-          .select({ id: organizationMembers.id })
-          .from(organizationMembers)
-          .where(and(eq(organizationMembers.id, delivery.membershipId), eq(organizationMembers.status, "ACTIVE")))
-          .limit(1);
-        recipientStillActive = memberRow.length === 1;
-      } else {
-        const active = await filterOrgMemberIds(this.db, job.orgId, [delivery.userId]);
-        recipientStillActive = active.length > 0;
-      }
-      if (!recipientStillActive) {
-        await this.db
-          .update(notificationDeliveries)
-          .set({ status: "CANCELLED", failureCode: "MEMBERSHIP_INACTIVE", updatedAt: new Date() })
-          .where(eq(notificationDeliveries.id, delivery.id));
-        await this.db
-          .update(notificationQueue)
-          .set({ status: "DONE", lastError: "recipient is no longer an active member" })
-          .where(eq(notificationQueue.id, job.id));
-        return null;
-      }
-
-      const provider = this.registry.get(delivery.channel);
-      if (!provider) {
-        await this.markDead(job.id, delivery.id, "NO_PROVIDER", `No provider for ${delivery.channel}`);
-        result.dead += 1;
-        return null;
-      }
-
-      const sandboxRows = await this.db
-        .select({ sandboxMode: notificationProviderAccounts.sandboxMode })
-        .from(notificationProviderAccounts)
-        .where(
-          and(
-            eq(notificationProviderAccounts.orgId, job.orgId),
-            eq(notificationProviderAccounts.channel, delivery.channel),
-            eq(notificationProviderAccounts.enabled, true),
-          ),
-        )
-        .limit(1);
-      const sandbox = sandboxRows[0]?.sandboxMode ?? process.env.NODE_ENV !== "production";
-      const attempt = delivery.attemptCount + 1;
-
-      await this.db
-        .update(notificationDeliveries)
-        .set({ status: "SENDING", attemptCount: attempt })
-        .where(eq(notificationDeliveries.id, delivery.id));
-
-      return { delivery, sandbox, attempt, provider };
-    });
+    const preflight = await this.inTenant(job.orgId, () =>
+      resolveDeliveryPreflight(
+        {
+          db: this.db,
+          registry: this.registry,
+          markDead: (q, d, c, m) => this.markDead(q, d, c, m),
+          logger: this.logger,
+        },
+        job,
+        result,
+      ),
+    );
 
     if (!preflight) return;
 
-    const { delivery, sandbox, attempt, provider } = preflight;
+    const { delivery, sandbox, caps, attempt, provider } = preflight;
 
-    const meta = (delivery.metadata as {
-      title?: string;
-      message?: string;
-      link?: string | null;
-      emailHtml?: string;
-      attachments?: Array<{ filename: string; contentBase64: string; type: string }>;
-    } | null) ?? {};
+    const parsedMetadata = deliveryMetadataSchema.safeParse(delivery.metadata ?? {});
+    const meta = parsedMetadata.success ? parsedMetadata.data : {};
     // COMP-002: resolved from the catalog rather than stored on the delivery row, so
     // it always reflects the event's current mandatory flag. An unknown key is treated
     // as mandatory — the conservative direction, since the cost of wrongly omitting an
@@ -305,6 +263,32 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
     // PIPE-010: if this provider has been failing consecutively, requeue without
     // calling it. Skipped, not failed — the attempt counter is untouched, so a provider
     // outage cannot push deliveries to DEAD while the breaker is holding them back.
+    // The operator's own spend controls, enforced the same way and for the same
+    // reason: a cap is a throttle, so the delivery is requeued at the window
+    // boundary with `attemptCount` untouched rather than failed. Skipped in sandbox,
+    // where nothing is spent and nothing is sent.
+    if (!sandbox) {
+      const verdict = await checkProviderCaps(this.db, delivery.orgId, delivery.channel, caps, now);
+      if (!verdict.allowed) {
+        this.logger.warn(
+          `Provider cap reached in org ${delivery.orgId}: ${verdict.reason}; delivery ${delivery.id} requeued`,
+        );
+        await this.inTenant(job.orgId, () =>
+          this.db
+            .update(notificationQueue)
+            .set({
+              status: "PENDING",
+              runAt: new Date(now.getTime() + verdict.retryAfterMs),
+              lockedBy: null,
+              lockedAt: null,
+              lastError: verdict.reason,
+            })
+            .where(eq(notificationQueue.id, job.id)),
+        );
+        return;
+      }
+    }
+
     const breaker = this.breaker.check(delivery.orgId, delivery.channel, now.getTime());
     if (breaker.open) {
       await this.inTenant(job.orgId, () =>
@@ -322,7 +306,7 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
       return;
     }
 
-    const sendResult = await provider.send({
+    const rawSendResult = await provider.send({
       orgId: delivery.orgId,
       userId: delivery.userId,
       mandatory: definition?.mandatory ?? true,
@@ -335,6 +319,18 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
       sandbox,
       metadata: delivery.metadata ?? undefined,
     });
+    const sendOutcome = providerSendResultSchema.safeParse(rawSendResult);
+    if (!sendOutcome.success)
+      this.logger.warn(
+        `Provider ${delivery.channel} in org ${delivery.orgId} returned an invalid response shape; treating as retryable failure`,
+      );
+    const fallback: ProviderSendResultParsed = {
+      status: "FAILED",
+      retryable: true,
+      failureCode: "INVALID_RESPONSE",
+      failureMessage: "Provider returned an invalid response shape",
+    };
+    const sendResult = sendOutcome.success ? sendOutcome.data : fallback;
 
     if (sendResult.status === "SENT") this.breaker.recordSuccess(delivery.orgId, delivery.channel);
     else if (this.breaker.recordFailure(delivery.orgId, delivery.channel, now.getTime())) {

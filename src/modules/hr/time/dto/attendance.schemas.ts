@@ -18,29 +18,29 @@ export const monthlyQuerySchema = z.object({
   userId: z.string().optional(),
   year: z.coerce.number(),
   month: z.coerce.number(),
-});
+}).strict();
 
 export const heatmapQuerySchema = z.object({
   userId: z.string().optional(),
   year: z.coerce.number().int().optional(),
-});
+}).strict();
 
 export const attendanceLogsQuerySchema = z.object({
   userId: z.string().optional(),
   year: z.coerce.number().int().optional(),
   month: z.coerce.number().int().optional(),
-});
+}).strict();
 
-export const selfMonthlyQuerySchema = monthlyQuerySchema.omit({ userId: true });
-export const selfHeatmapQuerySchema = heatmapQuerySchema.omit({ userId: true });
+export const selfMonthlyQuerySchema = monthlyQuerySchema.omit({ userId: true }).strict();
+export const selfHeatmapQuerySchema = heatmapQuerySchema.omit({ userId: true }).strict();
 export const selfAttendanceLogsQuerySchema = attendanceLogsQuerySchema.omit({
   userId: true,
-});
+}).strict();
 
 export const selfAttendanceHistoryQuerySchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
-});
+}).strict();
 
 export const REGULARIZATION_WINDOW_DAYS = 30;
 
@@ -123,13 +123,15 @@ export const createAttendanceRegularizationSchema = z
     },
   );
 
-export const teamStatusQuerySchema = z.object({
-  page: pageNumberField,
-  limit: pageSizeField(50, 100),
-  search: z.string().trim().min(1).max(200).optional(),
-  status: z.enum(["PRESENT", "ON_BREAK", "CHECKED_OUT", "OFFLINE"]).optional(),
-  departmentId: z.string().min(1).optional(),
-});
+export const teamStatusQuerySchema = z
+  .object({
+    cursor: z.string().trim().min(1).max(2048).optional(),
+    limit: pageSizeField(50, 100),
+    search: z.string().trim().min(1).max(200).optional(),
+    status: z.enum(["PRESENT", "ON_BREAK", "CHECKED_OUT", "OFFLINE"]).optional(),
+    departmentId: z.string().min(1).optional(),
+  })
+  .strict();
 
 export const ATTENDANCE_REPORT_RECIPIENT_LIMIT = 10;
 export const ATTENDANCE_REPORT_MAX_DAYS = 31;
@@ -235,13 +237,13 @@ export const createOrgHolidaySchema = z.object({
   name: holidayNameSchema,
   date: z.string().min(1, "Date is required").regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date format"),
   recurring: z.boolean().optional().default(false),
-});
+}).strict();
 
 export const updateOrgHolidaySchema = z.object({
   name: holidayNameSchema.optional(),
   date: z.string().min(1).regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   recurring: z.boolean().optional(),
-});
+}).strict();
 
 export type CheckInInput = z.infer<typeof checkInSchema>;
 export type CheckOutInput = z.infer<typeof checkOutSchema>;
@@ -263,3 +265,18 @@ export type TeamStatusQuery = z.infer<typeof teamStatusQuerySchema>;
 export type AttendanceEmailReportInput = z.infer<typeof attendanceEmailReportSchema>;
 export type CreateOrgHolidayInput = z.infer<typeof createOrgHolidaySchema>;
 export type UpdateOrgHolidayInput = z.infer<typeof updateOrgHolidaySchema>;
+
+export const listRegularizationsSchema = z.object({
+  userId: z.string().optional(),
+  status: z.enum(["PENDING", "APPROVED", "REJECTED"]).optional(),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  cursor: z.string().min(1).max(512).optional(),
+  limit: pageSizeField(20, 100),
+});
+export type ListRegularizationsInput = z.infer<typeof listRegularizationsSchema>;
+
+export const rejectRegularizationSchema = z.object({
+  rejectionReason: z.string().min(1).max(500),
+});
+export type RejectRegularizationInput = z.infer<typeof rejectRegularizationSchema>;

@@ -34,6 +34,14 @@ import {
 } from "./dto/template.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  notificationSuccessSchema,
+  notificationTemplateRowSchema,
+  notificationTemplatesListSchema,
+  templatePreviewSchema,
+  templateTestSendSchema,
+} from "./dto/notification-admin-response.schemas";
 
 const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
@@ -43,6 +51,7 @@ export class NotificationTemplatesController {
   constructor(private readonly templates: NotificationTemplatesService) {}
 
   @Get()
+  @ResponseSchema(notificationTemplatesListSchema)
   @RequirePermission("notifications:templates:view")
   @Validate({ query: listTemplatesSchema })
   list(
@@ -53,6 +62,7 @@ export class NotificationTemplatesController {
   }
 
   @Post()
+  @ResponseSchema(notificationTemplateRowSchema)
   @HttpCode(201)
   @RequirePermission("notifications:templates:manage")
   @Validate({ body: createTemplateSchema })
@@ -64,6 +74,7 @@ export class NotificationTemplatesController {
   }
 
   @Patch(":templateId")
+  @ResponseSchema(notificationTemplateRowSchema)
   @RequirePermission("notifications:templates:manage")
   @Validate({ params: templateIdParams, body: updateTemplateSchema })
   update(
@@ -75,6 +86,7 @@ export class NotificationTemplatesController {
   }
 
   @Patch(":templateId/approval")
+  @ResponseSchema(notificationTemplateRowSchema)
   @RequirePermission("notifications:templates:manage")
   @Validate({ params: templateIdParams, body: setTemplateApprovalSchema })
   setApproval(
@@ -86,6 +98,7 @@ export class NotificationTemplatesController {
   }
 
   @Delete(":templateId")
+  @ResponseSchema(notificationSuccessSchema)
   @RequirePermission("notifications:templates:manage")
   @Validate({ params: templateIdParams })
   remove(
@@ -96,6 +109,7 @@ export class NotificationTemplatesController {
   }
 
   @Post(":templateId/preview")
+  @ResponseSchema(templatePreviewSchema)
   @HttpCode(200)
   @RequirePermission("notifications:templates:view")
   @Validate({ params: templateIdParams, body: previewTemplateSchema })
@@ -108,6 +122,7 @@ export class NotificationTemplatesController {
   }
 
   @Post(":templateId/test")
+  @ResponseSchema(templateTestSendSchema)
   @Idempotent("notifications.template.test-send")
   @HttpCode(200)
   @RequirePermission("notifications:templates:manage")

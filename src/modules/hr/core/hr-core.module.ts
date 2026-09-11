@@ -54,7 +54,6 @@ import { EmploymentFactsModule } from "../../directory/employment-facts.module";
   exports: [
     HrAuditService,
     HrEffectiveChangesService,
-    HrPeopleService,
     HrEmploymentsService,
     HrSensitiveService,
     PersonEmploymentSyncService,

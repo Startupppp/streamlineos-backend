@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const documentTypeNameSchema = z
   .string()
@@ -16,9 +16,9 @@ const sortOrderSchema = z
   .optional();
 
 export const listDocumentTypesSchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(20),
-});
+}).strict();
 
 export const createDocumentTypeSchema = z.object({
   name: documentTypeNameSchema,
@@ -26,7 +26,7 @@ export const createDocumentTypeSchema = z.object({
   isMandatory: z.boolean().optional().default(true),
   applicableRoles: z.array(z.string()).optional().default([]),
   sortOrder: sortOrderSchema,
-});
+}).strict();
 
 export const updateDocumentTypeSchema = z.object({
   name: documentTypeNameSchema.optional(),
@@ -35,7 +35,7 @@ export const updateDocumentTypeSchema = z.object({
   isActive: z.boolean().optional(),
   applicableRoles: z.array(z.string()).optional(),
   sortOrder: sortOrderSchema,
-});
+}).strict();
 
 export type ListDocumentTypesInput = z.infer<typeof listDocumentTypesSchema>;
 export type CreateDocumentTypeInput = z.infer<typeof createDocumentTypeSchema>;

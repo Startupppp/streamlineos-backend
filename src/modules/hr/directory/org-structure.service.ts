@@ -11,14 +11,14 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import type { HeadcountInput, OrgChartQueryInput } from "./dto/hr-directory.schemas";
-import { applyScope } from "../../access/apply-scope";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
 import { OrgChartService } from "./org-chart.service";
-export type { OrgChartNode, OrgChartPage } from "./org-chart.service";
+import { HR_SCAN_PAGE } from "../hr-read-limits";
+export type { OrgChartPage } from "./org-chart.service";
 
 export interface HeadcountGroup {
   label: string;
@@ -34,51 +34,53 @@ export class OrgStructureService {
     private readonly orgChart: OrgChartService,
   ) {}
 
-  async getDirectory(orgId: string, actorUserId: string, scope: DataScope) {
-    return this.cache.cached(
-      `hr:directory:${orgId}:${actorUserId}:${scope}`,
-      () => this.buildDirectory(orgId, actorUserId, scope),
+  async getDirectory(read: ScopedRead) {
+    return this.cache.cachedVersionedForOrg(
+      read.orgId,
+      "hr:directory",
+      read.discriminator,
+      () => this.buildDirectory(read),
       CACHE_TTL.MEDIUM,
     );
   }
 
-  private async buildDirectory(
-    orgId: string,
-    actorUserId: string,
-    scope: DataScope,
-  ) {
-    const members = await this.db
-      .select({
-        id: users.id,
-        name: users.name,
-        firstName: users.firstName,
-        lastName: users.lastName,
-        email: users.email,
-        image: users.image,
-        role: organizationMembers.role,
-        phone: users.phone,
-        isActive: users.isActive,
-      })
-      .from(users)
-      .innerJoin(
-        organizationMembers,
-        and(eq(organizationMembers.userId, users.id), eq(organizationMembers.orgId, orgId)),
-      )
-      .where(
-        and(
-          eq(users.isActive, true),
-          applyScope(scope, orgId, actorUserId, {
-            ownerColumn: organizationMembers.userId,
-          }),
-        ),
-      )
-      .limit(1000);
+  private async buildDirectory(read: ScopedRead) {
+    const orgId = read.orgId;
+    const members = await read.read(
+      {
+        tenant: organizationMembers.orgId,
+        scope: { columns: { ownerColumn: organizationMembers.userId } },
+        and: [eq(users.isActive, true)],
+      },
+      ({ sql: where }) =>
+        this.db
+          .select({
+            id: users.id,
+            name: users.name,
+            firstName: users.firstName,
+            lastName: users.lastName,
+            email: users.email,
+            image: users.image,
+            role: organizationMembers.role,
+            phone: users.phone,
+            isActive: users.isActive,
+          })
+          .from(users)
+          .innerJoin(
+            organizationMembers,
+            and(eq(organizationMembers.userId, users.id), eq(organizationMembers.orgId, orgId)),
+          )
+          .where(where)
+          .limit(1000),
+      () => [],
+    );
 
     const memberIds = members.map((m) => m.id);
     const [orgDepts, factsMap] = await Promise.all([
       this.db.query.orgUnits.findMany({
         where: and(eq(orgUnits.orgId, orgId), isNull(orgUnits.deletedAt), eq(orgUnits.kind, "DEPARTMENT")),
         columns: { id: true, name: true },
+        limit: 500,
       }),
       this.employment.getFactsBatch(orgId, memberIds),
     ]);
@@ -110,18 +112,14 @@ export class OrgStructureService {
     });
   }
 
-  getOrgChart(
-    orgId: string,
-    actorUserId: string,
-    scope: DataScope,
-    query: OrgChartQueryInput,
-  ) {
-    return this.orgChart.getOrgChart(orgId, actorUserId, scope, query);
+  getOrgChart(read: ScopedRead, query: OrgChartQueryInput) {
+    return this.orgChart.getOrgChart(read, query);
   }
 
   getHeadcount(orgId: string, query: HeadcountInput) {
-    return this.cache.cachedVersioned(
-      CACHE_KEYS.hrHeadcountNamespace(orgId),
+    return this.cache.cachedVersionedForOrg(
+      orgId,
+      "hr:headcount",
       `group:${query.groupBy}`,
       () => this.buildHeadcount(orgId, query),
       CACHE_TTL.MEDIUM,
@@ -162,7 +160,8 @@ export class OrgStructureService {
             eq(users.isActive, true),
           ),
         )
-        .groupBy(departmentLabel);
+        .groupBy(departmentLabel)
+        .limit(100);
 
       groups = headcountRows.map((headcountRow) => ({
         label: headcountRow.label,
@@ -174,7 +173,8 @@ export class OrgStructureService {
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
         .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
-        .groupBy(organizationMembers.role);
+        .groupBy(organizationMembers.role)
+        .limit(100);
 
       groups = roleHeadcountRows.map((headcountRow) => ({
         label: headcountRow.role ?? "Unassigned",
@@ -197,7 +197,8 @@ export class OrgStructureService {
           ),
         )
         .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
-        .groupBy(orgUnits.name);
+        .groupBy(orgUnits.name)
+        .limit(100);
 
       groups = branchHeadcountRows.map((headcountRow) => ({
         label: headcountRow.branchName ?? "Head Office",
@@ -211,12 +212,8 @@ export class OrgStructureService {
     return groups;
   }
 
-  async getTeam(
-    orgId: string,
-    actorUserId: string,
-    teamId: string,
-    scope: DataScope,
-  ) {
+  async getTeam(read: ScopedRead, teamId: string) {
+    const orgId = read.orgId;
     const [[deptRow], memberships] = await Promise.all([
       this.db
         .select({
@@ -226,37 +223,40 @@ export class OrgStructureService {
         })
         .from(orgUnits)
         .leftJoin(organizationMembers, eq(organizationMembers.id, orgUnits.headMembershipId))
-        .where(and(eq(orgUnits.id, teamId), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "DEPARTMENT")))
+        .where(and(eq(orgUnits.id, teamId), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "DEPARTMENT"), isNull(orgUnits.deletedAt)))
         .limit(1),
-      this.db
-        .select({
-          id: users.id,
-          name: users.name,
-          image: users.image,
-          email: users.email,
-          role: organizationMembers.role,
-        })
-        .from(users)
-        .innerJoin(organizationMembers, and(eq(organizationMembers.userId, users.id), eq(organizationMembers.orgId, orgId)))
-        .innerJoin(orgUnitMembers, and(eq(orgUnitMembers.membershipId, organizationMembers.id), eq(orgUnitMembers.orgUnitId, teamId)))
-        .where(
-          and(
-            eq(orgUnitMembers.orgId, orgId),
-            eq(users.isActive, true),
-            applyScope(scope, orgId, actorUserId, {
-              ownerColumn: organizationMembers.userId,
-            }),
-          ),
-        )
-        .limit(500),
+      read.read(
+        {
+          tenant: orgUnitMembers.orgId,
+          scope: { columns: { ownerColumn: organizationMembers.userId } },
+          and: [eq(orgUnitMembers.orgUnitId, teamId), eq(users.isActive, true)],
+        },
+        ({ sql: where }) =>
+          this.db
+            .select({
+              id: users.id,
+              name: users.name,
+              image: users.image,
+              email: users.email,
+              role: organizationMembers.role,
+            })
+            .from(users)
+            .innerJoin(organizationMembers, and(eq(organizationMembers.userId, users.id), eq(organizationMembers.orgId, orgId)))
+            .innerJoin(orgUnitMembers, eq(orgUnitMembers.membershipId, organizationMembers.id))
+            .where(where)
+            .limit(HR_SCAN_PAGE + 1),
+        () => [],
+      ),
     ]);
 
     if (!deptRow) throw new NotFoundException("Team not found");
 
-    const factsMap = await this.employment.getFactsBatch(orgId, memberships.map((m) => m.id));
+    const membersTruncated = memberships.length > HR_SCAN_PAGE;
+    const members = membersTruncated ? memberships.slice(0, HR_SCAN_PAGE) : memberships;
+    const factsMap = await this.employment.getFactsBatch(orgId, members.map((m) => m.id));
 
     const visibleManager = deptRow.headUserId
-      ? memberships.find((member) => member.id === deptRow.headUserId)
+      ? members.find((member) => member.id === deptRow.headUserId)
       : undefined;
 
     return {
@@ -264,7 +264,8 @@ export class OrgStructureService {
       name: deptRow.name,
       managerId: visibleManager?.id ?? null,
       managerName: visibleManager?.name ?? null,
-      members: memberships.map((m) => ({
+      membersTruncated,
+      members: members.map((m) => ({
         ...m,
         designation: factsMap.get(m.id)?.designation ?? null,
       })),

@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
-import { sprints, tickets } from "../../../db/schema";
+import { and, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { organizationMembers, sprints, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { forEachOrg } from "../../../common/tenant";
@@ -60,7 +60,7 @@ export class BuildDueSweepService {
         eq(tickets.orgId, orgId),
         isNull(tickets.deletedAt),
         isNotNull(tickets.dueDate),
-        isNotNull(tickets.assigneeId),
+        isNotNull(tickets.assigneeMembershipId),
         ne(tickets.status, "DONE"),
       );
 
@@ -69,9 +69,10 @@ export class BuildDueSweepService {
           id: tickets.id,
           title: tickets.title,
           dueDate: tickets.dueDate,
-          assigneeId: tickets.assigneeId,
+          assigneeId: organizationMembers.userId,
         })
         .from(tickets)
+        .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
         .where(and(base, eq(tickets.dueDate, entersWindow)))
         .limit(500);
 
@@ -80,9 +81,10 @@ export class BuildDueSweepService {
           id: tickets.id,
           title: tickets.title,
           dueDate: tickets.dueDate,
-          assigneeId: tickets.assigneeId,
+          assigneeId: organizationMembers.userId,
         })
         .from(tickets)
+        .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
         .where(and(base, eq(tickets.dueDate, slippedYesterday)))
         .limit(500);
 
@@ -117,20 +119,36 @@ export class BuildDueSweepService {
         )
         .limit(100);
 
+      const endingIds = ending.map((s) => s.id);
+      const ownerRows =
+        endingIds.length === 0
+          ? []
+          : await tx
+              .selectDistinct({
+                sprintId: tickets.sprintId,
+                assigneeId: organizationMembers.userId,
+              })
+              .from(tickets)
+              .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
+              .where(
+                and(
+                  eq(tickets.orgId, orgId),
+                  inArray(tickets.sprintId, endingIds),
+                  isNull(tickets.deletedAt),
+                  isNotNull(tickets.assigneeMembershipId),
+                  ne(tickets.status, "DONE"),
+                ),
+              );
+      const ownersBySprint = new Map<number, string[]>();
+      for (const row of ownerRows) {
+        if (row.sprintId === null || !row.assigneeId) continue;
+        const bucket = ownersBySprint.get(row.sprintId);
+        if (bucket) bucket.push(row.assigneeId);
+        else ownersBySprint.set(row.sprintId, [row.assigneeId]);
+      }
+
       for (const sprint of ending) {
-        const owners = await tx
-          .selectDistinct({ assigneeId: tickets.assigneeId })
-          .from(tickets)
-          .where(
-            and(
-              eq(tickets.orgId, orgId),
-              eq(tickets.sprintId, sprint.id),
-              isNull(tickets.deletedAt),
-              isNotNull(tickets.assigneeId),
-              ne(tickets.status, "DONE"),
-            ),
-          );
-        const targets = owners.map((o) => o.assigneeId).filter((id): id is string => Boolean(id));
+        const targets = ownersBySprint.get(sprint.id) ?? [];
         if (targets.length === 0) continue;
         await this.dispatch.emit({
           eventKey: "build.sprint.ending",

@@ -25,6 +25,8 @@ import {
 } from "./dto/insights.schemas";
 import { AccountingMappingsService } from "./accounting-mappings.service";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
+import { accountingMappingRowSchema } from "./dto/insights-response.schemas";
 import { z } from "zod";
 
 const mappingIdParams = z.object({ mappingId: z.coerce.number().int().positive() }).strict();
@@ -37,6 +39,7 @@ export class AccountingMappingsController {
   constructor(private readonly accountingMappingsService: AccountingMappingsService) {}
 
   @Get()
+  @ResponseSchema(accountingMappingRowSchema.array())
   async list(@CurrentUser() u: CurrentUserContext) {
     return this.accountingMappingsService.list(u.orgId);
   }
@@ -44,6 +47,7 @@ export class AccountingMappingsController {
   @Post()
   @HttpCode(201)
   @Validate({ body: accountingMappingCreateSchema })
+  @ResponseSchema(accountingMappingRowSchema)
   async create(
     @Body() body: AccountingMappingCreate,
     @CurrentUser() u: CurrentUserContext,
@@ -53,6 +57,7 @@ export class AccountingMappingsController {
 
   @Patch(":mappingId")
   @Validate({ params: mappingIdParams, body: accountingMappingUpdateSchema })
+  @ResponseSchema(accountingMappingRowSchema)
   async update(
     @Param("mappingId", ParseIntPipe) mappingId: number,
     @Body() body: AccountingMappingUpdate,
@@ -64,6 +69,7 @@ export class AccountingMappingsController {
   @Delete(":mappingId")
   @HttpCode(204)
   @Validate({ params: mappingIdParams })
+  @NoContentResponse()
   async remove(
     @Param("mappingId", ParseIntPipe) mappingId: number,
     @CurrentUser() u: CurrentUserContext,

@@ -1,20 +1,32 @@
-import { normalizeDatabaseUrl, resolvePoolConfig, resolveTransactionGuards } from "./pool.config";
+import {
+  describeTimezoneRisk,
+  normalizeDatabaseUrl,
+  resolvePoolConfig,
+  resolveTransactionGuards,
+} from "./pool.config";
 
 const POOLED = "postgres://streamline_app:pw@ep-x-pooler.us-east-2.aws.neon.tech/db?sslmode=require";
 const DIRECT = "postgres://streamline_app:pw@ep-x.us-east-2.aws.neon.tech/db?sslmode=require";
 const SELF_HOSTED = "postgres://app:pw@db.internal:5432/streamlineos";
+const AURORA = "postgresql://streamline_app:pw@streamlineos.cluster-abc123.ap-south-1.rds.amazonaws.com:5432/streamlineos?sslmode=require";
+const RDS = "postgresql://streamline_app:pw@streamlineos.abc123.ap-south-1.rds.amazonaws.com:5432/streamlineos?sslmode=require";
 
-function resolve(env: NodeJS.ProcessEnv) {
-  return resolvePoolConfig({ NODE_ENV: "production", APP_DATABASE_URL: POOLED, ...env });
+const UTC_PROCESS = { utcOffsetMinutes: 0 };
+const IST_PROCESS = { utcOffsetMinutes: -330 };
+
+function resolve(env: NodeJS.ProcessEnv, runtime = UTC_PROCESS) {
+  return resolvePoolConfig({ NODE_ENV: "production", APP_DATABASE_URL: POOLED, ...env }, runtime);
 }
 
 describe("resolvePoolConfig", () => {
   it("throws when neither database url is set", () => {
-    expect(() => resolvePoolConfig({ NODE_ENV: "production" })).toThrow(/is required/);
+    expect(() => resolvePoolConfig({ NODE_ENV: "production" }, UTC_PROCESS)).toThrow(/is required/);
   });
 
   it("reports the owner role when APP_DATABASE_URL is absent, because BYPASSRLS disables every policy", () => {
-    expect(resolvePoolConfig({ NODE_ENV: "production", DATABASE_URL: POOLED }).role).toBe("owner");
+    expect(
+      resolvePoolConfig({ NODE_ENV: "production", DATABASE_URL: POOLED }, UTC_PROCESS).role,
+    ).toBe("owner");
     expect(resolve({}).role).toBe("application");
   });
 
@@ -24,19 +36,43 @@ describe("resolvePoolConfig", () => {
     expect(resolve({ APP_DATABASE_URL: SELF_HOSTED }).isNeon).toBe(false);
   });
 
+  it("detects AWS RDS and Aurora endpoints separately from Neon", () => {
+    const aurora = resolve({ APP_DATABASE_URL: AURORA });
+    expect(aurora.isAwsRds).toBe(true);
+    expect(aurora.isAurora).toBe(true);
+    expect(aurora.isNeon).toBe(false);
+
+    const rds = resolve({ APP_DATABASE_URL: RDS });
+    expect(rds.isAwsRds).toBe(true);
+    expect(rds.isAurora).toBe(false);
+  });
+
   it("keeps max small on a direct Neon endpoint and larger behind the pooler", () => {
     expect(resolve({}).max).toBe(20);
     expect(resolve({ APP_DATABASE_URL: DIRECT }).max).toBe(10);
     expect(resolve({ NODE_ENV: "development" }).max).toBe(5);
+    expect(resolve({ APP_DATABASE_URL: AURORA }).max).toBe(10);
+  });
+
+  it("uses resume-tolerant, scale-to-zero-friendly Aurora pool defaults", () => {
+    const config = resolve({ APP_DATABASE_URL: AURORA });
+    expect(config.options.idle_timeout).toBe(15);
+    expect(config.options.connect_timeout).toBe(30);
+    expect(config.options.max_lifetime).toBe(15 * 60);
   });
 
   it("disables prepared statements, which a transaction-mode pooler cannot serve", () => {
     expect(resolve({}).options.prepare).toBe(false);
   });
 
-  it("sends only application_name as a startup parameter, the one Neon's pooler honours", () => {
+  it("sends application_name and a pinned TimeZone, the startup parameters the pooler tracks", () => {
     const { connection } = resolve({}).options;
-    expect(connection).toEqual({ application_name: "streamlineos-api" });
+    expect(connection).toEqual({ application_name: "streamlineos-api", TimeZone: "UTC" });
+  });
+
+  it("keeps TimeZone pinned even when the application name is overridden", () => {
+    const { connection } = resolve({ DB_APPLICATION_NAME: "streamlineos-api-cron" }).options;
+    expect(connection?.TimeZone).toBe("UTC");
   });
 
   it("keeps the timeouts out of the startup packet, where the pooler drops them", () => {
@@ -85,17 +121,30 @@ describe("resolvePoolConfig", () => {
   it("rejects an unparseable pool setting instead of silently falling back", () => {
     expect(() => resolve({ DB_POOL_MAX: "twenty" })).toThrow(/Invalid pool configuration/);
     expect(() => resolve({ DB_POOL_MAX: "0" })).toThrow(/Invalid pool configuration/);
+    expect(() => resolve({ DB_REPLICA_URL: "mysql://u:p@localhost/db" })).toThrow(
+      /Invalid pool configuration/,
+    );
+    expect(() =>
+      resolve({ DB_REPLICA_URL: "postgresql://u:p@replica.abc.ap-south-1.rds.amazonaws.com/db" }),
+    ).toThrow(/enable sslmode/);
   });
 
   it("requires TLS to Neon even if sslmode is dropped from the url", () => {
     expect(resolve({}).options.ssl).toBe("require");
     expect(resolve({ APP_DATABASE_URL: SELF_HOSTED }).options.ssl).toBeUndefined();
+    expect(resolve({ APP_DATABASE_URL: AURORA }).options.ssl).toBe("require");
   });
 
   it("warns when a direct Neon endpoint is asked for more connections than it can spare", () => {
     const warnings = resolve({ APP_DATABASE_URL: DIRECT, DB_POOL_MAX: "40" }).warnings;
     expect(warnings.join(" ")).toMatch(/direct Neon endpoint/);
     expect(resolve({ DB_POOL_MAX: "40" }).warnings).toEqual([]);
+  });
+
+  it("warns when an AWS pool can multiply into excessive connections", () => {
+    expect(
+      resolve({ APP_DATABASE_URL: AURORA, DB_POOL_MAX: "21" }).warnings.join(" "),
+    ).toMatch(/total possible connections/);
   });
 
   it("warns in production when a disabled guard would let a connection be pinned forever", () => {
@@ -126,6 +175,25 @@ describe("resolveTransactionGuards", () => {
 
   it("honours overrides", () => {
     expect(resolveTransactionGuards({ DB_LOCK_TIMEOUT_MS: "0" }).lockTimeoutMs).toBe(0);
+  });
+});
+
+describe("timezone pinning", () => {
+  it("says nothing when the process already runs at UTC, which is the only safe pairing", () => {
+    expect(describeTimezoneRisk(0)).toBeNull();
+    expect(resolve({}).warnings).toEqual([]);
+  });
+
+  it("names the exact drift when the process is not at UTC, because pinning only one end shifts every naive column", () => {
+    const risk = describeTimezoneRisk(-330);
+    expect(risk).toMatch(/UTC\+5\.5/);
+    expect(risk).toMatch(/shifted by 5\.5 hours/);
+    expect(risk).toMatch(/TZ=UTC/);
+    expect(resolve({}, IST_PROCESS).warnings.join(" ")).toMatch(/timestamp without time zone/);
+  });
+
+  it("reports a western offset with its sign, not its magnitude", () => {
+    expect(describeTimezoneRisk(300)).toMatch(/UTC-5/);
   });
 });
 

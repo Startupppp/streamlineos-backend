@@ -267,6 +267,27 @@ export const MODULE_REGISTRY = [
     publicExposure: false,
     cacheNamespaces: NONE,
   },
+  // Tasks are a universal member surface: `tasks:read` ships in
+  // EMPLOYEE_SELF_SERVICE, TasksController carries no @RequireModule, and no
+  // plan locks it. It is declared here rather than left absent because absence
+  // is not a statement — `isCoreModuleKey` answers "core" for any key it does
+  // not hold, so an undeclared module reads as free by accident and nobody has
+  // decided anything. Not administrable and not delegable: there is no tasks
+  // ladder to appoint and no org toggle to show.
+  {
+    id: "tasks",
+    displayName: "Tasks",
+    planGated: false,
+    administrable: false,
+    ladder: "universal",
+    administersNamespaces: NONE,
+    route: null,
+    productKey: null,
+    moduleFolder: "tasks",
+    schemaFolder: null,
+    publicExposure: false,
+    cacheNamespaces: NONE,
+  },
   {
     id: "home",
     displayName: "Home",
@@ -449,10 +470,21 @@ export function coreModuleIds(): string[] {
 /**
  * The one availability definition for a module that is always on.
  *
- * Namespaces without a registry entry are platform surfaces (for example
- * settings and ownership) and therefore have no org-module toggle. Registered
- * modules are core only when they are not subscription-gated and are not
- * platform-admin-only. The platform-admin ladder controls delegation, not
+ * The argument is a PERMISSION NAMESPACE, not necessarily a module. Thirteen
+ * live namespaces own permissions without being modules (ai, audit-log, branch,
+ * dashboard, integrations, onboarding, ownership, payments, reports, sales,
+ * self, storage, and party via CRM), and `namespaceOf` hands this function the raw
+ * segment before the first colon, so refusing an unknown key would answer
+ * NO_MODULE for every permission in all of them. Unknown-is-core is therefore
+ * deliberate and load-bearing; `administering-module-exists.spec.ts` pins the
+ * exact set so a fourteenth is a decision rather than a discovery.
+ *
+ * A caller asking about a MODULE — something an organisation enables, is billed
+ * for, or toggles — must therefore establish `moduleDefinition(key)` first.
+ * Passing an undeclared key here means "not plan-gated", never "declared core".
+ *
+ * Registered modules are core only when they are not subscription-gated and are
+ * not platform-admin-only. The platform-admin ladder controls delegation, not
  * availability, so billing is still always available to its platform users.
  */
 export function isCoreModuleKey(rawKey: string): boolean {

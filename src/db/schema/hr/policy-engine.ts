@@ -1,17 +1,4 @@
-import {
-  pgTable,
-  text,
-  serial,
-  timestamp,
-  integer,
-  jsonb,
-  date,
-  index,
-  unique,
-  uniqueIndex,
-  pgEnum,
-  type AnyPgColumn,
-} from "drizzle-orm/pg-core";
+import { date, foreignKey, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 
@@ -64,7 +51,7 @@ export const hrPolicies = pgTable(
     description: text("description"),
     status: hrPolicyStatusEnum("status").default("draft").notNull(),
     version: integer("version").default(1).notNull(),
-    parentPolicyId: integer("parent_policy_id").references((): AnyPgColumn => hrPolicies.id, { onDelete: "set null" }),
+    parentPolicyId: integer("parent_policy_id"),
     effectiveFrom: date("effective_from").notNull(),
     effectiveTo: date("effective_to"),
     rules: jsonb("rules").$type<Record<string, unknown>>().notNull(),
@@ -78,6 +65,11 @@ export const hrPolicies = pgTable(
     deletedAt: timestamp("deleted_at"),
   },
   (table) => [
+    foreignKey({
+      columns: [table.orgId, table.parentPolicyId],
+      foreignColumns: [table.orgId, table.id],
+      name: "fk_hr_policies_parent_policy",
+    }).onDelete("set null"),
     unique("uniq_hr_policies_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_hr_policies_org_type_name_version").on(
       table.orgId,
@@ -90,6 +82,7 @@ export const hrPolicies = pgTable(
       table.policyType,
       table.status,
     ),
+    index("idx_hr_policies_parent_policy").on(table.orgId, table.parentPolicyId),
     index("idx_hr_policies_org_status").on(table.orgId, table.status),
   ],
 );
@@ -102,12 +95,12 @@ export const hrPolicyScopes = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     policyId: integer("policy_id")
-      .references(() => hrPolicies.id, { onDelete: "cascade" })
       .notNull(),
     scopeType: hrPolicyScopeTypeEnum("scope_type").notNull(),
     scopeValue: text("scope_value").notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.policyId], foreignColumns: [hrPolicies.orgId, hrPolicies.id], name: "fk_hr_policy_scopes_org_policy" }).onDelete("cascade"),
     unique("uniq_hr_policy_scopes_org_id").on(table.orgId, table.id),
     index("idx_hr_policy_scopes_org_policy").on(table.orgId, table.policyId),
     index("idx_hr_policy_scopes_org_type_value").on(

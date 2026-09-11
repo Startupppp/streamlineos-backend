@@ -1,5 +1,4 @@
-import { BadRequestException, ConflictException, Inject, Injectable } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
+import { ConflictException, Inject, Injectable } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -7,15 +6,13 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { MfaPolicyService } from "../../access/mfa-policy.service";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import type { TenantTx } from "../../../common/tenant/with-tenant";
 import {
-  orgCustomDomains,
-  orgHolidays,
   organizationAllowedEmailDomains,
   organizations,
 } from "../../../db/schema";
 import type {
-  AddCustomDomainInput,
-  CreateHolidayInput,
   SecuritySettingsInput,
   UpdateOrgSettingsInput,
 } from "./dto/organization.schemas";
@@ -27,7 +24,6 @@ type OrgSettingsUpdate = {
   timezone?: string;
   currency?: string;
   fiscalYearStart?: number;
-  mfaEnforced?: boolean;
   settings?: Record<string, unknown>;
   industry?: string | null;
   website?: string | null;
@@ -70,10 +66,12 @@ export class OrganizationSettingsService {
   async updateSettings(orgId: string, actorUserId: string, input: UpdateOrgSettingsInput) {
     if (input.slug) {
       const existing = await this.db.query.organizations.findFirst({
+        columns: { id: true },
         where: and(eq(organizations.slug, input.slug), eq(organizations.id, orgId)),
       });
       if (!existing) {
         const slugTaken = await this.db.query.organizations.findFirst({
+          columns: { id: true },
           where: eq(organizations.slug, input.slug),
         });
         if (slugTaken) throw new ConflictException("Slug already in use");
@@ -88,7 +86,6 @@ export class OrganizationSettingsService {
     if (input.currency !== undefined) updateData.currency = input.currency;
     if (input.fiscalYearStart !== undefined) updateData.fiscalYearStart = input.fiscalYearStart;
     if (input.logo !== undefined) updateData.logo = input.logo;
-    if (input.mfaEnforced !== undefined) updateData.mfaEnforced = input.mfaEnforced;
     if (input.industry !== undefined) updateData.industry = input.industry;
     if (input.website !== undefined) updateData.website = input.website;
     if (input.legalName !== undefined) updateData.legalName = input.legalName;
@@ -108,7 +105,6 @@ export class OrganizationSettingsService {
       input.directoryPublic !== undefined ||
       input.primaryColor !== undefined ||
       input.loginBgUrl !== undefined ||
-      input.ipAllowlist !== undefined ||
       input.language !== undefined ||
       input.dateFormat !== undefined ||
       input.timeFormat !== undefined ||
@@ -137,18 +133,6 @@ export class OrganizationSettingsService {
           currentSettings.loginBgUrl = input.loginBgUrl;
         }
       }
-      if (input.ipAllowlist !== undefined) {
-        currentSettings.ipAllowlist = input.ipAllowlist;
-        if (input.ipAllowlist.length === 0) {
-          await this.cache.invalidateForOrg(orgId, "org:ip-allowlist");
-        } else {
-          await this.cache.set(
-            `${orgId}:org:ip-allowlist`,
-            JSON.stringify(input.ipAllowlist),
-            3600,
-          );
-        }
-      }
       if (input.language !== undefined) currentSettings.language = input.language;
       if (input.dateFormat !== undefined) currentSettings.dateFormat = input.dateFormat;
       if (input.timeFormat !== undefined) currentSettings.timeFormat = input.timeFormat;
@@ -159,10 +143,6 @@ export class OrganizationSettingsService {
 
     if (Object.keys(updateData).length > 0) {
       await this.db.update(organizations).set(updateData).where(eq(organizations.id, orgId));
-    }
-
-    if (input.allowedEmailDomains !== undefined) {
-      await this.replaceAllowedDomains(orgId, input.allowedEmailDomains);
     }
 
     await this.invalidateSettingsCache(orgId);
@@ -204,15 +184,16 @@ export class OrganizationSettingsService {
 
     if (!hasOrgUpdate && !hasDomainsUpdate) return { success: true };
 
-    const ops: Promise<unknown>[] = [];
-
-    if (hasOrgUpdate) {
-      ops.push(this.db.update(organizations).set(updateData).where(eq(organizations.id, orgId)));
-    }
-    if (hasDomainsUpdate) {
-      ops.push(this.replaceAllowedDomains(orgId, input.allowedEmailDomains!));
-    }
-    await Promise.all(ops);
+    const domains = input.allowedEmailDomains;
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        if (hasOrgUpdate)
+          await tx.update(organizations).set(updateData).where(eq(organizations.id, orgId));
+        if (domains !== undefined) await this.replaceAllowedDomains(tx, orgId, domains);
+      },
+      { orgId },
+    );
 
     this.audit.log({
       action: "security_settings.updated",
@@ -250,17 +231,19 @@ export class OrganizationSettingsService {
     return { success: true };
   }
 
-  private async replaceAllowedDomains(orgId: string, domains: string[]): Promise<void> {
-    await this.db.transaction(async (tx) => {
-      await tx
-        .delete(organizationAllowedEmailDomains)
-        .where(eq(organizationAllowedEmailDomains.orgId, orgId));
-      if (domains.length > 0) {
-        await tx.insert(organizationAllowedEmailDomains).values(
-          domains.map((domain) => ({ orgId, domain: domain.toLowerCase() })),
-        );
-      }
-    });
+  private async replaceAllowedDomains(
+    tx: TenantTx,
+    orgId: string,
+    domains: string[],
+  ): Promise<void> {
+    await tx
+      .delete(organizationAllowedEmailDomains)
+      .where(eq(organizationAllowedEmailDomains.orgId, orgId));
+    if (domains.length > 0) {
+      await tx.insert(organizationAllowedEmailDomains).values(
+        domains.map((domain) => ({ orgId, domain: domain.toLowerCase() })),
+      );
+    }
   }
 
   async getSettings(orgId: string) {
@@ -278,7 +261,8 @@ export class OrganizationSettingsService {
       this.db
         .select({ domain: organizationAllowedEmailDomains.domain })
         .from(organizationAllowedEmailDomains)
-        .where(eq(organizationAllowedEmailDomains.orgId, orgId)),
+        .where(eq(organizationAllowedEmailDomains.orgId, orgId))
+        .limit(100),
     ]);
     if (!data) return null;
 
@@ -292,114 +276,5 @@ export class OrganizationSettingsService {
       directoryPublic:
         typeof settings.directoryPublic === "boolean" ? settings.directoryPublic : false,
     };
-  }
-
-  listHolidays(orgId: string) {
-    return this.db
-      .select()
-      .from(orgHolidays)
-      .where(eq(orgHolidays.orgId, orgId))
-      .orderBy(orgHolidays.date);
-  }
-
-  async createHoliday(orgId: string, userId: string, input: CreateHolidayInput) {
-    const id = randomUUID();
-    const [holiday] = await this.db
-      .insert(orgHolidays)
-      .values({
-        id,
-        orgId,
-        name: input.name,
-        date: input.date,
-        recurring: input.recurring ?? false,
-        createdBy: userId,
-      })
-      .returning();
-    this.audit.log({
-      action: "org.holiday.created",
-      userId,
-      orgId,
-      targetId: id,
-      targetType: "org_holiday",
-      metadata: input,
-    });
-    return holiday;
-  }
-
-  async deleteHoliday(orgId: string, userId: string, holidayId: string) {
-    await this.db
-      .delete(orgHolidays)
-      .where(and(eq(orgHolidays.id, holidayId), eq(orgHolidays.orgId, orgId)));
-    this.audit.log({
-      action: "org.holiday.deleted",
-      userId,
-      orgId,
-      targetId: holidayId,
-      targetType: "org_holiday",
-    });
-    return { success: true };
-  }
-
-  listCustomDomains(orgId: string) {
-    return this.db
-      .select()
-      .from(orgCustomDomains)
-      .where(eq(orgCustomDomains.orgId, orgId))
-      .orderBy(orgCustomDomains.createdAt);
-  }
-
-  async addCustomDomain(orgId: string, userId: string, input: AddCustomDomainInput) {
-    const existing = await this.db.query.orgCustomDomains.findFirst({
-      where: eq(orgCustomDomains.domain, input.domain),
-    });
-    if (existing) throw new ConflictException("Domain already registered");
-    const id = randomUUID();
-    const verificationToken = `streamline-verify=${randomUUID().replace(/-/g, "")}`;
-    const [domain] = await this.db
-      .insert(orgCustomDomains)
-      .values({ id, orgId, domain: input.domain, verificationToken, createdBy: userId })
-      .returning();
-    this.audit.log({
-      action: "org.domain.added",
-      userId,
-      orgId,
-      targetId: id,
-      targetType: "org_custom_domain",
-      metadata: { domain: input.domain },
-    });
-    return domain;
-  }
-
-  async verifyCustomDomain(orgId: string, userId: string, domainId: string) {
-    const record = await this.db.query.orgCustomDomains.findFirst({
-      where: and(eq(orgCustomDomains.id, domainId), eq(orgCustomDomains.orgId, orgId)),
-    });
-    if (!record) throw new BadRequestException("Domain not found");
-    this.audit.log({
-      action: "org.domain.verified",
-      userId,
-      orgId,
-      targetId: domainId,
-      targetType: "org_custom_domain",
-    });
-    await this.db
-      .update(orgCustomDomains)
-      .set({ verifiedAt: new Date() })
-      .where(eq(orgCustomDomains.id, domainId));
-    return { success: true, verified: true };
-  }
-
-  async removeCustomDomain(orgId: string, userId: string, domainId: string) {
-    await this.db
-      .delete(orgCustomDomains)
-      .where(and(eq(orgCustomDomains.id, domainId), eq(orgCustomDomains.orgId, orgId)));
-    this.audit.log({
-      action: "org.domain.removed",
-      userId,
-      orgId,
-      targetId: domainId,
-      targetType: "org_custom_domain",
-    });
-    return { success: true };
   }
 }

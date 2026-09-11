@@ -2,20 +2,13 @@ import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nest
 import { partyNamesFor } from "../../party/party-names";
 import { SupportTicketStaleException } from "../../../common/http/api-exceptions";
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
-import {
-  supportTicketLinks,
-  supportTicketMessages,
-  supportTickets,
-} from "../../../db/schema";
+import { supportTicketLinks, supportTicketMessages, supportTickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
-import { logger } from "../../../common/logger/logger.service";
-import { logSideEffectFailure } from "../../../common/logger/side-effect";
-import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { SupportMacrosService } from "./support-macros.service";
 import { SupportNotificationsService } from "./support-notifications.service";
@@ -24,30 +17,37 @@ import { SupportSlaService } from "./support-sla.service";
 import { SupportAiService } from "./support-ai.service";
 import { SupportCustomFieldsService } from "./support-custom-fields.service";
 import { AutomationService } from "../../automation/automation.service";
-import { applyScope } from "../../access/apply-scope";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import { SupportTicketActivityService } from "./support-ticket-activity.service";
 import { SupportTicketMessagesService } from "./support-ticket-messages.service";
 import { SupportTicketOperationsService } from "./support-ticket-operations.service";
+import {
+  ticketListFilters,
+  ticketListCacheKey,
+  type ListTicketsQuery,
+} from "./support-ticket-list-query";
+import { supportTicketScope } from "./support-tickets-scope";
+import { resolveTicketRouting } from "./support-ticket-routing";
+import {
+  insertTicketWithOpeningMessage,
+  resolveActiveMembershipId,
+  type TicketSource,
+} from "./support-ticket-writes";
+import { buildTicketUpdateData } from "./support-ticket-update-plan";
+import {
+  dispatchTicketCreatedEffects,
+  dispatchTicketUpdatedEffects,
+} from "./support-ticket-effects";
 import type {
   CreateTicketInput,
   CreateTicketLinkInput,
-  ListTicketsInput,
   MergeTicketInput,
   ReplyMessageInput,
   SnoozeTicketInput,
   SplitTicketInput,
-  TicketPriority,
+  TicketAttachmentInput,
   UpdateTicketInput,
 } from "./dto/support.schemas";
-
-type ListTicketsQuery = ListTicketsInput & { scope?: DataScope; userId?: string };
-
-const TICKET_PRIORITIES: readonly TicketPriority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
-
-function isTicketPriority(value: string): value is TicketPriority {
-  return (TICKET_PRIORITIES as readonly string[]).includes(value);
-}
 
 @Injectable()
 export class SupportTicketsService {
@@ -67,84 +67,57 @@ export class SupportTicketsService {
     private readonly operations: SupportTicketOperationsService,
   ) {}
 
-  private buildAutomationPayload(ticket: {
-    id: number;
-    title: string;
-    status: string;
-    priority: string;
-    category?: string | null;
-    assigneeId?: string | null;
-  }): Record<string, unknown> {
-    return {
-      ticketId: ticket.id,
-      title: ticket.title,
-      status: ticket.status,
-      priority: ticket.priority,
-      category: ticket.category ?? null,
-      assigneeId: ticket.assigneeId ?? null,
-    };
-  }
-
   listTickets(orgId: string, query: ListTicketsQuery) {
-    const { status, priority, assigneeId, queueId, channel, snoozed, page, limit, scope, userId } = query;
-    const key = `${status ?? ""}:${priority ?? ""}:${assigneeId ?? ""}:${queueId ?? ""}:${channel ?? ""}:${snoozed ?? ""}:${scope ?? ""}:${userId ?? ""}:${page}:${limit}`;
+    const { page, limit } = query;
     return this.cache.cachedVersioned(
       `support:tickets:${orgId}`,
-      key,
+      ticketListCacheKey(query),
       async () => {
         const offset = (page - 1) * limit;
-        const conditions: SQL[] = [eq(supportTickets.orgId, orgId)];
-        if (status) conditions.push(eq(supportTickets.status, status));
-        if (priority) conditions.push(eq(supportTickets.priority, priority));
-        if (assigneeId) conditions.push(eq(supportTickets.assigneeId, assigneeId));
-        if (queueId) conditions.push(eq(supportTickets.queueId, queueId));
-        if (channel) conditions.push(eq(supportTickets.sourceChannel, channel));
-        if (snoozed === true) {
-          conditions.push(sql`${supportTickets.snoozedUntil} > now()`);
-        } else if (snoozed === false || snoozed === undefined) {
-          const notSnoozed = or(isNull(supportTickets.snoozedUntil), sql`${supportTickets.snoozedUntil} <= now()`);
-          if (notSnoozed) conditions.push(notSnoozed);
-        }
-        if (scope && scope !== "none" && userId) {
-          conditions.push(applyScope(scope, orgId, userId, { ownerColumn: supportTickets.assigneeId }));
-        } else if (scope === "none") {
-          return { items: [], total: 0, page, totalPages: 0 };
-        }
+        return query.read.read(
+          {
+            tenant: supportTickets.orgId,
+            scope: supportTicketScope(orgId, query.read.actorId),
+            and: ticketListFilters(orgId, query),
+          },
+          async ({ sql: where }) => {
+            const [items, [countResult]] = await Promise.all([
+              this.db.query.supportTickets.findMany({
+                where,
+                orderBy: [desc(supportTickets.createdAt)],
+                limit,
+                offset,
+                with: {
+                  assigneeMembership: { columns: { id: true }, with: { user: { columns: { id: true, name: true, image: true } } } },
+                  creatorMembership: { columns: { id: true }, with: { user: { columns: { id: true, name: true } } } },
+                },
+              }),
+              this.db
+                .select({ count: sql<number>`count(*)::int` })
+                .from(supportTickets)
+                .where(where),
+            ]);
 
-        const [items, [countResult]] = await Promise.all([
-          this.db.query.supportTickets.findMany({
-            where: and(...conditions),
-            orderBy: [desc(supportTickets.createdAt)],
-            limit,
-            offset,
-            with: {
-              assignee: { columns: { id: true, name: true, image: true } },
-              creator: { columns: { id: true, name: true } },
-            },
-          }),
-          this.db
-            .select({ count: sql<number>`count(*)::int` })
-            .from(supportTickets)
-            .where(and(...conditions)),
-        ]);
+            /**
+             * The client's name from Party, not from `clients`. Ticket 08.
+             *
+             * `client_id` is still what the ticket is filed under and is still
+             * returned as `client.id`, so nothing downstream changes shape; only the
+             * name moved. That is all this service read the legacy table for.
+             */
+            const names = await partyNamesFor(this.db, orgId, items.map((t) => t.clientPartyId));
+            const withClient = items.map((t) => ({
+              ...t,
+              client: t.clientId
+                ? { id: t.clientId, name: t.clientPartyId ? (names.get(t.clientPartyId) ?? null) : null }
+                : null,
+            }));
 
-        /**
-         * The client's name from Party, not from `clients`. Ticket 08.
-         *
-         * `client_id` is still what the ticket is filed under and is still
-         * returned as `client.id`, so nothing downstream changes shape; only the
-         * name moved. That is all this service read the legacy table for.
-         */
-        const names = await partyNamesFor(this.db, orgId, items.map((t) => t.clientPartyId));
-        const withClient = items.map((t) => ({
-          ...t,
-          client: t.clientId
-            ? { id: t.clientId, name: t.clientPartyId ? (names.get(t.clientPartyId) ?? null) : null }
-            : null,
-        }));
-
-        const total = countResult?.count ?? 0;
-        return { items: withClient, total, page, totalPages: Math.ceil(total / limit) };
+            const total = countResult?.count ?? 0;
+            return { items: withClient, total, page, totalPages: Math.ceil(total / limit) };
+          },
+          () => ({ items: [], total: 0, page, totalPages: 0 }),
+        );
       },
       CACHE_TTL.SHORT,
     );
@@ -153,15 +126,11 @@ export class SupportTicketsService {
   async createTicket(
     orgId: string,
     userId: string,
-    input: CreateTicketInput,
-    source?: {
-      channel: string;
-      messageId?: string | null;
-      requesterEmail?: string | null;
-      requesterName?: string | null;
-    },
+    input: CreateTicketInput & { attachments?: TicketAttachmentInput[] },
+    source?: TicketSource,
     membershipId?: number | null,
   ) {
+    if (membershipId == null) throw new ForbiddenException("Organization membership required");
     const possibleDuplicate = await this.db.query.supportTickets.findFirst({
       where: and(
         eq(supportTickets.orgId, orgId),
@@ -171,60 +140,26 @@ export class SupportTicketsService {
       columns: { id: true, title: true },
     });
 
-    const callerSetPriority = input.priority !== undefined;
-    let finalPriority: TicketPriority = input.priority ?? "MEDIUM";
-    let finalAssigneeId = input.assigneeId;
-
-    try {
-      const isVip = await this.macros.isVipClient(orgId, input.clientId ?? null);
-      const routing = await this.macros.applyRoutingRules(orgId, {
-        title: input.title,
-        category: input.category ?? null,
-        description: input.description ?? null,
-        priority: finalPriority,
-        isVip,
-      });
-      if (routing.assigneeId && !input.assigneeId) {
-        finalAssigneeId = routing.assigneeId;
-      }
-      if (routing.setPriority && !callerSetPriority && isTicketPriority(routing.setPriority)) {
-        finalPriority = routing.setPriority;
-      }
-    } catch (routingError) {
-      logger.error("Support routing rules failed to apply", {
-        orgId,
-        error: routingError instanceof Error ? routingError.message : String(routingError),
-      });
-    }
+    const routing = await resolveTicketRouting(this.macros, orgId, input);
 
     await this.planLimits.assertWithinLimit(orgId, "supportTickets");
 
-    const resolvedPolicy = await this.sla.resolvePolicy(orgId, finalPriority, input.category ?? null);
+    const resolvedPolicy = await this.sla.resolvePolicy(orgId, routing.priority, input.category ?? null);
     const { firstResponseDueAt, resolutionDueAt } = this.sla.computeDueDates(resolvedPolicy, new Date());
 
-    const ticket = await this.db.transaction(async (tx) => {
-      const [row] = await (tx as Db)
-        .insert(supportTickets)
-        .values({
-          orgId,
-          title: input.title,
-          category: input.category ?? null,
-          description: input.description ?? null,
-          clientId: input.clientId ?? null,
-          priority: finalPriority,
-          assigneeId: finalAssigneeId ?? null,
-          slaDeadline: resolutionDueAt,
-          firstResponseDueAt,
-          createdBy: userId,
-          createdByMembershipId: membershipId ?? undefined,
-          sourceChannel: source?.channel ?? "web",
-          sourceMessageId: source?.messageId ?? null,
-          requesterEmail: source?.requesterEmail ?? null,
-          requesterName: source?.requesterName ?? null,
-        })
-        .returning();
-      return row;
-    });
+    const ticket = await this.db.transaction(async (tx) =>
+      insertTicketWithOpeningMessage(tx, {
+        orgId,
+        userId,
+        input,
+        priority: routing.priority,
+        assigneeId: routing.assigneeId,
+        membershipId,
+        firstResponseDueAt,
+        resolutionDueAt,
+        source,
+      }),
+    );
 
     await this.invalidateTicketCaches(orgId);
     await this.activity.recordActivity(orgId, ticket.id, userId, "created", null, input.title).catch(
@@ -232,24 +167,17 @@ export class SupportTicketsService {
     );
     await this.customFields.setFieldValues(orgId, ticket.id, input.customFields ?? [], true);
 
-    const ticketAutomationPayload = this.buildAutomationPayload(ticket);
-    const createdAutomationTask = () =>
-      this.automations
-        .runAutomationsForEvent(orgId, "ticket.created", ticketAutomationPayload)
-        .catch(logSideEffectFailure("support automations on ticket.created", { orgId, ticketId: ticket.id }));
-    if (!registerAfterCommit(createdAutomationTask)) void createdAutomationTask();
-
-    const aiTask = () =>
-      this.ai.runFullAnalysis(orgId, ticket.id, userId).catch(logSideEffectFailure("support AI analysis", { orgId, ticketId: ticket.id }));
-    if (!registerAfterCommit(aiTask)) void aiTask();
-
-    if (finalAssigneeId) {
-      const assignTask = () =>
-        this.notifications
-          .sendAssignmentEmail(orgId, finalAssigneeId, userId, input.title, finalPriority, ticket.id, "User")
-          .catch(logSideEffectFailure("support assignment email", { orgId, ticketId: ticket.id }));
-      if (!registerAfterCommit(assignTask)) void assignTask();
-    }
+    dispatchTicketCreatedEffects(
+      { automations: this.automations, ai: this.ai, notifications: this.notifications },
+      {
+        orgId,
+        userId,
+        ticket,
+        title: input.title,
+        priority: routing.priority,
+        assigneeId: routing.assigneeId,
+      },
+    );
 
     return {
       ...ticket,
@@ -259,22 +187,35 @@ export class SupportTicketsService {
     };
   }
 
-  async getTicket(orgId: string, ticketId: number, actor: { userId: string; scope: DataScope }) {
-    const ticket = await this.db.query.supportTickets.findFirst({
-      where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
-      with: {
-        assignee: { columns: { id: true, name: true, image: true } },
-        creator: { columns: { id: true, name: true } },
-        messages: {
-          with: { author: { columns: { id: true, name: true, image: true } } },
-          orderBy: [asc(supportTicketMessages.createdAt)],
-        },
+  async getTicket(orgId: string, ticketId: number, read: ScopedRead) {
+    const ticket = await read.read(
+      {
+        tenant: supportTickets.orgId,
+        scope: supportTicketScope(orgId, read.actorId),
+        and: [eq(supportTickets.id, ticketId)],
       },
-    });
-    if (!ticket) throw new NotFoundException("Ticket not found");
-    if (actor.scope === "none") throw new ForbiddenException("Not authorized to view tickets");
-    if (actor.scope !== "all" && ticket.assigneeId !== actor.userId)
-      throw new ForbiddenException("Not authorized to view this ticket");
+      ({ sql: where }) => this.db.query.supportTickets.findFirst({
+        where,
+        with: {
+          assigneeMembership: { columns: { id: true }, with: { user: { columns: { id: true, name: true, image: true } } } },
+          creatorMembership: { columns: { id: true }, with: { user: { columns: { id: true, name: true } } } },
+          messages: {
+            with: { author: { columns: { id: true, name: true, image: true } } },
+            orderBy: [asc(supportTicketMessages.createdAt)],
+          },
+        },
+      }),
+      () => undefined,
+    );
+    // Same tenant but out of scope is a permission answer, not an existence one, so the fallback read decides which.
+    if (!ticket) {
+      const exists = await this.db.query.supportTickets.findFirst({
+        where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
+        columns: { id: true },
+      });
+      if (exists) throw new ForbiddenException("Not authorized to view this ticket");
+      throw new NotFoundException("Ticket not found");
+    }
     const customFieldValues = await this.customFields.getFieldValues(orgId, ticketId);
 
     // Same as the list path: the identifier stays, the name comes from Party.
@@ -292,6 +233,10 @@ export class SupportTicketsService {
   async updateTicket(orgId: string, ticketId: number, userId: string, input: UpdateTicketInput) {
     const ticket = await this.db.query.supportTickets.findFirst({
       where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
+      with: {
+        assigneeMembership: { columns: { id: true }, with: { user: { columns: { id: true } } } },
+        creatorMembership: { columns: { id: true }, with: { user: { columns: { id: true } } } },
+      },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
 
@@ -300,38 +245,21 @@ export class SupportTicketsService {
     }
 
     const ticketUpdatedAt = new Date();
-    const updateData: Partial<typeof supportTickets.$inferInsert> = { updatedAt: ticketUpdatedAt };
-    if (input.status) {
-      updateData.status = input.status;
-      if (input.status === "RESOLVED") updateData.resolvedAt = new Date();
-      if (input.status === "CLOSED") updateData.closedAt = new Date();
-
-      const policy = await this.sla.resolvePolicy(orgId, ticket.priority, ticket.category);
-      const pauseTransition = this.sla.computePauseTransition(
-        ticket.status,
-        input.status,
-        policy.pauseStatuses,
-        ticket.slaPausedAt,
-        ticket.slaPausedMinutes,
-      );
-      updateData.slaPausedAt = pauseTransition.slaPausedAt;
-      updateData.slaPausedMinutes = pauseTransition.slaPausedMinutes;
-      if (pauseTransition.extendByMinutes > 0) {
-        const extendMs = pauseTransition.extendByMinutes * 60_000;
-        if (!ticket.firstRespondedAt && ticket.firstResponseDueAt) {
-          updateData.firstResponseDueAt = new Date(ticket.firstResponseDueAt.getTime() + extendMs);
-        }
-        if (ticket.slaDeadline) {
-          updateData.slaDeadline = new Date(ticket.slaDeadline.getTime() + extendMs);
-        }
-      }
-    }
-    if (input.priority) updateData.priority = input.priority;
-    if (input.assigneeId !== undefined) updateData.assigneeId = input.assigneeId;
-    if (input.queueId !== undefined) updateData.queueId = input.queueId;
+    const assigneeMembershipId =
+      input.assigneeId !== undefined
+        ? await resolveActiveMembershipId(this.db, orgId, input.assigneeId)
+        : undefined;
+    const updateData = await buildTicketUpdateData(
+      this.sla,
+      orgId,
+      ticket,
+      input,
+      ticketUpdatedAt,
+      assigneeMembershipId,
+    );
 
     await this.db.transaction(async (tx) => {
-      await (tx as Db)
+      await tx
         .update(supportTickets)
         .set(updateData)
         .where(and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)));
@@ -349,67 +277,37 @@ export class SupportTicketsService {
       }
     });
 
-    await this.activity.logTicketActivity(orgId, ticketId, userId, ticket, input);
+    await this.activity.logTicketActivity(orgId, ticketId, userId, { ...ticket, assigneeId: ticket.assigneeMembership?.user?.id ?? null }, input);
     if (input.customFields) {
       await this.customFields.setFieldValues(orgId, ticketId, input.customFields, false);
     }
 
     await this.invalidateTicketCaches(orgId);
 
-    void this.realtime.publishTicketUpdated(orgId, ticketId, ticketUpdatedAt).catch(logSideEffectFailure("support realtime ticket-updated publish", { orgId, ticketId }));
-
-    const updatedTicketForPayload = {
-      id: ticketId,
-      title: ticket.title,
-      status: updateData.status ?? ticket.status,
-      priority: updateData.priority ?? ticket.priority,
-      category: ticket.category,
-      assigneeId: updateData.assigneeId !== undefined ? updateData.assigneeId : ticket.assigneeId,
-    };
-
-    if (input.status && input.status !== ticket.status) {
-      const statusAutomationTask = () =>
-        this.automations
-          .runAutomationsForEvent(orgId, "ticket.status_changed", this.buildAutomationPayload(updatedTicketForPayload))
-          .catch(logSideEffectFailure("support automations on ticket.updated", { orgId, ticketId }));
-      if (!registerAfterCommit(statusAutomationTask)) void statusAutomationTask();
-    }
-    if (input.priority && input.priority !== ticket.priority) {
-      const priorityAutomationTask = () =>
-        this.automations
-          .runAutomationsForEvent(orgId, "ticket.priority_changed", this.buildAutomationPayload(updatedTicketForPayload))
-          .catch(logSideEffectFailure("support status-change notification", { orgId, ticketId }));
-      if (!registerAfterCommit(priorityAutomationTask)) void priorityAutomationTask();
-    }
-
-    if (input.status) {
-      const statusNotifTask = () =>
-        this.notifications
-          .sendStatusEmail(orgId, ticket.createdBy, userId, ticket.title, ticketId, input.status!)
-          .catch(logSideEffectFailure("support assignment notification", { orgId, ticketId }));
-      if (!registerAfterCommit(statusNotifTask)) void statusNotifTask();
-    }
-
-    if (input.assigneeId && input.assigneeId !== ticket.assigneeId) {
-      const assignNotifTask = () =>
-        this.notifications
-          .sendAssignmentEmail(
-            orgId,
-            input.assigneeId!,
-            userId,
-            ticket.title,
-            ticket.priority ?? "MEDIUM",
-            ticketId,
-            "Support",
-          )
-          .catch(logSideEffectFailure("support SLA recalculation", { orgId, ticketId }));
-      if (!registerAfterCommit(assignNotifTask)) void assignNotifTask();
-    }
+    dispatchTicketUpdatedEffects(
+      { automations: this.automations, notifications: this.notifications, realtime: this.realtime },
+      {
+        orgId,
+        ticketId,
+        userId,
+        updatedAt: ticketUpdatedAt,
+        input,
+        before: {
+          title: ticket.title,
+          status: ticket.status,
+          priority: ticket.priority,
+          category: ticket.category,
+          assigneeUserId: ticket.assigneeMembership?.user?.id,
+          creatorUserId: ticket.creatorMembership?.user?.id ?? null,
+        },
+        applied: { status: updateData.status, priority: updateData.priority },
+      },
+    );
 
     return { success: true, updatedAt: updateData.updatedAt };
   }
 
-  async splitTicket(orgId: string, ticketId: number, userId: string, input: SplitTicketInput) {
+  async splitTicket(orgId: string, ticketId: number, userId: string, input: SplitTicketInput, membershipId?: number | null) {
     const original = await this.db.query.supportTickets.findFirst({
       where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
       columns: { id: true, category: true, clientId: true, priority: true, requesterEmail: true, requesterName: true },
@@ -422,7 +320,7 @@ export class SupportTicketsService {
       category: original.category ?? undefined,
       clientId: original.clientId ?? undefined,
       priority: original.priority,
-    });
+    }, undefined, membershipId);
 
     await this.db
       .insert(supportTicketLinks)

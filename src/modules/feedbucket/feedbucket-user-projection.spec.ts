@@ -1,4 +1,5 @@
 import { FeedbucketSubmissionsService } from "./feedbucket-submissions.service";
+import { ScopedRead } from "../access/scoped-read";
 
 describe("FeedbucketSubmissionsService user projection", () => {
   it("projects assignee identity without global-user secrets", async () => {
@@ -12,23 +13,14 @@ describe("FeedbucketSubmissionsService user projection", () => {
     const service = new FeedbucketSubmissionsService(db as never);
 
     await service.list(
-      "org-1",
-      "user-1",
+      ScopedRead.of("org-1", "user-1", "all"),
       { page: 1, limit: 25 },
-      "all",
       null,
     );
 
-    const columns = findMany.mock.calls[0]?.[0]?.with?.assignee?.columns;
-    expect(columns).toEqual({
-      id: true,
-      name: true,
-      firstName: true,
-      lastName: true,
-      email: true,
-      image: true,
-    });
-    expect(columns).not.toHaveProperty("totpSecret");
-    expect(columns).not.toHaveProperty("bankDetails");
+    const call = findMany.mock.calls[0]?.[0];
+    expect(call?.with?.assignee).toBeUndefined();
+    expect(call?.columns?.consoleLogs).toBe(false);
+    expect(call?.columns?.networkLogs).toBe(false);
   });
 });

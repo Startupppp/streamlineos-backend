@@ -126,6 +126,8 @@ describe("HrWorkflowApproverService — resolveApprovers", () => {
     const step = { stepOrder: 1, name: "Step 1", approverType: "named_user", approverValue: "user-fixed", mode: "serial" };
     const result = await approver.resolveApprovers(step, "emp1", "org1");
     expect(result).toEqual(["user-fixed"]);
+
+    expect(db.transaction).not.toHaveBeenCalled();
   });
 
   it("returns empty array for named_user with null approverValue", async () => {
@@ -239,7 +241,7 @@ describe("HrWorkflowEngineService — act terminal states", () => {
 
 describe("HrWorkflowEngineService — act reject sets status", () => {
   it("sets instance status to rejected when action is rejected", async () => {
-    const db = makeDb([[{ settings: {} }]]);
+    const db = makeDb([[{ membershipId: 1 }], [{ settings: {} }]]);
     const updateSetWhereMock = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) });
     const updateSetMock = jest.fn().mockReturnValue({ where: updateSetWhereMock });
     const updateMock = jest.fn().mockReturnValue({ set: updateSetMock });
@@ -255,7 +257,7 @@ describe("HrWorkflowEngineService — act reject sets status", () => {
       .mockResolvedValueOnce(rejectedInstance as never);
     jest.spyOn(approver, "resolveApprovers").mockResolvedValueOnce(["hr-user"]);
 
-    const result = await engine.act({ orgId: "org1", instanceId: 1, actorUserId: "hr-user", action: "rejected" });
+    const result = await engine.act({ orgId: "org1", instanceId: 1, actorUserId: "hr-user", actorMembershipId: 1, action: "rejected" });
     expect(updateMock).toHaveBeenCalled();
     expect(updateSetMock).toHaveBeenCalledWith(expect.objectContaining({ status: "rejected" }));
     expect(result.status).toBe("rejected");
@@ -276,6 +278,9 @@ describe("HrWorkflowEngineService — act non-approver denied", () => {
     await expect(
       engine.act({ orgId: "org1", instanceId: 1, actorUserId: "random-user", action: "approved" }),
     ).rejects.toThrow(ForbiddenException);
+
+    expect(db.insert).not.toHaveBeenCalled();
+    expect(db.update).not.toHaveBeenCalled();
   });
 });
 
@@ -284,6 +289,10 @@ describe("HrWorkflowEngineService — getInstanceOrThrow", () => {
     const db = makeDb([[]]);
     const { engine } = await makeServices(db);
     await expect(engine.getInstanceOrThrow("org1", 999)).rejects.toThrow(NotFoundException);
+
+    expect(db.transaction).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
+    expect(db.update).not.toHaveBeenCalled();
   });
 
   it("returns the instance when found", async () => {

@@ -15,11 +15,15 @@ import { buildDefaultTemplates } from "./seed-default-templates";
 import {
   VALID_TRANSITIONS,
   type CreateTemplateInput,
+  type HrTemplateStatus,
   type RenderTemplateInput,
   type TemplateListQuery,
+  type TemplateRendersQuery,
   type UpdateTemplateInput,
 } from "./dto/hr-templates.schemas";
 import { TEMPLATE_VARIABLES } from "./hr-template-variables";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 
 type TemplateRow = typeof hrTemplates.$inferSelect;
 
@@ -38,7 +42,12 @@ export class HrTemplatesService {
     if (query.status) conditions.push(eq(hrTemplates.status, query.status));
     if (query.search) conditions.push(await this.templateSearchCondition(query.search));
 
-    const offset = (query.page - 1) * query.limit;
+    const baseWhere = and(...conditions);
+    const position = decodeCursor(query.cursor);
+    const where = and(
+      baseWhere,
+      position ? keysetBeforeId(hrTemplates.updatedAt, hrTemplates.id, position) : undefined,
+    );
 
     const [rows, [{ total }]] = await Promise.all([
       this.db
@@ -60,24 +69,27 @@ export class HrTemplatesService {
           updatedAt: hrTemplates.updatedAt,
         })
         .from(hrTemplates)
-        .where(and(...conditions))
-        .orderBy(desc(hrTemplates.updatedAt))
-        .limit(query.limit)
-        .offset(offset),
+        .where(where)
+        .orderBy(desc(hrTemplates.updatedAt), desc(hrTemplates.id))
+        .limit(query.limit + 1),
       this.db
         .select({ total: count() })
         .from(hrTemplates)
-        .where(and(...conditions)),
+        .where(baseWhere),
     ]);
-
-    return { data: rows, total, page: query.page, limit: query.limit };
+    const page = buildCursorPage(rows, query.limit, (template) => ({
+      sortValue: template.updatedAt.toISOString(),
+      id: String(template.id),
+    }));
+    return { data: page.data, total, pagination: page.pagination };
   }
 
   private async templateSearchCondition(search: string): Promise<SQL> {
     const fallback = or(
       ilike(hrTemplates.name, `%${search}%`),
       ilike(hrTemplates.description, `%${search}%`),
-    )!;
+    );
+    if (!fallback) throw new InternalServerErrorException("Failed to build template search fallback");
     const rows = await this.db.execute(
       sql`SELECT app.search_hr_template_ids(${search}, ${TEMPLATE_SEARCH_CAP + 1}) AS id`,
     );
@@ -145,7 +157,7 @@ export class HrTemplatesService {
     return updated;
   }
 
-  async transition(orgId: string, userId: string, templateId: number, to: string): Promise<TemplateRow> {
+  async transition(orgId: string, userId: string, templateId: number, to: HrTemplateStatus): Promise<TemplateRow> {
     const existing = await this.getById(orgId, templateId);
     const allowed = VALID_TRANSITIONS[existing.status] ?? [];
     if (!allowed.includes(to)) {
@@ -154,7 +166,7 @@ export class HrTemplatesService {
 
     const [updated] = await this.db
       .update(hrTemplates)
-      .set({ status: to as TemplateRow["status"], updatedBy: userId })
+      .set({ status: to, updatedBy: userId })
       .where(and(eq(hrTemplates.id, templateId), eq(hrTemplates.orgId, orgId)))
       .returning();
 
@@ -204,8 +216,10 @@ export class HrTemplatesService {
       // caller must hold hr:sensitive:view — enforced in controller before reaching here
     }
 
-    const body = (template.content as Record<string, unknown>)["bodyHtml"] as string | undefined;
-    const subject = (template.content as Record<string, unknown>)["subject"] as string | undefined;
+    const bodyHtml = template.content["bodyHtml"];
+    const body = typeof bodyHtml === "string" ? bodyHtml : undefined;
+    const subjectRaw = template.content["subject"];
+    const subject = typeof subjectRaw === "string" ? subjectRaw : undefined;
 
     const ctx = await this.renderService.buildContext(
       orgId,
@@ -240,17 +254,42 @@ export class HrTemplatesService {
     return { outputHtml, renderedSubject, renderId: renderRow?.id, templateVersion: template.version };
   }
 
-  async listRenders(orgId: string, templateId: number, page = 1, limit = 50) {
+  async listRenders(
+    orgId: string,
+    templateId: number,
+    query: TemplateRendersQuery,
+  ) {
     await this.getById(orgId, templateId);
-    const safeLimit = Math.min(limit, 100);
-    const offset = (page - 1) * safeLimit;
-    return this.db
+    const position = decodeCursor(query.cursor);
+    if (query.cursor !== undefined && !position) {
+      throw new BadRequestException("Invalid pagination cursor");
+    }
+
+    const conditions = [
+      eq(hrTemplateRenders.orgId, orgId),
+      eq(hrTemplateRenders.templateId, templateId),
+    ];
+    if (position) {
+      conditions.push(
+        keysetBeforeId(
+          hrTemplateRenders.createdAt,
+          hrTemplateRenders.id,
+          position,
+        ),
+      );
+    }
+
+    const rows = await this.db
       .select()
       .from(hrTemplateRenders)
-      .where(and(eq(hrTemplateRenders.orgId, orgId), eq(hrTemplateRenders.templateId, templateId)))
-      .orderBy(desc(hrTemplateRenders.createdAt))
-      .limit(safeLimit)
-      .offset(offset);
+      .where(and(...conditions))
+      .orderBy(desc(hrTemplateRenders.createdAt), desc(hrTemplateRenders.id))
+      .limit(query.limit + 1);
+
+    return buildCursorPage(rows, query.limit, (render) => ({
+      sortValue: render.createdAt.toISOString(),
+      id: String(render.id),
+    }));
   }
 
   async seedDefaults(orgId: string, userId: string) {
@@ -271,7 +310,7 @@ export class HrTemplatesService {
       name: t.name,
       description: t.description,
       status: "active" as const,
-      content: t.content as Record<string, unknown>,
+      content: t.content,
       variablesUsed: t.variablesUsed,
       letterType: t.letterType,
       createdBy: userId,

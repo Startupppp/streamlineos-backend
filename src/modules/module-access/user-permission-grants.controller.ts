@@ -18,6 +18,12 @@ import {
   type SetUserPermissionGrantsInput,
 } from "./dto/user-permission-grants.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  userGrantListResponseSchema,
+  userGrantSetResponseSchema,
+  userGrantRemoveResponseSchema,
+} from "./dto/module-access-response.schemas";
 import { z } from "zod";
 
 const grantBaseParams = z.object({ moduleKey: z.string().min(1), membershipId: z.coerce.number().int().positive() }).strict();
@@ -30,6 +36,7 @@ export class UserPermissionGrantsController {
   constructor(private readonly grants: UserPermissionGrantsService) {}
 
   @Get()
+  @ResponseSchema(userGrantListResponseSchema)
   @Validate({ params: grantBaseParams })
   async list(
     @Param("moduleKey") moduleKey: string,
@@ -40,6 +47,7 @@ export class UserPermissionGrantsController {
   }
 
   @Put()
+  @ResponseSchema(userGrantSetResponseSchema)
   @Validate({ params: grantBaseParams, body: setUserPermissionGrantsSchema })
   async set(
     @Param("moduleKey") moduleKey: string,
@@ -51,6 +59,7 @@ export class UserPermissionGrantsController {
   }
 
   @Delete(":permissionKey")
+  @ResponseSchema(userGrantRemoveResponseSchema)
   @Validate({ params: grantAndPermissionKeyParams })
   async remove(
     @Param("moduleKey") moduleKey: string,

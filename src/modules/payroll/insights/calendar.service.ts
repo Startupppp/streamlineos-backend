@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, eq, gte, lte } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
@@ -7,8 +7,10 @@ import {
   payrollPolicies,
   payrollPolicyVersions,
 } from "../../../db/schema";
-import type { PayrollPolicyConfig } from "../payroll.types";
+import { toPayrollPolicyConfig } from "../dto/payroll.schemas";
+import { DEFAULT_PAYROLL_POLICY_CONFIG } from "../setup/payroll-policy-defaults.constants";
 import { AuditService } from "../../../common/audit/audit.service";
+import type { CreateCalendarEvent, PatchCalendarEvent } from "./dto/insights.schemas";
 
 type CalendarEventStatus = "upcoming" | "due" | "overdue";
 
@@ -84,7 +86,7 @@ export class CalendarService {
   async create(
     orgId: string,
     actorId: string,
-    data: { type: string; date: string; title: string; month?: string },
+    data: CreateCalendarEvent,
   ): Promise<CalendarEventRow> {
     validateDate(data.date);
 
@@ -92,7 +94,7 @@ export class CalendarService {
       .insert(payrollCalendarEvents)
       .values({
         orgId,
-        type: data.type as CalendarEventInsert["type"],
+        type: data.type,
         date: data.date,
         title: data.title,
         month: data.month ?? null,
@@ -116,7 +118,7 @@ export class CalendarService {
     orgId: string,
     actorId: string,
     eventId: number,
-    data: { type?: string; date?: string; title?: string; month?: string },
+    data: PatchCalendarEvent,
   ): Promise<CalendarEventRow> {
     validateDate(data.date);
 
@@ -124,7 +126,8 @@ export class CalendarService {
       const [existing] = await tx
         .select({ id: payrollCalendarEvents.id, type: payrollCalendarEvents.type, date: payrollCalendarEvents.date, title: payrollCalendarEvents.title })
         .from(payrollCalendarEvents)
-        .where(and(eq(payrollCalendarEvents.id, eventId), eq(payrollCalendarEvents.orgId, orgId)));
+        .where(and(eq(payrollCalendarEvents.id, eventId), eq(payrollCalendarEvents.orgId, orgId)))
+        .limit(1);
 
       if (!existing) throw new NotFoundException("Calendar event not found");
 
@@ -136,7 +139,7 @@ export class CalendarService {
         updatedAt?: Date;
       } = { updatedAt: new Date() };
 
-      if (data.type !== undefined) patch.type = data.type as CalendarEventInsert["type"];
+      if (data.type !== undefined) patch.type = data.type;
       if (data.date !== undefined) patch.date = data.date;
       if (data.title !== undefined) patch.title = data.title;
       if (data.month !== undefined) patch.month = data.month;
@@ -166,7 +169,8 @@ export class CalendarService {
       const [existing] = await tx
         .select({ id: payrollCalendarEvents.id, type: payrollCalendarEvents.type, date: payrollCalendarEvents.date })
         .from(payrollCalendarEvents)
-        .where(and(eq(payrollCalendarEvents.id, eventId), eq(payrollCalendarEvents.orgId, orgId)));
+        .where(and(eq(payrollCalendarEvents.id, eventId), eq(payrollCalendarEvents.orgId, orgId)))
+        .limit(1);
 
       if (!existing) throw new NotFoundException("Calendar event not found");
 
@@ -198,7 +202,7 @@ export class CalendarService {
     if (rows.length === 0) return { generated: 0, month };
 
     const { policy, version } = rows[0];
-    const config = version.config as PayrollPolicyConfig;
+    const config = toPayrollPolicyConfig(version.config) ?? DEFAULT_PAYROLL_POLICY_CONFIG;
     const policyPayDay = policy.payDay;
 
     const pad = (n: number) => String(n).padStart(2, "0");
@@ -232,12 +236,13 @@ export class CalendarService {
 
     return this.db.transaction(async (tx) => {
       const existing = await tx
-        .select({ type: payrollCalendarEvents.type })
+        .selectDistinct({ type: payrollCalendarEvents.type })
         .from(payrollCalendarEvents)
         .where(
           and(
             eq(payrollCalendarEvents.orgId, orgId),
             eq(payrollCalendarEvents.month, month),
+            inArray(payrollCalendarEvents.type, eventDefs.map((event) => event.type)),
           ),
         );
 

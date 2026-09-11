@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, decimal, jsonb, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, decimal, jsonb, integer, index, unique, uniqueIndex, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../common/auth";
 
@@ -34,13 +34,16 @@ export const competencyFrameworks = pgTable("competency_frameworks", {
 
 export const competencies = pgTable("competencies", {
   id: serial("id").primaryKey(),
-  frameworkId: integer("framework_id").references(() => competencyFrameworks.id, { onDelete: "cascade" }).notNull(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  frameworkId: integer("framework_id").notNull(),
   name: text("name").notNull(),
   description: text("description"),
   category: text("category").notNull(),
   weight: decimal("weight", { precision: 5, scale: 2 }).default("1").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.frameworkId], foreignColumns: [competencyFrameworks.orgId, competencyFrameworks.id], name: "fk_competencies_framework_id_org" }).onDelete("cascade"),
+  unique("uniq_competencies_org_id").on(table.orgId, table.id),
   index("idx_competencies_framework").on(table.frameworkId),
 ]);
 

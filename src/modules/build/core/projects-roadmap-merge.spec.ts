@@ -1,5 +1,6 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { ProjectsRoadmapService } from "./projects-roadmap.service";
+import { ProjectsFeedbackService } from "./projects-feedback.service";
 import type { Db } from "../../../db/drizzle.module";
 
 const ORG_ID = "org-1";
@@ -41,7 +42,7 @@ describe("ProjectsRoadmapService — mergeFeedback", () => {
     const db = {
       transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(makeTx())),
     } as unknown as Db;
-    svc = new ProjectsRoadmapService(db);
+    svc = new ProjectsRoadmapService(db, {} as never, new ProjectsFeedbackService(db));
   });
 
   it("rejects merging a post into itself", async () => {

@@ -17,6 +17,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { HrBenefitsPlansService } from "./hr-benefits-plans.service";
 import { HrBenefitsEnrollmentService } from "./hr-benefits-enrollment.service";
 import { HrBenefitsClaimsService } from "./hr-benefits-claims.service";
@@ -32,6 +33,7 @@ import {
   reviewClaimSchema,
   setPayoutRouteSchema,
   benefitPlansQuerySchema,
+  availableBenefitPlansQuerySchema,
   claimsQuerySchema,
   type CreateBenefitPlanInput,
   type PatchBenefitPlanInput,
@@ -44,11 +46,14 @@ import {
   type ReviewClaimInput,
   type SetPayoutRouteInput,
   type BenefitPlansQuery,
+  type AvailableBenefitPlansQuery,
   type ClaimsQuery,
 } from "./dto/benefits.schemas";
 import { AccessService } from "../../access/access.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts"
+import { listPlansResponseSchema, getPlanResponseSchema, checkEligibilityResponseSchema, createPlanResponseSchema, updatePlanResponseSchema, deletePlanResponseSchema, listWindowsResponseSchema, createWindowResponseSchema, updateWindowResponseSchema, getMyBenefitsResponseSchema, enrollResponseSchema, waiveResponseSchema, listDependentsResponseSchema, addDependentResponseSchema, updateDependentResponseSchema, deleteDependentResponseSchema, listClaimsResponseSchema, submitClaimResponseSchema, reviewClaimResponseSchema, setPayoutRouteResponseSchema } from "./dto/benefits-response.schemas"
 
 const planIdParams = z.object({ planId: z.coerce.number().int().positive() }).strict();
 const windowIdParams = z.object({ windowId: z.coerce.number().int().positive() }).strict();
@@ -73,13 +78,19 @@ export class HrBenefitsController {
     return perms.has("hr:benefits:manage");
   }
 
+  @ResponseSchema(listPlansResponseSchema)
   @Get("plans/available")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:view")
-  listActivePlans(@CurrentUser() u: CurrentUserContext) {
-    return this.plans.listPlans(u.orgId, { status: "active", limit: 100 });
+  @Validate({ query: availableBenefitPlansQuerySchema })
+  listActivePlans(
+    @CurrentUser() u: CurrentUserContext,
+    @Query() query: AvailableBenefitPlansQuery,
+  ) {
+    return this.plans.listPlans(u.orgId, { ...query, status: "active" });
   }
 
+  @ResponseSchema(listPlansResponseSchema)
   @Get("plans")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:view")
@@ -91,6 +102,7 @@ export class HrBenefitsController {
     return this.plans.listPlans(u.orgId, query);
   }
 
+  @ResponseSchema(getPlanResponseSchema)
   @Get("plans/:planId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:view")
@@ -102,6 +114,7 @@ export class HrBenefitsController {
     return this.plans.getPlan(u.orgId, planId);
   }
 
+  @ResponseSchema(checkEligibilityResponseSchema)
   @Get("plans/:planId/eligibility")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:view")
@@ -116,6 +129,7 @@ export class HrBenefitsController {
     return this.enrollment.checkEligibility(u.orgId, planId, targetId);
   }
 
+  @ResponseSchema(createPlanResponseSchema)
   @Post("plans")
   @HttpCode(201)
   @UseGuards(PermissionGuard)
@@ -128,6 +142,7 @@ export class HrBenefitsController {
     return this.plans.createPlan(u.orgId, body);
   }
 
+  @ResponseSchema(updatePlanResponseSchema)
   @Patch("plans/:planId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:manage")
@@ -140,6 +155,7 @@ export class HrBenefitsController {
     return this.plans.updatePlan(u.orgId, planId, body);
   }
 
+  @ResponseSchema(deletePlanResponseSchema)
   @Delete("plans/:planId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:manage")
@@ -151,6 +167,7 @@ export class HrBenefitsController {
     return this.plans.deletePlan(u.orgId, planId);
   }
 
+  @ResponseSchema(listWindowsResponseSchema)
   @Get("windows")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:view")
@@ -158,6 +175,7 @@ export class HrBenefitsController {
     return this.plans.listWindows(u.orgId);
   }
 
+  @ResponseSchema(createWindowResponseSchema)
   @Post("windows")
   @HttpCode(201)
   @UseGuards(PermissionGuard)
@@ -170,6 +188,7 @@ export class HrBenefitsController {
     return this.plans.createWindow(u.orgId, body);
   }
 
+  @ResponseSchema(updateWindowResponseSchema)
   @Patch("windows/:windowId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:manage")
@@ -182,13 +201,15 @@ export class HrBenefitsController {
     return this.plans.updateWindow(u.orgId, windowId, body);
   }
 
+  @ResponseSchema(getMyBenefitsResponseSchema)
   @Get("my")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:view")
   getMyBenefits(@CurrentUser() u: CurrentUserContext) {
-    return this.enrollment.getMyBenefits(u.orgId, u.userId);
+    return this.enrollment.getMyBenefits(u.orgId, u.userId, actingMembershipId(u.principal));
   }
 
+  @ResponseSchema(enrollResponseSchema)
   @Post("enroll")
   @HttpCode(201)
   @UseGuards(PermissionGuard)
@@ -198,9 +219,10 @@ export class HrBenefitsController {
     @CurrentUser() u: CurrentUserContext,
     @Body() body: EnrollInput,
   ) {
-    return this.enrollment.enroll(u.orgId, u.userId, body);
+    return this.enrollment.enroll(u.orgId, u.userId, actingMembershipId(u.principal), body);
   }
 
+  @ResponseSchema(waiveResponseSchema)
   @Post("waive")
   @HttpCode(201)
   @UseGuards(PermissionGuard)
@@ -210,16 +232,18 @@ export class HrBenefitsController {
     @CurrentUser() u: CurrentUserContext,
     @Body() body: WaiveInput,
   ) {
-    return this.enrollment.waive(u.orgId, u.userId, body);
+    return this.enrollment.waive(u.orgId, u.userId, actingMembershipId(u.principal), body);
   }
 
+  @ResponseSchema(listDependentsResponseSchema)
   @Get("dependents")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:view")
   listDependents(@CurrentUser() u: CurrentUserContext) {
-    return this.enrollment.listDependents(u.orgId, u.userId);
+    return this.enrollment.listDependents(u.orgId, u.userId, actingMembershipId(u.principal));
   }
 
+  @ResponseSchema(addDependentResponseSchema)
   @Post("dependents")
   @HttpCode(201)
   @UseGuards(PermissionGuard)
@@ -229,9 +253,10 @@ export class HrBenefitsController {
     @CurrentUser() u: CurrentUserContext,
     @Body() body: CreateDependentInput,
   ) {
-    return this.enrollment.addDependent(u.orgId, u.userId, body);
+    return this.enrollment.addDependent(u.orgId, u.userId, actingMembershipId(u.principal), body);
   }
 
+  @ResponseSchema(updateDependentResponseSchema)
   @Patch("dependents/:depId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:view")
@@ -241,9 +266,10 @@ export class HrBenefitsController {
     @Param("depId", ParseIntPipe) depId: number,
     @Body() body: PatchDependentInput,
   ) {
-    return this.enrollment.updateDependent(u.orgId, u.userId, depId, body);
+    return this.enrollment.updateDependent(u.orgId, u.userId, actingMembershipId(u.principal), depId, body);
   }
 
+  @ResponseSchema(deleteDependentResponseSchema)
   @Delete("dependents/:depId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:view")
@@ -252,9 +278,10 @@ export class HrBenefitsController {
     @CurrentUser() u: CurrentUserContext,
     @Param("depId", ParseIntPipe) depId: number,
   ) {
-    return this.enrollment.deleteDependent(u.orgId, u.userId, depId);
+    return this.enrollment.deleteDependent(u.orgId, u.userId, actingMembershipId(u.principal), depId);
   }
 
+  @ResponseSchema(listClaimsResponseSchema)
   @Get("claims")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:view")
@@ -264,9 +291,10 @@ export class HrBenefitsController {
     @Query() query: ClaimsQuery,
   ) {
     const isAdmin = await this.isAdmin(u);
-    return this.claims.listClaims(u.orgId, query, u.userId, isAdmin);
+    return this.claims.listClaims(u.orgId, query, u.userId, actingMembershipId(u.principal), isAdmin);
   }
 
+  @ResponseSchema(submitClaimResponseSchema)
   @Post("claims")
   @HttpCode(201)
   @UseGuards(PermissionGuard)
@@ -276,9 +304,10 @@ export class HrBenefitsController {
     @CurrentUser() u: CurrentUserContext,
     @Body() body: SubmitClaimInput,
   ) {
-    return this.claims.submitClaim(u.orgId, u.userId, body);
+    return this.claims.submitClaim(u.orgId, u.userId, actingMembershipId(u.principal), body);
   }
 
+  @ResponseSchema(reviewClaimResponseSchema)
   @Patch("claims/:claimId/review")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:manage")
@@ -288,9 +317,10 @@ export class HrBenefitsController {
     @Param("claimId", ParseIntPipe) claimId: number,
     @Body() body: ReviewClaimInput,
   ) {
-    return this.claims.reviewClaim(u.orgId, claimId, u.userId, body);
+    return this.claims.reviewClaim(u.orgId, claimId, u.userId, actingMembershipId(u.principal), body);
   }
 
+  @ResponseSchema(setPayoutRouteResponseSchema)
   @Patch("claims/:claimId/payout-route")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:manage")

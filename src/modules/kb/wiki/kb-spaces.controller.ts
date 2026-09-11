@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   HttpCode,
   Param,
@@ -25,15 +26,19 @@ import {
   type UpdateSpaceInput,
 } from "../core/dto/kb.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { RequireModule } from "../../../common/rbac/require-module.decorator";
-import { actingMembershipId } from "../../../common/auth/principal";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  kbSpaceListSchema,
+  kbSpaceFullSchema,
+  kbSpaceSuccessSchema,
+} from "./dto/kb-space-response.schemas";
+import { accountableMembershipId } from "../../../common/auth/principal";
 import { z } from "zod";
 
 const spaceIdParams = z.object({ spaceId: z.coerce.number().int().positive() }).strict();
 
 @Controller("kb/spaces")
 @UseGuards(JwtAuthGuard, PermissionGuard)
-@RequireModule("kb")
 export class KbSpacesController {
   constructor(
     private readonly spaces: KbSpacesService,
@@ -42,6 +47,7 @@ export class KbSpacesController {
 
   @Get()
   @RequirePermission("kb:spaces:view")
+  @ResponseSchema(kbSpaceListSchema)
   async list(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
     const scope = await resolveKbSpacesViewScope(this.access, u);
     return await this.spaces.list(u, scope);
@@ -51,16 +57,22 @@ export class KbSpacesController {
   @RequirePermission("kb:spaces:manage")
   @HttpCode(201)
   @Validate({ body: createSpaceSchema })
+  @ResponseSchema(kbSpaceFullSchema)
   async create(
     @Body() body: CreateSpaceInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return await this.spaces.create(u.orgId, u.userId, body, actingMembershipId(u.principal) ?? undefined);
+    const membershipId = accountableMembershipId(u.principal);
+    if (membershipId === null) {
+      throw new ForbiddenException("Organization membership required");
+    }
+    return await this.spaces.create(u.orgId, body, membershipId);
   }
 
   @Get(":spaceId")
   @RequirePermission("kb:spaces:view")
   @Validate({ params: spaceIdParams })
+  @ResponseSchema(kbSpaceFullSchema)
   async get(
     @Param("spaceId", ParseIntPipe) spaceId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -71,6 +83,7 @@ export class KbSpacesController {
   @Patch(":spaceId")
   @RequirePermission("kb:spaces:manage")
   @Validate({ params: spaceIdParams, body: updateSpaceSchema })
+  @ResponseSchema(kbSpaceFullSchema)
   async update(
     @Param("spaceId", ParseIntPipe) spaceId: number,
     @Body() body: UpdateSpaceInput,
@@ -82,6 +95,7 @@ export class KbSpacesController {
   @Delete(":spaceId")
   @RequirePermission("kb:spaces:manage")
   @Validate({ params: spaceIdParams })
+  @ResponseSchema(kbSpaceSuccessSchema)
   async remove(
     @Param("spaceId", ParseIntPipe) spaceId: number,
     @CurrentUser() u: CurrentUserContext,

@@ -29,9 +29,7 @@ export type { DealsViewScope, ForecastMonth, ForecastSummary } from "./deals-for
  * entry per analytic; `own` and `team` fan out per caller.
  */
 function scopeSuffix(view: DealsViewScope): string {
-  return view.scope === "all" || view.scope === "none"
-    ? view.scope
-    : `${view.scope}:${view.userId}`;
+  return view.discriminator;
 }
 
 /**
@@ -111,11 +109,18 @@ export class DealsAnalyticsService {
    * colleague's deal names and values off it without ever opening a deal.
    */
   async getAging(orgId: string, view: DealsViewScope) {
+    if (view.denied) return { summary: { total: 0, stale: 0, critical: 0 }, deals: [] };
     return this.cache.cached(
       `deals:aging:${orgId}:${scopeSuffix(view)}`,
       async () => {
         const { wonKeys, lostKeys } = await this.getTerminalStageKeys(orgId);
-        const allDeals = await this.db
+        const allDeals = await view.read(
+          {
+            tenant: deals.orgId,
+            scope: { columns: { ownerColumn: deals.assignedToId } },
+            and: [isNull(deals.deletedAt), notInArray(deals.stage, [...wonKeys, ...lostKeys])],
+          },
+          ({ sql: where }) => this.db
           .select({
             id: deals.id,
             name: deals.name,
@@ -126,11 +131,13 @@ export class DealsAnalyticsService {
             assignedToId: deals.assignedToId,
             assigneeName: users.name,
           })
-          .from(deals)
-          .leftJoin(users, eq(deals.assignedToId, users.id))
-          .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), notInArray(deals.stage, [...wonKeys, ...lostKeys]), visibleDeals(view, orgId)))
-          .orderBy(sql`${deals.updatedAt} asc`)
-          .limit(100);
+            .from(deals)
+            .leftJoin(users, eq(deals.assignedToId, users.id))
+            .where(where)
+            .orderBy(sql`${deals.updatedAt} asc`)
+            .limit(100),
+          () => [],
+        );
 
         const now = Date.now();
         const enriched = allDeals.map((d) => {

@@ -14,12 +14,17 @@ function buildSelectChain(rows: unknown[]) {
   for (const m of ["from", "innerJoin", "where", "orderBy"]) {
     chain[m] = jest.fn().mockReturnValue(chain);
   }
-  chain.limit = jest.fn().mockResolvedValue(rows.slice(0, 1));
+  chain.limit = jest.fn().mockResolvedValue(rows);
   return chain;
 }
 
 function buildUpdateChain() {
-  const where = jest.fn().mockResolvedValue(undefined);
+  // Drizzle's .where() is awaitable AND chainable into .returning(); the double has to be both.
+  const where = jest.fn().mockImplementation(() =>
+    Object.assign(Promise.resolve(undefined), {
+      returning: jest.fn().mockResolvedValue([{ sagaId: "saga-1" }]),
+    }),
+  );
   return { set: jest.fn().mockReturnValue({ where }) };
 }
 
@@ -187,7 +192,13 @@ describe("OrganizationSagaService.runStep", () => {
       update: jest.fn().mockImplementation(() => ({
         set: jest.fn().mockImplementation((s: unknown) => {
           setCalls.push(s);
-          return { where: jest.fn().mockResolvedValue(undefined) };
+          return {
+            where: jest.fn().mockImplementation(() =>
+              Object.assign(Promise.resolve(undefined), {
+                returning: jest.fn().mockResolvedValue([{ sagaId: "saga-1" }]),
+              }),
+            ),
+          };
         }),
       })),
       delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
@@ -208,7 +219,13 @@ describe("OrganizationSagaService.runStep", () => {
       update: jest.fn().mockImplementation(() => ({
         set: jest.fn().mockImplementation((s: unknown) => {
           setCalls.push(s);
-          return { where: jest.fn().mockResolvedValue(undefined) };
+          return {
+            where: jest.fn().mockImplementation(() =>
+              Object.assign(Promise.resolve(undefined), {
+                returning: jest.fn().mockResolvedValue([{ sagaId: "saga-1" }]),
+              }),
+            ),
+          };
         }),
       })),
       delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
@@ -296,7 +313,13 @@ describe("OrganizationSagaService.compensate — reverse position order", () => 
       update: jest.fn().mockImplementation(() => ({
         set: jest.fn().mockImplementation((s: unknown) => {
           setCalls.push(s);
-          return { where: jest.fn().mockResolvedValue(undefined) };
+          return {
+            where: jest.fn().mockImplementation(() =>
+              Object.assign(Promise.resolve(undefined), {
+                returning: jest.fn().mockResolvedValue([{ sagaId: "saga-1" }]),
+              }),
+            ),
+          };
         }),
       })),
       delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
@@ -332,6 +355,28 @@ describe("OrganizationSagaService.reserve — 23505 returns false", () => {
     const service = await buildService(db as never);
     const result = await service.reserve("SLUG", "my-org", "org-1", "saga-1");
     expect(result).toBe(false);
+  });
+
+  it("returns true when a retry finds its own reservation after a 23505", async () => {
+    const db = {
+      insert: jest.fn().mockReturnValue(buildInsertChain({ throwCode: "23505" })),
+      select: jest.fn().mockReturnValue(
+        buildSelectChain([
+          {
+            organizationId: "org-1",
+            sagaId: "saga-1",
+            state: "RESERVED",
+          },
+        ]),
+      ),
+      update: jest.fn().mockReturnValue(buildUpdateChain()),
+      delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+    };
+
+    const service = await buildService(db as never);
+    await expect(
+      service.reserve("SLUG", "my-org", "org-1", "saga-1"),
+    ).resolves.toBe(true);
   });
 
   it("rethrows errors with SQLSTATE other than 23505", async () => {

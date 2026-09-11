@@ -1,8 +1,54 @@
 import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { clientAccountStatusEnum } from "../common/enums";
+import { clientAccountStatusEnum, crmHealthEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
 import { orgUnits } from "../common/organization";
+
+/**
+ * The legacy `clients` table, declared for its readers and never written.
+ *
+ * CRM stopped writing it with the Party model: a client's id is minted by
+ * `client_party_map` and the row is derived from the Party. The declaration
+ * stays because code outside CRM still names the table — `build/ticket-core.ts`
+ * and `support/agent-routing.ts` hold foreign keys to it — and the table itself
+ * survives until the opt-in 0278 drop runs. Nothing in CRM may insert, update
+ * or delete through it; `cold-build-integrity.spec.ts` names the readers.
+ *
+ * `lead_id` is declared without its reference: `leads` is no longer declared
+ * anywhere, and a Drizzle reference is only documentation here — migrations
+ * are hand-authored.
+ */
+export const clients = pgTable("clients", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  leadId: integer("lead_id"),
+  name: text("name").notNull(),
+  email: text("email"),
+  phone: text("phone"),
+  company: text("company"),
+  designation: text("designation"),
+  city: text("city"),
+  state: text("state"),
+  gstin: text("gstin"),
+  isVendor: boolean("is_vendor").default(false).notNull(),
+  investmentValue: decimal("investment_value", { precision: 15, scale: 2 }),
+  status: text("status").default("active").notNull(),
+  accountManagerId: text("account_manager_id").references(() => users.id, { onDelete: "set null" }),
+  accountManagerMembershipId: integer("account_manager_membership_id"),
+  notes: text("notes"),
+  healthScore: integer("health_score").default(50).notNull(),
+  healthStatus: crmHealthEnum("health_status").default("healthy").notNull(),
+  lastHealthCheck: timestamp("last_health_check"),
+  churnRiskScore: integer("churn_risk_score"),
+  churnRiskReasoning: text("churn_risk_reasoning"),
+  convertedAt: timestamp("converted_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+}, (table) => [
+  index("idx_clients_org_status").on(table.orgId, table.status),
+  index("idx_clients_account_manager").on(table.accountManagerId),
+  unique("uniq_clients_org_id").on(table.orgId, table.id),
+]);
 
 export const clientAccounts = pgTable("client_accounts", {
   id: serial("id").primaryKey(),

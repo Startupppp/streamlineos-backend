@@ -25,11 +25,11 @@ function makeService(db: unknown, conflict?: unknown): CalendarService {
   return new CalendarService(
     db as Db,
     {} as never,
-    {} as never,
     (conflict ?? {}) as never,
     {} as never,
     recurrence,
     calendarExport,
+    {} as never,
   );
 }
 

@@ -42,7 +42,7 @@ export class ProjectsCopilotTools {
               priority: tickets.priority,
               type: tickets.type,
               description: tickets.description,
-              assigneeId: tickets.assigneeId,
+              assigneeMembershipId: tickets.assigneeMembershipId,
               projectId: tickets.projectId,
               createdAt: tickets.createdAt,
             })

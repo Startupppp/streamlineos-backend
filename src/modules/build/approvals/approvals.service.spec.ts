@@ -1,7 +1,8 @@
 process.env.APP_URL ??= "http://localhost:1000";
 
-import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { ApprovalsService } from "./approvals.service";
+import { ApprovalsReadService } from "./approvals-read.service";
 import type { AccessService } from "../../access/access.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { ChatChannelsService } from "../../chat/chat-channels.service";
@@ -42,12 +43,16 @@ const mockDb = {
 } as unknown as Db;
 
 const mockAudit = { log: jest.fn() } as unknown as AuditService;
-const mockAccess = { holds: jest.fn() } as unknown as AccessService;
+const mockAccess = {
+  holds: jest.fn(),
+  resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
+} as unknown as AccessService;
 const mockChatChannels = { getOrCreateEntityChannel: jest.fn() } as unknown as ChatChannelsService;
 const mockChatMessages = { sendSystemMessage: jest.fn() } as unknown as ChatMessagesService;
 
 beforeEach(() => {
   jest.resetAllMocks();
+  (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Set());
 });
 
 const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserContext => ({
@@ -71,7 +76,7 @@ describe("ApprovalsService.createApproval", () => {
       mockChatMessages,
     );
     await expect(
-      svc.createApproval("org-1", "user-1", 1, {
+      svc.createApproval(makeUser({ userId: "user-1" }), 1, {
         entityType: "task",
         entityId: 1,
         title: "Self-review",
@@ -212,5 +217,88 @@ describe("ApprovalsService.decideApproval", () => {
       svc.decideApproval(makeUser({ principal: humanSessionPrincipal(1, false) }), 1, 1, { decision: "approved" }),
     ).resolves.toBeDefined();
     expect(mockAccess.holds).not.toHaveBeenCalled();
+  });
+});
+
+describe("ApprovalsReadService — project membership gate (BOLA fix)", () => {
+  const ORG = "org-1";
+  const gateAccess = {
+    holds: jest.fn(),
+    resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
+  } as unknown as AccessService;
+
+  const gateU: CurrentUserContext = {
+    userId: "user-gate",
+    orgId: ORG,
+    role: "MEMBER",
+    isOrgOwner: false,
+    sessionId: "s-gate",
+    tokenScopes: null,
+    principal: humanSessionPrincipal(7, false),
+  };
+
+  function makeNonMemberDb(): Db {
+    return {
+      query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
+      },
+      select: jest.fn()
+        .mockReturnValueOnce({
+          from: jest.fn().mockReturnValue({
+            innerJoin: jest.fn().mockReturnValue({
+              where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+            }),
+          }),
+        })
+        .mockReturnValueOnce({
+          from: jest.fn().mockReturnValue({
+            innerJoin: jest.fn().mockReturnValue({
+              innerJoin: jest.fn().mockReturnValue({
+                where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+              }),
+            }),
+          }),
+        }),
+    } as unknown as Db;
+  }
+
+  function makeMemberDb(): Db {
+    const postGateChain = {
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+        }),
+      }),
+    };
+    return {
+      query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
+      },
+      select: jest.fn()
+        .mockReturnValueOnce({
+          from: jest.fn().mockReturnValue({
+            innerJoin: jest.fn().mockReturnValue({
+              where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([{ role: "MEMBER" }]) }),
+            }),
+          }),
+        })
+        .mockReturnValue(postGateChain),
+    } as unknown as Db;
+  }
+
+  beforeEach(() => {
+    (gateAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Set());
+  });
+
+  it("rejects non-member with ForbiddenException on listApprovals", async () => {
+    const db = makeNonMemberDb();
+    const svc = new ApprovalsReadService(db, gateAccess);
+    await expect(svc.listApprovals(gateU, 1, {})).rejects.toThrow(ForbiddenException);
+  });
+
+  it("allows direct project member on listApprovals", async () => {
+    const db = makeMemberDb();
+    const svc = new ApprovalsReadService(db, gateAccess);
+    await expect(svc.listApprovals(gateU, 1, {})).resolves.toBeDefined();
   });
 });

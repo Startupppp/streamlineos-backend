@@ -10,12 +10,20 @@ describe("Expenses auth/RBAC (e2e)", () => {
   });
   afterAll(async () => app.close());
 
-  type Method = "get" | "post" | "delete";
+  type Method = "get" | "post" | "patch" | "delete";
   const routes: ReadonlyArray<[Method, string]> = [
     ["get", "/hr/expenses"],
     ["get", "/hr/expenses/page-data"],
     ["get", "/hr/expenses/report"],
-    ["get", "/hr/expenses/export"],
+    ["get", "/hr/expenses/export/jobs/job-1"],
+    ["get", "/hr/expenses/export/jobs/job-1/download"],
+    ["post", "/hr/expenses/export/jobs"],
+    ["post", "/hr/expenses/email-report"],
+    ["post", "/hr/expenses"],
+    ["patch", "/hr/expenses/1"],
+    ["post", "/hr/expenses/1/submit"],
+    ["post", "/hr/expenses/1/approve"],
+    ["post", "/hr/expenses/1/reject"],
     ["delete", "/hr/expenses/1"],
     ["get", "/hr/expenses/categories"],
     ["post", "/hr/expenses/categories"],
@@ -28,6 +36,8 @@ describe("Expenses auth/RBAC (e2e)", () => {
         return agent.get(path);
       case "post":
         return agent.post(path);
+      case "patch":
+        return agent.patch(path);
       case "delete":
         return agent.delete(path);
     }

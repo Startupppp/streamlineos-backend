@@ -14,6 +14,8 @@ import {
 } from "./dto/deals.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema, NoContentResponse } from "../../common/openapi/zod-operation-contracts";
+import { dealStakeholderSchema, dealStakeholderMutatedSchema } from "./dto/deals-response.schemas";
 
 const dealIdParams = z.object({ dealId: z.coerce.number().int().positive() }).strict();
 const dealAndStakeholderIdParams = z.object({ dealId: z.coerce.number().int().positive(), stakeholderId: z.string().min(1) }).strict();
@@ -27,6 +29,7 @@ export class DealsStakeholdersController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:read")
+  @ResponseSchema(z.array(dealStakeholderSchema))
   @Validate({ params: dealIdParams })
   listStakeholders(
     @Param("dealId", ParseIntPipe) dealId: number,
@@ -39,6 +42,7 @@ export class DealsStakeholdersController {
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:update")
   @HttpCode(201)
+  @ResponseSchema(dealStakeholderMutatedSchema)
   @Validate({ params: dealIdParams, body: createStakeholderSchema })
   createStakeholder(
     @Param("dealId", ParseIntPipe) dealId: number,
@@ -51,6 +55,7 @@ export class DealsStakeholdersController {
   @Patch(":stakeholderId")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:update")
+  @ResponseSchema(dealStakeholderMutatedSchema)
   @Validate({ params: dealAndStakeholderIdParams, body: updateStakeholderSchema })
   updateStakeholder(
     @Param("dealId", ParseIntPipe) dealId: number,
@@ -65,6 +70,7 @@ export class DealsStakeholdersController {
   @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:update")
+  @NoContentResponse()
   @Validate({ params: dealAndStakeholderIdParams })
   async deleteStakeholder(
     @Param("dealId", ParseIntPipe) dealId: number,

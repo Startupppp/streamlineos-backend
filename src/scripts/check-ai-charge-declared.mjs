@@ -6,7 +6,10 @@
  * makes the feature's AI_FEATURE_COSTS entry dead (zero reservation, zero settlement).
  *
  * Methods checked: invokeStructured, invokeStructuredWithUsage, invokeStructuredWithImage,
- * invokeStructuredWithImageWithUsage, invokeText, invokeTextWithUsage.
+ * invokeStructuredWithImageWithUsage, invokeText, invokeTextWithUsage,
+ * embedQueryWithCredit, embedBatchWithCredit, streamTextWithUsage.
+ * The self-test derives this list from AiGatewayService itself, so a new paid
+ * entry point fails the gate rather than escaping the scan.
  *
  * Excluded from the scan (internal machinery — different option shapes):
  *   src/modules/ai/core/gateway/ai-gateway-runner.helper.ts
@@ -23,7 +26,38 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
-const INVOKE_RE = /\.(invokeStructured(?:WithImage)?(?:WithUsage)?|invokeText(?:WithUsage)?)\s*\(/g;
+// Every paid entry point on AiGatewayService. Widening this alternation is not
+// optional bookkeeping: `embed(Query|Batch)WithCredit` were absent, so six live
+// embedding call sites — the KB indexing loop among them — were outside the scan
+// entirely and the count sat at a stable, reassuring 113 across a refactor that
+// added them. The self-test now derives the required set from the gateway source
+// (see assertCoversEveryPaidEntryPoint) so a new entry point fails this gate
+// instead of silently escaping it.
+const INVOKE_RE =
+  /\.(invokeStructured(?:WithImage)?(?:WithUsage)?|invokeText(?:WithUsage)?|embed(?:Query|Batch)WithCredit|streamTextWithUsage)\s*\(/g;
+
+const GATEWAY_SERVICE_REL = "src/modules/ai/core/gateway/ai-gateway.service.ts";
+
+/**
+ * Public methods on AiGatewayService whose name marks them a paid provider call.
+ * A gate whose coverage is "the names I thought of when I wrote it" stops covering
+ * a surface the moment someone adds an entry point; this reads the surface instead.
+ */
+export function paidEntryPointsFromGateway(source) {
+  const names = new Set();
+  for (const m of source.matchAll(/^\s{2}(?:async\s+)?([a-zA-Z][A-Za-z0-9_]*)\s*[(<]/gm)) {
+    const name = m[1];
+    if (/^(?:constructor|private|public|protected|get|set|if|for|while|return|catch)$/.test(name)) continue;
+    if (/^(?:invoke|embed|stream)/.test(name) && !/^is[A-Z]/.test(name)) names.add(name);
+  }
+  return names;
+}
+
+export function methodIsCovered(name) {
+  const probe = `this.aiGateway.${name}({ charge: true })`;
+  INVOKE_RE.lastIndex = 0;
+  return INVOKE_RE.test(probe);
+}
 
 const EXCLUDED_PATHS = [
   "src/modules/ai/core/gateway/ai-gateway-runner.helper.ts",
@@ -111,6 +145,7 @@ function lineOf(text, pos) {
 function scan(srcDir) {
   const violations = [];
   const matchedAllowlistPaths = new Set();
+  const byMethod = new Map();
   let totalInvocations = 0;
 
   for (const absPath of walkTs(srcDir)) {
@@ -133,6 +168,7 @@ function scan(srcDir) {
       if (!opts) continue;
 
       totalInvocations++;
+      byMethod.set(match[1], (byMethod.get(match[1]) ?? 0) + 1);
 
       if (!hasChargeProp(opts)) {
         const entry = isAllowlisted(rel);
@@ -153,7 +189,7 @@ function scan(srcDir) {
     (a) => !matchedAllowlistPaths.has(a.path),
   );
 
-  return { violations, staleAllowlistEntries, totalInvocations };
+  return { violations, staleAllowlistEntries, totalInvocations, byMethod };
 }
 
 function runSelfTests() {
@@ -227,6 +263,46 @@ function runSelfTests() {
   assert("nested braces in prompt do not confuse the extractor", findViolations(nested).length === 0);
   assert("absent charge names the correct method", findViolations(absent)[0] === "invokeText");
 
+  // The embedding surface. These shapes were invisible to the previous regex, so
+  // every fixture above passed while six live paid call sites went unscanned.
+  const embedAbsent = `
+    const embedResult = await this.aiGateway.embedBatchWithCredit({
+      texts: pending.map((i) => chunks[i]),
+      orgId,
+      feature: KB_INDEXING_FEATURE,
+    });
+  `;
+  const embedCharged = `
+    return this.aiGateway.embedQueryWithCredit({
+      text,
+      orgId,
+      feature: KB_SEARCH_FEATURE,
+      charge: true,
+    });
+  `;
+  assert("an embedBatchWithCredit call with no charge is a violation", findViolations(embedAbsent).length === 1);
+  assert("the embedding violation names the method", findViolations(embedAbsent)[0] === "embedBatchWithCredit");
+  assert("an embedQueryWithCredit call declaring charge passes", findViolations(embedCharged).length === 0);
+
+  // Structural coverage: read the gateway and require every paid entry point on it
+  // to be matched. This is what makes the self-test unable to share the gate's
+  // blind spot — a fixture can only test the shapes its author thought of.
+  const gatewaySource = readFileSync(join(BACKEND_ROOT, GATEWAY_SERVICE_REL), "utf8");
+  const paidEntryPoints = [...paidEntryPointsFromGateway(gatewaySource)];
+  const uncovered = paidEntryPoints.filter((n) => !methodIsCovered(n));
+  assert(
+    `the gateway source yields a plausible number of paid entry points (found ${paidEntryPoints.length})`,
+    paidEntryPoints.length >= 8,
+  );
+  assert(
+    `every paid entry point on AiGatewayService is inside the scan${uncovered.length ? ` — UNCOVERED: ${uncovered.join(", ")}` : ""}`,
+    uncovered.length === 0,
+  );
+  assert(
+    "the coverage check can actually fail — an unknown paid method is reported uncovered",
+    methodIsCovered("embedImageWithCreditNotYetSupported") === false,
+  );
+
   const { violations, staleAllowlistEntries, totalInvocations } = scan(SRC_DIR);
 
   assert(
@@ -257,7 +333,24 @@ if (process.argv.includes("--self-test")) {
   runSelfTests();
 }
 
-const { violations, staleAllowlistEntries, totalInvocations } = scan(SRC_DIR);
+const { violations, staleAllowlistEntries, totalInvocations, byMethod } = scan(SRC_DIR);
+
+// Print the per-method breakdown always. A stable total across a refactor that
+// added six credited embedding calls looked exactly like success; a per-method
+// line makes a surface that drops to zero visible at a glance.
+const gatewayEntryPoints = [...paidEntryPointsFromGateway(readFileSync(join(BACKEND_ROOT, GATEWAY_SERVICE_REL), "utf8"))].sort();
+console.log("Paid gateway entry points and call sites found:");
+for (const name of gatewayEntryPoints) {
+  const covered = methodIsCovered(name);
+  console.log(`  ${covered ? " " : "!"} ${name.padEnd(36)} ${covered ? String(byMethod.get(name) ?? 0) : "NOT SCANNED — widen INVOKE_RE"}`);
+}
+const uncoveredEntryPoints = gatewayEntryPoints.filter((n) => !methodIsCovered(n));
+if (uncoveredEntryPoints.length > 0) {
+  console.error(
+    `\ncheck-ai-charge-declared: INCONCLUSIVE — ${uncoveredEntryPoints.length} paid entry point(s) on AiGatewayService are outside this scan: ${uncoveredEntryPoints.join(", ")}. A clean result cannot cover them.`,
+  );
+  process.exit(2);
+}
 
 if (totalInvocations < ANTI_VACUITY_MIN) {
   console.error(

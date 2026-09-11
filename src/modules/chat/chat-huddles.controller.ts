@@ -3,8 +3,6 @@ import {
   Controller,
   Get,
   HttpCode,
-  HttpException,
-  HttpStatus,
   Param,
   ParseIntPipe,
   Patch,
@@ -16,63 +14,76 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { NoTenantTransaction } from "../../common/tenant/no-tenant-transaction.decorator";
 import { ChatHuddlesService } from "./chat-huddles.service";
 import { ChatHuddleSignalsService } from "./chat-huddle-signals.service";
 import {
-  huddleSignalSchema,
-  muteSchema,
-  raiseHandSchema,
-  screenShareSchema,
   kickSchema,
-  type HuddleSignalInput,
-  type MuteInput,
-  type RaiseHandInput,
-  type ScreenShareInput,
+  huddleInviteSchema,
   type KickInput,
+  type HuddleInviteInput,
 } from "./dto/huddle.schemas";
 import { z } from "zod";
-import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
+import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
+import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagger";
 import { Validate } from "../../common/validation/validate.decorator";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  chatOkSchema,
+  huddleWireNullableSchema,
+  huddleWireSchema,
+} from "./dto/chat-misc-response.schemas";
 
 const channelIdParams = z.object({ channelId: z.coerce.number().int().positive() }).strict();
 const huddleIdParams = z.object({ huddleId: z.coerce.number().int().positive() }).strict();
 
 @ApiTags("Chat Huddles & Video")
 @ApiBearerAuth()
-@RequireModule("chat")
 @Controller("chat")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ChatHuddlesController {
   constructor(
     private readonly huddles: ChatHuddlesService,
     private readonly signals: ChatHuddleSignalsService,
-    private readonly rateLimit: RateLimitService,
   ) {}
 
-  @ApiOperation({ summary: "Start a voice huddle in a channel" })
+  @ApiOperation({ summary: "Start a huddle in a channel and mint its Google Meet link" })
   @ApiResponse({ status: 201, description: "Huddle started" })
   @ApiResponse({ status: 429, description: "Rate limited" })
+  @ApiResponse({
+    status: 412,
+    description:
+      "Organization precondition an owner or admin must fix, never a retry: no Google account is connected, or the connected one needs reconnecting.",
+  })
+  @ApiResponse({
+    status: 503,
+    description:
+      "Transient or server-side: Composio is unconfigured for this deployment, Google refused or timed out, or Google returned no join link. Nothing was started.",
+  })
   @Post("channels/:channelId/huddle/start")
+  @ResponseSchema(huddleWireSchema)
   @BodylessAction()
   @HttpCode(201)
+  // Minting the Meet link is a third-party call; the ambient request transaction would hold a
+  // pooled connection for the length of a Google outage, so the service opens its own instead.
+  @NoTenantTransaction()
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("chat:huddle")
   @RequirePermission("chat:huddles:start")
   @Validate({ params: channelIdParams })
-  async startHuddle(
+  startHuddle(
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const rl = await this.rateLimit.check("chat:huddle", u.userId);
-    if (!rl.allowed) throw new HttpException(`Rate limited. Retry after ${rl.retryAfterSecs}s`, HttpStatus.TOO_MANY_REQUESTS);
     return this.huddles.startHuddle(channelId, u.userId, u.orgId);
   }
 
   @ApiOperation({ summary: "Get the currently active huddle for a channel" })
   @ApiResponse({ status: 200, description: "Active huddle or null" })
   @Get("channels/:channelId/huddle")
+  @ResponseSchema(huddleWireNullableSchema)
   @RequirePermission("chat:channels:read")
   @Validate({ params: channelIdParams })
   getActiveHuddle(
@@ -85,6 +96,7 @@ export class ChatHuddlesController {
   @ApiOperation({ summary: "Join an active huddle" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post("huddles/:huddleId/join")
+  @ResponseSchema(chatOkSchema)
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
@@ -99,6 +111,7 @@ export class ChatHuddlesController {
   @ApiOperation({ summary: "Leave a huddle" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post("huddles/:huddleId/leave")
+  @ResponseSchema(chatOkSchema)
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
@@ -110,99 +123,28 @@ export class ChatHuddlesController {
     return this.huddles.leaveHuddle(huddleId, u.userId, u.orgId);
   }
 
-  @ApiOperation({ summary: "Set mute state for self in a huddle" })
-  @ApiResponse({ status: 200, description: "OK" })
-  @Patch("huddles/:huddleId/mute")
-  @HttpCode(200)
-  @RequirePermission("chat:messages:write")
-  @Validate({ params: huddleIdParams, body: muteSchema })
-  setMute(
-    @Param("huddleId", ParseIntPipe) huddleId: number,
-    @Body() body: MuteInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.signals.setMute(huddleId, u.userId, body.muted, u.orgId);
-  }
-
-  @ApiOperation({ summary: "Raise or lower hand in a huddle" })
-  @ApiResponse({ status: 200, description: "OK" })
-  @Patch("huddles/:huddleId/hand")
-  @HttpCode(200)
-  @RequirePermission("chat:messages:write")
-  @Validate({ params: huddleIdParams, body: raiseHandSchema })
-  raiseHand(
-    @Param("huddleId", ParseIntPipe) huddleId: number,
-    @Body() body: RaiseHandInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.signals.raiseHand(huddleId, u.userId, body.raised, u.orgId);
-  }
-
-  @ApiOperation({ summary: "Set deafen state for self in a huddle" })
-  @ApiResponse({ status: 200, description: "OK" })
-  @Patch("huddles/:huddleId/deafen")
-  @HttpCode(200)
-  @RequirePermission("chat:channels:write")
-  @Validate({ params: huddleIdParams, body: z.object({ deafened: z.boolean() }) })
-  deafen(
-    @Param("huddleId", ParseIntPipe) huddleId: number,
-    @Body() body: { deafened: boolean },
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.signals.setDeafen(huddleId, u.userId, u.orgId, body.deafened);
-  }
-
-  @ApiOperation({ summary: "Send a WebRTC signalling message to a peer in a huddle" })
-  @ApiResponse({ status: 200, description: "OK" })
-  @ApiResponse({ status: 429, description: "Rate limited" })
-  @Post("huddles/:huddleId/signal")
-  @HttpCode(200)
-  @RequirePermission("chat:messages:write")
-  @Validate({ params: huddleIdParams, body: huddleSignalSchema })
-  async sendSignal(
-    @Param("huddleId", ParseIntPipe) huddleId: number,
-    @Body() body: HuddleSignalInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    const rl = await this.rateLimit.check("chat:huddle-signal", u.userId);
-    if (!rl.allowed) throw new HttpException(`Rate limited. Retry after ${rl.retryAfterSecs}s`, HttpStatus.TOO_MANY_REQUESTS);
-    return this.signals.sendSignal(huddleId, u.userId, body, u.orgId);
-  }
-
   @ApiOperation({ summary: "Heartbeat to keep a participant active in a huddle" })
   @ApiResponse({ status: 200, description: "OK" })
   @ApiResponse({ status: 429, description: "Rate limited" })
   @Patch("huddles/:huddleId/heartbeat")
+  @ResponseSchema(chatOkSchema)
   @BodylessAction()
   @HttpCode(200)
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("chat:huddle-heartbeat")
   @RequirePermission("chat:channels:read")
   @Validate({ params: huddleIdParams })
-  async heartbeat(
+  heartbeat(
     @Param("huddleId", ParseIntPipe) huddleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const rl = await this.rateLimit.check("chat:huddle-heartbeat", u.userId);
-    if (!rl.allowed) throw new HttpException(`Rate limited. Retry after ${rl.retryAfterSecs}s`, HttpStatus.TOO_MANY_REQUESTS);
     return this.signals.heartbeat(huddleId, u.userId, u.orgId);
-  }
-
-  @ApiOperation({ summary: "Toggle screen share on/off in a huddle" })
-  @ApiResponse({ status: 200, description: "OK" })
-  @Patch("huddles/:huddleId/screenshare")
-  @HttpCode(200)
-  @RequirePermission("chat:messages:write")
-  @Validate({ params: huddleIdParams, body: screenShareSchema })
-  setScreenShare(
-    @Param("huddleId", ParseIntPipe) huddleId: number,
-    @Body() body: ScreenShareInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.signals.setScreenShare(huddleId, u.userId, body.isScreenSharing, u.orgId);
   }
 
   @ApiOperation({ summary: "Kick a participant from a huddle" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post("huddles/:huddleId/kick")
+  @ResponseSchema(chatOkSchema)
   @HttpCode(200)
   @RequirePermission("chat:huddles:moderate")
   @Validate({ params: huddleIdParams, body: kickSchema })
@@ -217,13 +159,14 @@ export class ChatHuddlesController {
   @ApiOperation({ summary: "Invite users to an active huddle" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post("huddles/:huddleId/invite")
+  @ResponseSchema(chatOkSchema)
   @Idempotent("chat.huddle.invite")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
-  @Validate({ params: huddleIdParams, body: z.object({ userIds: z.array(z.string().min(1)).min(1) }) })
+  @Validate({ params: huddleIdParams, body: huddleInviteSchema })
   invite(
     @Param("huddleId", ParseIntPipe) huddleId: number,
-    @Body() body: { userIds: string[] },
+    @Body() body: HuddleInviteInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.huddles.inviteToHuddle(huddleId, u.userId, u.orgId, body.userIds);

@@ -5,6 +5,8 @@ import { HrInterviewBookingService } from "./hr-interview-booking.service";
 import { bookInterviewSchema, type BookInterviewInput } from "./dto/interview-scheduling.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { bookInterviewResponseSchema } from "./dto/interviews-response.schemas";
 
 const tokenParams = z.object({ token: z.string().min(1) }).strict();
 
@@ -15,6 +17,7 @@ export class HrInterviewBookingController {
 
   @Post(":token")
   @HttpCode(200)
+  @ResponseSchema(bookInterviewResponseSchema)
   @Validate({ params: tokenParams, body: bookInterviewSchema })
   book(
     @Param("token") token: string,

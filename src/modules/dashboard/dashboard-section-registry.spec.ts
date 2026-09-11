@@ -1,8 +1,19 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import "reflect-metadata";
+import { PATH_METADATA, METHOD_METADATA } from "@nestjs/common/constants";
+import { DashboardController } from "./dashboard.controller";
+import { REQUIRE_PERMISSION } from "../access/require-permission.decorator";
+import { REQUIRE_MODULE } from "../../common/rbac/require-module.decorator";
+import { IS_UNIVERSAL } from "../../common/auth/universal.decorator";
 import {
   DASHBOARD_HOME_SECTIONS,
+  cacheNamespaceOf,
+  cacheScopeOf,
   isModuleSection,
   isPermissionSection,
   permissionOf,
+  type DashboardSection,
   type ModuleSection,
   type PermissionSection,
 } from "./dashboard-section-registry";
@@ -45,13 +56,18 @@ describe("DASHBOARD_HOME_SECTIONS — authoritative section registry (ITEMS A+B)
     }
   });
 
-  it("every permission section declares a permission string and cacheScope", () => {
+  it("every permission section declares a permission string", () => {
     const perms = DASHBOARD_HOME_SECTIONS.filter(isPermissionSection) as PermissionSection[];
     expect(perms.length).toBeGreaterThan(0);
     for (const s of perms) {
       expect(typeof s.permission).toBe("string");
       expect(s.permission.length).toBeGreaterThan(0);
-      expect(["org", "scoped"]).toContain(s.cacheScope);
+    }
+  });
+
+  it("every section — not just permission ones — declares a cache scope", () => {
+    for (const section of DASHBOARD_HOME_SECTIONS) {
+      expect(["org", "scoped", "none"]).toContain(section.cacheScope);
     }
   });
 
@@ -77,7 +93,6 @@ describe("DASHBOARD_HOME_SECTIONS — authoritative section registry (ITEMS A+B)
     expect(universalKeys.has("announcements")).toBe(true);
     expect(universalKeys.has("upcoming-events")).toBe(true);
     expect(universalKeys.has("unread-notifications")).toBe(true);
-    expect(universalKeys.has("birthdays")).toBe(true);
   });
 
   it("ITEM B — HR admin sections are NOT classified as universal", () => {
@@ -88,25 +103,243 @@ describe("DASHBOARD_HOME_SECTIONS — authoritative section registry (ITEMS A+B)
     expect(nonUniversalKeys.has("pending-approvals")).toBe(true);
     expect(nonUniversalKeys.has("crm-executive")).toBe(true);
   });
+
+  it("module-gated sections that require a specific module are not classified as universal", () => {
+    const universalKeys = new Set(
+      DASHBOARD_HOME_SECTIONS.filter((s) => s.kind === "universal").map((s) => s.key),
+    );
+    expect(universalKeys.has("birthdays")).toBe(false);
+    expect(universalKeys.has("my-issues")).toBe(false);
+    expect(universalKeys.has("upcoming-holidays")).toBe(false);
+    expect(universalKeys.has("active-sprint")).toBe(false);
+  });
 });
 
 describe("permissionOf helper", () => {
   it("returns the permission key for a permission section", () => {
     expect(permissionOf("stats-employees")).toBe("hr:employees:view");
     expect(permissionOf("stats-projects")).toBe("build:tickets:view");
-    expect(permissionOf("recent-projects")).toBe("build:manage");
-    expect(permissionOf("leaves-today")).toBe("hr:leaves:approve");
+    expect(permissionOf("recent-projects")).toBe("build:tickets:view");
+    expect(permissionOf("leaves-today")).toBe("hr:leaves:view");
   });
 
   it("throws for an unknown section key", () => {
-    expect(() => permissionOf("nonexistent-section")).toThrow();
+    expect(() => permissionOf("nonexistent-section")).toThrow(
+      "Dashboard registry: 'nonexistent-section' is not a permission section",
+    );
   });
 
   it("throws for a universal section key (not a permission section)", () => {
-    expect(() => permissionOf("announcements")).toThrow();
+    expect(() => permissionOf("announcements")).toThrow(
+      "Dashboard registry: 'announcements' is not a permission section",
+    );
   });
 
   it("throws for a module section key (not a permission section)", () => {
-    expect(() => permissionOf("my-tasks")).toThrow();
+    expect(() => permissionOf("my-tasks")).toThrow(
+      "Dashboard registry: 'my-tasks' is not a permission section",
+    );
+  });
+});
+
+describe("registry ↔ controller cross-check", () => {
+  const GET = 0;
+
+  interface HandlerMeta {
+    permission: string | undefined;
+    module: string | undefined;
+    isUniversal: boolean;
+  }
+
+  function buildRouteMap(): Map<string, HandlerMeta> {
+    const proto = DashboardController.prototype as unknown as Record<string, unknown>;
+    const map = new Map<string, HandlerMeta>();
+    for (const name of Object.getOwnPropertyNames(proto)) {
+      if (name === "constructor") continue;
+      const handler = proto[name];
+      if (typeof handler !== "function") continue;
+      if (Reflect.getMetadata(METHOD_METADATA, handler) !== GET) continue;
+      const path = Reflect.getMetadata(PATH_METADATA, handler) as string | undefined;
+      if (!path) continue;
+      map.set(path, {
+        permission: Reflect.getMetadata(REQUIRE_PERMISSION, handler) as string | undefined,
+        module: Reflect.getMetadata(REQUIRE_MODULE, handler) as string | undefined,
+        isUniversal: Reflect.getMetadata(IS_UNIVERSAL, handler) === true,
+      });
+    }
+    return map;
+  }
+
+  it("every registry entry with a routePath matches its controller handler on permission key, module key and universality", () => {
+    const routeMap = buildRouteMap();
+    for (const section of DASHBOARD_HOME_SECTIONS as DashboardSection[]) {
+      if (!("routePath" in section) || section.routePath === undefined) continue;
+      const meta = routeMap.get(section.routePath);
+      if (!meta) {
+        throw new Error(
+          `Registry key '${section.key}' declares routePath='${section.routePath}' ` +
+            `but DashboardController has no GET handler at that path`,
+        );
+      }
+      if (section.kind === "universal") {
+        if (meta.permission !== undefined) {
+          throw new Error(
+            `Registry key '${section.key}' is kind='universal' but controller route ` +
+              `'${section.routePath}' carries @RequirePermission('${meta.permission}')`,
+          );
+        }
+        if (meta.module !== undefined) {
+          throw new Error(
+            `Registry key '${section.key}' is kind='universal' but controller route ` +
+              `'${section.routePath}' carries @RequireModule('${meta.module}')`,
+          );
+        }
+      } else if (section.kind === "module") {
+        const moduleSection = section as ModuleSection;
+        if (meta.module !== moduleSection.module) {
+          throw new Error(
+            `Registry key '${section.key}' declares module='${moduleSection.module}' but ` +
+              `controller route '${section.routePath}' has @RequireModule('${meta.module ?? "none"}')`,
+          );
+        }
+        if (!meta.isUniversal) {
+          throw new Error(
+            `Registry key '${section.key}' is kind='module' but controller route ` +
+              `'${section.routePath}' is not decorated with @Universal()`,
+          );
+        }
+      } else if (section.kind === "permission") {
+        const permSection = section as PermissionSection;
+        if (meta.permission !== permSection.permission) {
+          throw new Error(
+            `Registry key '${section.key}' declares permission='${permSection.permission}' but ` +
+              `controller route '${section.routePath}' has @RequirePermission('${meta.permission ?? "none"}')`,
+          );
+        }
+      }
+    }
+  });
+
+  it("the route map covers every GET handler registered in DashboardController", () => {
+    const routeMap = buildRouteMap();
+    expect(routeMap.size).toBeGreaterThan(0);
+  });
+
+  /**
+   * This assertion used to be `routeMap.size > 0`, which is true of any
+   * controller and therefore never bit. Two live Home routes — recent-activity
+   * and today-activities — had no registry entry at all, so neither had a
+   * declared kind or cache namespace and nothing noticed.
+   */
+  it("FAIL-CLOSED: every GET route on DashboardController has a registry entry", () => {
+    const routed = new Set(
+      (DASHBOARD_HOME_SECTIONS as DashboardSection[])
+        .map((s) => ("routePath" in s ? s.routePath : undefined))
+        .filter((p): p is string => p !== undefined),
+    );
+    const missing = [...buildRouteMap().keys()].filter((path) => !routed.has(path));
+    expect(missing).toEqual([]);
+  });
+
+  it("FAIL-CLOSED: a permission section declares the module gate its controller route carries", () => {
+    const routeMap = buildRouteMap();
+    const mismatches: string[] = [];
+    for (const section of DASHBOARD_HOME_SECTIONS as DashboardSection[]) {
+      if (section.kind !== "permission") continue;
+      if (!("routePath" in section) || section.routePath === undefined) continue;
+      const meta = routeMap.get(section.routePath);
+      const declared = (section as PermissionSection).module;
+      if (meta?.module !== declared)
+        mismatches.push(
+          `${section.key}: registry module='${declared ?? "none"}' controller module='${meta?.module ?? "none"}'`,
+        );
+    }
+    expect(mismatches).toEqual([]);
+  });
+});
+
+/**
+ * `cacheNs` and `cacheScope` were declared and read by nothing: every Home cache
+ * key was a free string at the call site, so a section could claim "scoped" while
+ * its read cached org-wide, or claim a namespace it never used. These assertions
+ * fail in BOTH directions — a section that declares a family it does not use, and
+ * a read that uses a family its section does not declare.
+ */
+describe("the registry's cache declarations are what production actually uses", () => {
+  const SERVICE_DIR = __dirname;
+  const serviceFiles = readdirSync(SERVICE_DIR).filter(
+    (name) => name.endsWith(".service.ts") && !name.includes(".spec."),
+  );
+  const sources = serviceFiles.map((name) => ({
+    name,
+    text: readFileSync(join(SERVICE_DIR, name), "utf8"),
+  }));
+
+  function usesBuilder(builder: string, sectionKey: string): boolean {
+    const call = new RegExp(
+      `${builder}\\(\\s*this\\.access,\\s*[A-Za-z.]+,\\s*"${sectionKey}"`,
+      "s",
+    );
+    return sources.some((file) => call.test(file.text));
+  }
+
+  it("scans the real service corpus, so a clean result is not an unscanned one", () => {
+    expect(serviceFiles.length).toBeGreaterThanOrEqual(5);
+    const builderCalls = sources.flatMap((file) => [
+      ...file.text.matchAll(/build(?:Org|Scoped)SectionCacheKey\(/g),
+    ]);
+    expect(builderCalls.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it("every section declaring cacheScope 'org' reads through the org builder", () => {
+    const declared = DASHBOARD_HOME_SECTIONS.filter((s) => s.cacheScope === "org");
+    expect(declared.length).toBeGreaterThan(0);
+    const missing = declared
+      .filter((s) => !usesBuilder("buildOrgSectionCacheKey", s.key))
+      .map((s) => s.key);
+    expect(missing).toEqual([]);
+  });
+
+  it("every section declaring cacheScope 'scoped' reads through the scoped builder", () => {
+    const declared = DASHBOARD_HOME_SECTIONS.filter((s) => s.cacheScope === "scoped");
+    expect(declared.length).toBeGreaterThan(0);
+    const missing = declared
+      .filter((s) => !usesBuilder("buildScopedSectionCacheKey", s.key))
+      .map((s) => s.key);
+    expect(missing).toEqual([]);
+  });
+
+  it("no section declaring 'none' secretly reads through either builder", () => {
+    const declared = DASHBOARD_HOME_SECTIONS.filter((s) => s.cacheScope === "none");
+    expect(declared.length).toBeGreaterThan(0);
+    const lying = declared
+      .filter(
+        (s) =>
+          usesBuilder("buildOrgSectionCacheKey", s.key) ||
+          usesBuilder("buildScopedSectionCacheKey", s.key),
+      )
+      .map((s) => s.key);
+    expect(lying).toEqual([]);
+  });
+
+  it("no dashboard service builds a Home cache key from a free string any more", () => {
+    const offenders: string[] = [];
+    for (const file of sources)
+      for (const match of file.text.matchAll(
+        /build(?:Org|Scoped)DashboardCacheKey\(/g,
+      )) {
+        const line = file.text.slice(0, match.index).split("\n").length;
+        offenders.push(`${file.name}:${String(line)}`);
+      }
+    expect(offenders).toEqual([]);
+  });
+
+  it("resolves each section's namespace from the registry, and refuses an unknown one", () => {
+    expect(cacheNamespaceOf("upcoming-holidays")).toBe("holidays");
+    expect(cacheNamespaceOf("team-availability")).toBe("availability");
+    expect(cacheScopeOf("leaves-today")).toBe("none");
+    expect(() => cacheNamespaceOf("not-a-section" as never)).toThrow(
+      /unknown section/,
+    );
   });
 });

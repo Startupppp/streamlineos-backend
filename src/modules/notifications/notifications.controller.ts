@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Headers,
   HttpCode,
   Param,
@@ -19,12 +20,22 @@ import type { Observable } from "rxjs";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
+import { NO_COMPRESSION_HEADER } from "../../common/http/compression.config";
 import { Universal } from "../../common/auth/universal.decorator";
 import { Public } from "../../common/auth/public.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { UseAdmissionTenantHint } from "../../common/admission/admission-tenant-hint";
+import { UseWorkClass } from "../../common/admission/work-class.decorator";
+import { ApiOkResponse } from "@nestjs/swagger";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  notificationCountResponseSchema,
+  notificationListResponseSchema,
+  notificationStreamTokenResponseSchema,
+  notificationSuccessResponseSchema,
+} from "./dto/notification-response-schema";
 import { NotificationsService } from "./notifications.service";
 import { NotificationEventService } from "./notification-event.service";
 import { NoTenantTransaction } from "../../common/tenant";
@@ -50,24 +61,31 @@ export class NotificationsController {
   ) {}
 
   @Get()
+  @ResponseSchema(notificationListResponseSchema)
   @Universal()
   @Validate({ query: listSchema })
   list(
     @Query() filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.notifications.list(u.orgId, u.userId, filters);
+    return this.notifications.list(u.orgId, u.userId, filters, u.principal);
   }
 
   @Get("unread-count")
+  @ResponseSchema(notificationCountResponseSchema)
   @Universal()
   unreadCount(@CurrentUser() u: CurrentUserContext) {
     return this.notifications.unreadCount(u.orgId, u.userId);
   }
 
   @Post("events/token")
+  @ResponseSchema(notificationStreamTokenResponseSchema)
   @BodylessAction()
   @Universal()
+  // PRD-C089 (BREACH) — this body is a bearer token, `app.enableCors({ credentials: true })`
+  // is live, and a compressed length is a cross-origin size oracle. `shouldCompress` checks
+  // this opt-out first, so no content type can overrule it.
+  @Header(NO_COMPRESSION_HEADER, "1")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("notifications:stream-token")
   @HttpCode(200)
@@ -77,9 +95,12 @@ export class NotificationsController {
   }
 
   @Get("events")
+  @ApiOkResponse({ description: "Server-sent event stream of notification events", content: { "text/event-stream": { schema: { type: "string" } } } })
   @Sse()
   @Public()
   @NoTenantTransaction()
+  @UseWorkClass("non-mandatory-notification")
+  @UseAdmissionTenantHint(NotificationEventService)
   stream(
     @Headers("authorization") authorization: string | undefined,
   ): Observable<MessageEvent> {
@@ -91,6 +112,7 @@ export class NotificationsController {
   }
 
   @Patch("read-all")
+  @ResponseSchema(notificationSuccessResponseSchema)
   @BodylessAction()
   @Universal()
   markAllRead(@CurrentUser() u: CurrentUserContext) {
@@ -98,12 +120,14 @@ export class NotificationsController {
   }
 
   @Delete("clear-all")
+  @ResponseSchema(notificationSuccessResponseSchema)
   @Universal()
   clearAll(@CurrentUser() u: CurrentUserContext) {
     return this.notifications.clearAll(u.orgId, u.userId);
   }
 
   @Post("bulk/read")
+  @ResponseSchema(notificationSuccessResponseSchema)
   @Universal()
   @HttpCode(200)
   @Validate({ body: bulkActionSchema })
@@ -115,6 +139,7 @@ export class NotificationsController {
   }
 
   @Post("bulk/archive")
+  @ResponseSchema(notificationSuccessResponseSchema)
   @Universal()
   @HttpCode(200)
   @Validate({ body: bulkActionSchema })
@@ -126,6 +151,7 @@ export class NotificationsController {
   }
 
   @Post("bulk/delete")
+  @ResponseSchema(notificationSuccessResponseSchema)
   @Universal()
   @HttpCode(200)
   @Validate({ body: bulkActionSchema })
@@ -137,6 +163,7 @@ export class NotificationsController {
   }
 
   @Patch(":notificationId/read")
+  @ResponseSchema(notificationSuccessResponseSchema)
   @BodylessAction()
   @Universal()
   @Validate({ params: notificationIdParams })
@@ -148,6 +175,7 @@ export class NotificationsController {
   }
 
   @Patch(":notificationId/archive")
+  @ResponseSchema(notificationSuccessResponseSchema)
   @BodylessAction()
   @Universal()
   @Validate({ params: notificationIdParams })
@@ -159,6 +187,7 @@ export class NotificationsController {
   }
 
   @Patch(":notificationId/unarchive")
+  @ResponseSchema(notificationSuccessResponseSchema)
   @BodylessAction()
   @Universal()
   @Validate({ params: notificationIdParams })
@@ -170,6 +199,7 @@ export class NotificationsController {
   }
 
   @Delete(":notificationId")
+  @ResponseSchema(notificationSuccessResponseSchema)
   @Universal()
   @Validate({ params: notificationIdParams })
   softDelete(
@@ -180,6 +210,7 @@ export class NotificationsController {
   }
 
   @Patch(":notificationId/pin")
+  @ResponseSchema(notificationSuccessResponseSchema)
   @BodylessAction()
   @Universal()
   @Validate({ params: notificationIdParams })
@@ -191,6 +222,7 @@ export class NotificationsController {
   }
 
   @Patch(":notificationId/unpin")
+  @ResponseSchema(notificationSuccessResponseSchema)
   @BodylessAction()
   @Universal()
   @Validate({ params: notificationIdParams })
@@ -202,6 +234,7 @@ export class NotificationsController {
   }
 
   @Patch(":notificationId/snooze")
+  @ResponseSchema(notificationSuccessResponseSchema)
   @Universal()
   @Validate({ params: notificationIdParams, body: snoozeSchema })
   snooze(
@@ -213,6 +246,7 @@ export class NotificationsController {
   }
 
   @Post(":notificationId/approve")
+  @ResponseSchema(notificationSuccessResponseSchema)
   @BodylessAction()
   @Idempotent("notifications.action.approve")
   @Universal()
@@ -226,6 +260,7 @@ export class NotificationsController {
   }
 
   @Post(":notificationId/reject")
+  @ResponseSchema(notificationSuccessResponseSchema)
   @BodylessAction()
   @Idempotent("notifications.action.reject")
   @Universal()

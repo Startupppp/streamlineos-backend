@@ -28,13 +28,12 @@ export const approvalStatusEnum = pgEnum("approval_status", [
 export const projectApprovals = build.table("project_approvals", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
+  projectId: integer("project_id").notNull(),
   entityType: approvalEntityTypeEnum("entity_type").notNull(),
   entityId: integer("entity_id").notNull(),
   title: text("title").notNull(),
   reason: text("reason"),
   requestedById: text("requested_by_id").references(() => users.id, { onDelete: "set null" }),
-  approverId: text("approver_id").references(() => users.id, { onDelete: "set null" }),
   approverMembershipId: integer("approver_membership_id"),
   status: approvalStatusEnum("status").notNull().default("pending"),
   level: integer("level").notNull().default(1),
@@ -46,14 +45,14 @@ export const projectApprovals = build.table("project_approvals", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at"),
 }, (t) => [
+  foreignKey({ columns: [t.orgId, t.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_project_approvals_org_project" }).onDelete("cascade"),
   index("idx_project_approvals_org_project_status").on(t.orgId, t.projectId, t.status).where(sql`deleted_at IS NULL`),
-  index("idx_project_approvals_approver_status").on(t.approverId, t.status),
+  index("idx_project_approvals_approver_status").on(t.orgId, t.approverMembershipId, t.status),
   index("idx_project_approvals_entity").on(t.entityType, t.entityId),
-  index("idx_project_approvals_org_approver_membership").on(t.orgId, t.approverMembershipId),
   unique("uniq_project_approvals_org_id").on(t.orgId, t.id),
   foreignKey({
     columns: [t.orgId, t.approverMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_project_approvals_approver_actor",
-  }).onDelete("restrict"),
+  }).onDelete("set null"),
 ]);

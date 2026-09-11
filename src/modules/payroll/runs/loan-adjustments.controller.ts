@@ -17,6 +17,8 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { numericIdSchema } from "../../../common/openapi/response-envelopes";
 import { z } from "zod";
 import { LoanAdjustmentsService } from "./loan-adjustments.service";
 import { loanAdjustmentSchema, type LoanAdjustmentInput } from "./dto/runs.schemas";
@@ -33,6 +35,7 @@ export class LoanAdjustmentsController {
   @HttpCode(201)
   @RequirePermission("payroll:runs:update")
   @Validate({ params: runIdParams, body: loanAdjustmentSchema })
+  @ResponseSchema(numericIdSchema)
   async create(
     @Param("runId", ParseIntPipe) runId: number,
     @Body() body: LoanAdjustmentInput,

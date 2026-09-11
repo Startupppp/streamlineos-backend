@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { okrGoals, okrLinks, projects, tickets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -59,7 +59,12 @@ export function isLinkProjectNotFound(
 export class GoalLinksService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  getLinks(orgId: string, goalId: number): Promise<GoalLinkRow[]> {
+  async getLinks(orgId: string, goalId: number): Promise<GoalLinkRow[]> {
+    const goal = await this.db.query.okrGoals.findFirst({
+      columns: { id: true },
+      where: and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId), isNull(okrGoals.deletedAt)),
+    });
+    if (!goal) throw new NotFoundException("Goal not found");
     return this.db
       .select({
         id: okrLinks.id,
@@ -73,7 +78,7 @@ export class GoalLinksService {
       })
       .from(okrLinks)
       .leftJoin(tickets, and(eq(okrLinks.ticketId, tickets.id), isNull(tickets.deletedAt)))
-      .leftJoin(projects, eq(okrLinks.projectId, projects.id))
+      .leftJoin(projects, and(eq(okrLinks.projectId, projects.id), isNull(projects.deletedAt)))
       .where(and(eq(okrLinks.goalId, goalId), eq(okrLinks.orgId, orgId)))
       .orderBy(desc(okrLinks.createdAt))
       .limit(100);
@@ -81,7 +86,7 @@ export class GoalLinksService {
 
   async createLink(orgId: string, goalId: number, input: CreateLinkInput): Promise<CreateLinkResult> {
     const goal = await this.db.query.okrGoals.findFirst({
-      where: and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId)),
+      where: and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId), isNull(okrGoals.deletedAt)),
       columns: { id: true },
     });
     if (!goal) return { error: "goal_not_found" as const };

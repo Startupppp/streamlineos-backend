@@ -1,22 +1,31 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, and, desc, asc, sql, count, gte, lte, inArray } from "drizzle-orm";
+import { eq, and, desc, asc, sql, count, gte, lte, inArray, isNull } from "drizzle-orm";
 import { users, crmOptions, crmPipelines, crmPipelineStages } from "../../db/schema";
 import { businessParties, leadPartyMap } from "../../db/schema/party";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import type { DataScope } from "../access/access.types";
+import type { ScopedRead } from "../access/scoped-read";
 import {
   LEAD_PARTY_COLUMNS,
   LEAD_PARTY_JOIN,
   leadPartyScope,
-  pushLeadPartyViewScope,
+  LEAD_PARTY_SCOPE,
 } from "./lead-party-reader";
 import { resolveLeadStatusSemantics } from "./lead-status-semantics";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 
-export type BoardOpts = { userId?: string; limitPerStatus?: number; scope?: DataScope };
-export type StatsFilters = { dateFrom?: string; dateTo?: string; userId?: string; scope?: DataScope };
+export type BoardOpts = { read: ScopedRead; limitPerStatus?: number };
+export type StatsFilters = { read: ScopedRead; dateFrom?: string; dateTo?: string };
+
+const EMPTY_LEAD_STATS = {
+  total: 0,
+  byStatus: {} as Record<string, number>,
+  conversionRate: 0,
+  totalPotentialValue: 0,
+  unassigned: 0,
+  thisMonth: 0,
+};
 
 @Injectable()
 export class LeadsBoardService {
@@ -60,16 +69,16 @@ export class LeadsBoardService {
     }, CACHE_TTL.MEDIUM);
   }
 
-  async getBoard(orgId: string, opts?: BoardOpts) {
-    const hash = Buffer.from(JSON.stringify(opts ?? {})).toString("base64");
+  async getBoard(orgId: string, opts: BoardOpts) {
+    const read = opts.read;
+    const hash = Buffer.from(
+      JSON.stringify({ scope: read.discriminator, limitPerStatus: opts.limitPerStatus }),
+    ).toString("base64");
 
     return this.cache.cachedVersioned(`leads:${orgId}`, `board:${hash}`, async () => {
-      const baseFilters = leadPartyScope(orgId);
-
-      pushLeadPartyViewScope(baseFilters, orgId, opts?.scope, opts?.userId);
-
+      if (read.denied) return {};
       const statusKeys = await this.resolveLeadStatusKeys(orgId);
-      const limitPerStatus = opts?.limitPerStatus ?? 50;
+      const limitPerStatus = opts.limitPerStatus ?? 50;
 
       const columns = {
         id: LEAD_PARTY_COLUMNS.id,
@@ -89,17 +98,28 @@ export class LeadsBoardService {
 
       const perStatusResults = await Promise.all(
         statusKeys.map(async (status) => {
-          const statusFilter = [...baseFilters, eq(LEAD_PARTY_COLUMNS.status, status)];
-          const raw = await this.db
-            .select({ ...columns, _total: sql<string>`count(*) OVER ()` })
-            .from(leadPartyMap)
-            .innerJoin(businessParties, LEAD_PARTY_JOIN)
-            .where(and(...statusFilter))
-            // Newest first, and the lead id to break a tie: a column capped at
-            // `limitPerStatus` must cut the same place twice or the board
-            // shuffles between refreshes.
-            .orderBy(desc(LEAD_PARTY_COLUMNS.createdAt), desc(LEAD_PARTY_COLUMNS.id))
-            .limit(limitPerStatus);
+          const raw = await read.read(
+            {
+              tenant: businessParties.organizationId,
+              scope: LEAD_PARTY_SCOPE,
+              and: [
+                eq(leadPartyMap.organizationId, orgId),
+                isNull(businessParties.deletedAt),
+                eq(LEAD_PARTY_COLUMNS.status, status),
+              ],
+            },
+            ({ sql: where }) => this.db
+              .select({ ...columns, _total: sql<string>`count(*) OVER ()` })
+              .from(leadPartyMap)
+              .innerJoin(businessParties, LEAD_PARTY_JOIN)
+              .where(where)
+              // Newest first, and the lead id to break a tie: a column capped at
+              // `limitPerStatus` must cut the same place twice or the board
+              // shuffles between refreshes.
+              .orderBy(desc(LEAD_PARTY_COLUMNS.createdAt), desc(LEAD_PARTY_COLUMNS.id))
+              .limit(limitPerStatus),
+            () => [],
+          );
           const total = raw.length > 0 ? Number(raw[0]._total) : 0;
           const rows = raw.map(({ _total, ...r }) => r);
           return { status, rows, total };
@@ -138,18 +158,25 @@ export class LeadsBoardService {
     }, CACHE_TTL.SHORT);
   }
 
-  async getStats(orgId: string, filters?: StatsFilters) {
-    const statsFilters = leadPartyScope(orgId);
-    pushLeadPartyViewScope(statsFilters, orgId, filters?.scope, filters?.userId);
-
-    if (filters?.dateFrom) {
-      statsFilters.push(gte(LEAD_PARTY_COLUMNS.createdAt, new Date(filters.dateFrom)));
-    }
-    if (filters?.dateTo) {
-      const to = new Date(filters.dateTo);
-      to.setHours(23, 59, 59, 999);
-      statsFilters.push(lte(LEAD_PARTY_COLUMNS.createdAt, to));
-    }
+  async getStats(orgId: string, filters: StatsFilters) {
+    const read = filters.read;
+    const to = filters.dateTo ? new Date(filters.dateTo) : undefined;
+    if (to) to.setHours(23, 59, 59, 999);
+    const statsWhere = read.compose(
+      {
+        tenant: businessParties.organizationId,
+        scope: LEAD_PARTY_SCOPE,
+        and: [
+          eq(leadPartyMap.organizationId, orgId),
+          isNull(businessParties.deletedAt),
+          filters.dateFrom ? gte(LEAD_PARTY_COLUMNS.createdAt, new Date(filters.dateFrom)) : undefined,
+          to ? lte(LEAD_PARTY_COLUMNS.createdAt, to) : undefined,
+        ],
+      },
+      (where) => where.sql,
+      () => null,
+    );
+    if (statsWhere === null) return EMPTY_LEAD_STATS;
 
     const now = new Date();
     const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -159,7 +186,7 @@ export class LeadsBoardService {
         .select({ status: LEAD_PARTY_COLUMNS.status, cnt: count() })
         .from(leadPartyMap)
         .innerJoin(businessParties, LEAD_PARTY_JOIN)
-        .where(and(...statsFilters))
+        .where(statsWhere)
         .groupBy(LEAD_PARTY_COLUMNS.status),
       this.db
         .select({
@@ -170,7 +197,7 @@ export class LeadsBoardService {
         })
         .from(leadPartyMap)
         .innerJoin(businessParties, LEAD_PARTY_JOIN)
-        .where(and(...statsFilters)),
+        .where(statsWhere),
       this.db.select().from(crmOptions).where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status"))),
     ]);
 

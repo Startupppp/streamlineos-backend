@@ -1,11 +1,12 @@
 import { ForbiddenException, UnauthorizedException, CanActivate, ExecutionContext, Injectable } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
-import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import type { AuthContext } from "../../common/auth/auth-context";
 import { IS_PUBLIC } from "../../common/auth/public.decorator";
 import { logger } from "../../common/logger/logger.service";
 import { ModuleDisabledException } from "../../common/http/api-exceptions";
-import { AccessService, moduleOf } from "./access.service";
+import { AccessService } from "./access.service";
+import { namespaceOf } from "../../common/rbac/module-vocabulary";
 import { authorize } from "./authorize";
 import type { AuthResult } from "./access.types";
 import { REQUIRE_PERMISSION } from "./require-permission.decorator";
@@ -33,11 +34,11 @@ export class PermissionGuard implements CanActivate {
 
     const req = context
       .switchToHttp()
-      .getRequest<Request & { user?: CurrentUserContext; rbacScope?: AuthResult["scope"] }>();
+      .getRequest<Request & { authContext?: AuthContext; rbacScope?: AuthResult["scope"] }>();
 
     let result: AuthResult;
     try {
-      result = await authorize(this.access, req.user ?? null, permissionKey);
+      result = await authorize(this.access, req.authContext ?? null, permissionKey);
     } catch (error: unknown) {
       logger.error("PermissionGuard: unexpected error during authorization — denying", {
         permissionKey,
@@ -52,7 +53,8 @@ export class PermissionGuard implements CanActivate {
       // the module named. A 403 here reads as "you lack the permission" and the
       // frontend's EntitlementGate, which keys the upgrade prompt on 402, shows
       // an access-denied dead end instead of an offer to enable the module.
-      if (result.reason === "NO_MODULE") throw new ModuleDisabledException(moduleOf(permissionKey));
+      // namespaceOf, never administeringModuleOf, or a disabled Chat offers to enable Home.
+      if (result.reason === "NO_MODULE") throw new ModuleDisabledException(namespaceOf(permissionKey));
       throw new ForbiddenException("Permission denied");
     }
 

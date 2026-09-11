@@ -32,6 +32,14 @@ import {
 } from "./dto/qa.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  testRunListItemSchema,
+  testRunDetailSchema,
+  testRunRowSchema,
+  testRunResultRowSchema,
+  bugRowSchema,
+} from "./dto/qa-response.schemas";
 
 const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
 const runIdresultIdParams = z.object({ runId: z.coerce.number().int().positive(), resultId: z.coerce.number().int().positive() }).strict();
@@ -44,17 +52,19 @@ export class TestRunsController {
 
   @Get()
   @RequirePermission("build:qa:view")
+  @ResponseSchema(z.array(testRunListItemSchema))
   @Validate({ query: testRunListQuerySchema })
   listRuns(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Query() query: TestRunListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listRuns(u.orgId, projectId, query);
+    return this.svc.listRuns(u, projectId, query);
   }
 
   @Get(":runId")
   @RequirePermission("build:qa:view")
+  @ResponseSchema(testRunDetailSchema)
   @Validate({ params: runIdParams })
   getRun(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -67,17 +77,19 @@ export class TestRunsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:qa:manage")
+  @ResponseSchema(testRunRowSchema)
   @Validate({ body: createTestRunSchema })
   createRun(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body() body: CreateTestRunInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createRun(u.orgId, u.userId, projectId, body);
+    return this.svc.createRun(u, projectId, body);
   }
 
   @Patch(":runId")
   @RequirePermission("build:qa:manage")
+  @ResponseSchema(testRunRowSchema)
   @Validate({ params: runIdParams, body: updateTestRunSchema })
   updateRun(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -91,6 +103,7 @@ export class TestRunsController {
   @Delete(":runId")
   @RequirePermission("build:qa:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: runIdParams })
   deleteRun(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -102,6 +115,7 @@ export class TestRunsController {
 
   @Patch(":runId/results/:resultId")
   @RequirePermission("build:qa:execute")
+  @ResponseSchema(testRunResultRowSchema)
   @Validate({ params: runIdresultIdParams, body: updateTestResultSchema })
   updateResult(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -116,6 +130,7 @@ export class TestRunsController {
   @Post(":runId/results/:resultId/bug")
   @HttpCode(201)
   @RequirePermission("build:bugs:create")
+  @ResponseSchema(bugRowSchema)
   @Validate({ params: runIdresultIdParams, body: createBugFromResultSchema })
   createBugFromResult(
     @Param("projectId", ParseIntPipe) projectId: number,

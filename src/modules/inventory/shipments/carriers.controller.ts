@@ -9,6 +9,11 @@ import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { CarriersService } from "./carriers.service";
 import { createCarrierSchema, updateCarrierSchema, type CreateCarrierInput, type UpdateCarrierInput } from "./dto/shipments.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  listCarriersResponseSchema,
+  invCarrierSchema,
+} from "./dto/shipments-response.schemas";
 import { z } from "zod";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
@@ -21,6 +26,7 @@ export class CarriersController {
   constructor(private readonly svc: CarriersService) {}
 
   @Get()
+  @ResponseSchema(listCarriersResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
   list(@CurrentUser() u: CurrentUserContext) {
@@ -28,6 +34,7 @@ export class CarriersController {
   }
 
   @Post()
+  @ResponseSchema(invCarrierSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
   @Idempotent("inventory.carrier.create")
@@ -40,6 +47,7 @@ export class CarriersController {
   }
 
   @Patch(":carrierId")
+  @ResponseSchema(invCarrierSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
   @Validate({ params: carrierIdParams, body: updateCarrierSchema })

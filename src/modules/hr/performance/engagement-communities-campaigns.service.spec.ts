@@ -32,9 +32,10 @@ describe("EngagementCommunitiesCampaignsService cursor pagination", () => {
     const pageLimit = jest.fn().mockResolvedValue(rows);
     const pageOrderBy = jest.fn(() => ({ limit: pageLimit }));
     const pageWhere = jest.fn((_predicate: unknown) => ({ orderBy: pageOrderBy }));
-    const memberWhere = jest.fn(async (_predicate: unknown) => [
+    const memberLimit = jest.fn().mockResolvedValue([
       { communityId: rows[0].id, userId: "user-1", role: "moderator" },
     ]);
+    const memberWhere = jest.fn((_predicate: unknown) => ({ limit: memberLimit }));
     const select = jest
       .fn()
       .mockReturnValueOnce({ from: () => ({ where: pageWhere }) })
@@ -54,6 +55,7 @@ describe("EngagementCommunitiesCampaignsService cursor pagination", () => {
     const hydratedIds = primitiveValues(memberWhere.mock.calls[0][0]);
     expect(hydratedIds).toEqual(expect.arrayContaining(rows.slice(0, 3).map((row) => row.id)));
     expect(hydratedIds).not.toContain(rows[3].id);
+    expect(memberLimit).toHaveBeenCalledWith(500);
     expect(result.items).toHaveLength(3);
     expect(result.items[0].members).toEqual([{ userId: "user-1", role: "moderator" }]);
     expect(decodeTimestampCursor(result.nextCursor!)).toEqual({

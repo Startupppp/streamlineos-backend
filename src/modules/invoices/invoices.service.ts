@@ -1,7 +1,7 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { clientShapedParties, partyNamesFor } from "../party/party-names";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
-import { invoices, payments } from "../../db/schema";
+import { invoiceItems, invoices, payments } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -92,6 +92,12 @@ export class InvoicesService {
     );
   }
 
+  /**
+   * `lineItems` carries the persisted `invoice_items` rows. It used to be absent, so the detail
+   * screen, the downloadable PDF and the edit dialog all read an empty array — the PDF shipped a
+   * total with no itemisation, and saving an edit replaced the real rows with whatever the empty
+   * dialog was given. Amounts stay decimal strings, like every other money field on this record.
+   */
   async getInvoice(orgId: string, invoiceId: number) {
     const invoice = await this.db.query.invoices.findFirst({
       where: and(eq(invoices.id, invoiceId), eq(invoices.orgId, orgId)),
@@ -101,6 +107,19 @@ export class InvoicesService {
         payments: {
           orderBy: [desc(payments.paymentDate)],
           with: { creator: { columns: { id: true, name: true } } },
+        },
+        items: {
+          columns: {
+            id: true,
+            description: true,
+            hsnSacCode: true,
+            quantity: true,
+            rate: true,
+            gstRate: true,
+            amount: true,
+            lineOrder: true,
+          },
+          orderBy: [asc(invoiceItems.lineOrder), asc(invoiceItems.id)],
         },
       },
     });
@@ -117,8 +136,10 @@ export class InvoicesService {
     const parties = await clientShapedParties(this.db, orgId, [invoice.clientPartyId]);
     const party = invoice.clientPartyId ? parties.get(invoice.clientPartyId) : undefined;
 
+    const { items, ...rest } = invoice;
     return {
-      ...invoice,
+      ...rest,
+      lineItems: items,
       client: invoice.clientId
         ? {
             id: invoice.clientId,
@@ -131,7 +152,12 @@ export class InvoicesService {
     };
   }
 
-  getInvoicePayments(orgId: string, invoiceId: number) {
+  async getInvoicePayments(orgId: string, invoiceId: number) {
+    const invoice = await this.db.query.invoices.findFirst({
+      columns: { id: true },
+      where: and(eq(invoices.id, invoiceId), eq(invoices.orgId, orgId)),
+    });
+    if (!invoice) throw new NotFoundException("Invoice not found");
     return this.db.query.payments.findMany({
       where: and(eq(payments.invoiceId, invoiceId), eq(payments.orgId, orgId)),
       orderBy: [desc(payments.paymentDate)],

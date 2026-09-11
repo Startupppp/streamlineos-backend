@@ -27,6 +27,8 @@ const MATERIALS_FIELD_SET: ReadonlySet<string> = new Set(PRODUCT_MATERIALS_FIELD
  */
 function stripKeys(value: unknown, hidden: ReadonlySet<string>, depth: number): unknown {
   if (depth > 6 || value === null || typeof value !== "object") return value;
+  // A Date has no own keys: rebuilding it below would send `{}` for every timestamp.
+  if (value instanceof Date) return value;
   if (Array.isArray(value)) return value.map((v) => stripKeys(v, hidden, depth + 1));
   const out: Record<string, unknown> = {};
   for (const [key, inner] of Object.entries(value as Record<string, unknown>)) {

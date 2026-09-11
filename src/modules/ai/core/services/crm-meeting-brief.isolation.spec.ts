@@ -60,32 +60,12 @@ const mockGateway = {
 beforeEach(() => jest.resetAllMocks());
 
 describe("CrmMeetingBriefService — cross-tenant isolation", () => {
-  it("meetingPrep throws NotFoundException for a lead attendee belonging to a different org (DENY)", async () => {
-    const db = makeDb();
-    const svc = new CrmMeetingBriefService(db, mockGateway, makeOrgFeatures());
-    await expect(
-      svc.meetingPrep(ATTACKER_ORG, {
-        meetingTitle: "Q4 Review",
-        attendeeType: "lead",
-        attendeeId: 42,
-        scheduledAt: new Date().toISOString(),
-      }),
-    ).rejects.toThrow(NotFoundException);
-  });
-
-  it("meetingPrep throws NotFoundException for a client attendee belonging to a different org (DENY)", async () => {
-    const db = makeDb();
-    const svc = new CrmMeetingBriefService(db, mockGateway, makeOrgFeatures());
-    await expect(
-      svc.meetingPrep(ATTACKER_ORG, {
-        meetingTitle: "Q4 Review",
-        attendeeType: "client",
-        attendeeId: 42,
-        scheduledAt: new Date().toISOString(),
-      }),
-    ).rejects.toThrow(NotFoundException);
-  });
-
+  /**
+   * `meetingPrep` was retired with the duplicate `/ai/meeting-prep` route family
+   * (see ticket 11). Cross-tenant DENY coverage for this service now rests on
+   * the follow-up path, which resolves the attendee through the same
+   * org-scoped loaders.
+   */
   it("meetingFollowUpDraft throws NotFoundException when lead belongs to a different org — cross-org isolation", async () => {
     const db = makeDb();
     const svc = new CrmMeetingBriefService(db, mockGateway, makeOrgFeatures());

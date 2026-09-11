@@ -22,12 +22,13 @@ describe("KbPageVersionsService — cross-tenant isolation", () => {
 
   function makeDb(pageRow: unknown) {
     const wheres: unknown[] = [];
-    const innerJoinChain = {
+    const innerJoinChain: Record<string, unknown> = {
       where: jest.fn().mockImplementation((w: unknown) => {
         wheres.push(w);
         return Promise.resolve([]);
       }),
     };
+    innerJoinChain.innerJoin = jest.fn().mockReturnValue(innerJoinChain);
     const leftJoinChain = {
       where: jest.fn().mockImplementation((w: unknown) => {
         wheres.push(w);
@@ -80,6 +81,6 @@ describe("KbPageVersionsService — cross-tenant isolation", () => {
 
     const result = await svc.listVersions(makeUser(OWNER), PAGE_ID);
 
-    expect(Array.isArray(result)).toBe(true);
+    expect(Array.isArray(result.data)).toBe(true);
   });
 });

@@ -1,9 +1,14 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull, or } from "drizzle-orm";
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { and, eq, isNull } from "drizzle-orm";
 import { commentDrafts } from "../../../db/schema/build/comment-drafts";
 import { tickets } from "../../../db/schema/build/tasks";
 import { projects } from "../../../db/schema/build/core";
-import { users } from "../../../db/schema/common/auth";
+import { organizationMembers, users } from "../../../db/schema/common/auth";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { UpsertCommentDraftInput } from "./dto/comment-drafts.schemas";
@@ -12,13 +17,13 @@ import type { UpsertCommentDraftInput } from "./dto/comment-drafts.schemas";
 export class CommentDraftsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  private draftOwnerFilter(membershipId: number | null, userId: string) {
-    return membershipId !== null
-      ? or(eq(commentDrafts.membershipId, membershipId), eq(commentDrafts.userId, userId))
-      : eq(commentDrafts.userId, userId);
+  private draftOwnerFilter(membershipId: number | null) {
+    if (membershipId === null)
+      throw new ForbiddenException("Organization membership required");
+    return eq(commentDrafts.membershipId, membershipId);
   }
 
-  async listMine(orgId: string, membershipId: number | null, userId: string) {
+  async listMine(orgId: string, membershipId: number | null, _userId: string) {
     const rows = await this.db
       .select({
         id: commentDrafts.id,
@@ -46,9 +51,14 @@ export class CommentDraftsService {
         projects,
         and(eq(projects.id, tickets.projectId), eq(projects.orgId, orgId)),
       )
-      .leftJoin(users, eq(users.id, tickets.assigneeId))
+      .leftJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
+      .leftJoin(users, eq(users.id, organizationMembers.userId))
       .where(
-        and(eq(commentDrafts.orgId, orgId), this.draftOwnerFilter(membershipId, userId), isNull(tickets.deletedAt)),
+        and(
+          eq(commentDrafts.orgId, orgId),
+          this.draftOwnerFilter(membershipId),
+          isNull(tickets.deletedAt),
+        ),
       )
       .orderBy(commentDrafts.updatedAt)
       .limit(100);
@@ -92,29 +102,41 @@ export class CommentDraftsService {
     const [ticket] = await this.db
       .select({ id: tickets.id })
       .from(tickets)
-      .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
+      .where(
+        and(
+          eq(tickets.id, ticketId),
+          eq(tickets.orgId, orgId),
+          isNull(tickets.deletedAt),
+        ),
+      )
       .limit(1);
 
     if (!ticket) throw new NotFoundException("Ticket not found");
 
-    const membershipSet = membershipId !== null ? { membershipId } : {};
+    if (membershipId === null)
+      throw new ForbiddenException("Organization membership required");
     const [row] = await this.db
       .insert(commentDrafts)
-      .values({ orgId, userId, ticketId, body: input.body, ...membershipSet })
+      .values({ orgId, membershipId, ticketId, body: input.body })
       .onConflictDoUpdate({
         target: [
           commentDrafts.orgId,
-          commentDrafts.userId,
+          commentDrafts.membershipId,
           commentDrafts.ticketId,
         ],
-        set: { body: input.body, updatedAt: new Date(), ...membershipSet },
+        set: { body: input.body, membershipId, updatedAt: new Date() },
       })
       .returning();
 
     return row;
   }
 
-  async deleteOne(orgId: string, membershipId: number | null, userId: string, id: number) {
+  async deleteOne(
+    orgId: string,
+    membershipId: number | null,
+    _userId: string,
+    id: number,
+  ) {
     const [draft] = await this.db
       .select({ id: commentDrafts.id })
       .from(commentDrafts)
@@ -122,7 +144,7 @@ export class CommentDraftsService {
         and(
           eq(commentDrafts.id, id),
           eq(commentDrafts.orgId, orgId),
-          this.draftOwnerFilter(membershipId, userId),
+          this.draftOwnerFilter(membershipId),
         ),
       )
       .limit(1);
@@ -135,31 +157,43 @@ export class CommentDraftsService {
         and(
           eq(commentDrafts.id, id),
           eq(commentDrafts.orgId, orgId),
-          this.draftOwnerFilter(membershipId, userId),
+          this.draftOwnerFilter(membershipId),
         ),
       );
 
     return { deleted: true };
   }
 
-  async deleteByTicket(orgId: string, membershipId: number | null, userId: string, ticketId: number) {
+  async deleteByTicket(
+    orgId: string,
+    membershipId: number | null,
+    _userId: string,
+    ticketId: number,
+  ) {
     await this.db
       .delete(commentDrafts)
       .where(
         and(
           eq(commentDrafts.orgId, orgId),
-          this.draftOwnerFilter(membershipId, userId),
+          this.draftOwnerFilter(membershipId),
           eq(commentDrafts.ticketId, ticketId),
         ),
       );
     return { deleted: true };
   }
 
-  async deleteAllMine(orgId: string, membershipId: number | null, userId: string) {
+  async deleteAllMine(
+    orgId: string,
+    membershipId: number | null,
+    _userId: string,
+  ) {
     await this.db
       .delete(commentDrafts)
       .where(
-        and(eq(commentDrafts.orgId, orgId), this.draftOwnerFilter(membershipId, userId)),
+        and(
+          eq(commentDrafts.orgId, orgId),
+          this.draftOwnerFilter(membershipId),
+        ),
       );
     return { deleted: true };
   }

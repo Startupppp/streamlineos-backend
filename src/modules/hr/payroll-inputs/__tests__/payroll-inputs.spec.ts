@@ -6,6 +6,10 @@ import { HrAuditService } from "../../core/hr-audit.service";
 import { HrAutomationEngineService } from "../../automations/hr-automation-engine.service";
 import { PayrollInputsBuildService } from "../payroll-inputs-build.service";
 import { PayrollInputSnapshotsService } from "../payroll-input-snapshots.service";
+import { nextMonthKey, periodBoundsFrom } from "../payroll-period-key";
+import { hrPayrollInputSectionEnum } from "../../../../db/schema/payroll/input-capture";
+import fs from "node:fs";
+import path from "node:path";
 
 function _chainable(terminal: unknown = undefined) {
   const obj: Record<string, jest.Mock> = {};
@@ -309,49 +313,56 @@ describe("PayrollInputsService — getPeriod", () => {
   });
 });
 
-describe("PayrollInputsBuildService — snapshot grouping (pure logic)", () => {
-  it("periodBounds computes correct start and end for a given YYYY-MM key", () => {
-    function periodBounds(periodKey: string): { start: string; end: string } {
-      const [year, month] = periodKey.split("-");
-      const lastDay = new Date(Number(year), Number(month), 0).getDate();
-      return {
-        start: `${periodKey}-01`,
-        end: `${periodKey}-${String(lastDay).padStart(2, "0")}`,
-      };
-    }
-
-    expect(periodBounds("2026-07")).toEqual({ start: "2026-07-01", end: "2026-07-31" });
-    expect(periodBounds("2026-02")).toEqual({ start: "2026-02-01", end: "2026-02-28" });
-    expect(periodBounds("2024-02")).toEqual({ start: "2024-02-01", end: "2024-02-29" });
-    expect(periodBounds("2026-12")).toEqual({ start: "2026-12-01", end: "2026-12-31" });
-  });
-
-  it("generates 8 snapshot sections per employee", () => {
-    const SNAPSHOT_SECTIONS = [
-      "employee_master",
-      "compensation",
-      "attendance",
-      "leave",
-      "overtime",
-      "reimbursement",
-      "deduction",
-      "lifecycle",
-    ] as const;
-
-    expect(SNAPSHOT_SECTIONS).toHaveLength(8);
-    const unique = new Set(SNAPSHOT_SECTIONS);
-    expect(unique.size).toBe(8);
+/**
+ * This block used to declare its own `periodBounds` and `nextMonthKey` inside
+ * each `it`, and to assert that a locally-declared eight-element array had
+ * eight elements. Nothing it covered could fail: the subject was the copy in
+ * the test file, so the real helpers in `payroll-period-key.ts` could have been
+ * deleted and every assertion here would still have passed. It also hid a live
+ * duplication — `payroll-inputs-build.service.ts` carried a third, private copy
+ * of `periodBounds`, byte-identical to `periodBoundsFrom`, which is the one the
+ * build path actually ran. The service now imports the shared helper, and this
+ * block imports the same one.
+ */
+describe("payroll-period-key — the helpers the build path actually calls", () => {
+  it("periodBoundsFrom computes correct start and end for a given YYYY-MM key", () => {
+    expect(periodBoundsFrom("2026-07")).toEqual({ start: "2026-07-01", end: "2026-07-31" });
+    expect(periodBoundsFrom("2026-02")).toEqual({ start: "2026-02-01", end: "2026-02-28" });
+    expect(periodBoundsFrom("2024-02")).toEqual({ start: "2024-02-01", end: "2024-02-29" });
+    expect(periodBoundsFrom("2026-12")).toEqual({ start: "2026-12-01", end: "2026-12-31" });
   });
 
   it("nextMonthKey correctly advances from December to January of next year", () => {
-    function nextMonthKey(periodKey: string): string {
-      const [year, month] = periodKey.split("-").map(Number);
-      const next = new Date(year!, (month ?? 1), 1);
-      return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`;
-    }
-
     expect(nextMonthKey("2026-12")).toBe("2027-01");
     expect(nextMonthKey("2026-07")).toBe("2026-08");
     expect(nextMonthKey("2026-01")).toBe("2026-02");
+  });
+
+  it("is the only definition of these two shapes left in the payroll-inputs folder", () => {
+    const folder = path.resolve(__dirname, "..");
+    const offenders: string[] = [];
+    for (const entry of fs.readdirSync(folder, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith(".ts")) continue;
+      if (entry.name === "payroll-period-key.ts") continue;
+      const src = fs.readFileSync(path.join(folder, entry.name), "utf8");
+      if (/function\s+(periodBounds|nextMonthKey)\b/.test(src)) offenders.push(entry.name);
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe("hrPayrollInputSectionEnum — the sections the build path writes", () => {
+  it("declares eight distinct sections", () => {
+    expect(hrPayrollInputSectionEnum.enumValues).toHaveLength(8);
+    expect(new Set(hrPayrollInputSectionEnum.enumValues).size).toBe(8);
+  });
+
+  it("the build service emits a snapshot for every declared section, and no other", () => {
+    const src = fs.readFileSync(
+      path.resolve(__dirname, "..", "payroll-inputs-build.service.ts"),
+      "utf8",
+    );
+    const emitted = [...src.matchAll(/buildSnapshot\("([a-z_]+)"/g)].map((match) => match[1]);
+    expect([...emitted].sort()).toEqual([...hrPayrollInputSectionEnum.enumValues].sort());
   });
 });

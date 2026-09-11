@@ -33,7 +33,15 @@ import { LeavesWriteService } from "./leaves-write.service";
 import { WfhService } from "./wfh.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../../common/openapi/response-envelopes";
+import {
+  leavesPageDataSchema,
+  leavesMyResponseSchema,
+  leavesThisWeekItemSchema,
+  leavesCreateResponseSchema,
+} from "./dto/time-leave-response.schemas";
+import { wfhRequestRowSchema } from "./dto/time-wfh-shifts-response.schemas";
 
 const leaveIdParams = z.object({ leaveId: z.coerce.number().int().positive() }).strict();
 
@@ -48,12 +56,14 @@ export class EmployeeTimeOffController {
   ) {}
 
   @Get()
+  @ResponseSchema(leavesPageDataSchema)
   @RequirePermission("self:leaves")
   pageData(@CurrentUser() user: CurrentUserContext) {
     return this.leavesPage.pageData(user.orgId, user.userId);
   }
 
   @Get("requests")
+  @ResponseSchema(leavesMyResponseSchema)
   @RequirePermission("self:leaves")
   @Validate({ query: listLeaveRequestsSchema })
   requests(
@@ -64,6 +74,7 @@ export class EmployeeTimeOffController {
   }
 
   @Get("team-calendar")
+  @ResponseSchema(z.array(leavesThisWeekItemSchema))
   @RequirePermission("self:leaves")
   teamCalendar(@CurrentUser() user: CurrentUserContext) {
     return this.leaves.thisWeek(user.orgId);
@@ -71,6 +82,7 @@ export class EmployeeTimeOffController {
 
   @Post()
   @HttpCode(201)
+  @ResponseSchema(leavesCreateResponseSchema)
   @RequirePermission("self:leaves")
   @Validate({ body: createLeaveSchema })
   create(
@@ -82,6 +94,7 @@ export class EmployeeTimeOffController {
 
   @Patch(":leaveId/cancel")
   @BodylessAction()
+  @ResponseSchema(successSchema)
   @RequirePermission("self:leaves")
   @Validate({ params: leaveIdParams })
   async cancel(
@@ -94,6 +107,7 @@ export class EmployeeTimeOffController {
   }
 
   @Get("wfh")
+  @ResponseSchema(z.array(wfhRequestRowSchema))
   @RequirePermission("self:attendance")
   listWfh(@CurrentUser() user: CurrentUserContext) {
     return this.wfh.list(user.orgId, user.userId);
@@ -101,6 +115,7 @@ export class EmployeeTimeOffController {
 
   @Post("wfh")
   @HttpCode(201)
+  @ResponseSchema(successSchema)
   @RequirePermission("self:attendance")
   @Validate({ body: createWfhSchema })
   createWfh(

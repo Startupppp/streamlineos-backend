@@ -1,10 +1,9 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, inArray, lt } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { goals, keyResults, organizationMembers } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { applyScope } from "../../access/apply-scope";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import { formatDateOnly } from "../../../common/date";
 import type {
   CreateGoalInput,
@@ -37,18 +36,25 @@ export class PerformanceGoalsService {
     return { goals: myGoals, keyResults: allKeyResults };
   }
 
-  listGoals(orgId: string, userId: string, scope: DataScope, filterUserId?: string) {
-    const conditions = [eq(goals.orgId, orgId)];
-    conditions.push(applyScope(scope, orgId, userId, { ownerColumn: goals.userId }));
-    if (filterUserId && scope === "all") {
-      conditions.push(eq(goals.userId, filterUserId));
-    }
-
-    return this.db.query.goals.findMany({
-      where: and(...conditions),
-      orderBy: [desc(goals.createdAt)],
-      limit: 100,
-    });
+  listGoals(read: ScopedRead, filterUserId?: string) {
+    return read.read(
+      {
+        tenant: goals.orgId,
+        scope: { columns: { ownerColumn: goals.userId } },
+        and: [
+          filterUserId && read.unrestricted
+            ? eq(goals.userId, filterUserId)
+            : undefined,
+        ],
+      },
+      ({ sql: where }) =>
+        this.db.query.goals.findMany({
+          where,
+          orderBy: [desc(goals.createdAt)],
+          limit: 100,
+        }),
+      () => [],
+    );
   }
 
   async createGoal(orgId: string, input: CreateGoalInput) {
@@ -65,8 +71,8 @@ export class PerformanceGoalsService {
         targetValue: input.targetValue?.toString(),
         currentValue: (input.currentValue ?? 0).toString(),
         unit: input.unit,
-        startDate: formatDateOnly(new Date(input.startDate)),
-        endDate: formatDateOnly(new Date(input.endDate)),
+        startDate: formatDateOnly(input.startDate),
+        endDate: formatDateOnly(input.endDate),
         status: "IN_PROGRESS",
         progress: 0,
         parentGoalId: input.parentGoalId,
@@ -134,6 +140,7 @@ export class PerformanceGoalsService {
 
   async listKeyResults(orgId: string, goalId: number) {
     const goal = await this.db.query.goals.findFirst({
+      columns: { id: true },
       where: and(eq(goals.id, goalId), eq(goals.orgId, orgId)),
     });
     if (!goal) throw new NotFoundException("Goal not found.");
@@ -157,6 +164,7 @@ export class PerformanceGoalsService {
     const [kr] = await this.db
       .insert(keyResults)
       .values({
+        orgId,
         goalId: input.goalId,
         title: input.title,
         targetValue: input.targetValue?.toString(),
@@ -186,21 +194,6 @@ export class PerformanceGoalsService {
       .where(eq(keyResults.id, input.id));
 
     return { success: true };
-  }
-
-  async sweepOverdueGoals(orgId?: string) {
-    const today = new Date().toISOString().slice(0, 10);
-    const conditions = [
-      eq(goals.status, "IN_PROGRESS"),
-      lt(goals.endDate, today),
-    ];
-    if (orgId) conditions.push(eq(goals.orgId, orgId));
-    const overdueGoals = await this.db
-      .select({ id: goals.id, orgId: goals.orgId, userId: goals.userId })
-      .from(goals)
-      .where(and(...conditions))
-      .limit(500);
-    return overdueGoals;
   }
 
   private async assertOrgMember(orgId: string, userId: string): Promise<void> {

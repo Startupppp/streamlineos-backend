@@ -227,6 +227,18 @@ describe("PartyService — contact CRUD", () => {
       expect((mockDb as { update: jest.Mock }).update).not.toHaveBeenCalled();
     });
 
+    it("returns the existing contact without hitting the DB when no fields are provided (bites if reverted: empty set would throw)", async () => {
+      const existing = makeContact();
+      const { selectChain } = makeSelectChain([existing]);
+      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
+
+      const result = await svc.updateContact(ORG_ID, USER_ID, CONTACT_ID, {});
+
+      expect(result).toMatchObject({ partyContactId: CONTACT_ID });
+      expect((mockDb as { update: jest.Mock }).update).not.toHaveBeenCalled();
+      expect(mockAudit.log).not.toHaveBeenCalled();
+    });
+
     it("applies patch and audit-logs when contact exists", async () => {
       const existing = makeContact();
       const updated = makeContact({ firstName: "Jane Updated" });

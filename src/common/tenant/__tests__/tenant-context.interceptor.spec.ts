@@ -52,9 +52,13 @@ describe("TenantContextInterceptor", () => {
   });
 
   function makeHttpContext(req: object, handler = function stub() {}): ExecutionContext {
+    const fullReq = Object.assign({ on: jest.fn(), off: jest.fn() }, req);
     return {
       getType: () => "http",
-      switchToHttp: () => ({ getRequest: () => req }),
+      switchToHttp: () => ({
+        getRequest: () => fullReq,
+        getResponse: () => ({ writableEnded: false, on: jest.fn(), off: jest.fn() }),
+      }),
       getHandler: () => handler,
       getClass: () => class StubController {},
     } as unknown as ExecutionContext;
@@ -175,9 +179,13 @@ describe("TenantContextInterceptor — after-commit hooks", () => {
   });
 
   function makeHttpContext(req: object, handler = function stub() {}): ExecutionContext {
+    const fullReq = Object.assign({ on: jest.fn(), off: jest.fn() }, req);
     return {
       getType: () => "http",
-      switchToHttp: () => ({ getRequest: () => req }),
+      switchToHttp: () => ({
+        getRequest: () => fullReq,
+        getResponse: () => ({ writableEnded: false, on: jest.fn(), off: jest.fn() }),
+      }),
       getHandler: () => handler,
       getClass: () => class StubController {},
     } as unknown as ExecutionContext;

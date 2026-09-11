@@ -32,34 +32,36 @@ describe("pullFromLockedSnapshots", () => {
         }
         return {
           from: jest.fn().mockReturnValue({
-            where: jest.fn().mockResolvedValue([
-              {
-                userId: "user-1",
-                section: "attendance",
-                payload: {
-                  payableDays: 26,
-                  presentDays: 20,
-                  absentDays: 2,
-                  latePenaltyDays: 0.5,
-                  holidayWorkDays: 1,
-                  overtimeMinutes: 90,
+            where: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue([
+                {
+                  userId: "user-1",
+                  section: "attendance",
+                  payload: {
+                    payableDays: 26,
+                    presentDays: 20,
+                    absentDays: 2,
+                    latePenaltyDays: 0.5,
+                    holidayWorkDays: 1,
+                    overtimeMinutes: 90,
+                  },
                 },
-              },
-              {
-                userId: "user-1",
-                section: "leave",
-                payload: {
-                  paidLeaveDays: 2,
-                  unpaidLeaveDays: 1,
-                  halfDayCount: 1,
+                {
+                  userId: "user-1",
+                  section: "leave",
+                  payload: {
+                    paidLeaveDays: 2,
+                    unpaidLeaveDays: 1,
+                    halfDayCount: 1,
+                  },
                 },
-              },
-              {
-                userId: "user-1",
-                section: "overtime",
-                payload: { totalHours: 3 },
-              },
-            ]),
+                {
+                  userId: "user-1",
+                  section: "overtime",
+                  payload: { totalHours: 3 },
+                },
+              ]),
+            }),
           }),
         };
       }),
@@ -97,38 +99,40 @@ describe("pullCalcFromLockedSnapshots", () => {
         }
         return {
           from: jest.fn().mockReturnValue({
-            where: jest.fn().mockResolvedValue([
-              {
-                userId: "user-1",
-                section: "reimbursement",
-                payload: {
-                  items: [
-                    { id: 11, amount: "1500.00", category: "TRAVEL", source: "reimbursement" },
-                    { id: 12, amount: "200", category: "benefits_claim", source: "benefits_claim" },
-                  ],
+            where: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue([
+                {
+                  userId: "user-1",
+                  section: "reimbursement",
+                  payload: {
+                    items: [
+                      { id: 11, amount: "1500.00", category: "TRAVEL", source: "reimbursement" },
+                      { id: 12, amount: "200", category: "benefits_claim", source: "benefits_claim" },
+                    ],
+                  },
                 },
-              },
-              {
-                userId: "user-1",
-                section: "deduction",
-                payload: {
-                  activeLoans: [
-                    {
-                      id: 7,
-                      amount: "50000",
-                      emiAmount: "5000",
-                      paidEmis: 2,
-                      totalEmis: 10,
-                    },
-                  ],
+                {
+                  userId: "user-1",
+                  section: "deduction",
+                  payload: {
+                    activeLoans: [
+                      {
+                        id: 7,
+                        amount: "50000",
+                        emiAmount: "5000",
+                        paidEmis: 2,
+                        totalEmis: 10,
+                      },
+                    ],
+                  },
                 },
-              },
-              {
-                userId: "user-1",
-                section: "overtime",
-                payload: { totalHours: 4.5 },
-              },
-            ]),
+                {
+                  userId: "user-1",
+                  section: "overtime",
+                  payload: { totalHours: 4.5 },
+                },
+              ]),
+            }),
           }),
         };
       }),

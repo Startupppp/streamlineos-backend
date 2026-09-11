@@ -1,6 +1,6 @@
 import { ORG_MEMBER_ROLE_VALUES } from "../../../../common/rbac/org-roles";
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const createOrganizationSchema = z.object({
   name: z.string().min(1).max(100),
@@ -16,10 +16,10 @@ export const createOrganizationSchema = z.object({
     .trim()
     .optional()
     .transform((v) => v ?? null),
-});
+}).strict();
 
 export const listMembersSchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().min(1).max(2048).optional(),
   limit: pageSizeField(20, 100),
   search: z.string().trim().optional(),
   userIds: z
@@ -32,7 +32,7 @@ export const listMembersSchema = z.object({
     .enum(["true", "false"])
     .optional()
     .transform((v) => v === "true"),
-});
+}).strict();
 
 export const updateOrgSettingsSchema = z.object({
   name: z.string().min(1).optional(),
@@ -48,15 +48,12 @@ export const updateOrgSettingsSchema = z.object({
     .optional(),
   fiscalYearStart: z.number().int().min(1).max(12).optional(),
   directoryPublic: z.boolean().optional(),
-  mfaEnforced: z.boolean().optional(),
-  allowedEmailDomains: z.array(z.string().min(1)).optional(),
   primaryColor: z
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/)
     .nullable()
     .optional(),
   loginBgUrl: z.string().url().nullable().optional(),
-  ipAllowlist: z.array(z.string().min(1)).optional(),
   industry: z.string().min(1).nullable().optional(),
   website: z.string().url().nullable().optional(),
   legalName: z.string().min(1).nullable().optional(),
@@ -79,64 +76,64 @@ export const updateOrgSettingsSchema = z.object({
   businessHours: z
     .record(
       z.string(),
-      z.object({ open: z.string(), close: z.string(), enabled: z.boolean() }),
+      z.object({ open: z.string(), close: z.string(), enabled: z.boolean() }).strict(),
     )
     .optional(),
   companySize: z.string().min(1).nullable().optional(),
   country: z.string().min(1).nullable().optional(),
-});
+}).strict();
 
 export const securitySettingsSchema = z.object({
   mfaEnforced: z.boolean().optional(),
-  allowedEmailDomains: z.array(z.string().min(1)).optional(),
+  allowedEmailDomains: z.array(z.string().min(1).max(253)).max(100).optional(),
   maxConcurrentSessions: z.number().int().min(1).max(100).nullable().optional(),
   ipAllowlist: z.array(z.string().min(1).max(128)).max(100).optional(),
-});
+}).strict();
 
 export const updateMemberRoleSchema = z.object({
   role: z.enum(ORG_MEMBER_ROLE_VALUES),
-});
+}).strict();
 
 export const acceptInvitationSchema = z.object({
   token: z.string().min(1),
   firstName: z.string().optional(),
   lastName: z.string().optional(),
-});
+}).strict();
 
 export const declineInvitationSchema = z.object({
   token: z.string().min(1),
-});
+}).strict();
 
 export const switchOrgSchema = z.object({
   orgId: z.string().min(1),
-});
+}).strict();
 
 export const restoreOrgSchema = z.object({
   orgId: z.string().min(1),
-});
+}).strict();
 
 export const deleteOrgSchema = z.object({
   confirmation: z.string().min(1).max(200),
-});
+}).strict();
 
 export const addCustomDomainSchema = z.object({
   domain: z.string().min(1).max(253),
-});
+}).strict();
 
 export const createHolidaySchema = z.object({
   name: z.string().min(1).max(100),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   recurring: z.boolean().optional().default(false),
-});
+}).strict();
 
 export const schedulePurgeSchema = z.object({
   scheduledForDays: z.number().int().min(1).max(365).default(30),
   reason: z.string().min(1).max(500),
-});
+}).strict();
 
 export const placeLegalHoldSchema = z.object({
   reason: z.string().min(1).max(500),
-});
+}).strict();
 
 export const validateInvitationTokenQuerySchema = z
   .object({ token: z.string().min(1).max(512) })

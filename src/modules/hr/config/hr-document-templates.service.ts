@@ -4,7 +4,7 @@ import {
   Injectable,
   InternalServerErrorException,
 } from "@nestjs/common";
-import { and, desc, eq, ilike, ne } from "drizzle-orm";
+import { and, desc, eq, ilike, ne, sql } from "drizzle-orm";
 import { documentTemplates, documentTemplateVersions } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -30,7 +30,8 @@ export class HrDocumentTemplatesService {
       .select()
       .from(documentTemplates)
       .where(and(...conditions))
-      .orderBy(desc(documentTemplates.createdAt));
+      .orderBy(desc(documentTemplates.createdAt))
+      .limit(100);
   }
 
   async getById(orgId: string, id: number): Promise<TemplateRow | null> {
@@ -88,7 +89,7 @@ export class HrDocumentTemplatesService {
       const [row] = await tx
         .update(documentTemplates)
         .set({ isDefault, updatedAt: new Date() })
-        .where(eq(documentTemplates.id, existing.id))
+        .where(and(eq(documentTemplates.orgId, existing.orgId), eq(documentTemplates.id, existing.id)))
         .returning();
       return row;
     });
@@ -143,11 +144,24 @@ export class HrDocumentTemplatesService {
           ...(input.type !== undefined && { type: input.type }),
           ...(sanitizedHtmlContent !== undefined && { htmlContent: sanitizedHtmlContent }),
           ...(variables !== undefined && { variables }),
-          version: existing.version + 1,
+          version: sql`${documentTemplates.version} + 1`,
           updatedAt: new Date(),
         })
-        .where(eq(documentTemplates.id, existing.id))
+        .where(
+          and(
+            eq(documentTemplates.orgId, existing.orgId),
+            eq(documentTemplates.id, existing.id),
+            eq(documentTemplates.version, existing.version),
+          ),
+        )
         .returning();
+      // Compare-and-swap on the version this edit was based on. `existing` is read by the
+      // controller OUTSIDE this transaction, so without the predicate two concurrent edits
+      // both read version N, both write N + 1, and one edit is lost with no error. The throw
+      // is INSIDE the transaction on purpose: the archive row above must roll back with it,
+      // or a lost update leaves an orphaned version snapshot behind. Mirrors
+      // hr/lifecycle/probation.service.ts:210-228.
+      if (!row) throw new ConflictException("The template was updated by another request.");
       return row;
     });
 
@@ -181,6 +195,7 @@ export class HrDocumentTemplatesService {
       .select()
       .from(documentTemplateVersions)
       .where(and(eq(documentTemplateVersions.templateId, templateId), eq(documentTemplateVersions.orgId, orgId)))
-      .orderBy(desc(documentTemplateVersions.version));
+      .orderBy(desc(documentTemplateVersions.version))
+      .limit(100);
   }
 }

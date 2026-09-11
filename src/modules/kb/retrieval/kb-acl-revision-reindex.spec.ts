@@ -4,16 +4,16 @@ import { KbMembersService } from "../wiki/kb-members.service";
 function makeCheckpoint() {
   return {
     loadCheckpoints: jest.fn().mockResolvedValue(new Map()),
-    saveCheckpoint: jest.fn().mockResolvedValue(undefined),
+    saveCheckpoints: jest.fn().mockResolvedValue(undefined),
     clearCheckpoints: jest.fn().mockResolvedValue(undefined),
   };
 }
 
 function makeEmbeddings() {
   return {
-    isConfigured: jest.fn().mockReturnValue(false),
-    embedQuery: jest.fn(),
-    toVectorLiteral: jest.fn(),
+    isEmbeddingConfigured: jest.fn().mockReturnValue(false),
+    embedQueryWithCredit: jest.fn(),
+    embedBatchWithCredit: jest.fn(),
   };
 }
 
@@ -68,12 +68,15 @@ describe("KbIndexingService.syncAclRevisionForSpace — chunk aclRevision sync",
     expect(articleSyncCall).toContain("org-y");
   });
 
-  it("bites: removing the execute calls makes the assertion fail", () => {
-    expect(true).toBe(true);
-  });
 });
 
-describe("KbMembersService.remove — triggers chunk aclRevision sync after member removal", () => {
+describe("KbMembersService — a membership ACL change always reaches the chunk aclRevision sync", () => {
+  function makeRealIndexing(db: unknown) {
+    const indexing = new KbIndexingService(db as never, makeEmbeddings() as never, makeCheckpoint() as never);
+    const syncSpy = jest.spyOn(indexing, "syncAclRevisionForSpace").mockResolvedValue(undefined);
+    return { indexing, syncSpy };
+  }
+
   function makeMembersDb(member: Record<string, unknown>) {
     const updateChain = {
       set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
@@ -99,12 +102,13 @@ describe("KbMembersService.remove — triggers chunk aclRevision sync after memb
     };
     const db = makeMembersDb(member);
     const access = { invalidateAccessibleSpaceIds: jest.fn().mockResolvedValue(undefined) };
-    const indexing = { syncAclRevisionForSpace: jest.fn().mockResolvedValue(undefined) };
+    const { indexing, syncSpy } = makeRealIndexing(db);
 
-    const svc = new KbMembersService(db as never, access as never, indexing as never);
+    const svc = new KbMembersService(db as never, access as never, indexing);
     await svc.remove("org-1", 3, 20);
 
-    expect(indexing.syncAclRevisionForSpace).toHaveBeenCalledWith("org-1", 3);
+    expect(syncSpy).toHaveBeenCalledWith("org-1", 3);
+    expect(db.update).toHaveBeenCalledTimes(2);
   });
 
   it("calls indexing.syncAclRevisionForSpace after adding a member", async () => {
@@ -121,11 +125,12 @@ describe("KbMembersService.remove — triggers chunk aclRevision sync after memb
       execute: jest.fn().mockResolvedValue([]),
     };
     const access = { invalidateAccessibleSpaceIds: jest.fn().mockResolvedValue(undefined) };
-    const indexing = { syncAclRevisionForSpace: jest.fn().mockResolvedValue(undefined) };
+    const { indexing, syncSpy } = makeRealIndexing(db);
 
-    const svc = new KbMembersService(db as never, access as never, indexing as never);
+    const svc = new KbMembersService(db as never, access as never, indexing);
     await svc.add("org-2", 5, { spaceRole: "viewer" });
 
-    expect(indexing.syncAclRevisionForSpace).toHaveBeenCalledWith("org-2", 5);
+    expect(syncSpy).toHaveBeenCalledWith("org-2", 5);
+    expect(db.update).toHaveBeenCalledTimes(2);
   });
 });

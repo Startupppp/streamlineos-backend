@@ -32,6 +32,11 @@ import {
 } from "./dto/document-templates.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  documentTemplateRowSchema,
+  documentTemplatePreviewSchema,
+} from "./dto/config-response.schemas";
 import { z } from "zod";
 
 const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
@@ -43,6 +48,7 @@ export class HrDocumentTemplatesController {
   constructor(private readonly templates: HrDocumentTemplatesService) {}
 
   @Get()
+  @ResponseSchema(z.array(documentTemplateRowSchema))
   @RequirePermission("hr:documents:view")
   @Validate({ query: templateListQuerySchema })
   list(
@@ -53,6 +59,7 @@ export class HrDocumentTemplatesController {
   }
 
   @Post()
+  @ResponseSchema(documentTemplateRowSchema)
   @RequirePermission("hr:documents:manage")
   @HttpCode(201)
   @Validate({ body: createTemplateSchema })
@@ -64,6 +71,7 @@ export class HrDocumentTemplatesController {
   }
 
   @Get(":templateId")
+  @ResponseSchema(documentTemplateRowSchema)
   @RequirePermission("hr:documents:view")
   @Validate({ params: templateIdParams })
   async getOne(
@@ -76,6 +84,7 @@ export class HrDocumentTemplatesController {
   }
 
   @Get(":templateId/preview")
+  @ResponseSchema(documentTemplatePreviewSchema)
   @RequirePermission("hr:documents:view")
   @Validate({ params: templateIdParams })
   async preview(
@@ -88,6 +97,7 @@ export class HrDocumentTemplatesController {
   }
 
   @Get(":templateId/versions")
+  @ResponseSchema(z.array(documentTemplateRowSchema))
   @RequirePermission("hr:documents:view")
   @Validate({ params: templateIdParams })
   async versions(
@@ -100,6 +110,7 @@ export class HrDocumentTemplatesController {
   }
 
   @Patch(":templateId")
+  @ResponseSchema(documentTemplateRowSchema)
   @RequirePermission("hr:documents:manage")
   @Validate({ params: templateIdParams, body: setDefaultTemplateSchema })
   async setDefault(
@@ -113,6 +124,7 @@ export class HrDocumentTemplatesController {
   }
 
   @Put(":templateId")
+  @ResponseSchema(documentTemplateRowSchema)
   @RequirePermission("hr:documents:manage")
   @Validate({ params: templateIdParams, body: updateTemplateSchema })
   async update(
@@ -126,6 +138,7 @@ export class HrDocumentTemplatesController {
   }
 
   @Delete(":templateId")
+  @NoContentResponse()
   @HttpCode(204)
   @RequirePermission("hr:documents:manage")
   @Validate({ params: templateIdParams })

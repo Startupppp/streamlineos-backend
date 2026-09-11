@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, inArray, lte } from "drizzle-orm";
+import { and, eq, inArray, isNull, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { hrWorkflowDelegations } from "../../../db/schema/hr/workflow-engine";
@@ -10,6 +10,10 @@ import { AccessService } from "../../access/access.service";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
 import type { HrWorkflowObjectType, ResolvedStep } from "./hr-workflow-engine.types";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object";
+}
 
 @Injectable()
 export class HrWorkflowApproverService {
@@ -43,7 +47,7 @@ export class HrWorkflowApproverService {
           .select({ headUserId: organizationMembers.userId })
           .from(orgUnits)
           .leftJoin(organizationMembers, eq(organizationMembers.id, orgUnits.headMembershipId))
-          .where(eq(orgUnits.id, facts.departmentId))
+          .where(and(eq(orgUnits.id, facts.departmentId), eq(orgUnits.orgId, orgId), isNull(orgUnits.deletedAt)))
           .limit(1);
         return dept?.headUserId ? [dept.headUserId] : [];
       }
@@ -107,8 +111,8 @@ export class HrWorkflowApproverService {
     const parts = expression.split(".");
     let value: unknown = employee;
     for (const part of parts.slice(1)) {
-      if (value !== null && typeof value === "object" && part in (value as Record<string, unknown>)) {
-        value = (value as Record<string, unknown>)[part];
+      if (isRecord(value) && part in value) {
+        value = value[part];
       } else {
         value = undefined;
         break;
@@ -121,12 +125,13 @@ export class HrWorkflowApproverService {
 
   async resolveEffectiveActor(
     orgId: string,
-    actorUserId: string,
+    actorMembershipId: number,
     resolvedApprovers: string[],
     _: string,
     objectType: HrWorkflowObjectType,
   ): Promise<string | null> {
-    if (resolvedApprovers.includes(actorUserId)) return actorUserId;
+    const resolvedApproverMembershipIds = await this.membershipIdsForUsers(orgId, resolvedApprovers);
+    if (resolvedApproverMembershipIds.includes(actorMembershipId)) return "authorized";
 
     const now = new Date();
     const delegations = await this.db.select()
@@ -134,7 +139,7 @@ export class HrWorkflowApproverService {
       .where(
         and(
           eq(hrWorkflowDelegations.orgId, orgId),
-          eq(hrWorkflowDelegations.delegateUserId, actorUserId),
+          eq(hrWorkflowDelegations.delegateMembershipId, actorMembershipId),
           eq(hrWorkflowDelegations.active, true),
           lte(hrWorkflowDelegations.startsAt, now),
         ),
@@ -144,9 +149,24 @@ export class HrWorkflowApproverService {
     const validDelegations = delegations.filter((d) => {
       if (d.endsAt < now) return false;
       if (d.objectType !== null && d.objectType !== objectType) return false;
-      return resolvedApprovers.includes(d.delegatorUserId);
+      return d.delegatorMembershipId != null
+        && resolvedApproverMembershipIds.includes(d.delegatorMembershipId);
     });
 
-    return validDelegations.length > 0 ? actorUserId : null;
+    return validDelegations.length > 0 ? "authorized" : null;
+  }
+
+  private async membershipIdsForUsers(orgId: string, userIds: string[]): Promise<number[]> {
+    if (userIds.length === 0) return [];
+    const uniqueUserIds = [...new Set(userIds)];
+    const members = await this.db
+      .select({ membershipId: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(
+        eq(organizationMembers.orgId, orgId),
+        inArray(organizationMembers.userId, uniqueUserIds),
+      ))
+      .limit(uniqueUserIds.length);
+    return members.map((member) => member.membershipId);
   }
 }

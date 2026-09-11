@@ -327,7 +327,7 @@ export class ModuleStandingMutationsService {
       this.cache.invalidate(CACHE_KEYS.moduleOwnershipsList(actor.orgId)),
       this.cache.invalidate(CACHE_KEYS.moduleOwnershipDetail(actor.orgId, moduleKey)),
       this.cache.invalidate(CACHE_KEYS.moduleAccessOwnership(actor.orgId, moduleKey)),
-      this.cache.invalidateNamespace(`ownership:transfers:${actor.orgId}`),
+      this.cache.invalidateNamespaceForOrg(actor.orgId, "ownership:transfers"),
     ]);
 
     this.audit.log({

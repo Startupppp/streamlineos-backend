@@ -10,7 +10,7 @@ function primitiveValues(value: unknown, seen = new WeakSet<object>()): unknown[
 describe("queryPrivilegedRoleNames — tenant join", () => {
   it("correlates roles and assignments by org_id as well as role id", async () => {
     const joinPredicates: unknown[] = [];
-    const where = jest.fn().mockResolvedValue([]);
+    const where = jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) });
     const innerJoin = jest.fn((_table: unknown, predicate: unknown) => {
       joinPredicates.push(predicate);
       return { where };

@@ -29,7 +29,7 @@ export const kbPages = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    spaceId: integer("space_id").references(() => kbSpaces.id, { onDelete: "set null" }),
+    spaceId: integer("space_id"),
     parentPageId: integer("parent_page_id"),
     title: text("title").notNull().default(""),
     icon: text("icon"),
@@ -64,23 +64,18 @@ export const kbPages = pgTable(
     verifiedUntil: timestamp("verified_until", { withTimezone: true }),
     nextReviewAt: timestamp("next_review_at", { withTimezone: true }),
     publicSlug: text("public_slug"),
-    sourceArticleId: integer("source_article_id").references(() => kbArticles.id, { onDelete: "set null" }),
-    projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
+    sourceArticleId: integer("source_article_id"),
+    projectId: integer("project_id"),
   },
   (table) => [
-    foreignKey({
-      columns: [table.parentPageId],
-      foreignColumns: [table.id],
-      name: "fk_kb_pages_parent",
-    }).onDelete("set null"),
-    index("idx_kb_pages_org_parent_sort").on(table.orgId, table.parentPageId, table.sortOrder),
+    index("idx_kb_pages_org_parent_sort").on(table.orgId, table.parentPageId, table.sortOrder).where(sql`deleted_at IS NULL`),
     index("idx_kb_pages_project_id").on(table.projectId),
     index("idx_kb_pages_org_deleted").on(table.orgId, table.deletedAt),
-    index("idx_kb_pages_org_updated").on(table.orgId, table.updatedAt),
+    index("idx_kb_pages_org_updated").on(table.orgId, table.updatedAt).where(sql`deleted_at IS NULL`),
     index("idx_kb_pages_parent").on(table.parentPageId),
     uniqueIndex("uniq_kb_pages_public_token").on(table.publicToken),
-    index("idx_kb_pages_org_status").on(table.orgId, table.status),
-    index("idx_kb_pages_org_next_review").on(table.orgId, table.nextReviewAt),
+    index("idx_kb_pages_org_status").on(table.orgId, table.status).where(sql`deleted_at IS NULL`),
+    index("idx_kb_pages_org_next_review").on(table.orgId, table.nextReviewAt).where(sql`deleted_at IS NULL AND next_review_at IS NOT NULL`),
     uniqueIndex("uniq_kb_pages_org_public_slug").on(table.orgId, table.publicSlug).where(sql`${table.publicSlug} IS NOT NULL`),
     uniqueIndex("uniq_kb_pages_org_source_article").on(table.orgId, table.sourceArticleId).where(sql`${table.sourceArticleId} IS NOT NULL`),
     index("idx_kb_pages_fts").using("gin", table.fts),
@@ -96,11 +91,11 @@ export const kbPages = pgTable(
     foreignKey({ columns: [table.orgId, table.parentPageId], foreignColumns: [table.orgId, table.id], name: "fk_kb_pages_org_parent" }),
     foreignKey({ columns: [table.orgId, table.sourceArticleId], foreignColumns: [kbArticles.orgId, kbArticles.id], name: "fk_kb_pages_org_source_article" }).onDelete("set null"),
     foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_kb_pages_org_project" }).onDelete("set null"),
-    foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_pages_org_created_membership" }),
-    foreignKey({ columns: [table.orgId, table.lastEditedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_pages_org_edited_membership" }),
-    foreignKey({ columns: [table.orgId, table.deletedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_pages_org_deleted_membership" }),
-    foreignKey({ columns: [table.orgId, table.ownerMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_pages_org_owner_membership" }),
-    foreignKey({ columns: [table.orgId, table.verifiedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_pages_org_verified_membership" }),
+    foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_pages_org_created_membership" }).onDelete("set null"),
+    foreignKey({ columns: [table.orgId, table.lastEditedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_pages_org_edited_membership" }).onDelete("set null"),
+    foreignKey({ columns: [table.orgId, table.deletedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_pages_org_deleted_membership" }).onDelete("set null"),
+    foreignKey({ columns: [table.orgId, table.ownerMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_pages_org_owner_membership" }).onDelete("set null"),
+    foreignKey({ columns: [table.orgId, table.verifiedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_pages_org_verified_membership" }).onDelete("set null"),
   ],
 );
 
@@ -109,7 +104,7 @@ export const kbPageFavorites = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    pageId: integer("page_id").references(() => kbPages.id, { onDelete: "cascade" }).notNull(),
+    pageId: integer("page_id").notNull(),
     userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
     membershipId: integer("membership_id"),
     sortOrder: integer("sort_order").default(0),
@@ -122,7 +117,7 @@ export const kbPageFavorites = pgTable(
     index("idx_kb_page_favorites_org_membership_sort").on(table.orgId, table.membershipId, table.sortOrder, table.createdAt),
     unique("uniq_kb_page_favorites_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.pageId], foreignColumns: [kbPages.orgId, kbPages.id], name: "fk_kb_page_favorites_org_page" }),
-    foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_page_favorites_org_membership" }),
+    foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_page_favorites_org_membership" }).onDelete("cascade"),
   ],
 );
 
@@ -131,7 +126,7 @@ export const kbPageVisits = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    pageId: integer("page_id").references(() => kbPages.id, { onDelete: "cascade" }).notNull(),
+    pageId: integer("page_id").notNull(),
     userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
     membershipId: integer("membership_id"),
     visitedAt: timestamp("visited_at").defaultNow().notNull(),
@@ -143,7 +138,7 @@ export const kbPageVisits = pgTable(
     index("idx_kb_page_visits_org_membership_visited").on(table.orgId, table.membershipId, table.visitedAt),
     unique("uniq_kb_page_visits_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.pageId], foreignColumns: [kbPages.orgId, kbPages.id], name: "fk_kb_page_visits_org_page" }),
-    foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_page_visits_org_membership" }),
+    foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_page_visits_org_membership" }).onDelete("cascade"),
   ],
 );
 
@@ -152,8 +147,8 @@ export const kbPageLinks = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    sourcePageId: integer("source_page_id").references(() => kbPages.id, { onDelete: "cascade" }).notNull(),
-    targetPageId: integer("target_page_id").references(() => kbPages.id, { onDelete: "cascade" }),
+    sourcePageId: integer("source_page_id").notNull(),
+    targetPageId: integer("target_page_id"),
     targetType: text("target_type").notNull().default("page"),
     targetId: text("target_id"),
     label: text("label"),
@@ -161,6 +156,9 @@ export const kbPageLinks = pgTable(
   },
   (table) => [
     uniqueIndex("uniq_kb_page_links_source_target").on(table.sourcePageId, table.targetPageId),
+    uniqueIndex("uniq_kb_page_links_org_source_record")
+      .on(table.orgId, table.sourcePageId, table.targetType, table.targetId)
+      .where(sql`${table.targetId} IS NOT NULL`),
     index("idx_kb_page_links_org_target").on(table.orgId, table.targetPageId),
     unique("uniq_kb_page_links_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.sourcePageId], foreignColumns: [kbPages.orgId, kbPages.id], name: "fk_kb_page_links_org_source" }),

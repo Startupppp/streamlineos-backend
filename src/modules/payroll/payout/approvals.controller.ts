@@ -26,7 +26,12 @@ import {
   type RejectActionInput,
 } from "./dto/payout.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  submitApprovalResponseSchema,
+  approvalListSchema,
+  approvalActionResponseSchema,
+} from "./dto/payout-response.schemas";
 import { z } from "zod";
 
 const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
@@ -46,6 +51,7 @@ export class PayrollPayoutApprovalsController {
   @HttpCode(200)
   @RequirePermission("payroll:runs:update")
   @Validate({ params: runIdParams })
+  @ResponseSchema(submitApprovalResponseSchema)
   async submitApproval(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -77,6 +83,7 @@ export class PayrollPayoutApprovalsController {
   @Get("approvals")
   @RequirePermission("payroll:runs:view")
   @Validate({ params: runIdParams })
+  @ResponseSchema(approvalListSchema)
   listApprovals(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -88,6 +95,7 @@ export class PayrollPayoutApprovalsController {
   @HttpCode(200)
   @RequirePermission("payroll:runs:approve")
   @Validate({ params: runAndApprovalIdParams, body: approvalActionSchema })
+  @ResponseSchema(approvalActionResponseSchema)
   async approveStage(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("approvalId", ParseIntPipe) approvalId: number,
@@ -122,6 +130,7 @@ export class PayrollPayoutApprovalsController {
   @HttpCode(200)
   @RequirePermission("payroll:runs:approve")
   @Validate({ params: runAndApprovalIdParams, body: rejectActionSchema })
+  @ResponseSchema(approvalActionResponseSchema)
   async rejectStage(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("approvalId", ParseIntPipe) approvalId: number,

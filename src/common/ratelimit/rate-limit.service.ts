@@ -17,6 +17,19 @@ const TIERS: Record<string, Tier> = {
   "auth:magic-link-verify": { limit: 60, windowSecs: 60 },
   "auth:email-otp": { limit: 3, windowSecs: 600 },
   "auth:email-otp-verify": { limit: 10, windowSecs: 600 },
+  // TOTP has a 30s step and otplib accepts one step either side, so a code stays
+  // valid long enough for an unthrottled loop to walk a meaningful slice of the
+  // 10^6 space. Keyed per user, not per IP.
+  "auth:mfa-verify": { limit: 10, windowSecs: 300 },
+  // The three INTERNAL_API_SECRET routes. They were the only @Public() routes on
+  // auth.controller.ts with no limiter at all, so a leaked shared secret minted
+  // sessions unbounded. Keyed on the SUBJECT, not the source: the caller is the
+  // web tier, so every request shares one server IP and a per-IP tier would be a
+  // single global bucket. Generous enough that no real user reaches them.
+  "auth:google": { limit: 10, windowSecs: 60 },
+  "auth:session-exchange": { limit: 300, windowSecs: 60 },
+  "auth:session-data": { limit: 300, windowSecs: 60 },
+  "auth:mfa-disable": { limit: 10, windowSecs: 300 },
   // Provider bounce/complaint callbacks. Generous — a real provider can burst — but
   // bounded so an attacker who obtains the signing secret cannot flood the write path.
   "webhook:email": { limit: 600, windowSecs: 60 },
@@ -57,7 +70,6 @@ const TIERS: Record<string, Tier> = {
   "public:roadmap-feedback": { limit: 5, windowSecs: 3600 },
   "chat:send-message": { limit: 30, windowSecs: 60 },
   "chat:huddle": { limit: 20, windowSecs: 60 },
-  "chat:huddle-signal": { limit: 240, windowSecs: 60 },
   "chat:huddle-heartbeat": { limit: 10, windowSecs: 60 },
   "whiteboard:public-view": { limit: 60, windowSecs: 60 },
   "whiteboard:public-edit": { limit: 30, windowSecs: 60 },
@@ -84,8 +96,20 @@ const TIERS: Record<string, Tier> = {
   "sign:public-otp-request": { limit: 5, windowSecs: 3600 },
   "sign:public-complete": { limit: 10, windowSecs: 60 },
   "sign:bulk-send-create": { limit: 5, windowSecs: 3600 },
+  // A "send me a test" button on a template preview. It used to take an
+  // arbitrary destination with no limiter, so one holder of
+  // settings:email-templates:manage could aim the platform sender anywhere,
+  // repeatedly. The destination is now the caller's own address; 5/hour is
+  // ample for a person checking a template and useless for a flood.
+  "settings:email-template-test": { limit: 5, windowSecs: 3600 },
   "mail:send": { limit: 30, windowSecs: 60 },
   "mail:reply": { limit: 30, windowSecs: 60 },
+  // An arbitrary To:, an arbitrary subject and arbitrary HTML, sent from the
+  // platform's own sender. Its sibling settings/email-templates/test has been
+  // limited since it could aim the sender anywhere; this route could do the same
+  // thing with a free-form body and carried no limiter at all. 60/hour is more
+  // than a recruiter working a pipeline needs and far short of a flood.
+  "hr:communications-send": { limit: 60, windowSecs: 3600 },
   "hr:attendance-report": { limit: 5, windowSecs: 3600 },
   "hr:employee-backfill": { limit: 3, windowSecs: 3600 },
   "hr:employee-bulk-onboard": { limit: 10, windowSecs: 3600 },
@@ -115,11 +139,26 @@ const TIERS: Record<string, Tier> = {
   // Checkout creates a provider order; 5/hour per user prevents order flooding
   // while leaving headroom for legitimate retries with different plans.
   "billing:checkout": { limit: 5, windowSecs: 3600 },
+  // Confirmation submits a provider signature, so it is the one billing write an
+  // attacker can replay against. Looser than checkout because a network blip during
+  // payment is normal and a blocked confirmation strands a paid customer.
+  "billing:confirm": { limit: 20, windowSecs: 3600 },
   // Vector ANN search under RLS is the highest-cost read in the system.
   // 30 calls/min per user matches the AI chat tier and leaves room for typeahead
   // without letting a single user monopolise the embedding + ANN budget.
   "search:global": { limit: 30, windowSecs: 60 },
   "public:job-apply": { limit: 3, windowSecs: 3600 },
+  // POST /csat/:surveyId/responses is @Public and unauthenticated, and it is the
+  // SECOND CSAT submit surface in the repository. The first, support-csat, is
+  // "support:csat-submit" at 5/hour; this one carried nothing, so a survey id is
+  // an unbounded write. Matched to the sibling rather than invented.
+  "csat:submit": { limit: 5, windowSecs: 3600 },
+  // POST /internal/audit is the FOURTH INTERNAL_API_SECRET route. The other three
+  // (auth:google, auth:session-exchange, auth:session-data) were limited precisely
+  // because a leaked shared secret is otherwise unbounded; this one was missed, so
+  // a leaked secret floods the audit log. Webhook order, because a real internal
+  // caller bursts: the same 600/60 as "webhook:email" and "billing:webhook".
+  "internal:audit": { limit: 600, windowSecs: 60 },
   "public:referrer-register": { limit: 3, windowSecs: 3600 },
   "public:intake": { limit: 5, windowSecs: 3600 },
   "public:form-submit": { limit: 5, windowSecs: 3600 },

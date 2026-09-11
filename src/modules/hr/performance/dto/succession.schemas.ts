@@ -6,7 +6,7 @@ const READINESS = ["ready_now", "1_2_years", "3_plus"] as const;
 export const successionListSchema = z.object({
   cursor: z.string().max(500).optional(),
   limit: pageSizeField(30, 100),
-});
+}).strict();
 
 export const createSuccessionPlanSchema = z.object({
   roleName: z
@@ -21,7 +21,7 @@ export const createSuccessionPlanSchema = z.object({
   successorId: z.string().trim().min(1, "Successor is required"),
   readiness: z.enum(READINESS).optional().default("ready_now"),
   note: z.string().trim().max(2000, "Note must be at most 2000 characters").nullable().optional(),
-}).refine((d) => !d.incumbentId || d.incumbentId !== d.successorId, {
+}).strict().refine((d) => !d.incumbentId || d.incumbentId !== d.successorId, {
   message: "Incumbent and successor must be different people",
   path: ["incumbentId"],
 });
@@ -33,7 +33,7 @@ export const updateSuccessionPlanSchema = z.object({
   successorId: z.string().trim().min(1).optional(),
   readiness: z.enum(READINESS).optional(),
   note: z.string().trim().max(2000, "Note must be at most 2000 characters").nullable().optional(),
-});
+}).strict();
 
 export type CreateSuccessionPlanInput = z.infer<typeof createSuccessionPlanSchema>;
 export type UpdateSuccessionPlanInput = z.infer<typeof updateSuccessionPlanSchema>;

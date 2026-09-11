@@ -4,7 +4,10 @@ import { SupportCustomFieldsService } from "./support-custom-fields.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { drizzlePostgresError, drizzleUniqueViolation } from "../../../test/postgres-error-fixture";
 
+const mockTicketFindFirst = jest.fn().mockResolvedValue({ id: 42 });
+
 const mockDb = {
+  query: { supportTickets: { findFirst: mockTicketFindFirst } },
   insert: jest.fn().mockReturnThis(),
   values: jest.fn().mockReturnThis(),
   onConflictDoUpdate: jest.fn().mockResolvedValue(undefined),
@@ -25,6 +28,7 @@ describe("SupportCustomFieldsService", () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockTicketFindFirst.mockResolvedValue({ id: 42 });
     mockDb.returning.mockResolvedValue([{ id: 1 }]);
     mockDb.onConflictDoUpdate.mockResolvedValue(undefined);
     mockDb.where.mockReturnThis();
@@ -161,6 +165,12 @@ describe("SupportCustomFieldsService", () => {
   });
 
   describe("getFieldValues", () => {
+    it("refuses a ticket outside the caller's org", async () => {
+      mockTicketFindFirst.mockResolvedValueOnce(undefined);
+
+      await expect(service.getFieldValues("org1", 42)).rejects.toThrow(NotFoundException);
+    });
+
     it("joins values with their field definitions", async () => {
       mockDb.where.mockResolvedValueOnce([
         { fieldId: 1, value: "ORD-1", key: "order_number", label: "Order #", fieldType: "text" },

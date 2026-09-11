@@ -8,8 +8,9 @@ import {
   index,
   unique,
   foreignKey,
+  jsonb,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { organizations, organizationMembers } from "./auth";
 
 export const calendarEvents = pgTable(
@@ -42,6 +43,7 @@ export const calendarEvents = pgTable(
     reminder15MinSent: boolean("reminder_15min_sent").default(false).notNull(),
     integrationConnectionId: integer("integration_connection_id"),
     externalEventId: text("external_event_id"),
+    localVersion: integer("local_version").default(0).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -90,7 +92,6 @@ export const eventAttendees = pgTable(
       table.eventId,
       table.membershipId,
     ),
-    index("idx_event_attendees_org_event").on(table.orgId, table.eventId),
     index("idx_event_attendees_membership_id").on(
       table.orgId,
       table.membershipId,
@@ -133,3 +134,29 @@ export const eventAttendeesRelations = relations(eventAttendees, ({ one }) => ({
     references: [organizationMembers.id],
   }),
 }));
+
+export const calendarProviderSyncQueue = pgTable(
+  "calendar_provider_sync_queue",
+  {
+    id: serial("id").primaryKey(),
+    orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+    eventId: integer("event_id"),
+    connectionId: integer("connection_id").notNull(),
+    operation: text("operation").$type<"create" | "update" | "delete">().notNull(),
+    externalEventId: text("external_event_id"),
+    payload: jsonb("payload").$type<Record<string, unknown>>().default({}).notNull(),
+    state: text("state").$type<"PENDING" | "IN_FLIGHT" | "PROCESSED" | "FAILED">().default("PENDING").notNull(),
+    attemptCount: integer("attempt_count").default(0).notNull(),
+    lastError: text("last_error"),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    eventLocalVersion: integer("event_local_version"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("idx_cal_provider_sync_queue_pending")
+      .on(table.state, table.id)
+      .where(sql`state IN ('PENDING','IN_FLIGHT')`),
+    index("idx_cal_provider_sync_queue_org").on(table.orgId, table.state),
+  ],
+);

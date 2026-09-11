@@ -11,6 +11,6 @@ export const upsertCalibrationEntrySchema = z.object({
   preRating: ratingString,
   postRating: ratingString,
   note: z.string().trim().max(2000, "Note must be at most 2000 characters").optional(),
-});
+}).strict();
 
 export type UpsertCalibrationEntryInput = z.infer<typeof upsertCalibrationEntrySchema>;

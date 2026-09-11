@@ -1,7 +1,7 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { eq, and, desc, sql, count, or } from "drizzle-orm";
-import type { DataScope } from "../access/access.types";
-import { applyClientAccountsScope } from "./client-accounts-scope";
+import type { ScopedRead } from "../access/scoped-read";
+import { CLIENT_ACCOUNTS_SCOPE, clientAccountWhere } from "./client-accounts-scope";
 import { Redis } from "@upstash/redis";
 import { clientAccounts, clientAccountActivities } from "../../db/schema";
 import { businessParties } from "../../db/schema/party";
@@ -9,6 +9,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { REDIS } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
+import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { ClientsEmailService } from "./clients-email.service";
 import type {
   CreateActivityInput,
@@ -33,8 +34,9 @@ import { updateClientStatus, type ClientInvestmentDeps } from "./lib/client-inve
  *
  * `lib/client-account-backfill.ts` holds the work that runs BESIDE a request:
  * opening accounts for converted leads and sharing unowned ones out round-robin,
- * fired off the list read with `void` behind a Redis lock, catching and logging
- * every failure so the list still renders. Everything below throws at the caller.
+ * behind a Redis lock, deferred off the list read until that read's transaction
+ * commits so a failing maintenance write cannot abort the read it rode in on.
+ * Everything below throws at the caller.
  *
  * `lib/client-investment.ts` holds the status change that pays somebody — the
  * only write here that fans out into incentives, notifications, an audit entry
@@ -64,76 +66,77 @@ export class ClientAccountsService {
     };
   }
 
-  async getClientAccounts(
-    orgId: string,
-    scope: DataScope,
-    userId: string,
-    filters: ListAccountsInput,
-  ) {
-    void tryBackfill(this.backfillDeps, orgId, userId);
+  async getClientAccounts(read: ScopedRead, filters: ListAccountsInput) {
+    const orgId = read.orgId;
+    // After the request's transaction commits: fired into it, a failing backfill
+    // aborted the transaction and every later statement of this read answered 25P02.
+    const backfill = () => tryBackfill(this.backfillDeps, orgId, read.actorId);
+    if (!registerAfterCommit(backfill)) await backfill();
 
-    const f = [eq(clientAccounts.orgId, orgId)];
-    if (scope !== "all") f.push(applyClientAccountsScope(scope, orgId, userId));
-    if (filters.status) f.push(eq(clientAccounts.status, filters.status));
-    if (filters.search) {
-      const s = `%${filters.search}%`;
-      f.push(
-        or(
-          sql`${clientAccounts.clientName} ILIKE ${s}`,
-          sql`${clientAccounts.clientEmail} ILIKE ${s}`,
-          sql`${clientAccounts.clientPhone} ILIKE ${s}`,
-        )!,
-      );
-    }
-
+    const search = filters.search ? `%${filters.search}%` : undefined;
     const page = filters.page ?? 1;
     const limit = filters.limit ?? 25;
     const offset = (page - 1) * limit;
+    const empty = { accounts: [], totalCount: 0, page, totalPages: 0 };
 
-    const [items, [countResult]] = await Promise.all([
-      this.db.query.clientAccounts.findMany({
-        where: and(...f),
-        orderBy: [desc(clientAccounts.createdAt)],
-        limit,
-        offset,
-        with: {
-          salesRep: { columns: { id: true, name: true, image: true } },
-          assignedCrm: { columns: { id: true, name: true, image: true } },
-        },
-      }),
-      this.db.select({ count: count() }).from(clientAccounts).where(and(...f)),
-    ]);
-
-    return {
-      accounts: items,
-      totalCount: countResult?.count ?? 0,
-      page,
-      totalPages: Math.ceil((countResult?.count ?? 0) / limit),
-    };
-  }
-
-  getClientAccount(orgId: string, id: number, scope: DataScope = "all", userId?: string) {
-    return this.loadClientAccount(orgId, id, scope, userId);
-  }
-
-  private async loadClientAccount(
-    orgId: string,
-    id: number,
-    scope: DataScope = "all",
-    userId?: string,
-  ) {
-    const conditions = [eq(clientAccounts.id, id), eq(clientAccounts.orgId, orgId)];
-    if (scope !== "all" && userId) {
-      conditions.push(applyClientAccountsScope(scope, orgId, userId));
-    }
-
-    const account = await this.db.query.clientAccounts.findFirst({
-      where: and(...conditions),
-      with: {
-        salesRep: { columns: { id: true, name: true, image: true, email: true } },
-        assignedCrm: { columns: { id: true, name: true, image: true, email: true } },
+    return read.read(
+      {
+        tenant: clientAccounts.orgId,
+        scope: CLIENT_ACCOUNTS_SCOPE,
+        and: [
+          filters.status ? eq(clientAccounts.status, filters.status) : undefined,
+          search
+            ? or(
+                sql`${clientAccounts.clientName} ILIKE ${search}`,
+                sql`${clientAccounts.clientEmail} ILIKE ${search}`,
+                sql`${clientAccounts.clientPhone} ILIKE ${search}`,
+              )
+            : undefined,
+        ],
       },
-    });
+      async ({ sql: where }) => {
+        const [items, [countResult]] = await Promise.all([
+          this.db.query.clientAccounts.findMany({
+            where,
+            orderBy: [desc(clientAccounts.createdAt)],
+            limit,
+            offset,
+            with: {
+              salesRep: { columns: { id: true, name: true, image: true } },
+              assignedCrm: { columns: { id: true, name: true, image: true } },
+            },
+          }),
+          this.db.select({ count: count() }).from(clientAccounts).where(where),
+        ]);
+        return {
+          accounts: items,
+          totalCount: countResult?.count ?? 0,
+          page,
+          totalPages: Math.ceil((countResult?.count ?? 0) / limit),
+        };
+      },
+      () => empty,
+    );
+  }
+
+  getClientAccount(read: ScopedRead, id: number) {
+    return this.loadClientAccount(read, id);
+  }
+
+  private async loadClientAccount(read: ScopedRead, id: number) {
+    const orgId = read.orgId;
+    const account = await read.read(
+      { tenant: clientAccounts.orgId, scope: CLIENT_ACCOUNTS_SCOPE, and: [eq(clientAccounts.id, id)] },
+      ({ sql: where }) =>
+        this.db.query.clientAccounts.findFirst({
+          where,
+          with: {
+            salesRep: { columns: { id: true, name: true, image: true, email: true } },
+            assignedCrm: { columns: { id: true, name: true, image: true, email: true } },
+          },
+        }),
+      () => undefined,
+    );
     if (!account) return null;
 
     /*
@@ -191,24 +194,16 @@ export class ClientAccountsService {
    * An activity carries a title, a free-text description and a metadata blob
    * about a named customer, so the trail is the account in narrative form.
    *
-   * The empty array on a miss is deliberate and unchanged: it is the same answer
-   * an account with no activities gives and the same answer another org's
-   * account gives, so this is not an oracle for which accounts exist.
+   * A miss is a 404, and it is the same 404 an account in another organisation
+   * or outside the caller's scope gives, so this is not an oracle for which
+   * accounts exist.
    */
-  async getClientActivities(
-    orgId: string,
-    clientAccountId: number,
-    scope: DataScope,
-    userId: string,
-  ) {
-    const conditions = [eq(clientAccounts.id, clientAccountId), eq(clientAccounts.orgId, orgId)];
-    if (scope !== "all") conditions.push(applyClientAccountsScope(scope, orgId, userId));
-
+  async getClientActivities(read: ScopedRead, clientAccountId: number) {
     const account = await this.db.query.clientAccounts.findFirst({
-      where: and(...conditions),
+      where: clientAccountWhere(read, clientAccountId),
       columns: { id: true },
     });
-    if (!account) return [];
+    if (!account) throw new NotFoundException("Client account not found");
 
     return this.db.query.clientAccountActivities.findMany({
       where: eq(clientAccountActivities.clientAccountId, clientAccountId),
@@ -228,18 +223,9 @@ export class ClientAccountsService {
    * colleague's customer, where it reads afterwards as that colleague's own
    * record of the relationship.
    */
-  async addActivity(
-    orgId: string,
-    clientAccountId: number,
-    userId: string,
-    input: CreateActivityInput,
-    scope: DataScope,
-  ) {
-    const conditions = [eq(clientAccounts.id, clientAccountId), eq(clientAccounts.orgId, orgId)];
-    if (scope !== "all") conditions.push(applyClientAccountsScope(scope, orgId, userId));
-
+  async addActivity(read: ScopedRead, clientAccountId: number, input: CreateActivityInput) {
     const account = await this.db.query.clientAccounts.findFirst({
-      where: and(...conditions),
+      where: clientAccountWhere(read, clientAccountId),
       columns: { id: true },
     });
     if (!account) return null;
@@ -248,7 +234,7 @@ export class ClientAccountsService {
       .insert(clientAccountActivities)
       .values({
         clientAccountId,
-        userId,
+        userId: read.actorId,
         activityType: input.activityType,
         title: input.title,
         description: input.description,
@@ -259,23 +245,23 @@ export class ClientAccountsService {
     return activity;
   }
 
-  listRenewals(orgId: string, scope: DataScope, userId: string) {
-    const conditions = [eq(clientAccounts.orgId, orgId)];
-    if (scope !== "all") {
-      conditions.push(applyClientAccountsScope(scope, orgId, userId));
-    }
-    return this.db.query.clientAccounts.findMany({
-      where: and(...conditions),
-      with: { salesRep: { columns: { id: true, name: true } } },
-      orderBy: (t, { asc }) => [asc(t.clientName)],
-      limit: 100,
-    });
+  listRenewals(read: ScopedRead) {
+    return read.read(
+      { tenant: clientAccounts.orgId, scope: CLIENT_ACCOUNTS_SCOPE },
+      ({ sql: where }) => this.db.query.clientAccounts.findMany({
+        where,
+        with: { salesRep: { columns: { id: true, name: true } } },
+        orderBy: (t, { asc }) => [asc(t.clientName)],
+        limit: 100,
+      }),
+      () => [],
+    );
   }
 
   /**
    * Move an account's renewal, out of the accounts the caller may read.
    *
-   * `listRenewals` ninety lines from here takes a `DataScope` and narrows the
+   * `listRenewals` ninety lines from here takes the read scope and narrows the
    * renewals a rep is shown. This — the mutation reached from that very list —
    * took no caller id at all, so a rep granted `own` was shown six renewals and
    * could edit every renewal in the organisation by id.
@@ -294,18 +280,11 @@ export class ClientAccountsService {
    * Both the check and the UPDATE carry the predicate. The check alone would
    * leave the write itself keyed on nothing but an id.
    */
-  async updateRenewal(
-    orgId: string,
-    accountId: number,
-    input: UpdateRenewalInput,
-    scope: DataScope,
-    userId: string,
-  ) {
-    const conditions = [eq(clientAccounts.id, accountId), eq(clientAccounts.orgId, orgId)];
-    if (scope !== "all") conditions.push(applyClientAccountsScope(scope, orgId, userId));
+  async updateRenewal(read: ScopedRead, accountId: number, input: UpdateRenewalInput) {
+    const where = clientAccountWhere(read, accountId);
 
     const existing = await this.db.query.clientAccounts.findFirst({
-      where: and(...conditions),
+      where,
       columns: { id: true },
     });
     if (!existing) return null;
@@ -318,7 +297,7 @@ export class ClientAccountsService {
     const [updated] = await this.db
       .update(clientAccounts)
       .set(updateData)
-      .where(and(...conditions))
+      .where(where)
       .returning();
 
     return updated;
@@ -342,14 +321,8 @@ export class ClientAccountsService {
    *
    * See `lib/client-investment.ts`: the one status change that books money.
    */
-  updateStatus(
-    orgId: string,
-    userId: string,
-    accountId: number,
-    input: UpdateClientStatusInput,
-    scope: DataScope,
-  ) {
-    return updateClientStatus(this.investmentDeps, orgId, userId, accountId, input, scope);
+  updateStatus(read: ScopedRead, accountId: number, input: UpdateClientStatusInput) {
+    return updateClientStatus(this.investmentDeps, read, accountId, input);
   }
 
   /**

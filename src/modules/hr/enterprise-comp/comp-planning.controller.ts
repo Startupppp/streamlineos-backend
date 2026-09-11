@@ -29,7 +29,8 @@ import {
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { listCompCyclesResponseSchema, createCompCycleResponseSchema, getCompCycleResponseSchema, updateCompCycleResponseSchema, listBudgetPoolsResponseSchema, createBudgetPoolResponseSchema, listRecommendationsResponseSchema, createRecommendationResponseSchema, updateRecommendationResponseSchema, submitRecommendationResponseSchema, calibrateRecommendationResponseSchema, approveRecommendationResponseSchema } from "./dto/enterprise-comp-response.schemas"
 
 const cycleIdParams = z.object({ cycleId: z.coerce.number().int().positive() }).strict();
 const recIdParams = z.object({ recId: z.coerce.number().int().positive() }).strict();
@@ -40,6 +41,7 @@ const recIdParams = z.object({ recId: z.coerce.number().int().positive() }).stri
 export class CompPlanningController {
   constructor(private readonly service: CompPlanningService) {}
 
+  @ResponseSchema(listCompCyclesResponseSchema)
   @Get("cycles")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
@@ -51,6 +53,7 @@ export class CompPlanningController {
     return this.service.listCycles(u.orgId, query);
   }
 
+  @ResponseSchema(createCompCycleResponseSchema)
   @Post("cycles")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
@@ -63,6 +66,7 @@ export class CompPlanningController {
     return this.service.createCycle(u.orgId, u.userId, body);
   }
 
+  @ResponseSchema(getCompCycleResponseSchema)
   @Get("cycles/:cycleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
@@ -74,6 +78,7 @@ export class CompPlanningController {
     return this.service.getCycle(u.orgId, cycleId);
   }
 
+  @ResponseSchema(updateCompCycleResponseSchema)
   @Patch("cycles/:cycleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
@@ -86,6 +91,7 @@ export class CompPlanningController {
     return this.service.updateCycle(u.orgId, cycleId, u.userId, body);
   }
 
+  @ResponseSchema(listBudgetPoolsResponseSchema)
   @Get("cycles/:cycleId/budget-pools")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
@@ -97,6 +103,7 @@ export class CompPlanningController {
     return this.service.getBudgetPools(u.orgId, cycleId);
   }
 
+  @ResponseSchema(createBudgetPoolResponseSchema)
   @Post("cycles/:cycleId/budget-pools")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
@@ -110,6 +117,7 @@ export class CompPlanningController {
     return this.service.createBudgetPool(u.orgId, u.userId, { ...body, cycleId });
   }
 
+  @ResponseSchema(listRecommendationsResponseSchema)
   @Get("recommendations")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
@@ -121,6 +129,7 @@ export class CompPlanningController {
     return this.service.listRecommendations(u.orgId, query);
   }
 
+  @ResponseSchema(createRecommendationResponseSchema)
   @Post("recommendations")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
@@ -133,6 +142,7 @@ export class CompPlanningController {
     return this.service.createRecommendation(u.orgId, u.userId, body);
   }
 
+  @ResponseSchema(updateRecommendationResponseSchema)
   @Patch("recommendations/:recId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
@@ -145,6 +155,7 @@ export class CompPlanningController {
     return this.service.updateRecommendation(u.orgId, recId, u.userId, body);
   }
 
+  @ResponseSchema(submitRecommendationResponseSchema)
   @Patch("recommendations/:recId/submit")
   @BodylessAction()
   @Idempotent("hr.comp-recommendation.submit")
@@ -158,6 +169,7 @@ export class CompPlanningController {
     return this.service.submitRecommendation(u.orgId, recId, u.userId);
   }
 
+  @ResponseSchema(calibrateRecommendationResponseSchema)
   @Patch("recommendations/:recId/calibrate")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
@@ -170,6 +182,7 @@ export class CompPlanningController {
     return this.service.calibrateRecommendation(u.orgId, recId, u.userId, body);
   }
 
+  @ResponseSchema(approveRecommendationResponseSchema)
   @Patch("recommendations/:recId/approve")
   @Idempotent("hr.comp-recommendation.approve")
   @UseGuards(PermissionGuard)

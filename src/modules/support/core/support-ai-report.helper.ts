@@ -4,7 +4,7 @@ import { supportAiSuggestions, supportCsatRequests, supportTickets } from "../..
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 
-export type AiReportFilters = { dateFrom?: Date; dateTo?: Date; cursor?: number; limit?: number };
+export type AiReportFilters = { dateFrom?: Date; dateTo?: Date };
 
 @Injectable()
 export class SupportAiReportHelper {

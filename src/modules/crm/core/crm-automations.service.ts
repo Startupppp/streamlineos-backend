@@ -7,7 +7,6 @@ import { type Db } from "../../../db/drizzle.module";
 import type { CreateAutomationRuleInput, UpdateAutomationRuleInput } from "./dto/automation-rules.schemas";
 import { CrmAutomationRunnerService } from "../automation-studio/crm-automation-runner.service";
 import type { TestAutomationRuleInput } from "../automation-studio/dto/automation-studio.schemas";
-import type { CrmAutomationCondition } from "../../../db/schema/crm/automation-rules";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBefore } from "../../../common/pagination/keyset";
@@ -126,10 +125,7 @@ export class CrmAutomationsService {
       .where(and(eq(crmAutomationRules.id, ruleId), eq(crmAutomationRules.orgId, orgId), isNull(crmAutomationRules.deletedAt)))
       .limit(1);
     if (!rule) throw new NotFoundException("Automation rule not found");
-    return this.runner.dryRunConditions(
-      (rule.conditions ?? []) as CrmAutomationCondition[],
-      input.samplePayload,
-    );
+    return this.runner.dryRunConditions(rule.conditions, input.samplePayload);
   }
 
   async getRuns(orgId: string, ruleId: number, cursor?: string) {

@@ -31,6 +31,9 @@ import {
 } from "./hr-interviews.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { actingMembershipId } from "../../../common/auth/principal";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { assignedInterviewsPageSchema, interviewScorecardSchema } from "./dto/interviews-response.schemas";
 
 const interviewIdParams = z.object({ interviewId: z.coerce.number().int().positive() }).strict();
 
@@ -44,16 +47,18 @@ export class EmployeeRecruitmentController {
   ) {}
 
   @Get()
+  @ResponseSchema(assignedInterviewsPageSchema)
   @Validate({ query: selfInterviewListSchema })
   list(
     @Query() query: SelfInterviewListInput,
     @CurrentUser() user: CurrentUserContext,
   ): Promise<AssignedInterviewsPage> {
-    return this.interviews.listMine(user.orgId, user.userId, query);
+    return this.interviews.listMine(user.orgId, actingMembershipId(user.principal), query);
   }
 
   @Post(":interviewId/scorecard")
   @HttpCode(201)
+  @ResponseSchema(interviewScorecardSchema)
   @Validate({ params: interviewIdParams, body: submitScorecardSchema })
   async submitScorecard(
     @Param("interviewId", ParseIntPipe) interviewId: number,
@@ -62,7 +67,7 @@ export class EmployeeRecruitmentController {
   ): Promise<unknown> {
     const assigned = await this.interviews.isAssignedTo(
       user.orgId,
-      user.userId,
+      actingMembershipId(user.principal),
       interviewId,
     );
     if (!assigned) {
@@ -71,6 +76,7 @@ export class EmployeeRecruitmentController {
     return this.results.submitScorecard(
       user.orgId,
       user.userId,
+      actingMembershipId(user.principal),
       interviewId,
       body,
     );

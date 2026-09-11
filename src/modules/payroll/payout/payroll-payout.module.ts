@@ -1,8 +1,7 @@
 import { Module } from "@nestjs/common";
 import { PayrollInsightsModule } from "../insights/payroll-insights.module";
 import { PayrollRunsModule } from "../runs/payroll-runs.module";
-import { AccountingAdaptersModule } from "../../accounting/adapters/accounting-adapters.module";
-import { AccountingKernelModule } from "../../accounting/kernel/accounting-kernel.module";
+import { AccountingModule } from "../../accounting/core/accounting.module";
 import { DirectoryModule } from "../../directory/directory.module";
 import { PayrollPayoutApprovalsController } from "./approvals.controller";
 import { ApprovalsService } from "./approvals.service";
@@ -27,9 +26,12 @@ import { PayslipBulkPublisherService } from "./payslip-bulk-publisher.service";
 import { PayslipDownloadService } from "./payslip-download.service";
 import { PayrollPostingService } from "../payroll-posting.service";
 import { NotificationsModule } from "../../notifications/notifications.module";
+import { OutboxModule } from "../../../common/outbox/outbox.module";
+import { PayrollPostingIntentConsumer } from "./payroll-posting-intent.consumer";
+import { PayrollPayoutPostingIntentConsumer } from "./payroll-payout-posting-intent.consumer";
 
 @Module({
-  imports: [NotificationsModule, PayrollInsightsModule, PayrollRunsModule, DirectoryModule, AccountingAdaptersModule, AccountingKernelModule],
+  imports: [NotificationsModule, PayrollInsightsModule, PayrollRunsModule, AccountingModule, DirectoryModule, OutboxModule],
   controllers: [
     PayrollPayoutApprovalsController,
     LockingController,
@@ -44,6 +46,8 @@ import { NotificationsModule } from "../../notifications/notifications.module";
     ApprovalActionsService,
     PayrollApproverResolverService,
     LockingService,
+    PayrollPostingIntentConsumer,
+    PayrollPayoutPostingIntentConsumer,
     PayoutBatchesService,
     BatchCreatorService,
     BatchStatusService,

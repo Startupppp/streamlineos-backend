@@ -19,7 +19,11 @@ const documentFileReferenceSchema = z
   .max(2048)
   .refine(
     (value) =>
-      /^https:\/\//i.test(value) || /^(?:documents|hr-documents)\/[a-zA-Z0-9][a-zA-Z0-9/_.-]*$/.test(value),
+      !value.includes("..") &&
+      !value.includes("\\") &&
+      !value.startsWith("/") &&
+      !/^[a-z][a-z0-9+.-]*:/i.test(value) &&
+      /^[a-zA-Z0-9][a-zA-Z0-9/_.-]*$/.test(value),
     "Invalid stored document file reference",
   );
 
@@ -36,7 +40,7 @@ export const createDocumentSchema = z.object({
   isPublic: z.boolean().optional().default(false),
   expiryDate: z.string().optional(),
   tags: z.array(z.string()).optional(),
-});
+}).strict();
 
 export const updateDocumentSchema = z.object({
   name: z.string().min(1).max(200).optional(),
@@ -47,7 +51,7 @@ export const updateDocumentSchema = z.object({
   isPublic: z.boolean().optional(),
   tags: z.array(z.string()).optional(),
   expiryDate: z.string().optional().nullable(),
-});
+}).strict();
 
 export const listDocumentsSchema = z
   .object({
@@ -67,28 +71,28 @@ export const listRichDocumentsSchema = z.object({
     .enum(["true", "false"])
     .optional()
     .transform((v) => (v === undefined ? undefined : v === "true")),
-});
+}).strict();
 
 export const sendAckSchema = z.object({
   documentId: z.number().int().positive(),
-  userIds: z.array(z.string().min(1)).min(1, "At least one user required"),
-});
+  userIds: z.array(z.string().min(1)).min(1, "At least one user required").max(100),
+}).strict();
 
 export const ackSchema = z.object({
   acknowledgmentId: z.number().int().positive(),
   status: z.enum(["ACKNOWLEDGED", "DECLINED"]),
-});
+}).strict();
 
 export const createRichDocumentSchema = z.object({
   title: z.string(),
   templateType: z.string().optional(),
   contentJson: z.unknown().optional(),
-});
+}).strict();
 
 export const updateRichDocumentSchema = z.object({
   title: z.string().optional(),
   contentJson: z.unknown().optional(),
-});
+}).strict();
 
 const letterEmployeeTargetSchema = z
   .object({
@@ -103,7 +107,7 @@ export const renderLetterSchema = z
   .object({
     templateId: z.number().int().positive(),
     extraContext: z.record(z.string(), z.string()).optional(),
-  })
+  }).strict()
   .and(letterEmployeeTargetSchema);
 
 export const saveLetterSchema = z
@@ -112,10 +116,10 @@ export const saveLetterSchema = z
     templateVersion: z.number().int().positive(),
     outputHtml: z.string().min(1),
     contextSnapshot: z.record(z.string(), z.unknown()).optional(),
-  })
+  }).strict()
   .and(letterEmployeeTargetSchema);
 
-export type DocumentType = (typeof DOCUMENT_TYPES)[number];
+type DocumentType = (typeof DOCUMENT_TYPES)[number];
 export type CreateDocumentInput = z.infer<typeof createDocumentSchema>;
 export type UpdateDocumentInput = z.infer<typeof updateDocumentSchema>;
 export type ListDocumentsInput = z.infer<typeof listDocumentsSchema>;
@@ -126,3 +130,14 @@ export type CreateRichDocumentInput = z.infer<typeof createRichDocumentSchema>;
 export type UpdateRichDocumentInput = z.infer<typeof updateRichDocumentSchema>;
 export type RenderLetterInput = z.infer<typeof renderLetterSchema>;
 export type SaveLetterInput = z.infer<typeof saveLetterSchema>;
+
+export const complianceCalendarQuerySchema = z.object({
+  year: z.coerce.number().int().min(2000).max(2100).optional(),
+  month: z.coerce.number().int().min(1).max(12).optional(),
+}).strict();
+export type ComplianceCalendarQueryInput = z.infer<typeof complianceCalendarQuerySchema>;
+
+export const documentExpiryQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(365).optional(),
+}).strict();
+export type DocumentExpiryQueryInput = z.infer<typeof documentExpiryQuerySchema>;

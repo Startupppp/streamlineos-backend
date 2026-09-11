@@ -1,11 +1,14 @@
 import { Body, Controller, HttpCode, Post, UseGuards } from "@nestjs/common";
+import { CurrentUser } from "../../common/auth/current-user.decorator";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { inboundIngressAcceptResponseSchema } from "./dto/ingress-response.schemas";
 import { InboundIngressService } from "./inbound-ingress.service";
 import { inboundEventSchema, type InboundEventBody } from "./dto/inbound-event.schemas";
-import type { InboundCommunicationEvent } from "./inbound-event";
 
 /**
  * The seam, as an endpoint.
@@ -26,8 +29,9 @@ export class InboundIngressController {
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:ingress:submit")
   @HttpCode(202)
+  @ResponseSchema(inboundIngressAcceptResponseSchema)
   @Validate({ body: inboundEventSchema })
-  accept(@Body() body: InboundEventBody) {
-    return this.ingress.accept(body as InboundCommunicationEvent);
+  accept(@Body() body: InboundEventBody, @CurrentUser() user: CurrentUserContext) {
+    return this.ingress.accept(body, user.orgId);
   }
 }

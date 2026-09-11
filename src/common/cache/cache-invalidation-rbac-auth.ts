@@ -58,12 +58,29 @@ export const RBAC_AUTH_CACHE_ENTRIES: readonly CacheNamespaceEntry[] = [
     invalidation: {
       kind: "write",
       events: [
-        "bustMembershipStatusCache (common/auth/membership-state.service.ts) on any membership status change",
+        "scheduleMembershipBust (common/org/membership-bust.ts) on any membership status change",
         "InvitationAcceptanceService.accept",
         "OrgMemberDepartureService (leave/remove member)",
         "OrgMembershipService.updateMember",
       ],
     },
+  },
+  {
+    namespace: "membership:status:<userId>",
+    description:
+      "Per-user generation counter over MembershipStateService.resolve(userId, orgId), which JwtAuthGuard consults on every request to decide whether the caller's membership is still active. Read as cachedVersioned('membership:status:<userId>', orgId) with a 15s TTL; one counter per user covers every organisation that user belongs to. This entry was missing while the namespace was bumped through a module-local helper, which is also why check:namespace-coverage could not see the bump.",
+    invalidation: {
+      kind: "write",
+      events: [
+        "scheduleMembershipBust / scheduleMembershipBustMany (common/org/membership-bust.ts) on any membership status change",
+        "OrgMembershipService.updateMember and OrgMemberDepartureService (leave/remove/deactivate)",
+        "InvitationAcceptanceService.accept",
+        "OrgLifecycleService, OrgPurgeService and CronOrgPurgeWorkerService (whole-org suspension/purge, batched)",
+        "GdprSubjectErasureService.erase",
+      ],
+    },
+    dimensions: ["userId"] as const,
+    staleToleranceSeconds: 0,
   },
   {
     namespace: "mfa:org-policy:<orgId>",
@@ -162,7 +179,7 @@ export const RBAC_AUTH_CACHE_ENTRIES: readonly CacheNamespaceEntry[] = [
   },
   {
     namespace: "module-access:candidates:<orgId>",
-    description: "Candidate members list for module access assignment (cachedForOrg; actual key: <orgId>:module-access:candidates). Note: CACHE_KEYS.moduleAccessCandidates factory produces module-access:candidates:<orgId> and is dead code — the service uses cachedForOrg with a raw localKey.",
+    description: "Candidate members list for module access assignment (cachedForOrg; actual key: <orgId>:module-access:candidates). The canonical key is owned by cachedForOrg; no parallel factory exists.",
     invalidation: {
       kind: "write",
       events: [

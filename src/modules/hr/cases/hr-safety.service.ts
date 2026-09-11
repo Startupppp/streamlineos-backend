@@ -1,7 +1,9 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
 import {
@@ -45,6 +47,52 @@ const SAFETY_SEARCH_CAP = 500;
 const BURNOUT_SCORE_THRESHOLD = 4;
 const WELLNESS_MIN_GROUP_SIZE = 5;
 
+type SafetyCursorScope = {
+  orgId: string;
+  status: string | null;
+  type: string | null;
+  severity: string | null;
+  search: string | null;
+  fromDate: string | null;
+  toDate: string | null;
+};
+
+function invalidSafetyCursor(): never {
+  throw new BadRequestException({
+    code: "INVALID_SAFETY_INCIDENT_CURSOR",
+    message: "The safety incident cursor is invalid or expired.",
+  });
+}
+
+function decodeSafetyCursor(value: string | undefined, expected: SafetyCursorScope) {
+  if (!value) return null;
+  const position = decodeCursor(value);
+  if (!position || Number.isNaN(new Date(position.sortValue).getTime()))
+    return invalidSafetyCursor();
+
+  try {
+    const scope: unknown = JSON.parse(position.id);
+    if (
+      !Array.isArray(scope) ||
+      scope.length !== 8 ||
+      typeof scope[0] !== "number" ||
+      !Number.isSafeInteger(scope[0]) ||
+      scope[0] < 1 ||
+      scope[1] !== expected.orgId ||
+      scope[2] !== expected.status ||
+      scope[3] !== expected.type ||
+      scope[4] !== expected.severity ||
+      scope[5] !== expected.search ||
+      scope[6] !== expected.fromDate ||
+      scope[7] !== expected.toDate
+    )
+      return invalidSafetyCursor();
+    return { sortValue: position.sortValue, id: String(scope[0]) };
+  } catch {
+    return invalidSafetyCursor();
+  }
+}
+
 function generateIncidentNumber(): string {
   const year = new Date().getFullYear();
   const suffix = Math.random().toString(36).toUpperCase().slice(2, 8);
@@ -61,7 +109,16 @@ export class HrSafetyService {
   async listIncidents(orgId: string, input: ListIncidentsInput) {
     const { cursor, limit, status, type, severity, search, fromDate, toDate } =
       input;
-    const pos = decodeCursor(cursor);
+    const cursorScope = {
+      orgId,
+      status: status ?? null,
+      type: type ?? null,
+      severity: severity ?? null,
+      search: search ?? null,
+      fromDate: fromDate ?? null,
+      toDate: toDate ?? null,
+    };
+    const pos = decodeSafetyCursor(cursor, cursorScope);
 
     const conditions = [
       eq(hrSafetyIncidents.orgId, orgId),
@@ -102,7 +159,16 @@ export class HrSafetyService {
 
     return buildCursorPage(rows, limit, (row) => ({
       sortValue: row.occurredAt.toISOString(),
-      id: String(row.id),
+      id: JSON.stringify([
+        row.id,
+        cursorScope.orgId,
+        cursorScope.status,
+        cursorScope.type,
+        cursorScope.severity,
+        cursorScope.search,
+        cursorScope.fromDate,
+        cursorScope.toDate,
+      ]),
     }));
   }
 
@@ -111,7 +177,8 @@ export class HrSafetyService {
       ilike(hrSafetyIncidents.description, `%${search}%`),
       ilike(hrSafetyIncidents.incidentNumber, `%${search}%`),
       ilike(hrSafetyIncidents.location, `%${search}%`),
-    )!;
+    );
+    if (!fallback) throw new InternalServerErrorException("Failed to build safety incident search fallback");
     const rows = await this.db.execute(
       sql`SELECT app.search_hr_safety_incident_ids(${search}, ${SAFETY_SEARCH_CAP + 1}) AS id`,
     );
@@ -168,17 +235,19 @@ export class HrSafetyService {
       })
       .returning();
 
+    if (!incident) throw new InternalServerErrorException("Failed to create safety incident");
+
     await this.audit.log({
       orgId,
       actorId: userId,
       entityType: "hr_safety_incident",
-      entityId: String(incident!.id),
+      entityId: String(incident.id),
       action: "safety.incident_created",
       after: { incidentNumber, type: input.type, severity: input.severity },
       ipAddress,
     });
 
-    return incident!;
+    return incident;
   }
 
   async updateIncident(
@@ -218,6 +287,8 @@ export class HrSafetyService {
       )
       .returning();
 
+    if (!updated) throw new InternalServerErrorException("Failed to update safety incident");
+
     await this.audit.log({
       orgId,
       actorId: userId,
@@ -229,7 +300,7 @@ export class HrSafetyService {
       ipAddress,
     });
 
-    return updated!;
+    return updated;
   }
 
   async deleteIncident(orgId: string, id: number, userId: string) {
@@ -265,6 +336,7 @@ export class HrSafetyService {
 
   async upsertCheckin(u: CurrentUserContext, input: CheckinInput) {
     const membershipId = actingMembershipId(u.principal);
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const [row] = await this.db
       .insert(hrWellnessCheckins)
       .values({
@@ -284,12 +356,13 @@ export class HrSafetyService {
         set: {
           score: input.score,
           flags: input.flags ?? null,
-          ...(membershipId != null && { userMembershipId: membershipId }),
+          userMembershipId: membershipId,
         },
       })
       .returning();
 
-    return row!;
+    if (!row) throw new InternalServerErrorException("Failed to upsert wellness check-in");
+    return row;
   }
 
   async myCheckins(
@@ -298,12 +371,10 @@ export class HrSafetyService {
     toDate?: string,
   ) {
     const membershipId = actingMembershipId(u.principal);
-    const ownerPredicate = membershipId != null
-      ? or(eq(hrWellnessCheckins.userMembershipId, membershipId), eq(hrWellnessCheckins.userId, u.userId))!
-      : eq(hrWellnessCheckins.userId, u.userId);
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const conditions = [
       eq(hrWellnessCheckins.orgId, u.orgId),
-      ownerPredicate,
+      eq(hrWellnessCheckins.userMembershipId, membershipId),
     ];
 
     if (fromDate) conditions.push(gte(hrWellnessCheckins.date, fromDate));

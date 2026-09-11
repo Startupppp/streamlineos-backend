@@ -8,6 +8,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { logger } from "../../../common/logger/logger.service";
 import { PURGE_ADAPTERS } from "../../../db/schema/common/organization-purge";
 import { PURGE_ADAPTER_REGISTRY } from "../../organization/core/lifecycle/organization-purge-adapters";
+import { APP_CONFIG } from "../../../config/config.module";
 
 jest.mock("../../../common/relocation/relocation-traffic-tracker", () => ({
   refreshRelocationTargets: jest.fn().mockResolvedValue(undefined),
@@ -23,6 +24,8 @@ const mockAudit = { log: jest.fn() };
 const mockCache = {
   invalidate: jest.fn().mockResolvedValue(undefined),
   invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+  invalidateMany: jest.fn().mockResolvedValue(undefined),
+  invalidateNamespaceMany: jest.fn().mockResolvedValue(undefined),
 };
 const mockOrgMembership = {
   revokeOrgScopedAccess: jest.fn().mockResolvedValue(undefined),
@@ -55,7 +58,7 @@ function setAdapterStates(state: "CONFIRMED" | "FAILED"): () => void {
 
 describe("CronOrgPurgeWorkerService", () => {
   let svc: CronOrgPurgeWorkerService;
-  let mockDb: { select: jest.Mock; transaction: jest.Mock };
+  let mockDb: { select: jest.Mock; transaction: jest.Mock; delete: jest.Mock };
   let restoreAdapters: (() => void) | null = null;
 
   function selectReturning(rows: unknown[]) {
@@ -94,7 +97,7 @@ describe("CronOrgPurgeWorkerService", () => {
     mockCache.invalidate.mockResolvedValue(undefined);
     mockCache.invalidateNamespace.mockResolvedValue(undefined);
 
-    mockDb = { select: jest.fn(), transaction: jest.fn() };
+    mockDb = { select: jest.fn(), transaction: jest.fn(), delete: jest.fn() };
 
     const module = await Test.createTestingModule({
       providers: [
@@ -104,6 +107,7 @@ describe("CronOrgPurgeWorkerService", () => {
         { provide: CacheService, useValue: mockCache },
         { provide: OrgMembershipService, useValue: mockOrgMembership },
         { provide: StorageService, useValue: mockStorage },
+        { provide: APP_CONFIG, useValue: { R2_KB_BUCKET_NAME: "kb-files" } },
       ],
     }).compile();
 
@@ -130,15 +134,15 @@ describe("CronOrgPurgeWorkerService", () => {
         // no unreleased hold; the read is inside the transaction so RLS is satisfied
         select: jest.fn().mockReturnValue(selectReturning([])),
         execute: jest.fn().mockResolvedValue([{ id: ORG_ID }]),
+        delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([{ id: ORG_ID }]) }),
         insert: jest.fn().mockReturnValue({
           values: jest.fn().mockReturnValue({
             onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
           }),
         }),
         update: jest.fn().mockReturnValue({
-          set: jest.fn().mockImplementation((arg: Record<string, unknown>) => {
-            if ("statusV2" in arg && arg.statusV2 === "PURGED") capturedSetArg = arg;
-            return { where: jest.fn().mockResolvedValue(undefined) };
+          set: jest.fn().mockReturnValue({
+            where: jest.fn().mockResolvedValue(undefined),
           }),
         }),
       };
@@ -156,8 +160,7 @@ describe("CronOrgPurgeWorkerService", () => {
 
     expect(result.processed).toBe(1);
     expect(result.skipped).toBe(0);
-    expect(capturedSetArg()).toMatchObject({ statusV2: "PURGED", status: "PURGED" });
-    expect(capturedSetArg()?.purgedAt).toBeInstanceOf(Date);
+    expect(capturedSetArg()).toBeUndefined();
     expect(mockOrgMembership.revokeOrgScopedAccess).toHaveBeenCalledWith(
       ORG_ID,
       MEMBER_ID,
@@ -251,7 +254,8 @@ describe("CronOrgPurgeWorkerService", () => {
       .mockReturnValueOnce(selectReturning([{ id: ORG_ID }]))
       .mockReturnValueOnce(
         selectReturning([{ id: ORG_ID, name: "Purge Corp", purgeJobId: null }]),
-      );
+      )
+      .mockReturnValue(memberSelect([]));
 
     // The final claim transaction is the one that must come back empty; the
     // earlier tenant transactions still have to work or we never reach it.

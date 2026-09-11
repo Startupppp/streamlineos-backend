@@ -70,7 +70,7 @@ describe("HrTemplatesService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([]);
     const mockRender = { buildContext: jest.fn() };
     const svc = new HrTemplatesService(db, mockRender as never);
-    await svc.list(ATTACKER, { page: 1, limit: 10 });
+    await svc.list(ATTACKER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
 
@@ -78,7 +78,7 @@ describe("HrTemplatesService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([ROW]);
     const mockRender = { buildContext: jest.fn() };
     const svc = new HrTemplatesService(db, mockRender as never);
-    await svc.list(OWNER, { page: 1, limit: 10 });
+    await svc.list(OWNER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
   });
 });

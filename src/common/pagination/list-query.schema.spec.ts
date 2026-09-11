@@ -209,7 +209,19 @@ describe("withSortField", () => {
 });
 
 type SizeKey = "limit" | "pageSize";
-type ParseableSchema = { parse: (v: unknown) => Record<string, unknown> };
+/**
+ * The surface these cases exercise, stated as Zod's own supertype rather than a
+ * hand-written structural stand-in.
+ *
+ * `ZodType` is declared covariant in its output (`out Output`), so every schema
+ * below is ASSIGNABLE to this and needs no `as`. The hand-written alias it
+ * replaces was not assignable from anything, which is why all 22 rows carried
+ * a cast — and a cast is what let the alias go a whole release declaring only
+ * `parse`, so `schema.safeParse(...)` below was a TS2339 the moment anyone
+ * typechecked specs. Widening the alias made the cast true; deleting the alias
+ * makes the cast unnecessary, which is the difference between the two fixes.
+ */
+type ParseableSchema = z.ZodType<Record<string, unknown>, unknown>;
 
 interface SchemaCaseConfig {
   name: string;
@@ -221,25 +233,25 @@ interface SchemaCaseConfig {
 }
 
 const schemaCases: SchemaCaseConfig[] = [
-  { name: "listProjectsSchema", schema: listProjectsSchema as ParseableSchema, sizeKey: "limit", defaultSize: 9 },
-  { name: "listProjectCustomersSchema", schema: listProjectCustomersSchema as ParseableSchema, sizeKey: "limit", defaultSize: 20 },
-  { name: "listWorkspaceMembersSchema", schema: listWorkspaceMembersSchema as ParseableSchema, sizeKey: "limit", defaultSize: 20 },
-  { name: "roadmapListQuerySchema", schema: roadmapListQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 50 },
-  { name: "feedbackListQuerySchema", schema: feedbackListQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 50 },
-  { name: "changelogListQuerySchema", schema: changelogListQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 50 },
-  { name: "timeEntriesListQuerySchema", schema: timeEntriesListQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 50 },
-  { name: "teamTimesheetsQuerySchema", schema: teamTimesheetsQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 50 },
-  { name: "listManagedProductsQuerySchema", schema: listManagedProductsQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 20 },
-  { name: "listWorkspacesQuerySchema", schema: listWorkspacesQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 20 },
-  { name: "listMembersQuerySchema", schema: listMembersQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 20 },
-  { name: "listPortfoliosQuerySchema", schema: listPortfoliosQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 20 },
-  { name: "listTeamsQuerySchema", schema: listTeamsQuerySchema as ParseableSchema, sizeKey: "pageSize", defaultSize: 50 },
-  { name: "listTeamMembersQuerySchema", schema: listTeamMembersQuerySchema as ParseableSchema, sizeKey: "pageSize", defaultSize: 50 },
-  { name: "listInvoicesSchema", schema: listInvoicesSchema as ParseableSchema, sizeKey: "limit", defaultSize: 50 },
-  { name: "listQuotesSchema", schema: listQuotesSchema as ParseableSchema, sizeKey: "pageSize", defaultSize: 25 },
-  { name: "campaignListSchema", schema: campaignListSchema as ParseableSchema, sizeKey: "limit", defaultSize: 20, ceiling: 50 },
-  { name: "organizationListSchema", schema: organizationListSchema as ParseableSchema, sizeKey: "pageSize", defaultSize: 20 },
-  { name: "orgDuplicatesQuerySchema", schema: orgDuplicatesQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 20 },
+  { name: "listProjectsSchema", schema: listProjectsSchema, sizeKey: "limit", defaultSize: 9 },
+  { name: "listProjectCustomersSchema", schema: listProjectCustomersSchema, sizeKey: "limit", defaultSize: 20 },
+  { name: "listWorkspaceMembersSchema", schema: listWorkspaceMembersSchema, sizeKey: "limit", defaultSize: 20 },
+  { name: "roadmapListQuerySchema", schema: roadmapListQuerySchema, sizeKey: "limit", defaultSize: 50 },
+  { name: "feedbackListQuerySchema", schema: feedbackListQuerySchema, sizeKey: "limit", defaultSize: 50 },
+  { name: "changelogListQuerySchema", schema: changelogListQuerySchema, sizeKey: "limit", defaultSize: 50 },
+  { name: "timeEntriesListQuerySchema", schema: timeEntriesListQuerySchema, sizeKey: "limit", defaultSize: 50 },
+  { name: "teamTimesheetsQuerySchema", schema: teamTimesheetsQuerySchema, sizeKey: "limit", defaultSize: 50 },
+  { name: "listManagedProductsQuerySchema", schema: listManagedProductsQuerySchema, sizeKey: "limit", defaultSize: 20 },
+  { name: "listWorkspacesQuerySchema", schema: listWorkspacesQuerySchema, sizeKey: "limit", defaultSize: 20 },
+  { name: "listMembersQuerySchema", schema: listMembersQuerySchema, sizeKey: "limit", defaultSize: 20 },
+  { name: "listPortfoliosQuerySchema", schema: listPortfoliosQuerySchema, sizeKey: "limit", defaultSize: 20 },
+  { name: "listTeamsQuerySchema", schema: listTeamsQuerySchema, sizeKey: "pageSize", defaultSize: 50 },
+  { name: "listTeamMembersQuerySchema", schema: listTeamMembersQuerySchema, sizeKey: "pageSize", defaultSize: 50 },
+  { name: "listInvoicesSchema", schema: listInvoicesSchema, sizeKey: "limit", defaultSize: 50 },
+  { name: "listQuotesSchema", schema: listQuotesSchema, sizeKey: "pageSize", defaultSize: 25 },
+  { name: "campaignListSchema", schema: campaignListSchema, sizeKey: "limit", defaultSize: 20, ceiling: 50 },
+  { name: "organizationListSchema", schema: organizationListSchema, sizeKey: "pageSize", defaultSize: 20 },
+  { name: "orgDuplicatesQuerySchema", schema: orgDuplicatesQuerySchema, sizeKey: "limit", defaultSize: 20 },
 ];
 
 describe("migrated schemas — clamp at their ceiling and preserve their own defaults", () => {
@@ -271,8 +283,20 @@ describe("migrated schemas — clamp at their ceiling and preserve their own def
         const exposesOffset = Object.prototype.hasOwnProperty.call(result, "page");
         if (exposesOffset) expect(result["page"]).toBe(1);
 
-        const exposesCursor = "cursor" in (schema.parse({ cursor: "1" }) as object);
-        const exposesIdCursor = "afterId" in (schema.parse({ afterId: 1 }) as object);
+        // `safeParse`, not `parse`: most of these schemas are strict, so probing
+        // one with a key it does not declare throws `unrecognized_keys` rather
+        // than returning an object without it. Parsing eagerly therefore made
+        // every strict OFFSET schema fail here — 20 of them — for having no
+        // `cursor`, which is exactly what an offset schema is supposed to lack.
+        // A rejected probe IS the answer "does not expose this style"; it is not
+        // an error. The assertion below is unchanged and still bites: a schema
+        // exposing none of the three styles fails.
+        const exposes = (probe: Record<string, unknown>, key: string): boolean => {
+          const parsed = schema.safeParse(probe);
+          return parsed.success && key in parsed.data;
+        };
+        const exposesCursor = exposes({ cursor: "1" }, "cursor");
+        const exposesIdCursor = exposes({ afterId: 1 }, "afterId");
         expect(exposesOffset || exposesCursor || exposesIdCursor).toBe(true);
       });
     });
@@ -292,13 +316,13 @@ interface SizeOnlyCaseConfig {
 
 // Cursor and size-only lists: no `page` field, but the same clamp-don't-reject rule on page size.
 const sizeOnlyCases: SizeOnlyCaseConfig[] = [
-  { name: "searchTicketsQuerySchema", schema: searchTicketsQuerySchema as ParseableSchema, defaultSize: 10, ceiling: 20, base: { q: "bug" } },
-  { name: "intakeListQuerySchema", schema: intakeListQuerySchema as ParseableSchema, defaultSize: 50 },
-  { name: "territoryListSchema", schema: territoryListSchema as ParseableSchema, defaultSize: 50 },
-  { name: "chat listMessagesQuerySchema", schema: chatListMessagesQuerySchema as ParseableSchema, defaultSize: 50 },
-  { name: "chat searchQuerySchema", schema: chatSearchQuerySchema as ParseableSchema, defaultSize: 20 },
-  { name: "mail listMessagesQuerySchema", schema: mailListMessagesQuerySchema as ParseableSchema, defaultSize: 25, ceiling: 50 },
-  { name: "global searchQuerySchema", schema: globalSearchQuerySchema as ParseableSchema, defaultSize: 5, ceiling: 10, base: { q: "acme" } },
+  { name: "searchTicketsQuerySchema", schema: searchTicketsQuerySchema, defaultSize: 10, ceiling: 20, base: { q: "bug" } },
+  { name: "intakeListQuerySchema", schema: intakeListQuerySchema, defaultSize: 50 },
+  { name: "territoryListSchema", schema: territoryListSchema, defaultSize: 50 },
+  { name: "chat listMessagesQuerySchema", schema: chatListMessagesQuerySchema, defaultSize: 50 },
+  { name: "chat searchQuerySchema", schema: chatSearchQuerySchema, defaultSize: 20 },
+  { name: "mail listMessagesQuerySchema", schema: mailListMessagesQuerySchema, defaultSize: 25, ceiling: 50 },
+  { name: "global searchQuerySchema", schema: globalSearchQuerySchema, defaultSize: 5, ceiling: 10, base: { q: "acme" } },
 ];
 
 describe("size-only schemas — clamp at their ceiling and preserve their own defaults", () => {

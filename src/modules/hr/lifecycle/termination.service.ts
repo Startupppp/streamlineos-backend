@@ -78,7 +78,8 @@ export class TerminationService {
             eq(moduleOwnerships.orgId, orgId),
             eq(moduleOwnerships.ownerMembershipId, membership.id),
           ),
-        ),
+        )
+        .limit(100),
       this.db
         .select({ name: roles.name, rank: roles.rank })
         .from(roleAssignments)
@@ -89,7 +90,8 @@ export class TerminationService {
             eq(roleAssignments.organizationMembershipId, membership.id),
             lte(roles.rank, ROLE_RANK.MODULE_ADMIN),
           ),
-      ),
+        )
+        .limit(100),
     ]);
     if (ownedModules.length > 0) {
       throw new BadRequestException(
@@ -225,6 +227,7 @@ export class TerminationService {
 
       const found = await tx.query.assets.findMany({
         where: and(eq(assets.orgId, orgId), eq(assets.assignedTo, existing.userId), eq(assets.status, "ASSIGNED")),
+        limit: 1_000,
       });
 
       if (found.length > 0) {

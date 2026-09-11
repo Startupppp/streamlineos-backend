@@ -15,22 +15,22 @@ import { PayrollTemplatesService } from "../templates.service";
 
 function makeOrderingChain(globalOrder: string[]) {
   const chain: Record<string, jest.Mock> = {};
-  for (const method of ["from", "where", "limit"]) {
+  for (const method of ["from", "where"]) {
     chain[method] = jest.fn(() => chain);
   }
   chain["orderBy"] = jest.fn((..._args: unknown[]) => {
     globalOrder.push("orderBy");
     return chain;
   });
-  chain["offset"] = jest.fn(() => {
-    globalOrder.push("offset");
+  chain["limit"] = jest.fn(() => {
+    globalOrder.push("limit");
     return Promise.resolve([]);
   });
   return chain;
 }
 
 describe("PayrollTemplatesService.list — deterministic ORDER BY before paging", () => {
-  it("orderBy(name ASC, id ASC) precedes offset in the template list query", async () => {
+  it("orderBy(name ASC, id ASC) precedes limit in the template list query", async () => {
     const globalOrder: string[] = [];
     const chain = makeOrderingChain(globalOrder);
 
@@ -58,16 +58,16 @@ describe("PayrollTemplatesService.list — deterministic ORDER BY before paging"
 
     const svc = new PayrollTemplatesService(db as never);
 
-    await svc.list("org-1", { page: 2, pageSize: 20 });
+    await svc.list("org-1", { limit: 20, cursor: undefined });
 
     const orderByCalledAt = globalOrder.indexOf("orderBy");
-    const offsetCalledAt = globalOrder.indexOf("offset");
+    const limitCalledAt = globalOrder.indexOf("limit");
     expect(orderByCalledAt).toBeGreaterThanOrEqual(0);
-    expect(offsetCalledAt).toBeGreaterThan(orderByCalledAt);
+    expect(limitCalledAt).toBeGreaterThan(orderByCalledAt);
   });
 
   it("bite: absent orderBy means the ordering check would fail", () => {
-    const seqWithoutOrderBy = ["offset"];
+    const seqWithoutOrderBy = ["limit"];
     expect(seqWithoutOrderBy.indexOf("orderBy")).toBe(-1);
     expect(seqWithoutOrderBy.indexOf("orderBy")).not.toBeGreaterThanOrEqual(0);
   });

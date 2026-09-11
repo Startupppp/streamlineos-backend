@@ -5,6 +5,7 @@ jest.mock("../../common/tenant/org-membership", () => ({
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { NotificationDispatchService } from "./notification-dispatch.service";
+import { NotificationDispatchPersistenceService } from "./notification-dispatch-persistence.service";
 import { NotificationEventRegistryService } from "./notification-event-registry.service";
 import { NotificationRoutingService } from "./notification-routing.service";
 import { NotificationsService } from "./notifications.service";
@@ -103,6 +104,7 @@ describe("NotificationDispatchService — idempotent materialization under relay
     const moduleRef = await Test.createTestingModule({
       providers: [
         NotificationDispatchService,
+        NotificationDispatchPersistenceService,
         { provide: DRIZZLE, useValue: db },
         {
           provide: NotificationEventRegistryService,

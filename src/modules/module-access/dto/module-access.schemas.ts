@@ -8,28 +8,28 @@ const moduleKeyRegex = /^[a-z][a-z0-9_-]*$/;
 
 export const moduleKeyParamSchema = z.object({
   moduleKey: z.string().min(1).max(32).regex(moduleKeyRegex),
-});
+}).strict();
 
 export const moduleRoleParamSchema = z.object({
   moduleKey: z.string().min(1).max(32).regex(moduleKeyRegex),
   roleId: z.coerce.number().int().positive(),
-});
+}).strict();
 
 export const moduleGroupParamSchema = z.object({
   moduleKey: z.string().min(1).max(32).regex(moduleKeyRegex),
   groupId: z.coerce.number().int().positive(),
-});
+}).strict();
 
 export const moduleGroupMemberParamSchema = z.object({
   moduleKey: z.string().min(1).max(32).regex(moduleKeyRegex),
   groupId: z.coerce.number().int().positive(),
   userId: z.string().min(1),
-});
+}).strict();
 
 export const flatMemberParamSchema = z.object({
   moduleKey: z.string().min(1).max(32).regex(moduleKeyRegex),
   userId: z.string().min(1),
-});
+}).strict();
 
 export const setModuleRolePermissionsSchema = z.object({
   version: z.number().int().positive(),
@@ -38,32 +38,32 @@ export const setModuleRolePermissionsSchema = z.object({
       z.object({
         permissionKey: z.string().min(1).max(120),
         scope: dataScopeSchema.default("all"),
-      }),
+      }).strict(),
     )
     .max(300),
-});
+}).strict();
 
 export const createModuleGroupSchema = z.object({
   name: z.string().min(1).max(100),
-});
+}).strict();
 
 export const renameModuleGroupSchema = z.object({
   name: z.string().min(1).max(100),
-});
+}).strict();
 
 export const addModuleGroupMemberSchema = z.object({
   userId: z.string().min(1),
-});
+}).strict();
 
 export const initiateOwnershipTransferSchema = z.object({
   toUserId: z.string().min(1),
-});
+}).strict();
 
 export const listMembersQuerySchema = z.object({
   pageSize: pageSizeField(20),
   userId: z.string().min(1).max(64).optional(),
   cursor: idCursorSchema,
-});
+}).strict();
 
 export const memberCandidatesQuerySchema = z.object({
   pageSize: pageSizeField(20),
@@ -74,7 +74,7 @@ export const memberCandidatesQuerySchema = z.object({
     .optional()
     .transform((value) => value !== "false"),
   cursor: idCursorSchema,
-});
+}).strict();
 
 export const addFlatMemberSchema = z.object({
   userId: z.string().min(1),
@@ -82,24 +82,24 @@ export const addFlatMemberSchema = z.object({
     .array(z.number().int().positive())
     .min(1, "Select at least one group to grant module access")
     .max(50),
-});
+}).strict();
 
 export const updateMemberGroupsSchema = z.object({
   groupIds: z
     .array(z.number().int().positive())
     .min(1, "A member needs at least one group — remove them from the module instead")
     .max(50),
-});
+}).strict();
 
 export const listGroupsQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
-});
+}).strict();
 
 export const auditLogQuerySchema = z.object({
   limit: pageSizeField(20),
   cursor: z.string().optional(),
-});
+}).strict();
 
 export type ModuleKeyParam = z.infer<typeof moduleKeyParamSchema>;
 export type ModuleRoleParam = z.infer<typeof moduleRoleParamSchema>;
@@ -121,11 +121,11 @@ export type AuditLogQuery = z.infer<typeof auditLogQuerySchema>;
 export const standingMemberParamSchema = z.object({
   moduleKey: z.string().min(1).max(32).regex(moduleKeyRegex),
   membershipId: z.coerce.number().int().positive(),
-});
+}).strict();
 
 export const directTransferOwnerSchema = z.object({
   toMembershipId: z.number().int().positive(),
-});
+}).strict();
 
 export type StandingMemberParam = z.infer<typeof standingMemberParamSchema>;
 export type DirectTransferOwnerInput = z.infer<typeof directTransferOwnerSchema>;

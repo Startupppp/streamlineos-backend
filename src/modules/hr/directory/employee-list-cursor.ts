@@ -1,6 +1,15 @@
 import { BadRequestException } from "@nestjs/common";
+import { z } from "zod";
 
 const CURSOR_VERSION = 1;
+
+const employeeListCursorSchema = z
+  .object({
+    v: z.literal(CURSOR_VERSION),
+    name: z.string(),
+    employeeUserId: z.string().min(1),
+  })
+  .strict();
 
 export type EmployeeListCursor = {
   name: string;
@@ -21,20 +30,11 @@ export function encodeEmployeeListCursor(cursor: EmployeeListCursor): string {
 export function decodeEmployeeListCursor(value: string): EmployeeListCursor {
   try {
     const parsed: unknown = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
-    if (
-      typeof parsed !== "object" ||
-      parsed === null ||
-      (parsed as { v?: unknown }).v !== CURSOR_VERSION ||
-      typeof (parsed as { name?: unknown }).name !== "string" ||
-      typeof (parsed as { employeeUserId?: unknown }).employeeUserId !== "string" ||
-      (parsed as { employeeUserId: string }).employeeUserId.length === 0
-    ) {
-      throw new Error("invalid cursor payload");
-    }
+    const cursor = employeeListCursorSchema.parse(parsed);
 
     return {
-      name: (parsed as { name: string }).name,
-      employeeUserId: (parsed as { employeeUserId: string }).employeeUserId,
+      name: cursor.name,
+      employeeUserId: cursor.employeeUserId,
     };
   } catch {
     throw new BadRequestException({

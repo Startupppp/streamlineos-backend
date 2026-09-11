@@ -84,6 +84,7 @@ export class ReviewCyclesService {
         eq(performanceReviews.orgId, orgId),
         eq(performanceReviews.cycleId, cycleId),
       ),
+      limit: 100,
       columns: {
         id: true,
         userId: true,
@@ -99,7 +100,6 @@ export class ReviewCyclesService {
         reviewer: { columns: { id: true, name: true } },
       },
       orderBy: [desc(performanceReviews.createdAt)],
-      limit: 100,
     });
 
     return { ...cycle, reviews };
@@ -107,6 +107,7 @@ export class ReviewCyclesService {
 
   async updateCycle(orgId: string, cycleId: number, input: UpdateReviewCycleInput) {
     const existing = await this.db.query.reviewCycles.findFirst({
+      columns: { id: true },
       where: and(eq(reviewCycles.id, cycleId), eq(reviewCycles.orgId, orgId)),
     });
     if (!existing) throw new NotFoundException("Review cycle not found.");
@@ -133,9 +134,11 @@ export class ReviewCyclesService {
   }
 
   async deleteCycle(orgId: string, cycleId: number) {
-    await this.db
+    const deleted = await this.db
       .delete(reviewCycles)
-      .where(and(eq(reviewCycles.id, cycleId), eq(reviewCycles.orgId, orgId)));
+      .where(and(eq(reviewCycles.id, cycleId), eq(reviewCycles.orgId, orgId)))
+      .returning({ id: reviewCycles.id });
+    if (deleted.length === 0) throw new NotFoundException("Review cycle not found.");
     return { success: true };
   }
 }

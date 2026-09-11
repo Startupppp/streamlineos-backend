@@ -86,11 +86,16 @@ describe("HrChecklistReconciliationService", () => {
         from: jest.fn().mockImplementation((table: unknown) => ({
           where: jest.fn().mockImplementation(() => {
             const value = counts.get(table) ?? 0;
-            const readsId =
+            // The service asks these tables a yes/no question and now does it with a bounded
+            // `select({ one: sql\`1\` }) ... .limit(1)` rather than an unbounded count()
+            // (PRD-C073). A row-shaped read must therefore return ROWS — zero of them when the
+            // table is empty. Returning a single `[{ value: 0 }]` row for every shape made
+            // `.length > 0` true no matter what the fixture set.
+            const rowShaped =
               typeof selection === "object" &&
               selection !== null &&
-              Object.hasOwn(selection, "id");
-            const rows = readsId ? (value > 0 ? [{ id: value }] : []) : [{ value }];
+              (Object.hasOwn(selection, "id") || Object.hasOwn(selection, "one"));
+            const rows = rowShaped ? (value > 0 ? [{ id: value, one: 1 }] : []) : [{ value }];
             const promise = Promise.resolve(rows);
             return {
               limit: jest.fn().mockResolvedValue(rows),

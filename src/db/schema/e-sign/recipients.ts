@@ -9,7 +9,7 @@ export const signRecipients = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    envelopeId: integer("envelope_id").references(() => signEnvelopes.id, { onDelete: "cascade" }).notNull(),
+    envelopeId: integer("envelope_id").notNull(),
     roleName: text("role_name").notNull(),
     recipientType: signRecipientTypeEnum("recipient_type").default("signer").notNull(),
     name: text("name").notNull(),
@@ -18,7 +18,6 @@ export const signRecipients = pgTable(
     userMembershipId: integer("user_membership_id"),
     routingOrder: integer("routing_order").default(1).notNull(),
     status: signRecipientStatusEnum("status").default("pending").notNull(),
-
     authMethod: signAuthMethodEnum("auth_method").default("email_link").notNull(),
     accessCodeHash: text("access_code_hash"),
     otpCodeHash: text("otp_code_hash"),
@@ -26,16 +25,13 @@ export const signRecipients = pgTable(
     otpAttempts: integer("otp_attempts").default(0).notNull(),
     failedAuthAttempts: integer("failed_auth_attempts").default(0).notNull(),
     authLockedUntil: timestamp("auth_locked_until"),
-
     signingTokenHash: text("signing_token_hash"),
     tokenExpiresAt: timestamp("token_expires_at"),
     tokenRevokedAt: timestamp("token_revoked_at"),
-
     consentAcceptedAt: timestamp("consent_accepted_at"),
     consentIp: text("consent_ip"),
     consentUserAgent: text("consent_user_agent"),
     consentDisclosureVersion: text("consent_disclosure_version"),
-
     delegatedToRecipientId: integer("delegated_to_recipient_id"),
     viewedAt: timestamp("viewed_at"),
     authenticatedAt: timestamp("authenticated_at"),
@@ -43,11 +39,11 @@ export const signRecipients = pgTable(
     declinedAt: timestamp("declined_at"),
     declinedReason: text("declined_reason"),
     bouncedAt: timestamp("bounced_at"),
-
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.envelopeId], foreignColumns: [signEnvelopes.orgId, signEnvelopes.id], name: "fk_sign_recipients_envelope_id_org" }).onDelete("cascade"),
     index("idx_sign_recipients_org_envelope").on(table.orgId, table.envelopeId),
     index("idx_sign_recipients_envelope_order").on(table.envelopeId, table.routingOrder),
     uniqueIndex("uniq_sign_recipients_token_hash").on(table.signingTokenHash),

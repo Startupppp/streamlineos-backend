@@ -9,6 +9,7 @@ import {
   webhookSignatureHeaderValue,
 } from "./webhook-signature";
 import { WEBHOOK_DELIVERY_TIMEOUT_MS } from "./webhook-delivery-policy";
+import { outboundTraceHeaders } from "../../../common/outbound/call-provider";
 
 export interface WebhookDeliveryTarget {
   readonly id: number;
@@ -97,6 +98,7 @@ export class WebhookTransportService {
           [WEBHOOK_EVENT_ID_HEADER]: String(event.id),
           [WEBHOOK_EVENT_TYPE_HEADER]: event.eventType,
           [WEBHOOK_ATTEMPT_HEADER]: String(event.attempt),
+          ...outboundTraceHeaders(),
         },
         body,
         signal: controller.signal,

@@ -63,8 +63,8 @@ describe("announcements create contract", () => {
     ).toThrow();
   });
 
-  it("strips unknown fields so clients cannot mass-assign columns", () => {
-    const parsed = createHrAnnouncementSchema.parse({
+  it("rejects unknown fields so clients cannot mass-assign columns", () => {
+    const result = createHrAnnouncementSchema.safeParse({
       title: "Valid title",
       content: "Valid announcement content here.",
       status: "DRAFT",
@@ -72,9 +72,28 @@ describe("announcements create contract", () => {
       orgId: "attacker-org",
       readCount: 42,
     });
-    expect(parsed).not.toHaveProperty("id");
-    expect(parsed).not.toHaveProperty("orgId");
-    expect(parsed).not.toHaveProperty("readCount");
+    expect(result.success).toBe(false);
+    const keys = result.success
+      ? []
+      : result.error.issues.flatMap((issue) =>
+          issue.code === "unrecognized_keys" ? issue.keys : [],
+        );
+    expect(keys).toEqual(expect.arrayContaining(["id", "orgId", "readCount"]));
+  });
+
+  it("accepts a body carrying exactly the nine client-owned fields", () => {
+    const result = createHrAnnouncementSchema.safeParse({
+      title: "Valid title",
+      content: "Valid announcement content here.",
+      targetType: "ALL",
+      targetIds: [],
+      status: "DRAFT",
+      publishAt: undefined,
+      expiresAt: undefined,
+      isPinned: false,
+      attachmentUrls: [],
+    });
+    expect(result.success).toBe(true);
   });
 
   it("update converts provided dates and leaves omitted dates untouched", async () => {

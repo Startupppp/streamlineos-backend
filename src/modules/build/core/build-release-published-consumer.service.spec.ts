@@ -49,13 +49,13 @@ function makeEvent(overrides: Partial<OutboxEventRow["payload"]> = {}): OutboxEv
 
 function buildDbMock(options: {
   claimed?: boolean;
-  assignees?: Array<{ assigneeId: string | null }>;
+  assignees?: Array<{ userId: string | null }>;
 }): {
   insert: jest.Mock;
   update: jest.Mock;
   selectDistinct: jest.Mock;
 } {
-  const { claimed = true, assignees = [{ assigneeId: ASSIGNEE_A }, { assigneeId: ASSIGNEE_B }] } = options;
+  const { claimed = true, assignees = [{ userId: ASSIGNEE_A }, { userId: ASSIGNEE_B }] } = options;
 
   const claimReturn = claimed ? [{ id: 1 }] : [];
   const claimReturning = jest.fn().mockResolvedValue(claimReturn);
@@ -70,7 +70,9 @@ function buildDbMock(options: {
   const dbSelectDistinct = jest.fn().mockReturnValue({
     from: jest.fn().mockReturnValue({
       innerJoin: jest.fn().mockReturnValue({
-        where: jest.fn().mockResolvedValue(assignees),
+        innerJoin: jest.fn().mockReturnValue({
+          where: jest.fn().mockResolvedValue(assignees),
+        }),
       }),
     }),
   });
@@ -80,7 +82,7 @@ function buildDbMock(options: {
 
 async function buildService(options: {
   claimed?: boolean;
-  assignees?: Array<{ assigneeId: string | null }>;
+  assignees?: Array<{ userId: string | null }>;
   emitImpl?: () => Promise<void>;
 }) {
   const { emitImpl = async () => undefined } = options;
@@ -164,7 +166,7 @@ describe("BuildReleasePublishedConsumerService", () => {
 
     it("marks inbox SKIPPED when all linked ticket assignees are null", async () => {
       const { svc, dispatch, db } = await buildService({
-        assignees: [{ assigneeId: null }],
+        assignees: [{ userId: null }],
       });
       await svc.handle(makeEvent());
 
@@ -177,7 +179,7 @@ describe("BuildReleasePublishedConsumerService", () => {
   describe("happy path", () => {
     it("dispatches build.release.published to assignees of linked tickets", async () => {
       const { svc, dispatch } = await buildService({
-        assignees: [{ assigneeId: ASSIGNEE_A }, { assigneeId: ASSIGNEE_B }],
+        assignees: [{ userId: ASSIGNEE_A }, { userId: ASSIGNEE_B }],
       });
 
       await svc.handle(makeEvent());

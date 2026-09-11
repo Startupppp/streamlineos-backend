@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, exists, gte, lte, or } from "drizzle-orm";
+import { and, asc, desc, eq, exists, gte, lte, or } from "drizzle-orm";
 import { formatInTimeZone } from "date-fns-tz";
+import { formatZoneClockTime } from "../../common/date/zoned-wall-clock";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import {
@@ -23,7 +24,8 @@ import type {
   CalendarSourceContext,
 } from "../calendar/calendar-event-source";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
-import { WEEKDAY_NAMES, dateOnly, dateAtNoon, enumerateDates, loadAttendanceOnly } from "./hr-calendar-sub-sources";
+import { WEEKDAY_NAMES, HR_CALENDAR_READ_BATCH_SIZE, dateOnly, dateAtNoon, enumerateDates, loadAttendanceOnly } from "./hr-calendar-sub-sources";
+import { findActiveHrCalendarMembership } from "./hr-calendar-membership";
 
 @Injectable()
 export class HrCalendarSource implements CalendarEventSource {
@@ -47,10 +49,12 @@ export class HrCalendarSource implements CalendarEventSource {
   }
 
   private async loadLeaves(ctx: CalendarSourceContext): Promise<CalendarEventProjection[]> {
+    const membership = await findActiveHrCalendarMembership(this.db, ctx.orgId, ctx.userId);
+    if (!membership) return [];
     const rows = await this.db
       .select({
         id: leaveRequests.id,
-        userId: leaveRequests.userId,
+        userMembershipId: leaveRequests.userMembershipId,
         startDate: leaveRequests.startDate,
         endDate: leaveRequests.endDate,
         reason: leaveRequests.reason,
@@ -65,7 +69,9 @@ export class HrCalendarSource implements CalendarEventSource {
         eq(leaveRequests.status, "APPROVED"),
         lte(leaveRequests.startDate, dateOnly(ctx.end)),
         gte(leaveRequests.endDate, dateOnly(ctx.start)),
-      ));
+      ))
+      .orderBy(asc(leaveRequests.id))
+      .limit(HR_CALENDAR_READ_BATCH_SIZE);
 
     return rows.map((leave) => ({
       id: `leave-${leave.id}`,
@@ -77,13 +83,15 @@ export class HrCalendarSource implements CalendarEventSource {
       category: "leave",
       meta: {
         source: "leave",
-        description: leave.userId === ctx.userId ? (leave.reason ?? null) : null,
+        description: leave.userMembershipId === membership.id ? (leave.reason ?? null) : null,
         creatorName: leave.userName ?? null,
       },
     }));
   }
 
   private async loadInterviews(ctx: CalendarSourceContext): Promise<CalendarEventProjection[]> {
+    const membership = await findActiveHrCalendarMembership(this.db, ctx.orgId, ctx.userId);
+    if (!membership) return [];
     const rows = await this.db
       .select({
         id: interviews.id,
@@ -91,6 +99,7 @@ export class HrCalendarSource implements CalendarEventSource {
         duration: interviews.duration,
         type: interviews.type,
         interviewerId: interviews.interviewerId,
+        interviewerMembershipId: interviews.interviewerMembershipId,
         location: interviews.location,
         meetingLink: interviews.meetingLink,
       })
@@ -100,17 +109,19 @@ export class HrCalendarSource implements CalendarEventSource {
         gte(interviews.scheduledAt, ctx.start),
         lte(interviews.scheduledAt, ctx.end),
         or(
-          eq(interviews.interviewerId, ctx.userId),
+          eq(interviews.interviewerMembershipId, membership.id),
           exists(this.db.select({ id: interviewPanelMembers.id })
             .from(interviewPanelMembers)
             .where(and(
               eq(interviewPanelMembers.orgId, ctx.orgId),
               eq(interviewPanelMembers.interviewId, interviews.id),
-              eq(interviewPanelMembers.userId, ctx.userId),
+              eq(interviewPanelMembers.userMembershipId, membership.id),
             )),
           ),
         ),
-      ));
+      ))
+      .orderBy(asc(interviews.id))
+      .limit(HR_CALENDAR_READ_BATCH_SIZE);
 
     return rows.map((interview) => {
       const end = new Date(interview.scheduledAt);
@@ -132,6 +143,8 @@ export class HrCalendarSource implements CalendarEventSource {
     const { orgId, userId, start, end } = ctx;
     const startStr = dateOnly(start);
     const endStr = dateOnly(end);
+    const membership = await findActiveHrCalendarMembership(this.db, orgId, userId);
+    if (!membership) return [];
     const policyDate = dateOnly(end.getTime() < Date.now() ? end : new Date());
 
     const [
@@ -150,7 +163,7 @@ export class HrCalendarSource implements CalendarEventSource {
       this.db
         .select({
           id: leaveRequests.id,
-          userId: leaveRequests.userId,
+          userMembershipId: leaveRequests.userMembershipId,
           startDate: leaveRequests.startDate,
           endDate: leaveRequests.endDate,
           reason: leaveRequests.reason,
@@ -167,7 +180,9 @@ export class HrCalendarSource implements CalendarEventSource {
             lte(leaveRequests.startDate, endStr),
             gte(leaveRequests.endDate, startStr),
           ),
-        ),
+        )
+        .orderBy(asc(leaveRequests.id))
+        .limit(HR_CALENDAR_READ_BATCH_SIZE),
 
       this.db
         .select({
@@ -176,6 +191,7 @@ export class HrCalendarSource implements CalendarEventSource {
           duration: interviews.duration,
           type: interviews.type,
           interviewerId: interviews.interviewerId,
+          interviewerMembershipId: interviews.interviewerMembershipId,
           location: interviews.location,
           meetingLink: interviews.meetingLink,
         })
@@ -186,7 +202,7 @@ export class HrCalendarSource implements CalendarEventSource {
             gte(interviews.scheduledAt, start),
             lte(interviews.scheduledAt, end),
             or(
-              eq(interviews.interviewerId, userId),
+              eq(interviews.interviewerMembershipId, membership.id),
               exists(
                 this.db
                   .select({ id: interviewPanelMembers.id })
@@ -195,13 +211,15 @@ export class HrCalendarSource implements CalendarEventSource {
                     and(
                       eq(interviewPanelMembers.orgId, orgId),
                       eq(interviewPanelMembers.interviewId, interviews.id),
-                      eq(interviewPanelMembers.userId, userId),
+                      eq(interviewPanelMembers.userMembershipId, membership.id),
                     ),
                   ),
               ),
             ),
           ),
-        ),
+        )
+        .orderBy(asc(interviews.id))
+        .limit(HR_CALENDAR_READ_BATCH_SIZE),
 
       this.db
         .select({
@@ -218,12 +236,13 @@ export class HrCalendarSource implements CalendarEventSource {
         .where(
           and(
             eq(attendance.orgId, orgId),
-            eq(attendance.userId, userId),
+            eq(attendance.userMembershipId, membership.id),
             gte(attendance.date, startStr),
             lte(attendance.date, endStr),
           ),
         )
-        .orderBy(desc(attendance.createdAt)),
+        .orderBy(desc(attendance.createdAt), asc(attendance.id))
+        .limit(HR_CALENDAR_READ_BATCH_SIZE),
 
       this.db
         .select({ id: wfhRequests.id, date: wfhRequests.date })
@@ -231,12 +250,14 @@ export class HrCalendarSource implements CalendarEventSource {
         .where(
           and(
             eq(wfhRequests.orgId, orgId),
-            eq(wfhRequests.userId, userId),
+            eq(wfhRequests.userMembershipId, membership.id),
             eq(wfhRequests.status, "APPROVED"),
             gte(wfhRequests.date, startStr),
             lte(wfhRequests.date, endStr),
           ),
-        ),
+        )
+        .orderBy(asc(wfhRequests.id))
+        .limit(HR_CALENDAR_READ_BATCH_SIZE),
 
       this.db
         .select({ timezone: organizations.timezone })
@@ -253,11 +274,14 @@ export class HrCalendarSource implements CalendarEventSource {
         )
         .where(
           and(
-            eq(rosterEntries.userId, userId),
+            eq(rosterEntries.orgId, orgId),
+            eq(rosterEntries.userMembershipId, membership.id),
             gte(rosterEntries.date, startStr),
             lte(rosterEntries.date, endStr),
           ),
-        ),
+        )
+        .orderBy(asc(rosterEntries.id))
+        .limit(HR_CALENDAR_READ_BATCH_SIZE),
 
       listCompatibleHolidays(this.db, orgId, startStr, endStr),
 
@@ -297,7 +321,7 @@ export class HrCalendarSource implements CalendarEventSource {
         category: "leave",
         meta: {
           source: "leave",
-          description: leave.userId === userId ? (leave.reason ?? null) : null,
+          description: leave.userMembershipId === membership.id ? (leave.reason ?? null) : null,
           creatorName: leave.userName ?? null,
         },
       });
@@ -323,13 +347,13 @@ export class HrCalendarSource implements CalendarEventSource {
 
     const orgTimezone = organizationData[0]?.timezone ?? "Asia/Kolkata";
     const today = formatInTimeZone(new Date(), orgTimezone, "yyyy-MM-dd");
-    const membership = membershipData[0];
+    const membershipForContext = membershipData[0];
     const employmentStart =
       employmentFacts.joiningDate ??
-      (membership?.activatedAt
-        ? formatInTimeZone(membership.activatedAt, orgTimezone, "yyyy-MM-dd")
-        : membership?.joinedAt
-          ? formatInTimeZone(membership.joinedAt, orgTimezone, "yyyy-MM-dd")
+      (membershipForContext?.activatedAt
+        ? formatInTimeZone(membershipForContext.activatedAt, orgTimezone, "yyyy-MM-dd")
+        : membershipForContext?.joinedAt
+          ? formatInTimeZone(membershipForContext.joinedAt, orgTimezone, "yyyy-MM-dd")
           : startStr);
 
     const holidayDateSet = new Set(holidaysData.map((h) => h.date));
@@ -339,7 +363,7 @@ export class HrCalendarSource implements CalendarEventSource {
 
     const selfLeaveByDate = new Map<string, { isHalfDay: boolean; halfDayPeriod: string | null }>();
     for (const leave of leavesData) {
-      if (leave.userId !== userId) continue;
+      if (leave.userMembershipId !== membership.id) continue;
       const leaveStart = leave.startDate < startStr ? startStr : leave.startDate;
       const leaveEnd = leave.endDate > endStr ? endStr : leave.endDate;
       for (const date of enumerateDates(leaveStart, leaveEnd))
@@ -405,8 +429,8 @@ export class HrCalendarSource implements CalendarEventSource {
         isWfh ? "Work from home" : null,
         onBreak ? "Currently on break" : null,
         netHours > 0 ? `${netHours.toFixed(1)} hours recorded` : null,
-        firstCheckIn ? `Check-in ${formatInTimeZone(firstCheckIn, orgTimezone, "p")}` : null,
-        lastCheckOut ? `Check-out ${formatInTimeZone(lastCheckOut, orgTimezone, "p")}` : null,
+        firstCheckIn ? `Check-in ${formatZoneClockTime(firstCheckIn, orgTimezone)}` : null,
+        lastCheckOut ? `Check-out ${formatZoneClockTime(lastCheckOut, orgTimezone)}` : null,
       ].filter((v): v is string => Boolean(v));
       const color =
         status === "ABSENT"

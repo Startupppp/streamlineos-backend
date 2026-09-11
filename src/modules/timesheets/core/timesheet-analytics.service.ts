@@ -6,7 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { timesheets, timesheetPeriods, timesheetSettings, projects, users, organizationMembers, holidays } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { resolveReportsScope, applyMembershipScope } from "./timesheets-core-scope";
+import { resolveReportsScope, membershipScope } from "./timesheets-core-scope";
 import type { ReportRangeQuery } from "./dto/reports.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import {
@@ -31,25 +31,31 @@ export class TimesheetAnalyticsService {
   ) {}
 
   async getClientProfitability(u: CurrentUserContext, query: ReportRangeQuery) {
-    const scope = await resolveReportsScope(this.access, u);
+    const read = await resolveReportsScope(this.access, u);
     const { startDate, endDate } = resolveDateRange(query.startDate, query.endDate);
     const actorMembId = actingMembershipId(u.principal);
 
-    const conditions = [
-      eq(timesheets.orgId, u.orgId),
-      isNull(timesheets.voidedAt),
-      eq(timesheets.status, "APPROVED"),
-      eq(timesheets.isBillable, true),
-      applyMembershipScope(scope, actorMembId, timesheets.userMembershipId),
-      gte(timesheets.date, startDate),
-      lte(timesheets.date, endDate),
-    ];
+    const where = read.compose(
+      {
+        tenant: timesheets.orgId,
+        scope: membershipScope(actorMembId, timesheets.userMembershipId),
+        and: [
+          isNull(timesheets.voidedAt),
+          eq(timesheets.status, "APPROVED"),
+          eq(timesheets.isBillable, true),
+          gte(timesheets.date, startDate),
+          lte(timesheets.date, endDate),
+        ],
+      },
+      ({ sql: w }) => w,
+      () => sql`false`,
+    );
 
     const currencyExpr = sql<string>`COALESCE(${timesheets.currency}, 'USD')`;
 
     const rows = await this.db
       .select({
-        clientId: projects.clientId,
+        clientId: projects.clientMembershipId,
         currency: currencyExpr,
         hours: sql<string>`COALESCE(SUM(${timesheets.hours}::numeric), 0)::text`,
         billableAmount: sql<string>`COALESCE(SUM(CASE WHEN ${timesheets.billRate} IS NOT NULL THEN ${timesheets.hours}::numeric * ${timesheets.billRate}::numeric END), 0)::text`,
@@ -59,21 +65,26 @@ export class TimesheetAnalyticsService {
       })
       .from(timesheets)
       .leftJoin(projects, eq(timesheets.projectId, projects.id))
-      .where(and(...conditions))
-      .groupBy(projects.clientId, currencyExpr);
+      .where(where)
+      .groupBy(projects.clientMembershipId, currencyExpr);
 
-    const clientIds = [...new Set(rows.map((r) => r.clientId).filter((id): id is string => id !== null))];
-    let clientNames = new Map<string, string>();
+    const clientIds = [...new Set(rows.map((r) => r.clientId).filter((id): id is number => id !== null))];
+    let clientNames = new Map<number, string>();
     if (clientIds.length > 0) {
       const nameRows = await this.db
-        .select({ id: users.id, name: users.name, email: users.email })
-        .from(users)
-        .where(inArray(users.id, clientIds));
-      clientNames = new Map(nameRows.map((r) => [r.id, r.name ?? r.email]));
+        .select({ membershipId: organizationMembers.id, name: users.name, email: users.email })
+        .from(organizationMembers)
+        .innerJoin(users, eq(users.id, organizationMembers.userId))
+        .where(and(
+          eq(organizationMembers.orgId, u.orgId),
+          eq(organizationMembers.status, "ACTIVE"),
+          inArray(organizationMembers.id, clientIds),
+        ));
+      clientNames = new Map(nameRows.map((r) => [r.membershipId, r.name ?? r.email]));
     }
 
     const byClient = new Map<
-      string | null,
+       number | null,
       { hours: number; missingRateHours: number; amountRows: CurrencyAmountInput[] }
     >();
     for (const r of rows) {
@@ -102,7 +113,7 @@ export class TimesheetAnalyticsService {
   }
 
   async getCompliance(u: CurrentUserContext, query: ReportRangeQuery) {
-    const scope = await resolveReportsScope(this.access, u);
+    const read = await resolveReportsScope(this.access, u);
     const { startDate, endDate } = resolveDateRange(query.startDate, query.endDate);
     const actorMembId = actingMembershipId(u.principal);
 
@@ -110,20 +121,25 @@ export class TimesheetAnalyticsService {
     const periodMember = alias(organizationMembers, "period_member");
     const tsMember2 = alias(organizationMembers, "ts_member2");
 
-    const entryConditions = [
-      eq(timesheets.orgId, u.orgId),
-      isNull(timesheets.voidedAt),
-      applyMembershipScope(scope, actorMembId, timesheets.userMembershipId),
-      gte(timesheets.date, startDate),
-      lte(timesheets.date, endDate),
-    ];
+    const entryWhere = read.compose(
+      {
+        tenant: timesheets.orgId,
+        scope: membershipScope(actorMembId, timesheets.userMembershipId),
+        and: [isNull(timesheets.voidedAt), gte(timesheets.date, startDate), lte(timesheets.date, endDate)],
+      },
+      ({ sql: w }) => w,
+      () => sql`false`,
+    );
 
-    const periodConditions = [
-      eq(timesheetPeriods.orgId, u.orgId),
-      applyMembershipScope(scope, actorMembId, timesheetPeriods.userMembershipId),
-      lte(timesheetPeriods.periodStart, endDate),
-      gte(timesheetPeriods.periodEnd, startDate),
-    ];
+    const periodWhere = read.compose(
+      {
+        tenant: timesheetPeriods.orgId,
+        scope: membershipScope(actorMembId, timesheetPeriods.userMembershipId),
+        and: [lte(timesheetPeriods.periodStart, endDate), gte(timesheetPeriods.periodEnd, startDate)],
+      },
+      ({ sql: w }) => w,
+      () => sql`false`,
+    );
 
     const [hoursRows, dateRows, periodRows, settingsRows] = await Promise.all([
       this.db
@@ -133,13 +149,13 @@ export class TimesheetAnalyticsService {
         })
         .from(timesheets)
         .innerJoin(tsMember, and(eq(timesheets.orgId, tsMember.orgId), eq(timesheets.userMembershipId, tsMember.id)))
-        .where(and(...entryConditions))
+        .where(entryWhere)
         .groupBy(tsMember.userId),
       this.db
         .select({ userId: tsMember2.userId, date: timesheets.date })
         .from(timesheets)
         .innerJoin(tsMember2, and(eq(timesheets.orgId, tsMember2.orgId), eq(timesheets.userMembershipId, tsMember2.id)))
-        .where(and(...entryConditions))
+        .where(entryWhere)
         .groupBy(tsMember2.userId, timesheets.date),
       this.db
         .select({
@@ -150,7 +166,7 @@ export class TimesheetAnalyticsService {
         })
         .from(timesheetPeriods)
         .innerJoin(periodMember, and(eq(timesheetPeriods.orgId, periodMember.orgId), eq(timesheetPeriods.userMembershipId, periodMember.id)))
-        .where(and(...periodConditions))
+        .where(periodWhere)
         .groupBy(periodMember.userId),
       this.db
         .select({ expectedWeeklyHours: timesheetSettings.expectedWeeklyHours })
@@ -192,8 +208,9 @@ export class TimesheetAnalyticsService {
       workedDates.set(r.userId, set);
     }
 
-    const hoursByUser = new Map(hoursRows.filter((r) => r.userId !== null).map((r) => [r.userId as string, Number(r.actualHours)]));
-    const periodsByUser = new Map(periodRows.filter((r) => r.userId !== null).map((r) => [r.userId as string, r]));
+    const hasUserId = <T extends { userId: string | null }>(r: T): r is T & { userId: string } => r.userId !== null;
+    const hoursByUser = new Map(hoursRows.filter(hasUserId).map((r) => [r.userId, Number(r.actualHours)]));
+    const periodsByUser = new Map(periodRows.filter(hasUserId).map((r) => [r.userId, r]));
     const userIds = [...new Set([...hoursByUser.keys(), ...periodsByUser.keys()])];
 
     let userInfo = new Map<string, { name: string | null; email: string }>();
@@ -226,13 +243,27 @@ export class TimesheetAnalyticsService {
   }
 
   async getApprovalSla(u: CurrentUserContext, query: ReportRangeQuery) {
-    const scope = await resolveReportsScope(this.access, u);
+    const read = await resolveReportsScope(this.access, u);
     const { startDate, endDate } = resolveDateRange(query.startDate, query.endDate);
     const actorMembId = actingMembershipId(u.principal);
 
     const ownerMember = alias(organizationMembers, "owner_member");
     const approverMember = alias(organizationMembers, "approver_member");
     const currentApproverMember = alias(organizationMembers, "current_approver_member");
+
+    const where = read.compose(
+      {
+        tenant: timesheetPeriods.orgId,
+        scope: membershipScope(actorMembId, timesheetPeriods.userMembershipId),
+        and: [
+          sql`${timesheetPeriods.submittedAt} IS NOT NULL`,
+          sql`${timesheetPeriods.submittedAt} >= ${startDate}::timestamp`,
+          sql`${timesheetPeriods.submittedAt} < ${endDate}::date + INTERVAL '1 day'`,
+        ],
+      },
+      ({ sql: w }) => w,
+      () => sql`false`,
+    );
 
     const rows = await this.db
       .select({
@@ -249,15 +280,7 @@ export class TimesheetAnalyticsService {
       .innerJoin(ownerMember, and(eq(timesheetPeriods.orgId, ownerMember.orgId), eq(timesheetPeriods.userMembershipId, ownerMember.id)))
       .leftJoin(currentApproverMember, and(eq(timesheetPeriods.orgId, currentApproverMember.orgId), eq(timesheetPeriods.currentApproverMembershipId, currentApproverMember.id)))
       .leftJoin(approverMember, and(eq(timesheetPeriods.orgId, approverMember.orgId), eq(timesheetPeriods.approvedByMembershipId, approverMember.id)))
-      .where(
-        and(
-          eq(timesheetPeriods.orgId, u.orgId),
-          applyMembershipScope(scope, actorMembId, timesheetPeriods.userMembershipId),
-          sql`${timesheetPeriods.submittedAt} IS NOT NULL`,
-          sql`${timesheetPeriods.submittedAt} >= ${startDate}::timestamp`,
-          sql`${timesheetPeriods.submittedAt} < ${endDate}::date + INTERVAL '1 day'`,
-        ),
-      );
+      .where(where);
 
     const now = new Date();
     const byStatus: Record<string, number> = {};
@@ -324,22 +347,20 @@ export class TimesheetAnalyticsService {
   }
 
   async getBillingLeakage(u: CurrentUserContext, query: ReportRangeQuery) {
-    const scope = await resolveReportsScope(this.access, u);
+    const read = await resolveReportsScope(this.access, u);
     const { startDate, endDate } = resolveDateRange(query.startDate, query.endDate);
     const actorMembId = actingMembershipId(u.principal);
 
-    const scopeCondition = applyMembershipScope(scope, actorMembId, timesheets.userMembershipId);
-    const rangeConditions = [
-      eq(timesheets.orgId, u.orgId),
-      scopeCondition,
-      gte(timesheets.date, startDate),
-      lte(timesheets.date, endDate),
-    ];
-    const approvedConditions = [
-      ...rangeConditions,
-      isNull(timesheets.voidedAt),
-      eq(timesheets.status, "APPROVED"),
-    ];
+    const rangeWhere = read.compose(
+      {
+        tenant: timesheets.orgId,
+        scope: membershipScope(actorMembId, timesheets.userMembershipId),
+        and: [gte(timesheets.date, startDate), lte(timesheets.date, endDate)],
+      },
+      ({ sql: w }) => w,
+      () => sql`false`,
+    );
+    const approvedWhere = and(rangeWhere, isNull(timesheets.voidedAt), eq(timesheets.status, "APPROVED"));
 
     const currencyExpr = sql<string>`COALESCE(${timesheets.currency}, 'USD')`;
 
@@ -352,7 +373,7 @@ export class TimesheetAnalyticsService {
           missingRateHours: sql<string>`COALESCE(SUM(${timesheets.hours}::numeric) FILTER (WHERE ${timesheets.isBillable} AND ${timesheets.billRate} IS NULL), 0)::text`,
         })
         .from(timesheets)
-        .where(and(...approvedConditions)),
+        .where(approvedWhere),
       this.db
         .select({
           currency: currencyExpr,
@@ -361,7 +382,7 @@ export class TimesheetAnalyticsService {
         .from(timesheets)
         .where(
           and(
-            ...approvedConditions,
+            approvedWhere,
             eq(timesheets.isBillable, true),
             eq(timesheets.invoicingStatus, "UNINVOICED"),
             sql`${timesheets.billRate} IS NOT NULL`,
@@ -373,7 +394,7 @@ export class TimesheetAnalyticsService {
           voidedHours: sql<string>`COALESCE(SUM(${timesheets.hours}::numeric), 0)::text`,
         })
         .from(timesheets)
-        .where(and(...rangeConditions, sql`${timesheets.voidedAt} IS NOT NULL`)),
+        .where(and(rangeWhere, sql`${timesheets.voidedAt} IS NOT NULL`)),
     ]);
 
     const agg = aggResult[0];

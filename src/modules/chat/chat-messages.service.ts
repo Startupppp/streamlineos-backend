@@ -1,23 +1,22 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import {
   chatAttachments,
   chatChannels,
   chatChannelMembers,
   chatMessages,
-  organizationMembers,
   users,
 } from "../../db/schema";
 import type { ChatAttachmentPayload, PersistedMessage } from "./chat-message.types";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import type { TenantTx } from "../../db/drizzle.types";
 import { logger } from "../../common/logger/logger.service";
 import { resolveMentionedUserIds } from "./chat-mentions";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
@@ -27,11 +26,13 @@ import { AblyService } from "../realtime/ably.service";
 import { ChatReplyRemindersService } from "./chat-reply-reminders.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import type { SendMessageInput } from "./dto/chat.schemas";
-import { EntityReferenceService } from "../entity-reference/entity-reference.service";
-import type { EntityActor } from "../entity-reference/entity-reference.types";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { CHAT_MESSAGE_FANOUT_EVENT } from "./chat-fanout-outbox";
 import { MESSAGE_FANOUT_PROVIDER, type MessageFanoutProvider } from "./message-fanout.interface";
+import { resolveMembershipId } from "./chat-membership-lookup";
+import { assertChannelMember } from "./chat-channel-authorization";
+import { CHAT_MESSAGE_CLIENT_KEY_CONFLICT } from "./chat-message-conflict-target";
+import { StorageService } from "../storage/storage.service";
 
 function strippedReferenceMetadata(
   metadata: Record<string, unknown> | null,
@@ -46,6 +47,8 @@ function strippedReferenceMetadata(
   return { ...metadata, entities };
 }
 
+class DuplicateSendError extends Error {}
+
 @Injectable()
 export class ChatMessagesService {
   constructor(
@@ -54,46 +57,53 @@ export class ChatMessagesService {
     private readonly ably: AblyService,
     private readonly replyReminders: ChatReplyRemindersService,
     private readonly orgSettings: ChatOrgSettingsService,
-    private readonly entities: EntityReferenceService,
+    private readonly storage: StorageService,
     @Inject(MESSAGE_FANOUT_PROVIDER) private readonly fanout: MessageFanoutProvider,
   ) {}
 
-  private async resolveMembershipId(orgId: string, userId: string): Promise<number | null> {
-    const row = await this.db.query.organizationMembers.findFirst({
+  private findByClientKey(orgId: string, channelId: number, clientKey: string) {
+    return this.db.query.chatMessages.findFirst({
       where: and(
-        eq(organizationMembers.orgId, orgId),
-        eq(organizationMembers.userId, userId),
-        eq(organizationMembers.status, "ACTIVE"),
+        eq(chatMessages.orgId, orgId),
+        eq(chatMessages.channelId, channelId),
+        eq(chatMessages.clientKey, clientKey),
       ),
-      columns: { id: true },
     });
-    return row?.id ?? null;
   }
 
-  private async isMember(
-    channelId: number,
+  private async requireReplyTargetInChannel(
+    executor: Db | TenantTx,
     orgId: string,
-    membershipId?: number | null,
-  ): Promise<boolean> {
-    if (!membershipId) return false;
-    const m = await this.db.query.chatChannelMembers.findFirst({
+    channelId: number,
+    messageId: number,
+  ): Promise<void> {
+    const target = await executor.query.chatMessages.findFirst({
       where: and(
-        eq(chatChannelMembers.orgId, orgId),
-        eq(chatChannelMembers.channelId, channelId),
-        eq(chatChannelMembers.membershipId, membershipId),
+        eq(chatMessages.id, messageId),
+        eq(chatMessages.orgId, orgId),
+        eq(chatMessages.channelId, channelId),
+        eq(chatMessages.isDeleted, false),
       ),
       columns: { id: true },
     });
-    return Boolean(m);
+
+    if (!target) throw new NotFoundException("Message not found");
   }
 
   async send(channelId: number, userId: string, orgId: string, body: SendMessageInput) {
-    const senderMembershipId = await this.resolveMembershipId(orgId, userId);
-    if (
-      senderMembershipId === null ||
-      !(await this.isMember(channelId, orgId, senderMembershipId))
-    )
-      throw new ForbiddenException("You are not a member of this channel");
+    const { membershipId: senderMembershipId } = await assertChannelMember(
+      this.db,
+      channelId,
+      userId,
+      orgId,
+    );
+
+    // A retry of a send whose response was lost must return the original message, not
+    // post a second one. Checked after membership so it cannot be used as a probe.
+    if (body.clientKey) {
+      const replayed = await this.findByClientKey(orgId, channelId, body.clientKey);
+      if (replayed) return replayed;
+    }
 
     const sanitizedContent = body.content
       ? body.content.replace(/<[^>]+>/g, "").slice(0, 10000)
@@ -110,6 +120,14 @@ export class ChatMessagesService {
         throw new BadRequestException(
           `Attachment "${oversized.fileName}" exceeds the ${maxAttachmentSizeMb}MB limit for this organization`,
         );
+
+      const orgPrefix = `${orgId}/`;
+      for (const a of body.attachments) {
+        if (!this.storage.isValidFileKey(a.fileKey) || !a.fileKey.startsWith(orgPrefix))
+          throw new BadRequestException(
+            `Attachment "${a.fileName}" has an invalid or cross-tenant key`,
+          );
+      }
     }
 
     const mentionedUserIds = await resolveMentionedUserIds(this.db, {
@@ -121,8 +139,9 @@ export class ChatMessagesService {
     });
 
     const fanoutEventId = randomUUID();
-    const { message, insertedAttachments, senderName, senderImage, channelType } =
-      await this.db.transaction(async (tx) => {
+    let sendResult;
+    try {
+      sendResult = await this.db.transaction(async (tx) => {
         const [channel] = await tx
           .select({ id: chatChannels.id, type: chatChannels.type })
           .from(chatChannels)
@@ -130,6 +149,9 @@ export class ChatMessagesService {
           .limit(1);
 
         if (!channel) throw new NotFoundException("Channel not found");
+
+        if (body.replyToId !== undefined)
+          await this.requireReplyTargetInChannel(tx, orgId, channelId, body.replyToId);
 
         const [senderRow] = await tx
           .select({ name: users.name, image: users.image })
@@ -158,32 +180,61 @@ export class ChatMessagesService {
             content: sanitizedContent?.trim() || null,
             replyToId: body.replyToId,
             metadata: body.metadata ?? null,
+            clientKey: body.clientKey ?? null,
             channelPosition,
           })
+          .onConflictDoNothing(CHAT_MESSAGE_CLIENT_KEY_CONFLICT)
           .returning();
+
+        // Two retries racing past the pre-check both reach here; the partial unique lets
+        // exactly one insert and the loser replays the winner's row.
+        if (!created) throw new DuplicateSendError();
 
         let attachmentRows: ChatAttachmentPayload[] = [];
         if (body.attachments && body.attachments.length > 0) {
-          attachmentRows = await tx
+          const inserted = await tx
             .insert(chatAttachments)
             .values(
               body.attachments.map((a) => ({
                 orgId,
                 messageId: created.id,
                 fileName: a.fileName,
-                fileUrl: a.fileUrl,
+                fileUrl: "",
                 fileKey: a.fileKey,
                 fileSize: a.fileSize,
                 mimeType: a.mimeType,
               })),
             )
             .returning();
+          attachmentRows = inserted.map(({ id, fileName, fileKey, fileSize, mimeType }) => ({
+            id,
+            fileName,
+            fileUrl: "",
+            fileKey,
+            fileSize,
+            mimeType,
+          }));
         }
 
+        // `isNotNull(archivedAt)` is what turns this from an O(members) write into a
+        // no-op in the overwhelmingly common case. Without it every single message
+        // rewrote EVERY member row of the channel and held a row lock on each until
+        // commit: 5,000 row updates and 5,000 locks per message in a 5,000-member
+        // channel, two concurrent sends serialising on the whole roster, and every
+        // markRead / mute / favourite on that channel queueing behind an in-flight send.
+        // Table bloat grew as messages x members. The predicate does not change what the
+        // statement means — a row with `archived_at` already NULL is set to NULL — it
+        // only stops the rows that need nothing from being written.
         await tx
           .update(chatChannelMembers)
           .set({ archivedAt: null })
-          .where(eq(chatChannelMembers.channelId, channelId));
+          .where(
+            and(
+              eq(chatChannelMembers.orgId, orgId),
+              eq(chatChannelMembers.channelId, channelId),
+              isNotNull(chatChannelMembers.archivedAt),
+            ),
+          );
 
         await OutboxWriter.emit(tx, {
           eventId: fanoutEventId,
@@ -216,19 +267,19 @@ export class ChatMessagesService {
           channelType: channel.type ?? null,
         };
       });
+    } catch (error: unknown) {
+      if (error instanceof DuplicateSendError && body.clientKey) {
+        const winner = await this.findByClientKey(orgId, channelId, body.clientKey);
+        if (winner) return winner;
+      }
+      throw error;
+    }
+    const { message, insertedAttachments, senderName, senderImage, channelType } = sendResult;
 
-    const deferred = () =>
-      runInNewTenantTransaction(this.db, orgId, async () => {
-        await this.cache.invalidateNamespace(`chat:unread:${orgId}`);
-        await this.replyReminders.scheduleForMessage(orgId, channelId, message.id, userId);
-      }).catch((error: unknown) => {
-        logger.error("chat message side effects failed", {
-          orgId,
-          channelId,
-          messageId: message.id,
-          error: error instanceof Error ? error.message : "Unknown error",
-        });
-      });
+    const deferWork = async () => {
+      await this.cache.invalidateNamespace(`chat:unread:${orgId}`);
+      await this.replyReminders.scheduleForMessage(orgId, channelId, message.id, userId, senderMembershipId);
+    };
 
     const realtime = () =>
       this.fanout
@@ -261,81 +312,18 @@ export class ChatMessagesService {
         });
 
     if (!registerAfterCommit(realtime)) void realtime();
-    if (!registerAfterCommit(deferred)) void deferred();
+    if (!registerAfterCommit(deferWork)) {
+      void runInNewTenantTransaction(this.db, orgId, deferWork).catch((error: unknown) => {
+        logger.error("chat message side effects failed", {
+          orgId,
+          channelId,
+          messageId: message.id,
+          error: error instanceof Error ? error.message : "Unknown error",
+        });
+      });
+    }
 
     return message;
-  }
-
-  async edit(messageId: number, userId: string, orgId: string, content: string) {
-    const message = await this.db.query.chatMessages.findFirst({
-      where: and(eq(chatMessages.id, messageId), eq(chatMessages.orgId, orgId), eq(chatMessages.isDeleted, false)),
-    });
-    if (!message) throw new NotFoundException("Message not found");
-
-    const membershipId = await this.resolveMembershipId(orgId, userId);
-    if (
-      membershipId === null ||
-      !(await this.isMember(message.channelId, orgId, membershipId))
-    )
-      throw new ForbiddenException("You are not a member of this channel");
-
-    if (message.senderMembershipId !== membershipId)
-      throw new ForbiddenException("You can only edit your own messages");
-
-    const updatedAt = new Date();
-    await this.db
-      .update(chatMessages)
-      .set({ content: content.trim(), isEdited: true, updatedAt })
-      .where(
-        and(
-          eq(chatMessages.id, messageId),
-          eq(chatMessages.senderMembershipId, membershipId),
-        ),
-      );
-
-    void this.ably.publishChatEvent(orgId, message.channelId, "message:updated", {
-      id: messageId,
-      channelId: message.channelId,
-      content: content.trim(),
-      isEdited: true,
-      updatedAt: updatedAt.toISOString(),
-    });
-
-    return { ok: true };
-  }
-
-  async remove(messageId: number, userId: string, isOrgAdmin: boolean, orgId: string) {
-    const message = await this.db.query.chatMessages.findFirst({
-      where: and(eq(chatMessages.id, messageId), eq(chatMessages.orgId, orgId), eq(chatMessages.isDeleted, false)),
-    });
-    if (!message) throw new NotFoundException("Message not found");
-
-    const membershipId = await this.resolveMembershipId(orgId, userId);
-    if (
-      membershipId === null ||
-      !(await this.isMember(message.channelId, orgId, membershipId))
-    )
-      throw new ForbiddenException("You are not a member of this channel");
-
-    if (!isOrgAdmin && message.senderMembershipId !== membershipId)
-      throw new ForbiddenException("You can only delete your own messages");
-
-    await this.db
-      .update(chatMessages)
-      .set({ isDeleted: true, content: null, updatedAt: new Date() })
-      .where(
-        and(
-          eq(chatMessages.id, messageId),
-          eq(chatMessages.channelId, message.channelId),
-        ),
-      );
-
-    void this.ably.publishChatEvent(orgId, message.channelId, "message:deleted", {
-      id: messageId,
-      channelId: message.channelId,
-    });
-
-    return { ok: true };
   }
 
   async sendThreadReply(
@@ -345,16 +333,7 @@ export class ChatMessagesService {
     orgId: string,
     body: SendMessageInput,
   ) {
-    const parentMessage = await this.db.query.chatMessages.findFirst({
-      where: and(
-        eq(chatMessages.id, parentMessageId),
-        eq(chatMessages.channelId, channelId),
-        eq(chatMessages.isDeleted, false),
-      ),
-      columns: { id: true, channelId: true },
-    });
-
-    if (!parentMessage) throw new NotFoundException("Message not found");
+    await this.requireReplyTargetInChannel(this.db, orgId, channelId, parentMessageId);
 
     return this.send(channelId, userId, orgId, { ...body, replyToId: parentMessageId });
   }
@@ -389,7 +368,7 @@ export class ChatMessagesService {
     content: string,
     metadata: Record<string, unknown>,
   ): Promise<void> {
-    const senderMembershipId = await this.resolveMembershipId(orgId, senderId);
+    const senderMembershipId = await resolveMembershipId(this.db, orgId, senderId);
 
     const { message, senderName } = await this.db.transaction(async (tx) => {
       const [channel] = await tx

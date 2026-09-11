@@ -14,6 +14,10 @@ import {
 } from "./dto/job-boards.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  jobBoardPostingSchema,
+} from "./dto/recruitment-response.schemas";
 
 const jobIdParams = z.object({ jobId: z.coerce.number().int().positive() }).strict();
 const jobAndPostingIdParams = z.object({ jobId: z.coerce.number().int().positive(), postingId: z.coerce.number().int().positive() }).strict();
@@ -25,6 +29,7 @@ export class RecruitmentJobBoardsController {
   constructor(private readonly service: RecruitmentJobBoardsService) {}
 
   @Get()
+  @ResponseSchema(z.array(jobBoardPostingSchema))
   @RequirePermission("hr:employees:view")
   @Validate({ params: jobIdParams })
   list(@CurrentUser() u: CurrentUserContext, @Param("jobId", ParseIntPipe) jobId: number) {
@@ -33,6 +38,7 @@ export class RecruitmentJobBoardsController {
 
   @Post()
   @HttpCode(201)
+  @ResponseSchema(jobBoardPostingSchema)
   @RequirePermission("hr:employees:manage")
   @Validate({ params: jobIdParams, body: createJobBoardPostingSchema })
   create(
@@ -44,6 +50,7 @@ export class RecruitmentJobBoardsController {
   }
 
   @Patch(":postingId")
+  @ResponseSchema(jobBoardPostingSchema)
   @RequirePermission("hr:employees:manage")
   @Validate({ params: jobAndPostingIdParams, body: updateJobBoardPostingSchema })
   update(
@@ -57,6 +64,7 @@ export class RecruitmentJobBoardsController {
 
   @Delete(":postingId")
   @HttpCode(204)
+  @NoContentResponse()
   @RequirePermission("hr:employees:manage")
   @Validate({ params: jobAndPostingIdParams })
   remove(

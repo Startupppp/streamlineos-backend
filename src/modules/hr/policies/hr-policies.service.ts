@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq, ilike, inArray, isNull, ne, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNull, ne, or, sql, type SQL } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { hrPolicies, hrPolicyScopes } from "../../../db/schema";
@@ -21,8 +21,14 @@ import type { PolicyType } from "./hr-policy-types";
 import { buildDefaultPolicies } from "./seed-default-policies";
 import { HrPolicyEvaluationService } from "./hr-policy-evaluation.service";
 import { HrPolicyConflictService } from "./hr-policy-conflict.service";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
+import { buildTupleCursorPage, decodeTupleCursor } from "../../../common/pagination/cursor";
+import {
+  keysetBeforeTuple,
+  keysetInteger,
+  keysetTimestamp,
+} from "../../../common/pagination/keyset";
 
-const POLICIES_CACHE = (orgId: string) => `hr:policies:list:${orgId}`;
 const POLICY_CACHE = (orgId: string, id: number) => `hr:policies:detail:${orgId}:${id}`;
 const POLICY_SEARCH_CAP = 500;
 
@@ -35,32 +41,43 @@ export class HrPoliciesService {
     private readonly conflicts: HrPolicyConflictService,
   ) {}
 
+  /**
+   * `(priority, created_at, id)` — the sort is two columns and neither is
+   * unique, so the serial id completes the total order. All three ride in the
+   * cursor: a `(priority, id)` cursor would order by something the query does
+   * not, and skip rows wherever two policies share a priority.
+   */
   async list(orgId: string, query: PoliciesListQuery) {
-    const { page, limit, type, status, search } = query;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, type, status, search } = query;
 
     const conditions = [eq(hrPolicies.orgId, orgId), isNull(hrPolicies.deletedAt)];
     if (type) conditions.push(eq(hrPolicies.policyType, type));
     if (status) conditions.push(eq(hrPolicies.status, status));
     if (search) conditions.push(await this.policySearchCondition(search));
 
-    const where = and(...conditions);
+    const position = decodeTupleCursor(cursor, 3);
+    if (position) {
+      conditions.push(
+        keysetBeforeTuple([
+          { column: hrPolicies.priority, value: keysetInteger(position[0] ?? "") },
+          { column: hrPolicies.createdAt, value: keysetTimestamp(position[1] ?? "") },
+          { column: hrPolicies.id, value: keysetInteger(position[2] ?? "") },
+        ]),
+      );
+    }
 
-    const [rows, countRows] = await Promise.all([
-      this.db.query.hrPolicies.findMany({
-        where,
-        with: { scopes: true },
-        orderBy: [desc(hrPolicies.priority), desc(hrPolicies.createdAt)],
-        limit,
-        offset,
-      }),
-      this.db
-        .select({ total: count() })
-        .from(hrPolicies)
-        .where(where),
+    const rows = await this.db.query.hrPolicies.findMany({
+      where: and(...conditions),
+      with: { scopes: true },
+      orderBy: [desc(hrPolicies.priority), desc(hrPolicies.createdAt), desc(hrPolicies.id)],
+      limit: limit + 1,
+    });
+
+    return buildTupleCursorPage(rows, limit, (row) => [
+      String(row.priority),
+      row.createdAt.toISOString(),
+      String(row.id),
     ]);
-
-    return { data: rows, total: Number(countRows[0]?.total ?? 0), page, limit };
   }
 
   private async policySearchCondition(search: string): Promise<SQL> {
@@ -116,8 +133,8 @@ export class HrPoliciesService {
         version: 1,
       })
       .returning()
-      .catch((e: { code?: string }) => {
-        if (e.code === "23505") {
+      .catch((e: unknown) => {
+        if (isUniqueViolation(e)) {
           throw new ConflictException(
             "A policy with this name, type, and version already exists",
           );
@@ -126,7 +143,6 @@ export class HrPoliciesService {
       });
 
     await this.upsertScopes(orgId, policy.id, input.scopes);
-    await this.cache.invalidate(POLICIES_CACHE(orgId));
     return this.getById(orgId, policy.id);
   }
 
@@ -153,6 +169,7 @@ export class HrPoliciesService {
         ...(input.effectiveTo !== undefined && { effectiveTo: input.effectiveTo }),
         ...(input.priority !== undefined && { priority: input.priority }),
         ...(validatedRules !== undefined && { rules: validatedRules }),
+        updatedAt: new Date(),
       })
       .where(and(eq(hrPolicies.id, policyId), eq(hrPolicies.orgId, orgId)));
 
@@ -160,10 +177,7 @@ export class HrPoliciesService {
       await this.upsertScopes(orgId, policyId, input.scopes);
     }
 
-    await Promise.all([
-      this.cache.invalidate(POLICIES_CACHE(orgId)),
-      this.cache.invalidate(POLICY_CACHE(orgId, policyId)),
-    ]);
+    await this.cache.invalidate(POLICY_CACHE(orgId, policyId));
     return this.getById(orgId, policyId);
   }
 
@@ -199,8 +213,8 @@ export class HrPoliciesService {
         parentPolicyId: policyId,
       })
       .returning()
-      .catch((e: { code?: string }) => {
-        if (e.code === "23505") throw new ConflictException("Version already exists");
+      .catch((e: unknown) => {
+        if (isUniqueViolation(e)) throw new ConflictException("Version already exists");
         throw e;
       });
 
@@ -209,7 +223,6 @@ export class HrPoliciesService {
       scopeValue: s.scopeValue,
     }));
     await this.upsertScopes(orgId, newPolicy.id, scopesToCopy);
-    await this.cache.invalidate(POLICIES_CACHE(orgId));
     return this.getById(orgId, newPolicy.id);
   }
 
@@ -235,9 +248,9 @@ export class HrPoliciesService {
         .set({ status: "active" })
         .where(and(eq(hrPolicies.id, policyId), eq(hrPolicies.orgId, orgId)));
 
-      const lowerPriorityConflicts = await tx
-        .select({ id: hrPolicies.id })
-        .from(hrPolicies)
+      await tx
+        .update(hrPolicies)
+        .set({ status: "archived" })
         .where(
           and(
             eq(hrPolicies.orgId, orgId),
@@ -247,25 +260,9 @@ export class HrPoliciesService {
             sql`${hrPolicies.priority} < ${policy.priority}`,
           ),
         );
-
-      if (lowerPriorityConflicts.length > 0) {
-        const ids = lowerPriorityConflicts.map((r) => r.id);
-        await tx
-          .update(hrPolicies)
-          .set({ status: "archived" })
-          .where(
-            and(
-              eq(hrPolicies.orgId, orgId),
-              inArray(hrPolicies.id, ids),
-            ),
-          );
-      }
     });
 
-    await Promise.all([
-      this.cache.invalidate(POLICIES_CACHE(orgId)),
-      this.cache.invalidate(POLICY_CACHE(orgId, policyId)),
-    ]);
+    await this.cache.invalidate(POLICY_CACHE(orgId, policyId));
     return this.getById(orgId, policyId);
   }
 
@@ -305,15 +302,14 @@ export class HrPoliciesService {
   }
 
   async archive(orgId: string, policyId: number) {
-    await this.db
+    const archived = await this.db
       .update(hrPolicies)
       .set({ status: "archived" })
-      .where(and(eq(hrPolicies.id, policyId), eq(hrPolicies.orgId, orgId)));
+      .where(and(eq(hrPolicies.id, policyId), eq(hrPolicies.orgId, orgId)))
+      .returning({ id: hrPolicies.id });
+    if (archived.length === 0) throw new NotFoundException("Policy not found");
 
-    await Promise.all([
-      this.cache.invalidate(POLICIES_CACHE(orgId)),
-      this.cache.invalidate(POLICY_CACHE(orgId, policyId)),
-    ]);
+    await this.cache.invalidate(POLICY_CACHE(orgId, policyId));
     return { success: true };
   }
 
@@ -364,7 +360,6 @@ export class HrPoliciesService {
       );
     }
 
-    await this.cache.invalidate(POLICIES_CACHE(orgId));
     return { seeded: true, count: insertedPolicies.length };
   }
 

@@ -84,6 +84,7 @@ export class TplService {
 
   async syncConnection(orgId: string, userId: string, connectionId: number) {
     const existing = await this.db.query.inv3plConnections.findFirst({
+      columns: { id: true },
       where: and(eq(inv3plConnections.id, connectionId), eq(inv3plConnections.orgId, orgId)),
     });
     if (!existing) throw new NotFoundException("3PL connection not found");

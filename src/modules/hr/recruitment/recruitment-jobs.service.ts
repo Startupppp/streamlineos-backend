@@ -6,13 +6,14 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import {
   candidateApplications,
   candidateSources,
   candidates,
   jobPostings,
   jobRecruiters,
+  orgUnits,
   organizations,
   users,
 } from "../../../db/schema";
@@ -23,6 +24,8 @@ import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { formatDateOnly } from "../../../common/date";
 import type { AssignRecruiterInput, CreateJobInput, InternalApplyInput, JobListInput, PublishJobInput, UpdateJobInput } from "./dto/jobs.schemas";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 
 type PublishStatus = "PUBLISHED" | "NO_INTEGRATION" | "INACTIVE" | "NO_TOKEN";
 
@@ -41,36 +44,42 @@ export class RecruitmentJobsService {
   ) {}
 
   async list(orgId: string, input: JobListInput) {
-    const key = `${input.status ?? ""}:${input.page}:${input.pageSize}`;
+    const key = `${input.status ?? ""}:${input.cursor ?? ""}:${input.pageSize}`;
     return this.cache.cachedVersioned(
       `hr:jobs:list:${orgId}`,
       key,
       async () => {
         const conditions = [eq(jobPostings.orgId, orgId)];
         if (input.status) conditions.push(eq(jobPostings.status, input.status));
-        const where = and(...conditions);
+        const baseWhere = and(...conditions);
+        const position = decodeCursor(input.cursor);
+        const where = and(
+          baseWhere,
+          position ? keysetBeforeId(jobPostings.createdAt, jobPostings.id, position) : undefined,
+        );
 
         const [items, totalRow] = await Promise.all([
           this.db.query.jobPostings.findMany({
             where,
-            orderBy: [desc(jobPostings.createdAt)],
-            limit: input.limit,
-            offset: input.offset,
+            orderBy: [desc(jobPostings.createdAt), desc(jobPostings.id)],
+            limit: input.limit + 1,
           }),
           this.db
             .select({ total: sql<number>`count(*)::int` })
             .from(jobPostings)
-            .where(where)
+            .where(baseWhere)
             .then((rows) => rows[0] ?? { total: 0 }),
         ]);
 
         const total = Number(totalRow.total);
+        const page = buildCursorPage(items, input.pageSize, (job) => ({
+          sortValue: job.createdAt.toISOString(),
+          id: String(job.id),
+        }));
         return {
-          items,
+          items: page.data,
           total,
-          page: input.page,
-          pageSize: input.pageSize,
-          totalPages: input.pageSize > 0 ? Math.ceil(total / input.pageSize) : 0,
+          pagination: page.pagination,
         };
       },
       CACHE_TTL.MEDIUM,
@@ -113,7 +122,7 @@ export class RecruitmentJobsService {
         requirements: input.requirements,
         benefits: input.benefits,
         openings: input.openings || 1,
-        applicationDeadline: input.applicationDeadline ? formatDateOnly(new Date(input.applicationDeadline)) : undefined,
+        applicationDeadline: input.applicationDeadline ? formatDateOnly(input.applicationDeadline) : undefined,
         status: input.status ?? "DRAFT",
         postedBy: userId,
         screeningQuestions: input.screeningQuestions,
@@ -127,7 +136,11 @@ export class RecruitmentJobsService {
   async getOne(orgId: string, jobId: number) {
     const job = await this.db.query.jobPostings.findFirst({
       where: and(eq(jobPostings.id, jobId), eq(jobPostings.orgId, orgId)),
-      with: { applications: true },
+      with: {
+        applications: {
+          columns: { trackingToken: false },
+        },
+      },
     });
     if (!job) throw new NotFoundException("Job posting not found.");
     return job;
@@ -153,7 +166,7 @@ export class RecruitmentJobsService {
     if (input.benefits !== undefined) updateData.benefits = input.benefits;
     if (input.status !== undefined) updateData.status = input.status;
     if (input.openings !== undefined) updateData.openings = input.openings;
-    if (input.applicationDeadline !== undefined) updateData.applicationDeadline = formatDateOnly(new Date(input.applicationDeadline));
+    if (input.applicationDeadline !== undefined) updateData.applicationDeadline = formatDateOnly(input.applicationDeadline);
     if (input.hiringFlowId !== undefined) updateData.hiringFlowId = input.hiringFlowId;
     if (input.screeningQuestions !== undefined) updateData.screeningQuestions = input.screeningQuestions;
 
@@ -163,7 +176,11 @@ export class RecruitmentJobsService {
   }
 
   async remove(orgId: string, jobId: number) {
-    await this.db.delete(jobPostings).where(and(eq(jobPostings.id, jobId), eq(jobPostings.orgId, orgId)));
+    const removed = await this.db
+      .delete(jobPostings)
+      .where(and(eq(jobPostings.id, jobId), eq(jobPostings.orgId, orgId)))
+      .returning({ id: jobPostings.id });
+    if (removed.length === 0) throw new NotFoundException("Job posting not found.");
     await this.cache.invalidateNamespace(`hr:jobs:list:${orgId}`);
     return { success: true };
   }
@@ -179,21 +196,25 @@ export class RecruitmentJobsService {
     if (!source) throw new NotFoundException("Job posting not found.");
 
     const baseTitle = source.title.replace(/\s*\(copy(?:\s+\d+)?\)\s*$/i, "").trim();
-    let title = `${baseTitle} (copy)`;
-    let attempt = 1;
-    // Ensure we don't trip the title+location+type uniqueness check forever.
-    while (attempt <= 20) {
-      const clash = await this.db.query.jobPostings.findFirst({
-        where: and(
+    const normalizedBase = baseTitle.trim().toLowerCase();
+    const normalizedLocation = (source.location ?? "").trim().toLowerCase();
+    const existingCopies = await this.db
+      .select({ normTitle: sql<string>`lower(trim(${jobPostings.title}))` })
+      .from(jobPostings)
+      .where(
+        and(
           eq(jobPostings.orgId, orgId),
-          sql`lower(trim(${jobPostings.title})) = ${title.trim().toLowerCase()}`,
-          sql`lower(trim(coalesce(${jobPostings.location}, ''))) = ${(source.location ?? "").trim().toLowerCase()}`,
+          sql`lower(trim(${jobPostings.title})) LIKE ${normalizedBase + " (copy%"}`,
+          sql`lower(trim(coalesce(${jobPostings.location}, ''))) = ${normalizedLocation}`,
           eq(jobPostings.type, source.type ?? "FULL_TIME"),
         ),
-        columns: { id: true },
-      });
-      if (!clash) break;
-      attempt += 1;
+      )
+      .limit(25);
+    const clashingNorm = new Set(existingCopies.map((r) => r.normTitle));
+
+    let title = `${baseTitle} (copy)`;
+    for (let attempt = 2; attempt <= 21; attempt++) {
+      if (!clashingNorm.has(title.trim().toLowerCase())) break;
       title = `${baseTitle} (copy ${attempt})`;
     }
 
@@ -236,6 +257,7 @@ export class RecruitmentJobsService {
 
     const sources = await this.db.query.candidateSources.findMany({
       where: eq(candidateSources.orgId, orgId),
+      limit: 100,
     });
 
     const results: Array<{ platform: string; status: PublishStatus }> = [];
@@ -264,7 +286,7 @@ export class RecruitmentJobsService {
       await this.db
         .update(jobPostings)
         .set({ externalPostingIds: externalIds, updatedAt: new Date() })
-        .where(eq(jobPostings.id, jobId));
+        .where(and(eq(jobPostings.id, jobId), eq(jobPostings.orgId, orgId)));
       await this.cache.invalidateNamespace(`hr:jobs:list:${orgId}`);
     }
 
@@ -285,7 +307,8 @@ export class RecruitmentJobsService {
       })
       .from(jobRecruiters)
       .innerJoin(users, eq(jobRecruiters.userId, users.id))
-      .where(eq(jobRecruiters.jobPostingId, jobId));
+      .where(eq(jobRecruiters.jobPostingId, jobId))
+      .limit(100);
   }
 
   async assignRecruiter(orgId: string, userId: string, jobId: number, input: AssignRecruiterInput) {
@@ -298,7 +321,8 @@ export class RecruitmentJobsService {
     return row ?? { message: "Already assigned" };
   }
 
-  async removeRecruiter(jobId: number, input: AssignRecruiterInput) {
+  async removeRecruiter(orgId: string, jobId: number, input: AssignRecruiterInput) {
+    await this.ensureJob(orgId, jobId);
     await this.db
       .delete(jobRecruiters)
       .where(and(eq(jobRecruiters.jobPostingId, jobId), eq(jobRecruiters.userId, input.userId)));
@@ -337,28 +361,50 @@ export class RecruitmentJobsService {
     };
   }
 
-  listInternalJobs(orgId: string) {
-    return this.db.query.jobPostings.findMany({
-      where: and(eq(jobPostings.orgId, orgId), eq(jobPostings.isInternal, true), eq(jobPostings.status, "OPEN")),
-      with: {
-        orgDepartment: { columns: { id: true, name: true } },
-        postedByUser: { columns: { id: true, name: true } },
-      },
-      columns: {
-        id: true,
-        title: true,
-        orgDepartmentId: true,
-        location: true,
-        type: true,
-        experience: true,
-        description: true,
-        requirements: true,
-        openings: true,
-        applicationDeadline: true,
-        createdAt: true,
-      },
-      limit: 100,
-    });
+  /**
+   * The client's `InternalJob` declares `department` and `departmentId`; this read shipped the
+   * relation under its schema name, `orgDepartment` / `orgDepartmentId`, and `apiClient.get` is a
+   * cast, so `job.department` was `undefined` on every row and the department badge in
+   * `internal-jobs-client.tsx:109` — guarded by `{job.department && ...}` — silently never rendered
+   * on any internal opening. `postedByUser` leaves the wire: no consumer reads it.
+   */
+  async listInternalJobs(orgId: string) {
+    const rows = await this.db
+      .select({
+        id: jobPostings.id,
+        title: jobPostings.title,
+        departmentId: jobPostings.orgDepartmentId,
+        departmentName: orgUnits.name,
+        location: jobPostings.location,
+        type: jobPostings.type,
+        experience: jobPostings.experience,
+        description: jobPostings.description,
+        requirements: jobPostings.requirements,
+        openings: jobPostings.openings,
+        applicationDeadline: jobPostings.applicationDeadline,
+        createdAt: jobPostings.createdAt,
+      })
+      .from(jobPostings)
+      .leftJoin(
+        orgUnits,
+        and(
+          eq(orgUnits.orgId, jobPostings.orgId),
+          eq(orgUnits.id, jobPostings.orgDepartmentId),
+          // Soft-deleting an org unit does not fire the posting's cascade, so `org_department_id`
+          // outlives the department it names. Without this the badge rendered a deleted
+          // department; with it the LEFT JOIN yields a null name and the mapping below already
+          // collapses that to `department: null`, which is what the client's guard expects.
+          isNull(orgUnits.deletedAt),
+        ),
+      )
+      .where(
+        and(eq(jobPostings.orgId, orgId), eq(jobPostings.isInternal, true), eq(jobPostings.status, "OPEN")),
+      )
+      .limit(100);
+    return rows.map(({ departmentName, ...job }) => ({
+      ...job,
+      department: job.departmentId !== null && departmentName !== null ? { id: job.departmentId, name: departmentName } : null,
+    }));
   }
 
   async internalApply(orgId: string, userId: string, jobId: number, input: InternalApplyInput) {
@@ -389,6 +435,7 @@ export class RecruitmentJobsService {
     if (existing) {
       candidateId = existing.id;
     } else {
+      await this.planLimits.assertWithinLimit(orgId, "hrCandidates");
       const [created] = await this.db
         .insert(candidates)
         .values({
@@ -399,11 +446,16 @@ export class RecruitmentJobsService {
           source: "INTERNAL",
         })
         .returning({ id: candidates.id });
+      if (!created) throw new InternalServerErrorException("Failed to create candidate.");
       candidateId = created.id;
     }
 
     const existingApp = await this.db.query.candidateApplications.findFirst({
-      where: and(eq(candidateApplications.candidateId, candidateId), eq(candidateApplications.jobPostingId, jobId)),
+      where: and(
+        eq(candidateApplications.orgId, orgId),
+        eq(candidateApplications.candidateId, candidateId),
+        eq(candidateApplications.jobPostingId, jobId),
+      ),
       columns: { id: true },
     });
     if (existingApp) throw new ConflictException("You have already applied for this position");

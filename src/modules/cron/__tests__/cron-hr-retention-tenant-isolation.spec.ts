@@ -40,7 +40,10 @@ describe("CronHrRetentionService — cross-tenant isolation", () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
-    svc = new CronHrRetentionService({} as unknown as Db);
+    svc = new CronHrRetentionService(
+      {} as unknown as Db,
+      { deleteFileIfPresent: jest.fn().mockResolvedValue(true) } as never,
+    );
   });
 
   it("sweep uses forEachOrg — each org is processed in its own scoped transaction (not cross-org)", async () => {

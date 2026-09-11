@@ -30,7 +30,10 @@ export const PAYROLL_PERMISSIONS: Permission[] = [
     name: "payroll:runs:manage",
     resource: "payroll:runs",
     action: "manage",
-    description: "Lock, reopen, and mark paid payroll runs",
+    // Marking a batch or a run paid is `payroll:bank:manage`
+    // (payout-batches.controller.ts). This key covers generate, recalculate,
+    // adjustments, holds, exception overrides and lock/reopen/close.
+    description: "Generate, recalculate, lock, reopen and close payroll runs",
   },
   {
     name: "payroll:salaries:view",

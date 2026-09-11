@@ -47,7 +47,7 @@ export const createInvoiceSchema = z
     supplierGstin: z.string().regex(GSTIN_REGEX).optional(),
     reverseCharge: z.boolean().optional(),
     taxInclusive: z.boolean().optional(),
-  })
+  }).strict()
   .refine((v) => Boolean(v.items?.length || v.lineItems?.length), {
     message: "Either items or lineItems must be provided",
   })
@@ -56,26 +56,37 @@ export const createInvoiceSchema = z
     path: ["discount"],
   });
 
+/**
+ * The edit shape. It is the legacy line (which carries a pre-computed `amount`)
+ * plus the two fields that make a line a GST tax-invoice line: its rate and its
+ * HSN/SAC code. Both are optional so existing callers keep working — when they
+ * are absent the service carries the stored values forward rather than writing
+ * zeros over them, and refuses the edit outright when carrying them forward
+ * would be a guess. See invoices-update.service.ts.
+ */
+const updateLineItemSchema = z.object({
+  description: z.string().min(1),
+  quantity: z.number().min(1).max(999999),
+  rate: z.number().positive().max(999999999.99),
+  amount: z.number().min(0).max(999999999.99),
+  gstRate: z
+    .number()
+    .refine((v) => [0, 5, 12, 18, 28].includes(v), { message: "gstRate must be 0/5/12/18/28" })
+    .optional(),
+  hsnSacCode: z.string().optional(),
+});
+
 export const updateInvoiceSchema = z.object({
   clientId: z.number().optional(),
   projectId: z.number().optional(),
-  lineItems: z
-    .array(
-      z.object({
-        description: z.string().min(1),
-        quantity: z.number().min(1).max(999999),
-        rate: z.number().positive().max(999999999.99),
-        amount: z.number().min(0).max(999999999.99),
-      }),
-    )
-    .optional(),
+  lineItems: z.array(updateLineItemSchema).optional(),
   taxRate: z.number().min(0).max(100).optional(),
   discount: z.number().min(0).optional(),
   currency: z.string().optional(),
   dueDate: z.string().optional(),
   notes: z.string().optional(),
-  status: z.enum(["ISSUED", "PAID", "FAILED", "VOIDED"]).optional(),
-});
+  status: z.enum(["ISSUED", "PAID", "FAILED"]).optional(),
+}).strict();
 
 export const recordPaymentSchema = z.object({
   amount: z.number().positive().max(999999999.99),
@@ -91,7 +102,7 @@ export const recordPaymentSchema = z.object({
       }),
     )
     .optional(),
-});
+}).strict();
 
 export type CreateInvoiceInput = z.infer<typeof createInvoiceSchema>;
 export type UpdateInvoiceInput = z.infer<typeof updateInvoiceSchema>;

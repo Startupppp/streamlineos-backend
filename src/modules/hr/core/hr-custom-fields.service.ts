@@ -12,8 +12,7 @@ import { customFieldDefinitions } from "../../../db/schema/custom-field-engine";
 import { hrEmployments, hrPeople } from "../../../db/schema/hr/core-people";
 import { organizationMembers } from "../../../db/schema";
 import type { CreateCustomFieldInput, UpdateCustomFieldInput, UpsertCustomFieldValuesInput } from "./dto/hr-custom-fields.schemas";
-import type { DataScope } from "../../access/access.types";
-import { applyScope } from "../../access/apply-scope";
+import type { ScopedRead } from "../../access/scoped-read";
 import { assertActiveOrgUnit } from "../../../common/org/sync-org-unit-placement";
 
 type HrFieldDef = {
@@ -67,28 +66,31 @@ export class HrCustomFieldsService {
   }
 
   private async assertEmploymentInScope(
-    orgId: string,
-    actorUserId: string,
-    scope: DataScope,
+    read: ScopedRead,
     employmentId: number,
   ): Promise<void> {
-    const [employment] = await this.db
-      .select({ id: hrEmployments.id })
-      .from(hrEmployments)
-      .innerJoin(
-        hrPeople,
-        and(eq(hrPeople.orgId, hrEmployments.orgId), eq(hrPeople.id, hrEmployments.personId)),
-      )
-      .where(
-        and(
+    const [employment] = await read.read(
+      {
+        tenant: hrEmployments.orgId,
+        scope: { columns: { ownerColumn: hrPeople.userId } },
+        and: [
           eq(hrEmployments.id, employmentId),
-          eq(hrEmployments.orgId, orgId),
           isNull(hrEmployments.deletedAt),
           isNull(hrPeople.deletedAt),
-          applyScope(scope, orgId, actorUserId, { ownerColumn: hrPeople.userId }),
-        ),
-      )
-      .limit(1);
+        ],
+      },
+      ({ sql: where }) =>
+        this.db
+          .select({ id: hrEmployments.id })
+          .from(hrEmployments)
+          .innerJoin(
+            hrPeople,
+            and(eq(hrPeople.orgId, hrEmployments.orgId), eq(hrPeople.id, hrEmployments.personId)),
+          )
+          .where(where)
+          .limit(1),
+      () => [],
+    );
     if (!employment) throw new NotFoundException("Employee not found");
   }
 
@@ -111,7 +113,8 @@ export class HrCustomFieldsService {
           eq(customFieldDefinitions.isActive, true),
         ),
       )
-      .orderBy(asc(customFieldDefinitions.displayOrder), asc(customFieldDefinitions.id));
+      .orderBy(asc(customFieldDefinitions.displayOrder), asc(customFieldDefinitions.id))
+      .limit(100);
     return rows.map((r) => this.toHrFieldDef(r));
   }
 
@@ -142,6 +145,7 @@ export class HrCustomFieldsService {
     const [row] = await this.db
       .update(customFieldDefinitions)
       .set({
+        updatedAt: new Date(),
         label: input.name,
         options: input.options,
         settings: input.settings,
@@ -165,20 +169,19 @@ export class HrCustomFieldsService {
   }
 
   async getEntityValues(
-    orgId: string,
-    actorUserId: string,
-    scope: DataScope,
+    read: ScopedRead,
     entityType: string,
     entityId: string,
     canViewSensitive: boolean,
   ) {
+    const orgId = read.orgId;
     this.assertSupportedValueEntity(entityType);
     const empId = Number(entityId);
     if (!Number.isInteger(empId) || empId <= 0) {
       throw new BadRequestException("Invalid entity ID — must be a positive integer");
     }
 
-    await this.assertEmploymentInScope(orgId, actorUserId, scope, empId);
+    await this.assertEmploymentInScope(read, empId);
 
     const [defs, empRows] = await Promise.all([
       this.listDefinitions(orgId, entityType),
@@ -202,21 +205,20 @@ export class HrCustomFieldsService {
   }
 
   async upsertEntityValues(
-    orgId: string,
-    actorUserId: string,
-    scope: DataScope,
+    read: ScopedRead,
     entityType: string,
     entityId: string,
     input: UpsertCustomFieldValuesInput,
     canManageSensitive: boolean,
   ) {
+    const orgId = read.orgId;
     this.assertSupportedValueEntity(entityType);
     const empId = Number(entityId);
     if (!Number.isInteger(empId) || empId <= 0) {
       throw new BadRequestException("Invalid entity ID — must be a positive integer");
     }
 
-    await this.assertEmploymentInScope(orgId, actorUserId, scope, empId);
+    await this.assertEmploymentInScope(read, empId);
     const defs = await this.listDefinitions(orgId, entityType);
     const defMap = new Map(defs.map((d) => [d.id, d]));
 
@@ -242,9 +244,7 @@ export class HrCustomFieldsService {
   }
 
   async filterByCustomField(
-    orgId: string,
-    actorUserId: string,
-    scope: DataScope,
+    read: ScopedRead,
     entityType: string,
     fieldKey: string,
     value: unknown,
@@ -256,25 +256,27 @@ export class HrCustomFieldsService {
         ? sql`NOT (${hrEmployments.customFieldValues} ? ${fieldKey})`
         : sql`${hrEmployments.customFieldValues} @> ${JSON.stringify({ [fieldKey]: value })}::jsonb`;
 
-    const rows = await this.db
-      .select({ id: hrEmployments.id })
-      .from(hrEmployments)
-      .innerJoin(
-        hrPeople,
-        and(
-          eq(hrPeople.orgId, hrEmployments.orgId),
-          eq(hrPeople.id, hrEmployments.personId),
-        ),
-      )
-      .where(
-        and(
-          eq(hrEmployments.orgId, orgId),
-          isNull(hrEmployments.deletedAt),
-          isNull(hrPeople.deletedAt),
-          applyScope(scope, orgId, actorUserId, { ownerColumn: hrPeople.userId }),
-          fieldCondition,
-        ),
-      );
+    const rows = await read.read(
+      {
+        tenant: hrEmployments.orgId,
+        scope: { columns: { ownerColumn: hrPeople.userId } },
+        and: [isNull(hrEmployments.deletedAt), isNull(hrPeople.deletedAt), fieldCondition],
+      },
+      ({ sql: where }) =>
+        this.db
+          .select({ id: hrEmployments.id })
+          .from(hrEmployments)
+          .innerJoin(
+            hrPeople,
+            and(
+              eq(hrPeople.orgId, hrEmployments.orgId),
+              eq(hrPeople.id, hrEmployments.personId),
+            ),
+          )
+          .where(where)
+          .limit(100),
+      () => [],
+    );
 
     return rows.map((r) => r.id);
   }

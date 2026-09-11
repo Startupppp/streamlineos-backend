@@ -1,14 +1,13 @@
 import { Inject, Injectable, ForbiddenException } from "@nestjs/common";
-import { and, eq, gte, lte } from "drizzle-orm";
+import { and, eq, gte, lte, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { timesheets, timesheetSettings, holidays, leaveRequests, users, organizationMembers } from "../../../db/schema";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
-import { applyScope } from "../../access/apply-scope";
-import { applyMembershipScope } from "../core/timesheets-core-scope";
-import type { DataScope } from "../../access/access.types";
+import { membershipScope } from "../core/timesheets-core-scope";
+import type { ScopedRead } from "../../access/scoped-read";
 import { computeLeaveDays, computeOvertime, isWeekend, round2 } from "./lib/payroll-calc";
 import type { PeriodSummaryQuery, PayrollSummaryRow } from "./dto/payroll.schemas";
 
@@ -108,31 +107,23 @@ export class PayrollSummaryService {
     private readonly cache: CacheService,
   ) {}
 
-  async getPeriodSummary(
-    orgId: string,
-    query: PeriodSummaryQuery,
-    scope: DataScope,
-    actorUserId: string,
-  ) {
-    if (query.userId && query.userId !== actorUserId && scope !== "all") {
+  async getPeriodSummary(read: ScopedRead, query: PeriodSummaryQuery) {
+    if (query.userId && query.userId !== read.actorId && read.discriminator !== "all") {
       throw new ForbiddenException("Not authorized to filter payroll summary for another user");
     }
 
-    const hash = `${query.start}-${query.end}-${query.userId ?? ""}-${query.includeExported}-${scope}-${actorUserId}`;
+    const hash = `${query.start}-${query.end}-${query.userId ?? ""}-${query.includeExported}-${read.discriminator}`;
     return this.cache.cachedVersioned(
-      CACHE_KEYS.payrollSummaryNamespace(orgId),
+      CACHE_KEYS.payrollSummaryNamespace(read.orgId),
       hash,
-      () => this.compute(orgId, query, scope, actorUserId),
+      () => this.compute(read, query),
       CACHE_TTL.SHORT,
     );
   }
 
-  private async compute(
-    orgId: string,
-    query: PeriodSummaryQuery,
-    scope: DataScope,
-    actorUserId: string,
-  ) {
+  private async compute(read: ScopedRead, query: PeriodSummaryQuery) {
+    const orgId = read.orgId;
+    const actorUserId = read.actorId;
     const [settings] = await this.db
       .select({
         overtimeDailyHours: timesheetSettings.overtimeDailyHours,
@@ -156,36 +147,44 @@ export class PayrollSummaryService {
 
     const ownerMember = alias(organizationMembers, "owner_member");
 
-    const entryConditions = [
-      eq(timesheets.orgId, orgId),
-      gte(timesheets.date, query.start),
-      lte(timesheets.date, query.end),
-      applyMembershipScope(scope, actorMembId, timesheets.userMembershipId),
-    ];
-    if (query.userId && scope === "all") {
+    let requestedMembershipId: number | undefined;
+    if (query.userId && read.discriminator === "all") {
       const [qm] = await this.db
         .select({ id: organizationMembers.id })
         .from(organizationMembers)
         .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, query.userId)))
         .limit(1);
-      if (qm) entryConditions.push(eq(timesheets.userMembershipId, qm.id));
+      if (qm) requestedMembershipId = qm.id;
     }
 
-    const entries = await this.db
-      .select({
-        userId: ownerMember.userId,
-        date: timesheets.date,
-        hours: timesheets.hours,
-        isBillable: timesheets.isBillable,
-        status: timesheets.status,
-        payrollStatus: timesheets.payrollStatus,
-        userName: users.name,
-        userEmail: users.email,
-      })
-      .from(timesheets)
-      .innerJoin(ownerMember, and(eq(timesheets.orgId, ownerMember.orgId), eq(timesheets.userMembershipId, ownerMember.id)))
-      .innerJoin(users, eq(ownerMember.userId, users.id))
-      .where(and(...entryConditions));
+    const entries: RawEntry[] = await read.read(
+      {
+        tenant: timesheets.orgId,
+        scope: membershipScope(actorMembId, timesheets.userMembershipId),
+        and: [
+          gte(timesheets.date, query.start),
+          lte(timesheets.date, query.end),
+          requestedMembershipId !== undefined ? eq(timesheets.userMembershipId, requestedMembershipId) : undefined,
+        ],
+      },
+      ({ sql: where }) =>
+        this.db
+          .select({
+            userId: ownerMember.userId,
+            date: timesheets.date,
+            hours: timesheets.hours,
+            isBillable: timesheets.isBillable,
+            status: timesheets.status,
+            payrollStatus: timesheets.payrollStatus,
+            userName: users.name,
+            userEmail: users.email,
+          })
+          .from(timesheets)
+          .innerJoin(ownerMember, and(eq(timesheets.orgId, ownerMember.orgId), eq(timesheets.userMembershipId, ownerMember.id)))
+          .innerJoin(users, eq(ownerMember.userId, users.id))
+          .where(where),
+      () => [],
+    );
 
     const holidayRows = await this.db
       .select({ date: holidays.date })
@@ -194,14 +193,20 @@ export class PayrollSummaryService {
 
     const holidayDates = new Set(holidayRows.map((h) => h.date));
 
-    const leaveConditions = [
-      eq(leaveRequests.orgId, orgId),
-      eq(leaveRequests.status, "APPROVED"),
-      lte(leaveRequests.startDate, query.end),
-      gte(leaveRequests.endDate, query.start),
-      applyScope(scope, orgId, actorUserId, { ownerColumn: leaveRequests.userId }),
-    ];
-    if (query.userId && scope === "all") leaveConditions.push(eq(leaveRequests.userId, query.userId));
+    const leaveWhere = read.compose(
+      {
+        tenant: leaveRequests.orgId,
+        scope: { columns: { ownerColumn: leaveRequests.userId } },
+        and: [
+          eq(leaveRequests.status, "APPROVED"),
+          lte(leaveRequests.startDate, query.end),
+          gte(leaveRequests.endDate, query.start),
+          query.userId && read.discriminator === "all" ? eq(leaveRequests.userId, query.userId) : undefined,
+        ],
+      },
+      ({ sql: w }) => w,
+      () => sql`false`,
+    );
 
     const leaveRows = await this.db
       .select({
@@ -211,7 +216,7 @@ export class PayrollSummaryService {
         isHalfDay: leaveRequests.isHalfDay,
       })
       .from(leaveRequests)
-      .where(and(...leaveConditions));
+      .where(leaveWhere);
 
     const leavesByUser = computeLeaveDays(leaveRows, query.start, query.end);
     const rows = buildRows(entries, holidayDates, leavesByUser, dailyThreshold, weeklyThreshold, query.includeExported, includeNonBillable);

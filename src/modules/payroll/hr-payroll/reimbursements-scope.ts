@@ -1,16 +1,21 @@
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import type { DataScope } from "../../access/access.types";
+import { ScopedRead } from "../../access/scoped-read";
 import { AccessService } from "../../access/access.service";
 import { isScopable } from "../../rbac/permissions";
+import { HR_PAYROLL_LIST_PERMISSION } from "./hr-payroll-permissions";
 
-export const REIMBURSEMENTS_PERMISSION = "hr:expenses:approve";
+export function selfOnlyReimbursementsRead(orgId: string, userId: string): ScopedRead {
+  return ScopedRead.of(orgId, userId, "own");
+}
 
 export async function resolveReimbursementsScope(
   access: AccessService,
   u: CurrentUserContext,
-): Promise<DataScope> {
-  if (u.isOrgOwner) return "all";
-  if (!isScopable(REIMBURSEMENTS_PERMISSION)) return "all";
-  const resolved = await access.resolveUserPermissions(u.orgId, u.userId);
-  return resolved.get(REIMBURSEMENTS_PERMISSION) ?? "none";
+): Promise<ScopedRead> {
+  const scope = u.isOrgOwner
+    ? "all"
+    : !isScopable(HR_PAYROLL_LIST_PERMISSION)
+      ? "all"
+      : (await access.resolveUserPermissions(u.orgId, u.userId)).get(HR_PAYROLL_LIST_PERMISSION) ?? "none";
+  return ScopedRead.of(u.orgId, u.userId, scope);
 }

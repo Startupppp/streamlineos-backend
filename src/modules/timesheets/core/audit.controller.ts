@@ -9,6 +9,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { auditQuerySchema, type AuditQuery } from "./dto/audit.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { auditListResponseSchema, auditVerifyResponseSchema } from "./dto/timesheets-response.schemas";
 
 @RequireModule("timesheets")
 @Controller("timesheets/audit")
@@ -18,6 +20,7 @@ export class TimesheetAuditController {
 
   @Get("verify")
   @RequirePermission("timesheets:audit:view")
+  @ResponseSchema(auditVerifyResponseSchema)
   verify(@CurrentUser() u: CurrentUserContext) {
     return this.auditService.verifyChain(u.orgId);
   }
@@ -25,6 +28,7 @@ export class TimesheetAuditController {
   @Get()
   @RequirePermission("timesheets:audit:view")
   @Validate({ query: auditQuerySchema })
+  @ResponseSchema(auditListResponseSchema)
   async list(
     @Query() query: AuditQuery,
     @CurrentUser() u: CurrentUserContext,

@@ -1,23 +1,15 @@
 import { Reflector } from "@nestjs/core";
 import type { ExecutionContext } from "@nestjs/common";
+import { ModuleDisabledException } from "../../../common/http/api-exceptions";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { REQUIRE_MODULE } from "../../../common/rbac/require-module.decorator";
 import { OnboardingViewsController } from "./onboarding-views.controller";
-import type { AccessService } from "../../access/access.service";
+import {
+  makeGuardCtx,
+  makeGuardRequest,
+  MODULE_DISABLED,
+} from "../../../../test/helpers/module-guard-context";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-
-function makeGuardCtx(
-  ctrl: Function,
-  methodName: string,
-  user: Partial<CurrentUserContext>,
-): ExecutionContext {
-  const handler = (ctrl.prototype as Record<string, unknown>)[methodName] as Function;
-  return {
-    getHandler: () => handler,
-    getClass: () => ctrl,
-    switchToHttp: () => ({ getRequest: () => ({ user }) }),
-  } as unknown as ExecutionContext;
-}
 
 const memberUser: Partial<CurrentUserContext> = { orgId: "org-1", userId: "u-1", isOrgOwner: false };
 
@@ -29,50 +21,46 @@ describe("OnboardingViewsController — self-service, no module gate", () => {
   });
 
   describe("ModuleGuard passes through regardless of HR module status", () => {
-    const disabledGuard = new ModuleGuard(
-      new Reflector(),
-      {
-        moduleAvailability: jest.fn().mockResolvedValue({ available: false, reason: "org-disabled" }),
-      } as unknown as AccessService,
-    );
+    const guard = new ModuleGuard(new Reflector());
 
     it("GET /hr/onboarding-docs/me (listMine) is reachable without HR module", async () => {
       await expect(
-        disabledGuard.canActivate(makeGuardCtx(OnboardingViewsController, "listMine", memberUser)),
+        guard.canActivate(
+          makeGuardCtx(OnboardingViewsController, "listMine", memberUser, MODULE_DISABLED),
+        ),
       ).resolves.toBe(true);
     });
 
     it("POST /hr/onboarding-docs/me (createMine) is reachable without HR module", async () => {
       await expect(
-        disabledGuard.canActivate(makeGuardCtx(OnboardingViewsController, "createMine", memberUser)),
+        guard.canActivate(
+          makeGuardCtx(OnboardingViewsController, "createMine", memberUser, MODULE_DISABLED),
+        ),
       ).resolves.toBe(true);
     });
 
     it("GET /hr/onboarding-docs/me/:docId/file (getMyFile) is reachable without HR module", async () => {
       await expect(
-        disabledGuard.canActivate(makeGuardCtx(OnboardingViewsController, "getMyFile", memberUser)),
+        guard.canActivate(
+          makeGuardCtx(OnboardingViewsController, "getMyFile", memberUser, MODULE_DISABLED),
+        ),
       ).resolves.toBe(true);
     });
   });
 
   describe("bite proof — adding @RequireModule would cause all three tests above to fail", () => {
     it("ModuleGuard throws when @RequireModule is set (proves the above tests are load-bearing)", async () => {
-      const reflectorWithGate = new Reflector();
-      const gatedGuard = new ModuleGuard(
-        reflectorWithGate,
-        {
-          moduleAvailability: jest.fn().mockResolvedValue({ available: false, reason: "org-disabled" }),
-        } as unknown as AccessService,
-      );
+      const gatedGuard = new ModuleGuard(new Reflector());
       const fakeClass = class FakeGatedController {};
       Reflect.defineMetadata(REQUIRE_MODULE, "hr", fakeClass);
       const handler = () => undefined;
+      const req = makeGuardRequest(memberUser, MODULE_DISABLED);
       const ctx: ExecutionContext = {
         getHandler: () => handler,
         getClass: () => fakeClass,
-        switchToHttp: () => ({ getRequest: () => ({ user: memberUser }) }),
+        switchToHttp: () => ({ getRequest: () => req }),
       } as unknown as ExecutionContext;
-      await expect(gatedGuard.canActivate(ctx)).rejects.toThrow();
+      await expect(gatedGuard.canActivate(ctx)).rejects.toThrow(ModuleDisabledException);
     });
   });
 });

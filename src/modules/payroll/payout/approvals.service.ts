@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, count, eq } from "drizzle-orm";
 import {
   assertOrganizationActor,
   OrganizationActorError,
@@ -23,12 +23,8 @@ import {
 import { AccessService } from "../../access/access.service";
 import { logger } from "../../../common/logger/logger.service";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
-import {
-  DEFAULT_PAYROLL_TOGGLES,
-  type PayrollApprovalStageDef,
-  type PayrollPolicyConfig,
-  type PayrollToggles,
-} from "../payroll.types";
+import type { PayrollApprovalStageDef } from "../payroll.types";
+import { normalizePayrollToggles, toPayrollPolicyConfig } from "../dto/payroll.schemas";
 import { PayrollNotificationsService } from "../insights/payroll-notifications.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { PayrollApproverResolverService } from "./payroll-approver-resolver.service";
@@ -57,8 +53,8 @@ export class ApprovalsService {
       throw new ConflictException(`Cannot submit approval: run status is ${run.status}`);
     }
 
-    const blockers = await this.db
-      .select({ id: payrollExceptions.id })
+    const [blockerCountRow] = await this.db
+      .select({ total: count() })
       .from(payrollExceptions)
       .where(
         and(
@@ -69,18 +65,15 @@ export class ApprovalsService {
         ),
       );
 
-    if (blockers.length > 0) {
+    const blockerCount = Number(blockerCountRow?.total ?? 0);
+    if (blockerCount > 0) {
       throw new BadRequestException(
-        `Cannot submit: ${blockers.length} open blocker exception(s) must be resolved`,
+        `Cannot submit: ${blockerCount} open blocker exception(s) must be resolved`,
       );
     }
 
-    const rawToggles = run.policyVersion?.toggles;
-    const toggles: PayrollToggles = rawToggles && typeof rawToggles === "object"
-      ? { ...DEFAULT_PAYROLL_TOGGLES, ...(rawToggles as Partial<PayrollToggles>) }
-      : { ...DEFAULT_PAYROLL_TOGGLES };
-    const rawConfig = run.policyVersion?.config;
-    const policyConfig: PayrollPolicyConfig | null = rawConfig && typeof rawConfig === "object" ? (rawConfig as PayrollPolicyConfig) : null;
+    const toggles = normalizePayrollToggles(run.policyVersion?.toggles);
+    const policyConfig = toPayrollPolicyConfig(run.policyVersion?.config);
     const approvalWorkflow = toggles.approvalWorkflow !== false;
 
     if (!approvalWorkflow) {
@@ -202,7 +195,12 @@ export class ApprovalsService {
       .select()
       .from(payrollApprovals)
       .where(and(eq(payrollApprovals.runId, runId), eq(payrollApprovals.orgId, orgId)))
-      .orderBy(asc(payrollApprovals.stage));
+      .orderBy(asc(payrollApprovals.stage))
+      .limit(21);
+
+    if (rows.length > 20) {
+      throw new ConflictException("Payroll approval workflow exceeds the supported 20-stage bound");
+    }
 
     const nextPendingId = rows.find((r) => r.status === "PENDING")?.id;
 

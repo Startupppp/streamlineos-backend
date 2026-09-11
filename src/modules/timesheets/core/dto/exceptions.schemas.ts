@@ -5,22 +5,28 @@ import {
 } from "./status.schemas";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
-export const exceptionsQuerySchema = z.object({
-  status: timesheetExceptionStatusSchema.optional(),
-  severity: timesheetExceptionSeveritySchema.optional(),
-  rule: z.string().max(100).optional(),
-  userId: z.string().optional(),
-  cursor: z.string().optional(),
-  limit: pageSizeField(50, 100),
-});
+export const exceptionsQuerySchema = z
+  .object({
+    status: timesheetExceptionStatusSchema.optional(),
+    severity: timesheetExceptionSeveritySchema.optional(),
+    rule: z.string().max(100).optional(),
+    userId: z.string().optional(),
+    cursor: z.string().optional(),
+    limit: pageSizeField(50, 100),
+  })
+  .strict();
 export type ExceptionsQuery = z.infer<typeof exceptionsQuerySchema>;
 
-export const resolveExceptionSchema = z.object({
-  reason: z.string().min(3).max(500),
-});
+export const resolveExceptionSchema = z
+  .object({
+    reason: z.string().min(3).max(500),
+  })
+  .strict();
 export type ResolveExceptionInput = z.infer<typeof resolveExceptionSchema>;
 
-export const dismissExceptionSchema = z.object({
-  reason: z.string().min(3).max(500),
-});
+export const dismissExceptionSchema = z
+  .object({
+    reason: z.string().min(3).max(500),
+  })
+  .strict();
 export type DismissExceptionInput = z.infer<typeof dismissExceptionSchema>;

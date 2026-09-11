@@ -11,8 +11,8 @@ import { kbArticles } from "../../../db/schema";
  */
 type ArticleRow = Pick<
   typeof kbArticles.$inferSelect,
-  "id" | "title" | "contentText" | "lastVerifiedAt" | "ownerId" | "authorId" | "visibility"
->;
+  "id" | "title" | "contentText" | "lastVerifiedAt" | "ownerMembershipId" | "authorId" | "visibility"
+> & { ownerId?: string | null };
 
 export interface MappedPage {
   title: string;
@@ -23,6 +23,7 @@ export interface MappedPage {
   visibility: "org";
   trustState: "verified" | "unverified";
   ownerUserId: string | null;
+  ownerMembershipId: number | null;
   createdById: string | null;
   sourceArticleId: number;
   sortOrder: number;
@@ -64,6 +65,7 @@ export function mapArticleToPage(article: ArticleRow, sortOrder: number): Mapped
     visibility: "org",
     trustState,
     ownerUserId: article.ownerId ?? null,
+    ownerMembershipId: article.ownerMembershipId ?? null,
     createdById: article.authorId ?? article.ownerId ?? null,
     sourceArticleId: article.id,
     sortOrder,

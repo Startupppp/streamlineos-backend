@@ -3,7 +3,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import { assertPageAccessible } from "../kb/retrieval/kb-page-access.util";
 import { pageVisibleTo } from "../kb/retrieval/kb-page-visibility";
-import { ScopedRead } from "./object-access";
+import { ScopedRead, type ScopedWhere } from "./scoped-read";
 import { organizationMembers } from "../../db/schema";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
@@ -90,18 +90,25 @@ describe("the audience ACL is SQL, not an application-code check", () => {
 });
 
 describe("the DataScope arm denies before it widens", () => {
-  const cols = { ownerColumn: organizationMembers.userId };
+  const SPEC = {
+    tenant: organizationMembers.orgId,
+    scope: { columns: { ownerColumn: organizationMembers.userId } },
+  };
+  const clause = (scope: "all" | "own" | "none"): ScopedWhere | null =>
+    ScopedRead.of("org-1", "u-1", scope).compose(SPEC, (where) => where, () => null);
 
-  it("renders none as false, so an unheld key returns nothing", () => {
-    expect(render(ScopedRead.of("org-1", "u-1", "none").predicate(cols))).toBe("false");
+  it("builds no clause at all for none, so an unheld key never queries", () => {
+    expect(clause("none")).toBeNull();
   });
 
-  it("renders own as an owner-column equality", () => {
-    expect(render(ScopedRead.of("org-1", "u-1", "own").predicate(cols))).toContain("user_id");
+  it("renders own as an owner-column equality beside the tenant predicate", () => {
+    const rendered = render((clause("own") as ScopedWhere).sql);
+    expect(rendered).toContain("user_id");
+    expect(rendered).toContain("org_id");
   });
 
-  it("renders all as true, and own as something else", () => {
-    expect(render(ScopedRead.of("org-1", "u-1", "all").predicate(cols))).toBe("true");
-    expect(render(ScopedRead.of("org-1", "u-1", "own").predicate(cols))).not.toBe("true");
+  it("renders all without the owner equality, and own with it", () => {
+    expect(render((clause("all") as ScopedWhere).sql)).not.toContain("user_id");
+    expect(render((clause("own") as ScopedWhere).sql)).toContain("user_id");
   });
 });

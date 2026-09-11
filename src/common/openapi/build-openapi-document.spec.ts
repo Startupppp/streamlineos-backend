@@ -1,6 +1,33 @@
 import { applyOperationContract, applyErrorResponses } from "./build-openapi-document";
 
 describe("applyOperationContract", () => {
+  it("preserves documented response headers and links while replacing stale body schemas", () => {
+    const headers = { "X-Next-Cursor": { description: "Next page cursor", schema: { type: "string" } } };
+    const links = { next: { operationId: "ReportsController_list", parameters: { cursor: "$response.header.X-Next-Cursor" } } };
+    const operation: Record<string, unknown> = {
+      operationId: "ReportsController_list",
+      responses: {
+        "200": {
+          description: "Recent sprint page", headers, links, "x-page-order": "descending",
+          content: { "application/json": { schema: { type: "string" } } },
+        },
+        "404": { description: "Project missing" },
+      },
+    };
+    applyOperationContract("get", operation, { response: { type: "array", items: { type: "integer" } } });
+    expect(operation).toMatchObject({
+      responses: {
+        "200": {
+          description: "Recent sprint page", headers, links, "x-page-order": "descending",
+          content: { "application/json": { schema: {
+            type: "object", properties: { success: { type: "boolean" }, data: { type: "array", items: { type: "integer" } } },
+          } } },
+        },
+        "404": { description: "Project missing" },
+      },
+    });
+  });
+
   it("makes a Zod query contract authoritative over stale Swagger metadata", () => {
     const operation = {
       operationId: "ReportsController_list",

@@ -1,4 +1,9 @@
+jest.mock("../../../common/tenant", () => ({
+  forEachOrg: jest.fn(),
+}));
+
 import type { Db } from "../../../db/drizzle.module";
+import { forEachOrg } from "../../../common/tenant";
 import { NotificationTimeSweepsService } from "./notification-time-sweeps.service";
 
 function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
@@ -30,23 +35,36 @@ describe("NotificationTimeSweepsService — cross-tenant isolation (background s
   const TARGET = "org-target";
 
   it("scopes sweep queries per org (org isolation)", async () => {
+    /*
+     * The original test asserted `expect(wheres.length).toBeGreaterThanOrEqual(0)`
+     * — true of every array — and put the real check behind `if (wheres.length > 0)`
+     * with `else { expect(true).toBe(true); }`. It also left `forEachOrg` real, so
+     * the per-org callback never ran and the only predicate ever recorded was the
+     * org-agnostic enumeration (`deleted_at is null and status = 'ACTIVE'`). The
+     * test could not observe a per-org query at all.
+     */
     const wheres: unknown[] = [];
-    const db = {
+    const tx = {
       select: jest.fn().mockImplementation(() => ({ from: jest.fn().mockImplementation(() => makeFrom(wheres)) })),
-      execute: jest.fn().mockResolvedValue([{ id: TARGET }]),
     } as unknown as Db;
+    (forEachOrg as jest.Mock).mockImplementation(
+      async (_db: unknown, _label: string, fn: (tx: unknown, orgId: string) => Promise<void>) => {
+        await fn(tx, TARGET);
+      },
+    );
+    const db = { select: jest.fn(), execute: jest.fn() } as unknown as Db;
     const dispatch = { emit: jest.fn().mockResolvedValue(undefined) } as never;
     const svc = new NotificationTimeSweepsService(db, dispatch);
 
     await svc.sweep();
 
-    expect(wheres.length).toBeGreaterThanOrEqual(0);
-    if (wheres.length > 0) {
-      const vals = wheres.flatMap(w => sqlValues(w));
-      expect(vals).not.toContain("org-intruder");
-    } else {
-      expect(true).toBe(true);
-    }
+    expect(wheres.length).toBeGreaterThan(0);
+    const unbound = wheres
+      .map((w, i) => ({ i, values: sqlValues(w) }))
+      .filter((e) => !e.values.includes(TARGET))
+      .map((e) => `per-org predicate #${e.i} does not bind the org: ${JSON.stringify(e.values)}`);
+    expect(unbound).toEqual([]);
+    expect(wheres.flatMap((w) => sqlValues(w))).not.toContain("org-intruder");
   });
 
   it("returns a sweep result without cross-org data (same-tenant control)", async () => {

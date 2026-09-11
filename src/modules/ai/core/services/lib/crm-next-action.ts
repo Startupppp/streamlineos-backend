@@ -9,7 +9,7 @@ import {
   leadIdIs,
   leadPartyScope,
 } from "../../../../leads/lead-party-reader";
-import { nextActionPrompt } from "../../prompts/crm.prompts";
+import { nextActionPrompt } from "../../prompts/crm-scoring.prompts";
 import {
   NextActionSchema,
   NextActionWithEvidenceSchema,

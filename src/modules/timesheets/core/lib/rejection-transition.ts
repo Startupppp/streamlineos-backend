@@ -161,16 +161,17 @@ export async function applyBulkRejection(
     );
 
   const actorMembId = actingMembershipId(u.principal);
-  for (const id of ids) {
-    await deps.audit.record(tx, {
+  await deps.audit.recordMany(
+    tx,
+    ids.map((id) => ({
       orgId: u.orgId,
       actorMembershipId: actorMembId,
       entityType: "period",
       entityId: id.toString(),
       action: "period.rejected",
       reason: input.reason,
-    });
-  }
+    })),
+  );
 
   /**
    * One event per period, not one for the batch. A bulk rejection is a

@@ -1,3 +1,4 @@
+import { ScopedRead } from "../../access/scoped-read";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import { SupportTicketsService } from "./support-tickets.service";
@@ -142,7 +143,7 @@ describe("SupportTicketsService", () => {
       const result = await service.createTicket("org1", "user1", {
         title: "Login not working",
         description: "desc",
-      } as never);
+      } as never, undefined, 123);
 
       expect(result.possibleDuplicateOf).toEqual({ id: 42, title: "Login not working" });
       expect(mockDb.insert).toHaveBeenCalled();
@@ -154,7 +155,7 @@ describe("SupportTicketsService", () => {
       const result = await service.createTicket("org1", "user1", {
         title: "Login not working",
         description: "desc",
-      } as never);
+      } as never, undefined, 123);
 
       expect(result.possibleDuplicateOf).toBeNull();
     });
@@ -166,7 +167,7 @@ describe("SupportTicketsService", () => {
         service.createTicket("org1", "user1", {
           title: "Login not working",
           description: "desc",
-        } as never),
+        } as never, undefined, 123),
       ).resolves.toBeDefined();
     });
   });
@@ -175,7 +176,7 @@ describe("SupportTicketsService", () => {
     it("records a 'created' activity entry", async () => {
       mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(undefined);
 
-      await service.createTicket("org1", "user1", { title: "New ticket title", description: "d" } as never);
+      await service.createTicket("org1", "user1", { title: "New ticket title", description: "d" } as never, undefined, 123);
 
       const createdActivityPayload = mockDb.values.mock.calls
         .map((call) => call[0])
@@ -192,7 +193,7 @@ describe("SupportTicketsService", () => {
       });
 
       await expect(
-        service.createTicket("org1", "user1", { title: "Another title", description: "d" } as never),
+        service.createTicket("org1", "user1", { title: "Another title", description: "d" } as never, undefined, 123),
       ).resolves.toBeDefined();
 
       mockDb.values.mockImplementation(() => mockDb);
@@ -350,9 +351,11 @@ describe("SupportTicketsService", () => {
 
   describe("cross-org isolation", () => {
     it("getTicket throws NotFoundException for a ticket belonging to a different org", async () => {
-      mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(undefined);
+      mockDb.query.supportTickets.findFirst.mockResolvedValue(undefined);
 
-      await expect(service.getTicket("org1", 123, { userId: "user1", scope: "all" })).rejects.toThrow(NotFoundException);
+      await expect(
+        service.getTicket("org1", 123, ScopedRead.of("org1", "user1", "all")),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it("listMessages throws NotFoundException for a ticket belonging to a different org", async () => {
@@ -526,7 +529,13 @@ describe("SupportTicketsService", () => {
         .mockResolvedValueOnce(undefined);
       mockDb.returning.mockResolvedValueOnce([{ id: 2, orgId: "org1", title: "New split ticket issue" }]);
 
-      const result = await service.splitTicket("org1", 1, "user1", { title: "New split ticket issue" } as never);
+      const result = await service.splitTicket(
+        "org1",
+        1,
+        "user1",
+        { title: "New split ticket issue" } as never,
+        123,
+      );
 
       expect(result).toMatchObject({ id: 2 });
       const linkPayload = mockDb.values.mock.calls.map((c) => c[0]).find((p) => p && p.relation === "split");
@@ -537,6 +546,10 @@ describe("SupportTicketsService", () => {
   });
 
   describe("addTicketLink", () => {
+    beforeEach(() => {
+      mockDb.query.supportTickets.findFirst.mockReset();
+    });
+
     it("rejects linking a ticket to itself", async () => {
       await expect(
         service.addTicketLink("org1", 1, "user1", { linkedTicketId: 1, relation: "related" } as never),

@@ -19,6 +19,6 @@ export type FeedbackAnalysis = z.infer<typeof FeedbackAnalysisSchema>;
 
 export const analyzeBodySchema = z.object({
   force: z.boolean().optional(),
-});
+}).strict();
 
 export type AnalyzeBodyInput = z.infer<typeof analyzeBodySchema>;

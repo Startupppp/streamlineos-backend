@@ -196,6 +196,7 @@ export class HrSensitiveService {
           ...(input.medicalNotes !== undefined && { medicalNotes: encryptField(input.medicalNotes) }),
           ...(input.bloodGroup !== undefined && { bloodGroup: input.bloodGroup }),
           ...(input.bgvStatus !== undefined && { bgvStatus: input.bgvStatus }),
+          updatedAt: new Date(),
         })
         .where(
           and(

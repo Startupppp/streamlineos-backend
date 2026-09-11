@@ -3,10 +3,12 @@ jest.mock("../../common/relocation/relocation-traffic-tracker", () => ({
   isRelocationTarget: jest.fn().mockReturnValue(false),
 }));
 
+import { makeMembershipStateStub } from "../../../test/helpers/membership-state-stub";
 import {
   AccessService,
-  moduleOf,
 } from "./access.service";
+import { AccessVersionCache } from "./access-version-cache";
+import { namespaceOf } from "../../common/rbac/module-vocabulary";
 import type { DataScope } from "./access.types";
 import type { Db } from "../../db/drizzle.module";
 /* A value import, not `import type`: the assertion below reads the real prototype. */
@@ -40,11 +42,15 @@ function expectActiveMemberBaseline(
 function makeSelectChain(result: unknown[]): Record<string, jest.Mock> {
   const chain: Record<string, jest.Mock> = {
     from: jest.fn(),
-    where: jest.fn().mockResolvedValue(result),
+    where: jest.fn(),
     innerJoin: jest.fn(),
+    orderBy: jest.fn(),
+    limit: jest.fn().mockResolvedValue(result),
   };
   chain.from.mockReturnValue(chain);
   chain.innerJoin.mockReturnValue(chain);
+  chain.orderBy.mockReturnValue(chain);
+  chain.where.mockReturnValue(chain);
   return chain;
 }
 
@@ -82,11 +88,14 @@ function buildService(db: unknown): AccessService {
     getModuleMap: jest.fn().mockResolvedValue({}),
     getEffectiveModuleMap: jest.fn().mockResolvedValue({}),
   };
+  const wrappedDb = withTenantTxMock(db as object) as unknown as Db;
   return new AccessService(
-    withTenantTxMock(db as object) as unknown as Db,
+    wrappedDb,
     cache as unknown as CacheService,
     entitlements as unknown as EntitlementsService,
     makeMfaPolicyStub(),
+    new AccessVersionCache(wrappedDb, cache as unknown as CacheService),
+    makeMembershipStateStub(),
   );
 }
 
@@ -311,7 +320,7 @@ describe("AccessService.resolveUserPermissions — module ownership grants", () 
     const result = await buildService(db).resolveUserPermissions("org-owner", "user-owner");
 
     for (const permissionKey of ACTIVE_MEMBER_BASELINE_PERMISSIONS) {
-      if (moduleOf(permissionKey) === "hr") {
+      if (namespaceOf(permissionKey) === "hr") {
         expect(result.has(permissionKey)).toBe(false);
       } else {
         expect(result.has(permissionKey)).toBe(true);
@@ -367,18 +376,20 @@ describe("AccessService.resolveUserPermissions — version bump invalidates loca
       getModuleMap: jest.fn().mockResolvedValue({}),
       getEffectiveModuleMap: jest.fn().mockResolvedValue({}),
     };
+    const versionCacheSvc = new AccessVersionCache(db as unknown as Db, cache as unknown as CacheService);
     const svc = new AccessService(
       db as unknown as Db,
       cache as unknown as CacheService,
       entitlements as unknown as EntitlementsService,
       makeMfaPolicyStub(),
+      versionCacheSvc,
+      makeMembershipStateStub(),
     );
     svc.onModuleInit();
 
     await svc.resolveUserPermissions("org-bump", "user-bump");
     expect(db.query.accessVersions.findFirst).toHaveBeenCalledTimes(1);
     svc["membershipAccessCache"].set("org-bump:user-bump", {
-      exists: true,
       active: true,
       isOwnerOrAdmin: false,
       expiresAt: Date.now() + 30_000,
@@ -410,7 +421,7 @@ describe("AccessService.resolveUserPermissions — version bump invalidates loca
     await svc.resolveUserPermissions("org-bump", "user-bump");
     expect(db.query.accessVersions.findFirst).toHaveBeenCalledTimes(2);
 
-    svc["versionCache"].delete("org-bump");
+    (versionCacheSvc as unknown as Record<string, Map<string, { version: number; expiresAt: number }>>)["versionCache"].delete("org-bump");
     cache.invalidateNamespace.mockClear();
     cache.invalidate.mockClear();
     currentVersion = 3;
@@ -556,11 +567,14 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
     const logWarnSpy = jest.spyOn(logger, "warn").mockImplementation(() => undefined);
 
     const db1 = withTenantTxMock(makeDb());
+    const versionCacheSvc2 = new AccessVersionCache(db1 as unknown as Db, cache as unknown as CacheService);
     const svc = new AccessService(
       db1 as unknown as Db,
       cache as unknown as CacheService,
       entitlements as unknown as EntitlementsService,
       makeMfaPolicyStub(),
+      versionCacheSvc2,
+      makeMembershipStateStub(),
     );
 
     await svc.resolveUserPermissions("org-dedup", "user-dedup");
@@ -568,7 +582,7 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
     const db2 = withTenantTxMock(makeDb());
     (svc as unknown as { db: unknown }).db = db2;
     cache.cached.mockImplementation(async (_key: string, fn: () => Promise<unknown>) => fn());
-    svc["versionCache"].clear();
+    (versionCacheSvc2 as unknown as Record<string, Map<string, { version: number; expiresAt: number }>>)["versionCache"].clear();
     svc["permsCache"].clear();
 
     await svc.resolveUserPermissions("org-dedup", "user-dedup2");

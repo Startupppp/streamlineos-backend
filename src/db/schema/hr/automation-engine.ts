@@ -1,16 +1,4 @@
-import {
-  pgTable,
-  text,
-  serial,
-  timestamp,
-  boolean,
-  jsonb,
-  integer,
-  index,
-  uniqueIndex,
-  unique,
-  type AnyPgColumn,
-} from "drizzle-orm/pg-core";
+import { boolean, foreignKey, index, integer, jsonb, pgTable, serial, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 
@@ -52,20 +40,27 @@ export const hrAutomationRuns = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    ruleId: integer("rule_id").references(() => hrAutomationRules.id, { onDelete: "cascade" }).notNull(),
+    ruleId: integer("rule_id").notNull(),
     triggerEvent: text("trigger_event").notNull(),
     eventPayload: jsonb("event_payload").$type<Record<string, unknown>>(),
     status: text("status").notNull(),
     actionResults: jsonb("action_results").$type<HrActionResult[]>(),
     error: text("error"),
     durationMs: integer("duration_ms"),
-    triggeredByRunId: integer("triggered_by_run_id").references((): AnyPgColumn => hrAutomationRuns.id, { onDelete: "set null" }),
+    triggeredByRunId: integer("triggered_by_run_id"),
     depth: integer("depth").notNull().default(0),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.ruleId], foreignColumns: [hrAutomationRules.orgId, hrAutomationRules.id], name: "fk_hr_automation_runs_org_rule" }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.orgId, table.triggeredByRunId],
+      foreignColumns: [table.orgId, table.id],
+      name: "fk_hr_automation_runs_triggered_by_run",
+    }).onDelete("set null"),
     unique("uniq_hr_automation_runs_org_id").on(table.orgId, table.id),
     index("idx_hr_automation_runs_org_rule_created").on(table.orgId, table.ruleId, table.createdAt),
+    index("idx_hr_automation_runs_triggered_by_run").on(table.orgId, table.triggeredByRunId),
     index("idx_hr_automation_runs_org_status").on(table.orgId, table.status),
   ],
 );

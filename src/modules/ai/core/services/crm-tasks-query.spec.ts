@@ -16,7 +16,7 @@ describe("CrmTasksService assignment query", () => {
 
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        columns: { id: true, title: true, priority: true, assigneeId: true },
+        columns: { id: true, title: true, priority: true, assigneeMembershipId: true },
         limit: 100,
       }),
     );

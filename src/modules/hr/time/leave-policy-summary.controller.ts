@@ -6,6 +6,8 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { LeavePoliciesService } from "./leave-policies.service";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { leavePolicySummaryPageDataSchema } from "./dto/time-leave-response.schemas";
 
 @RequireModule("hr")
 @Controller("hr/leave-policy")
@@ -14,6 +16,7 @@ export class LeavePolicySummaryController {
   constructor(private readonly service: LeavePoliciesService) {}
 
   @Get()
+  @ResponseSchema(leavePolicySummaryPageDataSchema)
   @RequirePermission("hr:leaves:view")
   getSummary(@CurrentUser() u: CurrentUserContext) {
     return this.service.getOrgSummary(u.orgId);

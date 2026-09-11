@@ -1,19 +1,5 @@
-import {
-  pgTable,
-  pgEnum,
-  text,
-  serial,
-  timestamp,
-  integer,
-  bigint,
-  jsonb,
-  date,
-  index,
-  uniqueIndex,
-  numeric,
-  unique,
-} from "drizzle-orm/pg-core";
-import { organizations, users } from "../common/auth";
+import { bigint, date, foreignKey, index, integer, jsonb, numeric, pgEnum, pgTable, serial, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { organizations } from "../common/auth";
 import { orgUnits } from "../common/organization";
 
 // ─── Pack 1: Time Clock Devices ─────────────────────────────────────────────
@@ -47,7 +33,7 @@ export const hrTimeDevices = pgTable(
     name: text("name").notNull(),
     serialNumber: text("serial_number").notNull(),
     type: hrTimeDeviceTypeEnum("type").notNull(),
-    locationId: text("location_id").references(() => orgUnits.id, { onDelete: "set null" }),
+    locationId: text("location_id"),
     status: hrTimeDeviceStatusEnum("status").default("active").notNull(),
     lastSyncAt: timestamp("last_sync_at"),
     effectiveFrom: date("effective_from"),
@@ -56,6 +42,7 @@ export const hrTimeDevices = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [
+  foreignKey({ columns: [t.orgId, t.locationId], foreignColumns: [orgUnits.orgId, orgUnits.id], name: "fk_hr_time_devices_org_location" }).onDelete("set null"),
     unique("uniq_hr_time_devices_org_id").on(t.orgId, t.id),
     index("idx_hr_time_devices_org_status").on(t.orgId, t.status),
     uniqueIndex("uniq_hr_time_devices_org_serial").on(t.orgId, t.serialNumber),
@@ -71,13 +58,14 @@ export const hrDeviceSyncLogs = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     deviceId: integer("device_id")
       .notNull()
-      .references(() => hrTimeDevices.id, { onDelete: "cascade" }),
+      ,
     status: hrDeviceSyncStatusEnum("status").notNull(),
     recordsCount: integer("records_count").default(0).notNull(),
     error: text("error"),
     syncedAt: timestamp("synced_at").defaultNow().notNull(),
   },
   (t) => [
+  foreignKey({ columns: [t.orgId, t.deviceId], foreignColumns: [hrTimeDevices.orgId, hrTimeDevices.id], name: "fk_hr_device_sync_logs_org_device" }).onDelete("cascade"),
     unique("uniq_hr_device_sync_logs_org_id").on(t.orgId, t.id),
     index("idx_hr_device_sync_logs_org_device").on(t.orgId, t.deviceId),
     index("idx_hr_device_sync_logs_status").on(t.orgId, t.status),
@@ -93,16 +81,18 @@ export const hrDeviceEmployeeMappings = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     deviceId: integer("device_id")
       .notNull()
-      .references(() => hrTimeDevices.id, { onDelete: "cascade" }),
+      ,
     userId: text("user_id")
       .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+      ,
+    userMembershipId: integer("user_membership_id"),
     biometricId: text("biometric_id"),
     effectiveFrom: date("effective_from"),
     effectiveTo: date("effective_to"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
+  foreignKey({ columns: [t.orgId, t.deviceId], foreignColumns: [hrTimeDevices.orgId, hrTimeDevices.id], name: "fk_hr_device_employee_mappings_org_device" }).onDelete("cascade"),
     unique("uniq_hr_device_employee_mappings_org_id").on(t.orgId, t.id),
     index("idx_hr_device_emp_mappings_org_device").on(t.orgId, t.deviceId),
     index("idx_hr_device_emp_mappings_org_user").on(t.orgId, t.userId),
@@ -138,7 +128,7 @@ export const hrPayrollVarianceApprovals = pgTable(
     variancePct: numeric("variance_pct", { precision: 8, scale: 4 }).notNull(),
     thresholdPct: numeric("threshold_pct", { precision: 8, scale: 4 }).notNull(),
     status: hrVarianceApprovalStatusEnum("status").default("pending").notNull(),
-    approverId: text("approver_id").references(() => users.id, { onDelete: "set null" }),
+    approverId: text("approver_id"),
     note: text("note"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     resolvedAt: timestamp("resolved_at"),
@@ -159,13 +149,14 @@ export const hrArrearsAdjustments = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     userId: text("user_id")
       .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+      ,
+    userMembershipId: integer("user_membership_id"),
     reason: text("reason").notNull(),
     amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
     sourcePeriod: text("source_period").notNull(),
     targetPeriod: text("target_period").notNull(),
     status: hrArrearsStatusEnum("status").default("pending").notNull(),
-    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdBy: text("created_by"),
     appliedAt: timestamp("applied_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
@@ -188,7 +179,7 @@ export const hrPayrollComplianceTasks = pgTable(
     dueDate: date("due_date").notNull(),
     status: hrComplianceTaskStatusEnum("status").default("pending").notNull(),
     notes: text("notes"),
-    completedBy: text("completed_by").references(() => users.id, { onDelete: "set null" }),
+    completedBy: text("completed_by"),
     completedAt: timestamp("completed_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
@@ -226,7 +217,7 @@ export const hrCompCycles = pgTable(
     status: hrCompCycleStatusEnum("status").default("draft").notNull(),
     budgetPoolCents: bigint("budget_pool_cents", { mode: "number" }).notNull(),
     meritMatrix: jsonb("merit_matrix"),
-    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdBy: text("created_by"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -246,10 +237,11 @@ export const hrCompRecommendations = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     cycleId: integer("cycle_id")
       .notNull()
-      .references(() => hrCompCycles.id, { onDelete: "cascade" }),
+      ,
     userId: text("user_id")
       .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+      ,
+    userMembershipId: integer("user_membership_id"),
     currentSalaryCents: bigint("current_salary_cents", { mode: "number" }).notNull(),
     recommendedIncreaseCents: bigint("recommended_increase_cents", { mode: "number" }).notNull(),
     recommendedPct: numeric("recommended_pct", { precision: 8, scale: 4 }).notNull(),
@@ -257,13 +249,14 @@ export const hrCompRecommendations = pgTable(
     managerNote: text("manager_note"),
     hrCalibratedCents: bigint("hr_calibrated_cents", { mode: "number" }),
     status: hrCompRecommendationStatusEnum("status").default("draft").notNull(),
-    submittedBy: text("submitted_by").references(() => users.id, { onDelete: "set null" }),
-    calibratedBy: text("calibrated_by").references(() => users.id, { onDelete: "set null" }),
-    approvedBy: text("approved_by").references(() => users.id, { onDelete: "set null" }),
+    submittedBy: text("submitted_by"),
+    calibratedBy: text("calibrated_by"),
+    approvedBy: text("approved_by"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [
+  foreignKey({ columns: [t.orgId, t.cycleId], foreignColumns: [hrCompCycles.orgId, hrCompCycles.id], name: "fk_hr_comp_recommendations_org_cycle" }).onDelete("cascade"),
     unique("uniq_hr_comp_recommendations_org_id").on(t.orgId, t.id),
     index("idx_hr_comp_recs_org_cycle").on(t.orgId, t.cycleId),
     index("idx_hr_comp_recs_org_user").on(t.orgId, t.userId),
@@ -280,15 +273,15 @@ export const hrCompBudgetPools = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     cycleId: integer("cycle_id")
       .notNull()
-      .references(() => hrCompCycles.id, { onDelete: "cascade" }),
-    departmentId: text("department_id").references(() => orgUnits.id, {
-      onDelete: "set null",
-    }),
+      ,
+    departmentId: text("department_id"),
     allocatedCents: bigint("allocated_cents", { mode: "number" }).notNull(),
     usedCents: bigint("used_cents", { mode: "number" }).default(0).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
+  foreignKey({ columns: [t.orgId, t.cycleId], foreignColumns: [hrCompCycles.orgId, hrCompCycles.id], name: "fk_hr_comp_budget_pools_org_cycle" }).onDelete("cascade"),
+  foreignKey({ columns: [t.orgId, t.departmentId], foreignColumns: [orgUnits.orgId, orgUnits.id], name: "fk_hr_comp_budget_pools_org_department" }).onDelete("set null"),
     unique("uniq_hr_comp_budget_pools_org_id").on(t.orgId, t.id),
     index("idx_hr_comp_budget_pools_org_cycle").on(t.orgId, t.cycleId),
   ],
@@ -319,7 +312,8 @@ export const hrEquityGrants = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     userId: text("user_id")
       .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+      ,
+    userMembershipId: integer("user_membership_id"),
     grantType: hrEquityGrantTypeEnum("grant_type").notNull(),
     units: integer("units").notNull(),
     strikePriceCents: bigint("strike_price_cents", { mode: "number" }),
@@ -330,7 +324,7 @@ export const hrEquityGrants = pgTable(
     boardApprovedAt: timestamp("board_approved_at"),
     documentUrl: text("document_url"),
     notes: text("notes"),
-    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdBy: text("created_by"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -350,13 +344,14 @@ export const hrEquityVestingEvents = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     grantId: integer("grant_id")
       .notNull()
-      .references(() => hrEquityGrants.id, { onDelete: "cascade" }),
+      ,
     vestDate: date("vest_date").notNull(),
     unitsVested: integer("units_vested").notNull(),
     cumulativeVested: integer("cumulative_vested").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
+  foreignKey({ columns: [t.orgId, t.grantId], foreignColumns: [hrEquityGrants.orgId, hrEquityGrants.id], name: "fk_hr_equity_vesting_events_org_grant" }).onDelete("cascade"),
     unique("uniq_hr_equity_vesting_events_org_id").on(t.orgId, t.id),
     index("idx_hr_equity_vesting_events_grant").on(t.grantId),
     index("idx_hr_equity_vesting_events_org_grant").on(t.orgId, t.grantId),
@@ -372,15 +367,16 @@ export const hrEquityExercises = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     grantId: integer("grant_id")
       .notNull()
-      .references(() => hrEquityGrants.id, { onDelete: "cascade" }),
+      ,
     exerciseDate: date("exercise_date").notNull(),
     units: integer("units").notNull(),
     amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
     notes: text("notes"),
-    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdBy: text("created_by"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
+  foreignKey({ columns: [t.orgId, t.grantId], foreignColumns: [hrEquityGrants.orgId, hrEquityGrants.id], name: "fk_hr_equity_exercises_org_grant" }).onDelete("cascade"),
     unique("uniq_hr_equity_exercises_org_id").on(t.orgId, t.id),
     index("idx_hr_equity_exercises_org_grant").on(t.orgId, t.grantId),
   ],

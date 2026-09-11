@@ -3,8 +3,8 @@ import { and, eq, isNull } from "drizzle-orm";
 import { crmDealCompetitors, deals } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import { getPostgresErrorCode } from "../../common/db/postgres-error";
 import type { CreateCompetitorInput, UpdateCompetitorInput } from "./dto/deals.schemas";
+import { isUniqueViolation } from "../../common/db/postgres-error";
 
 @Injectable()
 export class DealsCompetitorsService {
@@ -40,7 +40,7 @@ export class DealsCompetitorsService {
        * was written for, and the frontend showed a generic failure for a
        * situation the user could have resolved by reading it.
        */
-      if (getPostgresErrorCode(err) === "23505") {
+      if (isUniqueViolation(err)) {
         throw new ConflictException(`Competitor "${input.competitorKey}" already tracked on this deal`);
       }
       throw err;

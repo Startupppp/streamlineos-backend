@@ -1,25 +1,20 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, desc, eq, or, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gt, or } from "drizzle-orm";
 import { users } from "../../db/schema";
 import { businessParties, clientPartyMap } from "../../db/schema/party";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
-import type { DataScope } from "../access/access.types";
+import type { ScopedRead } from "../access/scoped-read";
 import { toCsv } from "../inventory/import-export/csv.util";
-import { getClientTimeline, type TimelineEvent } from "./lib/client-timeline";
 import {
   CLIENT_PARTY_COLUMNS,
   CLIENT_PARTY_JOIN,
-  clientPartyScope,
-  clientPartyViewScope,
+  CLIENT_PARTY_SCOPE,
 } from "./client-party-reader";
 
 export type ClientHealthFilter = "healthy" | "at_risk" | "critical";
-
-/** Re-exported so importers of this service keep the path they had. */
-export type { TimelineEvent } from "./lib/client-timeline";
 
 @Injectable()
 export class ClientsService {
@@ -28,23 +23,32 @@ export class ClientsService {
     private readonly cache: CacheService,
   ) {}
 
-  listClients(orgId: string, userId: string, scope: DataScope): Promise<{ id: number; name: string | null }[]> {
-    return this.db
+  listClients(read: ScopedRead): Promise<{ id: number; name: string | null }[]> {
+    return read.read(
+      {
+        tenant: businessParties.organizationId,
+        scope: CLIENT_PARTY_SCOPE,
+        and: [eq(clientPartyMap.organizationId, read.orgId)],
+      },
+      ({ sql: where }) => this.db
       .select({ id: CLIENT_PARTY_COLUMNS.id, name: CLIENT_PARTY_COLUMNS.name })
       .from(clientPartyMap)
       .innerJoin(businessParties, CLIENT_PARTY_JOIN)
-      .where(and(...clientPartyScope(orgId), clientPartyViewScope(orgId, userId, scope)))
+      .where(where)
       // Names repeat, and a hundred of them is a truncation -- the id decides
       // which hundred rather than the heap order the map join changes.
       .orderBy(asc(CLIENT_PARTY_COLUMNS.name), asc(CLIENT_PARTY_COLUMNS.id))
-      .limit(100);
+      .limit(100),
+      () => [],
+    );
   }
 
-  getHealth(orgId: string, status: ClientHealthFilter | undefined, limit: number | undefined, userId: string, scope: DataScope) {
+  getHealth(read: ScopedRead, status: ClientHealthFilter | undefined, limit: number | undefined) {
+    const orgId = read.orgId;
     return this.cache.cachedVersionedForOrg(
       orgId,
       "clients:health",
-      `${userId}:${scope}:${status ?? "all"}:${limit ?? 20}`,
+      `${read.discriminator}:${status ?? "all"}:${limit ?? 20}`,
       async () => {
         /*
          * `health_status` is NOT NULL on the legacy row and nullable on the
@@ -54,13 +58,16 @@ export class ClientsService {
          * scored yet, which is exactly the set an "at risk" filter must not
          * silently exclude.
          */
-        const conditions: SQL[] = [
-          ...clientPartyScope(orgId),
-          clientPartyViewScope(orgId, userId, scope),
-        ];
-        if (status) conditions.push(eq(CLIENT_PARTY_COLUMNS.healthStatus, status));
-
-        const results = await this.db
+        const results = await read.read(
+          {
+            tenant: businessParties.organizationId,
+            scope: CLIENT_PARTY_SCOPE,
+            and: [
+              eq(clientPartyMap.organizationId, orgId),
+              status ? eq(CLIENT_PARTY_COLUMNS.healthStatus, status) : undefined,
+            ],
+          },
+          ({ sql: where }) => this.db
           .select({
             id: CLIENT_PARTY_COLUMNS.id,
             name: CLIENT_PARTY_COLUMNS.name,
@@ -75,9 +82,11 @@ export class ClientsService {
           })
           .from(clientPartyMap)
           .innerJoin(businessParties, CLIENT_PARTY_JOIN)
-          .where(and(...conditions))
+          .where(where)
           .orderBy(asc(CLIENT_PARTY_COLUMNS.healthScore), asc(CLIENT_PARTY_COLUMNS.id))
-          .limit(limit ?? 20);
+          .limit(limit ?? 20),
+          () => [],
+        );
 
         const summary = { healthy: 0, at_risk: 0, critical: 0 };
         for (const c of results) {
@@ -90,13 +99,26 @@ export class ClientsService {
     );
   }
 
-  getChurnAlerts(orgId: string, userId: string, scope: DataScope) {
+  getChurnAlerts(read: ScopedRead) {
+    const orgId = read.orgId;
     return this.cache.cachedVersionedForOrg(
       orgId,
       "clients:churn",
-      `${userId}:${scope}`,
+      read.discriminator,
       async () => {
-        const atRiskClients = await this.db
+        const atRiskClients = await read.read(
+          {
+            tenant: businessParties.organizationId,
+            scope: CLIENT_PARTY_SCOPE,
+            and: [
+              eq(clientPartyMap.organizationId, orgId),
+              or(
+                eq(CLIENT_PARTY_COLUMNS.healthStatus, "at_risk"),
+                eq(CLIENT_PARTY_COLUMNS.healthStatus, "critical"),
+              ),
+            ],
+          },
+          ({ sql: where }) => this.db
           .select({
             id: CLIENT_PARTY_COLUMNS.id,
             name: CLIENT_PARTY_COLUMNS.name,
@@ -113,20 +135,12 @@ export class ClientsService {
           .from(clientPartyMap)
           .innerJoin(businessParties, CLIENT_PARTY_JOIN)
           .leftJoin(users, eq(CLIENT_PARTY_COLUMNS.accountManagerId, users.id))
-          .where(
-            and(
-              ...clientPartyScope(orgId),
-              clientPartyViewScope(orgId, userId, scope),
-              or(
-                eq(CLIENT_PARTY_COLUMNS.healthStatus, "at_risk"),
-                eq(CLIENT_PARTY_COLUMNS.healthStatus, "critical"),
-              ),
-            ),
-          )
-          // `churn_risk_score` is nullable and ties freely; the id says which
-          // twenty alerts an org sees.
+          .where(where)
+          // `churn_risk_score` is nullable and ties freely; the id says which twenty alerts an org sees.
           .orderBy(desc(CLIENT_PARTY_COLUMNS.churnRiskScore), desc(CLIENT_PARTY_COLUMNS.id))
-          .limit(20);
+          .limit(20),
+          () => [],
+        );
 
         const critical = atRiskClients.filter((c) => c.healthStatus === "critical").length;
         const atRisk = atRiskClients.filter((c) => c.healthStatus === "at_risk").length;
@@ -136,33 +150,66 @@ export class ClientsService {
     );
   }
 
-  /** @see lib/client-timeline.ts */
-  async getTimeline(
-    orgId: string,
-    clientId: number,
-  ): Promise<{ events: TimelineEvent[]; total: number } | null> {
-    return getClientTimeline(this.db, orgId, clientId);
-  }
-
-  async exportCsv(orgId: string): Promise<string> {
-    const rows = await this.db
-      .select({
-        id: CLIENT_PARTY_COLUMNS.id,
-        name: CLIENT_PARTY_COLUMNS.name,
-        email: CLIENT_PARTY_COLUMNS.email,
-        phone: CLIENT_PARTY_COLUMNS.phone,
-        company: CLIENT_PARTY_COLUMNS.company,
-        city: CLIENT_PARTY_COLUMNS.city,
-        status: CLIENT_PARTY_COLUMNS.status,
-        healthScore: CLIENT_PARTY_COLUMNS.healthScore,
-        healthStatus: CLIENT_PARTY_COLUMNS.healthStatus,
-        investmentValue: CLIENT_PARTY_COLUMNS.investmentValue,
-        createdAt: CLIENT_PARTY_COLUMNS.createdAt,
-      })
-      .from(clientPartyMap)
-      .innerJoin(businessParties, CLIENT_PARTY_JOIN)
-      .where(and(...clientPartyScope(orgId)))
-      .orderBy(asc(CLIENT_PARTY_COLUMNS.name), asc(CLIENT_PARTY_COLUMNS.id));
+  async exportCsv(read: ScopedRead): Promise<string> {
+    const orgId = read.orgId;
+    const EXPORT_PAGE = 500;
+    type ExportRow = {
+      id: number;
+      name: string;
+      email: string | null;
+      phone: string | null;
+      company: string | null;
+      city: string | null;
+      status: string;
+      healthScore: number;
+      healthStatus: string;
+      investmentValue: string | null;
+      createdAt: Date | null;
+    };
+    const rows: ExportRow[] = [];
+    let afterName: string | undefined;
+    let afterId: number | undefined;
+    for (;;) {
+      const cursorCond =
+        afterName !== undefined && afterId !== undefined
+          ? or(
+              gt(CLIENT_PARTY_COLUMNS.name, afterName),
+              and(eq(CLIENT_PARTY_COLUMNS.name, afterName), gt(CLIENT_PARTY_COLUMNS.id, afterId)),
+            )
+          : undefined;
+      const page = await read.read(
+        {
+          tenant: businessParties.organizationId,
+          scope: CLIENT_PARTY_SCOPE,
+          and: [eq(clientPartyMap.organizationId, orgId), cursorCond],
+        },
+        ({ sql: where }) => this.db
+        .select({
+          id: CLIENT_PARTY_COLUMNS.id,
+          name: CLIENT_PARTY_COLUMNS.name,
+          email: CLIENT_PARTY_COLUMNS.email,
+          phone: CLIENT_PARTY_COLUMNS.phone,
+          company: CLIENT_PARTY_COLUMNS.company,
+          city: CLIENT_PARTY_COLUMNS.city,
+          status: CLIENT_PARTY_COLUMNS.status,
+          healthScore: CLIENT_PARTY_COLUMNS.healthScore,
+          healthStatus: CLIENT_PARTY_COLUMNS.healthStatus,
+          investmentValue: CLIENT_PARTY_COLUMNS.investmentValue,
+          createdAt: CLIENT_PARTY_COLUMNS.createdAt,
+        })
+        .from(clientPartyMap)
+        .innerJoin(businessParties, CLIENT_PARTY_JOIN)
+        .where(where)
+        .orderBy(asc(CLIENT_PARTY_COLUMNS.name), asc(CLIENT_PARTY_COLUMNS.id))
+        .limit(EXPORT_PAGE),
+        () => [],
+      );
+      for (const row of page) rows.push(row);
+      const last = page[page.length - 1];
+      if (page.length < EXPORT_PAGE || last === undefined) break;
+      afterName = last.name;
+      afterId = last.id;
+    }
 
     const headers = [
       "id",

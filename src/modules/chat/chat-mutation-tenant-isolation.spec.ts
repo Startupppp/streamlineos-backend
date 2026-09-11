@@ -5,6 +5,7 @@ import { EntityReferenceService } from "../entity-reference/entity-reference.ser
 import { ChatPinsService } from "./chat-pins.service";
 import { ChatSavedService } from "./chat-saved.service";
 import { ChatMessagesService } from "./chat-messages.service";
+import { ChatMessageModerationService } from "./chat-message-moderation.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { AblyService } from "../realtime/ably.service";
 import { ChatReplyRemindersService } from "./chat-reply-reminders.service";
@@ -12,9 +13,10 @@ import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { MESSAGE_FANOUT_PROVIDER } from "./message-fanout.interface";
 import { ChatHuddlesService } from "./chat-huddles.service";
 import { ChatHuddleSignalsService } from "./chat-huddle-signals.service";
-import { WebPushService } from "../realtime/web-push.service";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
+import { ComposioGateway } from "../integrations/core/composio.gateway";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -49,6 +51,7 @@ describe("Chat mutation services — cross-tenant isolation", () => {
     const actorWithMembership = { ...actor, membershipId: 99 };
     const db = {
       query: {
+        chatChannels: { findFirst: jest.fn().mockResolvedValue({ id: 27, isPrivate: false }) },
         chatChannelMembers: { findFirst: jest.fn().mockResolvedValue(undefined) },
         chatMessages: { findFirst: jest.fn() },
       },
@@ -65,6 +68,8 @@ describe("Chat mutation services — cross-tenant isolation", () => {
 
     await expect(service.pin(27, 91, actorWithMembership)).rejects.toThrow(ForbiddenException);
 
+    const channelQuery = db.query.chatChannels.findFirst.mock.calls[0]?.[0];
+    expect(sqlValues(channelQuery?.where)).toContain(actor.orgId);
     const membershipQuery = db.query.chatChannelMembers.findFirst.mock.calls[0]?.[0];
     expect(sqlValues(membershipQuery?.where)).toContain(actor.orgId);
     expect(sqlValues(membershipQuery?.where)).toContain(actorWithMembership.membershipId);
@@ -98,7 +103,7 @@ describe("Chat mutation services — cross-tenant isolation", () => {
   });
 });
 
-describe("ChatMessagesService — cross-tenant isolation on edit and remove", () => {
+describe("ChatMessageModerationService — cross-tenant isolation on edit and remove", () => {
   const ATTACKER_ORG = "org-attacker";
   const OWNER_ORG = "org-owner";
 
@@ -106,6 +111,7 @@ describe("ChatMessagesService — cross-tenant isolation on edit and remove", ()
     const db = {
       query: {
         chatMessages: { findFirst: jest.fn().mockResolvedValue(messageRow) },
+        chatChannels: { findFirst: jest.fn().mockResolvedValue({ id: 1, isPrivate: false }) },
         organizationMembers: { findFirst: jest.fn().mockResolvedValue(null) },
         chatChannelMembers: { findFirst: jest.fn().mockResolvedValue(null) },
       },
@@ -119,19 +125,14 @@ describe("ChatMessagesService — cross-tenant isolation on edit and remove", ()
 
     const module = await Test.createTestingModule({
       providers: [
-        ChatMessagesService,
+        ChatMessageModerationService,
         { provide: DRIZZLE, useValue: db },
-        { provide: CacheService, useValue: {} },
-        { provide: AblyService, useValue: {} },
-        { provide: ChatReplyRemindersService, useValue: {} },
-        { provide: ChatOrgSettingsService, useValue: {} },
-        { provide: EntityReferenceService, useValue: {} },
-        { provide: MESSAGE_FANOUT_PROVIDER, useValue: {} },
+        { provide: AblyService, useValue: { publishChatEvent: jest.fn() } },
       ],
     }).compile();
-    const service = module.get(ChatMessagesService);
+    const service = module.get(ChatMessageModerationService);
 
-    await expect(service.edit(99, "user-x", ATTACKER_ORG, "pwned")).rejects.toThrow(NotFoundException);
+    await expect(service.edit(99, 1, "user-x", ATTACKER_ORG, "pwned")).rejects.toThrow(NotFoundException);
 
     const q = db.query.chatMessages.findFirst.mock.calls[0]?.[0];
     expect(sqlValues(q?.where)).toContain(ATTACKER_ORG);
@@ -146,19 +147,14 @@ describe("ChatMessagesService — cross-tenant isolation on edit and remove", ()
 
     const module = await Test.createTestingModule({
       providers: [
-        ChatMessagesService,
+        ChatMessageModerationService,
         { provide: DRIZZLE, useValue: db },
-        { provide: CacheService, useValue: {} },
         { provide: AblyService, useValue: { publishChatEvent: jest.fn().mockResolvedValue(undefined) } },
-        { provide: ChatReplyRemindersService, useValue: {} },
-        { provide: ChatOrgSettingsService, useValue: {} },
-        { provide: EntityReferenceService, useValue: {} },
-        { provide: MESSAGE_FANOUT_PROVIDER, useValue: {} },
       ],
     }).compile();
-    const service = module.get(ChatMessagesService);
+    const service = module.get(ChatMessageModerationService);
 
-    const result = await service.edit(99, "u1", OWNER_ORG, "updated");
+    const result = await service.edit(99, 1, "u1", OWNER_ORG, "updated");
 
     const q = db.query.chatMessages.findFirst.mock.calls[0]?.[0];
     expect(sqlValues(q?.where)).toContain(OWNER_ORG);
@@ -170,23 +166,95 @@ describe("ChatMessagesService — cross-tenant isolation on edit and remove", ()
 
     const module = await Test.createTestingModule({
       providers: [
-        ChatMessagesService,
+        ChatMessageModerationService,
         { provide: DRIZZLE, useValue: db },
-        { provide: CacheService, useValue: {} },
-        { provide: AblyService, useValue: {} },
-        { provide: ChatReplyRemindersService, useValue: {} },
-        { provide: ChatOrgSettingsService, useValue: {} },
-        { provide: EntityReferenceService, useValue: {} },
-        { provide: MESSAGE_FANOUT_PROVIDER, useValue: {} },
+        { provide: AblyService, useValue: { publishChatEvent: jest.fn() } },
       ],
     }).compile();
-    const service = module.get(ChatMessagesService);
+    const service = module.get(ChatMessageModerationService);
 
-    await expect(service.remove(99, "user-x", false, ATTACKER_ORG)).rejects.toThrow(NotFoundException);
+    await expect(service.remove(99, 1, "user-x", false, ATTACKER_ORG)).rejects.toThrow(NotFoundException);
 
     const q = db.query.chatMessages.findFirst.mock.calls[0]?.[0];
     expect(sqlValues(q?.where)).toContain(ATTACKER_ORG);
     expect(sqlValues(q?.where)).not.toContain(OWNER_ORG);
+  });
+
+  /**
+   * The route is `PATCH|DELETE /chat/channels/:channelId/messages/:messageId`. `:channelId`
+   * was parsed by `channelAndMessageIdParams` and then dropped on the floor: the lookup keyed
+   * on `(id, orgId)` only, and the membership check that followed read the message's OWN
+   * `channelId`, so the URL's channel was never compared to anything. A member of channel A
+   * could therefore edit or delete a message of channel A while addressing channel B, and no
+   * layer could tell — the write's own `WHERE` used `message.channelId` too, so it agreed
+   * with itself. The channel in the path is part of the message's identity.
+   */
+  const CHANNEL_IN_URL = 7;
+
+  it("DENY: edit binds the message lookup to the channel named in the URL", async () => {
+    const { db } = makeMessagesService(null);
+
+    const module = await Test.createTestingModule({
+      providers: [
+        ChatMessageModerationService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: AblyService, useValue: { publishChatEvent: jest.fn() } },
+      ],
+    }).compile();
+    const service = module.get(ChatMessageModerationService);
+
+    await expect(
+      service.edit(99, CHANNEL_IN_URL, "u1", OWNER_ORG, "pwned"),
+    ).rejects.toThrow(NotFoundException);
+
+    const q = db.query.chatMessages.findFirst.mock.calls[0]?.[0];
+    expect(sqlValues(q?.where)).toContain(CHANNEL_IN_URL);
+  });
+
+  it("DENY: remove binds the message lookup to the channel named in the URL", async () => {
+    const { db } = makeMessagesService(null);
+
+    const module = await Test.createTestingModule({
+      providers: [
+        ChatMessageModerationService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: AblyService, useValue: { publishChatEvent: jest.fn() } },
+      ],
+    }).compile();
+    const service = module.get(ChatMessageModerationService);
+
+    await expect(
+      service.remove(99, CHANNEL_IN_URL, "u1", false, OWNER_ORG),
+    ).rejects.toThrow(NotFoundException);
+
+    const q = db.query.chatMessages.findFirst.mock.calls[0]?.[0];
+    expect(sqlValues(q?.where)).toContain(CHANNEL_IN_URL);
+  });
+
+  it("scopes the edit WRITE on the URL channel, not on the row it just read", async () => {
+    // Re-deriving the channel from the row makes the predicate agree with itself: it
+    // would still update a message that lives in a different channel from the one the
+    // caller addressed. The write has to carry the caller's channel.
+    const msgRow = { id: 99, orgId: OWNER_ORG, channelId: CHANNEL_IN_URL, senderId: "u1", senderMembershipId: 5, isDeleted: false };
+    const { db } = makeMessagesService(msgRow);
+    db.query.organizationMembers.findFirst.mockResolvedValue({ id: 5 });
+    db.query.chatChannelMembers.findFirst.mockResolvedValue({ id: 1 });
+
+    const where = jest.fn().mockResolvedValue(undefined);
+    db.update = jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where }) });
+
+    const module = await Test.createTestingModule({
+      providers: [
+        ChatMessageModerationService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: AblyService, useValue: { publishChatEvent: jest.fn().mockResolvedValue(undefined) } },
+      ],
+    }).compile();
+    const service = module.get(ChatMessageModerationService);
+
+    await service.edit(99, CHANNEL_IN_URL, "u1", OWNER_ORG, "updated");
+
+    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(CHANNEL_IN_URL);
   });
 });
 
@@ -217,10 +285,11 @@ describe("ChatHuddlesService — cross-tenant isolation on huddle operations", (
         ChatHuddlesService,
         { provide: DRIZZLE, useValue: db },
         { provide: AblyService, useValue: {} },
-        { provide: WebPushService, useValue: {} },
+        { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue({}) } },
         { provide: AuditService, useValue: { log: jest.fn() } },
         { provide: ChatOrgSettingsService, useValue: {} },
         { provide: PlanLimitsService, useValue: {} },
+        { provide: ComposioGateway, useValue: {} },
       ],
     }).compile();
     const service = module.get(ChatHuddlesService);
@@ -232,9 +301,11 @@ describe("ChatHuddlesService — cross-tenant isolation on huddle operations", (
     expect(sqlValues(q?.where)).not.toContain(OWNER_ORG);
   });
 
-  it("DENY: heartbeat binds update to actor orgId — cross-org participant cannot be kept alive", async () => {
+  it("DENY: heartbeat resolves the huddle in the actor org and 404s a cross-org id without updating", async () => {
+    const huddleFindFirst = jest.fn().mockResolvedValue(undefined);
     const db = {
       query: {
+        chatHuddles: { findFirst: huddleFindFirst },
         organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 7 }) },
       },
       update: jest.fn().mockReturnValue({
@@ -251,18 +322,19 @@ describe("ChatHuddlesService — cross-tenant isolation on huddle operations", (
     }).compile();
     const service = module.get(ChatHuddleSignalsService);
 
-    await service.heartbeat(42, "user-x", ATTACKER_ORG);
+    await expect(service.heartbeat(42, "user-x", ATTACKER_ORG)).rejects.toThrow(NotFoundException);
 
-    const whereCall = (db.update as jest.Mock).mock.results[0]?.value.set.mock.results[0]?.value.where;
-    const [predicate] = (whereCall as jest.Mock).mock.calls[0] ?? [];
-    expect(sqlValues(predicate)).toContain(ATTACKER_ORG);
-    expect(sqlValues(predicate)).not.toContain(OWNER_ORG);
+    expect(db.update).not.toHaveBeenCalled();
+    const [opts] = huddleFindFirst.mock.calls[0] ?? [];
+    expect(sqlValues(opts?.where)).toContain(ATTACKER_ORG);
+    expect(sqlValues(opts?.where)).not.toContain(OWNER_ORG);
   });
 
   it("CONTROL: heartbeat with matching orgId updates the participant row", async () => {
     const whereMock = jest.fn().mockResolvedValue(undefined);
     const db = {
       query: {
+        chatHuddles: { findFirst: jest.fn().mockResolvedValue({ id: 42 }) },
         organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 5 }) },
       },
       update: jest.fn().mockReturnValue({

@@ -1,3 +1,4 @@
+import { BadRequestException } from "@nestjs/common";
 import type { Db } from "../../../../db/drizzle.module";
 import { EventStreamService } from "./event-stream.service";
 
@@ -42,19 +43,59 @@ function isolationArg(where: jest.Mock, findMany: jest.Mock): unknown {
 describe("EventStreamService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
   const OWNER = "org-owner";
-  const ROW = { id: 1, orgId: OWNER };
+  const ROW = {
+    id: "0198d510-9d64-7f53-8bd6-aef1c1b695d2",
+    orgId: OWNER,
+    occurredAt: new Date("2026-08-20T09:00:00.000Z"),
+  };
+  const OLDER_ROW = {
+    id: "0198d510-9d64-7f53-8bd6-aef1c1b695d1",
+    orgId: OWNER,
+    occurredAt: new Date("2026-08-20T08:00:00.000Z"),
+  };
 
   it("hides event stream entries from different org (cross-tenant isolation)", async () => {
     const { db, where, findMany } = makeDb([]);
     const svc = new EventStreamService(db);
-    await svc.listEvents(ATTACKER, { page: 1, limit: 10 });
+    await svc.listEvents(ATTACKER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
 
   it("returns event stream entries for owning org (control — same-tenant access works)", async () => {
     const { db, where, findMany } = makeDb([ROW]);
     const svc = new EventStreamService(db);
-    await svc.listEvents(OWNER, { page: 1, limit: 10 });
+    await svc.listEvents(OWNER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
+  });
+
+  it("trims the sentinel and exposes an opaque next cursor", async () => {
+    const { db } = makeDb([ROW, OLDER_ROW]);
+    const result = await new EventStreamService(db).listEvents(OWNER, { limit: 1 });
+
+    expect(result.data).toEqual([ROW]);
+    expect(result.pagination).toMatchObject({ limit: 1, hasMore: true });
+    expect(result.pagination.nextCursor).toEqual(expect.any(String));
+  });
+
+  it("preserves export filters, trims its sentinel, and rejects malformed cursors", async () => {
+    const { db, where, findMany } = makeDb([ROW, OLDER_ROW]);
+    const svc = new EventStreamService(db);
+
+    const result = await svc.exportEvents(OWNER, {
+      limit: 1,
+      eventType: "employee.updated",
+      entityType: "employee",
+    });
+    expect(result.data).toEqual([ROW]);
+    expect(result.pagination).toMatchObject({ limit: 1, hasMore: true });
+    const values = sqlValues(isolationArg(where, findMany));
+    expect(values).toContain("employee.updated");
+    expect(values).toContain("employee");
+    await expect(
+      svc.listEvents(OWNER, { limit: 10, cursor: "malformed" }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      svc.exportEvents(OWNER, { limit: 10, cursor: "malformed" }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

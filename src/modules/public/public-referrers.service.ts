@@ -1,8 +1,10 @@
 import {
+  BadRequestException,
   ForbiddenException,
   GoneException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
@@ -20,14 +22,26 @@ import { type Db } from "../../db/drizzle.module";
 import { withPublicToken } from "../../common/tenant/with-public-token";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { randomBytes } from "node:crypto";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
+import { PaymentRequiredException } from "../../common/http/api-exceptions";
+import { logger } from "../../common/logger/logger.service";
 import type {
   ExternalReferralSubmitInput,
   ExternalReferrerRegisterInput,
 } from "./dto/public.schemas";
 
+function isQuotaExceededError(error: unknown): error is PaymentRequiredException {
+  if (!(error instanceof PaymentRequiredException)) return false;
+  const body = error.getResponse();
+  return typeof body === "object" && body !== null && "code" in body && body.code === "QUOTA_EXCEEDED";
+}
+
 @Injectable()
 export class PublicReferrersService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly planLimits: PlanLimitsService,
+  ) {}
 
   async registerExternalReferrer(input: ExternalReferrerRegisterInput) {
     const org = await this.db.query.organizations.findFirst({
@@ -160,23 +174,39 @@ export class PublicReferrersService {
           columns: { id: true },
         });
 
-        const candidateId = existingCandidate
-          ? existingCandidate.id
-          : (
-              await tx
-                .insert(candidates)
-                .values({
-                  orgId: referrer.orgId,
-                  firstName: input.firstName,
-                  lastName: input.lastName,
-                  email: normalizedEmail,
-                  phone: input.phone,
-                  source: "EXTERNAL_REFERRAL",
-                })
-                .returning({ id: candidates.id })
-            )[0]!.id;
+        let candidateId: number;
+        if (existingCandidate) {
+          candidateId = existingCandidate.id;
+        } else {
+          try {
+            await this.planLimits.assertWithinLimit(referrer.orgId, "hrCandidates", 1, tx);
+          } catch (error) {
+            if (!isQuotaExceededError(error)) throw error;
+            logger.warn("[public-referrers] referral submission refused: candidate quota exceeded", {
+              orgId: referrer.orgId,
+              referrerId: referrer.id,
+            });
+            throw new BadRequestException(
+              "This referral link is not accepting new referrals at this time.",
+            );
+          }
+          const [created] = await tx
+            .insert(candidates)
+            .values({
+              orgId: referrer.orgId,
+              firstName: input.firstName,
+              lastName: input.lastName,
+              email: normalizedEmail,
+              phone: input.phone,
+              source: "EXTERNAL_REFERRAL",
+            })
+            .returning({ id: candidates.id });
+          if (!created) throw new InternalServerErrorException("Failed to create candidate.");
+          candidateId = created.id;
+        }
 
         const existingReferral = await tx.query.externalReferrals.findFirst({
+          columns: { id: true },
           where: and(
             eq(externalReferrals.referrerId, referrer.id),
             eq(externalReferrals.candidateId, candidateId),

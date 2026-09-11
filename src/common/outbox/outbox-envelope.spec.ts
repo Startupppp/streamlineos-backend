@@ -1,6 +1,7 @@
 import {
   buildOutboxEvent,
   nextRetryDelayMs,
+  nextRetryDelayWithJitterMs,
   shouldDeadLetter,
   shouldSuppressForLifecycle,
   OUTBOX_MAX_RETRIES,
@@ -93,6 +94,33 @@ describe("nextRetryDelayMs", () => {
 
   it("treats a negative retry count as the base delay", () => {
     expect(nextRetryDelayMs(-5)).toBe(OUTBOX_RETRY_BASE_MS);
+  });
+});
+
+describe("nextRetryDelayWithJitterMs", () => {
+  it("never returns the same delay twice for a whole claim batch", () => {
+    const batch = Array.from({ length: 50 }, () => nextRetryDelayWithJitterMs(5));
+    expect(new Set(batch).size).toBeGreaterThan(1);
+  });
+
+  it("stays within [base, deterministic ceiling] for every retry count", () => {
+    for (let retryCount = 0; retryCount <= 12; retryCount++) {
+      const ceiling = nextRetryDelayMs(retryCount);
+      for (const random of [() => 0, () => 0.5, () => 0.999999]) {
+        const delay = nextRetryDelayWithJitterMs(retryCount, random);
+        expect(delay).toBeGreaterThanOrEqual(OUTBOX_RETRY_BASE_MS);
+        expect(delay).toBeLessThanOrEqual(ceiling);
+      }
+    }
+  });
+
+  it("collapses to the base delay when there is no span to jitter over", () => {
+    expect(nextRetryDelayWithJitterMs(0, () => 0.9)).toBe(OUTBOX_RETRY_BASE_MS);
+    expect(nextRetryDelayWithJitterMs(-5, () => 0.9)).toBe(OUTBOX_RETRY_BASE_MS);
+  });
+
+  it("never exceeds the maximum delay once the ceiling is capped", () => {
+    expect(nextRetryDelayWithJitterMs(100, () => 0.999999)).toBeLessThanOrEqual(OUTBOX_RETRY_MAX_MS);
   });
 });
 

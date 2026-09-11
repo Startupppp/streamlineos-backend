@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { eq, and, asc, inArray, isNull, notInArray, sql, lte, isNotNull } from "drizzle-orm";
 import { AccessService } from "../access/access.service";
+import type { ScopedRead } from "../access/scoped-read";
 import {
   leadActivities,
   users,
@@ -9,6 +10,7 @@ import {
 import { businessParties, leadPartyMap } from "../../db/schema/party";
 import {
   LEAD_PARTY_COLUMNS,
+  LEAD_PARTY_SCOPE,
   LEAD_PARTY_JOIN,
   leadPartyScope,
 } from "./lead-party-reader";
@@ -220,10 +222,8 @@ export class LeadsReportsTeamService {
     );
   }
 
-  async getLeadSlaAlerts(
-    orgId: string,
-    opts: { ownScope?: boolean; userId?: string },
-  ) {
+  async getLeadSlaAlerts(read: ScopedRead) {
+    const orgId = read.orgId;
     const now = new Date();
     const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
@@ -235,16 +235,18 @@ export class LeadsReportsTeamService {
       );
     const semantics = resolveLeadStatusSemantics(statusOptions);
 
-    const slaFilters = [
-      ...leadPartyScope(orgId),
-      inArray(LEAD_PARTY_COLUMNS.status, semantics.slaOpenKeys),
-      lte(LEAD_PARTY_COLUMNS.updatedAt, twentyFourHoursAgo),
-    ];
-    if (opts.ownScope && opts.userId) {
-      slaFilters.push(eq(LEAD_PARTY_COLUMNS.assignedToId, opts.userId));
-    }
-
-    const slaLeads = await this.db
+    const slaLeads = await read.read(
+      {
+        tenant: businessParties.organizationId,
+        scope: LEAD_PARTY_SCOPE,
+        and: [
+          eq(leadPartyMap.organizationId, orgId),
+          isNull(businessParties.deletedAt),
+          inArray(LEAD_PARTY_COLUMNS.status, semantics.slaOpenKeys),
+          lte(LEAD_PARTY_COLUMNS.updatedAt, twentyFourHoursAgo),
+        ],
+      },
+      ({ sql: where }) => this.db
       .select({
         id: LEAD_PARTY_COLUMNS.id,
         name: LEAD_PARTY_COLUMNS.name,
@@ -257,12 +259,12 @@ export class LeadsReportsTeamService {
       .from(leadPartyMap)
       .innerJoin(businessParties, LEAD_PARTY_JOIN)
       .leftJoin(users, eq(LEAD_PARTY_COLUMNS.assignedToId, users.id))
-      .where(and(...slaFilters))
-      // Oldest first, where the query this replaces had no order at all: with a
-      // cap of 100 and no ORDER BY, an org with more breaches than that showed an
-      // arbitrary hundred of them and called the worst ones missing.
+      .where(where)
+      // Oldest first: with a cap of 100 and no ORDER BY an org with more breaches showed an arbitrary hundred.
       .orderBy(asc(LEAD_PARTY_COLUMNS.updatedAt), asc(LEAD_PARTY_COLUMNS.id))
-      .limit(100);
+      .limit(100),
+      () => [],
+    );
 
     const slaBreached = slaLeads.map((lead) => {
       const updatedAt = lead.updatedAt

@@ -10,7 +10,7 @@ export const listSurveysSchema = z.object({
   search: z.string().trim().max(200).optional(),
   page: pageNumberField,
   pageSize: pageSizeField(25, 100),
-});
+}).strict();
 
 export const createSurveySchema = z.object({
   title: z.string().min(1).max(200),
@@ -18,7 +18,7 @@ export const createSurveySchema = z.object({
   mode: surveyModeSchema.default("survey"),
   defaultLanguage: z.string().min(2).max(10).default("en"),
   templateKey: z.string().max(100).optional(),
-});
+}).strict();
 
 export const patchSurveySchema = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -27,7 +27,7 @@ export const patchSurveySchema = z.object({
   defaultLanguage: z.string().min(2).max(10).optional(),
   settings: z.record(z.string(), z.unknown()).optional(),
   branding: z.record(z.string(), z.unknown()).optional(),
-});
+}).strict();
 
 export type ListSurveysInput = z.infer<typeof listSurveysSchema>;
 export type CreateSurveyInput = z.infer<typeof createSurveySchema>;

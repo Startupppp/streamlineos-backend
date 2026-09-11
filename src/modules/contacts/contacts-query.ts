@@ -12,7 +12,9 @@ import {
   canonicalContactOnly,
   contactIdIs,
   contactPartyScope,
+  CONTACT_PARTY_SCOPE,
 } from "./contact-party-reader";
+import type { ScopedRead } from "../access/scoped-read";
 import type { ListInput } from "./dto/contact.schemas";
 
 /**
@@ -148,7 +150,8 @@ export function listConditions(orgId: string, filters: ListInput, employerPartyI
   return conditions;
 }
 
-export async function queryContacts(db: Db, orgId: string, filters: ListInput) {
+export async function queryContacts(db: Db, read: ScopedRead, filters: ListInput) {
+  const orgId = read.orgId;
   const employerPartyId = filters.organizationId
     ? ((await partyIdsOfCrmOrgs(db, orgId, [filters.organizationId])).get(
         filters.organizationId,
@@ -157,20 +160,32 @@ export async function queryContacts(db: Db, orgId: string, filters: ListInput) {
   if (filters.organizationId && !employerPartyId) return { items: [], total: 0, hasMore: false, nextCursor: null };
 
   const after = decodeCursor(filters.cursor);
-  const conditions = listConditions(orgId, filters, employerPartyId);
   const afterId = after ? Number(after.id) : Number.NaN;
-  if (after && !Number.isNaN(afterId)) {
-    const keyset = or(
-      gt(CONTACT_PARTY_COLUMNS.name, after.sortValue),
-      and(
-        eq(CONTACT_PARTY_COLUMNS.name, after.sortValue),
-        gt(CONTACT_PARTY_COLUMNS.id, afterId),
-      ),
-    );
-    if (keyset) conditions.push(keyset);
-  }
-  const whereClause = and(...conditions);
+  const keyset =
+    after && !Number.isNaN(afterId)
+      ? or(
+          gt(CONTACT_PARTY_COLUMNS.name, after.sortValue),
+          and(
+            eq(CONTACT_PARTY_COLUMNS.name, after.sortValue),
+            gt(CONTACT_PARTY_COLUMNS.id, afterId),
+          ),
+        )
+      : undefined;
   const limit = filters.limit ?? 50;
+  const domain = listConditions(orgId, filters, employerPartyId);
+
+  const scopedCount = read.compose(
+    { tenant: businessParties.organizationId, scope: CONTACT_PARTY_SCOPE, and: domain },
+    (where) => where.sql,
+    () => null,
+  );
+  const scopedList = read.compose(
+    { tenant: businessParties.organizationId, scope: CONTACT_PARTY_SCOPE, and: [...domain, keyset] },
+    (where) => where.sql,
+    () => null,
+  );
+  if (scopedList === null || scopedCount === null)
+    return { items: [], total: 0, hasMore: false, nextCursor: null };
 
   const [countResult, rows] = await Promise.all([
     after === null
@@ -178,10 +193,10 @@ export async function queryContacts(db: Db, orgId: string, filters: ListInput) {
           .select({ count: count() })
           .from(contactPartyMap)
           .innerJoin(businessParties, CONTACT_PARTY_JOIN)
-          .where(and(...listConditions(orgId, filters, employerPartyId)))
+          .where(scopedCount)
       : Promise.resolve(null),
     contactBase(db, orgId)
-      .where(whereClause)
+      .where(scopedList)
       .orderBy(asc(CONTACT_PARTY_COLUMNS.name), asc(CONTACT_PARTY_COLUMNS.id))
       .limit(limit + 1),
   ]);
@@ -205,9 +220,24 @@ export async function queryContacts(db: Db, orgId: string, filters: ListInput) {
   };
 }
 
-export function searchContacts(db: Db, orgId: string, query: string) {
+export function searchContacts(db: Db, read: ScopedRead, query: string) {
   const q = `%${query}%`;
-  return db
+  return read.read(
+    {
+      tenant: businessParties.organizationId,
+      scope: CONTACT_PARTY_SCOPE,
+      and: [
+        eq(contactPartyMap.organizationId, read.orgId),
+        // One row per party, the same rule the list applies.
+        canonicalContactOnly(read.orgId),
+        or(
+          ilike(CONTACT_PARTY_COLUMNS.name, q),
+          ilike(CONTACT_PARTY_COLUMNS.email, q),
+          ilike(CONTACT_PARTY_COLUMNS.phone, q),
+        ),
+      ],
+    },
+    ({ sql: where }) => db
     .select({
       id: CONTACT_PARTY_COLUMNS.id,
       name: CONTACT_PARTY_COLUMNS.name,
@@ -219,19 +249,11 @@ export function searchContacts(db: Db, orgId: string, query: string) {
     })
     .from(contactPartyMap)
     .innerJoin(businessParties, CONTACT_PARTY_JOIN)
-    .where(
-      and(
-        ...contactPartyScope(orgId),
-        canonicalContactOnly(orgId),
-        or(
-          ilike(CONTACT_PARTY_COLUMNS.name, q),
-          ilike(CONTACT_PARTY_COLUMNS.email, q),
-          ilike(CONTACT_PARTY_COLUMNS.phone, q),
-        ),
-      ),
-    )
+    .where(where)
     .orderBy(asc(CONTACT_PARTY_COLUMNS.name), asc(CONTACT_PARTY_COLUMNS.id))
-    .limit(20);
+    .limit(20),
+    () => [],
+  );
 }
 
 export async function getOneContact(db: Db, orgId: string, id: number) {

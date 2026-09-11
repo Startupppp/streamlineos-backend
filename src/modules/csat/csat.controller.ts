@@ -17,6 +17,8 @@ import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { Public } from "../../common/auth/public.decorator";
+import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
+import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import {
@@ -37,8 +39,20 @@ import {
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  csatSurveyListSchema,
+  csatSurveyDetailSchema,
+  csatSurveyRowSchema,
+  csatResponseListSchema,
+  csatSubmittedSchema,
+  successSchema,
+} from "./dto/csat-response.schemas";
 
-const surveyIdParams = z.object({ surveyId: z.coerce.number().int().positive() }).strict();
+const surveyIdParams = z
+  .object({ surveyId: z.coerce.number().int().positive() })
+  .strict();
+const publicTokenParams = z.object({ publicToken: z.uuid() }).strict();
 
 @RequireModule("support")
 @Controller("csat")
@@ -48,6 +62,7 @@ export class CsatController {
 
   @Get()
   @RequirePermission("support:csat:view")
+  @ResponseSchema(csatSurveyListSchema)
   list(@CurrentUser() u: CurrentUserContext) {
     return this.csat.listSurveys(u.orgId);
   }
@@ -56,16 +71,15 @@ export class CsatController {
   @HttpCode(201)
   @RequirePermission("support:csat:manage")
   @Validate({ body: createSchema })
-  create(
-    @Body() body: CreateInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
+  @ResponseSchema(csatSurveyRowSchema)
+  create(@Body() body: CreateInput, @CurrentUser() u: CurrentUserContext) {
     return this.csat.createSurvey(u.orgId, u.userId, body);
   }
 
   @Get(":surveyId")
   @RequirePermission("support:csat:view")
   @Validate({ params: surveyIdParams })
+  @ResponseSchema(csatSurveyDetailSchema)
   async get(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -78,6 +92,7 @@ export class CsatController {
   @Patch(":surveyId")
   @RequirePermission("support:csat:manage")
   @Validate({ params: surveyIdParams, body: patchSchema })
+  @ResponseSchema(csatSurveyRowSchema)
   async update(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body() body: PatchInput,
@@ -91,6 +106,7 @@ export class CsatController {
   @Delete(":surveyId")
   @RequirePermission("support:csat:manage")
   @Validate({ params: surveyIdParams })
+  @ResponseSchema(successSchema)
   async remove(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -103,25 +119,33 @@ export class CsatController {
   @Get(":surveyId/responses")
   @RequirePermission("support:csat:view")
   @Validate({ params: surveyIdParams, query: listResponsesSchema })
+  @ResponseSchema(csatResponseListSchema)
   async listResponses(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Query() query: ListResponsesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const responses = await this.csat.listResponses(u.orgId, surveyId, query.limit);
+    const responses = await this.csat.listResponses(
+      u.orgId,
+      surveyId,
+      query.limit,
+    );
     if (!responses) throw new NotFoundException("Survey not found");
     return responses;
   }
 
   @Public()
-  @Post(":surveyId/responses")
+  @Post("public/:publicToken/responses")
   @HttpCode(201)
-  @Validate({ params: surveyIdParams, body: submitResponseSchema })
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("csat:submit")
+  @Validate({ params: publicTokenParams, body: submitResponseSchema })
+  @ResponseSchema(csatSubmittedSchema)
   async submitResponse(
-    @Param("surveyId", ParseIntPipe) surveyId: number,
+    @Param("publicToken") publicToken: string,
     @Body() body: SubmitResponseInput,
   ) {
-    const result = await this.csat.submitResponse(surveyId, body);
+    const result = await this.csat.submitResponse(publicToken, body);
     if (isSubmitNotFound(result)) {
       throw new NotFoundException("Survey not found or not active");
     }

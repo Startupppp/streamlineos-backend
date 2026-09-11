@@ -9,21 +9,16 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 import { BiometricService } from "./biometric.service";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { biometricDeviceRowSchema, biometricLogRowSchema } from "./dto/time-attendance-response.schemas";
+import {
+  createDeviceSchema,
+  updateDeviceSchema,
+  type CreateDeviceInput,
+  type UpdateDeviceInput,
+} from "./dto/biometric.schemas";
 
 const deviceIdParams = z.object({ deviceId: z.coerce.number().int().positive() }).strict();
-
-const createDeviceSchema = z.object({
-  name: z.string().min(1).max(100),
-  ipAddress: z.string().min(1).max(45),
-  port: z.number().int().positive().optional(),
-  vendor: z.string().max(100).optional(),
-  location: z.string().max(200).optional(),
-});
-
-const updateDeviceSchema = createDeviceSchema.partial();
-
-type CreateDeviceInput = z.infer<typeof createDeviceSchema>;
-type UpdateDeviceInput = z.infer<typeof updateDeviceSchema>;
 
 @RequireModule("hr")
 @UseGuards(JwtAuthGuard)
@@ -32,6 +27,7 @@ export class BiometricController {
   constructor(private readonly service: BiometricService) {}
 
   @Get("devices")
+  @ResponseSchema(z.array(biometricDeviceRowSchema))
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
   listDevices(@CurrentUser() u: CurrentUserContext) {
@@ -40,6 +36,7 @@ export class BiometricController {
 
   @Post("devices")
   @HttpCode(201)
+  @ResponseSchema(biometricDeviceRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
   @Validate({ body: createDeviceSchema })
@@ -51,6 +48,7 @@ export class BiometricController {
   }
 
   @Patch("devices/:deviceId")
+  @ResponseSchema(biometricDeviceRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
   @Validate({ params: deviceIdParams, body: updateDeviceSchema })
@@ -63,6 +61,7 @@ export class BiometricController {
   }
 
   @Get("logs")
+  @ResponseSchema(z.array(biometricLogRowSchema))
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:view")
   getLogs(@CurrentUser() u: CurrentUserContext) {

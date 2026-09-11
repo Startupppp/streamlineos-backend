@@ -352,7 +352,7 @@ function approvalsService(db: Db, notifications: NotificationDispatchService) {
 
 /** Rejection lives in `ApprovalsBulkService`, which reaches the notifier through `ApprovalsService`. */
 function approvalsBulkService(db: Db, notifications: NotificationDispatchService) {
-  return new ApprovalsBulkService(db, audit, approvalsService(db, notifications));
+  return new ApprovalsBulkService(db, audit, approvalsService(db, notifications), rateResolver);
 }
 
 /** A submit whose entries carry a project, so an approver is resolved. */

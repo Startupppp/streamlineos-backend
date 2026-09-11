@@ -1,5 +1,5 @@
-import { Injectable, Inject } from "@nestjs/common";
-import { and, eq, gte, lte, count } from "drizzle-orm";
+import { ConflictException, Injectable, Inject } from "@nestjs/common";
+import { and, asc, eq, gte, lte, count } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -11,7 +11,10 @@ import {
   payrollPolicies,
 } from "../../../db/schema";
 import { buildRunChecklist } from "./lib/checklist";
-import { DEFAULT_PAYROLL_TOGGLES } from "../payroll.types";
+import {
+  normalizePayrollToggles,
+  toPayrollPolicyConfig,
+} from "../dto/payroll.schemas";
 import type { PayrollToggles, PayrollPolicyConfig } from "../payroll.types";
 import { getStatutoryPack } from "./lib/statutory-packs";
 import type { CommandCenterQuery } from "./dto/runs.schemas";
@@ -26,7 +29,9 @@ export class CommandCenterService {
 
   async getCommandCenter(orgId: string, query: CommandCenterQuery) {
     const now = new Date();
-    const month = query.month ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const month =
+      query.month ??
+      `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
     const runs = await this.db
       .select()
@@ -47,25 +52,36 @@ export class CommandCenterService {
     const todayStr = now.toISOString().slice(0, 10);
     const in14DaysStr = in14Days.toISOString().slice(0, 10);
 
-    const [versionData, policyRows, upcomingCalendarEvents] = await Promise.all([
-      run?.policyVersionId ? this.loadVersionData(orgId, run.policyVersionId) : Promise.resolve(null),
-      this.db
-        .select({ country: payrollPolicies.country })
-        .from(payrollPolicies)
-        .where(eq(payrollPolicies.orgId, orgId))
-        .limit(1),
-      this.db
-        .select()
-        .from(payrollCalendarEvents)
-        .where(
-          and(
-            eq(payrollCalendarEvents.orgId, orgId),
-            gte(payrollCalendarEvents.date, todayStr),
-            lte(payrollCalendarEvents.date, in14DaysStr),
-          ),
-        )
-        .orderBy(payrollCalendarEvents.date),
-    ]);
+    const [versionData, policyRows, upcomingCalendarEvents] = await Promise.all(
+      [
+        run?.policyVersionId
+          ? this.loadVersionData(orgId, run.policyVersionId)
+          : Promise.resolve(null),
+        this.db
+          .select({ country: payrollPolicies.country })
+          .from(payrollPolicies)
+          .where(eq(payrollPolicies.orgId, orgId))
+          .limit(1),
+        this.db
+          .select()
+          .from(payrollCalendarEvents)
+          .where(
+            and(
+              eq(payrollCalendarEvents.orgId, orgId),
+              gte(payrollCalendarEvents.date, todayStr),
+              lte(payrollCalendarEvents.date, in14DaysStr),
+            ),
+          )
+          .orderBy(payrollCalendarEvents.date)
+          .limit(101),
+      ],
+    );
+
+    if (upcomingCalendarEvents.length > 100) {
+      throw new ConflictException(
+        "Upcoming payroll calendar exceeds the supported 100-event window bound",
+      );
+    }
 
     const toggles = versionData?.toggles ?? null;
     const packComplianceChecklist = this.buildPackComplianceChecklist(
@@ -73,10 +89,23 @@ export class CommandCenterService {
       versionData?.config ?? null,
     );
 
-    const [checklist, varianceSummary, exceptionCounts, topExceptions, pendingApprovals] = await Promise.all([
-      run ? buildRunChecklist(this.db, orgId, run, toggles) : Promise.resolve([]),
+    const [
+      checklist,
+      varianceSummary,
+      exceptionCounts,
+      topExceptions,
+      pendingApprovals,
+    ] = await Promise.all([
       run
-        ? this.runsService.buildVarianceSummary(orgId, run.id, run.month, run.netTotal)
+        ? buildRunChecklist(this.db, orgId, run, toggles)
+        : Promise.resolve([]),
+      run
+        ? this.runsService.buildVarianceSummary(
+            orgId,
+            run.id,
+            run.month,
+            run.netTotal,
+          )
         : Promise.resolve(null),
       run
         ? this.getExceptionCounts(orgId, run.id)
@@ -93,7 +122,13 @@ export class CommandCenterService {
               status: payrollExceptions.status,
             })
             .from(payrollExceptions)
-            .where(and(eq(payrollExceptions.runId, run.id), eq(payrollExceptions.status, "OPEN")))
+            .where(
+              and(
+                eq(payrollExceptions.orgId, orgId),
+                eq(payrollExceptions.runId, run.id),
+                eq(payrollExceptions.status, "OPEN"),
+              ),
+            )
             .orderBy(payrollExceptions.severity)
             .limit(5)
         : Promise.resolve([]),
@@ -105,9 +140,23 @@ export class CommandCenterService {
               status: payrollApprovals.status,
             })
             .from(payrollApprovals)
-            .where(and(eq(payrollApprovals.runId, run.id), eq(payrollApprovals.status, "PENDING")))
+            .where(
+              and(
+                eq(payrollApprovals.orgId, orgId),
+                eq(payrollApprovals.runId, run.id),
+                eq(payrollApprovals.status, "PENDING"),
+              ),
+            )
+            .orderBy(asc(payrollApprovals.stage))
+            .limit(21)
         : Promise.resolve([]),
     ]);
+
+    if (pendingApprovals.length > 20) {
+      throw new ConflictException(
+        "Payroll approval workflow exceeds the supported 20-stage bound",
+      );
+    }
 
     const header = run
       ? {
@@ -121,7 +170,17 @@ export class CommandCenterService {
           employeeCount: run.employeeCount,
           exceptionCounts,
         }
-      : { runId: null, month, status: null, grossTotal: "0", deductionTotal: "0", netTotal: "0", employerCostTotal: "0", employeeCount: 0, exceptionCounts };
+      : {
+          runId: null,
+          month,
+          status: null,
+          grossTotal: "0",
+          deductionTotal: "0",
+          netTotal: "0",
+          employerCostTotal: "0",
+          employeeCount: 0,
+          exceptionCounts,
+        };
 
     return {
       header,
@@ -131,9 +190,15 @@ export class CommandCenterService {
         topExceptions,
         varianceSummary,
         pendingApprovals,
-        payoutReadiness: run ? ["LOCKED", "PAID", "PAYSLIPS_PUBLISHED", "CLOSED"].includes(run.status) : false,
+        payoutReadiness: run
+          ? ["LOCKED", "PAID", "PAYSLIPS_PUBLISHED", "CLOSED"].includes(
+              run.status,
+            )
+          : false,
         statutoryReadiness: {
-          taxDeclarationsLocked: checklist.find((c) => c.key === "tax_declarations_locked")?.done ?? false,
+          taxDeclarationsLocked:
+            checklist.find((c) => c.key === "tax_declarations_locked")?.done ??
+            false,
           packComplianceChecklist,
         },
       },
@@ -148,7 +213,13 @@ export class CommandCenterService {
         total: count(),
       })
       .from(payrollExceptions)
-      .where(and(eq(payrollExceptions.runId, runId), eq(payrollExceptions.orgId, orgId), eq(payrollExceptions.status, "OPEN")))
+      .where(
+        and(
+          eq(payrollExceptions.runId, runId),
+          eq(payrollExceptions.orgId, orgId),
+          eq(payrollExceptions.status, "OPEN"),
+        ),
+      )
       .groupBy(payrollExceptions.severity);
 
     const result = { BLOCKER: 0, WARNING: 0, INFO: 0 };
@@ -161,21 +232,31 @@ export class CommandCenterService {
   private async loadVersionData(
     orgId: string,
     policyVersionId: number,
-  ): Promise<{ toggles: PayrollToggles | null; config: PayrollPolicyConfig | null }> {
+  ): Promise<{
+    toggles: PayrollToggles | null;
+    config: PayrollPolicyConfig | null;
+  }> {
     const version = await this.db
-      .select({ toggles: payrollPolicyVersions.toggles, config: payrollPolicyVersions.config })
+      .select({
+        toggles: payrollPolicyVersions.toggles,
+        config: payrollPolicyVersions.config,
+      })
       .from(payrollPolicyVersions)
-      .where(and(eq(payrollPolicyVersions.id, policyVersionId), eq(payrollPolicyVersions.orgId, orgId)))
+      .where(
+        and(
+          eq(payrollPolicyVersions.id, policyVersionId),
+          eq(payrollPolicyVersions.orgId, orgId),
+        ),
+      )
       .limit(1);
 
     const rawToggles = version[0]?.toggles;
-    const rawConfig = version[0]?.config;
     return {
       toggles:
         rawToggles && typeof rawToggles === "object"
-          ? { ...DEFAULT_PAYROLL_TOGGLES, ...(rawToggles as Partial<PayrollToggles>) }
+          ? normalizePayrollToggles(rawToggles)
           : null,
-      config: rawConfig && typeof rawConfig === "object" ? (rawConfig as PayrollPolicyConfig) : null,
+      config: toPayrollPolicyConfig(version[0]?.config),
     };
   }
 

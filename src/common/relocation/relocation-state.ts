@@ -1,3 +1,5 @@
+import { assertNever } from "../types/assert-never";
+
 export const RELOCATION_STATES = [
   "ACTIVE_SOURCE",
   "SNAPSHOT",
@@ -66,9 +68,6 @@ export type NextStateResult =
       readonly reason: string;
     };
 
-function assertNever(value: never): never {
-  throw new Error(`Unhandled relocation variant: ${JSON.stringify(value)}`);
-}
 
 function eventToNext(
   current: RelocationState,

@@ -1,6 +1,5 @@
-import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { SupportAiTriageService } from "./support-ai-triage.service";
+import { SupportAiTriageDataService } from "./support-ai-triage-data.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (
@@ -21,21 +20,15 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   ];
 }
 
-function makeSvc(
+function makeDataSvc(
   accessibleSpaceIds: number[],
   selectResult: unknown[],
-): { svc: SupportAiTriageService; selectWhere: jest.Mock } {
-  const ticket = { id: 1, orgId: "org-owner", title: "Login broken", description: null };
-
+): { svc: SupportAiTriageDataService; selectWhere: jest.Mock } {
   const selectWhere = jest.fn().mockReturnValue({
     orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(selectResult) }),
   });
 
   const db = {
-    query: {
-      supportTickets: { findFirst: jest.fn().mockResolvedValue(ticket) },
-      supportAiSuggestions: { findMany: jest.fn().mockResolvedValue([]) },
-    },
     select: jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue({
         innerJoin: jest.fn().mockReturnValue({
@@ -45,14 +38,11 @@ function makeSvc(
         }),
       }),
     }),
-    update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
-    insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: 99 }]) }) }),
-  } as unknown as Db;
+  };
 
   const embeddings = {
-    isConfigured: jest.fn().mockReturnValue(true),
-    embedQuery: jest.fn().mockResolvedValue([0.1, 0.2]),
-    toVectorLiteral: jest.fn().mockReturnValue("[0.1,0.2]"),
+    isEmbeddingConfigured: jest.fn().mockReturnValue(true),
+    embedQueryWithCredit: jest.fn().mockResolvedValue({ ok: true, vector: [0.1, 0.2], vectorLiteral: "[0.1,0.2]" }),
   };
 
   const orgFeatures = {
@@ -64,23 +54,19 @@ function makeSvc(
     getPrincipalIds: jest.fn().mockResolvedValue({ userId: "u1", roleSlugs: [] }),
   };
 
-  const svc = new SupportAiTriageService(
-    db,
-    null as never,
+  const svc = new SupportAiTriageDataService(
+    db as never,
     embeddings as never,
     orgFeatures as never,
-    null as never,
-    null as never,
     kbAccess as never,
   );
 
   return { svc, selectWhere };
 }
 
-describe("SupportAiTriageService — KB space ACL in RAG search (cross-tenant isolation)", () => {
+describe("SupportAiTriageDataService.searchKbForTicket — KB space ACL in RAG search (cross-tenant isolation)", () => {
   const OWNER_ORG = "org-owner";
   const OWNER_USER = "user-owner-1";
-  const TICKET_ID = 1;
 
   const ownerCtx: CurrentUserContext = {
     orgId: OWNER_ORG,
@@ -92,20 +78,20 @@ describe("SupportAiTriageService — KB space ACL in RAG search (cross-tenant is
     principal: { kind: "human-session", membershipId: 1, isOrgOwner: false },
   };
 
-  it("returns null when caller has no accessible KB spaces (cross-tenant deny — private space)", async () => {
-    const { svc, selectWhere } = makeSvc([], []);
+  it("returns empty array when caller has no accessible KB spaces (cross-tenant deny — private space)", async () => {
+    const { svc, selectWhere } = makeDataSvc([], []);
 
-    const result = await svc.suggestKbArticles(ownerCtx, TICKET_ID);
+    const result = await svc.searchKbForTicket(ownerCtx, "Login broken");
 
-    expect(result).toBeNull();
+    expect(result).toEqual([]);
     expect(selectWhere).not.toHaveBeenCalled();
   });
 
   it("includes accessible space IDs in the SQL predicate (control — same-tenant access works)", async () => {
     const spaceIds = [10, 20];
-    const { svc, selectWhere } = makeSvc(spaceIds, []);
+    const { svc, selectWhere } = makeDataSvc(spaceIds, []);
 
-    await svc.suggestKbArticles(ownerCtx, TICKET_ID);
+    await svc.searchKbForTicket(ownerCtx, "Login broken");
 
     expect(selectWhere).toHaveBeenCalled();
     const whereArg = selectWhere.mock.calls[0]?.[0];

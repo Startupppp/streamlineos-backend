@@ -33,6 +33,13 @@ import { ensureCrmFixtureOrg } from "../../test/db-spec-crm-fixture";
 
 const describeDb = dbSpecSuite();
 
+/** The SQLSTATE a driver error carries, or null for anything that is not one. */
+function sqlStateOf(error: unknown): string | null {
+  if (typeof error !== "object" || error === null || !("code" in error)) return null;
+  const code = error.code;
+  return typeof code === "string" ? code : null;
+}
+
 /** Read on demand: the default hermetic run loads this file only to skip it. */
 const migration = (name: string): string =>
   readFileSync(join(__dirname, "..", "..", "..", "migrations", name), "utf8");
@@ -60,6 +67,14 @@ const FORMATS: { kind: IdentifierKind; written: string }[] = [
 ];
 
 describeDb("party identifiers — real database", () => {
+  // Every test here drops party_identifiers and re-runs the backfill across the
+  // tenant's whole business_parties table, which `withBackfill` already declares
+  // may take up to 60s (`SET LOCAL statement_timeout`). Jest's unstated 5s default
+  // contradicted that: on the production-shaped seed two tests died at 5,000 ms
+  // mid-backfill and read as assertion failures. This aligns the test timeout with
+  // the statement timeout the file already declares — no assertion is relaxed.
+  jest.setTimeout(60_000);
+
   let sql: ReturnType<typeof postgres>;
   let backfill: string;
   let fixtureOrgId: string;
@@ -259,6 +274,65 @@ describeDb("party identifiers — real database", () => {
     });
 
     expect(held).toBe(0);
+  });
+
+  it("keeps one of two identical claims in one INSERT, and only DO UPDATE raises 21000", async () => {
+    const outcome = await withBackfill(async (tx, orgId, marker) => {
+      const parties = await tx`
+        SELECT party_id FROM business_parties
+        WHERE organization_id = ${orgId} AND name LIKE ${`fixture ${marker}%`}
+        LIMIT 2`;
+      const first = String(parties[0]?.party_id);
+      const second = String(parties[1]?.party_id);
+
+      const doNothingValue = `intra-nothing-${marker}@example.test`;
+      let doNothing: { raised: boolean; inserted: number; code: string | null };
+      try {
+        const rows = await tx.savepoint(
+          async (sp) => sp`
+            INSERT INTO party_identifiers
+              (party_identifier_id, organization_id, party_id, kind, value, normalised_value)
+            VALUES (gen_random_uuid()::text, ${orgId}, ${first}, 'email',
+                    ${doNothingValue}, ${doNothingValue}),
+                   (gen_random_uuid()::text, ${orgId}, ${second}, 'email',
+                    ${doNothingValue}, ${doNothingValue})
+            ON CONFLICT DO NOTHING
+            RETURNING party_id`,
+        );
+        doNothing = { raised: false, inserted: rows.length, code: null };
+      } catch (error) {
+        doNothing = { raised: true, inserted: 0, code: sqlStateOf(error) };
+      }
+
+      const doUpdateValue = `intra-update-${marker}@example.test`;
+      let doUpdate: { raised: boolean; code: string | null };
+      try {
+        await tx.savepoint(
+          async (sp) => sp`
+            INSERT INTO party_identifiers
+              (party_identifier_id, organization_id, party_id, kind, value, normalised_value)
+            VALUES (gen_random_uuid()::text, ${orgId}, ${first}, 'email',
+                    ${doUpdateValue}, ${doUpdateValue}),
+                   (gen_random_uuid()::text, ${orgId}, ${second}, 'email',
+                    ${doUpdateValue}, ${doUpdateValue})
+            ON CONFLICT (organization_id, kind, normalised_value)
+            DO UPDATE SET value = excluded.value`,
+        );
+        doUpdate = { raised: false, code: null };
+      } catch (error) {
+        doUpdate = { raised: true, code: sqlStateOf(error) };
+      }
+
+      const survived = await tx`
+        SELECT count(*)::int AS n FROM party_identifiers
+        WHERE organization_id = ${orgId} AND normalised_value = ${doNothingValue}`;
+
+      return { doNothing, doUpdate, survived: Number(survived[0]?.n ?? -1) };
+    });
+
+    expect(outcome.doNothing).toEqual({ raised: false, inserted: 1, code: null });
+    expect(outcome.doUpdate).toEqual({ raised: true, code: "21000" });
+    expect(outcome.survived).toBe(1);
   });
 
   /**

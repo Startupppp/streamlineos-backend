@@ -39,8 +39,16 @@ import {
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
+import {
+  leadActivitySchema,
+  leadTimelineSchema,
+  leadScoreExplanationSchema,
+  leadCustomDataSchema,
+  leadMutatedSchema,
+  successSchema,
+} from "./dto/leads-response.schemas";
 
 const leadIdParams = z.object({ leadId: z.coerce.number().int().positive() }).strict();
 
@@ -61,6 +69,7 @@ export class LeadsDetailController {
 
   @Get(":leadId/activities")
   @RequirePermission("crm:leads:view")
+  @ResponseSchema(z.array(leadActivitySchema))
   @Validate({ params: leadIdParams })
   getActivities(
     @Param("leadId", ParseIntPipe) leadId: number,
@@ -73,6 +82,7 @@ export class LeadsDetailController {
   @Post(":leadId/activities")
   @RequirePermission("crm:leads:update")
   @HttpCode(201)
+  @ResponseSchema(leadActivitySchema)
   @Validate({ params: leadIdParams, body: logActivitySchema })
   addActivity(
     @Param("leadId", ParseIntPipe) leadId: number,
@@ -84,6 +94,7 @@ export class LeadsDetailController {
 
   @Get(":leadId/timeline")
   @RequirePermission("crm:leads:view")
+  @ResponseSchema(leadTimelineSchema)
   @Validate({ params: leadIdParams })
   getTimeline(
     @Param("leadId", ParseIntPipe) leadId: number,
@@ -95,6 +106,7 @@ export class LeadsDetailController {
 
   @Get(":leadId/score-explanation")
   @RequirePermission("crm:leads:view")
+  @ResponseSchema(leadScoreExplanationSchema)
   @Validate({ params: leadIdParams })
   async getScoreExplanation(
     @Param("leadId", ParseIntPipe) leadId: number,
@@ -107,6 +119,7 @@ export class LeadsDetailController {
 
   @Patch(":leadId/custom-data")
   @RequirePermission("crm:leads:update")
+  @ResponseSchema(leadCustomDataSchema)
   @Validate({ params: leadIdParams, body: customDataSchema })
   async updateCustomData(
     @Param("leadId", ParseIntPipe) leadId: number,
@@ -120,6 +133,7 @@ export class LeadsDetailController {
 
   @Patch(":leadId/status")
   @RequirePermission("crm:leads:update")
+  @ResponseSchema(leadMutatedSchema)
   @Validate({ params: leadIdParams, body: transitionLeadStatusSchema })
   async changeStatus(
     @Param("leadId", ParseIntPipe) leadId: number,
@@ -140,6 +154,7 @@ export class LeadsDetailController {
 
   @Patch(":leadId/verify")
   @RequirePermission("crm:leads:update")
+  @ResponseSchema(leadMutatedSchema)
   @Validate({ params: leadIdParams, body: verifySchema })
   async verify(
     @Param("leadId", ParseIntPipe) leadId: number,
@@ -154,6 +169,7 @@ export class LeadsDetailController {
   @Patch(":leadId/reject")
   @Idempotent("leads.lead.reject")
   @RequirePermission("crm:leads:update")
+  @ResponseSchema(leadMutatedSchema)
   @Validate({ params: leadIdParams, body: rejectSchema })
   async reject(
     @Param("leadId", ParseIntPipe) leadId: number,
@@ -168,6 +184,7 @@ export class LeadsDetailController {
   @Patch(":leadId/self-assign")
   @BodylessAction()
   @RequirePermission("crm:leads:update")
+  @ResponseSchema(leadMutatedSchema)
   @Validate({ params: leadIdParams })
   async selfAssign(
     @Param("leadId", ParseIntPipe) leadId: number,
@@ -180,6 +197,7 @@ export class LeadsDetailController {
 
   @Patch(":leadId/assign")
   @RequirePermission("crm:leads:assign")
+  @ResponseSchema(leadMutatedSchema)
   @Validate({ params: leadIdParams, body: assignSchema })
   async assign(
     @Param("leadId", ParseIntPipe) leadId: number,
@@ -194,6 +212,7 @@ export class LeadsDetailController {
   @Post(":leadId/merge")
   @RequirePermission("crm:leads:update")
   @HttpCode(200)
+  @ResponseSchema(successSchema)
   @Validate({ params: leadIdParams, body: leadMergeSchema })
   async mergeLoser(
     @Param("leadId", ParseIntPipe) leadId: number,

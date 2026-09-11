@@ -22,7 +22,7 @@ export const IMPORT_ENTITIES = IMPORT_TARGET_ENTITIES;
 export type ImportEntity = ImportTargetEntity;
 
 export function isImportEntity(value: string): value is ImportEntity {
-  return (IMPORT_ENTITIES as readonly string[]).includes(value);
+  return IMPORT_ENTITIES.some((entity) => entity === value);
 }
 
 /**
@@ -171,7 +171,7 @@ export function normaliseLookupKey(value: string | undefined): string {
 export type PartyType = (typeof partyTypeEnum.enumValues)[number];
 
 export function isPartyType(value: unknown): value is PartyType {
-  return typeof value === "string" && (partyTypeEnum.enumValues as readonly string[]).includes(value);
+  return typeof value === "string" && partyTypeEnum.enumValues.some((kind) => kind === value);
 }
 
 /**
@@ -225,7 +225,7 @@ export const ACTIVITY_KIND_WORDS: Readonly<Record<string, ActivityKind>> = {
 };
 
 export function isActivityKind(value: unknown): value is ActivityKind {
-  return typeof value === "string" && (ACTIVITY_KINDS as readonly string[]).includes(value);
+  return typeof value === "string" && ACTIVITY_KINDS.some((kind) => kind === value);
 }
 
 /**

@@ -1,13 +1,4 @@
-import {
-  pgTable,
-  text,
-  timestamp,
-  integer,
-  boolean,
-  jsonb,
-  index,
-  uniqueIndex,
-} from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, integer, boolean, jsonb, index } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { users } from "./auth";
 
@@ -35,7 +26,6 @@ export const featureFlags = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
-    uniqueIndex("uniq_feature_flags_key").on(table.key),
     index("idx_feature_flags_is_archived").on(table.isArchived),
     index("idx_feature_flags_created_at").on(table.createdAt),
   ],

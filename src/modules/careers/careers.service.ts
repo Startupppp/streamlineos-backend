@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, InternalServerErrorException } from "@nestjs/common";
 import { and, desc, eq, ilike } from "drizzle-orm";
 import {
   candidateApplications,
@@ -9,7 +9,16 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
+import { PaymentRequiredException } from "../../common/http/api-exceptions";
+import { logger } from "../../common/logger/logger.service";
 import type { ApplyInput } from "./dto/careers.schemas";
+
+function isQuotaExceededError(error: unknown): error is PaymentRequiredException {
+  if (!(error instanceof PaymentRequiredException)) return false;
+  const body = error.getResponse();
+  return typeof body === "object" && body !== null && "code" in body && body.code === "QUOTA_EXCEEDED";
+}
 
 export type ApplyJobNotFound = { error: "job_not_found" };
 
@@ -27,6 +36,7 @@ export class CareersService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   listOpenJobs() {
@@ -73,24 +83,39 @@ export class CareersService {
         columns: { id: true },
       });
 
-      const candidateId = existingCandidate
-        ? existingCandidate.id
-        : (
-            await tx
-              .insert(candidates)
-              .values({
-                orgId: job.orgId,
-                firstName,
-                lastName,
-                email: normalizedEmail,
-                phone: phone ?? null,
-                linkedinUrl: linkedinUrl ?? null,
-                resumeUrl: resumeUrl ?? null,
-                source: "CAREERS_PAGE",
-                status: "NEW",
-              })
-              .returning({ id: candidates.id })
-          )[0]!.id;
+      let candidateId: number;
+      if (existingCandidate) {
+        candidateId = existingCandidate.id;
+      } else {
+        try {
+          await this.planLimits.assertWithinLimit(job.orgId, "hrCandidates", 1, tx);
+        } catch (error) {
+          if (!isQuotaExceededError(error)) throw error;
+          logger.warn("[careers] application refused: candidate quota exceeded", {
+            orgId: job.orgId,
+            jobPostingId,
+          });
+          throw new BadRequestException(
+            "This job posting is not accepting applications at this time.",
+          );
+        }
+        const [created] = await tx
+          .insert(candidates)
+          .values({
+            orgId: job.orgId,
+            firstName,
+            lastName,
+            email: normalizedEmail,
+            phone: phone ?? null,
+            linkedinUrl: linkedinUrl ?? null,
+            resumeUrl: resumeUrl ?? null,
+            source: "CAREERS_PAGE",
+            status: "NEW",
+          })
+          .returning({ id: candidates.id });
+        if (!created) throw new InternalServerErrorException("Failed to create candidate.");
+        candidateId = created.id;
+      }
 
       const existingApplication = await tx.query.candidateApplications.findFirst({
         where: and(eq(candidateApplications.candidateId, candidateId), eq(candidateApplications.jobPostingId, jobPostingId)),

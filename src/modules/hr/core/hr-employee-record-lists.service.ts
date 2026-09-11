@@ -2,7 +2,6 @@ import { Inject, Injectable } from "@nestjs/common";
 import {
   and,
   asc,
-  count,
   eq,
   gt,
   ilike,
@@ -16,8 +15,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { hrEmployments, hrPeople } from "../../../db/schema/hr/core-people";
 import { organizationPeople } from "../../../db/schema/directory/organization-people";
-import { applyScope } from "../../access/apply-scope";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import type {
   ListEmploymentsInput,
   ListPeopleInput,
@@ -35,6 +33,7 @@ const PERSON_SEARCH_CAP = 500;
 const PERSON_JOIN_COND = and(
   eq(organizationPeople.organizationId, hrPeople.orgId),
   eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
+  isNull(organizationPeople.deletedAt),
 );
 
 const PERSON_VIEW_COLUMNS = {
@@ -99,16 +98,6 @@ type CursorListResponse<RecordType> = {
   };
 };
 
-type LegacyPageResponse<RecordType> = {
-  data: RecordType[];
-  pagination: {
-    page: number;
-    limit: number;
-    total: number;
-    totalPages: number;
-  };
-};
-
 function boundPageLimit(requestedLimit: number): number {
   return Math.min(Math.max(requestedLimit, 1), MAX_PAGE_LIMIT);
 }
@@ -118,183 +107,142 @@ export class HrEmployeeRecordListsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listPeopleCursor(
-    orgId: string,
-    actorUserId: string,
+    read: ScopedRead,
     query: Pick<ListPeopleInput, "cursor" | "limit" | "search">,
-    scope: DataScope,
   ): Promise<CursorListResponse<PersonListRecord>> {
     const pageLimit = boundPageLimit(query.limit);
-    const conditions = this.peopleConditions(orgId, actorUserId, scope);
-    if (query.search)
-      conditions.push(await this.personSearchCondition(query.search));
+    const emptyPage: CursorListResponse<PersonListRecord> = {
+      data: [],
+      pageInfo: { limit: pageLimit, hasMore: false, nextCursor: null },
+    };
+    if (read.denied) return emptyPage;
+
+    const orgId = read.orgId;
+    const actorUserId = read.actorId;
+    const cursorScope = read.discriminator;
+    const extraConditions: (SQL | undefined)[] = [];
     if (query.cursor) {
-      const cursor = decodePeopleListCursor(query.cursor);
-      conditions.push(gt(hrPeople.id, cursor.personId));
+      const cursor = decodePeopleListCursor(query.cursor, {
+        orgId,
+        actorUserId,
+        scope: cursorScope,
+        search: query.search ?? null,
+      });
+      extraConditions.push(gt(hrPeople.id, cursor.personId));
     }
-
-    const result = await this.db
-      .select(PERSON_VIEW_COLUMNS)
-      .from(hrPeople)
-      .innerJoin(organizationPeople, PERSON_JOIN_COND)
-      .where(and(...conditions))
-      .orderBy(asc(hrPeople.id))
-      .limit(pageLimit + 1);
-    const hasMore = result.length > pageLimit;
-    const data = result.slice(0, pageLimit);
-    const lastPerson = data.at(-1);
-
-    return {
-      data,
-      pageInfo: {
-        limit: pageLimit,
-        hasMore,
-        nextCursor:
-          hasMore && lastPerson
-            ? encodePeopleListCursor({ personId: lastPerson.id })
-            : null,
-      },
-    };
-  }
-
-  async listPeoplePage(
-    orgId: string,
-    actorUserId: string,
-    query: Pick<ListPeopleInput, "limit" | "page" | "search"> & {
-      page: number;
-    },
-    scope: DataScope,
-  ): Promise<LegacyPageResponse<PersonListRecord>> {
-    const pageLimit = boundPageLimit(query.limit);
-    const conditions = this.peopleConditions(orgId, actorUserId, scope);
     if (query.search)
-      conditions.push(await this.personSearchCondition(query.search));
-    const where = and(...conditions);
-    const [data, totalRows] = await Promise.all([
-      this.db
-        .select(PERSON_VIEW_COLUMNS)
-        .from(hrPeople)
-        .innerJoin(organizationPeople, PERSON_JOIN_COND)
-        .where(where)
-        .orderBy(asc(organizationPeople.firstName), asc(hrPeople.id))
-        .limit(pageLimit)
-        .offset((query.page - 1) * pageLimit),
-      this.db
-        .select({ total: count() })
-        .from(hrPeople)
-        .innerJoin(organizationPeople, PERSON_JOIN_COND)
-        .where(where),
-    ]);
-    const total = totalRows[0]?.total ?? 0;
+      extraConditions.push(await this.personSearchCondition(query.search));
 
-    return {
-      data,
-      pagination: {
-        page: query.page,
-        limit: pageLimit,
-        total,
-        totalPages: Math.ceil(total / pageLimit),
+    return read.read(
+      {
+        tenant: hrPeople.orgId,
+        scope: { columns: { ownerColumn: hrPeople.userId } },
+        and: [isNull(hrPeople.deletedAt), ...extraConditions],
       },
-    };
+      async ({ sql: where }) => {
+        const result = await this.db
+          .select(PERSON_VIEW_COLUMNS)
+          .from(hrPeople)
+          .innerJoin(organizationPeople, PERSON_JOIN_COND)
+          .where(where)
+          .orderBy(asc(hrPeople.id))
+          .limit(pageLimit + 1);
+        const hasMore = result.length > pageLimit;
+        const data = result.slice(0, pageLimit);
+        const lastPerson = data.at(-1);
+
+        return {
+          data,
+          pageInfo: {
+            limit: pageLimit,
+            hasMore,
+            nextCursor:
+              hasMore && lastPerson
+                ? encodePeopleListCursor({
+                    personId: lastPerson.id,
+                    orgId,
+                    actorUserId,
+                    scope: cursorScope,
+                    search: query.search ?? null,
+                  })
+                : null,
+          },
+        };
+      },
+      () => emptyPage,
+    );
   }
 
   async listEmploymentsCursor(
-    orgId: string,
-    actorUserId: string,
+    read: ScopedRead,
     query: Pick<ListEmploymentsInput, "cursor" | "limit">,
-    scope: DataScope,
   ): Promise<CursorListResponse<EmploymentListRecord>> {
     const pageLimit = boundPageLimit(query.limit);
-    const conditions = this.employmentConditions(orgId, actorUserId, scope);
-    if (query.cursor) {
-      const cursor = decodeEmploymentListCursor(query.cursor);
-      conditions.push(gt(hrEmployments.id, cursor.employmentId));
-    }
-
-    const result = await this.db
-      .select(EMPLOYMENT_VIEW_COLUMNS)
-      .from(hrEmployments)
-      .innerJoin(
-        hrPeople,
-        and(
-          eq(hrPeople.orgId, hrEmployments.orgId),
-          eq(hrPeople.id, hrEmployments.personId),
-        ),
-      )
-      .where(and(...conditions))
-      .orderBy(asc(hrEmployments.id))
-      .limit(pageLimit + 1);
-    const hasMore = result.length > pageLimit;
-    const data = result.slice(0, pageLimit);
-    const lastEmployment = data.at(-1);
-
-    return {
-      data,
-      pageInfo: {
-        limit: pageLimit,
-        hasMore,
-        nextCursor:
-          hasMore && lastEmployment
-            ? encodeEmploymentListCursor({
-                employmentId: lastEmployment.id,
-              })
-            : null,
-      },
+    const emptyPage: CursorListResponse<EmploymentListRecord> = {
+      data: [],
+      pageInfo: { limit: pageLimit, hasMore: false, nextCursor: null },
     };
-  }
+    if (read.denied) return emptyPage;
 
-  async listEmploymentsPage(
-    orgId: string,
-    actorUserId: string,
-    query: Pick<ListEmploymentsInput, "limit" | "page"> & { page: number },
-    scope: DataScope,
-  ): Promise<LegacyPageResponse<EmploymentListRecord>> {
-    const pageLimit = boundPageLimit(query.limit);
-    const conditions = this.employmentConditions(orgId, actorUserId, scope);
-    const where = and(...conditions);
-    const employmentJoin = and(
-      eq(hrPeople.orgId, hrEmployments.orgId),
-      eq(hrPeople.id, hrEmployments.personId),
-    );
-    const [data, totalRows] = await Promise.all([
-      this.db
-        .select(EMPLOYMENT_VIEW_COLUMNS)
-        .from(hrEmployments)
-        .innerJoin(hrPeople, employmentJoin)
-        .where(where)
-        .orderBy(asc(hrEmployments.id))
-        .limit(pageLimit)
-        .offset((query.page - 1) * pageLimit),
-      this.db
-        .select({ total: count() })
-        .from(hrEmployments)
-        .innerJoin(hrPeople, employmentJoin)
-        .where(where),
-    ]);
-    const total = totalRows[0]?.total ?? 0;
-
-    return {
-      data,
-      pagination: {
-        page: query.page,
-        limit: pageLimit,
-        total,
-        totalPages: Math.ceil(total / pageLimit),
-      },
-    };
-  }
-
-  private peopleConditions(
-    orgId: string,
-    actorUserId: string,
-    scope: DataScope,
-  ): SQL[] {
-    return [
+    const orgId = read.orgId;
+    const actorUserId = read.actorId;
+    const cursorScope = read.discriminator;
+    const extraConditions: (SQL | undefined)[] = [
       eq(hrPeople.orgId, orgId),
       isNull(hrPeople.deletedAt),
-      applyScope(scope, orgId, actorUserId, {
-        ownerColumn: hrPeople.userId,
-      }),
     ];
+    if (query.cursor) {
+      const cursor = decodeEmploymentListCursor(query.cursor, {
+        orgId,
+        actorUserId,
+        scope: cursorScope,
+      });
+      extraConditions.push(gt(hrEmployments.id, cursor.employmentId));
+    }
+
+    return read.read(
+      {
+        tenant: hrEmployments.orgId,
+        scope: { columns: { ownerColumn: hrPeople.userId } },
+        and: [isNull(hrEmployments.deletedAt), ...extraConditions],
+      },
+      async ({ sql: where }) => {
+        const result = await this.db
+          .select(EMPLOYMENT_VIEW_COLUMNS)
+          .from(hrEmployments)
+          .innerJoin(
+            hrPeople,
+            and(
+              eq(hrPeople.orgId, hrEmployments.orgId),
+              eq(hrPeople.id, hrEmployments.personId),
+            ),
+          )
+          .where(where)
+          .orderBy(asc(hrEmployments.id))
+          .limit(pageLimit + 1);
+        const hasMore = result.length > pageLimit;
+        const data = result.slice(0, pageLimit);
+        const lastEmployment = data.at(-1);
+
+        return {
+          data,
+          pageInfo: {
+            limit: pageLimit,
+            hasMore,
+            nextCursor:
+              hasMore && lastEmployment
+                ? encodeEmploymentListCursor({
+                    employmentId: lastEmployment.id,
+                    orgId,
+                    actorUserId,
+                    scope: cursorScope,
+                  })
+                : null,
+          },
+        };
+      },
+      () => emptyPage,
+    );
   }
 
   private async personSearchCondition(search: string): Promise<SQL> {
@@ -310,21 +258,5 @@ export class HrEmployeeRecordListsService {
     if (rows.length > PERSON_SEARCH_CAP) return fallback;
     const ids = rows.map((r) => Number(r["id"]));
     return inArray(hrPeople.id, ids);
-  }
-
-  private employmentConditions(
-    orgId: string,
-    actorUserId: string,
-    scope: DataScope,
-  ): SQL[] {
-    return [
-      eq(hrEmployments.orgId, orgId),
-      isNull(hrEmployments.deletedAt),
-      eq(hrPeople.orgId, orgId),
-      isNull(hrPeople.deletedAt),
-      applyScope(scope, orgId, actorUserId, {
-        ownerColumn: hrPeople.userId,
-      }),
-    ];
   }
 }

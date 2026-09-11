@@ -14,10 +14,32 @@ describe("KB Tags auth/RBAC (e2e)", () => {
         {
           provide: KbTagsService,
           useValue: {
-            list: async () => [],
-            create: async () => ({ id: 1, name: "test", slug: "test", orgId: "org_1" }),
-            remove: async () => ({ deleted: true }),
-            getArticleTags: async () => [],
+            list: async () => [
+              {
+                id: 2,
+                name: "onboarding",
+                slug: "onboarding",
+                orgId: "org_1",
+                createdAt: new Date("2026-01-01T00:00:00.000Z"),
+              },
+            ],
+            create: async () => ({
+              id: 1,
+              name: "test",
+              slug: "test",
+              orgId: "org_1",
+              createdAt: new Date("2026-01-01T00:00:00.000Z"),
+            }),
+            remove: async () => ({ success: true }),
+            getArticleTags: async () => [
+              {
+                id: 2,
+                name: "onboarding",
+                slug: "onboarding",
+                orgId: "org_1",
+                createdAt: new Date("2026-01-01T00:00:00.000Z"),
+              },
+            ],
             setArticleTags: async () => [],
           },
         },
@@ -66,12 +88,24 @@ describe("KB Tags auth/RBAC (e2e)", () => {
     ["put", "/kb/articles/1/tags"],
   ];
 
-  it.each(abilities)("402 on %s %s when the kb module is not enabled", async (method, path) => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
-    const res = await callRoute(method, path).set("Authorization", `Bearer ${token}`);
-    expect(res.status).toBe(402);
-    expect(res.body).toMatchObject({ code: "MODULE_NOT_ENABLED", details: { moduleKey: "kb" } });
-  });
+  /**
+   * Never 402. `kb` is registered `planGated: false`, so `isCoreModuleKey("kb")` is true
+   * and `moduleAvailability` answers `{ available: true }` before it reads a single
+   * entitlement row — the constitution's rule that knowledge is platform core, not a
+   * paid entitlement. This case asserted 402 and could never have passed. What it pins
+   * now is the contract that does hold: an org with the module switched off still
+   * reaches the permission check, and the permission check is what denies. The registry
+   * half is pinned in src/modules/kb/kb-module-gate.spec.ts.
+   */
+  it.each(abilities)(
+    "403 on %s %s with no permission even when the kb module is not enabled",
+    async (method, path) => {
+      const token = await signToken({ permissions: [], enabledModules: [] });
+      const res = await callRoute(method, path).set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
+    },
+  );
 
   it.each(abilities)("403 on %s %s without permission", async (method, path) => {
     const token = await signToken({ permissions: [], enabledModules: ["kb"] });
@@ -90,6 +124,7 @@ describe("KB Tags auth/RBAC (e2e)", () => {
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body).toMatchObject([{ id: 2, name: "onboarding", slug: "onboarding" }]);
   });
 
   it("POST /kb/tags creates a tag with valid body", async () => {
@@ -115,5 +150,6 @@ describe("KB Tags auth/RBAC (e2e)", () => {
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body).toMatchObject([{ id: 2, name: "onboarding", slug: "onboarding" }]);
   });
 });

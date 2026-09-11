@@ -1,21 +1,19 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, count, eq, gte, inArray, isNull, sql } from "drizzle-orm";
-import { cycles, projects, ticketAssignees, tickets, timesheets, users } from "../../../db/schema";
+import { cycles, organizationMembers, projects, ticketAssignees, tickets, timesheets, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_TTL } from "../../../common/cache/cache-keys";
+import { assertProjectInOrg } from "./project-access";
 
 @Injectable()
 export class ProjectsAnalyticsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly cache: CacheService,
   ) {}
 
   async getProjectAnalytics(orgId: string, projectId: number) {
-    const key = `projects:analytics:${orgId}:${projectId}`;
-    return this.cache.cached(key, () => this.computeProjectAnalytics(orgId, projectId), CACHE_TTL.MEDIUM);
+    await assertProjectInOrg(this.db, orgId, projectId);
+    return this.computeProjectAnalytics(orgId, projectId);
   }
 
   private async computeProjectAnalytics(orgId: string, projectId: number) {
@@ -43,15 +41,16 @@ export class ProjectsAnalyticsService {
         .groupBy(tickets.priority),
       this.db
         .select({
-          assigneeId: tickets.assigneeId,
+          assigneeId: organizationMembers.userId,
           assigneeName: sql<string | null>`COALESCE(NULLIF(TRIM(CONCAT(${users.firstName}, ' ', ${users.lastName})), ''), ${users.name})`,
           total: count(),
           completed: count(sql`CASE WHEN ${tickets.status} = 'DONE' THEN 1 END`),
         })
         .from(tickets)
-        .leftJoin(users, eq(users.id, tickets.assigneeId))
-        .where(and(orgFilter, sql`${tickets.assigneeId} IS NOT NULL`))
-        .groupBy(tickets.assigneeId, users.firstName, users.lastName, users.name),
+        .leftJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
+        .leftJoin(users, eq(users.id, organizationMembers.userId))
+        .where(and(orgFilter, sql`${tickets.assigneeMembershipId} IS NOT NULL`))
+        .groupBy(organizationMembers.userId, users.firstName, users.lastName, users.name),
       this.db
         .select({
           week: sql<string>`TO_CHAR(DATE_TRUNC('week', ${tickets.createdAt}), 'YYYY-MM-DD')`,
@@ -232,10 +231,6 @@ export class ProjectsAnalyticsService {
   }
 
   async resourceAllocation(orgId: string) {
-    const key = `projects:resource-allocation:${orgId}`;
-    return this.cache.cached(
-      key,
-      async () => {
         const activeProjects = await this.db.query.projects.findMany({
           where: and(eq(projects.orgId, orgId), eq(projects.status, "ACTIVE"), isNull(projects.deletedAt)),
           columns: { id: true, name: true, key: true },
@@ -248,11 +243,12 @@ export class ProjectsAnalyticsService {
         const [primaryAllocation, multiAllocation] = await Promise.all([
           this.db
             .select({
-              assigneeId: tickets.assigneeId,
+              assigneeId: organizationMembers.userId,
               projectId: tickets.projectId,
               open: count(tickets.id),
             })
             .from(tickets)
+            .leftJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
             .where(
               and(
                 eq(tickets.orgId, orgId),
@@ -261,15 +257,16 @@ export class ProjectsAnalyticsService {
                 sql`${tickets.status} NOT IN ('DONE', 'CANCELLED', 'CLOSED')`,
               ),
             )
-            .groupBy(tickets.assigneeId, tickets.projectId),
+            .groupBy(organizationMembers.userId, tickets.projectId),
           this.db
             .select({
-              assigneeId: ticketAssignees.userId,
+              assigneeId: organizationMembers.userId,
               projectId: tickets.projectId,
               open: count(tickets.id),
             })
             .from(ticketAssignees)
             .innerJoin(tickets, eq(ticketAssignees.ticketId, tickets.id))
+            .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, ticketAssignees.orgId), eq(organizationMembers.id, ticketAssignees.membershipId)))
             .where(
               and(
                 eq(tickets.orgId, orgId),
@@ -278,7 +275,7 @@ export class ProjectsAnalyticsService {
                 sql`${tickets.status} NOT IN ('DONE', 'CANCELLED', 'CLOSED')`,
               ),
             )
-            .groupBy(ticketAssignees.userId, tickets.projectId),
+            .groupBy(organizationMembers.userId, tickets.projectId),
         ]);
 
         const allAssigneeIds = new Set<string>();
@@ -342,8 +339,5 @@ export class ProjectsAnalyticsService {
         }
 
         return [...byMember.values()].sort((a, b) => b.totalOpen - a.totalOpen);
-      },
-      CACHE_TTL.SHORT,
-    );
   }
 }

@@ -28,6 +28,8 @@ import {
 } from "./dto/governance.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { riskRowSchema } from "./dto/governance-response.schemas";
 
 const riskIdParams = z.object({ riskId: z.coerce.number().int().positive() }).strict();
 
@@ -39,40 +41,44 @@ export class RisksController {
 
   @Get()
   @RequirePermission("build:risks:view")
+  @ResponseSchema(z.array(riskRowSchema))
   @Validate({ query: listRisksQuerySchema })
   listRisks(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Query() query: ListRisksQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listRisks(u.orgId, projectId, query);
+    return this.svc.listRisks(u, projectId, query);
   }
 
   @Get(":riskId")
   @RequirePermission("build:risks:view")
+  @ResponseSchema(riskRowSchema)
   @Validate({ params: riskIdParams })
   getRisk(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("riskId", ParseIntPipe) riskId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getRisk(u.orgId, projectId, riskId);
+    return this.svc.getRisk(u, projectId, riskId);
   }
 
   @Post()
   @HttpCode(201)
   @RequirePermission("build:risks:manage")
+  @ResponseSchema(riskRowSchema)
   @Validate({ body: createRiskSchema })
   createRisk(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body() body: CreateRiskInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createRisk(u.orgId, u.userId, projectId, body);
+    return this.svc.createRisk(u, projectId, body);
   }
 
   @Patch(":riskId")
   @RequirePermission("build:risks:manage")
+  @ResponseSchema(riskRowSchema)
   @Validate({ params: riskIdParams, body: updateRiskSchema })
   updateRisk(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -80,18 +86,19 @@ export class RisksController {
     @Body() body: UpdateRiskInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.updateRisk(u.orgId, u.userId, projectId, riskId, body);
+    return this.svc.updateRisk(u, projectId, riskId, body);
   }
 
   @Delete(":riskId")
   @RequirePermission("build:risks:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: riskIdParams })
   softDeleteRisk(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("riskId", ParseIntPipe) riskId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.softDeleteRisk(u.orgId, u.userId, projectId, riskId);
+    return this.svc.softDeleteRisk(u, projectId, riskId);
   }
 }

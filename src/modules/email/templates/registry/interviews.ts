@@ -4,10 +4,9 @@ import {
   getBookingConfirmationEmail,
   getCandidateFeedbackEmail,
 } from "../index";
-import { BASE_URL } from "./_shared";
-import type { TemplateEntry } from "./_shared";
+import { BASE_URL, EMAIL_TEMPLATE_VERSION, defineTemplateFamily } from "./_shared";
 
-export const interviewsTemplates: Record<string, TemplateEntry> = {
+export const interviewsTemplates = defineTemplateFamily({
   "interview.invite_candidate": {
     category: "Interviews",
     name: "Interview Invite (Candidate)",
@@ -71,4 +70,4 @@ export const interviewsTemplates: Record<string, TemplateEntry> = {
         scheduledAt: new Date("2026-07-15T10:00:00+05:30"),
       }).html,
   },
-};
+}, EMAIL_TEMPLATE_VERSION);

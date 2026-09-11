@@ -1,11 +1,12 @@
 import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { formatInTimeZone } from "date-fns-tz";
 import type { Db } from "../../db/drizzle.module";
-import { attendance, organizations, wfhRequests } from "../../db/schema";
+import { attendance, organizationMembers, organizations, wfhRequests } from "../../db/schema";
 import type { AttendancePolicyService } from "./time/attendance-policy.service";
 import type { CalendarEventProjection, CalendarSourceContext } from "../calendar/calendar-event-source";
 
 export const WEEKDAY_NAMES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
+export const HR_CALENDAR_READ_BATCH_SIZE = 500;
 
 export function dateOnly(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -34,6 +35,15 @@ export async function loadAttendanceOnly(
   const startStr = dateOnly(ctx.start);
   const endStr = dateOnly(ctx.end);
   const policyDate = dateOnly(ctx.end.getTime() < Date.now() ? ctx.end : new Date());
+  const membership = await db.query.organizationMembers.findFirst({
+    where: and(
+      eq(organizationMembers.orgId, ctx.orgId),
+      eq(organizationMembers.userId, ctx.userId),
+      eq(organizationMembers.status, "ACTIVE"),
+    ),
+    columns: { id: true },
+  });
+  if (!membership) return [];
 
   const [attendanceData, wfhData, organizationData, attendanceRules] = await Promise.all([
     db
@@ -50,17 +60,18 @@ export async function loadAttendanceOnly(
       .from(attendance)
       .where(and(
         eq(attendance.orgId, ctx.orgId),
-        eq(attendance.userId, ctx.userId),
+        eq(attendance.userMembershipId, membership.id),
         gte(attendance.date, startStr),
         lte(attendance.date, endStr),
       ))
-      .orderBy(desc(attendance.createdAt)),
+      .orderBy(desc(attendance.createdAt))
+      .limit(HR_CALENDAR_READ_BATCH_SIZE),
     db
       .select({ id: wfhRequests.id, date: wfhRequests.date })
       .from(wfhRequests)
       .where(and(
         eq(wfhRequests.orgId, ctx.orgId),
-        eq(wfhRequests.userId, ctx.userId),
+        eq(wfhRequests.userMembershipId, membership.id),
         eq(wfhRequests.status, "APPROVED"),
         gte(wfhRequests.date, startStr),
         lte(wfhRequests.date, endStr),

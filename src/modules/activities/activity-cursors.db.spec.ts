@@ -10,8 +10,12 @@
  * step across the null group are the same kind of claim.
  *
  * Runs whenever DATABASE_URL is present and skips loudly by name when it is
- * not. Run with:
- *   DATABASE_URL=... pnpm test:db --testPathPattern="activity-cursors.db"
+ * not. A present URL must also pass `requireApprovedDatabaseUrl` — an approved
+ * host and ALLOW_DESTRUCTIVE_DB_TESTS=1 — because the fixture org it writes is
+ * real. Run with:
+ *   DATABASE_URL=... ALLOW_DESTRUCTIVE_DB_TESTS=1 pnpm test:db --testPathPattern="activity-cursors.db"
+ * or through the destructive-spec config:
+ *   npx jest --config jest-db.json --runInBand --testPathPattern="activity-cursors.db"
  *
  * The tenant comes from `ensureCrmFixtureOrg` rather than from
  * `SELECT id FROM organizations LIMIT 1`, which is what this file used to open
@@ -24,6 +28,7 @@
  * included, so the tests leave the database exactly as they found it.
  */
 import { randomUUID } from "node:crypto";
+import { requireApprovedDatabaseUrl } from "../../test/db-spec-guard";
 import type postgres from "postgres";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -32,7 +37,7 @@ import { ActivitiesService } from "./activities.service";
 import type { AuditService } from "../../common/audit/audit.service";
 import type { Db } from "../../db/drizzle.types";
 import type { TaskPage } from "./task-list";
-import { dbSpecClient, dbSpecSuite, dbSpecUrl } from "../../test/db-spec-gate";
+import { dbSpecClient, dbSpecSuite } from "../../test/db-spec-gate";
 import { ensureCrmFixtureOrg } from "../../test/db-spec-crm-fixture";
 
 const describeDb = dbSpecSuite();
@@ -70,7 +75,10 @@ describeDb("activity cursors — real database", () => {
   let fixtureOrgId: string;
 
   beforeAll(async () => {
-    client = dbSpecClient(dbSpecUrl("DATABASE_URL"), { max: 1 });
+    client = dbSpecClient(
+      requireApprovedDatabaseUrl({ spec: "activity-cursors.db.spec.ts", vars: ["DATABASE_URL"] }),
+      { max: 1 },
+    );
     db = drizzle(client) as unknown as Db;
     fixtureOrgId = (await ensureCrmFixtureOrg(client)).orgId;
   });

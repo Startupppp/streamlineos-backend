@@ -125,6 +125,9 @@ describe("MeetingActionAiService.extractMeetingActions — cross-tenant isolatio
     const attendeesChain = {
       from: jest.fn().mockReturnValue({
         innerJoin: jest.fn().mockReturnValue({
+          innerJoin: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+          }),
           where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
         }),
         where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),

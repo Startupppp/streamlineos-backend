@@ -8,7 +8,8 @@ import { SignAuditService } from "./sign-audit.service";
 import { SignSettingsService } from "./sign-settings.service";
 import { SignNotificationsService } from "./sign-notifications.service";
 import { SignIntegrationsService } from "./sign-integrations.service";
-import { SignTemplatesService, parseTemplateSnapshot } from "./sign-templates.service";
+import { SignTemplatesService } from "./sign-templates.service";
+import { parseTemplateSnapshot } from "./sign-template-snapshot";
 import { SignEnvelopesService } from "./sign-envelopes.service";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import type { CreateBulkSendJobInput } from "./dto/e-sign.schemas";
@@ -67,6 +68,7 @@ export class SignBulkSendService {
     }
 
     const activeJobs = await this.db.query.signBulkSendJobs.findMany({
+      columns: { id: true },
       where: and(eq(signBulkSendJobs.orgId, orgId), inArray(signBulkSendJobs.status, [...ACTIVE_JOB_STATUSES])),
     });
     if (activeJobs.length >= orgSettings.bulkSendMaxActiveJobs) {
@@ -96,6 +98,7 @@ export class SignBulkSendService {
 
       await tx.insert(signBulkSendRows).values(
         mapped.map((row) => ({
+          orgId,
           jobId: created.id,
           rowNumber: row.rowNumber,
           rawDataJson: row.raw,
@@ -239,7 +242,7 @@ export class SignBulkSendService {
 
   async cancel(orgId: string, jobId: number, actor: { userId: string }) {
     const { job } = await this.getJob(orgId, jobId);
-    if (!(ACTIVE_JOB_STATUSES as readonly string[]).includes(job.status)) {
+    if (!ACTIVE_JOB_STATUSES.some((status) => status === job.status)) {
       throw new ForbiddenException("Only pending or in-progress jobs can be cancelled");
     }
     const [updated] = await this.db

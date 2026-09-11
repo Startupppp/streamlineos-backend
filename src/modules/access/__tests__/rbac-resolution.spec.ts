@@ -3,10 +3,12 @@ jest.mock("../../../common/relocation/relocation-traffic-tracker", () => ({
   isRelocationTarget: jest.fn().mockReturnValue(false),
 }));
 
+import { membershipStubFromDb } from "../../../../test/helpers/membership-state-stub";
 import { ForbiddenException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 
 import { AccessService } from "../access.service";
+import { AccessVersionCache } from "../access-version-cache";
 import {
   ALL_PERMISSION_NAMES,
   ROLE_DEFAULT_PERMISSIONS,
@@ -20,6 +22,7 @@ import type { EntitlementsService } from "../entitlements.service";
 import { isCoreModuleKey } from "../entitlements.service";
 import { moduleAvailabilityResolver } from "../../../common/rbac/module-availability";
 import { CATALOG_MODULES } from "../access-policy";
+import { PLATFORM_ONLY_PERMISSION_KEYS } from "../../../common/rbac/grantability";
 import { makeMfaPolicyStub } from "../../../../test/helpers/mfa-policy-stub";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
@@ -33,16 +36,22 @@ type AccessSelectChain = {
   from: jest.Mock;
   where: jest.Mock;
   innerJoin: jest.Mock;
+  orderBy: jest.Mock;
+  limit: jest.Mock;
 };
 
 function makeSelectChain(result: unknown[]): AccessSelectChain {
   const chain: AccessSelectChain = {
     from: jest.fn(),
-    where: jest.fn().mockResolvedValue(result),
+    where: jest.fn(),
     innerJoin: jest.fn(),
+    orderBy: jest.fn(),
+    limit: jest.fn().mockResolvedValue(result),
   };
   chain.from.mockReturnValue(chain);
   chain.innerJoin.mockReturnValue(chain);
+  chain.orderBy.mockReturnValue(chain);
+  chain.where.mockReturnValue(chain);
   return chain;
 }
 
@@ -139,17 +148,25 @@ function buildService(db: unknown): AccessService {
         ),
     ),
   };
+  const wrappedDb = withTenantTransactionMock(db as object) as unknown as Db;
   return new AccessService(
-    withTenantTransactionMock(db as object) as unknown as Db,
+    wrappedDb,
     cache as unknown as CacheService,
     entitlements as unknown as EntitlementsService,
     makeMfaPolicyStub(),
+    new AccessVersionCache(wrappedDb, cache as unknown as CacheService),
+    membershipStubFromDb(db),
   );
 }
 
 const ORG_A = "org-a";
 const ORG_B = "org-b";
 const USER = "user-1";
+
+/** Every catalog key an organization can confer — platform-only keys are not among them. */
+const ORG_CATALOG_NAMES = ALL_PERMISSION_NAMES.filter(
+  (name) => !PLATFORM_ONLY_PERMISSION_KEYS.has(name),
+);
 
 describe("AccessService.resolveUserPermissions — org owner receives every catalog permission", () => {
   it("returns a non-empty map containing all catalog keys at all-scope, short-circuiting permission table reads", async () => {
@@ -166,12 +183,81 @@ describe("AccessService.resolveUserPermissions — org owner receives every cata
     const result = await buildService(db).resolveUserPermissions(ORG_A, USER);
 
     expect(result.size).toBeGreaterThan(0);
-    for (const name of ALL_PERMISSION_NAMES) {
+    for (const name of ORG_CATALOG_NAMES) {
       expect(result.has(name)).toBe(true);
     }
     expect(result.get("hr:employees:view")).toBe("all");
     expect(result.get("crm:leads:view")).toBe("all");
     expect(result.get("ownership:org:transfer")).toBe("all");
+  });
+
+  it("does NOT grant a platform-only key: the vendor's global blog is not a tenant resource", async () => {
+    const db = {
+      query: {
+        accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({ isOwner: true, status: "ACTIVE", id: 1 }),
+        },
+      },
+      select: jest.fn().mockReturnValue(makeSelectChain([])),
+    };
+
+    const result = await buildService(db).resolveUserPermissions(ORG_A, USER);
+
+    expect(PLATFORM_ONLY_PERMISSION_KEYS.size).toBeGreaterThan(0);
+    for (const key of PLATFORM_ONLY_PERMISSION_KEYS)
+      expect(result.has(key)).toBe(false);
+  });
+
+  it("grants the platform-only keys to a deployment platform admin, so the surface is not merely dead", async () => {
+    const previous = process.env.PLATFORM_ADMIN_USER_IDS;
+    process.env.PLATFORM_ADMIN_USER_IDS = `someone-else, ${USER}`;
+    try {
+      const db = {
+        query: {
+          accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
+          organizationMembers: {
+            findFirst: jest.fn().mockResolvedValue({ isOwner: true, status: "ACTIVE", id: 1 }),
+          },
+        },
+        select: jest.fn().mockReturnValue(makeSelectChain([])),
+      };
+
+      const result = await buildService(db).resolveUserPermissions(ORG_A, USER);
+
+      for (const key of PLATFORM_ONLY_PERMISSION_KEYS)
+        expect(result.get(key)).toBe("all");
+    } finally {
+      if (previous === undefined) delete process.env.PLATFORM_ADMIN_USER_IDS;
+      else process.env.PLATFORM_ADMIN_USER_IDS = previous;
+    }
+  });
+
+  it("grants them to a plain member on the allowlist too — the standing is the deployment's, not the org's", async () => {
+    const previous = process.env.PLATFORM_ADMIN_USER_IDS;
+    process.env.PLATFORM_ADMIN_USER_IDS = USER;
+    try {
+      const db = {
+        query: {
+          accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
+          organizationMembers: {
+            findFirst: jest
+              .fn()
+              .mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 3, role: "MEMBER" }),
+          },
+        },
+        select: jest.fn().mockReturnValue(makeSelectChain([])),
+      };
+
+      const result = await buildService(db).resolveUserPermissions(ORG_A, USER);
+
+      for (const key of PLATFORM_ONLY_PERMISSION_KEYS)
+        expect(result.get(key)).toBe("all");
+      expect(result.has("crm:leads:view")).toBe(false);
+    } finally {
+      if (previous === undefined) delete process.env.PLATFORM_ADMIN_USER_IDS;
+      else process.env.PLATFORM_ADMIN_USER_IDS = previous;
+    }
   });
 });
 
@@ -245,9 +331,11 @@ describe("AccessService.resolveUserPermissions — ORG_ADMIN role grants every c
     const result = await buildService(db).resolveUserPermissions(ORG_A, USER);
 
     expect(result.size).toBeGreaterThan(0);
-    for (const name of ALL_PERMISSION_NAMES) {
+    for (const name of ORG_CATALOG_NAMES) {
       expect(result.has(name)).toBe(true);
     }
+    for (const key of PLATFORM_ONLY_PERMISSION_KEYS)
+      expect(result.has(key)).toBe(false);
     expect(result.get("ownership:org:transfer")).toBe("all");
     expect(result.get("hr:leaves:approve")).toBe("all");
     expect(result.get("crm:deals:read")).toBe("all");

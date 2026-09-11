@@ -9,23 +9,23 @@ export const createApprovalSchema = z.object({
   reason: z.string().max(2000).optional(),
   dueAt: z.coerce.date().optional(),
   level: z.number().int().min(1).optional(),
-});
+}).strict();
 
 export const listApprovalsQuerySchema = z.object({
   status: z.enum(approvalStatusEnum.enumValues).optional(),
   entityType: z.enum(approvalEntityTypeEnum.enumValues).optional(),
-});
+}).strict();
 
 export const decideApprovalSchema = z.object({
   decision: z.enum(["approved", "rejected", "changes_requested"]),
   decisionComment: z.string().optional(),
-});
+}).strict();
 
 export const updateApprovalSchema = z.object({
   approverId: z.string().min(1).optional(),
   dueAt: z.coerce.date().nullish(),
   status: z.enum(approvalStatusEnum.enumValues).optional(),
-});
+}).strict();
 
 export type CreateApprovalInput = z.infer<typeof createApprovalSchema>;
 export type ListApprovalsQuery = z.infer<typeof listApprovalsQuerySchema>;

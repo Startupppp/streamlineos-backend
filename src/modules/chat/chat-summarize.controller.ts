@@ -15,14 +15,14 @@ import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { ChatSummarizeService } from "./chat-summarize.service";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { chatSummarizeResponseSchema } from "./dto/chat-misc-response.schemas";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 
 const channelIdParams = z.object({ channelId: z.coerce.number().int().positive() }).strict();
 
-@RequireModule("chat")
 @Controller("chat/channels/:channelId/summarize")
 @UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)
 @RequirePermission("chat:messages:read")
@@ -30,7 +30,17 @@ const channelIdParams = z.object({ channelId: z.coerce.number().int().positive()
 export class ChatSummarizeController {
   constructor(private readonly chatSummarizeService: ChatSummarizeService) {}
 
+  /**
+   * The summary is charged. `ChatSummarizeService.summarize` calls the AI gateway with
+   * `charge: true`, so every attempt debits the org's credit wallet, and nothing about the
+   * request is keyed on anything a retry would reuse — a timed-out request that the browser
+   * or a proxy repeats is billed twice for one summary. `check:idempotent-commands` cannot
+   * see this route: its keyword list matches on the full path, and "summarize" is not one of
+   * its terms.
+   */
   @Post()
+  @ResponseSchema(chatSummarizeResponseSchema)
+  @Idempotent("chat.summarize")
   @BodylessAction()
   @HttpCode(HttpStatus.OK)
   @Validate({ params: channelIdParams })

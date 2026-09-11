@@ -21,10 +21,17 @@ export class ClientPortalService {
     private readonly audit: AuditService,
   ) {}
 
-  private clientFilter(membershipId: number | null, userId: string) {
+  private clientFilter(orgId: string, membershipId: number | null, userId: string) {
+    const userMembership = sql`(
+      SELECT id FROM organization_members
+      WHERE org_id = ${orgId}
+        AND user_id = ${userId}
+        AND status = 'ACTIVE'
+      LIMIT 1
+    )`;
     return membershipId !== null
-      ? or(eq(projects.clientMembershipId, membershipId), eq(projects.clientId, userId))
-      : eq(projects.clientId, userId);
+      ? or(eq(projects.clientMembershipId, membershipId), eq(projects.clientMembershipId, userMembership))
+      : eq(projects.clientMembershipId, userMembership);
   }
 
   private async assertClientProject(orgId: string, membershipId: number | null, userId: string, projectId: number) {
@@ -32,7 +39,7 @@ export class ClientPortalService {
       where: and(
         eq(projects.id, projectId),
         eq(projects.orgId, orgId),
-        this.clientFilter(membershipId, userId),
+        this.clientFilter(orgId, membershipId, userId),
         isNull(projects.deletedAt),
       ),
       columns: { id: true },
@@ -51,7 +58,7 @@ export class ClientPortalService {
         targetEndDate: projects.endDate,
       })
       .from(projects)
-      .where(and(eq(projects.orgId, orgId), this.clientFilter(membershipId, userId), isNull(projects.deletedAt)))
+      .where(and(eq(projects.orgId, orgId), this.clientFilter(orgId, membershipId, userId), isNull(projects.deletedAt)))
       .limit(100);
   }
 
@@ -66,7 +73,7 @@ export class ClientPortalService {
         targetEndDate: projects.endDate,
       })
       .from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId), this.clientFilter(membershipId, userId), isNull(projects.deletedAt)))
+      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId), this.clientFilter(orgId, membershipId, userId), isNull(projects.deletedAt)))
       .limit(1);
     if (!project) throw new NotFoundException("Project not found");
 

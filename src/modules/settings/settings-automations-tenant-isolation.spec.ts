@@ -44,7 +44,7 @@ describe("SettingsAutomationsService — cross-tenant isolation", () => {
     const wheres: unknown[] = [];
     const svc = new SettingsAutomationsService(makeDb(wheres), planLimits);
 
-    await svc.listAutomations(ATTACKER, { page: 1, limit: 20 });
+    await svc.listAutomations(ATTACKER, { limit: 20 });
 
     expect(wheres.length).toBeGreaterThan(0);
     const vals = wheres.flatMap(w => sqlValues(w));
@@ -56,7 +56,7 @@ describe("SettingsAutomationsService — cross-tenant isolation", () => {
     const wheres: unknown[] = [];
     const svc = new SettingsAutomationsService(makeDb(wheres), planLimits);
 
-    const result = await svc.listAutomations(OWNER, { page: 1, limit: 20 });
+    const result = await svc.listAutomations(OWNER, { limit: 20 });
 
     expect(result).toBeDefined();
     expect(result).toHaveProperty("data");

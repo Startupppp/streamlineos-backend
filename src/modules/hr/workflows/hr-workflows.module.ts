@@ -27,6 +27,6 @@ import { DirectoryModule } from "../../directory/directory.module";
     HrWorkflowDelegationsService,
     HrWorkflowStarterAdapter,
   ],
-  exports: [HrWorkflowEngineService, HrWorkflowStarterAdapter],
+  exports: [HrWorkflowEngineService, HrWorkflowStarterAdapter, HrWorkflowApproverService],
 })
 export class HrWorkflowsModule {}

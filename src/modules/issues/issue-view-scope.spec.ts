@@ -29,16 +29,16 @@ describe("how much of the three record types a caller sees", () => {
         throw new Error("should not be consulted");
       },
     };
-    await expect(resolveIssuesViewScope(never, caller({ isOrgOwner: true }))).resolves.toBe("all");
+    const read = await resolveIssuesViewScope(never, caller({ isOrgOwner: true }));
+    expect(read.rawScope("spec reads the resolved value")).toBe("all");
   });
 
   it("honours the scope the resolver returns", async () => {
-    await expect(
-      resolveIssuesViewScope(reader({ [ISSUES_VIEW_PERMISSION]: "own" }), caller()),
-    ).resolves.toBe("own");
-    await expect(
-      resolveIssuesViewScope(reader({ [ISSUES_VIEW_PERMISSION]: "team" }), caller()),
-    ).resolves.toBe("team");
+    for (const scope of ["own", "team"] as const) {
+      const read = await resolveIssuesViewScope(reader({ [ISSUES_VIEW_PERMISSION]: scope }), caller());
+      expect(read.rawScope("spec reads the resolved value")).toBe(scope);
+      expect(read.denied).toBe(false);
+    }
   });
 
   /**
@@ -47,7 +47,9 @@ describe("how much of the three record types a caller sees", () => {
    * an organisation-wide read of every complaint.
    */
   it("returns none when the resolver knows nothing about the key", async () => {
-    await expect(resolveIssuesViewScope(reader({}), caller())).resolves.toBe("none");
+    const read = await resolveIssuesViewScope(reader({}), caller());
+    expect(read.denied).toBe(true);
+    expect(read.rawScope("spec reads the resolved value")).toBe("none");
   });
 
   /**

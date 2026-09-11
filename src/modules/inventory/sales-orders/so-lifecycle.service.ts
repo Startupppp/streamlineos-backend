@@ -214,7 +214,7 @@ export class SoLifecycleService {
       // writes the same figure back, so the tote never empties. An increment did
       // not care about ordering, which is exactly the kind of assumption a
       // change of mechanism invalidates silently.
-      await (tx as Db)
+      await tx
         .update(invSalesOrders)
         .set({ status: "CANCELLED", updatedAt: new Date() })
         .where(

@@ -8,6 +8,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { accountableMembershipId } from "../../../common/auth/principal";
 import { StorageService, type FileStreamResult } from "../../storage/storage.service";
 import type { PayrollRunExportFilters } from "../../../db/schema/payroll/payroll-export-jobs";
+import { isRunType } from "./dto/runs.schemas";
 import { runInTenantTransaction, runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
 export type PayrollRunExportJobRow = typeof payrollRunExportJobs.$inferSelect;
@@ -113,7 +114,7 @@ export class PayrollRunExportService {
       const f = job.filters;
       const conditions = [eq(payrollRuns.orgId, job.orgId)];
       if (f.entityId != null) conditions.push(eq(payrollRuns.entityId, f.entityId));
-      if (f.runType) conditions.push(eq(payrollRuns.runType, f.runType as "REGULAR" | "BONUS" | "OFF_CYCLE" | "CORRECTION" | "FINAL_SETTLEMENT"));
+      if (f.runType && isRunType(f.runType)) conditions.push(eq(payrollRuns.runType, f.runType));
       if (f.monthFrom) conditions.push(gte(payrollRuns.month, f.monthFrom));
       if (f.monthTo) conditions.push(lte(payrollRuns.month, f.monthTo));
       if (afterId !== undefined) conditions.push(gt(payrollRuns.id, afterId));

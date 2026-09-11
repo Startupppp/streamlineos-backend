@@ -1,10 +1,10 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { ProjectsQueryService } from "./projects-query.service";
-import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
 import type { Db } from "../../../db/drizzle.module";
+import { projectListItemSchema } from "./dto/build-core-response.schemas";
 
 const dialect = new PgDialect();
 
@@ -15,6 +15,7 @@ function render(value: unknown): string {
 interface Captured {
   where: unknown;
   orderBy: unknown[];
+  selections: Record<string, unknown>[];
 }
 
 function buildDb(captured: Captured) {
@@ -34,20 +35,21 @@ function buildDb(captured: Captured) {
     groupBy: jest.fn().mockReturnThis(),
   };
   (builder.from as jest.Mock).mockReturnValue(builder);
-  return { select: jest.fn().mockReturnValue(builder) } as unknown as Db;
+  return {
+    select: jest.fn((selection: Record<string, unknown>) => {
+      captured.selections.push(selection);
+      return builder;
+    }),
+  } as unknown as Db;
 }
-
-const mockCache = {
-  cachedVersioned: jest.fn().mockImplementation((_ns: string, _key: string, fn: () => unknown) => fn()),
-} as unknown as CacheService;
 
 const mockAccess = {
   scopeFor: jest.fn().mockResolvedValue("all"),
 } as unknown as AccessService;
 
 async function capture(afterId: number | undefined): Promise<Captured> {
-  const captured: Captured = { where: undefined, orderBy: [] };
-  const svc = new ProjectsQueryService(buildDb(captured), mockCache, {} as AuditService, mockAccess);
+  const captured: Captured = { where: undefined, orderBy: [], selections: [] };
+  const svc = new ProjectsQueryService(buildDb(captured), {} as AuditService, mockAccess);
   await svc.listProjects(
     { orgId: "org-1", userId: "u-1", principal: humanSessionPrincipal(1, false) } as never,
     { afterId, limit: 9, status: "ALL", search: undefined, pmWorkspaceId: undefined },
@@ -74,6 +76,35 @@ describe("ProjectsQueryService.queryProjects — keyset matches the sort", () =>
     const { where } = await capture(undefined);
     const sql = render(where);
     expect(sql).not.toMatch(/"id"\s*</);
+  });
+
+  // The scope subqueries also call select(), so the projects selection is found by shape rather than by position.
+  it("selects the nullable managed product id required by the list contract", async () => {
+    const { selections } = await capture(undefined);
+    const projectSelection = selections.find(
+      (selection) => selection !== null && typeof selection === "object" && "name" in selection,
+    );
+    expect(projectSelection).toBeDefined();
+    expect(projectSelection).toHaveProperty("managedProductId");
+  });
+
+  it("requires managedProductId on every project list item", () => {
+    const result = projectListItemSchema.safeParse({
+      id: 1,
+      name: "Project",
+      description: null,
+      key: "PRJ",
+      status: "ACTIVE",
+      priority: null,
+      startDate: null,
+      endDate: null,
+      manager: null,
+      progress: { total: 0, done: 0, percentage: 0 },
+      health: "on_track",
+      members: [],
+      teams: [],
+    });
+    expect(result.success).toBe(false);
   });
 
   it("bite proof: window-function total was the old approach", () => {

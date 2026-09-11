@@ -19,7 +19,14 @@ import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { PublishingService } from "./publishing.service";
 import { publishSchema, type PublishInput } from "./dto/payout.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { ApiOkResponse } from "@nestjs/swagger";
+import {
+  publishResponseSchema,
+  retryPublishResponseSchema,
+  retryOnePublishResponseSchema,
+  publicationListSchema,
+} from "./dto/payout-response.schemas";
 import { z } from "zod";
 
 const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
@@ -36,6 +43,7 @@ export class PublishingController {
   @RequirePermission("payroll:payslips:manage")
   @Idempotent("payroll.payslips.publish")
   @Validate({ params: runIdParams, body: publishSchema })
+  @ResponseSchema(publishResponseSchema)
   publish(
     @Param("runId", ParseIntPipe) runId: number,
     @Body() body: PublishInput,
@@ -50,6 +58,7 @@ export class PublishingController {
   @RequireModule("payroll")
   @RequirePermission("payroll:payslips:manage")
   @Validate({ params: runIdParams })
+  @ResponseSchema(retryPublishResponseSchema)
   retryFailed(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -63,6 +72,7 @@ export class PublishingController {
   @RequireModule("payroll")
   @RequirePermission("payroll:payslips:manage")
   @Validate({ params: publicationIdParams })
+  @ResponseSchema(retryOnePublishResponseSchema)
   retryOne(
     @Param("publicationId", ParseIntPipe) publicationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -74,6 +84,7 @@ export class PublishingController {
   @RequireModule("payroll")
   @RequirePermission("payroll:payslips:view")
   @Validate({ params: runIdParams })
+  @ResponseSchema(publicationListSchema)
   listPublications(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -84,6 +95,7 @@ export class PublishingController {
   @Get("payslips/:publicationId/download")
   @RequirePermission("self:payslips")
   @Validate({ params: publicationIdParams })
+  @ApiOkResponse({ content: { "application/pdf": { schema: { type: "string", format: "binary" } } } })
   downloadPdf(
     @Param("publicationId", ParseIntPipe) publicationId: number,
     @CurrentUser() u: CurrentUserContext,

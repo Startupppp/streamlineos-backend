@@ -1,7 +1,7 @@
 import { Injectable, Inject } from "@nestjs/common";
 import { tool } from "ai";
 import { z } from "zod";
-import { and, eq, ilike, isNull, sql } from "drizzle-orm";
+import { and, eq, ilike, inArray, isNull, sql } from "drizzle-orm";
 import {
   invProducts,
   invProductVariants,
@@ -25,12 +25,19 @@ export function shouldDenyTeamPayrollCopilot(scope: DataScope): boolean {
   return scope === "team";
 }
 
+const PAYROLL_COPILOT_BRANCH =
+  "the payroll copilot answers a different shape per scope — self rows, a team refusal, or an org summary — rather than filtering one query";
+
 export interface OpsCopilotContext {
   actor: CurrentUserContext;
 }
 
-/** Caps on what one lookup may pull into a context window. */
-const STOCK_LOOKUP_CAPS = { products: 5, variants: 10 } as const;
+/**
+ * Caps on what one lookup may pull into a context window. `variantScan` bounds
+ * the single batched variant read across every matched product; `variants` is
+ * what each product then shows.
+ */
+const STOCK_LOOKUP_CAPS = { products: 5, variants: 10, variantScan: 500 } as const;
 
 export interface CopilotStockRow {
   variantId: number;
@@ -106,7 +113,12 @@ export class OpsCopilotTools {
     private readonly warehouseScope: WarehouseScopeService,
   ) {}
 
-  private async selfPayrollRows(orgId: string, userId: string, month?: string, year?: string) {
+  private async selfPayrollRows(
+    orgId: string,
+    userId: string,
+    month?: string,
+    year?: string,
+  ) {
     return this.db
       .select({
         month: payrollRuns.month,
@@ -138,10 +150,18 @@ export class OpsCopilotTools {
           productQuery: z.string().min(1).max(120).describe("Partial product name to search for"),
         }),
         execute: async ({ productQuery }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "inventory:products:read");
+          const deny = await this.toolAccess.denyReason(
+            orgId,
+            userId,
+            "inventory:products:read",
+          );
           if (deny) return { denied: true, reason: deny };
 
-          const stockDeny = await this.toolAccess.denyReason(orgId, userId, "inventory:stock:read");
+          const stockDeny = await this.toolAccess.denyReason(
+            orgId,
+            userId,
+            "inventory:stock:read",
+          );
           if (stockDeny) return { denied: true, reason: stockDeny };
 
           const scope = await this.warehouseScope.forUser(orgId, userId);
@@ -151,7 +171,12 @@ export class OpsCopilotTools {
           // is that every read filters them: without this the assistant happily
           // quotes stock for a SKU the product screens no longer show.
           const matched = await this.db
-            .select({ id: invProducts.id, name: invProducts.name, sku: invProducts.sku, status: invProducts.status })
+            .select({
+              id: invProducts.id,
+              name: invProducts.name,
+              sku: invProducts.sku,
+              status: invProducts.status,
+            })
             .from(invProducts)
             .where(
               and(
@@ -163,46 +188,71 @@ export class OpsCopilotTools {
             .limit(STOCK_LOOKUP_CAPS.products);
 
           if (matched.length === 0) {
-            return { results: [], message: `No products found matching "${productQuery}".` };
+            return {
+              results: [],
+              message: `No products found matching "${productQuery}".`,
+            };
           }
 
-          const results = await Promise.all(
-            matched.map(async (product) => {
-              const variants = await this.db
-                .select({ id: invProductVariants.id, name: invProductVariants.name })
-                .from(invProductVariants)
-                .where(
-                  and(
-                    eq(invProductVariants.orgId, orgId),
-                    eq(invProductVariants.productId, product.id),
-                    isNull(invProductVariants.deletedAt),
-                  ),
-                )
-                .limit(STOCK_LOOKUP_CAPS.variants);
+          // One read for every matched product's variants rather than one per
+          // product: the lookup is bounded by the product cap either way, but a
+          // query inside the map is the N+1 shape the growing-loop gate refuses.
+          const productIds = matched.map((p) => p.id);
+          const allVariants = await this.db
+            .select({
+              id: invProductVariants.id,
+              name: invProductVariants.name,
+              productId: invProductVariants.productId,
+            })
+            .from(invProductVariants)
+            .where(
+              and(
+                eq(invProductVariants.orgId, orgId),
+                inArray(invProductVariants.productId, productIds),
+                isNull(invProductVariants.deletedAt),
+              ),
+            )
+            .orderBy(invProductVariants.productId, invProductVariants.id)
+            .limit(STOCK_LOOKUP_CAPS.variantScan);
 
-              const variantIds = variants.map((v) => v.id);
-              if (variantIds.length === 0) {
-                return { ...product, stock: [] };
-              }
+          const variantsByProduct = new Map<
+            number,
+            Array<{ id: number; name: string }>
+          >();
+          for (const v of allVariants) {
+            const list = variantsByProduct.get(v.productId) ?? [];
+            list.push({ id: v.id, name: v.name });
+            variantsByProduct.set(v.productId, list);
+          }
 
-              const stockRows = await readCopilotVariantStock(this.db, orgId, scope, variantIds);
-              const stockByVariant = new Map(stockRows.map((r) => [r.variantId, r]));
-
-              return {
-                ...product,
-                stock: variants.map((v) => {
-                  const s = stockByVariant.get(v.id) ?? { onHand: 0, committed: 0, available: 0 };
-                  return {
-                    variantId: v.id,
-                    variantName: v.name,
-                    onHand: s.onHand,
-                    committed: s.committed,
-                    available: s.available,
-                  };
-                }),
-              };
-            }),
+          const shown = matched.map((product) => ({
+            product,
+            variants: (variantsByProduct.get(product.id) ?? []).slice(0, STOCK_LOOKUP_CAPS.variants),
+          }));
+          const stockRows = await readCopilotVariantStock(
+            this.db,
+            orgId,
+            scope,
+            shown.flatMap((entry) => entry.variants.map((v) => v.id)),
           );
+          const stockByVariant = new Map(stockRows.map((r) => [r.variantId, r]));
+
+          const results = shown.map(({ product, variants }) => {
+            if (variants.length === 0) return { ...product, stock: [] };
+            return {
+              ...product,
+              stock: variants.map((v) => {
+                const s = stockByVariant.get(v.id) ?? { onHand: 0, committed: 0, available: 0 };
+                return {
+                  variantId: v.id,
+                  variantName: v.name,
+                  onHand: s.onHand,
+                  committed: s.committed,
+                  available: s.available,
+                };
+              }),
+            };
+          });
 
           return { results };
         },
@@ -212,20 +262,41 @@ export class OpsCopilotTools {
         description:
           "Get a payroll summary (counts and net totals by status). Never returns bank details or individual salaries when the user only has own-scope access. Use month (YYYY-MM) and/or year (YYYY) to filter.",
         inputSchema: z.object({
-          month: z.string().optional().describe("Filter to a specific month, format YYYY-MM"),
-          year: z.string().optional().describe("Filter to a specific year, format YYYY"),
+          month: z
+            .string()
+            .optional()
+            .describe("Filter to a specific month, format YYYY-MM"),
+          year: z
+            .string()
+            .optional()
+            .describe("Filter to a specific year, format YYYY"),
         }),
         execute: async ({ month, year }) => {
-          const scope = await this.toolAccess.scope(orgId, userId, "hr:payroll:view");
+          const read = await this.toolAccess.scope(
+            orgId,
+            userId,
+            "hr:payroll:view",
+          );
+          const scope = read.rawScope(PAYROLL_COPILOT_BRANCH);
 
-          if (scope === "none") {
-            const selfDeny = await this.toolAccess.denyReason(orgId, userId, "self:payslips");
+          if (read.denied) {
+            const selfDeny = await this.toolAccess.denyReason(
+              orgId,
+              userId,
+              "self:payslips",
+            );
             if (selfDeny) return { denied: true, reason: selfDeny };
-            return { scope: "self", records: await this.selfPayrollRows(orgId, userId, month, year) };
+            return {
+              scope: "self",
+              records: await this.selfPayrollRows(orgId, userId, month, year),
+            };
           }
 
           if (scope === "own") {
-            return { scope: "self", records: await this.selfPayrollRows(orgId, userId, month, year) };
+            return {
+              scope: "self",
+              records: await this.selfPayrollRows(orgId, userId, month, year),
+            };
           }
 
           if (shouldDenyTeamPayrollCopilot(scope)) {
@@ -289,7 +360,10 @@ export class OpsCopilotTools {
             );
 
           if (rows.length === 0) {
-            return { balances: [], message: "No leave balances found for the current year." };
+            return {
+              balances: [],
+              message: "No leave balances found for the current year.",
+            };
           }
 
           return {

@@ -31,6 +31,16 @@ import {
   type WorkAgingQueryInput,
 } from "./dto/operations-metrics.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  dashboardResponseSchema,
+  stockSummaryResponseSchema,
+  reorderReportResponseSchema,
+  movementsReportResponseSchema,
+  valuationReportResponseSchema,
+  slowMovingReportResponseSchema,
+  expiryReportResponseSchema,
+} from "./dto/reports-response.schemas";
 
 @RequireModule("inventory")
 @Controller("inventory/reports")
@@ -77,6 +87,7 @@ export class InvReportsController {
   }
 
   @Get("dashboard")
+  @ResponseSchema(dashboardResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:reports:read")
   getDashboard(@CurrentUser() u: CurrentUserContext) {
@@ -84,6 +95,7 @@ export class InvReportsController {
   }
 
   @Get("stock-summary")
+  @ResponseSchema(stockSummaryResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:reports:read")
   @Validate({ query: stockSummaryQuerySchema })
@@ -95,6 +107,7 @@ export class InvReportsController {
   }
 
   @Get("reorder")
+  @ResponseSchema(reorderReportResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:reports:read")
   @Validate({ query: reorderQuerySchema })
@@ -106,6 +119,7 @@ export class InvReportsController {
   }
 
   @Get("movements")
+  @ResponseSchema(movementsReportResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:reports:read")
   @Validate({ query: movementsQuerySchema })
@@ -117,6 +131,7 @@ export class InvReportsController {
   }
 
   @Get("valuation")
+  @ResponseSchema(valuationReportResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:valuation:read")
   @Validate({ query: valuationReportSchema })
@@ -128,6 +143,7 @@ export class InvReportsController {
   }
 
   @Get("slow-moving")
+  @ResponseSchema(slowMovingReportResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:reports:read")
   @Validate({ query: slowMovingQuerySchema })
@@ -139,6 +155,7 @@ export class InvReportsController {
   }
 
   @Get("expiry")
+  @ResponseSchema(expiryReportResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:reports:read")
   @Validate({ query: expiryReportSchema })

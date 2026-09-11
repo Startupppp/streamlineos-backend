@@ -7,7 +7,3 @@ export const surveyResponseSubmittedPayloadSchema = z.object({
   score: z.number().int().nullable(),
   passed: z.boolean().nullable(),
 });
-
-export type SurveyResponseSubmittedPayload = z.infer<
-  typeof surveyResponseSubmittedPayloadSchema
->;

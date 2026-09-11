@@ -8,6 +8,12 @@ import { ExpensesService } from "./expenses.service";
 import { createCategorySchema, type CreateCategoryInput } from "./dto/expense.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  expenseCategoryRowSchema,
+  expenseCategoryWithStatsSchema,
+} from "./dto/expenses-response.schemas";
+import { z } from "zod";
 
 @RequireModule("accounting")
 @Controller("hr/expenses/categories")
@@ -17,6 +23,7 @@ export class ExpenseCategoriesController {
 
   @Get()
   @RequirePermission("hr:expenses:view")
+  @ResponseSchema(z.array(expenseCategoryWithStatsSchema))
   list(@CurrentUser() u: CurrentUserContext) {
     return this.expenses.getCategories(u.orgId);
   }
@@ -25,6 +32,7 @@ export class ExpenseCategoriesController {
   @HttpCode(201)
   @RequirePermission("hr:expenses:manage")
   @Validate({ body: createCategorySchema })
+  @ResponseSchema(expenseCategoryRowSchema)
   create(
     @Body() body: CreateCategoryInput,
     @CurrentUser() u: CurrentUserContext,

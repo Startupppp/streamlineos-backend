@@ -39,8 +39,13 @@ export class InMemoryRedis {
     return Promise.resolve(this.store.delete(key) ? 1 : 0);
   }
 
-  eval(_script: string, keys: string[]): Promise<number> {
-    for (const key of keys) this.store.delete(key);
+  eval(script: string, keys: string[], args: string[]): Promise<number> {
+    if (this.store.get(keys[0]) !== args[0]) return Promise.resolve(0);
+    if (script.includes('redis.call("set"') && keys[1] !== undefined) {
+      this.store.set(keys[1], JSON.parse(args[1] ?? "null"));
+      return Promise.resolve(1);
+    }
+    this.store.delete(keys[0]);
     return Promise.resolve(1);
   }
 }

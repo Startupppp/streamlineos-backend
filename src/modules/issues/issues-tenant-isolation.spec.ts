@@ -5,6 +5,7 @@
  * records owned by a different org, satisfying the BOLA requirement.
  */
 
+import { ScopedRead } from "../access/scoped-read";
 import type { Db } from "../../db/drizzle.types";
 import { IssuesService } from "./issues.service";
 import { IssueTransitionsService } from "./issue-transitions.service";
@@ -101,7 +102,7 @@ describe("IssuesService — cross-tenant isolation", () => {
     const { db, where } = makeListDb([]);
     const svc = new IssuesService(db, makeTransitionsMock());
 
-    const result = await svc.list(ATTACKER_ORG, "user-x", QUERY, SCOPE);
+    const result = await svc.list(ScopedRead.of(ATTACKER_ORG, "user-x", SCOPE), QUERY);
 
     expect(result.data).toHaveLength(0);
     expect(where).toHaveBeenCalled();
@@ -113,7 +114,7 @@ describe("IssuesService — cross-tenant isolation", () => {
     const { db } = makeListDb([FAKE_ROW]);
     const svc = new IssuesService(db, makeTransitionsMock());
 
-    const result = await svc.list(OWNER_ORG, "user-1", QUERY, SCOPE);
+    const result = await svc.list(ScopedRead.of(OWNER_ORG, "user-1", SCOPE), QUERY);
 
     expect(result.data.length).toBeGreaterThan(0);
   });

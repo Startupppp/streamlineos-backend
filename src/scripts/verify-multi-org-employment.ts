@@ -15,18 +15,23 @@ async function findMultiOrgUser(db: Db): Promise<{ userId: string; orgIds: strin
   const byUser = new Map<string, string[]>();
 
   for (const org of orgs) {
-    const memberIds = await runInNewTenantTransaction(db, org.id, async (tx) => {
-      const rows = await tx
-        .selectDistinct({ userId: organizationMembers.userId })
-        .from(organizationMembers)
-        .where(
-          and(
-            eq(organizationMembers.orgId, org.id),
-            eq(organizationMembers.status, "ACTIVE"),
-          ),
-        );
-      return rows.map((row) => row.userId);
-    });
+    let memberIds: string[];
+    try {
+      memberIds = await runInNewTenantTransaction(db, org.id, async (tx) => {
+        const rows = await tx
+          .selectDistinct({ userId: organizationMembers.userId })
+          .from(organizationMembers)
+          .where(
+            and(
+              eq(organizationMembers.orgId, org.id),
+              eq(organizationMembers.status, "ACTIVE"),
+            ),
+          );
+        return rows.map((row) => row.userId);
+      });
+    } catch {
+      continue;
+    }
     for (const userId of memberIds) byUser.set(userId, [...(byUser.get(userId) ?? []), org.id]);
   }
 

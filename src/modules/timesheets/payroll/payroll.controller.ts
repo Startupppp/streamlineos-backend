@@ -36,6 +36,15 @@ import {
   type UpdateSettingsInput,
 } from "./dto/payroll.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  payrollPeriodSummaryResponseSchema,
+  payrollRunExportResponseSchema,
+  payrollExportListResponseSchema,
+  payrollAckExportResponseSchema,
+  payrollExportRowsResponseSchema,
+  payrollSettingsResponseSchema,
+} from "./dto/payroll-response.schemas";
 import { z } from "zod";
 
 const exportIdParams = z.object({ exportId: z.coerce.number().int().positive() }).strict();
@@ -54,12 +63,13 @@ export class PayrollController {
   @Get("period-summary")
   @RequirePermission("timesheets:payroll:view")
   @Validate({ query: periodSummaryQuerySchema })
+  @ResponseSchema(payrollPeriodSummaryResponseSchema)
   async getPeriodSummary(
     @Query() query: PeriodSummaryQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolvePayrollScope(this.access, u);
-    return this.summary.getPeriodSummary(u.orgId, query, scope, u.userId);
+    const read = await resolvePayrollScope(this.access, u);
+    return this.summary.getPeriodSummary(read, query);
   }
 
   @Post("export")
@@ -67,6 +77,7 @@ export class PayrollController {
   @RequirePermission("timesheets:payroll:export")
   @Idempotent("timesheets.payroll.export")
   @Validate({ body: exportPayrollSchema })
+  @ResponseSchema(payrollRunExportResponseSchema)
   runExport(
     @Body() body: ExportPayrollInput,
     @CurrentUser() u: CurrentUserContext,
@@ -77,6 +88,7 @@ export class PayrollController {
   @Get("exports")
   @RequirePermission("timesheets:payroll:view")
   @Validate({ query: exportsListQuerySchema })
+  @ResponseSchema(payrollExportListResponseSchema)
   listExports(
     @Query() query: ExportsListQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -87,6 +99,7 @@ export class PayrollController {
   @Patch("exports/:exportId/ack")
   @RequirePermission("timesheets:payroll:export")
   @Validate({ params: exportIdParams, body: ackExportSchema })
+  @ResponseSchema(payrollAckExportResponseSchema)
   ackExport(
     @Param("exportId", ParseIntPipe) exportId: number,
     @Body() body: AckExportInput,
@@ -98,6 +111,7 @@ export class PayrollController {
   @Get("exports/:exportId/rows")
   @RequirePermission("timesheets:payroll:view")
   @Validate({ params: exportIdParams })
+  @ResponseSchema(payrollExportRowsResponseSchema)
   getExportRows(
     @Param("exportId", ParseIntPipe) exportId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -107,6 +121,7 @@ export class PayrollController {
 
   @Get("settings")
   @RequirePermission("timesheets:payroll:view")
+  @ResponseSchema(payrollSettingsResponseSchema)
   getSettings(@CurrentUser() u: CurrentUserContext) {
     return this.settings.getSettings(u.orgId);
   }
@@ -114,6 +129,7 @@ export class PayrollController {
   @Patch("settings")
   @RequirePermission("timesheets:payroll:export")
   @Validate({ body: updateSettingsSchema })
+  @ResponseSchema(payrollSettingsResponseSchema)
   updateSettings(
     @Body() body: UpdateSettingsInput,
     @CurrentUser() u: CurrentUserContext,

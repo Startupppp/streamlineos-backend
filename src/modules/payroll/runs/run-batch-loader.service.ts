@@ -12,6 +12,7 @@ import {
   payrollLoanAdjustments,
   incentives,
   taxDeclarations,
+  organizationMembers,
 } from "../../../db/schema";
 import type { PayrollToggles } from "../payroll.types";
 import type { CalcInputPulls } from "./lib/calculation-engine";
@@ -41,6 +42,12 @@ type TaxDeclarationRow = {
   previousEmployerTds: string;
   status: string;
 };
+
+// A run is materialized for a bounded employee snapshot. These caps keep a
+// malformed or unexpectedly large input set from turning a calculation into
+// an unbounded read; the caller already supplies the run's employee IDs.
+const MAX_RUN_INPUT_ROWS = 10_000;
+const MAX_COMPONENT_ROWS = 100_000;
 
 function getFyString(month: string): string {
   const [yearStr, monStr] = month.split("-");
@@ -76,10 +83,18 @@ export class RunBatchLoaderService {
     const userIds = profiles
       .map((p) => p.userId)
       .filter((id): id is string => id !== null);
+    const membershipRows = userIds.length > 0
+      ? await this.db
+          .select({ membershipId: organizationMembers.id })
+          .from(organizationMembers)
+          .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, userIds)))
+          .limit(MAX_RUN_INPUT_ROWS)
+      : [];
+    const membershipIds = membershipRows.map((row) => row.membershipId);
     const profileIds = profiles.map((p) => p.id);
     const [year, mon] = month.split("-").map(Number);
-    const monthStart = new Date(year!, mon! - 1, 1);
-    const monthEnd = new Date(year!, mon!, 0, 23, 59, 59, 999);
+    const monthStart = new Date(year, mon - 1, 1);
+    const monthEnd = new Date(year, mon, 0, 23, 59, 59, 999);
     const fy = getFyString(month);
 
     const [
@@ -100,11 +115,12 @@ export class RunBatchLoaderService {
             .select()
             .from(payrollInputs)
             .where(and(eq(payrollInputs.runId, runId), inArray(payrollInputs.userId, userIds)))
-        : Promise.resolve([] as RunInputRow[]),
+            .limit(MAX_RUN_INPUT_ROWS)
+        : Promise.resolve([]),
       profileIds.length > 0
         ? this.loadComponentsByProfile(orgId, profileIds)
         : Promise.resolve(new Map<number, ResolvedComponent[]>()),
-      toggles.bonuses && userIds.length > 0
+      toggles.bonuses && membershipIds.length > 0
         ? this.db
             .select({
               id: bonuses.id,
@@ -114,8 +130,9 @@ export class RunBatchLoaderService {
               taxable: bonuses.taxable,
             })
             .from(bonuses)
-            .where(and(eq(bonuses.orgId, orgId), inArray(bonuses.userId, userIds), eq(bonuses.status, "APPROVED"), eq(bonuses.month, month)))
-        : Promise.resolve([] as BonusRow[]),
+            .where(and(eq(bonuses.orgId, orgId), inArray(bonuses.userMembershipId, membershipIds), eq(bonuses.status, "APPROVED"), eq(bonuses.month, month)))
+            .limit(MAX_RUN_INPUT_ROWS)
+        : Promise.resolve([]),
       toggles.incentives && userIds.length > 0
         ? this.db
             .select({
@@ -134,15 +151,16 @@ export class RunBatchLoaderService {
                 lte(incentives.approvedAt, monthEnd),
               ),
             )
-        : Promise.resolve([] as IncentiveRow[]),
-      toggles.reimbursements && userIds.length > 0
+            .limit(MAX_RUN_INPUT_ROWS)
+        : Promise.resolve([]),
+      toggles.reimbursements && membershipIds.length > 0
         ? this.db
             .select({ id: reimbursements.id, userId: reimbursements.userId, amount: reimbursements.amount, category: reimbursements.category })
             .from(reimbursements)
             .where(
               and(
                 eq(reimbursements.orgId, orgId),
-                inArray(reimbursements.userId, userIds),
+                inArray(reimbursements.userMembershipId, membershipIds),
                 eq(reimbursements.status, "APPROVED"),
                 isNull(reimbursements.paidAt),
                 or(
@@ -151,13 +169,15 @@ export class RunBatchLoaderService {
                 ),
               ),
             )
-        : Promise.resolve([] as ReimbursementRow[]),
-      toggles.loans && userIds.length > 0
+            .limit(MAX_RUN_INPUT_ROWS)
+        : Promise.resolve([]),
+      toggles.loans && membershipIds.length > 0
         ? this.db
             .select()
             .from(salaryLoans)
-            .where(and(eq(salaryLoans.orgId, orgId), inArray(salaryLoans.userId, userIds), eq(salaryLoans.status, "ACTIVE")))
-        : Promise.resolve([] as (typeof salaryLoans.$inferSelect)[]),
+            .where(and(eq(salaryLoans.orgId, orgId), inArray(salaryLoans.userMembershipId, membershipIds), eq(salaryLoans.status, "ACTIVE")))
+            .limit(MAX_RUN_INPUT_ROWS)
+        : Promise.resolve([]),
       toggles.tds && userIds.length > 0
         ? this.db
             .select({
@@ -181,7 +201,8 @@ export class RunBatchLoaderService {
                 eq(taxDeclarations.status, "VERIFIED"),
               ),
             )
-        : Promise.resolve([] as TaxDeclarationRow[]),
+            .limit(MAX_RUN_INPUT_ROWS)
+        : Promise.resolve([]),
     ]);
 
     const loanIds = loanRows.map((l) => l.id);
@@ -190,6 +211,7 @@ export class RunBatchLoaderService {
           .select()
           .from(payrollLoanAdjustments)
           .where(and(eq(payrollLoanAdjustments.runId, runId), inArray(payrollLoanAdjustments.loanId, loanIds)))
+          .limit(MAX_RUN_INPUT_ROWS)
       : [];
 
     const loansByUser = new Map<string, CalcInputPulls["activeLoans"]>();
@@ -269,7 +291,8 @@ export class RunBatchLoaderService {
       .from(employeeSalaryProfileComponents)
       .innerJoin(salaryComponents, eq(salaryComponents.id, employeeSalaryProfileComponents.componentId))
       .where(and(inArray(employeeSalaryProfileComponents.profileId, profileIds), eq(employeeSalaryProfileComponents.orgId, orgId)))
-      .orderBy(salaryComponents.sortOrder);
+      .orderBy(salaryComponents.sortOrder)
+      .limit(MAX_COMPONENT_ROWS);
 
     const byProfile = new Map<number, ResolvedComponent[]>();
     for (const r of rows) {

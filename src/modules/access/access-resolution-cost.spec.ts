@@ -1,4 +1,6 @@
+import { makeMembershipStateStub } from "../../../test/helpers/membership-state-stub";
 import { AccessService } from "./access.service";
+import { AccessVersionCache } from "./access-version-cache";
 import { poolTelemetry } from "../../db/pool-telemetry";
 import type { Db } from "../../db/drizzle.module";
 import type { CacheService } from "../../common/cache/cache.service";
@@ -24,11 +26,15 @@ const BORROWS_WITHOUT_SHARED_CACHE = 2;
 function makeSelectChain(rows: unknown[]): Record<string, jest.Mock> {
   const chain: Record<string, jest.Mock> = {
     from: jest.fn(),
-    where: jest.fn().mockResolvedValue(rows),
+    where: jest.fn(),
     innerJoin: jest.fn(),
+    orderBy: jest.fn(),
+    limit: jest.fn().mockResolvedValue(rows),
   };
   chain.from.mockReturnValue(chain);
   chain.innerJoin.mockReturnValue(chain);
+  chain.where.mockReturnValue(chain);
+  chain.orderBy.mockReturnValue(chain);
   return chain;
 }
 
@@ -89,6 +95,8 @@ function buildFixture(): CostFixture {
       cache as unknown as CacheService,
       entitlements as unknown as EntitlementsService,
       makeMfaPolicyStub(),
+      new AccessVersionCache(db as unknown as Db, cache as unknown as CacheService),
+      makeMembershipStateStub(),
     ),
   };
 }

@@ -1,34 +1,16 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, inArray, isNull, ne, or } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { hrCases } from "../../../db/schema/hr/cases";
-import { hrSafetyIncidents } from "../../../db/schema/hr/safety";
-import { helpdeskTickets } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
+import { sortByUrgency } from "./lib/service-delivery-aging";
 import {
-  classifyAging,
-  severityRank,
-  sortByUrgency,
-  type AgingResult,
-} from "./lib/service-delivery-aging";
-
-export type ServiceDeliveryKind = "case" | "safety_incident" | "helpdesk";
-
-export interface ServiceDeliveryItem {
-  kind: ServiceDeliveryKind;
-  id: number;
-  ref: string;
-  title: string;
-  status: string;
-  severity: string | null;
-  assignedTo: string | null;
-  href: string;
-  createdAt: string;
-  aging: AgingResult;
-  severityRank: number;
-  confidential?: boolean;
-}
+  fetchCasesForOpsInbox,
+  fetchSafetyForOpsInbox,
+  fetchHelpdeskForOpsInbox,
+  fetchHelpdeskForMyItems,
+  fetchCasesForMyItems,
+} from "./service-delivery-queries";
+import type { ServiceDeliveryItem } from "./lib/service-delivery-item";
 
 export interface ServiceDeliveryOpsInbox {
   mode: "ops_unified_inbox";
@@ -81,138 +63,13 @@ export class ServiceDeliveryInboxService {
     const now = new Date();
     const items: ServiceDeliveryItem[] = [];
 
-    if (canViewCases) {
-      const caseConditions = [
-        eq(hrCases.orgId, orgId),
-        isNull(hrCases.deletedAt),
-        inArray(hrCases.status, ["open", "under_investigation"]),
-      ];
-      if (!hasConfidential) {
-        const assigneeMatch =
-          membershipId != null
-            ? or(eq(hrCases.assignedToMembershipId, membershipId), eq(hrCases.assignedTo, userId))
-            : eq(hrCases.assignedTo, userId);
-        const vis = or(eq(hrCases.confidential, false), assigneeMatch);
-        if (vis) caseConditions.push(vis);
-      }
-      const rows = await this.db
-        .select({
-          id: hrCases.id,
-          caseNumber: hrCases.caseNumber,
-          summary: hrCases.summary,
-          status: hrCases.status,
-          severity: hrCases.severity,
-          assignedTo: hrCases.assignedTo,
-          confidential: hrCases.confidential,
-          createdAt: hrCases.createdAt,
-        })
-        .from(hrCases)
-        .where(and(...caseConditions))
-        .orderBy(desc(hrCases.createdAt))
-        .limit(50);
-
-      for (const r of rows) {
-        const aging = classifyAging(r.createdAt, now);
-        items.push({
-          kind: "case",
-          id: r.id,
-          ref: r.caseNumber,
-          title: r.confidential && !hasConfidential ? "Confidential case" : r.summary,
-          status: r.status,
-          severity: r.severity,
-          assignedTo: r.assignedTo,
-          href: `/hr/cases?id=${r.id}`,
-          createdAt: r.createdAt.toISOString(),
-          aging,
-          severityRank: severityRank("case", r.severity),
-          confidential: r.confidential,
-        });
-      }
-    }
-
-    if (canViewSafety) {
-      const rows = await this.db
-        .select({
-          id: hrSafetyIncidents.id,
-          incidentNumber: hrSafetyIncidents.incidentNumber,
-          type: hrSafetyIncidents.type,
-          status: hrSafetyIncidents.status,
-          severity: hrSafetyIncidents.severity,
-          location: hrSafetyIncidents.location,
-          createdAt: hrSafetyIncidents.createdAt,
-        })
-        .from(hrSafetyIncidents)
-        .where(
-          and(
-            eq(hrSafetyIncidents.orgId, orgId),
-            isNull(hrSafetyIncidents.deletedAt),
-            ne(hrSafetyIncidents.status, "closed"),
-          ),
-        )
-        .orderBy(desc(hrSafetyIncidents.createdAt))
-        .limit(50);
-
-      for (const r of rows) {
-        const aging = classifyAging(r.createdAt, now);
-        items.push({
-          kind: "safety_incident",
-          id: r.id,
-          ref: r.incidentNumber,
-          title: `${r.type}${r.location ? ` @ ${r.location}` : ""}`,
-          status: r.status,
-          severity: r.severity,
-          assignedTo: null,
-          href: `/hr/safety?id=${r.id}`,
-          createdAt: r.createdAt.toISOString(),
-          aging,
-          severityRank: severityRank("safety", r.severity),
-        });
-      }
-    }
-
+    if (canViewCases)
+      items.push(...await fetchCasesForOpsInbox(this.db, orgId, membershipId, hasConfidential, now));
+    if (canViewSafety)
+      items.push(...await fetchSafetyForOpsInbox(this.db, orgId, now));
     if (canViewHelpdesk) {
       const isAdmin = perms.has("hr:helpdesk:manage");
-      // ticket_status: TODO | IN_PROGRESS | IN_REVIEW | DONE
-      const rows = await this.db
-        .select({
-          id: helpdeskTickets.id,
-          title: helpdeskTickets.title,
-          status: helpdeskTickets.status,
-          priority: helpdeskTickets.priority,
-          assigneeId: helpdeskTickets.assigneeId,
-          slaDueAt: helpdeskTickets.slaDueAt,
-          createdAt: helpdeskTickets.createdAt,
-          userId: helpdeskTickets.userId,
-        })
-        .from(helpdeskTickets)
-        .where(
-          and(
-            eq(helpdeskTickets.orgId, orgId),
-            inArray(helpdeskTickets.status, ["TODO", "IN_PROGRESS", "IN_REVIEW"]),
-          ),
-        )
-        .orderBy(desc(helpdeskTickets.createdAt))
-        .limit(50);
-
-      for (const r of rows) {
-        if (!isAdmin && r.assigneeId !== userId && r.userId !== userId) {
-          continue;
-        }
-        const aging = classifyAging(r.createdAt, now, r.slaDueAt);
-        items.push({
-          kind: "helpdesk",
-          id: r.id,
-          ref: `HD-${r.id}`,
-          title: r.title,
-          status: r.status,
-          severity: r.priority,
-          assignedTo: r.assigneeId,
-          href: `/hr/helpdesk?ticket=${r.id}`,
-          createdAt: r.createdAt.toISOString(),
-          aging,
-          severityRank: severityRank("helpdesk", r.priority),
-        });
-      }
+      items.push(...await fetchHelpdeskForOpsInbox(this.db, orgId, userId, isAdmin, now));
     }
 
     const sorted = sortByUrgency(items).slice(0, 100);
@@ -233,92 +90,12 @@ export class ServiceDeliveryInboxService {
     };
   }
 
-  /** Employee view: my open helpdesk tickets + cases I reported (non-confidential summary). */
   async getMyItems(orgId: string, userId: string, membershipId?: number | null): Promise<ServiceDeliveryMyItems> {
     const now = new Date();
-    const items: ServiceDeliveryItem[] = [];
-
-    const tickets = await this.db
-      .select({
-        id: helpdeskTickets.id,
-        title: helpdeskTickets.title,
-        status: helpdeskTickets.status,
-        priority: helpdeskTickets.priority,
-        assigneeId: helpdeskTickets.assigneeId,
-        slaDueAt: helpdeskTickets.slaDueAt,
-        createdAt: helpdeskTickets.createdAt,
-      })
-      .from(helpdeskTickets)
-      .where(
-        and(
-          eq(helpdeskTickets.orgId, orgId),
-          eq(helpdeskTickets.userId, userId),
-          inArray(helpdeskTickets.status, ["TODO", "IN_PROGRESS", "IN_REVIEW"]),
-        ),
-      )
-      .orderBy(desc(helpdeskTickets.createdAt))
-      .limit(30);
-
-    for (const r of tickets) {
-      const aging = classifyAging(r.createdAt, now, r.slaDueAt);
-      items.push({
-        kind: "helpdesk",
-        id: r.id,
-        ref: `HD-${r.id}`,
-        title: r.title,
-        status: r.status,
-        severity: r.priority,
-        assignedTo: r.assigneeId,
-        href: `/hr/helpdesk?ticket=${r.id}`,
-        createdAt: r.createdAt.toISOString(),
-        aging,
-        severityRank: severityRank("helpdesk", r.priority),
-      });
-    }
-
-    const cases = await this.db
-      .select({
-        id: hrCases.id,
-        caseNumber: hrCases.caseNumber,
-        summary: hrCases.summary,
-        status: hrCases.status,
-        severity: hrCases.severity,
-        assignedTo: hrCases.assignedTo,
-        createdAt: hrCases.createdAt,
-        confidential: hrCases.confidential,
-      })
-      .from(hrCases)
-      .where(
-        and(
-          eq(hrCases.orgId, orgId),
-          isNull(hrCases.deletedAt),
-          membershipId != null
-            ? or(eq(hrCases.reportedByMembershipId, membershipId), eq(hrCases.reportedBy, userId))!
-            : eq(hrCases.reportedBy, userId),
-          inArray(hrCases.status, ["open", "under_investigation"]),
-        ),
-      )
-      .orderBy(desc(hrCases.createdAt))
-      .limit(30);
-
-    for (const r of cases) {
-      const aging = classifyAging(r.createdAt, now);
-      items.push({
-        kind: "case",
-        id: r.id,
-        ref: r.caseNumber,
-        title: r.confidential ? "Confidential case (limited detail)" : r.summary,
-        status: r.status,
-        severity: r.severity,
-        assignedTo: r.assignedTo,
-        href: `/hr/cases?id=${r.id}`,
-        createdAt: r.createdAt.toISOString(),
-        aging,
-        severityRank: severityRank("case", r.severity),
-        confidential: r.confidential,
-      });
-    }
-
+    const items: ServiceDeliveryItem[] = [
+      ...await fetchHelpdeskForMyItems(this.db, orgId, userId, now),
+      ...await fetchCasesForMyItems(this.db, orgId, membershipId, now),
+    ];
     const sorted = sortByUrgency(items);
 
     return {

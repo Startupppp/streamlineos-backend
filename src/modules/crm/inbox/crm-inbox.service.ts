@@ -1,10 +1,9 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { tasks } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import type { DataScope } from "../../access/access.types";
-import { applyScope } from "../../access/apply-scope";
+import type { ScopedRead } from "../../access/scoped-read";
 import type { SnoozeTaskInput } from "./crm-inbox.dto";
 import { CrmInboxQueriesService } from "./crm-inbox-queries.service";
 import type { InboxResponse, InboxCounts } from "./crm-inbox-queries.service";
@@ -18,23 +17,24 @@ export class CrmInboxService {
     private readonly queries: CrmInboxQueriesService,
   ) {}
 
-  getInbox(orgId: string, userId: string, scope: DataScope): Promise<InboxResponse> {
-    return this.queries.getInbox(orgId, userId, scope);
+  getInbox(read: ScopedRead): Promise<InboxResponse> {
+    return this.queries.getInbox(read);
   }
 
-  getCounts(orgId: string, userId: string, scope: DataScope): Promise<InboxCounts> {
-    return this.queries.getCounts(orgId, userId, scope);
+  getCounts(read: ScopedRead): Promise<InboxCounts> {
+    return this.queries.getCounts(read);
   }
 
   async snoozeTask(
-    orgId: string,
+    read: ScopedRead,
     taskId: number,
-    userId: string,
     input: SnoozeTaskInput,
-    scope: DataScope,
   ): Promise<void> {
-    const scopeFilter = applyScope(scope, orgId, userId, { ownerColumn: tasks.assigneeId });
-    const where = and(eq(tasks.id, taskId), eq(tasks.orgId, orgId), scopeFilter);
+    const where = read.compose(
+      { tenant: tasks.orgId, scope: { columns: { ownerColumn: tasks.assigneeId } }, and: [eq(tasks.id, taskId)] },
+      ({ sql: w }) => w,
+      () => sql`false`,
+    );
 
     const [task] = await this.db
       .select({ id: tasks.id })
@@ -51,13 +51,14 @@ export class CrmInboxService {
   }
 
   async completeTask(
-    orgId: string,
+    read: ScopedRead,
     taskId: number,
-    userId: string,
-    scope: DataScope,
   ): Promise<void> {
-    const scopeFilter = applyScope(scope, orgId, userId, { ownerColumn: tasks.assigneeId });
-    const where = and(eq(tasks.id, taskId), eq(tasks.orgId, orgId), scopeFilter);
+    const where = read.compose(
+      { tenant: tasks.orgId, scope: { columns: { ownerColumn: tasks.assigneeId } }, and: [eq(tasks.id, taskId)] },
+      ({ sql: w }) => w,
+      () => sql`false`,
+    );
 
     const [task] = await this.db
       .select({ id: tasks.id })

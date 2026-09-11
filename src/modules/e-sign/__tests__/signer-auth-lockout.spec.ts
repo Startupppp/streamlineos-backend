@@ -54,6 +54,8 @@ function serviceWith(recipient: Partial<Record<string, unknown>>) {
   const db = {
     transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
     query: tx.query,
+    /** `authenticate` re-reads the row under `FOR UPDATE` before judging the code. */
+    select: jest.fn(() => ({ from: () => ({ where: () => ({ for: async () => [row] }) }) })),
     update: jest.fn(() => ({
       set: (payload: SetPayload) => {
         sets.push(payload);

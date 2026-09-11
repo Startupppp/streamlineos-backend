@@ -8,6 +8,7 @@ import { decodeOrgChartCursor } from "./org-chart-cursor";
 import { OrgStructureService } from "./org-structure.service";
 import { OrgChartService } from "./org-chart.service";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
+import { ScopedRead } from "../../access/scoped-read";
 
 function selectPage(rows: unknown[]) {
   const chain = {
@@ -89,7 +90,7 @@ describe("OrgStructureService organization chart", () => {
     const scopeSpy = jest.spyOn(applyScopeModule, "applyScope");
     const service = await createService(db);
 
-    const result = await service.getOrgChart("org-1", "actor-1", "team", {
+    const result = await service.getOrgChart(ScopedRead.of("org-1", "actor-1", "team"), {
       limit: 2,
     });
 
@@ -116,7 +117,7 @@ describe("OrgStructureService organization chart", () => {
     const scopeSpy = jest.spyOn(applyScopeModule, "applyScope");
     const service = await createService(db);
 
-    await service.getOrgChart("org-1", "actor-1", "own", {
+    await service.getOrgChart(ScopedRead.of("org-1", "actor-1", "own"), {
       parentId: "manager-1",
       limit: 20,
     });

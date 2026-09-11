@@ -14,7 +14,7 @@ export const updateEventPolicySchema = z.object({
   dedupeWindowSeconds: z.number().int().min(0).optional(),
   rateLimitWindowSeconds: z.number().int().min(0).optional(),
   rateLimitMax: z.number().int().min(0).optional(),
-});
+}).strict();
 
 export const emitEventSchema = z.object({
   eventKey: z.string().min(1),
@@ -28,7 +28,7 @@ export const emitEventSchema = z.object({
   priority: z.enum(PRIORITIES).optional(),
   variables: z.record(z.string(), z.unknown()).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
-});
+}).strict();
 
 export type UpdateEventPolicyInput = z.infer<typeof updateEventPolicySchema>;
 export type EmitEventInput = z.infer<typeof emitEventSchema>;

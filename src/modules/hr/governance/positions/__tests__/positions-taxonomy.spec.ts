@@ -215,9 +215,16 @@ describe("PositionsTaxonomyService.retireStatus", () => {
             }),
           };
         }
+        // PRD-C073: "is more than one status still active?" is answered by a bounded
+        // limit-2 read, not by counting every active status in the org. The double
+        // therefore returns ROWS, capped by the limit the service asks for.
         return {
           from: jest.fn().mockReturnValue({
-            where: jest.fn().mockResolvedValue([{ cnt: activeCount }]),
+            where: jest.fn().mockReturnValue({
+              limit: jest.fn().mockImplementation(async (n: number) =>
+                Array.from({ length: Math.min(activeCount, n) }, () => ({ one: 1 })),
+              ),
+            }),
           }),
         };
       }),
@@ -291,7 +298,9 @@ describe("tenant isolation (code-level guarantee)", () => {
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
-            orderBy: jest.fn().mockResolvedValue([]),
+            orderBy: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue([]),
+            }),
           }),
         }),
       }),

@@ -35,16 +35,15 @@ import {
 } from "../../db/schema";
 import type { BulkUpdateUsersInput, ImportUsersRow } from "./dto/users.schemas";
 import { UsersService } from "./users.service";
-import { syncStructuralRoleAssignment } from "../../common/rbac/sync-structural-role";
 import {
   assertMayGrantRole,
   assertMayManageOrganizationMembership,
 } from "../../common/rbac/assert-may-grant-role";
 import { assertNoOwnerAmongTargets } from "../../common/rbac/assert-target-not-owner";
-import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
+import { withMembershipMutations } from "../../common/org/membership-mutations";
 import { UserOperationsReporter } from "./user-operations.reporter";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
-import { syncCanonicalReportingLine } from "../../common/hr/sync-canonical-reporting-line";
+import { syncCanonicalReportingLines } from "../../common/hr/sync-canonical-reporting-line";
 
 @Injectable()
 export class UserOpsService {
@@ -153,7 +152,7 @@ export class UserOpsService {
 
     if (role) await this.assertMayGrantRole(orgId, actor, role);
 
-    const scopedIds = await this.db.transaction(async (tx) => {
+    const scopedIds = await withMembershipMutations(this.cache, (membership) => this.db.transaction(async (tx) => {
       if (managerUserId) {
         const manager = await tx.query.organizationMembers.findFirst({
           where: and(
@@ -178,9 +177,7 @@ export class UserOpsService {
           inArray(organizationMembers.userId, userIds),
         ),
       );
-      const tenantUserIds = memberRows.map(
-        (membership) => membership.userId,
-      );
+      const tenantUserIds = memberRows.map((row) => row.userId);
 
       if (tenantUserIds.length === 0) return [];
 
@@ -226,9 +223,14 @@ export class UserOpsService {
 
       if (managerUserId !== undefined) {
         const today = new Date().toISOString().slice(0, 10);
-        for (const memberId of tenantUserIds) {
-          await syncCanonicalReportingLine(tx, orgId, memberId, managerUserId, today, actorUserId);
-        }
+        await syncCanonicalReportingLines(
+          tx,
+          orgId,
+          tenantUserIds,
+          managerUserId,
+          today,
+          actorUserId,
+        );
       }
 
       const unitMoves: Array<{ kind: OrgUnitKind; unitId: string | null }> = [];
@@ -240,81 +242,62 @@ export class UserOpsService {
         unitMoves.push({ kind: "TEAM", unitId: teamId ?? null });
 
       if (unitMoves.length > 0) {
-        for (const { kind, unitId } of unitMoves) {
-          const memberRows = await tx
-            .select({ id: organizationMembers.id, userId: organizationMembers.userId })
-            .from(organizationMembers)
+        const memberRows = await tx
+          .select({ id: organizationMembers.id })
+          .from(organizationMembers)
+          .where(
+            and(
+              eq(organizationMembers.orgId, orgId),
+              inArray(organizationMembers.userId, tenantUserIds),
+            ),
+          );
+        const membershipIds = memberRows.map((row) => row.id);
+
+        if (membershipIds.length > 0) {
+          const movedKinds = unitMoves.map((move) => move.kind);
+          const existing = await tx
+            .select({ id: orgUnitMembers.id })
+            .from(orgUnitMembers)
+            .innerJoin(orgUnits, eq(orgUnits.id, orgUnitMembers.orgUnitId))
             .where(
               and(
-                eq(organizationMembers.orgId, orgId),
-                inArray(organizationMembers.userId, tenantUserIds),
+                eq(orgUnitMembers.orgId, orgId),
+                inArray(orgUnitMembers.membershipId, membershipIds),
+                inArray(orgUnits.kind, movedKinds),
               ),
             );
-          const membershipIds = memberRows.map((m) => m.id);
-
-          if (membershipIds.length > 0) {
-            const existing = await tx
-              .select({ id: orgUnitMembers.id })
-              .from(orgUnitMembers)
-              .innerJoin(orgUnits, eq(orgUnits.id, orgUnitMembers.orgUnitId))
-              .where(
-                and(
-                  eq(orgUnitMembers.orgId, orgId),
-                  inArray(orgUnitMembers.membershipId, membershipIds),
-                  eq(orgUnits.kind, kind),
-                ),
-              );
-            if (existing.length > 0) {
-              await tx
-                .delete(orgUnitMembers)
-                .where(inArray(orgUnitMembers.id, existing.map((row) => row.id)));
-            }
+          if (existing.length > 0) {
+            await tx
+              .delete(orgUnitMembers)
+              .where(inArray(orgUnitMembers.id, existing.map((row) => row.id)));
           }
 
-          if (unitId !== null && membershipIds.length > 0) {
-            await tx
-              .insert(orgUnitMembers)
-              .values(memberRows.map((m) => ({
-                id: randomUUID(),
-                orgId,
-                orgUnitId: unitId,
-                membershipId: m.id,
-                role: "member",
-              })))
-              .onConflictDoNothing();
+          const additions = unitMoves.flatMap(({ unitId }) =>
+            unitId === null
+              ? []
+              : membershipIds.map((membershipId) => ({
+                  id: randomUUID(),
+                  orgId,
+                  orgUnitId: unitId,
+                  membershipId,
+                  role: "member",
+                })),
+          );
+          if (additions.length > 0) {
+            await tx.insert(orgUnitMembers).values(additions).onConflictDoNothing();
           }
         }
       }
 
       if (role) {
         await assertNoOwnerAmongTargets(tx, orgId, tenantUserIds);
-        const rows = await tx
-          .update(organizationMembers)
-          .set({ role })
-          .where(
-            and(
-              eq(organizationMembers.orgId, orgId),
-              inArray(organizationMembers.userId, tenantUserIds),
-            ),
-          )
-          .returning({ id: organizationMembers.id });
-        for (const row of rows) {
-          await syncStructuralRoleAssignment(tx, orgId, row.id, role);
-        }
+        await membership.changeRoles(tx, { orgId, userIds: tenantUserIds, role });
       }
 
       return tenantUserIds;
-    });
+    }));
 
     if (scopedIds.length === 0) return { success: true, updated: 0 };
-
-    if (role) {
-      await Promise.all(
-        scopedIds.map((memberUserId) =>
-          bustMembershipStatusCache(this.cache, memberUserId, orgId),
-        ),
-      );
-    }
 
     this.audit.log({
       action: "user.bulk_updated",

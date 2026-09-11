@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
-import { and, desc, eq, ilike, isNull, sql } from "drizzle-orm";
+import { and, count, desc, eq, ilike, isNull, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { hrAutomationRules, hrAutomationRuns } from "../../../db/schema/hr/automation-engine";
@@ -16,6 +16,11 @@ import type { HrAutomationEvent } from "./hr-automation-events";
 // so HR automation webhooks silently never dispatch.
 import { HrWebhooksService } from "./hr-webhooks.service";
 import { evaluateNormalizedCondition, evaluateNormalizedConditions, type NormalizedCondition } from "../../automation/shared-condition-evaluator";
+import { boundHrReadLimit } from "../hr-read-limits";
+import { buildListResponse } from "../../../common/pagination/pagination";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 const MAX_DEPTH = 3;
 const COOLDOWN_MS = 5_000;
@@ -73,6 +78,7 @@ export class HrAutomationEngineService {
         isNull(hrAutomationRules.deletedAt),
       ),
       columns: { id: true, conditions: true, actions: true, webhookSecret: true },
+      limit: 100,
     });
 
     if (rules.length === 0) return;
@@ -201,9 +207,8 @@ export class HrAutomationEngineService {
     };
   }
 
-  async listRules(orgId: string, params: { search?: string; triggerEvent?: string; isEnabled?: boolean; page: number; limit: number }) {
-    const { page, limit } = params;
-    const offset = (page - 1) * limit;
+  async listRules(orgId: string, params: { search?: string; triggerEvent?: string; isEnabled?: boolean; limit: number }) {
+    const limit = boundHrReadLimit(params.limit);
 
     const baseWhere = and(
       eq(hrAutomationRules.orgId, orgId),
@@ -213,12 +218,16 @@ export class HrAutomationEngineService {
       params.search ? ilike(hrAutomationRules.name, `${params.search}%`) : undefined,
     );
 
-    return this.db.query.hrAutomationRules.findMany({
-      where: baseWhere,
-      orderBy: [desc(hrAutomationRules.createdAt)],
-      limit,
-      offset,
-    });
+    const [rows, [totalRow]] = await Promise.all([
+      this.db.query.hrAutomationRules.findMany({
+        where: baseWhere,
+        orderBy: [desc(hrAutomationRules.createdAt)],
+        limit,
+      }),
+      this.db.select({ total: count() }).from(hrAutomationRules).where(baseWhere),
+    ]);
+
+    return buildListResponse(rows, Number(totalRow?.total ?? 0), { page: 1, pageSize: limit });
   }
 
   async getRule(orgId: string, ruleId: number) {
@@ -236,15 +245,15 @@ export class HrAutomationEngineService {
         name: input.name,
         description: input.description ?? null,
         triggerEvent: input.triggerEvent,
-        conditions: input.conditions as HrAutomationCondition[],
-        actions: input.actions as HrAutomationAction[],
+        conditions: input.conditions,
+        actions: input.actions,
         isEnabled: input.isEnabled,
         webhookSecret: null,
         createdBy: userId,
       }).returning();
       return rule;
     } catch (error: unknown) {
-      if (error instanceof Error && error.message.includes("23505")) {
+      if (isUniqueViolation(error)) {
         throw new ConflictException(`An automation rule named "${input.name}" already exists`);
       }
       throw error;
@@ -258,8 +267,8 @@ export class HrAutomationEngineService {
           ...(input.name !== undefined ? { name: input.name } : {}),
           ...(input.description !== undefined ? { description: input.description } : {}),
           ...(input.triggerEvent !== undefined ? { triggerEvent: input.triggerEvent } : {}),
-          ...(input.conditions !== undefined ? { conditions: input.conditions as HrAutomationCondition[] } : {}),
-          ...(input.actions !== undefined ? { actions: input.actions as HrAutomationAction[] } : {}),
+          ...(input.conditions !== undefined ? { conditions: input.conditions } : {}),
+          ...(input.actions !== undefined ? { actions: input.actions } : {}),
           ...(input.isEnabled !== undefined ? { isEnabled: input.isEnabled } : {}),
           updatedAt: new Date(),
         })
@@ -269,7 +278,7 @@ export class HrAutomationEngineService {
       return updated;
     } catch (error: unknown) {
       if (error instanceof ConflictException || error instanceof NotFoundException) throw error;
-      if (error instanceof Error && error.message.includes("23505")) {
+      if (isUniqueViolation(error)) {
         throw new ConflictException("An automation rule with that name already exists");
       }
       throw error;
@@ -296,30 +305,36 @@ export class HrAutomationEngineService {
 
   async listRuns(orgId: string, params: { ruleId?: number } & ListRunsInput) {
     const { ruleId } = params;
+    if (ruleId !== undefined) {
+      const rule = await this.db.query.hrAutomationRules.findFirst({
+        columns: { id: true },
+        where: and(
+          eq(hrAutomationRules.orgId, orgId),
+          eq(hrAutomationRules.id, ruleId),
+          isNull(hrAutomationRules.deletedAt),
+        ),
+      });
+      if (!rule) throw new NotFoundException("Automation rule not found");
+    }
     const limit = Math.min(params.limit, 100);
-    const offset = (params.page - 1) * limit;
-    const where = ruleId
-      ? and(eq(hrAutomationRuns.orgId, orgId), eq(hrAutomationRuns.ruleId, ruleId))
-      : eq(hrAutomationRuns.orgId, orgId);
+    const conditions = [eq(hrAutomationRuns.orgId, orgId)];
+    if (ruleId !== undefined) conditions.push(eq(hrAutomationRuns.ruleId, ruleId));
 
-    const [data, countRows] = await Promise.all([
-      this.db.query.hrAutomationRuns.findMany({
-        where,
-        orderBy: [desc(hrAutomationRuns.createdAt)],
-        limit,
-        offset,
-      }),
-      this.db
-        .select({ total: sql<number>`count(*)::int` })
-        .from(hrAutomationRuns)
-        .where(where),
-    ]);
+    const position = decodeCursor(params.cursor);
+    if (position)
+      conditions.push(keysetBeforeId(hrAutomationRuns.createdAt, hrAutomationRuns.id, position));
 
-    const total = countRows[0]?.total ?? 0;
+    const rows = await this.db.query.hrAutomationRuns.findMany({
+      where: and(...conditions),
+      orderBy: [desc(hrAutomationRuns.createdAt), desc(hrAutomationRuns.id)],
+      limit: limit + 1,
+    });
 
-    return {
-      data,
-      pagination: { page: params.page, limit, total, totalPages: Math.ceil(total / limit) },
-    };
+    const page = buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
+
+    return { data: page.data, pagination: page.pagination };
   }
 }

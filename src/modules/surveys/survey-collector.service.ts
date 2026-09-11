@@ -4,6 +4,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { surveyCollectors } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { assertSurveyInOrg } from "./survey-tenant";
 import { withPublicToken } from "../../common/tenant/with-public-token";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import type { CreateCollectorInput, PatchCollectorInput } from "./dto/survey-collectors.schemas";
@@ -12,7 +13,8 @@ import type { CreateCollectorInput, PatchCollectorInput } from "./dto/survey-col
 export class SurveyCollectorService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  list(orgId: string, surveyId: number) {
+  async list(orgId: string, surveyId: number) {
+    await assertSurveyInOrg(this.db, orgId, surveyId);
     return this.db.query.surveyCollectors.findMany({
       where: and(eq(surveyCollectors.orgId, orgId), eq(surveyCollectors.surveyId, surveyId)),
       orderBy: [desc(surveyCollectors.createdAt)],
@@ -21,6 +23,14 @@ export class SurveyCollectorService {
   }
 
   async create(orgId: string, surveyId: number, input: CreateCollectorInput) {
+    /**
+     * The survey is resolved under the caller's organisation before a collector is inserted, which
+     * `list` on the same service already did and `create` did not. `survey_collectors` carries
+     * `fk_survey_collectors_survey_id_org (org_id, survey_id) -> survey_forms(org_id, id)`, so
+     * another organisation's survey id could not land — the database refused it with a 23503 that
+     * nothing caught and the route answered **500**. Measured live by the cross-tenant sweep.
+     */
+    await assertSurveyInOrg(this.db, orgId, surveyId);
     const [collector] = await this.db
       .insert(surveyCollectors)
       .values({

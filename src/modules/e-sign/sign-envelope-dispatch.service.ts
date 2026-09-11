@@ -19,6 +19,7 @@ import { SignTokensService } from "./sign-tokens.service";
 import { SignSettingsService } from "./sign-settings.service";
 import { SignNotificationsService } from "./sign-notifications.service";
 import { SignRecipientsService } from "./sign-recipients.service";
+import { systemEnvelopeScope } from "./sign-envelope-scope";
 import { SignIntegrationsService } from "./sign-integrations.service";
 import {
   SignEnvelopeValidationService,
@@ -129,7 +130,7 @@ export class SignEnvelopeDispatchService {
       envelope.expiresAt ?? addDays(new Date(), orgSettings.defaultExpirationDays);
     const finalizationKey = randomUUID();
 
-    const recipientRows = await this.recipients.listForEnvelope(orgId, envelopeId);
+    const recipientRows = await this.recipients.listForEnvelope(systemEnvelopeScope(orgId), null, envelopeId);
     const signingRecipients = recipientRows.filter((r) => isSigningType(r.recipientType));
     const inviteNowIds = new Set(
       nextEligibleRecipientIds(
@@ -168,7 +169,7 @@ export class SignEnvelopeDispatchService {
 
     const updated = await this.db.transaction(async (tx) => {
       for (const plan of sendPlans) {
-        await (tx as Db)
+        await tx
           .update(signRecipients)
           .set({
             status: plan.shouldInviteNow ? "invited" : "pending",
@@ -178,7 +179,7 @@ export class SignEnvelopeDispatchService {
           })
           .where(eq(signRecipients.id, plan.id));
       }
-      const [row] = await (tx as Db)
+      const [row] = await tx
         .update(signEnvelopes)
         .set({ status: "sent", sentAt: new Date(), expiresAt, finalizationKey })
         .where(eq(signEnvelopes.id, envelopeId))
@@ -255,7 +256,7 @@ export class SignEnvelopeDispatchService {
     }
 
     const senderNameStr = await this.senderName(orgId, actor.membershipId);
-    const recipientRows = await this.recipients.listForEnvelope(orgId, envelopeId);
+    const recipientRows = await this.recipients.listForEnvelope(systemEnvelopeScope(orgId), null, envelopeId);
     const invitations: InvitationPlan[] = [];
     for (const r of recipientRows) {
       if (!isSigningType(r.recipientType)) continue;
@@ -312,7 +313,7 @@ export class SignEnvelopeDispatchService {
     envelopeId: number,
   ): Promise<{ status: SignEnvelopeStatus; becameCompleted: boolean }> {
     const envelope = await this.findEnvelope(orgId, envelopeId);
-    const recipientRows = await this.recipients.listForEnvelope(orgId, envelopeId);
+    const recipientRows = await this.recipients.listForEnvelope(systemEnvelopeScope(orgId), null, envelopeId);
     const signingRecipients = recipientRows.filter((r) => isSigningType(r.recipientType));
 
     const newStatus = computeEnvelopeStatusFromRecipients(
@@ -331,7 +332,7 @@ export class SignEnvelopeDispatchService {
       if (newStatus === "declined") patch.declinedAt = new Date();
 
       await this.db.transaction(async (tx) => {
-        await (tx as Db)
+        await tx
           .update(signEnvelopes)
           .set(patch)
           .where(eq(signEnvelopes.id, envelopeId));
@@ -364,7 +365,7 @@ export class SignEnvelopeDispatchService {
 
       if (newStatus === "declined") {
         this.integrations.emitEnvelopeEvent(
-          { ...envelope, ...patch } as typeof signEnvelopes.$inferSelect,
+          { ...envelope, status: newStatus, declinedAt: patch.declinedAt ?? envelope.declinedAt },
           "declined",
         );
       }

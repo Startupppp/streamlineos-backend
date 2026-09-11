@@ -20,6 +20,7 @@ import {
   recordInboundParticipants,
   shadowScoreInbound,
 } from "./lib/ingress-filing";
+import { inboundEventSchema } from "./dto/inbound-event.schemas";
 
 /**
  * What happens after a communication arrives.
@@ -217,6 +218,38 @@ export class InboundIngressWorkflow implements OnModuleInit {
       .limit(1);
 
     if (!row) throw new Error(`inbound: receipt ${inboundEventId} not found`);
-    return row.payload as unknown as InboundCommunicationEvent;
+
+    /**
+     * Parsed, not cast.
+     *
+     * `payload` is `jsonb`, and this is the read half of a round-trip whose write half is
+     * `inbound-ingress.service.ts`. A cast over a stored shape cannot fail: a row written
+     * by an earlier release deserialises into a LIE rather than an error, and everything
+     * below this line — the sender, the identifier kind, the participants filed against a
+     * party — is then computed from fields that may not be there. The lesson is one file
+     * away, at `adapters/mail-to-inbound-event.ts`: "a message somebody marked private is
+     * filed into the CRM with nobody the wiser — which is exactly what a `as unknown as`
+     * cast over a provider type that has no labels at all used to do here."
+     *
+     * `inboundEventSchema` is the same contract the HTTP boundary already enforces on the
+     * write (`inbound-ingress.controller.ts:29`), so the two halves now agree instead of
+     * one asserting what the other never checked.
+     *
+     * A mismatch RAISES. `loadEvent` runs inside a durable workflow, so the run retries
+     * and then dead-letters carrying the reason, which is something an operator can see
+     * and act on — where filing the communication on a guess is not. Only the issue paths
+     * and codes are reported: a Zod issue can echo the offending value, and a participant
+     * address is personal data that does not belong in a log line.
+     */
+    const parsed = inboundEventSchema.safeParse(row.payload);
+    if (!parsed.success) {
+      const where = parsed.error.issues
+        .map((issue) => `${issue.path.join(".") || "<root>"}:${issue.code}`)
+        .join(", ");
+      throw new Error(
+        `inbound: receipt ${inboundEventId} payload does not match the inbound-event contract (${where})`,
+      );
+    }
+    return parsed.data;
   }
 }

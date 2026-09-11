@@ -1,5 +1,6 @@
+import { organizationWideCelebrationsRead } from "../directory/celebrations-scope";
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { and, gte, lte, eq } from "drizzle-orm";
+import { and, asc, gt, gte, lte, eq } from "drizzle-orm";
 import {
   leaveRequests,
   leaveTypes,
@@ -15,6 +16,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { HrCalendarInput } from "./dto/hr-calendar.schemas";
 import { CelebrationsService } from "../directory/celebrations.service";
 import { AccessService } from "../../access/access.service";
+import { HR_SCAN_MAX_PAGES, HR_SCAN_PAGE } from "../hr-read-limits";
 
 export type CalendarEventType =
   | "HOLIDAY"
@@ -43,6 +45,48 @@ export class HrCalendarService {
     private readonly celebrations: CelebrationsService,
     private readonly access: AccessService,
   ) {}
+
+  /**
+   * A calendar window shows every approved leave in it or it is wrong, so this walks the
+   * window in capped keyset pages on the primary key instead of truncating at one big read.
+   */
+  private approvedLeavePage(orgId: string, fromStr: string, toStr: string, afterId: number) {
+    return this.db
+      .select({
+        id: leaveRequests.id,
+        userId: leaveRequests.userId,
+        startDate: leaveRequests.startDate,
+        endDate: leaveRequests.endDate,
+        typeName: leaveTypes.name,
+        userName: users.name,
+      })
+      .from(leaveRequests)
+      .leftJoin(leaveTypes, eq(leaveRequests.leaveTypeId, leaveTypes.id))
+      .leftJoin(users, eq(leaveRequests.userId, users.id))
+      .where(
+        and(
+          eq(leaveRequests.orgId, orgId),
+          eq(leaveRequests.status, "APPROVED"),
+          lte(leaveRequests.startDate, toStr),
+          gte(leaveRequests.endDate, fromStr),
+          gt(leaveRequests.id, afterId),
+        ),
+      )
+      .orderBy(asc(leaveRequests.id))
+      .limit(HR_SCAN_PAGE);
+  }
+
+  private async scanApprovedLeave(orgId: string, fromStr: string, toStr: string) {
+    const rows: Awaited<ReturnType<HrCalendarService["approvedLeavePage"]>> = [];
+    let afterId = 0;
+    for (let page = 0; page < HR_SCAN_MAX_PAGES; page++) {
+      const chunk = await this.approvedLeavePage(orgId, fromStr, toStr, afterId);
+      rows.push(...chunk);
+      if (chunk.length < HR_SCAN_PAGE) break;
+      afterId = chunk[chunk.length - 1].id;
+    }
+    return rows;
+  }
 
   async getEvents(user: CurrentUserContext, input: HrCalendarInput): Promise<CalendarEvent[]> {
     const from = new Date(input.from);
@@ -90,46 +134,25 @@ export class HrCalendarService {
 
     if (types.includes("LEAVE")) {
       fetches.push(
-        this.db
-          .select({
-            id: leaveRequests.id,
-            userId: leaveRequests.userId,
-            startDate: leaveRequests.startDate,
-            endDate: leaveRequests.endDate,
-            typeName: leaveTypes.name,
-            userName: users.name,
-          })
-          .from(leaveRequests)
-          .leftJoin(leaveTypes, eq(leaveRequests.leaveTypeId, leaveTypes.id))
-          .leftJoin(users, eq(leaveRequests.userId, users.id))
-          .where(
-            and(
-              eq(leaveRequests.orgId, user.orgId),
-              eq(leaveRequests.status, "APPROVED"),
-              lte(leaveRequests.startDate, toStr),
-              gte(leaveRequests.endDate, fromStr),
-            ),
-          )
-          .limit(500)
-          .then((rows) => {
-            for (const r of rows) {
-              events.push({
-                id: `leave-${r.id}`,
-                type: "LEAVE",
-                title: `${r.userName ?? "Employee"} – ${r.typeName ?? "Leave"}`,
-                date: r.startDate,
-                endDate: r.endDate,
-                meta: { userId: r.userId },
-              });
-            }
-          }),
+        this.scanApprovedLeave(user.orgId, fromStr, toStr).then((rows) => {
+          for (const r of rows) {
+            events.push({
+              id: `leave-${r.id}`,
+              type: "LEAVE",
+              title: `${r.userName ?? "Employee"} – ${r.typeName ?? "Leave"}`,
+              date: r.startDate,
+              endDate: r.endDate,
+              meta: { userId: r.userId },
+            });
+          }
+        }),
       );
     }
 
     if (types.includes("BIRTHDAY") || types.includes("ANNIVERSARY")) {
       fetches.push(
         this.celebrations
-          .getAnniversaryFeed(user.orgId, user.userId, "all")
+          .getAnniversaryFeed(organizationWideCelebrationsRead(user))
           .then((feed) => {
           for (const item of feed) {
             if (

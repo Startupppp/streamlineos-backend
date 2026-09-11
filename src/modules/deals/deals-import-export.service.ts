@@ -10,6 +10,7 @@ import { logSideEffectFailure } from "../../common/logger/side-effect";
 import { toCsv } from "../inventory/import-export/csv.util";
 import { DealsCrudService } from "./deals-crud.service";
 import type { BulkImportDealsInput } from "./dto/deals.schemas";
+import type { ScopedRead } from "../access/scoped-read";
 
 @Injectable()
 export class DealsImportExportService {
@@ -88,8 +89,27 @@ export class DealsImportExportService {
     return { created, failed };
   }
 
-  async exportCsv(orgId: string): Promise<{ csv: string; truncated: boolean; rowCount: number }> {
-    const rows = await this.db
+  async exportCsv(read: ScopedRead): Promise<{ csv: string; truncated: boolean; rowCount: number }> {
+    const headers = [
+      "id",
+      "name",
+      "value",
+      "stage",
+      "probability",
+      "contactEmail",
+      "contactPerson",
+      "expectedCloseDate",
+      "assignee",
+      "notes",
+      "createdAt",
+    ];
+    const rows = await read.read(
+      {
+        tenant: deals.orgId,
+        scope: { columns: { ownerColumn: deals.assignedToId } },
+        and: [isNull(deals.deletedAt)],
+      },
+      ({ sql: where }) => this.db
       .select({
         id: deals.id,
         name: deals.name,
@@ -105,24 +125,13 @@ export class DealsImportExportService {
       })
       .from(deals)
       .leftJoin(users, eq(deals.assignedToId, users.id))
-      .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt)))
+      .where(where)
       .orderBy(desc(deals.updatedAt))
-      .limit(EXPORT_ROW_CAP);
+      .limit(EXPORT_ROW_CAP),
+      () => [],
+    );
 
     const truncated = rows.length === EXPORT_ROW_CAP;
-    const headers = [
-      "id",
-      "name",
-      "value",
-      "stage",
-      "probability",
-      "contactEmail",
-      "contactPerson",
-      "expectedCloseDate",
-      "assignee",
-      "notes",
-      "createdAt",
-    ];
     return {
       csv: toCsv(
         headers,

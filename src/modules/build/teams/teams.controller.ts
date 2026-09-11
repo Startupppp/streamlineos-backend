@@ -38,6 +38,16 @@ import {
 } from "./dto/teams.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  teamRowSchema,
+  teamPageSchema,
+  teamDetailSchema,
+  teamMemberRowSchema,
+  teamMemberPageSchema,
+  teamProjectItemSchema,
+  teamProjectRowSchema,
+} from "./dto/teams-response.schemas";
 
 const teamIdParams = z.object({ teamId: z.coerce.number().int().positive() }).strict();
 const teamIdmemberUserIdParams = z.object({ teamId: z.coerce.number().int().positive(), memberUserId: z.string().min(1) }).strict();
@@ -56,6 +66,7 @@ export class TeamsController {
 
   @Get()
   @RequirePermission("build:teams:view")
+  @ResponseSchema(teamPageSchema)
   @Validate({ query: listTeamsQuerySchema })
   listTeams(
     @Query() query: ListTeamsQuery,
@@ -66,6 +77,7 @@ export class TeamsController {
 
   @Get(":teamId")
   @RequirePermission("build:teams:view")
+  @ResponseSchema(teamDetailSchema)
   @Validate({ params: teamIdParams })
   getTeam(
     @Param("teamId", ParseIntPipe) teamId: number,
@@ -77,6 +89,7 @@ export class TeamsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:teams:create")
+  @ResponseSchema(teamRowSchema)
   @Validate({ body: createTeamSchema })
   createTeam(
     @Body() body: CreateTeamInput,
@@ -87,6 +100,7 @@ export class TeamsController {
 
   @Patch(":teamId")
   @RequirePermission("build:teams:update")
+  @ResponseSchema(teamRowSchema)
   @Validate({ params: teamIdParams, body: updateTeamSchema })
   updateTeam(
     @Param("teamId", ParseIntPipe) teamId: number,
@@ -98,6 +112,7 @@ export class TeamsController {
 
   @Delete(":teamId")
   @HttpCode(204)
+  @NoContentResponse()
   @RequirePermission("build:teams:delete")
   @Validate({ params: teamIdParams })
   deleteTeam(
@@ -109,6 +124,7 @@ export class TeamsController {
 
   @Get(":teamId/members")
   @RequirePermission("build:teams:view")
+  @ResponseSchema(teamMemberPageSchema)
   @Validate({ params: teamIdParams, query: listTeamMembersQuerySchema })
   listTeamMembers(
     @Param("teamId", ParseIntPipe) teamId: number,
@@ -121,6 +137,7 @@ export class TeamsController {
   @Post(":teamId/members")
   @HttpCode(201)
   @RequirePermission("build:teams:manage")
+  @ResponseSchema(teamMemberRowSchema)
   @Validate({ params: teamIdParams, body: addTeamMemberSchema })
   addMember(
     @Param("teamId", ParseIntPipe) teamId: number,
@@ -132,6 +149,7 @@ export class TeamsController {
 
   @Patch(":teamId/members/:memberUserId")
   @RequirePermission("build:teams:manage")
+  @ResponseSchema(teamMemberRowSchema)
   @Validate({ params: teamIdmemberUserIdParams, body: updateTeamMemberRoleSchema })
   updateMemberRole(
     @Param("teamId", ParseIntPipe) teamId: number,
@@ -150,6 +168,7 @@ export class TeamsController {
 
   @Delete(":teamId/members/:memberId")
   @HttpCode(204)
+  @NoContentResponse()
   @RequirePermission("build:teams:manage")
   @Validate({ params: teamIdmemberIdParams })
   removeMember(
@@ -162,6 +181,7 @@ export class TeamsController {
 
   @Get(":teamId/projects")
   @RequirePermission("build:teams:view")
+  @ResponseSchema(z.array(teamProjectItemSchema))
   @Validate({ params: teamIdParams })
   listTeamProjects(
     @Param("teamId", ParseIntPipe) teamId: number,
@@ -173,6 +193,7 @@ export class TeamsController {
   @Post(":teamId/projects")
   @HttpCode(201)
   @RequirePermission("build:teams:manage")
+  @ResponseSchema(teamProjectRowSchema)
   @Validate({ params: teamIdParams, body: addTeamProjectSchema })
   addProject(
     @Param("teamId", ParseIntPipe) teamId: number,
@@ -184,6 +205,7 @@ export class TeamsController {
 
   @Delete(":teamId/projects/:projectId")
   @HttpCode(204)
+  @NoContentResponse()
   @RequirePermission("build:teams:manage")
   @Validate({ params: teamIdprojectIdParams })
   removeProject(

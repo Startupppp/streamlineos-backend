@@ -83,6 +83,8 @@ function buildHarness(authMethod: Method) {
       signRecipients: { findFirst: async () => ({ ...recipient }) },
       signEnvelopes: { findFirst: async () => envelope },
     },
+    /** `authenticate` re-reads the row under `FOR UPDATE`; the same fresh copy. */
+    select: () => ({ from: () => ({ where: () => ({ for: async () => [{ ...recipient }] }) }) }),
     /** Writes land back on `recipient`, so the counter accumulates across calls. */
     update: () => ({
       set: (patch: Record<string, unknown>) => ({

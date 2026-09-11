@@ -30,6 +30,21 @@ function makeThenable(resolved: unknown[]): jest.Mock {
   return fn;
 }
 
+/**
+ * `select(...)` answers two different queries in `list`: the envelope's COUNT over
+ * `okr_goals`, and the per-goal key-result roll-up. Only the first projects a bare
+ * `total`, which is how they are told apart here.
+ */
+function makeSelect(total: number): jest.Mock {
+  const countChain = makeThenable([{ total }]);
+  const rollupChain = makeThenable([]);
+  return jest.fn().mockImplementation((projection?: Record<string, unknown>) =>
+    projection !== undefined && Object.keys(projection).length === 1 && "total" in projection
+      ? countChain()
+      : rollupChain(),
+  );
+}
+
 function makeDb(goalRows: unknown[]): Db {
   return {
     query: {
@@ -40,7 +55,7 @@ function makeDb(goalRows: unknown[]): Db {
       okrKeyResults: { findMany: jest.fn().mockResolvedValue([]) },
       okrUpdates: { findMany: jest.fn().mockResolvedValue([]) },
     },
-    select: makeThenable([]),
+    select: makeSelect(goalRows.length),
     transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({} as unknown)),
     insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }) }),
     update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }) }) }),
@@ -70,7 +85,8 @@ describe("GoalsService — cross-tenant isolation", () => {
     const db = makeDb([]);
     const svc = new GoalsService(db, makeAccessService(), new GoalLinksService(db));
     const result = await svc.list(userCtx(ATTACKER_ORG), { page: 1, limit: 20 });
-    expect(result).toHaveLength(0);
+    expect(result.items).toHaveLength(0);
+    expect(result.total).toBe(0);
   });
 
   it("returns rows for the owning org (same-tenant control)", async () => {
@@ -96,7 +112,8 @@ describe("GoalsService — cross-tenant isolation", () => {
     const db = makeDb([goalRow]);
     const svc = new GoalsService(db, makeAccessService(), new GoalLinksService(db));
     const result = await svc.list(userCtx(OWNER_ORG), { page: 1, limit: 20 });
-    expect(result).toHaveLength(1);
+    expect(result.items).toHaveLength(1);
+    expect(result.total).toBe(1);
   });
 
   it("returns null for a goal in another org (getGoal cross-tenant isolation)", async () => {

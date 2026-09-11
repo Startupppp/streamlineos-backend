@@ -1,5 +1,5 @@
-import { ForbiddenException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
-import { SQL, aliasedTable, and, count, desc, eq, ilike, inArray, ne, or, sql } from "drizzle-orm";
+import { BadRequestException, ForbiddenException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
+import { SQL, and, asc, count, desc, eq, gt, isNull, ne, or, sql } from "drizzle-orm";
 import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
 import {
   documentAuditLogs,
@@ -14,16 +14,22 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { AutomationService } from "../../automation/automation.service";
-import { applyScope } from "../../access/apply-scope";
-import type { DataScope } from "../../access/access.types";
+import { ScopedRead } from "../../access/scoped-read";
 import type {
   CreateOnboardingDocInput,
   ListOnboardingDocsQueryInput,
   OnboardingDocsSummaryQueryInput,
   ReviewOnboardingDocInput,
 } from "./dto/hr-lifecycle.schemas";
-
-const reviewerUsers = aliasedTable(users, "reviewer");
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
+import {
+  decodeOnboardingSummaryCursor,
+  dispatchOnboardingDocumentSubmittedEvent,
+  onboardingSearchCondition,
+  type OnboardingDocumentListRow,
+  reviewerUsers,
+} from "./onboarding-views-support";
 
 @Injectable()
 export class OnboardingViewsService {
@@ -32,12 +38,17 @@ export class OnboardingViewsService {
     private readonly automation: AutomationService,
   ) {}
 
-  async summary(orgId: string, query: OnboardingDocsSummaryQueryInput, scope: DataScope, actorUserId: string) {
+  async summary(read: ScopedRead, query: OnboardingDocsSummaryQueryInput) {
+    const orgId = read.orgId;
     const conditions: SQL[] = [
       eq(users.isActive, true),
-      applyScope(scope, orgId, actorUserId, { ownerColumn: users.id }),
+      read.compose(
+        { tenant: organizationMembers.orgId, scope: { columns: { ownerColumn: users.id } } },
+        ({ sql: where }) => where,
+        () => sql`false`,
+      ),
     ];
-    if (query.search) conditions.push(await this.onboardingSearchCondition(query.search));
+    if (query.search) conditions.push(await onboardingSearchCondition(this.db, query.search));
 
     const latestDocs = this.db
       .selectDistinctOn([onboardingDocuments.userId, onboardingDocuments.documentTypeId], {
@@ -101,9 +112,20 @@ export class OnboardingViewsService {
         then 'IN_PROGRESS'
       else 'PENDING'
     end`;
+    const unfilteredConditions = [...conditions];
     if (query.status) conditions.push(sql`${derivedStatus} = ${query.status}`);
-
-    const offset = (query.page - 1) * query.limit;
+    const rowConditions = [...conditions];
+    const cursorPosition = decodeOnboardingSummaryCursor(query.cursor);
+    if (cursorPosition) {
+      const cursorCondition = cursorPosition.name === null
+        ? and(isNull(users.name), gt(users.id, cursorPosition.userId))
+        : or(
+            gt(users.name, cursorPosition.name),
+            isNull(users.name),
+            and(eq(users.name, cursorPosition.name), gt(users.id, cursorPosition.userId)),
+          );
+      if (cursorCondition) rowConditions.push(cursorCondition);
+    }
 
     const [rows, [countRow]] = await Promise.all([
       this.db
@@ -128,10 +150,9 @@ export class OnboardingViewsService {
         .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .leftJoin(documentStats, eq(documentStats.userId, users.id))
         .innerJoin(mandatoryTotals, sql`true`)
-        .where(and(...conditions))
-        .orderBy(users.name)
-        .limit(query.limit)
-        .offset(offset),
+        .where(and(...rowConditions))
+        .orderBy(asc(users.name), asc(users.id))
+        .limit(query.limit + 1),
       this.db
         .select({ total: count() })
         .from(users)
@@ -146,123 +167,145 @@ export class OnboardingViewsService {
         .where(and(...conditions)),
     ]);
 
+    const statusRows = await this.db
+      .select({ status: derivedStatus, total: count() })
+      .from(users)
+      .innerJoin(
+        organizationMembers,
+        and(eq(organizationMembers.userId, users.id), eq(organizationMembers.orgId, orgId)),
+      )
+      .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+      .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+      .leftJoin(documentStats, eq(documentStats.userId, users.id))
+      .innerJoin(mandatoryTotals, sql`true`)
+      .where(and(...unfilteredConditions))
+      .groupBy(derivedStatus);
+
+    const statusCounts = { PENDING: 0, IN_PROGRESS: 0, APPROVED: 0 };
+    for (const row of statusRows) statusCounts[row.status] = row.total;
+
     const total = countRow?.total ?? 0;
+    const page = buildCursorPage(rows, query.limit, (row) => ({
+      sortValue: JSON.stringify(row.userName),
+      id: row.userId,
+    }));
 
     return {
-      data: rows,
+      data: page.data,
       pagination: {
-        page: query.page,
-        limit: query.limit,
+        ...page.pagination,
         total,
-        totalPages: Math.ceil(total / query.limit),
       },
+      statusCounts,
     };
   }
 
   async list(
-    orgId: string,
-    actorUserId: string,
+    read: ScopedRead,
     isAdmin: boolean,
     query: ListOnboardingDocsQueryInput,
-    scope: DataScope,
   ) {
-    const conditions: SQL[] = [eq(onboardingDocuments.orgId, orgId)];
+    const conditions: SQL<unknown>[] = [];
     if (isAdmin) {
-      conditions.push(applyScope(scope, orgId, actorUserId, { ownerColumn: onboardingDocuments.userId }));
-      if (query.userId) conditions.push(eq(onboardingDocuments.userId, query.userId));
+      conditions.push(
+        read.compose(
+          {
+            tenant: onboardingDocuments.orgId,
+            scope: { columns: { ownerColumn: onboardingDocuments.userId } },
+            and: query.userId ? [eq(onboardingDocuments.userId, query.userId)] : [],
+          },
+          ({ sql: where }) => where,
+          () => sql`false`,
+        ),
+      );
     } else {
-      conditions.push(eq(onboardingDocuments.userId, actorUserId));
+      conditions.push(eq(onboardingDocuments.orgId, read.orgId), eq(onboardingDocuments.userId, read.actorId));
     }
     if (query.status) conditions.push(eq(onboardingDocuments.status, query.status));
+    const position = decodeCursor(query.cursor);
+    if (query.cursor !== undefined && !position) {
+      throw new BadRequestException("Invalid pagination cursor");
+    }
+    if (position) {
+      conditions.push(
+        keysetBeforeId(
+          onboardingDocuments.createdAt,
+          onboardingDocuments.id,
+          position,
+        ),
+      );
+    }
 
-    const whereClause = and(...conditions);
-    const offset = (query.page - 1) * query.limit;
+    const rows: OnboardingDocumentListRow[] = await this.db
+      .select({
+        id: onboardingDocuments.id,
+        orgId: onboardingDocuments.orgId,
+        userId: onboardingDocuments.userId,
+        employeeName: users.name,
+        documentTypeId: onboardingDocuments.documentTypeId,
+        documentTypeName: documentTypes.name,
+        isMandatory: documentTypes.isMandatory,
+        hasFile: sql<boolean>`${onboardingDocuments.fileUrl} <> ''`,
+        fileName: onboardingDocuments.fileName,
+        fileSize: onboardingDocuments.fileSize,
+        mimeType: onboardingDocuments.mimeType,
+        version: onboardingDocuments.version,
+        status: onboardingDocuments.status,
+        reviewedBy: onboardingDocuments.reviewedBy,
+        reviewedAt: onboardingDocuments.reviewedAt,
+        remarks: onboardingDocuments.remarks,
+        createdAt: onboardingDocuments.createdAt,
+        updatedAt: onboardingDocuments.updatedAt,
+        reviewerName: reviewerUsers.name,
+      })
+      .from(onboardingDocuments)
+      .innerJoin(documentTypes, eq(onboardingDocuments.documentTypeId, documentTypes.id))
+      .innerJoin(users, eq(onboardingDocuments.userId, users.id))
+      .leftJoin(reviewerUsers, eq(onboardingDocuments.reviewedBy, reviewerUsers.id))
+      .where(sql.join(conditions, sql` AND `))
+      .orderBy(desc(onboardingDocuments.createdAt), desc(onboardingDocuments.id))
+      .limit(query.limit + 1);
 
-    const [rows, [countRow]] = await Promise.all([
-      this.db
-        .select({
-          id: onboardingDocuments.id,
-          orgId: onboardingDocuments.orgId,
-          userId: onboardingDocuments.userId,
-          employeeName: users.name,
-          documentTypeId: onboardingDocuments.documentTypeId,
-          documentTypeName: documentTypes.name,
-          isMandatory: documentTypes.isMandatory,
-          hasFile: sql<boolean>`${onboardingDocuments.fileUrl} <> ''`,
-          fileName: onboardingDocuments.fileName,
-          fileSize: onboardingDocuments.fileSize,
-          mimeType: onboardingDocuments.mimeType,
-          version: onboardingDocuments.version,
-          status: onboardingDocuments.status,
-          reviewedBy: onboardingDocuments.reviewedBy,
-          reviewedAt: onboardingDocuments.reviewedAt,
-          remarks: onboardingDocuments.remarks,
-          createdAt: onboardingDocuments.createdAt,
-          updatedAt: onboardingDocuments.updatedAt,
-          reviewerName: reviewerUsers.name,
-        })
-        .from(onboardingDocuments)
-        .innerJoin(documentTypes, eq(onboardingDocuments.documentTypeId, documentTypes.id))
-        .innerJoin(users, eq(onboardingDocuments.userId, users.id))
-        .leftJoin(reviewerUsers, eq(onboardingDocuments.reviewedBy, reviewerUsers.id))
-        .where(whereClause)
-        .orderBy(desc(onboardingDocuments.createdAt))
-        .limit(query.limit)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(onboardingDocuments)
-        .where(whereClause),
-    ]);
-
-    const total = countRow?.total ?? 0;
-
-    return {
-      data: rows,
-      pagination: {
-        page: query.page,
-        limit: query.limit,
-        total,
-        totalPages: Math.ceil(total / query.limit),
-      },
-    };
+    return buildCursorPage(rows, query.limit, (document) => ({
+      sortValue: document.createdAt.toISOString(),
+      id: String(document.id),
+    }));
   }
 
   async getFileReference(
-    orgId: string,
-    actorUserId: string,
+    read: ScopedRead,
     docId: number,
-    scope: DataScope,
   ): Promise<{ id: number; fileUrl: string; fileName: string }> {
-    const [document] = await this.db
-      .select({
-        id: onboardingDocuments.id,
-        fileUrl: onboardingDocuments.fileUrl,
-        fileName: onboardingDocuments.fileName,
-      })
-      .from(onboardingDocuments)
-      .where(
-        and(
-          eq(onboardingDocuments.id, docId),
-          eq(onboardingDocuments.orgId, orgId),
-          applyScope(scope, orgId, actorUserId, {
-            ownerColumn: onboardingDocuments.userId,
-          }),
-        ),
-      )
-      .limit(1);
+    const [document] = await read.read(
+      {
+        tenant: onboardingDocuments.orgId,
+        scope: { columns: { ownerColumn: onboardingDocuments.userId } },
+        and: [eq(onboardingDocuments.id, docId)],
+      },
+      ({ sql: where }) =>
+        this.db
+          .select({
+            id: onboardingDocuments.id,
+            fileUrl: onboardingDocuments.fileUrl,
+            fileName: onboardingDocuments.fileName,
+          })
+          .from(onboardingDocuments)
+          .where(where)
+          .limit(1),
+      () => [],
+    );
 
     if (!document) throw new NotFoundException("Document not found.");
     return document;
   }
 
   async create(
-    orgId: string,
-    actorUserId: string,
+    read: ScopedRead,
     isAdmin: boolean,
     body: CreateOnboardingDocInput,
-    scope: DataScope,
   ) {
+    const orgId = read.orgId;
+    const actorUserId = read.actorId;
     let targetUserId = actorUserId;
     if (body.targetUserId && body.targetUserId !== actorUserId) {
       if (!isAdmin) {
@@ -276,13 +319,14 @@ export class OnboardingViewsService {
         .select({ userId: organizationMembers.userId })
         .from(organizationMembers)
         .where(
-          and(
-            eq(organizationMembers.orgId, orgId),
-            eq(organizationMembers.userId, targetUserId),
-            ne(organizationMembers.status, "INVITED"),
-            applyScope(scope, orgId, actorUserId, {
-              ownerColumn: organizationMembers.userId,
-            }),
+          read.compose(
+            {
+              tenant: organizationMembers.orgId,
+              scope: { columns: { ownerColumn: organizationMembers.userId } },
+              and: [eq(organizationMembers.userId, targetUserId), ne(organizationMembers.status, "INVITED")],
+            },
+            ({ sql: where }) => where,
+            () => sql`false`,
           ),
         )
         .limit(1);
@@ -366,7 +410,8 @@ export class OnboardingViewsService {
     });
 
     const dispatch = () =>
-      this.dispatchDocumentSubmittedEvent(
+      dispatchOnboardingDocumentSubmittedEvent(
+        this.automation,
         orgId,
         result.record.id,
         targetUserId,
@@ -378,12 +423,12 @@ export class OnboardingViewsService {
   }
 
   async review(
-    orgId: string,
-    actorUserId: string,
+    read: ScopedRead,
     docId: number,
     body: ReviewOnboardingDocInput,
-    scope: DataScope,
   ) {
+    const orgId = read.orgId;
+    const actorUserId = read.actorId;
     return this.db.transaction(async (tx) => {
       const [existing] = await tx
         .select({
@@ -401,12 +446,14 @@ export class OnboardingViewsService {
           ),
         )
         .where(
-          and(
-            eq(onboardingDocuments.id, docId),
-            eq(onboardingDocuments.orgId, orgId),
-            applyScope(scope, orgId, actorUserId, {
-              ownerColumn: onboardingDocuments.userId,
-            }),
+          read.compose(
+            {
+              tenant: onboardingDocuments.orgId,
+              scope: { columns: { ownerColumn: onboardingDocuments.userId } },
+              and: [eq(onboardingDocuments.id, docId)],
+            },
+            ({ sql: where }) => where,
+            () => sql`false`,
           ),
         )
         .limit(1);
@@ -442,34 +489,4 @@ export class OnboardingViewsService {
     });
   }
 
-  private static readonly ONBOARDING_SEARCH_CAP = 500;
-
-  private async onboardingSearchCondition(search: string): Promise<SQL> {
-    const designationIlike = ilike(hrEmployments.designation, `%${search}%`);
-    const rows = await this.db.execute(
-      sql`SELECT app.search_hr_person_ids(${search}, ${OnboardingViewsService.ONBOARDING_SEARCH_CAP + 1}) AS id`,
-    );
-    if (rows.length === 0) return designationIlike;
-    if (rows.length > OnboardingViewsService.ONBOARDING_SEARCH_CAP)
-      return or(ilike(users.name, `%${search}%`), designationIlike)!;
-    const ids = rows.map((r) => Number(r["id"]));
-    return or(inArray(hrPeople.id, ids), designationIlike)!;
-  }
-
-  private dispatchDocumentSubmittedEvent(
-    orgId: string,
-    documentId: number,
-    targetUserId: string,
-    documentTypeName: string,
-  ): Promise<void> {
-    return this.automation
-      .runAutomationsForEvent(orgId, "onboarding.document_submitted", {
-        documentId,
-        userId: targetUserId,
-        documentTypeName,
-        status: "SUBMITTED",
-        submittedAt: new Date().toISOString(),
-      })
-      .catch(() => undefined);
-  }
 }

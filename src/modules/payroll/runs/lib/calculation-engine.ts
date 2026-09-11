@@ -396,15 +396,15 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
     let largestIdx = -1;
     let largestPaise = -1;
     for (let i = 0; i < lines.length; i++) {
-      if (lines[i]!.category !== "EARNING") continue;
-      const p = toPaise(lines[i]!.amount);
+      if (lines[i].category !== "EARNING") continue;
+      const p = toPaise(lines[i].amount);
       if (p > largestPaise) {
         largestPaise = p;
         largestIdx = i;
       }
     }
     if (largestIdx >= 0) {
-      const line = lines[largestIdx]!;
+      const line = lines[largestIdx];
       line.amount = fromPaise(toPaise(line.amount) + residualPaise);
       line.explain.steps.push(`Residual allocation: ${residualPaise > 0 ? "+" : ""}${residualPaise}p`);
       grossPaise += residualPaise;

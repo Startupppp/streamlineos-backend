@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, gt } from "drizzle-orm";
+import { asc, eq, gt } from "drizzle-orm";
 import { businessParties, contactPartyMap } from "../../db/schema/party";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -18,8 +18,10 @@ import {
   CONTACT_PARTY_COLUMNS,
   CONTACT_PARTY_JOIN,
   canonicalContactOnly,
-  contactPartyScope,
+  CONTACT_PARTY_SCOPE,
 } from "./contact-party-reader";
+import type { ScopedRead } from "../access/scoped-read";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { queryContacts, searchContacts, getOneContact } from "./contacts-query";
 import type {
   BulkImportContactsInput,
@@ -36,18 +38,19 @@ export class ContactsService {
     private readonly planLimits: PlanLimitsService,
   ) {}
 
-  list(orgId: string, filters: ListInput) {
-    const hash = `${filters.search ?? ""}:${filters.organizationId ?? ""}:${filters.limit ?? ""}:${filters.cursor ?? ""}`;
+  list(read: ScopedRead, filters: ListInput) {
+    // The scope and the actor are part of the key: caching a scoped result under an unscoped one serves one caller's rows to the next.
+    const hash = `${read.discriminator}:${filters.search ?? ""}:${filters.organizationId ?? ""}:${filters.limit ?? ""}:${filters.cursor ?? ""}`;
     return this.cache.cachedVersioned(
-      CACHE_KEYS.contactsListNamespace(orgId),
+      CACHE_KEYS.contactsListNamespace(read.orgId),
       hash,
-      () => queryContacts(this.db, orgId, filters),
+      () => queryContacts(this.db, read, filters),
       CACHE_TTL.SHORT,
     );
   }
 
-  search(orgId: string, query: string) {
-    return searchContacts(this.db, orgId, query);
+  search(read: ScopedRead, query: string) {
+    return searchContacts(this.db, read, query);
   }
 
   getContact(orgId: string, id: number) {
@@ -151,7 +154,8 @@ export class ContactsService {
     }
   }
 
-  async *exportCsvChunks(orgId: string): AsyncGenerator<string> {
+  async *exportCsvChunks(read: ScopedRead): AsyncGenerator<string> {
+    const orgId = read.orgId;
     const headers = [
       "id",
       "name",
@@ -167,22 +171,12 @@ export class ContactsService {
     const pageSize = 500;
     let afterId = 0;
     for (;;) {
-      const rows = await this.db
-        .select({
-          id: CONTACT_PARTY_COLUMNS.id,
-          name: CONTACT_PARTY_COLUMNS.name,
-          email: CONTACT_PARTY_COLUMNS.email,
-          phone: CONTACT_PARTY_COLUMNS.phone,
-          title: CONTACT_PARTY_COLUMNS.title,
-          company: CONTACT_PARTY_COLUMNS.company,
-          department: CONTACT_PARTY_COLUMNS.department,
-          createdAt: CONTACT_PARTY_COLUMNS.createdAt,
-        })
-        .from(contactPartyMap)
-        .innerJoin(businessParties, CONTACT_PARTY_JOIN)
-        .where(
-          and(
-            ...contactPartyScope(orgId),
+      const pageWhere = read.compose(
+        {
+          tenant: businessParties.organizationId,
+          scope: CONTACT_PARTY_SCOPE,
+          and: [
+            eq(contactPartyMap.organizationId, orgId),
             // The export is a list, so it takes the same one-row-per-party rule
             // the screen does; a CSV that re-imports a merged-away duplicate
             // would undo the merge on the next round trip.
@@ -191,10 +185,36 @@ export class ContactsService {
             // `(organization_id, contact_id)`, so it is unique per tenant and a
             // page can neither repeat nor skip.
             gt(contactPartyMap.contactId, afterId),
-          ),
-        )
-        .orderBy(asc(contactPartyMap.contactId))
-        .limit(pageSize);
+          ],
+        },
+        (where) => where.sql,
+        () => null,
+      );
+      if (pageWhere === null) return;
+      /* One page, one transaction. The handler is `@NoTenantTransaction()` because the
+       * generator stays open for the whole download; holding the request transaction
+       * across every `res.write` would pin a pooled connection to the client's socket. */
+      const rows = await runInTenantTransaction(
+        this.db,
+        (tx) =>
+          tx
+            .select({
+              id: CONTACT_PARTY_COLUMNS.id,
+              name: CONTACT_PARTY_COLUMNS.name,
+              email: CONTACT_PARTY_COLUMNS.email,
+              phone: CONTACT_PARTY_COLUMNS.phone,
+              title: CONTACT_PARTY_COLUMNS.title,
+              company: CONTACT_PARTY_COLUMNS.company,
+              department: CONTACT_PARTY_COLUMNS.department,
+              createdAt: CONTACT_PARTY_COLUMNS.createdAt,
+            })
+            .from(contactPartyMap)
+            .innerJoin(businessParties, CONTACT_PARTY_JOIN)
+            .where(pageWhere)
+            .orderBy(asc(contactPartyMap.contactId))
+            .limit(pageSize),
+        { orgId },
+      );
       if (rows.length === 0) return;
 
       const pageCsv = toCsv(headers, rows.map((r) => ({

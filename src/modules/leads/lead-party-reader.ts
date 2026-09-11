@@ -1,8 +1,7 @@
 import { and, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.types";
 import { businessParties, leadPartyMap } from "../../db/schema/party";
-import type { DataScope } from "../access/access.types";
-import { applyScope } from "../access/apply-scope";
+import type { ScopeShape } from "../access/scoped-read";
 import { LEAD_MIRROR, type PartyRow } from "../party/party-legacy-mirror";
 import type { LeadInsert } from "../party/party-legacy-writer";
 
@@ -129,33 +128,10 @@ export function leadPartyScope(
   return scope;
 }
 
-/**
- * The viewer's data scope, as a predicate over the lead's owner.
- *
- * `owner_user_id` is `leads.assigned_to_id` under the merged model's name, so
- * "own" still means "assigned to me" and no scope changed meaning here. It lives
- * beside the columns rather than beside each caller because the list and the
- * board were asking the same question in two places, and a scope that means one
- * thing on one screen and something else on the next is exactly the drift this
- * seam exists to prevent.
- *
- * No scope leaves the predicate off, for the callers that pass `undefined`
- * because the read was authorised somewhere else.
- */
-export function pushLeadPartyViewScope(
-  where: SQL[],
-  orgId: string,
-  scope: DataScope | undefined,
-  userId: string | undefined,
-): void {
-  if (!scope) return;
-  if (scope === "none") {
-    where.push(sql`false`);
-    return;
-  }
-  if (!userId) return;
-  where.push(applyScope(scope, orgId, userId, { ownerColumn: businessParties.ownerUserId }));
-}
+// `owner_user_id` is `leads.assigned_to_id` under the merged model's name, so "own" still means "assigned to me".
+export const LEAD_PARTY_SCOPE: ScopeShape = {
+  columns: { ownerColumn: businessParties.ownerUserId },
+};
 
 /**
  * For the reads that have always seen a deleted lead, and must keep seeing one.

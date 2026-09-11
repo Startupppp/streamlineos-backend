@@ -198,6 +198,7 @@ describe("OrganizationLegalHoldService", () => {
       const result = await service.listActive("org-1");
 
       expect(result).toEqual([holdRow]);
+      expect((tx.select.mock.results[0]?.value as { limit: jest.Mock }).limit).toHaveBeenCalledWith(1);
     });
   });
 });

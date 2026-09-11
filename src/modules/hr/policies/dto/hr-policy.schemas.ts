@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const HR_POLICY_TYPES = [
   "leave",
@@ -35,12 +35,12 @@ export const HR_SCOPE_TYPES = [
 ] as const;
 
 export const policiesListQuerySchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
   type: z.enum(HR_POLICY_TYPES).optional(),
   status: z.enum(HR_POLICY_STATUSES).optional(),
   search: z.string().optional(),
-});
+}).strict();
 
 export type PoliciesListQuery = z.infer<typeof policiesListQuerySchema>;
 
@@ -66,7 +66,7 @@ export const createPolicySchema = z.object({
   priority: z.number().int().min(0).max(9999).default(0),
   rules: z.record(z.string(), z.unknown()),
   scopes: z.array(policyScopeSchema).min(1),
-});
+}).strict();
 
 export type CreatePolicyInput = z.infer<typeof createPolicySchema>;
 
@@ -84,13 +84,31 @@ export const updatePolicySchema = z.object({
   priority: z.number().int().min(0).max(9999).optional(),
   rules: z.record(z.string(), z.unknown()).optional(),
   scopes: z.array(policyScopeSchema).optional(),
-});
+}).strict();
 
 export type UpdatePolicyInput = z.infer<typeof updatePolicySchema>;
 
 export const previewQuerySchema = z.object({
   employeeId: z.string().min(1),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-});
+}).strict();
 
 export type PreviewQuery = z.infer<typeof previewQuerySchema>;
+
+export const activatePolicySchema = z.object({
+  force: z.boolean().optional().default(false),
+});
+export type ActivatePolicyInput = z.infer<typeof activatePolicySchema>;
+
+export const simulatePolicySchema = z.object({
+  employeeId: z.string().min(1),
+  policyType: z.enum(HR_POLICY_TYPES),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  rules: z.record(z.string(), z.unknown()).optional(),
+});
+export type SimulatePolicyInput = z.infer<typeof simulatePolicySchema>;
+
+export const orgConflictsQuerySchema = z.object({
+  type: z.enum(HR_POLICY_TYPES).optional(),
+});
+export type OrgConflictsQuery = z.infer<typeof orgConflictsQuerySchema>;

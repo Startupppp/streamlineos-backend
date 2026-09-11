@@ -9,30 +9,16 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 import { LeavePoliciesService } from "./leave-policies.service";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { leavePolicyRowSchema } from "./dto/time-leave-response.schemas";
+import {
+  createLeavePolicySchema,
+  updateLeavePolicySchema,
+  type CreateLeavePolicyBody,
+  type UpdateLeavePolicyBody,
+} from "./dto/leaves.schemas";
 
 const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
-
-const createLeavePolicySchema = z.object({
-  leaveTypeId: z.number().int().positive(),
-  name: z.string().min(1).max(200),
-  accrualType: z.string().optional(),
-  accrualRate: z.string().min(1),
-  maxBalance: z.string().optional(),
-  carryForwardDays: z.string().optional(),
-  carryForwardExpiryMonths: z.number().int().positive().optional(),
-  encashable: z.boolean().optional(),
-  probationRestricted: z.boolean().optional(),
-  genderRestriction: z.string().optional(),
-  appliesTo: z.string().optional(),
-  effectiveFrom: z.string().min(1),
-  effectiveTo: z.string().optional(),
-  isActive: z.boolean().optional(),
-});
-
-const updateLeavePolicySchema = createLeavePolicySchema.partial();
-
-type CreateLeavePolicyBody = z.infer<typeof createLeavePolicySchema>;
-type UpdateLeavePolicyBody = z.infer<typeof updateLeavePolicySchema>;
 
 @RequireModule("hr")
 @UseGuards(JwtAuthGuard)
@@ -41,6 +27,7 @@ export class LeavePoliciesController {
   constructor(private readonly service: LeavePoliciesService) {}
 
   @Get()
+  @ResponseSchema(z.array(leavePolicyRowSchema))
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:leaves:view")
   list(@CurrentUser() u: CurrentUserContext) {
@@ -49,6 +36,7 @@ export class LeavePoliciesController {
 
   @Post()
   @HttpCode(201)
+  @ResponseSchema(leavePolicyRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:leaves:manage")
   @Validate({ body: createLeavePolicySchema })
@@ -60,6 +48,7 @@ export class LeavePoliciesController {
   }
 
   @Patch(":policyId")
+  @ResponseSchema(leavePolicyRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:leaves:manage")
   @Validate({ params: policyIdParams, body: updateLeavePolicySchema })
@@ -73,6 +62,7 @@ export class LeavePoliciesController {
 
   @Delete(":policyId")
   @HttpCode(204)
+  @NoContentResponse()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:leaves:manage")
   @Validate({ params: policyIdParams })

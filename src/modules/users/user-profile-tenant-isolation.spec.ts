@@ -51,6 +51,36 @@ describe("UserProfileService — cross-tenant isolation", () => {
     const svc = makeService({ userId: USER_ID });
     await expect(svc.getUserSessions(OWNER_ORG, USER_ID)).resolves.toEqual([]);
   });
+
+  describe("updatePreferences — empty-patch guard", () => {
+    it("returns success without querying userPreferences when no fields are provided (bites if reverted: empty set would throw)", async () => {
+      const memberFindFirst = jest.fn().mockResolvedValue({ userId: USER_ID });
+      const prefsFindFirst = jest.fn();
+      const updateSet = jest.fn();
+      const db = {
+        query: {
+          organizationMembers: { findFirst: memberFindFirst },
+          userPreferences: { findFirst: prefsFindFirst },
+        },
+        update: jest.fn().mockReturnValue({ set: updateSet }),
+      } as unknown as Db;
+
+      const audit: Pick<AuditService, "log"> = { log: jest.fn() };
+      const svc = new UserProfileService(
+        db,
+        audit as AuditService,
+        {} as SessionsService,
+        {} as EmploymentFactsService,
+        {} as UserActivityService,
+      );
+
+      const result = await svc.updatePreferences(OWNER_ORG, USER_ID, {});
+
+      expect(result).toEqual({ success: true });
+      expect(prefsFindFirst).not.toHaveBeenCalled();
+      expect(updateSet).not.toHaveBeenCalled();
+    });
+  });
 });
 
 /**

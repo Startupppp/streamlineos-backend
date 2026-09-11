@@ -77,7 +77,8 @@ export class OnboardingInitiationDispatchService {
         const recipients = await this.db
           .select({ id: users.id, email: users.email, name: users.name })
           .from(users)
-          .where(inArray(users.id, userIds));
+          .where(inArray(users.id, userIds))
+          .limit(Math.max(userIds.length, 1));
         deliveries.push(this.notifications.emit({
           eventKey: "hr.onboarding.started",
           orgId,

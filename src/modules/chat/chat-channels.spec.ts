@@ -1,5 +1,6 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { ChatChannelsService, entityChannelFallbackName } from "./chat-channels.service";
+import { ChatChannelListService } from "./chat-channel-list.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { CacheService } from "../../common/cache/cache.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
@@ -52,6 +53,29 @@ function buildMocks() {
     orderBy: jest.fn().mockResolvedValue([]),
   };
 
+  // Call order inside listMemberChannels: [0] the keyset page, [1] the ranked member subquery
+  // (built, never awaited — `.as()` hands it to the next `from()`), [2] the bounded member
+  // preview, [3] the unread counts. An entry per call, so a new statement shows up as a missing
+  // fixture rather than as another query's rows.
+  let selectCallIdx = 0;
+  const selectResults: unknown[][] = [
+    [{ id: 1, lastMessageAt: null }],
+    [],
+    [],
+    [],
+  ];
+  const makeSelectChain = () => {
+    const resultIdx = selectCallIdx++;
+    const chain: Record<string, unknown> = {};
+    // `innerJoinLateral` joined the list here when the last-message preview stopped being a
+    // DISTINCT ON over every message in every listed channel and became one index probe per
+    // channel; `selectDistinctOn` is no longer called at all by this path.
+    for (const method of ["from", "where", "innerJoin", "innerJoinLateral", "leftJoin", "groupBy", "having", "orderBy", "limit", "as"])
+      chain[method] = jest.fn(() => chain);
+    chain.then = (resolve: (v: unknown[]) => unknown) => resolve(selectResults[resultIdx] ?? []);
+    return chain;
+  };
+
   const mockDb = {
     query: {
       chatChannels: { findMany: findManyMock, findFirst: jest.fn() },
@@ -59,9 +83,7 @@ function buildMocks() {
     update: updateSpy,
     set: jest.fn().mockReturnThis(),
     where: jest.fn().mockResolvedValue([]),
-    select: jest.fn().mockReturnValue({
-      from: jest.fn().mockReturnValue({ where: membershipWhere }),
-    }),
+    select: jest.fn(() => makeSelectChain()),
     selectDistinctOn: jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue(distinctChain),
     }),
@@ -74,7 +96,7 @@ function buildMocks() {
     invalidateNamespace: jest.fn(),
   };
 
-  return { mockDb, mockCache, updateSpy, resolveSpy, findManyMock };
+  return { mockDb, mockCache, updateSpy, resolveSpy, findManyMock, selectResults };
 }
 
 describe("ChatChannelsService — read path", () => {
@@ -82,15 +104,18 @@ describe("ChatChannelsService — read path", () => {
   let updateSpy: jest.Mock;
   let resolveSpy: jest.Mock;
   let findManyMock: jest.Mock;
+  let selectResults: unknown[][];
 
   beforeEach(async () => {
     const mocks = buildMocks();
     updateSpy = mocks.updateSpy;
     resolveSpy = mocks.resolveSpy;
+    selectResults = mocks.selectResults;
     findManyMock = mocks.findManyMock;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        ChatChannelListService,
         ChatChannelsService,
         { provide: DRIZZLE, useValue: mocks.mockDb },
         { provide: CacheService, useValue: mocks.mockCache },
@@ -106,13 +131,14 @@ describe("ChatChannelsService — read path", () => {
     const result = await service.getMyChannels(actor);
 
     expect(updateSpy).not.toHaveBeenCalled();
-    expect(result).toHaveLength(1);
-    expect(result[0]).toBeDefined();
-    expect(result[0]!.name).toBe("TICKET-1: Fix the bug");
+    expect(result.channels).toHaveLength(1);
+    expect(result.channels[0]).toBeDefined();
+    expect(result.channels[0]!.name).toBe("TICKET-1: Fix the bug");
   });
 
   it("falls back to the stored name when the adapter fails without aborting the list", async () => {
     resolveSpy.mockRejectedValue(new Error("adapter offline"));
+    selectResults[0] = [{ id: 1, lastMessageAt: null }, { id: 2, lastMessageAt: null }];
     findManyMock.mockResolvedValue([
       {
         id: 1,
@@ -151,8 +177,8 @@ describe("ChatChannelsService — read path", () => {
     const result = await service.getMyChannels(actor);
 
     expect(updateSpy).not.toHaveBeenCalled();
-    expect(result).toHaveLength(2);
-    expect(result[0]!.name).toBe(FALLBACK);
-    expect(result[1]!.name).toBe("General");
+    expect(result.channels).toHaveLength(2);
+    expect(result.channels[0]!.name).toBe(FALLBACK);
+    expect(result.channels[1]!.name).toBe("General");
   });
 });

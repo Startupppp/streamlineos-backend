@@ -1,8 +1,11 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, ilike, isNull, sql } from "drizzle-orm";
-import { projects, testCases, testSuites } from "../../../db/schema";
+import { testCases, testSuites } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { AccessService } from "../../access/access.service";
+import { assertProjectAccess } from "../core/project-access";
 import type {
   CreateTestCaseInput,
   CreateTestSuiteInput,
@@ -13,24 +16,19 @@ import type {
 
 @Injectable()
 export class TestManagementService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly access: AccessService,
+  ) {}
 
-  private async assertProject(orgId: string, projectId: number): Promise<void> {
-    const p = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-      columns: { id: true },
-    });
-    if (!p) throw new NotFoundException("Project not found");
-  }
-
-  async listSuites(orgId: string, projectId: number) {
-    await this.assertProject(orgId, projectId);
+  async listSuites(u: CurrentUserContext, projectId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     return this.db
       .select()
       .from(testSuites)
       .where(
         and(
-          eq(testSuites.orgId, orgId),
+          eq(testSuites.orgId, u.orgId),
           eq(testSuites.projectId, projectId),
           isNull(testSuites.deletedAt),
         ),
@@ -39,13 +37,13 @@ export class TestManagementService {
       .limit(100);
   }
 
-  async createSuite(orgId: string, userId: string, projectId: number, input: CreateTestSuiteInput) {
-    await this.assertProject(orgId, projectId);
+  async createSuite(u: CurrentUserContext, projectId: number, input: CreateTestSuiteInput) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     if (input.parentId !== undefined) {
       const parent = await this.db.query.testSuites.findFirst({
         where: and(
           eq(testSuites.id, input.parentId),
-          eq(testSuites.orgId, orgId),
+          eq(testSuites.orgId, u.orgId),
           eq(testSuites.projectId, projectId),
           isNull(testSuites.deletedAt),
         ),
@@ -56,12 +54,12 @@ export class TestManagementService {
     const [suite] = await this.db
       .insert(testSuites)
       .values({
-        orgId,
+        orgId: u.orgId,
         projectId,
         name: input.name,
         description: input.description,
         parentId: input.parentId ?? null,
-        createdBy: userId,
+        createdBy: u.userId,
       })
       .returning();
     return suite;
@@ -109,10 +107,10 @@ export class TestManagementService {
     return { success: true };
   }
 
-  async listCases(orgId: string, projectId: number, query: TestCaseListQuery) {
-    await this.assertProject(orgId, projectId);
+  async listCases(u: CurrentUserContext, projectId: number, query: TestCaseListQuery) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     const conditions = [
-      eq(testCases.orgId, orgId),
+      eq(testCases.orgId, u.orgId),
       eq(testCases.projectId, projectId),
       isNull(testCases.deletedAt),
     ];
@@ -141,19 +139,19 @@ export class TestManagementService {
     return tc;
   }
 
-  async createCase(orgId: string, userId: string, projectId: number, input: CreateTestCaseInput) {
-    await this.assertProject(orgId, projectId);
+  async createCase(u: CurrentUserContext, projectId: number, input: CreateTestCaseInput) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     const [tc] = await this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
       const [maxRow] = await tx
         .select({ maxNum: sql<number>`COALESCE(MAX(${testCases.caseNumber}), 0)` })
         .from(testCases)
-        .where(and(eq(testCases.projectId, projectId), eq(testCases.orgId, orgId)));
+        .where(and(eq(testCases.projectId, projectId), eq(testCases.orgId, u.orgId)));
       const nextNumber = (maxRow?.maxNum ?? 0) + 1;
       return tx
         .insert(testCases)
         .values({
-          orgId,
+          orgId: u.orgId,
           projectId,
           caseNumber: nextNumber,
           suiteId: input.suiteId ?? null,
@@ -165,7 +163,7 @@ export class TestManagementService {
           component: input.component,
           linkedTicketId: input.linkedTicketId ?? null,
           automationStatus: input.automationStatus ?? "manual",
-          createdBy: userId,
+          createdBy: u.userId,
         })
         .returning();
     });

@@ -42,6 +42,10 @@ const MIN_SERVICES = 100;
 const MIN_TEST_FILES = 5;
 
 const GLOBAL_SERVICE_PATTERNS = [
+  // This extracted identity flow reads/writes only users and magicLinkTokens.
+  // Organization selection belongs to AuthMembershipResolverService, which
+  // remains tenant-owned and must retain its negative isolation tests.
+  /^src\/modules\/auth\/auth-magic-link\.service\.ts$/,
   /auth\.service/,
   /session\.service/,
   /users\.service/,
@@ -183,6 +187,18 @@ if (SELF_TEST) {
     isTenantOwnedRequiresOrgIdAndFilter: isTenantOwned(goodServiceSrc) === true,
     isTenantOwnedFalseWithoutOrgId: isTenantOwned(badServiceSrc) === false,
     classNameExtraction: serviceClassName(goodServiceSrc) === "ContactsService",
+    magicLinkIdentityServiceIsGlobal: isGlobalService(
+      join(MODULES_DIR, "auth", "auth-magic-link.service.ts"),
+    ),
+    magicLinkNameInOtherModuleIsNotGlobal: !isGlobalService(
+      join(MODULES_DIR, "other", "auth-magic-link.service.ts"),
+    ),
+    magicLinkTenantSuffixIsNotGlobal: !isGlobalService(
+      join(MODULES_DIR, "auth", "auth-magic-link-tenant.service.ts"),
+    ),
+    membershipResolverStillRequiresIsolation: !isGlobalService(
+      join(MODULES_DIR, "auth", "auth-membership-resolver.service.ts"),
+    ),
     isolationPatternMatchesIsolationSpec: ISOLATION_PATTERNS.some((re) =>
       re.test(isolationSpecSrc),
     ),

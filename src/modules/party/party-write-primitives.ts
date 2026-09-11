@@ -6,10 +6,12 @@ import {
   contactPartyMap,
   crmOrgPartyMap,
   leadPartyMap,
+  partyIdentifiers,
   partyRoles,
 } from "../../db/schema/party";
 import { type PartyPatch, type PartyRow } from "./party-legacy-mirror";
 import type { MappedLegacyKind } from "./party-legacy-seam";
+import { normaliseIdentifier } from "../ingress/inbound-event";
 import { claimIdentifiers, claimsOfPatch, identifierClaimsOfColumns } from "./party-identifiers";
 
 /**
@@ -277,11 +279,40 @@ export async function movePartiesFor(
     // go through it. Gated on the payload, so the ownership and stage sweeps
     // that make up nearly every bulk write cost nothing extra.
     if (claimsOfPatch(group.payload) !== null)
-      for (const row of rows)
-        await claimIdentifiers(db, organizationId, row.partyId, identifierClaimsOfColumns(row));
+      await claimIdentifiersOfParties(db, organizationId, rows);
   }
 
   return moved;
+}
+
+/**
+ * `claimIdentifiers` for a whole group of moved parties, in one statement.
+ *
+ * The loop this replaces claimed each party's addresses with its own INSERT, so
+ * a bulk ownership or stage sweep that happened to touch a contact column cost
+ * one round trip per party. The rows are the same ones `claimIdentifiers` would
+ * write, normalised and de-duplicated the same way, and a claim that already
+ * exists is left alone exactly as it was.
+ */
+async function claimIdentifiersOfParties(
+  db: MirrorDb,
+  organizationId: string,
+  parties: readonly PartyRow[],
+): Promise<void> {
+  const rows: (typeof partyIdentifiers.$inferInsert)[] = [];
+  const seen = new Set<string>();
+  for (const party of parties) {
+    for (const claim of identifierClaimsOfColumns(party)) {
+      const normalisedValue = normaliseIdentifier(claim.kind, claim.value);
+      const key = `${claim.kind}:${normalisedValue}`;
+      if (!normalisedValue || seen.has(key)) continue;
+      seen.add(key);
+      const value = claim.value.trim();
+      rows.push({ organizationId, partyId: party.partyId, kind: claim.kind, value, normalisedValue });
+    }
+  }
+  if (rows.length === 0) return;
+  await db.insert(partyIdentifiers).values(rows).onConflictDoNothing();
 }
 
 /**

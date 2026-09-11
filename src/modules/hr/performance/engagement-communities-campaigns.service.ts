@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, inArray, lt, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, or } from "drizzle-orm";
 import {
   hrCampaigns,
   hrCommunities,
@@ -19,6 +19,9 @@ import type {
   CommunityListInput,
 } from "./dto/engagement-extras.schemas";
 import { decodeTimestampCursor, encodeTimestampCursor } from "./cursor-pagination";
+import { HR_SCAN_PAGE } from "../hr-read-limits";
+
+const COMMUNITY_MEMBER_LIMIT = 500;
 
 @Injectable()
 export class EngagementCommunitiesCampaignsService {
@@ -56,7 +59,8 @@ export class EngagementCommunitiesCampaignsService {
         role: hrCommunityMembers.role,
       })
       .from(hrCommunityMembers)
-      .where(inArray(hrCommunityMembers.communityId, ids));
+      .where(inArray(hrCommunityMembers.communityId, ids))
+      .limit(COMMUNITY_MEMBER_LIMIT);
 
     const membersByComm = new Map<number, { userId: string; role: string }[]>();
     for (const m of members) {
@@ -115,7 +119,8 @@ export class EngagementCommunitiesCampaignsService {
       .from(hrCommunities)
       .where(
         and(eq(hrCommunities.id, communityId), eq(hrCommunities.orgId, orgId)),
-      );
+      )
+      .limit(1);
     if (!community) throw new NotFoundException("Community not found.");
 
     await this.db
@@ -134,7 +139,8 @@ export class EngagementCommunitiesCampaignsService {
       .from(hrCommunities)
       .where(
         and(eq(hrCommunities.id, communityId), eq(hrCommunities.orgId, orgId)),
-      );
+      )
+      .limit(1);
     if (!community) throw new NotFoundException("Community not found.");
 
     await this.db
@@ -154,18 +160,29 @@ export class EngagementCommunitiesCampaignsService {
       .from(hrCommunities)
       .where(
         and(eq(hrCommunities.id, communityId), eq(hrCommunities.orgId, orgId)),
-      );
+      )
+      .limit(1);
     if (!community) throw new NotFoundException("Community not found.");
 
-    const members = await this.db
+    const memberRows = await this.db
       .select({
         userId: hrCommunityMembers.userId,
         role: hrCommunityMembers.role,
       })
       .from(hrCommunityMembers)
-      .where(eq(hrCommunityMembers.communityId, communityId));
+      .where(
+        and(
+          eq(hrCommunityMembers.orgId, orgId),
+          eq(hrCommunityMembers.communityId, communityId),
+        ),
+      )
+      .orderBy(asc(hrCommunityMembers.userId))
+      .limit(HR_SCAN_PAGE + 1);
 
-    return { ...community, members };
+    const membersTruncated = memberRows.length > HR_SCAN_PAGE;
+    const members = membersTruncated ? memberRows.slice(0, HR_SCAN_PAGE) : memberRows;
+
+    return { ...community, members, membersTruncated };
   }
 
   listCampaigns(orgId: string) {
@@ -208,12 +225,14 @@ export class EngagementCommunitiesCampaignsService {
       .from(hrCampaigns)
       .where(
         and(eq(hrCampaigns.id, campaignId), eq(hrCampaigns.orgId, orgId)),
-      );
+      )
+      .limit(1);
     if (!campaign) throw new NotFoundException("Campaign not found.");
 
     const [updated] = await this.db
       .update(hrCampaigns)
       .set({
+        updatedAt: new Date(),
         ...(input.name !== undefined && { name: input.name }),
         ...(input.description !== undefined && {
           description: input.description,
@@ -238,7 +257,8 @@ export class EngagementCommunitiesCampaignsService {
       .from(hrCampaigns)
       .where(
         and(eq(hrCampaigns.id, campaignId), eq(hrCampaigns.orgId, orgId)),
-      );
+      )
+      .limit(1);
     if (!campaign) throw new NotFoundException("Campaign not found.");
 
     await this.db

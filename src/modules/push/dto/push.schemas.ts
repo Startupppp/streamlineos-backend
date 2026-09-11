@@ -5,11 +5,11 @@ export const subscribeSchema = z.object({
   p256dh: z.string().min(1),
   auth: z.string().min(1),
   userAgent: z.string().max(1000).optional(),
-});
+}).strict();
 
 export const unsubscribeSchema = z.object({
   endpoint: z.string().url(),
-});
+}).strict();
 
 export type SubscribeInput = z.infer<typeof subscribeSchema>;
 export type UnsubscribeInput = z.infer<typeof unsubscribeSchema>;

@@ -5,7 +5,7 @@ import {
   orgModules,
   organizations,
 } from "../../db/schema";
-import { ACCESS_MANAGED_MODULES } from "../../modules/rbac/permissions";
+import { ACCESS_MANAGED_MODULES } from "../rbac/module-vocabulary";
 import { type TenantTx } from "../tenant/with-tenant";
 
 export const DEFAULT_SKIP_MODULES = ["hr", "crm", "build"] as const;

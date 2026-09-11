@@ -27,6 +27,13 @@ import {
 } from "./dto/deals.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { z } from "zod";
+import {
+  dealApprovalRuleSchema,
+  dealApprovalSchema,
+  dealRequestApprovalSchema,
+} from "./dto/deals-response.schemas";
 
 @RequireModule("crm")
 @Controller("deals")
@@ -36,6 +43,7 @@ export class DealsApprovalsController {
 
   @Get("approval-rules")
   @RequirePermission("crm:deals:read")
+  @ResponseSchema(z.array(dealApprovalRuleSchema))
   listRules(@CurrentUser() u: CurrentUserContext) {
     return this.approvals.listRules(u.orgId);
   }
@@ -43,6 +51,7 @@ export class DealsApprovalsController {
   @Post("approval-rules")
   @HttpCode(201)
   @RequirePermission("settings:manage")
+  @ResponseSchema(dealApprovalRuleSchema)
   @Validate({ body: createApprovalRuleSchema })
   createRule(
     @Body() body: CreateApprovalRuleInput,
@@ -53,6 +62,7 @@ export class DealsApprovalsController {
 
   @Get("approvals")
   @RequirePermission("crm:deals:read")
+  @ResponseSchema(z.array(dealApprovalSchema))
   @Validate({ query: approvalsListSchema })
   listApprovals(
     @Query() query: ApprovalsListInput,
@@ -63,6 +73,7 @@ export class DealsApprovalsController {
 
   @Post("approvals")
   @RequirePermission("crm:deals:update")
+  @ResponseSchema(dealRequestApprovalSchema)
   @Validate({ body: submitApprovalSchema })
   async submitApproval(
     @Body() body: SubmitApprovalInput,

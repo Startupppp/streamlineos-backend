@@ -9,6 +9,13 @@ import { LEAVES_PERMISSION } from "../leaves-scope";
 import { LeavesService } from "../leaves.service";
 import { LeavesWriteService } from "../leaves-write.service";
 
+jest.mock("../organization-membership", () => ({
+  requireOrganizationMembershipId: jest.fn(
+    (_db: unknown, _orgId: string, userId: string) =>
+      Promise.resolve({ "hr-1": 11, "manager-a": 21, "manager-b": 22 }[userId] ?? 1),
+  ),
+}));
+
 const ORG_ID = "org-1";
 
 function makeUser(userId: string): CurrentUserContext {
@@ -27,7 +34,14 @@ class FakeRedis {
   readonly store = new Map<string, unknown>();
 
   get<T>(key: string): Promise<T | null> {
-    return Promise.resolve((this.store.get(key) as T | undefined) ?? null);
+    const raw = this.store.get(key);
+    if (raw === undefined) return Promise.resolve(null);
+    if (typeof raw !== "string") return Promise.resolve(raw as T);
+    try {
+      return Promise.resolve(JSON.parse(raw) as T);
+    } catch {
+      return Promise.resolve(raw as T);
+    }
   }
 
   set(key: string, value: unknown, options?: { nx?: boolean }): Promise<string | null> {
@@ -42,8 +56,16 @@ class FakeRedis {
     return Promise.resolve(next);
   }
 
-  eval(_script: string, keys: string[], _args: string[]): Promise<number> {
-    for (const key of keys) this.store.delete(key);
+  eval(_script: string, keys: string[], args: string[]): Promise<number> {
+    const [leaseKey, valueKey] = keys;
+    const [token, serialized] = args;
+    if (leaseKey === undefined) return Promise.resolve(0);
+    if (this.store.get(leaseKey) !== token) return Promise.resolve(0);
+    if (valueKey === undefined) {
+      this.store.delete(leaseKey);
+      return Promise.resolve(1);
+    }
+    this.store.set(valueKey, serialized);
     return Promise.resolve(1);
   }
 
@@ -107,6 +129,7 @@ describe("leave analytics filtered read-after-write", () => {
             id: 7,
             orgId: ORG_ID,
             userId: "employee-1",
+            userMembershipId: 1,
             leaveTypeId: 1,
             startDate: "2026-01-05",
             endDate: "2026-01-06",

@@ -1,13 +1,38 @@
-import { Body, Controller, Get, Module, Post } from "@nestjs/common";
+import { Body, Controller, Get, Injectable, Module, Post, Req } from "@nestjs/common";
 import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 import { Test } from "@nestjs/testing";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import request from "supertest";
+import type { AdmissionScopedRequest } from "./admission-slot";
+import {
+  hintedBucket,
+  PUBLIC_ADMISSION_BUCKET,
+  UseAdmissionTenantHint,
+  type AdmissionTenantHintProvider,
+} from "./admission-tenant-hint";
 import { AdmissionGuard } from "./admission.guard";
 import { AdmissionInterceptor } from "./admission.interceptor";
 import { AdmissionModule } from "./admission.module";
 import { AdmissionService } from "./admission.service";
 import { UseWorkClass } from "./work-class.decorator";
+
+// Stands in for NotificationEventService: the caller sends an opaque token and the org comes from
+// this server-side table, so nothing the caller writes can name the bucket it is charged to.
+@Injectable()
+class ProbeTenantHint implements AdmissionTenantHintProvider {
+  private readonly tokens = new Map<string, string>([["good-token", "org-hinted"]]);
+
+  resolveAdmissionTenantOrgId(req: unknown): string | undefined {
+    if (typeof req !== "object" || req === null) return undefined;
+    const withHeaders: { headers?: unknown } = req;
+    const headers = withHeaders.headers;
+    if (typeof headers !== "object" || headers === null) return undefined;
+    const withAuth: { authorization?: unknown } = headers;
+    const authorization = withAuth.authorization;
+    if (typeof authorization !== "string") return undefined;
+    return this.tokens.get(authorization.replace("Bearer ", ""));
+  }
+}
 
 @Controller("probe")
 class ProbeController {
@@ -26,12 +51,20 @@ class ProbeController {
   reserved(): { ok: boolean } {
     return { ok: true };
   }
+
+  @Get("hinted")
+  @UseWorkClass("non-mandatory-notification")
+  @UseAdmissionTenantHint(ProbeTenantHint)
+  hinted(@Req() req: AdmissionScopedRequest): { bucket: string | undefined } {
+    return { bucket: req._admissionOrgId };
+  }
 }
 
 @Module({
   imports: [AdmissionModule],
   controllers: [ProbeController],
   providers: [
+    ProbeTenantHint,
     { provide: APP_GUARD, useClass: AdmissionGuard },
     { provide: APP_INTERCEPTOR, useClass: AdmissionInterceptor },
   ],
@@ -147,5 +180,72 @@ describe("admission control sheds over real HTTP", () => {
     for (let i = 0; i < inFlight; i++) service.release(`filler-${String(i)}`);
 
     await request(app.getHttpServer()).get("/probe/reserved").expect(200, { ok: true });
+  });
+});
+
+describe("admission control buckets a public route by its declared tenant hint over real HTTP", () => {
+  let app: NestExpressApplication;
+  let service: AdmissionService;
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({ imports: [ProbeAppModule] }).compile();
+    app = moduleRef.createNestApplication<NestExpressApplication>();
+    service = moduleRef.get(AdmissionService);
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it("charges a resolvable token to its own namespaced bucket", async () => {
+    const response = await request(app.getHttpServer())
+      .get("/probe/hinted")
+      .set("Authorization", "Bearer good-token")
+      .expect(200);
+
+    expect(response.body.bucket).toBe(hintedBucket("org-hinted"));
+    expect(service.snapshot().inFlight).toBe(0);
+    expect(service.snapshot().orgMapSize).toBe(0);
+  });
+
+  it("charges a forged token to the public bucket", async () => {
+    const response = await request(app.getHttpServer())
+      .get("/probe/hinted")
+      .set("Authorization", "Bearer forged-token")
+      .expect(200);
+
+    expect(response.body.bucket).toBe(PUBLIC_ADMISSION_BUCKET);
+  });
+
+  it("charges a request with no token to the public bucket", async () => {
+    const response = await request(app.getHttpServer()).get("/probe/hinted").expect(200);
+
+    expect(response.body.bucket).toBe(PUBLIC_ADMISSION_BUCKET);
+  });
+
+  it("leaves an undecorated public route in the public bucket", async () => {
+    const releases = jest.spyOn(service, "release");
+    await request(app.getHttpServer()).get("/probe").expect(200);
+
+    expect(releases).toHaveBeenCalledWith(PUBLIC_ADMISSION_BUCKET);
+    releases.mockRestore();
+  });
+
+  it("keeps a hinted stream admitted while the shared public bucket is exhausted", async () => {
+    let filled = 0;
+    while (service.tryAdmit("ordinary-write", PUBLIC_ADMISSION_BUCKET).admitted) filled += 1;
+    expect(filled).toBeGreaterThan(0);
+
+    await request(app.getHttpServer()).get("/probe").expect(503);
+
+    const hinted = await request(app.getHttpServer())
+      .get("/probe/hinted")
+      .set("Authorization", "Bearer good-token")
+      .expect(200);
+    expect(hinted.body.bucket).toBe(hintedBucket("org-hinted"));
+
+    for (let i = 0; i < filled; i += 1) service.release(PUBLIC_ADMISSION_BUCKET);
+    expect(service.snapshot().inFlight).toBe(0);
   });
 });

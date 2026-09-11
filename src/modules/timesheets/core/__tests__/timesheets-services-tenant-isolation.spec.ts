@@ -17,6 +17,7 @@ import { TimerService } from "../timer.service";
 import { PayrollExportService } from "../../payroll/payroll-export.service";
 import { PayrollSettingsService } from "../../payroll/payroll-settings.service";
 import { PayrollSummaryService } from "../../payroll/payroll-summary.service";
+import { ScopedRead } from "../../../access/scoped-read";
 
 const OWNER_ORG = "org-owner";
 const ATTACKER_ORG = "org-attacker";
@@ -265,14 +266,13 @@ describe("RateResolverService — cross-tenant isolation", () => {
 });
 
 describe("EntriesReadService — cross-tenant isolation", () => {
-  it("listEntries: WHERE contains attacker orgId (deny — different org isolation)", async () => {
+  it("listEntries: a scope that resolves to none denies before the database is ever queried", async () => {
     const { db, where } = makeDb([]);
     const svc = new EntriesReadService(db, mockAccess as never);
     const u = { orgId: ATTACKER_ORG, userId: "attacker", isOrgOwner: false, permissions: [], principal: { kind: "human-session", membershipId: 1 } } as never;
     const result = await svc.listEntries(u, { page: 1, limit: 25 } as never);
     expect(result.data).toHaveLength(0);
-    const allVals = where.mock.calls.flatMap((c) => sqlValues(c[0]));
-    expect(allVals).toContain(ATTACKER_ORG);
+    expect(where).not.toHaveBeenCalled();
   });
 
   it("listEntries: returns empty for own org with no entries (control — same-tenant)", async () => {
@@ -321,14 +321,13 @@ describe("EntriesService — cross-tenant isolation", () => {
 });
 
 describe("ExceptionsService — cross-tenant isolation", () => {
-  it("listExceptions: WHERE contains attacker orgId (deny — different org isolation)", async () => {
+  it("listExceptions: a scope that resolves to none denies before the database is ever queried", async () => {
     const { db, where } = makeDb([]);
     const svc = new ExceptionsService(db, mockAccess as never, mockAudit as never);
     const u = { orgId: ATTACKER_ORG, userId: "attacker", isOrgOwner: false, permissions: [], principal: { kind: "human-session", membershipId: 1 } } as never;
     const result = await svc.listExceptions(u, {} as never);
     expect(result.data).toHaveLength(0);
-    const allVals = where.mock.calls.flatMap((c) => sqlValues(c[0]));
-    expect(allVals).toContain(ATTACKER_ORG);
+    expect(where).not.toHaveBeenCalled();
   });
 
   it("listExceptions: returns empty for own org with no exceptions (control)", async () => {
@@ -385,7 +384,7 @@ describe("PayrollSummaryService — cross-tenant isolation", () => {
     const { db, where } = makeDb([]);
     const svc = new PayrollSummaryService(db, mockCache as never);
     const query = { start: "2025-01-01", end: "2025-01-31", includeExported: false } as never;
-    await svc.getPeriodSummary(ATTACKER_ORG, query, "all", "actor-x");
+    await svc.getPeriodSummary(ScopedRead.of(ATTACKER_ORG, "actor-x", "all"), query);
     const allVals = where.mock.calls.flatMap((c) => sqlValues(c[0]));
     expect(allVals).toContain(ATTACKER_ORG);
   });
@@ -394,7 +393,7 @@ describe("PayrollSummaryService — cross-tenant isolation", () => {
     const { db } = makeDb([]);
     const svc = new PayrollSummaryService(db, mockCache as never);
     const query = { start: "2025-01-01", end: "2025-01-31", includeExported: false } as never;
-    await expect(svc.getPeriodSummary(OWNER_ORG, query, "all", "actor-y")).resolves.toBeDefined();
+    await expect(svc.getPeriodSummary(ScopedRead.of(OWNER_ORG, "actor-y", "all"), query)).resolves.toBeDefined();
   });
 });
 

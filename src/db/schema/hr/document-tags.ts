@@ -45,11 +45,6 @@ export const hrDocumentTags = pgTable(
       table.documentId,
       table.sortOrder,
     ),
-    index("idx_hr_document_tags_parent").on(
-      table.organizationId,
-      table.documentId,
-      table.sortOrder,
-    ),
     index("idx_hr_document_tags_lookup").on(table.organizationId, table.tag),
     foreignKey({
       name: "fk_hr_document_tags_parent",

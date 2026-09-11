@@ -2,6 +2,7 @@ import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { Test } from "@nestjs/testing";
 import { SupportKbGapService } from "./support-kb-gap.service";
+import { SupportKbGapDetectionService } from "./support-kb-gap-detection.service";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { KbArticlesService } from "../../kb/help-centre/kb-articles.service";
 import { KbEventsService } from "../../kb/core/kb-events.service";
@@ -89,6 +90,13 @@ async function makeService(db: ReturnType<typeof makeDb>) {
   return module.get(SupportKbGapService);
 }
 
+async function makeDetectionService(db: ReturnType<typeof makeDb>) {
+  const module = await Test.createTestingModule({
+    providers: [SupportKbGapDetectionService, { provide: DRIZZLE, useValue: db }],
+  }).compile();
+  return module.get(SupportKbGapDetectionService);
+}
+
 describe("SupportKbGapService", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -99,7 +107,7 @@ describe("SupportKbGapService", () => {
       const db = makeDb();
       db.execute.mockResolvedValue([]);
       db.limit.mockResolvedValue([]);
-      const service = await makeService(db);
+      const service = await makeDetectionService(db);
       const result = await service.detectGaps("org1");
       expect(result).toEqual({ created: 0, updated: 0 });
     });
@@ -117,7 +125,7 @@ describe("SupportKbGapService", () => {
       db.query.supportKnowledgeGaps.findFirst.mockResolvedValue(null);
       db.returning.mockResolvedValue([]);
 
-      const service = await makeService(db);
+      const service = await makeDetectionService(db);
       const result = await service.detectGaps("org1");
 
       expect(result.created).toBe(1);
@@ -134,7 +142,7 @@ describe("SupportKbGapService", () => {
       db.query.supportKnowledgeGaps.findFirst.mockResolvedValue(null);
       db.returning.mockResolvedValue([]);
 
-      const service = await makeService(db);
+      const service = await makeDetectionService(db);
       const result = await service.detectGaps("org1");
 
       expect(result.created).toBe(2);
@@ -157,7 +165,7 @@ describe("SupportKbGapService", () => {
       });
       db.returning.mockResolvedValue([]);
 
-      const service = await makeService(db);
+      const service = await makeDetectionService(db);
       const result = await service.detectGaps("org1");
 
       expect(result.created).toBe(0);
@@ -175,7 +183,7 @@ describe("SupportKbGapService", () => {
         status: SupportKnowledgeGapStatus.DISMISSED,
       });
 
-      const service = await makeService(db);
+      const service = await makeDetectionService(db);
       const result = await service.detectGaps("org1");
 
       expect(result.created).toBe(0);
@@ -192,7 +200,7 @@ describe("SupportKbGapService", () => {
       db.query.supportKnowledgeGaps.findFirst.mockResolvedValue(null);
       db.returning.mockResolvedValue([]);
 
-      const service = await makeService(db);
+      const service = await makeDetectionService(db);
       const result = await service.detectGaps("org1");
 
       expect(result.created).toBe(1);
@@ -221,7 +229,7 @@ describe("SupportKbGapService", () => {
       db.query.supportKnowledgeGaps.findFirst.mockResolvedValue(null);
       db.returning.mockResolvedValue([]);
 
-      const service = await makeService(db);
+      const service = await makeDetectionService(db);
       await service.detectGaps("org1");
 
       const insertValuesCall = db.values.mock.calls[0] as [

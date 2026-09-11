@@ -1,5 +1,7 @@
-import { Inject, Injectable, NotFoundException, BadRequestException } from "@nestjs/common";
-import { and, count, desc, eq, isNull, sql } from "drizzle-orm";
+import { Inject, Injectable, InternalServerErrorException, NotFoundException, BadRequestException } from "@nestjs/common";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -21,6 +23,13 @@ import type {
   CreateBudgetPoolInput,
 } from "./dto/enterprise-comp.schemas";
 
+function decodePaginationCursor(cursor: string | undefined) {
+  if (cursor === undefined) return null;
+  const position = decodeCursor(cursor);
+  if (!position) throw new BadRequestException("Invalid pagination cursor");
+  return position;
+}
+
 @Injectable()
 export class CompPlanningService {
   constructor(
@@ -31,24 +40,31 @@ export class CompPlanningService {
 
   async createCycle(orgId: string, actorId: string, input: CreateCompCycleInput) {
     const [created] = await this.db.insert(hrCompCycles).values({ orgId, ...input, meritMatrix: input.meritMatrix ?? null, createdBy: actorId }).returning();
-    await this.audit.log({ orgId, actorId, entityType: "hr_comp_cycles", entityId: String(created!.id), action: "created", after: created });
+    if (!created) throw new InternalServerErrorException("Failed to create compensation cycle");
+    await this.audit.log({ orgId, actorId, entityType: "hr_comp_cycles", entityId: String(created.id), action: "created", after: created });
     return created;
   }
 
   async listCycles(orgId: string, input: ListCompCyclesInput) {
-    const { page, limit, status, fiscalYear } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, status, fiscalYear } = input;
     const conditions = [eq(hrCompCycles.orgId, orgId)];
     if (status) conditions.push(eq(hrCompCycles.status, status));
     if (fiscalYear) conditions.push(eq(hrCompCycles.fiscalYear, fiscalYear));
-    const where = and(...conditions);
+    const position = decodePaginationCursor(cursor);
+    if (position)
+      conditions.push(keysetBeforeId(hrCompCycles.createdAt, hrCompCycles.id, position));
 
-    const [data, totalResult] = await Promise.all([
-      this.db.select().from(hrCompCycles).where(where).orderBy(desc(hrCompCycles.createdAt)).limit(limit).offset(offset),
-      this.db.select({ total: count() }).from(hrCompCycles).where(where),
-    ]);
-    const total = totalResult[0]?.total ?? 0;
-    return { data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+    const rows = await this.db
+      .select()
+      .from(hrCompCycles)
+      .where(and(...conditions))
+      .orderBy(desc(hrCompCycles.createdAt), desc(hrCompCycles.id))
+      .limit(limit + 1);
+
+    return buildCursorPage(rows, limit, (cycle) => ({
+      sortValue: cycle.createdAt.toISOString(),
+      id: String(cycle.id),
+    }));
   }
 
   async getCycle(orgId: string, cycleId: number) {
@@ -60,7 +76,7 @@ export class CompPlanningService {
   async updateCycle(orgId: string, cycleId: number, actorId: string, input: UpdateCompCycleInput) {
     const [updated] = await this.db
       .update(hrCompCycles)
-      .set({ ...input, meritMatrix: (input.meritMatrix ?? undefined) as never, updatedAt: new Date() })
+      .set({ ...input, updatedAt: new Date() })
       .where(and(eq(hrCompCycles.id, cycleId), eq(hrCompCycles.orgId, orgId)))
       .returning();
     if (!updated) throw new NotFoundException("Compensation cycle not found");
@@ -86,21 +102,25 @@ export class CompPlanningService {
       managerNote: input.managerNote ?? null,
     }).returning();
 
-    await this.audit.log({ orgId, actorId, entityType: "hr_comp_recommendations", entityId: String(created!.id), action: "created", after: created });
+    if (!created) throw new InternalServerErrorException("Failed to create compensation recommendation");
+    await this.audit.log({ orgId, actorId, entityType: "hr_comp_recommendations", entityId: String(created.id), action: "created", after: created });
     return created;
   }
 
   async listRecommendations(orgId: string, input: ListRecommendationsInput) {
-    const { page, limit, cycleId, userId, status } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, cycleId, userId, status } = input;
     const conditions = [eq(hrCompRecommendations.orgId, orgId)];
     if (cycleId) conditions.push(eq(hrCompRecommendations.cycleId, cycleId));
     if (userId) conditions.push(eq(hrCompRecommendations.userId, userId));
     if (status) conditions.push(eq(hrCompRecommendations.status, status));
-    const where = and(...conditions);
+    const position = decodePaginationCursor(cursor);
+    if (position)
+      conditions.push(
+        keysetBeforeId(hrCompRecommendations.createdAt, hrCompRecommendations.id, position),
+      );
 
-    const [data, totalResult] = await Promise.all([
-      this.db.select({
+    const rows = await this.db
+      .select({
         id: hrCompRecommendations.id,
         cycleId: hrCompRecommendations.cycleId,
         userId: hrCompRecommendations.userId,
@@ -112,23 +132,28 @@ export class CompPlanningService {
         hrCalibratedCents: hrCompRecommendations.hrCalibratedCents,
         status: hrCompRecommendations.status,
         createdAt: hrCompRecommendations.createdAt,
-      }).from(hrCompRecommendations).where(where).orderBy(desc(hrCompRecommendations.createdAt)).limit(limit).offset(offset),
-      this.db.select({ total: count() }).from(hrCompRecommendations).where(where),
-    ]);
-    const total = totalResult[0]?.total ?? 0;
-    return { data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+      })
+      .from(hrCompRecommendations)
+      .where(and(...conditions))
+      .orderBy(desc(hrCompRecommendations.createdAt), desc(hrCompRecommendations.id))
+      .limit(limit + 1);
+
+    return buildCursorPage(rows, limit, (recommendation) => ({
+      sortValue: recommendation.createdAt.toISOString(),
+      id: String(recommendation.id),
+    }));
   }
 
   async updateRecommendation(orgId: string, recId: number, actorId: string, input: UpdateRecommendationInput) {
-    const setData: Record<string, unknown> = { updatedAt: new Date() };
-    if (input.recommendedIncreaseCents !== undefined) setData["recommendedIncreaseCents"] = input.recommendedIncreaseCents;
-    if (input.recommendedPct !== undefined) setData["recommendedPct"] = String(input.recommendedPct);
-    if (input.rating !== undefined) setData["rating"] = input.rating;
-    if (input.managerNote !== undefined) setData["managerNote"] = input.managerNote;
-
     const [updated] = await this.db
       .update(hrCompRecommendations)
-      .set(setData as never)
+      .set({
+        updatedAt: new Date(),
+        ...(input.recommendedIncreaseCents !== undefined && { recommendedIncreaseCents: input.recommendedIncreaseCents }),
+        ...(input.recommendedPct !== undefined && { recommendedPct: String(input.recommendedPct) }),
+        ...(input.rating !== undefined && { rating: input.rating }),
+        ...(input.managerNote !== undefined && { managerNote: input.managerNote }),
+      })
       .where(and(eq(hrCompRecommendations.id, recId), eq(hrCompRecommendations.orgId, orgId)))
       .returning();
     if (!updated) throw new NotFoundException("Recommendation not found");
@@ -191,7 +216,23 @@ export class CompPlanningService {
     return { approved: true, finalCents };
   }
 
+  /**
+   * The cycle named in the path, resolved under the caller's organisation.
+   *
+   * `getBudgetPools` did this and `createBudgetPool` did not, so a cross-tenant `:cycleId` reached
+   * the INSERT and the composite tenant FK refused it with an uncaught 23503 — a **500** where the
+   * contract requires 404, measured by the live cross-tenant sweep (control 201, cross-tenant 500).
+   */
+  private async assertCycleInOrg(orgId: string, cycleId: number): Promise<void> {
+    const cycle = await this.db.query.hrCompCycles.findFirst({
+      columns: { id: true },
+      where: and(eq(hrCompCycles.id, cycleId), eq(hrCompCycles.orgId, orgId)),
+    });
+    if (!cycle) throw new NotFoundException("Compensation cycle not found");
+  }
+
   async getBudgetPools(orgId: string, cycleId: number) {
+    await this.assertCycleInOrg(orgId, cycleId);
     return this.db
       .select()
       .from(hrCompBudgetPools)
@@ -200,8 +241,10 @@ export class CompPlanningService {
   }
 
   async createBudgetPool(orgId: string, actorId: string, input: CreateBudgetPoolInput) {
+    await this.assertCycleInOrg(orgId, input.cycleId);
     const [created] = await this.db.insert(hrCompBudgetPools).values({ orgId, ...input }).returning();
-    await this.audit.log({ orgId, actorId, entityType: "hr_comp_budget_pools", entityId: String(created!.id), action: "created", after: created });
+    if (!created) throw new InternalServerErrorException("Failed to create budget pool");
+    await this.audit.log({ orgId, actorId, entityType: "hr_comp_budget_pools", entityId: String(created.id), action: "created", after: created });
     return created;
   }
 }

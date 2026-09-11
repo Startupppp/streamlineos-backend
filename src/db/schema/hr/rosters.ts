@@ -1,5 +1,5 @@
-import { pgTable, text, serial, timestamp, date, integer, index, unique, jsonb } from "drizzle-orm/pg-core";
-import { organizations, users } from "../common/auth";
+import { pgTable, text, serial, timestamp, date, integer, index, uniqueIndex, unique, jsonb, foreignKey } from "drizzle-orm/pg-core";
+import { organizationMembers, organizations, users } from "../common/auth";
 import { shiftTemplates } from "./shifts";
 
 export const rosters = pgTable("rosters", {
@@ -19,14 +19,21 @@ export const rosters = pgTable("rosters", {
 
 export const rosterEntries = pgTable("roster_entries", {
   id: serial("id").primaryKey(),
-  rosterId: integer("roster_id").references(() => rosters.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  shiftId: integer("shift_id").references(() => shiftTemplates.id),
+  rosterId: integer("roster_id").notNull(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  userId: text("user_id").notNull(),
+  userMembershipId: integer("user_membership_id"),
+  shiftId: integer("shift_id"),
   date: date("date").notNull(),
   isDayOff: jsonb("is_day_off").$type<boolean>().default(false),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.rosterId], foreignColumns: [rosters.orgId, rosters.id], name: "fk_roster_entries_org_roster" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.shiftId], foreignColumns: [shiftTemplates.orgId, shiftTemplates.id], name: "fk_roster_entries_org_shift" }),
   index("idx_roster_entries_roster").on(table.rosterId),
   index("idx_roster_entries_user_date").on(table.userId, table.date),
+  index("idx_roster_entries_org_user_membership_date").on(table.orgId, table.userMembershipId, table.date),
+  foreignKey({ columns: [table.orgId, table.userMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_roster_entries_user_actor" }).onDelete("set null"),
+  uniqueIndex("uniq_roster_entries_org_roster_membership_date").on(table.orgId, table.rosterId, table.userMembershipId, table.date),
 ]);

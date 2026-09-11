@@ -1,27 +1,14 @@
-import {
-  ConflictException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from "@nestjs/common";
-import { and, asc, eq, ilike, isNull, or } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
-import { orgUnits } from "../../../db/schema/common/organization";
-import { DRIZZLE } from "../../../db/drizzle.constants";
-import { type Db } from "../../../db/drizzle.module";
-import { CacheService } from "../../../common/cache/cache.service";
-import { AuditService } from "../../../common/audit/audit.service";
+import { Injectable } from "@nestjs/common";
+import { orgUnits } from "../../../db/schema";
 import type {
   CreateCostCenterInput,
   ListQueryInput,
   UpdateCostCenterInput,
 } from "./dto/org-hierarchy.schemas";
 import {
-  getOrgUnitCursorFilter,
-  getOrgUnitStatusFilter,
-  orgUnitNormalizedName,
-  toOrgUnitCursorPage,
-} from "./org-hierarchy-list-filters";
+  OrgUnitCrudService,
+  type OrgUnitCrudAdapter,
+} from "./org-unit-crud";
 
 const ORG_COST_CENTER_COLUMNS = {
   id: orgUnits.id,
@@ -62,133 +49,79 @@ export function toOrgCostCenter(row: OrgCostCenterRow) {
   };
 }
 
+const COST_CENTER_ADAPTER: OrgUnitCrudAdapter<
+  CreateCostCenterInput,
+  UpdateCostCenterInput,
+  OrgCostCenterRow,
+  OrgCostCenterRow,
+  ReturnType<typeof toOrgCostCenter>
+> = {
+  kind: "COST_CENTER",
+  label: "Cost center",
+  auditName: "org.costCenter",
+  code: {
+    create: (input) => input.code,
+    update: (input) => input.code,
+    current: (row) => row.code,
+    includeDeleted: true,
+  },
+  listRows: async (db, plan) =>
+    db
+      .select(ORG_COST_CENTER_COLUMNS)
+      .from(orgUnits)
+      .where(plan.where)
+      .orderBy(...plan.orderBy)
+      .limit(plan.limit),
+  readRow: async (db, where) => {
+    const [row] = await db
+      .select(ORG_COST_CENTER_COLUMNS)
+      .from(orgUnits)
+      .where(where)
+      .limit(1);
+    return row ?? null;
+  },
+  createValues: (input) => ({
+    name: input.name,
+    description: input.description,
+  }),
+  updateValues: (input) => ({
+    ...(input.name !== undefined ? { name: input.name } : {}),
+    ...(input.description !== undefined
+      ? { description: input.description }
+      : {}),
+    ...(input.status !== undefined ? { status: input.status } : {}),
+  }),
+  toOutput: toOrgCostCenter,
+  toListOutput: toOrgCostCenter,
+  toWriteOutput: toOrgCostCenter,
+};
+
 @Injectable()
 export class OrgHierarchyCostCentersService {
-  constructor(
-    @Inject(DRIZZLE) private readonly db: Db,
-    private readonly cache: CacheService,
-    private readonly audit: AuditService,
-  ) {}
+  constructor(private readonly crud: OrgUnitCrudService) {}
 
-  async listCostCenters(orgId: string, query: ListQueryInput) {
-    const { cursor, limit, search, status } = query;
-    const statusFilter = getOrgUnitStatusFilter(status);
-    const cursorFilter = getOrgUnitCursorFilter(cursor);
-    const filters = and(
-      eq(orgUnits.orgId, orgId),
-      eq(orgUnits.kind, "COST_CENTER"),
-      isNull(orgUnits.deletedAt),
-      ...(search
-        ? [
-            or(
-              ilike(orgUnits.name, `%${search}%`),
-              ilike(orgUnits.code, `%${search}%`),
-            ),
-          ]
-        : []),
-      ...(statusFilter ? [statusFilter] : []),
-      ...(cursorFilter ? [cursorFilter] : []),
-    );
-    const rows = await this.db
-      .select(ORG_COST_CENTER_COLUMNS)
-      .from(orgUnits)
-      .where(filters)
-      .orderBy(asc(orgUnitNormalizedName), asc(orgUnits.id))
-      .limit(limit + 1);
-    return toOrgUnitCursorPage(rows, limit, toOrgCostCenter);
+  listCostCenters(orgId: string, query: ListQueryInput) {
+    return this.crud.list(COST_CENTER_ADAPTER, orgId, query);
   }
 
-  async getCostCenter(orgId: string, id: string) {
-    const [row] = await this.db
-      .select(ORG_COST_CENTER_COLUMNS)
-      .from(orgUnits)
-      .where(
-        and(
-          eq(orgUnits.id, id),
-          eq(orgUnits.orgId, orgId),
-          eq(orgUnits.kind, "COST_CENTER"),
-          isNull(orgUnits.deletedAt),
-        ),
-      )
-      .limit(1);
-    return row ? toOrgCostCenter(row) : null;
+  getCostCenter(orgId: string, id: string) {
+    return this.crud.get(COST_CENTER_ADAPTER, orgId, id);
   }
 
-  async createCostCenter(orgId: string, userId: string, body: CreateCostCenterInput) {
-    const conflict = await this.db.query.orgUnits.findFirst({
-      where: and(
-        eq(orgUnits.orgId, orgId),
-        eq(orgUnits.kind, "COST_CENTER"),
-        eq(orgUnits.code, body.code.toUpperCase()),
-      ),
-    });
-    if (conflict) throw new ConflictException("Cost center code already exists");
-
-    const [row] = await this.db
-      .insert(orgUnits)
-      .values({
-        id: randomUUID(),
-        orgId,
-        kind: "COST_CENTER",
-        code: body.code.toUpperCase(),
-        name: body.name,
-        description: body.description,
-      })
-      .returning(ORG_COST_CENTER_COLUMNS);
-
-    if (!row) throw new Error("Failed to create cost center");
-
-    await this.cache.invalidateForOrg(orgId, "org:units:COST_CENTER");
-    await this.audit.logCritical({ action: "org.costCenter.created", userId, orgId, targetId: row.id, targetType: "org_unit" });
-
-    return toOrgCostCenter(row);
+  createCostCenter(
+    orgId: string,
+    userId: string,
+    body: CreateCostCenterInput,
+  ) {
+    return this.crud.create(COST_CENTER_ADAPTER, orgId, userId, body);
   }
 
-  async updateCostCenter(orgId: string, userId: string, id: string, body: UpdateCostCenterInput) {
-    const existing = await this.getCostCenter(orgId, id);
-    if (!existing) throw new NotFoundException("Cost center not found");
-
-    if (body.code && body.code !== existing.code) {
-      const conflict = await this.db.query.orgUnits.findFirst({
-        where: and(
-          eq(orgUnits.orgId, orgId),
-          eq(orgUnits.kind, "COST_CENTER"),
-          eq(orgUnits.code, body.code.toUpperCase()),
-        ),
-      });
-      if (conflict) throw new ConflictException("Cost center code already exists");
-    }
-
-    const [row] = await this.db
-      .update(orgUnits)
-      .set({ ...body, ...(body.code !== undefined && { code: body.code.toUpperCase() }) })
-      .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "COST_CENTER")))
-      .returning(ORG_COST_CENTER_COLUMNS);
-
-    if (!row) throw new NotFoundException("Cost center not found");
-
-    await this.cache.invalidateForOrg(orgId, "org:units:COST_CENTER");
-    await this.audit.logCritical({ action: "org.costCenter.updated", userId, orgId, targetId: id, targetType: "org_unit" });
-
-    return toOrgCostCenter(row);
-  }
-
-  async deleteCostCenter(orgId: string, userId: string, id: string) {
-    const existing = await this.getCostCenter(orgId, id);
-    if (!existing) throw new NotFoundException("Cost center not found");
-
-    await this.db
-      .update(orgUnits)
-      .set({ deletedAt: new Date() })
-      .where(
-        and(
-          eq(orgUnits.id, id),
-          eq(orgUnits.orgId, orgId),
-          eq(orgUnits.kind, "COST_CENTER"),
-        ),
-      );
-
-    await this.cache.invalidateForOrg(orgId, "org:units:COST_CENTER");
-    await this.audit.logCritical({ action: "org.costCenter.deleted", userId, orgId, targetId: id, targetType: "org_unit" });
+  updateCostCenter(
+    orgId: string,
+    userId: string,
+    id: string,
+    body: UpdateCostCenterInput,
+  ) {
+    return this.crud.update(COST_CENTER_ADAPTER, orgId, userId, id, body);
   }
 }

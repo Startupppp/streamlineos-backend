@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { and, eq, gt, gte, lt, lte, sql } from "drizzle-orm";
+import { and, eq, gt, gte, inArray, lt, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db, TenantTx } from "../../../db/drizzle.types";
 import {
@@ -8,9 +8,10 @@ import {
   billingUsageRollups,
 } from "../../../db/schema";
 import { PaymentRequiredException } from "../../../common/http/api-exceptions";
-import { runInTenantTransaction, runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { forEachOrg } from "../../../common/tenant";
 import { readCount } from "./quota-counts";
+import { assertOneOf } from "./lib/enum-guard";
 
 export const RESERVATION_STATUSES = ["ACTIVE", "SETTLED", "RELEASED", "EXPIRED"] as const;
 
@@ -145,7 +146,7 @@ export class UsageMeteringService {
           id: inserted.id,
           meterKey: input.meterKey,
           reservedQuantity: input.quantity,
-          status: "ACTIVE" as ReservationStatus,
+          status: "ACTIVE",
           expiresAt,
           replayed: false,
         };
@@ -297,7 +298,10 @@ export class UsageMeteringService {
       .limit(1);
 
     if (!existing) return null;
-    return { ...existing, status: existing.status as ReservationStatus };
+    return {
+      ...existing,
+      status: assertOneOf(RESERVATION_STATUSES, existing.status, "billing_usage_reservations.status"),
+    };
   }
 
   async rebuildRollup(
@@ -348,45 +352,63 @@ export class UsageMeteringService {
     );
   }
 
+  /**
+   * Expires reservations inside the tenant transaction `forEachOrg` already
+   * opened, one claim per distinct meter rather than one transaction per row.
+   *
+   * The previous shape opened `runInNewTenantTransaction` for every expired
+   * reservation, so a page of 500 borrowed 500 further pooled connections while
+   * the sweep's own transaction sat idle holding one. The advisory lock is what
+   * serialises this against a concurrent settle, and it is per meter — so taking
+   * it once per meter and expiring that meter's whole set in one compare-and-set
+   * `UPDATE … WHERE status = 'ACTIVE'` is the same guarantee at
+   * O(distinct meters) round trips instead of O(reservations).
+   */
   async sweepExpiredReservations(limit = 500): Promise<number> {
     const now = new Date();
     let swept = 0;
     await forEachOrg(this.db, "sweep:expired-usage-reservations", async (tx, orgId) => {
-      const expired = await tx
-        .select({
-          id: billingUsageReservations.id,
-          meterKey: billingUsageReservations.meterKey,
-        })
-        .from(billingUsageReservations)
-        .where(
-          and(
-            eq(billingUsageReservations.orgId, orgId),
-            eq(billingUsageReservations.status, "ACTIVE"),
-            lte(billingUsageReservations.expiresAt, now),
-          ),
-        )
-        .limit(limit);
-      for (const row of expired) {
-        try {
-          await runInNewTenantTransaction(this.db, orgId, async (rtx) => {
-            await rtx.execute(lockMeter(orgId, row.meterKey));
-            await rtx
-              .update(billingUsageReservations)
-              .set({ status: "EXPIRED", settledAt: new Date(), settledQuantity: 0 })
-              .where(
-                and(
-                  eq(billingUsageReservations.id, row.id),
-                  eq(billingUsageReservations.status, "ACTIVE"),
-                ),
-              );
-          });
-          swept++;
-        } catch (err: unknown) {
-          this.logger.error(`Failed to expire usage reservation ${row.id}`, {
-            orgId,
-            cause: err instanceof Error ? err.message : String(err),
-          });
+      for (;;) {
+        const expired = await tx
+          .select({
+            id: billingUsageReservations.id,
+            meterKey: billingUsageReservations.meterKey,
+          })
+          .from(billingUsageReservations)
+          .where(
+            and(
+              eq(billingUsageReservations.orgId, orgId),
+              eq(billingUsageReservations.status, "ACTIVE"),
+              lte(billingUsageReservations.expiresAt, now),
+            ),
+          )
+          .limit(limit);
+        if (expired.length === 0) return;
+
+        const idsByMeter = new Map<string, number[]>();
+        for (const row of expired) {
+          const bucket = idsByMeter.get(row.meterKey);
+          if (bucket) bucket.push(row.id);
+          else idsByMeter.set(row.meterKey, [row.id]);
         }
+
+        for (const [meterKey, ids] of idsByMeter) {
+          await tx.execute(lockMeter(orgId, meterKey));
+          const claimed = await tx
+            .update(billingUsageReservations)
+            .set({ status: "EXPIRED", settledAt: new Date(), settledQuantity: 0 })
+            .where(
+              and(
+                eq(billingUsageReservations.orgId, orgId),
+                eq(billingUsageReservations.status, "ACTIVE"),
+                inArray(billingUsageReservations.id, ids),
+              ),
+            )
+            .returning({ id: billingUsageReservations.id });
+          swept += claimed.length;
+        }
+
+        if (expired.length < limit) return;
       }
     });
     return swept;

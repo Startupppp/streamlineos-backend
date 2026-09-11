@@ -9,7 +9,7 @@
  * `./admin-integration` and the evidence in `./admin-compliance`.
  */
 
-import { pgTable, text, serial, timestamp, decimal, integer, boolean, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, decimal, integer, boolean, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
   invReservationStrategyEnum,
@@ -176,7 +176,6 @@ export const invSettings = pgTable("inv_settings", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_inv_settings_org_id").on(table.orgId, table.id),
-  index("idx_inv_settings_org").on(table.orgId),
 ]);
 
 /**

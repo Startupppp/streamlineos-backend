@@ -21,8 +21,26 @@ import { TimesheetRemindersSweepService } from "../timesheets/core/reminders-swe
 import { BuildDueSweepService } from "../build/core/build-due-sweep.service";
 import { CronSignService } from "./cron-sign.service";
 import { CronLeaseService } from "./cron-lease.service";
-import { CalendarReminderSweepService } from "../calendar/calendar-reminder-sweep.service";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { CronOperatorAccessService } from "./cron-operator-access.service";
+import { CronAiUsageRetentionService } from "./cron-ai-usage-retention.service";
+import { CronMailRetentionService } from "./cron-mail-retention.service";
+import { CronAnnouncementsRetentionService } from "./cron-announcements-retention.service";
+import {
+  workflowTickResponseSchema,
+  buildDueSweepResponseSchema,
+  emailOutboxFlushResponseSchema,
+  invitationExpiryResponseSchema,
+  ownershipTransferExpiryResponseSchema,
+  accountOrgIndexRebuildResponseSchema,
+  orgPurgeWorkerResponseSchema,
+  idempotencyFenceSweepResponseSchema,
+  timesheetsExceptionDetectionResponseSchema,
+  operatorGrantExpiryResponseSchema,
+  aiUsageRetentionSweepResponseSchema,
+  mailMetadataRetentionSweepResponseSchema,
+  announcementsRetentionSweepResponseSchema,
+} from "./dto/cron-platform-response.schemas";
 
 @Public()
 @Controller("cron")
@@ -37,13 +55,17 @@ export class CronPlatformController {
     private readonly timesheetReminders: TimesheetRemindersSweepService,
     private readonly idempotency: CronIdempotencyService,
     private readonly buildDueSweep: BuildDueSweepService,
-    private readonly calendarReminderSweep: CalendarReminderSweepService,
     private readonly accountOrgIndex: AccountOrganizationIndexService,
     private readonly signSweeps: CronSignService,
     private readonly cronLease: CronLeaseService,
+    private readonly operatorAccess: CronOperatorAccessService,
+    private readonly aiUsageRetention: CronAiUsageRetentionService,
+    private readonly mailRetention: CronMailRetentionService,
+    private readonly announcementsRetention: CronAnnouncementsRetentionService,
   ) {}
 
   @Get("workflow-tick")
+  @ResponseSchema(workflowTickResponseSchema)
   async workflowTickGet(@Headers("authorization") authorization?: string) {
     return this.runWorkflowTick(authorization);
   }
@@ -51,11 +73,13 @@ export class CronPlatformController {
   @Post("workflow-tick")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(workflowTickResponseSchema)
   async workflowTickPost(@Headers("authorization") authorization?: string) {
     return this.runWorkflowTick(authorization);
   }
 
   @Get("build-due-sweep")
+  @ResponseSchema(buildDueSweepResponseSchema)
   getBuildDueSweep(@Headers("authorization") authorization?: string) {
     return this.runBuildDueSweep(authorization);
   }
@@ -63,23 +87,13 @@ export class CronPlatformController {
   @Post("build-due-sweep")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(buildDueSweepResponseSchema)
   postBuildDueSweep(@Headers("authorization") authorization?: string) {
     return this.runBuildDueSweep(authorization);
   }
 
-  @Get("calendar-reminder-sweep")
-  getCalendarReminderSweep(@Headers("authorization") authorization?: string) {
-    return this.runCalendarReminderSweep(authorization);
-  }
-
-  @Post("calendar-reminder-sweep")
-  @BodylessAction()
-  @HttpCode(200)
-  postCalendarReminderSweep(@Headers("authorization") authorization?: string) {
-    return this.runCalendarReminderSweep(authorization);
-  }
-
   @Get("email-outbox-flush")
+  @ResponseSchema(emailOutboxFlushResponseSchema)
   getEmailOutboxFlush(@Headers("authorization") authorization?: string) {
     return this.runEmailOutboxFlush(authorization);
   }
@@ -87,11 +101,13 @@ export class CronPlatformController {
   @Post("email-outbox-flush")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(emailOutboxFlushResponseSchema)
   postEmailOutboxFlush(@Headers("authorization") authorization?: string) {
     return this.runEmailOutboxFlush(authorization);
   }
 
   @Get("invitation-expiry")
+  @ResponseSchema(invitationExpiryResponseSchema)
   getInvitationExpiry(@Headers("authorization") authorization?: string) {
     return this.runInvitationExpiry(authorization);
   }
@@ -99,11 +115,13 @@ export class CronPlatformController {
   @Post("invitation-expiry")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(invitationExpiryResponseSchema)
   postInvitationExpiry(@Headers("authorization") authorization?: string) {
     return this.runInvitationExpiry(authorization);
   }
 
   @Get("ownership-transfer-expiry")
+  @ResponseSchema(ownershipTransferExpiryResponseSchema)
   getOwnershipTransferExpiry(@Headers("authorization") authorization?: string) {
     return this.runOwnershipTransferExpiry(authorization);
   }
@@ -111,11 +129,13 @@ export class CronPlatformController {
   @Post("ownership-transfer-expiry")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(ownershipTransferExpiryResponseSchema)
   postOwnershipTransferExpiry(@Headers("authorization") authorization?: string) {
     return this.runOwnershipTransferExpiry(authorization);
   }
 
   @Get("account-org-index-rebuild")
+  @ResponseSchema(accountOrgIndexRebuildResponseSchema)
   getAccountOrgIndexRebuild(@Headers("authorization") authorization?: string) {
     return this.runAccountOrgIndexRebuild(authorization);
   }
@@ -123,11 +143,13 @@ export class CronPlatformController {
   @Post("account-org-index-rebuild")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(accountOrgIndexRebuildResponseSchema)
   postAccountOrgIndexRebuild(@Headers("authorization") authorization?: string) {
     return this.runAccountOrgIndexRebuild(authorization);
   }
 
   @Get("org-purge-worker")
+  @ResponseSchema(orgPurgeWorkerResponseSchema)
   getOrgPurgeWorker(@Headers("authorization") authorization?: string) {
     return this.runOrgPurgeWorker(authorization);
   }
@@ -135,11 +157,13 @@ export class CronPlatformController {
   @Post("org-purge-worker")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(orgPurgeWorkerResponseSchema)
   postOrgPurgeWorker(@Headers("authorization") authorization?: string) {
     return this.runOrgPurgeWorker(authorization);
   }
 
   @Get("idempotency-fence-sweep")
+  @ResponseSchema(idempotencyFenceSweepResponseSchema)
   getIdempotencyFenceSweep(@Headers("authorization") authorization?: string) {
     return this.runIdempotencyFenceSweep(authorization);
   }
@@ -147,6 +171,7 @@ export class CronPlatformController {
   @Post("idempotency-fence-sweep")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(idempotencyFenceSweepResponseSchema)
   postIdempotencyFenceSweep(@Headers("authorization") authorization?: string) {
     return this.runIdempotencyFenceSweep(authorization);
   }
@@ -164,6 +189,7 @@ export class CronPlatformController {
   }
 
   @Get("timesheets-exception-detection")
+  @ResponseSchema(timesheetsExceptionDetectionResponseSchema)
   getTimesheetsExceptionDetection(@Headers("authorization") authorization?: string) {
     return this.runTimesheetsExceptionDetection(authorization);
   }
@@ -171,6 +197,7 @@ export class CronPlatformController {
   @Post("timesheets-exception-detection")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(timesheetsExceptionDetectionResponseSchema)
   postTimesheetsExceptionDetection(@Headers("authorization") authorization?: string) {
     return this.runTimesheetsExceptionDetection(authorization);
   }
@@ -185,6 +212,34 @@ export class CronPlatformController {
   @HttpCode(200)
   postSignEnvelopeSweeps(@Headers("authorization") authorization?: string) {
     return this.runSignEnvelopeSweeps(authorization);
+  }
+
+  @Get("operator-grant-expiry")
+  @ResponseSchema(operatorGrantExpiryResponseSchema)
+  getOperatorGrantExpiry(@Headers("authorization") authorization?: string) {
+    return this.runOperatorGrantExpiry(authorization);
+  }
+
+  @Post("operator-grant-expiry")
+  @BodylessAction()
+  @HttpCode(200)
+  @ResponseSchema(operatorGrantExpiryResponseSchema)
+  postOperatorGrantExpiry(@Headers("authorization") authorization?: string) {
+    return this.runOperatorGrantExpiry(authorization);
+  }
+
+  @Get("ai-usage-retention-sweep")
+  @ResponseSchema(aiUsageRetentionSweepResponseSchema)
+  getAiUsageRetentionSweep(@Headers("authorization") authorization?: string) {
+    return this.runAiUsageRetentionSweep(authorization);
+  }
+
+  @Post("ai-usage-retention-sweep")
+  @BodylessAction()
+  @HttpCode(200)
+  @ResponseSchema(aiUsageRetentionSweepResponseSchema)
+  postAiUsageRetentionSweep(@Headers("authorization") authorization?: string) {
+    return this.runAiUsageRetentionSweep(authorization);
   }
 
   private async runWorkflowTick(authorization?: string) {
@@ -224,20 +279,6 @@ export class CronPlatformController {
       };
     } catch (error) {
       logger.error("Build due sweep cron failed", error);
-      throw new InternalServerErrorException("Internal server error");
-    }
-  }
-
-  private async runCalendarReminderSweep(authorization?: string) {
-    assertCronSecret(authorization);
-    try {
-      const outcome = await this.cronLease.withLease("calendar-reminder-sweep", 120, () =>
-        this.calendarReminderSweep.run(),
-      );
-      if (!outcome.ran) return { success: true, skipped: true, message: "calendar-reminder-sweep already running" };
-      return { success: true, ...outcome.result };
-    } catch (error) {
-      logger.error("Calendar reminder sweep cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }
@@ -437,6 +478,92 @@ export class CronPlatformController {
       };
     } catch (error) {
       logger.error("Timesheet exception detection cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runOperatorGrantExpiry(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("operator-grant-expiry", 120, () =>
+        this.operatorAccess.expirePendingGrants(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "operator-grant-expiry already running" };
+      return { success: true, ...outcome.result };
+    } catch (error) {
+      logger.error("Operator grant expiry cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runAiUsageRetentionSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("ai-usage-retention-sweep", 1800, () =>
+        this.aiUsageRetention.sweep({ dryRun: false }),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "ai-usage-retention-sweep already running" };
+      return { success: true, ...outcome.result };
+    } catch (error) {
+      logger.error("AI usage retention sweep cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  @Get("mail-metadata-retention-sweep")
+  @ResponseSchema(mailMetadataRetentionSweepResponseSchema)
+  getMailMetadataRetentionSweep(@Headers("authorization") authorization?: string) {
+    return this.runMailMetadataRetentionSweep(authorization);
+  }
+
+  @Post("mail-metadata-retention-sweep")
+  @BodylessAction()
+  @HttpCode(200)
+  @ResponseSchema(mailMetadataRetentionSweepResponseSchema)
+  postMailMetadataRetentionSweep(@Headers("authorization") authorization?: string) {
+    return this.runMailMetadataRetentionSweep(authorization);
+  }
+
+  @Get("announcements-retention-sweep")
+  @ResponseSchema(announcementsRetentionSweepResponseSchema)
+  getAnnouncementsRetentionSweep(@Headers("authorization") authorization?: string) {
+    return this.runAnnouncementsRetentionSweep(authorization);
+  }
+
+  @Post("announcements-retention-sweep")
+  @BodylessAction()
+  @HttpCode(200)
+  @ResponseSchema(announcementsRetentionSweepResponseSchema)
+  postAnnouncementsRetentionSweep(@Headers("authorization") authorization?: string) {
+    return this.runAnnouncementsRetentionSweep(authorization);
+  }
+
+  private async runMailMetadataRetentionSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("mail-metadata-retention-sweep", 1800, () =>
+        this.mailRetention.sweep(),
+      );
+      if (!outcome.ran)
+        return { success: true, skipped: true, message: "mail-metadata-retention-sweep already running" };
+      return { success: true, ...outcome.result };
+    } catch (error) {
+      logger.error("Mail metadata retention sweep cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runAnnouncementsRetentionSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("announcements-retention-sweep", 1800, () =>
+        this.announcementsRetention.sweep(),
+      );
+      if (!outcome.ran)
+        return { success: true, skipped: true, message: "announcements-retention-sweep already running" };
+      return { success: true, ...outcome.result };
+    } catch (error) {
+      logger.error("Announcements retention sweep cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

@@ -1,4 +1,5 @@
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import type { AuthContext } from "../../common/auth/auth-context";
 import { isPersonalTokenPermissionDelegable } from "../../common/rbac/personal-token-policy";
 import { moduleAvailability } from "../../common/rbac/module-availability";
 import type { ModuleAvailabilityResolver } from "../../common/rbac/module-availability";
@@ -19,6 +20,7 @@ export class AccessSnapshotResolver {
     private readonly resolveUserPermissions: (
       orgId: string,
       userId: string,
+      ctx?: AuthContext,
     ) => Promise<Map<string, DataScope>>,
     private readonly getUserDeniedModules: (
       orgId: string,
@@ -27,6 +29,7 @@ export class AccessSnapshotResolver {
     private readonly canManageOrganizationMembership: (
       orgId: string,
       userId: string,
+      ctx?: AuthContext,
     ) => Promise<boolean>,
     private readonly buildModuleAvailabilityResolver: (
       getModuleMap: (orgId: string) => Promise<Record<string, boolean>>,
@@ -41,10 +44,11 @@ export class AccessSnapshotResolver {
     orgId: string,
     userId: string,
     currentUserContext: CurrentUserContext,
+    ctx?: AuthContext,
   ): Promise<AccessSnapshot> {
     const [version, mfa] = await Promise.all([
       this.getPermissionsVersion(orgId),
-      this.mfaPolicy.resolve(orgId, userId),
+      ctx ? ctx.mfa() : this.mfaPolicy.resolve(orgId, userId),
     ]);
 
     const tokenScopes = currentUserContext.tokenScopes;
@@ -75,7 +79,7 @@ export class AccessSnapshotResolver {
       };
     }
 
-    const resolved = await this.resolveUserPermissions(orgId, userId);
+    const resolved = await this.resolveUserPermissions(orgId, userId, ctx);
     const scopes: Record<string, DataScope> = {};
     for (const [key, scope] of resolved) {
       if (scope === "none") continue;
@@ -89,7 +93,7 @@ export class AccessSnapshotResolver {
 
     const [denied, canManageOrganizationMembership] = await Promise.all([
       this.getUserDeniedModules(orgId, userId),
-      this.canManageOrganizationMembership(orgId, userId),
+      this.canManageOrganizationMembership(orgId, userId, ctx),
     ]);
     const modules = await this.resolveModuleFlags(orgId, userId, denied);
 

@@ -9,3 +9,12 @@ export const generateSchema = z
   .strict();
 
 export type GenerateInput = z.infer<typeof generateSchema>;
+
+export const generateWorkspaceResponseSchema = z.object({
+  businessUnits: z.number().int().nonnegative(),
+  branches: z.number().int().nonnegative(),
+  departments: z.number().int().nonnegative(),
+  teams: z.number().int().nonnegative(),
+});
+
+export type GenerateWorkspaceResponse = z.infer<typeof generateWorkspaceResponseSchema>;

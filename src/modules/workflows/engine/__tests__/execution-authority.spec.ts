@@ -23,14 +23,18 @@ interface Recorder {
   steps: StepRow[];
   updates: Record<string, unknown>[];
   selectQueue: unknown[][];
+  executionStatus: Array<{ executionStatus: string }>;
 }
 
 function makeTx(rec: Recorder) {
   return {
-    select: () => ({
+    select: (projection?: Record<string, unknown>) => ({
       from: () => ({
         where: () => ({
-          limit: () => Promise.resolve(rec.selectQueue.shift() ?? []),
+          limit: () =>
+            projection !== undefined && "executionStatus" in projection
+              ? Promise.resolve(rec.executionStatus)
+              : Promise.resolve(rec.selectQueue.shift() ?? []),
         }),
       }),
     }),
@@ -80,6 +84,7 @@ describe("advanceExecution — actor authority gate", () => {
     const rec: Recorder = {
       steps: [],
       updates: [],
+      executionStatus: [{ executionStatus: "running" }],
       selectQueue: [
         [{ status: "ACTIVE" }],
         [{ definitionJson: SIMPLE_GRAPH }],
@@ -101,6 +106,7 @@ describe("advanceExecution — actor authority gate", () => {
     const rec: Recorder = {
       steps: [],
       updates: [],
+      executionStatus: [{ executionStatus: "running" }],
       selectQueue: [],
     };
     currentTx = makeTx(rec);
@@ -125,6 +131,7 @@ describe("advanceExecution — actor authority gate", () => {
     const rec: Recorder = {
       steps: [],
       updates: [],
+      executionStatus: [{ executionStatus: "running" }],
       selectQueue: [[{ status: "SUSPENDED" }]],
     };
     currentTx = makeTx(rec);
@@ -145,6 +152,7 @@ describe("advanceExecution — actor authority gate", () => {
     const rec: Recorder = {
       steps: [],
       updates: [],
+      executionStatus: [{ executionStatus: "running" }],
       selectQueue: [[{ status: "LEFT" }]],
     };
     currentTx = makeTx(rec);
@@ -163,6 +171,7 @@ describe("advanceExecution — actor authority gate", () => {
     const rec: Recorder = {
       steps: [],
       updates: [],
+      executionStatus: [{ executionStatus: "running" }],
       selectQueue: [[{ definitionJson: SIMPLE_GRAPH }]],
     };
     currentTx = makeTx(rec);

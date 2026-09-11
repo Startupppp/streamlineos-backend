@@ -17,6 +17,7 @@ export class HrLeaveBlackoutService {
     return this.db.query.leaveBlackoutDates.findMany({
       where: and(...conditions),
       orderBy: [asc(leaveBlackoutDates.startDate)],
+      limit: 100,
     });
   }
 

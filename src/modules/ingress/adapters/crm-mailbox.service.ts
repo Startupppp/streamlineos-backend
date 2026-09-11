@@ -9,6 +9,7 @@ import { GmailMailProvider } from "../../mail/providers/gmail-mail.provider";
 import { OutlookMailProvider } from "../../mail/providers/outlook-mail.provider";
 import { InboundIngressService } from "../inbound-ingress.service";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { logger } from "../../../common/logger/logger.service";
 import { mailToInboundEvent, type MailMessageForIngress } from "./mail-to-inbound-event";
 import { advanceWatermark, planSweep } from "./mailbox-sync";
 import {
@@ -285,7 +286,7 @@ export class CrmMailboxService {
         });
 
         if (result.ok) {
-          await this.ingress.accept(result.event);
+          await this.ingress.accept(result.event, organizationId);
           delivered += 1;
         } else {
           skipped += 1;
@@ -338,7 +339,12 @@ export class CrmMailboxService {
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.logger.warn(`sweep failed for ${row.mailboxAddress}: ${message}`);
+      logger.warn("crm mailbox sweep failed", {
+        organizationId,
+        crmMailboxSyncId,
+        mailboxEmailAddress: row.mailboxAddress,
+        error: message,
+      });
 
       await this.db
         .update(crmMailboxSync)

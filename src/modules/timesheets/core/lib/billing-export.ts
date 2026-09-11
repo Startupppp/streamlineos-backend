@@ -15,7 +15,11 @@ import type { TenantTx } from "../../../../db/drizzle.types";
 import { timesheets, timesheetExports } from "../../../../db/schema";
 import { actingMembershipId } from "../../../../common/auth/principal";
 import { TimesheetsAuditService } from "../timesheets-audit.service";
-import type { CreateInvoiceDraftInput, ExportBillingInput } from "../dto/billing.schemas";
+import {
+  billingExportSnapshotSchema,
+  type CreateInvoiceDraftInput,
+  type ExportBillingInput,
+} from "../dto/billing.schemas";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { round2 } from "./billing-money";
 
@@ -173,8 +177,8 @@ async function findExportByIdempotencyKey(
 
   if (!row) return null;
 
-  const snapshotRows =
-    (row.snapshot as { computedAmount?: number }[] | null) ?? [];
+  const parsedSnapshot = billingExportSnapshotSchema.safeParse(row.snapshot);
+  const snapshotRows = parsedSnapshot.success ? parsedSnapshot.data : [];
   const totalAmount = round2(
     snapshotRows.reduce((sum, r) => sum + (r.computedAmount ?? 0), 0),
   );

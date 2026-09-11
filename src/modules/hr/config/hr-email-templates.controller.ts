@@ -27,6 +27,11 @@ import {
 } from "./dto/email-templates.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  emailTemplateRowSchema,
+  emailTemplateAiSchema,
+} from "./dto/config-response.schemas";
 import { z } from "zod";
 
 const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
@@ -39,11 +44,13 @@ export class HrEmailTemplatesController {
   constructor(private readonly emailTemplates: HrEmailTemplatesService) {}
 
   @Get()
+  @ResponseSchema(z.array(emailTemplateRowSchema))
   list(@CurrentUser() u: CurrentUserContext) {
     return this.emailTemplates.list(u.orgId);
   }
 
   @Post()
+  @ResponseSchema(emailTemplateRowSchema)
   @HttpCode(201)
   @Validate({ body: createEmailTemplateSchema })
   create(
@@ -54,6 +61,7 @@ export class HrEmailTemplatesController {
   }
 
   @Patch(":templateId")
+  @ResponseSchema(emailTemplateRowSchema)
   @Validate({ params: templateIdParams, body: updateEmailTemplateSchema })
   update(
     @Param("templateId", ParseIntPipe) templateId: number,
@@ -64,6 +72,7 @@ export class HrEmailTemplatesController {
   }
 
   @Delete(":templateId")
+  @NoContentResponse()
   @HttpCode(204)
   @Validate({ params: templateIdParams })
   remove(
@@ -74,6 +83,7 @@ export class HrEmailTemplatesController {
   }
 
   @Post("generate-ai")
+  @ResponseSchema(emailTemplateAiSchema)
   @HttpCode(200)
   @Validate({ body: generateEmailTemplateAiSchema })
   generateAi(

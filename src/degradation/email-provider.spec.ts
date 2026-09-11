@@ -110,17 +110,17 @@ describe("Retry state machine — outbox retries and dead-letters on provider fa
 
 describe("Email provider degraded — outbox retry state machine", () => {
   it.skip(
-    "integration: a 503 from the provider increments retryCount and returns the event to PENDING — needs OutboxPublisherService / AiCreditsReservationService driven end to end; those services open their own transactions via runInNewTenantTransaction, so their writes cannot be rolled back on a database shared with concurrent sessions — asserting hand-written SQL state instead proves only that Postgres stores what was written",
+    "integration: a provider 503 increments retryCount and returns the event to PENDING — the real-publisher persistence probe is unimplemented; the provider can be a local fault server, but an approved disposable database is required",
     () => {},
   );
 
   it.skip(
-    "integration: reaching OUTBOX_MAX_RETRIES dead-letters the event while the request row stays committed — same blocker as above",
+    "integration: reaching OUTBOX_MAX_RETRIES dead-letters the event while the request row stays committed — the real-publisher persistence probe is unimplemented and requires an approved disposable database",
     () => {},
   );
 
   it.skip(
-    "integration: the request transaction commits before any delivery attempt — same blocker as above",
+    "integration: the request transaction commits before any delivery attempt — the real-publisher transaction-ordering probe is unimplemented and requires an approved disposable database",
     () => {},
   );
 });

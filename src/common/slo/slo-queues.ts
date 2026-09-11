@@ -29,7 +29,7 @@ export const QUEUE_SUBJECTS: readonly QueueSubject[] = [
   {
     id: "notification-outbox-relay",
     sourceFile: "src/modules/notifications/notification-outbox-relay.service.ts",
-    drains: "outbox_events",
+    drains: "notification_outbox",
     owner: "notifications-team",
     channel: "outbox",
   },
@@ -135,6 +135,21 @@ export const QUEUE_SUBJECTS: readonly QueueSubject[] = [
     channel: "job",
   },
   {
+    id: "payroll-posting-intent",
+    sourceFile: "src/modules/payroll/payout/payroll-posting-intent.consumer.ts",
+    drains: "outbox_events",
+    owner: "finance-team",
+    channel: "outbox",
+  },
+  {
+    id: "payroll-payout-posting-intent",
+    sourceFile:
+      "src/modules/payroll/payout/payroll-payout-posting-intent.consumer.ts",
+    drains: "outbox_events",
+    owner: "finance-team",
+    channel: "outbox",
+  },
+  {
     id: "expense-export",
     sourceFile: "src/modules/expenses/expense-export-worker.service.ts",
     drains: "expense_export_jobs",
@@ -216,8 +231,30 @@ function freshnessObjective(subject: QueueSubject): ServiceLevelObjective {
   };
 }
 
+/**
+ * The alert is chosen by the table, not by the channel. `notification-outbox-relay`
+ * declared `drains: "outbox_events"` and inherited `alertId: "dead-outbox"` from it,
+ * so the DEAD-letter objective for `notification_outbox` was satisfied by a script
+ * (`alert-dead-outbox.mjs`) that queries a different table entirely — the objective
+ * could never fail, however many notification intents dead-lettered. Every DEAD-letter
+ * objective now names the watcher that reads the table it is about.
+ */
+const DEAD_LETTER_ALERTS: Record<string, { alertId: string; anchor: string }> = {
+  outbox_events: { alertId: "dead-outbox", anchor: "#dead-outbox" },
+  notification_outbox: {
+    alertId: "dead-notification-outbox",
+    anchor: "#dead-notification-outbox",
+  },
+};
+
 function durabilityObjective(subject: QueueSubject): ServiceLevelObjective | null {
   if (subject.channel !== "outbox") return null;
+  const alert = DEAD_LETTER_ALERTS[subject.drains];
+  if (alert === undefined)
+    throw new Error(
+      `Queue subject ${subject.id} drains ${subject.drains}, which no DEAD-letter alert reads. ` +
+        `Add a watcher for that table and register it in DEAD_LETTER_ALERTS.`,
+    );
   return {
     id: `queue:${subject.id}:durability`,
     kind: "queue",
@@ -229,9 +266,9 @@ function durabilityObjective(subject: QueueSubject): ServiceLevelObjective | nul
       windowHours: DEAD_LETTER_WINDOW_HOURS,
     },
     owner: subject.owner,
-    alertId: "dead-outbox",
+    alertId: alert.alertId,
     runbookFile: ALERT_RUNBOOK,
-    runbookAnchor: "#dead-outbox",
+    runbookAnchor: alert.anchor,
   };
 }
 

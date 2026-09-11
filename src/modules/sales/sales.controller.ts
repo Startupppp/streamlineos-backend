@@ -22,9 +22,21 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { subMonths } from "../../common/date";
 import { AccessService } from "../access/access.service";
-import { SalesService, isForbidden, isNotFound, isConflict } from "./sales.service";
-import { SalesDashboardService, type DateRange } from "./sales-dashboard.service";
-import { SalesAnalyticsService, isRepNotFound } from "./sales-analytics.service";
+import { SalesPlaybookService } from "./sales-playbook.service";
+import {
+  SalesService,
+  isForbidden,
+  isNotFound,
+  isConflict,
+} from "./sales.service";
+import {
+  SalesDashboardService,
+  type DateRange,
+} from "./sales-dashboard.service";
+import {
+  SalesAnalyticsService,
+  isRepNotFound,
+} from "./sales-analytics.service";
 import {
   commissionRuleCreateSchema,
   commissionListSchema,
@@ -58,9 +70,33 @@ import {
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  commissionRuleSchema,
+  commissionSchema,
+  commissionsListSchema,
+  quotaSchema,
+  createdQuotaSchema,
+  playbookEntrySchema,
+  removePlaybookEntrySchema,
+  salesKpisSchema,
+  salesFunnelSchema,
+  salesLeaderboardSchema,
+  salesRevenueVsGoalSchema,
+  salesVelocitySchema,
+  salesAgingSchema,
+  salesCohortSchema,
+  salesCycleLengthSchema,
+  salesLostAnalysisSchema,
+  salesRepComparisonSchema,
+} from "./dto/sales-response.schemas";
 
-const commissionIdParams = z.object({ commissionId: z.coerce.number().int().positive() }).strict();
-const entryIdParams = z.object({ entryId: z.coerce.number().int().positive() }).strict();
+const commissionIdParams = z
+  .object({ commissionId: z.coerce.number().int().positive() })
+  .strict();
+const entryIdParams = z
+  .object({ entryId: z.coerce.number().int().positive() })
+  .strict();
 
 function toRange(input: { from?: string; to?: string }): DateRange {
   return {
@@ -75,6 +111,7 @@ function toRange(input: { from?: string; to?: string }): DateRange {
 export class SalesController {
   constructor(
     private readonly sales: SalesService,
+    private readonly playbook: SalesPlaybookService,
     private readonly dashboard: SalesDashboardService,
     private readonly analytics: SalesAnalyticsService,
     private readonly access: AccessService,
@@ -93,6 +130,7 @@ export class SalesController {
 
   @Get("commission-rules")
   @RequirePermission("sales:view")
+  @ResponseSchema(z.array(commissionRuleSchema))
   listCommissionRules(@CurrentUser() u: CurrentUserContext) {
     return this.sales.listCommissionRules(u.orgId);
   }
@@ -100,6 +138,7 @@ export class SalesController {
   @Post("commission-rules")
   @HttpCode(201)
   @RequirePermission("settings:manage")
+  @ResponseSchema(commissionRuleSchema)
   @Validate({ body: commissionRuleCreateSchema })
   createCommissionRule(
     @Body() body: CommissionRuleCreateInput,
@@ -110,6 +149,7 @@ export class SalesController {
 
   @Get("commissions")
   @RequirePermission("crm:incentives:read")
+  @ResponseSchema(commissionsListSchema)
   @Validate({ query: commissionListSchema })
   async listCommissions(
     @Query() query: CommissionListInput,
@@ -122,13 +162,18 @@ export class SalesController {
   @Patch("commissions/:commissionId")
   @UseGuards(PermissionGuard)
   @RequirePermission("sales:manage")
+  @ResponseSchema(commissionSchema)
   @Validate({ params: commissionIdParams, body: commissionUpdateSchema })
   async updateCommission(
     @Param("commissionId", ParseIntPipe) commissionId: number,
     @Body() body: CommissionUpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.sales.updateCommission(u.orgId, commissionId, body.status);
+    const result = await this.sales.updateCommission(
+      u.orgId,
+      commissionId,
+      body.status,
+    );
     if (isNotFound(result)) throw new NotFoundException("Commission not found");
     if (isConflict(result)) throw new ConflictException(result.message);
     return result;
@@ -136,6 +181,7 @@ export class SalesController {
 
   @Get("quotas")
   @RequirePermission("crm:targets:view")
+  @ResponseSchema(z.array(quotaSchema))
   @Validate({ query: quotaListSchema })
   async listQuotas(
     @Query() query: QuotaListInput,
@@ -148,6 +194,7 @@ export class SalesController {
   @Post("quotas")
   @HttpCode(201)
   @RequirePermission("crm:targets:manage")
+  @ResponseSchema(createdQuotaSchema)
   @Validate({ body: quotaCreateSchema })
   async createQuota(
     @Body() body: QuotaCreateInput,
@@ -161,32 +208,39 @@ export class SalesController {
   @Get("playbook")
   @UseGuards(PermissionGuard)
   @RequirePermission("sales:view")
+  @ResponseSchema(z.array(playbookEntrySchema))
   listPlaybook(@CurrentUser() u: CurrentUserContext) {
-    return this.sales.listPlaybook(u.orgId);
+    return this.playbook.listPlaybook(u.orgId);
   }
 
   @Post("playbook")
   @UseGuards(PermissionGuard)
   @RequirePermission("sales:manage")
   @HttpCode(201)
+  @ResponseSchema(playbookEntrySchema)
   @Validate({ body: playbookCreateSchema })
   createPlaybookEntry(
     @Body() body: PlaybookCreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.sales.createPlaybookEntry(u.orgId, u.userId, body);
+    return this.playbook.createPlaybookEntry(u.orgId, u.userId, body);
   }
 
   @Patch("playbook/:entryId")
   @UseGuards(PermissionGuard)
   @RequirePermission("sales:manage")
+  @ResponseSchema(playbookEntrySchema)
   @Validate({ params: entryIdParams, body: playbookUpdateSchema })
   async updatePlaybookEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
     @Body() body: PlaybookUpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const updated = await this.sales.updatePlaybookEntry(u.orgId, entryId, body);
+    const updated = await this.playbook.updatePlaybookEntry(
+      u.orgId,
+      entryId,
+      body,
+    );
     if (!updated) throw new NotFoundException("Playbook entry not found");
     return updated;
   }
@@ -194,18 +248,20 @@ export class SalesController {
   @Delete("playbook/:entryId")
   @UseGuards(PermissionGuard)
   @RequirePermission("sales:manage")
+  @ResponseSchema(removePlaybookEntrySchema)
   @Validate({ params: entryIdParams })
   async removePlaybookEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.sales.removePlaybookEntry(u.orgId, entryId);
+    const result = await this.playbook.removePlaybookEntry(u.orgId, entryId);
     if (!result) throw new NotFoundException("Playbook entry not found");
     return result;
   }
 
   @Get("dashboard/kpis")
   @RequirePermission("sales:view")
+  @ResponseSchema(salesKpisSchema)
   @Validate({ query: dashboardRangeSchema })
   dashboardKpis(
     @Query() query: DashboardRangeInput,
@@ -217,6 +273,7 @@ export class SalesController {
 
   @Get("dashboard/funnel")
   @RequirePermission("sales:view")
+  @ResponseSchema(salesFunnelSchema)
   @Validate({ query: dashboardRangeSchema })
   dashboardFunnel(
     @Query() query: DashboardRangeInput,
@@ -228,6 +285,7 @@ export class SalesController {
 
   @Get("dashboard/leaderboard")
   @RequirePermission("sales:view")
+  @ResponseSchema(salesLeaderboardSchema)
   @Validate({ query: leaderboardSchema })
   dashboardLeaderboard(
     @Query() query: LeaderboardInput,
@@ -238,6 +296,7 @@ export class SalesController {
 
   @Get("dashboard/revenue-vs-goal")
   @RequirePermission("sales:view")
+  @ResponseSchema(salesRevenueVsGoalSchema)
   @Validate({ query: revenueVsGoalSchema })
   dashboardRevenueVsGoal(
     @Query() query: RevenueVsGoalInput,
@@ -249,6 +308,7 @@ export class SalesController {
 
   @Get("dashboard/velocity")
   @RequirePermission("sales:view")
+  @ResponseSchema(salesVelocitySchema)
   @Validate({ query: leaderboardSchema })
   dashboardVelocity(
     @Query() query: LeaderboardInput,
@@ -259,6 +319,7 @@ export class SalesController {
 
   @Get("dashboard/aging")
   @RequirePermission("sales:view")
+  @ResponseSchema(salesAgingSchema)
   @Validate({ query: agingSchema })
   dashboardAging(
     @Query() query: AgingInput,
@@ -269,6 +330,7 @@ export class SalesController {
 
   @Get("dashboard/cohort")
   @RequirePermission("sales:view")
+  @ResponseSchema(salesCohortSchema)
   @Validate({ query: cohortSchema })
   dashboardCohort(
     @Query() query: CohortInput,
@@ -280,6 +342,7 @@ export class SalesController {
   @Get("dashboard/cycle-length")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:read")
+  @ResponseSchema(salesCycleLengthSchema)
   @Validate({ query: repFilterSchema })
   dashboardCycleLength(
     @Query() query: RepFilterInput,
@@ -291,6 +354,7 @@ export class SalesController {
   @Get("dashboard/lost-analysis")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:read")
+  @ResponseSchema(salesLostAnalysisSchema)
   @Validate({ query: repFilterSchema })
   dashboardLostAnalysis(
     @Query() query: RepFilterInput,
@@ -301,6 +365,7 @@ export class SalesController {
 
   @Get("dashboard/rep-comparison")
   @RequirePermission("sales:view")
+  @ResponseSchema(salesRepComparisonSchema)
   @Validate({ query: repComparisonSchema })
   async dashboardRepComparison(
     @Query() query: RepComparisonInput,
@@ -315,8 +380,15 @@ export class SalesController {
     const from = query.from ? new Date(query.from) : subMonths(new Date(), 6);
     const to = query.to ? new Date(query.to) : new Date();
 
-    const result = await this.analytics.getRepComparison(u.orgId, rep1Id, rep2Id, from, to);
-    if (isRepNotFound(result)) throw new NotFoundException("One or both reps not found");
+    const result = await this.analytics.getRepComparison(
+      u.orgId,
+      rep1Id,
+      rep2Id,
+      from,
+      to,
+    );
+    if (isRepNotFound(result))
+      throw new NotFoundException("One or both reps not found");
     return result;
   }
 }

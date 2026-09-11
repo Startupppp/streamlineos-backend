@@ -6,10 +6,10 @@ import type { Db } from "../../../db/drizzle.module";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { HrAuditService } from "./hr-audit.service";
 import { PersonEmploymentSyncService } from "./person-employment-sync.service";
+import type { EnsureManyRow } from "./person-employment-sync-batch.types";
 import { toEnsureInput, type BackfillResult, type PrefetchedActiveMember } from "./person-employment-sync.types";
 
 const BACKFILL_FETCH_SIZE = 100;
-const BACKFILL_CONCURRENCY = 4;
 const BACKFILL_ERROR_MESSAGE = "Member synchronization failed";
 
 @Injectable()
@@ -127,32 +127,32 @@ export class PersonEmploymentBackfillService {
     members: PrefetchedActiveMember[],
     result: BackfillResult,
   ): Promise<void> {
-    for (let start = 0; start < members.length; start += BACKFILL_CONCURRENCY) {
-      const window = members.slice(start, start + BACKFILL_CONCURRENCY);
-      const settled = await Promise.allSettled(
-        window.map((member) =>
-          runInNewTenantTransaction(this.db, orgId, () =>
-            this.sync.ensureFromUser(orgId, actorId, toEnsureInput(member, "ACTIVE")),
-          ),
+    let rows: EnsureManyRow[];
+    try {
+      rows = await runInNewTenantTransaction(this.db, orgId, (tx) =>
+        this.sync.ensureManyFromUsers(
+          orgId,
+          actorId,
+          members.map((member) => toEnsureInput(member, "ACTIVE")),
+          tx,
         ),
       );
-
-      for (let index = 0; index < settled.length; index += 1) {
-        const outcome = settled[index];
-        const member = window[index];
-        if (!outcome || !member) continue;
-        if (outcome.status === "rejected") {
-          result.errors.push({
-            userId: member.userId,
-            message: BACKFILL_ERROR_MESSAGE,
-          });
-          continue;
-        }
-        if (outcome.value.createdPerson) result.createdPeople += 1;
-        if (outcome.value.createdEmployment) result.createdEmployments += 1;
-        if (!outcome.value.createdPerson && !outcome.value.createdEmployment)
-          result.skipped += 1;
-      }
+    } catch {
+      for (const member of members)
+        result.errors.push({ userId: member.userId, message: BACKFILL_ERROR_MESSAGE });
+      return;
     }
+
+    const synchronized = new Set<string>();
+    for (const row of rows) {
+      synchronized.add(row.userId);
+      if (row.createdPerson) result.createdPeople += 1;
+      if (row.createdEmployment) result.createdEmployments += 1;
+      if (!row.createdPerson && !row.createdEmployment) result.skipped += 1;
+    }
+
+    for (const member of members)
+      if (!synchronized.has(member.userId))
+        result.errors.push({ userId: member.userId, message: BACKFILL_ERROR_MESSAGE });
   }
 }

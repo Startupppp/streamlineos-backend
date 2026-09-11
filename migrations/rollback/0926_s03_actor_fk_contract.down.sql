@@ -1,0 +1,3 @@
+-- @irreversible
+-- 0926 intentionally has no rollback: restoring users.id authority FKs would
+-- reintroduce the retired tenant-unsafe seam after membership cutover.

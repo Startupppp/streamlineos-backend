@@ -24,9 +24,16 @@ import {
   type UpdateExpenseDetailsInput,
 } from "./dto/expense.schemas";
 import { ExpensesService } from "./expenses.service";
+import { selfOnlyRead } from "./expenses-scope";
 import { ExpensesWriteService } from "./expenses-write.service";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../common/openapi/response-envelopes";
+import {
+  expensePageDataResponseSchema,
+  expenseRowSchema,
+} from "./dto/expenses-response.schemas";
 
 const expenseIdParams = z.object({ expenseId: z.coerce.number().int().positive() }).strict();
 
@@ -41,14 +48,13 @@ export class EmployeeExpensesController {
 
   @Get()
   @Validate({ query: selfExpensePageDataSchema })
+  @ResponseSchema(expensePageDataResponseSchema)
   pageData(
     @Query() filters: SelfExpensePageDataInput,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.expenses.getPageData(
-      user.orgId,
-      user.userId,
-      false,
+      selfOnlyRead(user.orgId, user.userId),
       filters,
     );
   }
@@ -56,6 +62,7 @@ export class EmployeeExpensesController {
   @Post()
   @HttpCode(201)
   @Validate({ body: createExpenseSchema })
+  @ResponseSchema(expenseRowSchema)
   create(
     @Body() body: CreateExpenseInput,
     @CurrentUser() user: CurrentUserContext,
@@ -65,6 +72,7 @@ export class EmployeeExpensesController {
 
   @Patch(":expenseId")
   @Validate({ params: expenseIdParams, body: updateExpenseDetailsSchema })
+  @ResponseSchema(successSchema)
   update(
     @Param("expenseId", ParseIntPipe) expenseId: number,
     @Body() body: UpdateExpenseDetailsInput,

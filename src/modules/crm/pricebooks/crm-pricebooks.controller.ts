@@ -36,6 +36,16 @@ import {
 } from "./dto/pricebooks.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  pricebookSchema,
+  pricebookEntrySchema,
+  pricebookEntryWithProductSchema,
+  resolvePriceSchema,
+  quoteSettingsSchema as quoteSettingsResponseSchema,
+  quoteTemplateSchema,
+  successSchema,
+} from "./dto/crm-pricebooks-response.schemas";
 
 const pricebookIdParams = z.object({ pricebookId: z.string().min(1) }).strict();
 const pricebookIdentryIdParams = z.object({ pricebookId: z.string().min(1), entryId: z.string().min(1) }).strict();
@@ -49,6 +59,7 @@ export class CrmPricebooksController {
 
   @Get("pricebooks/resolve-price")
   @RequirePermission("crm:quotes:create")
+  @ResponseSchema(resolvePriceSchema)
   @Validate({ query: resolvePriceQuerySchema })
   resolvePrice(
     @Query() query: ResolvePriceQuery,
@@ -59,6 +70,7 @@ export class CrmPricebooksController {
 
   @Get("pricebooks")
   @RequirePermission("crm:pricebooks:manage")
+  @ResponseSchema(z.array(pricebookSchema))
   listPricebooks(@CurrentUser() u: CurrentUserContext) {
     return this.service.listPricebooks(u.orgId);
   }
@@ -67,6 +79,7 @@ export class CrmPricebooksController {
   @HttpCode(201)
   @RequirePermission("crm:pricebooks:manage")
   @Idempotent("crm.pricebook.create")
+  @ResponseSchema(pricebookSchema)
   @Validate({ body: createPricebookSchema })
   createPricebook(
     @Body() body: CreatePricebookInput,
@@ -77,6 +90,7 @@ export class CrmPricebooksController {
 
   @Patch("pricebooks/:pricebookId")
   @RequirePermission("crm:pricebooks:manage")
+  @ResponseSchema(pricebookSchema)
   @Validate({ params: pricebookIdParams, body: updatePricebookSchema })
   updatePricebook(
     @Param("pricebookId") pricebookId: string,
@@ -88,6 +102,7 @@ export class CrmPricebooksController {
 
   @Delete("pricebooks/:pricebookId")
   @RequirePermission("crm:pricebooks:manage")
+  @ResponseSchema(successSchema)
   @Validate({ params: pricebookIdParams })
   deletePricebook(
     @Param("pricebookId") pricebookId: string,
@@ -98,6 +113,7 @@ export class CrmPricebooksController {
 
   @Get("pricebooks/:pricebookId/entries")
   @RequirePermission("crm:pricebooks:manage")
+  @ResponseSchema(z.array(pricebookEntryWithProductSchema))
   @Validate({ params: pricebookIdParams })
   listEntries(
     @Param("pricebookId") pricebookId: string,
@@ -109,6 +125,7 @@ export class CrmPricebooksController {
   @Post("pricebooks/:pricebookId/entries")
   @HttpCode(200)
   @RequirePermission("crm:pricebooks:manage")
+  @ResponseSchema(pricebookEntrySchema)
   @Validate({ params: pricebookIdParams, body: upsertEntrySchema })
   upsertEntry(
     @Param("pricebookId") pricebookId: string,
@@ -120,6 +137,7 @@ export class CrmPricebooksController {
 
   @Delete("pricebooks/:pricebookId/entries/:entryId")
   @RequirePermission("crm:pricebooks:manage")
+  @ResponseSchema(successSchema)
   @Validate({ params: pricebookIdentryIdParams })
   deleteEntry(
     @Param("pricebookId") pricebookId: string,
@@ -131,12 +149,14 @@ export class CrmPricebooksController {
 
   @Get("quote-settings")
   @RequirePermission("crm:pricebooks:manage")
+  @ResponseSchema(quoteSettingsResponseSchema)
   getQuoteSettings(@CurrentUser() u: CurrentUserContext) {
     return this.service.getQuoteSettings(u.orgId);
   }
 
   @Patch("quote-settings")
   @RequirePermission("crm:pricebooks:manage")
+  @ResponseSchema(quoteSettingsResponseSchema)
   @Validate({ body: quoteSettingsSchema })
   upsertQuoteSettings(
     @Body() body: QuoteSettingsInput,
@@ -147,6 +167,7 @@ export class CrmPricebooksController {
 
   @Get("quote-templates")
   @RequirePermission("crm:pricebooks:manage")
+  @ResponseSchema(z.array(quoteTemplateSchema))
   listTemplates(@CurrentUser() u: CurrentUserContext) {
     return this.service.listTemplates(u.orgId);
   }
@@ -154,6 +175,7 @@ export class CrmPricebooksController {
   @Post("quote-templates")
   @HttpCode(201)
   @RequirePermission("crm:pricebooks:manage")
+  @ResponseSchema(quoteTemplateSchema)
   @Validate({ body: createTemplateSchema })
   createTemplate(
     @Body() body: CreateTemplateInput,
@@ -164,6 +186,7 @@ export class CrmPricebooksController {
 
   @Patch("quote-templates/:templateId")
   @RequirePermission("crm:pricebooks:manage")
+  @ResponseSchema(quoteTemplateSchema)
   @Validate({ params: templateIdParams, body: updateTemplateSchema })
   updateTemplate(
     @Param("templateId") templateId: string,
@@ -175,6 +198,7 @@ export class CrmPricebooksController {
 
   @Delete("quote-templates/:templateId")
   @RequirePermission("crm:pricebooks:manage")
+  @ResponseSchema(successSchema)
   @Validate({ params: templateIdParams })
   deleteTemplate(
     @Param("templateId") templateId: string,

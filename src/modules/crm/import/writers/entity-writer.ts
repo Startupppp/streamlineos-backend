@@ -104,6 +104,32 @@ export interface EntityWriter {
  * a refusal at preview time is a sentence the tenant can act on rather than a
  * NOT NULL violation on row four thousand.
  */
-export function requiresSubjectType(entity: ImportEntity): boolean {
+function requiresSubjectType(entity: ImportEntity): boolean {
   return entity === "subject";
+}
+
+/**
+ * A Drizzle row, widened to the shape `UpdatePath.before` promises.
+ *
+ * The row Drizzle returns is a specific, fully-typed object with no index
+ * signature, and `Record<string, unknown>` cannot describe it without one — a
+ * real conversion, not a cast, because the writer contract is deliberately
+ * polymorphic across entities with different column sets.
+ */
+export function rowToRecord<T extends object>(row: T): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(row));
+}
+
+/** Narrows a before-image column to a string, or `null` if it never was one. */
+export function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** Narrows a before-image column to a plain object, or `null` if it never was one. */
+export function recordOrNull(value: unknown): Record<string, unknown> | null {
+  return isPlainRecord(value) ? value : null;
 }

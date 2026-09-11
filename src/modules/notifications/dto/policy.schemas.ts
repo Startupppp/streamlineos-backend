@@ -15,6 +15,6 @@ export const upsertPolicySchema = z.object({
   categoryOverrides: z.record(z.string(), overrideSchema).optional(),
   moduleOverrides: z.record(z.string(), overrideSchema).optional(),
   canUserOverride: z.boolean().optional(),
-});
+}).strict();
 
 export type UpsertPolicyInput = z.infer<typeof upsertPolicySchema>;

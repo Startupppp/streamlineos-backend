@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, count, eq, gt, isNull, sql } from "drizzle-orm";
 import { clientAccounts, deals, invoiceItems, invoices, quotes, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -236,31 +236,58 @@ export class QuotesLifecycleService {
   }
 
   async buildExportCsv(orgId: string, userId: string, filters: ExportInput): Promise<string> {
-    const conditions = [eq(quotes.orgId, orgId), isNull(quotes.deletedAt)];
-    if (filters.status) conditions.push(eq(quotes.status, filters.status));
+    const baseConditions = [eq(quotes.orgId, orgId), isNull(quotes.deletedAt)];
+    if (filters.status) baseConditions.push(eq(quotes.status, filters.status));
 
-    const data = await this.db
-      .select({
-        quoteNumber: quotes.quoteNumber,
-        subject: quotes.subject,
-        status: quotes.status,
-        currency: quotes.currency,
-        totalAmount: quotes.totalAmount,
-        taxAmount: quotes.taxAmount,
-        netAmount: quotes.netAmount,
-        validUntil: quotes.validUntil,
-        createdBy: users.name,
-        dealName: deals.name,
-        clientName: clientAccounts.clientName,
-        createdAt: quotes.createdAt,
-        sentAt: quotes.sentAt,
-        acceptedAt: quotes.acceptedAt,
-      })
-      .from(quotes)
-      .leftJoin(users, eq(quotes.createdById, users.id))
-      .leftJoin(deals, eq(quotes.dealId, deals.id))
-      .leftJoin(clientAccounts, eq(quotes.clientId, clientAccounts.id))
-      .where(and(...conditions));
+    const EXPORT_PAGE = 500;
+    const data: Array<{
+      quoteNumber: string;
+      subject: string;
+      status: "DRAFT" | "SENT" | "ACCEPTED" | "REJECTED" | "EXPIRED";
+      currency: string;
+      totalAmount: string | null;
+      taxAmount: string | null;
+      netAmount: string | null;
+      validUntil: string | null;
+      createdBy: string | null;
+      dealName: string | null;
+      clientName: string | null;
+      createdAt: Date | null;
+      sentAt: Date | null;
+      acceptedAt: Date | null;
+    }> = [];
+    let afterId = 0;
+    for (;;) {
+      const page = await this.db
+        .select({
+          id: quotes.id,
+          quoteNumber: quotes.quoteNumber,
+          subject: quotes.subject,
+          status: quotes.status,
+          currency: quotes.currency,
+          totalAmount: quotes.totalAmount,
+          taxAmount: quotes.taxAmount,
+          netAmount: quotes.netAmount,
+          validUntil: quotes.validUntil,
+          createdBy: users.name,
+          dealName: deals.name,
+          clientName: clientAccounts.clientName,
+          createdAt: quotes.createdAt,
+          sentAt: quotes.sentAt,
+          acceptedAt: quotes.acceptedAt,
+        })
+        .from(quotes)
+        .leftJoin(users, eq(quotes.createdById, users.id))
+        .leftJoin(deals, eq(quotes.dealId, deals.id))
+        .leftJoin(clientAccounts, eq(quotes.clientId, clientAccounts.id))
+        .where(and(...baseConditions, gt(quotes.id, afterId)))
+        .orderBy(asc(quotes.id))
+        .limit(EXPORT_PAGE);
+      for (const row of page) data.push(row);
+      const last = page[page.length - 1];
+      if (page.length < EXPORT_PAGE || last === undefined) break;
+      afterId = last.id;
+    }
 
     const headers = [
       "Quote #", "Subject", "Status", "Currency", "Total", "Tax", "Net",

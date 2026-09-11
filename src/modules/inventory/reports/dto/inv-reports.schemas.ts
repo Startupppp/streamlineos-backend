@@ -7,10 +7,10 @@ const paginationSchema = z.object({
   limit: pageSizeField(50, 100),
 }).strict();
 
-export const stockSummaryQuerySchema = paginationSchema;
+export const stockSummaryQuerySchema = paginationSchema.strict();
 export type StockSummaryQueryInput = z.infer<typeof stockSummaryQuerySchema>;
 
-export const reorderQuerySchema = paginationSchema;
+export const reorderQuerySchema = paginationSchema.strict();
 export type ReorderQueryInput = z.infer<typeof reorderQuerySchema>;
 
 export const movementsQuerySchema = z.object({

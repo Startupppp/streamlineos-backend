@@ -80,7 +80,8 @@ export class HrInterviewersService {
           lte(calendarEvents.startDate, dayEnd),
           gte(calendarEvents.endDate, dayStart),
         ),
-      );
+      )
+      .limit(10_000);
 
     const attendeeRows =
       events.length === 0
@@ -104,7 +105,8 @@ export class HrInterviewersService {
                   events.map((event) => event.id),
                 ),
               ),
-            );
+            )
+            .limit(10_000);
     const attendeesByEvent = new Map<number, string[]>();
     for (const attendee of attendeeRows) {
       const ids = attendeesByEvent.get(attendee.eventId) ?? [];
@@ -126,7 +128,8 @@ export class HrInterviewersService {
           gte(interviews.scheduledAt, dayStart),
           lte(interviews.scheduledAt, dayEnd),
         ),
-      );
+      )
+      .limit(10_000);
 
     const busyMap = new Map<string, BusyBlock[]>();
     for (const id of interviewerIds) {
@@ -178,7 +181,8 @@ export class HrInterviewersService {
           lte(interviews.scheduledAt, dayEnd),
           inArray(interviewPanelMembers.userId, interviewerIds),
         ),
-      );
+      )
+      .limit(10_000);
 
     for (const pm of panelMemberRows) {
       if (busyMap.has(pm.userId)) {
@@ -222,7 +226,8 @@ export class HrInterviewersService {
           isNotNull(interviewScorecards.submittedAt),
           gte(interviews.scheduledAt, since),
         ),
-      );
+      )
+      .limit(10_000);
 
     const map = new Map<string, PerformanceAccumulator>();
 
@@ -333,7 +338,7 @@ export class HrInterviewersService {
     await this.db
       .update(interviewBookingLinks)
       .set({ status: "cancelled", updatedAt: new Date() })
-      .where(eq(interviewBookingLinks.id, linkId));
+      .where(and(eq(interviewBookingLinks.orgId, orgId), eq(interviewBookingLinks.id, linkId)));
 
     return { success: true };
   }

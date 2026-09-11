@@ -274,7 +274,7 @@ export function calcSlabTaxRupees(taxableRupees: number, regime: TdsRegimeRule):
 /** Resolve PT monthly amount for a state (falls back to default). */
 export function resolvePtMonthly(bundle: IndiaStatutoryBundle, stateCode?: string | null): string {
   if (stateCode && bundle.pt.byState[stateCode.toUpperCase()]) {
-    return bundle.pt.byState[stateCode.toUpperCase()]!;
+    return bundle.pt.byState[stateCode.toUpperCase()];
   }
   return bundle.pt.defaultMonthly;
 }
@@ -285,7 +285,7 @@ export function resolveLwf(
   stateCode?: string | null,
 ): { employeeFixed: string; employerFixed: string } {
   if (stateCode && bundle.lwf.byState[stateCode.toUpperCase()]) {
-    return bundle.lwf.byState[stateCode.toUpperCase()]!;
+    return bundle.lwf.byState[stateCode.toUpperCase()];
   }
   return {
     employeeFixed: bundle.lwf.employeeFixed,
@@ -349,7 +349,7 @@ export function getIndiaBundleForDate(asOf = new Date()): IndiaStatutoryBundle {
   for (const bundle of IN_BUNDLES_DESC) {
     if (bundle.effectiveFrom <= asOfIso) return bundle;
   }
-  return IN_BUNDLES_DESC[IN_BUNDLES_DESC.length - 1]!;
+  return IN_BUNDLES_DESC[IN_BUNDLES_DESC.length - 1];
 }
 
 /** Resolve the India bundle for a payroll month ("YYYY-MM") using the month end. */

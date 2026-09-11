@@ -30,8 +30,10 @@ import { RichDocumentsService } from "./rich-documents.service";
 import { LettersService } from "./letters.service";
 import {
   ackSchema,
+  complianceCalendarQuerySchema,
   createDocumentSchema,
   createRichDocumentSchema,
+  documentExpiryQuerySchema,
   listDocumentsSchema,
   listRichDocumentsSchema,
   renderLetterSchema,
@@ -40,8 +42,10 @@ import {
   updateDocumentSchema,
   updateRichDocumentSchema,
   type AckInput,
+  type ComplianceCalendarQueryInput,
   type CreateDocumentInput,
   type CreateRichDocumentInput,
+  type DocumentExpiryQueryInput,
   type ListDocumentsInput,
   type ListRichDocumentsInput,
   type RenderLetterInput,
@@ -53,10 +57,12 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { AuditService } from "../../../common/audit/audit.service";
 import { StorageService } from "../../storage/storage.service";
+import { parseStorageKey } from "../../storage/storage-key";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
+import { listDocumentsResponseSchema, createDocumentResponseSchema, getDocumentFileResponseSchema, documentStatsResponseSchema, updateDocumentResponseSchema, documentExpiryResponseSchema, listComplianceResponseSchema, sendComplianceResponseSchema, acknowledgeComplianceResponseSchema, statutoryResponseSchema, listRichDocumentsResponseSchema, createRichDocumentResponseSchema, getRichDocumentResponseSchema, publishRichDocumentResponseSchema, updateRichDocumentResponseSchema, listLettersResponseSchema, renderLetterResponseSchema, saveLetterResponseSchema, complianceCalendarResponseSchema } from "./dto/documents-response.schemas"
 
 const documentIdParams = z.object({ documentId: z.coerce.number().int().positive() }).strict();
 
@@ -74,6 +80,7 @@ export class DocumentsController {
     private readonly audit: AuditService,
   ) {}
 
+  @ResponseSchema(listDocumentsResponseSchema)
   @Get("documents")
   @RequirePermission("hr:documents:view")
   @Validate({ query: listDocumentsSchema })
@@ -82,9 +89,10 @@ export class DocumentsController {
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const scope = await resolveDocumentsScope(this.access, currentUser);
-    return this.documents.listDocuments(currentUser.orgId, currentUser.userId, scope, filters, actingMembershipId(currentUser.principal));
+    return this.documents.listDocuments(scope, filters, actingMembershipId(currentUser.principal));
   }
 
+  @ResponseSchema(createDocumentResponseSchema)
   @Post("documents")
   @HttpCode(201)
   @RequirePermission("hr:documents:manage")
@@ -94,9 +102,10 @@ export class DocumentsController {
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const scope = await resolveDocumentsManageScope(this.access, currentUser);
-    return this.documents.createDocument(currentUser.orgId, currentUser.userId, scope, body, actingMembershipId(currentUser.principal));
+    return this.documents.createDocument(scope, body, actingMembershipId(currentUser.principal));
   }
 
+  @ResponseSchema(getDocumentFileResponseSchema)
   @Get("documents/:documentId/file")
   @RequirePermission("hr:documents:view")
   @Validate({ params: documentIdParams })
@@ -106,8 +115,6 @@ export class DocumentsController {
   ): Promise<{ url: string; fileName: string; expiresIn: number }> {
     const scope = await resolveDocumentsScope(this.access, currentUser);
     const document = await this.documents.getFileReference(
-      currentUser.orgId,
-      currentUser.userId,
       scope,
       documentId,
       actingMembershipId(currentUser.principal),
@@ -116,9 +123,15 @@ export class DocumentsController {
     if (!this.storage.isValidFileKey(fileKey)) {
       throw new NotFoundException("Document file is unavailable.");
     }
+    const { folderRoot } = parseStorageKey(fileKey, currentUser.orgId);
+    if (folderRoot !== "documents" && folderRoot !== "hr-documents" && folderRoot !== "hr") {
+      throw new NotFoundException("Document file is unavailable.");
+    }
 
     const expiresIn = 300;
-    const url = await this.storage.getFileUrl(currentUser.orgId, fileKey, expiresIn);
+    const url = await this.storage.getFileUrl(currentUser.orgId, fileKey, expiresIn, undefined, {
+      preauthorized: true,
+    });
     await this.audit.logCritical({
       action: "hr.document_viewed",
       userId: currentUser.userId,
@@ -130,13 +143,15 @@ export class DocumentsController {
     return { url, fileName: document.fileName, expiresIn };
   }
 
+  @ResponseSchema(documentStatsResponseSchema)
   @Get("documents/stats")
   @RequirePermission("hr:documents:view")
   async documentStats(@CurrentUser() currentUser: CurrentUserContext) {
     const scope = await resolveDocumentsScope(this.access, currentUser);
-    return this.documents.stats(currentUser.orgId, currentUser.userId, scope, actingMembershipId(currentUser.principal));
+    return this.documents.stats(scope, actingMembershipId(currentUser.principal));
   }
 
+  @ResponseSchema(updateDocumentResponseSchema)
   @Patch("documents/:documentId")
   @RequirePermission("hr:documents:manage")
   @Validate({ params: documentIdParams, body: updateDocumentSchema })
@@ -147,8 +162,6 @@ export class DocumentsController {
   ) {
     const scope = await resolveDocumentsManageScope(this.access, currentUser);
     return this.documents.updateDocument(
-      currentUser.orgId,
-      currentUser.userId,
       scope,
       documentId,
       body,
@@ -156,6 +169,7 @@ export class DocumentsController {
     );
   }
 
+  @NoContentResponse()
   @Delete("documents/:documentId")
   @HttpCode(204)
   @RequirePermission("hr:documents:manage")
@@ -165,27 +179,31 @@ export class DocumentsController {
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const scope = await resolveDocumentsManageScope(this.access, currentUser);
-    await this.documents.deleteDocument(currentUser.orgId, currentUser.userId, scope, documentId, actingMembershipId(currentUser.principal));
+    await this.documents.deleteDocument(scope, documentId, actingMembershipId(currentUser.principal));
   }
 
+  @ResponseSchema(documentExpiryResponseSchema)
   @Get("document-expiry")
   @RequirePermission("hr:documents:view")
+  @Validate({ query: documentExpiryQuerySchema })
   async documentExpiry(
-    @Query("days") days: string | undefined,
+    @Query() query: DocumentExpiryQueryInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const daysAhead = Math.min(Math.max(Number(days) || 30, 1), 365);
+    const daysAhead = Math.min(Math.max(query.days ?? 30, 1), 365);
     const scope = await resolveDocumentsScope(this.access, currentUser);
-    return this.documents.expiry(currentUser.orgId, currentUser.userId, scope, daysAhead, actingMembershipId(currentUser.principal));
+    return this.documents.expiry(scope, daysAhead, actingMembershipId(currentUser.principal));
   }
 
+  @ResponseSchema(listComplianceResponseSchema)
   @Get("compliance")
   @RequirePermission("hr:documents:view")
   async listCompliance(@CurrentUser() currentUser: CurrentUserContext) {
     const scope = await resolveDocumentsScope(this.access, currentUser);
-    return this.compliance.listAcknowledgments(currentUser.orgId, currentUser.userId, scope);
+    return this.compliance.listAcknowledgments(scope);
   }
 
+  @ResponseSchema(sendComplianceResponseSchema)
   @Post("compliance")
   @HttpCode(201)
   @RequirePermission("hr:compliance:manage")
@@ -197,6 +215,7 @@ export class DocumentsController {
     return this.compliance.sendAcknowledgments(currentUser.orgId, body);
   }
 
+  @ResponseSchema(acknowledgeComplianceResponseSchema)
   @Patch("compliance")
   @RequirePermission("hr:documents:view")
   @Validate({ body: ackSchema })
@@ -207,12 +226,14 @@ export class DocumentsController {
     return this.compliance.acknowledge(currentUser.orgId, currentUser.userId, body);
   }
 
+  @ResponseSchema(statutoryResponseSchema)
   @Get("compliance/statutory")
   @RequirePermission("hr:compliance:manage")
   statutory(@CurrentUser() currentUser: CurrentUserContext) {
     return this.compliance.statutory(currentUser.orgId);
   }
 
+  @ResponseSchema(listRichDocumentsResponseSchema)
   @Get("rich-documents")
   @RequirePermission("hr:documents:view")
   @Validate({ query: listRichDocumentsSchema })
@@ -223,6 +244,7 @@ export class DocumentsController {
     return this.richDocuments.list(currentUser.orgId, query);
   }
 
+  @ResponseSchema(createRichDocumentResponseSchema)
   @Post("rich-documents")
   @HttpCode(201)
   @RequirePermission("hr:documents:manage")
@@ -234,6 +256,7 @@ export class DocumentsController {
     return this.richDocuments.create(currentUser.orgId, currentUser.userId, body);
   }
 
+  @ResponseSchema(getRichDocumentResponseSchema)
   @Get("rich-documents/:documentId")
   @RequirePermission("hr:documents:view")
   @Validate({ params: documentIdParams })
@@ -244,6 +267,7 @@ export class DocumentsController {
     return this.richDocuments.get(currentUser.orgId, documentId);
   }
 
+  @ResponseSchema(publishRichDocumentResponseSchema)
   @Patch("rich-documents/:documentId/publish")
   @BodylessAction()
   @Idempotent("hr.performance-document.publish")
@@ -256,6 +280,7 @@ export class DocumentsController {
     return this.richDocuments.togglePublish(currentUser.orgId, documentId);
   }
 
+  @ResponseSchema(updateRichDocumentResponseSchema)
   @Patch("rich-documents/:documentId")
   @RequirePermission("hr:documents:manage")
   @Validate({ params: documentIdParams, body: updateRichDocumentSchema })
@@ -267,6 +292,7 @@ export class DocumentsController {
     return this.richDocuments.update(currentUser.orgId, currentUser.userId, documentId, body);
   }
 
+  @NoContentResponse()
   @Delete("rich-documents/:documentId")
   @HttpCode(204)
   @RequirePermission("hr:documents:manage")
@@ -278,6 +304,7 @@ export class DocumentsController {
     await this.richDocuments.remove(currentUser.orgId, documentId);
   }
 
+  @ResponseSchema(listLettersResponseSchema)
   @Get("documents/letters")
   @RequirePermission("hr:documents:view")
   listLetters(
@@ -287,6 +314,7 @@ export class DocumentsController {
     return this.letters.listLetters(currentUser.orgId, employmentId);
   }
 
+  @ResponseSchema(renderLetterResponseSchema)
   @Post("documents/letters/render")
   @RequirePermission("hr:documents:manage")
   @HttpCode(200)
@@ -298,6 +326,7 @@ export class DocumentsController {
     return this.letters.renderLetter(currentUser.orgId, body);
   }
 
+  @ResponseSchema(saveLetterResponseSchema)
   @Post("documents/letters")
   @RequirePermission("hr:documents:manage")
   @HttpCode(201)
@@ -309,15 +338,17 @@ export class DocumentsController {
     return this.letters.saveLetter(currentUser.orgId, currentUser.userId, body);
   }
 
+  @ResponseSchema(complianceCalendarResponseSchema)
   @Get("compliance/calendar")
   @RequirePermission("hr:compliance:manage")
+  @Validate({ query: complianceCalendarQuerySchema })
   complianceCalendar(
-    @Query("year") year: string | undefined,
-    @Query("month") month: string | undefined,
+    @Query() query: ComplianceCalendarQueryInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const y = parseInt(year ?? String(new Date().getFullYear()), 10);
-    const m = parseInt(month ?? String(new Date().getMonth() + 1), 10);
+    const now = new Date();
+    const y = query.year ?? now.getFullYear();
+    const m = query.month ?? now.getMonth() + 1;
     return this.compliance.calendar(currentUser.orgId, y, m);
   }
 }

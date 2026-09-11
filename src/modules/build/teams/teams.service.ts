@@ -9,7 +9,7 @@ import {
   projectTeamMembers,
   projectTeams,
 } from "../../../db/schema/build/teams";
-import { users } from "../../../db/schema/common/auth";
+import { organizationMembers, users } from "../../../db/schema/common/auth";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -21,8 +21,7 @@ import type {
   ListTeamsQuery,
   UpdateTeamInput,
 } from "./dto/teams.schemas";
-
-const PG_UNIQUE_VIOLATION = "23505";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 export type TeamRow = typeof projectTeams.$inferSelect;
 type TeamPatch = Partial<typeof projectTeams.$inferInsert>;
@@ -93,7 +92,7 @@ export class TeamsService {
     const members = await this.db
       .select({
         id: projectTeamMembers.id,
-        userId: projectTeamMembers.userId,
+        userId: organizationMembers.userId,
         role: projectTeamMembers.role,
         joinedAt: projectTeamMembers.joinedAt,
         firstName: users.firstName,
@@ -102,7 +101,14 @@ export class TeamsService {
         image: users.image,
       })
       .from(projectTeamMembers)
-      .innerJoin(users, eq(users.id, projectTeamMembers.userId))
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, projectTeamMembers.orgId),
+          eq(organizationMembers.id, projectTeamMembers.membershipId),
+        ),
+      )
+      .innerJoin(users, eq(users.id, organizationMembers.userId))
       .where(
         and(
           eq(projectTeamMembers.teamId, teamId),
@@ -139,12 +145,7 @@ export class TeamsService {
       });
       return row;
     } catch (err: unknown) {
-      if (
-        typeof err === "object" &&
-        err !== null &&
-        "code" in err &&
-        (err as { code: string }).code === PG_UNIQUE_VIOLATION
-      ) {
+      if (isUniqueViolation(err)) {
         throw new ConflictException(
           `A team with key "${input.key}" already exists in this organisation.`,
         );

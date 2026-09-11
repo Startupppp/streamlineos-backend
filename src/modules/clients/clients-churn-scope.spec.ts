@@ -1,30 +1,25 @@
-import { type SQL } from "drizzle-orm";
-import { applyClientAccountsScope } from "./client-accounts-scope";
+import { PgDialect } from "drizzle-orm/pg-core";
+import { clientAccounts } from "../../db/schema";
+import { ScopedRead, type ScopedWhere } from "../access/scoped-read";
+import { CLIENT_ACCOUNTS_SCOPE } from "./client-accounts-scope";
 
-function isSqlLiteral(s: SQL, literal: string): boolean {
-  const first: unknown = s.queryChunks[0];
-  if (first == null || typeof first !== "object" || !("value" in first)) return false;
-  const value = (first as { value: unknown }).value;
-  if (!Array.isArray(value)) return false;
-  return (value as unknown[])[0] === literal;
-}
+const dialect = new PgDialect();
+const SPEC = { tenant: clientAccounts.orgId, scope: CLIENT_ACCOUNTS_SCOPE };
+const clauseFor = (scope: "all" | "team" | "own" | "none"): ScopedWhere | null =>
+  ScopedRead.of("org-a", "user-churn", scope).compose(SPEC, (where) => where, () => null);
 
-function isSqlFalse(s: SQL): boolean {
-  return s.queryChunks.length === 1 && isSqlLiteral(s, "false");
-}
-
-function isSqlTrue(s: SQL): boolean {
-  return s.queryChunks.length === 1 && isSqlLiteral(s, "true");
-}
-
-describe("clients churn and renewals scope adapter", () => {
-  const userId = "user-churn";
-
+describe("clients churn and renewals aggregates share the account scope", () => {
   it("does not widen team scope to every client account row", () => {
-    expect(isSqlTrue(applyClientAccountsScope("team", "org-a", userId))).toBe(false);
+    const where = clauseFor("team");
+    expect(dialect.sqlToQuery((where as ScopedWhere).sql).sql).toContain("sales_rep_id");
   });
 
-  it("denies none scope for client account aggregates", () => {
-    expect(isSqlFalse(applyClientAccountsScope("none", "org-a", userId))).toBe(true);
+  it("denies none scope for client account aggregates before the query is built", () => {
+    expect(clauseFor("none")).toBeNull();
+  });
+
+  it("scopes the aggregate to the caller's tenant", () => {
+    const where = clauseFor("all");
+    expect(dialect.sqlToQuery((where as ScopedWhere).sql).params).toContain("org-a");
   });
 });

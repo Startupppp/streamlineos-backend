@@ -1,15 +1,4 @@
-import {
-  pgTable,
-  text,
-  date,
-  boolean,
-  timestamp,
-  jsonb,
-  index,
-  uniqueIndex,
-  unique,
-  type AnyPgColumn,
-} from "drizzle-orm/pg-core";
+import { boolean, date, foreignKey, index, jsonb, pgTable, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql, relations } from "drizzle-orm";
 import { organizations, users } from "./auth";
 import { orgUnits } from "./organization";
@@ -20,18 +9,14 @@ export const legalEntities = pgTable(
     id: text("id")
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
-
     orgId: text("org_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-
     name: text("name").notNull(),
     legalName: text("legal_name").notNull(),
-
     countryCode: text("country_code").notNull().default("IN"),
     stateCode: text("state_code"),
     functionalCurrency: text("functional_currency").notNull().default("INR"),
-
     gstin: text("gstin"),
     pan: text("pan"),
     tan: text("tan"),
@@ -42,7 +27,6 @@ export const legalEntities = pgTable(
     cin: text("cin"),
     llpin: text("llpin"),
     udyamNumber: text("udyam_number"),
-
     registeredAddress: jsonb("registered_address").$type<{
       line1?: string;
       line2?: string;
@@ -51,33 +35,20 @@ export const legalEntities = pgTable(
       country?: string;
       postalCode?: string;
     }>(),
-
     dataResidencyRegion: text("data_residency_region"),
-
     invoicePrefix: text("invoice_prefix").notNull().default("INV"),
     invoiceFyReset: boolean("invoice_fy_reset").notNull().default(true),
     invoiceSeries: text("invoice_series").notNull().default("DEFAULT"),
-
     status: text("status").notNull().default("ACTIVE"),
-
     effectiveFrom: date("effective_from").notNull(),
     effectiveTo: date("effective_to")
       .notNull()
       .default(sql`'infinity'::date`),
-
-    parentLegalEntityId: text("parent_legal_entity_id").references(
-      (): AnyPgColumn => legalEntities.id,
-      { onDelete: "set null" },
-    ),
-
-    orgUnitId: text("org_unit_id").references(() => orgUnits.id, {
-      onDelete: "set null",
-    }),
-
+    parentLegalEntityId: text("parent_legal_entity_id"),
+    orgUnitId: text("org_unit_id"),
     createdBy: text("created_by").references(() => users.id, {
       onDelete: "set null",
     }),
-
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -86,6 +57,8 @@ export const legalEntities = pgTable(
     deletedAt: timestamp("deleted_at"),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.orgUnitId], foreignColumns: [orgUnits.orgId, orgUnits.id], name: "fk_legal_entities_org_unit_id_org" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.parentLegalEntityId], foreignColumns: [table.orgId, table.id], name: "fk_legal_entities_parent_legal_entity_id_org" }).onDelete("set null"),
     unique("uniq_legal_entities_org_id").on(table.orgId, table.id),
     index("idx_legal_entities_org_status").on(table.orgId, table.status),
     index("idx_legal_entities_org_country").on(table.orgId, table.countryCode),

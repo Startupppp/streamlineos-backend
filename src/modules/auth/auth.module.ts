@@ -1,8 +1,9 @@
 import { Module } from "@nestjs/common";
 import { AuthService } from "./auth.service";
 import { AuthController } from "./auth.controller";
-import { AuthTokensService } from "./auth-tokens.service";
-import { AuthPasswordlessService } from "./auth-passwordless.service";
+import { AuthEmailVerificationService } from "./auth-email-verification.service";
+import { AuthMagicLinkService } from "./auth-magic-link.service";
+import { AuthEmailOtpService } from "./auth-email-otp.service";
 import { AuthMembershipResolverService } from "./auth-membership-resolver.service";
 import { AuthAnalyticsService } from "./auth-analytics.service";
 import { RateLimitModule } from "../../common/ratelimit/rate-limit.module";
@@ -13,11 +14,12 @@ import { OrganizationModule } from "../organization/core/organization.module";
 @Module({
   controllers: [AuthController],
   imports: [RateLimitModule, NotificationsModule, SessionsModule, OrganizationModule],
-  exports: [AuthService, AuthTokensService],
+  exports: [AuthService],
   providers: [
     AuthService,
-    AuthTokensService,
-    AuthPasswordlessService,
+    AuthEmailVerificationService,
+    AuthMagicLinkService,
+    AuthEmailOtpService,
     AuthMembershipResolverService,
     AuthAnalyticsService,
   ],

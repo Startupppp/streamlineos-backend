@@ -1,11 +1,13 @@
 jest.mock("@composio/core", () => ({ Composio: jest.fn() }));
 
 import { PgDialect } from "drizzle-orm/pg-core";
-import type { SQL } from "drizzle-orm";
+import { getTableName, type SQL } from "drizzle-orm";
 import { CalendarService } from "./calendar.service";
 import { CalendarRecurrenceService } from "./calendar-recurrence.service";
 import { CalendarExportService } from "./calendar-export.service";
+import { updateAttendeesInTx } from "./calendar-attendee-sync";
 import type { Db } from "../../db/drizzle.module";
+import { ScopedRead } from "../access/scoped-read";
 
 const dialect = new PgDialect();
 
@@ -26,10 +28,37 @@ function makeInsertChain(returnedRows: unknown[]) {
   return { insert: jest.fn().mockReturnValue({ values }), returning };
 }
 
+/**
+ * Records which TABLE each update targeted, not just that one happened.
+ *
+ * An occurrence write now also bumps the parent series' `local_version`/`updated_at`
+ * (a local change the provider-drift comparison in `handleScoped` has to be able to
+ * see), so "was an update issued" no longer answers "was a reminder dead-lettered".
+ * The reminder assertions below therefore ask about `notification_outbox` specifically.
+ */
 function makeUpdateChain() {
-  const where = jest.fn().mockResolvedValue([]);
+  const targets: string[] = [];
+  const where = jest
+    .fn()
+    .mockImplementation(() =>
+      Object.assign(Promise.resolve([]), { returning: jest.fn().mockResolvedValue([]) }),
+    );
   const set = jest.fn().mockReturnValue({ where });
-  return { update: jest.fn().mockReturnValue({ set }), set, where };
+  const update = jest.fn().mockImplementation((table: unknown) => {
+    targets.push(getTableName(table as Parameters<typeof getTableName>[0]));
+    return { set };
+  });
+  const outboxWhereCalls = () =>
+    where.mock.calls
+      .map((call, index) => ({ cond: call[0], table: targets[index] }))
+      .filter((entry) => entry.table === "notification_outbox")
+      .map((entry) => entry.cond);
+  return { update, set, where, targets, outboxWhereCalls };
+}
+
+/** How many of those updates dead-lettered reminders. */
+function outboxUpdates(chain: { targets: string[] }): string[] {
+  return chain.targets.filter((table) => table === "notification_outbox");
 }
 
 function makeDeleteChain() {
@@ -48,7 +77,7 @@ function makeSelectChain(rows: unknown[]) {
 function makeService(db: unknown): CalendarService {
   const recurrence = new CalendarRecurrenceService(db as Db);
   const calendarExport = new CalendarExportService(db as Db);
-  return new CalendarService(db as Db, {} as never, {} as never, {} as never, {} as never, recurrence, calendarExport);
+  return new CalendarService(db as Db, {} as never, {} as never, {} as never, recurrence, calendarExport, {} as never);
 }
 
 describe("cancelOccurrence — kills PENDING outbox reminder for the specific occurrence", () => {
@@ -62,6 +91,10 @@ describe("cancelOccurrence — kills PENDING outbox reminder for the specific oc
     const updateChain = makeUpdateChain();
 
     const tx = {
+      // No exception rows: the occurrence-key resolution finds nothing and uses the
+      // instant supplied, which is what these fixtures assume. The resolution itself is
+      // covered by calendar-moved-occurrence-identity.spec.ts.
+      select: makeSelectChain([]),
       insert: insertChain.insert,
       update: updateChain.update,
     };
@@ -81,10 +114,10 @@ describe("cancelOccurrence — kills PENDING outbox reminder for the specific oc
 
     expect(result).toBeDefined();
     expect(db.transaction).toHaveBeenCalledTimes(1);
-    expect(updateChain.update).toHaveBeenCalledTimes(1);
+    expect(outboxUpdates(updateChain)).toHaveLength(1);
     expect(updateChain.set).toHaveBeenCalledWith({ state: "DEAD" });
 
-    const whereCond = updateChain.where.mock.calls[0]?.[0];
+    const whereCond = updateChain.outboxWhereCalls()[0];
     const { params } = renderCond(whereCond);
     expect(params).toContain(ORG);
     expect(params).toContain("PENDING");
@@ -99,6 +132,10 @@ describe("cancelOccurrence — kills PENDING outbox reminder for the specific oc
     const updateChain = makeUpdateChain();
 
     const tx = {
+      // No exception rows: the occurrence-key resolution finds nothing and uses the
+      // instant supplied, which is what these fixtures assume. The resolution itself is
+      // covered by calendar-moved-occurrence-identity.spec.ts.
+      select: makeSelectChain([]),
       insert: insertChain.insert,
       update: updateChain.update,
     };
@@ -116,7 +153,7 @@ describe("cancelOccurrence — kills PENDING outbox reminder for the specific oc
     const svc = makeService(db);
     await svc.cancelOccurrence(ORG, USER, EVENT_ID, occurrenceStart.toISOString());
 
-    const whereCond = updateChain.where.mock.calls[0]?.[0];
+    const whereCond = updateChain.outboxWhereCalls()[0];
     const { params } = renderCond(whereCond);
     expect(params).not.toContain(differentOccurrenceKey);
   });
@@ -152,6 +189,10 @@ describe("upsertOccurrenceException — kills old PENDING reminder when modified
     const updateChain = makeUpdateChain();
 
     const tx = {
+      // No exception rows: the occurrence-key resolution finds nothing and uses the
+      // instant supplied, which is what these fixtures assume. The resolution itself is
+      // covered by calendar-moved-occurrence-identity.spec.ts.
+      select: makeSelectChain([]),
       insert: insertChain.insert,
       update: updateChain.update,
     };
@@ -172,10 +213,10 @@ describe("upsertOccurrenceException — kills old PENDING reminder when modified
       modifiedEnd: "2024-06-03T15:00:00.000Z",
     });
 
-    expect(updateChain.update).toHaveBeenCalledTimes(1);
+    expect(outboxUpdates(updateChain)).toHaveLength(1);
     expect(updateChain.set).toHaveBeenCalledWith({ state: "DEAD" });
 
-    const whereCond = updateChain.where.mock.calls[0]?.[0];
+    const whereCond = updateChain.outboxWhereCalls()[0];
     const { params } = renderCond(whereCond);
     expect(params).toContain(ORG);
     expect(params).toContain("PENDING");
@@ -189,6 +230,10 @@ describe("upsertOccurrenceException — kills old PENDING reminder when modified
     const updateChain = makeUpdateChain();
 
     const tx = {
+      // No exception rows: the occurrence-key resolution finds nothing and uses the
+      // instant supplied, which is what these fixtures assume. The resolution itself is
+      // covered by calendar-moved-occurrence-identity.spec.ts.
+      select: makeSelectChain([]),
       insert: insertChain.insert,
       update: updateChain.update,
     };
@@ -208,7 +253,7 @@ describe("upsertOccurrenceException — kills old PENDING reminder when modified
       modifiedTitle: "Renamed occurrence",
     });
 
-    expect(updateChain.update).not.toHaveBeenCalled();
+    expect(outboxUpdates(updateChain)).toEqual([]);
   });
 });
 
@@ -253,10 +298,13 @@ describe("updateAttendeesInTx — deletes PENDING reminders when attendees are r
       }),
     };
 
-    const db = {} as unknown as Db;
-    const svc = makeService(db);
-    await (svc as unknown as { updateAttendeesInTx: (...args: unknown[]) => Promise<string[]> })
-      .updateAttendeesInTx(tx, ORG, EVENT_ID, [ALICE], "actor-user-id");
+    await updateAttendeesInTx(
+      tx as unknown as Parameters<typeof updateAttendeesInTx>[0],
+      ORG,
+      EVENT_ID,
+      [ALICE],
+      "actor-user-id",
+    );
 
     expect(tx.delete).toHaveBeenCalledTimes(2);
     expect(tx.update).toHaveBeenCalledTimes(1);
@@ -302,10 +350,13 @@ describe("updateAttendeesInTx — deletes PENDING reminders when attendees are r
       }),
     };
 
-    const db = {} as unknown as Db;
-    const svc = makeService(db);
-    await (svc as unknown as { updateAttendeesInTx: (...args: unknown[]) => Promise<string[]> })
-      .updateAttendeesInTx(tx, ORG, EVENT_ID, [ALICE, BOB], "actor-user-id");
+    await updateAttendeesInTx(
+      tx as unknown as Parameters<typeof updateAttendeesInTx>[0],
+      ORG,
+      EVENT_ID,
+      [ALICE, BOB],
+      "actor-user-id",
+    );
 
     expect(tx.delete).toHaveBeenCalledTimes(1);
   });
@@ -420,9 +471,25 @@ describe("exportEvents — visibility filter applied to export query", () => {
   it("excludes private events the caller neither created nor attends", async () => {
     const CALLER_MEMBERSHIP_ID = 77;
 
+    const exportRow = (id: number, title: string, visibility: string) => ({
+      id,
+      title,
+      visibility,
+      startDate: new Date("2024-06-10T09:00:00Z"),
+      endDate: new Date("2024-06-10T09:30:00Z"),
+      allDay: false,
+      timezone: "UTC",
+      rrule: null,
+      recurrenceEnd: null,
+      category: "general",
+      location: null,
+      description: null,
+      color: null,
+    });
+
     const mockRows = [
-      { id: 1, title: "Team event", visibility: "org" },
-      { id: 2, title: "Private event", visibility: "private" },
+      exportRow(1, "Team event", "org"),
+      exportRow(2, "Private event", "private"),
     ];
 
     const capturedWhereArgs: unknown[] = [];
@@ -435,22 +502,20 @@ describe("exportEvents — visibility filter applied to export query", () => {
       },
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
-          leftJoin: jest.fn().mockReturnValue({
-            where: jest.fn().mockImplementation((cond) => {
-              capturedWhereArgs.push(cond);
-              return {
-                orderBy: jest.fn().mockReturnValue({
-                  limit: jest.fn().mockResolvedValue(mockRows),
-                }),
-              };
-            }),
+          where: jest.fn().mockImplementation((cond) => {
+            capturedWhereArgs.push(cond);
+            return {
+              orderBy: jest.fn().mockReturnValue({
+                limit: jest.fn().mockResolvedValue(mockRows),
+              }),
+            };
           }),
         }),
       }),
     };
 
     const svc = makeService(db);
-    await svc.exportEvents(ORG, USER, new Date("2024-06-01"), new Date("2024-06-30"));
+    await svc.exportEvents(ScopedRead.of(ORG, USER, "all"), new Date("2024-06-01"), new Date("2024-06-30"));
 
     expect(capturedWhereArgs.length).toBeGreaterThan(0);
     const { params, sql: sqlStr } = renderCond(capturedWhereArgs[0]);
@@ -470,11 +535,9 @@ describe("exportEvents — visibility filter applied to export query", () => {
       },
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
-          leftJoin: jest.fn().mockReturnValue({
-            where: jest.fn().mockReturnValue({
-              orderBy: jest.fn().mockReturnValue({
-                limit: jest.fn().mockResolvedValue([]),
-              }),
+          where: jest.fn().mockReturnValue({
+            orderBy: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue([]),
             }),
           }),
         }),
@@ -482,7 +545,7 @@ describe("exportEvents — visibility filter applied to export query", () => {
     };
 
     const svc = makeService(db);
-    await svc.exportEvents(ORG, USER, new Date("2024-06-01"), new Date("2024-06-30"));
+    await svc.exportEvents(ScopedRead.of(ORG, USER, "all"), new Date("2024-06-01"), new Date("2024-06-30"));
 
     const call = memberFindFirst.mock.calls[0]?.[0] as { where?: unknown; columns?: unknown };
     expect(call).toBeDefined();

@@ -1,8 +1,6 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { and, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
-import { dataQualityFindings, dataQualityResolutions } from "../../db/schema";
 import type { ReversibilityClass } from "../../db/schema/crm/autonomous-decisions";
 import { PartyMergeService } from "../party/party-merge.service";
 import { DataQualityQueueService } from "./data-quality-queue.service";
@@ -10,11 +8,19 @@ import { DataQualityHealthService } from "./dataset-health.service";
 import { strictestReversibility } from "./finding-vocabulary";
 import {
   MAX_RECORDED_FAILURES,
-  applyAll,
-  type ClaimedFinding,
-  type FindingExecutorDeps,
-} from "./lib/finding-executors";
-import { reverseResolution, type ResolutionUndoDeps } from "./lib/resolution-undo";
+  claimReversal,
+  loadDecision,
+  openDecision,
+  recordDecisionOutcome,
+  recordReversedCount,
+} from "./data-quality-decision-record";
+import {
+  assertFindingsInOrg,
+  claimFindings,
+  listClosedForResolution,
+  reopenFindings,
+} from "./data-quality-finding-claim";
+import { applyAll, type ExecutionFailure } from "./data-quality-remediation";
 import { type ResolveFindingsInput, type ReverseResolutionInput } from "./dto/data-quality.schemas";
 
 /**
@@ -27,8 +33,9 @@ import { type ResolveFindingsInput, type ReverseResolutionInput } from "./dto/da
  * remediation that is irreducibly per item, and each of those gets a savepoint
  * so item seven failing costs item seven.
  *
- * That per-item remediation now lives in `lib/finding-executors.ts`, and the
- * undo in `lib/resolution-undo.ts`. The isolation is `withSavepoint`, and it is
+ * That per-item remediation lives in `data-quality-remediation.ts`, the claim
+ * and reopen statements in `data-quality-finding-claim.ts`, and the decision row
+ * in `data-quality-decision-record.ts`. The isolation is `withSavepoint`, and it is
  * subtler than it looks — see `savepoint.ts` for why a nested service would
  * otherwise write straight past the savepoint it appears to be inside.
  */
@@ -43,25 +50,16 @@ export class DataQualityResolutionService {
     private readonly health: DataQualityHealthService,
   ) {}
 
-  private get executorDeps(): FindingExecutorDeps {
-    return { db: this.db, merges: this.merges, logger: this.logger };
-  }
-
-  private get undoDeps(): ResolutionUndoDeps {
-    return { db: this.db, health: this.health, logger: this.logger };
-  }
-
-  // ── One decision ──────────────────────────────────────────────────────────
-
   /**
    * Resolve a selection of findings as a single decision.
    *
-   * The claim is a conditional set-based update: `status = 'open'` sits in its
-   * predicate, so two people deciding about overlapping selections at the same
-   * instant each take the rows the other has not, and neither fails. A read-then-
-   * write would let both believe they had all four hundred.
+   * The claim is a conditional set-based update, so two people deciding about
+   * overlapping selections at the same instant each take the rows the other has
+   * not, and neither fails.
    */
   async resolve(organizationId: string, userId: string, input: ResolveFindingsInput) {
+    if (input.selection.kind === "ids")
+      await assertFindingsInOrg(this.db, organizationId, input.selection.findingIds);
     const candidates = await this.queue.selectCandidates(organizationId, input.selection, "open");
 
     /**
@@ -94,54 +92,37 @@ export class DataQualityResolutionService {
         ? "instant"
         : strictestReversibility(candidates.map((row) => row.reversibility));
 
-    const [resolution] = await this.db
-      .insert(dataQualityResolutions)
-      .values({
-        organizationId,
-        action: input.action,
-        selectionKind: input.selection.kind,
-        groupKey: input.selection.kind === "group" ? input.selection.groupKey : null,
-        reversibility,
-        reason: input.reason ?? null,
-        attemptedCount: candidates.length,
-        // Filled in once the executors have run; the row has to exist first
-        // because every claimed finding carries a foreign key to it.
-        resolvedCount: 0,
-        decidedByUserId: userId,
-      })
-      .returning({ resolutionId: dataQualityResolutions.resolutionId });
+    const resolutionId = await openDecision(this.db, {
+      organizationId,
+      action: input.action,
+      selectionKind: input.selection.kind,
+      groupKey: input.selection.kind === "group" ? input.selection.groupKey : null,
+      reversibility,
+      reason: input.reason ?? null,
+      attemptedCount: candidates.length,
+      decidedByUserId: userId,
+    });
 
-    if (!resolution) throw new ConflictException("The decision could not be recorded");
-
-    const claimed = await this.claim(
+    const claimed = await claimFindings(this.db, {
       organizationId,
       userId,
-      resolution.resolutionId,
-      candidates.map((row) => row.findingId),
-      input.action === "dismiss" ? "dismissed" : "resolved",
-    );
+      resolutionId,
+      findingIds: candidates.map((row) => row.findingId),
+      status: input.action === "dismiss" ? "dismissed" : "resolved",
+    });
 
+    const remediation = { db: this.db, merges: this.merges, logger: this.logger };
     const failures =
-      input.action === "apply"
-        ? await applyAll(this.executorDeps, organizationId, userId, claimed)
-        : [];
+      input.action === "apply" ? await applyAll(remediation, organizationId, userId, claimed) : [];
 
     const failedIds = new Set(failures.map((failure) => failure.findingId));
     const resolvedCount = claimed.length - failedIds.size;
 
-    await this.db
-      .update(dataQualityResolutions)
-      .set({
-        resolvedCount,
-        failedCount: failedIds.size,
-        failures: failures.length > 0 ? failures.slice(0, MAX_RECORDED_FAILURES) : null,
-      })
-      .where(
-        and(
-          eq(dataQualityResolutions.organizationId, organizationId),
-          eq(dataQualityResolutions.resolutionId, resolution.resolutionId),
-        ),
-      );
+    await recordDecisionOutcome(this.db, organizationId, resolutionId, {
+      resolvedCount,
+      failedCount: failedIds.size,
+      failures: failures.length > 0 ? failures.slice(0, MAX_RECORDED_FAILURES) : null,
+    });
 
     /**
      * The dataset-health number, re-read now that the queue is shorter.
@@ -154,7 +135,7 @@ export class DataQualityResolutionService {
     await this.health.captureQuietly(organizationId);
 
     return {
-      resolutionId: resolution.resolutionId,
+      resolutionId,
       action: input.action,
       reversibility,
       attemptedCount: candidates.length,
@@ -172,49 +153,88 @@ export class DataQualityResolutionService {
     };
   }
 
-  /** One statement, whatever the size of the selection. */
-  private async claim(
-    organizationId: string,
-    userId: string,
-    resolutionId: string,
-    findingIds: string[],
-    status: "resolved" | "dismissed",
-  ): Promise<ClaimedFinding[]> {
-    if (findingIds.length === 0) return [];
-
-    return this.db
-      .update(dataQualityFindings)
-      .set({
-        status,
-        resolvedAt: new Date(),
-        resolvedByUserId: userId,
-        resolutionId,
-        lastError: null,
-      })
-      .where(
-        and(
-          eq(dataQualityFindings.organizationId, organizationId),
-          eq(dataQualityFindings.status, "open"),
-          inArray(dataQualityFindings.findingId, findingIds),
-        ),
-      )
-      .returning({
-        findingId: dataQualityFindings.findingId,
-        proposedAction: dataQualityFindings.proposedAction,
-        partyId: dataQualityFindings.partyId,
-        relatedPartyId: dataQualityFindings.relatedPartyId,
-      });
-  }
-
-  // ── Taking it back ────────────────────────────────────────────────────────
-
-  /** See `lib/resolution-undo.ts`: the refusal, not the undo, is the feature. */
-  reverse(
+  /**
+   * Undo one decision, if its reversibility class allows it.
+   *
+   * The refusal is the feature. `planResolutionReversal` decides, and it refuses
+   * `irreversible` outright rather than attempting a remedy that cannot work —
+   * offering the button anyway teaches people that undo works when it does not.
+   */
+  async reverse(
     organizationId: string,
     userId: string,
     resolutionId: string,
     input: ReverseResolutionInput,
   ) {
-    return reverseResolution(this.undoDeps, organizationId, userId, resolutionId, input);
+    const resolution = await loadDecision(this.db, organizationId, resolutionId);
+    if (!resolution) throw new NotFoundException("Decision not found");
+
+    const plan = planResolutionReversal(
+      {
+        action: resolution.action,
+        reversibility: resolution.reversibility,
+        holdUntil: resolution.holdUntil,
+        reversedAt: resolution.reversedAt,
+        resolvedCount: resolution.resolvedCount,
+      },
+      new Date(),
+    );
+
+    if (!plan.ok) throw new ConflictException(plan.explanation);
+
+    const claimed = await claimReversal(
+      this.db,
+      organizationId,
+      resolutionId,
+      userId,
+      input.reason ?? null,
+    );
+    if (!claimed)
+      throw new ConflictException("This decision was reversed by someone else a moment ago.");
+
+    const closed = await listClosedForResolution(this.db, organizationId, resolutionId);
+
+    const reopenable: string[] = [];
+    const failures: ExecutionFailure[] = [];
+
+    for (const finding of closed) {
+      const partyMergeId = finding.undoToken?.["partyMergeId"];
+
+      /**
+       * Nothing was done to a record, so reopening the finding is the whole
+       * undo. A dismissal is always this case, which is why the planner names it
+       * separately rather than dispatching a no-op per item.
+       */
+      if (plan.action === "reopen" || typeof partyMergeId !== "string") {
+        reopenable.push(finding.findingId);
+        continue;
+      }
+
+      failures.push({ findingId: finding.findingId, error: "merge revert is not supported" });
+      this.logger.warn(`merge ${partyMergeId} cannot be reverted: capability is not implemented`);
+    }
+
+    /**
+     * Only what actually came back is reopened. A finding whose merge could not
+     * be undone stays closed, because reopening it would claim a record was
+     * restored when it was not — and the next sweep would then file a second
+     * finding for a problem that is still fixed.
+     */
+    const reopened = await reopenFindings(this.db, organizationId, reopenable);
+
+    await recordReversedCount(this.db, organizationId, resolutionId, reopened);
+
+    // An undo puts findings back in the queue, so the number goes back up. A
+    // trend that only ever recorded improvements would be a graph of decisions
+    // taken rather than of the dataset.
+    await this.health.captureQuietly(organizationId);
+
+    return {
+      reversed: true,
+      action: plan.action,
+      reopened,
+      failedCount: failures.length,
+      failures: failures.slice(0, MAX_RECORDED_FAILURES),
+    };
   }
 }

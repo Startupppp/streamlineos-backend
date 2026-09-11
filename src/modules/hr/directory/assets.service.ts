@@ -10,8 +10,7 @@ import { assetReturns, employeeDevices, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { formatDateOnly } from "../../../common/date";
-import type { DataScope } from "../../access/access.types";
-import { applyScope } from "../../access/apply-scope";
+import type { ScopedRead } from "../../access/scoped-read";
 import type {
   CreateAssetReturnInput,
   CreateDeviceInput,
@@ -23,28 +22,39 @@ import type {
 export class AssetsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async listAssetReturns(orgId: string, userId: string, scope: DataScope) {
-    const rows = await this.db
-      .select({
-        id: assetReturns.id,
-        orgId: assetReturns.orgId,
-        userId: assetReturns.userId,
-        assetId: assetReturns.assetId,
-        assetName: assetReturns.assetName,
-        status: assetReturns.status,
-        returnedAt: assetReturns.returnedAt,
-        condition: assetReturns.condition,
-        notes: assetReturns.notes,
-        createdAt: assetReturns.createdAt,
-        userFirstName: users.firstName,
-        userLastName: users.lastName,
-        userEmail: users.email,
-      })
-      .from(assetReturns)
-      .leftJoin(users, eq(assetReturns.userId, users.id))
-      .where(and(eq(assetReturns.orgId, orgId), applyScope(scope, orgId, userId, { ownerColumn: assetReturns.userId })))
-      .orderBy(desc(assetReturns.createdAt))
-      .limit(100);
+  async listAssetReturns(read: ScopedRead) {
+    const rows = await read.read(
+      {
+        tenant: assetReturns.orgId,
+        scope: { columns: { ownerColumn: assetReturns.userId } },
+      },
+      ({ sql: where }) =>
+        this.db
+          .select({
+            id: assetReturns.id,
+            orgId: assetReturns.orgId,
+            userId: assetReturns.userId,
+            assetId: assetReturns.assetId,
+            assetName: assetReturns.assetName,
+            status: assetReturns.status,
+            returnedAt: assetReturns.returnedAt,
+            condition: assetReturns.condition,
+            notes: assetReturns.notes,
+            createdAt: assetReturns.createdAt,
+            userFirstName: users.firstName,
+            userLastName: users.lastName,
+            userEmail: users.email,
+          })
+          .from(assetReturns)
+          .leftJoin(users, eq(assetReturns.userId, users.id))
+          .where(where)
+          .orderBy(desc(assetReturns.createdAt))
+          .limit(100),
+      () => [],
+    );
+
+    const assetType: string | null = null;
+    const serialNumber: string | null = null;
 
     return rows.map((r) => {
       const name = `${r.userFirstName ?? ""} ${r.userLastName ?? ""}`.trim();
@@ -55,8 +65,8 @@ export class AssetsService {
         userId: r.userId,
         assetId: r.assetId,
         assetName: r.assetName,
-        assetType: null as string | null,
-        serialNumber: null as string | null,
+        assetType,
+        serialNumber,
         status: r.status,
         returnedAt: r.returnedAt,
         condition: r.condition,
@@ -88,7 +98,8 @@ export class AssetsService {
     const [existing] = await this.db
       .select()
       .from(assetReturns)
-      .where(and(eq(assetReturns.id, returnId), eq(assetReturns.orgId, orgId)));
+      .where(and(eq(assetReturns.id, returnId), eq(assetReturns.orgId, orgId)))
+      .limit(1);
 
     if (!existing) throw new NotFoundException("Asset return record not found.");
     if (existing.status === "RETURNED" || existing.status === "DAMAGED" || existing.status === "LOST") {
@@ -180,7 +191,7 @@ export class AssetsService {
         model: body.model,
         notes: body.notes,
         assignedDate: body.assignedDate
-          ? formatDateOnly(new Date(body.assignedDate))
+          ? formatDateOnly(body.assignedDate)
           : formatDateOnly(new Date()),
         status: "ACTIVE",
       })
@@ -191,6 +202,7 @@ export class AssetsService {
 
   async updateDevice(orgId: string, deviceId: number, body: PatchDeviceInput) {
     const existing = await this.db.query.employeeDevices.findFirst({
+      columns: { id: true },
       where: and(eq(employeeDevices.id, deviceId), eq(employeeDevices.orgId, orgId)),
     });
 
@@ -221,7 +233,8 @@ export class AssetsService {
         ...(body.model !== undefined && { model: body.model }),
         ...(body.notes !== undefined && { notes: body.notes }),
         ...(body.status !== undefined && { status: body.status }),
-        ...(body.returnDate !== undefined && { returnDate: formatDateOnly(new Date(body.returnDate)) }),
+        ...(body.returnDate !== undefined && { returnDate: formatDateOnly(body.returnDate) }),
+        updatedAt: new Date(),
       })
       .where(and(eq(employeeDevices.id, deviceId), eq(employeeDevices.orgId, orgId)));
 
@@ -230,6 +243,7 @@ export class AssetsService {
 
   async deleteDevice(orgId: string, deviceId: number) {
     const existing = await this.db.query.employeeDevices.findFirst({
+      columns: { id: true },
       where: and(eq(employeeDevices.id, deviceId), eq(employeeDevices.orgId, orgId)),
     });
 

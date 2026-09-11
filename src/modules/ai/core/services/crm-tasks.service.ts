@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, eq, isNull, sql, sum } from "drizzle-orm";
+import { and, count, eq, inArray, isNull, sql, sum } from "drizzle-orm";
 import { crmDeals, organizationMembers, tasks, tickets, timesheets, users } from "../../../../db/schema";
 import { businessParties, leadPartyMap } from "../../../../db/schema/party";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
@@ -9,7 +9,7 @@ import {
   INCLUDE_DELETED,
   LEAD_PARTY_COLUMNS,
   LEAD_PARTY_JOIN,
-  leadIdIs,
+  leadIdIn,
   leadPartyScope,
 } from "../../../leads/lead-party-reader";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
@@ -70,80 +70,85 @@ export class CrmTasksService {
 
       if (pendingTasks.length === 0) return null;
 
-      return Promise.all(
-        pendingTasks.map(async (t) => {
-          let entityContext: Record<string, unknown> = {};
+      const idsOf = (entityType: string): number[] => [
+        ...new Set(
+          pendingTasks.flatMap((t) => (t.entityType === entityType && t.entityId ? [t.entityId] : [])),
+        ),
+      ];
+      const leadIds = idsOf("LEAD");
+      const dealIds = idsOf("DEAL");
 
-          if (t.entityType === "LEAD" && t.entityId) {
-            // A task can outlive the lead it was raised on, and the SLA line it
-            // carries is the reason it is still worth ranking -- so the deleted
-            // record is still read, exactly as it was before.
-            const [lead] = await tx
-              .select({
-                id: LEAD_PARTY_COLUMNS.id,
-                name: LEAD_PARTY_COLUMNS.name,
-                score: LEAD_PARTY_COLUMNS.score,
-                potentialValue: LEAD_PARTY_COLUMNS.potentialValue,
-                slaDeadline: LEAD_PARTY_COLUMNS.slaDeadline,
-                status: LEAD_PARTY_COLUMNS.status,
-                priority: LEAD_PARTY_COLUMNS.priority,
-              })
-              .from(leadPartyMap)
-              .innerJoin(businessParties, LEAD_PARTY_JOIN)
-              .where(and(...leadPartyScope(orgId, INCLUDE_DELETED), leadIdIs(t.entityId)))
-              .limit(1);
+      const leadRows = leadIds.length === 0 ? [] : await tx
+        .select({
+          id: LEAD_PARTY_COLUMNS.id,
+          name: LEAD_PARTY_COLUMNS.name,
+          score: LEAD_PARTY_COLUMNS.score,
+          potentialValue: LEAD_PARTY_COLUMNS.potentialValue,
+          slaDeadline: LEAD_PARTY_COLUMNS.slaDeadline,
+          status: LEAD_PARTY_COLUMNS.status,
+          priority: LEAD_PARTY_COLUMNS.priority,
+        })
+        .from(leadPartyMap)
+        .innerJoin(businessParties, LEAD_PARTY_JOIN)
+        .where(and(...leadPartyScope(orgId, INCLUDE_DELETED), leadIdIn(leadIds)))
+        .limit(leadIds.length);
+      const leadsById = new Map(leadRows.map((lead) => [lead.id, lead]));
 
-            if (lead) {
-              const slaHoursLeft = lead.slaDeadline ? diffHours(new Date(lead.slaDeadline), new Date()) : null;
-              entityContext = {
-                type: "LEAD",
-                name: lead.name,
-                score: lead.score ?? 0,
-                potentialValue: lead.potentialValue ? parseFloat(String(lead.potentialValue)) : 0,
-                slaHoursLeft,
-                slaMissed: slaHoursLeft !== null && slaHoursLeft < 0,
-                priority: lead.priority,
-                status: lead.status,
-              };
-            }
-          } else if (t.entityType === "DEAL" && t.entityId) {
-            const [deal] = await tx
-              .select({
-                id: crmDeals.id,
-                companyName: crmDeals.companyName,
-                value: crmDeals.value,
-                stage: crmDeals.stage,
-                closeDate: crmDeals.closeDate,
-              })
-              .from(crmDeals)
-              .where(and(eq(crmDeals.id, t.entityId), eq(crmDeals.orgId, orgId)))
-              .limit(1);
+      const dealRows = dealIds.length === 0 ? [] : await tx
+        .select({
+          id: crmDeals.id,
+          companyName: crmDeals.companyName,
+          value: crmDeals.value,
+          stage: crmDeals.stage,
+          closeDate: crmDeals.closeDate,
+        })
+        .from(crmDeals)
+        .where(and(inArray(crmDeals.id, dealIds), eq(crmDeals.orgId, orgId)))
+        .limit(dealIds.length);
+      const dealsById = new Map(dealRows.map((deal) => [deal.id, deal]));
 
-            if (deal) {
-              const closeDaysLeft = deal.closeDate ? diffHours(new Date(deal.closeDate), new Date()) / 24 : null;
-              entityContext = {
-                type: "DEAL",
-                companyName: deal.companyName,
-                value: deal.value ? parseFloat(String(deal.value)) : 0,
-                stage: deal.stage,
-                closeDaysLeft: closeDaysLeft !== null ? Math.round(closeDaysLeft) : null,
-              };
-            }
-          }
+      return pendingTasks.map((t) => {
+        let entityContext: Record<string, unknown> = {};
 
-          const dueHoursLeft = t.dueDate ? diffHours(new Date(t.dueDate), new Date()) : null;
-
-          return {
-            taskId: t.id,
-            title: t.title,
-            type: t.type,
-            notes: t.notes,
-            dueHoursLeft,
-            overdue: dueHoursLeft !== null && dueHoursLeft < 0,
-            entityContext,
+        const lead = t.entityType === "LEAD" && t.entityId ? leadsById.get(t.entityId) : undefined;
+        if (lead) {
+          const slaHoursLeft = lead.slaDeadline ? diffHours(new Date(lead.slaDeadline), new Date()) : null;
+          entityContext = {
+            type: "LEAD",
+            name: lead.name,
+            score: lead.score ?? 0,
+            potentialValue: lead.potentialValue ? parseFloat(String(lead.potentialValue)) : 0,
+            slaHoursLeft,
+            slaMissed: slaHoursLeft !== null && slaHoursLeft < 0,
+            priority: lead.priority,
+            status: lead.status,
           };
-        }),
-      );
+        }
+
+        const deal = t.entityType === "DEAL" && t.entityId ? dealsById.get(t.entityId) : undefined;
+        if (deal) {
+          const closeDaysLeft = deal.closeDate ? diffHours(new Date(deal.closeDate), new Date()) / 24 : null;
+          entityContext = {
+            type: "DEAL",
+            companyName: deal.companyName,
+            value: deal.value ? parseFloat(String(deal.value)) : 0,
+            stage: deal.stage,
+            closeDaysLeft: closeDaysLeft !== null ? Math.round(closeDaysLeft) : null,
+          };
+        }
+
+        const dueHoursLeft = t.dueDate ? diffHours(new Date(t.dueDate), new Date()) : null;
+
+        return {
+          taskId: t.id,
+          title: t.title,
+          type: t.type,
+          notes: t.notes,
+          dueHoursLeft,
+          overdue: dueHoursLeft !== null && dueHoursLeft < 0,
+          entityContext,
+        };
+      });
     }, { orgId });
 
     if (enriched === null) {
@@ -189,13 +194,13 @@ Also return a short summary (2-3 sentences) with overall advice for the rep.`,
     const projectTickets = await runInTenantTransaction(this.db, (tx) =>
       tx.query.tickets.findMany({
         where: and(eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), eq(tickets.status, "TODO"), isNull(tickets.deletedAt)),
-        columns: { id: true, title: true, priority: true, assigneeId: true },
+        columns: { id: true, title: true, priority: true, assigneeMembershipId: true },
         limit: 100,
       }),
       { orgId },
     );
 
-    const unassignedTickets = projectTickets.filter((t) => !t.assigneeId);
+    const unassignedTickets = projectTickets.filter((t) => !t.assigneeMembershipId);
 
     return unassignedTickets.slice(0, 5).map((ticket) => ({
       ticketId: ticket.id,
@@ -213,13 +218,14 @@ Also return a short summary (2-3 sentences) with overall advice for the rep.`,
       const [ticketAgg, hoursAgg] = await Promise.all([
         tx
           .select({
-            assigneeId: tickets.assigneeId,
+            assigneeId: organizationMembers.userId,
             activeTickets: count(),
             totalPoints: sum(tickets.points),
             userName: users.firstName,
           })
           .from(tickets)
-          .innerJoin(users, eq(users.id, tickets.assigneeId))
+          .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
+          .innerJoin(users, eq(users.id, organizationMembers.userId))
           .where(
             and(
               eq(tickets.orgId, orgId),
@@ -227,7 +233,7 @@ Also return a short summary (2-3 sentences) with overall advice for the rep.`,
               sql`${tickets.status} IN ('TODO', 'IN_PROGRESS', 'IN_REVIEW')`,
             ),
           )
-          .groupBy(tickets.assigneeId, users.firstName)
+          .groupBy(organizationMembers.userId, users.firstName)
           .limit(200),
         tx
           .select({
@@ -263,7 +269,7 @@ Also return a short summary (2-3 sentences) with overall advice for the rep.`,
       .map((r) => {
         const activeTickets = Number(r.activeTickets);
         const totalPoints = Number(r.totalPoints ?? 0);
-        const hoursThisWeek = hoursMap.get(r.assigneeId!) ?? 0;
+        const hoursThisWeek = hoursMap.get(r.assigneeId) ?? 0;
 
         let recommendation: WorkloadAnalysis["recommendation"] = "AVAILABLE";
         if (hoursThisWeek > 40 || activeTickets > 10) {
@@ -275,7 +281,7 @@ Also return a short summary (2-3 sentences) with overall advice for the rep.`,
         }
 
         return {
-          userId: r.assigneeId!,
+          userId: r.assigneeId,
           userName: r.userName ?? "Unknown",
           activeTickets,
           totalPoints,

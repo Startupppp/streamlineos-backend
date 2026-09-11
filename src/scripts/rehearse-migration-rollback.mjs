@@ -333,8 +333,8 @@ function inventoryTouchingAbove(tags, lowest) {
 }
 
 async function tierOne(sql, tags, findings) {
-  // The INVENTORY chain, not the global one. `0912_feedbucket_modules_catalog`
-  // and `0913_party_map_drop_legacy_fks` landed with no rollback files and took
+  // The INVENTORY chain, not the global one. `1092_feedbucket_modules_catalog`
+  // and `1093_party_map_drop_legacy_fks` landed with no rollback files and took
   // this tier from two migrations to zero without touching a line of inventory.
   const inventoryTags = tags.filter((tag) => INVENTORY_TAG.test(tag));
   const suffix = suffixWithRollbacks(inventoryTags);
@@ -718,7 +718,7 @@ function selfTest() {
   );
   check(
     "the inventory tag rule selects inventory and nothing else",
-    INVENTORY_TAG.test("0911_inv_projects_rls") &&
+    INVENTORY_TAG.test("1091_inv_projects_rls") &&
       INVENTORY_TAG.test("0516_inventory_soft_delete") &&
       !INVENTORY_TAG.test("0477_invoice_items_backfill") &&
       !INVENTORY_TAG.test("0346_invitation_events"),
@@ -739,9 +739,9 @@ function selfTest() {
     declaredLossTables('DROP TABLE IF EXISTS "inv_x";').size === 0,
   );
   check(
-    "0910 declares the loss the drill measured",
+    "1090 declares the loss the drill measured",
     declaredLossTables(
-      readFileSync(join(ROLLBACKS, "0910_inv_quality_hold_stock_grain.down.sql"), "utf8"),
+      readFileSync(join(ROLLBACKS, "1090_inv_quality_hold_stock_grain.down.sql"), "utf8"),
     ).has("inv_quality_holds"),
   );
 

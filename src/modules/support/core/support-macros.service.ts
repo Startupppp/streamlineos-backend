@@ -8,6 +8,7 @@ import {
   supportVipClients,
   users,
   organizations,
+  organizationMembers,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -29,6 +30,7 @@ import type {
   UpdateMacroInput,
   UpdateRoutingRuleInput,
 } from "./dto/support.schemas";
+import { isTicketPriority, isTicketStatus } from "./support-ticket-routing";
 
 export type { RoutableTicket, RoutingOutcome } from "./lib/support-routing";
 
@@ -45,13 +47,26 @@ export type { RoutableTicket, RoutingOutcome } from "./lib/support-routing";
 export class SupportMacrosService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listMacros(orgId: string, userId: string, membershipId: number | null, query: ListMacrosInput) {
-    const privateVisible = membershipId != null
-      ? eq(supportMacros.createdByMembershipId, membershipId)
-      : eq(supportMacros.createdBy, userId);
+  private async resolveActiveMembershipId(orgId: string, userId: string): Promise<number> {
+    const member = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.status, "ACTIVE"),
+      ),
+      columns: { id: true },
+    });
+    if (!member) throw new NotFoundException("Active organization member not found");
+    return member.id;
+  }
+
+  listMacros(orgId: string, _userId: string, membershipId: number | null, query: ListMacrosInput) {
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
+    const privateVisible = eq(supportMacros.createdByMembershipId, membershipId);
+    const visibility = or(sql`${supportMacros.visibility} != 'private'`, privateVisible) ?? sql`false`;
     const conditions = [
       eq(supportMacros.orgId, orgId),
-      or(sql`${supportMacros.visibility} != 'private'`, privateVisible)!,
+      visibility,
     ];
     if (query.category) conditions.push(eq(supportMacros.category, query.category));
     if (query.search) {
@@ -67,7 +82,8 @@ export class SupportMacrosService {
     });
   }
 
-  async createMacro(orgId: string, userId: string, membershipId: number | null, input: CreateMacroInput) {
+  async createMacro(orgId: string, _userId: string, membershipId: number | null, input: CreateMacroInput) {
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const [macro] = await this.db
       .insert(supportMacros)
       .values({
@@ -77,8 +93,7 @@ export class SupportMacrosService {
         category: input.category ?? null,
         visibility: input.visibility,
         actions: input.actions,
-        createdBy: userId,
-        createdByMembershipId: membershipId ?? undefined,
+        createdByMembershipId: membershipId,
       })
       .returning();
     return macro;
@@ -111,14 +126,13 @@ export class SupportMacrosService {
    * bump. Used for the compose-time preview before an agent sends a reply.
    */
   async previewMacro(orgId: string, macroId: number, userId: string, membershipId: number | null, ticketId: number): Promise<{ body: string }> {
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const macro = await this.db.query.supportMacros.findFirst({
       where: and(eq(supportMacros.id, macroId), eq(supportMacros.orgId, orgId)),
-      columns: { id: true, body: true, visibility: true, createdBy: true, createdByMembershipId: true },
+      columns: { id: true, body: true, visibility: true, createdByMembershipId: true },
     });
     if (!macro) throw new NotFoundException("Macro not found");
-    const isCreator = membershipId != null && macro.createdByMembershipId != null
-      ? macro.createdByMembershipId === membershipId
-      : macro.createdBy === userId;
+    const isCreator = macro.createdByMembershipId === membershipId;
     if (macro.visibility === "private" && !isCreator) {
       throw new ForbiddenException("This macro is private to its creator");
     }
@@ -135,13 +149,12 @@ export class SupportMacrosService {
    * into the macro itself.
    */
   async applyMacro(orgId: string, macroId: number, userId: string, membershipId: number | null, input: ApplyMacroInput) {
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const macro = await this.db.query.supportMacros.findFirst({
       where: and(eq(supportMacros.id, macroId), eq(supportMacros.orgId, orgId)),
     });
     if (!macro) throw new NotFoundException("Macro not found");
-    const isCreator = membershipId != null && macro.createdByMembershipId != null
-      ? macro.createdByMembershipId === membershipId
-      : macro.createdBy === userId;
+    const isCreator = macro.createdByMembershipId === membershipId;
     if (macro.visibility === "private" && !isCreator) {
       throw new ForbiddenException("This macro is private to its creator");
     }
@@ -149,8 +162,12 @@ export class SupportMacrosService {
     const rendered = await this.renderMacroBody(orgId, userId, input.ticketId, macro.body);
 
     const ticketUpdate: Partial<typeof supportTickets.$inferInsert> = {};
-    if (macro.actions?.setStatus) ticketUpdate.status = macro.actions.setStatus as (typeof supportTickets.$inferInsert)["status"];
-    if (macro.actions?.setPriority) ticketUpdate.priority = macro.actions.setPriority as (typeof supportTickets.$inferInsert)["priority"];
+    if (macro.actions?.setStatus && isTicketStatus(macro.actions.setStatus)) {
+      ticketUpdate.status = macro.actions.setStatus;
+    }
+    if (macro.actions?.setPriority && isTicketPriority(macro.actions.setPriority)) {
+      ticketUpdate.priority = macro.actions.setPriority;
+    }
     if (Object.keys(ticketUpdate).length > 0) {
       ticketUpdate.updatedAt = new Date();
       await this.db
@@ -180,15 +197,15 @@ export class SupportMacrosService {
     const [ticket, agent, org] = await Promise.all([
       this.db.query.supportTickets.findFirst({
         where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
-        columns: { id: true, requesterName: true, createdBy: true },
-        with: { creator: { columns: { name: true } } },
+        columns: { id: true, requesterName: true },
+        with: { creatorMembership: { columns: { id: true }, with: { user: { columns: { name: true } } } } },
       }),
       this.db.query.users.findFirst({ where: eq(users.id, userId), columns: { name: true } }),
       this.db.query.organizations.findFirst({ where: eq(organizations.id, orgId), columns: { name: true } }),
     ]);
     if (!ticket) throw new NotFoundException("Ticket not found");
 
-    const customerName = ticket.requesterName ?? ticket.creator?.name ?? "there";
+    const customerName = ticket.requesterName ?? ticket.creatorMembership?.user?.name ?? "there";
     const variables: Record<string, string> = {
       "customer.name": customerName,
       "ticket.id": String(ticket.id),
@@ -221,14 +238,15 @@ export class SupportMacrosService {
   }
 
   async setAgentSkills(orgId: string, userId: string, skills: string[]) {
+    const membershipId = await this.resolveActiveMembershipId(orgId, userId);
     await this.db.transaction(async (tx) => {
       await tx
         .delete(supportAgentSkills)
-        .where(and(eq(supportAgentSkills.orgId, orgId), eq(supportAgentSkills.userId, userId)));
+        .where(and(eq(supportAgentSkills.orgId, orgId), eq(supportAgentSkills.userMembershipId, membershipId)));
       if (skills.length > 0) {
         await tx
           .insert(supportAgentSkills)
-          .values(skills.map((skill) => ({ orgId, userId, skill })))
+          .values(skills.map((skill) => ({ orgId, userMembershipId: membershipId, skill })))
           .onConflictDoNothing();
       }
     });
@@ -236,15 +254,29 @@ export class SupportMacrosService {
   }
 
   listAgentSkills(orgId: string) {
-    return this.db.query.supportAgentSkills.findMany({ where: eq(supportAgentSkills.orgId, orgId) });
+    return this.db
+      .select({
+        id: supportAgentSkills.id,
+        orgId: supportAgentSkills.orgId,
+        userId: organizationMembers.userId,
+        userMembershipId: supportAgentSkills.userMembershipId,
+        skill: supportAgentSkills.skill,
+        createdAt: supportAgentSkills.createdAt,
+      })
+      .from(supportAgentSkills)
+      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, supportAgentSkills.orgId), eq(organizationMembers.id, supportAgentSkills.userMembershipId)))
+      .where(eq(supportAgentSkills.orgId, orgId))
+      .orderBy(asc(supportAgentSkills.id))
+      .limit(500);
   }
 
   async setAgentAvailability(orgId: string, userId: string, isAvailable: boolean) {
+    const membershipId = await this.resolveActiveMembershipId(orgId, userId);
     const [row] = await this.db
       .insert(supportAgentAvailability)
-      .values({ orgId, userId, isAvailable })
+      .values({ orgId, userMembershipId: membershipId, isAvailable })
       .onConflictDoUpdate({
-        target: [supportAgentAvailability.orgId, supportAgentAvailability.userId],
+        target: [supportAgentAvailability.orgId, supportAgentAvailability.userMembershipId],
         set: { isAvailable, updatedAt: new Date() },
       })
       .returning();
@@ -252,7 +284,20 @@ export class SupportMacrosService {
   }
 
   listAgentAvailability(orgId: string) {
-    return this.db.query.supportAgentAvailability.findMany({ where: eq(supportAgentAvailability.orgId, orgId) });
+    return this.db
+      .select({
+        id: supportAgentAvailability.id,
+        orgId: supportAgentAvailability.orgId,
+        userId: organizationMembers.userId,
+        userMembershipId: supportAgentAvailability.userMembershipId,
+        isAvailable: supportAgentAvailability.isAvailable,
+        updatedAt: supportAgentAvailability.updatedAt,
+      })
+      .from(supportAgentAvailability)
+      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, supportAgentAvailability.orgId), eq(organizationMembers.id, supportAgentAvailability.userMembershipId)))
+      .where(eq(supportAgentAvailability.orgId, orgId))
+      .orderBy(asc(supportAgentAvailability.id))
+      .limit(500);
   }
 
   async addVipClient(orgId: string, clientId: number) {
@@ -261,9 +306,11 @@ export class SupportMacrosService {
   }
 
   async removeVipClient(orgId: string, clientId: number) {
-    await this.db
+    const removed = await this.db
       .delete(supportVipClients)
-      .where(and(eq(supportVipClients.orgId, orgId), eq(supportVipClients.clientId, clientId)));
+      .where(and(eq(supportVipClients.orgId, orgId), eq(supportVipClients.clientId, clientId)))
+      .returning({ clientId: supportVipClients.clientId });
+    if (removed.length === 0) throw new NotFoundException("VIP client not found");
     return { success: true };
   }
 

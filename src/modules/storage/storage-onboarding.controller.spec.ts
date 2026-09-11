@@ -1,17 +1,22 @@
-import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ServiceUnavailableException,
+  UnprocessableEntityException,
+} from "@nestjs/common";
 import { OnboardingDocumentsController } from "./storage-onboarding.controller";
 import type { StorageService } from "./storage.service";
+import type { AvScanner } from "../../common/security/av-scan";
+import { MediaTransformRunner } from "./media-transform.runner";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
-import * as tenantContext from "../../common/tenant/tenant-context";
 
-jest.mock("../../common/tenant/tenant-context", () => ({
-  registerAfterCommit: jest.fn().mockReturnValue(false),
-}));
-
-const mockRegisterAfterCommit = tenantContext.registerAfterCommit as jest.MockedFunction<
-  typeof tenantContext.registerAfterCommit
->;
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
 
 function makeUser(orgId = "org-1"): CurrentUserContext {
   return {
@@ -46,6 +51,7 @@ function buildTxMock(onboardingStepResult: object | null = null) {
   return {
     insert: jest.fn().mockReturnValue(insertBuilder),
     update: jest.fn().mockReturnValue(updateBuilder),
+    execute: jest.fn().mockResolvedValue([]),
     query: {
       onboardingSteps: {
         findFirst: jest.fn().mockResolvedValue(onboardingStepResult),
@@ -54,34 +60,52 @@ function buildTxMock(onboardingStepResult: object | null = null) {
   };
 }
 
-describe("OnboardingDocumentsController.upload — connection decoupling", () => {
-  const callOrder: string[] = [];
+function buildRelocationSelect() {
+  const targets = {
+    from: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockResolvedValue([]),
+  };
+  return jest.fn().mockReturnValue(targets);
+}
 
-  let mockStorage: jest.Mocked<Pick<StorageService, "isConfigured" | "compressAndPreGenerateKey" | "uploadToKey">>;
-  let mockDb: { transaction: jest.Mock };
+describe("OnboardingDocumentsController.upload — the object write leaves the request thread", () => {
+  const callOrder: string[] = [];
+  let codec: { promise: Promise<void>; resolve: () => void };
+
+  let mockStorage: jest.Mocked<Pick<StorageService, "isConfigured" | "planUpload" | "compressToKey" | "deleteFileIfPresent">>;
+  let mockAvScanner: jest.Mocked<Pick<AvScanner, "scan">>;
+  let mockDb: { transaction: jest.Mock; select: jest.Mock };
+  let transforms: MediaTransformRunner;
   let controller: OnboardingDocumentsController;
 
   beforeEach(() => {
     callOrder.length = 0;
-    mockRegisterAfterCommit.mockClear();
-    mockRegisterAfterCommit.mockReturnValue(false);
+    codec = deferred();
+    codec.resolve();
 
     mockStorage = {
       isConfigured: jest.fn().mockReturnValue(true),
-      compressAndPreGenerateKey: jest.fn().mockResolvedValue({
+      planUpload: jest.fn().mockResolvedValue({
         key: "onboarding/uuid-id-doc.pdf",
-        url: "https://cdn.example.com/onboarding/uuid-id-doc.pdf",
-        compressedBuffer: Buffer.from("compressed"),
-        compressedMimeType: "application/pdf",
-        size: 10,
+        plannedMimeType: "application/pdf",
       }),
-      uploadToKey: jest.fn().mockImplementation(async () => {
+      compressToKey: jest.fn().mockImplementation(async () => {
+        await codec.promise;
         callOrder.push("upload");
+        return { size: 10, mimeType: "application/pdf", sha256: "aa" };
       }),
+      deleteFileIfPresent: jest.fn().mockResolvedValue(true),
     };
 
+    mockAvScanner = {
+      scan: jest.fn().mockResolvedValue({ status: "clean" }),
+    };
+
+    transforms = new MediaTransformRunner();
     const tx = buildTxMock();
     mockDb = {
+      select: buildRelocationSelect(),
       transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
         const result = await fn(tx);
         callOrder.push("db-committed");
@@ -92,43 +116,44 @@ describe("OnboardingDocumentsController.upload — connection decoupling", () =>
     controller = new OnboardingDocumentsController(
       mockDb as never,
       mockStorage as never,
+      mockAvScanner as never,
+      transforms,
     );
   });
 
-  it("commits the database row before the upload is attempted when no ambient tenant context exists", async () => {
-    mockRegisterAfterCommit.mockReturnValue(false);
-
+  it("commits the database row before the object is written", async () => {
     await controller.upload(makeFile(), "ID_PROOF", makeUser());
+    await transforms.drain();
 
+    expect(mockDb.transaction).toHaveBeenCalledTimes(1);
     expect(callOrder).toEqual(["db-committed", "upload"]);
   });
 
-  it("defers the upload to after the transaction when an ambient context is present", async () => {
-    let capturedHook: (() => Promise<unknown>) | null = null;
-    mockRegisterAfterCommit.mockImplementation((hook) => {
-      capturedHook = hook;
-      return true;
-    });
+  it("returns the pre-generated tenant-private key without waiting for the object write", async () => {
+    codec = deferred();
 
     const result = await controller.upload(makeFile(), "ID_PROOF", makeUser());
 
+    expect(result).toEqual({ url: "onboarding/uuid-id-doc.pdf" });
     expect(callOrder).toEqual(["db-committed"]);
-    expect(capturedHook).not.toBeNull();
-    expect(mockStorage.uploadToKey).not.toHaveBeenCalled();
 
-    await capturedHook!();
+    codec.resolve();
+    await transforms.drain();
 
     expect(callOrder).toEqual(["db-committed", "upload"]);
-    expect(result.url).toBe("https://cdn.example.com/onboarding/uuid-id-doc.pdf");
   });
 
-  it("returns the pre-generated URL immediately without waiting for the upload", async () => {
-    mockRegisterAfterCommit.mockReturnValue(true);
+  it("deletes the object when the write fails, so a half-written blob never outlives the attempt", async () => {
+    mockStorage.compressToKey.mockRejectedValue(new Error("sharp died"));
 
     const result = await controller.upload(makeFile(), "ID_PROOF", makeUser());
+    await transforms.drain();
 
-    expect(result).toEqual({ url: "https://cdn.example.com/onboarding/uuid-id-doc.pdf" });
-    expect(mockStorage.uploadToKey).not.toHaveBeenCalled();
+    expect(result).toEqual({ url: "onboarding/uuid-id-doc.pdf" });
+    expect(mockStorage.deleteFileIfPresent).toHaveBeenCalledWith(
+      "org-1",
+      "onboarding/uuid-id-doc.pdf",
+    );
   });
 
   it("rejects when storage is not configured", async () => {
@@ -157,6 +182,87 @@ describe("OnboardingDocumentsController.upload — connection decoupling", () =>
     await expect(controller.upload(makeFile(), "NATIONAL_ID", makeUser())).rejects.toThrow(
       "Invalid document type",
     );
+    expect(mockDb.transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("OnboardingDocumentsController.upload — AV scan gate", () => {
+  let mockStorage: jest.Mocked<Pick<StorageService, "isConfigured" | "planUpload" | "compressToKey" | "deleteFileIfPresent">>;
+  let mockAvScanner: jest.Mocked<Pick<AvScanner, "scan">>;
+  let mockDb: { transaction: jest.Mock; select: jest.Mock };
+  let transforms: MediaTransformRunner;
+  let controller: OnboardingDocumentsController;
+
+  beforeEach(() => {
+    mockStorage = {
+      isConfigured: jest.fn().mockReturnValue(true),
+      planUpload: jest.fn().mockResolvedValue({
+        key: "onboarding/uuid-id-doc.pdf",
+        plannedMimeType: "application/pdf",
+      }),
+      compressToKey: jest.fn().mockResolvedValue({ size: 10, mimeType: "application/pdf", sha256: "aa" }),
+      deleteFileIfPresent: jest.fn().mockResolvedValue(true),
+    };
+
+    mockAvScanner = { scan: jest.fn().mockResolvedValue({ status: "clean" }) };
+
+    transforms = new MediaTransformRunner();
+    const tx = buildTxMock();
+    mockDb = {
+      select: buildRelocationSelect(),
+      transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
+    };
+
+    controller = new OnboardingDocumentsController(
+      mockDb as never,
+      mockStorage as never,
+      mockAvScanner as never,
+      transforms,
+    );
+  });
+
+  it("scans the file buffer before any S3 write — clean file proceeds", async () => {
+    mockAvScanner.scan.mockResolvedValue({ status: "clean" });
+
+    await controller.upload(makeFile(), "ID_PROOF", makeUser());
+
+    expect(mockAvScanner.scan).toHaveBeenCalledWith(
+      expect.any(Buffer),
+      "id-doc.pdf",
+      "application/pdf",
+    );
+    expect(mockStorage.planUpload).toHaveBeenCalled();
+  });
+
+  it("rejects infected files with 422 and never writes to S3", async () => {
+    mockAvScanner.scan.mockResolvedValue({ status: "infected", threat: "Eicar-Test-Signature" });
+
+    await expect(controller.upload(makeFile(), "ID_PROOF", makeUser())).rejects.toBeInstanceOf(
+      UnprocessableEntityException,
+    );
+
+    expect(mockStorage.planUpload).not.toHaveBeenCalled();
+    expect(mockStorage.compressToKey).not.toHaveBeenCalled();
+  });
+
+  it("rejects scanner errors with 503 and never writes to S3", async () => {
+    mockAvScanner.scan.mockResolvedValue({ status: "error", reason: "clamd-unreachable" });
+
+    await expect(controller.upload(makeFile(), "ID_PROOF", makeUser())).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+
+    expect(mockStorage.planUpload).not.toHaveBeenCalled();
+    expect(mockStorage.compressToKey).not.toHaveBeenCalled();
+  });
+
+  it("scan happens before the DB transaction — no orphaned rows on infected files", async () => {
+    mockAvScanner.scan.mockResolvedValue({ status: "infected", threat: "Eicar-Test-Signature" });
+
+    await expect(controller.upload(makeFile(), "ID_PROOF", makeUser())).rejects.toBeInstanceOf(
+      UnprocessableEntityException,
+    );
+
     expect(mockDb.transaction).not.toHaveBeenCalled();
   });
 });

@@ -16,7 +16,7 @@ export const timesheetExceptions = pgTable("timesheet_exceptions", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   userMembershipId: integer("user_membership_id"),
-  periodId: integer("period_id").references(() => timesheetPeriods.id, { onDelete: "cascade" }),
+  periodId: integer("period_id"),
   entryId: integer("entry_id"),
   rule: text("rule").notNull(),
   severity: text("severity").notNull().default("WARNING"),
@@ -31,6 +31,7 @@ export const timesheetExceptions = pgTable("timesheet_exceptions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (t) => [
+  foreignKey({ columns: [t.orgId, t.periodId], foreignColumns: [timesheetPeriods.orgId, timesheetPeriods.id], name: "fk_timesheet_exceptions_org_period" }).onDelete("cascade"),
   index("idx_ts_exceptions_org_status").on(t.orgId, t.status, t.severity),
   index("idx_ts_exceptions_user_membership").on(t.orgId, t.userMembershipId),
   foreignKey({

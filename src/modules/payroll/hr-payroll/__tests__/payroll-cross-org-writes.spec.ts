@@ -52,7 +52,7 @@ describe("LoansService.createLoan — cross-org write guard", () => {
     const service = new LoansService(db as never);
 
     await expect(
-      service.createLoan("org-a", "admin-user", true, {
+      service.createLoan("org-a", "admin-user", null, true, {
         userId: "user-in-org-b",
         amount: 10000,
         totalEmis: 5,
@@ -67,7 +67,7 @@ describe("LoansService.createLoan — cross-org write guard", () => {
     const db = makeDb({ id: 5 }, [{ id: 7, userId: "self-user" }]);
     const service = new LoansService(db as never);
 
-    const result = await service.createLoan("org-a", "self-user", false, {
+    const result = await service.createLoan("org-a", "self-user", 5, false, {
       amount: 10000,
       totalEmis: 5,
       reason: "advance",
@@ -82,7 +82,7 @@ describe("LoansService.createLoan — cross-org write guard", () => {
     const db = makeDb({ id: 1 }, [{ id: 8, userId: "user-in-org-a" }]);
     const service = new LoansService(db as never);
 
-    const result = await service.createLoan("org-a", "admin-user", true, {
+    const result = await service.createLoan("org-a", "admin-user", 1, true, {
       userId: "user-in-org-a",
       amount: 10000,
       totalEmis: 5,

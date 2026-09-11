@@ -12,7 +12,6 @@ import {
   uniqueIndex,
   unique,
   foreignKey,
-  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users, organizationMembers } from "../common/auth";
@@ -49,20 +48,15 @@ export const payrollJournalBatches = pgTable(
     orgId: text("org_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    entityId: integer("entity_id").references(() => payrollEntities.id, {
-      onDelete: "set null",
-    }),
-    runId: integer("run_id").references(() => payrollRuns.id, { onDelete: "set null" }),
+    entityId: integer("entity_id"),
+    runId: integer("run_id"),
     periodKey: text("period_key").notNull(),
     version: integer("version").default(1).notNull(),
     status: payrollJournalBatchStatusEnum("status").default("DRAFT").notNull(),
     reconciliationStatus: payrollJournalReconStatusEnum("reconciliation_status")
       .default("UNRECONCILED")
       .notNull(),
-    reversalOfBatchId: integer("reversal_of_batch_id").references(
-      (): AnyPgColumn => payrollJournalBatches.id,
-      { onDelete: "set null" },
-    ),
+    reversalOfBatchId: integer("reversal_of_batch_id"),
     reversalReason: text("reversal_reason"),
     provisional: boolean("provisional").default(false).notNull(),
     sourceHash: text("source_hash").notNull(),
@@ -93,6 +87,9 @@ export const payrollJournalBatches = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.reversalOfBatchId], foreignColumns: [table.orgId, table.id], name: "fk_payroll_journal_batches_org_reversal_of" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.entityId], foreignColumns: [payrollEntities.orgId, payrollEntities.id], name: "fk_payroll_journal_batches_entity_id_org" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.runId], foreignColumns: [payrollRuns.orgId, payrollRuns.id], name: "fk_payroll_journal_batches_run_id_org" }).onDelete("set null"),
     unique("uniq_payroll_journal_batches_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_payroll_journal_batches_org_period_version").on(
       table.orgId,
@@ -145,7 +142,7 @@ export const payrollJournalBatchLines = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     batchId: integer("batch_id")
       .notNull()
-      .references(() => payrollJournalBatches.id, { onDelete: "cascade" }),
+      ,
     lineNo: integer("line_no").notNull(),
     account: text("account").notNull(),
     description: text("description").notNull(),
@@ -155,6 +152,7 @@ export const payrollJournalBatchLines = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.batchId], foreignColumns: [payrollJournalBatches.orgId, payrollJournalBatches.id], name: "fk_payroll_journal_batch_lines_batch_id_org" }).onDelete("cascade"),
     unique("uniq_payroll_jrnl_batch_lines_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_payroll_journal_batch_lines_batch_line").on(table.batchId, table.lineNo),
     index("idx_payroll_journal_batch_lines_org_batch").on(table.orgId, table.batchId),

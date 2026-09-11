@@ -23,9 +23,13 @@ import type {
 } from "./dto/quality.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import {
+  listInspectionsResponseSchema,
+  createInspectionResponseSchema,
+} from "./dto/quality-response.schemas";
 
 const inspectionIdParams = z.object({ inspectionId: z.coerce.number().int().positive() }).strict();
 
@@ -36,6 +40,7 @@ export class InspectionsController {
   constructor(private readonly svc: InspectionsService) {}
 
   @Get()
+  @ResponseSchema(listInspectionsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:read")
   @Validate({ query: listInspectionsQuerySchema })
@@ -47,6 +52,7 @@ export class InspectionsController {
   }
 
   @Get(":inspectionId")
+  @ResponseSchema(createInspectionResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:read")
   @Validate({ params: inspectionIdParams })
@@ -58,6 +64,7 @@ export class InspectionsController {
   }
 
   @Post()
+  @ResponseSchema(createInspectionResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
   @Idempotent("inventory.quality.inspection.create")
@@ -71,6 +78,7 @@ export class InspectionsController {
 
   @Post(":inspectionId/start")
   @BodylessAction()
+  @ResponseSchema(createInspectionResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
   @Idempotent("inventory.quality.inspection.start")
@@ -84,6 +92,7 @@ export class InspectionsController {
 
   @Post(":inspectionId/pass")
   @BodylessAction()
+  @ResponseSchema(createInspectionResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:release")
   @Validate({ params: inspectionIdParams })
@@ -96,6 +105,7 @@ export class InspectionsController {
   }
 
   @Post(":inspectionId/fail")
+  @ResponseSchema(createInspectionResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
   @Idempotent("inventory.quality.inspection.fail")
@@ -109,6 +119,7 @@ export class InspectionsController {
   }
 
   @Post(":inspectionId/dispose")
+  @ResponseSchema(createInspectionResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
   @Validate({ params: inspectionIdParams, body: disposeInspectionSchema })
@@ -127,6 +138,7 @@ export class InspectionsController {
    */
   @Post(":inspectionId/cancel")
   @BodylessAction()
+  @ResponseSchema(createInspectionResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
   @Validate({ params: inspectionIdParams })

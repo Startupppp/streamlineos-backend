@@ -76,13 +76,20 @@ export class NotificationTimeSweepsService {
       .select({
         id: supportTickets.id,
         title: supportTickets.title,
-        assigneeId: supportTickets.assigneeId,
+        assigneeId: organizationMembers.userId,
       })
       .from(supportTickets)
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, supportTickets.orgId),
+          eq(organizationMembers.id, supportTickets.assigneeMembershipId),
+        ),
+      )
       .where(
         and(
           eq(supportTickets.orgId, orgId),
-          isNotNull(supportTickets.assigneeId),
+          isNotNull(supportTickets.assigneeMembershipId),
           isNotNull(supportTickets.firstResponseDueAt),
           notInArray(supportTickets.status, ["RESOLVED", "CLOSED"]),
           sql`${supportTickets.firstResponseDueAt} <= now()`,

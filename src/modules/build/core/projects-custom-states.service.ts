@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   Inject,
   Injectable,
   NotFoundException,
@@ -13,12 +14,16 @@ import {
   projectStatuses,
   tickets,
 } from "../../../db/schema";
+import { bulkUpdateFromValues } from "../../../common/db/bulk-update";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { lockProjectTicketMutation } from "./build-ticket-mutation-policy";
+import { reserveTicketCapacity } from "./build-ticket-capacity";
 import { type Db } from "../../../db/drizzle.module";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import type {
+  BulkReorderStatesInput,
   CreateStateInput,
   UpdateCustomStateInput,
 } from "./dto/projects.schemas";
@@ -43,18 +48,19 @@ export class ProjectsCustomStatesService {
     if (perms.has("build:manage")) return;
     const project = await this.db.query.projects.findFirst({
       where: and(eq(projects.id, projectId), eq(projects.orgId, u.orgId), isNull(projects.deletedAt)),
-      columns: { managerId: true, managerMembershipId: true },
+      columns: { managerMembershipId: true },
     });
     if (!project) throw new NotFoundException("Project not found");
     const callerMid = actingMembershipId(u.principal);
-    if ((callerMid !== null && project.managerMembershipId === callerMid) || project.managerId === u.userId) return;
+    if (callerMid !== null && project.managerMembershipId === callerMid) return;
     const membership = await this.db
       .select({ role: projectMembers.role })
       .from(projectMembers)
       .where(
         and(
+          eq(projectMembers.orgId, u.orgId),
           eq(projectMembers.projectId, projectId),
-          eq(projectMembers.userId, u.userId),
+          eq(projectMembers.membershipId, callerMid ?? -1),
         ),
       )
       .limit(1);
@@ -74,7 +80,8 @@ export class ProjectsCustomStatesService {
           eq(projectStatuses.orgId, orgId),
         ),
       )
-      .orderBy(projectStatuses.order);
+      .orderBy(projectStatuses.order)
+      .limit(100);
   }
 
   async createCustomState(
@@ -169,6 +176,7 @@ export class ProjectsCustomStatesService {
     if (data.type !== undefined) updateData.type = data.type;
 
     const updated = await this.db.transaction(async (tx) => {
+      await lockProjectTicketMutation(tx, orgId, existing.projectId);
       if (data.name !== undefined && data.name !== existing.name) {
         await tx
           .update(tickets)
@@ -199,6 +207,67 @@ export class ProjectsCustomStatesService {
     return updated;
   }
 
+  async bulkReorderCustomStates(
+    u: CurrentUserContext,
+    projectId: number,
+    body: BulkReorderStatesInput,
+  ) {
+    await this.assertCanManageProject(u, projectId);
+
+    const current = await this.db
+      .select({ id: projectStatuses.id, order: projectStatuses.order })
+      .from(projectStatuses)
+      .where(
+        and(
+          eq(projectStatuses.projectId, projectId),
+          eq(projectStatuses.orgId, u.orgId),
+        ),
+      )
+      .limit(200);
+
+    const currentById = new Map(current.map((s) => [s.id, s.order]));
+
+    const seenStateIds = new Set<number>();
+    for (const item of body.items) {
+      if (!currentById.has(item.stateId))
+        throw new NotFoundException(`Status ${item.stateId} not found in this project`);
+      if (seenStateIds.has(item.stateId))
+        throw new BadRequestException(`Status ${item.stateId} appears twice in the reorder`);
+      seenStateIds.add(item.stateId);
+    }
+
+    const conflicts: { stateId: number; currentOrder: number; expectedOrder: number }[] = [];
+    for (const item of body.items) {
+      if (item.expectedOrder === undefined) continue;
+      const actual = currentById.get(item.stateId) ?? -1;
+      if (actual !== item.expectedOrder)
+        conflicts.push({ stateId: item.stateId, currentOrder: actual, expectedOrder: item.expectedOrder });
+    }
+    if (conflicts.length > 0)
+      throw new HttpException({ error: "conflict", conflicts }, 409);
+
+    /*
+     * A reorder is one statement, not one per state. Every row carries a
+     * different `order`, so the batched form is `UPDATE … FROM (VALUES …)`;
+     * a repeated stateId is refused there rather than silently applying one
+     * of the two orders.
+     */
+    const updatedIds = await bulkUpdateFromValues(this.db, {
+      table: projectStatuses,
+      orgId: u.orgId,
+      key: { column: "id", type: "integer" },
+      columns: [{ column: "order", type: "integer" }],
+      rows: body.items.map((item) => ({ key: item.stateId, values: [item.order] })),
+    });
+    const updatedSet = new Set(updatedIds.map((id) => Number(id)));
+
+    return {
+      items: body.items
+        .filter((item) => updatedSet.has(item.stateId))
+        .map((item) => ({ id: item.stateId, order: item.order })),
+    };
+  }
+
   async deleteCustomState(u: CurrentUserContext, stateId: number) {
     const orgId = u.orgId;
     const [existing] = await this.db
@@ -220,7 +289,8 @@ export class ProjectsCustomStatesService {
           eq(projectStatuses.orgId, orgId),
         ),
       )
-      .orderBy(projectStatuses.order);
+      .orderBy(projectStatuses.order)
+      .limit(100);
 
     const remaining = siblings.filter((s) => s.id !== stateId);
     if (remaining.length === 0) {
@@ -249,6 +319,13 @@ export class ProjectsCustomStatesService {
     }
 
     await this.db.transaction(async (tx) => {
+      await lockProjectTicketMutation(tx, orgId, existing.projectId);
+      const [moving] = await tx.execute(sql`
+        SELECT count(*)::int AS count FROM build.tickets
+        WHERE org_id = ${orgId} AND project_id = ${existing.projectId}
+          AND status = ${existing.name} AND deleted_at IS NULL
+      `);
+      await reserveTicketCapacity(tx, orgId, existing.projectId, [{ status: fallback.name, count: Number(moving?.count ?? 0) }]);
       await tx
         .update(tickets)
         .set({ status: fallback.name })

@@ -129,8 +129,9 @@ export function calcHraForMonth(input: {
   city?: string | null;
 }): { exemption: string; steps: string[] } {
   const bundle = getIndiaBundleForDate();
-  const isMetro = !!input.city && bundle.hra.metroCities.some(
-    (c) => c.toLowerCase() === input.city!.toLowerCase(),
+  const city = input.city;
+  const isMetro = !!city && bundle.hra.metroCities.some(
+    (c) => c.toLowerCase() === city.toLowerCase(),
   );
   const { exemptionPaise, steps } = calcHraExemptionPaise({
     basicPaise: toPaise(input.basic),

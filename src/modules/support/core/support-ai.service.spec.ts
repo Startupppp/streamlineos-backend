@@ -5,12 +5,13 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { SupportAiService } from "./support-ai.service";
 import { SupportAiTriageService } from "./support-ai-triage.service";
+import { SupportAiTriageAnalysisService } from "./support-ai-triage-analysis.service";
+import { SupportAiTriageDataService } from "./support-ai-triage-data.service";
 import { SupportAiTranslationService } from "./support-ai-translation.service";
 import { SupportAiEmbeddingsHelper } from "./support-ai-embeddings.helper";
 import { SupportAiSettingsService } from "./support-ai-settings.service";
 import { SupportAiReportHelper } from "./support-ai-report.helper";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
-import { EmbeddingsService } from "../../ai/core/providers/embeddings.service";
 import { OrgFeaturesService } from "../../ai/core/services/org-features.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { KbAccessService } from "../../kb/core/kb-access.service";
@@ -70,13 +71,15 @@ const makeGatewayFail = (kind: "quota_exceeded" | "provider_unavailable" | "not_
 const mockGateway = {
   invokeStructured: jest.fn(),
   invokeText: jest.fn(),
+  isEmbeddingConfigured: jest.fn().mockReturnValue(true),
+  embedQueryWithCredit: jest.fn().mockResolvedValue({
+    ok: true,
+    vector: new Array(1536).fill(0.01) as number[],
+    vectorLiteral: `[${new Array(1536).fill(0.01).join(",")}]`,
+  }),
 };
 
-const mockEmbeddings = {
-  isConfigured: jest.fn().mockReturnValue(true),
-  embedQuery: jest.fn().mockResolvedValue(new Array(1536).fill(0.01)),
-  toVectorLiteral: jest.fn((vec: number[]) => `[${vec.join(",")}]`),
-};
+
 
 const mockOrgFeatures = { getFlags: jest.fn().mockResolvedValue({ supportAi: true }) };
 
@@ -102,7 +105,7 @@ describe("SupportAiService", () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    mockEmbeddings.isConfigured.mockReturnValue(true);
+    mockGateway.isEmbeddingConfigured.mockReturnValue(true);
     mockOrgFeatures.getFlags.mockResolvedValue({ supportAi: true });
     mockDb.query.supportTickets.findFirst.mockResolvedValue(baseTicket);
     mockDb.query.supportTicketMessages.findMany.mockResolvedValue([]);
@@ -118,11 +121,12 @@ describe("SupportAiService", () => {
       providers: [
         SupportAiService,
         SupportAiTriageService,
+        SupportAiTriageAnalysisService,
+        SupportAiTriageDataService,
         SupportAiTranslationService,
         SupportAiEmbeddingsHelper,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AiGatewayService, useValue: mockGateway },
-        { provide: EmbeddingsService, useValue: mockEmbeddings },
         { provide: OrgFeaturesService, useValue: mockOrgFeatures },
         { provide: SupportAiSettingsService, useValue: mockAiSettings },
         { provide: SupportAiReportHelper, useValue: mockReportHelper },
@@ -135,14 +139,14 @@ describe("SupportAiService", () => {
   describe("analyzeTicket", () => {
     it("returns null when the org has disabled support AI", async () => {
       mockOrgFeatures.getFlags.mockResolvedValueOnce({ supportAi: false });
-      const result = await service.analyzeTicket("org1", 42);
+      const result = await service.analyzeTicket("org1", 42, "user-1");
       expect(result).toBeNull();
       expect(mockGateway.invokeStructured).not.toHaveBeenCalled();
     });
 
     it("throws NotFoundException when the ticket doesn't belong to the org", async () => {
       mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(undefined);
-      await expect(service.analyzeTicket("org1", 999)).rejects.toThrow(NotFoundException);
+      await expect(service.analyzeTicket("org1", 999, "user-1")).rejects.toThrow(NotFoundException);
     });
 
     it("persists summary/sentiment/category/priority suggestions from one structured gateway call (charge: true)", async () => {
@@ -155,7 +159,7 @@ describe("SupportAiService", () => {
         confidence: 0.9,
       }));
 
-      const result = await service.analyzeTicket("org1", 42);
+      const result = await service.analyzeTicket("org1", 42, "user-1");
 
       expect(result).not.toBeNull();
       const [call] = mockGateway.invokeStructured.mock.calls;
@@ -176,7 +180,7 @@ describe("SupportAiService", () => {
         confidence: 0.95,
       }));
 
-      await service.analyzeTicket("org1", 42);
+      await service.analyzeTicket("org1", 42, "user-1");
       const insertedTypes = mockDb.values.mock.calls.map((c: [Record<string, unknown>]) => c[0].type);
       expect(insertedTypes).toContain("spam");
       expect(insertedTypes).not.toContain("category");
@@ -184,7 +188,7 @@ describe("SupportAiService", () => {
 
     it("returns null gracefully when the gateway returns a failure", async () => {
       mockGateway.invokeStructured.mockResolvedValueOnce(makeGatewayFail("provider_unavailable"));
-      const result = await service.analyzeTicket("org1", 42);
+      const result = await service.analyzeTicket("org1", 42, "user-1");
       expect(result).toBeNull();
     });
   });
@@ -258,7 +262,7 @@ describe("SupportAiService", () => {
   describe("suggestMacro", () => {
     it("returns null when there are no candidate macros", async () => {
       mockDb.query.supportMacros.findMany.mockResolvedValueOnce([]);
-      const result = await service.suggestMacro("org1", "user1", 42);
+      const result = await service.suggestMacro("org1", "user1", 42, 1);
       expect(result).toBeNull();
       expect(mockGateway.invokeStructured).not.toHaveBeenCalled();
     });
@@ -266,14 +270,14 @@ describe("SupportAiService", () => {
     it("returns null when the model picks no good match", async () => {
       mockDb.query.supportMacros.findMany.mockResolvedValueOnce([{ id: 1, title: "Reset password", body: "..." }]);
       mockGateway.invokeStructured.mockResolvedValueOnce(makeGatewayOk({ macroId: null, reason: "no good fit", confidence: 0.4 }));
-      const result = await service.suggestMacro("org1", "user1", 42);
+      const result = await service.suggestMacro("org1", "user1", 42, 1);
       expect(result).toBeNull();
     });
 
     it("returns null if the model hallucinates a macro id not in the candidate list", async () => {
       mockDb.query.supportMacros.findMany.mockResolvedValueOnce([{ id: 1, title: "Reset password", body: "..." }]);
       mockGateway.invokeStructured.mockResolvedValueOnce(makeGatewayOk({ macroId: 999, reason: "made up", confidence: 0.9 }));
-      const result = await service.suggestMacro("org1", "user1", 42);
+      const result = await service.suggestMacro("org1", "user1", 42, 1);
       expect(result).toBeNull();
     });
 
@@ -281,7 +285,7 @@ describe("SupportAiService", () => {
       mockDb.query.supportMacros.findMany.mockResolvedValueOnce([{ id: 7, title: "Reset password", body: "..." }]);
       mockGateway.invokeStructured.mockResolvedValueOnce(makeGatewayOk({ macroId: 7, reason: "matches password reset", confidence: 0.85 }));
 
-      const result = await service.suggestMacro("org1", "user1", 42);
+      const result = await service.suggestMacro("org1", "user1", 42, 1);
 
       expect(result).not.toBeNull();
       const [call] = mockGateway.invokeStructured.mock.calls;
@@ -295,7 +299,7 @@ describe("SupportAiService", () => {
 
   describe("suggestKbArticles", () => {
     it("returns null when embeddings aren't configured", async () => {
-      mockEmbeddings.isConfigured.mockReturnValueOnce(false);
+      mockGateway.isEmbeddingConfigured.mockReturnValueOnce(false);
       const result = await service.suggestKbArticles(currentUser, 42);
       expect(result).toBeNull();
     });
@@ -410,7 +414,7 @@ describe("SupportAiService", () => {
 
   describe("findRootCauseCluster", () => {
     it("returns null when embeddings aren't configured", async () => {
-      mockEmbeddings.isConfigured.mockReturnValueOnce(false);
+      mockGateway.isEmbeddingConfigured.mockReturnValueOnce(false);
       const result = await service.findRootCauseCluster("org1", 42);
       expect(result).toBeNull();
     });
@@ -457,7 +461,7 @@ describe("SupportAiService", () => {
       }));
       mockDb.limit.mockResolvedValue([]);
 
-      await service.runFullAnalysis("org1", 42);
+      await service.runFullAnalysis("org1", 42, "user-1");
 
       expect(mockGateway.invokeStructured).toHaveBeenCalledTimes(1);
       const [analysisCall] = mockGateway.invokeStructured.mock.calls;
@@ -467,7 +471,7 @@ describe("SupportAiService", () => {
 
     it("swallows errors from sub-calls (fire-and-forget safety)", async () => {
       mockGateway.invokeStructured.mockRejectedValueOnce(new Error("unexpected boom"));
-      await expect(service.runFullAnalysis("org1", 42)).resolves.toBeUndefined();
+      await expect(service.runFullAnalysis("org1", 42, "user-1")).resolves.toBeUndefined();
     });
   });
 

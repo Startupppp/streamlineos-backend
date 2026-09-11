@@ -9,6 +9,7 @@ import {
   withTenant,
 } from "../tenant";
 import { logger } from "../logger/logger.service";
+import { reportError } from "../observability/error-reporter";
 
 interface AuditEntryFields {
   action: string;
@@ -73,10 +74,10 @@ export class AuditService {
   /** Best-effort telemetry only. Transactional/security audit must use logCritical. */
   log(entry: AuditEntry): void {
     const dispatch = () =>
-      runOutsideTenantContext(() => this.write(entry)).catch(
-        (error: unknown) =>
-          logger.error("audit.log failed", { error, action: entry.action }),
-      );
+      runOutsideTenantContext(() => this.write(entry)).catch((error: unknown) => {
+        logger.error("audit.log failed", { error, action: entry.action });
+        reportError(error, { action: entry.action });
+      });
     if (!registerAfterCommit(dispatch)) void dispatch();
   }
 

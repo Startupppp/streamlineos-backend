@@ -29,5 +29,5 @@ export function pctOf(basePaise: number, percentStr: string): number {
 
 export function daysInMonth(month: string): number {
   const [year, mon] = month.split("-").map(Number);
-  return new Date(year!, mon!, 0).getDate();
+  return new Date(year, mon, 0).getDate();
 }

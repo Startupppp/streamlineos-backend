@@ -120,15 +120,22 @@ export async function buildSupportDashboard(
       .limit(8),
 
     db
-      .select({ assigneeId: supportTickets.assigneeId, cnt: count() })
+      .select({ assigneeId: organizationMembers.userId, cnt: count() })
       .from(supportTickets)
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, supportTickets.orgId),
+          eq(organizationMembers.id, supportTickets.assigneeMembershipId),
+        ),
+      )
       .where(
         and(
           eq(supportTickets.orgId, orgId),
-          isNotNull(supportTickets.assigneeId),
+          isNotNull(supportTickets.assigneeMembershipId),
         ),
       )
-      .groupBy(supportTickets.assigneeId)
+      .groupBy(organizationMembers.userId)
       .orderBy(desc(count()))
       .limit(10),
 
@@ -190,18 +197,11 @@ export async function buildSupportDashboard(
     },
   };
 
-  const ticketStatusBreakdown = [
-    "OPEN",
-    "IN_PROGRESS",
-    "WAITING",
-    "RESOLVED",
-    "CLOSED",
-  ].map((status) => ({
+  const ticketStatusBreakdown = (
+    ["OPEN", "IN_PROGRESS", "WAITING", "RESOLVED", "CLOSED"] as const
+  ).map((status) => ({
     label: STATUS_LABELS[status],
-    value:
-      statusMap.get(
-        status as "OPEN" | "IN_PROGRESS" | "WAITING" | "RESOLVED" | "CLOSED",
-      ) ?? 0,
+    value: statusMap.get(status) ?? 0,
     color: STATUS_COLORS[status],
   }));
 
@@ -219,7 +219,7 @@ export async function buildSupportDashboard(
 
   const assigneeIds = assigneeAggs
     .map((a) => a.assigneeId)
-    .filter(Boolean) as string[];
+    .filter((assigneeId): assigneeId is NonNullable<typeof assigneeId> => assigneeId !== null);
   let assigneeUsers: {
     id: string;
     name: string | null;
@@ -259,12 +259,10 @@ export async function buildSupportDashboard(
   const priorityMap = new Map(
     priorityAggs.map((r) => [r.priority, Number(r.cnt)]),
   );
-  const ticketsByPriority = ["URGENT", "HIGH", "MEDIUM", "LOW"].map(
+  const ticketsByPriority = (["URGENT", "HIGH", "MEDIUM", "LOW"] as const).map(
     (priority) => ({
       label: PRIORITY_LABELS[priority],
-      value:
-        priorityMap.get(priority as "URGENT" | "HIGH" | "MEDIUM" | "LOW") ??
-        0,
+      value: priorityMap.get(priority) ?? 0,
       color: PRIORITY_COLORS[priority],
     }),
   );

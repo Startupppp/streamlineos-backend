@@ -1,6 +1,7 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, asc } from "drizzle-orm";
-import { supportTickets, supportTicketMessages, kbArticles } from "../../../db/schema";
+import { supportTickets, supportTicketMessages } from "../../../db/schema";
+import { type KbArticleRow } from "./kb-article-columns";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
@@ -25,7 +26,7 @@ export class KbFromTicketService {
     user: CurrentUserContext,
     ticketId: number,
     input: FromTicketInput,
-  ): Promise<typeof kbArticles.$inferSelect> {
+  ): Promise<KbArticleRow> {
     const orgId = user.orgId;
 
     const ticket = await this.db.query.supportTickets.findFirst({

@@ -1,3 +1,15 @@
+declare const cacheNamespaceBrand: unique symbol;
+
+/**
+ * A namespace is a generation counter, not an address: its entries are reached
+ * through `cachedVersioned*` and retired by `invalidateNamespace*`. `ExactCacheKey`
+ * refuses it, so deleting a prefix — which `redis.del` cannot do — will not compile.
+ */
+export type CacheNamespace = string & { readonly [cacheNamespaceBrand]: "namespace" };
+export type ExactCacheKey = string & { readonly [cacheNamespaceBrand]?: never };
+
+const namespace = (value: string): CacheNamespace => value as CacheNamespace;
+
 export const CACHE_KEYS = {
   dashboardStats: (orgId: string) => `dashboard:stats:${orgId}`,
   userSession: (userId: string) => `user:session:${userId}`,
@@ -9,6 +21,8 @@ export const CACHE_KEYS = {
   mfaUserTotp: (userId: string) => `mfa:user-totp:${userId}`,
 
   accessVersion: (orgId: string) => `access:version:${orgId}`,
+  accessSnapshot: (userId: string, version: number, isOrgOwner: boolean) =>
+    `access:snapshot:${userId}:v${version}:o${isOrgOwner ? 1 : 0}`,
   accessPerms: (orgId: string, userId: string, version: number) =>
     `access:perms:${orgId}:${userId}:v${version}`,
   accessMembersWithPermPage: (
@@ -25,14 +39,13 @@ export const CACHE_KEYS = {
 
   contactsList: (orgId: string, hash: string) =>
     `crm:contacts:list:${orgId}:${hash}`,
-  contactsListNamespace: (orgId: string) => `crm:contacts:list:${orgId}`,
+  contactsListNamespace: (orgId: string) => namespace(`crm:contacts:list:${orgId}`),
 
   crmOrganizationDetailNamespace: (orgId: string) =>
-    `crm:organizations:detail:${orgId}`,
+    namespace(`crm:organizations:detail:${orgId}`),
   crmOrganizationsListNamespace: (orgId: string) =>
-    `crm:organizations:list:${orgId}`,
+    namespace(`crm:organizations:list:${orgId}`),
 
-  projectsList: (orgId: string) => `projects:list:${orgId}`,
   projectLabels: (orgId: string) => `projects:labels:${orgId}`,
   orgMembers: (orgId: string) => `org:members:${orgId}`,
   customStates: (orgId: string, projectId: number) =>
@@ -41,7 +54,7 @@ export const CACHE_KEYS = {
     `tickets:list:${orgId}:${projectId}:${hash}`,
 
   salesDashboard: (orgId: string) => `sales:dashboard:${orgId}`,
-  salesKpisNamespace: (orgId: string) => `sales:kpis:${orgId}`,
+  salesKpisNamespace: (orgId: string) => namespace(`sales:kpis:${orgId}`),
   salesKpisSubKey: (from: string, to: string, repId: string) => `${from}:${to}:${repId}`,
   ceDashboard: (orgId: string) => `ce:dashboard:${orgId}`,
   supportDashboard: (orgId: string) => `support:dashboard:${orgId}`,
@@ -60,10 +73,10 @@ export const CACHE_KEYS = {
   leadBoard: (orgId: string, hash: string) => `leads:board:${orgId}:${hash}`,
   leadStats: (orgId: string, hash: string) => `leads:stats:${orgId}:${hash}`,
 
-  executiveDashboard: (orgId: string) => `dashboard:executive:${orgId}`,
+  executiveDashboard: (orgId: string, projection: string) =>
+    `dashboard:executive:${orgId}:${projection}`,
   announcementsList: (orgId: string) => `dashboard:announcements:${orgId}`,
 
-  tasksList: (orgId: string, hash: string) => `tasks:list:${orgId}:${hash}`,
   taskDetail: (orgId: string, id: number) => `tasks:detail:${orgId}:${id}`,
 
   quotesList: (orgId: string, hash: string) => `quotes:list:${orgId}:${hash}`,
@@ -86,26 +99,25 @@ export const CACHE_KEYS = {
   targetLeaderboard: (orgId: string, metricType: string) =>
     `targets:leaderboard:${orgId}:${metricType}`,
 
-  branchesList: (orgId: string) => `branches:list:${orgId}`,
 
-  invProductsNamespace: (orgId: string) => `inv:products:list:${orgId}`,
+  invProductsNamespace: (orgId: string) => namespace(`inv:products:list:${orgId}`),
   invProductDetail: (orgId: string, id: number) =>
     `inv:products:detail:${orgId}:${id}`,
   invStockSummary: (orgId: string) => `inv:stock:summary:${orgId}`,
   invLowStock: (orgId: string) => `inv:low-stock:${orgId}`,
   invWarehouseDetail: (orgId: string, id: number) =>
     `inv:warehouses:detail:${orgId}:${id}`,
-  invVendorsNamespace: (orgId: string) => `inv:vendors:list:${orgId}`,
-  invPoNamespace: (orgId: string) => `inv:po:list:${orgId}`,
-  invGrnNamespace: (orgId: string) => `inv:grn:list:${orgId}`,
+  invVendorsNamespace: (orgId: string) => namespace(`inv:vendors:list:${orgId}`),
+  invPoNamespace: (orgId: string) => namespace(`inv:po:list:${orgId}`),
+  invGrnNamespace: (orgId: string) => namespace(`inv:grn:list:${orgId}`),
   invPoDetail: (orgId: string, id: number) => `inv:po:detail:${orgId}:${id}`,
   invVendorReturnDetail: (orgId: string, id: number) =>
     `inv:vret:detail:${orgId}:${id}`,
-  invVendorReturnsNamespace: (orgId: string) => `inv:vret:list:${orgId}`,
+  invVendorReturnsNamespace: (orgId: string) => namespace(`inv:vret:list:${orgId}`),
   invCustomerReturnDetail: (orgId: string, id: number) =>
     `inv:cret:detail:${orgId}:${id}`,
-  invCustomerReturnsNamespace: (orgId: string) => `inv:cret:list:${orgId}`,
-  invSoNamespace: (orgId: string) => `inv:so:list:${orgId}`,
+  invCustomerReturnsNamespace: (orgId: string) => namespace(`inv:cret:list:${orgId}`),
+  invSoNamespace: (orgId: string) => namespace(`inv:so:list:${orgId}`),
   invSoDetail: (orgId: string, id: number) => `inv:so:detail:${orgId}:${id}`,
   invDashboard: (orgId: string) => `inv:dashboard:${orgId}`,
   invReorderReport: (orgId: string) => `inv:reorder:${orgId}`,
@@ -114,7 +126,7 @@ export const CACHE_KEYS = {
   invStockSummaryReport: (orgId: string, hash: string) =>
     `inv:stock:summary-report:${orgId}:${hash}`,
   invReplenishmentSuggestionsNamespace: (orgId: string) =>
-    `inv:replenishment:suggestions:${orgId}`,
+    namespace(`inv:replenishment:suggestions:${orgId}`),
 
   invValuationReport: (orgId: string, hash: string) =>
     `inv:valuation:report:${orgId}:${hash}`,
@@ -122,25 +134,26 @@ export const CACHE_KEYS = {
     `inv:slow-moving:${orgId}:${hash}`,
   invExpiryReport: (orgId: string, hash: string) =>
     `inv:expiry:report:${orgId}:${hash}`,
-  invCycleCountsNamespace: (orgId: string) => `inv:cycle-counts:list:${orgId}`,
+  invCycleCountsNamespace: (orgId: string) => namespace(`inv:cycle-counts:list:${orgId}`),
   invCycleCountDetail: (orgId: string, id: number) =>
     `inv:cycle-counts:detail:${orgId}:${id}`,
   invQualityInspectionsNamespace: (orgId: string) =>
-    `inv:quality:inspections:${orgId}`,
-  invQualityHoldsNamespace: (orgId: string) => `inv:quality:holds:${orgId}`,
-  invQualityRecallsNamespace: (orgId: string) => `inv:quality:recalls:${orgId}`,
-  invInspectionPlansNamespace: (orgId: string) => `inv:quality:plans:${orgId}`,
-  invPackagesNamespace: (orgId: string) => `inv:packages:${orgId}`,
-  invShipmentsNamespace: (orgId: string) => `inv:shipments:${orgId}`,
-  invLoadsNamespace: (orgId: string) => `inv:loads:${orgId}`,
-  invCarriersNamespace: (orgId: string) => `inv:carriers:${orgId}`,
+    namespace(`inv:quality:inspections:${orgId}`),
+  invQualityHoldsNamespace: (orgId: string) => namespace(`inv:quality:holds:${orgId}`),
+  invQualityRecallsNamespace: (orgId: string) => namespace(`inv:quality:recalls:${orgId}`),
+  invInspectionPlansNamespace: (orgId: string) => namespace(`inv:quality:plans:${orgId}`),
+  invPackagesNamespace: (orgId: string) => namespace(`inv:packages:${orgId}`),
+  invShipmentsNamespace: (orgId: string) => namespace(`inv:shipments:${orgId}`),
+  invLoadsNamespace: (orgId: string) => namespace(`inv:loads:${orgId}`),
+  invCarriersNamespace: (orgId: string) => namespace(`inv:carriers:${orgId}`),
   invChannelsList: (orgId: string) => `inv:channels:list:${orgId}`,
   invChannelDetail: (orgId: string, id: number) =>
     `inv:channels:detail:${orgId}:${id}`,
   inv3plList: (orgId: string) => `inv:3pl:list:${orgId}`,
-  invImportJobsNamespace: (orgId: string) => `inv:import-jobs:list:${orgId}`,
-  invExportJobsNamespace: (orgId: string) => `inv:export-jobs:list:${orgId}`,
-  invAuditExportJobsNamespace: (orgId: string) => `inv:audit-export-jobs:list:${orgId}`,
+  invImportJobsNamespace: (orgId: string) => namespace(`inv:import-jobs:list:${orgId}`),
+  invExportJobsNamespace: (orgId: string) => namespace(`inv:export-jobs:list:${orgId}`),
+  invAuditExportJobsNamespace: (orgId: string) =>
+    namespace(`inv:audit-export-jobs:list:${orgId}`),
   invSettings: (orgId: string) => `inv:settings:${orgId}`,
   invNumberSequences: (orgId: string) => `inv:numseq:${orgId}`,
   invAiInsightsList: (orgId: string) => `inv:ai-insights:${orgId}`,
@@ -154,14 +167,12 @@ export const CACHE_KEYS = {
 
   featureFlags: () => "feature-flags:all",
 
-  orgUnits: (orgId: string, kind?: string) =>
-    kind ? `org:units:${orgId}:${kind}` : `org:units:${orgId}`,
-  orgHierarchyNamespace: (orgId: string) => `org:hierarchy:${orgId}`,
-  hrHeadcountNamespace: (orgId: string) => `hr:headcount:${orgId}`,
-  leaveAnalyticsNamespace: (orgId: string) => `hr:leave-analytics:${orgId}`,
+  orgHierarchyNamespace: (orgId: string) => namespace(`org:hierarchy:${orgId}`),
+  leaveAnalyticsNamespace: (orgId: string) => namespace(`hr:leave-analytics:${orgId}`),
+  hrEmployeesListNamespace: (orgId: string) => namespace(`hr:employees:list:${orgId}`),
 
   /** Employee expense claims (`modules/expenses`), versioned per organisation. */
-  expensesListNamespace: (orgId: string) => `expenses:list:${orgId}`,
+  expensesListNamespace: (orgId: string) => namespace(`expenses:list:${orgId}`),
 
   supportReportsOverview: (orgId: string) =>
     `support:reports:overview:${orgId}`,
@@ -169,47 +180,47 @@ export const CACHE_KEYS = {
   payrollSummary: (orgId: string, hash: string) =>
     `timesheets:payroll:summary:${orgId}:${hash}`,
   payrollSummaryNamespace: (orgId: string) =>
-    `timesheets:payroll:summary:${orgId}`,
+    namespace(`timesheets:payroll:summary:${orgId}`),
   payrollExportsList: (
     orgId: string,
     page: number | "*",
     pageSize: number | "*",
   ) => `timesheets:payroll:exports:${orgId}:${page}:${pageSize}`,
   payrollExportsNamespace: (orgId: string) =>
-    `timesheets:payroll:exports:${orgId}`,
+    namespace(`timesheets:payroll:exports:${orgId}`),
   payrollSettings: (orgId: string) => `timesheets:payroll:settings:${orgId}`,
   payrollSettingsNamespace: (orgId: string) =>
-    `timesheets:payroll:settings:${orgId}`,
+    namespace(`timesheets:payroll:settings:${orgId}`),
 
   timesheetSettings: (orgId: string) => `timesheets:settings:${orgId}`,
-  timesheetSettingsNamespace: (orgId: string) => `timesheets:settings:${orgId}`,
+  timesheetSettingsNamespace: (orgId: string) => namespace(`timesheets:settings:${orgId}`),
   timesheetRates: (orgId: string) => `timesheets:rates:${orgId}`,
-  timesheetRatesNamespace: (orgId: string) => `timesheets:rates:${orgId}`,
+  timesheetRatesNamespace: (orgId: string) => namespace(`timesheets:rates:${orgId}`),
 
-  finReportsNamespace: (orgId: string) => `fin:reports:${orgId}`,
+  finReportsNamespace: (orgId: string) => namespace(`fin:reports:${orgId}`),
   finInsightsAnomalies: (orgId: string, from: string, to: string) =>
     `fin:insights:anomalies:${orgId}:${from}:${to}`,
   finInsightsDigest: (orgId: string) => `fin:insights:digest:${orgId}`,
   finCategorizeSuggest: (orgId: string, merchant: string) =>
     `fin:cat-suggest:${orgId}:${merchant}`,
 
-  finAssetsListNamespace: (orgId: string) => `fin:assets:list:${orgId}`,
+  finAssetsListNamespace: (orgId: string) => namespace(`fin:assets:list:${orgId}`),
   finAssetCategoriesNamespace: (orgId: string) =>
-    `fin:asset-categories:${orgId}`,
-  finTaxCodesNamespace: (orgId: string) => `fin:tax-codes:${orgId}`,
-  finTaxPaymentsNamespace: (orgId: string) => `fin:tax-payments:${orgId}`,
-  finTaxDashboardNamespace: (orgId: string) => `fin:tax-dashboard:${orgId}`,
-  finTaxReportsNamespace: (orgId: string) => `fin:tax-reports:${orgId}`,
+    namespace(`fin:asset-categories:${orgId}`),
+  finTaxCodesNamespace: (orgId: string) => namespace(`fin:tax-codes:${orgId}`),
+  finTaxPaymentsNamespace: (orgId: string) => namespace(`fin:tax-payments:${orgId}`),
+  finTaxDashboardNamespace: (orgId: string) => namespace(`fin:tax-dashboard:${orgId}`),
+  finTaxReportsNamespace: (orgId: string) => namespace(`fin:tax-reports:${orgId}`),
   finExpensePoliciesNamespace: (orgId: string) =>
-    `fin:expense-policies:${orgId}`,
+    namespace(`fin:expense-policies:${orgId}`),
   finBankAccountsNamespace: (orgId: string) =>
-    `fin:banking:accounts:${orgId}`,
-  finForecastNamespace: (orgId: string) => `fin:forecast:${orgId}`,
+    namespace(`fin:banking:accounts:${orgId}`),
+  finForecastNamespace: (orgId: string) => namespace(`fin:forecast:${orgId}`),
   finBvaNamespace: (orgId: string, budgetId: number) =>
-    `fin:bva:${orgId}:${budgetId}`,
+    namespace(`fin:bva:${orgId}:${budgetId}`),
 
-  orgProfileNamespace: (orgId: string) => `org:profile:${orgId}`,
-  orgMembersListNamespace: (orgId: string) => `org:members:list:${orgId}`,
+  orgProfileNamespace: (orgId: string) => namespace(`org:profile:${orgId}`),
+  orgMembersListNamespace: (orgId: string) => namespace(`org:members:list:${orgId}`),
   usersStats: (orgId: string) => `users:stats:${orgId}`,
 
   permissionsMatrix: (orgId: string, version: number) => `rbac:matrix:${orgId}:v${version}`,
@@ -226,7 +237,6 @@ export const CACHE_KEYS = {
     groupId: number,
     version: number,
   ) => `module-access:group-members:${orgId}:${moduleKey}:${groupId}:v${version}`,
-  moduleAccessCandidates: (orgId: string) => `module-access:candidates:${orgId}`,
   moduleAccessMembers: (
     orgId: string,
     moduleKey: string,
@@ -247,6 +257,15 @@ export const CACHE_KEYS = {
   incomingTransfers: (orgId: string, userId: string) =>
     `ownership:incoming:${orgId}:${userId}`,
 } as const;
+
+/**
+ * Home's pending-approvals section is keyed per approver, so a leave decision
+ * cannot name the entries it invalidates. The generation counter retires every
+ * approver's entry in one O(1) bump.
+ */
+export const DASHBOARD_PENDING_APPROVALS_NAMESPACE = namespace(
+  "dashboard-home:pending-approvals",
+);
 
 export const CACHE_TTL = {
   SHORT: 30,

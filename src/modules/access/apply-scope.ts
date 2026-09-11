@@ -1,6 +1,6 @@
-import { eq, inArray, sql, type SQL } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
-import type { DataScope } from "./access.types";
+import type { DataScope, ScopePredicate } from "./access.types";
 
 export interface ScopeColumns {
   ownerColumn: PgColumn;
@@ -13,7 +13,7 @@ export function applyScope(
   _orgId: string,
   userId: string,
   cols: ScopeColumns,
-): SQL {
+): ScopePredicate {
   switch (scope) {
     case "all":
       return sql`true`;
@@ -29,7 +29,7 @@ export function applyScope(
     case "none":
       return sql`false`;
     default: {
-      const _exhaustive: never = scope;
+      void (scope satisfies never);
       return sql`false`;
     }
   }

@@ -272,6 +272,9 @@ class Ctrl {
 }
 `;
   const r2 = run(validateBodyConflict);
+  if (r2.length === 1 && r2[0].handler !== "create")
+    fail("validate-body-conflict-attribution", `finding must name the handler it is about, got ${JSON.stringify(r2[0].handler)}`);
+  else if (r2.length === 1) pass("attribution: the conflict names the handler `create`, not the raw line");
   if (r2.length !== 1 || !r2[0].reason.includes("body: key"))
     fail("validate-body-conflict", `expected 1 validate-body conflict, got ${JSON.stringify(r2)}`);
   else pass("conflict: @BodylessAction + @Validate({ body: ... }) is flagged");
@@ -374,6 +377,16 @@ class Ctrl {
   if (r9.length !== 0)
     fail("req-body-no-bodyless", `no @BodylessAction mark, should not flag, got ${JSON.stringify(r9)}`);
   else pass("no-conflict: req.body without @BodylessAction() is not flagged");
+
+  for (const [line, expected] of [
+    ["async create(@Body() body: CreateDto) {}", "create"],
+    ["create(@Body() body: CreateDto) {}", "create"],
+    ["async findAll<T>(): Promise<T[]> {}", "findAll"],
+  ]) {
+    if (extractHandlerName(line) !== expected)
+      fail("extractHandlerName", `${JSON.stringify(line)} → ${JSON.stringify(extractHandlerName(line))}, expected ${expected}`);
+  }
+  if (!failed) pass("extractHandlerName reads the method name from async, plain and generic declarations");
 
   if (failed) {
     process.stderr.write("\nSELF-TEST FAILED\n");

@@ -5,13 +5,11 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, eq, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { and, eq, isNull } from "drizzle-orm";
 import {
   kbPageReviews,
   kbPages,
   organizationMembers,
-  users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -27,14 +25,6 @@ import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
 
 type ReviewRow = typeof kbPageReviews.$inferSelect;
-const REVIEW_STATUSES = ["pending", "approved", "rejected", "expired"] as const;
-const REVIEW_TYPES = ["approval", "freshness"] as const;
-
-type ReviewWithContext = ReviewRow & {
-  pageTitle: string | null;
-  requestedByName: string | null;
-  reviewerName: string | null;
-};
 
 export async function reviewerCanSeeAllReviews(
   user: CurrentUserContext,
@@ -75,132 +65,6 @@ export class KbPageReviewsService {
     if (!membership)
       throw new NotFoundException("Reviewer not found in this organization");
     return membership.id;
-  }
-
-  async list(
-    user: CurrentUserContext,
-    status: string | undefined,
-    type: string | undefined,
-  ): Promise<ReviewWithContext[]> {
-    const requester = alias(users, "requester");
-    const reviewer = alias(users, "reviewer");
-    const requesterMembership = alias(
-      organizationMembers,
-      "reviewer_requester_membership",
-    );
-    const reviewerMembership = alias(
-      organizationMembers,
-      "reviewer_assignee_membership",
-    );
-
-    const conditions = [eq(kbPageReviews.orgId, user.orgId)];
-    if (status && REVIEW_STATUSES.includes(status as ReviewRow["status"])) {
-      conditions.push(eq(kbPageReviews.status, status as ReviewRow["status"]));
-    }
-    if (type && REVIEW_TYPES.includes(type as ReviewRow["type"])) {
-      conditions.push(eq(kbPageReviews.type, type as ReviewRow["type"]));
-    }
-    if (!(await reviewerCanSeeAllReviews(user, this.access))) {
-      const membershipId = this.actorMembershipId(user);
-      const ownOnly = or(
-        eq(kbPageReviews.reviewerMembershipId, membershipId),
-        eq(kbPageReviews.requestedByMembershipId, membershipId),
-      );
-      if (ownOnly) conditions.push(ownOnly);
-    }
-
-    return this.db
-      .select({
-        id: kbPageReviews.id,
-        orgId: kbPageReviews.orgId,
-        pageId: kbPageReviews.pageId,
-        type: kbPageReviews.type,
-        status: kbPageReviews.status,
-        requestedById: kbPageReviews.requestedById,
-        reviewerId: kbPageReviews.reviewerId,
-        requestedByMembershipId: kbPageReviews.requestedByMembershipId,
-        reviewerMembershipId: kbPageReviews.reviewerMembershipId,
-        dueAt: kbPageReviews.dueAt,
-        decidedAt: kbPageReviews.decidedAt,
-        decisionNote: kbPageReviews.decisionNote,
-        createdAt: kbPageReviews.createdAt,
-        updatedAt: kbPageReviews.updatedAt,
-        pageTitle: kbPages.title,
-        requestedByName: requester.name,
-        reviewerName: reviewer.name,
-      })
-      .from(kbPageReviews)
-      .leftJoin(kbPages, eq(kbPageReviews.pageId, kbPages.id))
-      .leftJoin(
-        requesterMembership,
-        eq(kbPageReviews.requestedByMembershipId, requesterMembership.id),
-      )
-      .leftJoin(
-        reviewerMembership,
-        eq(kbPageReviews.reviewerMembershipId, reviewerMembership.id),
-      )
-      .leftJoin(requester, eq(requesterMembership.userId, requester.id))
-      .leftJoin(reviewer, eq(reviewerMembership.userId, reviewer.id))
-      .where(and(...conditions))
-      .orderBy(sql`${kbPageReviews.dueAt} ASC NULLS LAST`)
-      .limit(100);
-  }
-
-  async listDue(orgId: string): Promise<ReviewWithContext[]> {
-    const requester = alias(users, "requester");
-    const reviewer = alias(users, "reviewer");
-    const requesterMembership = alias(
-      organizationMembers,
-      "reviewer_requester_membership",
-    );
-    const reviewerMembership = alias(
-      organizationMembers,
-      "reviewer_assignee_membership",
-    );
-
-    return this.db
-      .select({
-        id: kbPageReviews.id,
-        orgId: kbPageReviews.orgId,
-        pageId: kbPageReviews.pageId,
-        type: kbPageReviews.type,
-        status: kbPageReviews.status,
-        requestedById: kbPageReviews.requestedById,
-        reviewerId: kbPageReviews.reviewerId,
-        requestedByMembershipId: kbPageReviews.requestedByMembershipId,
-        reviewerMembershipId: kbPageReviews.reviewerMembershipId,
-        dueAt: kbPageReviews.dueAt,
-        decidedAt: kbPageReviews.decidedAt,
-        decisionNote: kbPageReviews.decisionNote,
-        createdAt: kbPageReviews.createdAt,
-        updatedAt: kbPageReviews.updatedAt,
-        pageTitle: kbPages.title,
-        requestedByName: requester.name,
-        reviewerName: reviewer.name,
-      })
-      .from(kbPageReviews)
-      .leftJoin(kbPages, eq(kbPageReviews.pageId, kbPages.id))
-      .leftJoin(
-        requesterMembership,
-        eq(kbPageReviews.requestedByMembershipId, requesterMembership.id),
-      )
-      .leftJoin(
-        reviewerMembership,
-        eq(kbPageReviews.reviewerMembershipId, reviewerMembership.id),
-      )
-      .leftJoin(requester, eq(requesterMembership.userId, requester.id))
-      .leftJoin(reviewer, eq(reviewerMembership.userId, reviewer.id))
-      .where(
-        and(
-          eq(kbPageReviews.orgId, orgId),
-          eq(kbPageReviews.status, "pending"),
-          eq(kbPageReviews.type, "freshness"),
-          isNotNull(kbPageReviews.dueAt),
-          lte(kbPageReviews.dueAt, new Date()),
-        ),
-      )
-      .orderBy(asc(kbPageReviews.dueAt))
-      .limit(100);
   }
 
   async create(
@@ -250,20 +114,16 @@ export class KbPageReviewsService {
     });
 
     if (review.reviewerId && review.reviewerId !== user.userId) {
-      void this.dispatch
-        .emit({
-          eventKey: "knowledge.page.review_requested",
-          orgId: user.orgId,
-          actorUserId: user.userId,
-          targetUserIds: [review.reviewerId],
-          entityType: "kb_page",
-          entityId: String(pageId),
-          title: `Review requested: ${page.title}`,
-          message: `You have been assigned a ${input.type} review for "${page.title}".`,
-        })
-        .catch(function notifError(err: unknown) {
-          console.error("Failed to send review request notification", err);
-        });
+      await this.dispatch.emit({
+        eventKey: "knowledge.page.review_requested",
+        orgId: user.orgId,
+        actorUserId: user.userId,
+        targetUserIds: [review.reviewerId],
+        entityType: "kb_page",
+        entityId: String(pageId),
+        title: `Review requested: ${page.title}`,
+        message: `You have been assigned a ${input.type} review for "${page.title}".`,
+      });
     }
 
     return review;
@@ -312,20 +172,16 @@ export class KbPageReviewsService {
     });
 
     if (existing.requestedById) {
-      void this.dispatch
-        .emit({
-          eventKey: "knowledge.page.review_approved",
-          orgId: user.orgId,
-          actorUserId: user.userId,
-          targetUserIds: [existing.requestedById],
-          entityType: "kb_page_review",
-          entityId: String(reviewId),
-          title: "Page review approved",
-          message: `Your review request (ID ${reviewId}) was approved.`,
-        })
-        .catch(function notifError(err: unknown) {
-          console.error("Failed to send review approval notification", err);
-        });
+      await this.dispatch.emit({
+        eventKey: "knowledge.page.review_approved",
+        orgId: user.orgId,
+        actorUserId: user.userId,
+        targetUserIds: [existing.requestedById],
+        entityType: "kb_page_review",
+        entityId: String(reviewId),
+        title: "Page review approved",
+        message: `Your review request (ID ${reviewId}) was approved.`,
+      });
     }
 
     return updated;
@@ -375,20 +231,16 @@ export class KbPageReviewsService {
     });
 
     if (existing.requestedById) {
-      void this.dispatch
-        .emit({
-          eventKey: "knowledge.page.review_rejected",
-          orgId: user.orgId,
-          actorUserId: user.userId,
-          targetUserIds: [existing.requestedById],
-          entityType: "kb_page_review",
-          entityId: String(reviewId),
-          title: "Page review rejected",
-          message: `Your review request (ID ${reviewId}) was rejected. Note: ${input.note}`,
-        })
-        .catch(function notifError(err: unknown) {
-          console.error("Failed to send review rejection notification", err);
-        });
+      await this.dispatch.emit({
+        eventKey: "knowledge.page.review_rejected",
+        orgId: user.orgId,
+        actorUserId: user.userId,
+        targetUserIds: [existing.requestedById],
+        entityType: "kb_page_review",
+        entityId: String(reviewId),
+        title: "Page review rejected",
+        message: `Your review request (ID ${reviewId}) was rejected. Note: ${input.note}`,
+      });
     }
 
     return updated;

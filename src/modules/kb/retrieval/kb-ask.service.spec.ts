@@ -6,6 +6,7 @@ import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { KbEventsService } from "../core/kb-events.service";
 import { KbSearchService } from "./kb-search.service";
 import { KbAccessService } from "../core/kb-access.service";
+import { KbCitationVisibilityService } from "./kb-citation-visibility.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 
@@ -58,6 +59,8 @@ const mockSearch = {
   retrieveTopArticles: jest.fn().mockResolvedValue([articleResult]),
   retrieveTopSources: jest.fn().mockResolvedValue([]),
   retrieveAttachmentSnippets: jest.fn().mockResolvedValue(null),
+  articleOwnerFilterFor: jest.fn().mockResolvedValue(null),
+  articleRestrictionFilterFor: jest.fn().mockResolvedValue(null),
 };
 
 const user = {
@@ -79,6 +82,7 @@ const mockAccess = {
 };
 
 const mockDb = {
+  transaction: jest.fn().mockImplementation((fn: (tx: unknown) => unknown) => fn(mockDb)),
   execute: jest.fn().mockResolvedValue([{ one: 1 }]),
   select: jest.fn().mockReturnValue({
     from: jest.fn().mockReturnValue({
@@ -108,6 +112,7 @@ describe("KbAskService", () => {
         { provide: KbEventsService, useValue: mockEvents },
         { provide: KbSearchService, useValue: mockSearch },
         { provide: KbAccessService, useValue: mockAccess },
+        KbCitationVisibilityService,
         { provide: DRIZZLE, useValue: mockDb },
       ],
     }).compile();
@@ -195,7 +200,16 @@ describe("KbAskService", () => {
   });
 
   it("does not call retrieval or gateway when org has no indexed chunks", async () => {
-    mockDb.execute.mockResolvedValueOnce([]);
+    /**
+     * `mockResolvedValue`, not `...Once`: KB Ask now carries
+     * `@NoTenantTransaction()`, so `runInTenantTransaction` opens a real
+     * `withTenant` whose own `SELECT set_config(...)` is the FIRST execute on
+     * this double. A `...Once` would be consumed by that and the content check
+     * would see the default non-empty row, quietly inverting this test. An
+     * empty result for the settings statement is harmless — withTenant only
+     * inspects those rows when a write fence is active.
+     */
+    mockDb.execute.mockResolvedValue([]);
 
     const result = await service.ask(user, input);
 

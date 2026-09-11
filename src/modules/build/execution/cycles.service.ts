@@ -4,12 +4,14 @@ import { cycles, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CreateCycleInput, CycleListQuery, UpdateCycleInput } from "./dto/iterations.schemas";
+import { assertProjectInOrg } from "../core/project-access";
 
 @Injectable()
 export class CyclesService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listCycles(orgId: string, projectId: number, query: CycleListQuery) {
+    await assertProjectInOrg(this.db, orgId, projectId);
     const conditions = [eq(cycles.projectId, projectId), eq(cycles.orgId, orgId)];
     if (query.status) conditions.push(eq(cycles.status, query.status));
 
@@ -129,7 +131,11 @@ export class CyclesService {
   async deleteCycle(orgId: string, cycleId: number) {
     await this.db.transaction(async (tx) => {
       await tx.update(tickets).set({ cycleId: null }).where(and(eq(tickets.cycleId, cycleId), eq(tickets.orgId, orgId)));
-      await tx.delete(cycles).where(and(eq(cycles.id, cycleId), eq(cycles.orgId, orgId)));
+      const removed = await tx
+        .delete(cycles)
+        .where(and(eq(cycles.id, cycleId), eq(cycles.orgId, orgId)))
+        .returning({ id: cycles.id });
+      if (removed.length === 0) throw new NotFoundException("Cycle not found");
     });
     return { success: true };
   }

@@ -1,14 +1,4 @@
-import {
-  pgTable,
-  text,
-  serial,
-  timestamp,
-  boolean,
-  integer,
-  index,
-  jsonb,
-  unique,
-} from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, integer, jsonb, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { slaAppliesToEnum, slaPriorityEnum } from "../common/enums";
 import { organizations } from "../common/auth";
@@ -44,7 +34,6 @@ export const crmSla = pgTable("crm_sla_policies", {
   priorityText: text("priority_text"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
-  index("idx_crm_sla_org").on(table.orgId),
   unique("uniq_crm_sla_policies_org_id").on(table.orgId, table.id),
 ]);
 

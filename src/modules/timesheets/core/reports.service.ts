@@ -6,7 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { timesheets, timesheetPeriods, projects, users, organizationMembers, holidays } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { resolveReportsScope, applyMembershipScope } from "./timesheets-core-scope";
+import { resolveReportsScope, membershipScope } from "./timesheets-core-scope";
 import type { OverviewQuery, ReportRangeQuery } from "./dto/reports.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { resolveDateRange, round2, utilizationRate } from "./lib/report-metrics";
@@ -23,33 +23,47 @@ export class ReportsService {
   ) {}
 
   async getOverview(u: CurrentUserContext, query: OverviewQuery) {
-    const scope = await resolveReportsScope(this.access, u);
+    const read = await resolveReportsScope(this.access, u);
     const actorMembId = actingMembershipId(u.principal);
 
-    const conditions = [
-      eq(timesheets.orgId, u.orgId),
-      isNull(timesheets.voidedAt),
-      applyMembershipScope(scope, actorMembId, timesheets.userMembershipId),
-    ];
-
-    if (query.userId && (scope === "all" || u.isOrgOwner)) {
+    let requestedMembershipId: number | undefined;
+    if (query.userId && (read.discriminator === "all" || u.isOrgOwner)) {
       const [qMember] = await this.db
         .select({ id: organizationMembers.id })
         .from(organizationMembers)
         .where(and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, query.userId)))
         .limit(1);
-      if (qMember) conditions.push(eq(timesheets.userMembershipId, qMember.id));
+      if (qMember) requestedMembershipId = qMember.id;
     }
-    if (query.startDate) conditions.push(gte(timesheets.date, query.startDate));
-    if (query.endDate) conditions.push(lte(timesheets.date, query.endDate));
 
-    const periodConditions = [
-      eq(timesheetPeriods.orgId, u.orgId),
-      eq(timesheetPeriods.status, "SUBMITTED"),
-      applyMembershipScope(scope, actorMembId, timesheetPeriods.userMembershipId),
-    ];
-    if (query.startDate) periodConditions.push(gte(timesheetPeriods.periodStart, query.startDate));
-    if (query.endDate) periodConditions.push(lte(timesheetPeriods.periodEnd, query.endDate));
+    const timesheetsWhere = read.compose(
+      {
+        tenant: timesheets.orgId,
+        scope: membershipScope(actorMembId, timesheets.userMembershipId),
+        and: [
+          isNull(timesheets.voidedAt),
+          requestedMembershipId !== undefined ? eq(timesheets.userMembershipId, requestedMembershipId) : undefined,
+          query.startDate ? gte(timesheets.date, query.startDate) : undefined,
+          query.endDate ? lte(timesheets.date, query.endDate) : undefined,
+        ],
+      },
+      ({ sql: w }) => w,
+      () => sql`false`,
+    );
+
+    const periodsWhere = read.compose(
+      {
+        tenant: timesheetPeriods.orgId,
+        scope: membershipScope(actorMembId, timesheetPeriods.userMembershipId),
+        and: [
+          eq(timesheetPeriods.status, "SUBMITTED"),
+          query.startDate ? gte(timesheetPeriods.periodStart, query.startDate) : undefined,
+          query.endDate ? lte(timesheetPeriods.periodEnd, query.endDate) : undefined,
+        ],
+      },
+      ({ sql: w }) => w,
+      () => sql`false`,
+    );
 
     const byProjectQuery = this.db
       .select({
@@ -57,7 +71,7 @@ export class ReportsService {
         hours: sql<string>`SUM(${timesheets.hours}::numeric)::text`,
       })
       .from(timesheets)
-      .where(and(...conditions, sql`${timesheets.projectId} IS NOT NULL`))
+      .where(and(timesheetsWhere, sql`${timesheets.projectId} IS NOT NULL`))
       .groupBy(timesheets.projectId);
 
     const [aggResult, byDayRows, byProjectRows, pendingResult] = await Promise.all([
@@ -71,21 +85,21 @@ export class ReportsService {
           activeUsers: sql<number>`COUNT(DISTINCT ${timesheets.userMembershipId})::int`,
         })
         .from(timesheets)
-        .where(and(...conditions)),
+        .where(timesheetsWhere),
       this.db
         .select({
           date: timesheets.date,
           hours: sql<string>`SUM(${timesheets.hours}::numeric)::text`,
         })
         .from(timesheets)
-        .where(and(...conditions))
+        .where(timesheetsWhere)
         .groupBy(timesheets.date)
         .orderBy(timesheets.date),
       byProjectQuery,
       this.db
         .select({ count: sql<number>`COUNT(*)::int` })
         .from(timesheetPeriods)
-        .where(and(...periodConditions)),
+        .where(periodsWhere),
     ]);
 
     const agg = aggResult[0];
@@ -115,29 +129,31 @@ export class ReportsService {
       activeUsers: Number(agg?.activeUsers ?? 0),
       byDay: byDayRows.map((r) => ({ date: r.date, hours: round2Local(Number(r.hours)) })),
       byProject: byProjectRows
-        .filter((r) => r.projectId !== null)
+        .filter((r): r is typeof r & { projectId: number } => r.projectId !== null)
         .map((r) => ({
-          projectId: r.projectId as number,
-          projectName: projectNames.get(r.projectId as number) ?? "Unknown",
+          projectId: r.projectId,
+          projectName: projectNames.get(r.projectId) ?? "Unknown",
           hours: round2Local(Number(r.hours)),
         })),
     };
   }
 
   async getUtilization(u: CurrentUserContext, query: ReportRangeQuery) {
-    const scope = await resolveReportsScope(this.access, u);
+    const read = await resolveReportsScope(this.access, u);
     const { startDate, endDate } = resolveDateRange(query.startDate, query.endDate);
     const actorMembId = actingMembershipId(u.principal);
 
     const ownerMember = alias(organizationMembers, "owner_member");
 
-    const conditions = [
-      eq(timesheets.orgId, u.orgId),
-      isNull(timesheets.voidedAt),
-      applyMembershipScope(scope, actorMembId, timesheets.userMembershipId),
-      gte(timesheets.date, startDate),
-      lte(timesheets.date, endDate),
-    ];
+    const where = read.compose(
+      {
+        tenant: timesheets.orgId,
+        scope: membershipScope(actorMembId, timesheets.userMembershipId),
+        and: [isNull(timesheets.voidedAt), gte(timesheets.date, startDate), lte(timesheets.date, endDate)],
+      },
+      ({ sql: w }) => w,
+      () => sql`false`,
+    );
 
     const rows = await this.db
       .select({
@@ -151,7 +167,7 @@ export class ReportsService {
       .from(timesheets)
       .leftJoin(ownerMember, and(eq(timesheets.orgId, ownerMember.orgId), eq(timesheets.userMembershipId, ownerMember.id)))
       .leftJoin(users, eq(ownerMember.userId, users.id))
-      .where(and(...conditions))
+      .where(where)
       .groupBy(ownerMember.userId, users.name, users.email)
       .orderBy(sql`SUM(${timesheets.hours}::numeric) DESC`);
 

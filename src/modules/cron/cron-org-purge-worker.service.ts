@@ -7,13 +7,16 @@ import { logger } from "../../common/logger/logger.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
-import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
+import { bustMembershipsAfterOrgTeardown } from "../../common/org/membership-bust";
 import { OrgMembershipService } from "../organization/core/org-membership.service";
 import { StorageService } from "../storage/storage.service";
+import { APP_CONFIG } from "../../config/config.module";
+import type { AppConfig } from "../../config/env.validation";
 import {
   PURGE_ADAPTERS,
   PURGE_ADAPTER_REGISTRY,
   type PurgeAdapterResult,
+  type PurgeStorage,
 } from "../organization/core/lifecycle/organization-purge-adapters";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { assertNever } from "../../common/auth/principal";
@@ -35,12 +38,15 @@ export class CronOrgPurgeWorkerService {
     private readonly cache: CacheService,
     private readonly orgMembership: OrgMembershipService,
     private readonly storage: StorageService,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
-  async run(): Promise<{ processed: number; skipped: number }> {
+  async run(): Promise<{ processed: number; skipped: number; moreRemaining: boolean }> {
     const now = new Date();
 
-    const candidates = await this.db
+    // BATCH_SIZE + 1 so the overflow is counted rather than inferred: the sweep is
+    // self-resuming, but a caller could not tell a cleared queue from a capped one.
+    const probed = await this.db
       .select({ id: organizations.id })
       .from(organizations)
       .where(
@@ -50,9 +56,12 @@ export class CronOrgPurgeWorkerService {
           lte(organizations.purgeScheduledAt, now),
         ),
       )
-      .limit(BATCH_SIZE);
+      .limit(BATCH_SIZE + 1);
 
-    if (candidates.length === 0) return { processed: 0, skipped: 0 };
+    const moreRemaining = probed.length > BATCH_SIZE;
+    const candidates = moreRemaining ? probed.slice(0, BATCH_SIZE) : probed;
+
+    if (candidates.length === 0) return { processed: 0, skipped: 0, moreRemaining: false };
 
     let processed = 0;
     let skipped = 0;
@@ -74,7 +83,7 @@ export class CronOrgPurgeWorkerService {
       }
     }
 
-    return { processed, skipped };
+    return { processed, skipped, moreRemaining };
   }
 
   private logSkip(orgId: string, outcome: Exclude<PurgeOutcome, { kind: "purged" }>): void {
@@ -113,14 +122,8 @@ export class CronOrgPurgeWorkerService {
     for (const memberUserId of memberUserIds) {
       await this.orgMembership.revokeOrgScopedAccess(orgId, memberUserId, "removed");
     }
-    await Promise.all(
-      memberUserIds.map((memberUserId) =>
-        Promise.all([
-          bustMembershipStatusCache(this.cache, memberUserId, orgId),
-          this.cache.invalidate(CACHE_KEYS.userSession(memberUserId)),
-        ]),
-      ),
-    );
+    await bustMembershipsAfterOrgTeardown(this.cache, memberUserIds);
+    await this.cache.invalidateMany(memberUserIds.map(CACHE_KEYS.userSession));
   }
 
   private async purgeSingle(orgId: string): Promise<PurgeOutcome> {
@@ -173,13 +176,20 @@ export class CronOrgPurgeWorkerService {
     });
 
     const adapterResults: Record<string, PurgeAdapterResult> = {};
+    // The KB bucket is threaded here because the adapter registry is a set of
+    // free functions with no injector: object_storage enumerates keys from every
+    // file-key column in the schema, three of which name KB-bucket objects.
+    const purgeStorage: PurgeStorage = {
+      port: this.storage,
+      kbBucket: this.config.R2_KB_BUCKET_NAME,
+    };
     for (const adapter of PURGE_ADAPTERS) {
       try {
         adapterResults[adapter] = await PURGE_ADAPTER_REGISTRY[adapter].confirm(
           orgId,
           purgeJobId,
           this.db,
-          this.storage,
+          purgeStorage,
         );
       } catch (err) {
         adapterResults[adapter] = { state: "FAILED", detail: String(err) };
@@ -217,7 +227,8 @@ export class CronOrgPurgeWorkerService {
 
     if (!allConfirmed) return { kind: "adapters-incomplete", adapters: adapterStates };
 
-    const purged = await this.db.transaction(async (tx) => {
+    const memberUserIds = await this.listMemberUserIds(orgId);
+    const purged = await runInNewTenantTransaction(this.db, orgId, async (tx) => {
       const rows = await tx.execute(sql`
         SELECT id FROM organizations
         WHERE  id          = ${orgId}
@@ -229,32 +240,25 @@ export class CronOrgPurgeWorkerService {
 
       if (!rows[0]) return false;
 
-      await tx
-        .update(organizations)
-        .set({ statusV2: "PURGED", status: "PURGED", purgedAt: new Date() })
-        .where(
-          and(
-            eq(organizations.id, orgId),
-            eq(organizations.statusV2, "PURGE_SCHEDULED"),
-          ),
-        );
-
-      this.audit.log({
-        action: "org.purged",
-        systemActor: "cron.org-purge-worker",
-        orgId,
-        targetId: orgId,
-        targetType: "organization",
-        metadata: { orgName, purgeJobId },
-      });
+      // audit_logs is retained as platform evidence, while every other
+      // organization-owned row is removed by the database FK cascade.
+      await tx.execute(sql`SELECT app.nullify_audit_logs_org_id(${orgId})`);
+      await tx.delete(organizations).where(eq(organizations.id, orgId));
 
       return true;
     });
 
     if (!purged) return { kind: "claimed-elsewhere" };
 
-    const memberUserIds = await this.listMemberUserIds(orgId);
     await this.revokeAndBustMembers(orgId, memberUserIds);
+    this.audit.log({
+      action: "org.purged",
+      systemActor: "cron.org-purge-worker",
+      orgId: null,
+      targetId: orgId,
+      targetType: "organization",
+      metadata: { orgName, purgeJobId, physicalDeletion: true },
+    });
     return { kind: "purged" };
   }
 }

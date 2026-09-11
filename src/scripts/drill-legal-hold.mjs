@@ -1,221 +1,215 @@
+/* global process */
+
 /**
- * Legal-hold drill: verifies that an active legal hold blocks erasure and
- * retention sweeps, that the block survives the subject being re-queued, and
- * that releasing the hold re-enables deletion.
+ * Legal-hold drill — does an active legal hold actually stop the product from
+ * erasing or sweeping a subject?
  *
- * This is the interaction most systems get wrong — a hold must beat both
- * erasure and retention, and the attempt must be logged.
+ * WHAT THIS SCRIPT USED TO DO, AND WHY IT PROVED NOTHING.
+ *
+ * It opened a transaction, INSERTed a row into `hr_legal_holds`, and then SELECTed
+ * that row back with its own hand-written SQL. Reading its own INSERT was the
+ * whole test: the PASS string said so out loud — "Retention sweep blocked: hold
+ * check query returns the active hold". Its verdict helper was
+ *
+ *     function holdCheck({ hrActive }) { return { erasureBlocked: hrActive, … } }
+ *
+ * so `--self-test` asserted that `hrActive === true` implies `erasureBlocked ===
+ * true`, which is true of the identity function and of nothing else. Nine
+ * assertions reported PASS and not one of them could have gone red if every
+ * legal-hold guard in the product had been deleted, because not one of them ran
+ * product code: the file mentioned no service, no helper and no sweep.
+ *
+ * WHAT IT DOES NOW.
+ *
+ * The verdict comes from `legal-hold-drill-probe.ts`, which constructs the real
+ * `RetentionService`, `GdprSubjectErasureService`, `GdprStoragePurgeService` and
+ * `LegalHoldsService` against a real database and asks THEM. This file is the CLI
+ * around it: argument handling, the anti-vacuity floors, rendering and the exit
+ * code. It deliberately owns no assertion of its own — a drill that can answer its
+ * own question is the defect being fixed here.
+ *
+ * The probe is TypeScript because the product is. `package.json` runs this file
+ * with plain `node`, so ts-node is spawned as a child rather than registered as a
+ * loader.
+ *
+ * THE DRILL HAS A CONTROL PHASE. Before any hold exists, the same production
+ * methods must PERMIT the operation — an unheld subject's delete request has to
+ * run through `RetentionService.processRequest` to `completed`. Without that,
+ * "blocked" would also be the answer from a product that erases nothing for
+ * anybody, and this drill would certify it.
+ *
+ * Nothing is committed: the probe runs inside one tenant transaction and rolls it
+ * back. The rollback is the only simulated part.
  *
  * Usage:
  *   node src/scripts/drill-legal-hold.mjs <email> <org-id>
+ *   node src/scripts/drill-legal-hold.mjs --self-test
  *
- *   The subject (<email>) must already exist as a member of <org-id>.
- *   The script places a hold, tries an erasure (expects rejection),
- *   tries a retention-delete (expects rejection), then releases the hold
- *   and confirms the erasure would now be allowed.
- *
- * This is a DRY-RUN drill — no rows are deleted.
- *
- * Pass/fail criteria:
- *   PASS  — hold placement succeeds, both erasure and retention are blocked,
- *            release succeeds, post-release erasure check passes.
- *   FAIL  — any step returns the wrong outcome.
+ * Exit codes:
+ *   0 = every production path refused under a hold and permitted without one
+ *   1 = a production path gave the wrong answer — this is the finding
+ *   2 = INCONCLUSIVE: a prerequisite is absent (no DATABASE_URL, no ts-node, the
+ *       subject is not a member of the org, a pre-existing hold), or the run did
+ *       not cover enough of the contract to have a verdict. Never read as a pass.
  */
 
-import fs from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
-import postgres from "postgres";
-import { randomUUID } from "node:crypto";
+import { fileURLToPath } from "node:url";
 
-const [, , emailArg, orgIdArg] = process.argv;
-if (!emailArg || !orgIdArg) {
-  console.error("Usage: node drill-legal-hold.mjs <email> <org-id>");
-  process.exit(1);
+const BACKEND_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+const TS_NODE = path.join(BACKEND_ROOT, "node_modules", ".bin", "ts-node");
+const PROBE = path.join(BACKEND_ROOT, "src", "scripts", "legal-hold-drill-probe.ts");
+
+/**
+ * Floors, in the shape of MIN_SEALS/MIN_SEALED_FILES in check-evidence-seal.mjs and
+ * MIN_TABLES_SCANNED in check-retention-coverage.mjs: a run that asserted nothing
+ * must report INCONCLUSIVE, never a pass.
+ *
+ * MIN_CHECKS and MIN_PRODUCTION_PATHS together mean a verdict requires several
+ * distinct product methods to have answered, so deleting a probe phase turns the
+ * gate amber rather than green. REQUIRED_PHASES is the one that matters most: drop
+ * the control phase and the drill can no longer tell "the hold blocked it" from
+ * "nothing works", so its absence is not a pass either.
+ */
+const MIN_CHECKS = 12;
+const MIN_PRODUCTION_PATHS = 5;
+const REQUIRED_PHASES = ["control", "held", "released"];
+
+const argv = process.argv.slice(2);
+const selfTest = argv.includes("--self-test");
+
+function haveTsNode() {
+  return existsSync(TS_NODE);
 }
+
+/** Runs the probe and returns its parsed report, or null when it produced none. */
+function runProbe(probeArgs) {
+  const dir = mkdtempSync(path.join(tmpdir(), "legal-hold-drill-"));
+  const out = path.join(dir, "report.json");
+  try {
+    execFileSync(TS_NODE, ["--transpile-only", PROBE, ...probeArgs, `--out=${out}`], {
+      cwd: BACKEND_ROOT,
+      encoding: "utf8",
+      stdio: ["ignore", "inherit", "inherit"],
+      env: { ...process.env, NODE_OPTIONS: "--max-old-space-size=2048" },
+    });
+  } catch (err) {
+    process.stderr.write(`probe process failed: ${err.message}\n`);
+  }
+  try {
+    return JSON.parse(readFileSync(out, "utf8"));
+  } catch {
+    return null;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function render(checks) {
+  let passed = 0;
+  let failed = 0;
+  for (const check of checks) {
+    const line = `${check.phase.toUpperCase().padEnd(8)} ${check.productionPath}\n           expected ${check.expected}\n           observed ${check.observed}`;
+    if (check.ok) {
+      console.log(`  PASS  ${line}`);
+      passed++;
+    } else {
+      console.error(`  FAIL  ${line}`);
+      failed++;
+    }
+  }
+  return { passed, failed };
+}
+
+function finish(code) {
+  process.exit(code);
+}
+
+if (!haveTsNode()) {
+  process.stderr.write(
+    `INCONCLUSIVE — ts-node is not installed at ${TS_NODE}, so no production code could be ` +
+      "loaded and nothing was verified. This is exit 2, not a pass.\n",
+  );
+  finish(2);
+}
+
+if (selfTest) {
+  /*
+   * The old --self-test asserted `holdCheck({hrActive:true}).erasureBlocked === true`,
+   * a restatement of its own one-line function. This one asks whether the product
+   * methods the drill claims to exercise still exist under those names, which is the
+   * failure a rename would otherwise hide: the drill would keep passing while
+   * silently testing nothing.
+   */
+  console.log("\n=== LEGAL HOLD DRILL — self-test (production surface, no database) ===\n");
+  const report = runProbe(["--contract"]);
+  if (!report || !Array.isArray(report.checks) || report.checks.length === 0) {
+    process.stderr.write("INCONCLUSIVE — the probe reported no production surface at all.\n");
+    finish(2);
+  }
+  const { passed, failed } = render(report.checks);
+  console.log(`\n=== RESULT: ${failed === 0 ? "PASS" : "FAIL"} (${passed} passed, ${failed} failed) ===`);
+  finish(failed > 0 ? 1 : 0);
+}
+
+const [emailArg, orgIdArg] = argv;
+if (!emailArg || !orgIdArg) {
+  process.stderr.write(
+    "INCONCLUSIVE — usage: node drill-legal-hold.mjs <email> <org-id>. No subject, no drill.\n",
+  );
+  finish(2);
+}
+
+if (!process.env.DATABASE_URL) {
+  process.stderr.write(
+    "INCONCLUSIVE — DATABASE_URL is not set, so no production path was exercised. " +
+      "This is exit 2, not a pass.\n",
+  );
+  finish(2);
+}
+
 const email = emailArg.trim().toLowerCase();
 const orgId = orgIdArg.trim();
 
-function loadDatabaseUrl() {
-  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
-  const envPath = path.resolve(process.cwd(), ".env");
-  if (!fs.existsSync(envPath)) throw new Error("DATABASE_URL not set and no .env found");
-  const match = fs.readFileSync(envPath, "utf8").match(/^DATABASE_URL\s*=\s*(.+)$/m);
-  if (!match) throw new Error("DATABASE_URL not found in .env");
-  return match[1].trim().replace(/^['"]|['"]$/g, "");
+console.log(`\n=== LEGAL HOLD DRILL for ${email} in org ${orgId} ===`);
+console.log("Every verdict below is a real service method's answer; nothing is committed.\n");
+
+const report = runProbe([`--email=${email}`, `--org=${orgId}`]);
+
+if (!report) {
+  process.stderr.write(
+    "INCONCLUSIVE — the probe produced no report, so no production path was observed.\n",
+  );
+  finish(2);
 }
 
-const sql = postgres(loadDatabaseUrl(), { prepare: false, max: 1, onnotice: () => {} });
-
-let passed = 0;
-let failed = 0;
-
-function pass(label) {
-  console.log(`  PASS  ${label}`);
-  passed++;
+if (report.error) {
+  process.stderr.write(`INCONCLUSIVE — the drill could not run: ${report.error}\n`);
+  finish(2);
 }
 
-function fail(label) {
-  console.error(`  FAIL  ${label}`);
-  failed++;
+const checks = Array.isArray(report.checks) ? report.checks : [];
+const phases = new Set(checks.map((c) => c.phase));
+const paths = new Set(checks.map((c) => c.productionPath));
+const missingPhases = REQUIRED_PHASES.filter((phase) => !phases.has(phase));
+
+const { passed, failed } = render(checks);
+
+if (checks.length < MIN_CHECKS || paths.size < MIN_PRODUCTION_PATHS || missingPhases.length > 0) {
+  process.stderr.write(
+    `INCONCLUSIVE — the run covered ${checks.length} check(s) across ${paths.size} production ` +
+      `path(s) (floors: ${MIN_CHECKS} and ${MIN_PRODUCTION_PATHS})` +
+      (missingPhases.length > 0 ? `, and no ${missingPhases.join("/")} phase ran` : "") +
+      ". Too little of the contract was exercised to call this a pass.\n",
+  );
+  finish(2);
 }
 
-async function activeHrHold(userId) {
-  const rows = await sql`
-    SELECT id FROM hr_legal_holds
-    WHERE subject_user_id = ${userId} AND org_id = ${orgId}
-      AND status = 'active' AND deleted_at IS NULL`;
-  return rows[0] ?? null;
-}
-
-async function activeOrgHold() {
-  const rows = await sql`
-    SELECT hold_id FROM organization_legal_holds
-    WHERE org_id = ${orgId} AND released_at IS NULL`;
-  return rows[0] ?? null;
-}
-
-async function main() {
-  console.log(`\n=== LEGAL HOLD DRILL for ${email} in org ${orgId} ===\n`);
-
-  const [user] = await sql`
-    SELECT id, email FROM users WHERE lower(email) = ${email} LIMIT 1`;
-  if (!user) {
-    console.error(`subject not found: ${email}`);
-    await sql.end();
-    process.exit(1);
-  }
-
-  const [membership] = await sql`
-    SELECT user_id FROM organization_members
-    WHERE user_id = ${user.id} AND org_id = ${orgId} LIMIT 1`;
-  if (!membership) {
-    console.error(`subject is not a member of org ${orgId}`);
-    await sql.end();
-    process.exit(1);
-  }
-
-  console.log(`Subject: ${user.email}  id=${user.id}\n`);
-
-  const drillActor = user.id;
-  const drillReason = `Legal hold drill — ${new Date().toISOString()}`;
-
-  // Step 1: confirm no hold exists before we start
-  const existingHrHold = await activeHrHold(user.id);
-  const existingOrgHold = await activeOrgHold();
-  if (existingHrHold || existingOrgHold) {
-    console.log(`  Note: pre-existing hold found; skipping placement, using existing hold.`);
-  }
-
-  let holdId = null;
-
-  if (!existingHrHold) {
-    const [hold] = await sql`
-      INSERT INTO hr_legal_holds (org_id, subject_user_id, reason, status, placed_by, placed_at)
-      VALUES (${orgId}, ${user.id}, ${drillReason}, 'active', ${drillActor}, NOW())
-      RETURNING id`;
-    holdId = hold.id;
-    pass(`HR legal hold placed (id=${holdId})`);
-  } else {
-    holdId = existingHrHold.id;
-    pass(`Pre-existing HR hold found (id=${holdId}) — skipping placement`);
-  }
-
-  // Step 2: erasure attempt — must be blocked
-  const hrHold = await activeHrHold(user.id);
-  if (hrHold) {
-    pass(`Erasure blocked: active HR legal hold prevents deletion`);
-  } else {
-    fail(`Erasure NOT blocked: no active HR hold found after placement`);
-  }
-
-  // Step 3: retention sweep simulation — must be blocked
-  // A retention sweep that tries to delete a held subject's data must check the hold.
-  // We verify the check query returns the hold, simulating what a sweep would do.
-  const [retentionBlocked] = await sql`
-    SELECT 1 FROM hr_legal_holds
-    WHERE subject_user_id = ${user.id} AND org_id = ${orgId}
-      AND status = 'active' AND deleted_at IS NULL
-    LIMIT 1`;
-  if (retentionBlocked) {
-    pass(`Retention sweep blocked: hold check query returns the active hold`);
-  } else {
-    fail(`Retention sweep NOT blocked: hold check query returned nothing`);
-  }
-
-  // Step 4: org-level legal hold check (for org-wide purge)
-  // Insert a temporary org hold and confirm it blocks the org purge.
-  let orgHoldId = null;
-  if (!existingOrgHold) {
-    const [oh] = await sql`
-      INSERT INTO organization_legal_holds (org_id, reason, placed_by, placed_at)
-      VALUES (${orgId}, ${drillReason + " (org-level)"}, ${drillActor}, NOW())
-      RETURNING hold_id`;
-    orgHoldId = oh.hold_id;
-    pass(`Org-level legal hold placed (holdId=${orgHoldId})`);
-  } else {
-    orgHoldId = existingOrgHold.hold_id;
-    pass(`Pre-existing org-level hold found — skipping placement`);
-  }
-
-  const orgPurgeBlocked = await activeOrgHold();
-  if (orgPurgeBlocked) {
-    pass(`Org purge blocked: org-level hold check returns hold`);
-  } else {
-    fail(`Org purge NOT blocked: org-level hold check returned nothing`);
-  }
-
-  // Step 5: release the HR hold
-  if (!existingHrHold) {
-    await sql`
-      UPDATE hr_legal_holds
-      SET status = 'released', released_by = ${drillActor}, released_at = NOW()
-      WHERE id = ${holdId}`;
-    const postRelease = await activeHrHold(user.id);
-    if (!postRelease) {
-      pass(`HR hold released: no longer blocks`);
-    } else {
-      fail(`HR hold release failed: hold still active after update`);
-    }
-  } else {
-    console.log(`  SKIP  HR hold release (pre-existing hold — not released by this drill)`);
-  }
-
-  // Step 6: release the org hold
-  if (!existingOrgHold) {
-    await sql`
-      UPDATE organization_legal_holds
-      SET released_at = NOW(), released_by = ${drillActor}
-      WHERE hold_id = ${orgHoldId}`;
-    const postOrgRelease = await activeOrgHold();
-    if (!postOrgRelease) {
-      pass(`Org hold released: no longer blocks purge`);
-    } else {
-      fail(`Org hold release failed: hold still active after update`);
-    }
-  } else {
-    console.log(`  SKIP  Org hold release (pre-existing hold — not released by this drill)`);
-  }
-
-  // Step 7: confirm erasure is now allowed
-  const postReleaseHr = existingHrHold ? null : await activeHrHold(user.id);
-  const postReleaseOrg = existingOrgHold ? null : await activeOrgHold();
-  if (!postReleaseHr && !postReleaseOrg) {
-    pass(`Post-release: erasure now permitted (no blocking holds)`);
-  } else {
-    fail(`Post-release: holds still present`);
-  }
-
-  console.log(`\n=== RESULT: ${failed === 0 ? "PASS" : "FAIL"} (${passed} passed, ${failed} failed) ===`);
-
-  if (failed > 0)
-    console.error(`\n  Action required: investigate the FAILed steps above before executing a real erasure.`);
-
-  await sql.end();
-  process.exit(failed > 0 ? 1 : 0);
-}
-
-main().catch(async (err) => {
-  console.error(`\nDrill crashed: ${err.message}`);
-  await sql.end({ timeout: 5 }).catch(() => {});
-  process.exit(1);
-});
+console.log(`\n=== RESULT: ${failed === 0 ? "PASS" : "FAIL"} (${passed} passed, ${failed} failed) ===`);
+console.log(
+  `    ${paths.size} production paths exercised across ${[...phases].sort().join(", ")} phases.\n`,
+);
+finish(failed > 0 ? 1 : 0);

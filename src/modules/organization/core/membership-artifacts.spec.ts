@@ -25,7 +25,10 @@ const NOT_AN_ORG_MEMBERSHIP_GRANT: ReadonlyMap<string, string> = new Map([
 const KNOWN_EXCLUDED_COLUMNS: readonly string[] = [
   "ai_summary_snapshots.generated_by_membership_id",
   "audit_logs.actor_membership_id",
+  "calibration_sessions.created_by_membership_id",
   "calendar_events.created_by_membership_id",
+  "candidate_referrals.referred_by_membership_id",
+  "candidate_sources.created_by_membership_id",
   "chat_channel_invite_links.created_by_membership_id",
   "chat_channels.created_by_membership_id",
   "chat_huddles.started_by_membership_id",
@@ -45,8 +48,16 @@ const KNOWN_EXCLUDED_COLUMNS: readonly string[] = [
   "deal_meetings.created_by_membership_id",
   "expense_export_jobs.requested_by_membership_id",
   "health_score_config.updated_by_membership_id",
+  "headcount_requests.approved_by_membership_id",
+  "headcount_requests.requested_by_membership_id",
+  "hiring_flows.created_by_membership_id",
+  "hr_attendance_regularizations.approved_by_membership_id",
+  "hr_attendance_regularizations.rejected_by_membership_id",
   "hr_audit_logs.actor_membership_id",
+  "hr_badge_awards.awarded_by_membership_id",
+  "hr_campaigns.created_by_membership_id",
   "hr_cases.reported_by_membership_id",
+  "hr_communities.created_by_membership_id",
   "hr_effective_dated_changes.approved_by_membership_id",
   "hr_effective_dated_changes.created_by_membership_id",
   "hr_employment_history.created_by_membership_id",
@@ -54,6 +65,9 @@ const KNOWN_EXCLUDED_COLUMNS: readonly string[] = [
   "hr_employments.updated_by_membership_id",
   "hr_people.archived_by_membership_id",
   "hr_people.updated_by_membership_id",
+  "hr_insurance_claims.decided_by_membership_id",
+  "hr_polls.created_by_membership_id",
+  "hr_workflow_instances.requested_by_membership_id",
   "hr_workflow_step_actions.acted_by_membership_id",
   "incentive_config.created_by_membership_id",
   "incentives.approved_by_membership_id",
@@ -96,6 +110,10 @@ const KNOWN_EXCLUDED_COLUMNS: readonly string[] = [
   "invitations.inviter_membership_id",
   "invitations.revoked_by_membership_id",
   "invoices.created_by_membership_id",
+  "interview_booking_links.created_by_membership_id",
+  "interview_questions.created_by_membership_id",
+  "job_postings.posted_by_membership_id",
+  "job_requisitions.requested_by_membership_id",
   "kb_article_chunks.page_created_by_membership_id",
   "kb_events.actor_membership_id",
   "kb_page_reviews.requested_by_membership_id",
@@ -139,15 +157,19 @@ const KNOWN_EXCLUDED_COLUMNS: readonly string[] = [
   "portal_invitations.inviter_membership_id",
   "portal_memberships.portal_membership_id",
   "project_client_grants.portal_membership_id",
+  "pulse_surveys.created_by_membership_id",
   "purchase_bills.approved_by_membership_id",
   "purchase_bills.created_by_membership_id",
   "quotes.approved_by_membership_id",
   "quotes.created_by_membership_id",
   "reimbursements.approved_by_membership_id",
+  "review_cycles.created_by_membership_id",
   "role_assignments.assigned_by_membership_id",
   "sales_quotas.set_by_membership_id",
+  "scorecard_templates.created_by_membership_id",
   "sign_documents.created_by_membership_id",
   "sign_envelopes.voided_by_membership_id",
+  "skill_assessments.created_by_membership_id",
   "sprint_scope_events.actor_membership_id",
   "support_macros.created_by_membership_id",
   "support_tickets.created_by_membership_id",
@@ -176,7 +198,7 @@ const KNOWN_EXCLUDED_COLUMNS: readonly string[] = [
   "workers.created_by_membership_id",
   "workers.updated_by_membership_id",
   "workflow_transitions.created_by_membership_id",
-];
+].sort();
 
 interface DiscoveredTable {
   table: string;
@@ -329,7 +351,6 @@ describe("the membership artifact inventory is well formed", () => {
     const ids = artifactsRequiringWriteOnRemoval().map((a) => a.id);
 
     expect(ids).toContain("resource_grants");
-    expect(ids).toContain("kb_space_grants");
     expect(ids).toContain("realtime_capability");
     expect(ids).toContain("user_integration_connections");
     expect(ids).toContain("invitations");

@@ -33,7 +33,7 @@ function resolveScope(explicitOrgId: string | null | undefined): {
 
 type DurableEmailOptions = Pick<
   EmailOptions,
-  "to" | "subject" | "html" | "text" | "organizationId"
+  "to" | "subject" | "html" | "text" | "organizationId" | "recipientUserId"
 >;
 
 @Injectable()
@@ -100,6 +100,7 @@ export class EmailOutboxService {
             subject: item.subject,
             html: item.html,
             text: item.text ?? null,
+            recipientUserId: item.recipientUserId ?? null,
             status: "PENDING" as const,
             attempts: 0,
             nextAttemptAt: now,
@@ -112,6 +113,12 @@ export class EmailOutboxService {
     if (inserted.length !== options.length)
       throw new Error("Failed to enqueue all emails");
     return inserted.length;
+  }
+
+  async enqueueOnly(options: EmailOptions): Promise<void> {
+    const filtered = await this.applySuppression(options);
+    if (!filtered) return;
+    await this.enqueueForDelivery([filtered]);
   }
 
   async enqueueAndTry(options: EmailOptions): Promise<void> {

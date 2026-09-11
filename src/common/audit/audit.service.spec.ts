@@ -6,6 +6,7 @@ const runOutsideTenantContext = jest.fn(
 const registerAfterCommit = jest.fn();
 const getTenantContext = jest.fn();
 const withTenant = jest.fn();
+const reportError = jest.fn();
 
 jest.mock("../tenant", () => ({
   getTenantContext: (...args: unknown[]) => getTenantContext(...args),
@@ -13,6 +14,10 @@ jest.mock("../tenant", () => ({
   runOutsideTenantContext: (...args: unknown[]) =>
     runOutsideTenantContext(...(args as [() => Promise<unknown>])),
   withTenant: (...args: unknown[]) => withTenant(...args),
+}));
+
+jest.mock("../observability/error-reporter", () => ({
+  reportError: (...args: unknown[]) => reportError(...args),
 }));
 
 function makeDb() {
@@ -28,6 +33,7 @@ describe("AuditService dispatch", () => {
     jest.clearAllMocks();
     getTenantContext.mockReturnValue(undefined);
     registerAfterCommit.mockReturnValue(false);
+    reportError.mockReturnValue(undefined);
     withTenant.mockImplementation(
       async (
         db: unknown,
@@ -89,5 +95,21 @@ describe("AuditService dispatch", () => {
     expect(values).toHaveBeenCalledWith(
       expect.objectContaining({ action: "critical.event", orgId: "org-1" }),
     );
+  });
+
+  it("routes audit write failures through reportError so they surface as a grouped incident", async () => {
+    const writeError = new Error("insert violates FK constraint");
+    const values = jest.fn().mockRejectedValue(writeError);
+    const db = { insert: jest.fn().mockReturnValue({ values }) };
+    const service = new AuditService(db as never);
+
+    runOutsideTenantContext.mockImplementationOnce(
+      <T>(callback: () => Promise<T>) => callback(),
+    );
+
+    service.log({ action: "ai.invoke", userId: "user-1", orgId: "org-1" });
+    await new Promise<void>((resolve) => process.nextTick(resolve));
+
+    expect(reportError).toHaveBeenCalledWith(writeError, { action: "ai.invoke" });
   });
 });

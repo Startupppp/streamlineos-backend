@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { eq, and, desc, inArray } from "drizzle-orm";
 import {
   leadActivities,
@@ -172,6 +172,9 @@ export class LeadsDetailService {
   }
 
   async addActivity(orgId: string, userId: string, leadId: number, input: LogActivityInput) {
+    const lead = await loadLeadView(this.db, orgId, leadId);
+    if (!lead) throw new NotFoundException("Lead not found");
+
     const [activity] = await this.db
       .insert(leadActivities)
       .values({

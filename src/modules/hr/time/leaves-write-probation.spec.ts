@@ -7,6 +7,10 @@ import type { ProbationCoverage } from "../lifecycle/probation-coverage";
 import { LeavesWriteService } from "./leaves-write.service";
 import { PROBATION_LEAVE_REFUSAL } from "./probation-leave-restriction";
 
+jest.mock("./organization-membership", () => ({
+  requireOrganizationMembershipId: jest.fn().mockResolvedValue(1),
+}));
+
 const USER: CurrentUserContext = {
   userId: "employee-1",
   orgId: "org-1",
@@ -75,7 +79,10 @@ function buildService(options: {
     {} as never,
     { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) } as never,
     { startWorkflow: jest.fn().mockResolvedValue(undefined) } as never,
-    { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never,
+    {
+      invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+      invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
+    } as never,
     { membersWithPermission: jest.fn().mockResolvedValue([]) } as never,
     { resolve: jest.fn().mockResolvedValue({ id: "manager-1", name: "Manager" }) } as never,
     { probationCoverageOn } as never,

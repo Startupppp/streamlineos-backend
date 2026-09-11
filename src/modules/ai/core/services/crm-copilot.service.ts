@@ -18,7 +18,7 @@ import { OrgFeaturesService } from "./org-features.service";
 import { CrmContentService } from "./crm-content.service";
 import { CrmPipelineService } from "./crm-pipeline.service";
 import { CrmCopilotLeadService } from "./crm-copilot-lead.service";
-import { ConversationSummarySchema } from "../dto/output.schemas";
+import { ConversationSummarySchema, DealInsightsSchema, type DealInsights } from "../dto/output.schemas";
 import { throwOnAiFailure } from "./gateway-result.util";
 
 interface CitationItem {
@@ -26,15 +26,6 @@ interface CitationItem {
   title: string;
   snippet: string;
 }
-
-const DealInsightsSchema = z.object({
-  summary: z.string(),
-  risks: z.array(z.string()),
-  recommendedPlays: z.array(z.string()),
-  stakeholdersGap: z.string(),
-});
-
-type DealInsights = z.infer<typeof DealInsightsSchema>;
 
 function truncate(s: string | null | undefined, max: number): string {
   if (!s) return "";
@@ -194,7 +185,8 @@ ${truncate(activitiesText, 1500)}`;
           .from(deals)
           .where(and(eq(deals.id, input.entityId), eq(deals.orgId, orgId), isNull(deals.deletedAt)));
         if (!deal) throw new NotFoundException("Deal not found");
-        return { entityName: deal.contactPerson ?? deal.name, company: null as string | null, contextLine: `Deal: ${deal.name}, Stage: ${deal.stage}, Value: ${deal.value}` };
+        const company: string | null = null;
+        return { entityName: deal.contactPerson ?? deal.name, company, contextLine: `Deal: ${deal.name}, Stage: ${deal.stage}, Value: ${deal.value}` };
       }
     }, { orgId });
 
@@ -271,7 +263,8 @@ Return JSON with summary, keyPoints, actionItems, objections, sentiment.`,
           .limit(10),
       ]);
 
-      if (!deal) return { deal: null, citations: [] as CitationItem[] };
+      const emptyCitations: CitationItem[] = [];
+      if (!deal) return { deal: null, citations: emptyCitations };
 
       const built: CitationItem[] = [
         { id: `deal-stage-${dealId}`, title: "Deal Stage & Value", snippet: `Stage: ${deal.stage}, Value: ₹${Number(deal.value ?? 0).toLocaleString("en-IN")}` },

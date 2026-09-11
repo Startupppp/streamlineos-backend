@@ -200,7 +200,7 @@ describe("ReservationService — cross-tenant isolation", () => {
         locationId: 1,
         qty: "10",
       }),
-    ).rejects.toThrow();
+    ).rejects.toThrow(TypeError);
     expect(settingsMock.get).toHaveBeenCalledWith(ATTACKER);
   });
 

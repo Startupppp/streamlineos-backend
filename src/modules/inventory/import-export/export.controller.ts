@@ -1,6 +1,7 @@
 import {
   Controller, Get, Post, Param, Body, Query, ParseIntPipe, UseGuards, Res,
 } from "@nestjs/common";
+import { ApiOkResponse } from "@nestjs/swagger";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -17,6 +18,11 @@ import {
   type ListJobsQueryInput,
 } from "./dto/import-export.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  createExportJobResponseSchema,
+  listExportJobsResponseSchema,
+} from "./dto/import-export-response.schemas";
 import { z } from "zod";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
@@ -29,6 +35,7 @@ export class ExportController {
   constructor(private readonly svc: ExportService) {}
 
   @Post("jobs")
+  @ResponseSchema(createExportJobResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:export")
   @Idempotent("inventory.export.job.create")
@@ -41,6 +48,7 @@ export class ExportController {
   }
 
   @Get("jobs")
+  @ResponseSchema(listExportJobsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:export")
   @Validate({ query: listJobsQuerySchema })
@@ -52,6 +60,7 @@ export class ExportController {
   }
 
   @Get("jobs/:jobId")
+  @ResponseSchema(createExportJobResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:export")
   @Validate({ params: jobIdParams })
@@ -60,6 +69,7 @@ export class ExportController {
   }
 
   @Get("jobs/:jobId/download")
+  @ApiOkResponse({ description: "CSV file download of export job data", content: { "text/csv": { schema: { type: "string" } } } })
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:export")
   @Validate({ params: jobIdParams })

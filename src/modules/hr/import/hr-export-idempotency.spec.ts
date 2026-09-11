@@ -4,7 +4,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { DataScope } from "../../access/access.types";
 import type { CreateEmployeeExportJobInput } from "./dto/export-job.dto";
-import { HrExportJobsService, type HrExportJobRow } from "./hr-export-jobs.service";
+import { HrExportJobsService } from "./hr-export-jobs.service";
+import type { HrExportJobRow } from "./hr-export-jobs.types";
 
 /**
  * `HrExportJobsService.create` fences on `(org_id, idempotency_key)` and then
@@ -81,6 +82,8 @@ function serviceWith(existing: HrExportJobRow) {
     db as never,
     { isConfigured: () => true } as never,
     audit as never,
+    {} as never,
+    {} as never,
     {} as never,
   );
   return { service, audit };

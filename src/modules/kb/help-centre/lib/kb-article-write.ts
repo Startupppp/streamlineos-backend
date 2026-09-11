@@ -6,6 +6,7 @@ import { actingMembershipId } from "../../../../common/auth/principal";
 import { type Db } from "../../../../db/drizzle.module";
 import { OutboxWriter } from "../../../../common/outbox/outbox-writer";
 import { kbSlugify } from "../../core/kb.util";
+import { KB_ARTICLE_COLUMNS, type KbArticleRow } from "../kb-article-columns";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 
 /**
@@ -40,7 +41,8 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 
 export type KbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-export type ArticleRow = typeof kbArticles.$inferSelect;
+/** Without the generated `fts` vector, which never leaves the module (`kb-article-columns.ts`). */
+export type ArticleRow = KbArticleRow;
 
 export type SnapshotSource = { id: number; title: string; content: string; excerpt: string | null };
 
@@ -71,19 +73,25 @@ export async function uniqueArticleSlug(
   excludeId?: number,
 ): Promise<string> {
   const root = kbSlugify(base) || "article";
-  let slug = root;
-  let suffix = 1;
-  while (true) {
-    const conditions: SQL[] = [eq(kbArticles.orgId, orgId), eq(kbArticles.slug, slug)];
-    if (excludeId !== undefined) conditions.push(ne(kbArticles.id, excludeId));
-    const existing = await db.query.kbArticles.findFirst({
-      where: and(...conditions),
-      columns: { id: true },
-    });
-    if (!existing) return slug;
-    suffix += 1;
-    slug = `${root}-${suffix}`;
-  }
+  /*
+   * One read for every candidate rather than one per suffix: the loop that
+   * probed `-2`, `-3`, … issued a query per collision, so a popular title cost
+   * a round trip for every article that already carried it.
+   */
+  const conditions: SQL[] = [
+    eq(kbArticles.orgId, orgId),
+    sql`(${kbArticles.slug} = ${root} OR ${kbArticles.slug} LIKE ${root + "-%"})`,
+  ];
+  if (excludeId !== undefined) conditions.push(ne(kbArticles.id, excludeId));
+  const rows = await db
+    .select({ slug: kbArticles.slug })
+    .from(kbArticles)
+    .where(and(...conditions));
+  const taken = new Set(rows.map((r) => r.slug));
+  if (!taken.has(root)) return root;
+  let suffix = 2;
+  while (taken.has(`${root}-${suffix}`)) suffix += 1;
+  return `${root}-${suffix}`;
 }
 
 export async function syncArticleTags(
@@ -222,9 +230,11 @@ export async function restoreArticleVersion(
         content: version.content,
         excerpt: version.excerpt,
         contentText: extractPlainText(version.content),
+        /* A restore changes the content, so readers holding the old revision must see it move. */
+        contentRevision: sql`content_revision + 1`,
       })
       .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
-      .returning();
+      .returning(KB_ARTICLE_COLUMNS);
     if (!result) throw new NotFoundException("Article not found");
 
     await snapshotArticleVersion(

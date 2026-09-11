@@ -22,12 +22,112 @@
 import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join, extname } from "node:path";
 
-const MIN_FILES = 500;
+const MIN_FILES = 2700;
 const MIN_MODULES = 40;
+const MIN_COMMON_FILES = 150;
+const MIN_DB_FILES = 300;
+
+/**
+ * Ceiling on unbounded reads suppressed by a FALSE-POSITIVE verdict — INSTANCES,
+ * not files. See countSuppressed() for why the file count could not catch this.
+ * Measured at 651 on 2026-09-03 over all three scan roots and set with no headroom; lowered to
+ * 648 on 2026-09-04 when /surveys/survey-live-participant.service.ts moved from FALSE-POSITIVE to
+ * BOUNDED and stopped suppressing its three reads (PRD-C058); lowered again to 647 the same day when
+ * /hr/recruitment/recruitment-candidate-ops.service.ts moved the same way — its bulkImport dedupe
+ * probe now reads the request's emails instead of the whole organisation (PRD-C119); lowered again to
+ * 646 on 2026-09-04 when /build/core/projects-search.service.ts stopped materialising the caller's
+ * whole `project_members` list into an `inArray` and became a correlated EXISTS, so its suppression
+ * row was deleted rather than reworded (PRD-C123). Lowering it is
+ * the ratchet working:
+ * a new read hiding behind an existing justification must fail here, because that
+ * is the only place it can fail. Lower it when you bound one; raising it means
+ * saying, in ratchets.json, which read is now hidden and why.
+ */
+/**
+ * RAISED 646 -> 650 on 2026-09-08, and this is the first raise. Every previous move was
+ * downward. It is recorded here read by read, because "a read added to an already-blessed
+ * file inherits a justification that was never written about it" is exactly what this
+ * ceiling exists to catch, and a raise with no inventory is indistinguishable from that.
+ *
+ * The N+1 pass replaced per-row loops with batched statements. Round trips fell by orders
+ * of magnitude; the count of statements WITHOUT a literal .limit() rose by four, because
+ * one batched read replaces N reads that each carried .limit(1). Net movement:
+ *
+ *   +2  /cron/cron-billing.service.ts        the trial_ends_at window read and the dunning
+ *                                            milestone read that replaced 3 windowed
+ *                                            SELECTs per org and 3R milestone INSERTs
+ *   +2  /invoices/invoices-lifecycle.service.ts  loadFallbackRecipients, one ranked
+ *                                            row_number() read capped at 5 per org, which
+ *                                            replaced one interleaved SELECT per invoice
+ *   +2  @common/hr/sync-canonical-reporting-line.ts  see its justification: the only
+ *                                            candidate bound would drop a different user's
+ *                                            row, so a limit was REFUSED, not forgotten
+ *   +1  /gdpr/gdpr-sync-export-fetchers.ts   a .as() subquery, not an executed statement;
+ *                                            its outer read carries an exact limit
+ *   -1  /cron/cron-notifications.service.ts  fan-out moved into the database
+ *   -1  /kb/wiki/kb-page-duplicate.service.ts  the unscoped root re-read is gone
+ *   -1  /leads/lead-triggers.ts              round-robin read-modify-write became one upsert
+ *
+ * Four further reads were BOUNDED in code in the same pass rather than suppressed, so they
+ * are not in this number at all: both crm-tasks reads (.limit on the id-set length), the
+ * gdpr outer read (persons x cap), and the cron-projects status read (DISTINCT ON plus a
+ * limit of the project count).
+ *
+ * LOWERED 650 -> 649 the same day, and this is the ratchet working in the intended
+ * direction. Splitting cron-billing.service.ts moved the dunning milestone read into
+ * /cron/cron-billing-dunning.ts, which surfaced it as an unclassified path rather than
+ * letting it inherit its old file's justification. It was then BOUNDED instead of
+ * re-suppressed: it had read every dunning attempt ever recorded for the batch's
+ * subscriptions, while planAttempts only ever consults an entry's CURRENT pastDueAt, so
+ * its row count grew with account age rather than with the batch. Narrowing it to the
+ * periods in play caps it at one row per (entry, milestone), which its limit now states.
+ * Six newly hidden reads remain. Lower this the moment any of them is bounded.
+ */
+const MAX_SUPPRESSED_UNBOUNDED = 649;
 const ORDER_BY_LOOKBACK = 25;
 const STATEMENT_MAX_LINES = 120;
 
 const ROOT = new URL("../modules", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1");
+const COMMON_ROOT = new URL("../common", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1");
+const DB_ROOT = new URL("../db", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1");
+
+/**
+ * The gate reads THREE trees, not one.
+ *
+ * It read `src/modules` alone until 2026-09-03, and reported "2,301 files scanned,
+ * 3 actionable" over a repository where `src/common` (188 non-spec files, the whole
+ * asynchronous substrate — tenant enumeration, outbox, workflow, cache) and `src/db`
+ * (364 files) were outside the corpus entirely. The single widest unbounded read in
+ * the repository lived in the blind spot: `common/tenant/for-each-org.ts:158` selects
+ * every ACTIVE organisation with no LIMIT and is called from 84 sites. A green run
+ * was evidence about `src/modules` and was read as evidence about the system, which
+ * is the exact failure `gate-corpus.mjs` documents.
+ *
+ * `key` is the classification-file prefix. `src/modules` keeps the bare
+ * `/<module>/<path>` form so the 365 existing entries are untouched; the new roots
+ * carry an `@`-prefixed name, which cannot collide with a module folder (both trees
+ * contain an `hr` folder and an `org`-prefixed one, so an unprefixed union WOULD
+ * have merged two different files onto one key).
+ *
+ * `minFiles` is per root and is the point: an aggregate floor cannot tell "one root
+ * silently resolved to nothing" from "the repository shrank", and a root that
+ * resolves to nothing is how this gate went blind in the first place.
+ */
+const SCAN_ROOTS = [
+  { key: "", dir: ROOT, minFiles: 1800, label: "src/modules" },
+  { key: "@common", dir: COMMON_ROOT, minFiles: MIN_COMMON_FILES, label: "src/common" },
+  { key: "@db", dir: DB_ROOT, minFiles: MIN_DB_FILES, label: "src/db" },
+];
+
+/** Resolve a classification key back to the file it names, across every root. */
+export function resolveClassifiedPath(relPath, roots = SCAN_ROOTS) {
+  for (const root of roots) {
+    if (root.key === "") continue;
+    if (relPath.startsWith(`${root.key}/`))
+      return root.dir.replace(/\\/g, "/") + relPath.slice(root.key.length);
+  }
+  return ROOT.replace(/\\/g, "/") + relPath;
+}
 const BASELINE_FILE = new URL("./baselines/unbounded-reads-baseline.json", import.meta.url).pathname.replace(
   /^\/([A-Z]:)/,
   "$1",
@@ -37,11 +137,11 @@ const CLASSIFICATION_FILE = new URL("./baselines/unbounded-reads-classification.
 
 const EXCLUDED_MODULE_PREFIXES = ["/crm/", "/inventory/"];
 
-function normalizeRelPath(file) {
+function normalizeRelPath(file, root = SCAN_ROOTS[0]) {
   const normalizedFile = file.replace(/\\/g, "/");
-  const normalizedRoot = ROOT.replace(/\\/g, "/");
+  const normalizedRoot = root.dir.replace(/\\/g, "/");
   return normalizedFile.startsWith(normalizedRoot)
-    ? normalizedFile.slice(normalizedRoot.length)
+    ? root.key + normalizedFile.slice(normalizedRoot.length)
     : normalizedFile;
 }
 
@@ -120,7 +220,7 @@ function isUnboundedSelect(src) {
       }
     }
     if (/\.findMany\(/.test(line)) {
-      const lookahead = lines.slice(i, i + 10).join("\n");
+      const lookahead = statementFrom(lines, i);
       if (!/"take":|take\s*:|\blimit\b/.test(lookahead)) {
         violations.push({ lineNo: i + 1, text: line.trim() });
       }
@@ -208,14 +308,13 @@ export function checkForUnclassified(offsetCounts, unboundedCounts, classificati
   return unclassified;
 }
 
-export function checkForStaleEntries(classification, root) {
+export function checkForStaleEntries(classification, resolve = resolveClassifiedPath) {
   const stale = [];
-  const rootFwd = root.replace(/\\/g, "/");
   for (const relPath of Object.keys(classification.offset ?? {})) {
-    try { statSync(rootFwd + relPath); } catch { stale.push({ kind: "offset", file: relPath }); }
+    try { statSync(resolve(relPath)); } catch { stale.push({ kind: "offset", file: relPath }); }
   }
   for (const relPath of Object.keys(classification.unbounded ?? {})) {
-    try { statSync(rootFwd + relPath); } catch { stale.push({ kind: "unbounded", file: relPath }); }
+    try { statSync(resolve(relPath)); } catch { stale.push({ kind: "unbounded", file: relPath }); }
   }
   return stale;
 }
@@ -235,6 +334,30 @@ export function checkForRegressions(offsetCounts, unboundedCounts, classificatio
       regressions.push({ kind: "unbounded", file: relPath, verdict });
   }
   return regressions;
+}
+
+/**
+ * Reads that a FALSE-POSITIVE verdict is currently hiding, counted as INSTANCES
+ * rather than files.
+ *
+ * The verdict is keyed per FILE and every entry carries one prose sentence, so a
+ * sentence that is true of some reads in a file silently covers all of them. That
+ * is not hypothetical: `/clients/clients.service.ts` was blessed with "client reads
+ * bounded by clientId+orgId (single-record lookups)", which is true of its two
+ * per-client reads and false of `exportCsv`, an unbounded select of every client
+ * row in the org that the same entry made invisible. Nothing in the gate could see
+ * that, because the file count does not move when a blessed file gains a read.
+ *
+ * This number does. It is printed on every run and ratcheted, so the next read that
+ * hides behind an existing sentence fails the gate and names the file, and somebody
+ * has to read the sentence again.
+ */
+export function countSuppressed(unboundedCounts, classification) {
+  let suppressed = 0;
+  for (const [relPath, count] of Object.entries(unboundedCounts)) {
+    if (classification.unbounded?.[relPath]?.verdict === "FALSE-POSITIVE") suppressed += count;
+  }
+  return suppressed;
 }
 
 export function countActionableByKind(offsetCounts, unboundedCounts, classification) {
@@ -342,6 +465,28 @@ function runSelfTests() {
     process.exit(1);
   }
 
+  const longBoundedFindMany = `
+    async list() {
+      return this.db.query.records.findMany({
+        where: and(eq(records.orgId, orgId), eq(records.parentId, parentId)),
+        columns: {
+          id: true,
+          name: true,
+          createdAt: true,
+        },
+        with: {
+          owner: { columns: { id: true, name: true } },
+        },
+        orderBy: [desc(records.createdAt), desc(records.id)],
+        limit: 101,
+      });
+    }
+  `;
+  if (isUnboundedSelect(longBoundedFindMany).length > 0) {
+    console.error("SELF-TEST FAIL: a findMany() bound later in its statement was flagged");
+    process.exit(1);
+  }
+
   const unorderedBad = `
     async badPage() {
       return this.db.select().from(t).where(conditions).limit(20).offset(offset);
@@ -414,15 +559,46 @@ function runSelfTests() {
   }
 
   {
-    const stale = checkForStaleEntries(
-      {
-        offset: { "/definitely/does/not/exist/fake.service.ts": { verdict: "ACTIONABLE", note: "test" } },
-        unbounded: {},
-      },
-      ROOT,
-    );
+    const stale = checkForStaleEntries({
+      offset: { "/definitely/does/not/exist/fake.service.ts": { verdict: "ACTIONABLE", note: "test" } },
+      unbounded: {},
+    });
     if (stale.length === 0) {
       console.error("SELF-TEST FAIL: stale classification entry pointing at non-existent file was not detected");
+      process.exit(1);
+    }
+  }
+
+  // The three roots, and the prefixes that keep them apart. Both src/modules and
+  // src/common hold an `hr/` folder, so an unprefixed union would have silently
+  // merged `/hr/x.ts` from two different trees into one classification entry.
+  {
+    for (const root of SCAN_ROOTS) {
+      const found = collectServiceFiles(root.dir).length;
+      if (found < root.minFiles) {
+        console.error(
+          `SELF-TEST FAIL: scan root ${root.label} yielded ${found} files (expected >= ${root.minFiles}) — it resolves to ${root.dir}`,
+        );
+        process.exit(1);
+      }
+    }
+    const commonRoot = SCAN_ROOTS.find((r) => r.key === "@common");
+    const sample = normalizeRelPath(join(commonRoot.dir, "tenant/for-each-org.ts"), commonRoot);
+    if (sample !== "@common/tenant/for-each-org.ts") {
+      console.error(`SELF-TEST FAIL: a src/common path normalised to "${sample}", not an @common key`);
+      process.exit(1);
+    }
+    if (resolveClassifiedPath(sample) !== `${commonRoot.dir}/tenant/for-each-org.ts`) {
+      console.error("SELF-TEST FAIL: an @common classification key does not resolve back to its file");
+      process.exit(1);
+    }
+    const moduleKey = normalizeRelPath(join(ROOT, "hr/x.service.ts"), SCAN_ROOTS[0]);
+    if (moduleKey !== "/hr/x.service.ts" || resolveClassifiedPath(moduleKey) !== `${ROOT}/hr/x.service.ts`) {
+      console.error("SELF-TEST FAIL: a src/modules key no longer round-trips unprefixed");
+      process.exit(1);
+    }
+    if (normalizeRelPath(join(commonRoot.dir, "hr/y.ts"), commonRoot) === moduleKey.replace("/x.service", "/y")) {
+      console.error("SELF-TEST FAIL: src/common/hr and src/modules/hr collide on one classification key");
       process.exit(1);
     }
   }
@@ -444,6 +620,45 @@ function runSelfTests() {
     if (counts.offset !== 3 || counts.unbounded !== 5) {
       console.error(
         `SELF-TEST FAIL: ACTIONABLE count wrong — expected offset=3,unbounded=5, got offset=${counts.offset},unbounded=${counts.unbounded}`,
+      );
+      process.exit(1);
+    }
+  }
+
+  // The suppression ceiling: a read ADDED to an already-FALSE-POSITIVE file must move
+  // this number, because nothing else in the gate moves when that happens — the file
+  // count is unchanged and the file is already classified, so there is no unclassified
+  // path and no regression to report.
+  {
+    const cls = {
+      offset: {},
+      unbounded: {
+        "/blessed/two-reads.service.ts": { verdict: "FALSE-POSITIVE", note: "test" },
+        "/blessed/actionable.service.ts": { verdict: "ACTIONABLE", note: "test" },
+        "/blessed/excluded.service.ts": { verdict: "EXCLUDED-MODULE", note: "test" },
+      },
+    };
+    const before = countSuppressed(
+      { "/blessed/two-reads.service.ts": 2, "/blessed/actionable.service.ts": 5, "/blessed/excluded.service.ts": 9 },
+      cls,
+    );
+    const after = countSuppressed(
+      { "/blessed/two-reads.service.ts": 3, "/blessed/actionable.service.ts": 5, "/blessed/excluded.service.ts": 9 },
+      cls,
+    );
+    if (before !== 2) {
+      console.error(`SELF-TEST FAIL: suppressed count should be 2 (FALSE-POSITIVE only), got ${before}`);
+      process.exit(1);
+    }
+    if (after <= before) {
+      console.error("SELF-TEST FAIL: a third read added to a FALSE-POSITIVE file did not raise the suppressed count");
+      process.exit(1);
+    }
+    const unclassified = checkForUnclassified({}, { "/blessed/two-reads.service.ts": 3 }, cls);
+    const regressed = checkForRegressions({}, { "/blessed/two-reads.service.ts": 3 }, cls);
+    if (unclassified.length !== 0 || regressed.length !== 0) {
+      console.error(
+        "SELF-TEST FAIL: the fixture is wrong — a read added to a blessed file must be invisible to the unclassified and regression checks, which is why the ceiling exists",
       );
       process.exit(1);
     }
@@ -472,13 +687,15 @@ if (process.argv.includes("--self-test")) process.exit(0);
 
 const territory = discoverTerritory();
 let scannedCount = 0;
+const perRootCounts = [];
 const offsetCounts = {};
 const unboundedCounts = {};
 const unorderedCounts = {};
 const detail = [];
 
-for (const module of territory) {
-  for (const file of collectServiceFiles(join(ROOT, module))) {
+for (const root of SCAN_ROOTS) {
+  let rootScanned = 0;
+  for (const file of collectServiceFiles(root.dir)) {
     let src;
     try {
       src = readFileSync(file, "utf8");
@@ -486,7 +703,8 @@ for (const module of territory) {
       continue;
     }
     scannedCount++;
-    const relPath = normalizeRelPath(file);
+    rootScanned++;
+    const relPath = normalizeRelPath(file, root);
 
     const offsets = hasOffsetUsage(src);
     if (offsets.length > 0) {
@@ -504,11 +722,21 @@ for (const module of territory) {
       for (const v of unordered) detail.push({ file: relPath, ...v, kind: "unordered" });
     }
   }
+  perRootCounts.push({ ...root, scanned: rootScanned });
+}
+
+for (const root of perRootCounts) {
+  if (root.scanned < root.minFiles) {
+    console.error(
+      `VACUITY GUARD: ${root.label} yielded only ${root.scanned} files (expected >= ${root.minFiles}). That root resolved to nothing or to the wrong tree: ${root.dir}`,
+    );
+    process.exit(1);
+  }
 }
 
 if (scannedCount < MIN_FILES) {
   console.error(
-    `VACUITY GUARD: only ${scannedCount} files scanned (expected >= ${MIN_FILES}). Check ROOT: ${ROOT}`,
+    `VACUITY GUARD: only ${scannedCount} files scanned across ${SCAN_ROOTS.length} roots (expected >= ${MIN_FILES}).`,
   );
   process.exit(1);
 }
@@ -577,14 +805,20 @@ try {
   process.exit(1);
 }
 
-console.log(`Scanned ${scannedCount} service files across ${territory.length} modules.`);
+// The corpus, named. "3 actionable" over 2,301 files read as a statement about the
+// system for as long as nothing said which 2,301.
+console.log(`Scanned ${scannedCount} service files across ${SCAN_ROOTS.length} roots:`);
+for (const root of perRootCounts)
+  console.log(
+    `  ${root.label.padEnd(12)}: ${root.scanned} file(s)${root.key === "" ? ` across ${territory.length} modules` : ""}`,
+  );
 console.log(`  offset pagination : ${total(offsetCounts)}`);
 console.log(`  unbounded reads   : ${total(unboundedCounts)}`);
 console.log(
   `  unordered paging  : ${total(unorderedCounts)} — .offset() with no ORDER BY repeats and drops rows between pages`,
 );
 
-const staleEntries = checkForStaleEntries(classification, ROOT);
+const staleEntries = checkForStaleEntries(classification);
 const unclassifiedPaths = checkForUnclassified(offsetCounts, unboundedCounts, classification);
 const regressions = checkForRegressions(offsetCounts, unboundedCounts, classification);
 const actionable = countActionableByKind(offsetCounts, unboundedCounts, classification);
@@ -609,7 +843,29 @@ console.log(`\nActionable instance counts (target: zero):`);
 console.log(`  offset pagination : ${actionable.offset}`);
 console.log(`  unbounded reads   : ${actionable.unbounded}`);
 
+const suppressed = countSuppressed(unboundedCounts, classification);
+console.log(
+  `\nSuppressed by a FALSE-POSITIVE justification: ${suppressed} unbounded read(s) [ceiling ${MAX_SUPPRESSED_UNBOUNDED}]`,
+);
+
 const failures = [];
+
+if (suppressed > MAX_SUPPRESSED_UNBOUNDED) {
+  console.error(
+    `\nSUPPRESSION CEILING: ${suppressed} unbounded read(s) are hidden behind a FALSE-POSITIVE verdict, against a ceiling of ${MAX_SUPPRESSED_UNBOUNDED}.`,
+  );
+  console.error(
+    "  A verdict is keyed per FILE and carries ONE sentence, so a read added to an already-blessed file\n" +
+      "  inherits a justification that was never written about it. That is how an unbounded CSV export of\n" +
+      "  every client in the org sat under 'client reads bounded by clientId+orgId (single-record lookups)'.\n" +
+      "  Bound the new read, or re-verdict the file and say in its justification which read is which.",
+  );
+  for (const [relPath, count] of Object.entries(unboundedCounts)) {
+    if (classification.unbounded?.[relPath]?.verdict === "FALSE-POSITIVE" && count > 1)
+      console.error(`      ${relPath} — ${count} read(s) under one justification`);
+  }
+  failures.push(`${suppressed - MAX_SUPPRESSED_UNBOUNDED} newly suppressed unbounded read(s)`);
+}
 
 if (staleEntries.length > 0) {
   console.error(`\nSTALE classification entries (file no longer exists — remove or update):`);

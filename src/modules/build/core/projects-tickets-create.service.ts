@@ -29,6 +29,7 @@ import type { CreateTicketInput } from "./dto/projects.schemas";
 import { computeNextRunAt } from "./projects-recurrence.util";
 import { normalizeTicketType } from "./tickets-helpers";
 import { allocateTicketNumbers } from "./lib/allocate-ticket-number";
+import { reserveTicketCapacity } from "./build-ticket-capacity";
 
 @Injectable()
 export class ProjectsTicketsCreateService {
@@ -91,6 +92,7 @@ export class ProjectsTicketsCreateService {
     const reporterMembershipId = actorMap.get(reporterUserId)?.membershipId ?? null;
 
     const [ticket] = await this.db.transaction(async (tx) => {
+      await reserveTicketCapacity(tx, u.orgId, projectId, [{ status: body.status ?? "TODO", count: 1 }]);
       const nextTicketNumber = await allocateTicketNumbers(tx, u.orgId, projectId);
 
       const isRecurring =
@@ -110,7 +112,6 @@ export class ProjectsTicketsCreateService {
           description: body.description,
           type: normalizeTicketType(body.type),
           priority: body.priority ?? "MEDIUM",
-          assigneeId: body.assigneeId,
           assigneeMembershipId,
           reporterId: reporterUserId,
           reporterMembershipId,
@@ -134,7 +135,7 @@ export class ProjectsTicketsCreateService {
             orgId: u.orgId,
             ticketId: created.id,
             userId,
-            membershipId: actorMap.get(userId)?.membershipId ?? null,
+            membershipId: actorMap.get(userId)!.membershipId,
             assignedBy: u.userId,
           })),
         );
@@ -146,7 +147,7 @@ export class ProjectsTicketsCreateService {
         Array.from(watcherIds).map((userId) => ({
           orgId: u.orgId,
           ticketId: created.id,
-          userId,
+          membershipId: actorMap.get(userId)!.membershipId,
         })),
       );
 
@@ -155,6 +156,18 @@ export class ProjectsTicketsCreateService {
         ticketId: created.id,
         userMembershipId: actorMap.get(u.userId)?.membershipId ?? null,
         action: "created",
+      });
+
+      await this.webhooksDispatch.enqueue(tx, u.orgId, projectId, "ticket.created", {
+        id: created.id,
+        projectId,
+        title: created.title,
+        status: created.status,
+        type: created.type,
+        priority: created.priority,
+        assigneeMembershipId: created.assigneeMembershipId ?? null,
+        actor: u.userId,
+        timestamp: new Date().toISOString(),
       });
 
       return [created];
@@ -204,18 +217,6 @@ export class ProjectsTicketsCreateService {
         );
     }
 
-    this.webhooksDispatch.dispatch(u.orgId, projectId, "ticket.created", {
-      id: ticket.id,
-      projectId,
-      title: ticket.title,
-      status: ticket.status,
-      type: ticket.type,
-      priority: ticket.priority,
-      assigneeId: ticket.assigneeId ?? null,
-      actor: u.userId,
-      timestamp: new Date().toISOString(),
-    });
-
     this.automationRunner.runForTicketEvent(u.orgId, projectId, "ticket.created", {
       ticketId: ticket.id,
       projectId,
@@ -223,7 +224,7 @@ export class ProjectsTicketsCreateService {
       title: ticket.title,
       status: ticket.status,
       priority: ticket.priority,
-      assigneeId: ticket.assigneeId ?? null,
+      assigneeId: body.assigneeId ?? null,
       type: ticket.type,
     });
 
@@ -243,6 +244,7 @@ export class ProjectsTicketsCreateService {
     const feedbackActorMap = await resolveOrganizationActorsByUserIds(this.db, orgId, [actingUserId]);
     const feedbackActorMembershipId = feedbackActorMap.get(actingUserId)?.membershipId ?? null;
     const [ticket] = await this.db.transaction(async (tx) => {
+      await reserveTicketCapacity(tx, orgId, projectId, [{ status: "TODO", count: 1 }]);
       const nextNum = await allocateTicketNumbers(tx, orgId, projectId);
 
       const [created] = await tx
@@ -262,7 +264,7 @@ export class ProjectsTicketsCreateService {
 
       await tx
         .insert(ticketWatchers)
-        .values({ orgId, ticketId: created.id, userId: actingUserId });
+        .values({ orgId, ticketId: created.id, membershipId: feedbackActorMembershipId! });
       await tx.insert(ticketActivityLog).values({
         orgId,
         ticketId: created.id,

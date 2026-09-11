@@ -1,6 +1,19 @@
 import { KbIngestionConsumer } from "./kb-ingestion-consumer";
+import {
+  KbIngestionLeaseService,
+  KB_LEASE_CONTENDED_CODE,
+  KB_LEASE_LOST_CODE,
+  type KbIngestionLease,
+} from "./kb-ingestion-lease.service";
 import { KbContentAdapterRegistry, KbPageAdapter, KbArticleAdapter, KbSourceAdapter, KbAttachmentAdapter } from "./kb-content-adapter";
 import { OutboxConsumerRegistry, type OutboxEventRow } from "../../../common/outbox/outbox-consumer.registry";
+import { OUTBOX_MAX_RETRIES } from "../../../common/outbox/outbox-envelope";
+
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInNewTenantTransaction: jest.fn().mockImplementation(
+    async (_db: unknown, _orgId: string, fn: () => Promise<void>) => fn(),
+  ),
+}));
 
 const ORG_ID = "org-kb-1";
 const EVENT_ID = "evt-kb-aaa";
@@ -37,10 +50,25 @@ function makeEvent(overrides: Partial<OutboxEventRow> = {}): OutboxEventRow {
   };
 }
 
+function makeLease(acquired = true): jest.Mocked<KbIngestionLeaseService> {
+  const outcome: KbIngestionLease = acquired
+    ? { status: "acquired", token: "tok-1" }
+    : { status: "contended" };
+  return {
+    acquire: jest.fn().mockResolvedValue(outcome),
+    release: jest.fn().mockResolvedValue(undefined),
+    renew: jest.fn().mockResolvedValue({ status: "renewed" }),
+    startHeartbeat: jest.fn().mockReturnValue({ stop: jest.fn(), lost: () => false }),
+  } as unknown as jest.Mocked<KbIngestionLeaseService>;
+}
+
+const MOCK_DB = {} as never;
+
 function buildConsumer(options: {
   pageAdapterImpl?: (orgId: string, contentId: number) => Promise<void>;
+  lease?: jest.Mocked<KbIngestionLeaseService>;
 } = {}) {
-  const { pageAdapterImpl = async () => undefined } = options;
+  const { pageAdapterImpl = async () => undefined, lease = makeLease() } = options;
 
   const pageAdapter = {
     contentType: "page",
@@ -72,11 +100,13 @@ function buildConsumer(options: {
     articleAdapter,
     sourceAdapter,
     attachmentAdapter,
+    lease,
+    MOCK_DB,
   );
 
   consumer.onModuleInit();
 
-  return { consumer, adapterRegistry, outboxRegistry, pageAdapter };
+  return { consumer, adapterRegistry, outboxRegistry, pageAdapter, lease };
 }
 
 describe("KbIngestionConsumer", () => {
@@ -106,7 +136,7 @@ describe("KbIngestionConsumer", () => {
 
       await consumer.handle(makeEvent());
 
-      expect(pageAdapter.handle).toHaveBeenCalledWith(ORG_ID, CONTENT_ID);
+      expect(pageAdapter.handle).toHaveBeenCalledWith(ORG_ID, CONTENT_ID, expect.any(AbortSignal));
     });
 
     it("throws for an unknown content type so the relay can dead-letter the poison event", async () => {
@@ -125,7 +155,7 @@ describe("KbIngestionConsumer", () => {
 
       await consumer.handle(makeEvent({ organizationId: isolatedOrg }));
 
-      expect(pageAdapter.handle).toHaveBeenCalledWith(isolatedOrg, CONTENT_ID);
+      expect(pageAdapter.handle).toHaveBeenCalledWith(isolatedOrg, CONTENT_ID, expect.any(AbortSignal));
     });
   });
 
@@ -145,6 +175,18 @@ describe("KbIngestionConsumer", () => {
 
       await expect(consumer.handle(makeEvent())).rejects.toThrow("adapter failure");
       await expect(consumer.handle(makeEvent())).rejects.toThrow("adapter failure");
+    });
+
+    it("releases the lease when the adapter throws", async () => {
+      const lease = makeLease();
+      const { consumer } = buildConsumer({
+        pageAdapterImpl: async () => { throw new Error("adapter failure"); },
+        lease,
+      });
+
+      await expect(consumer.handle(makeEvent())).rejects.toThrow("adapter failure");
+
+      expect(lease.release).toHaveBeenCalledWith(ORG_ID, "page", CONTENT_ID, "tok-1");
     });
   });
 
@@ -170,8 +212,8 @@ describe("KbIngestionConsumer", () => {
       await consumer.handle(makeEvent());
 
       expect(adapterFn).toHaveBeenCalledTimes(2);
-      expect(adapterFn.mock.calls[0]).toEqual([ORG_ID, CONTENT_ID]);
-      expect(adapterFn.mock.calls[1]).toEqual([ORG_ID, CONTENT_ID]);
+      expect(adapterFn.mock.calls[0]).toEqual([ORG_ID, CONTENT_ID, expect.any(AbortSignal)]);
+      expect(adapterFn.mock.calls[1]).toEqual([ORG_ID, CONTENT_ID, expect.any(AbortSignal)]);
     });
   });
 
@@ -201,6 +243,72 @@ describe("KbIngestionConsumer", () => {
       const bad = makeEvent({ payload: { contentType: "page", contentId: "not-a-number" } });
 
       await expect(consumer.handle(bad)).rejects.toThrow();
+    });
+  });
+
+  describe("L1 — lease exclusivity under concurrent claim", () => {
+    it("BITE: a contended lease FAILS the delivery, so the outbox never marks the event DELIVERED", async () => {
+      const contendedLease = makeLease(false);
+      const { consumer } = buildConsumer({ lease: contendedLease });
+
+      await expect(consumer.handle(makeEvent())).rejects.toThrow(KB_LEASE_CONTENDED_CODE);
+    });
+
+    it("does not call the adapter when the lease is not acquired", async () => {
+      const contendedLease = makeLease(false);
+      const { consumer, pageAdapter } = buildConsumer({ lease: contendedLease });
+
+      await expect(consumer.handle(makeEvent())).rejects.toThrow(KB_LEASE_CONTENDED_CODE);
+
+      expect(pageAdapter.handle).not.toHaveBeenCalled();
+    });
+
+    it("releases nothing when the lease was never acquired", async () => {
+      const contendedLease = makeLease(false);
+      const { consumer } = buildConsumer({ lease: contendedLease });
+
+      await expect(consumer.handle(makeEvent())).rejects.toThrow(KB_LEASE_CONTENDED_CODE);
+
+      expect(contendedLease.release).not.toHaveBeenCalled();
+    });
+
+    it("releases the lease after successful ingestion", async () => {
+      const lease = makeLease();
+      const { consumer } = buildConsumer({ lease });
+
+      await consumer.handle(makeEvent());
+
+      expect(lease.release).toHaveBeenCalledWith(ORG_ID, "page", CONTENT_ID, "tok-1");
+    });
+
+    it("heartbeats the lease for the length of the run and stops on the way out", async () => {
+      const lease = makeLease();
+      const stop = jest.fn();
+      (lease.startHeartbeat as jest.Mock).mockReturnValue({ stop, lost: () => false });
+      const { consumer } = buildConsumer({ lease });
+
+      await consumer.handle(makeEvent());
+
+      expect(lease.startHeartbeat).toHaveBeenCalledWith(ORG_ID, "page", CONTENT_ID, "tok-1");
+      expect(stop).toHaveBeenCalledTimes(1);
+    });
+
+    it("fails the delivery when the heartbeat lost the lease mid-run", async () => {
+      const lease = makeLease();
+      (lease.startHeartbeat as jest.Mock).mockReturnValue({ stop: jest.fn(), lost: () => true });
+      const { consumer } = buildConsumer({ lease });
+
+      await expect(consumer.handle(makeEvent())).rejects.toThrow(KB_LEASE_LOST_CODE);
+    });
+  });
+
+  describe("D1 — the consumer does not second-guess the relay's dead-letter decision", () => {
+    it("still ingests at the highest retryCount a consumer can observe", async () => {
+      const { consumer, pageAdapter } = buildConsumer();
+
+      await consumer.handle(makeEvent({ retryCount: OUTBOX_MAX_RETRIES - 1 }));
+
+      expect(pageAdapter.handle).toHaveBeenCalledTimes(1);
     });
   });
 });

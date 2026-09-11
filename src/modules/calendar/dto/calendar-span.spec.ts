@@ -47,9 +47,15 @@ describe("calendar span limit vs the client's real request", () => {
         widest = Math.max(widest, spanDays(start, end));
       }
     }
-    // The worst case is 92 days (Feb 29 2024 -> May 31 2024). A limit equal to
-    // it would pass this suite while being one padding day from breaking.
-    expect(widest).toBeLessThanOrEqual(92);
+    // The worst case is 92 days (Feb 29 2024 -> May 31 2024), plus up to one
+    // hour: `clientWindow` builds host-local Dates, exactly as the browser
+    // does, so a window straddling a DST fall-back really is 92d 1h on the
+    // wire. Asserting a flat 92 made this fail under any DST-observing host
+    // (Europe/Berlin, America/New_York) while passing at UTC.
+    const DST_SLACK_DAYS = 1 / 24;
+    expect(widest).toBeLessThanOrEqual(92 + DST_SLACK_DAYS);
+    // A limit equal to the worst case would pass this suite while being one
+    // padding day from breaking.
     expect(CALENDAR_MAX_SPAN_DAYS).toBeGreaterThanOrEqual(widest + 14);
   });
 

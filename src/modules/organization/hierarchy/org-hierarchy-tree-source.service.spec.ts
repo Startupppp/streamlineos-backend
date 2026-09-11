@@ -49,7 +49,9 @@ function profileFailureQuery(error: unknown) {
 }
 
 function joinChain(result: unknown) {
-  const where = jest.fn().mockResolvedValue(result);
+  const where = jest.fn().mockReturnValue({
+    limit: jest.fn().mockResolvedValue(result),
+  });
   const leftJoin: jest.Mock = jest.fn();
   leftJoin.mockReturnValue({ leftJoin, where });
   return { leftJoin, where };

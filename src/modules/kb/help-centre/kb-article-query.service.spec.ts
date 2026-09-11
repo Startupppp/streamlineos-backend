@@ -1,3 +1,5 @@
+import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { ScopedRead } from "../../access/scoped-read";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { decodeCursor, encodeCursor } from "../../../common/pagination/cursor";
 import { KbArticleQueryService } from "./kb-article-query.service";
@@ -53,11 +55,13 @@ function articleRow(id: number, updatedAt: Date) {
   };
 }
 
+const ALL = ScopedRead.of("org-1", "u-1", "all");
 const user = {
   orgId: "org-1",
   userId: "user-1",
   membershipId: 1,
   isOwner: false,
+  principal: humanSessionPrincipal(1, false),
   role: "MEMBER" as const,
 };
 
@@ -71,7 +75,7 @@ describe("KbArticleQueryService — keyset pagination", () => {
     const { db } = buildChain([[row1, row2, sentinel]]);
     const svc = new KbArticleQueryService(db as never, makeAccessService([1]) as never);
 
-    const result = await svc.list(user as never, { limit: 2, cursor: undefined });
+    const result = await svc.list(user as never, { limit: 2, cursor: undefined }, ALL);
 
     expect(result.items).toHaveLength(2);
     expect(result.hasMore).toBe(true);
@@ -116,14 +120,15 @@ describe("KbArticleQueryService — keyset pagination", () => {
     const { db } = buildChain([[row1, sentinel], [row2]]);
     const svc = new KbArticleQueryService(db as never, makeAccessService([1]) as never);
 
-    const page1 = await svc.list(user as never, { limit: 1, cursor: undefined });
+    const page1 = await svc.list(user as never, { limit: 1, cursor: undefined }, ALL);
     expect(page1.items).toHaveLength(1);
     expect(page1.hasMore).toBe(true);
 
-    const page2 = await svc.list(user as never, {
-      limit: 1,
-      cursor: page1.nextCursor ?? undefined,
-    });
+    const page2 = await svc.list(
+      user as never,
+      { limit: 1, cursor: page1.nextCursor ?? undefined },
+      ALL,
+    );
     expect(page2.items).toHaveLength(1);
     expect(page2.items[0]?.id).toBe(10);
     expect(page2.hasMore).toBe(false);
@@ -135,10 +140,11 @@ describe("KbArticleQueryService — keyset pagination", () => {
     const { db } = buildChain([[articleRow(1, t), articleRow(2, t)]]);
     const svc = new KbArticleQueryService(db as never, makeAccessService([1]) as never);
 
-    const result = await svc.list(user as never, {
-      limit: 10,
-      cursor: "not-a-valid-cursor!!!",
-    });
+    const result = await svc.list(
+      user as never,
+      { limit: 10, cursor: "not-a-valid-cursor!!!" },
+      ALL,
+    );
 
     expect(result.items).toHaveLength(2);
     expect(result.nextCursor).toBeNull();
@@ -148,7 +154,7 @@ describe("KbArticleQueryService — keyset pagination", () => {
     const { db } = buildChain([]);
     const svc = new KbArticleQueryService(db as never, makeAccessService([1]) as never);
 
-    const result = await svc.list(user as never, { limit: 20, cursor: undefined }, "none");
+    const result = await svc.list(user as never, { limit: 20, cursor: undefined }, ScopedRead.of("org-1", "u-1", "none"));
 
     expect(result.items).toHaveLength(0);
     expect(result.hasMore).toBe(false);

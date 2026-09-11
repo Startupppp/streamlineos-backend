@@ -1,51 +1,20 @@
-export type { InvalidationTrigger, CacheNamespaceEntry } from "./cache-invalidation-types";
+export type { CacheNamespaceEntry } from "./cache-invalidation-types";
 import type { CacheNamespaceEntry } from "./cache-invalidation-types";
 import { FINANCE_CACHE_ENTRIES } from "./cache-invalidation-finance";
 import { INVENTORY_CACHE_ENTRIES } from "./cache-invalidation-inventory";
+import { INVENTORY_FULFILLMENT_CACHE_ENTRIES } from "./cache-invalidation-inventory-fulfillment";
 import { RBAC_AUTH_CACHE_ENTRIES } from "./cache-invalidation-rbac-auth";
 import { CRM_CACHE_ENTRIES } from "./cache-invalidation-crm";
+import { HR_CACHE_ENTRIES } from "./cache-invalidation-hr";
 
 export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
   ...FINANCE_CACHE_ENTRIES,
   ...INVENTORY_CACHE_ENTRIES,
+  ...INVENTORY_FULFILLMENT_CACHE_ENTRIES,
   ...RBAC_AUTH_CACHE_ENTRIES,
   ...CRM_CACHE_ENTRIES,
+  ...HR_CACHE_ENTRIES,
 
-  {
-    namespace: "org:hierarchy:<orgId>",
-    description: "Organisation hierarchy tree (all shapes)",
-    invalidation: {
-      kind: "write",
-      events: ["OrgHierarchyCacheService.invalidateAfterMutation (any hierarchy mutation)"],
-    },
-  },
-  {
-    namespace: "hr:headcount:<orgId>",
-    description: "HR headcount aggregate",
-    invalidation: {
-      kind: "write",
-      events: ["OrgHierarchyCacheService.invalidateAfterMutation (any hierarchy mutation)"],
-    },
-  },
-  {
-    namespace: "hr:leave-analytics:<orgId>",
-    description: "Leave analytics (scope+year sub-keyed)",
-    invalidation: {
-      kind: "write",
-      events: [
-        "LeavesWriteService (create/cancel)",
-        "LeaveDecisionEffectsService (approve/reject)",
-      ],
-    },
-  },
-  {
-    namespace: "hr:expenses:<orgId>",
-    description: "Expense list (user+admin-flag+filters sub-keyed)",
-    invalidation: {
-      kind: "write",
-      events: ["ExpensesService (any write)"],
-    },
-  },
   {
     namespace: "dashboard:stats:<orgId>",
     description: "Dashboard statistics",
@@ -150,30 +119,12 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
   },
   {
     namespace: "org:units:<orgId>",
-    description: "Org unit list by kind (cachedForOrg; actual key: <orgId>:org:units:<kind>). CACHE_KEYS.orgUnits factory produces org:units:<orgId>:…, so factory key format diverges from actual key. Factory is dead code.",
-    invalidation: {
-      kind: "write",
-      events: [
-        "BranchesService (invalidateForOrg(orgId,'org:units:BRANCH'))",
-        "OrgHierarchyBranchesService (invalidateForOrg(orgId,'org:units:BRANCH'))",
-        "OrgHierarchyCacheService.invalidateAfterMutation (any hierarchy mutation)",
-      ],
-    },
-  },
-  {
-    namespace: "branches:list:<orgId>",
-    description: "Branch list (cachedForOrg; actual key: <orgId>:branches:list). CACHE_KEYS.branchesList factory produces branches:list:<orgId> — format diverges. Factory is dead code.",
-    invalidation: {
-      kind: "write",
-      events: [
-        "BranchesService.create/update/archive (invalidateForOrg(orgId,'branches:list'))",
-        "OrgHierarchyBranchesService.create/update/archive",
-      ],
-    },
+    description: "Org unit list by kind. Never populated: the 18 invalidateForOrg(orgId,'org:units:<KIND>') writes that suggested otherwise were removed, and no read ever produced the key. Org unit reads are cached under org:hierarchy:<orgId> instead.",
+    invalidation: { kind: "ttl-only", reason: "Dead namespace — key never produced or consumed; document to trigger removal" },
   },
   {
     namespace: "tasks:list:<orgId>",
-    description: "Task list. CACHE_KEYS.tasksList factory is dead code — never called in any service.",
+    description: "Task list. The list key is built at the owning read seam; no parallel factory exists.",
     invalidation: { kind: "ttl-only", reason: "Dead factory — key never produced or consumed" },
   },
   {
@@ -241,13 +192,12 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
   },
   {
     namespace: "projects:list:<orgId>",
-    description: "Build workspace project list (namespace-versioned via cachedVersioned('projects:list:<orgId>',…))",
+    description:
+      "Build workspace project list — DELIBERATELY UNCACHED, and it must stay that way. Until 2026-09-09 this row claimed a cachedVersioned('projects:list:<orgId>') reader that has never existed, while four writers (projects-write.service.ts x3, projects-provision.service.ts x1) bumped the generation counter. check:cache-invalidation reported all four as namespace-mismatch: the bump reached nothing. The bumps and the CACHE_KEYS.projectsList factory were removed rather than a reader added, because ProjectsQueryService.listProjects resolves a per-caller DataScope (all/team/own/none) plus membershipId and userId, then filters on search/status/afterId/limit/pmWorkspaceId. An org-keyed entry would serve one member's scoped project set to another — the cross-user leak backend/CLAUDE.md section 6 forbids. Caching this read requires every one of those discriminators in the key, which is a design change, not an invalidation fix.",
     invalidation: {
-      kind: "write",
-      events: [
-        "ProjectsWriteService.create/update/archive (invalidateNamespace('projects:list:<orgId>'))",
-        "ProjectsProvisionService.provision (invalidateNamespace('projects:list:<orgId>'))",
-      ],
+      kind: "ttl-only",
+      reason:
+        "No reader exists and none may be added under an org-only key; nothing to invalidate",
     },
   },
   {

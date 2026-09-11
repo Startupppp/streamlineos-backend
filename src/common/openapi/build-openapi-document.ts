@@ -19,6 +19,7 @@ import {
   type JsonSchema,
   type OperationContract,
 } from "./zod-operation-contracts";
+import { PAGE_SIZE_CAP } from "../pagination/list-query.schema";
 
 export const OPENAPI_TITLE = "StreamlineOS API";
 export const OPENAPI_DESCRIPTION = "StreamlineOS platform REST API";
@@ -31,12 +32,42 @@ export interface BuiltDocument {
   contractsApplied: number;
   unconvertible: string[];
   errorResponsesApplied: number;
+  pageSizeCapsApplied: number;
+}
+
+const PAGE_SIZE_PARAM_NAMES = new Set(["limit", "pageSize", "take", "perPage"]);
+
+export function applyPageSizeCap(document: OpenAPIObject, cap: number): number {
+  let count = 0;
+  for (const pathItem of Object.values(document.paths)) {
+    if (typeof pathItem !== "object" || pathItem === null) continue;
+    for (const operation of Object.values(pathItem)) {
+      if (!isOperation(operation)) continue;
+      const parameters = Array.isArray(operation.parameters) ? operation.parameters : [];
+      for (const parameter of parameters) {
+        if (!isParameter(parameter)) continue;
+        if (parameter.in !== "query") continue;
+        if (typeof parameter.name !== "string") continue;
+        if (!PAGE_SIZE_PARAM_NAMES.has(parameter.name)) continue;
+        const rawSchema = parameter.schema;
+        if (typeof rawSchema !== "object" || rawSchema === null) continue;
+        const schema = rawSchema as Record<string, unknown>;
+        if (schema["type"] !== "integer" && schema["type"] !== "number") continue;
+        const currentMax = schema["maximum"];
+        if (typeof currentMax === "number" && currentMax <= cap) continue;
+        schema["maximum"] = cap;
+        count++;
+      }
+    }
+  }
+  return count;
 }
 
 interface MutableOperation {
   operationId?: string;
   parameters?: unknown[];
   requestBody?: unknown;
+  responses?: Record<string, unknown>;
   [key: string]: unknown;
 }
 
@@ -151,17 +182,70 @@ function applyPathParams(
   if (added.length > 0) operation.parameters = [...parameters, ...added];
 }
 
+/**
+ * The published response body is the ENVELOPE, not the handler's return value.
+ *
+ * `ResponseTransformInterceptor` (registered in `main.ts`) wraps every handler return
+ * that does not already carry a `success` key as `{ success: true, data }`. Until
+ * 2026-09-03 this function published the un-enveloped shape, so the one operation in
+ * the whole document that carried a 2xx schema — `GET /calendar/admin/settings` —
+ * documented `{ sources }` while the wire actually carried
+ * `{ success: true, data: { sources } }`. An external consumer generating a client
+ * from that document would have read `sources` off the envelope and found undefined:
+ * the single response contract this API published was wrong about the field it
+ * described. `@ResponseSchema` still declares the handler's own shape, which is what a
+ * service author can see and what the browser client validates after unwrapping
+ * (`frontend/lib/api-envelope.ts` strips the envelope before applying its contract) —
+ * the wrap belongs here, once, rather than in every schema.
+ *
+ * A schema that already declares `success` is describing a handler that returns its
+ * own envelope, which the transform passes through untouched; it is published as-is.
+ */
+export function envelopeResponseSchema(schema: JsonSchema): JsonSchema {
+  const properties = asRecord(schema["properties"]);
+  if (properties && Object.hasOwn(properties, "success")) return schema;
+  return {
+    type: "object",
+    properties: { success: { type: "boolean", enum: [true] }, data: schema },
+    required: ["success", "data"],
+    additionalProperties: false,
+  };
+}
+
+function isBareSuccessKey(code: string, value: unknown): boolean {
+  const num = Number(code);
+  if (!(num >= 200 && num < 300)) return false;
+  const record = asRecord(value);
+  return record === undefined || !("content" in record);
+}
+
 function applyResponseSchema(
   method: string,
   operation: MutableOperation,
   schema: JsonSchema,
+  status: number | undefined,
 ): void {
-  const responses = (operation.responses ?? {}) as Record<string, unknown>;
-  const statusCode = method === "post" ? "201" : "200";
+  const responses: Record<string, unknown> = operation.responses ?? {};
+  const statusCode = String(status ?? (method === "post" ? 201 : 200));
+  for (const code of Object.keys(responses))
+    if (code !== statusCode && isBareSuccessKey(code, responses[code])) delete responses[code];
+  const previous = asRecord(responses[statusCode]) ?? {};
+  const metadata = Object.fromEntries(Object.entries(previous).filter(([key]) => key !== "$ref" && key !== "content"));
   responses[statusCode] = {
-    description: statusCode === "201" ? "Created" : "OK",
-    content: { "application/json": { schema } },
+    ...metadata,
+    description: typeof previous.description === "string" && previous.description.trim()
+      ? previous.description
+      : statusCode === "201" ? "Created" : "OK",
+    content: { "application/json": { schema: envelopeResponseSchema(schema) } },
   };
+  operation.responses = responses;
+}
+
+function applyNoContent(operation: MutableOperation): void {
+  const responses: Record<string, unknown> = operation.responses ?? {};
+  for (const code of Object.keys(responses))
+    if (isBareSuccessKey(code, responses[code])) delete responses[code];
+  responses["204"] = { description: "No Content", "x-no-content": true };
   operation.responses = responses;
 }
 
@@ -170,7 +254,7 @@ export function applyErrorResponses(
   pathTemplate: string,
   operation: MutableOperation,
 ): void {
-  const responses = (operation.responses ?? {}) as Record<string, unknown>;
+  const responses: Record<string, unknown> = operation.responses ?? {};
   const exposure = String(operation["x-exposure"] ?? "");
   const hasPathParam = pathTemplate.includes("{");
   const isMutating = BODY_METHODS.has(method);
@@ -234,7 +318,8 @@ export function applyOperationContract(
   if (contract.params) applyPathParams(operation, contract.params);
   if (contract.idempotencyCommand)
     applyIdempotency(operation, contract.idempotencyCommand);
-  if (contract.response) applyResponseSchema(method, operation, contract.response);
+  if (contract.response) applyResponseSchema(method, operation, contract.response, contract.status);
+  if (contract.noContent) applyNoContent(operation);
   if (contract.bodyless) operation["x-bodyless"] = true;
   if (contract.deprecated) operation["deprecated"] = true;
 }
@@ -289,6 +374,8 @@ export function buildOpenApiDocument(app: INestApplication): BuiltDocument {
     }
   }
 
+  const pageSizeCapsApplied = applyPageSizeCap(document, PAGE_SIZE_CAP);
+
   document.paths = sortRecord(document.paths);
 
   return {
@@ -298,5 +385,6 @@ export function buildOpenApiDocument(app: INestApplication): BuiltDocument {
     contractsApplied,
     unconvertible: unconvertible.sort(),
     errorResponsesApplied,
+    pageSizeCapsApplied,
   };
 }

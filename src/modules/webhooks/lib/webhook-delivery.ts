@@ -6,6 +6,7 @@ import type {
   ProviderCallResult,
   ProviderDescriptor,
 } from "../../../common/outbound/call-provider";
+import { UnsafeWebhookTargetError } from "../../../common/outbound/safe-webhook-transport";
 import { WEBHOOK_RESPONSE_BODY_LIMIT } from "../dto/webhook.schemas";
 
 /**
@@ -28,8 +29,14 @@ export class WebhookTerminalStatusError extends Error {
   }
 }
 
+/**
+ * A 4xx and an SSRF refusal are both final: the endpoint said no, or the
+ * transport refused to call an address it resolved to. Retrying either burns
+ * the whole attempt budget on an answer that cannot change.
+ */
 export function classifyWebhookError(err: unknown): "terminal" | "retryable" {
   if (err instanceof WebhookTerminalStatusError) return "terminal";
+  if (err instanceof UnsafeWebhookTargetError) return "terminal";
   return "retryable";
 }
 

@@ -7,6 +7,10 @@ import type { ForEachOrgResult } from "../../../common/tenant/for-each-org";
 import type { Db } from "../../../db/drizzle.module";
 import type { TenantTx } from "../../../common/tenant/with-tenant";
 import { WorkflowRunnerService } from "./workflow-runner.service";
+import { MembershipStateService } from "../../../common/auth/membership-state.service";
+function liveMembership(): MembershipStateService {
+  return { resolve: jest.fn().mockResolvedValue({ active: true, isOwner: false, role: "MEMBER", membershipId: 1 }) } as unknown as MembershipStateService;
+}
 
 function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
   if (v === null || v === undefined || typeof v === "string" || typeof v === "number" || typeof v === "boolean") return [v];
@@ -59,7 +63,7 @@ describe("WorkflowRunnerService — cross-tenant isolation", () => {
       return { organizations: 1, succeeded: 1, failed: 0 } satisfies ForEachOrgResult;
     });
 
-    const svc = new WorkflowRunnerService({} as unknown as Db, {} as never, {} as never);
+    const svc = new WorkflowRunnerService({} as unknown as Db, {} as never, {} as never, liveMembership());
     await svc.sweep();
 
     expect(wheresA.length).toBeGreaterThan(0);
@@ -73,7 +77,7 @@ describe("WorkflowRunnerService — cross-tenant isolation", () => {
       return { organizations: 0, succeeded: 0, failed: 0 } satisfies ForEachOrgResult;
     });
 
-    const svc = new WorkflowRunnerService({} as unknown as Db, {} as never, {} as never);
+    const svc = new WorkflowRunnerService({} as unknown as Db, {} as never, {} as never, liveMembership());
     const result = await svc.sweep();
 
     expect(result).toBeDefined();

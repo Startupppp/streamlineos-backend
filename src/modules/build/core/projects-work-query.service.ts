@@ -14,6 +14,7 @@ import {
 } from "drizzle-orm";
 import {
   projectMembers,
+  organizationMembers,
   projects,
   ticketLabelMappings,
   ticketLabels,
@@ -31,148 +32,30 @@ import {
   readIds,
   resolveWorkSort,
   type WorkSort,
-  type WorkSortKey,
-  type SortDirection,
 } from "./work-scope-union";
 import {
   buildCursorPage,
   decodeCursor,
   encodeCursor,
-  type CursorPosition,
 } from "../../../common/pagination/cursor";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
-
-const WORK_ROW_SELECTION = {
-  id: tickets.id,
-  title: tickets.title,
-  status: tickets.status,
-  priority: tickets.priority,
-  type: tickets.type,
-  dueDate: tickets.dueDate,
-  startDate: tickets.startDate,
-  ticketNumber: tickets.ticketNumber,
-  points: tickets.points,
-  estimate: tickets.estimate,
-  rank: tickets.rank,
-  createdAt: tickets.createdAt,
-  updatedAt: tickets.updatedAt,
-  assigneeId: tickets.assigneeId,
-  sprintId: tickets.sprintId,
-  cycleId: tickets.cycleId,
-  epicId: tickets.epicId,
-  projectId: projects.id,
-  projectKey: projects.key,
-  projectName: projects.name,
-  assigneeName: users.name,
-  assigneeFirstName: users.firstName,
-  assigneeLastName: users.lastName,
-  assigneeEmail: users.email,
-  assigneeImage: users.image,
-} as const;
-
-function serializeSortValue(
-  row: { rank: string | null; createdAt: Date | null; updatedAt: Date | null; priority: string | null; dueDate: string | null },
-  sortKey: WorkSortKey,
-): string {
-  switch (sortKey) {
-    case "rank": return row.rank ?? "";
-    case "created": return row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt ?? "");
-    case "updated": return row.updatedAt instanceof Date ? row.updatedAt.toISOString() : String(row.updatedAt ?? "");
-    case "priority": return row.priority ?? "";
-    case "dueDate": return row.dueDate ?? "";
-  }
-}
-
-function buildCursorPredicate(
-  sortKey: WorkSortKey,
-  dir: SortDirection,
-  position: CursorPosition,
-): SQL<unknown> {
-  const col = { created: tickets.createdAt, updated: tickets.updatedAt, priority: tickets.priority, dueDate: tickets.dueDate, rank: tickets.rank }[sortKey];
-  const id = Number(position.id);
-  if (sortKey === "created" || sortKey === "updated") {
-    const d = new Date(position.sortValue);
-    return dir === "asc"
-      ? sql`(${col}, ${tickets.id}) > (${sql.param(d, col)}, ${sql.param(id, tickets.id)})`
-      : sql`(${col}, ${tickets.id}) < (${sql.param(d, col)}, ${sql.param(id, tickets.id)})`;
-  }
-  return dir === "asc"
-    ? sql`(${col}, ${tickets.id}) > (${sql.param(position.sortValue, col)}, ${sql.param(id, tickets.id)})`
-    : sql`(${col}, ${tickets.id}) < (${sql.param(position.sortValue, col)}, ${sql.param(id, tickets.id)})`;
-}
-
-function buildMineCursorPredicate(
-  sortKey: WorkSortKey,
-  dir: SortDirection,
-  position: CursorPosition,
-): SQL<unknown> {
-  const id = Number(position.id);
-  if (sortKey === "created" || sortKey === "updated") {
-    const d = new Date(position.sortValue);
-    return dir === "asc"
-      ? sql`(u.sort_col, u.id) > (${sql.param(d.toISOString())}, ${sql.param(id)})`
-      : sql`(u.sort_col, u.id) < (${sql.param(d.toISOString())}, ${sql.param(id)})`;
-  }
-  return dir === "asc"
-    ? sql`(u.sort_col, u.id) > (${sql.param(String(position.sortValue))}, ${sql.param(id)})`
-    : sql`(u.sort_col, u.id) < (${sql.param(String(position.sortValue))}, ${sql.param(id)})`;
-}
+import {
+  buildCursorPredicate,
+  buildMineCursorPredicate,
+  serializeSortValue,
+} from "./projects-work-query.cursor";
+import { WORK_ROW_SELECTION } from "./projects-work-query-helpers";
 
 @Injectable()
 export class ProjectsWorkQueryService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   private watches(orgId: string, userId: string): SQL<unknown> {
-    return sql`EXISTS (SELECT 1 FROM ${ticketWatchers} tw WHERE tw.org_id = ${orgId} AND tw.user_id = ${userId} AND tw.ticket_id = ${tickets.id})`;
-  }
-
-  async searchOrgTickets(
-    orgId: string,
-    userId: string,
-    q: string,
-    limit: number,
-  ) {
-    const memberProjectIds = await this.db
-      .select({ projectId: projectMembers.projectId })
-      .from(projectMembers)
-      .where(
-        and(eq(projectMembers.orgId, orgId), eq(projectMembers.userId, userId)),
-      );
-
-    const ids = memberProjectIds.map((r) => r.projectId);
-    if (ids.length === 0) return [];
-
-    const rows = await this.db
-      .select({
-        id: tickets.id,
-        title: tickets.title,
-        status: tickets.status,
-        priority: tickets.priority,
-        ticketNumber: tickets.ticketNumber,
-        projectId: tickets.projectId,
-        projectKey: projects.key,
-        projectName: projects.name,
-      })
-      .from(tickets)
-      .innerJoin(projects, eq(tickets.projectId, projects.id))
-      .where(
-        and(
-          eq(tickets.orgId, orgId),
-          inArray(tickets.projectId, ids),
-          isNull(tickets.deletedAt),
-          q.length > 0
-            ? or(
-                sql`${tickets.title} ILIKE ${"%" + q + "%"}`,
-                sql`CAST(${tickets.ticketNumber} AS TEXT) ILIKE ${"%" + q + "%"}`,
-                sql`CONCAT(${projects.key}, '-', CAST(${tickets.ticketNumber} AS TEXT)) ILIKE ${"%" + q + "%"}`,
-              )
-            : undefined,
-        ),
-      )
-      .orderBy(sql`${tickets.updatedAt} DESC`)
-      .limit(limit);
-
-    return rows;
+    return sql`EXISTS (
+      SELECT 1 FROM ${ticketWatchers} tw
+      JOIN organization_members om ON om.org_id = tw.org_id AND om.id = tw.membership_id
+      WHERE tw.org_id = ${orgId} AND om.user_id = ${userId} AND tw.ticket_id = ${tickets.id}
+    )`;
   }
 
   async getAllWork(u: CurrentUserContext, query: AllWorkQuery) {
@@ -202,12 +85,16 @@ export class ProjectsWorkQueryService {
     const memberRows = await this.db
       .select({ projectId: projectMembers.projectId })
       .from(projectMembers)
-      .where(
+      .innerJoin(
+        organizationMembers,
         and(
-          eq(projectMembers.orgId, u.orgId),
-          eq(projectMembers.userId, u.userId),
+          eq(organizationMembers.id, projectMembers.membershipId),
+          eq(organizationMembers.orgId, projectMembers.orgId),
+          eq(organizationMembers.userId, u.userId),
+          eq(organizationMembers.status, "ACTIVE"),
         ),
-      );
+      )
+      .where(eq(projectMembers.orgId, u.orgId));
 
     const memberProjectIds = memberRows.map((r) => r.projectId);
     if (memberProjectIds.length === 0) {
@@ -276,12 +163,15 @@ export class ProjectsWorkQueryService {
       const unassigned = resolved.includes("__unassigned__");
       const realIds = resolved.filter((id) => id !== "__unassigned__");
       if (unassigned && realIds.length > 0) {
-        const assigneeCondition = or(isNull(tickets.assigneeId), inArray(tickets.assigneeId, realIds));
+        const assigneeCondition = or(
+          isNull(tickets.assigneeMembershipId),
+          sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id IN (${sql.join(realIds.map((id) => sql`${id}`), sql`, `)}))`,
+        );
         if (assigneeCondition) conditions.push(assigneeCondition);
       } else if (unassigned) {
-        conditions.push(isNull(tickets.assigneeId));
+        conditions.push(isNull(tickets.assigneeMembershipId));
       } else {
-        conditions.push(inArray(tickets.assigneeId, realIds));
+        conditions.push(sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id IN (${sql.join(realIds.map((id) => sql`${id}`), sql`, `)}))`);
       }
     }
 
@@ -389,10 +279,15 @@ export class ProjectsWorkQueryService {
 
     const [rawRows, countRows] = await Promise.all([
       this.db
-        .select(WORK_ROW_SELECTION)
+        .select({
+          ...WORK_ROW_SELECTION,
+          cursorCreatedAt: sql<string>`${tickets.createdAt}::text`,
+          cursorUpdatedAt: sql<string>`${tickets.updatedAt}::text`,
+        })
         .from(tickets)
         .innerJoin(projects, eq(tickets.projectId, projects.id))
-        .leftJoin(users, eq(tickets.assigneeId, users.id))
+        .leftJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
+        .leftJoin(users, eq(organizationMembers.userId, users.id))
         .where(finalWhere)
         .orderBy(...sort.rows)
         .limit(limit + 1),
@@ -459,10 +354,15 @@ export class ProjectsWorkQueryService {
     }
 
     const rows = await this.db
-      .select(WORK_ROW_SELECTION)
+      .select({
+        ...WORK_ROW_SELECTION,
+        cursorCreatedAt: sql<string>`${tickets.createdAt}::text`,
+        cursorUpdatedAt: sql<string>`${tickets.updatedAt}::text`,
+      })
       .from(tickets)
       .innerJoin(projects, eq(tickets.projectId, projects.id))
-      .leftJoin(users, eq(tickets.assigneeId, users.id))
+      .leftJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
+      .leftJoin(users, eq(organizationMembers.userId, users.id))
       .where(and(eq(tickets.orgId, u.orgId), inArray(tickets.id, pageIds)))
       .orderBy(...sort.rows);
 

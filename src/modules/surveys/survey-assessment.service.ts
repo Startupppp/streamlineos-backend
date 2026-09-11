@@ -1,10 +1,12 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, isNull } from "drizzle-orm";
 import { surveyAssessmentAttempts, surveyCertificates, surveyForms } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { assertSurveyInOrg } from "./survey-tenant";
 import type { ListAttemptsInput } from "./dto/survey-assessment.schemas";
+import { buildListResponse, paginateOffset } from "../../common/pagination/pagination";
 
 interface AssessmentSettings {
   passScore?: number;
@@ -13,28 +15,50 @@ interface AssessmentSettings {
   certificateOnPass?: boolean;
 }
 
+function readAssessmentSettings(settings: Record<string, unknown> | null): AssessmentSettings {
+  const passScore = settings?.["passScore"];
+  const attemptsAllowed = settings?.["attemptsAllowed"];
+  const timeLimitMinutes = settings?.["timeLimitMinutes"];
+  const certificateOnPass = settings?.["certificateOnPass"];
+  return {
+    passScore: typeof passScore === "number" ? passScore : undefined,
+    attemptsAllowed: typeof attemptsAllowed === "number" ? attemptsAllowed : undefined,
+    timeLimitMinutes: typeof timeLimitMinutes === "number" ? timeLimitMinutes : undefined,
+    certificateOnPass: typeof certificateOnPass === "boolean" ? certificateOnPass : undefined,
+  };
+}
+
 @Injectable()
 export class SurveyAssessmentService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listAttempts(orgId: string, surveyId: number, filters: ListAttemptsInput) {
+    await assertSurveyInOrg(this.db, orgId, surveyId);
     const conditions = [eq(surveyAssessmentAttempts.orgId, orgId), eq(surveyAssessmentAttempts.surveyId, surveyId)];
     if (filters.status) conditions.push(eq(surveyAssessmentAttempts.status, filters.status));
-    return this.db.query.surveyAssessmentAttempts.findMany({
-      where: and(...conditions),
-      orderBy: [desc(surveyAssessmentAttempts.startedAt)],
-      limit: filters.pageSize,
-      offset: (filters.page - 1) * filters.pageSize,
-    });
+    const where = and(...conditions);
+    const { limit, offset } = paginateOffset(filters);
+
+    const [rows, [totalRow]] = await Promise.all([
+      this.db.query.surveyAssessmentAttempts.findMany({
+        where,
+        orderBy: [desc(surveyAssessmentAttempts.startedAt)],
+        limit,
+        offset,
+      }),
+      this.db.select({ total: count() }).from(surveyAssessmentAttempts).where(where),
+    ]);
+
+    return buildListResponse(rows, Number(totalRow?.total ?? 0), filters);
   }
 
   async createAttempt(orgId: string, surveyId: number, participantId: number | null) {
-    const survey = await this.db.query.surveyForms.findFirst({ where: and(eq(surveyForms.id, surveyId), eq(surveyForms.orgId, orgId)) });
+    const survey = await this.db.query.surveyForms.findFirst({ where: and(eq(surveyForms.id, surveyId), eq(surveyForms.orgId, orgId), isNull(surveyForms.archivedAt)) });
     if (!survey) throw new NotFoundException("Survey not found");
     if (survey.mode !== "assessment") throw new BadRequestException("Survey is not in assessment mode");
     if (!survey.activeVersionId) throw new BadRequestException("Assessment has not been published");
 
-    const settings = (survey.settings ?? {}) as AssessmentSettings;
+    const settings = readAssessmentSettings(survey.settings);
     const priorAttempts = participantId
       ? await this.db.query.surveyAssessmentAttempts.findMany({
           where: and(eq(surveyAssessmentAttempts.orgId, orgId), eq(surveyAssessmentAttempts.surveyId, surveyId), eq(surveyAssessmentAttempts.participantId, participantId)),
@@ -68,7 +92,7 @@ export class SurveyAssessmentService {
     const survey = await this.db.query.surveyForms.findFirst({ where: and(eq(surveyForms.id, surveyId), eq(surveyForms.orgId, orgId)) });
     if (!survey) return null;
 
-    const settings = (survey.settings ?? {}) as AssessmentSettings;
+    const settings = readAssessmentSettings(survey.settings);
     const passScore = settings.passScore ?? 0;
     const passed = score >= passScore;
 
@@ -108,7 +132,8 @@ export class SurveyAssessmentService {
     return certificate;
   }
 
-  listCertificates(orgId: string, surveyId: number) {
+  async listCertificates(orgId: string, surveyId: number) {
+    await assertSurveyInOrg(this.db, orgId, surveyId);
     return this.db.query.surveyCertificates.findMany({
       where: and(eq(surveyCertificates.orgId, orgId), eq(surveyCertificates.surveyId, surveyId)),
       orderBy: [desc(surveyCertificates.issuedAt)],

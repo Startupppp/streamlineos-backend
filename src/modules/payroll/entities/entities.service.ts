@@ -3,13 +3,14 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { payrollEntities, payrollPeriods } from "../../../db/schema";
-import { getPostgresErrorCode } from "../../../common/db/postgres-error";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 import { logger } from "../../../common/logger/logger.service";
 import { getCountryPack } from "../../hr/global/country-packs";
 import {
@@ -76,7 +77,7 @@ export class PayrollEntitiesService {
         .returning();
       return row;
     } catch (err) {
-      if (getPostgresErrorCode(err) !== "23505") {
+      if (!isUniqueViolation(err)) {
         logger.error("entities.create: insert failed unexpectedly", {
           cause: err instanceof Error ? err.message : String(err),
         });
@@ -93,7 +94,7 @@ export class PayrollEntitiesService {
   ) {
     const [y, m] = periodKey.split("-").map(Number);
     const startDate = `${periodKey}-01`;
-    const lastDay = new Date(y!, m!, 0).getDate();
+    const lastDay = new Date(y, m, 0).getDate();
     const endDate = `${periodKey}-${String(lastDay).padStart(2, "0")}`;
 
     const conditions = [
@@ -120,7 +121,8 @@ export class PayrollEntitiesService {
         status: "OPEN",
       })
       .returning();
-    return row!;
+    if (!row) throw new InternalServerErrorException("Failed to create payroll period");
+    return row;
   }
 
   async getEntity(orgId: string, entityId: number) {

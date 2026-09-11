@@ -3,7 +3,6 @@ import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import {
   entityActionOptionsSchema,
@@ -27,8 +26,13 @@ import type {
   EntityReference,
 } from "../entity-reference/entity-reference.types";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  chatActionOptionsSchema,
+  chatAvailableActionsSchema,
+  chatSubmitActionSchema,
+} from "./dto/chat-misc-response.schemas";
 
-@RequireModule("chat")
 @Controller("chat/entity-actions")
 @UseGuards(JwtAuthGuard)
 export class ChatEntityActionsController {
@@ -41,6 +45,7 @@ export class ChatEntityActionsController {
   ) {}
 
   @Post("available")
+  @ResponseSchema(chatAvailableActionsSchema)
   @AuthorizedInService("ChatChannelMembersService.assertChannelMembership, then EntityReferenceService resolves the actor's own access to the target")
   @Validate({ body: entityActionsAvailableSchema })
   async availableActions(
@@ -63,6 +68,7 @@ export class ChatEntityActionsController {
   }
 
   @Post("options")
+  @ResponseSchema(chatActionOptionsSchema)
   @AuthorizedInService("ChatChannelMembersService.assertChannelMembership, then EntityReferenceService resolves the actor's own access to the target")
   @Validate({ body: entityActionOptionsSchema })
   async actionOptions(
@@ -76,6 +82,7 @@ export class ChatEntityActionsController {
   }
 
   @Post("submit")
+  @ResponseSchema(chatSubmitActionSchema)
   @Idempotent("chat.action.submit")
   @AuthorizedInService("ChatChannelMembersService.assertChannelMembership, then EntityReferenceService resolves the actor's own access to the target")
   @Validate({ body: submitEntityActionSchema })

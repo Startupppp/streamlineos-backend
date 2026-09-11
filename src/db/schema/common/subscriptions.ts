@@ -1,10 +1,10 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique, uniqueIndex, numeric, primaryKey, foreignKey } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique, uniqueIndex, numeric, foreignKey } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import {
   subscriptionStatusEnum,
   subscriptionPlanEnum,
 } from "./enums";
-import { organizations, users, organizationMembers } from "./auth";
+import { organizations, organizationMembers } from "./auth";
 
 export const subscriptions = pgTable("subscriptions", {
   id: serial("id").primaryKey(),
@@ -34,7 +34,6 @@ export const subscriptions = pgTable("subscriptions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  index("idx_subscriptions_org").on(table.orgId),
   index("idx_subscriptions_status").on(table.status),
   index("idx_subscriptions_razorpay").on(table.razorpaySubscriptionId),
   unique("uniq_subscriptions_org_id").on(table.orgId, table.id),
@@ -43,7 +42,7 @@ export const subscriptions = pgTable("subscriptions", {
 export const subscriptionPayments = pgTable("subscription_payments", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  subscriptionId: integer("subscription_id").references(() => subscriptions.id, { onDelete: "cascade" }).notNull(),
+  subscriptionId: integer("subscription_id").notNull(),
   razorpayPaymentId: text("razorpay_payment_id"),
   razorpayOrderId: text("razorpay_order_id"),
   /**
@@ -66,14 +65,14 @@ export const subscriptionPayments = pgTable("subscription_payments", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uniq_subscription_payments_razorpay_payment").on(table.razorpayPaymentId).where(sql`razorpay_payment_id IS NOT NULL`),
-  index("idx_sub_payments_org").on(table.orgId),
   index("idx_sub_payments_sub").on(table.subscriptionId),
   unique("uniq_subscription_payments_org_id").on(table.orgId, table.id),
+  foreignKey({ columns: [table.orgId, table.subscriptionId], foreignColumns: [subscriptions.orgId, subscriptions.id], name: "fk_sub_payments_org_sub" }).onDelete("cascade"),
 ]);
 
 export const coupons = pgTable("coupons", {
   id: serial("id").primaryKey(),
-  code: text("code").notNull().unique(),
+  code: text("code").notNull(),
   type: text("type").$type<"PERCENTAGE" | "FIXED">().notNull(),
   value: numeric("value", { precision: 15, scale: 2 }).notNull(),
   minPurchase: numeric("min_purchase", { precision: 15, scale: 2 }),
@@ -86,24 +85,27 @@ export const coupons = pgTable("coupons", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  // Tenant-scoped, not global: a global UNIQUE(code) lets the first org to claim
+  // a code deny it to every other org and turn the 409 into an existence oracle.
+  uniqueIndex("uniq_coupons_platform_code").on(table.code).where(sql`org_id IS NULL`),
+  uniqueIndex("uniq_coupons_org_code").on(table.orgId, table.code).where(sql`org_id IS NOT NULL`),
   index("idx_coupons_code").on(table.code),
   index("idx_coupons_is_active").on(table.isActive),
-  index("idx_coupons_org").on(table.orgId),
 ]);
 
 export const couponRedemptions = pgTable("coupon_redemptions", {
   id: serial("id").primaryKey(),
-  couponId: integer("coupon_id").references(() => coupons.id, { onDelete: "cascade" }).notNull(),
+  couponId: integer("coupon_id").notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+  // Historical redemption display projection; membershipId is authoritative.
+  userId: text("user_id"),
   membershipId: integer("membership_id"),
   amount: numeric("amount", { precision: 15, scale: 2 }),
   amountPaise: integer("amount_paise").notNull(),
   redeemedAt: timestamp("redeemed_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.couponId], foreignColumns: [coupons.orgId, coupons.id], name: "fk_coupon_redemptions_coupon_id_org" }).onDelete("cascade"),
   unique("uq_coupon_redemptions_coupon_org").on(table.couponId, table.orgId),
-  index("idx_coupon_redemptions_coupon").on(table.couponId),
-  index("idx_coupon_redemptions_org").on(table.orgId),
   index("idx_coupon_redemptions_org_membership").on(table.orgId, table.membershipId),
   unique("uniq_coupon_redemptions_org_id").on(table.orgId, table.id),
   foreignKey({
@@ -130,5 +132,5 @@ export const couponsRelations = relations(coupons, ({ one, many }) => ({
 export const couponRedemptionsRelations = relations(couponRedemptions, ({ one }) => ({
   coupon: one(coupons, { fields: [couponRedemptions.couponId], references: [coupons.id] }),
   organization: one(organizations, { fields: [couponRedemptions.orgId], references: [organizations.id] }),
-  user: one(users, { fields: [couponRedemptions.userId], references: [users.id] }),
+  membership: one(organizationMembers, { fields: [couponRedemptions.orgId, couponRedemptions.membershipId], references: [organizationMembers.orgId, organizationMembers.id] }),
 }));

@@ -23,6 +23,7 @@ import { EmploymentFactsService } from "../../directory/employment-facts.service
 import { PayslipBulkPublisherService } from "./payslip-bulk-publisher.service";
 import { PayslipDownloadService } from "./payslip-download.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { PAYROLL_READ_CAP } from "../lib/query-bounds";
 
 @Injectable()
 export class PublishingService {
@@ -57,6 +58,7 @@ export class PublishingService {
 
     const rows = await this.db.query.payslipPublications.findMany({
       where: and(eq(payslipPublications.runId, runId), eq(payslipPublications.orgId, orgId)),
+      limit: PUBLICATION_LIST_CAP,
       columns: {
         id: true,
         userId: true,
@@ -71,12 +73,20 @@ export class PublishingService {
         attemptCount: true,
         lastAttemptAt: true,
       },
-      limit: PUBLICATION_LIST_CAP,
     });
     return { items: rows, truncated: rows.length === PUBLICATION_LIST_CAP };
   }
 
-  async retryFailed(orgId: string, runId: number, actorId: string) {
+  async retryFailed(
+    orgId: string,
+    runId: number,
+    actorId: string,
+  ): Promise<{ published: number; total: number; runStatus: string | null; retried: number }> {
+    const run = await this.db.query.payrollRuns.findFirst({
+      where: and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)),
+      columns: { id: true },
+    });
+    if (!run) throw new NotFoundException("Payroll run not found");
     const failed = await this.db.query.payslipPublications.findMany({
       where: and(
         eq(payslipPublications.runId, runId),
@@ -84,9 +94,10 @@ export class PublishingService {
         eq(payslipPublications.status, "FAILED"),
       ),
       columns: { runEmployeeId: true },
+      limit: PAYROLL_READ_CAP + 1,
     });
     if (failed.length === 0) {
-      return { published: 0, total: 0, runStatus: null as string | null, retried: 0 };
+      return { published: 0, total: 0, runStatus: null, retried: 0 };
     }
     const runEmployeeIds = failed.map((f) => f.runEmployeeId);
     const result = await this.publisher.publish(orgId, runId, actorId, undefined, runEmployeeIds);

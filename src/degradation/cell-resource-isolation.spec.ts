@@ -38,7 +38,8 @@ function makeMockDb(orgIds: string[], throws?: Error): { db: Db; capture: ChainC
   interface SelectChain {
     from: jest.Mock<SelectChain, []>;
     where: jest.Mock<SelectChain, [SQL]>;
-    orderBy: jest.Mock<Promise<{ id: string }[]>, []>;
+    orderBy: jest.Mock<SelectChain, []>;
+    limit: jest.Mock<Promise<{ id: string }[]>, [number]>;
   }
 
   const chain: SelectChain = {
@@ -47,8 +48,9 @@ function makeMockDb(orgIds: string[], throws?: Error): { db: Db; capture: ChainC
       capture.where = condition;
       return chain;
     }),
-    orderBy: jest.fn(() =>
-      throws ? Promise.reject(throws) : Promise.resolve(rows),
+    orderBy: jest.fn((): SelectChain => chain),
+    limit: jest.fn((pageSize: number) =>
+      throws ? Promise.reject(throws) : Promise.resolve(rows.slice(0, pageSize)),
     ),
   };
 

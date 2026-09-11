@@ -5,11 +5,17 @@ import { NotificationsModule } from "../../notifications/notifications.module";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
 import { IntegrationsModule } from "../../integrations/core/integrations.module";
 import { OrganizationController } from "./organization.controller";
+import { OrganizationMembersController } from "./organization-members.controller";
+import { OrganizationCustomDomainsController } from "./organization-custom-domains.controller";
+import { OrganizationHolidaysController } from "./organization-holidays.controller";
+import { OrganizationLifecycleController } from "./organization-lifecycle.controller";
 import { OrgProfileService } from "./org-profile.service";
 import { OrgMembershipService } from "./org-membership.service";
 import { OrgLifecycleService } from "./org-lifecycle.service";
 import { OrgPurgeService } from "./org-purge.service";
 import { OrganizationSettingsService } from "./organization-settings.service";
+import { OrgHolidaysService } from "./org-holidays.service";
+import { OrgCustomDomainsService } from "./org-custom-domains.service";
 import { InvitationCreateService } from "./invitation-create.service";
 import { InvitationLifecycleService } from "./invitation-lifecycle.service";
 import { InvitationsReadService } from "./invitations-read.service";
@@ -23,10 +29,26 @@ import { OrgMembershipReadService } from "./org-membership-read.service";
 import { OrgMembershipStatusService } from "./org-membership-status.service";
 import { OrgMemberDepartureService } from "./org-member-departure.service";
 import { IntegrationConnectionDisconnectedConsumer } from "./integration-connection-disconnected-consumer.service";
+import { MembershipAdmissionModule } from "./membership-admission.module";
+import { OrganizationCreationService } from "./organization-creation.service";
 
 @Module({
-  imports: [BillingModule, SessionsModule, NotificationsModule, RealtimeModule, OutboxModule, IntegrationsModule],
-  controllers: [OrganizationController],
+  imports: [
+    BillingModule,
+    SessionsModule,
+    NotificationsModule,
+    RealtimeModule,
+    OutboxModule,
+    IntegrationsModule,
+    MembershipAdmissionModule,
+  ],
+  controllers: [
+    OrganizationController,
+    OrganizationMembersController,
+    OrganizationCustomDomainsController,
+    OrganizationHolidaysController,
+    OrganizationLifecycleController,
+  ],
   providers: [
     OrgProfileService,
     OrgMembershipService,
@@ -36,12 +58,15 @@ import { IntegrationConnectionDisconnectedConsumer } from "./integration-connect
     OrgLifecycleService,
     OrgPurgeService,
     OrganizationSettingsService,
+    OrgHolidaysService,
+    OrgCustomDomainsService,
     InvitationCreateService,
     InvitationLifecycleService,
     InvitationsReadService,
     InvitationAcceptanceService,
     AccountOrganizationIndexService,
     OrganizationSagaService,
+    OrganizationCreationService,
     OrganizationLegalHoldService,
     OrganizationPlacementAdminService,
     IntegrationConnectionDisconnectedConsumer,
@@ -52,10 +77,10 @@ import { IntegrationConnectionDisconnectedConsumer } from "./integration-connect
     InvitationsReadService,
     InvitationAcceptanceService,
     OrgMembershipService,
-    OrgMembershipStatusService,
     OrgMemberDepartureService,
     AccountOrganizationIndexService,
     OrganizationSagaService,
+    OrganizationCreationService,
   ],
 })
 export class OrganizationModule {}

@@ -82,7 +82,7 @@ export class InvWarehousesService {
           ilike(invWarehouses.state, term),
           ilike(invWarehouses.country, term),
           ilike(invWarehouses.address, term),
-        )!,
+        ) ?? sql`false`,
       );
     }
     if (filters.status === "active") conds.push(eq(invWarehouses.isActive, true));
@@ -170,17 +170,18 @@ export class InvWarehousesService {
     }
 
     const [wh] = await this.db.insert(invWarehouses).values({ orgId, createdBy: userId, ...data }).returning();
+    if (!wh) throw new Error("Warehouse insert did not return a row");
 
     await this.db.insert(invLocations).values([
-      { orgId, warehouseId: wh!.id, name: "Main", code: "MAIN", locationType: "ZONE" },
-      { orgId, warehouseId: wh!.id, name: "Receiving", code: "RECEIVING", locationType: "RECEIVING", isReceivable: true, isPickable: false },
-      { orgId, warehouseId: wh!.id, name: "Shipping", code: "SHIPPING", locationType: "SHIPPING", isReceivable: false, isPickable: true },
-      { orgId, warehouseId: wh!.id, name: "Quarantine", code: "QUARANTINE", locationType: "QUARANTINE", isReceivable: false, isPickable: false },
-      { orgId, warehouseId: wh!.id, name: "Scrap", code: "SCRAP", locationType: "SCRAP", isReceivable: false, isPickable: false },
+      { orgId, warehouseId: wh.id, name: "Main", code: "MAIN", locationType: "ZONE" },
+      { orgId, warehouseId: wh.id, name: "Receiving", code: "RECEIVING", locationType: "RECEIVING", isReceivable: true, isPickable: false },
+      { orgId, warehouseId: wh.id, name: "Shipping", code: "SHIPPING", locationType: "SHIPPING", isReceivable: false, isPickable: true },
+      { orgId, warehouseId: wh.id, name: "Quarantine", code: "QUARANTINE", locationType: "QUARANTINE", isReceivable: false, isPickable: false },
+      { orgId, warehouseId: wh.id, name: "Scrap", code: "SCRAP", locationType: "SCRAP", isReceivable: false, isPickable: false },
     ]);
 
     await this.cache.invalidateNamespaceForOrg(orgId, "inv:warehouses");
-    return wh!;
+    return wh;
   }
 
   // B1-01 BOLA: pre-deactivation stock check now includes eq(invLocations.orgId, orgId).
@@ -276,7 +277,8 @@ export class InvWarehousesService {
     if (existing) throw new ConflictException("A location with this code already exists in this warehouse");
 
     const [loc] = await this.db.insert(invLocations).values({ orgId, warehouseId, ...data }).returning();
-    return loc!;
+    if (!loc) throw new Error("location insert did not return a row");
+    return loc;
   }
 
   /**

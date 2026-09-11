@@ -11,15 +11,16 @@ import {
   type OutboxEventConsumer,
   type OutboxEventRow,
 } from "../../../common/outbox/outbox-consumer.registry";
+import { type OutboxEventInput } from "../../../common/outbox/outbox-event-schema";
 import { type DbOrTx } from "../../../common/rbac/access-invalidate";
 import { PLAN_PRICES_PAISE } from "./plan-entitlements.constants";
-import type { Plan } from "./dto/billing.schemas";
 import {
   REVENUE_EVENT_TYPE,
   revenueEventPayloadSchema,
   type RevenueEventInput,
 } from "./revenue-events";
 import { summariseMovements, type RevenueMovement } from "./revenue-metrics";
+import { deterministicEventId } from "./deterministic-event-id";
 
 const CONSUMER_NAME = "billing:revenue-event";
 
@@ -38,10 +39,15 @@ export class RevenueAnalyticsService implements OutboxEventConsumer, OnModuleIni
     this.registry.register(this);
   }
 
-  // Each event is its own aggregate, so the inbox version fence never suppresses a sibling.
-  async emit(tx: DbOrTx, input: RevenueEventInput): Promise<void> {
-    const eventId = randomUUID();
-    await OutboxWriter.emit(tx, {
+  // Each event is its own aggregate, so the inbox version fence never suppresses a sibling. A
+  // caller carrying a dedupeKey gets a stable id instead, so re-running one movement conflicts
+  // on uniq_outbox_events_event_id rather than committing a second revenue row.
+  private envelope(input: RevenueEventInput): OutboxEventInput {
+    const eventId =
+      input.dedupeKey === undefined
+        ? randomUUID()
+        : deterministicEventId(REVENUE_EVENT_TYPE, input.orgId, input.type, input.dedupeKey);
+    return {
       eventId,
       organizationId: input.orgId,
       aggregateType: "revenue_event",
@@ -55,10 +61,19 @@ export class RevenueAnalyticsService implements OutboxEventConsumer, OnModuleIni
         previousPlan: input.previousPlan ?? null,
         mrr: input.mrr,
         amount: input.amount ?? null,
+        currency: input.currency,
         metadata: input.metadata ?? null,
       },
       occurredAt: new Date(),
-    });
+    };
+  }
+
+  async emit(tx: DbOrTx, input: RevenueEventInput): Promise<void> {
+    await OutboxWriter.emit(tx, this.envelope(input));
+  }
+
+  async emitMany(tx: DbOrTx, inputs: readonly RevenueEventInput[]): Promise<void> {
+    await OutboxWriter.emitMany(tx, inputs.map((input) => this.envelope(input)));
   }
 
   // The relay holds the tenant transaction; a failure is rethrown so the outbox retries it.
@@ -91,6 +106,7 @@ export class RevenueAnalyticsService implements OutboxEventConsumer, OnModuleIni
         previousPlan: payload.previousPlan ?? undefined,
         mrr: payload.mrr,
         amount: payload.amount ?? undefined,
+        currency: payload.currency ?? undefined,
         metadata: payload.metadata ?? undefined,
       });
       await new InboxConsumer(tx).markProcessed(CONSUMER_NAME, event.eventId, "COMPLETED", null);
@@ -98,7 +114,7 @@ export class RevenueAnalyticsService implements OutboxEventConsumer, OnModuleIni
   }
 
   // MRR is read from subscription state: summing new_subscription rows double-counted every re-subscribe.
-  async getMetrics() {
+  async getMetrics(orgId: string) {
     const [statusRows, movementRows] = await Promise.all([
       this.db
         .select({
@@ -107,6 +123,7 @@ export class RevenueAnalyticsService implements OutboxEventConsumer, OnModuleIni
           count: sql<number>`count(*)::int`,
         })
         .from(subscriptions)
+        .where(eq(subscriptions.orgId, orgId))
         .groupBy(subscriptions.status, subscriptions.plan),
       this.db
         .select({
@@ -116,6 +133,7 @@ export class RevenueAnalyticsService implements OutboxEventConsumer, OnModuleIni
           recentMrr: sql<number>`coalesce(sum(${revenueEvents.mrr}) filter (where ${revenueEvents.createdAt} >= now() - interval '30 days'), 0)::int`,
         })
         .from(revenueEvents)
+        .where(eq(revenueEvents.orgId, orgId))
         .groupBy(revenueEvents.type),
     ]);
 
@@ -126,7 +144,7 @@ export class RevenueAnalyticsService implements OutboxEventConsumer, OnModuleIni
       const count = Number(row.count ?? 0);
       if (row.status === "ACTIVE") {
         totalActive += count;
-        mrr += (PLAN_PRICES_PAISE[row.plan as Plan] ?? 0) * count;
+        mrr += (PLAN_PRICES_PAISE[row.plan] ?? 0) * count;
       }
       if (row.status === "TRIAL") totalTrial += count;
     }
@@ -141,7 +159,7 @@ export class RevenueAnalyticsService implements OutboxEventConsumer, OnModuleIni
     return summariseMovements({ mrr, totalActive, totalTrial, movements });
   }
 
-  async getTimeSeriesData(period: string) {
+  async getTimeSeriesData(period: string, orgId: string) {
     const months = period === "3m" ? 3 : period === "12m" ? 12 : 6;
     const since = new Date();
     since.setMonth(since.getMonth() - months);
@@ -153,7 +171,7 @@ export class RevenueAnalyticsService implements OutboxEventConsumer, OnModuleIni
         createdAt: revenueEvents.createdAt,
       })
       .from(revenueEvents)
-      .where(gte(revenueEvents.createdAt, since))
+      .where(and(eq(revenueEvents.orgId, orgId), gte(revenueEvents.createdAt, since)))
       .orderBy(revenueEvents.createdAt);
 
     const byMonth: Record<
@@ -181,26 +199,26 @@ export class RevenueAnalyticsService implements OutboxEventConsumer, OnModuleIni
     return Object.values(byMonth).sort((a, b) => a.month.localeCompare(b.month));
   }
 
-  async reconcile(): Promise<{ reportedMrr: number; subscriptionMrr: number; reconciles: boolean }> {
+  async reconcile(orgId: string): Promise<{ reportedMrr: number; subscriptionMrr: number; reconciles: boolean }> {
     const rows = await this.db
       .select({ plan: subscriptions.plan, count: sql<number>`count(*)::int` })
       .from(subscriptions)
-      .where(eq(subscriptions.status, "ACTIVE"))
+      .where(and(eq(subscriptions.orgId, orgId), eq(subscriptions.status, "ACTIVE")))
       .groupBy(subscriptions.plan);
 
     const subscriptionMrr = rows.reduce(
-      (total, row) => total + (PLAN_PRICES_PAISE[row.plan as Plan] ?? 0) * Number(row.count ?? 0),
+      (total, row) => total + (PLAN_PRICES_PAISE[row.plan] ?? 0) * Number(row.count ?? 0),
       0,
     );
-    const { mrr } = await this.getMetrics();
+    const { mrr } = await this.getMetrics(orgId);
     return { reportedMrr: mrr, subscriptionMrr, reconciles: mrr === subscriptionMrr };
   }
 
-  async countEventsSince(type: RevenueEventInput["type"], since: Date): Promise<number> {
+  async countEventsSince(type: RevenueEventInput["type"], since: Date, orgId: string): Promise<number> {
     const rows = await this.db
       .select({ count: sql<number>`count(*)::int` })
       .from(revenueEvents)
-      .where(and(eq(revenueEvents.type, type), gte(revenueEvents.createdAt, since)));
+      .where(and(eq(revenueEvents.orgId, orgId), eq(revenueEvents.type, type), gte(revenueEvents.createdAt, since)));
     return Number(rows[0]?.count ?? 0);
   }
 }

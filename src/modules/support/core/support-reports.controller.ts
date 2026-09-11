@@ -11,6 +11,14 @@ import { SupportReportsService } from "./support-reports.service";
 import { resolveSupportTicketsViewScope } from "./support-tickets-scope";
 import { supportReportFiltersSchema, type SupportReportFiltersInput } from "./dto/support.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  supportOverviewSchema,
+  agentPerformanceListSchema,
+  queuePerformanceListSchema,
+  channelPerformanceListSchema,
+  automationPerformanceListSchema,
+} from "./dto/support-report-response.schemas";
 
 @RequireModule("support")
 @Controller("support/reports")
@@ -24,6 +32,7 @@ export class SupportReportsController {
 
   @Get("overview")
   @Validate({ query: supportReportFiltersSchema })
+  @ResponseSchema(supportOverviewSchema)
   getOverview(
     @Query() filters: SupportReportFiltersInput,
     @CurrentUser() u: CurrentUserContext,
@@ -33,17 +42,21 @@ export class SupportReportsController {
 
   @Get("agent-performance")
   @Validate({ query: supportReportFiltersSchema })
+  @ResponseSchema(agentPerformanceListSchema)
   async getAgentPerformance(
     @Query() filters: SupportReportFiltersInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveSupportTicketsViewScope(this.access, u);
+    const read = await resolveSupportTicketsViewScope(this.access, u);
+    // An agent-performance report groups by agent; below `all` the only agent the caller may see is themselves.
+    const scope = read.rawScope("agent-performance report narrows its GROUP BY subject, not a row predicate");
     const scopeToUserId = scope === "all" ? undefined : u.userId;
     return this.reports.getAgentPerformance(u.orgId, { ...filters, scopeToUserId });
   }
 
   @Get("queue-performance")
   @Validate({ query: supportReportFiltersSchema })
+  @ResponseSchema(queuePerformanceListSchema)
   getQueuePerformance(
     @Query() filters: SupportReportFiltersInput,
     @CurrentUser() u: CurrentUserContext,
@@ -53,6 +66,7 @@ export class SupportReportsController {
 
   @Get("channel-performance")
   @Validate({ query: supportReportFiltersSchema })
+  @ResponseSchema(channelPerformanceListSchema)
   getChannelPerformance(
     @Query() filters: SupportReportFiltersInput,
     @CurrentUser() u: CurrentUserContext,
@@ -62,6 +76,7 @@ export class SupportReportsController {
 
   @Get("automation-performance")
   @Validate({ query: supportReportFiltersSchema })
+  @ResponseSchema(automationPerformanceListSchema)
   getAutomationPerformance(
     @Query() filters: SupportReportFiltersInput,
     @CurrentUser() u: CurrentUserContext,

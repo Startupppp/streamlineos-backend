@@ -20,7 +20,14 @@ import { ReportSchedulesService } from "../reporting/report-schedules.service";
 import { CronBuildRetentionService } from "./cron-build-retention.service";
 import { CronBuildSnapshotsService } from "./cron-build-snapshots.service";
 import { CronLeaseService } from "./cron-lease.service";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import {
+  projectsRecurringFlushResponseSchema,
+  crmSequencesFlushResponseSchema,
+  crmTasksOverdueFlushResponseSchema,
+  buildRetentionPruneResponseSchema,
+  buildDailySnapshotsResponseSchema,
+} from "./dto/cron-build-response.schemas";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 
 @Public()
 @Controller("cron")
@@ -40,6 +47,7 @@ export class CronBuildController {
   ) {}
 
   @Get("projects-recurring-flush")
+  @ResponseSchema(projectsRecurringFlushResponseSchema)
   getProjectsRecurringFlush(@Headers("authorization") authorization?: string) {
     return this.runProjectsRecurringFlush(authorization);
   }
@@ -47,11 +55,13 @@ export class CronBuildController {
   @Post("projects-recurring-flush")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(projectsRecurringFlushResponseSchema)
   postProjectsRecurringFlush(@Headers("authorization") authorization?: string) {
     return this.runProjectsRecurringFlush(authorization);
   }
 
   @Get("crm-sequences-flush")
+  @ResponseSchema(crmSequencesFlushResponseSchema)
   getCrmSequencesFlush(@Headers("authorization") authorization?: string) {
     return this.runCrmSequencesFlush(authorization);
   }
@@ -59,6 +69,7 @@ export class CronBuildController {
   @Post("crm-sequences-flush")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(crmSequencesFlushResponseSchema)
   postCrmSequencesFlush(@Headers("authorization") authorization?: string) {
     return this.runCrmSequencesFlush(authorization);
   }
@@ -136,6 +147,7 @@ export class CronBuildController {
   }
 
   @Get("crm-tasks-overdue-flush")
+  @ResponseSchema(crmTasksOverdueFlushResponseSchema)
   getCrmTasksOverdueFlush(@Headers("authorization") authorization?: string) {
     return this.runCrmTasksOverdueFlush(authorization);
   }
@@ -143,11 +155,13 @@ export class CronBuildController {
   @Post("crm-tasks-overdue-flush")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(crmTasksOverdueFlushResponseSchema)
   postCrmTasksOverdueFlush(@Headers("authorization") authorization?: string) {
     return this.runCrmTasksOverdueFlush(authorization);
   }
 
   @Get("build-retention-prune")
+  @ResponseSchema(buildRetentionPruneResponseSchema)
   getBuildRetentionPrune(@Headers("authorization") authorization?: string) {
     return this.runBuildRetentionPrune(authorization);
   }
@@ -155,11 +169,13 @@ export class CronBuildController {
   @Post("build-retention-prune")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(buildRetentionPruneResponseSchema)
   postBuildRetentionPrune(@Headers("authorization") authorization?: string) {
     return this.runBuildRetentionPrune(authorization);
   }
 
   @Get("build-daily-snapshots")
+  @ResponseSchema(buildDailySnapshotsResponseSchema)
   getBuildDailySnapshots(@Headers("authorization") authorization?: string) {
     return this.runBuildDailySnapshots(authorization);
   }
@@ -167,6 +183,7 @@ export class CronBuildController {
   @Post("build-daily-snapshots")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(buildDailySnapshotsResponseSchema)
   postBuildDailySnapshots(@Headers("authorization") authorization?: string) {
     return this.runBuildDailySnapshots(authorization);
   }

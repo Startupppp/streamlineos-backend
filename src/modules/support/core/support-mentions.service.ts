@@ -8,6 +8,7 @@ import { logger } from "../../../common/logger/logger.service";
 
 interface OrgUser {
   id: string;
+  membershipId: number;
   name: string | null;
   firstName: string | null;
   lastName: string | null;
@@ -68,6 +69,7 @@ export class SupportMentionsService {
     const orgUsers = await this.db
       .select({
         id: users.id,
+        membershipId: organizationMembers.id,
         name: users.name,
         firstName: users.firstName,
         lastName: users.lastName,
@@ -89,7 +91,7 @@ export class SupportMentionsService {
           mentioned.map((user) => ({
             orgId: input.orgId,
             messageId: input.messageId,
-            mentionedUserId: user.id,
+            mentionedUserMembershipId: user.membershipId,
           })),
         )
         .onConflictDoNothing();

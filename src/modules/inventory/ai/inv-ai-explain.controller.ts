@@ -25,8 +25,15 @@ import {
   invAiReorderProposalSchema as reorderProposalBodySchema,
 } from "./proposals/dto/inv-ai-proposal.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import {
+  explainInsightResponseSchema,
+  digestResponseSchema,
+  reorderProposalResponseSchema,
+  confirmReorderProposalResponseSchema,
+  supplierDelayBriefingResponseSchema,
+} from "./dto/ai-response.schemas";
 
 const insightIdParams = z.object({ insightId: z.coerce.number().int().positive() }).strict();
 
@@ -46,6 +53,7 @@ export class InvAiExplainController {
 
   @Post("insights/:insightId/explain")
   @BodylessAction()
+  @ResponseSchema(explainInsightResponseSchema)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:reports:read")
@@ -82,6 +90,7 @@ export class InvAiExplainController {
   }
 
   @Get("digest")
+  @ResponseSchema(digestResponseSchema)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:reports:read")
@@ -99,6 +108,7 @@ export class InvAiExplainController {
    * `invAiReorderProposalSchema` has no field for either.
    */
   @Post("reorder-proposal")
+  @ResponseSchema(reorderProposalResponseSchema)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:ai:propose")
@@ -120,6 +130,7 @@ export class InvAiExplainController {
    * is the cheap early denial, not the boundary.
    */
   @Post("reorder-proposal/confirm")
+  @ResponseSchema(confirmReorderProposalResponseSchema)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:ai:propose")
@@ -133,6 +144,7 @@ export class InvAiExplainController {
   }
 
   @Get("supplier-delay")
+  @ResponseSchema(supplierDelayBriefingResponseSchema)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:reports:read")

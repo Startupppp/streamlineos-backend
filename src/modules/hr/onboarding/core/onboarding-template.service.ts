@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull } from "drizzle-orm";
 import {
   onboardingTemplates,
   onboardingTemplateSteps,
@@ -8,41 +8,63 @@ import {
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import type { CreateTemplateInput } from "./dto/onboarding.schemas";
+import { readHrKeysetBatches } from "../../shared/hr-keyset-batch";
 
 @Injectable()
 export class OnboardingTemplateService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   listTemplateDepartments(orgId: string) {
-    return this.db
-      .select({ id: orgUnits.id, name: orgUnits.name })
-      .from(orgUnits)
-      .where(
-        and(
-          eq(orgUnits.orgId, orgId),
-          eq(orgUnits.kind, "DEPARTMENT"),
-          isNull(orgUnits.deletedAt),
-          eq(orgUnits.status, "ACTIVE"),
-        ),
-      )
-      .orderBy(asc(orgUnits.name));
+    return readHrKeysetBatches(
+      (afterId, batchSize) =>
+        this.db
+          .select({ id: orgUnits.id, name: orgUnits.name })
+          .from(orgUnits)
+          .where(
+            and(
+              eq(orgUnits.orgId, orgId),
+              eq(orgUnits.kind, "DEPARTMENT"),
+              isNull(orgUnits.deletedAt),
+              eq(orgUnits.status, "ACTIVE"),
+              afterId ? gt(orgUnits.id, String(afterId)) : undefined,
+            ),
+          )
+          .orderBy(asc(orgUnits.id))
+          .limit(batchSize),
+      (department) => Number(department.id),
+    );
   }
 
   async listTemplates(orgId: string) {
-    const templates = await this.db
-      .select()
-      .from(onboardingTemplates)
-      .where(eq(onboardingTemplates.orgId, orgId))
-      .orderBy(onboardingTemplates.createdAt);
+    const templates = await readHrKeysetBatches(
+      (afterId, batchSize) =>
+        this.db
+          .select()
+          .from(onboardingTemplates)
+          .where(and(eq(onboardingTemplates.orgId, orgId), afterId ? gt(onboardingTemplates.id, afterId) : undefined))
+          .orderBy(asc(onboardingTemplates.id))
+          .limit(batchSize),
+      (template) => template.id,
+    );
 
     const templateIds = templates.map((t) => t.id);
     const steps =
       templateIds.length > 0
-        ? await this.db
-            .select()
-            .from(onboardingTemplateSteps)
-            .where(inArray(onboardingTemplateSteps.templateId, templateIds))
-            .orderBy(onboardingTemplateSteps.sortOrder)
+        ? await readHrKeysetBatches(
+            (afterId, batchSize) =>
+              this.db
+                .select()
+                .from(onboardingTemplateSteps)
+                .where(
+                  and(
+                    inArray(onboardingTemplateSteps.templateId, templateIds),
+                    afterId ? gt(onboardingTemplateSteps.id, afterId) : undefined,
+                  ),
+                )
+                .orderBy(asc(onboardingTemplateSteps.id))
+                .limit(batchSize),
+            (step) => step.id,
+          ).then((rows) => rows.sort((a, b) => a.sortOrder - b.sortOrder))
         : [];
 
     const stepsMap = new Map<number, typeof steps>();
@@ -79,6 +101,7 @@ export class OnboardingTemplateService {
       if (input.steps.length > 0) {
         await tx.insert(onboardingTemplateSteps).values(
           input.steps.map((step, i) => ({
+            orgId,
             templateId: template.id,
             title: step.title,
             description: step.description ?? null,

@@ -8,4 +8,4 @@ export const invStockLowPayloadSchema = z.object({
   sourceId: z.string().min(1),
 }).strict();
 
-export type InvStockLowPayload = z.infer<typeof invStockLowPayloadSchema>;
+type InvStockLowPayload = z.infer<typeof invStockLowPayloadSchema>;

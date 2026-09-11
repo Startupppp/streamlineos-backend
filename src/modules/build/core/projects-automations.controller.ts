@@ -14,6 +14,11 @@ import {
 } from "./dto/automation.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  projectAutomationListItemSchema,
+  projectAutomationRowSchema,
+} from "./dto/build-core-response.schemas";
 
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
 const projectIdautomationIdParams = z.object({ projectId: z.coerce.number().int().positive(), automationId: z.coerce.number().int().positive() }).strict();
@@ -26,6 +31,7 @@ export class ProjectsAutomationsController {
 
   @Get(":projectId/automations")
   @RequirePermission("build:view")
+  @ResponseSchema(z.array(projectAutomationListItemSchema))
   @Validate({ params: projectIdParams })
   list(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -37,6 +43,7 @@ export class ProjectsAutomationsController {
   @Post(":projectId/automations")
   @RequirePermission("build:manage")
   @HttpCode(201)
+  @ResponseSchema(projectAutomationRowSchema)
   @Validate({ params: projectIdParams, body: createAutomationSchema })
   create(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -48,6 +55,7 @@ export class ProjectsAutomationsController {
 
   @Patch(":projectId/automations/:automationId")
   @RequirePermission("build:manage")
+  @ResponseSchema(projectAutomationRowSchema)
   @Validate({ params: projectIdautomationIdParams, body: updateAutomationSchema })
   update(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -61,6 +69,7 @@ export class ProjectsAutomationsController {
   @Delete(":projectId/automations/:automationId")
   @RequirePermission("build:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: projectIdautomationIdParams })
   delete(
     @Param("projectId", ParseIntPipe) projectId: number,

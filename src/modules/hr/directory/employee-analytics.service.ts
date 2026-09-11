@@ -53,7 +53,8 @@ export class EmployeeAnalyticsService {
         .select({ leaveTypeId: leaveRequests.leaveTypeId, count: sql<string>`COUNT(*)` })
         .from(leaveRequests)
         .where(leaveWhere)
-        .groupBy(leaveRequests.leaveTypeId),
+        .groupBy(leaveRequests.leaveTypeId)
+        .limit(100),
       this.db
         .select({
           daysPresent: sql<string>`COUNT(*) FILTER (WHERE ${attendance.checkIn} IS NOT NULL)`,
@@ -118,6 +119,7 @@ export class EmployeeAnalyticsService {
                 eq(users.isActive, true),
               ),
             )
+            .limit(directReportIds.length)
         : [];
 
     if (reports.length === 0) {

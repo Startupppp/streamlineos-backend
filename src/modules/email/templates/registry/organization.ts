@@ -3,10 +3,9 @@ import {
   getHolidayAnnouncementEmailTemplate,
   getCompanyAnnouncementEmailTemplate,
 } from "../index";
-import { BASE_URL } from "./_shared";
-import type { TemplateEntry } from "./_shared";
+import { BASE_URL, EMAIL_TEMPLATE_VERSION, defineTemplateFamily } from "./_shared";
 
-export const organizationTemplates: Record<string, TemplateEntry> = {
+export const organizationTemplates = defineTemplateFamily({
   "org.invitation": {
     category: "Organization",
     name: "Team Invitation",
@@ -31,4 +30,4 @@ export const organizationTemplates: Record<string, TemplateEntry> = {
         "Rahul Verma",
       ),
   },
-};
+}, EMAIL_TEMPLATE_VERSION);

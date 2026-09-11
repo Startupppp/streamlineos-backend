@@ -6,17 +6,19 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, eq, sql, isNull } from "drizzle-orm";
-import { kbSpaces, kbSpaceMembers, kbPages, kbArticles, users, organizationMembers } from "../../../db/schema";
+import { kbSpaces, kbSpaceMembers, users, organizationMembers } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { KbAccessService } from "../core/kb-access.service";
 import { KbIndexingService } from "../retrieval/kb-indexing.service";
-import { registerAfterCommit } from "../../../common/tenant/tenant-context";
+import { PG_UNIQUE_VIOLATION, getPostgresErrorDetails } from "../../../common/db/postgres-error";
 import type { AddMemberInput } from "./dto/kb-members.schemas";
+
 
 type MemberRow = typeof kbSpaceMembers.$inferSelect;
 
 type MemberListItem = MemberRow & {
+  userId: string | null;
   userName: string | null;
   userEmail: string | null;
   userImage: string | null;
@@ -49,7 +51,7 @@ export class KbMembersService {
         id: kbSpaceMembers.id,
         orgId: kbSpaceMembers.orgId,
         spaceId: kbSpaceMembers.spaceId,
-        userId: kbSpaceMembers.userId,
+        userId: organizationMembers.userId,
         membershipId: kbSpaceMembers.membershipId,
         role: kbSpaceMembers.role,
         team: kbSpaceMembers.team,
@@ -60,27 +62,21 @@ export class KbMembersService {
         userImage: users.image,
       })
       .from(kbSpaceMembers)
-      .leftJoin(users, eq(kbSpaceMembers.userId, users.id))
+      .leftJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, kbSpaceMembers.orgId),
+          eq(organizationMembers.id, kbSpaceMembers.membershipId),
+        ),
+      )
+      .leftJoin(users, eq(organizationMembers.userId, users.id))
       .where(and(eq(kbSpaceMembers.orgId, orgId), eq(kbSpaceMembers.spaceId, spaceId)))
-      .orderBy(asc(kbSpaceMembers.spaceRole), asc(kbSpaceMembers.createdAt));
+      .orderBy(asc(kbSpaceMembers.spaceRole), asc(kbSpaceMembers.createdAt))
+      .limit(500);
   }
 
-  async add(orgId: string, spaceId: number, input: AddMemberInput): Promise<MemberRow> {
+  async add(orgId: string, spaceId: number, input: AddMemberInput): Promise<MemberRow & { userId: string | null }> {
     await this.assertSpaceExists(orgId, spaceId);
-    if (input.userId) {
-      const existing = await this.db.query.kbSpaceMembers.findFirst({
-        where: and(eq(kbSpaceMembers.spaceId, spaceId), eq(kbSpaceMembers.userId, input.userId)),
-        columns: { id: true },
-      });
-      if (existing) throw new ConflictException("User already has access");
-    }
-    if (input.role) {
-      const existing = await this.db.query.kbSpaceMembers.findFirst({
-        where: and(eq(kbSpaceMembers.spaceId, spaceId), eq(kbSpaceMembers.role, input.role)),
-        columns: { id: true },
-      });
-      if (existing) throw new ConflictException("Role already granted");
-    }
     let membershipId: number | null = null;
     if (input.userId) {
       const membership = await this.db.query.organizationMembers.findFirst({
@@ -91,45 +87,34 @@ export class KbMembersService {
         ),
         columns: { id: true },
       });
-      membershipId = membership?.id ?? null;
+      if (!membership) throw new NotFoundException("Active organization member not found");
+      membershipId = membership.id;
     }
-    const [member] = await this.db
-      .insert(kbSpaceMembers)
-      .values({
-        orgId,
-        spaceId,
-        userId: input.userId ?? null,
-        membershipId,
-        role: input.role ?? null,
-        spaceRole: input.spaceRole,
-      })
-      .returning();
-    await this.bumpSpaceAclRevision(orgId, spaceId);
+
+    let member: MemberRow;
+    try {
+      const [row] = await this.db
+        .insert(kbSpaceMembers)
+        .values({
+          orgId,
+          spaceId,
+          membershipId,
+          role: input.role ?? null,
+          spaceRole: input.spaceRole,
+        })
+        .returning();
+      member = row;
+    } catch (err) {
+      const { code, constraint } = getPostgresErrorDetails(err);
+      if (code !== PG_UNIQUE_VIOLATION) throw err;
+      if (constraint === "uniq_kb_space_members_org_space_role")
+        throw new ConflictException("Role already granted");
+      throw new ConflictException("User already has access");
+    }
+
+    await this.indexing.bumpSpaceAclRevision(orgId, spaceId);
     await this.access.invalidateAccessibleSpaceIds(orgId);
-    await this.scheduleAclReindex(orgId, spaceId);
-    return member;
-  }
-
-  private async scheduleAclReindex(orgId: string, spaceId: number): Promise<void> {
-    const registered = registerAfterCommit(async () => {
-      await this.indexing.syncAclRevisionForSpace(orgId, spaceId);
-    });
-    if (!registered) {
-      await this.indexing.syncAclRevisionForSpace(orgId, spaceId);
-    }
-  }
-
-  private async bumpSpaceAclRevision(orgId: string, spaceId: number): Promise<void> {
-    await Promise.all([
-      this.db
-        .update(kbPages)
-        .set({ aclRevision: sql`acl_revision + 1` })
-        .where(and(eq(kbPages.orgId, orgId), eq(kbPages.spaceId, spaceId))),
-      this.db
-        .update(kbArticles)
-        .set({ aclRevision: sql`acl_revision + 1` })
-        .where(and(eq(kbArticles.orgId, orgId), eq(kbArticles.spaceId, spaceId))),
-    ]);
+    return { ...member, userId: input.userId ?? null };
   }
 
   async remove(orgId: string, spaceId: number, memberId: number): Promise<{ success: boolean }> {
@@ -163,9 +148,8 @@ export class KbMembersService {
           eq(kbSpaceMembers.orgId, orgId),
         ),
       );
-    await this.bumpSpaceAclRevision(orgId, spaceId);
+    await this.indexing.bumpSpaceAclRevision(orgId, spaceId);
     await this.access.invalidateAccessibleSpaceIds(orgId);
-    await this.scheduleAclReindex(orgId, spaceId);
     return { success: true };
   }
 }

@@ -11,6 +11,8 @@ import type {
   ListAssetsQueryInput,
   PatchAssetInput,
 } from "./dto/hr-directory.schemas";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 
 @Injectable()
 export class AssetInventoryService {
@@ -23,17 +25,15 @@ export class AssetInventoryService {
     const conditions: SQL[] = [eq(assets.orgId, orgId)];
     if (query.status) conditions.push(eq(assets.status, query.status));
 
-    const whereClause = and(...conditions);
-    const offset = (query.page - 1) * query.limit;
+    const position = decodeCursor(query.cursor);
+    if (position) conditions.push(keysetBeforeId(assets.createdAt, assets.id, position));
 
-    const [rows, [countRow], statusRows] = await Promise.all([
+    const [rows, statusRows] = await Promise.all([
       this.db.query.assets.findMany({
-        where: whereClause,
-        orderBy: [desc(assets.createdAt)],
-        limit: query.limit,
-        offset,
+        where: and(...conditions),
+        orderBy: [desc(assets.createdAt), desc(assets.id)],
+        limit: query.limit + 1,
       }),
-      this.db.select({ total: count() }).from(assets).where(whereClause),
       this.db
         .select({ status: assets.status, total: count() })
         .from(assets)
@@ -41,7 +41,11 @@ export class AssetInventoryService {
         .groupBy(assets.status),
     ]);
 
-    const total = countRow?.total ?? 0;
+    const page = buildCursorPage(rows, query.limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
+
     const counts = { total: 0, available: 0, assigned: 0, maintenance: 0, retired: 0 };
     for (const row of statusRows) {
       counts.total += row.total;
@@ -51,16 +55,7 @@ export class AssetInventoryService {
       if (row.status === "RETIRED") counts.retired = row.total;
     }
 
-    return {
-      data: rows,
-      counts,
-      pagination: {
-        page: query.page,
-        limit: query.limit,
-        total,
-        totalPages: Math.ceil(total / query.limit),
-      },
-    };
+    return { data: page.data, counts, pagination: page.pagination };
   }
 
   async create(orgId: string, body: CreateAssetInput) {
@@ -82,7 +77,7 @@ export class AssetInventoryService {
         brand: body.brand,
         model: body.model,
         serialNumber: body.serialNumber,
-        purchaseDate: body.purchaseDate ? formatDateOnly(new Date(body.purchaseDate)) : undefined,
+        purchaseDate: body.purchaseDate ? formatDateOnly(body.purchaseDate) : undefined,
         purchaseCost: body.purchaseCost?.toString(),
         location: body.location,
         notes: body.notes,
@@ -147,7 +142,7 @@ export class AssetInventoryService {
     }
     if (body.status !== undefined) updatePayload.status = body.status;
     if (body.purchaseDate !== undefined) {
-      updatePayload.purchaseDate = body.purchaseDate ? formatDateOnly(new Date(body.purchaseDate)) : undefined;
+      updatePayload.purchaseDate = body.purchaseDate ? formatDateOnly(body.purchaseDate) : undefined;
     }
     if (body.purchaseCost !== undefined) updatePayload.purchaseCost = body.purchaseCost?.toString();
     if (body.location !== undefined) updatePayload.location = body.location;

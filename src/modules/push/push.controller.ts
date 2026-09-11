@@ -13,6 +13,12 @@ import { Public } from "../../common/auth/public.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  vapidPublicKeyResponseSchema,
+  pushSubscribeResponseSchema,
+  pushUnsubscribeResponseSchema,
+} from "./dto/push-response.schemas";
 import { PushService } from "./push.service";
 import {
   subscribeSchema,
@@ -28,12 +34,14 @@ export class PushController {
 
   @Public()
   @Get("vapid-public-key")
+  @ResponseSchema(vapidPublicKeyResponseSchema)
   vapidPublicKey() {
     return this.push.getVapidPublicKey();
   }
 
   @Post("subscribe")
   @Universal()
+  @ResponseSchema(pushSubscribeResponseSchema)
   @Validate({ body: subscribeSchema })
   subscribe(
     @Body() body: SubscribeInput,
@@ -44,6 +52,7 @@ export class PushController {
 
   @Delete("subscribe")
   @Universal()
+  @ResponseSchema(pushUnsubscribeResponseSchema)
   @Validate({ query: unsubscribeSchema })
   unsubscribe(
     @Query() query: UnsubscribeInput,

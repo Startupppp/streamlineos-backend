@@ -1,4 +1,4 @@
-import { impliedViewKey } from "../module-access.service";
+import { impliedViewKey } from "../../../common/rbac/module-vocabulary";
 
 const catalog = new Set([
   "surveys:view",

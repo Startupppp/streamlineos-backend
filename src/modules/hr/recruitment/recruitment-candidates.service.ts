@@ -6,7 +6,6 @@ import {
   UnprocessableEntityException,
 } from "@nestjs/common";
 import { and, count, desc, eq, ilike, inArray, ne, or, sql, type SQL } from "drizzle-orm";
-import { buildListResponse } from "../../../common/pagination/pagination";
 import {
   candidateApplications,
   candidateSlaTracking,
@@ -14,6 +13,8 @@ import {
   interviews,
   organizations,
 } from "../../../db/schema";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -76,7 +77,7 @@ export class RecruitmentCandidatesService {
   ) {}
 
   async list(orgId: string, input: CandidateListInput) {
-    const key = `${input.status ?? ""}:${input.source ?? ""}:${input.jobId ?? ""}:${input.search ?? ""}:${input.page}:${input.pageSize}`;
+    const key = `${input.status ?? ""}:${input.source ?? ""}:${input.jobId ?? ""}:${input.search ?? ""}:${input.cursor ?? ""}:${input.limit}`;
     return this.cache.cachedVersioned(
       `hr:candidates:list:${orgId}`,
       key,
@@ -91,20 +92,16 @@ export class RecruitmentCandidatesService {
         }
         if (input.search) conditions.push(await this.candidateSearchCondition(input.search));
 
-        const where = and(...conditions);
+        const position = decodeCursor(input.cursor);
+        if (position)
+          conditions.push(keysetBeforeId(candidates.createdAt, candidates.id, position));
 
-        const [items, totalRow, statusRows] = await Promise.all([
+        const [rows, statusRows] = await Promise.all([
           this.db.query.candidates.findMany({
-            where,
-            orderBy: [desc(candidates.createdAt)],
-            limit: input.limit,
-            offset: input.offset,
+            where: and(...conditions),
+            orderBy: [desc(candidates.createdAt), desc(candidates.id)],
+            limit: input.limit + 1,
           }),
-          this.db
-            .select({ total: count() })
-            .from(candidates)
-            .where(where)
-            .then((rows) => rows[0] ?? { total: 0 }),
           this.db
             .select({ status: candidates.status, total: count() })
             .from(candidates)
@@ -117,13 +114,12 @@ export class RecruitmentCandidatesService {
           if (row.status) statusCounts[row.status] = Number(row.total);
         }
 
-        return {
-          ...buildListResponse(items, Number(totalRow.total), {
-            page: input.page,
-            pageSize: input.pageSize,
-          }),
-          statusCounts,
-        };
+        const page = buildCursorPage(rows, input.limit, (row) => ({
+          sortValue: row.createdAt.toISOString(),
+          id: String(row.id),
+        }));
+
+        return { data: page.data, pagination: page.pagination, statusCounts };
       },
       CACHE_TTL.SHORT,
     );
@@ -235,8 +231,12 @@ export class RecruitmentCandidatesService {
       this.db.query.candidates.findFirst({
         where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)),
         with: {
-          applications: { with: { jobPosting: true } },
+          applications: {
+            columns: { trackingToken: false },
+            with: { jobPosting: true },
+          },
           interviews: {
+            columns: { calendarSyncToken: false },
             with: {
               scorecards: true,
               interviewer: { columns: { id: true, firstName: true, lastName: true, email: true, image: true } },
@@ -248,6 +248,7 @@ export class RecruitmentCandidatesService {
       this.db.query.candidateSlaTracking.findMany({
         where: and(eq(candidateSlaTracking.candidateId, candidateId), eq(candidateSlaTracking.orgId, orgId)),
         orderBy: (t, { asc }) => [asc(t.stage)],
+        limit: 100,
       }),
     ]);
 

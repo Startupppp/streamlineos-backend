@@ -5,6 +5,7 @@ import { SalaryProfilesRepository } from "../runs/salary-profiles.repository";
 import { FnfService } from "../hr-payroll/fnf.service";
 import { SalaryStructureTemplatesService } from "../hr-payroll/salary-structure-templates.service";
 import { EssService } from "../insights/ess.service";
+import { salaryTemplateRowSchema } from "../hr-payroll/dto/hr-payroll-response.schemas";
 
 const SERVICES_DIR = join(__dirname, "..");
 const BARE_SELECT_RE = /\.select\s*\(\s*\)/;
@@ -13,6 +14,10 @@ function makeChain(result: unknown[]) {
   const promise = Promise.resolve(result);
   return {
     from: jest.fn().mockReturnThis(),
+    // The worker-addressed reads resolve the worker through the person seam before they query, and
+    // that resolution joins. Without these the chain throws before the projection under test runs.
+    innerJoin: jest.fn().mockReturnThis(),
+    leftJoin: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
     limit: jest.fn().mockReturnThis(),
@@ -88,7 +93,10 @@ describe("pay-projection-exposure", () => {
         effectiveFrom: "2024-01-01",
       };
       const chain = makeChain([row]);
-      const db = { select: jest.fn().mockReturnValue(chain) };
+      const db = {
+        query: { organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) } },
+        select: jest.fn().mockReturnValue(chain),
+      };
       const service = new ProfilesService(
         db as never,
         {} as never,
@@ -136,9 +144,12 @@ describe("pay-projection-exposure", () => {
 
       const result = await service.listHistoryByWorker("org-1", "w1");
 
-      expect(Object.keys(db.select.mock.calls[0][0] as object).sort()).toEqual(
-        PROFILE_KEYS,
-      );
+      // The LAST select is the history query. `listHistoryByWorker` now resolves the worker under
+      // the caller's organisation first — the guard that makes a cross-tenant `:workerId` answer
+      // 404 instead of an empty 200 — so the projection under test is no longer call zero. The
+      // claim this test makes is about the profile projection, not about call ordering.
+      const historySelect = db.select.mock.calls.at(-1)?.[0] as object;
+      expect(Object.keys(historySelect).sort()).toEqual(PROFILE_KEYS);
       const first = result[0] ?? {};
       expect(Object.keys(first).sort()).toEqual(PROFILE_KEYS);
       expect(first).not.toHaveProperty("basicSalary");
@@ -195,7 +206,7 @@ describe("pay-projection-exposure", () => {
       expect(selectKeys).toEqual(["approvedBy", "notes", "status"]);
     });
 
-    it("SalaryStructureTemplatesService.list projects allowlist without updatedAt", async () => {
+    it("SalaryStructureTemplatesService.list projects exactly its published wire contract", async () => {
       const row = {
         id: 1,
         orgId: "org-1",
@@ -212,6 +223,7 @@ describe("pay-projection-exposure", () => {
         effectiveTo: null,
         isActive: true,
         createdAt: new Date(),
+        updatedAt: new Date(),
       };
       const chain = makeChain([row]);
       const db = { select: jest.fn().mockReturnValue(chain) };
@@ -219,29 +231,14 @@ describe("pay-projection-exposure", () => {
 
       const result = await service.list("org-1");
 
-      const TEMPLATE_KEYS = [
-        "basicSalary",
-        "createdAt",
-        "effectiveFrom",
-        "effectiveTo",
-        "hraPercent",
-        "id",
-        "isActive",
-        "medicalAllowance",
-        "name",
-        "orgId",
-        "otherAllowances",
-        "pfDeductionPercent",
-        "professionalTax",
-        "specialAllowance",
-        "travelAllowance",
-      ];
+      const TEMPLATE_KEYS = Object.keys(salaryTemplateRowSchema.shape).sort();
+      expect(TEMPLATE_KEYS).toContain("updatedAt");
       expect(Object.keys(db.select.mock.calls[0][0] as object).sort()).toEqual(
         TEMPLATE_KEYS,
       );
-      const first = result[0] ?? {};
+      const first = result.data[0] ?? {};
       expect(Object.keys(first).sort()).toEqual(TEMPLATE_KEYS);
-      expect(first).not.toHaveProperty("updatedAt");
+      expect(first).not.toHaveProperty("deletedAt");
     });
 
     it("EssService.getOwnFnf projects allowlist without orgId/userId/approvedBy", async () => {

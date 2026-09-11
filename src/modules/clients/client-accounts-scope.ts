@@ -1,8 +1,6 @@
-import type { SQL } from "drizzle-orm";
 import { clientAccounts } from "../../db/schema";
-import { applyScope } from "../access/apply-scope";
-import type { DataScope } from "../access/access.types";
+import type { ScopeShape } from "../access/scoped-read";
 
-export function applyClientAccountsScope(scope: DataScope, orgId: string, userId: string): SQL {
-  return applyScope(scope, orgId, userId, { ownerColumn: clientAccounts.salesRepId });
-}
+export const CLIENT_ACCOUNTS_SCOPE: ScopeShape = {
+  columns: { ownerColumn: clientAccounts.salesRepId },
+};

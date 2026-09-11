@@ -31,6 +31,7 @@ SET "delegator_membership_id" = om.id
 FROM "organization_members" om
 WHERE om.org_id = wd.org_id
   AND om.user_id = wd.delegator_user_id
+  AND om.status = 'ACTIVE'
   AND wd."delegator_membership_id" IS NULL;
 
 --> statement-breakpoint
@@ -39,6 +40,7 @@ SET "delegate_membership_id" = om.id
 FROM "organization_members" om
 WHERE om.org_id = wd.org_id
   AND om.user_id = wd.delegate_user_id
+  AND om.status = 'ACTIVE'
   AND wd."delegate_membership_id" IS NULL;
 
 --> statement-breakpoint
@@ -47,6 +49,7 @@ SET "acted_by_membership_id" = om.id
 FROM "organization_members" om
 WHERE om.org_id = sa.org_id
   AND om.user_id = sa.acted_by_user_id
+  AND om.status = 'ACTIVE'
   AND sa."acted_by_membership_id" IS NULL;
 
 --> statement-breakpoint

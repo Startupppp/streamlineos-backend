@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { automationRules, automationRuns } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -9,6 +9,8 @@ import type {
   ListAutomationsQueryInput,
   UpdateAutomationInput,
 } from "./dto/settings.schemas";
+import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
+import { keysetBeforeId } from "../../common/pagination/keyset";
 
 @Injectable()
 export class SettingsAutomationsService {
@@ -19,11 +21,13 @@ export class SettingsAutomationsService {
 
   async listAutomations(orgId: string, params: ListAutomationsQueryInput) {
     const limit = Math.min(params.limit, 100);
-    const offset = (params.page - 1) * limit;
-    const where = eq(automationRules.orgId, orgId);
+    const position = decodeCursor(params.cursor);
+    const where = and(
+      eq(automationRules.orgId, orgId),
+      position ? keysetBeforeId(automationRules.createdAt, automationRules.id, position) : undefined,
+    );
 
-    const [data, countRows] = await Promise.all([
-      this.db
+    const data = await this.db
         .select({
           id: automationRules.id,
           name: automationRules.name,
@@ -39,21 +43,13 @@ export class SettingsAutomationsService {
         })
         .from(automationRules)
         .where(where)
-        .orderBy(desc(automationRules.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ total: sql<number>`count(*)::int` })
-        .from(automationRules)
-        .where(where),
-    ]);
+        .orderBy(desc(automationRules.createdAt), desc(automationRules.id))
+        .limit(limit + 1);
 
-    const total = countRows[0]?.total ?? 0;
-
-    return {
-      data,
-      pagination: { page: params.page, limit, total, totalPages: Math.ceil(total / limit) },
-    };
+    return buildCursorPage(data, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
   }
 
   async createAutomation(orgId: string, userId: string, input: CreateAutomationInput) {

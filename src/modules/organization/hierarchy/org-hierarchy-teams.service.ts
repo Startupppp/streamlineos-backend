@@ -1,31 +1,20 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from "@nestjs/common";
-import { and, asc, eq, ilike, isNull, or } from "drizzle-orm";
+import { BadRequestException, Injectable } from "@nestjs/common";
+import { and, eq, isNull } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { randomUUID } from "node:crypto";
 import { organizationMembers, orgUnits } from "../../../db/schema";
-
-const headMember = alias(organizationMembers, "head_member");
-import { DRIZZLE } from "../../../db/drizzle.constants";
-import { type Db } from "../../../db/drizzle.module";
-import { CacheService } from "../../../common/cache/cache.service";
-import { AuditService } from "../../../common/audit/audit.service";
+import type { Db } from "../../../db/drizzle.module";
 import type {
   CreateOrgTeamInput,
-  UpdateOrgTeamInput,
   ListQueryInput,
+  UpdateOrgTeamInput,
 } from "./dto/org-hierarchy.schemas";
 import {
-  getOrgUnitCursorFilter,
-  getOrgUnitStatusFilter,
-  orgUnitNormalizedName,
-  toOrgUnitCursorPage,
-} from "./org-hierarchy-list-filters";
+  OrgUnitCrudService,
+  type OrgUnitCrudAdapter,
+} from "./org-unit-crud";
+
+const headMember = alias(organizationMembers, "head_member");
+const teamDepartments = alias(orgUnits, "team_departments");
 
 const ORG_TEAM_COLUMNS = {
   id: orgUnits.id,
@@ -46,7 +35,6 @@ const ORG_TEAM_READ_COLUMNS = {
   headUserId: headMember.userId,
 };
 
-const teamDepartments = alias(orgUnits, "team_departments");
 const ORG_TEAM_LIST_COLUMNS = {
   ...ORG_TEAM_READ_COLUMNS,
   departmentName: teamDepartments.name,
@@ -67,6 +55,48 @@ type OrgTeamRow = Pick<
   | "deletedAt"
 > & { headUserId: string | null };
 
+type OrgTeamListRow = OrgTeamRow & { departmentName: string | null };
+
+async function assertDepartment(db: Db, orgId: string, departmentId: string) {
+  const department = await db.query.orgUnits.findFirst({
+    columns: { id: true },
+    where: and(
+      eq(orgUnits.id, departmentId),
+      eq(orgUnits.orgId, orgId),
+      eq(orgUnits.kind, "DEPARTMENT"),
+      eq(orgUnits.status, "ACTIVE"),
+      isNull(orgUnits.deletedAt),
+    ),
+  });
+  if (!department)
+    throw new BadRequestException(
+      "Select an active department from this organization",
+    );
+}
+
+async function assertActiveLead(
+  db: Db,
+  orgId: string,
+  leadUserId: string | null | undefined,
+) {
+  if (!leadUserId) return;
+  const [membership] = await db
+    .select({ id: organizationMembers.id })
+    .from(organizationMembers)
+    .where(
+      and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, leadUserId),
+        eq(organizationMembers.status, "ACTIVE"),
+      ),
+    )
+    .limit(1);
+  if (!membership)
+    throw new BadRequestException(
+      "Select an active member of this organization as team lead",
+    );
+}
+
 export function toOrgTeam(row: OrgTeamRow) {
   return {
     id: row.id,
@@ -84,43 +114,45 @@ export function toOrgTeam(row: OrgTeamRow) {
   };
 }
 
-function toOrgTeamList(
-  row: OrgTeamRow & { departmentName: string | null },
-) {
+function toOrgTeamList(row: OrgTeamListRow) {
   return {
     ...toOrgTeam(row),
     departmentName: row.departmentName,
   };
 }
 
-@Injectable()
-export class OrgHierarchyTeamsService {
-  constructor(
-    @Inject(DRIZZLE) private readonly db: Db,
-    private readonly cache: CacheService,
-    private readonly audit: AuditService,
-  ) {}
-
-  async listTeams(orgId: string, query: ListQueryInput) {
-    const { cursor, limit, search, status } = query;
-    const statusFilter = getOrgUnitStatusFilter(status);
-    const cursorFilter = getOrgUnitCursorFilter(cursor);
-    const filters = and(
-      eq(orgUnits.orgId, orgId),
-      eq(orgUnits.kind, "TEAM"),
-      isNull(orgUnits.deletedAt),
-      ...(search
-        ? [
-            or(
-              ilike(orgUnits.name, `%${search}%`),
-              ilike(orgUnits.code, `%${search}%`),
-            ),
-          ]
-        : []),
-      ...(statusFilter ? [statusFilter] : []),
-      ...(cursorFilter ? [cursorFilter] : []),
-    );
-    const rows = await this.db
+const TEAM_ADAPTER: OrgUnitCrudAdapter<
+  CreateOrgTeamInput,
+  UpdateOrgTeamInput,
+  OrgTeamRow,
+  OrgTeamListRow,
+  ReturnType<typeof toOrgTeam>,
+  ReturnType<typeof toOrgTeamList>
+> = {
+  kind: "TEAM",
+  label: "Team",
+  auditName: "org.team",
+  code: {
+    create: (input) => input.code,
+    update: (input) => input.code,
+    current: (row) => row.code,
+  },
+  parent: {
+    rule: "required",
+    kind: "DEPARTMENT",
+    label: "department",
+    create: (input) => input.departmentId,
+    update: (input) => input.departmentId,
+    current: (row) => row.parentId,
+    validate: assertDepartment,
+  },
+  head: {
+    create: (input) => input.leadUserId,
+    update: (input) => input.leadUserId,
+    current: (row) => row.headUserId,
+  },
+  listRows: async (db, plan) =>
+    db
       .select(ORG_TEAM_LIST_COLUMNS)
       .from(orgUnits)
       .leftJoin(headMember, eq(headMember.id, orgUnits.headMembershipId))
@@ -130,256 +162,74 @@ export class OrgHierarchyTeamsService {
           eq(teamDepartments.id, orgUnits.parentId),
           eq(teamDepartments.orgId, orgUnits.orgId),
           eq(teamDepartments.kind, "DEPARTMENT"),
+          isNull(teamDepartments.deletedAt),
         ),
       )
-      .where(filters)
-      .orderBy(asc(orgUnitNormalizedName), asc(orgUnits.id))
-      .limit(limit + 1);
-    return toOrgUnitCursorPage(rows, limit, toOrgTeamList);
-  }
-
-  private async getTeamRow(
-    orgId: string,
-    id: string,
-  ): Promise<OrgTeamRow | null> {
-    const [row] = await this.db
+      .where(plan.where)
+      .orderBy(...plan.orderBy)
+      .limit(plan.limit),
+  readRow: async (db, where) => {
+    const [row] = await db
       .select(ORG_TEAM_READ_COLUMNS)
       .from(orgUnits)
       .leftJoin(headMember, eq(headMember.id, orgUnits.headMembershipId))
-      .where(
-        and(
-          eq(orgUnits.id, id),
-          eq(orgUnits.orgId, orgId),
-          eq(orgUnits.kind, "TEAM"),
-          isNull(orgUnits.deletedAt),
-        ),
-      )
+      .where(where)
       .limit(1);
     return row ?? null;
+  },
+  createValues: (input) => ({
+    name: input.name,
+    description: input.description,
+    ...(input.capacity !== undefined
+      ? { metadata: { capacity: input.capacity } }
+      : {}),
+  }),
+  updateValues: (input, existing) => ({
+    ...(input.name !== undefined ? { name: input.name } : {}),
+    ...(input.description !== undefined
+      ? { description: input.description }
+      : {}),
+    ...(input.status !== undefined ? { status: input.status } : {}),
+    ...(input.capacity !== undefined
+      ? {
+          metadata: {
+            ...(existing.metadata ?? {}),
+            capacity: input.capacity ?? undefined,
+          },
+        }
+      : {}),
+  }),
+  validateCreate: (db, orgId, input) =>
+    assertActiveLead(db, orgId, input.leadUserId),
+  validateUpdate: (db, orgId, input) =>
+    assertActiveLead(db, orgId, input.leadUserId),
+  toOutput: toOrgTeam,
+  toListOutput: toOrgTeamList,
+  toWriteOutput: toOrgTeam,
+};
+
+@Injectable()
+export class OrgHierarchyTeamsService {
+  constructor(private readonly crud: OrgUnitCrudService) {}
+
+  listTeams(orgId: string, query: ListQueryInput) {
+    return this.crud.list(TEAM_ADAPTER, orgId, query);
   }
 
-  async getTeam(orgId: string, id: string) {
-    const row = await this.getTeamRow(orgId, id);
-    return row ? toOrgTeam(row) : null;
+  getTeam(orgId: string, id: string) {
+    return this.crud.get(TEAM_ADAPTER, orgId, id);
   }
 
-  private async assertDepartment(orgId: string, departmentId?: string | null) {
-    if (!departmentId) return;
-    const department = await this.db.query.orgUnits.findFirst({
-      where: and(
-        eq(orgUnits.id, departmentId),
-        eq(orgUnits.orgId, orgId),
-        eq(orgUnits.kind, "DEPARTMENT"),
-        isNull(orgUnits.deletedAt),
-      ),
-      columns: { id: true },
-    });
-    if (!department) {
-      throw new BadRequestException(
-        "Select a valid department from this organization",
-      );
-    }
+  createTeam(orgId: string, userId: string, body: CreateOrgTeamInput) {
+    return this.crud.create(TEAM_ADAPTER, orgId, userId, body);
   }
 
-  private async assertActiveLead(orgId: string, leadUserId?: string | null) {
-    if (!leadUserId) return;
-    const [membership] = await this.db
-      .select({ id: organizationMembers.id })
-      .from(organizationMembers)
-      .where(
-        and(
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.userId, leadUserId),
-          eq(organizationMembers.status, "ACTIVE"),
-        ),
-      )
-      .limit(1);
-    if (!membership) {
-      throw new BadRequestException(
-        "Select an active member of this organization as team lead",
-      );
-    }
-  }
-
-  async createTeam(orgId: string, userId: string, body: CreateOrgTeamInput) {
-    await Promise.all([
-      this.assertDepartment(orgId, body.departmentId),
-      this.assertActiveLead(orgId, body.leadUserId),
-    ]);
-    const conflict = await this.db.query.orgUnits.findFirst({
-      where: and(
-        eq(orgUnits.orgId, orgId),
-        eq(orgUnits.kind, "TEAM"),
-        eq(orgUnits.code, body.code.toUpperCase()),
-        isNull(orgUnits.deletedAt),
-      ),
-    });
-    if (conflict) throw new ConflictException("Team code already exists");
-
-    const leadMembershipId = body.leadUserId
-      ? await this.db
-          .select({ id: organizationMembers.id })
-          .from(organizationMembers)
-          .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, body.leadUserId)))
-          .limit(1)
-          .then((rows) => rows[0]?.id ?? null)
-      : null;
-
-    const [row] = await this.db
-      .insert(orgUnits)
-      .values({
-        id: randomUUID(),
-        orgId,
-        kind: "TEAM",
-        name: body.name,
-        code: body.code.toUpperCase(),
-        description: body.description,
-        headMembershipId: leadMembershipId,
-        parentId: body.departmentId ?? undefined,
-        metadata:
-          body.capacity !== undefined ? { capacity: body.capacity } : undefined,
-      })
-      .returning(ORG_TEAM_COLUMNS);
-
-    if (!row) throw new Error("Failed to create team");
-
-    await this.cache.invalidateForOrg(orgId, "org:units:TEAM");
-    await this.audit.logCritical({
-      action: "org.team.created",
-      userId,
-      orgId,
-      targetId: row.id,
-      targetType: "org_unit",
-    });
-
-    return toOrgTeam({ ...row, headUserId: body.leadUserId ?? null });
-  }
-
-  async updateTeam(
+  updateTeam(
     orgId: string,
     userId: string,
     id: string,
     body: UpdateOrgTeamInput,
   ) {
-    const existing = await this.getTeamRow(orgId, id);
-    if (!existing) throw new NotFoundException("Team not found");
-    if (body.departmentId !== undefined) {
-      await this.assertDepartment(orgId, body.departmentId);
-    }
-    if (body.leadUserId !== undefined) {
-      await this.assertActiveLead(orgId, body.leadUserId);
-    }
-
-    if (body.code && body.code !== existing.code) {
-      const conflict = await this.db.query.orgUnits.findFirst({
-        where: and(
-          eq(orgUnits.orgId, orgId),
-          eq(orgUnits.kind, "TEAM"),
-          eq(orgUnits.code, body.code.toUpperCase()),
-          isNull(orgUnits.deletedAt),
-        ),
-      });
-      if (conflict) throw new ConflictException("Team code already exists");
-    }
-
-    const { departmentId, leadUserId, capacity, code, ...rest } = body;
-    const existingMeta = existing.metadata ?? {};
-
-    let teamLeadMembershipId: number | null | undefined = undefined;
-    if (leadUserId !== undefined) {
-      if (leadUserId) {
-        const [member] = await this.db
-          .select({ id: organizationMembers.id })
-          .from(organizationMembers)
-          .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, leadUserId)))
-          .limit(1);
-        teamLeadMembershipId = member?.id ?? null;
-      } else {
-        teamLeadMembershipId = null;
-      }
-    }
-
-    const effectiveHeadUserId = leadUserId !== undefined ? (leadUserId ?? null) : (existing?.headUserId ?? null);
-
-    const [row] = await this.db
-      .update(orgUnits)
-      .set({
-        ...rest,
-        ...(code !== undefined && { code: code.toUpperCase() }),
-        ...(leadUserId !== undefined && { headMembershipId: teamLeadMembershipId }),
-        ...(departmentId !== undefined && { parentId: departmentId }),
-        ...(capacity !== undefined && {
-          metadata: { ...existingMeta, capacity: capacity ?? undefined },
-        }),
-      })
-      .where(
-        and(
-          eq(orgUnits.id, id),
-          eq(orgUnits.orgId, orgId),
-          eq(orgUnits.kind, "TEAM"),
-        ),
-      )
-      .returning(ORG_TEAM_COLUMNS);
-
-    if (!row) throw new NotFoundException("Team not found");
-
-    await this.cache.invalidateForOrg(orgId, "org:units:TEAM");
-    await this.audit.logCritical({
-      action: "org.team.updated",
-      userId,
-      orgId,
-      targetId: id,
-      targetType: "org_unit",
-    });
-
-    return toOrgTeam({ ...row, headUserId: effectiveHeadUserId });
-  }
-
-  async deleteTeam(orgId: string, userId: string, id: string) {
-    const existing = await this.getTeam(orgId, id);
-    if (!existing) throw new NotFoundException("Team not found");
-
-    await this.db
-      .update(orgUnits)
-      .set({ deletedAt: new Date() })
-      .where(
-        and(
-          eq(orgUnits.id, id),
-          eq(orgUnits.orgId, orgId),
-          eq(orgUnits.kind, "TEAM"),
-        ),
-      );
-
-    await this.cache.invalidateForOrg(orgId, "org:units:TEAM");
-    await this.audit.logCritical({
-      action: "org.team.deleted",
-      userId,
-      orgId,
-      targetId: id,
-      targetType: "org_unit",
-    });
-  }
-
-  async moveTeam(orgId: string, teamId: string, newDepartmentId: string) {
-    const team = await this.db.query.orgUnits.findFirst({
-      where: and(
-        eq(orgUnits.id, teamId),
-        eq(orgUnits.orgId, orgId),
-        eq(orgUnits.kind, "TEAM"),
-        isNull(orgUnits.deletedAt),
-      ),
-    });
-    if (!team) throw new NotFoundException("Team not found");
-    if (newDepartmentId === teamId) {
-      throw new BadRequestException("A unit cannot be its own parent");
-    }
-    await this.assertDepartment(orgId, newDepartmentId);
-
-    await this.db
-      .update(orgUnits)
-      .set({ parentId: newDepartmentId, updatedAt: new Date() })
-      .where(and(eq(orgUnits.id, teamId), eq(orgUnits.orgId, orgId)));
-
-    return { success: true };
+    return this.crud.update(TEAM_ADAPTER, orgId, userId, id, body);
   }
 }

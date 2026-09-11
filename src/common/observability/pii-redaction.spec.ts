@@ -92,16 +92,31 @@ describe("Surface 1 — structured logger: PII in meta is redacted at emission",
     expect(joint).toContain("[redacted]");
   });
 
-  it("(FINDING — DECISION REQUIRED) email under 'email' key currently appears in log — not in SENSITIVE_EXACT list", () => {
+  it("email under 'email' key is not in the emitted log line, but the organisation still is", () => {
     logger.info("invite sent", { email: EMAIL_PII, orgId: "org-1" });
     const joint = cap.lines.join("");
-    expect(joint).toContain(EMAIL_PII);
+    expect(joint).not.toContain(EMAIL_PII);
+    expect(joint).toContain("[redacted]");
+    expect(joint).toContain("org-1");
   });
 
-  it("(FINDING — DECISION REQUIRED) phone under 'phone' key currently appears in log — not in SENSITIVE_EXACT list", () => {
+  it("phone under 'phone' key is not in the emitted log line", () => {
     logger.info("sms sent", { phone: PHONE_PII, orgId: "org-1" });
     const joint = cap.lines.join("");
-    expect(joint).toContain(PHONE_PII);
+    expect(joint).not.toContain(PHONE_PII);
+    expect(joint).toContain("[redacted]");
+  });
+
+  it("a recipient list and a message subject are withheld", () => {
+    logger.info("Email sent (resend)", {
+      to: [EMAIL_PII],
+      subject: "Termination letter — Ada Lovelace",
+      orgId: "org-1",
+    });
+    const joint = cap.lines.join("");
+    expect(joint).not.toContain(EMAIL_PII);
+    expect(joint).not.toContain("Ada Lovelace");
+    expect(joint).toContain("org-1");
   });
 });
 

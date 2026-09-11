@@ -43,13 +43,18 @@ describe("PermissionCatalogSyncService.sync — administering module column", ()
     const { PermissionCatalogSyncService } = await import(
       "./permission-catalog-sync.service"
     );
+    const { RoleGrantReconcilerService } = await import(
+      "./role-grant-reconciler.service"
+    );
     let inserted: Array<Record<string, unknown>> = [];
     let conflictSet: Record<string, unknown> = {};
 
     const db = {
       select: () => ({
-        from: () =>
-          Promise.resolve(catalogModules.map((moduleKey) => ({ moduleKey }))),
+        from: () => ({
+          limit: () =>
+            Promise.resolve(catalogModules.map((moduleKey) => ({ moduleKey }))),
+        }),
       }),
       insert: () => ({
         values: (rows: Array<Record<string, unknown>>) => {
@@ -67,7 +72,10 @@ describe("PermissionCatalogSyncService.sync — administering module column", ()
       delete: () => ({ where: () => Promise.resolve() }),
     };
 
-    const service = new PermissionCatalogSyncService(db as never);
+    const service = new PermissionCatalogSyncService(
+      db as never,
+      new RoleGrantReconcilerService(db as never),
+    );
     await service.sync().catch(() => undefined);
     return { inserted, conflictSet };
   }

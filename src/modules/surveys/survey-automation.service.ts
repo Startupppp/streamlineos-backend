@@ -1,15 +1,19 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
 import { and, desc, eq } from "drizzle-orm";
 import { surveyAutomationEvents, surveyForms } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
+import { createAutomationSchema } from "./dto/survey-automation.schemas";
 import type { CreateAutomationInput, PatchAutomationInput } from "./dto/survey-automation.schemas";
 
 export interface AutomationRule extends CreateAutomationInput {
   id: string;
 }
+
+const automationRuleSchema = createAutomationSchema.extend({ id: z.string() }).strip();
 
 @Injectable()
 export class SurveyAutomationService {
@@ -43,8 +47,12 @@ export class SurveyAutomationService {
   }
 
   private getRules(survey: typeof surveyForms.$inferSelect): AutomationRule[] {
-    const settings = (survey.settings ?? {}) as Record<string, unknown>;
-    return Array.isArray(settings.automations) ? (settings.automations as AutomationRule[]) : [];
+    const automations = survey.settings?.["automations"];
+    if (!Array.isArray(automations)) return [];
+    return automations
+      .map((item) => automationRuleSchema.safeParse(item))
+      .filter((result): result is { success: true; data: AutomationRule } => result.success)
+      .map((result) => result.data);
   }
 
   async list(orgId: string, surveyId: number) {

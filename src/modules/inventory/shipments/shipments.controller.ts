@@ -31,9 +31,14 @@ import {
 } from "./dto/shipments.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import {
+  listShipmentsResponseSchema,
+  getShipmentResponseSchema,
+  invShipmentSchema,
+} from "./dto/shipments-response.schemas";
 
 const shipmentIdParams = z.object({ shipmentId: z.coerce.number().int().positive() }).strict();
 
@@ -44,6 +49,7 @@ export class ShipmentsController {
   constructor(private readonly svc: ShipmentsService) {}
 
   @Get()
+  @ResponseSchema(listShipmentsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
   @Validate({ query: listShipmentsQuerySchema })
@@ -55,6 +61,7 @@ export class ShipmentsController {
   }
 
   @Get(":shipmentId")
+  @ResponseSchema(getShipmentResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
   @Validate({ params: shipmentIdParams })
@@ -66,6 +73,7 @@ export class ShipmentsController {
   }
 
   @Post()
+  @ResponseSchema(invShipmentSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
   @Idempotent("inventory.shipment.create")
@@ -78,6 +86,7 @@ export class ShipmentsController {
   }
 
   @Patch(":shipmentId")
+  @ResponseSchema(invShipmentSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
   @Validate({ params: shipmentIdParams, body: updateShipmentSchema })
@@ -90,6 +99,7 @@ export class ShipmentsController {
   }
 
   @Post(":shipmentId/ship")
+  @ResponseSchema(invShipmentSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
   @HttpCode(HttpStatus.OK)
@@ -105,6 +115,7 @@ export class ShipmentsController {
 
   @Post(":shipmentId/cancel")
   @BodylessAction()
+  @ResponseSchema(invShipmentSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
   @Idempotent("inventory.shipment.cancel")

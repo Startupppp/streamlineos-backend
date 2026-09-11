@@ -9,6 +9,6 @@ export const applySchema = z.object({
   coverLetter: z.string().max(5000).optional(),
   resumeUrl: z.string().url().max(500).optional(),
   answers: z.record(z.string(), z.string().max(1000)).optional(),
-});
+}).strict();
 
 export type ApplyInput = z.infer<typeof applySchema>;

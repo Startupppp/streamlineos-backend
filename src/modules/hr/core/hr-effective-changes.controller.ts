@@ -31,7 +31,12 @@ import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  effectiveChangeRowSchema,
+  effectiveChangePageSchema,
+  applyDueChangesResponseSchema,
+} from "./dto/core-response.schemas";
 
 const changeIdParams = z.object({ changeId: z.coerce.number().int().positive() }).strict();
 
@@ -42,6 +47,7 @@ export class HrEffectiveChangesController {
   constructor(private readonly service: HrEffectiveChangesService) {}
 
   @Get()
+  @ResponseSchema(effectiveChangePageSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
   @Validate({ query: listEffectiveDateChangesSchema })
@@ -56,6 +62,7 @@ export class HrEffectiveChangesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @HttpCode(201)
+  @ResponseSchema(effectiveChangeRowSchema)
   @Validate({ body: createEffectiveDateChangeSchema })
   create(
     @Body() body: CreateEffectiveDateChangeInput,
@@ -66,6 +73,7 @@ export class HrEffectiveChangesController {
 
   @Patch(":changeId/approve")
   @BodylessAction()
+  @ResponseSchema(effectiveChangeRowSchema)
   @Idempotent("hr.effective-change.approve")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
@@ -78,6 +86,7 @@ export class HrEffectiveChangesController {
   }
 
   @Post("apply-due")
+  @ResponseSchema(applyDueChangesResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @Idempotent("hr.effective-changes.apply-due")

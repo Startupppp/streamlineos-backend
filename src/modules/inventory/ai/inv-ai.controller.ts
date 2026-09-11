@@ -17,8 +17,13 @@ import {
 } from "./dto/ai-insights.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import {
+  listInsightsResponseSchema,
+  generateInsightsResponseSchema,
+  updateInsightStatusResponseSchema,
+} from "./dto/ai-response.schemas";
 
 const insightIdParams = z.object({ insightId: z.coerce.number().int().positive() }).strict();
 
@@ -29,6 +34,7 @@ export class InvAiController {
   constructor(private readonly aiService: InvAiService) {}
 
   @Get("insights")
+  @ResponseSchema(listInsightsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:reports:read")
   @Validate({ query: listInsightsSchema })
@@ -41,6 +47,7 @@ export class InvAiController {
 
   @Post("insights/generate")
   @BodylessAction()
+  @ResponseSchema(generateInsightsResponseSchema)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("inventory:ai:manage")
   @Idempotent("inventory.ai.insights.generate")
@@ -51,6 +58,7 @@ export class InvAiController {
   }
 
   @Patch("insights/:insightId")
+  @ResponseSchema(updateInsightStatusResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:ai:manage")
   @Validate({ params: insightIdParams, body: updateInsightStatusSchema })

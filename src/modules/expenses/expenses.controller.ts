@@ -23,8 +23,14 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
+import { EmploymentFactsService } from "../directory/employment-facts.service";
+import { readRequestScopedRead } from "../organization/core/read-request-scope";
+import {
+  canReadOthersExpenses,
+  resolveExpenseReadScope,
+  type ExpenseRead,
+} from "./expenses-scope";
 import { ExpensesService } from "./expenses.service";
 import { ExpensesWriteService } from "./expenses-write.service";
 import { ExpenseLifecycleService } from "./expense-lifecycle.service";
@@ -50,10 +56,22 @@ import { ExpenseExportService } from "./expense-export.service";
 import { pipeline } from "node:stream/promises";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { ApiOkResponse } from "@nestjs/swagger";
+import {
+  expenseApproveResponseSchema,
+  expenseExportJobViewSchema,
+  expenseImportResultSchema,
+  expenseListResponseSchema,
+  expensePageDataResponseSchema,
+  expenseReportResponseSchema,
+  expenseRowSchema,
+  expenseSubmitResponseSchema,
+} from "./dto/expenses-response.schemas";
+import { successSchema } from "../../common/openapi/response-envelopes";
 
 const expenseIdParams = z.object({ expenseId: z.coerce.number().int().positive() }).strict();
-const jobIdParams = z.object({ jobId: z.string().min(1) }).strict();
+const jobIdParams = z.object({ jobId: z.string().uuid() }).strict();
 
 @RequireModule("accounting")
 @Controller("hr/expenses")
@@ -64,29 +82,34 @@ export class ExpensesController {
     private readonly expensesWrite: ExpensesWriteService,
     private readonly lifecycle: ExpenseLifecycleService,
     private readonly access: AccessService,
+    private readonly employment: EmploymentFactsService,
     private readonly exportJobs: ExpenseExportService,
   ) {}
 
+  private readScope(u: CurrentUserContext): Promise<ExpenseRead> {
+    return resolveExpenseReadScope(this.access, this.employment, u);
+  }
+
   private async canApprove(u: CurrentUserContext): Promise<boolean> {
-    if (u.isOrgOwner) return true;
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    return perms.has("hr:expenses:approve");
+    return canReadOthersExpenses(await this.readScope(u));
   }
 
   @Get()
   @RequirePermission("hr:expenses:view")
   @Validate({ query: listSchema })
+  @ResponseSchema(expenseListResponseSchema)
   async list(
     @Query() filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.expenses.list(u.orgId, u.userId, await this.canApprove(u), filters);
+    return this.expenses.list(await this.readScope(u), filters);
   }
 
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:expenses:create")
   @Validate({ body: createExpenseSchema })
+  @ResponseSchema(expenseRowSchema)
   async create(
     @Body() body: CreateExpenseInput,
     @CurrentUser() u: CurrentUserContext,
@@ -97,6 +120,7 @@ export class ExpensesController {
   @Patch(":expenseId")
   @RequirePermission("hr:expenses:approve")
   @Validate({ params: expenseIdParams, body: updateExpensePatchSchema })
+  @ResponseSchema(successSchema)
   async update(
     @Param("expenseId", ParseIntPipe) expenseId: number,
     @Body() body: UpdateExpensePatchInput,
@@ -110,34 +134,42 @@ export class ExpensesController {
   @Idempotent("expenses.email-report.create")
   @RequirePermission("hr:expenses:approve")
   @Validate({ body: exportSchema })
+  @ResponseSchema(expenseExportJobViewSchema)
   async emailReport(
     @Body() filters: ExportInput,
     @Headers("idempotency-key") idempotencyKey: string,
     @CurrentUser() u: CurrentUserContext,
-    @Req() req: Request & { rbacScope?: DataScope },
+    @Req() req: Request,
   ) {
-    const scope: DataScope = req.rbacScope ?? "none";
-    return this.exportJobs.create(u, filters, idempotencyKey, scope);
+    const read = readRequestScopedRead(req, u);
+    return this.exportJobs.create(
+      u,
+      filters,
+      idempotencyKey,
+      read.rawScope("export filters are persisted on the job row for a background worker to replay outside the request"),
+    );
   }
 
   @Get("page-data")
   @RequirePermission("hr:expenses:view")
   @Validate({ query: pageDataSchema })
+  @ResponseSchema(expensePageDataResponseSchema)
   async pageData(
     @Query() filters: PageDataInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.expenses.getPageData(u.orgId, u.userId, await this.canApprove(u), filters);
+    return this.expenses.getPageData(await this.readScope(u), filters);
   }
 
   @Get("report")
   @RequirePermission("hr:expenses:read")
   @Validate({ query: reportSchema })
+  @ResponseSchema(expenseReportResponseSchema)
   async report(
     @Query() filters: ReportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.expenses.getReport(u.orgId, u.userId, await this.canApprove(u), filters);
+    return this.expenses.getReport(await this.readScope(u), filters);
   }
 
   @Post("export/jobs")
@@ -145,19 +177,26 @@ export class ExpensesController {
   @Idempotent("expenses.export.create")
   @RequirePermission("hr:expenses:read")
   @Validate({ body: exportSchema })
+  @ResponseSchema(expenseExportJobViewSchema)
   async createExportJob(
     @Body() filters: ExportInput,
     @Headers("idempotency-key") idempotencyKey: string,
     @CurrentUser() u: CurrentUserContext,
-    @Req() req: Request & { rbacScope?: DataScope },
+    @Req() req: Request,
   ) {
-    const scope: DataScope = req.rbacScope ?? "none";
-    return this.exportJobs.create(u, filters, idempotencyKey, scope);
+    const read = readRequestScopedRead(req, u);
+    return this.exportJobs.create(
+      u,
+      filters,
+      idempotencyKey,
+      read.rawScope("export filters are persisted on the job row for a background worker to replay outside the request"),
+    );
   }
 
   @Get("export/jobs/:jobId")
   @RequirePermission("hr:expenses:read")
   @Validate({ params: jobIdParams })
+  @ResponseSchema(expenseExportJobViewSchema)
   getExportJob(@Param("jobId") jobId: string, @CurrentUser() u: CurrentUserContext) {
     return this.exportJobs.get(u, jobId);
   }
@@ -165,6 +204,7 @@ export class ExpensesController {
   @Get("export/jobs/:jobId/download")
   @RequirePermission("hr:expenses:read")
   @Validate({ params: jobIdParams })
+  @ApiOkResponse({ description: "CSV download", content: { "text/csv": { schema: { type: "string", format: "binary" } } } })
   async downloadExportJob(@Param("jobId") jobId: string, @CurrentUser() u: CurrentUserContext, @Res() res: Response) {
     const { job, file } = await this.exportJobs.download(u, jobId);
     res.setHeader("Content-Type", file.contentType);
@@ -180,6 +220,7 @@ export class ExpensesController {
   @RequirePermission("hr:expenses:create")
   @Validate({ params: expenseIdParams })
   @BodylessAction()
+  @ResponseSchema(expenseSubmitResponseSchema)
   async submit(
     @Param("expenseId", ParseIntPipe) expenseId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -193,6 +234,7 @@ export class ExpensesController {
   @RequirePermission("hr:expenses:approve")
   @Validate({ params: expenseIdParams })
   @BodylessAction()
+  @ResponseSchema(expenseApproveResponseSchema)
   async approve(
     @Param("expenseId", ParseIntPipe) expenseId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -205,6 +247,7 @@ export class ExpensesController {
   @HttpCode(200)
   @RequirePermission("hr:expenses:approve")
   @Validate({ params: expenseIdParams, body: rejectExpenseSchema })
+  @ResponseSchema(successSchema)
   async reject(
     @Param("expenseId", ParseIntPipe) expenseId: number,
     @Body() body: RejectExpenseInput,
@@ -217,6 +260,7 @@ export class ExpensesController {
   @Delete(":expenseId")
   @RequirePermission("hr:expenses:create")
   @Validate({ params: expenseIdParams })
+  @ResponseSchema(successSchema)
   async remove(
     @Param("expenseId", ParseIntPipe) expenseId: number,
     @CurrentUser() u: CurrentUserContext,

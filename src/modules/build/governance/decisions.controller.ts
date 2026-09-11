@@ -28,6 +28,8 @@ import {
 } from "./dto/governance.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { decisionRowSchema } from "./dto/governance-response.schemas";
 
 const decisionIdParams = z.object({ decisionId: z.coerce.number().int().positive() }).strict();
 
@@ -39,40 +41,44 @@ export class DecisionsController {
 
   @Get()
   @RequirePermission("build:decisions:view")
+  @ResponseSchema(z.array(decisionRowSchema))
   @Validate({ query: listDecisionsQuerySchema })
   listDecisions(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Query() query: ListDecisionsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listDecisions(u.orgId, projectId, query);
+    return this.svc.listDecisions(u, projectId, query);
   }
 
   @Get(":decisionId")
   @RequirePermission("build:decisions:view")
+  @ResponseSchema(decisionRowSchema)
   @Validate({ params: decisionIdParams })
   getDecision(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("decisionId", ParseIntPipe) decisionId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getDecision(u.orgId, projectId, decisionId);
+    return this.svc.getDecision(u, projectId, decisionId);
   }
 
   @Post()
   @HttpCode(201)
   @RequirePermission("build:decisions:manage")
+  @ResponseSchema(decisionRowSchema)
   @Validate({ body: createDecisionSchema })
   createDecision(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body() body: CreateDecisionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createDecision(u.orgId, u.userId, projectId, body);
+    return this.svc.createDecision(u, projectId, body);
   }
 
   @Patch(":decisionId")
   @RequirePermission("build:decisions:manage")
+  @ResponseSchema(decisionRowSchema)
   @Validate({ params: decisionIdParams, body: updateDecisionSchema })
   updateDecision(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -80,18 +86,19 @@ export class DecisionsController {
     @Body() body: UpdateDecisionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.updateDecision(u.orgId, u.userId, projectId, decisionId, body);
+    return this.svc.updateDecision(u, projectId, decisionId, body);
   }
 
   @Delete(":decisionId")
   @RequirePermission("build:decisions:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: decisionIdParams })
   softDeleteDecision(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("decisionId", ParseIntPipe) decisionId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.softDeleteDecision(u.orgId, u.userId, projectId, decisionId);
+    return this.svc.softDeleteDecision(u, projectId, decisionId);
   }
 }

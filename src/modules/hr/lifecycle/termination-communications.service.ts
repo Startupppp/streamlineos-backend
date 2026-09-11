@@ -126,6 +126,8 @@ export class TerminationCommunicationsService {
       await this.email.sendEmail({
         to: employee.email,
         subject: "Notice of employment termination",
+        organizationId: orgId,
+        recipientUserId: employee.id,
         html: getTerminationEmailTemplate(
           employee.name ?? "Employee",
           employeeDesignation ?? "N/A",

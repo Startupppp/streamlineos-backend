@@ -4,6 +4,8 @@ import { type Db } from "../../../db/drizzle.module";
 import { shiftTemplates, employeeShiftAssignments, shiftSwapRequests } from "../../../db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import type { CreateShiftInput, UpdateShiftInput } from "./dto/shifts.schemas";
+import { requireOrganizationMembershipId } from "./organization-membership";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 @Injectable()
 export class ShiftsService {
@@ -21,8 +23,7 @@ export class ShiftsService {
       const [shift] = await this.db.insert(shiftTemplates).values({ orgId, ...data }).returning();
       return shift;
     } catch (err: unknown) {
-      const pg = err as { code?: string };
-      if (pg.code === "23505") {
+      if (isUniqueViolation(err)) {
         throw new ConflictException("A shift template with this name already exists.");
       }
       throw err;
@@ -31,7 +32,7 @@ export class ShiftsService {
 
   async updateShift(orgId: string, id: number, data: UpdateShiftInput) {
     const [shift] = await this.db.update(shiftTemplates)
-      .set(data)
+      .set({ ...data, updatedAt: new Date() })
       .where(and(eq(shiftTemplates.id, id), eq(shiftTemplates.orgId, orgId)))
       .returning();
     if (!shift) throw new NotFoundException("Shift not found");
@@ -39,9 +40,11 @@ export class ShiftsService {
   }
 
   async deleteShift(orgId: string, id: number) {
-    await this.db.update(shiftTemplates)
+    const removed = await this.db.update(shiftTemplates)
       .set({ isActive: false, updatedAt: new Date() })
-      .where(and(eq(shiftTemplates.id, id), eq(shiftTemplates.orgId, orgId)));
+      .where(and(eq(shiftTemplates.id, id), eq(shiftTemplates.orgId, orgId)))
+      .returning({ id: shiftTemplates.id });
+    if (removed.length === 0) throw new NotFoundException("Shift not found");
   }
 
   async getEmployeeShifts(orgId: string) {
@@ -52,7 +55,8 @@ export class ShiftsService {
   }
 
   async assignShift(orgId: string, data: { userId: string; shiftId: number; effectiveFrom: string; effectiveTo?: string }) {
-    const [assignment] = await this.db.insert(employeeShiftAssignments).values({ orgId, ...data }).returning();
+    const userMembershipId = await requireOrganizationMembershipId(this.db, orgId, data.userId);
+    const [assignment] = await this.db.insert(employeeShiftAssignments).values({ orgId, ...data, userMembershipId }).returning();
     return assignment;
   }
 
@@ -64,13 +68,18 @@ export class ShiftsService {
   }
 
   async createSwapRequest(orgId: string, data: { requesterId: string; targetUserId: string; requestDate: string; targetDate: string; reason?: string }) {
-    const [swap] = await this.db.insert(shiftSwapRequests).values({ orgId, ...data }).returning();
+    const [requesterMembershipId, targetMembershipId] = await Promise.all([
+      requireOrganizationMembershipId(this.db, orgId, data.requesterId),
+      requireOrganizationMembershipId(this.db, orgId, data.targetUserId),
+    ]);
+    const [swap] = await this.db.insert(shiftSwapRequests).values({ orgId, ...data, requesterMembershipId, targetMembershipId }).returning();
     return swap;
   }
 
   async updateSwapStatus(orgId: string, id: number, status: string, approverId: string) {
+    const approverMembershipId = await requireOrganizationMembershipId(this.db, orgId, approverId);
     const [swap] = await this.db.update(shiftSwapRequests)
-      .set({ status, approverId })
+      .set({ status, approverId, approverMembershipId })
       .where(and(eq(shiftSwapRequests.id, id), eq(shiftSwapRequests.orgId, orgId)))
       .returning();
     if (!swap) throw new NotFoundException("Swap request not found");

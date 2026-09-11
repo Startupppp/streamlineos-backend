@@ -13,6 +13,7 @@ import { BroadcastsController } from "./broadcasts.controller";
 import { BroadcastsService } from "./broadcasts.service";
 import { NotificationPreferencesController } from "./notification-preferences.controller";
 import { NotificationPreferencesService } from "./notification-preferences.service";
+import { NotificationConsentService } from "./notification-consent.service";
 import { NotificationEventRegistryService } from "./notification-event-registry.service";
 import { NotificationRoutingService } from "./notification-routing.service";
 import { NotificationDispatchService } from "./notification-dispatch.service";
@@ -21,6 +22,7 @@ import { NotificationOutboxRelayService } from "./notification-outbox-relay.serv
 import { NotificationTemplateRenderer } from "./notification-template-renderer.service";
 import { NotificationPreferenceRulesService } from "./notification-preference-rules.service";
 import { NotificationDigestService } from "./notification-digest.service";
+import { NotificationDispatchPersistenceService } from "./notification-dispatch-persistence.service";
 import { NotificationWhatsAppProvider } from "./providers/notification-whatsapp.provider";
 import { NotificationSmsProvider } from "./providers/notification-sms.provider";
 import { NotificationTimeSweepsService } from "./time-sweeps/notification-time-sweeps.service";
@@ -54,9 +56,11 @@ import { NotificationPolicyController } from "./notification-policy.controller";
     NotificationTemplatesService,
     BroadcastsService,
     NotificationPreferencesService,
+    NotificationConsentService,
     NotificationEventRegistryService,
     NotificationRoutingService,
     NotificationDispatchService,
+    NotificationDispatchPersistenceService,
     NotificationDeliveryWorker,
     NotificationEmailProvider,
     NotificationWebPushProvider,
@@ -78,7 +82,6 @@ import { NotificationPolicyController } from "./notification-policy.controller";
     UnifiedInboxService,
     NotificationEventService,
     NotificationDispatchService,
-    NotificationEventRegistryService,
     NotificationDeliveryWorker,
     NotificationVisibilityRegistry,
     NotificationOutboxRelayService,

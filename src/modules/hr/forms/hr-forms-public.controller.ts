@@ -16,6 +16,9 @@ import { HrFormsSubmissionsService } from "./hr-forms-submissions.service";
 import { submitHrFormSchema, type SubmitHrFormInput } from "./dto/hr-forms.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { resolveClientIpOr } from "../../../common/http/client-ip";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { hrPublicFormSchema, hrFormSubmissionRowSchema } from "./dto/forms-response.schemas";
 
 const orgIdslugParams = z.object({ orgId: z.string().min(1), slug: z.string().min(1) }).strict();
 
@@ -27,7 +30,7 @@ export class HrFormsPublicController {
   ) {}
 
   private getIp(req: { ip?: string; headers: Record<string, string> }): string {
-    return req.headers["x-forwarded-for"]?.split(",")?.[0]?.trim() ?? req.ip ?? "unknown";
+    return resolveClientIpOr(req, "unknown");
   }
 
   private async enforceRateLimit(tier: string, identifier: string): Promise<void> {
@@ -41,6 +44,7 @@ export class HrFormsPublicController {
   }
 
   @Public()
+  @ResponseSchema(hrPublicFormSchema)
   @Get(":orgId/:slug")
   @Validate({ params: orgIdslugParams })
   async getPublicForm(
@@ -62,6 +66,7 @@ export class HrFormsPublicController {
   }
 
   @Public()
+  @ResponseSchema(hrFormSubmissionRowSchema)
   @Post(":orgId/:slug/submit")
   @HttpCode(201)
   @Validate({ params: orgIdslugParams, body: submitHrFormSchema })

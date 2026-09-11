@@ -12,22 +12,43 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { BillingService } from "./billing.service";
 import { PlanLimitsService } from "./plan-limits.service";
 import {
+  confirmCheckoutSchema,
   createCouponSchema,
   createOrderSchema,
   purchaseAddonSchema,
   updateBillingProfileSchema,
   updateCouponSchema,
   validateCouponQuerySchema,
-  verifyPaymentSchema,
+  type ConfirmCheckoutInput,
   type CreateCouponInput,
   type CreateOrderInput,
   type PurchaseAddonInput,
   type UpdateBillingProfileInput,
   type UpdateCouponInput,
   type ValidateCouponQueryInput,
-  type VerifyPaymentInput,
 } from "./dto/billing.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  billingEntitlementsResponseSchema,
+  billingSeatsResponseSchema,
+  billingSummaryResponseSchema,
+} from "./dto/billing-response-schema";
+import {
+  subscriptionResponseSchema,
+  plansResponseSchema,
+  marketplaceOverviewResponseSchema,
+  checkoutResponseSchema,
+  verifyActivateResponseSchema,
+  purchaseAddonResponseSchema,
+  provisioningFailuresResponseSchema,
+  validateCouponResponseSchema,
+  billingProfileResponseSchema,
+  listAddonsResponseSchema,
+  couponListResponseSchema,
+  couponRowSchema,
+  successSchema,
+} from "./dto/billing-core-response.schemas";
 import { z } from "zod";
 
 const couponIdParams = z.object({ couponId: z.coerce.number().int().positive() }).strict();
@@ -43,6 +64,7 @@ export class BillingController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:subscription:view")
   @Get()
+  @ResponseSchema(subscriptionResponseSchema)
   getSubscription(@CurrentUser() u: CurrentUserContext) {
     return this.billing.getSubscription(u.orgId);
   }
@@ -50,12 +72,14 @@ export class BillingController {
   @AllowNoOrg()
   @Get("plans")
   @Universal()
+  @ResponseSchema(plansResponseSchema)
   getPlans() {
     return this.billing.getPlans();
   }
 
   @Get("marketplace")
   @Universal()
+  @ResponseSchema(marketplaceOverviewResponseSchema)
   getMarketplace() {
     return this.billing.getMarketplace();
   }
@@ -67,11 +91,27 @@ export class BillingController {
   @HttpCode(200)
   @RequirePermission("billing:subscription:manage")
   @Validate({ body: createOrderSchema })
+  @ResponseSchema(checkoutResponseSchema)
   checkout(
     @Body() body: CreateOrderInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.billing.createOrder(u.orgId, u.userId, body.plan, body.billingCycle, body.couponId);
+  }
+
+  @Patch("checkout")
+  @Idempotent("billing.subscription.verify")
+  @HttpCode(200)
+  @UseGuards(RateLimitGuard, PermissionGuard)
+  @UseRateLimit("billing:confirm")
+  @RequirePermission("billing:subscription:manage")
+  @Validate({ body: confirmCheckoutSchema })
+  @ResponseSchema(verifyActivateResponseSchema)
+  confirmCheckout(
+    @Body() body: ConfirmCheckoutInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.billing.verifyAndActivate(u.orgId, u.userId, body);
   }
 
   @Post("addons/purchase")
@@ -80,6 +120,7 @@ export class BillingController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:subscription:manage")
   @Validate({ body: purchaseAddonSchema })
+  @ResponseSchema(purchaseAddonResponseSchema)
   purchaseAddon(
     @Body() body: PurchaseAddonInput,
     @CurrentUser() u: CurrentUserContext,
@@ -90,11 +131,13 @@ export class BillingController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:subscription:view")
   @Get("summary")
+  @ResponseSchema(billingSummaryResponseSchema)
   getSummary(@CurrentUser() u: CurrentUserContext) {
     return this.billing.getSummary(u.orgId);
   }
 
   @Get("entitlements")
+  @ResponseSchema(billingEntitlementsResponseSchema)
   @Universal()
   getEntitlements(@CurrentUser() u: CurrentUserContext) {
     return this.planLimits.getEntitlements(u.orgId);
@@ -103,6 +146,7 @@ export class BillingController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:subscription:view")
   @Get("provisioning-failures")
+  @ResponseSchema(provisioningFailuresResponseSchema)
   listProvisioningFailures(@CurrentUser() u: CurrentUserContext) {
     return this.billing.listProvisioningFailures(u.orgId);
   }
@@ -111,6 +155,7 @@ export class BillingController {
   @RequirePermission("billing:subscription:manage")
   @Get("coupons/validate")
   @Validate({ query: validateCouponQuerySchema })
+  @ResponseSchema(validateCouponResponseSchema)
   validateCoupon(
     @Query() query: ValidateCouponQueryInput,
     @CurrentUser() u: CurrentUserContext,
@@ -118,41 +163,10 @@ export class BillingController {
     return this.billing.validateCoupon(query.code, u.orgId, query.plan);
   }
 
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:subscription:view")
-  @Get("razorpay")
-  getRazorpaySubscription(@CurrentUser() u: CurrentUserContext) {
-    return this.billing.getSubscription(u.orgId);
-  }
-
-  @Post("razorpay")
-  @Idempotent("billing.order.create")
-  @HttpCode(200)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:subscription:manage")
-  @Validate({ body: createOrderSchema })
-  createOrder(
-    @Body() body: CreateOrderInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.billing.createOrder(u.orgId, u.userId, body.plan, body.billingCycle, body.couponId);
-  }
-
-  @Patch("razorpay")
-  @Idempotent("billing.subscription.verify")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:subscription:manage")
-  @Validate({ body: verifyPaymentSchema })
-  verifyPayment(
-    @Body() body: VerifyPaymentInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.billing.verifyAndActivate(u.orgId, u.userId, body);
-  }
-
   @Get("profile")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:profile:view")
+  @ResponseSchema(billingProfileResponseSchema)
   getBillingProfile(@CurrentUser() u: CurrentUserContext) {
     return this.billing.getBillingProfile(u.orgId);
   }
@@ -161,6 +175,7 @@ export class BillingController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:profile:update")
   @Validate({ body: updateBillingProfileSchema })
+  @ResponseSchema(billingProfileResponseSchema)
   updateBillingProfile(
     @Body() body: UpdateBillingProfileInput,
     @CurrentUser() u: CurrentUserContext,
@@ -169,6 +184,7 @@ export class BillingController {
   }
 
   @Get("seats")
+  @ResponseSchema(billingSeatsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:seats:view")
   getSeatInfo(@CurrentUser() u: CurrentUserContext) {
@@ -178,6 +194,7 @@ export class BillingController {
   @Get("addons")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:marketplace:view")
+  @ResponseSchema(listAddonsResponseSchema)
   listAddons() {
     return this.billing.listAddons();
   }
@@ -185,8 +202,9 @@ export class BillingController {
   @Get("coupons")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:coupons:manage")
-  listCoupons() {
-    return this.billing.listCoupons();
+  @ResponseSchema(couponListResponseSchema)
+  listCoupons(@CurrentUser() u: CurrentUserContext) {
+    return this.billing.listCoupons(u.orgId);
   }
 
   @Post("coupons")
@@ -194,26 +212,33 @@ export class BillingController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:coupons:manage")
   @Validate({ body: createCouponSchema })
-  createCoupon(@Body() body: CreateCouponInput) {
-    return this.billing.createCoupon(body);
+  @ResponseSchema(couponRowSchema)
+  createCoupon(@Body() body: CreateCouponInput, @CurrentUser() u: CurrentUserContext) {
+    return this.billing.createCoupon(u.orgId, body);
   }
 
   @Patch("coupons/:couponId")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:coupons:manage")
   @Validate({ params: couponIdParams, body: updateCouponSchema })
+  @ResponseSchema(couponRowSchema)
   updateCoupon(
     @Param("couponId", ParseIntPipe) couponId: number,
     @Body() body: UpdateCouponInput,
+    @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.billing.updateCoupon(couponId, body);
+    return this.billing.updateCoupon(u.orgId, couponId, body);
   }
 
   @Delete("coupons/:couponId")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:coupons:manage")
   @Validate({ params: couponIdParams })
-  deleteCoupon(@Param("couponId", ParseIntPipe) couponId: number) {
-    return this.billing.deleteCoupon(couponId);
+  @ResponseSchema(successSchema)
+  deleteCoupon(
+    @Param("couponId", ParseIntPipe) couponId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.billing.deleteCoupon(u.orgId, couponId);
   }
 }

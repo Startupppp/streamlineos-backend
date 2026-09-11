@@ -1,19 +1,5 @@
 import { randomUUID } from "node:crypto";
-import {
-  pgTable,
-  text,
-  serial,
-  timestamp,
-  boolean,
-  jsonb,
-  decimal,
-  date,
-  integer,
-  bigint,
-  index,
-  uniqueIndex,
-  unique,
-} from "drizzle-orm/pg-core";
+import { bigint, boolean, date, decimal, index, integer, jsonb, pgTable, serial, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { crmPipelines } from "./metadata";
@@ -124,7 +110,6 @@ export const dealActivities = pgTable(
   },
   (table) => [
     index("idx_deal_activities_deal").on(table.dealId),
-    index("idx_deal_activities_org").on(table.orgId),
     unique("uniq_deal_activities_org_id").on(table.orgId, table.id),
   ],
 );
@@ -159,7 +144,6 @@ export const dealMeetings = pgTable(
   },
   (table) => [
     index("idx_deal_meetings_deal").on(table.dealId),
-    index("idx_deal_meetings_org").on(table.orgId),
     unique("uniq_deal_meetings_org_id").on(table.orgId, table.id),
   ],
 );
@@ -265,7 +249,6 @@ export const crmDealCompetitors = pgTable(
       table.competitorKey,
     ),
     index("idx_crm_deal_competitors_deal").on(table.dealId),
-    index("idx_crm_deal_competitors_org").on(table.orgId),
     unique("uniq_crm_deal_competitors_org_id").on(table.orgId, table.id),
   ],
 );
@@ -363,7 +346,6 @@ export const crmDealStakeholders = pgTable(
       table.dealId,
       table.contactId,
     ),
-    index("idx_crm_deal_stakeholders_deal").on(table.orgId, table.dealId),
     index("idx_crm_deal_stakeholders_contact").on(table.orgId, table.contactId),
     unique("uniq_crm_deal_stakeholders_org_id").on(table.orgId, table.id),
   ],

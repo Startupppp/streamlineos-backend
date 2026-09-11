@@ -21,6 +21,12 @@ import {
 } from "./dto/shifts.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  shiftTemplateRowSchema,
+  shiftAssignmentRowSchema,
+  shiftSwapRowSchema,
+} from "./dto/time-wfh-shifts-response.schemas";
 
 const shiftIdParams = z.object({ shiftId: z.coerce.number().int().positive() }).strict();
 const swapIdParams = z.object({ swapId: z.coerce.number().int().positive() }).strict();
@@ -32,6 +38,7 @@ export class ShiftsController {
   constructor(private readonly service: ShiftsService) {}
 
   @Get()
+  @ResponseSchema(z.array(shiftTemplateRowSchema))
   @RequirePermission("hr:attendance:view")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.service.listShifts(u.orgId);
@@ -39,6 +46,7 @@ export class ShiftsController {
 
   @Post()
   @HttpCode(201)
+  @ResponseSchema(shiftTemplateRowSchema)
   @RequirePermission("hr:attendance:manage")
   @Validate({ body: createShiftSchema })
   create(
@@ -49,6 +57,7 @@ export class ShiftsController {
   }
 
   @Patch(":shiftId")
+  @ResponseSchema(shiftTemplateRowSchema)
   @RequirePermission("hr:attendance:manage")
   @Validate({ params: shiftIdParams, body: updateShiftSchema })
   update(
@@ -61,6 +70,7 @@ export class ShiftsController {
 
   @Delete(":shiftId")
   @HttpCode(204)
+  @NoContentResponse()
   @RequirePermission("hr:attendance:manage")
   @Validate({ params: shiftIdParams })
   remove(@CurrentUser() u: CurrentUserContext, @Param("shiftId", ParseIntPipe) shiftId: number) {
@@ -68,6 +78,7 @@ export class ShiftsController {
   }
 
   @Get("assignments")
+  @ResponseSchema(z.array(shiftAssignmentRowSchema))
   @RequirePermission("hr:attendance:view")
   getAssignments(@CurrentUser() u: CurrentUserContext) {
     return this.service.getEmployeeShifts(u.orgId);
@@ -75,6 +86,7 @@ export class ShiftsController {
 
   @Post("assignments")
   @HttpCode(201)
+  @ResponseSchema(shiftAssignmentRowSchema)
   @RequirePermission("hr:attendance:manage")
   @Validate({ body: assignShiftSchema })
   assign(
@@ -85,6 +97,7 @@ export class ShiftsController {
   }
 
   @Get("swaps")
+  @ResponseSchema(z.array(shiftSwapRowSchema))
   @RequirePermission("hr:attendance:view")
   listSwaps(@CurrentUser() u: CurrentUserContext) {
     return this.service.listSwapRequests(u.orgId);
@@ -92,6 +105,7 @@ export class ShiftsController {
 
   @Post("swaps")
   @HttpCode(201)
+  @ResponseSchema(shiftSwapRowSchema)
   @RequirePermission("hr:attendance:view")
   @Validate({ body: createSwapRequestSchema })
   createSwap(
@@ -102,6 +116,7 @@ export class ShiftsController {
   }
 
   @Patch("swaps/:swapId")
+  @ResponseSchema(shiftSwapRowSchema)
   @RequirePermission("hr:attendance:manage")
   @Validate({ params: swapIdParams, body: updateSwapStatusSchema })
   updateSwap(

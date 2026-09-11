@@ -16,13 +16,17 @@ import type {
   UpdateCalibrationInput,
 } from "./dto/candidate-records.schemas";
 
+const CALIBRATION_PARTICIPANT_LIMIT = 500;
+
 @Injectable()
 export class RecruitmentCalibrationService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listCalibration(orgId: string, candidateId: number) {
+  async listCalibration(orgId: string, candidateId: number) {
+    await this.ensureCandidate(orgId, candidateId);
     return this.db.query.calibrationSessions
       .findMany({
+        limit: 100,
         where: and(
           eq(calibrationSessions.candidateId, candidateId),
           eq(calibrationSessions.orgId, orgId),
@@ -130,7 +134,8 @@ export class RecruitmentCalibrationService {
       const rows = await this.db
         .select({ userId: calibrationParticipants.userId })
         .from(calibrationParticipants)
-        .where(eq(calibrationParticipants.sessionId, input.id));
+        .where(eq(calibrationParticipants.sessionId, input.id))
+        .limit(CALIBRATION_PARTICIPANT_LIMIT);
       participantIds = rows.map((r) => r.userId);
     }
 

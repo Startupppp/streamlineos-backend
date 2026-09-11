@@ -6,6 +6,21 @@ import { type Db } from "../../../../db/drizzle.module";
 import { logger } from "../../../../common/logger/logger.service";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import { computeTokenCharge } from "../billing/ai-model-pricing.constants";
+import { getObservabilityContext } from "../../../../common/observability";
+import type { AiCallOutcome, AiCallTimings } from "../telemetry/ai-call-metrics";
+
+const CORRELATION_ID_MAX_LENGTH = 64;
+
+/**
+ * Defaulted at the single write site, so a caller that forgets it still produces
+ * a row that joins back to the request — the streaming settle path had no way to
+ * pass one at all, and every stream it billed landed with a null.
+ */
+function resolveCorrelationId(explicit: string | undefined): string | null {
+  const candidate = explicit ?? getObservabilityContext()?.correlationId;
+  if (candidate === undefined) return null;
+  return candidate.length <= CORRELATION_ID_MAX_LENGTH ? candidate : null;
+}
 
 export interface TrackAiUsageParams {
   orgId: string;
@@ -16,9 +31,32 @@ export interface TrackAiUsageParams {
   completionTokens?: number;
   metadata?: Record<string, unknown>;
   latencyMs?: number;
+  ttftMs?: number;
+  appOverheadMs?: number;
   correlationId?: string;
-  outcome?: string;
+  outcome?: AiCallOutcome;
   creditsMilli?: number;
+  /** Every measured phase at once, so a caller cannot record half of them. */
+  timings?: AiCallTimings;
+}
+
+/**
+ * The measured phases, flattened onto the row's metadata.
+ *
+ * `latency_ms` is the column and stays what it has always been — the wall clock
+ * of the whole call. The split lives here because the phases are what tell an
+ * operator whether a slow call was the provider, the queue or us, and a single
+ * total answers none of those.
+ */
+function timingMetadata(timings: AiCallTimings): Record<string, number | boolean> {
+  return {
+    queueMs: timings.queueMs,
+    appOverheadMs: timings.overheadMs,
+    providerMs: timings.providerMs,
+    ...(timings.ttftMs !== undefined ? { ttftMs: timings.ttftMs } : {}),
+    retries: timings.retries,
+    cacheHit: timings.cacheHit,
+  };
 }
 
 @Injectable()
@@ -26,7 +64,14 @@ export class AiUsageService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async track(params: TrackAiUsageParams): Promise<void> {
-    const { orgId, userId, feature, model, metadata, latencyMs, correlationId, outcome } = params;
+    const { orgId, userId, feature, model, latencyMs, outcome } = params;
+    const correlationId = resolveCorrelationId(params.correlationId);
+    const metadata: Record<string, unknown> = {
+      ...(params.metadata ?? {}),
+      ...(params.timings ? timingMetadata(params.timings) : {}),
+    };
+    if (params.ttftMs !== undefined) metadata["ttftMs"] = params.ttftMs;
+    if (params.appOverheadMs !== undefined) metadata["appOverheadMs"] = params.appOverheadMs;
     const promptTokens = params.promptTokens ?? 0;
     const completionTokens = params.completionTokens ?? 0;
     const totalTokens = promptTokens + completionTokens;
@@ -47,7 +92,7 @@ export class AiUsageService {
         creditsMilli,
         metadata: metadata ?? null,
         latencyMs: latencyMs ?? null,
-        correlationId: correlationId ?? null,
+        correlationId,
         outcome: outcome ?? null,
       }), { orgId });
     } catch (error) {

@@ -1,16 +1,4 @@
-import {
-  pgTable,
-  pgEnum,
-  text,
-  serial,
-  timestamp,
-  integer,
-  index,
-  unique,
-  uniqueIndex,
-  jsonb,
-  type AnyPgColumn,
-} from "drizzle-orm/pg-core";
+import { foreignKey, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { hrEmployments } from "./core-people";
@@ -110,7 +98,7 @@ export const hrTemplates = pgTable("hr_templates", {
   description: text("description"),
   status: hrTemplateStatusEnum("status").default("draft").notNull(),
   version: integer("version").default(1).notNull(),
-  parentTemplateId: integer("parent_template_id").references((): AnyPgColumn => hrTemplates.id, { onDelete: "set null" }),
+  parentTemplateId: integer("parent_template_id"),
   content: jsonb("content").$type<Record<string, unknown>>().notNull().default({}),
   variablesUsed: text("variables_used").array().default([]).notNull(),
   letterType: hrLetterTypeEnum("letter_type"),
@@ -120,23 +108,30 @@ export const hrTemplates = pgTable("hr_templates", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({
+    columns: [table.orgId, table.parentTemplateId],
+    foreignColumns: [table.orgId, table.id],
+    name: "fk_hr_templates_parent_template",
+  }).onDelete("set null"),
   unique("uniq_hr_templates_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_templates_org_kind_name_ver").on(table.orgId, table.kind, table.name, table.version),
-  index("idx_hr_templates_org_kind").on(table.orgId, table.kind),
+  index("idx_hr_templates_parent_template").on(table.orgId, table.parentTemplateId),
   index("idx_hr_templates_org_status").on(table.orgId, table.status),
 ]);
 
 export const hrTemplateRenders = pgTable("hr_template_renders", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  templateId: integer("template_id").references(() => hrTemplates.id, { onDelete: "cascade" }).notNull(),
+  templateId: integer("template_id").notNull(),
   templateVersion: integer("template_version").notNull(),
-  renderedForEmployeeId: integer("rendered_for_employee_id").references(() => hrEmployments.id, { onDelete: "set null" }),
+  renderedForEmployeeId: integer("rendered_for_employee_id"),
   renderedBy: text("rendered_by").references(() => users.id).notNull(),
   contextSnapshot: jsonb("context_snapshot").$type<Record<string, unknown>>().notNull().default({}),
   outputHtml: text("output_html").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.templateId], foreignColumns: [hrTemplates.orgId, hrTemplates.id], name: "fk_hr_template_renders_org_template" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.renderedForEmployeeId], foreignColumns: [hrEmployments.orgId, hrEmployments.id], name: "fk_hr_template_renders_rendered_for_employee_id_org" }).onDelete("set null"),
   unique("uniq_hr_template_renders_org_id").on(table.orgId, table.id),
   index("idx_hr_template_renders_org_template").on(table.orgId, table.templateId, table.createdAt),
 ]);

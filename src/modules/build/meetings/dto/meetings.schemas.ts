@@ -39,10 +39,10 @@ export const createMeetingSchema = z
     endAt: z.coerce.date().optional(),
     durationMinutes: z.number().int().positive().optional(),
     sprintId: z.number().int().positive().optional(),
-    attendeeUserIds: z.array(z.string().min(1)).optional(),
+    attendeeUserIds: z.array(z.string().min(1)).max(100).optional(),
     recurrenceRule: recurrenceRuleSchema.optional(),
     timezone: z.string().optional(),
-  })
+  }).strict()
   .refine(
     (data) => {
       if (data.scheduledAt && data.endAt) return data.endAt > data.scheduledAt;
@@ -64,7 +64,7 @@ export const updateMeetingSchema = z
     sprintId: z.number().int().positive().nullish(),
     recurrenceRule: recurrenceRuleSchema.nullish(),
     timezone: z.string().nullish(),
-  })
+  }).strict()
   .refine(
     (data) => {
       if (data.scheduledAt && data.endAt) return data.endAt > data.scheduledAt;
@@ -81,24 +81,24 @@ export const listMeetingsQuerySchema = z.object({
   attendeeId: z.string().optional(),
   hasActionItems: queryBoolean.optional(),
   hasUnresolvedActionItems: queryBoolean.optional(),
-});
+}).strict();
 
 export const addAttendeeSchema = z.object({
   userId: z.string().min(1),
-});
+}).strict();
 
 export const upsertStandupSchema = z.object({
   yesterday: z.string().optional(),
   today: z.string().optional(),
   blockers: z.string().optional(),
-});
+}).strict();
 
 export const createActionItemSchema = z.object({
   title: z.string().min(1).max(500),
   description: z.string().optional(),
   assigneeId: z.string().min(1).optional(),
   dueDate: z.coerce.date().optional(),
-});
+}).strict();
 
 export const updateActionItemSchema = z.object({
   title: z.string().min(1).max(500).optional(),
@@ -106,7 +106,7 @@ export const updateActionItemSchema = z.object({
   assigneeId: z.string().min(1).nullish(),
   dueDate: z.coerce.date().nullish(),
   status: z.enum(actionItemStatusEnum.enumValues).optional(),
-});
+}).strict();
 
 export type CreateMeetingInput = z.infer<typeof createMeetingSchema>;
 export type UpdateMeetingInput = z.infer<typeof updateMeetingSchema>;

@@ -1,21 +1,19 @@
 import { pgTable, serial, text, integer, boolean, timestamp, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
-import { organizations, users, organizationMembers } from "../common/auth";
+import { organizations, organizationMembers } from "../common/auth";
 
 export const supportAgentSkills = pgTable(
   "support_agent_skills",
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-    userMembershipId: integer("user_membership_id"),
+    userMembershipId: integer("user_membership_id").notNull(),
     skill: text("skill").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex("uniq_support_agent_skills_org_user_skill").on(table.orgId, table.userId, table.skill),
+    uniqueIndex("uniq_support_agent_skills_org_membership_skill").on(table.orgId, table.userMembershipId, table.skill),
     index("idx_support_agent_skills_org").on(table.orgId, table.skill),
     unique("uniq_support_agent_skills_org_id").on(table.orgId, table.id),
-    index("idx_support_agent_skills_org_user_actor").on(table.orgId, table.userMembershipId),
     foreignKey({
       columns: [table.orgId, table.userMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
@@ -30,15 +28,13 @@ export const supportAgentAvailability = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-    userMembershipId: integer("user_membership_id"),
+    userMembershipId: integer("user_membership_id").notNull(),
     isAvailable: boolean("is_available").default(true).notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
-    uniqueIndex("uniq_support_agent_availability_org_user").on(table.orgId, table.userId),
+    uniqueIndex("uniq_support_agent_availability_org_membership").on(table.orgId, table.userMembershipId),
     unique("uniq_support_agent_avail_org_id").on(table.orgId, table.id),
-    index("idx_support_agent_avail_org_user_actor").on(table.orgId, table.userMembershipId),
     foreignKey({
       columns: [table.orgId, table.userMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
@@ -65,6 +61,9 @@ export const supportVipClients = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+    // `fk_support_vip_clients_client_id_org` is not declared here: this schema has
+    // no `clients` table (CRM rows derive from the Party), and migration 1096
+    // re-points that constraint at the party map rather than at `clients`.
     uniqueIndex("uniq_support_vip_clients_org_client").on(table.orgId, table.clientId),
     unique("uniq_support_vip_clients_org_id").on(table.orgId, table.id),
   ],

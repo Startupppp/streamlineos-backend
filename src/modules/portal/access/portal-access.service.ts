@@ -1,5 +1,5 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, isNull, sql } from "drizzle-orm";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { portalMemberships } from "../../../db/schema/portal-access/portal-memberships";
 import { partyContacts } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -7,6 +7,8 @@ import { type Db } from "../../../db/drizzle.module";
 import { type PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { AuditService } from "../../../common/audit/audit.service";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeUuid } from "../../../common/pagination/keyset";
 import type {
   ListMembershipsQuery,
   CreateMembershipInput,
@@ -77,17 +79,18 @@ export class PortalAccessService {
   }
 
   async listMemberships(organizationId: string, query: ListMembershipsQuery) {
-    const { page, limit, status } = query;
-    const offset = (page - 1) * limit;
+    const { limit, cursor, status } = query;
+    const position = cursor === undefined ? undefined : decodeCursor(cursor);
+    if (cursor !== undefined && !position) throw new BadRequestException("Invalid pagination cursor");
 
     const conditions = and(
       eq(portalMemberships.organizationId, organizationId),
       isNull(portalMemberships.deletedAt),
       status ? eq(portalMemberships.status, status) : undefined,
+      position ? keysetBeforeUuid(portalMemberships.createdAt, portalMemberships.portalMembershipId, position) : undefined,
     );
 
-    const [rows, [totalRow]] = await Promise.all([
-      this.db
+    const rows = await this.db
         .select({
           portalMembershipId: portalMemberships.portalMembershipId,
           organizationId: portalMemberships.organizationId,
@@ -113,21 +116,8 @@ export class PortalAccessService {
         )
         .where(conditions)
         .orderBy(desc(portalMemberships.createdAt), desc(portalMemberships.portalMembershipId))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(portalMemberships).where(conditions),
-    ]);
-
-    const total = Number(totalRow?.total ?? 0);
-    return {
-      data: rows,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
+        .limit(limit + 1);
+    return buildCursorPage(rows, limit, (row) => ({ sortValue: row.createdAt.toISOString(), id: row.portalMembershipId }));
   }
 
   async getMembership(organizationId: string, portalMembershipId: string) {

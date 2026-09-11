@@ -1,8 +1,15 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Inject, Injectable, UnauthorizedException, Logger } from "@nestjs/common";
+import {
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  UnauthorizedException,
+  Logger,
+} from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
-import { jwtVerify, decodeJwt } from "jose";
-import type { JWTPayload } from "jose";
+import { decodeJwt } from "jose";
 import { PORTAL_AUDIENCE } from "../portal-auth/portal-claims";
 import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import * as bcrypt from "bcryptjs";
@@ -14,13 +21,7 @@ import {
   isAgentTokenCredential,
   resolveAgentToken,
 } from "./agent-token-resolution";
-import {
-  INTERNAL_TOKEN_AUDIENCE,
-  INTERNAL_TOKEN_ISSUER,
-  type BackendClaims,
-  type CurrentUserContext,
-} from "./backend-claims";
-import { backendJwtPayloadSchema } from "./backend-claims-schema";
+import { type BackendClaims, type CurrentUserContext } from "./backend-claims";
 import {
   ACCOUNT_ONLY_PRINCIPAL,
   humanSessionPrincipal,
@@ -36,8 +37,20 @@ import {
   isModernApiToken,
   legacyApiTokenPrefix,
 } from "./api-token-hash";
-import { accountOrganizationIndex, organizationMembers, organizations, userApiTokens, userSessions } from "../../db/schema";
-import { MembershipStateService } from "./membership-state.service";
+import {
+  accountOrganizationIndex,
+  organizationMembers,
+  organizations,
+  userApiTokens,
+  userSessions,
+} from "../../db/schema";
+import {
+  MembershipStateService,
+  type MembershipState,
+} from "./membership-state.service";
+import { JwtKeyringService } from "./jwt-keyring.service";
+import { type AuthContext } from "./auth-context";
+import { AuthContextFactory } from "./auth-context.factory";
 
 interface OrgContext {
   orgId: string;
@@ -51,33 +64,28 @@ interface OrgContextEntry {
 }
 
 const ORG_CTX_TTL_MS = 60_000;
-const REVOCATION_CACHE_TTL_MS = 5_000;
-
-function extractClaims(payload: JWTPayload): BackendClaims | null {
-  const parsed = backendJwtPayloadSchema.safeParse(payload);
-  if (!parsed.success) return null;
-  return {
-    sub: parsed.data.sub,
-    orgId: parsed.data.orgId ?? null,
-    sessionId: parsed.data.sessionId,
-  };
-}
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   private readonly logger = new Logger(JwtAuthGuard.name);
   private readonly orgCtxCache = new Map<string, OrgContextEntry>();
-  private readonly revocationCache = new Map<string, number>();
-  private readonly jwtSecretKey: Uint8Array | null;
 
   constructor(
     private readonly reflector: Reflector,
     @Inject(DRIZZLE) private readonly db: Db,
     @Inject(REDIS) private readonly redis: Redis | null,
     private readonly membership: MembershipStateService,
-  ) {
-    const raw = process.env.BACKEND_JWT_SECRET;
-    this.jwtSecretKey = raw ? new TextEncoder().encode(raw) : null;
+    private readonly keyring: JwtKeyringService,
+    private readonly authContexts: AuthContextFactory,
+  ) {}
+
+  private attach(
+    req: Request & { user?: CurrentUserContext; authContext?: AuthContext },
+    actor: CurrentUserContext,
+    membership?: MembershipState,
+  ): void {
+    req.user = actor;
+    req.authContext = this.authContexts.create(actor, membership);
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -89,7 +97,9 @@ export class JwtAuthGuard implements CanActivate {
 
     const req = context
       .switchToHttp()
-      .getRequest<Request & { user?: CurrentUserContext }>();
+      .getRequest<
+        Request & { user?: CurrentUserContext; authContext?: AuthContext }
+      >();
     const header = req.headers.authorization;
     if (!header?.startsWith("Bearer ")) {
       throw new UnauthorizedException("Unauthorized");
@@ -109,6 +119,10 @@ export class JwtAuthGuard implements CanActivate {
      * Nothing widens for a route that has not opted in: without
      * `@AllowAgentToken()` the credential is refused here, which is the same
      * answer it gets today, one step earlier.
+     *
+     * Attached through `attach`, like every other caller, so the request also
+     * carries an `authContext`: `PermissionGuard` authorizes against that, and a
+     * request with only `req.user` would be refused on every gated route.
      */
     if (isAgentTokenCredential(token)) {
       const allowsAgentToken = this.reflector.getAllAndOverride<boolean>(
@@ -119,11 +133,9 @@ export class JwtAuthGuard implements CanActivate {
 
       const agentCtx = await resolveAgentToken(this.db, this.membership, token);
       if (!agentCtx) throw new UnauthorizedException("Unauthorized");
-      req.user = agentCtx;
+      this.attach(req, agentCtx);
       return true;
     }
-
-    if (!this.jwtSecretKey) throw new UnauthorizedException("Unauthorized");
 
     try {
       const raw = decodeJwt(token);
@@ -139,60 +151,54 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     let claims: BackendClaims | null = null;
-    try {
-      const { payload } = await jwtVerify(token, this.jwtSecretKey, {
-        algorithms: ["HS256"],
-        audience: INTERNAL_TOKEN_AUDIENCE,
-        issuer: INTERNAL_TOKEN_ISSUER,
-      });
-      claims = extractClaims(payload);
-    } catch {
-      // JWT verification failed — fall through to PAT check
+    const verified = await this.keyring.verifyToken(token);
+    if (verified) {
+      claims = {
+        sub: verified.sub,
+        orgId: verified.orgId,
+        sessionId: verified.sessionId,
+      };
     }
 
     if (claims !== null) {
       if (!claims.sessionId.startsWith("pat:")) {
-        const cachedOk = this.revocationCache.get(claims.sessionId);
-        if (!(cachedOk && cachedOk > Date.now())) {
-          let tombstone: boolean | null = null;
-          let useDatabase = this.redis === null;
-          if (this.redis) {
-            try {
-              tombstone = await this.redis.get<boolean>(
-                `revoked:session:${claims.sessionId}`,
-              );
-            } catch (err) {
-              useDatabase = true;
-              this.logger.error(
-                `session revocation lookup failed, falling back to the database: ${err instanceof Error ? err.message : String(err)}`,
-              );
-            }
-          }
-
-          let revoked = tombstone === true;
-          let resolved = true;
-          if (useDatabase) {
-            const stored = await this.isRevokedInDatabase(claims.sessionId);
-            revoked = stored === true;
-            resolved = stored !== null;
-          }
-
-          if (revoked) {
-            this.revocationCache.delete(claims.sessionId);
-            throw new UnauthorizedException("Session has been revoked");
-          }
-          if (resolved) {
-            this.revocationCache.set(
-              claims.sessionId,
-              Date.now() + REVOCATION_CACHE_TTL_MS,
+        // Every request re-reads the tombstone. A positive-result cache used to sit here
+        // and it made revocation take effect up to its TTL later, on a per-process basis.
+        let tombstone: boolean | null = null;
+        let redisErrored = false;
+        if (this.redis) {
+          try {
+            tombstone = await this.redis.get<boolean>(
+              `revoked:session:${claims.sessionId}`,
             );
-            if (this.revocationCache.size > 10000) {
-              const now = Date.now();
-              for (const [key, exp] of this.revocationCache) {
-                if (exp <= now) this.revocationCache.delete(key);
-              }
-            }
+          } catch (err) {
+            redisErrored = true;
+            this.logger.error(
+              `session revocation lookup failed, falling back to the database: ${err instanceof Error ? err.message : String(err)}`,
+            );
           }
+        }
+
+        // Positive tombstone: session is durably revoked — deny without a DB read (hot path).
+        if (tombstone === true)
+          throw new UnauthorizedException("Session has been revoked");
+
+        // Consult the DB when: Redis is absent, Redis errored, or tombstone was a cache miss (null).
+        const needsDatabase =
+          this.redis === null || redisErrored || tombstone === null;
+        if (needsDatabase) {
+          const dbResult = await this.isRevokedInDatabase(claims.sessionId);
+          if (dbResult === null) {
+            // Both revocation authorities failed — fail closed rather than admit a possibly-revoked session.
+            this.logger.error(
+              `session revocation double-failure for sessionId=${claims.sessionId}: both Redis and the database were unavailable; denying to fail closed`,
+            );
+            throw new UnauthorizedException(
+              "Session revocation check unavailable",
+            );
+          }
+          if (dbResult)
+            throw new UnauthorizedException("Session has been revoked");
         }
       }
       const allowNoOrg = this.reflector.getAllAndOverride<boolean>(
@@ -223,9 +229,11 @@ export class JwtAuthGuard implements CanActivate {
       let isOrgOwner = false;
       let resolvedOrgId = orgId ?? "";
       let principal: Principal = ACCOUNT_ONLY_PRINCIPAL;
+      let membership: MembershipState | undefined;
 
       if (orgId) {
         const state = await this.membership.resolve(claims.sub, orgId);
+        membership = state;
         if (!state.active || state.membershipId === null) {
           if (!allowNoOrg) {
             // The login is still valid; only this organization membership is
@@ -246,35 +254,34 @@ export class JwtAuthGuard implements CanActivate {
         }
       }
 
-      req.user = {
-        userId: claims.sub,
-        orgId: resolvedOrgId,
-        role,
-        isOrgOwner,
-        sessionId: claims.sessionId,
-        tokenScopes: null,
-        principal,
-      };
+      this.attach(
+        req,
+        {
+          userId: claims.sub,
+          orgId: resolvedOrgId,
+          role,
+          isOrgOwner,
+          sessionId: claims.sessionId,
+          tokenScopes: null,
+          principal,
+        },
+        membership,
+      );
       return true;
     }
 
-    const userCtx = await this.tryPatAuth(token);
-    if (userCtx) {
-      req.user = userCtx;
+    const personalToken = await this.tryPatAuth(token);
+    if (personalToken) {
+      this.attach(req, personalToken.actor, personalToken.membership);
       return true;
     }
 
     throw new UnauthorizedException("Unauthorized");
   }
 
-  /**
-   * Redis holds the revocation tombstone, but it is a cache, not the record.
-   * When it is missing or erroring, `user_sessions.is_revoked` is the durable
-   * answer — so an Upstash outage costs a database read, not a 500 on every
-   * authenticated request and not a silently unenforced revocation. Only a
-   * double failure returns null, and the caller then treats the session as live.
-   */
-  private async isRevokedInDatabase(sessionId: string): Promise<boolean | null> {
+  private async isRevokedInDatabase(
+    sessionId: string,
+  ): Promise<boolean | null> {
     try {
       const rows = await this.db
         .select({ isRevoked: userSessions.isRevoked })
@@ -296,7 +303,10 @@ export class JwtAuthGuard implements CanActivate {
 
     const result = await this.fetchOrgContext(userId);
     if (result !== null) {
-      this.orgCtxCache.set(userId, { value: result, expiresAt: Date.now() + ORG_CTX_TTL_MS });
+      this.orgCtxCache.set(userId, {
+        value: result,
+        expiresAt: Date.now() + ORG_CTX_TTL_MS,
+      });
       if (this.orgCtxCache.size > 5000) {
         const now = Date.now();
         for (const [key, entry] of this.orgCtxCache) {
@@ -316,7 +326,10 @@ export class JwtAuthGuard implements CanActivate {
           isOwner: organizationMembers.isOwner,
         })
         .from(organizationMembers)
-        .innerJoin(organizations, eq(organizations.id, organizationMembers.orgId))
+        .innerJoin(
+          organizations,
+          eq(organizations.id, organizationMembers.orgId),
+        )
         .leftJoin(
           accountOrganizationIndex,
           and(
@@ -352,7 +365,7 @@ export class JwtAuthGuard implements CanActivate {
 
   private async tryPatAuth(
     rawToken: string,
-  ): Promise<CurrentUserContext | null> {
+  ): Promise<{ actor: CurrentUserContext; membership: MembershipState } | null> {
     const matched = await this.findApiToken(rawToken);
     if (!matched) return null;
 
@@ -372,18 +385,21 @@ export class JwtAuthGuard implements CanActivate {
       .catch(() => undefined);
 
     return {
-      userId: matched.userId,
-      orgId: resolved.orgId,
-      role: state.role,
-      isOrgOwner: state.isOwner,
-      sessionId: `pat:${matched.id}`,
-      tokenScopes: matched.scopes,
-      principal: personalTokenPrincipal(
-        state.membershipId,
-        state.isOwner,
-        matched.id,
-        matched.scopes,
-      ),
+      actor: {
+        userId: matched.userId,
+        orgId: resolved.orgId,
+        role: state.role,
+        isOrgOwner: state.isOwner,
+        sessionId: `pat:${matched.id}`,
+        tokenScopes: matched.scopes,
+        principal: personalTokenPrincipal(
+          state.membershipId,
+          state.isOwner,
+          matched.id,
+          matched.scopes,
+        ),
+      },
+      membership: state,
     };
   }
 

@@ -1,3 +1,4 @@
+import { ScopedRead } from "../access/scoped-read";
 import type { Db } from "../../db/drizzle.module";
 import { LeadsService } from "./leads.service";
 import { LeadsReadService } from "./leads-read.service";
@@ -83,7 +84,7 @@ describe("LeadsBoardService — cross-tenant isolation", () => {
   it("getBoard: queries scoped to attacker org (deny)", async () => {
     const { db, where } = makeDb([]);
     const svc = buildSvc(db);
-    await svc.getBoard(ATTACKER);
+    await svc.getBoard(ATTACKER, { read: ScopedRead.of(ATTACKER, "user-1", "all") });
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
   });
@@ -91,7 +92,7 @@ describe("LeadsBoardService — cross-tenant isolation", () => {
   it("getBoard: queries scoped to owner org (control)", async () => {
     const { db, where } = makeDb([]);
     const svc = buildSvc(db);
-    await svc.getBoard(OWNER);
+    await svc.getBoard(OWNER, { read: ScopedRead.of(OWNER, "user-1", "all") });
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
   });
@@ -106,7 +107,7 @@ describe("LeadsReadService — cross-tenant isolation", () => {
   it("listLeads: queries scoped to attacker org (deny)", async () => {
     const { db, where } = makeDb([]);
     const svc = buildSvc(db);
-    const result = await svc.listLeads(ATTACKER, {});
+    const result = await svc.listLeads(ATTACKER, { read: ScopedRead.of(ATTACKER, "user-1", "all") });
     const r = result as Record<string, unknown>;
     const arr = (r.leads ?? r.items ?? result) as unknown[];
     expect(arr).toHaveLength(0);
@@ -118,7 +119,7 @@ describe("LeadsReadService — cross-tenant isolation", () => {
     const row = { id: 1, orgId: OWNER };
     const { db, where } = makeDb([row]);
     const svc = buildSvc(db);
-    await svc.listLeads(OWNER, {});
+    await svc.listLeads(OWNER, { read: ScopedRead.of(OWNER, "user-1", "all") });
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
   });

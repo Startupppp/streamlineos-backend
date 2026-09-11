@@ -49,7 +49,7 @@ describe("BlogAdminController", () => {
       const posts = [{ id: "a", title: "Hello" }];
       service.listAdminPosts.mockResolvedValue(posts as never);
 
-      const result = await controller.listPosts();
+      const result = await controller.listPosts({ page: 1, limit: 20 });
 
       expect(service.listAdminPosts).toHaveBeenCalledTimes(1);
       expect(result).toBe(posts);

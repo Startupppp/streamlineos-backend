@@ -1,10 +1,11 @@
-import { pgTable, text, serial, timestamp, decimal, integer, index, unique } from "drizzle-orm/pg-core";
+import { decimal, foreignKey, index, integer, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { organizations, users } from "../common/auth";
 
 export const taxDeclarations = pgTable("tax_declarations", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  userId: text("user_id").notNull(),
+  userMembershipId: integer("user_membership_id"),
   financialYear: text("financial_year").notNull(),
   regime: text("regime").default("NEW").notNull(),
   hra: decimal("hra", { precision: 15, scale: 2 }).default("0").notNull(),
@@ -30,7 +31,7 @@ export const taxDeclarations = pgTable("tax_declarations", {
 export const investmentProofs = pgTable("investment_proofs", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  declarationId: integer("declaration_id").references(() => taxDeclarations.id, { onDelete: "cascade" }).notNull(),
+  declarationId: integer("declaration_id").notNull(),
   category: text("category").notNull(),
   amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
   description: text("description"),
@@ -38,6 +39,7 @@ export const investmentProofs = pgTable("investment_proofs", {
   status: text("status").default("PENDING").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.declarationId], foreignColumns: [taxDeclarations.orgId, taxDeclarations.id], name: "fk_investment_proofs_org_declaration" }).onDelete("cascade"),
   unique("uniq_investment_proofs_org_id").on(table.orgId, table.id),
   index("idx_investment_proofs_declaration").on(table.declarationId),
 ]);

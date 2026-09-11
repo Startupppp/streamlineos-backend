@@ -24,7 +24,7 @@ describe("NotificationDigestService — cross-tenant isolation", () => {
   const makeNotifications = () => ({ create: jest.fn().mockResolvedValue({}) } as never);
 
   const baseInput = {
-    userId: "user-1",
+    membershipId: 41,
     channel: "IN_APP" as const,
     eventKey: "test.event",
     title: "Test",
@@ -41,6 +41,7 @@ describe("NotificationDigestService — cross-tenant isolation", () => {
     const row = insertedValues[0] as Record<string, unknown>;
     expect(row["orgId"]).toBe(ATTACKER);
     expect(row["orgId"]).not.toBe(OWNER);
+    expect(row["membershipId"]).toBe(41);
   });
 
   it("binds the owning org to the digest item insert (same-tenant control)", async () => {
@@ -51,5 +52,6 @@ describe("NotificationDigestService — cross-tenant isolation", () => {
     expect(insertedValues.length).toBeGreaterThan(0);
     const row = insertedValues[0] as Record<string, unknown>;
     expect(row["orgId"]).toBe(OWNER);
+    expect(row["membershipId"]).toBe(41);
   });
 });

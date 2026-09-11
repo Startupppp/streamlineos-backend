@@ -29,6 +29,8 @@ import { ForecastPersistenceService } from "./forecast/forecast-persistence.serv
 import { simulateSchema, type SimulateInput } from "./dto/simulate.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { listForecastingResponseSchema } from "./dto/replenishment-response.schemas";
 
 const productVariantIdParams = z.object({ productVariantId: z.coerce.number().int().positive() }).strict();
 const vendorIdParams = z.object({ vendorId: z.coerce.number().int().positive() }).strict();
@@ -240,6 +242,7 @@ export class InvForecastingController {
   }
 
   @Get()
+  @ResponseSchema(listForecastingResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:reports:read")
   @Validate({ query: forecastingSchema })

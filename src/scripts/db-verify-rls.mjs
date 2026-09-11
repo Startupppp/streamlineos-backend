@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import postgres from "postgres";
 import * as dotenv from "dotenv";
@@ -26,7 +27,46 @@ const PROBE_TABLE_NULLABLE = "rls_probe_nullable";
 
 const sql = postgres(adminUrl, { prepare: false, max: 1, onnotice: () => {} });
 let failures = 0;
+let behaviouralFailureCount = 0;
+let behaviouralProbeCount = 0;
+let driftReason = null;
+let checksRun = 0;
+
+// Scope classification. CRM and Inventory are out of this release's scope
+// (PRD-IN-SCOPE.md). They are excluded BY NAME into their own reported bucket, never
+// folded into a silent ignore, and an unrecognised table classifies as IN-SCOPE so a
+// new table without a policy fails rather than slipping through as excluded.
+// The name sets match check-tenant-relationships.mjs so the two gates cannot disagree.
+const CRM_TABLE_NAMES = new Set([
+  "clients", "leads", "deals", "contacts", "quotes", "pipelines", "pipeline_stages",
+  "activities", "campaigns", "campaign_recipients", "quote_items", "contact_notes",
+  "contact_tags", "deal_activities", "deal_approvals", "deal_meetings",
+  "lead_activities", "lead_emails", "lead_notes", "lead_tasks",
+  "enterprise_quotes", "client_accounts", "client_onboarding_items",
+  "client_opportunities", "commissions", "csat_surveys", "quote_line_items",
+  "vendor_credits", "credit_notes",
+]);
+function bareName(qualified) {
+  return qualified.includes(".") ? qualified.slice(qualified.indexOf(".") + 1) : qualified;
+}
+function isCrmTable(qualified) {
+  const n = bareName(qualified);
+  return n.startsWith("crm_") || CRM_TABLE_NAMES.has(n);
+}
+function isInvTable(qualified) {
+  const n = bareName(qualified);
+  return n.startsWith("inv_") || n === "inv_items";
+}
+const buckets = { inScopeCovered: 0, inScopeMissing: [], platformGlobal: [], crm: [], inventory: [] };
+function classifyTable(tbl) {
+  if (PLATFORM_GLOBAL_TABLES.has(tbl)) return "PLATFORM-GLOBAL";
+  if (isCrmTable(tbl)) return "EXCLUDED: CRM";
+  if (isInvTable(tbl)) return "EXCLUDED: INVENTORY";
+  return "IN-SCOPE";
+}
+
 const check = (label, ok, detail = "") => {
+  checksRun++;
   if (!ok) failures++;
   console.log(`${ok ? "PASS" : "FAIL"}  ${label}${detail ? `  — ${detail}` : ""}`);
 };
@@ -235,14 +275,46 @@ try {
     failures++;
     console.error(`teardown incomplete: role=${roleLeft} table=${tableLeft}`);
   }
+  // Everything above this line is a self-contained behavioural probe on tables this
+  // script created, and is valid against any target. Everything below compares the LIVE
+  // catalogue against the declared schema, and is only evidence about THIS commit if the
+  // target is at THIS commit's journal head. check:tenant-relationships shipped the
+  // counter-example: 627 "violations" that were entirely a target sitting at 573 of 667.
+  // A catalogue finding on a drifted target is a fact about that database, not about the
+  // release -- so it is printed in full and the run answers "cannot determine" (exit 2)
+  // rather than either failing or, worse, passing.
+  behaviouralFailureCount = failures;
+  behaviouralProbeCount = checksRun;
+  const journalLength = JSON.parse(
+    readFileSync(new URL("../../migrations/meta/_journal.json", import.meta.url), "utf8"),
+  ).entries.length;
+  let appliedCount = null;
+  let ledgerError = null;
+  try {
+    const [row] = await sql`SELECT count(*)::int AS n FROM drizzle.__drizzle_migrations`;
+    appliedCount = row?.n ?? null;
+  } catch (err) {
+    ledgerError = err instanceof Error ? err.message : String(err);
+  }
+  const drift =
+    ledgerError !== null
+      ? `the migration ledger could not be read (${ledgerError})`
+      : appliedCount === null
+        ? "the migration ledger returned no row"
+        : appliedCount < journalLength
+          ? `the target is at ${appliedCount} of ${journalLength} journal entries — ${journalLength - appliedCount} migration(s) pending`
+          : null;
+  driftReason = drift;
+  if (drift !== null)
+    console.log(`\nTARGET DRIFT — ${drift}.\nThe catalogue section below describes THAT database, not this commit.`);
+
   const [coverage] = await sql`
     SELECT
       (SELECT count(DISTINCT c.oid)::int FROM pg_class c
         JOIN pg_namespace n2 ON n2.oid = c.relnamespace
         JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
-        WHERE n2.nspname IN ('public','build','build_events') AND c.relkind='r'
-          AND a.attname IN ('org_id','organization_id')
-          AND format_type(a.atttypid, NULL)='text') AS tenant_columns,
+        WHERE n2.nspname IN ('public','build','build_events') AND c.relkind IN ('r','p')
+          AND a.attname IN ('org_id','organization_id')) AS tenant_columns,
       (SELECT count(*)::int FROM pg_class c
         JOIN pg_namespace n ON n.oid=c.relnamespace
         WHERE n.nspname IN ('public','build','build_events') AND c.relrowsecurity) AS rls_enabled`;
@@ -260,17 +332,74 @@ coverage: ${coverage.rls_enabled} of ${coverage.tenant_columns} tenant-scoped ta
     JOIN pg_namespace n ON n.oid = c.relnamespace
     JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
     WHERE n.nspname IN ('public','build','build_events')
-      AND c.relkind = 'r'
+      AND c.relkind IN ('r','p')
       AND a.attname IN ('org_id','organization_id')
-      AND format_type(a.atttypid, NULL) = 'text'
       AND NOT c.relrowsecurity
     ORDER BY tbl`;
 
   for (const { tbl } of unprotected) {
-    if (!PLATFORM_GLOBAL_TABLES.has(tbl))
-      check(`RLS enabled on ${tbl}`, false, "tenant table has no RLS — add a policy or register in PLATFORM_GLOBAL_TABLES");
-    else
-      console.log(`SKIP  ${tbl} — registered as platform-global`);
+    const bucket = classifyTable(tbl);
+    if (bucket === "PLATFORM-GLOBAL") { buckets.platformGlobal.push(tbl); continue; }
+    if (bucket === "EXCLUDED: CRM") { buckets.crm.push(tbl); continue; }
+    if (bucket === "EXCLUDED: INVENTORY") { buckets.inventory.push(tbl); continue; }
+    buckets.inScopeMissing.push(tbl);
+    check(`RLS enabled on ${tbl}`, false, "in-scope tenant table has no RLS — add a policy or register in PLATFORM_GLOBAL_TABLES");
+  }
+  buckets.inScopeCovered = coverage.tenant_columns - buckets.inScopeMissing.length -
+    buckets.platformGlobal.length - buckets.crm.length - buckets.inventory.length;
+  console.log(
+    `
+BUCKET SUMMARY  (${coverage.tenant_columns} tenant-scoped tables scanned)` +
+    `
+  IN-SCOPE COVERED:    ${buckets.inScopeCovered}` +
+    `
+  IN-SCOPE MISSING:    ${buckets.inScopeMissing.length}` +
+    `
+  PLATFORM-GLOBAL:     ${buckets.platformGlobal.length}` +
+    `
+  EXCLUDED: CRM:       ${buckets.crm.length}` +
+    `
+  EXCLUDED: INVENTORY: ${buckets.inventory.length}`);
+  for (const t of buckets.inventory) console.log(`  excluded  ${t} — Inventory is out of release scope`);
+  for (const t of buckets.crm) console.log(`  excluded  ${t} — CRM is out of release scope`);
+  for (const t of buckets.platformGlobal) console.log(`  skip      ${t} — registered platform-global`);
+
+  // A scope exclusion is a statement about who fixes it, never about whether the exposure is
+  // real. Grants arrive through ALTER DEFAULT PRIVILEGES, so an excluded table with no policy
+  // is still readable org-wide by anything reaching raw SQL as the app role. Name that here
+  // rather than let a release exclusion read as an all-clear — and fail on it, because printing
+  // the exposure under RESULT: RLS VERIFIED is that same all-clear by another route.
+  const excludedNoPolicy = [...buckets.inventory, ...buckets.crm];
+  if (excludedNoPolicy.length > 0) {
+    failures++;
+    const appRole = process.env.APP_DB_ROLE || "streamline_app";
+    const [{ present }] = await sql`
+      SELECT count(*)::int AS present FROM pg_roles WHERE rolname = ${appRole}`;
+    if (present === 0) {
+      console.log(
+        `\nEXPOSURE  ${excludedNoPolicy.length} out-of-scope table(s) carry a tenant column with no policy.` +
+        `\n          Role ${appRole} does not exist on this target, so its DML could not be measured.`,
+      );
+    } else {
+      const grants = await sql`
+        SELECT n.nspname || '.' || c.relname AS tbl,
+               has_table_privilege(${appRole}, c.oid, 'SELECT') AS can_select,
+               (has_table_privilege(${appRole}, c.oid, 'INSERT')
+                 OR has_table_privilege(${appRole}, c.oid, 'UPDATE')
+                 OR has_table_privilege(${appRole}, c.oid, 'DELETE')) AS can_write
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname || '.' || c.relname = ANY(${excludedNoPolicy})
+        ORDER BY tbl`;
+      const reachable = grants.filter((g) => g.can_select || g.can_write);
+      console.log(
+        `\nEXPOSURE  ${excludedNoPolicy.length} out-of-scope table(s) carry a tenant column with no policy;` +
+        `\n          ${reachable.length} of them grant ${appRole} access, so their rows are readable across every org.` +
+        `\n          Out of release scope means "someone else fixes it", not "it is not exposed".`,
+      );
+      for (const g of reachable)
+        console.log(`  exposed   ${g.tbl}  — ${appRole} SELECT=${g.can_select} WRITE=${g.can_write}, policies=0`);
+    }
   }
 
   // 2. Tables that have RLS enabled and an org_id column but lack any policy that
@@ -283,13 +412,12 @@ coverage: ${coverage.rls_enabled} of ${coverage.tenant_columns} tenant-scoped ta
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname IN ('public','build','build_events')
-      AND c.relkind = 'r'
+      AND c.relkind IN ('r','p')
       AND c.relrowsecurity
       AND EXISTS (
         SELECT 1 FROM pg_attribute a
         WHERE a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
           AND a.attname IN ('org_id','organization_id')
-          AND format_type(a.atttypid, NULL) = 'text'
       )
       AND NOT EXISTS (
         SELECT 1 FROM pg_policies p
@@ -337,8 +465,8 @@ coverage: ${coverage.rls_enabled} of ${coverage.tenant_columns} tenant-scoped ta
 
   for (const { tbl, parent } of missingTenantColumn) {
     if (parent === null) continue;
-    if (PLATFORM_GLOBAL_TABLES.has(tbl)) {
-      console.log(`SKIP  ${tbl} — registered as platform-global`);
+    if (classifyTable(tbl) !== "IN-SCOPE") {
+      console.log(`SKIP  ${tbl} — ${classifyTable(tbl)}`);
       continue;
     }
     check(
@@ -355,14 +483,13 @@ coverage: ${coverage.rls_enabled} of ${coverage.tenant_columns} tenant-scoped ta
     JOIN pg_namespace n ON n.oid = c.relnamespace
     JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
     WHERE n.nspname IN ('public','build','build_events')
-      AND c.relkind = 'r'
+      AND c.relkind IN ('r','p')
       AND c.relrowsecurity
       AND NOT c.relforcerowsecurity
       AND a.attname IN ('org_id','organization_id')
-      AND format_type(a.atttypid, NULL) = 'text'
     ORDER BY tbl`;
 
-  const notForcedTenant = notForced.filter(({ tbl }) => !PLATFORM_GLOBAL_TABLES.has(tbl));
+  const notForcedTenant = notForced.filter(({ tbl }) => classifyTable(tbl) === "IN-SCOPE");
   if (notForcedTenant.length > 0) {
     const SHOW_MAX = 20;
     const shown = notForcedTenant.slice(0, SHOW_MAX).map(({ tbl }) => tbl);
@@ -379,6 +506,29 @@ coverage: ${coverage.rls_enabled} of ${coverage.tenant_columns} tenant-scoped ta
   }
 
   await sql.end();
+}
+
+// A behavioural probe runs against tables this script created, so it is valid on any
+// target and no amount of drift explains a failure. Those always exit 1.
+if (behaviouralFailureCount > 0) {
+  console.log(`\nRESULT: ${failures} CHECK(S) FAILED`);
+  process.exit(1);
+}
+
+// A green catalogue sweep on a drifted target is the "a gate that did not run is not a
+// gate that passed" trap, and a red one is a fact about that database rather than about
+// this commit. Both answer "cannot determine", never PASS and never FAIL.
+if (driftReason !== null) {
+  console.log(
+    `\nPREREQUISITE UNMET — cannot determine. All ${behaviouralProbeCount} behavioural probe(s) passed;` +
+      `\nthe catalogue sweep produced ${failures} finding(s) but ran against a target that is not at` +
+      `\nthis commit: ${driftReason}.` +
+      `\nA finding there is real for that database and is listed above, but it is NOT release evidence` +
+      `\nfor this commit -- a pending migration can both create an unprotected table and protect it,` +
+      `\nand a clean sweep proves nothing about tables that target has not created yet.` +
+      `\nRe-run against a target at journal head (\`node src/scripts/db-bootstrap.mjs\`) for a verdict.`,
+  );
+  process.exit(2);
 }
 
 console.log(failures === 0 ? "\nRESULT: RLS VERIFIED" : `\nRESULT: ${failures} CHECK(S) FAILED`);

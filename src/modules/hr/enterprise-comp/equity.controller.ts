@@ -20,6 +20,8 @@ import {
 } from "./dto/enterprise-comp.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts"
+import { listGrantsResponseSchema, createGrantResponseSchema, getGrantResponseSchema, updateGrantResponseSchema, getVestingScheduleResponseSchema, getExitTreatmentResponseSchema, recordExerciseResponseSchema } from "./dto/enterprise-comp-response.schemas"
 
 const grantIdParams = z.object({ grantId: z.coerce.number().int().positive() }).strict();
 
@@ -29,6 +31,7 @@ const grantIdParams = z.object({ grantId: z.coerce.number().int().positive() }).
 export class EquityController {
   constructor(private readonly service: EquityService) {}
 
+  @ResponseSchema(listGrantsResponseSchema)
   @Get("grants")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:equity:view")
@@ -40,6 +43,7 @@ export class EquityController {
     return this.service.listGrants(u.orgId, query);
   }
 
+  @ResponseSchema(createGrantResponseSchema)
   @Post("grants")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:equity:manage")
@@ -52,6 +56,7 @@ export class EquityController {
     return this.service.createGrant(u.orgId, u.userId, body);
   }
 
+  @ResponseSchema(getGrantResponseSchema)
   @Get("grants/:grantId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:equity:view")
@@ -63,6 +68,7 @@ export class EquityController {
     return this.service.getGrant(u.orgId, grantId);
   }
 
+  @ResponseSchema(updateGrantResponseSchema)
   @Patch("grants/:grantId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:equity:manage")
@@ -75,6 +81,7 @@ export class EquityController {
     return this.service.updateGrant(u.orgId, grantId, u.userId, body);
   }
 
+  @ResponseSchema(getVestingScheduleResponseSchema)
   @Get("grants/:grantId/vesting-schedule")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:equity:view")
@@ -86,6 +93,7 @@ export class EquityController {
     return this.service.getVestingSchedule(u.orgId, grantId);
   }
 
+  @ResponseSchema(getExitTreatmentResponseSchema)
   @Get("grants/:grantId/exit-treatment")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:equity:view")
@@ -98,6 +106,7 @@ export class EquityController {
     return this.service.getExitTreatment(u.orgId, grantId, query.exitDate);
   }
 
+  @ResponseSchema(recordExerciseResponseSchema)
   @Post("exercises")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:equity:manage")

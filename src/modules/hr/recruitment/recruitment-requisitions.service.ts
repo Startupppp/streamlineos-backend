@@ -33,7 +33,8 @@ export class RecruitmentRequisitionsService {
 
   private async findOrThrow(orgId: string, id: number) {
     const [req] = await this.db.select().from(jobRequisitions)
-      .where(and(eq(jobRequisitions.id, id), eq(jobRequisitions.orgId, orgId)));
+      .where(and(eq(jobRequisitions.id, id), eq(jobRequisitions.orgId, orgId)))
+      .limit(1);
     if (!req) throw new NotFoundException("Requisition not found");
     return req;
   }

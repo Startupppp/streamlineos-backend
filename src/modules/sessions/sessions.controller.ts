@@ -7,7 +7,14 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { enrichUserAgent } from "../../common/http/parse-user-agent";
 import { SessionsService } from "./sessions.service";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  sessionListResponseSchema,
+  sessionRevokeOneResponseSchema,
+  sessionRevokeAllResponseSchema,
+} from "./dto/sessions-response.schemas";
 import { z } from "zod";
+import { resolveClientIp } from "../../common/http/client-ip";
 
 const sessionIdParams = z.object({ sessionId: z.string().min(1) }).strict();
 
@@ -22,6 +29,7 @@ export class SessionsController {
   constructor(private readonly sessions: SessionsService) {}
 
   @Get()
+  @ResponseSchema(sessionListResponseSchema)
   @Universal()
   list(@Req() req: Request, @CurrentUser() u: CurrentUserContext) {
     const rawUa =
@@ -33,14 +41,12 @@ export class SessionsController {
       headerString(req.headers["x-streamlineos-client"]) ??
       null;
     const userAgent = enrichUserAgent(rawUa, { clientApp });
-    const raw = req.headers["x-forwarded-for"];
-    const ipAddress =
-      (Array.isArray(raw) ? raw[0] : raw)?.split(",")[0]?.trim() ??
-      (req.headers["x-real-ip"] as string | undefined);
+    const ipAddress = resolveClientIp(req);
     return this.sessions.list(u.userId, u.sessionId, userAgent, ipAddress);
   }
 
   @Delete(":sessionId")
+  @ResponseSchema(sessionRevokeOneResponseSchema)
   @Universal()
   @Validate({ params: sessionIdParams })
   revokeOne(
@@ -51,6 +57,7 @@ export class SessionsController {
   }
 
   @Delete()
+  @ResponseSchema(sessionRevokeAllResponseSchema)
   @Universal()
   revokeAllOthers(@CurrentUser() u: CurrentUserContext) {
     return this.sessions.revokeAllOthers(u.userId, u.sessionId);

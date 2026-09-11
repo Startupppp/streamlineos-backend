@@ -71,7 +71,8 @@ const PLAN_FEATURES: Record<Plan, ReadonlySet<Feature>> = {
 };
 
 function isPlan(value: string | null | undefined): value is Plan {
-  return value !== null && value !== undefined && (PLANS as readonly string[]).includes(value);
+  if (value === null || value === undefined) return false;
+  return PLANS.some((plan) => plan === value);
 }
 
 export function canUseFeature(plan: string | null | undefined, feature: Feature): boolean {

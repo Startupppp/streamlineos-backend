@@ -21,22 +21,12 @@ import type {
   ListWorkspacesQuery,
   UpdateWorkspaceInput,
 } from "./dto/pm-workspaces.schemas";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 type MembershipRow = typeof pmWorkspaceMemberships.$inferSelect;
 
-const PG_UNIQUE_VIOLATION = "23505";
-
 type WorkspaceRow = typeof pmWorkspaces.$inferSelect;
 type WorkspacePatch = Partial<typeof pmWorkspaces.$inferInsert>;
-
-function isUniqueViolation(err: unknown): boolean {
-  return (
-    typeof err === "object" &&
-    err !== null &&
-    "code" in err &&
-    (err as { code: string }).code === PG_UNIQUE_VIOLATION
-  );
-}
 
 @Injectable()
 export class PmWorkspacesService {

@@ -20,8 +20,15 @@ import {
 } from "./dto/webhooks.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import {
+  listWebhooksResponseSchema,
+  webhookResponseSchema,
+  deleteWebhookResponseSchema,
+  listWebhookEventsResponseSchema,
+  retryEventResponseSchema,
+} from "./dto/webhooks-response.schemas";
 
 const webhookIdParams = z.object({ webhookId: z.coerce.number().int().positive() }).strict();
 const eventIdParams = z.object({ eventId: z.coerce.number().int().positive() }).strict();
@@ -33,6 +40,7 @@ export class InvWebhooksController {
   constructor(private readonly svc: WebhooksService) {}
 
   @Get()
+  @ResponseSchema(listWebhooksResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:webhooks:manage")
   list(@CurrentUser() u: CurrentUserContext) {
@@ -40,6 +48,7 @@ export class InvWebhooksController {
   }
 
   @Post()
+  @ResponseSchema(webhookResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:webhooks:manage")
   @Idempotent("inventory.webhook.create")
@@ -52,6 +61,7 @@ export class InvWebhooksController {
   }
 
   @Patch(":webhookId")
+  @ResponseSchema(webhookResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:webhooks:manage")
   @Validate({ params: webhookIdParams, body: updateWebhookSchema })
@@ -64,6 +74,7 @@ export class InvWebhooksController {
   }
 
   @Delete(":webhookId")
+  @ResponseSchema(deleteWebhookResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:webhooks:manage")
   @Validate({ params: webhookIdParams })
@@ -75,6 +86,7 @@ export class InvWebhooksController {
   }
 
   @Get(":webhookId/events")
+  @ResponseSchema(listWebhookEventsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:webhooks:manage")
   @Validate({ params: webhookIdParams, query: listEventsQuerySchema })
@@ -88,6 +100,7 @@ export class InvWebhooksController {
 
   @Post("events/:eventId/retry")
   @BodylessAction()
+  @ResponseSchema(retryEventResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:webhooks:manage")
   @Validate({ params: eventIdParams })

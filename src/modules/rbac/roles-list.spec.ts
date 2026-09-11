@@ -6,7 +6,7 @@ import {
 import { RolesService } from "./roles.service";
 
 describe("RolesService.getRoles", () => {
-  it("returns a bounded page with permission counts and total metadata", async () => {
+  it("returns a bounded page with permission counts and no-more-pages signal", async () => {
     const role = {
       id: 12,
       name: "Manager",
@@ -23,27 +23,21 @@ describe("RolesService.getRoles", () => {
       explicitPermissionCount: 7,
       universalGrantCount: 2,
       memberCount: 5,
+      cursorSortValue: "manager",
     };
-    const offset = jest.fn().mockResolvedValue([role]);
-    const limit = jest.fn().mockReturnValue({ offset });
+    const limit = jest.fn().mockResolvedValue([role]);
     const orderBy = jest.fn().mockReturnValue({ limit });
     const groupBy = jest.fn().mockReturnValue({ orderBy });
     const pageWhere = jest.fn().mockReturnValue({ groupBy });
     const leftJoin = jest.fn().mockReturnValue({ where: pageWhere });
     const pageFrom = jest.fn().mockReturnValue({ leftJoin });
-    const countWhere = jest.fn().mockResolvedValue([{ value: 41 }]);
-    const countFrom = jest.fn().mockReturnValue({ where: countWhere });
-    const select = jest.fn((selection: Record<string, unknown>) =>
-      "explicitPermissionCount" in selection
-        ? { from: pageFrom }
-        : { from: countFrom },
-    );
+    const select = jest.fn().mockReturnValue({ from: pageFrom });
     const service: RolesService = Object.create(RolesService.prototype);
     Reflect.set(service, "db", { select });
 
     await expect(
       service.getRoles("org-1", {
-        page: 2,
+        cursor: undefined,
         limit: 20,
         search: "manager",
       }),
@@ -67,57 +61,37 @@ describe("RolesService.getRoles", () => {
         },
       ],
       pagination: {
-        page: 2,
         limit: 20,
-        total: 41,
-        totalPages: 3,
+        nextCursor: null,
+        hasMore: false,
       },
     });
     expect(leftJoin).toHaveBeenCalledWith(rolePermissionGrants, expect.anything());
     expect(groupBy).toHaveBeenCalledWith(roles.id);
     expect(orderBy).toHaveBeenCalledTimes(1);
     expect(orderBy.mock.calls[0]).toHaveLength(2);
-    expect(limit).toHaveBeenCalledWith(20);
-    expect(offset).toHaveBeenCalledWith(20);
-    expect(pageWhere.mock.calls[0]?.[0]).toBe(countWhere.mock.calls[0]?.[0]);
+    expect(limit).toHaveBeenCalledWith(21);
   });
 
-  it("returns zero totals when no count row is returned", async () => {
-    const offset = jest.fn().mockResolvedValue([]);
-    const select = jest.fn((selection: Record<string, unknown>) => {
-      if ("explicitPermissionCount" in selection) {
-        return {
-          from: jest.fn().mockReturnValue({
-            leftJoin: jest.fn().mockReturnValue({
-              where: jest.fn().mockReturnValue({
-                groupBy: jest.fn().mockReturnValue({
-                  orderBy: jest.fn().mockReturnValue({
-                    limit: jest.fn().mockReturnValue({ offset }),
-                  }),
-                }),
-              }),
-            }),
-          }),
-        };
-      }
-      return {
-        from: jest.fn().mockReturnValue({
-          where: jest.fn().mockResolvedValue([]),
-        }),
-      };
-    });
+  it("returns an empty page when no roles match", async () => {
+    const limit = jest.fn().mockResolvedValue([]);
+    const orderBy = jest.fn().mockReturnValue({ limit });
+    const groupBy = jest.fn().mockReturnValue({ orderBy });
+    const where = jest.fn().mockReturnValue({ groupBy });
+    const leftJoin = jest.fn().mockReturnValue({ where });
+    const from = jest.fn().mockReturnValue({ leftJoin });
+    const select = jest.fn().mockReturnValue({ from });
     const service: RolesService = Object.create(RolesService.prototype);
     Reflect.set(service, "db", { select });
 
     await expect(
-      service.getRoles("org-1", { page: 1, limit: 10 }),
+      service.getRoles("org-1", { limit: 10 }),
     ).resolves.toEqual({
       data: [],
       pagination: {
-        page: 1,
         limit: 10,
-        total: 0,
-        totalPages: 0,
+        nextCursor: null,
+        hasMore: false,
       },
     });
   });
@@ -138,30 +112,16 @@ describe("RolesService.getRoles", () => {
       updatedAt: new Date("2026-08-01T00:00:00.000Z"),
       explicitPermissionCount: 0,
       universalGrantCount: 0,
+      memberCount: 3,
+      cursorSortValue: "member",
     };
-    const offset = jest.fn().mockResolvedValue([role]);
-    const select = jest.fn((selection: Record<string, unknown>) => {
-      if ("explicitPermissionCount" in selection) {
-        return {
-          from: jest.fn().mockReturnValue({
-            leftJoin: jest.fn().mockReturnValue({
-              where: jest.fn().mockReturnValue({
-                groupBy: jest.fn().mockReturnValue({
-                  orderBy: jest.fn().mockReturnValue({
-                    limit: jest.fn().mockReturnValue({ offset }),
-                  }),
-                }),
-              }),
-            }),
-          }),
-        };
-      }
-      return {
-        from: jest.fn().mockReturnValue({
-          where: jest.fn().mockResolvedValue([{ value: 1 }]),
-        }),
-      };
-    });
+    const limit = jest.fn().mockResolvedValue([role]);
+    const orderBy = jest.fn().mockReturnValue({ limit });
+    const groupBy = jest.fn().mockReturnValue({ orderBy });
+    const where = jest.fn().mockReturnValue({ groupBy });
+    const leftJoin = jest.fn().mockReturnValue({ where });
+    const from = jest.fn().mockReturnValue({ leftJoin });
+    const select = jest.fn().mockReturnValue({ from });
     const service: RolesService = Object.create(RolesService.prototype);
     Reflect.set(service, "db", { select });
     const expectedPermissionCount = new Set([
@@ -169,7 +129,7 @@ describe("RolesService.getRoles", () => {
       ...(ROLE_DEFAULT_PERMISSIONS.MEMBER ?? []),
     ]).size;
 
-    const result = await service.getRoles("org-1", { page: 1, limit: 10 });
+    const result = await service.getRoles("org-1", { limit: 10 });
 
     expect(result.data).toEqual([
       expect.objectContaining({
@@ -179,5 +139,6 @@ describe("RolesService.getRoles", () => {
     ]);
     expect(result.data[0]).not.toHaveProperty("explicitPermissionCount");
     expect(result.data[0]).not.toHaveProperty("universalGrantCount");
+    expect(result.data[0]).not.toHaveProperty("cursorSortValue");
   });
 });

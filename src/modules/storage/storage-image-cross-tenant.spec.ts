@@ -1,5 +1,6 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { StorageController } from "./storage.controller";
+import { MediaTransformRunner } from "./media-transform.runner";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
 
@@ -75,6 +76,8 @@ function build(
     audit as never,
     access as never,
     { scan: jest.fn() } as never,
+    { isKeyBlocked: jest.fn().mockResolvedValue(false), getTotalUsageBytes: jest.fn().mockResolvedValue(0), begin: jest.fn().mockResolvedValue("qr-1"), markClean: jest.fn(), markInfected: jest.fn(), markError: jest.fn() } as never,
+    new MediaTransformRunner(),
   );
   return { controller, storage, db };
 }
@@ -101,7 +104,7 @@ describe("StorageController.image — cross-tenant isolation for tracked non-sen
     expect(storage.getFileStream).toHaveBeenCalledWith("org-A", "uploads/expense-receipt.jpg");
   });
 
-  it("ALLOW — untracked non-sensitive non-namespaced key is served (public profile images etc.)", async () => {
+  it("ALLOW — untracked non-sensitive, non-chat, non-namespaced key is served (public profile images etc.)", async () => {
     const { controller, storage } = build({});
     const res = mockRes();
     await controller.image({ key: "avatars/user-profile.jpg" }, ctx("org-A"), res);

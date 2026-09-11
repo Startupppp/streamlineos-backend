@@ -1,18 +1,14 @@
 import { BadRequestException } from "@nestjs/common";
 import { OrganizationController } from "./organization.controller";
 import type { OrgProfileService } from "./org-profile.service";
-import type { OrgMembershipService } from "./org-membership.service";
-import type { OrgMembershipStatusService } from "./org-membership-status.service";
-import type { OrgMemberDepartureService } from "./org-member-departure.service";
 import type { OrgLifecycleService } from "./org-lifecycle.service";
-import type { OrgPurgeService } from "./org-purge.service";
 import type { OrganizationSettingsService } from "./organization-settings.service";
 import type { InvitationsReadService } from "./invitations-read.service";
 import type { InvitationAcceptanceService } from "./invitation-acceptance.service";
 import type { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
-import type { OrganizationLegalHoldService } from "./lifecycle/organization-legal-hold.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { CreateOrganizationInput, SwitchOrgInput } from "./dto/organization.schemas";
+import { NO_TENANT_TRANSACTION } from "../../../common/tenant/no-tenant-transaction.decorator";
 
 const ORG_RESULT = { id: "org-new", name: "New Org", slug: "new-org" };
 const NEW_ORG_BODY: CreateOrganizationInput = { name: "New Org", slug: "new-org", billingEmail: null };
@@ -39,22 +35,26 @@ function buildController(switchOrgImpl?: () => Promise<unknown>) {
 
   const controller = new OrganizationController(
     orgProfile,
-    {} as unknown as OrgMembershipService,
-    {} as unknown as OrgMembershipStatusService,
-    {} as unknown as OrgMemberDepartureService,
     {} as unknown as OrgLifecycleService,
-    {} as unknown as OrgPurgeService,
     {} as unknown as OrganizationSettingsService,
     {} as unknown as InvitationsReadService,
     {} as unknown as InvitationAcceptanceService,
     {} as unknown as RateLimitService,
-    {} as unknown as OrganizationLegalHoldService,
   );
 
   return { controller, createOrganization, switchOrg };
 }
 
 describe("OrganizationController — org creation policy", () => {
+  it("runs creation outside the caller's existing tenant transaction", () => {
+    expect(
+      Reflect.getMetadata(
+        NO_TENANT_TRANSACTION,
+        OrganizationController.prototype.createOrganization,
+      ),
+    ).toBe(true);
+  });
+
   it("allows a plain member (MEMBER role) to create a new organisation", async () => {
     const { controller, createOrganization } = buildController();
     const u = userContext("MEMBER", false);

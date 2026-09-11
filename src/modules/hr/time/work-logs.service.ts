@@ -16,7 +16,7 @@ import type {
   PostWorkLogInput,
 } from "./dto/work-logs.schemas";
 import { resolveWorkLogsScope, WORKLOGS_PERMISSION } from "./worklogs-scope";
-import { assertOrganizationActor } from "../../../common/organization/organization-actor";
+import { exportWorkLogsCsv } from "./work-logs-export";
 
 @Injectable()
 export class WorkLogsService {
@@ -29,7 +29,7 @@ export class WorkLogsService {
 
   async list(u: CurrentUserContext, query: ListWorkLogsQuery) {
     const scope = await resolveWorkLogsScope(this.access, u);
-    if (scope !== "all" && query.userId && query.userId !== u.userId) {
+    if (!scope.unrestricted && query.userId && query.userId !== u.userId) {
       throw new ForbiddenException("Not authorized to view other users' work logs.");
     }
 
@@ -148,31 +148,59 @@ export class WorkLogsService {
 
     const workLink = body.workLink || null;
 
-    const [upserted] = await this.db
-      .insert(timesheets)
-      .values({
-        orgId,
-        userMembershipId: member.id,
-        date: dateStr,
-        description: normalizedDescription,
-        hours: body.hours?.toString() || "0",
-        workLink,
-        status: "APPROVED",
-      })
-      .onConflictDoUpdate({
-        target: [timesheets.orgId, timesheets.userMembershipId, timesheets.date],
-        targetWhere: sql`ticket_id IS NULL AND project_id IS NULL AND voided_at IS NULL`,
-        set: {
+    return await this.db.transaction(async (tx) => {
+      const [upserted] = await tx
+        .insert(timesheets)
+        .values({
+          orgId,
+          userMembershipId: member.id,
+          date: dateStr,
           description: normalizedDescription,
-          hours: body.hours ? body.hours.toString() : sql`${timesheets.hours}`,
+          hours: body.hours?.toString() || "0",
           workLink,
           status: "APPROVED",
-          updatedAt: new Date(),
-        },
-      })
-      .returning();
+        })
+        .onConflictDoUpdate({
+          target: [timesheets.orgId, timesheets.userMembershipId, timesheets.date],
+          targetWhere: sql`ticket_id IS NULL AND project_id IS NULL AND voided_at IS NULL`,
+          set: {
+            description: normalizedDescription,
+            hours: body.hours ? body.hours.toString() : sql`${timesheets.hours}`,
+            workLink,
+            status: "APPROVED",
+            updatedAt: new Date(),
+          },
+        })
+        .returning();
 
-    return upserted;
+      await this.audit.logCritical({
+        action: "hr.worklog.saved",
+        userId: actor?.userId ?? userId,
+        orgId,
+        targetId: upserted ? String(upserted.id) : null,
+        targetType: "work_log",
+        metadata: {
+          employeeUserId: userId,
+          date: dateStr,
+          // A locked log rewritten by someone holding hr:attendance:manage —
+          // the override this audit trail exists to answer for.
+          overwroteLockedLog: alreadySaved,
+        },
+        before: existing ? this.auditShape(existing) : null,
+        after: upserted ? this.auditShape(upserted) : null,
+      });
+
+      return upserted;
+    });
+  }
+
+  private auditShape(row: typeof timesheets.$inferSelect): Record<string, unknown> {
+    return {
+      description: row.description,
+      hours: row.hours,
+      workLink: row.workLink,
+      status: row.status,
+    };
   }
 
   async updateStatus(u: CurrentUserContext, body: PatchWorkLogStatusInput) {
@@ -188,17 +216,39 @@ export class WorkLogsService {
       .where(and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, u.userId)))
       .limit(1);
 
-    const [updated] = await this.db
-      .update(timesheets)
-      .set({
-        status: body.status,
-        approvedByMembershipId: approverMember?.id ?? null,
-        approvedAt: new Date(),
-        rejectionReason: body.status === "REJECTED" ? (body.rejectionReason ?? null) : null,
-      })
-      .where(and(eq(timesheets.id, body.id), eq(timesheets.orgId, u.orgId)))
-      .returning();
+    const updated = await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(timesheets)
+        .set({
+          status: body.status,
+          approvedByMembershipId: approverMember?.id ?? null,
+          approvedAt: new Date(),
+          rejectionReason: body.status === "REJECTED" ? (body.rejectionReason ?? null) : null,
+        })
+        .where(and(eq(timesheets.id, body.id), eq(timesheets.orgId, u.orgId)))
+        .returning();
+      if (!row) throw new NotFoundException("Work log not found.");
 
+      await this.audit.logCritical({
+        action: body.status === "APPROVED" ? "hr.worklog.approved" : "hr.worklog.rejected",
+        userId: u.userId,
+        orgId: u.orgId,
+        targetId: String(body.id),
+        targetType: "work_log",
+        metadata: {
+          previousStatus: existing.status,
+          status: body.status,
+          date: String(existing.date).slice(0, 10),
+          employeeMembershipId: existing.userMembershipId,
+          approverMembershipId: approverMember?.id ?? null,
+          rejectionReason: body.status === "REJECTED" ? (body.rejectionReason ?? null) : null,
+        },
+      });
+      return row;
+    });
+
+    // After the decision has committed: an approval mail must never precede the
+    // audit row that justifies it.
     void this.dispatchWorkLogStatusEmail(existing, body.status, u.userId, body.rejectionReason).catch(() => undefined);
 
     return updated;
@@ -241,72 +291,6 @@ export class WorkLogsService {
   }
 
   async exportCsv(u: CurrentUserContext, query: ExportWorkLogsQuery): Promise<string> {
-    const scope = await resolveWorkLogsScope(this.access, u);
-
-    const conditions: SQL[] = [eq(timesheets.orgId, u.orgId)];
-
-    if (scope !== "all") {
-      const [selfMember] = await this.db
-        .select({ id: organizationMembers.id })
-        .from(organizationMembers)
-        .where(and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, u.userId)))
-        .limit(1);
-      if (selfMember) conditions.push(eq(timesheets.userMembershipId, selfMember.id));
-    } else if (query.userId) {
-      const [qMember] = await this.db
-        .select({ id: organizationMembers.id })
-        .from(organizationMembers)
-        .where(and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, query.userId)))
-        .limit(1);
-      if (qMember) conditions.push(eq(timesheets.userMembershipId, qMember.id));
-    }
-
-    if (query.startDate) conditions.push(gte(timesheets.date, query.startDate));
-    if (query.endDate) conditions.push(lte(timesheets.date, query.endDate));
-
-    const exportMember = alias(organizationMembers, "export_member");
-    const data = await this.db
-      .select({
-        date: timesheets.date,
-        hours: timesheets.hours,
-        description: timesheets.description,
-        status: timesheets.status,
-        userName: users.name,
-        userEmail: users.email,
-      })
-      .from(timesheets)
-      .leftJoin(exportMember, and(eq(timesheets.orgId, exportMember.orgId), eq(timesheets.userMembershipId, exportMember.id)))
-      .leftJoin(users, eq(exportMember.userId, users.id))
-      .where(and(...conditions))
-      .orderBy(timesheets.date)
-      .limit(5000);
-
-    const headers = ["Date", "Employee", "Email", "Hours", "Description", "Status"];
-    const rows = data.map((r) => [
-      r.date,
-      r.userName || "",
-      r.userEmail || "",
-      r.hours || "0",
-      r.description || "",
-      r.status || "PENDING",
-    ]);
-
-    const csv = [headers, ...rows]
-      .map((row) => row.map((val) => `"${String(val ?? "").replace(/"/g, '""')}"`).join(","))
-      .join("\n");
-
-    await this.audit.logCritical({
-      action: "worklog.exported",
-      userId: u.userId,
-      orgId: u.orgId,
-      metadata: {
-        format: "csv",
-        recordCount: rows.length,
-        startDate: query.startDate ?? null,
-        endDate: query.endDate ?? null,
-      },
-    });
-
-    return csv;
+    return exportWorkLogsCsv(this.db, this.access, this.audit, u, query);
   }
 }

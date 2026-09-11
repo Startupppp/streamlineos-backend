@@ -10,6 +10,7 @@ import { TaskNotificationsService } from "./task-notifications.service";
 import { AccessService } from "../access/access.service";
 import { logSideEffectFailure } from "../../common/logger/side-effect";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { resolveTasksViewScope } from "./tasks-scope";
 import type { ListInput, CreateInput, UpdateInput, CompleteInput } from "./dto/task.schemas";
 import { addDays, addWeeks, addMonths } from "./task-date-utils";
 
@@ -23,34 +24,30 @@ export class TasksService {
     private readonly access: AccessService,
   ) {}
 
-  private async canViewAllTasks(actor: CurrentUserContext): Promise<boolean> {
-    if (actor.isOrgOwner) return true;
-    const resolved = await this.access.resolveUserPermissions(
-      actor.orgId,
-      actor.userId,
-    );
-    return (resolved.get("crm:tasks:view") ?? "none") !== "none";
-  }
-
   async list(actor: CurrentUserContext, filters: ListInput) {
-    const { orgId, userId } = actor;
-    const canViewAll = await this.canViewAllTasks(actor);
+    const { userId } = actor;
+    const read = await resolveTasksViewScope(this.access, actor);
     const resolvedAssigneeId = filters.assigneeId === "me" ? userId : filters.assigneeId;
     const limit = filters.limit;
 
-    const conditions = [eq(tasks.orgId, orgId)];
-    if (!canViewAll) conditions.push(eq(tasks.assigneeId, userId));
-    else if (resolvedAssigneeId)
-      conditions.push(eq(tasks.assigneeId, resolvedAssigneeId));
-    if (filters.status) conditions.push(eq(tasks.status, filters.status));
-    if (filters.type) conditions.push(eq(tasks.type, filters.type));
-    if (filters.entityType) conditions.push(eq(tasks.entityType, filters.entityType));
-    if (filters.entityId) conditions.push(eq(tasks.entityId, Number(filters.entityId)));
-
+    // `?assigneeId=` widens to another person, so it is honoured only above `own`; the scope predicate holds it to the caller otherwise.
+    const domain = [
+      resolvedAssigneeId ? eq(tasks.assigneeId, resolvedAssigneeId) : undefined,
+      filters.status ? eq(tasks.status, filters.status) : undefined,
+      filters.type ? eq(tasks.type, filters.type) : undefined,
+      filters.entityType ? eq(tasks.entityType, filters.entityType) : undefined,
+      filters.entityId ? eq(tasks.entityId, Number(filters.entityId)) : undefined,
+    ];
+    const spec = { tenant: tasks.orgId, scope: { columns: { ownerColumn: tasks.assigneeId } } };
     const position = decodeCursor(filters.cursor);
-    const where = position
-      ? and(...conditions, keysetBefore(tasks.createdAt, tasks.id, position))
-      : and(...conditions);
+    const where = read.compose(
+      { ...spec, and: [...domain, position ? keysetBefore(tasks.createdAt, tasks.id, position) : undefined] },
+      (clause) => clause.sql,
+      () => null,
+    );
+    const countWhere = read.compose({ ...spec, and: domain }, (clause) => clause.sql, () => null);
+    if (where === null || countWhere === null)
+      return { tasks: [], hasMore: false, nextCursor: null, total: 0 };
 
     const [rows, totalResult] = await Promise.all([
       this.db
@@ -60,7 +57,7 @@ export class TasksService {
         .orderBy(desc(tasks.createdAt), desc(tasks.id))
         .limit(limit + 1),
       filters.cursor === undefined
-        ? this.db.select({ count: count() }).from(tasks).where(and(...conditions))
+        ? this.db.select({ count: count() }).from(tasks).where(countWhere)
         : Promise.resolve(null),
     ]);
 

@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException, BadRequestException } from "@nestjs/common";
-import { and, count, desc, eq, lte, sql } from "drizzle-orm";
+import { and, desc, eq, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -14,6 +14,8 @@ import type {
   ListEquityGrantsInput,
   CreateExerciseInput,
 } from "./dto/enterprise-comp.schemas";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 
 function addMonths(date: Date, months: number): Date {
   const d = new Date(date);
@@ -93,28 +95,36 @@ export class EquityService {
   }
 
   async listGrants(orgId: string, input: ListEquityGrantsInput) {
-    const { page, limit, userId, status, grantType } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, userId, status, grantType } = input;
     const conditions = [eq(hrEquityGrants.orgId, orgId)];
     if (userId) conditions.push(eq(hrEquityGrants.userId, userId));
     if (status) conditions.push(eq(hrEquityGrants.status, status));
     if (grantType) conditions.push(eq(hrEquityGrants.grantType, grantType));
-    const where = and(...conditions);
+    const position = decodeCursor(cursor);
+    if (cursor !== undefined && !position)
+      throw new BadRequestException("Invalid pagination cursor");
+    if (position)
+      conditions.push(keysetBeforeId(hrEquityGrants.createdAt, hrEquityGrants.id, position));
 
-    const [data, totalResult] = await Promise.all([
-      this.db.select().from(hrEquityGrants).where(where).orderBy(desc(hrEquityGrants.createdAt)).limit(limit).offset(offset),
-      this.db.select({ total: count() }).from(hrEquityGrants).where(where),
-    ]);
-    const total = totalResult[0]?.total ?? 0;
-    return { data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+    const rows = await this.db
+      .select()
+      .from(hrEquityGrants)
+      .where(and(...conditions))
+      .orderBy(desc(hrEquityGrants.createdAt), desc(hrEquityGrants.id))
+      .limit(limit + 1);
+
+    return buildCursorPage(rows, limit, (grant) => ({
+      sortValue: grant.createdAt.toISOString(),
+      id: String(grant.id),
+    }));
   }
 
   async getGrant(orgId: string, grantId: number) {
     const [grant] = await this.db.select().from(hrEquityGrants).where(and(eq(hrEquityGrants.id, grantId), eq(hrEquityGrants.orgId, orgId))).limit(1);
     if (!grant) throw new NotFoundException("Equity grant not found");
 
-    const vestingEvents = await this.db.select().from(hrEquityVestingEvents).where(and(eq(hrEquityVestingEvents.grantId, grantId), eq(hrEquityVestingEvents.orgId, orgId))).orderBy(hrEquityVestingEvents.vestDate);
-    const exercises = await this.db.select().from(hrEquityExercises).where(and(eq(hrEquityExercises.grantId, grantId), eq(hrEquityExercises.orgId, orgId))).orderBy(hrEquityExercises.exerciseDate);
+    const vestingEvents = await this.db.select().from(hrEquityVestingEvents).where(and(eq(hrEquityVestingEvents.grantId, grantId), eq(hrEquityVestingEvents.orgId, orgId))).orderBy(hrEquityVestingEvents.vestDate).limit(1000);
+    const exercises = await this.db.select().from(hrEquityExercises).where(and(eq(hrEquityExercises.grantId, grantId), eq(hrEquityExercises.orgId, orgId))).orderBy(hrEquityExercises.exerciseDate).limit(1000);
 
     return { ...grant, vestingEvents, exercises };
   }
@@ -138,7 +148,7 @@ export class EquityService {
     const [grant] = await this.db.select({ id: hrEquityGrants.id }).from(hrEquityGrants).where(and(eq(hrEquityGrants.id, grantId), eq(hrEquityGrants.orgId, orgId))).limit(1);
     if (!grant) throw new NotFoundException("Equity grant not found");
 
-    return this.db.select().from(hrEquityVestingEvents).where(and(eq(hrEquityVestingEvents.grantId, grantId), eq(hrEquityVestingEvents.orgId, orgId))).orderBy(hrEquityVestingEvents.vestDate);
+    return this.db.select().from(hrEquityVestingEvents).where(and(eq(hrEquityVestingEvents.grantId, grantId), eq(hrEquityVestingEvents.orgId, orgId))).orderBy(hrEquityVestingEvents.vestDate).limit(1000);
   }
 
   async recordExercise(orgId: string, actorId: string, input: CreateExerciseInput) {

@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, lte } from "drizzle-orm";
 import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
 import { keysetAfterValue } from "../../../common/pagination/keyset";
 import {
@@ -15,6 +15,7 @@ import { holidays } from "../../../db/schema/hr/attendance";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { HrAuditService } from "../core/hr-audit.service";
+import { HR_SCAN_MAX_PAGES, HR_SCAN_PAGE } from "../hr-read-limits";
 import { COUNTRY_PACKS } from "./country-packs";
 import type {
   CreateComplianceRequirementInput,
@@ -24,6 +25,7 @@ import type {
   MarkEventDoneInput,
   SeedCountryPackInput,
 } from "./dto/hr-global.schemas";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 @Injectable()
 export class ComplianceRequirementsService {
@@ -86,8 +88,8 @@ export class ComplianceRequirementsService {
         createdBy: actorId,
       })
       .returning()
-      .catch((e: { code?: string }) => {
-        if (e.code === "23505")
+      .catch((e: unknown) => {
+        if (isUniqueViolation(e))
           throw new ConflictException("A compliance requirement with this name already exists.");
         throw e;
       });
@@ -123,8 +125,8 @@ export class ComplianceRequirementsService {
       })
       .where(and(eq(hrComplianceRequirements.id, id), eq(hrComplianceRequirements.orgId, orgId)))
       .returning()
-      .catch((e: { code?: string }) => {
-        if (e.code === "23505")
+      .catch((e: unknown) => {
+        if (isUniqueViolation(e))
           throw new ConflictException("A compliance requirement with this name already exists.");
         throw e;
       });
@@ -203,48 +205,67 @@ export class ComplianceRequirementsService {
     const conditions = [eq(hrComplianceRequirements.orgId, orgId), eq(hrComplianceRequirements.active, true)];
     if (requirementId) conditions.push(eq(hrComplianceRequirements.id, requirementId));
 
-    const reqs = await this.db.select().from(hrComplianceRequirements).where(and(...conditions));
     const now = new Date();
     const horizon = new Date(now);
     horizon.setMonth(horizon.getMonth() + 12);
 
-    const dueDates: Array<{ requirementId: number; dueDate: string }> = [];
+    let generated = 0;
+    let total = 0;
+    let afterRequirementId = 0;
 
-    for (const req of reqs) {
-      const dates = this.computeDueDates(req.frequency, req.dueRule as { month?: number; day?: number; offsetDays?: number }, now, horizon);
-      for (const d of dates) {
-        dueDates.push({ requirementId: req.id, dueDate: d });
+    for (let page = 0; page < HR_SCAN_MAX_PAGES; page++) {
+      const reqs = await this.db
+        .select()
+        .from(hrComplianceRequirements)
+        .where(and(...conditions, gt(hrComplianceRequirements.id, afterRequirementId)))
+        .orderBy(asc(hrComplianceRequirements.id))
+        .limit(HR_SCAN_PAGE);
+      if (reqs.length === 0) break;
+
+      const dueDates: Array<{ requirementId: number; dueDate: string }> = [];
+      for (const req of reqs) {
+        const dates = this.computeDueDates(req.frequency, req.dueRule as { month?: number; day?: number; offsetDays?: number }, now, horizon);
+        for (const d of dates) {
+          dueDates.push({ requirementId: req.id, dueDate: d });
+        }
       }
+
+      if (dueDates.length > 0) {
+        const reqIds = [...new Set(dueDates.map((d) => d.requirementId))];
+        const existingEvents = await this.db
+          .select({ requirementId: hrComplianceEvents.requirementId, dueDate: hrComplianceEvents.dueDate })
+          .from(hrComplianceEvents)
+          .where(
+            and(
+              eq(hrComplianceEvents.orgId, orgId),
+              inArray(hrComplianceEvents.requirementId, reqIds),
+            ),
+          )
+          .limit(5000);
+
+        const existingKeys = new Set(
+          existingEvents.map((e) => `${e.requirementId}:${e.dueDate}`),
+        );
+
+        const toInsert = dueDates.filter(
+          (dd) => !existingKeys.has(`${dd.requirementId}:${dd.dueDate}`),
+        );
+
+        if (toInsert.length > 0) {
+          await this.db.insert(hrComplianceEvents).values(
+            toInsert.map((dd) => ({ orgId, requirementId: dd.requirementId, dueDate: dd.dueDate, status: "pending" as const })),
+          );
+        }
+
+        generated += toInsert.length;
+        total += dueDates.length;
+      }
+
+      if (reqs.length < HR_SCAN_PAGE) break;
+      afterRequirementId = reqs[reqs.length - 1].id;
     }
 
-    if (dueDates.length === 0) return { generated: 0, total: 0 };
-
-    const reqIds = [...new Set(dueDates.map((d) => d.requirementId))];
-    const existingEvents = await this.db
-      .select({ requirementId: hrComplianceEvents.requirementId, dueDate: hrComplianceEvents.dueDate })
-      .from(hrComplianceEvents)
-      .where(
-        and(
-          eq(hrComplianceEvents.orgId, orgId),
-          inArray(hrComplianceEvents.requirementId, reqIds),
-        ),
-      );
-
-    const existingKeys = new Set(
-      existingEvents.map((e) => `${e.requirementId}:${e.dueDate}`),
-    );
-
-    const toInsert = dueDates.filter(
-      (dd) => !existingKeys.has(`${dd.requirementId}:${dd.dueDate}`),
-    );
-
-    if (toInsert.length > 0) {
-      await this.db.insert(hrComplianceEvents).values(
-        toInsert.map((dd) => ({ orgId, requirementId: dd.requirementId, dueDate: dd.dueDate, status: "pending" as const })),
-      );
-    }
-
-    return { generated: toInsert.length, total: dueDates.length };
+    return { generated, total };
   }
 
   async markOverdueEvents(orgId: string) {
@@ -316,12 +337,14 @@ export class ComplianceRequirementsService {
             .select({ date: holidays.date })
             .from(holidays)
             .where(and(eq(holidays.orgId, orgId), inArray(holidays.date, holidayDates)))
+            .limit(100)
         : Promise.resolve([]),
       reqNames.length > 0
         ? this.db
             .select({ name: hrComplianceRequirements.name })
             .from(hrComplianceRequirements)
             .where(and(eq(hrComplianceRequirements.orgId, orgId), inArray(hrComplianceRequirements.name, reqNames)))
+            .limit(100)
         : Promise.resolve([]),
     ]);
 

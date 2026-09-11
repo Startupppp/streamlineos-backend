@@ -5,18 +5,23 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 
 type AnnouncementRow = typeof announcements.$inferSelect;
+const MAX_ANNOUNCEMENT_TARGETS = 1000;
 
 @Injectable()
 export class AnnouncementsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  private async attachTargetIds(rows: AnnouncementRow[]) {
+  private async attachTargetIds(rows: AnnouncementRow[], orgId: string) {
     if (!rows.length) return rows.map((r) => ({ ...r, targetIds: [] as string[] }));
     const ids = rows.map((r) => r.id);
     const targets = await this.db
       .select({ announcementId: announcementTargets.announcementId, targetId: announcementTargets.targetId })
       .from(announcementTargets)
-      .where(inArray(announcementTargets.announcementId, ids));
+      .where(and(
+        eq(announcementTargets.orgId, orgId),
+        inArray(announcementTargets.announcementId, ids),
+      ))
+      .limit(rows.length * MAX_ANNOUNCEMENT_TARGETS);
     const byId = new Map<number, string[]>();
     for (const t of targets) {
       const list = byId.get(t.announcementId) ?? [];
@@ -38,7 +43,7 @@ export class AnnouncementsService {
       .where(and(eq(announcements.orgId, orgId), ne(announcements.status, "DRAFT")))
       .orderBy(desc(announcements.isPinned), desc(announcements.createdAt))
       .limit(50);
-    return this.attachTargetIds(rows);
+    return this.attachTargetIds(rows, orgId);
   }
 
   async listAll(orgId: string) {
@@ -46,7 +51,7 @@ export class AnnouncementsService {
       .where(eq(announcements.orgId, orgId))
       .orderBy(desc(announcements.createdAt))
       .limit(100);
-    return this.attachTargetIds(rows);
+    return this.attachTargetIds(rows, orgId);
   }
 
   async create(
@@ -71,7 +76,10 @@ export class AnnouncementsService {
     if (!announcement) throw new NotFoundException("Announcement not found");
 
     if (targetIds !== undefined) {
-      await this.db.delete(announcementTargets).where(eq(announcementTargets.announcementId, id));
+      await this.db.delete(announcementTargets).where(and(
+        eq(announcementTargets.announcementId, id),
+        eq(announcementTargets.orgId, orgId),
+      ));
       const effectiveTargetType = data.targetType ?? announcement.targetType;
       await this.insertTargets(id, orgId, effectiveTargetType, targetIds);
     }
@@ -79,18 +87,36 @@ export class AnnouncementsService {
     const rows = await this.db
       .select({ targetId: announcementTargets.targetId })
       .from(announcementTargets)
-      .where(eq(announcementTargets.announcementId, id));
+      .where(and(
+        eq(announcementTargets.announcementId, id),
+        eq(announcementTargets.orgId, orgId),
+      ))
+      .limit(MAX_ANNOUNCEMENT_TARGETS);
     return { ...announcement, targetIds: rows.map((r) => r.targetId) };
   }
 
   async remove(orgId: string, id: number) {
-    await this.db.delete(announcements)
-      .where(and(eq(announcements.id, id), eq(announcements.orgId, orgId)));
+    const removed = await this.db.delete(announcements)
+      .where(and(eq(announcements.id, id), eq(announcements.orgId, orgId)))
+      .returning({ id: announcements.id });
+    if (removed.length === 0) throw new NotFoundException("Announcement not found");
   }
 
-  async markRead(announcementId: number, userId: string) {
+  async markRead(orgId: string, announcementId: number, userId: string) {
+    // Resolve the announcement inside the caller's organisation first. Without this the
+    // insert accepted any announcement id in the system: `announcement_reads.org_id` is
+    // nullable, and a composite foreign key with a NULL column is not enforced, so
+    // fk_announcement_reads_announcement_id_org never fired on the omitted org_id.
+    // A cross-tenant id must be indistinguishable from a missing one, so this is 404.
+    const [announcement] = await this.db
+      .select({ id: announcements.id })
+      .from(announcements)
+      .where(and(eq(announcements.id, announcementId), eq(announcements.orgId, orgId)))
+      .limit(1);
+    if (!announcement) throw new NotFoundException("Announcement not found");
+
     await this.db.insert(announcementReads)
-      .values({ announcementId, userId })
+      .values({ orgId, announcementId, userId })
       .onConflictDoNothing();
   }
 }

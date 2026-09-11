@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, gte, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { attendance, hrAttendanceRegularizations } from "../../../db/schema";
 import { PayrollInputsService } from "../payroll-inputs/payroll-inputs.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -17,6 +17,10 @@ import { resolveAttendanceScope } from "./attendance-scope";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { AuditService } from "../../../common/audit/audit.service";
+import { requireOrganizationMembershipId } from "./organization-membership";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
+import { boundHrReadLimit } from "../hr-read-limits";
 
 export interface CreateRegularizationInput {
   attendanceDate: string;
@@ -30,7 +34,7 @@ export interface ListRegularizationsQuery {
   status?: string;
   startDate?: string;
   endDate?: string;
-  page?: number;
+  cursor?: string;
   limit?: number;
 }
 
@@ -49,6 +53,11 @@ export class AttendanceRegularizationService {
       throw new BadRequestException("At least one of requestedCheckIn or requestedCheckOut is required.");
     }
 
+    const membershipId = actingMembershipId(u.principal);
+    if (membershipId == null) {
+      throw new ForbiddenException("Organization membership required.");
+    }
+
     return this.db.transaction(async (tx) => {
       await tx.execute(sql`
         SELECT pg_advisory_xact_lock(
@@ -57,9 +66,10 @@ export class AttendanceRegularizationService {
       `);
 
       const existingPending = await tx.query.hrAttendanceRegularizations.findFirst({
+        columns: { id: true },
         where: and(
           eq(hrAttendanceRegularizations.orgId, u.orgId),
-          eq(hrAttendanceRegularizations.userId, u.userId),
+          eq(hrAttendanceRegularizations.userMembershipId, membershipId),
           eq(hrAttendanceRegularizations.attendanceDate, input.attendanceDate),
           eq(hrAttendanceRegularizations.status, "PENDING"),
         ),
@@ -71,7 +81,7 @@ export class AttendanceRegularizationService {
       const attendanceRow = await tx.query.attendance.findFirst({
         where: and(
           eq(attendance.orgId, u.orgId),
-          eq(attendance.userId, u.userId),
+          eq(attendance.userMembershipId, membershipId),
           eq(attendance.date, input.attendanceDate),
         ),
       });
@@ -80,7 +90,7 @@ export class AttendanceRegularizationService {
         .values({
           orgId: u.orgId,
           userId: u.userId,
-          userMembershipId: actingMembershipId(u.principal),
+          userMembershipId: membershipId,
           attendanceDate: input.attendanceDate,
           requestedCheckIn: input.requestedCheckIn ? new Date(input.requestedCheckIn) : null,
           requestedCheckOut: input.requestedCheckOut ? new Date(input.requestedCheckOut) : null,
@@ -124,23 +134,31 @@ export class AttendanceRegularizationService {
 
   async list(u: CurrentUserContext, query: ListRegularizationsQuery) {
     const scope = await resolveAttendanceScope(this.access, u);
-    const targetUserId = query.userId ?? (scope !== "all" ? u.userId : undefined);
+    const isAll = scope.unrestricted;
+    const targetUserId = query.userId ?? (isAll ? undefined : u.userId);
 
-    if (scope !== "all" && targetUserId !== u.userId) {
+    if (!isAll && targetUserId !== u.userId) {
       throw new ForbiddenException("Not authorized to view other users' regularizations.");
     }
 
-    const pageSize = Math.min(query.limit ?? 20, 100);
-    const offset = ((query.page ?? 1) - 1) * pageSize;
+    const pageSize = boundHrReadLimit(query.limit ?? 20);
+    const position = decodeCursor(query.cursor);
 
     const conditions = [eq(hrAttendanceRegularizations.orgId, u.orgId)];
+    if (position)
+      conditions.push(
+        keysetBeforeId(
+          hrAttendanceRegularizations.createdAt,
+          hrAttendanceRegularizations.id,
+          position,
+        ),
+      );
     if (targetUserId) {
-      const membershipId = actingMembershipId(u.principal);
-      const userPredicate =
-        targetUserId === u.userId && membershipId != null
-          ? or(eq(hrAttendanceRegularizations.userMembershipId, membershipId), eq(hrAttendanceRegularizations.userId, targetUserId))!
-          : eq(hrAttendanceRegularizations.userId, targetUserId);
-      conditions.push(userPredicate);
+      const targetMembershipId = targetUserId === u.userId
+        ? actingMembershipId(u.principal)
+        : await requireOrganizationMembershipId(this.db, u.orgId, targetUserId);
+      if (targetMembershipId == null) throw new ForbiddenException("Organization membership required.");
+      conditions.push(eq(hrAttendanceRegularizations.userMembershipId, targetMembershipId));
     }
     if (query.status) conditions.push(eq(hrAttendanceRegularizations.status, query.status));
     if (query.startDate) conditions.push(gte(hrAttendanceRegularizations.attendanceDate, query.startDate));
@@ -148,17 +166,24 @@ export class AttendanceRegularizationService {
 
     const rows = await this.db.query.hrAttendanceRegularizations.findMany({
       where: and(...conditions),
-      orderBy: [desc(hrAttendanceRegularizations.createdAt)],
-      limit: pageSize,
-      offset,
+      orderBy: [
+        desc(hrAttendanceRegularizations.createdAt),
+        desc(hrAttendanceRegularizations.id),
+      ],
+      limit: pageSize + 1,
     });
 
-    return { data: rows, page: query.page ?? 1, limit: pageSize };
+    return buildCursorPage(rows, pageSize, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
   }
 
   async apply(u: CurrentUserContext, regularizationId: number) {
     const scope = await resolveAttendanceScope(this.access, u);
-    if (scope !== "all") throw new ForbiddenException("Only managers can apply regularizations.");
+    if (!scope.unrestricted) throw new ForbiddenException("Only managers can apply regularizations.");
+    const membershipId = actingMembershipId(u.principal);
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
 
     const applied = await this.db.transaction(async (tx) => {
       const [reg] = await tx
@@ -208,6 +233,7 @@ export class AttendanceRegularizationService {
         await tx.insert(attendance).values({
           orgId: u.orgId,
           userId: reg.userId,
+          userMembershipId: reg.userMembershipId,
           date: reg.attendanceDate,
           checkIn: reg.requestedCheckIn,
           checkOut: reg.requestedCheckOut ?? null,
@@ -222,7 +248,7 @@ export class AttendanceRegularizationService {
         .update(hrAttendanceRegularizations)
         .set({
           status: "APPROVED",
-          approvedBy: u.userId,
+          approvedByMembershipId: membershipId,
           approvedAt: new Date(),
         })
         .where(
@@ -272,7 +298,9 @@ export class AttendanceRegularizationService {
 
   async reject(u: CurrentUserContext, regularizationId: number, rejectionReason: string) {
     const scope = await resolveAttendanceScope(this.access, u);
-    if (scope !== "all") throw new ForbiddenException("Only managers can reject regularizations.");
+    if (!scope.unrestricted) throw new ForbiddenException("Only managers can reject regularizations.");
+    const membershipId = actingMembershipId(u.principal);
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
 
     await this.db.transaction(async (tx) => {
       const [reg] = await tx
@@ -295,7 +323,7 @@ export class AttendanceRegularizationService {
         .update(hrAttendanceRegularizations)
         .set({
           status: "REJECTED",
-          rejectedBy: u.userId,
+          rejectedByMembershipId: membershipId,
           rejectedAt: new Date(),
           rejectionReason,
         })

@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, inArray, lte, notInArray } from "drizzle-orm";
+import { and, eq, inArray, lte, notInArray, sql } from "drizzle-orm";
 import { addDays } from "date-fns";
 import { organizationMembers, signEnvelopes, signRecipients, signSweepRuns } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -13,9 +13,11 @@ import { SignAuditService } from "./sign-audit.service";
 import { SignTokensService } from "./sign-tokens.service";
 import { SignNotificationsService } from "./sign-notifications.service";
 import { SignRecipientsService } from "./sign-recipients.service";
+import { systemEnvelopeScope } from "./sign-envelope-scope";
 import { SignIntegrationsService } from "./sign-integrations.service";
 import { isSigningType } from "./sign-envelope-validation.service";
 import { isEnvelopeSignable } from "./sign-state";
+import { bulkUpdateFromValues } from "../../common/db/bulk-update";
 import type { RequestActorContext } from "../../common/audit/actor-context";
 import { forEachOrg } from "../../common/tenant/for-each-org";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
@@ -50,6 +52,33 @@ export function remindableRecipients<
       r.email !== "" &&
       r.signingTokenHash !== null,
   );
+}
+
+/**
+ * Envelopes flipped per statement.
+ *
+ * The three writes an expiring envelope needs — its recipients, its own status
+ * and its `envelope_expired` audit row — are uniform across the batch, so they
+ * become three statements per chunk rather than three per envelope. 500 ids is
+ * ~500 bound parameters per `inArray`, two orders of magnitude under the 65,535
+ * a single Postgres statement can bind.
+ *
+ * Batching here does NOT widen a lost-audit window. `runExpirationSweep` is
+ * reached from `POST /sign/admin/run-expiration-sweep`, which carries no
+ * `@NoTenantTransaction`, so `TenantContextInterceptor` already wraps the whole
+ * call in one transaction, and from `runSweepAllOrgs`, where `forEachOrg` gives
+ * each organisation a transaction of its own. Either way the DRIZZLE proxy
+ * routes every statement below into that transaction: the status flips and the
+ * audit rows commit or roll back together, one envelope at a time or five
+ * hundred. What the per-envelope loop bought was not atomicity but 3N round
+ * trips inside that transaction.
+ */
+const EXPIRATION_SWEEP_CHUNK = 500;
+
+interface RemindableRecipient {
+  readonly id: number;
+  readonly name: string;
+  readonly email: string;
 }
 
 @Injectable()
@@ -87,56 +116,81 @@ export class SignEnvelopeSweepsService {
   ): Promise<number> {
     const now = new Date();
     const recipientRows = await this.recipients.listForEnvelope(
-      envelope.orgId,
+      systemEnvelopeScope(envelope.orgId),
+      null,
       envelope.id,
     );
-    const senderNameStr = await this.senderName(envelope.orgId, envelope.senderMembershipId);
-    let remindedCount = 0;
+    /*
+     * The filter is `remindableRecipients`, shared with the preview so the dry
+     * run's count is the real run's count; the writes are batched — one token
+     * rotation statement, one audit insert, one counter bump per envelope.
+     */
+    const remindable: RemindableRecipient[] = remindableRecipients(recipientRows).map((r) => ({
+      id: r.id,
+      name: r.name,
+      email: r.email,
+    }));
 
-    for (const r of remindableRecipients(recipientRows)) {
-      const rawToken = this.tokens.generateSigningToken();
-      await this.db
-        .update(signRecipients)
-        .set({ signingTokenHash: this.tokens.hash(rawToken) })
-        .where(eq(signRecipients.id, r.id));
-      const signingUrl = this.tokens.buildSigningUrl(rawToken);
-      const daysRemaining = envelope.expiresAt
-        ? Math.max(
-            0,
-            Math.ceil(
-              (envelope.expiresAt.getTime() - now.getTime()) / 86_400_000,
-            ),
-          )
-        : null;
+    const remindedCount = remindable.length;
+    if (remindedCount === 0) return 0;
+
+    const senderNameStr = await this.senderName(envelope.orgId, envelope.senderMembershipId);
+    const rotated = remindable.map((recipient) => ({
+      recipient,
+      rawToken: this.tokens.generateSigningToken(),
+    }));
+
+    await bulkUpdateFromValues(this.db, {
+      table: signRecipients,
+      orgId: envelope.orgId,
+      key: { column: "id", type: "integer" },
+      columns: [{ column: "signing_token_hash", type: "text" }],
+      rows: rotated.map(({ recipient, rawToken }) => ({
+        key: recipient.id,
+        values: [this.tokens.hash(rawToken)],
+      })),
+      touch: ["updated_at"],
+      extraWhere: eq(signRecipients.envelopeId, envelope.id),
+    });
+
+    const daysRemaining = envelope.expiresAt
+      ? Math.max(
+          0,
+          Math.ceil((envelope.expiresAt.getTime() - now.getTime()) / 86_400_000),
+        )
+      : null;
+
+    for (const { recipient, rawToken } of rotated) {
       await this.notifications.sendReminder(
-        r.email,
-        r.name,
+        recipient.email,
+        recipient.name,
         senderNameStr,
         envelope.title,
-        signingUrl,
+        this.tokens.buildSigningUrl(rawToken),
         daysRemaining,
       );
-      await this.audit.record({
-        orgId: envelope.orgId,
-        envelopeId: envelope.id,
-        recipientId: r.id,
-        actorType,
-        actorUserId,
-        eventType: "reminder_sent",
-        eventMessage: `Reminder sent to ${r.name}`,
-      });
-      remindedCount++;
     }
 
-    if (remindedCount > 0) {
-      await this.db
-        .update(signEnvelopes)
-        .set({
-          reminderSentCount: envelope.reminderSentCount + 1,
-          lastReminderAt: now,
-        })
-        .where(eq(signEnvelopes.id, envelope.id));
-    }
+    await this.audit.record(
+      rotated.map(({ recipient }) => ({
+        orgId: envelope.orgId,
+        envelopeId: envelope.id,
+        recipientId: recipient.id,
+        actorType,
+        actorUserId,
+        eventType: "reminder_sent" as const,
+        eventMessage: `Reminder sent to ${recipient.name}`,
+      })),
+    );
+
+    await this.db
+      .update(signEnvelopes)
+      .set({
+        reminderSentCount: sql`${signEnvelopes.reminderSentCount} + 1`,
+        lastReminderAt: now,
+      })
+      .where(and(eq(signEnvelopes.id, envelope.id), eq(signEnvelopes.orgId, envelope.orgId)));
+
     return remindedCount;
   }
 
@@ -230,36 +284,39 @@ export class SignEnvelopeSweepsService {
     const now = new Date();
     const expiring = await this.expiringEnvelopes(orgId, now);
 
-    for (const envelope of expiring) {
+    if (expiring.length === 0) return 0;
+
+    for (let offset = 0; offset < expiring.length; offset += EXPIRATION_SWEEP_CHUNK) {
+      const batch = expiring.slice(offset, offset + EXPIRATION_SWEEP_CHUNK);
+      const envelopeIds = batch.map((envelope) => envelope.id);
       await this.db
         .update(signRecipients)
         .set({ status: "expired", tokenRevokedAt: now })
         .where(
           and(
-            eq(signRecipients.envelopeId, envelope.id),
-            notInArray(signRecipients.status, [
-              "completed",
-              "declined",
-              "delegated",
-            ]),
+            eq(signRecipients.orgId, orgId),
+            inArray(signRecipients.envelopeId, envelopeIds),
+            notInArray(signRecipients.status, ["completed", "declined", "delegated"]),
           ),
         );
       await this.db
         .update(signEnvelopes)
         .set({ status: "expired" })
-        .where(eq(signEnvelopes.id, envelope.id));
-      await this.audit.record({
-        orgId: envelope.orgId,
-        envelopeId: envelope.id,
-        actorType: "system",
-        eventType: "envelope_expired",
-        eventMessage: "Envelope expired automatically",
-      });
-      this.integrations.emitEnvelopeEvent(
-        { ...envelope, status: "expired" },
-        "expired",
+        .where(and(eq(signEnvelopes.orgId, orgId), inArray(signEnvelopes.id, envelopeIds)));
+      await this.audit.record(
+        batch.map((envelope) => ({
+          orgId: envelope.orgId,
+          envelopeId: envelope.id,
+          actorType: "system" as const,
+          eventType: "envelope_expired" as const,
+          eventMessage: "Envelope expired automatically",
+        })),
       );
     }
+
+    for (const envelope of expiring)
+      this.integrations.emitEnvelopeEvent({ ...envelope, status: "expired" }, "expired");
+
     return expiring.length;
   }
 
@@ -352,7 +409,7 @@ export class SignEnvelopeSweepsService {
     if (sweep === "reminder") {
       for (const envelope of await this.reminderDueEnvelopes(orgId, now)) {
         const recipients = remindableRecipients(
-          await this.recipients.listForEnvelope(envelope.orgId, envelope.id),
+          await this.recipients.listForEnvelope(systemEnvelopeScope(envelope.orgId), null, envelope.id),
         ).length;
         /**
          * A due envelope whose recipients have all signed or declined sends

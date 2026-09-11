@@ -18,6 +18,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { PayrollEntitiesService } from "./entities.service";
 import { createEntitySchema, type CreateEntityInput } from "./dto/entities.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { payrollEntitySchema, payrollEntityListResponseSchema, countryPacksResponseSchema, entityContextResponseSchema } from "./dto/entities-response.schemas";
 import { z } from "zod";
 
 const entityIdParams = z.object({ entityId: z.coerce.number().int().positive() }).strict();
@@ -30,19 +32,21 @@ export class PayrollEntitiesController {
 
   @Get()
   @RequirePermission("payroll:policies:view")
+  @ResponseSchema(payrollEntityListResponseSchema)
   list(@CurrentUser() u: CurrentUserContext) {
     return this.service.list(u.orgId);
   }
 
-  /** Country pack catalog with maturity honesty labels. */
   @Get("country-packs")
   @RequirePermission("payroll:policies:view")
+  @ResponseSchema(countryPacksResponseSchema)
   countryPacks() {
     return this.service.listCountryPacks();
   }
 
   @Get(":entityId/context")
   @RequirePermission("payroll:policies:view")
+  @ResponseSchema(entityContextResponseSchema)
   @Validate({ params: entityIdParams })
   context(
     @CurrentUser() u: CurrentUserContext,
@@ -54,6 +58,7 @@ export class PayrollEntitiesController {
   @Get(":entityId")
   @RequirePermission("payroll:policies:view")
   @Validate({ params: entityIdParams })
+  @ResponseSchema(payrollEntitySchema)
   get(
     @CurrentUser() u: CurrentUserContext,
     @Param("entityId", ParseIntPipe) entityId: number,
@@ -65,6 +70,7 @@ export class PayrollEntitiesController {
   @HttpCode(201)
   @RequirePermission("payroll:policies:manage")
   @Validate({ body: createEntitySchema })
+  @ResponseSchema(payrollEntitySchema)
   create(
     @CurrentUser() u: CurrentUserContext,
     @Body() body: CreateEntityInput,

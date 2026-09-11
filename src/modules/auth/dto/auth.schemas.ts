@@ -16,7 +16,7 @@ export const registerSchema = z.object({
    * could place by country and nothing ever told it one.
    */
   country: z.string().length(2).toUpperCase().optional(),
-});
+}).strict();
 
 export const verifyEmailSchema = z.object({
   token: z.string().min(1).max(256),
@@ -59,3 +59,11 @@ export const verifyEmailOtpSchema = z.object({
 
 export type RequestEmailOtpInput = z.infer<typeof requestEmailOtpSchema>;
 export type VerifyEmailOtpInput = z.infer<typeof verifyEmailOtpSchema>;
+
+export const sessionExchangeSchema = z
+  .object({
+    orgId: z.string().min(1).max(128).nullable().optional(),
+  })
+  .strict();
+
+export type SessionExchangeInput = z.infer<typeof sessionExchangeSchema>;

@@ -51,14 +51,14 @@ export type ExportEntity =
  * here silently narrows what a customer can leave with, and nothing complains —
  * which is why `crm-export.spec.ts` asserts this list rather than describing it.
  */
-export const EXPORT_ENTITIES: readonly ExportEntity[] = [
+export const EXPORT_ENTITIES = [
   "parties",
   "contacts",
   "subjects",
   "activities",
   "deals",
   "pipelines",
-];
+] as const;
 
 /**
  * The entities whose primary key is an integer rather than text.

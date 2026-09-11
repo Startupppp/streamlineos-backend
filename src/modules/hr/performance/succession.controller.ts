@@ -17,6 +17,8 @@ import {
 } from "./dto/succession.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts"
+import { listSuccessionPlansResponseSchema, createSuccessionPlanResponseSchema, updateSuccessionPlanResponseSchema } from "./dto/succession-response.schemas"
 
 const successionIdParams = z.object({ successionId: z.coerce.number().int().positive() }).strict();
 
@@ -26,6 +28,7 @@ const successionIdParams = z.object({ successionId: z.coerce.number().int().posi
 export class SuccessionController {
   constructor(private readonly successionService: SuccessionService) {}
 
+  @ResponseSchema(listSuccessionPlansResponseSchema)
   @Get()
   @RequirePermission("hr:succession:view")
   @Validate({ query: successionListSchema })
@@ -36,6 +39,7 @@ export class SuccessionController {
     return this.successionService.list(user.orgId, query);
   }
 
+  @ResponseSchema(createSuccessionPlanResponseSchema)
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:succession:manage")
@@ -47,6 +51,7 @@ export class SuccessionController {
     return this.successionService.create(user.orgId, user.userId, body);
   }
 
+  @ResponseSchema(updateSuccessionPlanResponseSchema)
   @Patch(":successionId")
   @RequirePermission("hr:succession:manage")
   @Validate({ params: successionIdParams, body: updateSuccessionPlanSchema })
@@ -58,6 +63,7 @@ export class SuccessionController {
     return this.successionService.update(user.orgId, successionId, body);
   }
 
+  @NoContentResponse()
   @Delete(":successionId")
   @HttpCode(204)
   @RequirePermission("hr:succession:manage")

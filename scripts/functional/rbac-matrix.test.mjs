@@ -400,8 +400,6 @@ const ROLE = [
   ["DELETE", "/dashboard/announcements?id=1", ["CEO", "HR", "ADMIN"]],
   ["GET", "/dashboard/branch-overview", ["CEO", "HR", "ADMIN"]],
   ["GET", "/dashboard/executive", ["OWNER", "CEO", "HR", "ADMIN"]],
-  ["PATCH", "/branches/1", ["HR", "CEO"]],
-  ["DELETE", "/branches/1", ["HR", "CEO"]],
   ["GET", `/hr/employees/${UUID}/profile-pdf`, ["CEO", "HR", "ADMIN", "HR_MANAGER"]],
   ["GET", "/hr/leaves/analytics", ["CEO", "ADMIN", "HR", "BRANCH_HR", "BRANCH_MANAGER"]],
   ["POST", "/hr/leaves/comp-off", ["CEO", "ADMIN", "HR", "BRANCH_HR", "BRANCH_MANAGER"]],

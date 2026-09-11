@@ -7,6 +7,6 @@ export const addMemberSchema = z
     userId: z.string().trim().min(1).optional(),
     role: z.string().trim().min(1).optional(),
     spaceRole: z.enum(KB_SPACE_ROLES),
-  })
+  }).strict()
   .refine((d) => (d.userId ? 1 : 0) + (d.role ? 1 : 0) === 1, "Provide exactly one of userId or role");
 export type AddMemberInput = z.infer<typeof addMemberSchema>;

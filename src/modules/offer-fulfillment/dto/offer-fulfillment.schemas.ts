@@ -1,13 +1,13 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
 
 export const listOfferFulfillmentQuerySchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
   crmOfferId: z.coerce.number().int().positive().optional(),
   invSkuId: z.coerce.number().int().positive().optional(),
   status: z.enum(["active", "inactive"]).optional(),
-});
+}).strict();
 
 export const createOfferFulfillmentSchema = z.object({
   crmOfferId: z.number().int().positive(),
@@ -18,7 +18,7 @@ export const createOfferFulfillmentSchema = z.object({
   effectiveFrom: z.coerce.date().optional(),
   effectiveTo: z.coerce.date().optional(),
   notes: z.string().max(2000).optional(),
-});
+}).strict();
 
 export const updateOfferFulfillmentSchema = z
   .object({
@@ -28,7 +28,7 @@ export const updateOfferFulfillmentSchema = z
     effectiveFrom: z.coerce.date().nullable().optional(),
     effectiveTo: z.coerce.date().nullable().optional(),
     notes: z.string().max(2000).nullable().optional(),
-  })
+  }).strict()
   .refine((v) => Object.keys(v).length > 0, {
     message: "At least one field must be provided",
   });

@@ -13,6 +13,9 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
 
 import type { Db } from "../../../db/drizzle.module";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { stubService } from "../../../test/service-stub.spec-fixtures";
+import type { PaymentProviderAdapter, PaymentProviderAdapterRegistry, PaymentProviderRuntime } from "./payment-provider-adapter.interface";
+import type { PaymentProviderSetupService } from "./payment-provider-setup.service";
 import { PaymentProviderResolver } from "./payment-provider-resolver.service";
 
 describe("PaymentProviderResolver — cross-tenant isolation", () => {
@@ -26,8 +29,8 @@ describe("PaymentProviderResolver — cross-tenant isolation", () => {
 
   it("returns undefined for a different org (cross-tenant isolation — no provider disclosed)", async () => {
     const db = makeDb(null);
-    const mockRegistry = { get: jest.fn().mockReturnValue(undefined) } as any;
-    const mockSetup = { getDecryptedSecret: jest.fn() } as any;
+    const mockRegistry = stubService<PaymentProviderAdapterRegistry>({ get: jest.fn().mockReturnValue(undefined) });
+    const mockSetup = stubService<PaymentProviderSetupService>({ getDecryptedSecret: jest.fn() });
     const svc = new PaymentProviderResolver(db, mockRegistry, mockSetup);
     const result = await svc.resolve(ATTACKER, "razorpay");
     expect(result).toBeUndefined();
@@ -45,9 +48,9 @@ describe("PaymentProviderResolver — cross-tenant isolation", () => {
       verifyWebhookSignature: jest.fn(),
       normalizeWebhook: jest.fn(),
     };
-    const mockAdapter = { configure: jest.fn().mockReturnValue(mockRuntime) } as any;
-    const mockRegistry = { get: jest.fn().mockReturnValue(mockAdapter) } as any;
-    const mockSetup = { getDecryptedSecret: jest.fn().mockResolvedValue({ keyId: "k", secret: "s" }) } as any;
+    const mockAdapter = stubService<PaymentProviderAdapter>({ configure: jest.fn().mockReturnValue(mockRuntime) });
+    const mockRegistry = stubService<PaymentProviderAdapterRegistry>({ get: jest.fn().mockReturnValue(mockAdapter) });
+    const mockSetup = stubService<PaymentProviderSetupService>({ getDecryptedSecret: jest.fn().mockResolvedValue({ keyId: "k", secret: "s" }) });
     const svc = new PaymentProviderResolver(db, mockRegistry, mockSetup);
     const result = await svc.resolve(OWNER, "razorpay");
     expect(result).toBeDefined();

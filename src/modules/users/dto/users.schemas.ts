@@ -3,8 +3,8 @@ import { pageNumberField, pageSizeField } from "../../../common/pagination/list-
 import { ORG_MEMBER_ROLES, ORG_MEMBER_ROLE_VALUES} from "../../../common/rbac/org-roles";
 
 export const listUsersSchema = z.object({
-  page: pageNumberField,
   limit: pageSizeField(20, 100),
+  cursor: z.string().optional(),
   search: z.string().optional(),
   status: z.enum(["active", "suspended", "archived"]).optional(),
   role: z.string().optional(),
@@ -14,7 +14,7 @@ export const listUsersSchema = z.object({
   managerUserId: z.string().optional(),
   sortBy: z.enum(["name", "joinedAt", "status"]).default("joinedAt"),
   sortOrder: z.enum(["asc", "desc"]).default("desc"),
-});
+}).strict();
 export type ListUsersInput = z.infer<typeof listUsersSchema>;
 
 const emergencyContactSchema = z.object({
@@ -22,7 +22,7 @@ const emergencyContactSchema = z.object({
   relation: z.string().min(1),
   phone: z.string().min(1),
   email: z.string().email().optional(),
-}).optional();
+}).strict().optional();
 
 export const updateUserSchema = z.object({
   firstName: z.string().min(1).optional(),
@@ -39,13 +39,13 @@ export const updateUserSchema = z.object({
   reportingTo: z.string().optional(),
   teamId: z.string().optional().nullable(),
   emergencyContact: emergencyContactSchema,
-});
+}).strict();
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
 
 export const updateUserStatusSchema = z.object({
   status: z.enum(["active", "suspended", "archived"]),
   reason: z.string().optional(),
-});
+}).strict();
 export type UpdateUserStatusInput = z.infer<typeof updateUserStatusSchema>;
 
 export const canonicalEmailSchema = z
@@ -61,13 +61,13 @@ const inviteEmailSchema = canonicalEmailSchema;
 export const inviteUserSchema = z.object({
   email: inviteEmailSchema,
   role: z.enum(ORG_MEMBER_ROLE_VALUES).default(ORG_MEMBER_ROLES.MEMBER),
-});
+}).strict();
 export type InviteUserInput = z.infer<typeof inviteUserSchema>;
 
 export const bulkInviteSchema = z.object({
   emails: z.array(inviteEmailSchema).min(1).max(500),
   role: z.enum(ORG_MEMBER_ROLE_VALUES).default(ORG_MEMBER_ROLES.MEMBER),
-});
+}).strict();
 export type BulkInviteInput = z.infer<typeof bulkInviteSchema>;
 
 export const updatePreferencesSchema = z.object({
@@ -80,7 +80,7 @@ export const updatePreferencesSchema = z.object({
   weekStartDay: z.enum(["sunday", "monday", "saturday"]).optional(),
   notificationPreferences: z.record(z.string(), z.boolean()).optional(),
   dashboardPreferences: z.record(z.string(), z.unknown()).optional(),
-});
+}).strict();
 export type UpdatePreferencesInput = z.infer<typeof updatePreferencesSchema>;
 
 export const updateMembershipSchema = z.object({
@@ -89,20 +89,20 @@ export const updateMembershipSchema = z.object({
   departmentId: z.string().optional().nullable(),
   teamId: z.string().optional().nullable(),
   managerUserId: z.string().optional().nullable(),
-});
+}).strict();
 export type UpdateMembershipInput = z.infer<typeof updateMembershipSchema>;
 
 export const bulkActionSchema = z.object({
   userIds: z.array(z.string()).min(1).max(200),
   reason: z.string().optional(),
-});
+}).strict();
 export type BulkActionInput = z.infer<typeof bulkActionSchema>;
 
 export const listLoginHistorySchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
   success: z.enum(["true", "false"]).optional().transform((v) => (v === undefined ? undefined : v === "true")),
-});
+}).strict();
 export type ListLoginHistoryInput = z.infer<typeof listLoginHistorySchema>;
 
 export const importUsersRowSchema = z.object({
@@ -112,7 +112,7 @@ export const importUsersRowSchema = z.object({
   role: z.enum(ORG_MEMBER_ROLE_VALUES).default(ORG_MEMBER_ROLES.MEMBER),
   designation: z.string().optional(),
   phone: z.string().optional(),
-});
+}).strict();
 export type ImportUsersRow = z.infer<typeof importUsersRowSchema>;
 export const importUsersBodySchema = z.object({ rows: z.array(importUsersRowSchema).min(1).max(500) }).strict();
 export type ImportUsersBody = z.infer<typeof importUsersBodySchema>;
@@ -124,7 +124,7 @@ export const bulkUpdateUsersSchema = z.object({
   branchId: z.string().optional().nullable(),
   teamId: z.string().optional().nullable(),
   managerUserId: z.string().optional().nullable(),
-});
+}).strict();
 export type BulkUpdateUsersInput = z.infer<typeof bulkUpdateUsersSchema>;
 
 export const createUserSchema = z.object({
@@ -137,7 +137,7 @@ export const createUserSchema = z.object({
   departmentId: z.string().optional(),
   branchId: z.string().optional(),
   sendInvite: z.boolean().default(true),
-});
+}).strict();
 export type CreateUserInput = z.infer<typeof createUserSchema>;
 
 export const listAuditSchema = z.object({
@@ -147,12 +147,12 @@ export const listAuditSchema = z.object({
   action: z.string().optional(),
   from: z.string().optional(),
   to: z.string().optional(),
-});
+}).strict();
 export type ListAuditInput = z.infer<typeof listAuditSchema>;
 
 export const changeInviteRoleSchema = z.object({
   role: z.enum(ORG_MEMBER_ROLE_VALUES),
-});
+}).strict();
 export type ChangeInviteRoleInput = z.infer<typeof changeInviteRoleSchema>;
 
 export const listInvitationsSchema = z.object({
@@ -161,5 +161,5 @@ export const listInvitationsSchema = z.object({
   includeAccepted: z.enum(["true", "false"]).optional().transform((v) => v === "true"),
   status: z.enum(["pending", "accepted", "expired", "revoked"]).optional(),
   q: z.string().trim().max(200).optional(),
-});
+}).strict();
 export type ListInvitationsInput = z.infer<typeof listInvitationsSchema>;

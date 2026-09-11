@@ -3,6 +3,7 @@ import { Test } from "@nestjs/testing";
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { AccessService } from "../../access/access.service";
 
 const ORG_ID = "org-1";
 const PROJECT_ID = 42;
@@ -15,7 +16,7 @@ const TEST_CONTEXT = {
 
 describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enforcement", () => {
   let svc: ProjectsTicketsQueryService;
-  let mockDb: Record<string, unknown>;
+  let mockDb: { select: jest.Mock; query: Record<string, unknown> };
 
   function _makeSelectTransitions(rows: { fromStatusId: number | null; toStatusId: number }[]) {
     return jest.fn().mockReturnValueOnce({
@@ -46,6 +47,7 @@ describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enfo
         ProjectsTicketsQueryService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: CacheService, useValue: { del: jest.fn() } },
+        { provide: AccessService, useValue: {} },
       ],
     }).compile();
     svc = module.get(ProjectsTicketsQueryService);
@@ -68,6 +70,12 @@ describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enfo
     await expect(
       svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "TODO", "IN_PROGRESS", TEST_CONTEXT),
     ).resolves.toBeUndefined();
+  });
+
+  it("propagates a database failure instead of treating the workflow as unrestricted", async () => {
+    mockDb.select.mockImplementation(() => { throw new Error("database unavailable"); });
+    await expect(svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "TODO", "DONE", TEST_CONTEXT))
+      .rejects.toThrow("database unavailable");
   });
 
   it("ALLOWS (no throw) when fromText cannot be mapped to a projectStatuses id", async () => {
@@ -234,7 +242,7 @@ describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enfo
     ).rejects.toThrow(/Backlog.*Review|Review.*Backlog/i);
   });
 
-  it("ALLOWS (no throw, swallows error) when any unexpected DB error is thrown", async () => {
+  it("DENIES rather than swallowing an unexpected database error", async () => {
     (mockDb as { select: jest.Mock }).select.mockImplementation(() => {
       return {
         from: jest.fn().mockReturnValue({
@@ -245,7 +253,7 @@ describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enfo
 
     await expect(
       svc.assertTransitionAllowed(ORG_ID, PROJECT_ID, "TODO", "DONE", TEST_CONTEXT),
-    ).resolves.toBeUndefined();
+    ).rejects.toThrow("DB connection refused");
   });
 
   it("does NOT swallow BadRequestException — rethrows it", async () => {

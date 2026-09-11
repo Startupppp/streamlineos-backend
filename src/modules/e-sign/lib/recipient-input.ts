@@ -1,11 +1,12 @@
 import { BadRequestException, ForbiddenException, Logger, NotFoundException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { signEnvelopes, signFields, signRecipients, signSignatureAssets } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
 import { StorageService } from "../../storage/storage.service";
+import { validateMagicBytes } from "../../storage/file-signatures";
 import { SignAuditService } from "../sign-audit.service";
 import { SignTokensService } from "../sign-tokens.service";
-import type { AdoptSignatureInput, PublicFieldValueInput } from "../dto/e-sign.schemas";
+import type { AdoptSignatureInput, PublicFieldValueInput } from "../dto/e-sign-public.schemas";
 import { withRecipientSession, type PublicRequestContext } from "./recipient-session";
 
 /**
@@ -81,6 +82,11 @@ export async function adoptSignature(
     if (input.imageDataUrl) {
       const base64 = input.imageDataUrl.replace(/^data:image\/\w+;base64,/, "");
       const buffer = Buffer.from(base64, "base64");
+      const MAX_SIGNATURE_BYTES = 1_500_000;
+      if (buffer.length > MAX_SIGNATURE_BYTES)
+        throw new BadRequestException("Signature image exceeds size limit");
+      if (!validateMagicBytes(buffer, "image/png"))
+        throw new BadRequestException("Signature image must be a valid PNG");
       const uploaded = await deps.storage.uploadFile(envelope.orgId, buffer, `signos/${envelope.orgId}/${envelope.id}/signatures`, `${input.assetType}.png`, "image/png");
       imageFileKey = uploaded.key;
     }
@@ -99,16 +105,17 @@ export async function adoptSignature(
       })
       .returning();
 
-    const matchingFields = await deps.db.query.signFields.findMany({
-      where: and(eq(signFields.recipientId, recipient.id), eq(signFields.fieldType, input.assetType)),
-    });
-    for (const field of matchingFields) {
-      if (field.completedAt) continue;
-      await deps.db
-        .update(signFields)
-        .set({ valueJson: { signatureAssetId: asset.id }, completedAt: new Date() })
-        .where(eq(signFields.id, field.id));
-    }
+    await deps.db
+      .update(signFields)
+      .set({ valueJson: { signatureAssetId: asset.id }, completedAt: new Date() })
+      .where(
+        and(
+          eq(signFields.orgId, envelope.orgId),
+          eq(signFields.recipientId, recipient.id),
+          eq(signFields.fieldType, input.assetType),
+          isNull(signFields.completedAt),
+        ),
+      );
 
     await deps.audit.record({
       orgId: envelope.orgId,

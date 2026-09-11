@@ -1,5 +1,6 @@
 import {
   Body,
+  Header,
   Controller,
   Delete,
   Get,
@@ -12,6 +13,7 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
+import { NO_COMPRESSION_HEADER } from "../../common/http/compression.config";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -31,8 +33,18 @@ import {
   type UpdateInput,
 } from "./dto/webhook.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
+import {
+  webhookListResponseSchema,
+  webhookCreateResponseSchema,
+  webhookRotateSecretResponseSchema,
+  webhookGetResponseSchema,
+  webhookUpdateResponseSchema,
+  webhookRemoveResponseSchema,
+  webhookListLogsResponseSchema,
+  webhookRetryLogResponseSchema,
+} from "./dto/webhooks-response.schemas";
 
 const webhookIdParams = z.object({ webhookId: z.coerce.number().int().positive() }).strict();
 const webhookIdlogIdParams = z.object({ webhookId: z.coerce.number().int().positive(), logId: z.coerce.number().int().positive() }).strict();
@@ -46,6 +58,7 @@ export class WebhooksController {
   ) {}
 
   @Get()
+  @ResponseSchema(webhookListResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:webhooks:manage")
   @Validate({ query: listSchema })
@@ -58,9 +71,13 @@ export class WebhooksController {
 
   @Post()
   @HttpCode(201)
+  @ResponseSchema(webhookCreateResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:webhooks:manage")
   @Validate({ body: createSchema })
+  // PRD-C089 (BREACH) — this body carries a credential and `app.enableCors({ credentials:
+  // true })` is live, so a compressed length is a cross-origin size oracle.
+  @Header(NO_COMPRESSION_HEADER, "1")
   create(
     @Body() body: CreateInput,
     @CurrentUser() u: CurrentUserContext,
@@ -71,9 +88,13 @@ export class WebhooksController {
   @Post(":webhookId/rotate-secret")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(webhookRotateSecretResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:webhooks:manage")
   @Validate({ params: webhookIdParams })
+  // PRD-C089 (BREACH) — this body carries a credential and `app.enableCors({ credentials:
+  // true })` is live, so a compressed length is a cross-origin size oracle.
+  @Header(NO_COMPRESSION_HEADER, "1")
   rotateSecret(
     @Param("webhookId", ParseIntPipe) webhookId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -82,6 +103,7 @@ export class WebhooksController {
   }
 
   @Get(":webhookId")
+  @ResponseSchema(webhookGetResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:webhooks:manage")
   @Validate({ params: webhookIdParams })
@@ -95,6 +117,7 @@ export class WebhooksController {
   }
 
   @Patch(":webhookId")
+  @ResponseSchema(webhookUpdateResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:webhooks:manage")
   @Validate({ params: webhookIdParams, body: updateSchema })
@@ -109,6 +132,7 @@ export class WebhooksController {
   }
 
   @Delete(":webhookId")
+  @ResponseSchema(webhookRemoveResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:webhooks:manage")
   @Validate({ params: webhookIdParams })
@@ -122,6 +146,7 @@ export class WebhooksController {
   }
 
   @Get(":webhookId/logs")
+  @ResponseSchema(webhookListLogsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:webhooks:manage")
   @Validate({ params: webhookIdParams, query: logsSchema })
@@ -138,6 +163,7 @@ export class WebhooksController {
   @Post(":webhookId/logs/:logId/retry")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(webhookRetryLogResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:webhooks:manage")
   @Idempotent("webhook.delivery.retry")

@@ -125,7 +125,7 @@ const HISTORICAL_TIMESTAMP_REGRESSIONS = new Set([
   "0678b_feedback_cycle_responses_rls_complete -> 0613_delegations_and_overrides_drop_user_columns",
   "0674a_subprocessor_subscribers_tenant_index -> 0659b_timesheets_lifecycle_seq_and_attendance_draft",
   "0659b_timesheets_lifecycle_seq_and_attendance_draft -> 0656_communication_tenant_rls",
-  "0916_crm_legacy_keys_follow_the_party_map -> 0466_drop_legacy_accounting",
+  "1096_crm_legacy_keys_follow_the_party_map -> 0466_drop_legacy_accounting",
 ]);
 
 const CHAIN_GAPS_FILE = resolve(process.cwd(), ".chain-gaps");
@@ -134,26 +134,60 @@ function numericPrefix(tag) {
   return tag.split("_")[0] ?? tag;
 }
 
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]", ""]);
+
 /**
- * Returns the highest created_at in drizzle.__drizzle_migrations, or null when no
- * database is reachable — CI runs this guard without one, and an absent database
- * must skip check (f) rather than fail it.
+ * TLS was hardcoded to "require", which made check (f) unrunnable against any local
+ * Postgres — it has SSL off, the connection threw, and the catch below reported the
+ * check as "no database" rather than as a failure to run it. The remote guarantee is
+ * kept: anything that is not loopback still defaults to require, and an explicit
+ * sslmode in the URL always wins.
+ */
+export function resolveSsl(url) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return "require";
+  }
+  const mode = parsed.searchParams.get("sslmode");
+  if (mode === "disable") return false;
+  if (mode === "no-verify" || mode === "allow" || mode === "prefer")
+    return { rejectUnauthorized: false };
+  if (mode) return "require";
+  return LOOPBACK_HOSTS.has(parsed.hostname) ? false : "require";
+}
+
+/**
+ * Reports the highest created_at in drizzle.__drizzle_migrations. CI runs this guard
+ * with no database at all, so an absent DATABASE_URL skips check (f) rather than
+ * failing it — but a configured database that cannot be read says so out loud
+ * instead of being indistinguishable from having none.
  */
 async function readAppliedWatermark() {
   const url = process.env.DATABASE_URL;
-  if (!url) return null;
+  if (!url) return { status: "no-database" };
   try {
     const { default: postgres } = await import("postgres");
-    const sql = postgres(url, { prepare: false, max: 1, ssl: sslForConnectionString(url), onnotice: () => {} });
+    const sql = postgres(url, {
+      prepare: false,
+      max: 1,
+      ssl: resolveSsl(url),
+      onnotice: () => {},
+      connect_timeout: 30,
+    });
     try {
       const rows = await sql`SELECT max(created_at) AS mx FROM drizzle.__drizzle_migrations`;
       const mx = rows[0]?.mx;
-      return mx === null || mx === undefined ? null : Number(mx);
+      return {
+        status: "ok",
+        watermark: mx === null || mx === undefined ? null : Number(mx),
+      };
     } finally {
       await sql.end();
     }
-  } catch {
-    return null;
+  } catch (error) {
+    return { status: "unreadable", reason: error instanceof Error ? error.message : String(error) };
   }
 }
 
@@ -321,6 +355,34 @@ function selfTest() {
     writeJournal([{ idx: 0, version: "7", when: 1000, tag: "0001_alpha", breakpoints: false }]);
   }
 
+  console.log("Self-test: (b) NEGATIVE — distinct prefixes are not duplicates");
+  {
+    writeJournal([
+      { idx: 0, version: "7", when: 1000, tag: "0001_alpha", breakpoints: false },
+      { idx: 1, version: "7", when: 2000, tag: "0002_beta", breakpoints: false },
+    ]);
+    writeSql("0001_alpha");
+    writeSql("0002_beta");
+    const failures = check(tmp);
+    if (failures.some((f) => f.includes("(b)"))) {
+      console.error("  FAIL  distinct numeric prefixes must not be reported as duplicates");
+      console.error(`         got: ${JSON.stringify(failures)}`);
+      failed++;
+    } else {
+      console.log("  PASS  distinct numeric prefixes are not reported as duplicates");
+      passed++;
+    }
+    if (numericPrefix("0002_beta") === "0002" && numericPrefix("0001_alpha") === "0001") {
+      console.log("  PASS  numericPrefix reads the numeric segment, not the whole tag");
+      passed++;
+    } else {
+      console.error("  FAIL  numericPrefix must return the leading numeric segment");
+      failed++;
+    }
+    rmSync(join(tmp, "0002_beta.sql"));
+    writeJournal([{ idx: 0, version: "7", when: 1000, tag: "0001_alpha", breakpoints: false }]);
+  }
+
   console.log("Self-test: (c) timestamp regression");
   {
     writeJournal([
@@ -366,6 +428,43 @@ function selfTest() {
     writeJournal([{ idx: 0, version: "7", when: 1000, tag: "0001_alpha", breakpoints: false }]);
   }
 
+  console.log("Self-test: (d) NEGATIVE — a pending-root entry is not an orphan");
+  {
+    // A pending migration lives under migrations/pending/ and is journalled either by a
+    // slashed tag or by a bare tag whose file sits in pending/. Reporting either as an
+    // orphan would flood the gate with false findings and get the real (d) allowlisted.
+    mkdirSync(join(tmp, "pending"), { recursive: true });
+    writeFileSync(join(tmp, "pending", "0004_delta.sql"), "SELECT 1;");
+    writeJournal([
+      { idx: 0, version: "7", when: 1000, tag: "0001_alpha", breakpoints: false },
+      { idx: 1, version: "7", when: 2000, tag: "pending/0005_epsilon", breakpoints: false },
+      { idx: 2, version: "7", when: 3000, tag: "0004_delta", breakpoints: false },
+    ]);
+    const failures = check(tmp);
+    const orphans = failures.filter((f) => f.includes("(d)"));
+    if (orphans.length > 0) {
+      console.error("  FAIL  a pending-root journal entry must not be reported as an orphan");
+      console.error(`         got: ${JSON.stringify(orphans)}`);
+      failed++;
+    } else {
+      console.log("  PASS  a slashed tag and a bare tag resolved under pending/ are both accepted");
+      passed++;
+    }
+    if (
+      isPendingPath("pending/0005_epsilon", tmp) === true &&
+      isPendingPath("0004_delta", tmp) === true &&
+      isPendingPath("0003_missing", tmp) === false
+    ) {
+      console.log("  PASS  isPendingPath tells a pending tag from an absent one");
+      passed++;
+    } else {
+      console.error("  FAIL  isPendingPath must accept both pending shapes and reject an absent tag");
+      failed++;
+    }
+    rmSync(join(tmp, "pending"), { recursive: true, force: true });
+    writeJournal([{ idx: 0, version: "7", when: 1000, tag: "0001_alpha", breakpoints: false }]);
+  }
+
   console.log("Self-test: (f) applied watermark ahead of the journal");
   {
     writeJournal([{ idx: 0, version: "7", when: 1000, tag: "0001_alpha", breakpoints: false }]);
@@ -386,6 +485,36 @@ function selfTest() {
     } else {
       console.log("  PASS  check (f) is skipped when no database is reachable");
       passed++;
+    }
+  }
+
+  console.log("Self-test: TLS resolution for check (f)");
+  {
+    const expectations = [
+      ["loopback defaults to no TLS", resolveSsl("postgresql://u@127.0.0.1:5432/db"), false],
+      ["localhost defaults to no TLS", resolveSsl("postgresql://u@localhost:5432/db"), false],
+      ["a remote host still defaults to require", resolveSsl("postgresql://u:p@db.example.com/x"), "require"],
+      ["a neon host still defaults to require", resolveSsl("postgresql://u:p@ep-x.eu-central-1.aws.neon.tech/neondb"), "require"],
+      ["an explicit sslmode=require on loopback is honoured", resolveSsl("postgresql://u@127.0.0.1/db?sslmode=require"), "require"],
+      ["an explicit sslmode=disable is honoured", resolveSsl("postgresql://u:p@db.example.com/x?sslmode=disable"), false],
+      ["an unparseable url falls back to require", resolveSsl("not a url"), "require"],
+    ];
+    for (const [label, actual, wanted] of expectations) {
+      if (actual === wanted) {
+        console.log(`  PASS  ${label}`);
+        passed++;
+      } else {
+        console.error(`  FAIL  ${label}: expected ${JSON.stringify(wanted)}, got ${JSON.stringify(actual)}`);
+        failed++;
+      }
+    }
+    const relaxed = resolveSsl("postgresql://u:p@db.example.com/x?sslmode=no-verify");
+    if (relaxed && typeof relaxed === "object" && relaxed.rejectUnauthorized === false) {
+      console.log("  PASS  sslmode=no-verify relaxes verification without disabling TLS");
+      passed++;
+    } else {
+      console.error("  FAIL  sslmode=no-verify must relax verification without disabling TLS");
+      failed++;
     }
   }
 
@@ -430,7 +559,19 @@ async function main() {
     return;
   }
 
-  const failures = runChecks(MIGRATIONS_DIR, CHAIN_GAPS_FILE, await readAppliedWatermark());
+  const watermark = await readAppliedWatermark();
+  if (watermark.status === "no-database")
+    console.log("SKIP  (f) applied watermark — no DATABASE_URL, nothing to read");
+  else if (watermark.status === "unreadable")
+    console.log(`SKIP  (f) applied watermark — DATABASE_URL is set but unreadable: ${watermark.reason}`);
+  else
+    console.log(`RAN   (f) applied watermark — max created_at=${watermark.watermark}`);
+
+  const failures = runChecks(
+    MIGRATIONS_DIR,
+    CHAIN_GAPS_FILE,
+    watermark.status === "ok" ? watermark.watermark : null,
+  );
 
   if (failures.length === 0) {
     console.log("PASS  migration chain verified — no issues found");

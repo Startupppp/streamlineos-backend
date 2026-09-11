@@ -1,10 +1,11 @@
-import { pgTable, text, serial, integer, timestamp, index, unique, primaryKey, foreignKey } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, index, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users, organizationMembers } from "./auth";
+import { organizations, organizationMembers } from "./auth";
 
 export const pushSubscriptions = pgTable("push_subscriptions", {
   id: serial("id").primaryKey(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  // Stable delivery address projection; membershipId owns the subscription.
+  userId: text("user_id").notNull(),
   membershipId: integer("membership_id"),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   endpoint: text("endpoint").notNull().unique(),
@@ -13,7 +14,6 @@ export const pushSubscriptions = pgTable("push_subscriptions", {
   userAgent: text("user_agent"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
-  index("idx_push_subs_user").on(table.userId),
   index("idx_push_subs_org_membership").on(table.orgId, table.membershipId),
   unique("uniq_push_subscriptions_org_id").on(table.orgId, table.id),
   foreignKey({
@@ -24,5 +24,5 @@ export const pushSubscriptions = pgTable("push_subscriptions", {
 ]);
 
 export const pushSubscriptionsRelations = relations(pushSubscriptions, ({ one }) => ({
-  user: one(users, { fields: [pushSubscriptions.userId], references: [users.id] }),
+  membership: one(organizationMembers, { fields: [pushSubscriptions.orgId, pushSubscriptions.membershipId], references: [organizationMembers.orgId, organizationMembers.id] }),
 }));

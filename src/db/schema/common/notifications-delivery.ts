@@ -82,7 +82,8 @@ export const notificationDeliveries = pgTable("notification_deliveries", {
   notificationId: bigint("notification_id", { mode: "number" }),
   notificationCreatedAt: timestamp("notification_created_at", { withTimezone: true }),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  // Stable delivery/audit display projection. membershipId controls recipient access.
+  userId: text("user_id").notNull(),
   membershipId: integer("membership_id"),
   eventKey: text("event_key"),
   channel: notificationChannelEnum("channel").notNull(),
@@ -126,9 +127,7 @@ export const notificationDeliveries = pgTable("notification_deliveries", {
     .where(sql`expires_at is not null`),
   uniqueIndex("uq_notification_deliveries_idempotency").on(table.idempotencyKey),
   index("idx_notification_deliveries_due").on(table.orgId, table.status, table.nextAttemptAt),
-  index("idx_notification_deliveries_notification").on(table.notificationId),
-  index("idx_notification_deliveries_user_channel").on(table.orgId, table.userId, table.channel, table.createdAt),
-  index("idx_notification_deliveries_org_membership").on(table.orgId, table.membershipId),
+  index("idx_notification_deliveries_membership_channel").on(table.orgId, table.membershipId, table.channel, table.createdAt),
   foreignKey({
     name: "fk_notification_deliveries_actor",
     columns: [table.orgId, table.membershipId],
@@ -144,7 +143,7 @@ export const notificationDeliveries = pgTable("notification_deliveries", {
 export const notificationQueue = pgTable("notification_queue", {
   // SCH-001
   id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
-  deliveryId: bigint("delivery_id", { mode: "number" }).references(() => notificationDeliveries.id, { onDelete: "cascade" }).notNull(),
+  deliveryId: bigint("delivery_id", { mode: "number" }).notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   channel: notificationChannelEnum("channel").notNull(),
   runAt: timestamp("run_at", { withTimezone: true }).defaultNow().notNull(),
@@ -156,12 +155,11 @@ export const notificationQueue = pgTable("notification_queue", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.deliveryId], foreignColumns: [notificationDeliveries.orgId, notificationDeliveries.id], name: "fk_notification_queue_delivery_id_org" }).onDelete("cascade"),
   index("idx_notification_queue_due").on(table.status, table.runAt),
-  index("idx_notification_queue_delivery").on(table.deliveryId),
   // SCH-015: one queue job per delivery. The worker already updates rather than
   // re-inserting; this makes that the database's invariant, not the caller's.
   uniqueIndex("uniq_notification_queue_delivery").on(table.deliveryId),
-  index("idx_notification_queue_org").on(table.orgId),
   unique("uniq_notification_queue_org_id").on(table.orgId, table.id),
 ]);
 

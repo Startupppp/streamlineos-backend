@@ -10,10 +10,12 @@ describe("TerminationService.create - structural owner block", () => {
   function buildSelectChain(): Record<string, jest.Mock> {
     const chain: Record<string, jest.Mock> = {
       from: jest.fn(),
-      where: jest.fn().mockResolvedValue([]),
+      where: jest.fn(),
+      limit: jest.fn().mockResolvedValue([]),
       innerJoin: jest.fn(),
     };
     chain.from.mockReturnValue(chain);
+    chain.where.mockReturnValue(chain);
     chain.innerJoin.mockReturnValue(chain);
     return chain;
   }
@@ -96,8 +98,7 @@ describe("TerminationService.list - paginated envelope and status counts", () =>
       leftJoin: () => rowsChain,
       where: () => rowsChain,
       orderBy: () => rowsChain,
-      limit: () => rowsChain,
-      offset: () => Promise.resolve(rows),
+      limit: () => Promise.resolve(rows),
     };
     const statusChain = {
       from: () => statusChain,
@@ -128,13 +129,12 @@ describe("TerminationService.list - paginated envelope and status counts", () =>
         { status: "COMPLETED", count: "37" },
       ],
     );
-    const result = await service.list("org-1", { page: 2, limit: 500 });
+    const result = await service.list("org-1", { limit: 500 });
     expect(result.data).toEqual([{ id: 1, reasons: [] }]);
     expect(result.pagination).toEqual({
-      page: 2,
       limit: 100,
-      total: 137,
-      totalPages: 2,
+      nextCursor: null,
+      hasMore: false,
     });
     expect(result.statusCounts).toEqual({ DRAFT: 100, COMPLETED: 37, ALL: 137 });
   });
@@ -148,15 +148,13 @@ describe("TerminationService.list - paginated envelope and status counts", () =>
       ],
     );
     const result = await service.list("org-1", {
-      page: 1,
       limit: 20,
       status: "DRAFT",
     });
     expect(result.pagination).toEqual({
-      page: 1,
       limit: 20,
-      total: 45,
-      totalPages: 3,
+      nextCursor: null,
+      hasMore: false,
     });
     expect(result.statusCounts).toEqual({ DRAFT: 45, APPROVED: 5, ALL: 50 });
   });

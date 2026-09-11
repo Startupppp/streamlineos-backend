@@ -14,7 +14,9 @@ export const notifications = pgTable("notifications", {
   // feed at the stated scale; widened while the table held 3 rows.
   id: bigint("id", { mode: "number" }).generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
+  // Historical delivery address projection. membershipId is the recipient authority.
+  userId: text("user_id"),
+  membershipId: integer("membership_id"),
   type: notificationTypeEnum("type").default("INFO").notNull(),
   priority: notificationPriorityEnum("priority").default("NORMAL").notNull(),
   category: notificationCategoryEnum("category").default("SYSTEM").notNull(),
@@ -42,22 +44,27 @@ export const notifications = pgTable("notifications", {
   // purpose-built indexes that match the actual query shape (ORDER BY id DESC).
   // idx_notifications_list_cursor: cursor pagination for list endpoints.
   index("idx_notifications_list_cursor")
-    .on(table.orgId, table.userId, table.id.desc())
+    .on(table.orgId, table.membershipId, table.id.desc())
     .where(sql`deleted_at IS NULL AND archived_at IS NULL`),
   // idx_notifications_unread_count: partial on is_read=false so the count seeks
   // past the watermark and counts only newly-arrived unread rows.
   index("idx_notifications_unread_count")
-    .on(table.orgId, table.userId, table.id)
+    .on(table.orgId, table.membershipId, table.id)
     .where(sql`deleted_at IS NULL AND archived_at IS NULL AND is_read = false`),
   index("idx_notifications_org_created").on(table.orgId, table.createdAt),
-  index("idx_notifications_user_archived").on(table.userId, table.archivedAt),
+  index("idx_notifications_org_membership_archived").on(table.orgId, table.membershipId, table.archivedAt),
   index("idx_notifications_org_category").on(table.orgId, table.category),
   index("idx_notifications_dedupe").on(table.orgId, table.eventKey, table.entityType, table.entityId),
   index("idx_notifications_org_user_active")
-    .on(table.orgId, table.userId, table.id)
+    .on(table.orgId, table.membershipId, table.id)
     .where(sql`deleted_at IS NULL`),
   primaryKey({ name: "notifications_pkey", columns: [table.id, table.createdAt] }),
   unique("uniq_notifications_org_id").on(table.orgId, table.id, table.createdAt),
+  foreignKey({
+    name: "fk_notifications_recipient_membership",
+    columns: [table.orgId, table.membershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+  }).onDelete("cascade"),
 ]);
 
 export const notificationReadWatermarks = pgTable(
@@ -65,13 +72,19 @@ export const notificationReadWatermarks = pgTable(
   {
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    userId: text("user_id").notNull(),
+    membershipId: integer("membership_id").notNull(),
     lastReadNotificationId: bigint("last_read_notification_id", { mode: "number" }).notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (t) => [
-    uniqueIndex("uniq_notification_read_watermarks_org_user").on(t.orgId, t.userId),
+    uniqueIndex("uniq_notification_read_watermarks_org_membership").on(t.orgId, t.membershipId),
     unique("uniq_notification_read_watermarks_org_id").on(t.orgId, t.id),
+    foreignKey({
+      name: "fk_notification_read_watermarks_membership",
+      columns: [t.orgId, t.membershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    }).onDelete("cascade"),
   ],
 );
 
@@ -100,7 +113,6 @@ export const notificationTemplates = pgTable("notification_templates", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uq_notification_templates_key_locale_version").on(table.orgId, table.templateKey, table.locale, table.version),
-  index("idx_notification_templates_org").on(table.orgId),
   index("idx_notification_templates_channel").on(table.channel),
   index("idx_notification_templates_active").on(table.isActive),
   unique("uniq_notification_templates_org_id").on(table.orgId, table.id),
@@ -132,13 +144,12 @@ export const notificationAuditLogs = pgTable("notification_audit_logs", {
   }).onDelete("set null"),
   index("idx_notif_audit_org_action").on(table.orgId, table.action),
   index("idx_notif_audit_org_created").on(table.orgId, table.createdAt),
-  index("idx_notif_audit_notification").on(table.notificationId),
   unique("uniq_notification_audit_logs_org_id").on(table.orgId, table.id),
 ]);
 
 export const notificationPreferences = pgTable("notification_preferences", {
   id: serial("id").primaryKey(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  userId: text("user_id").notNull(),
   membershipId: integer("membership_id"),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   emailEnabled: boolean("email_enabled").default(true).notNull(),
@@ -167,8 +178,7 @@ export const notificationPreferences = pgTable("notification_preferences", {
   unique("uniq_notification_preferences_org_id").on(table.orgId, table.id),
   // SCH-011: was a bare UNIQUE(user_id), so a user in two orgs shared one row and
   // the second org's write overwrote the first.
-  uniqueIndex("uniq_notification_preferences_org_user").on(table.orgId, table.userId),
-  index("idx_notification_preferences_org_membership").on(table.orgId, table.membershipId),
+  uniqueIndex("uniq_notification_preferences_org_membership").on(table.orgId, table.membershipId),
   foreignKey({
     name: "fk_notification_preferences_actor",
     columns: [table.orgId, table.membershipId],
@@ -177,7 +187,10 @@ export const notificationPreferences = pgTable("notification_preferences", {
 ]);
 
 export const notificationsRelations = relations(notifications, ({ one }) => ({
-  user: one(users, { fields: [notifications.userId], references: [users.id] }),
+  membership: one(organizationMembers, {
+    fields: [notifications.orgId, notifications.membershipId],
+    references: [organizationMembers.orgId, organizationMembers.id],
+  }),
   organization: one(organizations, { fields: [notifications.orgId], references: [organizations.id] }),
 }));
 

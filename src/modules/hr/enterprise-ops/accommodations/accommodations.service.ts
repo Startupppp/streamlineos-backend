@@ -1,7 +1,7 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { decodeCursor, buildCursorPage } from "../../../../common/pagination/cursor";
-import { keysetBeforeId } from "../../../../common/pagination/keyset";
+import { keysetBeforeUuid } from "../../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import {
@@ -38,12 +38,17 @@ export class AccommodationsService {
   async list(orgId: string, input: ListAccommodationsInput, hasSensitive: boolean) {
     const { cursor, limit, userId, status, type } = input;
     const pos = decodeCursor(cursor);
+    if (cursor !== undefined && !pos)
+      throw new BadRequestException("Invalid pagination cursor");
 
     const conditions = [eq(hrAccommodationRequests.orgId, orgId), isNull(hrAccommodationRequests.deletedAt)];
     if (userId) conditions.push(eq(hrAccommodationRequests.userId, userId));
     if (status) conditions.push(eq(hrAccommodationRequests.status, status));
     if (type) conditions.push(eq(hrAccommodationRequests.type, type));
-    if (pos) conditions.push(keysetBeforeId(hrAccommodationRequests.createdAt, hrAccommodationRequests.id, pos));
+    if (pos)
+      conditions.push(
+        keysetBeforeUuid(hrAccommodationRequests.createdAt, hrAccommodationRequests.id, pos),
+      );
 
     const rows = await this.db
       .select()
@@ -208,11 +213,13 @@ export class AccommodationsService {
   }
 
   async listTasks(orgId: string, requestId: string) {
+    await this.getById(orgId, requestId, false);
     return this.db
       .select()
       .from(hrAccommodationTasks)
       .where(and(eq(hrAccommodationTasks.orgId, orgId), eq(hrAccommodationTasks.requestId, requestId)))
-      .orderBy(hrAccommodationTasks.createdAt);
+      .orderBy(hrAccommodationTasks.createdAt)
+      .limit(100);
   }
 
   async createTask(orgId: string, requestId: string, input: CreateAccommodationTaskInput) {

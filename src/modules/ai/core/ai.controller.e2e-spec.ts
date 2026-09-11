@@ -49,7 +49,6 @@ describe("AI auth/RBAC (e2e)", () => {
     ["post", "/ai/churn-risk"],
     ["post", "/ai/next-action"],
     ["post", "/ai/account-summary"],
-    ["post", "/ai/meeting-prep"],
     ["post", "/ai/nl-search"],
     ["post", "/ai/enrich-lead"],
     ["post", "/ai/generate-email"],

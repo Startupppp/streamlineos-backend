@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, integer, jsonb, timestamp, index, unique } from "drizzle-orm/pg-core";
+import { index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { clientAccounts } from "./contacts";
@@ -36,7 +36,6 @@ export const healthScoreConfig = pgTable("health_score_config", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  index("idx_health_score_config_org").on(table.orgId),
   unique("uniq_health_score_config_org_id").on(table.orgId, table.id),
 ]);
 

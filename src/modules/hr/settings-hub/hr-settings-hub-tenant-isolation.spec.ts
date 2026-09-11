@@ -1,3 +1,4 @@
+import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { HrSettingsHubService } from "./hr-settings-hub.service";
 
@@ -55,7 +56,7 @@ describe("HrSettingsHubService — cross-tenant isolation", () => {
     const { db, where, findMany, findFirst } = makeDb([]);
     const mockEvaluation = { evaluatePolicy: jest.fn() };
     const svc = new HrSettingsHubService(db, mockEvaluation as never);
-    await expect(svc.getVersions(ATTACKER, "policy", "99")).rejects.toThrow();
+    await expect(svc.getVersions(ATTACKER, "policy", "99")).rejects.toThrow(NotFoundException);
     expect(sqlValues(isolationArg(where, findMany, findFirst))).toContain(ATTACKER);
   });
 

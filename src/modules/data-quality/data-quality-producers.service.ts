@@ -31,8 +31,6 @@ import { SWEEPABLE_PRODUCERS, type ScanInput } from "./dto/data-quality.schemas"
  */
 const SWEEP_CAP = 2000;
 
-/** Rows per insert statement. Twenty columns, so this stays well inside the parameter limit. */
-const INSERT_CHUNK = 500;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -152,38 +150,30 @@ export class DataQualityProducersService {
       lastSeenAt: now,
     }));
 
-    let filed = 0;
-    for (let index = 0; index < rows.length; index += INSERT_CHUNK) {
-      const chunk = rows.slice(index, index + INSERT_CHUNK);
-      const inserted = await this.db
-        .insert(dataQualityFindings)
-        .values(chunk)
-        .onConflictDoUpdate({
-          target: [
-            dataQualityFindings.organizationId,
-            dataQualityFindings.producer,
-            dataQualityFindings.findingKind,
-            dataQualityFindings.subjectKey,
-          ],
-          // Postgres infers a partial unique only when the predicate is repeated
-          // here; without it this raises 42P10 rather than silently missing.
-          targetWhere: sql`status = 'open'`,
-          set: {
-            lastSeenAt: now,
-            severity: sql`excluded.severity`,
-            groupKey: sql`excluded.group_key`,
-            evidence: sql`excluded.evidence`,
-            score: sql`excluded.score`,
-            proposedAction: sql`excluded.proposed_action`,
-            reversibility: sql`excluded.reversibility`,
-          },
-        })
-        .returning({ findingId: dataQualityFindings.findingId });
+    const inserted = await this.db
+      .insert(dataQualityFindings)
+      .values(rows)
+      .onConflictDoUpdate({
+        target: [
+          dataQualityFindings.organizationId,
+          dataQualityFindings.producer,
+          dataQualityFindings.findingKind,
+          dataQualityFindings.subjectKey,
+        ],
+        targetWhere: sql`status = 'open'`,
+        set: {
+          lastSeenAt: now,
+          severity: sql`excluded.severity`,
+          groupKey: sql`excluded.group_key`,
+          evidence: sql`excluded.evidence`,
+          score: sql`excluded.score`,
+          proposedAction: sql`excluded.proposed_action`,
+          reversibility: sql`excluded.reversibility`,
+        },
+      })
+      .returning({ findingId: dataQualityFindings.findingId });
 
-      filed += inserted.length;
-    }
-
-    return filed;
+    return inserted.length;
   }
 
   // ── Duplicate, and its contradictions ─────────────────────────────────────
@@ -394,7 +384,7 @@ export class DataQualityProducersService {
           // the table rather than all of it.
           lt(businessParties.updatedAt, cutoff),
           lt(businessParties.createdAt, cutoff),
-          sql`COALESCE(${lastActivityAt}, ${businessParties.createdAt}) < ${cutoff}`,
+          sql`COALESCE(${lastActivityAt}, ${businessParties.createdAt}) < ${cutoff.toISOString()}::timestamptz`,
         ),
       )
       .orderBy(asc(businessParties.updatedAt))

@@ -17,6 +17,8 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { AccessService } from "../access/access.service";
+import { resolveTasksViewScope } from "./tasks-scope";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { TasksService } from "./tasks.service";
@@ -41,6 +43,17 @@ import {
   type UpdateInput,
 } from "./dto/task.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  taskAnalyticsSchema,
+  taskRowSchema,
+  taskSequenceApplySchema,
+  taskSequenceRowSchema,
+  taskSequencesListSchema,
+  taskSequenceSuccessSchema,
+  tasksListResponseSchema,
+  taskSuccessSchema,
+} from "./dto/tasks-response.schemas";
 import { z } from "zod";
 
 const sequenceIdParams = z.object({ sequenceId: z.coerce.number().int().positive() }).strict();
@@ -53,9 +66,11 @@ export class TasksController {
     private readonly tasks: TasksService,
     private readonly sequences: TaskSequencesService,
     private readonly analytics: TaskAnalyticsService,
+    private readonly access: AccessService,
   ) {}
 
   @Get()
+  @ResponseSchema(tasksListResponseSchema)
   @RequirePermission("tasks:read")
   @Validate({ query: listSchema })
   list(
@@ -66,6 +81,7 @@ export class TasksController {
   }
 
   @Post()
+  @ResponseSchema(taskRowSchema)
   @HttpCode(201)
   @RequirePermission("tasks:write")
   @Validate({ body: createSchema })
@@ -79,16 +95,19 @@ export class TasksController {
   }
 
   @Get("analytics")
+  @ResponseSchema(taskAnalyticsSchema)
   @RequirePermission("tasks:read")
   @Validate({ query: analyticsSchema })
-  getAnalytics(
+  async getAnalytics(
     @Query() query: AnalyticsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.analytics.analytics(u.orgId, query);
+    const read = await resolveTasksViewScope(this.access, u);
+    return this.analytics.analytics(read, query);
   }
 
   @Get("sequences")
+  @ResponseSchema(taskSequencesListSchema)
   @RequirePermission("tasks:read")
   @Validate({ query: sequenceListSchema })
   listSequences(
@@ -99,6 +118,7 @@ export class TasksController {
   }
 
   @Post("sequences")
+  @ResponseSchema(taskSequenceRowSchema)
   @HttpCode(201)
   @RequirePermission("tasks:write")
   @Validate({ body: sequenceCreateSchema })
@@ -110,6 +130,7 @@ export class TasksController {
   }
 
   @Delete("sequences/:sequenceId")
+  @ResponseSchema(taskSequenceSuccessSchema)
   @RequirePermission("tasks:write")
   @Validate({ params: sequenceIdParams })
   async removeSequence(
@@ -122,6 +143,7 @@ export class TasksController {
   }
 
   @Post("sequences/:sequenceId/apply")
+  @ResponseSchema(taskSequenceApplySchema)
   @HttpCode(201)
   @RequirePermission("tasks:write")
   @Validate({ params: sequenceIdParams, body: sequenceApplySchema })
@@ -137,6 +159,7 @@ export class TasksController {
   }
 
   @Patch(":taskId")
+  @ResponseSchema(taskRowSchema)
   @RequirePermission("tasks:write")
   @Validate({ params: taskIdParams, body: updateSchema })
   async update(
@@ -150,6 +173,7 @@ export class TasksController {
   }
 
   @Delete(":taskId")
+  @ResponseSchema(taskSuccessSchema)
   @RequirePermission("tasks:write")
   @Validate({ params: taskIdParams })
   async remove(
@@ -162,6 +186,7 @@ export class TasksController {
   }
 
   @Post(":taskId/complete")
+  @ResponseSchema(taskRowSchema)
   @RequirePermission("tasks:write")
   @Validate({ params: taskIdParams, body: completeSchema })
   async complete(

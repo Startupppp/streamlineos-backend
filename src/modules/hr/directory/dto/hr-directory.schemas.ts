@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { canonicalEmailSchema } from "../../../users/dto/users.schemas";
 
 export const listEmployeesSchema = z.object({
   cursor: z.string().min(1).max(2048).optional(),
@@ -15,14 +16,14 @@ export const listEmployeesSchema = z.object({
 
 export const availabilitySchema = z.object({
   userIds: z.string().optional(),
-});
+}).strict();
 
 export const findExpertSchema = z.object({
   skill: z.string().min(1),
   department: z.string().optional(),
   role: z.string().optional(),
   limit: pageSizeField(20, 50),
-});
+}).strict();
 
 export const skillsMatrixQuerySchema = z
   .object({
@@ -33,7 +34,7 @@ export const skillsMatrixQuerySchema = z
 
 export const headcountSchema = z.object({
   groupBy: z.enum(["department", "role", "branch"]).default("department"),
-});
+}).strict();
 
 export const orgChartQuerySchema = z
   .object({
@@ -66,7 +67,7 @@ export const createTeamEventSchema = z
     time: z.string().optional(),
     location: z.string().max(200).optional(),
     maxParticipants: z.number().int().positive().optional(),
-  })
+  }).strict()
   .refine((d) => !!(d.date || d.startDate), { message: "Event date is required" });
 
 export const ASSET_RETURN_CONDITIONS = ["Good", "Fair", "Poor"] as const;
@@ -77,13 +78,13 @@ export const createAssetReturnSchema = z.object({
   assetName: z.string().min(1, "Asset name is required"),
   condition: z.enum(ASSET_RETURN_CONDITIONS).optional(),
   notes: z.string().trim().max(1000, "Notes must be at most 1000 characters").optional(),
-});
+}).strict();
 
 export const patchAssetReturnSchema = z.object({
   status: z.enum(["RETURNED", "DAMAGED", "LOST"]).default("RETURNED"),
   condition: z.enum(ASSET_RETURN_CONDITIONS).optional(),
   notes: z.string().trim().max(500).optional(),
-});
+}).strict();
 
 export const createDeviceSchema = z.object({
   userId: z.string().min(1, "Employee is required"),
@@ -102,7 +103,7 @@ export const createDeviceSchema = z.object({
   model: z.string().trim().min(1, "Model is required").max(100, "Model is too long"),
   notes: z.string().max(500).optional(),
   assignedDate: z.string().optional(),
-});
+}).strict();
 
 export const patchDeviceSchema = z.object({
   userId: z.string().optional(),
@@ -114,13 +115,13 @@ export const patchDeviceSchema = z.object({
   notes: z.string().optional(),
   status: z.enum(["ACTIVE", "INACTIVE", "LOST", "RETURNED"]).optional(),
   returnDate: z.string().optional(),
-});
+}).strict();
 
 export const listAssetsQuerySchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
   status: z.enum(["AVAILABLE", "ASSIGNED", "MAINTENANCE", "RETIRED"]).optional(),
-});
+}).strict();
 
 export const createAssetSchema = z.object({
   name: z.string().trim().min(1, "Asset name is required").max(100, "Asset name is too long"),
@@ -132,12 +133,12 @@ export const createAssetSchema = z.object({
   purchaseCost: z.number().optional(),
   location: z.string().optional(),
   notes: z.string().max(500).optional(),
-});
+}).strict();
 
 export const assignAssetSchema = z.object({
   assetId: z.number(),
   assignedTo: z.string().nullable(),
-});
+}).strict();
 
 export const patchAssetSchema = z.object({
   name: z.string().min(2).max(100).optional(),
@@ -151,7 +152,7 @@ export const patchAssetSchema = z.object({
   purchaseCost: z.number().optional(),
   location: z.string().optional(),
   notes: z.string().optional(),
-});
+}).strict();
 
 export const createBgvSchema = z.object({
   userId: z.string().min(1, "Employee is required"),
@@ -171,7 +172,7 @@ export const createBgvSchema = z.object({
     )
     .optional(),
   notes: z.string().max(1000, "Notes must be 1000 characters or fewer").optional(),
-});
+}).strict();
 
 const TERMINAL_BGV_STATUSES = ["PASSED", "FAILED"] as const;
 
@@ -185,7 +186,7 @@ export const updateBgvSchema = z
       .refine((v) => v.trim().length > 0, "Result cannot be blank")
       .optional(),
     notes: z.string().max(1000, "Notes must be 1000 characters or fewer").optional(),
-  })
+  }).strict()
   .superRefine((data, ctx) => {
     if (
       data.status !== undefined &&
@@ -207,12 +208,11 @@ export const updateEmployeeSchema = z
     name: z.string().trim().min(1).max(100).optional(),
     firstName: z.string().trim().min(1).max(100).optional(),
     lastName: z.string().trim().min(1).max(100).optional(),
-    designation: z.string().optional(),
+    designation: z.string().max(200).optional(),
     departmentId: z.string().optional(),
     phone: z.string().optional(),
     image: z.string().optional(),
     isActive: z.boolean().optional(),
-    role: z.string().optional(),
     gender: z.enum(["MALE", "FEMALE", "OTHER"]).optional(),
     skills: z.array(z.string()).optional(),
     bio: z.string().max(500).optional(),
@@ -228,7 +228,7 @@ export const updateEmployeeSchema = z
 export const onboardEmployeeSchema = z.object({
   firstName: z.string(),
   lastName: z.string(),
-  email: z.string(),
+  email: canonicalEmailSchema,
   phone: z.string().optional(),
   whatsappSameAsPhone: z.boolean().optional(),
   whatsappNumber: z.string().optional(),
@@ -273,18 +273,18 @@ export const onboardEmployeeSchema = z.object({
         .or(z.literal("")),
     })
     .optional(),
-});
+}).strict();
 
 export const createAccessRequestSchema = z.object({
   employeeId: z.string().min(1, "Employee is required"),
   systemName: z.string().min(1, "System name is required").max(200),
   accessLevel: z.string().min(1, "Access level is required").max(100),
-});
+}).strict();
 
 export const patchAccessRequestSchema = z.object({
   status: z.enum(["requested", "granted", "revoked"]),
   grantedBy: z.string().optional(),
-});
+}).strict();
 
 /** Row shape for spreadsheet bulk onboard — department can be an org department id or a name. */
 export const bulkOnboardEmployeeRowSchema = onboardEmployeeSchema
@@ -306,7 +306,7 @@ export const bulkOnboardEmployeesSchema = z.object({
     .array(bulkOnboardEmployeeRowSchema)
     .min(1, "At least one employee is required")
     .max(100, "You can onboard at most 100 employees per upload"),
-});
+}).strict();
 
 export type UpdateEmployeeInput = z.infer<typeof updateEmployeeSchema>;
 export type OnboardEmployeeInput = z.infer<typeof onboardEmployeeSchema>;
@@ -331,3 +331,8 @@ export type AssignAssetInput = z.infer<typeof assignAssetSchema>;
 export type PatchAssetInput = z.infer<typeof patchAssetSchema>;
 export type CreateAccessRequestInput = z.infer<typeof createAccessRequestSchema>;
 export type PatchAccessRequestInput = z.infer<typeof patchAccessRequestSchema>;
+
+export const employeeUserQuerySchema = z.object({
+  userId: z.string().min(1).optional(),
+}).strict();
+export type EmployeeUserQueryInput = z.infer<typeof employeeUserQuerySchema>;

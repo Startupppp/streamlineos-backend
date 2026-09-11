@@ -27,6 +27,19 @@ import {
 } from "./dto/blueprints.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  crmAggregateSchema,
+  pipelineSchema,
+  pipelineStageSchema,
+  crmOptionSchema,
+  validationRuleSchema,
+  testValidationSchema as testValidationResponseSchema,
+  blueprintSchema,
+  blueprintTransitionSchema,
+  testTransitionSchema as testTransitionResponseSchema,
+  successSchema,
+} from "./dto/crm-metadata-response.schemas";
 
 const pipelineIdParams = z.object({ pipelineId: z.string().min(1) }).strict();
 const stageIdParams = z.object({ stageId: z.string().min(1) }).strict();
@@ -48,12 +61,14 @@ export class CrmMetadataController {
 
   @Get("metadata")
   @RequirePermission("crm:leads:view")
+  @ResponseSchema(crmAggregateSchema)
   getAggregate(@CurrentUser() u: CurrentUserContext) {
     return this.svc.getAggregate(u.orgId);
   }
 
   @Get("pipelines")
   @RequirePermission("crm:settings:view")
+  @ResponseSchema(z.array(pipelineSchema))
   @Validate({ query: listPipelinesSchema })
   listPipelines(@CurrentUser() u: CurrentUserContext) {
     return this.svc.listPipelines(u.orgId);
@@ -61,6 +76,7 @@ export class CrmMetadataController {
 
   @Post("pipelines")
   @RequirePermission("crm:settings:manage")
+  @ResponseSchema(pipelineSchema)
   @Validate({ body: createPipelineSchema })
   createPipeline(
     @Body() body: CreatePipelineInput,
@@ -71,6 +87,7 @@ export class CrmMetadataController {
 
   @Patch("pipelines/:pipelineId")
   @RequirePermission("crm:settings:manage")
+  @ResponseSchema(pipelineSchema)
   @Validate({ params: pipelineIdParams, body: updatePipelineSchema })
   updatePipeline(
     @Param("pipelineId") pipelineId: string,
@@ -82,6 +99,7 @@ export class CrmMetadataController {
 
   @Delete("pipelines/:pipelineId")
   @RequirePermission("crm:settings:manage")
+  @ResponseSchema(successSchema)
   @Validate({ params: pipelineIdParams })
   deletePipeline(
     @Param("pipelineId") pipelineId: string,
@@ -92,6 +110,7 @@ export class CrmMetadataController {
 
   @Get("pipelines/:pipelineId/stages")
   @RequirePermission("crm:settings:view")
+  @ResponseSchema(z.array(pipelineStageSchema))
   @Validate({ params: pipelineIdParams })
   listStages(
     @Param("pipelineId") pipelineId: string,
@@ -102,6 +121,7 @@ export class CrmMetadataController {
 
   @Post("pipelines/:pipelineId/stages")
   @RequirePermission("crm:settings:manage")
+  @ResponseSchema(pipelineStageSchema)
   @Validate({ params: pipelineIdParams, body: createStageSchema })
   createStage(
     @Param("pipelineId") pipelineId: string,
@@ -113,6 +133,7 @@ export class CrmMetadataController {
 
   @Post("pipelines/:pipelineId/stages/reorder")
   @RequirePermission("crm:settings:manage")
+  @ResponseSchema(successSchema)
   @Validate({ params: pipelineIdParams, body: reorderStagesSchema })
   reorderStages(
     @Param("pipelineId") pipelineId: string,
@@ -124,6 +145,7 @@ export class CrmMetadataController {
 
   @Patch("stages/:stageId")
   @RequirePermission("crm:settings:manage")
+  @ResponseSchema(pipelineStageSchema)
   @Validate({ params: stageIdParams, body: updateStageSchema })
   updateStage(
     @Param("stageId") stageId: string,
@@ -135,6 +157,7 @@ export class CrmMetadataController {
 
   @Delete("stages/:stageId")
   @RequirePermission("crm:settings:manage")
+  @ResponseSchema(successSchema)
   @Validate({ params: stageIdParams })
   deleteStage(
     @Param("stageId") stageId: string,
@@ -145,6 +168,7 @@ export class CrmMetadataController {
 
   @Get("options/:optionType")
   @RequirePermission("crm:leads:view")
+  @ResponseSchema(z.array(crmOptionSchema))
   @Validate({ params: optionTypeParams })
   listOptions(
     @Param("optionType") optionType: string,
@@ -155,6 +179,7 @@ export class CrmMetadataController {
 
   @Post("options/:optionType")
   @RequirePermission("crm:settings:manage")
+  @ResponseSchema(crmOptionSchema)
   @Validate({ params: optionTypeParams, body: createOptionSchema })
   createOption(
     @Param("optionType") optionType: string,
@@ -166,6 +191,7 @@ export class CrmMetadataController {
 
   @Patch("options/:optionType/:optionId")
   @RequirePermission("crm:settings:manage")
+  @ResponseSchema(crmOptionSchema)
   @Validate({ params: optionTypeoptionIdParams, body: updateOptionSchema })
   updateOption(
     @Param("optionType") optionType: string,
@@ -178,6 +204,7 @@ export class CrmMetadataController {
 
   @Delete("options/:optionType/:optionId")
   @RequirePermission("crm:settings:manage")
+  @ResponseSchema(successSchema)
   @Validate({ params: optionTypeoptionIdParams })
   deleteOption(
     @Param("optionType") optionType: string,
@@ -189,12 +216,14 @@ export class CrmMetadataController {
 
   @Get("validation-rules")
   @RequirePermission("crm:settings:view")
+  @ResponseSchema(z.array(validationRuleSchema))
   listValidationRules(@CurrentUser() u: CurrentUserContext) {
     return this.validationRulesSvc.list(u.orgId);
   }
 
   @Post("validation-rules")
   @RequirePermission("crm:settings:manage")
+  @ResponseSchema(validationRuleSchema)
   @Validate({ body: createValidationRuleSchema })
   createValidationRule(
     @Body() body: CreateValidationRuleInput,
@@ -205,6 +234,7 @@ export class CrmMetadataController {
 
   @Patch("validation-rules/:ruleId")
   @RequirePermission("crm:settings:manage")
+  @ResponseSchema(validationRuleSchema)
   @Validate({ params: ruleIdParams, body: updateValidationRuleSchema })
   updateValidationRule(
     @Param("ruleId") ruleId: string,
@@ -216,6 +246,7 @@ export class CrmMetadataController {
 
   @Delete("validation-rules/:ruleId")
   @RequirePermission("crm:settings:manage")
+  @ResponseSchema(successSchema)
   @Validate({ params: ruleIdParams })
   deleteValidationRule(
     @Param("ruleId") ruleId: string,
@@ -226,6 +257,7 @@ export class CrmMetadataController {
 
   @Post("validation-rules/test")
   @RequirePermission("crm:settings:view")
+  @ResponseSchema(testValidationResponseSchema)
   @Validate({ body: testValidationSchema })
   testValidationRule(
     @Body() body: TestValidationInput,
@@ -236,12 +268,14 @@ export class CrmMetadataController {
 
   @Get("blueprints")
   @RequirePermission("crm:settings:view")
+  @ResponseSchema(z.array(blueprintSchema))
   listBlueprints(@CurrentUser() u: CurrentUserContext) {
     return this.blueprintsSvc.list(u.orgId);
   }
 
   @Post("blueprints")
   @RequirePermission("crm:settings:manage")
+  @ResponseSchema(blueprintSchema)
   @Validate({ body: createBlueprintSchema })
   createBlueprint(
     @Body() body: CreateBlueprintInput,
@@ -252,6 +286,7 @@ export class CrmMetadataController {
 
   @Patch("blueprints/:blueprintId")
   @RequirePermission("crm:settings:manage")
+  @ResponseSchema(blueprintSchema)
   @Validate({ params: blueprintIdParams, body: updateBlueprintSchema })
   updateBlueprint(
     @Param("blueprintId") blueprintId: string,
@@ -263,6 +298,7 @@ export class CrmMetadataController {
 
   @Delete("blueprints/:blueprintId")
   @RequirePermission("crm:settings:manage")
+  @ResponseSchema(successSchema)
   @Validate({ params: blueprintIdParams })
   deleteBlueprint(
     @Param("blueprintId") blueprintId: string,
@@ -273,6 +309,7 @@ export class CrmMetadataController {
 
   @Post("blueprints/:blueprintId/test-transition")
   @RequirePermission("crm:settings:view")
+  @ResponseSchema(testTransitionResponseSchema)
   @Validate({ params: blueprintIdParams, body: testTransitionSchema })
   testBlueprintTransition(
     @Param("blueprintId") blueprintId: string,
@@ -284,6 +321,7 @@ export class CrmMetadataController {
 
   @Post("blueprints/:blueprintId/test")
   @RequirePermission("crm:settings:view")
+  @ResponseSchema(testTransitionResponseSchema)
   @Validate({ params: blueprintIdParams, body: testTransitionSchema })
   testBlueprintTransitionAlias(
     @Param("blueprintId") blueprintId: string,
@@ -295,6 +333,7 @@ export class CrmMetadataController {
 
   @Get("blueprints/:blueprintId/transitions")
   @RequirePermission("crm:settings:view")
+  @ResponseSchema(z.array(blueprintTransitionSchema))
   @Validate({ params: blueprintIdParams })
   listBlueprintTransitions(
     @Param("blueprintId") blueprintId: string,
@@ -305,6 +344,7 @@ export class CrmMetadataController {
 
   @Post("blueprints/:blueprintId/transitions")
   @RequirePermission("crm:settings:manage")
+  @ResponseSchema(blueprintTransitionSchema)
   @Validate({ params: blueprintIdParams, body: createTransitionSchema })
   createBlueprintTransition(
     @Param("blueprintId") blueprintId: string,
@@ -316,6 +356,7 @@ export class CrmMetadataController {
 
   @Patch("blueprints/:blueprintId/transitions/:transitionId")
   @RequirePermission("crm:settings:manage")
+  @ResponseSchema(blueprintTransitionSchema)
   @Validate({ params: blueprintIdtransitionIdParams, body: updateTransitionSchema })
   updateBlueprintTransition(
     @Param("blueprintId") blueprintId: string,
@@ -328,6 +369,7 @@ export class CrmMetadataController {
 
   @Delete("blueprints/:blueprintId/transitions/:transitionId")
   @RequirePermission("crm:settings:manage")
+  @ResponseSchema(successSchema)
   @Validate({ params: blueprintIdtransitionIdParams })
   deleteBlueprintTransition(
     @Param("blueprintId") blueprintId: string,

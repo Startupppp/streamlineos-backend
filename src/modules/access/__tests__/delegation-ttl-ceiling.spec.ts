@@ -14,7 +14,9 @@ jest.mock("../../../common/relocation/relocation-traffic-tracker", () => ({
  * delegation expiry — confirming the cap is load-bearing.
  */
 
+import { makeMembershipStateStub } from "../../../../test/helpers/membership-state-stub";
 import { AccessService } from "../access.service";
+import { AccessVersionCache } from "../access-version-cache";
 import type { Db } from "../../../db/drizzle.module";
 import type { CacheService } from "../../../common/cache/cache.service";
 import type { EntitlementsService } from "../entitlements.service";
@@ -93,6 +95,8 @@ function buildServiceWithExpiredDelegation(
     cacheOverride as unknown as CacheService,
     entitlements,
     makeMfaPolicyStub(),
+    new AccessVersionCache(db as unknown as Db, cacheOverride as unknown as CacheService),
+    makeMembershipStateStub(),
   );
 }
 

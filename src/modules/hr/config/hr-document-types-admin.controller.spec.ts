@@ -1,37 +1,20 @@
 import { Reflector } from "@nestjs/core";
-import type { ExecutionContext } from "@nestjs/common";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { ModuleDisabledException } from "../../../common/http/api-exceptions";
 import { REQUIRE_MODULE } from "../../../common/rbac/require-module.decorator";
 import { HrDocumentTypesAdminController } from "./hr-document-types-admin.controller";
-import type { AccessService } from "../../access/access.service";
+import {
+  makeGuardCtx,
+  MODULE_AVAILABLE,
+  MODULE_DISABLED,
+} from "../../../../test/helpers/module-guard-context";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-
-function makeGuardCtx(
-  ctrl: Function,
-  methodName: string,
-  user: Partial<CurrentUserContext>,
-): ExecutionContext {
-  const handler = (ctrl.prototype as Record<string, unknown>)[methodName] as Function;
-  return {
-    getHandler: () => handler,
-    getClass: () => ctrl,
-    switchToHttp: () => ({ getRequest: () => ({ user }) }),
-  } as unknown as ExecutionContext;
-}
-
-function makeAccessSvc(available: boolean): AccessService {
-  return {
-    moduleAvailability: jest.fn().mockResolvedValue(
-      available ? { available: true } : { available: false, reason: "org-disabled" },
-    ),
-  } as unknown as AccessService;
-}
 
 const memberUser: Partial<CurrentUserContext> = { orgId: "org-1", userId: "u-1", isOrgOwner: false };
 
 describe("HrDocumentTypesAdminController — @RequireModule(hr) gate", () => {
   const reflector = new Reflector();
+  const guard = new ModuleGuard(reflector);
 
   it("carries @RequireModule(hr) at class level", () => {
     expect(reflector.get(REQUIRE_MODULE, HrDocumentTypesAdminController)).toBe("hr");
@@ -39,32 +22,36 @@ describe("HrDocumentTypesAdminController — @RequireModule(hr) gate", () => {
 
   describe("HR module DISABLED — all mutation handlers refused", () => {
     it("POST /hr/document-types (create) is blocked", async () => {
-      const guard = new ModuleGuard(reflector, makeAccessSvc(false));
       await expect(
-        guard.canActivate(makeGuardCtx(HrDocumentTypesAdminController, "create", memberUser)),
+        guard.canActivate(
+          makeGuardCtx(HrDocumentTypesAdminController, "create", memberUser, MODULE_DISABLED),
+        ),
       ).rejects.toThrow(ModuleDisabledException);
     });
 
     it("PATCH /hr/document-types/:documentTypeId (update) is blocked", async () => {
-      const guard = new ModuleGuard(reflector, makeAccessSvc(false));
       await expect(
-        guard.canActivate(makeGuardCtx(HrDocumentTypesAdminController, "update", memberUser)),
+        guard.canActivate(
+          makeGuardCtx(HrDocumentTypesAdminController, "update", memberUser, MODULE_DISABLED),
+        ),
       ).rejects.toThrow(ModuleDisabledException);
     });
 
     it("DELETE /hr/document-types/:documentTypeId (remove) is blocked", async () => {
-      const guard = new ModuleGuard(reflector, makeAccessSvc(false));
       await expect(
-        guard.canActivate(makeGuardCtx(HrDocumentTypesAdminController, "remove", memberUser)),
+        guard.canActivate(
+          makeGuardCtx(HrDocumentTypesAdminController, "remove", memberUser, MODULE_DISABLED),
+        ),
       ).rejects.toThrow(ModuleDisabledException);
     });
   });
 
   describe("bite proof — HR module ENABLED, gate passes through", () => {
     it("create passes when module is available (proving gate is the only blocker)", async () => {
-      const guard = new ModuleGuard(reflector, makeAccessSvc(true));
       await expect(
-        guard.canActivate(makeGuardCtx(HrDocumentTypesAdminController, "create", memberUser)),
+        guard.canActivate(
+          makeGuardCtx(HrDocumentTypesAdminController, "create", memberUser, MODULE_AVAILABLE),
+        ),
       ).resolves.toBe(true);
     });
   });

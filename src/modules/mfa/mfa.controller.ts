@@ -1,11 +1,16 @@
 import {
   Body,
+  Header,
   Controller,
   Get,
   HttpCode,
+  HttpException,
+  HttpStatus,
   Post,
   UseGuards,
 } from "@nestjs/common";
+import { NO_COMPRESSION_HEADER } from "../../common/http/compression.config";
+import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { Universal } from "../../common/auth/universal.decorator";
 import { PermissionGuard } from "../access/permission.guard";
@@ -14,8 +19,15 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { AllowWithoutMfa } from "../../common/auth/allow-without-mfa.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { MfaService } from "./mfa.service";
+import {
+  mfaSetupResponseSchema,
+  mfaVerifyResponseSchema,
+  mfaDisableResponseSchema,
+  mfaStatusResponseSchema,
+  mfaResetResponseSchema,
+} from "./dto/mfa-response.schemas";
 import {
   verifyMfaSchema,
   disableMfaSchema,
@@ -29,50 +41,77 @@ import {
 @UseGuards(JwtAuthGuard)
 @AllowWithoutMfa()
 export class MfaController {
-  constructor(private readonly mfa: MfaService) {}
+  constructor(
+    private readonly mfa: MfaService,
+    private readonly rateLimit: RateLimitService,
+  ) {}
+
+  private async enforceAttemptLimit(tier: string, userId: string): Promise<void> {
+    const result = await this.rateLimit.check(tier, userId);
+    if (!result.allowed) {
+      throw new HttpException(
+        {
+          code: "AUTH_RATE_LIMITED",
+          message: "Too many attempts. Try again later.",
+          details: { retryAfterSeconds: result.retryAfterSecs },
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
 
   @Post("setup")
   @BodylessAction()
+  @ResponseSchema(mfaSetupResponseSchema)
   @Universal()
   @HttpCode(200)
+  // PRD-C089 (BREACH) — this body carries a credential and `app.enableCors({ credentials:
+  // true })` is live, so a compressed length is a cross-origin size oracle.
+  @Header(NO_COMPRESSION_HEADER, "1")
   setup(@CurrentUser() u: CurrentUserContext) {
     return this.mfa.setup(u.userId);
   }
 
   @Post("verify")
+  @ResponseSchema(mfaVerifyResponseSchema)
   @Universal()
   @HttpCode(200)
   @Validate({ body: verifyMfaSchema })
-  verify(
+  async verify(
     @Body() body: VerifyMfaInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    await this.enforceAttemptLimit("auth:mfa-verify", u.userId);
     return this.mfa.verify(u.userId, body);
   }
 
   @Post("disable")
+  @ResponseSchema(mfaDisableResponseSchema)
   @Universal()
   @HttpCode(200)
   @Validate({ body: disableMfaSchema })
-  disable(
+  async disable(
     @Body() body: DisableMfaInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    await this.enforceAttemptLimit("auth:mfa-disable", u.userId);
     return this.mfa.disable(u.userId, u.orgId, body);
   }
 
   @Get("status")
+  @ResponseSchema(mfaStatusResponseSchema)
   @Universal()
   status(@CurrentUser() u: CurrentUserContext) {
     return this.mfa.status(u.userId);
   }
 
   @Post("reset")
+  @ResponseSchema(mfaResetResponseSchema)
   @HttpCode(200)
   @UseGuards(JwtAuthGuard, PermissionGuard)
   @RequirePermission("settings:mfa")
   @Validate({ body: resetMfaSchema })
-  reset(@Body() body: ResetMfaInput) {
-    return this.mfa.reset(body.userId);
+  reset(@Body() body: ResetMfaInput, @CurrentUser() u: CurrentUserContext) {
+    return this.mfa.reset(body.userId, u.orgId);
   }
 }

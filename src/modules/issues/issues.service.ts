@@ -1,13 +1,13 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, desc, eq, isNotNull, isNull, lte, sql, type SQL } from "drizzle-orm";
+import { Inject, Injectable } from "@nestjs/common";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { keysetAfter, keysetBefore } from "../../common/pagination/keyset";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
 import { businessParties, deals, issueRecords } from "../../db/schema";
 import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
-import { applyScope } from "../access/apply-scope";
-import type { DataScope } from "../access/access.types";
+import type { ScopedRead } from "../access/scoped-read";
 import { ISSUE_LAYOUTS, issueRecordRow } from "./issue-record-types";
+import { issueFilters, issueProjection, readIssueRecord } from "./issue-record-queries";
 import { IssueTransitionsService } from "./issue-transitions.service";
 import type { CreateIssueInput, ListIssuesQuery, UpdateIssueInput } from "./dto/issues.schemas";
 import { createIssueRecord, updateIssueRecord, type IssueWriteDeps } from "./lib/issue-writes";
@@ -41,59 +41,23 @@ export class IssuesService {
     return { recordTypes: Object.values(ISSUE_LAYOUTS) };
   }
 
-  private projection() {
-    return {
-      issueRecordId: issueRecords.issueRecordId,
-      recordType: issueRecords.recordType,
-      title: issueRecords.title,
-      severity: issueRecords.severity,
-      stage: issueRecords.stage,
-      ownerUserId: issueRecords.ownerUserId,
-      partyId: issueRecords.partyId,
-      dealId: issueRecords.dealId,
-      dueAt: issueRecords.dueAt,
-      openedAt: issueRecords.openedAt,
-      acknowledgedAt: issueRecords.acknowledgedAt,
-      closedAt: issueRecords.closedAt,
-      details: issueRecords.details,
-      reference: issueRecords.reference,
-      /** Named, so a reader opens a customer rather than an identifier. */
-      partyName: businessParties.name,
-      dealTitle: deals.name,
-    };
-  }
-
-  private filters(organizationId: string, query: ListIssuesQuery): (SQL | undefined)[] {
-    const openOnly = query.openOnly === true || query.overdueOnly === true;
-    return [
-      eq(issueRecords.organizationId, organizationId),
-      eq(issueRecords.recordType, query.recordType),
-      query.stage ? eq(issueRecords.stage, query.stage) : undefined,
-      query.severity ? eq(issueRecords.severity, query.severity) : undefined,
-      query.ownerUserId ? eq(issueRecords.ownerUserId, query.ownerUserId) : undefined,
-      query.partyId ? eq(issueRecords.partyId, query.partyId) : undefined,
-      query.dealId !== undefined ? eq(issueRecords.dealId, query.dealId) : undefined,
-      openOnly ? isNull(issueRecords.closedAt) : undefined,
-      /**
-       * Overdue implies open. A closed record that missed its deadline is a fact
-       * about the past; the filter exists to find work that is late *now*.
-       */
-      query.overdueOnly === true
-        ? and(isNotNull(issueRecords.dueAt), lte(issueRecords.dueAt, new Date()))
-        : undefined,
-    ];
-  }
-
-  async list(
-    organizationId: string,
-    userId: string,
-    query: ListIssuesQuery,
-    scope: DataScope,
-  ) {
-    const conditions = and(
-      ...this.filters(organizationId, query).filter((c): c is SQL => c !== undefined),
-      applyScope(scope, organizationId, userId, { ownerColumn: issueRecords.ownerUserId }),
+  async list(read: ScopedRead, query: ListIssuesQuery) {
+    const organizationId = read.orgId;
+    const conditions = read.compose(
+      {
+        tenant: issueRecords.organizationId,
+        scope: { columns: { ownerColumn: issueRecords.ownerUserId } },
+        and: issueFilters(organizationId, query),
+      },
+      (where) => where.sql,
+      () => null,
     );
+    if (conditions === null)
+      return {
+        layout: ISSUE_LAYOUTS[query.recordType],
+        ...buildCursorPage([], query.limit, () => ({ sortValue: "", id: "" })),
+        data: [],
+      };
 
     const position = decodeCursor(query.cursor);
     const ascending = query.order === "oldest";
@@ -115,7 +79,7 @@ export class IssuesService {
       : conditions;
 
     const rows = await this.db
-      .select(this.projection())
+      .select(issueProjection())
       .from(issueRecords)
       .leftJoin(
         businessParties,
@@ -156,73 +120,34 @@ export class IssuesService {
    * asks, and a surface that has to fetch it separately is one that will render
    * the record without it.
    */
-  async get(organizationId: string, userId: string, issueRecordId: string, scope: DataScope) {
-    return this.read(
-      organizationId,
-      issueRecordId,
-      applyScope(scope, organizationId, userId, { ownerColumn: issueRecords.ownerUserId }),
+  async get(read: ScopedRead, issueRecordId: string) {
+    return read.read(
+      { tenant: issueRecords.organizationId, scope: { columns: { ownerColumn: issueRecords.ownerUserId } } },
+      ({ sql: where }) => readIssueRecord(this.db, this.transitions, read.orgId, issueRecordId, where),
+      () => null,
     );
-  }
-
-  /**
-   * The read itself, with the scope predicate passed in.
-   *
-   * A writer reads back what they just wrote through an unconditional predicate rather than
-   * their own view scope: a member who files a complaint and assigns it to
-   * somebody else would otherwise get a 404 for the record they had just
-   * created, which reads as the write having failed.
-   */
-  private async read(organizationId: string, issueRecordId: string, scope: SQL) {
-    const [row] = await this.db
-      .select(this.projection())
-      .from(issueRecords)
-      .leftJoin(
-        businessParties,
-        and(
-          eq(businessParties.organizationId, issueRecords.organizationId),
-          eq(businessParties.partyId, issueRecords.partyId),
-        ),
-      )
-      .leftJoin(
-        deals,
-        and(eq(deals.orgId, issueRecords.organizationId), eq(deals.id, issueRecords.dealId)),
-      )
-      .where(
-        and(
-          eq(issueRecords.organizationId, organizationId),
-          eq(issueRecords.issueRecordId, issueRecordId),
-          scope,
-        ),
-      )
-      .limit(1);
-
-    /**
-     * 404 rather than 403, for a record in another organisation and for one this
-     * caller's scope excludes alike. A 403 confirms the identifier exists, which
-     * turns an id-guessing loop into a tenant census.
-     */
-    if (!row) throw new NotFoundException("Record not found");
-
-    return {
-      layout: ISSUE_LAYOUTS[row.recordType],
-      record: issueRecordRow(row, Date.now()),
-      transitions: await this.transitions.list(organizationId, issueRecordId, 100),
-    };
   }
 
   private get writeDeps(): IssueWriteDeps {
     return { db: this.db, transitions: this.transitions };
   }
 
-  /** Files the record under the anchor rules in `lib/issue-writes.ts`, then reads it back. */
+  /**
+   * Files the record under the anchor rules in `lib/issue-writes.ts`, then reads it back.
+   *
+   * The read-back is unconditional rather than the writer's own view scope: a
+   * member who files a complaint and assigns it to somebody else would otherwise
+   * get a 404 for the record they had just created, which reads as the write
+   * having failed.
+   */
   async create(organizationId: string, userId: string, input: CreateIssueInput) {
     const issueRecordId = await createIssueRecord(this.writeDeps, organizationId, userId, input);
-    return this.read(organizationId, issueRecordId, sql`true`);
+    return readIssueRecord(this.db, this.transitions, organizationId, issueRecordId, sql`true`);
   }
 
   /** Edits the record under the same anchor rules, then reads it back. */
   async update(organizationId: string, issueRecordId: string, input: UpdateIssueInput) {
     await updateIssueRecord(this.writeDeps, organizationId, issueRecordId, input);
-    return this.read(organizationId, issueRecordId, sql`true`);
+    return readIssueRecord(this.db, this.transitions, organizationId, issueRecordId, sql`true`);
   }
 }

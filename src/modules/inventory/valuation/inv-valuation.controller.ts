@@ -17,6 +17,11 @@ import {
   type ValuationConsumptionsInput,
 } from "./dto/valuation.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  valuationSummaryResponseSchema,
+  valuationLayersResponseSchema,
+} from "./dto/valuation-response.schemas";
 
 @RequireModule("inventory")
 @Controller("inventory/valuation")
@@ -25,6 +30,7 @@ export class InvValuationController {
   constructor(private readonly valuation: InvValuationService) {}
 
   @Get()
+  @ResponseSchema(valuationSummaryResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:valuation:read")
   @Validate({ query: valuationSummarySchema })
@@ -44,6 +50,7 @@ export class InvValuationController {
   }
 
   @Get("layers")
+  @ResponseSchema(valuationLayersResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:valuation:read")
   @Validate({ query: valuationLayersSchema })

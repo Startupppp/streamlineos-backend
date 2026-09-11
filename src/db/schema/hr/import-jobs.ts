@@ -8,6 +8,7 @@ import {
   jsonb,
   index,
   unique,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
@@ -64,9 +65,10 @@ export const hrImportRows = pgTable(
   "hr_import_rows",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    jobId: uuid("job_id")
-      .references(() => hrImportJobs.id, { onDelete: "cascade" })
+    orgId: text("org_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
+    jobId: uuid("job_id").notNull(),
     rowNumber: integer("row_number").notNull(),
     payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
     status: hrImportRowStatusEnum("status").default("valid").notNull(),
@@ -74,6 +76,12 @@ export const hrImportRows = pgTable(
     createdRecordRef: jsonb("created_record_ref").$type<{ table: string; id: string | number } | null>(),
   },
   (table) => [
+    foreignKey({
+      columns: [table.orgId, table.jobId],
+      foreignColumns: [hrImportJobs.orgId, hrImportJobs.id],
+      name: "fk_hr_import_rows_org_job",
+    }).onDelete("cascade"),
+    unique("uniq_hr_import_rows_org_id").on(table.orgId, table.id),
     index("idx_hr_import_rows_job_status").on(table.jobId, table.status),
   ],
 );

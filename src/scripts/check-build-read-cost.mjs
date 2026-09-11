@@ -59,11 +59,36 @@ const CHECKS = [
       select t.id, count(*) over () total
       from build.tickets t
       where t.org_id = $1 and t.project_id = $2 and t.deleted_at is null
-        and (t.assignee_id = $3 or t.reporter_id = $3
+        and (t.assignee_membership_id = $3
              or exists (select 1 from build.ticket_assignees ta
-                        where ta.org_id = $1 and ta.user_id = $3 and ta.ticket_id = t.id))
+                        where ta.org_id = $1 and ta.membership_id = $3 and ta.ticket_id = t.id))
       order by t.rank asc, t.created_at desc, t.id asc
       limit 50 offset 0`,
+  },
+  {
+    /**
+     * The board's own page, character for character from the `orderBy === "rank"`
+     * branch of projects-tickets-read.service.ts.
+     *
+     * `scoped-board-page` above orders by (rank, created_at DESC, id) — the
+     * generic sort template every OTHER orderBy uses — which is not what the
+     * board emits. That divergence is why this gate reported the board healthy
+     * while every page Incremental-Sorted the entire project: 1,850 index rows
+     * read to return 101, on every page, for every user, five times per board
+     * open. Buffers alone never caught it because sorting 1,850 index tuples is
+     * cheap in blocks; `forbidSort` is the assertion that does.
+     */
+    id: "board-page-rank",
+    ceiling: 2000,
+    requireIndexOnlyOn: "tickets",
+    forbidSort: true,
+    params: (f) => [ORG, f.projectId],
+    text: `
+      select t.id, t.rank, t.rank as cursor_primary, t.created_at
+      from build.tickets t
+      where t.org_id = $1 and t.project_id = $2 and t.deleted_at is null
+      order by t.rank asc, t.id asc
+      limit 101`,
   },
   {
     id: "my-work",
@@ -74,11 +99,11 @@ const CHECKS = [
       select u.id, count(*) over () total from (
         (select t.id as id, t.due_date as due_date, t.priority as priority
          from build.tickets t inner join build.projects p on p.id = t.project_id
-         where t.org_id = $1 and p.status <> 'ARCHIVED' and t.deleted_at is null and t.assignee_id = $2)
+         where t.org_id = $1 and p.status <> 'ARCHIVED' and t.deleted_at is null and t.assignee_membership_id = $2)
         union
         (select t.id as id, t.due_date as due_date, t.priority as priority
          from build.tickets t inner join build.projects p on p.id = t.project_id
-         inner join build.ticket_assignees ta on ta.ticket_id = t.id and ta.org_id = $1 and ta.user_id = $2
+         inner join build.ticket_assignees ta on ta.ticket_id = t.id and ta.org_id = $1 and ta.membership_id = $2
          where t.org_id = $1 and p.status <> 'ARCHIVED' and t.deleted_at is null)
       ) u
       order by u.due_date asc nulls last,
@@ -107,17 +132,16 @@ async function main() {
       where org_id = ${ORG} and deleted_at is null
       group by project_id order by n desc limit 1`;
     const [collaborator] = await tx`
-      select ta.user_id, count(*)::int n from build.ticket_assignees ta
+      select ta.membership_id, count(*)::int n from build.ticket_assignees ta
       join build.tickets t on t.id = ta.ticket_id and t.org_id = ta.org_id
       where ta.org_id = ${ORG}
-        and t.assignee_id is distinct from ta.user_id
-        and t.reporter_id is distinct from ta.user_id
-      group by ta.user_id order by n desc limit 1`;
+        and t.assignee_membership_id is distinct from ta.membership_id
+      group by ta.membership_id order by n desc limit 1`;
     const [participant] = collaborator
       ? [collaborator]
       : await tx`
-          select user_id, count(*)::int n from build.ticket_assignees
-          where org_id = ${ORG} group by user_id order by n desc limit 1`;
+          select membership_id, count(*)::int n from build.ticket_assignees
+          where org_id = ${ORG} group by membership_id order by n desc limit 1`;
     if (!project || !participant) {
       const missing = [!project && "build.tickets", !participant && "build.ticket_assignees"]
         .filter(Boolean)
@@ -128,15 +152,15 @@ async function main() {
       );
     }
     const [spread] = await tx`
-      select count(*)::int total, count(distinct user_id)::int users
+      select count(*)::int total, count(distinct membership_id)::int users
       from build.ticket_assignees where org_id = ${ORG}`;
     const [held] = await tx`
       select count(*)::int n from build.ticket_assignees
-      where org_id = ${ORG} and user_id = ${participant.user_id}`;
+      where org_id = ${ORG} and membership_id = ${participant.membership_id}`;
     return {
       projectId: project.project_id,
       projectTickets: project.n,
-      userId: participant.user_id,
+      userId: participant.membership_id,
       participationOrgWide: participant.n,
       participantShare: spread.total > 0 ? held.n / spread.total : 0,
       distinctParticipants: spread.users,
@@ -160,7 +184,11 @@ async function main() {
 
     const root = plan.Plan;
     const blocks = (root["Shared Hit Blocks"] ?? 0) + (root["Shared Read Blocks"] ?? 0);
-    const node = walk(root, []).find((n) => n.relation === check.requireIndexOnlyOn);
+    const nodes = walk(root, []);
+    const node = nodes.find((n) => n.relation === check.requireIndexOnlyOn);
+    const sortNode = check.forbidSort
+      ? nodes.find((n) => n.executed && n.type.endsWith("Sort"))
+      : undefined;
 
     const state = !node ? "ABSENT" : node.executed ? `${node.type} using ${node.index}` : `${node.type} (never executed)`;
     console.log(
@@ -170,12 +198,18 @@ async function main() {
 
     if (blocks > check.ceiling)
       failures.push(`${check.id}: ${blocks} > ${check.ceiling}`);
+    if (sortNode)
+      failures.push(
+        `${check.id}: the plan contains ${sortNode.type} — no index carries this ORDER BY, so the page ` +
+          `reads and sorts the whole filtered set before the LIMIT can discard it. Blocks stay small ` +
+          `while rows do not, which is why a ceiling alone cannot see this.`,
+      );
     if (!node)
       failures.push(`${check.id}: no ${check.requireIndexOnlyOn} node — the query shape changed`);
     else if (!node.executed)
       failures.push(
         `${check.id}: the ${check.requireIndexOnlyOn} branch was planned but NEVER EXECUTED, so its access path is unproven. ` +
-          `The fixture participant reaches every row through tickets.assignee_id/reporter_id, so the OR short-circuits before the semi-join. ` +
+          `The fixture participant reaches every row through tickets.assignee_membership_id, so the OR short-circuits before the semi-join. ` +
           `Seed a participant who appears ONLY in ${check.requireIndexOnlyOn} (pnpm seed:build-load creates one) or this assertion is vacuous.`,
       );
     else if (!node.type.startsWith("Index Only Scan"))

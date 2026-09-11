@@ -1,4 +1,7 @@
 import { type SystemJobId, systemJobCeiling } from "./system-jobs";
+import { assertNever } from "../types/assert-never";
+
+export { assertNever } from "../types/assert-never";
 
 export type Principal =
   | {
@@ -28,11 +31,6 @@ export type Principal =
       ceiling: readonly string[];
     };
 
-export type PrincipalKind = Principal["kind"];
-
-export function assertNever(value: never): never {
-  throw new Error(`Unhandled principal variant: ${JSON.stringify(value)}`);
-}
 
 export const ACCOUNT_ONLY_PRINCIPAL: Principal = { kind: "account-only" };
 
@@ -120,27 +118,4 @@ export function systemJobCovers(
   return (
     principal.kind === "system-job" && principal.ceiling.includes(permissionKey)
   );
-}
-
-export interface PrincipalAuditIdentity {
-  actorKind: PrincipalKind;
-  actorRef: string | null;
-}
-
-export function principalAuditIdentity(
-  principal: Principal,
-): PrincipalAuditIdentity {
-  switch (principal.kind) {
-    case "human-session":
-    case "account-only":
-      return { actorKind: principal.kind, actorRef: null };
-    case "personal-token":
-      return { actorKind: principal.kind, actorRef: principal.tokenId };
-    case "agent-token":
-      return { actorKind: principal.kind, actorRef: String(principal.tokenId) };
-    case "system-job":
-      return { actorKind: principal.kind, actorRef: principal.jobId };
-    default:
-      return assertNever(principal);
-  }
 }

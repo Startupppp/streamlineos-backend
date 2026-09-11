@@ -1,8 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, and, asc, desc } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import {
   salesQuotas,
-  playbookEntries,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -23,8 +22,6 @@ import type {
   CommissionListInput,
   QuotaListInput,
   QuotaCreateInput,
-  PlaybookCreateInput,
-  PlaybookUpdateInput,
 } from "./dto/sales.schemas";
 import type { CommissionConflict, CommissionNotFound } from "./lib/sales-commissions";
 
@@ -157,56 +154,5 @@ export class SalesService {
 
     await this.cache.invalidateNamespace(`sales:quotas:${orgId}`);
     return quota;
-  }
-
-  listPlaybook(orgId: string) {
-    return this.db
-      .select()
-      .from(playbookEntries)
-      .where(eq(playbookEntries.orgId, orgId))
-      .orderBy(asc(playbookEntries.sortOrder), asc(playbookEntries.id));
-  }
-
-  async createPlaybookEntry(orgId: string, createdBy: string, input: PlaybookCreateInput) {
-    const [entry] = await this.db
-      .insert(playbookEntries)
-      .values({
-        orgId,
-        title: input.title,
-        category: input.category?.trim() || null,
-        content: input.content ?? "",
-        sortOrder: input.sortOrder ?? 0,
-        createdBy,
-      })
-      .returning();
-
-    return entry;
-  }
-
-  async updatePlaybookEntry(orgId: string, entryId: number, input: PlaybookUpdateInput) {
-    const values: Partial<typeof playbookEntries.$inferInsert> = {};
-    if (input.title !== undefined) values.title = input.title;
-    if (input.category !== undefined) values.category = input.category?.trim() || null;
-    if (input.content !== undefined) values.content = input.content;
-    if (input.sortOrder !== undefined) values.sortOrder = input.sortOrder;
-
-    const [updated] = await this.db
-      .update(playbookEntries)
-      .set(values)
-      .where(and(eq(playbookEntries.id, entryId), eq(playbookEntries.orgId, orgId)))
-      .returning();
-
-    if (!updated) return null;
-    return updated;
-  }
-
-  async removePlaybookEntry(orgId: string, entryId: number) {
-    const [deleted] = await this.db
-      .delete(playbookEntries)
-      .where(and(eq(playbookEntries.id, entryId), eq(playbookEntries.orgId, orgId)))
-      .returning();
-
-    if (!deleted) return null;
-    return { success: true };
   }
 }

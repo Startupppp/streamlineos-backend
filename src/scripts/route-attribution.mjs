@@ -2,8 +2,8 @@
  * Route-to-module attribution.
  *
  * Maps an API route's first path segment (namespace) to the owning module and
- * its SLO owner using the same logic as moduleOwningNamespace() in
- * module-vocabulary.ts — derived from MODULE_REGISTRY.administersNamespaces.
+ * its SLO owner, deriving both the administering overrides and the route-segment
+ * exceptions from the committed module manifest rather than a local table.
  *
  * Three outcome shapes for resolveRouteAttribution(namespace):
  *   { module, owner }                        — a covered module owns it
@@ -17,24 +17,27 @@
  *   node src/scripts/route-attribution.mjs --self-test
  */
 
-/**
- * Namespace-to-module-id overrides.
- * Two sources:
- * 1. MODULE_REGISTRY.administersNamespaces: Home administers chat/mail/calendar/notifications;
- *    CRM administers party.  The same logic as moduleOwningNamespace() in module-vocabulary.ts.
- * 2. Route-segment exceptions where the first API path segment differs from the module id:
- *    /knowledge/... → kb module (id "kb", route "/knowledge")
- *    /dashboard/... → home module (id "home", route "/dashboard")
- */
-const NAMESPACE_TO_MODULE_ID = {
-  party: "crm",
-  chat: "home",
-  mail: "home",
-  calendar: "home",
-  notifications: "home",
-  knowledge: "kb",
-  dashboard: "home",
-};
+import {
+  committedModuleManifest,
+  moduleOwningNamespace,
+} from "./permission-key-extractors.mjs";
+
+let routeSegmentToModuleId = null;
+
+// A route's first segment is not always the module id (/knowledge → kb, /dashboard → home), so derive it from the manifest's own `route` rather than a second table.
+function routeSegmentOverrides() {
+  if (routeSegmentToModuleId === null) {
+    routeSegmentToModuleId = new Map();
+    for (const entry of committedModuleManifest().modules) {
+      const segment = (entry.route ?? "").split("/").filter(Boolean)[0];
+      if (segment !== undefined && segment !== entry.id)
+        routeSegmentToModuleId.set(segment, entry.id);
+    }
+    if (routeSegmentToModuleId.size === 0)
+      throw new Error("module manifest yielded no route-segment overrides; attribution would be silently identity-only");
+  }
+  return routeSegmentToModuleId;
+}
 
 /**
  * Module id → SLO owner for every in-scope module.
@@ -78,12 +81,11 @@ export const PLATFORM_NAMESPACES = new Set([
  */
 const SLO_EXCLUDED_MODULES = new Set(["crm", "inventory"]);
 
-/**
- * Maps a namespace through the administersNamespaces overrides and route-segment
- * exceptions to the canonical module id.
- */
+// Administration wins over the route segment: /notifications is the notifications module's route, but Home administers the namespace.
 export function resolveModuleForNamespace(namespace) {
-  return NAMESPACE_TO_MODULE_ID[namespace] ?? namespace;
+  const administering = moduleOwningNamespace(namespace);
+  if (administering !== namespace) return administering;
+  return routeSegmentOverrides().get(namespace) ?? namespace;
 }
 
 /**
@@ -132,9 +134,25 @@ if (isMainScript && process.argv.includes("--self-test")) {
   const crmAttrib = resolveRouteAttribution("crm");
   const partyAttrib = resolveRouteAttribution("party");
 
+  const calendarAttrib = resolveRouteAttribution("calendar");
+  const notificationsAttrib = resolveRouteAttribution("notifications");
+  const dashboardAttrib = resolveRouteAttribution("dashboard");
+  const authAttrib = resolveRouteAttribution("auth");
+  const platformAttrib = resolveRouteAttribution("platform");
+
   const checks = {
     hrAttributesToPeopleTeam:
       hrAttrib.module === "hr" && hrAttrib.owner === "people-team",
+    calendarAttributesToCommunicationsViaHome:
+      calendarAttrib.module === "home" && calendarAttrib.owner === "communications-team",
+    notificationsAttributesToHomeNotItsOwnModule:
+      notificationsAttrib.module === "home" && notificationsAttrib.owner === "communications-team",
+    dashboardRouteSegmentAttributesToHome:
+      dashboardAttrib.module === "home" && dashboardAttrib.owner === "communications-team",
+    authAttributesToPlatform:
+      authAttrib.platform === true && authAttrib.owner === "platform-reliability",
+    platformAttributesToPlatform:
+      platformAttrib.platform === true && platformAttrib.owner === "platform-reliability",
     chatAttributesToCommunicationsViaHome:
       chatAttrib.module === "home" && chatAttrib.owner === "communications-team",
     mailAttributesToCommunicationsViaHome:

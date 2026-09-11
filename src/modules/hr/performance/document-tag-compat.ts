@@ -13,9 +13,16 @@ export async function loadDocumentTags(
   const uniqueDocumentIds = [...new Set(documentIds)];
   if (
     uniqueDocumentIds.length === 0 ||
-    !(await isCompatibilityRelationAvailable(database, "public.hr_document_tags"))
+    !(await isCompatibilityRelationAvailable(
+      database,
+      "public.hr_document_tags",
+    ))
   )
     return new Map();
+  if (uniqueDocumentIds.length > 1000)
+    throw new Error(
+      "Document tag lookup exceeds the supported 1000-document bound",
+    );
 
   const tagRows = await database
     .select({
@@ -29,7 +36,8 @@ export async function loadDocumentTags(
         inArray(hrDocumentTags.documentId, uniqueDocumentIds),
       ),
     )
-    .orderBy(asc(hrDocumentTags.documentId), asc(hrDocumentTags.sortOrder));
+    .orderBy(asc(hrDocumentTags.documentId), asc(hrDocumentTags.sortOrder))
+    .limit(10000);
 
   const tagsByDocumentId = new Map<number, string[]>();
   for (const tagRow of tagRows) {
@@ -46,7 +54,12 @@ export async function syncDocumentTags(
   documentId: number,
   tags: readonly string[],
 ): Promise<void> {
-  if (!(await isCompatibilityRelationAvailable(transaction, "public.hr_document_tags")))
+  if (
+    !(await isCompatibilityRelationAvailable(
+      transaction,
+      "public.hr_document_tags",
+    ))
+  )
     return;
 
   await transaction
@@ -68,7 +81,12 @@ export async function syncDocumentTags(
   for (const [tagPosition, tag] of tags.entries()) {
     if (tag.trim() === "" || seenTags.has(tag)) continue;
     seenTags.add(tag);
-    normalizedTags.push({ organizationId, documentId, tag, sortOrder: tagPosition });
+    normalizedTags.push({
+      organizationId,
+      documentId,
+      tag,
+      sortOrder: tagPosition,
+    });
   }
   if (normalizedTags.length > 0)
     await transaction.insert(hrDocumentTags).values(normalizedTags);

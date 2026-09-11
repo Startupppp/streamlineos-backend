@@ -51,7 +51,8 @@ export class AccountOrganizationIndexService {
             eq(accountOrganizationIndex.organizationStatus, "ACTIVE"),
           ),
         )
-        .orderBy(desc(accountOrganizationIndex.joinedAt)),
+        .orderBy(desc(accountOrganizationIndex.joinedAt))
+        .limit(100),
     );
   }
 
@@ -77,8 +78,9 @@ export class AccountOrganizationIndexService {
     return { orgId: row.orgId, cellId: row.cellId };
   }
 
-  async touchLastActivated(userId: string, orgId: string): Promise<void> {
-    await withIdentity(this.db, userId, (tx) =>
+  // A zero-row update does not throw, so the old void signature read that silence as success.
+  async touchLastActivated(userId: string, orgId: string): Promise<boolean> {
+    const touched = await withIdentity(this.db, userId, (tx) =>
       tx
         .update(accountOrganizationIndex)
         .set({ lastActivatedAt: new Date() })
@@ -87,8 +89,27 @@ export class AccountOrganizationIndexService {
             eq(accountOrganizationIndex.userId, userId),
             eq(accountOrganizationIndex.orgId, orgId),
           ),
-        ),
+        )
+        .returning({ orgId: accountOrganizationIndex.orgId }),
     );
+    return touched.length > 0;
+  }
+
+  // `resolvePreferredOrg` orders by `last_activated_at`, so a missed stamp resolves the session to
+  // another org; the projection is written by a refresh pass, so a just-joined org may have no row.
+  async activate(userId: string, orgId: string): Promise<void> {
+    try {
+      if (await this.touchLastActivated(userId, orgId)) return;
+      await this.refreshForUser(userId);
+      if (await this.touchLastActivated(userId, orgId)) return;
+      logger.error("[account-org-index] projection absent after refresh", { userId, orgId });
+    } catch (error: unknown) {
+      logger.error("[account-org-index] last-activated write failed", {
+        userId,
+        orgId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   async refreshForUser(userId: string): Promise<void> {
@@ -109,7 +130,8 @@ export class AccountOrganizationIndexService {
           organizations,
           eq(organizations.id, organizationMembers.orgId),
         )
-        .where(eq(organizationMembers.userId, userId));
+        .where(eq(organizationMembers.userId, userId))
+        .limit(100);
 
       if (live.length === 0) {
         await tx
@@ -186,7 +208,8 @@ export class AccountOrganizationIndexService {
             organizations,
             eq(organizations.id, organizationMembers.orgId),
           )
-          .where(eq(organizationMembers.orgId, orgId));
+          .where(eq(organizationMembers.orgId, orgId))
+          .limit(10000);
 
         if (!members.length) return;
 

@@ -17,7 +17,8 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { lockResponseSchema, reopenResponseSchema, closeResponseSchema } from "./dto/payout-response.schemas";
 import { z } from "zod";
 import { LockingService } from "./locking.service";
 import { reopenRunSchema, type ReopenRunInput } from "./dto/payout.schemas";
@@ -39,6 +40,7 @@ export class LockingController {
   @HttpCode(200)
   @RequirePermission("payroll:runs:manage")
   @Validate({ params: runIdParams })
+  @ResponseSchema(lockResponseSchema)
   async lock(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -53,6 +55,7 @@ export class LockingController {
   @HttpCode(200)
   @RequirePermission("payroll:runs:manage")
   @Validate({ params: runIdParams, body: reopenRunSchema })
+  @ResponseSchema(reopenResponseSchema)
   async reopen(
     @Param("runId", ParseIntPipe) runId: number,
     @Body() body: ReopenRunInput,
@@ -74,6 +77,7 @@ export class LockingController {
   @HttpCode(200)
   @RequirePermission("payroll:runs:manage")
   @Validate({ params: runIdParams })
+  @ResponseSchema(closeResponseSchema)
   async close(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -89,7 +93,7 @@ export class LockingController {
     runId: number,
     command: "run.lock" | "run.reopen" | "run.close",
     idempotencyKey: string | undefined,
-    fn: () => Promise<unknown>,
+    fn: () => Promise<Record<string, unknown>>,
     body?: unknown,
   ) {
     const key = idempotencyKey?.trim() || `${command}:${u.orgId}:${runId}`;
@@ -107,7 +111,7 @@ export class LockingController {
     }
     try {
       const result = await fn();
-      const response = { ...(result as object), correlationId: begin.correlationId };
+      const response = { ...result, correlationId: begin.correlationId };
       await this.receipts.succeed(begin.receiptId, response);
       return response;
     } catch (err) {

@@ -21,23 +21,23 @@ export const commissionRuleCreateSchema = z.object({
     )
     .optional(),
   appliesTo: z.string().default("all"),
-});
+}).strict();
 
 export const commissionListSchema = z.object({
   userId: z.string().optional(),
   status: z.enum(["pending", "approved", "paid"]).optional(),
   limit: optionalPageSizeField(50),
-});
+}).strict();
 
 export const commissionUpdateSchema = z.object({
   status: z.enum(["approved", "paid"]),
-});
+}).strict();
 
 export const quotaListSchema = z.object({
   userId: z.string().optional(),
   period: z.enum(["monthly", "quarterly", "yearly"]).optional(),
   limit: optionalPageSizeField(50),
-});
+}).strict();
 
 export const quotaCreateSchema = z
   .object({
@@ -53,7 +53,7 @@ export const quotaCreateSchema = z
         "Target revenue must be a positive number",
       ),
     notes: z.string().optional(),
-  })
+  }).strict()
   .refine((data) => new Date(data.startDate) < new Date(data.endDate), {
     message: "Start date must be before end date",
     path: ["endDate"],
@@ -64,48 +64,48 @@ export const playbookCreateSchema = z.object({
   category: z.string().max(80).optional(),
   content: z.string().max(10000).optional(),
   sortOrder: z.number().int().optional(),
-});
+}).strict();
 
 export const playbookUpdateSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   category: z.string().max(80).nullable().optional(),
   content: z.string().max(10000).optional(),
   sortOrder: z.number().int().optional(),
-});
+}).strict();
 
 export const dashboardRangeSchema = z.object({
   from: z.string().optional(),
   to: z.string().optional(),
   repId: z.string().optional(),
-});
+}).strict();
 
 export const leaderboardSchema = z.object({
   from: z.string().optional(),
   to: z.string().optional(),
-});
+}).strict();
 
 export const agingSchema = z.object({
   threshold: z.coerce.number().int().min(1).max(365).optional(),
-});
+}).strict();
 
 export const cohortSchema = z.object({
   months: z.coerce.number().int().min(1).max(12).optional(),
-});
+}).strict();
 
 export const revenueVsGoalSchema = z.object({
   year: z.coerce.number().int().min(2000).max(2100).optional(),
-});
+}).strict();
 
 export const repFilterSchema = z.object({
   repId: z.string().optional(),
-});
+}).strict();
 
 export const repComparisonSchema = z.object({
   rep1: z.string(),
   rep2: z.string(),
   from: z.string().optional(),
   to: z.string().optional(),
-});
+}).strict();
 
 export type CommissionRuleCreateInput = z.infer<typeof commissionRuleCreateSchema>;
 export type CommissionListInput = z.infer<typeof commissionListSchema>;

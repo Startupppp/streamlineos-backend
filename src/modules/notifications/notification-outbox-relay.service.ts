@@ -12,6 +12,23 @@ const BATCH_SIZE = 50;
 const LEASE_MS = 60_000;
 const MAX_ATTEMPTS = 5;
 
+/**
+ * The most any one organization may take out of a single tick's global budget.
+ *
+ * Without it the claim was `limit ${remaining}` — the whole rest of the batch — so
+ * the lowest-id tenant with a backlog took all 50 rows and every tenant sorting
+ * after it saw `remaining <= 0` and returned. Their rows stayed PENDING, therefore
+ * never attempted, therefore never reached DEAD, therefore `alert-dead-outbox`
+ * never fired: an indefinite, silent notification outage whose victims were chosen
+ * by how their org id sorts. Measured over 8 tenants x 200 pending rows x 5 ticks,
+ * the head form reached two organizations; with this cap and the rotating cursor
+ * below it reaches all eight.
+ *
+ * Same ratio as `ORG_BATCH_CAP` in the delivery worker, which had this half of the
+ * fix from the start — five tenants per tick.
+ */
+export const OUTBOX_ORG_BATCH_CAP = Math.ceil(BATCH_SIZE / 5);
+
 export interface OutboxRelayResult {
   claimed: number;
   processed: number;
@@ -24,11 +41,14 @@ export interface OutboxRelayResult {
  *
  * At-least-once by construction: a row is leased, processed, then marked. If the
  * process dies mid-flight the lease expires and another pass reclaims it. A replay
- * cannot produce a second notification because the row's own `dedupeKey` is passed
- * down as the delivery idempotency discriminator, so the retry rebuilds the same
+ * cannot produce a second notification because the row's own key is passed down as
+ * `replayKey`, so the retry rebuilds the same
  * `notification_deliveries.idempotency_key` and the unique index refuses it. Do not
  * drop that argument: the time-bucket fallback is absent for the 9 events that set
  * `dedupeWindowSeconds: 0` — mentions, DMs, invites — and they would double-deliver.
+ * It is `replayKey` rather than `dedupeKey` because the outbox key is a random UUID
+ * for any emission without an explicit caller key, and passing it as `dedupeKey` made
+ * it override the declared window on every one of them.
  *
  * Runs per tenant via `forEachOrg`: `notification_outbox` enforces
  * `org_id = app.current_org_id()`, so a global sweep is denied `42501` (§20).
@@ -36,6 +56,14 @@ export interface OutboxRelayResult {
 @Injectable()
 export class NotificationOutboxRelayService {
   private readonly logger = new Logger(NotificationOutboxRelayService.name);
+
+  /**
+   * Where the previous tick's budget ran out. In-process rather than persisted: a
+   * lost cursor costs one unfair tick, and every claim is fenced by
+   * `for update skip locked` plus its lease, so two relays starting from different
+   * cursors cover the tenant list faster rather than less correctly.
+   */
+  private cursorOrgId: string | null = null;
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
@@ -48,19 +76,26 @@ export class NotificationOutboxRelayService {
     const leaseUntil = new Date(now.getTime() + LEASE_MS);
 
     const claimed: Array<typeof notificationOutbox.$inferSelect> = [];
+    let lastClaimedFromOrgId: string | null = null;
 
-    await forEachOrg(this.db, "notification-outbox-relay", async (tx, orgId) => {
-      const remaining = BATCH_SIZE - claimed.length;
-      if (remaining <= 0) return;
+    await forEachOrg(
+      this.db,
+      "notification-outbox-relay",
+      async (tx, orgId) => {
+        const remaining = BATCH_SIZE - claimed.length;
+        if (remaining <= 0) return;
+        // The cap is what makes one tick serve several tenants; `remaining` is what
+        // keeps the global budget honest when the last slice is smaller than the cap.
+        const orgLimit = Math.min(remaining, OUTBOX_ORG_BATCH_CAP);
 
-      // One statement, FOR UPDATE SKIP LOCKED: two relays never fight over the same
-      // row, and neither blocks on the other (SCH-016's lesson, applied here from the
-      // start rather than retrofitted).
-      const rows = await tx
-        .update(notificationOutbox)
-        .set({ state: "IN_FLIGHT", leaseExpiresAt: leaseUntil })
-        .where(
-          sql`${notificationOutbox.id} in (
+        // One statement, FOR UPDATE SKIP LOCKED: two relays never fight over the same
+        // row, and neither blocks on the other (SCH-016's lesson, applied here from the
+        // start rather than retrofitted).
+        const rows = await tx
+          .update(notificationOutbox)
+          .set({ state: "IN_FLIGHT", leaseExpiresAt: leaseUntil })
+          .where(
+            sql`${notificationOutbox.id} in (
             select id from ${notificationOutbox}
             where org_id = ${orgId}
               and (
@@ -68,13 +103,31 @@ export class NotificationOutboxRelayService {
                 or (state = 'IN_FLIGHT' and lease_expires_at < ${now.toISOString()}::timestamptz)
               )
             order by id
-            limit ${remaining}
+            limit ${orgLimit}
             for update skip locked
           )`,
-        )
-        .returning();
-      claimed.push(...rows);
-    });
+          )
+          .returning();
+        if (rows.length === 0) return;
+        claimed.push(...rows);
+        lastClaimedFromOrgId = orgId;
+      },
+      "write",
+      {
+        // Where the last tick ran out of budget is where this one starts, so the
+        // tenants a capped tick could not reach are the ones served first next time.
+        // The cap alone would still serve the same lowest five organizations forever.
+        startAfterOrgId: this.cursorOrgId,
+        // Not the `remaining <= 0` guard alone: that already cost one tenant
+        // transaction per remaining organization in order to claim nothing.
+        stopWhen: () => claimed.length >= BATCH_SIZE,
+      },
+    );
+
+    // Only a tick that ran out of budget leaves a cursor. A tick that drained every
+    // tenant has no one to be fair to, so the next one starts from the top and stays
+    // deterministic.
+    this.cursorOrgId = claimed.length >= BATCH_SIZE ? lastClaimedFromOrgId : null;
 
     result.claimed = claimed.length;
     if (claimed.length === 0) return result;
@@ -87,7 +140,10 @@ export class NotificationOutboxRelayService {
         await this.dispatch.emitNow({
           eventKey: row.eventKey,
           orgId: row.orgId,
-          dedupeKey: row.dedupeKey,
+          // The row's key is a REPLAY discriminator, not a caller dedupe key: passing
+          // it as the latter overrode the event's declared dedupe window on every
+          // emission that did not supply a key of its own.
+          replayKey: row.dedupeKey,
           actorUserId: row.actorUserId,
           notifySelf: row.notifySelf,
           targetUserIds: row.targetUserIds,

@@ -10,9 +10,10 @@ import {
 import type { Request } from "express";
 import { Public } from "../../../common/auth/public.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { gitWebhookAckResponseSchema } from "./dto/git-connections-response.schemas";
 import { logger } from "../../../common/logger/logger.service";
 import { IntegrationsGitService } from "./integrations-git.service";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { webhookQuerySchema } from "./dto/integrations-git.schemas";
 
 @Public()
@@ -23,6 +24,7 @@ export class IntegrationsGitController {
   @Post("webhook")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(gitWebhookAckResponseSchema)
   @Validate({ query: webhookQuerySchema })
   async webhook(
     @Req() req: RawBodyRequest<Request>,
@@ -31,6 +33,8 @@ export class IntegrationsGitController {
     @Headers("x-gitlab-token") gitlabToken: string | undefined,
     @Headers("x-github-event") githubEvent: string | undefined,
     @Headers("x-gitlab-event") gitlabEvent: string | undefined,
+    @Headers("x-github-delivery") githubDelivery: string | undefined,
+    @Headers("x-gitlab-event-uuid") gitlabEventUuid: string | undefined,
   ): Promise<{ ok: true }> {
     const ack: { ok: true } = { ok: true };
     try {
@@ -41,6 +45,7 @@ export class IntegrationsGitController {
         gitlabToken,
         githubEvent,
         gitlabEvent,
+        deliveryId: githubDelivery ?? gitlabEventUuid,
       });
       return ack;
     } catch (error) {

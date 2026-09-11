@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import {
   surveyVersions,
@@ -19,6 +19,7 @@ import { SurveyAssessmentService } from "./survey-assessment.service";
 import { SurveyLeadAutomationService } from "./survey-lead-automation.service";
 import type { SaveAnswerInput, StartSessionInput } from "./dto/survey-public.schemas";
 import type { ListResponsesInput } from "./dto/survey-analytics.schemas";
+import { buildListResponse, paginateOffset } from "../../common/pagination/pagination";
 
 @Injectable()
 export class SurveyResponseService {
@@ -37,11 +38,12 @@ export class SurveyResponseService {
     if (!survey || survey.status !== "published" || !survey.activeVersionId) {
       throw new NotFoundException("This survey is not currently accepting responses");
     }
+    const activeVersionId = survey.activeVersionId;
 
     return runInTenantTransaction(
       this.db,
       async (tx) => {
-        const version = await tx.query.surveyVersions.findFirst({ where: eq(surveyVersions.id, survey.activeVersionId!) });
+        const version = await tx.query.surveyVersions.findFirst({ where: eq(surveyVersions.id, activeVersionId) });
         await this.collectors.incrementCounter(collector.id, "opens");
 
         return {
@@ -61,6 +63,7 @@ export class SurveyResponseService {
     }
     if (collector.status !== "active") throw new BadRequestException("This collector is not active");
     if (collector.expiresAt && collector.expiresAt < new Date()) throw new BadRequestException("This collector has expired");
+    const activeVersionId = survey.activeVersionId;
 
     return runInTenantTransaction(
       this.db,
@@ -77,7 +80,7 @@ export class SurveyResponseService {
           .values({
             orgId: survey.orgId,
             surveyId: survey.id,
-            versionId: survey.activeVersionId!,
+            versionId: activeVersionId,
             collectorId: collector.id,
             participantId,
             anonymous: !input.accessToken && !input.participantEmail,
@@ -167,9 +170,10 @@ export class SurveyResponseService {
   ): (typeof surveyAnswers.$inferInsert)[] {
     return answers.map((answer) => {
       let score: number | null = null;
-      if (answer.choiceIds?.length) {
+      const choiceIds = answer.choiceIds;
+      if (choiceIds?.length) {
         const choices = choicesByQuestion.get(answer.questionId) ?? [];
-        const selected = choices.filter((c) => answer.choiceIds!.includes(c.id));
+        const selected = choices.filter((c) => choiceIds.includes(c.id));
         if (selected.length) score = selected.reduce((sum, c) => sum + (c.score ?? 0), 0);
       }
       return {
@@ -266,12 +270,20 @@ export class SurveyResponseService {
     if (filters.collectorId) conditions.push(eq(surveyResponseSessions.collectorId, filters.collectorId));
     if (filters.status) conditions.push(eq(surveyResponseSessions.status, filters.status));
 
-    return this.db.query.surveyResponseSessions.findMany({
-      where: and(...conditions),
-      orderBy: [desc(surveyResponseSessions.startedAt)],
-      limit: filters.pageSize,
-      offset: (filters.page - 1) * filters.pageSize,
-    });
+    const where = and(...conditions);
+    const { limit, offset } = paginateOffset(filters);
+
+    const [rows, [totalRow]] = await Promise.all([
+      this.db.query.surveyResponseSessions.findMany({
+        where,
+        orderBy: [desc(surveyResponseSessions.startedAt)],
+        limit,
+        offset,
+      }),
+      this.db.select({ total: count() }).from(surveyResponseSessions).where(where),
+    ]);
+
+    return buildListResponse(rows, Number(totalRow?.total ?? 0), filters);
   }
 
   async getResponse(orgId: string, surveyId: number, sessionId: number) {

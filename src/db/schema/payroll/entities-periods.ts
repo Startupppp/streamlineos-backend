@@ -18,6 +18,7 @@ import {
 import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { workers } from "../directory/workers";
+import { payrollRuns } from "./runs";
 
 export const payrollEntityStatusEnum = pgEnum("payroll_entity_status", [
   "ACTIVE",
@@ -81,9 +82,7 @@ export const payrollPeriods = pgTable(
     orgId: text("org_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    entityId: integer("entity_id").references(() => payrollEntities.id, {
-      onDelete: "set null",
-    }),
+    entityId: integer("entity_id"),
     periodKey: text("period_key").notNull(), // YYYY-MM
     startDate: date("start_date").notNull(),
     endDate: date("end_date").notNull(),
@@ -101,6 +100,7 @@ export const payrollPeriods = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.entityId], foreignColumns: [payrollEntities.orgId, payrollEntities.id], name: "fk_payroll_periods_entity_id_org" }).onDelete("set null"),
     unique("uniq_payroll_periods_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_payroll_periods_org_entity_key").on(
       table.orgId,
@@ -120,12 +120,8 @@ export const payrollFilings = pgTable(
     orgId: text("org_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    entityId: integer("entity_id").references(() => payrollEntities.id, {
-      onDelete: "set null",
-    }),
-    periodId: integer("period_id").references(() => payrollPeriods.id, {
-      onDelete: "set null",
-    }),
+    entityId: integer("entity_id"),
+    periodId: integer("period_id"),
     fiscalYear: text("fiscal_year"),
     filingType: text("filing_type").notNull(), // PF_ECR | ESI | PT | TDS_24Q | FORM16 | LWF
     ruleVersion: text("rule_version"),
@@ -147,6 +143,8 @@ export const payrollFilings = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.entityId], foreignColumns: [payrollEntities.orgId, payrollEntities.id], name: "fk_payroll_filings_entity_id_org" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.periodId], foreignColumns: [payrollPeriods.orgId, payrollPeriods.id], name: "fk_payroll_filings_period_id_org" }).onDelete("set null"),
     unique("uniq_payroll_filings_org_id").on(table.orgId, table.id),
     index("idx_payroll_filings_org_type").on(table.orgId, table.filingType),
     index("idx_payroll_filings_org_period").on(table.orgId, table.periodId),
@@ -167,9 +165,7 @@ export const payrollJobs = pgTable(
     orgId: text("org_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    entityId: integer("entity_id").references(() => payrollEntities.id, {
-      onDelete: "set null",
-    }),
+    entityId: integer("entity_id"),
     jobType: text("job_type").notNull(),
     resourceType: text("resource_type"),
     resourceId: text("resource_id"),
@@ -192,6 +188,7 @@ export const payrollJobs = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.entityId], foreignColumns: [payrollEntities.orgId, payrollEntities.id], name: "fk_payroll_jobs_entity_id_org" }).onDelete("set null"),
     unique("uniq_payroll_jobs_org_id").on(table.orgId, table.id),
     index("idx_payroll_jobs_org_status").on(table.orgId, table.status),
     index("idx_payroll_jobs_correlation").on(table.correlationId),
@@ -241,7 +238,7 @@ export const payrollTdsYtdLedger = pgTable(
     workerId: text("worker_id"),
     fiscalYear: text("fiscal_year").notNull(),
     periodKey: text("period_key").notNull(),
-    runId: integer("run_id"),
+    runId: integer("run_id").notNull(),
     taxableIncomePaise: integer("taxable_income_paise").default(0).notNull(),
     tdsPaise: integer("tds_paise").default(0).notNull(),
     previousEmployerIncomePaise: integer("previous_employer_income_paise").default(0).notNull(),
@@ -254,10 +251,10 @@ export const payrollTdsYtdLedger = pgTable(
   (table) => [
     unique("uniq_payroll_tds_ytd_ledger_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_payroll_tds_ytd_user_period")
-      .on(table.orgId, table.userId, table.fiscalYear, table.periodKey)
+      .on(table.orgId, table.userId, table.fiscalYear, table.periodKey, table.runId)
       .where(sql`user_id IS NOT NULL`),
     uniqueIndex("uniq_payroll_tds_ytd_worker_period")
-      .on(table.orgId, table.workerId, table.fiscalYear, table.periodKey)
+      .on(table.orgId, table.workerId, table.fiscalYear, table.periodKey, table.runId)
       .where(sql`worker_id IS NOT NULL`),
     index("idx_payroll_tds_ytd_user_fy").on(table.orgId, table.userId, table.fiscalYear),
     index("idx_payroll_tds_ytd_worker_fy").on(table.orgId, table.workerId, table.fiscalYear),
@@ -270,6 +267,17 @@ export const payrollTdsYtdLedger = pgTable(
       foreignColumns: [workers.organizationId, workers.workerId],
       name: "fk_payroll_tds_ytd_ledger_org_worker",
     }).onDelete("restrict"),
+    // No onDelete, deliberately (migration 1026). 1030's `guard_paid_payroll_tds_ytd_row`
+    // is a BEFORE DELETE OR UPDATE guard that forbids changing `run_id` on a paid run, so
+    // SET NULL (an UPDATE) and CASCADE (a DELETE) would both raise 23514 the moment a paid
+    // run was deleted. NO ACTION never touches the child row, and it states the right rule:
+    // a run whose withheld tax is on the year-to-date ledger is not deletable.
+    foreignKey({
+      columns: [table.orgId, table.runId],
+      foreignColumns: [payrollRuns.orgId, payrollRuns.id],
+      name: "fk_payroll_tds_ytd_ledger_run_id_org",
+    }),
+    index("idx_payroll_tds_ytd_ledger_org_run").on(table.orgId, table.runId),
   ],
 );
 

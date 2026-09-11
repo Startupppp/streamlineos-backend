@@ -24,6 +24,16 @@ import {
 } from "./dto/inv-stock.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../../common/openapi/response-envelopes";
+import {
+  listStockLevelsResponseSchema,
+  listTransactionsResponseSchema,
+  stockAvailabilityResponseSchema,
+  listReservationsResponseSchema,
+  createReservationResponseSchema,
+  stockEngineResultSchema,
+} from "./dto/stock-response.schemas";
 
 @RequireModule("inventory")
 @Controller("inventory/stock")
@@ -35,6 +45,7 @@ export class InvStockController {
   ) {}
 
   @Get()
+  @ResponseSchema(listStockLevelsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   @Validate({ query: listStockLevelsSchema })
@@ -46,6 +57,7 @@ export class InvStockController {
   }
 
   @Get("transactions")
+  @ResponseSchema(listTransactionsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   @Validate({ query: listTransactionsSchema })
@@ -57,6 +69,7 @@ export class InvStockController {
   }
 
   @Get("availability")
+  @ResponseSchema(stockAvailabilityResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   @Validate({ query: availabilityQuerySchema })
@@ -68,6 +81,7 @@ export class InvStockController {
   }
 
   @Get("reservations")
+  @ResponseSchema(listReservationsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   @Validate({ query: listReservationsSchema })
@@ -79,6 +93,7 @@ export class InvStockController {
   }
 
   @Post("reserve")
+  @ResponseSchema(createReservationResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reserve")
   @Validate({ body: createReservationSchema })
@@ -91,18 +106,21 @@ export class InvStockController {
   }
 
   @Post("release-reservation")
+  @ResponseSchema(successSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reserve")
   @Validate({ body: releaseReservationSchema })
-  releaseReservation(
+  async releaseReservation(
     @IdempotencyKey() idempotencyKey: string,
     @Body() body: ReleaseReservationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reservations.releaseReservation(u.orgId, u.userId, body, idempotencyKey);
+    await this.reservations.releaseReservation(u.orgId, u.userId, body, idempotencyKey);
+    return { success: true as const };
   }
 
   @Post("opening")
+  @ResponseSchema(stockEngineResultSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:adjust")
   @Validate({ body: openingStockSchema })

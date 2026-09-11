@@ -113,7 +113,7 @@ describe("IncentivesService — cross-tenant isolation", () => {
     const { db, where } = makeDb([]);
     const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Map()) };
     const svc = new IncentivesService(db, mockAccess as never);
-    await svc.getIncentives(ATTACKER, { page: 1, limit: 20 });
+    await svc.getIncentives(ATTACKER, { limit: 20 });
     const allWhere = where.mock.calls.flatMap((c) => sqlValues(c[0]));
     expect(allWhere).toContain(ATTACKER);
   });
@@ -122,7 +122,7 @@ describe("IncentivesService — cross-tenant isolation", () => {
     const { db, where } = makeDb([]);
     const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Map()) };
     const svc = new IncentivesService(db, mockAccess as never);
-    await svc.getIncentives(OWNER, { page: 1, limit: 20 });
+    await svc.getIncentives(OWNER, { limit: 20 });
     const allWhere = where.mock.calls.flatMap((c) => sqlValues(c[0]));
     expect(allWhere).toContain(OWNER);
   });

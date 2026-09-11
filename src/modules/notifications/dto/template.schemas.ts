@@ -13,18 +13,18 @@ export const createTemplateSchema = z.object({
   subject: z.string().max(500).optional(),
   body: z.string().min(1),
   variables: z.array(z.string()).default([]),
-});
+}).strict();
 
-export const updateTemplateSchema = createTemplateSchema.partial().omit({ templateKey: true });
+export const updateTemplateSchema = createTemplateSchema.partial().omit({ templateKey: true }).strict();
 
 export const previewTemplateSchema = z.object({
   variables: z.record(z.string(), z.string()).default({}),
-});
+}).strict();
 
 export const testSendTemplateSchema = z.object({
   recipientId: z.string().min(1),
   variables: z.record(z.string(), z.string()).default({}),
-});
+}).strict();
 
 export const listTemplatesSchema = z.object({
   channel: z.enum(CHANNELS).optional(),
@@ -35,7 +35,7 @@ export const listTemplatesSchema = z.object({
     .transform((v) => (v === undefined ? undefined : v === "true")),
   limit: pageSizeField(50),
   offset: z.coerce.number().int().min(0).default(0),
-});
+}).strict();
 
 export type CreateTemplateInput = z.infer<typeof createTemplateSchema>;
 export type UpdateTemplateInput = z.infer<typeof updateTemplateSchema>;

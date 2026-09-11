@@ -26,7 +26,7 @@ export const kbCategories = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    spaceId: integer("space_id").references(() => kbSpaces.id, { onDelete: "cascade" }),
+    spaceId: integer("space_id"),
     parentId: integer("parent_id"),
     name: text("name").notNull(),
     slug: text("slug").notNull(),
@@ -41,11 +41,6 @@ export const kbCategories = pgTable(
     uniqueIndex("uniq_kb_categories_org_space_slug").on(table.orgId, table.spaceId, table.slug),
     index("idx_kb_categories_space").on(table.spaceId),
     index("idx_kb_categories_parent").on(table.parentId),
-    foreignKey({
-      columns: [table.parentId],
-      foreignColumns: [table.id],
-      name: "fk_kb_categories_parent",
-    }).onDelete("set null"),
     foreignKey({
       columns: [table.orgId, table.spaceId],
       foreignColumns: [kbSpaces.orgId, kbSpaces.id],
@@ -65,8 +60,8 @@ export const kbArticles = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    categoryId: integer("category_id").references(() => kbCategories.id, { onDelete: "set null" }),
-    spaceId: integer("space_id").references(() => kbSpaces.id, { onDelete: "cascade" }),
+    categoryId: integer("category_id"),
+    spaceId: integer("space_id"),
     title: text("title").notNull(),
     slug: text("slug").notNull(),
     excerpt: text("excerpt"),
@@ -75,7 +70,6 @@ export const kbArticles = pgTable(
     status: kbArticleStatusEnum("status").default("draft").notNull(),
     visibility: kbArticleVisibilityEnum("visibility").default("internal").notNull(),
     authorId: text("author_id").references(() => users.id, { onDelete: "set null" }),
-    ownerId: text("owner_id").references(() => users.id, { onDelete: "set null" }),
     ownerMembershipId: integer("owner_membership_id"),
     views: integer("views").default(0).notNull(),
     helpfulCount: integer("helpful_count").default(0).notNull(),
@@ -96,7 +90,6 @@ export const kbArticles = pgTable(
   },
   (table) => [
     uniqueIndex("uniq_kb_articles_org_slug").on(table.orgId, table.slug),
-    index("idx_kb_articles_org_status").on(table.orgId, table.status),
     index("idx_kb_articles_org_category").on(table.orgId, table.categoryId),
     index("idx_kb_articles_space").on(table.spaceId),
     index("idx_kb_articles_org_updated").on(table.orgId, table.updatedAt),
@@ -127,7 +120,7 @@ export const kbArticleFeedback = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    articleId: integer("article_id").references(() => kbArticles.id, { onDelete: "cascade" }).notNull(),
+    articleId: integer("article_id").notNull(),
     helpful: boolean("helpful").notNull(),
     comment: text("comment"),
     visitorId: text("visitor_id"),

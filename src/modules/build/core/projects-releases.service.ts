@@ -11,12 +11,14 @@ import {
   tickets,
 } from "../../../db/schema";
 import type { CreateReleaseInput, UpdateReleaseInput } from "./dto/releases.schemas";
+import { assertProjectInOrg } from "./project-access";
 
 @Injectable()
 export class ProjectsReleasesService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listReleases(orgId: string, projectId: number) {
+    await assertProjectInOrg(this.db, orgId, projectId);
     const rows = await this.db
       .select({
         id: projectReleases.id,

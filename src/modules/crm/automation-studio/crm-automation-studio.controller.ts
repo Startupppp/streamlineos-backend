@@ -25,15 +25,26 @@ import {
   createSequenceStepSchema,
   reorderSequenceStepsSchema,
   enrollInSequenceSchema,
+  listEnrollmentsQuerySchema,
   type CreateSequenceInput,
   type UpdateSequenceInput,
   type CreateSequenceStepInput,
   type ReorderSequenceStepsInput,
   type EnrollInSequenceInput,
+  type ListEnrollmentsQueryInput,
 } from "./dto/automation-studio.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  sequencesListSchema,
+  sequenceSingleSchema,
+  stepsListSchema,
+  stepSingleSchema,
+  enrollmentsListSchema,
+  enrollmentSingleSchema,
+  successSchema,
+} from "./dto/crm-automation-studio-response.schemas";
 
 const sequenceIdParams = z.object({ sequenceId: z.string().min(1) }).strict();
 const sequenceIdstepIdParams = z.object({ sequenceId: z.string().min(1), stepId: z.string().min(1) }).strict();
@@ -47,6 +58,7 @@ export class CrmAutomationStudioController {
 
   @Get()
   @RequirePermission("crm:sequences:manage")
+  @ResponseSchema(sequencesListSchema)
   list(@CurrentUser() u: CurrentUserContext) {
     return this.sequences.list(u.orgId);
   }
@@ -54,6 +66,7 @@ export class CrmAutomationStudioController {
   @Post()
   @RequirePermission("crm:sequences:manage")
   @HttpCode(201)
+  @ResponseSchema(sequenceSingleSchema)
   @Validate({ body: createSequenceSchema })
   create(
     @Body() body: CreateSequenceInput,
@@ -64,6 +77,7 @@ export class CrmAutomationStudioController {
 
   @Get(":sequenceId")
   @RequirePermission("crm:sequences:manage")
+  @ResponseSchema(sequenceSingleSchema)
   @Validate({ params: sequenceIdParams })
   async getOne(
     @Param("sequenceId") sequenceId: string,
@@ -76,6 +90,7 @@ export class CrmAutomationStudioController {
 
   @Patch(":sequenceId")
   @RequirePermission("crm:sequences:manage")
+  @ResponseSchema(sequenceSingleSchema)
   @Validate({ params: sequenceIdParams, body: updateSequenceSchema })
   async update(
     @Param("sequenceId") sequenceId: string,
@@ -89,6 +104,7 @@ export class CrmAutomationStudioController {
 
   @Delete(":sequenceId")
   @RequirePermission("crm:sequences:manage")
+  @ResponseSchema(successSchema)
   @Validate({ params: sequenceIdParams })
   remove(
     @Param("sequenceId") sequenceId: string,
@@ -99,6 +115,7 @@ export class CrmAutomationStudioController {
 
   @Get(":sequenceId/steps")
   @RequirePermission("crm:sequences:manage")
+  @ResponseSchema(stepsListSchema)
   @Validate({ params: sequenceIdParams })
   listSteps(
     @Param("sequenceId") sequenceId: string,
@@ -110,6 +127,7 @@ export class CrmAutomationStudioController {
   @Post(":sequenceId/steps")
   @RequirePermission("crm:sequences:manage")
   @HttpCode(201)
+  @ResponseSchema(stepSingleSchema)
   @Validate({ params: sequenceIdParams, body: createSequenceStepSchema })
   createStep(
     @Param("sequenceId") sequenceId: string,
@@ -121,6 +139,7 @@ export class CrmAutomationStudioController {
 
   @Delete(":sequenceId/steps/:stepId")
   @RequirePermission("crm:sequences:manage")
+  @ResponseSchema(successSchema)
   @Validate({ params: sequenceIdstepIdParams })
   removeStep(
     @Param("sequenceId") sequenceId: string,
@@ -132,6 +151,7 @@ export class CrmAutomationStudioController {
 
   @Patch(":sequenceId/steps/reorder")
   @RequirePermission("crm:sequences:manage")
+  @ResponseSchema(successSchema)
   @Validate({ params: sequenceIdParams, body: reorderSequenceStepsSchema })
   reorderSteps(
     @Param("sequenceId") sequenceId: string,
@@ -143,19 +163,21 @@ export class CrmAutomationStudioController {
 
   @Get(":sequenceId/enrollments")
   @RequirePermission("crm:sequences:manage")
-  @Validate({ params: sequenceIdParams })
+  @ResponseSchema(enrollmentsListSchema)
+  @Validate({ params: sequenceIdParams, query: listEnrollmentsQuerySchema })
   listEnrollments(
     @Param("sequenceId") sequenceId: string,
-    @Query("cursor") cursor: string | undefined,
+    @Query() query: ListEnrollmentsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.sequences.listEnrollments(u.orgId, sequenceId, cursor);
+    return this.sequences.listEnrollments(u.orgId, sequenceId, query.cursor);
   }
 
   @Post(":sequenceId/enrollments")
   @RequirePermission("crm:sequences:manage")
   @HttpCode(201)
   @Idempotent("crm.sequence.enroll")
+  @ResponseSchema(enrollmentSingleSchema)
   @Validate({ params: sequenceIdParams, body: enrollInSequenceSchema })
   enroll(
     @Param("sequenceId") sequenceId: string,
@@ -168,6 +190,7 @@ export class CrmAutomationStudioController {
   @Patch(":sequenceId/enrollments/:enrollmentId/stop")
   @BodylessAction()
   @RequirePermission("crm:sequences:manage")
+  @ResponseSchema(successSchema)
   @Validate({ params: sequenceIdenrollmentIdParams })
   stopEnrollment(
     @Param("sequenceId") sequenceId: string,

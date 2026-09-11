@@ -30,6 +30,8 @@ const SCOPE_SPECIFICITY: Record<string, number> = {
   organization: 0,
 };
 
+const POLICY_EVALUATION_READ_LIMIT = 1000;
+
 export interface PolicyEvaluationTrace {
   policyId: number;
   policyName: string;
@@ -175,7 +177,8 @@ export class HrPolicyEvaluationService {
             eq(organizationMembers.orgId, orgId),
             inArray(organizationMembers.userId, employeeIds),
           ),
-        ),
+        )
+        .limit(POLICY_EVALUATION_READ_LIMIT),
       this.db
         .select({
           userId: organizationMembers.userId,
@@ -203,7 +206,8 @@ export class HrPolicyEvaluationService {
             inArray(organizationMembers.userId, employeeIds),
             inArray(orgUnits.kind, ["DEPARTMENT", "TEAM"]),
           ),
-        ),
+        )
+        .limit(POLICY_EVALUATION_READ_LIMIT),
       this.db
         .select({ userId: organizationMembers.userId, slug: roles.slug })
         .from(roleAssignments)
@@ -223,7 +227,8 @@ export class HrPolicyEvaluationService {
             eq(roleAssignments.orgId, orgId),
             inArray(organizationMembers.userId, employeeIds),
           ),
-        ),
+        )
+        .limit(POLICY_EVALUATION_READ_LIMIT),
     ]);
 
     const attributes = new Map<string, EmployeeAttributes>();
@@ -261,6 +266,7 @@ export class HrPolicyEvaluationService {
     employeeId: string,
   ): Promise<EmployeeAttributes> {
     const member = await this.db.query.organizationMembers.findFirst({
+      columns: { id: true },
       where: and(
         eq(organizationMembers.orgId, orgId),
         eq(organizationMembers.userId, employeeId),
@@ -324,7 +330,8 @@ export class HrPolicyEvaluationService {
             eq(organizationMembers.userId, employeeId),
             eq(organizationMembers.orgId, orgId),
           ),
-        ),
+        )
+        .limit(POLICY_EVALUATION_READ_LIMIT),
       this.employmentFacts.getFacts(orgId, employeeId),
     ]);
 
@@ -348,6 +355,7 @@ export class HrPolicyEvaluationService {
     eventDate: string,
   ) {
     const rows = await this.db.query.hrPolicies.findMany({
+      limit: POLICY_EVALUATION_READ_LIMIT,
       where: and(
         eq(hrPolicies.orgId, orgId),
         eq(hrPolicies.policyType, policyType),

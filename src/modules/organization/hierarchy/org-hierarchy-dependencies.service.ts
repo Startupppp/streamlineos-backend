@@ -12,7 +12,6 @@ import { type Db } from "../../../db/drizzle.module";
 import {
   countQuery,
   pushKindDependencyQueries,
-  type DependencyMode,
   type OrgUnitKind,
 } from "./lib/org-unit-kind-dependencies";
 
@@ -20,11 +19,11 @@ export const ORG_UNIT_DEPENDENCY_ERROR = "ORG_UNIT_HAS_DEPENDENCIES";
 
 /**
  * Declared in lib/org-unit-kind-dependencies.ts, where the per-kind query
- * catalog needs them, and re-exported here because every existing importer
+ * catalog needs it, and re-exported here because every existing importer
  * (org-hierarchy.service, org-hierarchy-command.service and their specs)
- * has always taken them from this module.
+ * has always taken it from this module.
  */
-export type { DependencyMode, OrgUnitKind };
+export type { OrgUnitKind };
 
 export type OrgUnitDependency = {
   key: string;
@@ -55,20 +54,14 @@ export class OrgHierarchyDependenciesService {
     orgId: string,
     unitId: string,
     kind: OrgUnitKind,
-    mode: DependencyMode,
     includeLegalEntities: boolean,
   ): SQL[] {
-    const strict = mode === "retire";
     const queries: SQL[] = [
       countQuery(
         "child_units",
-        strict
-          ? "Child organization units"
-          : "Non-archived child organization units",
+        "Non-archived child organization units",
         sql`${orgUnits}`,
-        sql`${orgUnits.orgId} = ${orgId} AND ${orgUnits.parentId} = ${unitId} AND ${orgUnits.deletedAt} IS NULL ${
-          strict ? sql`` : sql`AND ${orgUnits.status} <> 'ARCHIVED'`
-        }`,
+        sql`${orgUnits.orgId} = ${orgId} AND ${orgUnits.parentId} = ${unitId} AND ${orgUnits.deletedAt} IS NULL ${sql`AND ${orgUnits.status} <> 'ARCHIVED'`}`,
       ),
       countQuery(
         "unit_members",
@@ -92,21 +85,13 @@ export class OrgHierarchyDependenciesService {
       queries.push(
         countQuery(
           "legal_entities",
-          strict
-            ? "Legal entity history linked to this unit"
-            : "Active legal entities linked to this unit",
+          "Active legal entities linked to this unit",
           sql`${legalEntities}`,
-          sql`${legalEntities.orgId} = ${orgId} AND ${legalEntities.orgUnitId} = ${unitId} ${
-            strict
-              ? sql``
-              : sql`AND ${legalEntities.status} = 'ACTIVE' AND ${legalEntities.deletedAt} IS NULL`
-          }`,
+          sql`${legalEntities.orgId} = ${orgId} AND ${legalEntities.orgUnitId} = ${unitId} ${sql`AND ${legalEntities.status} = 'ACTIVE' AND ${legalEntities.deletedAt} IS NULL`}`,
         ),
       );
 
-    const engagementStatus = strict
-      ? sql``
-      : sql`AND ${workerEngagements.status} IN ('PLANNED', 'ACTIVE')`;
+    const engagementStatus = sql`AND ${workerEngagements.status} IN ('PLANNED', 'ACTIVE')`;
     const engagementColumn =
       kind === "BUSINESS_UNIT"
         ? workerEngagements.businessUnitId
@@ -123,14 +108,14 @@ export class OrgHierarchyDependenciesService {
       queries.push(
         countQuery(
           "worker_assignments",
-          strict ? "Worker engagement history" : "Current worker assignments",
+          "Current worker assignments",
           sql`${workerEngagements}`,
           sql`${workerEngagements.organizationId} = ${orgId} AND ${engagementColumn} = ${unitId} ${engagementStatus}`,
         ),
       );
     }
 
-    pushKindDependencyQueries(queries, orgId, unitId, kind, strict);
+    pushKindDependencyQueries(queries, orgId, unitId, kind);
 
     return queries;
   }
@@ -139,20 +124,13 @@ export class OrgHierarchyDependenciesService {
     orgId: string,
     unitId: string,
     kind: OrgUnitKind,
-    mode: DependencyMode,
   ): Promise<OrgUnitDependency[]> {
     const [capability] = await this.db.execute<{ available: boolean }>(sql`
       SELECT to_regclass('public.legal_entities') IS NOT NULL AS available
     `);
     const rows = await this.db.execute<DependencyCountRow>(
       sql.join(
-        this.buildQueries(
-          orgId,
-          unitId,
-          kind,
-          mode,
-          capability?.available === true,
-        ),
+        this.buildQueries(orgId, unitId, kind, capability?.available === true),
         sql` UNION ALL `,
       ),
     );
@@ -169,19 +147,17 @@ export class OrgHierarchyDependenciesService {
     orgId: string,
     unitId: string,
     kind: OrgUnitKind,
-    mode: DependencyMode,
   ): Promise<void> {
-    const dependencies = await this.listDependencies(orgId, unitId, kind, mode);
+    const dependencies = await this.listDependencies(orgId, unitId, kind);
     if (dependencies.length === 0) return;
 
-    const action = mode === "archive" ? "archive" : "remove";
     throw new ConflictException({
       code: ORG_UNIT_DEPENDENCY_ERROR,
-      message: `This ${KIND_LABELS[kind]} is still in use. Move or update its dependent records before you ${action} it.`,
+      message: `This ${KIND_LABELS[kind]} is still in use. Move or update its dependent records before you archive it.`,
       details: {
         unitId,
         unitKind: kind,
-        action,
+        action: "archive",
         dependencies,
         totalDependencies: dependencies.reduce(
           (total, dependency) => total + dependency.count,
@@ -192,10 +168,6 @@ export class OrgHierarchyDependenciesService {
   }
 
   assertCanArchive(orgId: string, unitId: string, kind: OrgUnitKind) {
-    return this.assertNoDependencies(orgId, unitId, kind, "archive");
-  }
-
-  assertCanRetire(orgId: string, unitId: string, kind: OrgUnitKind) {
-    return this.assertNoDependencies(orgId, unitId, kind, "retire");
+    return this.assertNoDependencies(orgId, unitId, kind);
   }
 }

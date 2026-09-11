@@ -1,13 +1,16 @@
-import { ServiceUnavailableException } from "@nestjs/common";
+import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
+import { assertNever } from "../../../../common/types/assert-never";
 import { InsufficientAiCreditsException } from "../../../../common/http/api-exceptions";
+import {
+  AiConcurrencyLimitException,
+  AiProviderUnavailableException,
+  AiRequestCancelledException,
+} from "./ai-service-exceptions";
 import type {
   AiInvokeFailure,
   AiInvokeResult,
 } from "../gateway/ai-gateway.types";
 
-function assertNever(x: never): never {
-  throw new Error(`Unhandled AI failure kind: ${String(x)}`);
-}
 
 export function throwOnAiFailure(result: AiInvokeFailure): never {
   switch (result.kind) {
@@ -15,9 +18,15 @@ export function throwOnAiFailure(result: AiInvokeFailure): never {
       throw new InsufficientAiCreditsException({ message: result.message });
     case "not_configured":
     case "provider_unavailable":
-      throw new ServiceUnavailableException(result.message);
+      throw new AiProviderUnavailableException(result.message);
     case "invalid_output":
       throw new ServiceUnavailableException("AI returned an invalid response");
+    case "context_too_large":
+      throw new BadRequestException(result.message);
+    case "concurrency_exceeded":
+      throw new AiConcurrencyLimitException(result.message);
+    case "cancelled":
+      throw new AiRequestCancelledException(result.message);
     default:
       assertNever(result.kind);
   }

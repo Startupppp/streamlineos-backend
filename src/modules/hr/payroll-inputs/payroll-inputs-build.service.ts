@@ -19,17 +19,32 @@ import {
 import { employeeSalaryProfiles } from "../../../db/schema/payroll/workforce";
 import { overtimeRequests } from "../../../db/schema/hr/overtime";
 import { organizationMembers, users } from "../../../db/schema/common/auth";
+import { buildReimbursementPayload } from "./payroll-inputs-money";
+import { periodBoundsFrom } from "./payroll-period-key";
 import { AttendanceSummaryService } from "../time/attendance-summary.service";
 import { LeaveLedgerService } from "../time/leave-ledger.service";
 import { HrBenefitsClaimsService } from "../benefits/hr-benefits-claims.service";
 
-function periodBounds(periodKey: string): { start: string; end: string } {
-  const [year, month] = periodKey.split("-");
-  const lastDay = new Date(Number(year), Number(month), 0).getDate();
-  return {
-    start: `${periodKey}-01`,
-    end: `${periodKey}-${String(lastDay).padStart(2, "0")}`,
-  };
+/**
+ * Row ceiling for every scan that feeds a payroll-input period.
+ *
+ * These reads are NOT paged. Each is issued with `limit(CAP + 1)` so a full page
+ * is distinguishable from a truncated one, and `assertNotTruncated` turns an
+ * overflow into a loud failure. Silently keeping the first CAP rows would write
+ * a period that *looks* complete while some employees have no compensation,
+ * attendance, leave or reimbursement input at all — and with no ORDER BY, which
+ * ones were dropped would vary between runs of the same period. A period like
+ * that gets reviewed and locked, and payroll runs off it.
+ */
+const PAYROLL_INPUT_SCAN_CAP = 1000;
+
+function assertNotTruncated(rows: { length: number }, source: string, periodKey: string): void {
+  if (rows.length > PAYROLL_INPUT_SCAN_CAP) {
+    throw new Error(
+      `Payroll input build for period ${periodKey} exceeded the ${PAYROLL_INPUT_SCAN_CAP}-row ceiling on ${source}. ` +
+        `Refusing to write a partial period; this scan must be paged before an organisation this size can be built.`,
+    );
+  }
 }
 
 @Injectable()
@@ -42,7 +57,7 @@ export class PayrollInputsBuildService {
   ) {}
 
   async buildSnapshots(orgId: string, period: typeof hrPayrollInputPeriods.$inferSelect): Promise<void> {
-    const { start, end } = periodBounds(period.periodKey);
+    const { start, end } = periodBoundsFrom(period.periodKey);
 
     const members = await this.db
       .select({
@@ -54,7 +69,14 @@ export class PayrollInputsBuildService {
       })
       .from(organizationMembers)
       .innerJoin(users, eq(users.id, organizationMembers.userId))
-      .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)));
+      .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
+      // Deterministic order: without it the rows kept under the ceiling are
+      // whatever Postgres happened to return, so the same period could cover a
+      // different set of employees on each run.
+      .orderBy(organizationMembers.userId)
+      .limit(PAYROLL_INPUT_SCAN_CAP + 1);
+
+    assertNotTruncated(members, "active organisation members", period.periodKey);
 
     if (members.length === 0) return;
 
@@ -98,7 +120,8 @@ export class PayrollInputsBuildService {
             gte(overtimeRequests.date, start),
             lte(overtimeRequests.date, end),
           ),
-        ),
+        )
+        .limit(PAYROLL_INPUT_SCAN_CAP + 1),
       this.db
         .select({
           id: reimbursements.id,
@@ -118,7 +141,8 @@ export class PayrollInputsBuildService {
             gte(reimbursements.createdAt, new Date(start)),
             lte(reimbursements.createdAt, new Date(end + "T23:59:59Z")),
           ),
-        ),
+        )
+        .limit(PAYROLL_INPUT_SCAN_CAP + 1),
       this.db
         .select({
           id: salaryLoans.id,
@@ -136,7 +160,8 @@ export class PayrollInputsBuildService {
             eq(salaryLoans.status, "ACTIVE"),
             inArray(salaryLoans.userId, userIds),
           ),
-        ),
+        )
+        .limit(PAYROLL_INPUT_SCAN_CAP + 1),
       this.db
         .select({
           id: employeeSalaryProfiles.id,
@@ -156,7 +181,8 @@ export class PayrollInputsBuildService {
             inArray(employeeSalaryProfiles.userId, userIds),
             lte(employeeSalaryProfiles.effectiveFrom, end),
           ),
-        ),
+        )
+        .limit(PAYROLL_INPUT_SCAN_CAP + 1),
       this.db
         .select({
           id: hrEmployments.id,
@@ -181,10 +207,20 @@ export class PayrollInputsBuildService {
             inArray(hrPeople.userId, userIds),
           ),
         )
+        .limit(PAYROLL_INPUT_SCAN_CAP + 1)
         .catch(() => []),
       this.benefitsClaims.getPayrollPayableClaims(orgId, periodStart, periodEnd),
       this.benefitsClaims.getDueLoanRepayments(orgId, periodStart, periodEnd),
     ]);
+
+    // Each sibling scan carries the same ceiling as the member scan and is just
+    // as capable of dropping rows silently — a truncated reimbursement or salary
+    // profile read costs an employee real money in the run built off this period.
+    assertNotTruncated(overtimeRows, "approved overtime requests", period.periodKey);
+    assertNotTruncated(reimbursementRows, "approved reimbursements", period.periodKey);
+    assertNotTruncated(loanRows, "active salary loans", period.periodKey);
+    assertNotTruncated(salaryProfileRows, "active salary profiles", period.periodKey);
+    assertNotTruncated(employmentRows, "primary employments", period.periodKey);
 
     const attendanceByUser = new Map(attendanceResult.data.map((r) => [r.userId, r]));
     const leaveByUser = new Map(leaveResult.map((r) => [r.userId, r]));
@@ -329,32 +365,7 @@ export class PayrollInputsBuildService {
         totalHours: otRows.reduce((sum, r) => sum + parseFloat(r.hours ?? "0"), 0),
       };
 
-      const reimbursementPayload = {
-        userId,
-        items: [
-          ...reimbs.map((r) => ({
-            id: r.id,
-            category: r.category,
-            amount: r.amount,
-            description: r.description,
-            payrollMonth: r.payrollMonth,
-            approvedAt: r.approvedAt,
-            source: "reimbursement" as const,
-          })),
-          ...benefitClaims.map((c) => ({
-            id: c.id,
-            category: "benefits_claim" as const,
-            amount: String(c.amountCents),
-            description: `Insurance claim #${c.claimNumber}`,
-            payrollMonth: null,
-            approvedAt: c.decidedAt,
-            source: "benefits_claim" as const,
-          })),
-        ],
-        totalAmount:
-          reimbs.reduce((sum, r) => sum + parseFloat(r.amount ?? "0"), 0) +
-          benefitClaims.reduce((sum, c) => sum + c.amountCents, 0),
-      };
+      const reimbursementPayload = buildReimbursementPayload(userId, reimbs, benefitClaims);
 
       const deductionPayload = {
         userId,
@@ -398,8 +409,8 @@ export class PayrollInputsBuildService {
         periodId: period.id,
         userId,
         section,
-        payload: payload as Record<string, unknown>,
-        sourceRefs: (sourceRefs ?? null) as Record<string, unknown> | null,
+        payload,
+        sourceRefs: sourceRefs ?? null,
       });
 
       snapshotValues.push(

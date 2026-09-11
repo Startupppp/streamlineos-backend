@@ -4,7 +4,6 @@ import { crmImportRows, dataQualityFindings } from "../../../../db/schema";
 import type { BatchOutcome, ImportContext } from "../crm-import-internals";
 import { writerFor } from "../writers";
 import { uncertaintyFinding } from "../import-uncertainty";
-import type { RowMatch } from "../import-plan";
 
 /**
  * Committing one import row, inside the savepoint `commitBatch` opens for it.
@@ -149,7 +148,7 @@ async function fileUncertainty(
     crmImportId,
     rowNumber: row.rowNumber,
     matchedPartyId: row.matchedRecordId,
-    match: row.match as RowMatch,
+    match: row.match,
     values: row.values ?? {},
     reason: row.reason,
     sourceFilename: filename,

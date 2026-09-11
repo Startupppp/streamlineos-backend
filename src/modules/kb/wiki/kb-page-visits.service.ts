@@ -1,18 +1,22 @@
-import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { and, asc, desc, eq, getTableColumns, isNull, sql } from "drizzle-orm";
-import { kbPages, kbPageFavorites, kbPageLinks, kbPageVisits, organizationMembers } from "../../../db/schema";
+import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import {
+  kbPages,
+  kbPageFavorites,
+  kbPageLinks,
+  kbPageVisits,
+  organizationMembers,
+} from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { pageVisibleTo } from "../retrieval/kb-page-visibility";
 import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
 import { assertPageAccessible } from "../retrieval/kb-page-access.util";
+import { KB_PAGE_LIST_COLUMNS, type KbPageListItem, type KbPageRow } from "./kb-page-columns";
 
-type PageRow = typeof kbPages.$inferSelect;
+type PageRow = KbPageRow;
 
-const { content: _content, contentText: _contentText, fts: _fts, ...KB_PAGE_LIST_COLUMNS } =
-  getTableColumns(kbPages);
-type KbPageListItem = Omit<PageRow, "content" | "contentText" | "fts">;
 
 @Injectable()
 export class KbPageVisitsService {
@@ -27,7 +31,10 @@ export class KbPageVisitsService {
       ),
       columns: { id: true },
     });
-    if (!membership) throw new ForbiddenException("Active organization membership is required");
+    if (!membership)
+      throw new ForbiddenException(
+        "Active organization membership is required",
+      );
     return membership.id;
   }
 
@@ -42,7 +49,12 @@ export class KbPageVisitsService {
       this.db
         .select({ pageId: kbPageVisits.pageId })
         .from(kbPageVisits)
-        .where(and(eq(kbPageVisits.orgId, orgId), eq(kbPageVisits.membershipId, membershipId)))
+        .where(
+          and(
+            eq(kbPageVisits.orgId, orgId),
+            eq(kbPageVisits.membershipId, membershipId),
+          ),
+        )
         .orderBy(desc(kbPageVisits.visitedAt))
         .limit(20),
       this.getAccessibleProjectIds(user),
@@ -58,11 +70,16 @@ export class KbPageVisitsService {
           eq(kbPages.orgId, orgId),
           isNull(kbPages.deletedAt),
           pageVisibleTo(user, projectIds),
-          sql`${kbPages.id} = ANY(ARRAY[${sql.join(ids.map((id) => sql`${id}`), sql`, `)}]::int[])`,
+          sql`${kbPages.id} = ANY(ARRAY[${sql.join(
+            ids.map((id) => sql`${id}`),
+            sql`, `,
+          )}]::int[])`,
         ),
       );
     const pageMap = new Map(pages.map((p) => [p.id, p]));
-    return ids.map((id) => pageMap.get(id)).filter((p): p is KbPageListItem => p !== undefined);
+    return ids
+      .map((id) => pageMap.get(id))
+      .filter((p): p is KbPageListItem => p !== undefined);
   }
 
   async getFavorites(user: CurrentUserContext): Promise<KbPageListItem[]> {
@@ -72,7 +89,12 @@ export class KbPageVisitsService {
       this.db
         .select({ pageId: kbPageFavorites.pageId })
         .from(kbPageFavorites)
-        .where(and(eq(kbPageFavorites.orgId, orgId), eq(kbPageFavorites.membershipId, membershipId)))
+        .where(
+          and(
+            eq(kbPageFavorites.orgId, orgId),
+            eq(kbPageFavorites.membershipId, membershipId),
+          ),
+        )
         .orderBy(asc(kbPageFavorites.sortOrder), asc(kbPageFavorites.createdAt))
         .limit(50),
       this.getAccessibleProjectIds(user),
@@ -88,14 +110,22 @@ export class KbPageVisitsService {
           eq(kbPages.orgId, orgId),
           isNull(kbPages.deletedAt),
           pageVisibleTo(user, projectIds),
-          sql`${kbPages.id} = ANY(ARRAY[${sql.join(ids.map((id) => sql`${id}`), sql`, `)}]::int[])`,
+          sql`${kbPages.id} = ANY(ARRAY[${sql.join(
+            ids.map((id) => sql`${id}`),
+            sql`, `,
+          )}]::int[])`,
         ),
       );
     const pageMap = new Map(pages.map((p) => [p.id, p]));
-    return ids.map((id) => pageMap.get(id)).filter((p): p is KbPageListItem => p !== undefined);
+    return ids
+      .map((id) => pageMap.get(id))
+      .filter((p): p is KbPageListItem => p !== undefined);
   }
 
-  async addFavorite(user: CurrentUserContext, pageId: number): Promise<{ success: boolean }> {
+  async addFavorite(
+    user: CurrentUserContext,
+    pageId: number,
+  ): Promise<{ success: boolean }> {
     const orgId = user.orgId;
     const membershipId = await this.activeMembershipId(user);
     await assertPageAccessible(this.db, user, pageId);
@@ -106,10 +136,13 @@ export class KbPageVisitsService {
     return { success: true };
   }
 
-  async removeFavorite(user: CurrentUserContext, pageId: number): Promise<{ success: boolean }> {
+  async removeFavorite(
+    user: CurrentUserContext,
+    pageId: number,
+  ): Promise<{ success: boolean }> {
     const orgId = user.orgId;
     const membershipId = await this.activeMembershipId(user);
-    await this.db
+    const removed = await this.db
       .delete(kbPageFavorites)
       .where(
         and(
@@ -118,19 +151,34 @@ export class KbPageVisitsService {
           eq(kbPageFavorites.orgId, orgId),
           eq(kbPageFavorites.membershipId, membershipId),
         ),
-      );
+      )
+      .returning({ pageId: kbPageFavorites.pageId });
+    if (removed.length === 0) throw new NotFoundException("Favorite not found");
     return { success: true };
   }
 
-  async recordVisit(user: CurrentUserContext, pageId: number): Promise<{ success: boolean }> {
+  async recordVisit(
+    user: CurrentUserContext,
+    pageId: number,
+  ): Promise<{ success: boolean }> {
     const orgId = user.orgId;
     const membershipId = await this.activeMembershipId(user);
     await assertPageAccessible(this.db, user, pageId);
     await this.db
       .insert(kbPageVisits)
-      .values({ orgId, pageId, userId: user.userId, membershipId, visitedAt: new Date() })
+      .values({
+        orgId,
+        pageId,
+        userId: user.userId,
+        membershipId,
+        visitedAt: new Date(),
+      })
       .onConflictDoUpdate({
-        target: [kbPageVisits.orgId, kbPageVisits.pageId, kbPageVisits.membershipId],
+        target: [
+          kbPageVisits.orgId,
+          kbPageVisits.pageId,
+          kbPageVisits.membershipId,
+        ],
         set: { visitedAt: new Date() },
       });
     return { success: true };
@@ -146,7 +194,13 @@ export class KbPageVisitsService {
       this.db
         .select({ sourcePageId: kbPageLinks.sourcePageId })
         .from(kbPageLinks)
-        .where(and(eq(kbPageLinks.orgId, orgId), eq(kbPageLinks.targetPageId, pageId))),
+        .where(
+          and(
+            eq(kbPageLinks.orgId, orgId),
+            eq(kbPageLinks.targetPageId, pageId),
+          ),
+        )
+        .limit(200),
       this.getAccessibleProjectIds(user),
     ]);
 
@@ -160,7 +214,10 @@ export class KbPageVisitsService {
           eq(kbPages.orgId, orgId),
           isNull(kbPages.deletedAt),
           pageVisibleTo(user, projectIds),
-          sql`${kbPages.id} = ANY(ARRAY[${sql.join(ids.map((id) => sql`${id}`), sql`, `)}]::int[])`,
+          sql`${kbPages.id} = ANY(ARRAY[${sql.join(
+            ids.map((id) => sql`${id}`),
+            sql`, `,
+          )}]::int[])`,
         ),
       );
   }

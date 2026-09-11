@@ -12,12 +12,14 @@ import type {
   CreateModuleInput,
   UpdateModuleInput,
 } from "./dto/iterations.schemas";
+import { assertProjectInOrg } from "../core/project-access";
 
 @Injectable()
 export class ModulesService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listModules(orgId: string, projectId: number) {
+    await assertProjectInOrg(this.db, orgId, projectId);
     const moduleList = await this.db
       .select({
         id: modules.id,
@@ -81,6 +83,9 @@ export class ModulesService {
     projectId: number,
     input: CreateModuleInput,
   ) {
+    // `listModules` above resolves the project; this did not, so a cross-tenant `:projectId` fell
+    // through the duplicate-name check and the INSERT then hit the composite tenant FK as a 500.
+    await assertProjectInOrg(this.db, orgId, projectId);
     const [existing] = await this.db
       .select({ id: modules.id, name: modules.name })
       .from(modules)
@@ -137,9 +142,11 @@ export class ModulesService {
         .update(tickets)
         .set({ moduleId: null })
         .where(and(eq(tickets.moduleId, moduleId), eq(tickets.orgId, orgId)));
-      await tx
+      const removed = await tx
         .delete(modules)
-        .where(and(eq(modules.id, moduleId), eq(modules.orgId, orgId)));
+        .where(and(eq(modules.id, moduleId), eq(modules.orgId, orgId)))
+        .returning({ id: modules.id });
+      if (removed.length === 0) throw new NotFoundException("Module not found");
     });
     return { success: true };
   }

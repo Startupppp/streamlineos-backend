@@ -42,7 +42,7 @@ export class KbChatHistoryService {
 
   async append(
     orgId: string,
-    userId: string,
+    _userId: string,
     membershipId: number,
     role: KbChatRole,
     content: string,
@@ -52,7 +52,6 @@ export class KbChatHistoryService {
     if (!trimmed) return;
     await this.db.insert(kbChatMessages).values({
       orgId,
-      userId,
       userMembershipId: membershipId,
       role,
       content: trimmed,
@@ -62,7 +61,7 @@ export class KbChatHistoryService {
 
   async list(
     orgId: string,
-    userId: string,
+    _userId: string,
     membershipId: number,
     opts: { cursor?: number; limit: number },
   ): Promise<KbChatHistoryPage> {
@@ -105,7 +104,7 @@ export class KbChatHistoryService {
 
   async clear(
     orgId: string,
-    userId: string,
+    _userId: string,
     membershipId: number,
   ): Promise<void> {
     await this.db
@@ -120,7 +119,7 @@ export class KbChatHistoryService {
 
   async listConversations(
     orgId: string,
-    userId: string,
+    _userId: string,
     membershipId: number,
     opts: { cursor?: number; limit: number },
   ): Promise<KbConversationListPage> {
@@ -134,7 +133,13 @@ export class KbChatHistoryService {
           id: kbChatConversations.id,
         })
         .from(kbChatConversations)
-        .where(eq(kbChatConversations.id, opts.cursor))
+        .where(
+          and(
+            eq(kbChatConversations.id, opts.cursor),
+            eq(kbChatConversations.orgId, orgId),
+            eq(kbChatConversations.userMembershipId, membershipId),
+          ),
+        )
         .limit(1);
       cursorRow = found;
     }
@@ -189,7 +194,7 @@ export class KbChatHistoryService {
 
   async createConversation(
     orgId: string,
-    userId: string,
+    _userId: string,
     membershipId: number,
     title?: string,
   ): Promise<KbConversation> {
@@ -197,7 +202,6 @@ export class KbChatHistoryService {
       .insert(kbChatConversations)
       .values({
         orgId,
-        userId,
         userMembershipId: membershipId,
         title: title ?? null,
       })
@@ -214,7 +218,7 @@ export class KbChatHistoryService {
 
   async renameConversation(
     orgId: string,
-    userId: string,
+    _userId: string,
     membershipId: number,
     id: number,
     title: string,
@@ -257,7 +261,7 @@ export class KbChatHistoryService {
 
   async deleteConversation(
     orgId: string,
-    userId: string,
+    _userId: string,
     membershipId: number,
     id: number,
   ): Promise<void> {
@@ -287,7 +291,7 @@ export class KbChatHistoryService {
 
   async listMessages(
     orgId: string,
-    userId: string,
+    _userId: string,
     membershipId: number,
     conversationId: number,
     opts: { cursor?: number; limit: number },
@@ -346,7 +350,7 @@ export class KbChatHistoryService {
 
   async appendToConversation(
     orgId: string,
-    userId: string,
+    _userId: string,
     membershipId: number,
     conversationId: number,
     role: KbChatRole,
@@ -358,7 +362,6 @@ export class KbChatHistoryService {
 
     await this.db.insert(kbChatMessages).values({
       orgId,
-      userId,
       userMembershipId: membershipId,
       role,
       content: trimmed,

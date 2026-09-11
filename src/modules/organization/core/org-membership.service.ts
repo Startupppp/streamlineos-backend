@@ -12,12 +12,11 @@ import { AccessService } from "../../access/access.service";
 import { and, eq } from "drizzle-orm";
 import { organizationMembers } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
-import { syncStructuralRoleAssignment } from "../../../common/rbac/sync-structural-role";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
-import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
-import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
+import { withMembershipMutations } from "../../../common/org/membership-mutations";
 import { SessionsService } from "../../sessions/sessions.service";
 import { stableHash } from "../../../common/cache/cache-hash";
 import type { ListMembersInput } from "./dto/organization.schemas";
@@ -36,7 +35,7 @@ import { queryOwnedModuleKeys } from "./org-member-authority-queries";
 import type { MemberLifecycleStatus } from "./member-lifecycle.types";
 
 export type { MemberLifecycleStatus } from "./member-lifecycle.types";
-export { membershipStatusToUserStatus, userStatusToMembershipStatus } from "./member-lifecycle.types";
+export { membershipStatusToUserStatus } from "./member-lifecycle.types";
 export type { MembershipRevocationCause } from "./org-membership-access-revocation";
 
 @Injectable()
@@ -102,11 +101,11 @@ export class OrgMembershipService {
   }
 
   async listMembers(orgId: string, input: ListMembersInput) {
-    const { page, search, userIds } = input;
+    const { cursor, search, userIds } = input;
     const limit = Math.min(input.limit, 100);
     const includeInactive = input.includeInactive === true;
     const hash = stableHash({
-      page,
+      cursor: cursor ?? null,
       limit,
       search: search ?? null,
       userIds: userIds ? [...userIds].sort() : null,
@@ -116,7 +115,7 @@ export class OrgMembershipService {
       orgId,
       "org:members:list",
       hash,
-      () => this.membershipRead.list(orgId, page, limit, search, userIds, includeInactive),
+      () => this.membershipRead.list(orgId, cursor, limit, search, userIds, includeInactive),
       60,
     );
   }
@@ -163,55 +162,47 @@ export class OrgMembershipService {
 
     await assertMayGrantRole(this.access, orgId, actor, role);
 
-    await runInTenantTransaction(
-      this.db,
-      async (tx) => {
-        await assertTargetNotOwner(tx, orgId, memberUserId);
-        const [member] = await tx
-          .select({
-            id: organizationMembers.id,
-            role: organizationMembers.role,
-          })
-          .from(organizationMembers)
-          .where(
-            and(
-              eq(organizationMembers.userId, memberUserId),
-              eq(organizationMembers.orgId, orgId),
-            ),
-          )
-          .for("update")
-          .limit(1);
+    await withMembershipMutations(this.cache, (membership) =>
+      runInTenantTransaction(
+        this.db,
+        async (tx) => {
+          await assertTargetNotOwner(tx, orgId, memberUserId);
+          const [member] = await tx
+            .select({
+              id: organizationMembers.id,
+              role: organizationMembers.role,
+            })
+            .from(organizationMembers)
+            .where(
+              and(
+                eq(organizationMembers.userId, memberUserId),
+                eq(organizationMembers.orgId, orgId),
+              ),
+            )
+            .for("update")
+            .limit(1);
 
-        if (!member) throw new NotFoundException("Member not found");
+          if (!member) throw new NotFoundException("Member not found");
 
-        await assertNotLastStructuralAdmin(tx, orgId, member.id, member.role, role);
+          await assertNotLastStructuralAdmin(tx, orgId, member.id, member.role, role);
 
-        const ownedModuleKeys = await queryOwnedModuleKeys(tx, orgId, member.id);
-        if (ownedModuleKeys.length > 0) {
-          throw new BadRequestException(
-            `Transfer module ownership before changing this member's role. Owned modules: ${ownedModuleKeys.join(", ")}.`,
-          );
-        }
+          const ownedModuleKeys = await queryOwnedModuleKeys(tx, orgId, member.id);
+          if (ownedModuleKeys.length > 0) {
+            throw new BadRequestException(
+              `Transfer module ownership before changing this member's role. Owned modules: ${ownedModuleKeys.join(", ")}.`,
+            );
+          }
 
-        await tx
-          .update(organizationMembers)
-          .set({ role })
-          .where(
-            and(
-              eq(organizationMembers.userId, memberUserId),
-              eq(organizationMembers.orgId, orgId),
-            ),
-          );
-
-        await syncStructuralRoleAssignment(tx, orgId, member.id, role);
-      },
-      { orgId },
+          await membership.changeRole(tx, { orgId, userId: memberUserId, role });
+        },
+        { orgId },
+      ),
     );
 
     await Promise.all([
       this.invalidateMemberListCaches(orgId),
       this.cache.invalidateNamespaceForOrg(orgId, "org:profile"),
-      bustMembershipStatusCache(this.cache, memberUserId, orgId),
+      this.cache.invalidate(CACHE_KEYS.userSession(memberUserId)),
     ]);
 
     this.audit.log({

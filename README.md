@@ -27,12 +27,37 @@ contact submissions.
 
 ## Health endpoints
 
-- `GET /health` — process liveness; returns HTTP 200 while the API process is serving.
-- `GET /health/ready` — database readiness; returns HTTP 200 when the database responds and
-  HTTP 503 otherwise.
+- `GET /health` — process liveness. Shallow by design: it touches no dependency, so a database
+  blip gets the process drained rather than killed and restarted.
+- `GET /health/ready` — dependency-aware readiness. Returns HTTP 200 with
+  `status: "ready" | "degraded"` and a per-dependency report (`database`, `cache`, `queue`,
+  `providers`), and HTTP 503 with `status: "unready"` when a required dependency is down or the
+  process has begun draining. `degraded` keeps the replica in rotation: an unreachable cache
+  still falls through to the database.
+
+The readiness result is cached for `READINESS_CACHE_TTL_MS` (default 5000) and evaluations are
+single-flight, so probe traffic cannot amplify the outage it is reporting; each check is bounded
+by `READINESS_CHECK_TIMEOUT_MS` (default 2000).
 
 Configure the runtime's liveness probe to use `/health` and its readiness or deployment
 probe to use `/health/ready`.
+
+Readiness and shutdown environment variables, all optional:
+
+| Variable | Default | Effect |
+|---|---|---|
+| `READINESS_CACHE_TTL_MS` | `5000` | Window in which repeat probes are served from cache |
+| `READINESS_CHECK_TIMEOUT_MS` | `2000` | Per-dependency budget; exceeding it reports `down` |
+| `READINESS_QUEUE_STALL_SECONDS` | `900` | Drain-worker heartbeat age that counts as stalled |
+| `READINESS_QUEUE_HEARTBEAT_JOBS` | `outbox-events-worker` | Comma-separated cron job keys to watch |
+| `READINESS_REQUIRED_PROVIDERS` | *(none)* | Comma-separated providers whose open circuit makes the process unready |
+| `SHUTDOWN_SETTLING_DELAY_MS` | `5000` | Time readiness reports 503 before new requests are refused |
+| `SHUTDOWN_DRAIN_TIMEOUT_MS` | `25000` | How long shutdown waits for in-flight requests to finish |
+
+On `SIGTERM` the process fails readiness first, keeps serving for the settling delay so the load
+balancer can take it out of rotation, then refuses new requests with HTTP 503 and waits for
+in-flight requests to finish before the connection pool is closed. Cron leases are refused for
+the whole of that window, so a sweep is never started and abandoned — the next tick resumes it.
 
 ## Production scheduler contract
 
@@ -74,6 +99,81 @@ Both are safe to over-trigger: each claims its work under a lease, so an overlap
 nothing to do rather than delivering twice. A minute is the natural cadence — the webhook
 worker's first retry is a minute after the failure, and a slower tick only delays every
 subsequent attempt, it does not lose one.
+### Cadenced sweeps are code-scheduled — no external configuration required
+
+The table above never contained a retention sweep, and no scheduler in either repository
+ever sent one of these requests. Every retention drain was therefore correct and dead.
+`CronRetentionSchedulerService` (`src/modules/cron/cron-retention-scheduler.service.ts`)
+now runs all of them in process, on the cadence declared in
+`src/modules/cron/retention-schedule.ts`, taking the same `CronLeaseService` lease the HTTP
+route takes.
+
+The list is no longer only retention. Three entries are billing jobs that had the same
+defect the retention drains had — correct code behind a route nothing called — with a
+customer-visible cost in both directions:
+
+- `ai-reservations-sweep` is a **compensator**: AI credit `reserve` debits the wallet by
+  the catalogue ceiling up front, so a lost or failed settle leaves the organisation
+  over-charged with no transaction row to explain it, and this sweep gives the money back.
+- `monthly-plan-grants` is **money owed to customers**: no organisation had ever received
+  a monthly plan allocation from this path.
+- `trial-expiry` is **revenue never collected**: no trial had ever ended.
+
+Each was added only after its own idempotency was established in the database — the
+scheduler's lease is not the guard. `CronLeaseService.withLease` runs *without dedup* when
+Redis is absent or erroring, so a job joins this list only when a natural key or a
+conditional write makes a second run a no-op. The billing jobs that failed that test are
+listed in `UNSCHEDULED_BILLING_JOBS` in `src/modules/cron/retention-schedule.ts` with the
+specific thing that would have to change first.
+
+| Sweep | Manual trigger | Cadence | Lease |
+| --- | --- | --- | --- |
+| HR policy retention (documents, employees, cases, attendance) | `POST /cron/hr-policy-retention-sweep` | daily | 1800s |
+| Helpdesk ticket retention | `POST /cron/helpdesk-retention-sweep` | daily | 1800s |
+| Mail metadata retention | `POST /cron/mail-metadata-retention-sweep` | daily | 1800s |
+| Announcements retention | `POST /cron/announcements-retention-sweep` | daily | 1800s |
+| AI usage log retention | `POST /cron/ai-usage-retention-sweep` | daily | 1800s |
+| Notification body + record purge | `POST /cron/notifications-retention-sweep` | daily | 300s |
+| Notification outbox retention | `POST /cron/notification-outbox-retention-sweep` | daily | 1800s |
+| Outbox events retention | `POST /cron/outbox-events-retention-sweep` | daily | 1800s |
+| KB chat history purge | `POST /cron/kb-chat-history-purge` | daily | 600s |
+| KB chunk retention | `POST /cron/kb-chunk-retention-sweep` | daily | 600s |
+| KB telemetry retention | `POST /cron/kb-telemetry-retention-sweep` | daily | 600s |
+| KB trash purge | `POST /cron/kb-trash-purge` | daily | 300s |
+| Build webhook delivery retention | `POST /cron/build-retention-prune` | daily | 120s |
+| Notification partition detach/drop | `POST /cron/notifications-retention-detach` | daily | 300s |
+| GDPR subject-export artifact retention | `POST /cron/gdpr-export-artifact-retention` | hourly | 900s |
+| AI credit reservation compensator (expired reservations refunded) | `POST /cron/ai-reservations-sweep` | every 15 minutes | 120s |
+| Monthly plan credit grants | `POST /cron/monthly-plan-grants` | daily | 300s |
+| Trial expiry and expiry reminders | `POST /cron/trial-expiry` | daily | 300s |
+
+The two mechanisms compose rather than compete. Due-ness is read from the same
+`cron:heartbeat:<jobKey>` key the lease writes on every successful run, so an external
+scheduler POSTing a route refreshes the heartbeat and the in-process scheduler stands down
+for the rest of that interval.
+
+- `RETENTION_SCHEDULER_ENABLED=false` turns the in-process scheduler off. Set it only in a
+  deployment that genuinely drives these routes from outside; the default is on, because an
+  opt-in scheduler nobody opts into is the defect this replaced.
+- `RETENTION_SCHEDULER_TICK_MS` overrides the 10-minute due-check interval.
+
+### Dead-man signal
+
+Silence is the failure mode here, and silence is indistinguishable from success, so absence
+of a run is itself an alert.
+
+- `CronLeaseService` writes `cron:heartbeat:<jobKey>` (ISO timestamp, 7-day TTL) after every
+  successful run and `cron:last-error:<jobKey>` on failure.
+- A sweep that failed for *some* tenants still writes a heartbeat — it did run — so
+  `CronSweepFailureSinkService` records that partial failure to `cron:last-error:<jobKey>`
+  as well. `forEachOrg` used to return the failed count and nothing read it.
+- `node src/scripts/alert-retention-dead-man.mjs` reads both keys for all twelve sweeps and
+  exits 1 when any is stale or has a recent failure record, 2 when Redis is unreachable or
+  every heartbeat is absent (an empty result set is not a healthy state). Registered in
+  `alert-dispatch.mjs` as `retention-dead-man`, owner `platform-reliability`.
+- `READINESS_QUEUE_HEARTBEAT_JOBS` makes `/health/ready` degrade on a stalled drain. It
+  defaults to `outbox-events-worker` only; to cover retention, set it to the job keys above
+  and raise `READINESS_QUEUE_STALL_SECONDS` past the daily cadence.
 
 ## Deployment
 

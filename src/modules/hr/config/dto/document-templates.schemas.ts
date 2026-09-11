@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const templateListQuerySchema = z.object({
   type: z.string().optional(),
-});
+}).strict();
 
 export const createTemplateSchema = z.object({
   title: z
@@ -14,18 +14,18 @@ export const createTemplateSchema = z.object({
   type: z.string().min(1, "Type is required").default("OFFER"),
   htmlContent: z.string().default(""),
   variables: z.array(z.string()).optional(),
-});
+}).strict();
 
 export const setDefaultTemplateSchema = z.object({
   isDefault: z.boolean(),
-});
+}).strict();
 
 export const updateTemplateSchema = z.object({
   title: z.string().min(1).optional(),
   type: z.string().min(1).optional(),
   htmlContent: z.string().optional(),
   variables: z.array(z.string()).optional(),
-});
+}).strict();
 
 export type TemplateListQuery = z.infer<typeof templateListQuerySchema>;
 export type CreateTemplateInput = z.infer<typeof createTemplateSchema>;

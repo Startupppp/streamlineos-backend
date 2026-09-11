@@ -11,6 +11,7 @@ import {
   OrganizationActorError,
   organizationActorHttpError,
 } from "../../../common/organization/organization-actor";
+import { requireOrganizationMembershipId } from "./organization-membership";
 
 @Injectable()
 export class WfhService {
@@ -19,15 +20,17 @@ export class WfhService {
     @Optional() private readonly policyEval: HrPolicyEvaluationService,
   ) {}
 
-  list(orgId: string, userId: string) {
+  async list(orgId: string, userId: string) {
+    const userMembershipId = await requireOrganizationMembershipId(this.db, orgId, userId);
     return this.db.query.wfhRequests.findMany({
-      where: and(eq(wfhRequests.orgId, orgId), eq(wfhRequests.userId, userId)),
+      where: and(eq(wfhRequests.orgId, orgId), eq(wfhRequests.userMembershipId, userMembershipId)),
       orderBy: [desc(wfhRequests.createdAt)],
       limit: 100,
     });
   }
 
   async create(orgId: string, userId: string, body: CreateWfhInput) {
+    const userMembershipId = await requireOrganizationMembershipId(this.db, orgId, userId);
     const quota = await this.resolveMonthlyQuota(orgId, userId);
 
     const requestDate = new Date(body.date);
@@ -40,7 +43,7 @@ export class WfhService {
       .where(
         and(
           eq(wfhRequests.orgId, orgId),
-          eq(wfhRequests.userId, userId),
+          eq(wfhRequests.userMembershipId, userMembershipId),
           gte(wfhRequests.date, monthStart),
           lte(wfhRequests.date, monthEnd),
           eq(wfhRequests.status, "APPROVED"),
@@ -71,6 +74,7 @@ export class WfhService {
       .values({
         orgId,
         userId,
+        userMembershipId,
         date: formatDateOnly(body.date),
         reason: body.reason,
         approverId: body.approverId,
@@ -127,6 +131,7 @@ export class WfhService {
 
   async update(orgId: string, approverId: string, requestId: number, body: UpdateWfhInput) {
     const existing = await this.db.query.wfhRequests.findFirst({
+      columns: { id: true },
       where: and(eq(wfhRequests.id, requestId), eq(wfhRequests.orgId, orgId)),
     });
 

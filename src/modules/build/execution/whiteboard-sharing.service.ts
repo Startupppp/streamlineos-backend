@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, gt, inArray, isNull, or } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import {
   organizationMembers,
@@ -59,7 +59,7 @@ export class WhiteboardSharingService {
         projectWhiteboardShares,
         and(
           eq(projectWhiteboardShares.whiteboardId, projectWhiteboards.id),
-          eq(projectWhiteboardShares.userId, u.userId),
+          sql`${projectWhiteboardShares.membershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id = ${u.userId} AND status = 'ACTIVE')`,
         ),
       )
       .where(
@@ -161,11 +161,12 @@ export class WhiteboardSharingService {
   ) {
     const board = await this.requireManageAccess(u, projectId, whiteboardId);
     const { shares } = input;
+    let members: Array<{ id: number; userId: string }> = [];
 
     if (shares.length > 0) {
       const userIds = shares.map((s) => s.userId);
-      const members = await this.db
-        .select({ userId: organizationMembers.userId })
+      members = await this.db
+        .select({ id: organizationMembers.id, userId: organizationMembers.userId })
         .from(organizationMembers)
         .where(
           and(
@@ -183,34 +184,38 @@ export class WhiteboardSharingService {
 
     const excluded = new Set([board.createdBy ?? "", u.userId]);
     const filteredShares = shares.filter((s) => !excluded.has(s.userId));
+    const membershipByUserId = new Map(members.map((m) => [m.userId, m.id]));
+    const rows = filteredShares.map((s) => {
+      const membershipId = membershipByUserId.get(s.userId);
+      if (membershipId === undefined)
+        throw new BadRequestException(`Unknown member(s): ${s.userId}`);
+      return {
+        orgId: u.orgId,
+        whiteboardId,
+        membershipId,
+        role: s.role,
+        createdBy: u.userId,
+      };
+    });
 
     await this.db.transaction(async (tx) => {
       await tx
         .delete(projectWhiteboardShares)
         .where(eq(projectWhiteboardShares.whiteboardId, whiteboardId));
 
-      if (filteredShares.length > 0) {
-        await tx.insert(projectWhiteboardShares).values(
-          filteredShares.map((s) => ({
-            orgId: u.orgId,
-            whiteboardId,
-            userId: s.userId,
-            role: s.role,
-            createdBy: u.userId,
-          })),
-        );
-      }
+      if (rows.length > 0) await tx.insert(projectWhiteboardShares).values(rows);
     });
 
     return this.db
       .select({
-        userId: projectWhiteboardShares.userId,
+        userId: organizationMembers.userId,
         role: projectWhiteboardShares.role,
         name: users.name,
         email: users.email,
       })
       .from(projectWhiteboardShares)
-      .innerJoin(users, eq(users.id, projectWhiteboardShares.userId))
+      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, projectWhiteboardShares.orgId), eq(organizationMembers.id, projectWhiteboardShares.membershipId)))
+      .innerJoin(users, eq(users.id, organizationMembers.userId))
       .where(eq(projectWhiteboardShares.whiteboardId, whiteboardId));
   }
 
@@ -226,7 +231,7 @@ export class WhiteboardSharingService {
       .where(
         and(
           eq(projectWhiteboardShares.whiteboardId, whiteboardId),
-          eq(projectWhiteboardShares.userId, targetUserId),
+          sql`${projectWhiteboardShares.membershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id = ${targetUserId} AND status = 'ACTIVE')`,
         ),
       );
     return { success: true };

@@ -28,7 +28,7 @@ describe("AuthService organization access session state", () => {
         (_key: string, load: () => Promise<unknown>) => load(),
       ),
     };
-    const authTokens = {
+    const membershipResolver = {
       resolveActiveMembership: jest
         .fn()
         .mockResolvedValue(options?.activeMembership ?? null),
@@ -49,16 +49,17 @@ describe("AuthService organization access session state", () => {
       cache as never,
       {} as never,
       {} as never,
-      authTokens as never,
+      membershipResolver as never,
+      {} as never,
       {} as never,
       accountOrgIndex as never,
     );
 
-    return { service, authTokens, accountOrgIndex };
+    return { service, membershipResolver, accountOrgIndex };
   }
 
   it("reports suspended membership instead of presenting the user as unconfigured", async () => {
-    const { service, authTokens } = buildService({
+    const { service, membershipResolver } = buildService({
       suspendedMembership: {
         orgId: "org-original",
         orgName: "Original workspace",
@@ -71,7 +72,7 @@ describe("AuthService organization access session state", () => {
       organizationAccess: "suspended",
       suspendedOrganizationName: "Original workspace",
     });
-    expect(authTokens.resolveActiveMembership).toHaveBeenCalledWith(
+    expect(membershipResolver.resolveActiveMembership).toHaveBeenCalledWith(
       "user-1",
       "org-original",
       { honorSuspendedPreference: true },
@@ -79,14 +80,14 @@ describe("AuthService organization access session state", () => {
   });
 
   it("lands the user in the org the index prefers, not the last one they used", async () => {
-    const { service, authTokens, accountOrgIndex } = buildService({
+    const { service, membershipResolver, accountOrgIndex } = buildService({
       preferredOrg: { orgId: "org-preferred", cellId: "cell-1" },
     });
 
     await service.getSessionData("user-1");
 
     expect(accountOrgIndex.resolvePreferredOrg).toHaveBeenCalledWith("user-1");
-    expect(authTokens.resolveActiveMembership).toHaveBeenCalledWith(
+    expect(membershipResolver.resolveActiveMembership).toHaveBeenCalledWith(
       "user-1",
       "org-preferred",
       { honorSuspendedPreference: true },

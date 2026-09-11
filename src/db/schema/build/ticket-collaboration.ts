@@ -26,34 +26,29 @@ export const ticketAssignees = build.table(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     ticketId: integer("ticket_id")
-      .references(() => tickets.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    membershipId: integer("membership_id"),
+    membershipId: integer("membership_id").notNull(),
     assignedAt: timestamp("assigned_at").defaultNow().notNull(),
     assignedBy: text("assigned_by").references(() => users.id, {
       onDelete: "set null",
     }),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.ticketId], foreignColumns: [tickets.orgId, tickets.id], name: "fk_ticket_assignees_org_ticket" }).onDelete("cascade"),
     uniqueIndex("uniq_ticket_assignees_ticket_user").on(
       table.ticketId,
-      table.userId,
+      table.membershipId,
     ),
-    index("idx_ticket_assignees_user_id").on(table.userId),
     index("idx_ticket_assignees_org_user_ticket").on(
       table.orgId,
-      table.userId,
+      table.membershipId,
       table.ticketId,
     ),
-    index("idx_ticket_assignees_org_member_membership").on(table.orgId, table.membershipId),
     foreignKey({
       columns: [table.orgId, table.membershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
       name: "fk_ticket_assignees_member_actor",
-    }).onDelete("restrict"),
+    }).onDelete("cascade"),
   ],
 );
 
@@ -65,7 +60,6 @@ export const ticketComments = buildEvents.table(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     ticketId: integer("ticket_id")
-      .references(() => tickets.id, { onDelete: "cascade" })
       .notNull(),
     userId: text("user_id")
       .references(() => users.id)
@@ -81,10 +75,8 @@ export const ticketComments = buildEvents.table(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    foreignKey({
-      columns: [table.parentCommentId],
-      foreignColumns: [table.id],
-    }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.ticketId], foreignColumns: [tickets.orgId, tickets.id], name: "fk_ticket_comments_org_ticket" }).onDelete("cascade"),
+    foreignKey({ columns: [table.orgId, table.parentCommentId], foreignColumns: [table.orgId, table.id], name: "fk_ticket_comments_org_parent" }).onDelete("cascade"),
     index("idx_ticket_comments_ticket").on(table.ticketId).where(sql`deleted_at IS NULL`),
     unique("uniq_ticket_comments_org_id").on(table.orgId, table.id),
   ],
@@ -98,7 +90,6 @@ export const ticketAttachments = build.table(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     ticketId: integer("ticket_id")
-      .references(() => tickets.id, { onDelete: "cascade" })
       .notNull(),
     fileUrl: text("file_url").notNull(),
     fileName: text("file_name").notNull(),
@@ -111,6 +102,7 @@ export const ticketAttachments = build.table(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.ticketId], foreignColumns: [tickets.orgId, tickets.id], name: "fk_ticket_attachments_org_ticket" }).onDelete("cascade"),
     index("idx_ticket_attachments_ticket").on(table.ticketId),
     unique("uniq_ticket_attachments_org_id").on(table.orgId, table.id),
   ],
@@ -141,18 +133,19 @@ export const ticketLabelMappings = build.table(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     ticketId: integer("ticket_id")
-      .references(() => tickets.id, { onDelete: "cascade" })
       .notNull(),
     labelId: integer("label_id")
-      .references(() => ticketLabels.id, { onDelete: "cascade" })
       .notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.labelId], foreignColumns: [ticketLabels.orgId, ticketLabels.id], name: "fk_ticket_label_mappings_org_label" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.ticketId], foreignColumns: [tickets.orgId, tickets.id], name: "fk_ticket_label_mappings_org_ticket" }).onDelete("cascade"),
     uniqueIndex("uniq_ticket_label_mappings_ticket_label").on(
       table.ticketId,
       table.labelId,
     ),
+    unique("uniq_ticket_label_mappings_org_id").on(table.orgId, table.id),
   ],
 );
 
@@ -164,17 +157,13 @@ export const ticketWatchers = build.table(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     ticketId: integer("ticket_id")
-      .references(() => tickets.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    membershipId: integer("membership_id"),
+    membershipId: integer("membership_id").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex("uniq_ticket_watcher").on(table.ticketId, table.userId),
-    index("idx_ticket_watchers_user").on(table.userId),
+  foreignKey({ columns: [table.orgId, table.ticketId], foreignColumns: [tickets.orgId, tickets.id], name: "fk_ticket_watchers_org_ticket" }).onDelete("cascade"),
+    uniqueIndex("uniq_ticket_watcher").on(table.ticketId, table.membershipId),
     index("idx_ticket_watchers_org_membership").on(table.orgId, table.membershipId),
     foreignKey({
       name: "fk_ticket_watchers_actor",
@@ -192,7 +181,6 @@ export const ticketChecklists = build.table(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     ticketId: integer("ticket_id")
-      .references(() => tickets.id, { onDelete: "cascade" })
       .notNull(),
     title: text("title").notNull().default("Checklist"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -202,6 +190,7 @@ export const ticketChecklists = build.table(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.ticketId], foreignColumns: [tickets.orgId, tickets.id], name: "fk_ticket_checklists_org_ticket" }).onDelete("cascade"),
     index("idx_ticket_checklists_ticket").on(table.ticketId),
     unique("uniq_ticket_checklists_org_id").on(table.orgId, table.id),
   ],
@@ -215,7 +204,6 @@ export const ticketChecklistItems = build.table(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     checklistId: integer("checklist_id")
-      .references(() => ticketChecklists.id, { onDelete: "cascade" })
       .notNull(),
     text: text("text").notNull(),
     isCompleted: boolean("is_completed").default(false).notNull(),
@@ -228,6 +216,7 @@ export const ticketChecklistItems = build.table(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.checklistId], foreignColumns: [ticketChecklists.orgId, ticketChecklists.id], name: "fk_ticket_checklist_items_org_checklist" }).onDelete("cascade"),
     index("idx_ticket_checklist_items_checklist").on(table.checklistId),
     index("idx_ticket_checklist_items_org_assignee_membership").on(table.orgId, table.assigneeMembershipId),
     foreignKey({
@@ -246,10 +235,8 @@ export const ticketCustomFieldValues = build.table(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     ticketId: integer("ticket_id")
-      .references(() => tickets.id, { onDelete: "cascade" })
       .notNull(),
     fieldDefinitionId: integer("field_definition_id")
-      .references(() => customFieldDefinitions.id, { onDelete: "cascade" })
       .notNull(),
     value: text("value"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -259,11 +246,12 @@ export const ticketCustomFieldValues = build.table(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.fieldDefinitionId], foreignColumns: [customFieldDefinitions.orgId, customFieldDefinitions.id], name: "fk_ticket_cfield_values_org_def" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.ticketId], foreignColumns: [tickets.orgId, tickets.id], name: "fk_ticket_cfield_values_org_ticket" }).onDelete("cascade"),
     uniqueIndex("uniq_ticket_custom_field_values").on(
       table.ticketId,
       table.fieldDefinitionId,
     ),
-    index("idx_ticket_custom_field_values_ticket").on(table.ticketId),
     unique("uniq_tcfv_org_id").on(table.orgId, table.id),
   ],
 );
@@ -274,11 +262,8 @@ export const ticketCommentReactions = build.table(
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
     commentId: bigint("comment_id", { mode: "number" })
       .notNull()
-      .references(() => ticketComments.id, { onDelete: "cascade" }),
-    userId: text("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    membershipId: integer("membership_id"),
+      ,
+    membershipId: integer("membership_id").notNull(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -288,12 +273,12 @@ export const ticketCommentReactions = build.table(
       .defaultNow(),
   },
   (t) => [
+  foreignKey({ columns: [t.orgId, t.commentId], foreignColumns: [ticketComments.orgId, ticketComments.id], name: "fk_ticket_comment_reactions_org_comment" }).onDelete("cascade"),
     uniqueIndex("uq_comment_reaction_user_emoji").on(
       t.commentId,
-      t.userId,
+      t.membershipId,
       t.emoji,
     ),
-    index("idx_comment_reactions_comment_id").on(t.commentId),
     index("idx_comment_reactions_org_membership").on(t.orgId, t.membershipId),
     unique("uniq_ticket_comment_reactions_org_id").on(t.orgId, t.id),
     foreignKey({
@@ -312,7 +297,6 @@ export const ticketRelatedLinks = build.table(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     ticketId: integer("ticket_id")
-      .references(() => tickets.id, { onDelete: "cascade" })
       .notNull(),
     url: text("url").notNull(),
     label: text("label"),
@@ -323,7 +307,9 @@ export const ticketRelatedLinks = build.table(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.ticketId], foreignColumns: [tickets.orgId, tickets.id], name: "fk_ticket_related_links_org_ticket" }).onDelete("cascade"),
     index("idx_ticket_related_links_ticket").on(table.ticketId),
+    unique("uniq_ticket_related_links_org_id").on(table.orgId, table.id),
     foreignKey({
       name: "fk_ticket_related_links_created_by_actor",
       columns: [table.orgId, table.createdByMembershipId],

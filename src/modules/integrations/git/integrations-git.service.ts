@@ -1,9 +1,12 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { asc, and, eq, inArray, isNull, sql } from "drizzle-orm";
-import { gitConnections, gitTicketLinks, projectStatuses, projects, tickets } from "../../../db/schema";
+import { gitConnections, gitTicketLinks, gitWebhookSeenDeliveries, projectStatuses, projects, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import {
+  runInTenantTransaction,
+  runInNewTenantTransaction,
+} from "../../../common/tenant/run-in-tenant-transaction";
 import { logger } from "../../../common/logger/logger.service";
 import { verifyGithubSignature, verifyGitlabToken } from "./git-signature";
 import { asRecord, extractTicketRefs, parseEvent } from "./git-event-parser";
@@ -47,6 +50,20 @@ export class IntegrationsGitService {
         if (!this.verifySignature(provider, connection.webhookSecret, req)) {
           logger.warn("[git-webhook] signature verification failed", { connectionId });
           return;
+        }
+
+        if (req.deliveryId) {
+          const inserted = await tx
+            .insert(gitWebhookSeenDeliveries)
+            .values({ orgId: connection.orgId, provider, deliveryId: req.deliveryId })
+            .onConflictDoNothing({
+              target: [gitWebhookSeenDeliveries.orgId, gitWebhookSeenDeliveries.provider, gitWebhookSeenDeliveries.deliveryId],
+            })
+            .returning({ id: gitWebhookSeenDeliveries.id });
+          if (inserted.length === 0) {
+            logger.warn("[git-webhook] duplicate delivery ignored", { connectionId, deliveryId: req.deliveryId });
+            return;
+          }
         }
 
         let body: Record<string, unknown> | null;
@@ -102,47 +119,49 @@ export class IntegrationsGitService {
     const ticketIds = Array.from(new Set(mergedLinks.map((l) => l.ticketId)));
     if (ticketIds.length === 0) return;
 
-    const ticketRows = await this.db
-      .select({ id: tickets.id, projectId: tickets.projectId, status: tickets.status })
-      .from(tickets)
-      .where(and(eq(tickets.orgId, orgId), isNull(tickets.deletedAt), inArray(tickets.id, ticketIds)));
+    await runInNewTenantTransaction(this.db, orgId, async (tx) => {
+      const ticketRows = await tx
+        .select({ id: tickets.id, projectId: tickets.projectId, status: tickets.status })
+        .from(tickets)
+        .where(and(eq(tickets.orgId, orgId), isNull(tickets.deletedAt), inArray(tickets.id, ticketIds)));
 
-    const projectIds = Array.from(new Set(ticketRows.map((t) => t.projectId).filter((p): p is number => p !== null)));
-    if (projectIds.length === 0) return;
+      const projectIds = Array.from(new Set(ticketRows.map((t) => t.projectId).filter((p): p is number => p !== null)));
+      if (projectIds.length === 0) return;
 
-    const completedStatuses = await this.db
-      .select({ projectId: projectStatuses.projectId, name: projectStatuses.name })
-      .from(projectStatuses)
-      .where(
-        and(
-          eq(projectStatuses.orgId, orgId),
-          inArray(projectStatuses.projectId, projectIds),
-          eq(projectStatuses.type, "completed"),
-        ),
-      )
-      .orderBy(asc(projectStatuses.order));
+      const completedStatuses = await tx
+        .select({ projectId: projectStatuses.projectId, name: projectStatuses.name })
+        .from(projectStatuses)
+        .where(
+          and(
+            eq(projectStatuses.orgId, orgId),
+            inArray(projectStatuses.projectId, projectIds),
+            eq(projectStatuses.type, "completed"),
+          ),
+        )
+        .orderBy(asc(projectStatuses.order));
 
-    const projectCompletedStatus = new Map<number, string>();
-    for (const row of completedStatuses) {
-      if (!projectCompletedStatus.has(row.projectId)) {
-        projectCompletedStatus.set(row.projectId, row.name);
+      const projectCompletedStatus = new Map<number, string>();
+      for (const row of completedStatuses) {
+        if (!projectCompletedStatus.has(row.projectId)) {
+          projectCompletedStatus.set(row.projectId, row.name);
+        }
       }
-    }
 
-    for (const ticket of ticketRows) {
-      if (!ticket.projectId) continue;
-      const targetStatus = projectCompletedStatus.get(ticket.projectId);
-      if (!targetStatus || ticket.status === targetStatus) continue;
-      const systemCtx: CurrentUserContext = systemActor(
-        "integrations.git.webhook",
-        orgId,
-      );
-      try {
-        await this.projectsTickets.updateTicket(systemCtx, ticket.id, { status: targetStatus });
-      } catch (error) {
-        logger.warn("[git-webhook] skipped auto-transition", { ticketId: ticket.id, error });
+      for (const ticket of ticketRows) {
+        if (!ticket.projectId) continue;
+        const targetStatus = projectCompletedStatus.get(ticket.projectId);
+        if (!targetStatus || ticket.status === targetStatus) continue;
+        const systemCtx: CurrentUserContext = systemActor(
+          "integrations.git.webhook",
+          orgId,
+        );
+        try {
+          await this.projectsTickets.updateTicket(systemCtx, ticket.id, { status: targetStatus });
+        } catch (error) {
+          logger.warn("[git-webhook] skipped auto-transition", { ticketId: ticket.id, error });
+        }
       }
-    }
+    });
   }
 
   private verifySignature(provider: GitProvider, secret: string, req: WebhookRequest): boolean {

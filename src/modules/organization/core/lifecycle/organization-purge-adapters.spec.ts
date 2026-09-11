@@ -1,9 +1,14 @@
 jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
   runInNewTenantTransaction: jest.fn(),
 }));
+jest.mock("../../../storage/storage-key-catalog", () => ({
+  enumerateFileKeyColumns: jest.fn(),
+  collectOrgFileKeys: jest.fn(),
+}));
 
 import { PURGE_ADAPTER_REGISTRY } from "./organization-purge-adapters";
 import { runInNewTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
+import { collectOrgFileKeys, enumerateFileKeyColumns } from "../../../storage/storage-key-catalog";
 
 const ORG_A = "org-aaaaaaaa-0000-0000-0000-000000000001";
 const ORG_B = "org-bbbbbbbb-0000-0000-0000-000000000002";
@@ -76,6 +81,36 @@ describe("PURGE_ADAPTER_REGISTRY — static adapters", () => {
   });
 });
 
+describe("PURGE_ADAPTER_REGISTRY — object_storage", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("fails when purge bookkeeping cannot be recorded even if no keys remain", async () => {
+    (enumerateFileKeyColumns as jest.Mock).mockResolvedValue([]);
+    (collectOrgFileKeys as jest.Mock)
+      .mockResolvedValueOnce([{ key: "documents/example.pdf", bucket: "default" }])
+      .mockResolvedValueOnce([]);
+    (runInNewTenantTransaction as jest.Mock).mockRejectedValueOnce(new Error("RLS denied"));
+
+    const deleteFile = jest.fn();
+    const result = await PURGE_ADAPTER_REGISTRY.object_storage.confirm(ORG_A, PURGE_JOB, FAKE_DB, {
+      port: { deleteFile },
+      kbBucket: "kb-files",
+    });
+
+    expect(result.state).toBe("FAILED");
+    // The guarantee is that a failed bookkeeping write stops the purge before
+    // anything is deleted, and says why. Ticket 21 moved the pending-row write
+    // from one transaction per key to one bulk upsert for the whole set, so the
+    // failure is now reported at registration rather than per key — the two
+    // behavioural assertions either side of this are the contract.
+    expect(result.detail).toMatch(/failed to register|failed keys/i);
+    expect(result.detail).toMatch(/RLS denied/);
+    expect(deleteFile).not.toHaveBeenCalled();
+  });
+});
+
 describe("PURGE_ADAPTER_REGISTRY — database_rows", () => {
   function makeMockDb(orgRow: unknown) {
     const limitMock = jest.fn().mockResolvedValue(orgRow === null ? [] : [orgRow]);
@@ -84,11 +119,11 @@ describe("PURGE_ADAPTER_REGISTRY — database_rows", () => {
     return { select: jest.fn().mockReturnValue({ from: fromMock }) };
   }
 
-  it("returns FAILED when org is present and statusV2 is PURGE_SCHEDULED", async () => {
+  it("confirms an eligible scheduled organization for the final physical-delete pass", async () => {
     const db = makeMockDb({ id: ORG_A, statusV2: "PURGE_SCHEDULED" }) as never;
     const result = await PURGE_ADAPTER_REGISTRY.database_rows.confirm(ORG_A, PURGE_JOB, db);
-    expect(result.state).toBe("FAILED");
-    expect(result.detail).toMatch(/not implemented/i);
+    expect(result.state).toBe("CONFIRMED");
+    expect(result.detail).toMatch(/physically deletes/i);
   });
 
   it("returns CONFIRMED when org row is absent", async () => {
@@ -96,6 +131,12 @@ describe("PURGE_ADAPTER_REGISTRY — database_rows", () => {
     const result = await PURGE_ADAPTER_REGISTRY.database_rows.confirm(ORG_A, PURGE_JOB, db);
     expect(result.state).toBe("CONFIRMED");
     expect(result.detail).toMatch(/absent/i);
+  });
+
+  it("returns FAILED for an organization outside the purge state", async () => {
+    const db = makeMockDb({ id: ORG_A, statusV2: "ACTIVE" }) as never;
+    const result = await PURGE_ADAPTER_REGISTRY.database_rows.confirm(ORG_A, PURGE_JOB, db);
+    expect(result.state).toBe("FAILED");
   });
 
   it("returns CONFIRMED when org row statusV2 is PURGED", async () => {

@@ -1,11 +1,18 @@
-import { Injectable, Inject } from "@nestjs/common";
-import { and, eq, count, sql } from "drizzle-orm";
+import { BadRequestException, Injectable, Inject } from "@nestjs/common";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { payrollExceptions, payrollRuns, payrollRunEvents } from "../../../db/schema";
 import { users } from "../../../db/schema";
-import type { ResolveExceptionInput, OverrideExceptionInput } from "./dto/runs.schemas";
+import type { ResolveExceptionInput, OverrideExceptionInput, ExceptionFilterInput } from "./dto/runs.schemas";
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
+import { buildCursorPage } from "../../../common/pagination/cursor";
+import {
+  decodePayrollTextTimestampCursor,
+  payrollCursorPosition,
+} from "../payroll-cursor";
+
+const EXCEPTION_SEVERITIES = ["BLOCKER", "WARNING", "INFO"] as const;
 
 @Injectable()
 export class ExceptionsService {
@@ -14,13 +21,26 @@ export class ExceptionsService {
   async listExceptions(
     orgId: string,
     runId: number,
-    severity?: string,
-    status?: string,
-    page = 1,
+    severity?: ExceptionFilterInput["severity"],
+    status?: ExceptionFilterInput["status"],
+    cursor?: string,
     limit = 50,
   ) {
     const cap = Math.min(limit, 100);
-    const offset = (page - 1) * cap;
+    const cursorScope = [
+      "run-exceptions",
+      orgId,
+      runId,
+      severity ?? null,
+      status ?? null,
+    ] as const;
+    const position = decodePayrollTextTimestampCursor(cursor, cursorScope);
+    if (
+      position &&
+      !EXCEPTION_SEVERITIES.some((s) => s === position.textValue)
+    ) {
+      throw new BadRequestException("Invalid pagination cursor");
+    }
 
     const runCheck = await this.db
       .select({ id: payrollRuns.id })
@@ -31,8 +51,13 @@ export class ExceptionsService {
     if (!runCheck[0]) return null;
 
     const conditions = [eq(payrollExceptions.runId, runId), eq(payrollExceptions.orgId, orgId)];
-    if (severity) conditions.push(eq(payrollExceptions.severity, severity as "BLOCKER" | "WARNING" | "INFO"));
-    if (status) conditions.push(eq(payrollExceptions.status, status as "OPEN" | "RESOLVED" | "OVERRIDDEN"));
+    if (severity) conditions.push(eq(payrollExceptions.severity, severity));
+    if (status) conditions.push(eq(payrollExceptions.status, status));
+    if (position) {
+      conditions.push(
+        sql`(${payrollExceptions.severity}, ${payrollExceptions.createdAt}, ${payrollExceptions.id}) > (${sql.param(position.textValue, payrollExceptions.severity)}, ${sql.param(position.createdAt, payrollExceptions.createdAt)}, ${position.id})`,
+      );
+    }
 
     const rows = await this.db
       .select({
@@ -53,11 +78,20 @@ export class ExceptionsService {
       .from(payrollExceptions)
       .leftJoin(users, eq(users.id, payrollExceptions.userId))
       .where(and(...conditions))
-      .orderBy(payrollExceptions.severity, payrollExceptions.createdAt)
-      .limit(cap)
-      .offset(offset);
+      .orderBy(
+        asc(payrollExceptions.severity),
+        asc(payrollExceptions.createdAt),
+        asc(payrollExceptions.id),
+      )
+      .limit(cap + 1);
 
-    return rows;
+    return buildCursorPage(rows, cap, (row) =>
+      payrollCursorPosition(
+        cursorScope,
+        [row.severity, row.createdAt.toISOString()],
+        row.id,
+      ),
+    );
   }
 
   async resolveException(
@@ -144,18 +178,20 @@ export class ExceptionsService {
         metadata: { exceptionId, reason: body.reason },
       });
 
-      const [remainingBlockers] = await tx
-        .select({ total: count() })
+      const remainingBlockers = await tx
+        .select({ one: sql`1` })
         .from(payrollExceptions)
         .where(
           and(
+            eq(payrollExceptions.orgId, orgId),
             eq(payrollExceptions.runId, runId),
             eq(payrollExceptions.status, "OPEN"),
             eq(payrollExceptions.severity, "BLOCKER"),
           ),
-        );
+        )
+        .limit(1);
 
-      if ((remainingBlockers?.total ?? 0) === 0 && runCheck[0].status === "EXCEPTIONS_FOUND") {
+      if (remainingBlockers.length === 0 && runCheck[0].status === "EXCEPTIONS_FOUND") {
         await tx
           .update(payrollRuns)
           .set({ status: "PREVIEW_READY" })

@@ -47,7 +47,6 @@ export const billingProfiles = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [
-    index("billing_profiles_org_idx").on(t.orgId),
     unique("uniq_billing_profiles_org_id").on(t.orgId, t.id),
   ],
 );
@@ -93,7 +92,7 @@ export const appInstallations = pgTable(
   },
   (t) => [
     index("app_installations_org_app_idx").on(t.orgId, t.appId),
-    index("app_installations_org_idx").on(t.orgId),
+    index("idx_app_installations_installed_by").on(t.installedBy),
     unique("uniq_app_installations_org_id").on(t.orgId, t.id),
   ],
 );
@@ -102,7 +101,10 @@ export const affiliates = pgTable(
   "affiliates",
   {
     id: serial("id").primaryKey(),
-    userId: text("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+    // NOT .unique(): a bare global unique here constrained the whole DEPLOYMENT, so a
+    // person could be an affiliate in exactly one organisation. Tenant-scoped uniqueness
+    // is composite — see uniq_affiliates_org_user below, and migration 1055.
+    userId: text("user_id").notNull(),
     userMembershipId: integer("user_membership_id"),
     orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
     referralCode: varchar("referral_code", { length: 20 }).notNull().unique(),
@@ -118,10 +120,9 @@ export const affiliates = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [
-    index("affiliates_code_idx").on(t.referralCode),
-    index("affiliates_user_idx").on(t.userId),
     index("affiliates_org_mbr_idx").on(t.orgId, t.userMembershipId),
     unique("uniq_affiliates_org_id").on(t.orgId, t.id),
+    unique("uniq_affiliates_org_user").on(t.orgId, t.userId),
     foreignKey({ columns: [t.orgId, t.userMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_affiliates_org_user_mbr" }).onDelete("set null"),
   ],
 );
@@ -142,6 +143,7 @@ export const affiliateCommissions = pgTable(
   (t) => [
     index("affiliate_commissions_affiliate_idx").on(t.affiliateId),
     index("affiliate_commissions_status_idx").on(t.status),
+    index("idx_affiliate_commissions_referred_org").on(t.referredOrgId),
   ],
 );
 
@@ -166,6 +168,8 @@ export const referrals = pgTable(
     index("referrals_referrer_idx").on(t.referrerOrgId),
     index("referrals_code_idx").on(t.referralCode),
     index("referrals_email_idx").on(t.referredEmail),
+    index("idx_referrals_referred_org").on(t.referredOrgId),
+    index("idx_referrals_referrer_user").on(t.referrerUserId),
   ],
 );
 
@@ -179,13 +183,13 @@ export const revenueEvents = pgTable(
     previousPlan: varchar("previous_plan", { length: 20 }),
     mrr: integer("mrr").notNull(),
     amount: integer("amount"),
+    currency: varchar("currency", { length: 3 }),
     metadata: jsonb("metadata"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
     index("revenue_events_type_idx").on(t.type),
     index("revenue_events_created_idx").on(t.createdAt),
-    index("revenue_events_org_idx").on(t.orgId),
     unique("uniq_revenue_events_org_id").on(t.orgId, t.id),
   ],
 );
@@ -233,12 +237,14 @@ export const enterpriseQuotes = pgTable("enterprise_quotes", {
   rejectionReason: text("rejection_reason"),
   validUntil: date("valid_until").notNull(),
   notes: text("notes"),
-  dealId: integer("deal_id").references(() => deals.id, { onDelete: "set null" }),
-  clientId: integer("client_id").references(() => clientAccounts.id, { onDelete: "set null" }),
+  dealId: integer("deal_id"),
+  clientId: integer("client_id"),
   createdById: text("created_by_id").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (t) => [
+  foreignKey({ columns: [t.orgId, t.dealId], foreignColumns: [deals.orgId, deals.id], name: "fk_enterprise_quotes_deal_id_org" }).onDelete("set null"),
+  foreignKey({ columns: [t.orgId, t.clientId], foreignColumns: [clientAccounts.orgId, clientAccounts.id], name: "fk_enterprise_quotes_client_id_org" }).onDelete("set null"),
   index("idx_ent_quotes_org_status").on(t.orgId, t.status),
   index("idx_ent_quotes_deal").on(t.dealId),
   index("idx_ent_quotes_client").on(t.clientId),

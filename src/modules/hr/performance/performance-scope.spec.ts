@@ -37,14 +37,14 @@ describe("resolvePerformanceScope", () => {
 
   it("returns all when isOrgOwner is true", async () => {
     const result = await resolvePerformanceScope(mockAccess, makeUser({ isOrgOwner: true }));
-    expect(result).toBe("all");
+    expect(result.rawScope("spec reads the resolved value")).toBe("all");
     expect(mockAccess.resolveUserPermissions).not.toHaveBeenCalled();
   });
 
   it("returns none when the permission is not scopable", async () => {
     jest.spyOn(permissionsConstants, "isScopable").mockReturnValue(false);
     const result = await resolvePerformanceScope(mockAccess, makeUser());
-    expect(result).toBe("none");
+    expect(result.denied).toBe(true);
     expect(mockAccess.resolveUserPermissions).not.toHaveBeenCalled();
   });
 
@@ -54,7 +54,7 @@ describe("resolvePerformanceScope", () => {
       new Map([["hr:performance:manage", "all"]]),
     );
     const result = await resolvePerformanceScope(mockAccess, makeUser());
-    expect(result).toBe("all");
+    expect(result.rawScope("spec reads the resolved value")).toBe("all");
   });
 
   it("returns own when scope map contains own for the permission key", async () => {
@@ -63,14 +63,14 @@ describe("resolvePerformanceScope", () => {
       new Map([["hr:performance:manage", "own"]]),
     );
     const result = await resolvePerformanceScope(mockAccess, makeUser());
-    expect(result).toBe("own");
+    expect(result.rawScope("spec reads the resolved value")).toBe("own");
   });
 
   it("returns none when the permission key is absent from the scope map", async () => {
     jest.spyOn(permissionsConstants, "isScopable").mockReturnValue(true);
     (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Map());
     const result = await resolvePerformanceScope(mockAccess, makeUser());
-    expect(result).toBe("none");
+    expect(result.denied).toBe(true);
   });
 });
 
@@ -79,14 +79,14 @@ describe("resolveDocumentsScope", () => {
 
   it("returns all when isOrgOwner is true", async () => {
     const result = await resolveDocumentsScope(mockAccess, makeUser({ isOrgOwner: true }));
-    expect(result).toBe("all");
+    expect(result.rawScope("spec reads the resolved value")).toBe("all");
     expect(mockAccess.resolveUserPermissions).not.toHaveBeenCalled();
   });
 
   it("returns none when the permission is not scopable", async () => {
     jest.spyOn(permissionsConstants, "isScopable").mockReturnValue(false);
     const result = await resolveDocumentsScope(mockAccess, makeUser());
-    expect(result).toBe("none");
+    expect(result.denied).toBe(true);
     expect(mockAccess.resolveUserPermissions).not.toHaveBeenCalled();
   });
 
@@ -96,7 +96,7 @@ describe("resolveDocumentsScope", () => {
       new Map([["hr:documents:view", "all"]]),
     );
     const result = await resolveDocumentsScope(mockAccess, makeUser());
-    expect(result).toBe("all");
+    expect(result.rawScope("spec reads the resolved value")).toBe("all");
   });
 
   it("returns own when scope map contains own for the permission key", async () => {
@@ -105,14 +105,14 @@ describe("resolveDocumentsScope", () => {
       new Map([["hr:documents:view", "own"]]),
     );
     const result = await resolveDocumentsScope(mockAccess, makeUser());
-    expect(result).toBe("own");
+    expect(result.rawScope("spec reads the resolved value")).toBe("own");
   });
 
   it("returns none when the permission key is absent from the scope map", async () => {
     jest.spyOn(permissionsConstants, "isScopable").mockReturnValue(true);
     (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Map());
     const result = await resolveDocumentsScope(mockAccess, makeUser());
-    expect(result).toBe("none");
+    expect(result.denied).toBe(true);
   });
 });
 
@@ -126,6 +126,7 @@ describe("resolveDocumentsManageScope", () => {
       ]),
     );
 
-    await expect(resolveDocumentsManageScope(mockAccess, makeUser())).resolves.toBe("own");
+    const result = await resolveDocumentsManageScope(mockAccess, makeUser());
+    expect(result.rawScope("spec reads the resolved value")).toBe("own");
   });
 });

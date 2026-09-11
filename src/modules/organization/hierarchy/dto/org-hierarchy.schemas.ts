@@ -129,30 +129,6 @@ export const updateOrgTeamSchema = z
 
 export type UpdateOrgTeamInput = z.infer<typeof updateOrgTeamSchema>;
 
-export const moveOrgTeamSchema = z
-  .object({ departmentId: z.string().uuid() })
-  .strict();
-
-export type MoveOrgTeamInput = z.infer<typeof moveOrgTeamSchema>;
-
-export const moveBusinessUnitSchema = z
-  .object({ parentId: z.string().uuid().nullable() })
-  .strict();
-
-export type MoveBusinessUnitInput = z.infer<typeof moveBusinessUnitSchema>;
-
-export const moveOrgBranchSchema = z
-  .object({ businessUnitId: z.string().uuid().nullable() })
-  .strict();
-
-export type MoveOrgBranchInput = z.infer<typeof moveOrgBranchSchema>;
-
-export const moveOrgDepartmentSchema = z
-  .object({ branchId: z.string().uuid().nullable() })
-  .strict();
-
-export type MoveOrgDepartmentInput = z.infer<typeof moveOrgDepartmentSchema>;
-
 export const createOrgLocationSchema = z
   .object({
     name: orgNodeName,
@@ -212,6 +188,13 @@ export const listQuerySchema = z
 
 export type ListQueryInput = z.infer<typeof listQuerySchema>;
 
+// `status` is omitted, not defaulted: the options read pins ACTIVE, so a holder of `branch:view` cannot widen a dropdown into the archived units the settings surface owns.
+export const branchOptionsQuerySchema = listQuerySchema
+  .omit({ status: true })
+  .strict();
+
+export type BranchOptionsQueryInput = z.infer<typeof branchOptionsQuerySchema>;
+
 export const dependencyPreviewParamsSchema = z
   .object({
     unitKind: z.enum([
@@ -230,12 +213,3 @@ export type DependencyPreviewParamsInput = z.infer<
   typeof dependencyPreviewParamsSchema
 >;
 
-export const dependencyPreviewQuerySchema = z
-  .object({
-    mode: z.enum(["archive", "retire"]).default("archive"),
-  })
-  .strict();
-
-export type DependencyPreviewQueryInput = z.infer<
-  typeof dependencyPreviewQuerySchema
->;

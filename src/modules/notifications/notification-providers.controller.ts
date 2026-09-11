@@ -15,6 +15,13 @@ import {
 } from "./dto/provider.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  notificationProviderRowSchema,
+  notificationProvidersListSchema,
+  notificationProviderTestSchema,
+  notificationSuccessSchema,
+} from "./dto/notification-admin-response.schemas";
 
 const providerIdParams = z.object({ providerId: z.coerce.number().int().positive() }).strict();
 
@@ -24,12 +31,14 @@ export class NotificationProvidersController {
   constructor(private readonly providers: NotificationProvidersService) {}
 
   @Get()
+  @ResponseSchema(notificationProvidersListSchema)
   @RequirePermission("notifications:providers:view")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.providers.list(u.orgId);
   }
 
   @Post()
+  @ResponseSchema(notificationProviderRowSchema)
   @HttpCode(201)
   @RequirePermission("notifications:providers:manage")
   @Validate({ body: createProviderSchema })
@@ -41,6 +50,7 @@ export class NotificationProvidersController {
   }
 
   @Patch(":providerId")
+  @ResponseSchema(notificationProviderRowSchema)
   @RequirePermission("notifications:providers:manage")
   @Validate({ params: providerIdParams, body: updateProviderSchema })
   update(
@@ -52,6 +62,7 @@ export class NotificationProvidersController {
   }
 
   @Post(":providerId/test")
+  @ResponseSchema(notificationProviderTestSchema)
   @RequirePermission("notifications:providers:manage")
   @Validate({ params: providerIdParams, body: testProviderSchema })
   test(
@@ -63,6 +74,7 @@ export class NotificationProvidersController {
   }
 
   @Delete(":providerId")
+  @ResponseSchema(notificationSuccessSchema)
   @RequirePermission("notifications:providers:manage")
   @Validate({ params: providerIdParams })
   remove(@Param("providerId", ParseIntPipe) providerId: number, @CurrentUser() u: CurrentUserContext) {

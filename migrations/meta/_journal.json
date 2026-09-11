@@ -2224,897 +2224,897 @@
     {
       "idx": 317,
       "version": "7",
-      "when": 1700000306000,
-      "tag": "0278_drop_legacy_identity_tables",
-      "breakpoints": true
-    },
-    {
-      "idx": 318,
-      "version": "7",
       "when": 1787830375441,
       "tag": "0530_crm_deal_forecast_models",
       "breakpoints": true
     },
     {
-      "idx": 319,
+      "idx": 318,
       "version": "7",
       "when": 1787830376441,
       "tag": "0272a_client_id_to_party_id",
       "breakpoints": true
     },
     {
-      "idx": 320,
+      "idx": 319,
       "version": "7",
       "when": 1787830377441,
       "tag": "0273_derive_party_from_client",
       "breakpoints": true
     },
     {
-      "idx": 321,
+      "idx": 320,
       "version": "7",
       "when": 1787830378441,
       "tag": "0274_customer_returns_party",
       "breakpoints": true
     },
     {
-      "idx": 322,
+      "idx": 321,
       "version": "7",
       "when": 1787830379441,
       "tag": "0275a_lead_contact_org_party_columns",
       "breakpoints": true
     },
     {
-      "idx": 323,
+      "idx": 322,
       "version": "7",
       "when": 1787830379442,
       "tag": "0531_platform_payments_provider_contract",
       "breakpoints": true
     },
     {
-      "idx": 324,
+      "idx": 323,
       "version": "7",
       "when": 1787830380442,
       "tag": "0276_derive_party_from_legacy",
       "breakpoints": true
     },
     {
-      "idx": 325,
+      "idx": 324,
       "version": "7",
       "when": 1787830381442,
       "tag": "0557_relationship_states_deal_fk",
       "breakpoints": true
     },
     {
-      "idx": 326,
+      "idx": 325,
       "version": "7",
       "when": 1700000307000,
       "tag": "0472_outbox_inbox_aggregate_fence",
       "breakpoints": true
     },
     {
-      "idx": 327,
+      "idx": 326,
       "version": "7",
       "when": 1787830391442,
       "tag": "0533_autonomy_repairs",
       "breakpoints": true
     },
     {
-      "idx": 328,
+      "idx": 327,
       "version": "7",
       "when": 1787830392442,
       "tag": "0534_compliance_subject_request_permissions",
       "breakpoints": true
     },
     {
-      "idx": 329,
+      "idx": 328,
       "version": "7",
       "when": 1787830393442,
       "tag": "0535a_crm_outbound",
       "breakpoints": true
     },
     {
-      "idx": 330,
+      "idx": 329,
       "version": "7",
       "when": 1787830394442,
       "tag": "0536_subscriptions_agreed_price",
       "breakpoints": true
     },
     {
-      "idx": 331,
+      "idx": 330,
       "version": "7",
       "when": 1787830395442,
       "tag": "0540a_crm_call_analyses",
       "breakpoints": true
     },
     {
-      "idx": 332,
+      "idx": 331,
       "version": "7",
       "when": 1787830396442,
       "tag": "0541a_crm_call_analysis_permissions",
       "breakpoints": true
     },
     {
-      "idx": 333,
+      "idx": 332,
       "version": "7",
       "when": 1787830397442,
       "tag": "0542a_crm_call_analysis_releases",
       "breakpoints": true
     },
     {
-      "idx": 334,
+      "idx": 333,
       "version": "7",
       "when": 1787830398442,
       "tag": "0543a_crm_call_analysis_team_permissions",
       "breakpoints": true
     },
     {
-      "idx": 335,
+      "idx": 334,
       "version": "7",
       "when": 1787830399442,
       "tag": "0544a_crm_call_recording_consent",
       "breakpoints": true
     },
     {
-      "idx": 336,
+      "idx": 335,
       "version": "7",
       "when": 1787830400442,
       "tag": "0545_crm_commission_plans",
       "breakpoints": true
     },
     {
-      "idx": 337,
+      "idx": 336,
       "version": "7",
       "when": 1787830401442,
       "tag": "0546_crm_commission_accrual",
       "breakpoints": true
     },
     {
-      "idx": 338,
+      "idx": 337,
       "version": "7",
       "when": 1787830402442,
       "tag": "0550a_customer_lifecycle_records",
       "breakpoints": true
     },
     {
-      "idx": 339,
+      "idx": 338,
       "version": "7",
       "when": 1787830403442,
       "tag": "0551_customer_lifecycle_permissions",
       "breakpoints": true
     },
     {
-      "idx": 340,
+      "idx": 339,
       "version": "7",
       "when": 1787830404442,
       "tag": "0552a_customer_health_assessments",
       "breakpoints": true
     },
     {
-      "idx": 341,
+      "idx": 340,
       "version": "7",
       "when": 1787830405442,
       "tag": "0553_customer_health_permissions",
       "breakpoints": true
     },
     {
-      "idx": 342,
+      "idx": 341,
       "version": "7",
       "when": 1787830406442,
       "tag": "0554_lifecycle_renewal_triggers",
       "breakpoints": true
     },
     {
-      "idx": 343,
+      "idx": 342,
       "version": "7",
       "when": 1787830407442,
       "tag": "0555_crm_reporting",
       "breakpoints": true
     },
     {
-      "idx": 344,
+      "idx": 343,
       "version": "7",
       "when": 1787830408442,
       "tag": "0556_backfill_crm_reporting_permissions",
       "breakpoints": true
     },
     {
-      "idx": 345,
+      "idx": 344,
       "version": "7",
       "when": 1787830409442,
       "tag": "0558_crm_nurture_sequences",
       "breakpoints": true
     },
     {
-      "idx": 346,
+      "idx": 345,
       "version": "7",
       "when": 1787830410442,
       "tag": "0559_data_quality_autonomous_decision",
       "breakpoints": true
     },
     {
-      "idx": 347,
+      "idx": 346,
       "version": "7",
       "when": 1700000308000,
       "tag": "0478_invoice_line_items_column_drop",
       "breakpoints": true
     },
     {
-      "idx": 348,
+      "idx": 347,
       "version": "7",
       "when": 1700000309000,
       "tag": "0482_candidate_resume_column_drop",
       "breakpoints": true
     },
     {
-      "idx": 349,
+      "idx": 348,
       "version": "7",
       "when": 1700000310000,
       "tag": "0514_inv_webhook_event_subscriptions_rls",
       "breakpoints": true
     },
     {
-      "idx": 350,
+      "idx": 349,
       "version": "7",
       "when": 1700000311000,
       "tag": "0515_inventory_ledger_invariants",
       "breakpoints": true
     },
     {
-      "idx": 351,
+      "idx": 350,
       "version": "7",
       "when": 1700000312000,
       "tag": "0516_inventory_soft_delete",
       "breakpoints": true
     },
     {
-      "idx": 352,
+      "idx": 351,
       "version": "7",
       "when": 1700000313000,
       "tag": "0517_inventory_uom_factor_snapshot",
       "breakpoints": true
     },
     {
-      "idx": 353,
+      "idx": 352,
       "version": "7",
       "when": 1700000314000,
       "tag": "0518_inventory_variant_search",
       "breakpoints": true
     },
     {
-      "idx": 354,
+      "idx": 353,
       "version": "7",
       "when": 1700000315000,
       "tag": "0519_inventory_resumable_import",
       "breakpoints": true
     },
     {
-      "idx": 355,
+      "idx": 354,
       "version": "7",
       "when": 1700000316000,
       "tag": "0520b_rbac_membership_keys",
       "breakpoints": true
     },
     {
-      "idx": 356,
+      "idx": 355,
       "version": "7",
       "when": 1700000317000,
       "tag": "0521a_drop_resurrected_sku_uniques",
       "breakpoints": true
     },
     {
-      "idx": 357,
+      "idx": 356,
       "version": "7",
       "when": 1700000318000,
       "tag": "0522a_grn_discrepancy",
       "breakpoints": true
     },
     {
-      "idx": 358,
+      "idx": 357,
       "version": "7",
       "when": 1700000319000,
       "tag": "0523a_pick_line_exceptions",
       "breakpoints": true
     },
     {
-      "idx": 359,
+      "idx": 358,
       "version": "7",
       "when": 1700000320000,
       "tag": "0524a_cartonization",
       "breakpoints": true
     },
     {
-      "idx": 360,
+      "idx": 359,
       "version": "7",
       "when": 1700000321000,
       "tag": "0525_carrier_status_events",
       "breakpoints": true
     },
     {
-      "idx": 361,
+      "idx": 360,
       "version": "7",
       "when": 1700000322000,
       "tag": "0526_return_inspection",
       "breakpoints": true
     },
     {
-      "idx": 362,
+      "idx": 361,
       "version": "7",
       "when": 1798000156000,
       "tag": "0591b_gl_ap_ar_bank_tax_chain_repair",
       "breakpoints": true
     },
     {
-      "idx": 363,
+      "idx": 362,
       "version": "7",
       "when": 1700000323000,
       "tag": "0527_po_batching_policy",
       "breakpoints": true
     },
     {
-      "idx": 364,
+      "idx": 363,
       "version": "7",
       "when": 1700000324000,
       "tag": "0528_pick_substitute_quantity",
       "breakpoints": true
     },
     {
-      "idx": 365,
+      "idx": 364,
       "version": "7",
       "when": 1700000325000,
       "tag": "0529_ledger_corrections_and_immutability",
       "breakpoints": true
     },
     {
-      "idx": 366,
+      "idx": 365,
       "version": "7",
       "when": 1700000326000,
       "tag": "0530a_transit_locations",
       "breakpoints": true
     },
     {
-      "idx": 367,
+      "idx": 366,
       "version": "7",
       "when": 1700000327000,
       "tag": "0531a_drop_resurrected_sku_uniques_again",
       "breakpoints": true
     },
     {
-      "idx": 368,
+      "idx": 367,
       "version": "7",
       "when": 1700000328000,
       "tag": "0532_inventory_ai_read_backfill",
       "breakpoints": true
     },
     {
-      "idx": 369,
+      "idx": 368,
       "version": "7",
       "when": 1700000329000,
       "tag": "0533a_ledger_correction_objects_relocked",
       "breakpoints": true
     },
     {
-      "idx": 370,
+      "idx": 369,
       "version": "7",
       "when": 1700000330000,
       "tag": "0534a_grn_receiving_lifecycle",
       "breakpoints": true
     },
     {
-      "idx": 371,
+      "idx": 370,
       "version": "7",
       "when": 1700000331000,
       "tag": "0535_pick_wave_assignment",
       "breakpoints": true
     },
     {
-      "idx": 372,
+      "idx": 371,
       "version": "7",
       "when": 1700000332000,
       "tag": "0536a_putaway_tasks",
       "breakpoints": true
     },
     {
-      "idx": 373,
+      "idx": 372,
       "version": "7",
       "when": 1700000333000,
       "tag": "0537_return_approval",
       "breakpoints": true
     },
     {
-      "idx": 374,
+      "idx": 373,
       "version": "7",
       "when": 1700000334000,
       "tag": "0538_inventory_webhook_delivery_durability",
       "breakpoints": true
     },
     {
-      "idx": 375,
+      "idx": 374,
       "version": "7",
       "when": 1700000335000,
       "tag": "0539_inventory_audit_export",
       "breakpoints": true
     },
     {
-      "idx": 376,
+      "idx": 375,
       "version": "7",
       "when": 1700000336000,
       "tag": "0540b_package_sales_order_link",
       "breakpoints": true
     },
     {
-      "idx": 377,
+      "idx": 376,
       "version": "7",
       "when": 1700000337000,
       "tag": "0542b_genealogy_traversal_indexes",
       "breakpoints": true
     },
     {
-      "idx": 378,
+      "idx": 377,
       "version": "7",
       "when": 1700000338000,
       "tag": "0541b_demand_forecast_versions",
       "breakpoints": true
     },
     {
-      "idx": 379,
+      "idx": 378,
       "version": "7",
       "when": 1700000339000,
       "tag": "0545a_stock_write_off",
       "breakpoints": true
     },
     {
-      "idx": 380,
+      "idx": 379,
       "version": "7",
       "when": 1700000340000,
       "tag": "0544b_inspection_plans",
       "breakpoints": true
     },
     {
-      "idx": 381,
+      "idx": 380,
       "version": "7",
       "when": 1700000341000,
       "tag": "0543b_pick_exception_ownership",
       "breakpoints": true
     },
     {
-      "idx": 382,
+      "idx": 381,
       "version": "7",
       "when": 1700000342000,
       "tag": "0547_ledger_keyset_pagination",
       "breakpoints": true
     },
     {
-      "idx": 383,
+      "idx": 382,
       "version": "7",
       "when": 1700000343000,
       "tag": "0548_inventory_pending_one_permissions",
       "breakpoints": true
     },
     {
-      "idx": 384,
+      "idx": 383,
       "version": "7",
       "when": 1700000344000,
       "tag": "0553a_inventory_pack_flags",
       "breakpoints": true
     },
     {
-      "idx": 385,
+      "idx": 384,
       "version": "7",
       "when": 1700000345000,
       "tag": "0550_recall_evidence",
       "breakpoints": true
     },
     {
-      "idx": 386,
+      "idx": 385,
       "version": "7",
       "when": 1700000346000,
       "tag": "0549_transit_exit_queue_index",
       "breakpoints": true
     },
     {
-      "idx": 387,
+      "idx": 386,
       "version": "7",
       "when": 1700000347000,
       "tag": "0561_inventory_hsn_tax_treatment",
       "breakpoints": true
     },
     {
-      "idx": 388,
+      "idx": 387,
       "version": "7",
       "when": 1700000348000,
       "tag": "0552_inventory_valuation_gl_recon_indexes",
       "breakpoints": true
     },
     {
-      "idx": 389,
+      "idx": 388,
       "version": "7",
       "when": 1700000349000,
       "tag": "0562_replenishment_proposal_overrides",
       "breakpoints": true
     },
     {
-      "idx": 390,
+      "idx": 389,
       "version": "7",
       "when": 1700000350000,
       "tag": "0563_near_expiry_allocation_policy",
       "breakpoints": true
     },
     {
-      "idx": 391,
+      "idx": 390,
       "version": "7",
       "when": 1700000351000,
       "tag": "0564_india_compliance_adapters",
       "breakpoints": true
     },
     {
-      "idx": 392,
+      "idx": 391,
       "version": "7",
       "when": 1700000352000,
       "tag": "0570_channel_snapshot_reconciliation",
       "breakpoints": true
     },
     {
-      "idx": 393,
+      "idx": 392,
       "version": "7",
       "when": 1700000353000,
       "tag": "0571_inventory_ai_review_and_feedback",
       "breakpoints": true
     },
     {
-      "idx": 394,
+      "idx": 393,
       "version": "7",
       "when": 1700000354000,
       "tag": "0572_inventory_landed_cost",
       "breakpoints": true
     },
     {
-      "idx": 395,
+      "idx": 394,
       "version": "7",
       "when": 1700000355000,
       "tag": "0573_shelf_life_allocation_overrides",
       "breakpoints": true
     },
     {
-      "idx": 396,
+      "idx": 395,
       "version": "7",
       "when": 1700000356000,
       "tag": "0574_inventory_pharmacy_kirana_packs",
       "breakpoints": true
     },
     {
-      "idx": 397,
+      "idx": 396,
       "version": "7",
       "when": 1700000357000,
       "tag": "0574a_inventory_party_columns",
       "breakpoints": true
     },
     {
-      "idx": 398,
+      "idx": 397,
       "version": "7",
       "when": 1700000358000,
       "tag": "0580a_inventory_channel_pools",
       "breakpoints": true
     },
     {
-      "idx": 399,
+      "idx": 398,
       "version": "7",
       "when": 1700000359000,
       "tag": "0581a_inventory_quick_commerce_asn",
       "breakpoints": true
     },
     {
-      "idx": 400,
+      "idx": 399,
       "version": "7",
       "when": 1700000360000,
       "tag": "0582a_inventory_handling_units",
       "breakpoints": true
     },
     {
-      "idx": 401,
+      "idx": 400,
       "version": "7",
       "when": 1700000361000,
       "tag": "0583_inventory_slotting",
       "breakpoints": true
     },
     {
-      "idx": 402,
+      "idx": 401,
       "version": "7",
       "when": 1700000362000,
       "tag": "0584_inventory_labor",
       "breakpoints": true
     },
     {
-      "idx": 403,
+      "idx": 402,
       "version": "7",
       "when": 1700000363000,
       "tag": "0585_inventory_cross_dock",
       "breakpoints": true
     },
     {
-      "idx": 404,
+      "idx": 403,
       "version": "7",
       "when": 1700000364000,
       "tag": "0586_inventory_kitting",
       "breakpoints": true
     },
     {
-      "idx": 405,
+      "idx": 404,
       "version": "7",
       "when": 1700000365000,
       "tag": "0587_inventory_catch_weight_consignment",
       "breakpoints": true
     },
     {
-      "idx": 406,
+      "idx": 405,
       "version": "7",
       "when": 1700000366000,
       "tag": "0588_inventory_dock_waveless",
       "breakpoints": true
     },
     {
-      "idx": 407,
+      "idx": 406,
       "version": "7",
       "when": 1798000157000,
       "tag": "0649b_inv_carton_shipment_chain_repair",
       "breakpoints": true
     },
     {
-      "idx": 408,
+      "idx": 407,
       "version": "7",
       "when": 1700000367000,
       "tag": "0589_inventory_drop_reason_codes",
       "breakpoints": true
     },
     {
-      "idx": 409,
+      "idx": 408,
       "version": "7",
       "when": 1700000368000,
       "tag": "0649_org_members_org_fk",
       "breakpoints": true
     },
     {
-      "idx": 410,
+      "idx": 409,
       "version": "7",
       "when": 1700000369000,
       "tag": "0520_commercial_billing_catalog",
       "breakpoints": true
     },
     {
-      "idx": 411,
+      "idx": 410,
       "version": "7",
       "when": 1700000370000,
       "tag": "0521_billing_seat_ledger",
       "breakpoints": true
     },
     {
-      "idx": 412,
+      "idx": 411,
       "version": "7",
       "when": 1700000371000,
       "tag": "0522_billing_proration_ledger",
       "breakpoints": true
     },
     {
-      "idx": 413,
+      "idx": 412,
       "version": "7",
       "when": 1700000372000,
       "tag": "0523_billing_usage_events",
       "breakpoints": true
     },
     {
-      "idx": 414,
+      "idx": 413,
       "version": "7",
       "when": 1700000373000,
       "tag": "0524_billing_invoice_snapshots",
       "breakpoints": true
     },
     {
-      "idx": 415,
+      "idx": 414,
       "version": "7",
       "when": 1700000374000,
       "tag": "0540_hr_employments_custom_field_jsonb_column",
       "breakpoints": true
     },
     {
-      "idx": 416,
+      "idx": 415,
       "version": "7",
       "when": 1700000375000,
       "tag": "0541_hr_employments_custom_field_backfill",
       "breakpoints": true
     },
     {
-      "idx": 417,
+      "idx": 416,
       "version": "7",
       "when": 1700000376000,
       "tag": "0542_hr_employments_custom_field_gin_index",
       "breakpoints": true
     },
     {
-      "idx": 418,
+      "idx": 417,
       "version": "7",
       "when": 1700000377000,
       "tag": "0580_notification_audit_logs_widen_notification_id",
       "breakpoints": true
     },
     {
-      "idx": 419,
+      "idx": 418,
       "version": "7",
       "when": 1700000378000,
       "tag": "0581_chat_messages_widen_identity",
       "breakpoints": true
     },
     {
-      "idx": 420,
+      "idx": 419,
       "version": "7",
       "when": 1700000379000,
       "tag": "0582_notifications_partition_by_created_at",
       "breakpoints": true
     },
     {
-      "idx": 421,
+      "idx": 420,
       "version": "7",
       "when": 1700000380000,
       "tag": "0565_billing_invoice_snapshot_immutability",
       "breakpoints": true
     },
     {
-      "idx": 422,
+      "idx": 421,
       "version": "7",
       "when": 1700000381000,
       "tag": "0543_hr_position_taxonomy",
       "breakpoints": true
     },
     {
-      "idx": 423,
+      "idx": 422,
       "version": "7",
       "when": 1700000382000,
       "tag": "0544_hr_position_status_to_text",
       "breakpoints": true
     },
     {
-      "idx": 424,
+      "idx": 423,
       "version": "7",
       "when": 1700000383000,
       "tag": "0575_ticket_list_sort_indexes",
       "breakpoints": true
     },
     {
-      "idx": 425,
+      "idx": 424,
       "version": "7",
       "when": 1700000384000,
       "tag": "0489_chain_creates_early",
       "breakpoints": true
     },
     {
-      "idx": 426,
+      "idx": 425,
       "version": "7",
       "when": 1700000385000,
       "tag": "0590_reconcile_baseline_shape_drift",
       "breakpoints": true
     },
     {
-      "idx": 427,
+      "idx": 426,
       "version": "7",
       "when": 1700000386000,
       "tag": "0591_tenant_isolation_for_unprotected_tables",
       "breakpoints": true
     },
     {
-      "idx": 428,
+      "idx": 427,
       "version": "7",
       "when": 1700000387000,
       "tag": "0592_notifications_tenant_isolation",
       "breakpoints": true
     },
     {
-      "idx": 429,
+      "idx": 428,
       "version": "7",
       "when": 1700000388000,
       "tag": "0605_provider_webhook_events_tenant_scoped_unique",
       "breakpoints": true
     },
     {
-      "idx": 430,
+      "idx": 429,
       "version": "7",
       "when": 1700000389000,
       "tag": "0606_audit_log_platform_event_consistency",
       "breakpoints": true
     },
     {
-      "idx": 431,
+      "idx": 430,
       "version": "7",
       "when": 1700000390000,
       "tag": "0607_vault_access_logs_survive_document_deletion",
       "breakpoints": true
     },
     {
-      "idx": 432,
+      "idx": 431,
       "version": "7",
       "when": 1700000391000,
       "tag": "0608_organization_placement_and_lifecycle",
       "breakpoints": true
     },
     {
-      "idx": 433,
+      "idx": 432,
       "version": "7",
       "when": 1700000392000,
       "tag": "0609_employment_sensitive_fields_envelope_encryption",
       "breakpoints": true
     },
     {
-      "idx": 434,
+      "idx": 433,
       "version": "7",
       "when": 1798000158000,
       "tag": "0676b_inv_compliance_documents_chain_repair",
       "breakpoints": true
     },
     {
-      "idx": 435,
+      "idx": 434,
       "version": "7",
       "when": 1700000393000,
       "tag": "0610_agent_tokens_membership_and_ceiling",
       "breakpoints": true
     },
     {
-      "idx": 436,
+      "idx": 435,
       "version": "7",
       "when": 1798000159000,
       "tag": "0677b_feedback_cycle_responses_policy_repair",
       "breakpoints": true
     },
     {
-      "idx": 437,
+      "idx": 436,
       "version": "7",
       "when": 1700000394000,
       "tag": "0611_delegations_and_overrides_expand_membership",
       "breakpoints": true
     },
     {
-      "idx": 438,
+      "idx": 437,
       "version": "7",
       "when": 1700000395000,
       "tag": "0612_delegations_and_overrides_enforce_membership",
       "breakpoints": true
     },
     {
-      "idx": 439,
+      "idx": 438,
       "version": "7",
       "when": 1798000160000,
       "tag": "0678b_feedback_cycle_responses_rls_complete",
       "breakpoints": true
     },
     {
-      "idx": 440,
+      "idx": 439,
       "version": "7",
       "when": 1700000396000,
       "tag": "0613_delegations_and_overrides_drop_user_columns",
       "breakpoints": true
     },
     {
-      "idx": 441,
+      "idx": 440,
       "version": "7",
       "when": 1700000397000,
       "tag": "0614_ownership_transfers_record_initiator",
       "breakpoints": true
     },
     {
-      "idx": 442,
+      "idx": 441,
       "version": "7",
       "when": 1700000398000,
       "tag": "0615_users_holds_authentication_identity_only",
       "breakpoints": true
     },
     {
-      "idx": 443,
+      "idx": 442,
       "version": "7",
       "when": 1700000399000,
       "tag": "0616_timesheets_declared_indexes_exist",
       "breakpoints": true
     },
     {
-      "idx": 444,
+      "idx": 443,
       "version": "7",
       "when": 1700000400000,
       "tag": "0617_cell_relocation_and_placement_decisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 444,
+      "version": "7",
+      "when": 1700000400500,
+      "tag": "0617a_control_plane_child_tenant_columns",
       "breakpoints": true
     },
     {
@@ -3155,1436 +3155,1436 @@
     {
       "idx": 450,
       "version": "7",
+      "when": 1700000405500,
+      "tag": "0622a_custom_field_twin_key_yields",
+      "breakpoints": true
+    },
+    {
+      "idx": 451,
+      "version": "7",
       "when": 1700000406000,
       "tag": "0623_workflow_variables_tenant_constraints",
       "breakpoints": true
     },
     {
-      "idx": 451,
+      "idx": 452,
       "version": "7",
       "when": 1700000407000,
       "tag": "0624_inventory_sku_uniqueness_restored",
       "breakpoints": true
     },
     {
-      "idx": 452,
+      "idx": 453,
       "version": "7",
       "when": 1700000408000,
       "tag": "0625_relocation_copy_progress",
       "breakpoints": true
     },
     {
-      "idx": 453,
+      "idx": 454,
       "version": "7",
       "when": 1700000409000,
       "tag": "0626_org_members_joined_at_index",
       "breakpoints": true
     },
     {
-      "idx": 454,
+      "idx": 455,
       "version": "7",
       "when": 1700000410000,
       "tag": "0627_org_cell_traffic",
       "breakpoints": true
     },
     {
-      "idx": 455,
+      "idx": 456,
       "version": "7",
       "when": 1700000411000,
       "tag": "0628_communication_actor_normalization",
       "breakpoints": true
     },
     {
-      "idx": 456,
+      "idx": 457,
       "version": "7",
       "when": 1700000412000,
       "tag": "0630_restore_calendar_legacy_read_column",
       "breakpoints": true
     },
     {
-      "idx": 457,
+      "idx": 458,
       "version": "7",
       "when": 1700000413000,
       "tag": "0631_chat_composite_tenant_constraints",
       "breakpoints": true
     },
     {
-      "idx": 458,
+      "idx": 459,
       "version": "7",
       "when": 1700000414000,
       "tag": "0633_tenant_leading_indexes",
       "breakpoints": true
     },
     {
-      "idx": 459,
+      "idx": 460,
       "version": "7",
       "when": 1700000415000,
       "tag": "0634_rbac_actor_and_module_integrity",
       "breakpoints": true
     },
     {
-      "idx": 460,
+      "idx": 461,
       "version": "7",
       "when": 1700000416000,
       "tag": "0635_kb_composite_tenant_constraints",
       "breakpoints": true
     },
     {
-      "idx": 461,
+      "idx": 462,
       "version": "7",
       "when": 1700000417000,
       "tag": "0637_finance_cursor_retention",
       "breakpoints": true
     },
     {
-      "idx": 462,
+      "idx": 463,
       "version": "7",
       "when": 1700000418000,
       "tag": "0638_accounting_child_tenant_indexes",
       "breakpoints": true
     },
     {
-      "idx": 463,
+      "idx": 464,
       "version": "7",
       "when": 1700000419000,
       "tag": "0639_perf_reviews_cursor_indexes",
       "breakpoints": true
     },
     {
-      "idx": 464,
+      "idx": 465,
       "version": "7",
       "when": 1700000420000,
       "tag": "0640_helpdesk_search_and_cursor_indexes",
       "breakpoints": true
     },
     {
-      "idx": 465,
+      "idx": 466,
       "version": "7",
       "when": 1700000421000,
       "tag": "0641_financial_actor_audit_identity",
       "breakpoints": true
     },
     {
-      "idx": 466,
+      "idx": 467,
       "version": "7",
       "when": 1700000422000,
       "tag": "0645_account_org_index_last_activated",
       "breakpoints": true
     },
     {
-      "idx": 467,
+      "idx": 468,
       "version": "7",
       "when": 1700000423000,
       "tag": "0646_hr_actor_membership_expand",
       "breakpoints": true
     },
     {
-      "idx": 468,
+      "idx": 469,
       "version": "7",
       "when": 1700000424000,
       "tag": "0647_pay_time_actor_membership_expand",
       "breakpoints": true
     },
     {
-      "idx": 469,
+      "idx": 470,
       "version": "7",
       "when": 1700000425000,
       "tag": "0648_build_actor_membership_expand",
       "breakpoints": true
     },
     {
-      "idx": 470,
+      "idx": 471,
       "version": "7",
       "when": 1700000426000,
       "tag": "0636_kb_source_review_tenant_constraints",
       "breakpoints": true
     },
     {
-      "idx": 471,
+      "idx": 472,
       "version": "7",
       "when": 1700000427000,
       "tag": "0655_chain_creates_remaining_catalog_objects",
       "breakpoints": true
     },
     {
-      "idx": 472,
+      "idx": 473,
       "version": "7",
       "when": 1700000428000,
       "tag": "0650_tenant_isolation_for_three_unprotected_tables",
       "breakpoints": true
     },
     {
-      "idx": 473,
+      "idx": 474,
       "version": "7",
       "when": 1700000429000,
       "tag": "0651_drop_calendar_attendee_json",
       "breakpoints": true
     },
     {
-      "idx": 474,
+      "idx": 475,
       "version": "7",
       "when": 1700000430000,
       "tag": "0652_repair_chat_reaction_backfill",
       "breakpoints": true
     },
     {
-      "idx": 475,
+      "idx": 476,
       "version": "7",
       "when": 1700000431000,
       "tag": "0653_kb_remaining_composite_tenant_constraints",
       "breakpoints": true
     },
     {
-      "idx": 476,
+      "idx": 477,
       "version": "7",
       "when": 1700000432000,
       "tag": "0654_calendar_exception_tenant_fk",
       "breakpoints": true
     },
     {
-      "idx": 477,
+      "idx": 478,
       "version": "7",
       "when": 1787941028254,
       "tag": "0656a_autonomy_auto_quote_opt_in",
       "breakpoints": true
     },
     {
-      "idx": 478,
+      "idx": 479,
       "version": "7",
       "when": 1787941088254,
       "tag": "0657a_crm_whatsapp_channels",
       "breakpoints": true
     },
     {
-      "idx": 479,
+      "idx": 480,
       "version": "7",
       "when": 1787941148254,
       "tag": "0658a_crm_whatsapp_channels_fail_closed",
       "breakpoints": true
     },
     {
-      "idx": 480,
+      "idx": 481,
       "version": "7",
       "when": 1787941208254,
       "tag": "0659a_sign_sweep_runs",
       "breakpoints": true
     },
     {
-      "idx": 481,
+      "idx": 482,
       "version": "7",
       "when": 1787941268254,
       "tag": "0660a_sign_bulk_row_attempts",
       "breakpoints": true
     },
     {
-      "idx": 482,
+      "idx": 483,
       "version": "7",
       "when": 1787941328254,
       "tag": "0661a_business_parties_timezone",
       "breakpoints": true
     },
     {
-      "idx": 483,
+      "idx": 484,
       "version": "7",
       "when": 1787941388254,
       "tag": "0662a_composite_fk_set_null_nulls_tenant",
       "breakpoints": true
     },
     {
-      "idx": 484,
+      "idx": 485,
       "version": "7",
       "when": 1787941448254,
       "tag": "0663a_audit_logs_unattributed_actor",
       "breakpoints": true
     },
     {
-      "idx": 485,
+      "idx": 486,
       "version": "7",
       "when": 1787941508254,
       "tag": "0664a_crm_report_schedules",
       "breakpoints": true
     },
     {
-      "idx": 486,
+      "idx": 487,
       "version": "7",
       "when": 1787941568254,
       "tag": "0665a_crm_mcp_off_by_default",
       "breakpoints": true
     },
     {
-      "idx": 487,
+      "idx": 488,
       "version": "7",
       "when": 1787941628254,
       "tag": "0666a_lifecycle_expansion_trigger",
       "breakpoints": true
     },
     {
-      "idx": 488,
+      "idx": 489,
       "version": "7",
       "when": 1787941688254,
       "tag": "0667a_crm_segments",
       "breakpoints": true
     },
     {
-      "idx": 489,
+      "idx": 490,
       "version": "7",
       "when": 1787941748254,
       "tag": "0668a_crm_call_analyses_window",
       "breakpoints": true
     },
     {
-      "idx": 490,
+      "idx": 491,
       "version": "7",
       "when": 1787941808254,
       "tag": "0669a_crm_deal_competitor_suggestions",
       "breakpoints": true
     },
     {
-      "idx": 491,
+      "idx": 492,
       "version": "7",
       "when": 1787941928254,
       "tag": "0670a_crm_contacts_view_not_scopable",
       "breakpoints": true
     },
     {
-      "idx": 492,
+      "idx": 493,
       "version": "7",
       "when": 1787941988254,
       "tag": "0671a_accounting_reads_not_scopable",
       "breakpoints": true
     },
     {
-      "idx": 493,
+      "idx": 494,
       "version": "7",
       "when": 1787942048254,
       "tag": "0672a_gl_system_tag_inventory_roles",
       "breakpoints": true
     },
     {
-      "idx": 494,
+      "idx": 495,
       "version": "7",
       "when": 1787942108254,
       "tag": "0673a_compliance_mock_transport",
       "breakpoints": true
     },
     {
-      "idx": 495,
+      "idx": 496,
       "version": "7",
       "when": 1787942168254,
       "tag": "0674a_subprocessor_subscribers_tenant_index",
       "breakpoints": true
     },
     {
-      "idx": 496,
+      "idx": 497,
       "version": "7",
       "when": 1787941868254,
       "tag": "0659b_timesheets_lifecycle_seq_and_attendance_draft",
       "breakpoints": true
     },
     {
-      "idx": 497,
+      "idx": 498,
       "version": "7",
       "when": 1700000433000,
       "tag": "0656_communication_tenant_rls",
       "breakpoints": true
     },
     {
-      "idx": 498,
+      "idx": 499,
       "version": "7",
       "when": 1700000434000,
       "tag": "0657_kb_article_tags_tenant_integrity",
       "breakpoints": true
     },
     {
-      "idx": 499,
+      "idx": 500,
       "version": "7",
       "when": 1700000435000,
       "tag": "0658_calendar_membership_actors",
       "breakpoints": true
     },
     {
-      "idx": 500,
+      "idx": 501,
       "version": "7",
       "when": 1700000436000,
       "tag": "0659_expense_export_jobs",
       "breakpoints": true
     },
     {
-      "idx": 501,
+      "idx": 502,
       "version": "7",
       "when": 1700000437000,
       "tag": "0660_communication_actor_contraction_expand",
       "breakpoints": true
     },
     {
-      "idx": 502,
+      "idx": 503,
       "version": "7",
       "when": 1700000438000,
       "tag": "0661_kb_page_membership_actors",
       "breakpoints": true
     },
     {
-      "idx": 503,
+      "idx": 504,
       "version": "7",
       "when": 1700000439000,
       "tag": "0662_kb_page_review_membership_actors",
       "breakpoints": true
     },
     {
-      "idx": 504,
+      "idx": 505,
       "version": "7",
       "when": 1700000440000,
       "tag": "0663_invoice_reminder_due_index",
       "breakpoints": true
     },
     {
-      "idx": 505,
+      "idx": 506,
       "version": "7",
       "when": 1700000441000,
       "tag": "0664_calendar_events_visibility",
       "breakpoints": true
     },
     {
-      "idx": 506,
+      "idx": 507,
       "version": "7",
       "when": 1700000442000,
       "tag": "0665_kb_article_chunks_acl_revision_not_null",
       "breakpoints": true
     },
     {
-      "idx": 507,
+      "idx": 508,
       "version": "7",
       "when": 1700000443000,
       "tag": "0668_fix_membership_fk_on_delete",
       "breakpoints": true
     },
     {
-      "idx": 508,
+      "idx": 509,
       "version": "7",
       "when": 1700000444000,
       "tag": "0670_kb_chunks_page_created_by_membership",
       "breakpoints": true
     },
     {
-      "idx": 509,
+      "idx": 510,
       "version": "7",
       "when": 1700000445000,
       "tag": "0671_kb_chunks_acl_index_membership",
       "breakpoints": true
     },
     {
-      "idx": 510,
+      "idx": 511,
       "version": "7",
       "when": 1700000446000,
       "tag": "0672_chat_attribution_contraction_backfill",
       "breakpoints": true
     },
     {
-      "idx": 511,
+      "idx": 512,
       "version": "7",
       "when": 1700000447000,
       "tag": "0673_chat_attribution_contraction_drop",
       "breakpoints": true
     },
     {
-      "idx": 512,
+      "idx": 513,
       "version": "7",
       "when": 1700000448000,
       "tag": "0674_support_ticket_indexes",
       "breakpoints": true
     },
     {
-      "idx": 513,
+      "idx": 514,
       "version": "7",
       "when": 1700000449000,
       "tag": "0675_chat_remaining_membership_fks",
       "breakpoints": true
     },
     {
-      "idx": 514,
+      "idx": 515,
       "version": "7",
       "when": 1700000450000,
       "tag": "0676_fix_kb_acl_revision_notnull_order",
       "breakpoints": true
     },
     {
-      "idx": 515,
+      "idx": 516,
       "version": "7",
       "when": 1700000451000,
       "tag": "0677_rls_fix_guc_key",
       "breakpoints": true
     },
     {
-      "idx": 516,
+      "idx": 517,
       "version": "7",
       "when": 1700000452000,
       "tag": "0678_rls_fix_feedback_cycle_responses",
       "breakpoints": true
     },
     {
-      "idx": 517,
+      "idx": 518,
       "version": "7",
       "when": 1700000453000,
       "tag": "0680_kb_versions_author_membership",
       "breakpoints": true
     },
     {
-      "idx": 518,
+      "idx": 519,
       "version": "7",
       "when": 1700000454000,
       "tag": "0689_hr_person_search_function",
       "breakpoints": true
     },
     {
-      "idx": 519,
+      "idx": 520,
       "version": "7",
       "when": 1700000455000,
       "tag": "0690_build_ticket_activity_log_user_membership_id",
       "breakpoints": true
     },
     {
-      "idx": 520,
+      "idx": 521,
       "version": "7",
       "when": 1700000456000,
       "tag": "0691_build_ticket_activity_log_user_membership_id_validate",
       "breakpoints": true
     },
     {
-      "idx": 521,
+      "idx": 522,
       "version": "7",
       "when": 1700000457000,
       "tag": "0692_build_ticket_comment_mentions_membership_id",
       "breakpoints": true
     },
     {
-      "idx": 522,
+      "idx": 523,
       "version": "7",
       "when": 1700000458000,
       "tag": "0693_build_ticket_comment_mentions_membership_id_validate",
       "breakpoints": true
     },
     {
-      "idx": 523,
+      "idx": 524,
       "version": "7",
       "when": 1700000459000,
       "tag": "0694_build_ticket_related_links_created_by_membership_id",
       "breakpoints": true
     },
     {
-      "idx": 524,
+      "idx": 525,
       "version": "7",
       "when": 1700000460000,
       "tag": "0695_build_ticket_related_links_created_by_membership_id_validate",
       "breakpoints": true
     },
     {
-      "idx": 525,
+      "idx": 526,
       "version": "7",
       "when": 1700000461000,
       "tag": "0696_build_sprint_scope_events_actor_membership_id",
       "breakpoints": true
     },
     {
-      "idx": 526,
+      "idx": 527,
       "version": "7",
       "when": 1700000462000,
       "tag": "0697_build_sprint_scope_events_actor_membership_id_validate",
       "breakpoints": true
     },
     {
-      "idx": 527,
+      "idx": 528,
       "version": "7",
       "when": 1700000463000,
       "tag": "0698_build_workflow_transitions_created_by_membership_id",
       "breakpoints": true
     },
     {
-      "idx": 528,
+      "idx": 529,
       "version": "7",
       "when": 1700000464000,
       "tag": "0699_build_workflow_transitions_created_by_membership_id_validate",
       "breakpoints": true
     },
     {
-      "idx": 529,
+      "idx": 530,
       "version": "7",
       "when": 1700000465000,
       "tag": "0700_timesheets_idx_org_status_date",
       "breakpoints": true
     },
     {
-      "idx": 530,
+      "idx": 531,
       "version": "7",
       "when": 1700000466000,
       "tag": "0629_calendar_events_org_id_composite_unique",
       "breakpoints": true
     },
     {
-      "idx": 531,
+      "idx": 532,
       "version": "7",
       "when": 1700000467000,
       "tag": "0701_kb_ingestion_checkpoints",
       "breakpoints": true
     },
     {
-      "idx": 532,
+      "idx": 533,
       "version": "7",
       "when": 1700000468000,
       "tag": "0666_rls_missing_tables",
       "breakpoints": true
     },
     {
-      "idx": 533,
+      "idx": 534,
       "version": "7",
       "when": 1700000469000,
       "tag": "0667_fix_invitations_pending_predicate",
       "breakpoints": true
     },
     {
-      "idx": 534,
+      "idx": 535,
       "version": "7",
       "when": 1700000470000,
       "tag": "0669_chain_creates_inv_compliance_documents",
       "breakpoints": true
     },
     {
-      "idx": 535,
+      "idx": 536,
       "version": "7",
       "when": 1700000471000,
       "tag": "0679_payroll_run_export_jobs",
       "breakpoints": true
     },
     {
-      "idx": 536,
+      "idx": 537,
       "version": "7",
       "when": 1700000472000,
       "tag": "0702_schema_catalog_parity_missing_columns",
       "breakpoints": true
     },
     {
-      "idx": 537,
+      "idx": 538,
       "version": "7",
       "when": 1700000473000,
       "tag": "0700_timesheets_attr_expand",
       "breakpoints": true
     },
     {
-      "idx": 538,
+      "idx": 539,
       "version": "7",
       "when": 1700000474000,
       "tag": "0701_timesheets_attr_validate",
       "breakpoints": true
     },
     {
-      "idx": 539,
+      "idx": 540,
       "version": "7",
       "when": 1700000475000,
       "tag": "0703_kb_chunk_search_function",
       "breakpoints": true
     },
     {
-      "idx": 540,
+      "idx": 541,
       "version": "7",
       "when": 1700000476000,
       "tag": "0710_calendar_admin_manage_grant_backfill",
       "breakpoints": true
     },
     {
-      "idx": 541,
+      "idx": 542,
       "version": "7",
       "when": 1700000477000,
       "tag": "0704_mail_sync_checkpoints",
       "breakpoints": true
     },
     {
-      "idx": 542,
+      "idx": 543,
       "version": "7",
       "when": 1700000478000,
       "tag": "0711_timesheets_locked_by_membership_index",
       "breakpoints": true
     },
     {
-      "idx": 543,
+      "idx": 544,
       "version": "7",
       "when": 1700000479000,
       "tag": "0712_chat_sender_channel_creator_fk_validate",
       "breakpoints": true
     },
     {
-      "idx": 544,
+      "idx": 545,
       "version": "7",
       "when": 1700000480000,
       "tag": "0713_chat_presence_membership_backfill",
       "breakpoints": true
     },
     {
-      "idx": 545,
+      "idx": 546,
       "version": "7",
       "when": 1700000481000,
       "tag": "0714_kb_chunk_search_hybrid",
       "breakpoints": true
     },
     {
-      "idx": 546,
+      "idx": 547,
       "version": "7",
       "when": 1700000482000,
       "tag": "0715_timesheets_attr_contract",
       "breakpoints": true
     },
     {
-      "idx": 547,
+      "idx": 548,
       "version": "7",
       "when": 1700000483000,
       "tag": "0716_build_attr_contract",
       "breakpoints": true
     },
     {
-      "idx": 548,
+      "idx": 549,
       "version": "7",
       "when": 1700000484000,
       "tag": "0717_kb_chunk_search_restore_fence",
       "breakpoints": true
     },
     {
-      "idx": 549,
+      "idx": 550,
       "version": "7",
       "when": 1700000485000,
       "tag": "0718_accounting_attr_expand",
       "breakpoints": true
     },
     {
-      "idx": 550,
+      "idx": 551,
       "version": "7",
       "when": 1700000486000,
       "tag": "0719_accounting_attr_validate",
       "breakpoints": true
     },
     {
-      "idx": 551,
+      "idx": 552,
       "version": "7",
       "when": 1700000487000,
       "tag": "0720_accounting_attr_contract",
       "breakpoints": true
     },
     {
-      "idx": 552,
+      "idx": 553,
       "version": "7",
       "when": 1700000488000,
       "tag": "0721_calendar_attendee_user_id_contract",
       "breakpoints": true
     },
     {
-      "idx": 553,
+      "idx": 554,
       "version": "7",
       "when": 1700000489000,
       "tag": "0722_calendar_events_created_by_contract",
       "breakpoints": true
     },
     {
-      "idx": 554,
+      "idx": 555,
       "version": "7",
       "when": 1700000490000,
       "tag": "0723_mail_checkpoint_org_index",
       "breakpoints": true
     },
     {
-      "idx": 555,
+      "idx": 556,
       "version": "7",
       "when": 1700000491000,
       "tag": "0724_rls_mail_checkpoints_payroll_export",
       "breakpoints": true
     },
     {
-      "idx": 556,
+      "idx": 557,
       "version": "7",
       "when": 1700000492000,
       "tag": "0725_chat_actor_contraction_backfill",
       "breakpoints": true
     },
     {
-      "idx": 557,
+      "idx": 558,
       "version": "7",
       "when": 1700000493000,
       "tag": "0728_perf_count_split_indexes",
       "breakpoints": true
     },
     {
-      "idx": 558,
+      "idx": 559,
       "version": "7",
       "when": 1700000494000,
       "tag": "0734_operator_access_grants",
       "breakpoints": true
     },
     {
-      "idx": 559,
+      "idx": 560,
       "version": "7",
       "when": 1700000495000,
       "tag": "0736_chat_membership_id_not_null",
       "breakpoints": true
     },
     {
-      "idx": 560,
+      "idx": 561,
       "version": "7",
       "when": 1700000496000,
       "tag": "0741_storage_pending_purge",
       "breakpoints": true
     },
     {
-      "idx": 561,
+      "idx": 562,
       "version": "7",
       "when": 1700000497000,
       "tag": "0746_ai_usage_covering_idx",
       "breakpoints": true
     },
     {
-      "idx": 562,
+      "idx": 563,
       "version": "7",
       "when": 1700000498000,
       "tag": "0745_org_unit_actor_expand",
       "breakpoints": true
     },
     {
-      "idx": 563,
+      "idx": 564,
       "version": "7",
       "when": 1700000499000,
       "tag": "0747_operator_access_two_person_approval",
       "breakpoints": true
     },
     {
-      "idx": 564,
+      "idx": 565,
       "version": "7",
       "when": 1700000500000,
       "tag": "0752_cal_src_pref_membership_backfill",
       "breakpoints": true
     },
     {
-      "idx": 565,
+      "idx": 566,
       "version": "7",
       "when": 1700000501000,
       "tag": "0753_cal_src_pref_membership_not_null",
       "breakpoints": true
     },
     {
-      "idx": 566,
+      "idx": 567,
       "version": "7",
       "when": 1700000502000,
       "tag": "0754_cal_src_pref_user_id_drop",
       "breakpoints": true
     },
     {
-      "idx": 567,
+      "idx": 568,
       "version": "7",
       "when": 1700000503000,
       "tag": "0755_dashboard_ticket_assignee_updated_idx",
       "breakpoints": true
     },
     {
-      "idx": 568,
+      "idx": 569,
       "version": "7",
       "when": 1700000504000,
       "tag": "0756_fin_reminder_log_measurement",
       "breakpoints": true
     },
     {
-      "idx": 569,
+      "idx": 570,
       "version": "7",
       "when": 1700000505000,
       "tag": "0757_expense_export_truncated_scope",
       "breakpoints": true
     },
     {
-      "idx": 570,
+      "idx": 571,
       "version": "7",
       "when": 1700000506000,
       "tag": "0758_org_unit_members_membership_not_null",
       "breakpoints": true
     },
     {
-      "idx": 571,
+      "idx": 572,
       "version": "7",
       "when": 1700000507000,
       "tag": "0759_org_unit_drop_legacy_user_ids",
       "breakpoints": true
     },
     {
-      "idx": 572,
+      "idx": 573,
       "version": "7",
       "when": 1700000508000,
       "tag": "0760_chat_channel_members_drop_user_id",
       "breakpoints": true
     },
     {
-      "idx": 573,
+      "idx": 574,
       "version": "7",
       "when": 1700000509000,
       "tag": "0761_chat_presence_membership_fk_cascade",
       "breakpoints": true
     },
     {
-      "idx": 574,
+      "idx": 575,
       "version": "7",
       "when": 1700000510000,
       "tag": "0762_chat_presence_membership_not_null",
       "breakpoints": true
     },
     {
-      "idx": 575,
+      "idx": 576,
       "version": "7",
       "when": 1700000511000,
       "tag": "0763_drop_stale_membership_fks",
       "breakpoints": true
     },
     {
-      "idx": 576,
+      "idx": 577,
       "version": "7",
       "when": 1700000512000,
       "tag": "0764_managed_products_owner_fk_set_null",
       "breakpoints": true
     },
     {
-      "idx": 577,
+      "idx": 578,
       "version": "7",
       "when": 1700000513000,
       "tag": "0765_chat_messages_sender_fk_set_null",
       "breakpoints": true
     },
     {
-      "idx": 578,
+      "idx": 579,
       "version": "7",
       "when": 1700000514000,
       "tag": "0766_ticket_activity_log_user_fk_set_null",
       "breakpoints": true
     },
     {
-      "idx": 579,
+      "idx": 580,
       "version": "7",
       "when": 1700000515000,
       "tag": "0767_ticket_comment_mentions_fk_set_null",
       "breakpoints": true
     },
     {
-      "idx": 580,
+      "idx": 581,
       "version": "7",
       "when": 1700000516000,
       "tag": "0767b_inv_table_chain_repair",
       "breakpoints": true
     },
     {
-      "idx": 581,
+      "idx": 582,
       "version": "7",
       "when": 1700000517000,
       "tag": "0768_rls_uncovered_tenant_tables",
       "breakpoints": true
     },
     {
-      "idx": 582,
+      "idx": 583,
       "version": "7",
       "when": 1700000518000,
       "tag": "0769_org_led_indexes_sprints_kb_pages",
       "breakpoints": true
     },
     {
-      "idx": 583,
+      "idx": 584,
       "version": "7",
       "when": 1700000519000,
       "tag": "0770_set_null_fk_column_lists",
       "breakpoints": true
     },
     {
-      "idx": 584,
+      "idx": 585,
       "version": "7",
       "when": 1700000520000,
       "tag": "0771_contacts_notes",
       "breakpoints": true
     },
     {
-      "idx": 585,
+      "idx": 586,
       "version": "7",
       "when": 1700000521000,
       "tag": "0772_audit_logs_org_actor_membership_fk",
       "breakpoints": true
     },
     {
-      "idx": 586,
+      "idx": 587,
       "version": "7",
       "when": 1700000522000,
       "tag": "0773_dedupe_notification_audit_log_fks",
       "breakpoints": true
     },
     {
-      "idx": 587,
+      "idx": 588,
       "version": "7",
       "when": 1700000523000,
       "tag": "0774_chat_channel_position",
       "breakpoints": true
     },
     {
-      "idx": 588,
+      "idx": 589,
       "version": "7",
       "when": 1700000524000,
       "tag": "0775_audit_logs_cursor_indexes",
       "breakpoints": true
     },
     {
-      "idx": 589,
+      "idx": 590,
       "version": "7",
       "when": 1700000525000,
       "tag": "0776_inv_compliance_documents_rls",
       "breakpoints": true
     },
     {
-      "idx": 590,
+      "idx": 591,
       "version": "7",
       "when": 1700000526000,
       "tag": "0777_invoices_reminder_sweep_index",
       "breakpoints": true
     },
     {
-      "idx": 591,
+      "idx": 592,
       "version": "7",
       "when": 1700000527000,
       "tag": "0778_chat_membership_fks",
       "breakpoints": true
     },
     {
-      "idx": 592,
+      "idx": 593,
       "version": "7",
       "when": 1700000528000,
       "tag": "0779_chat_membership_fks_validate",
       "breakpoints": true
     },
     {
-      "idx": 593,
+      "idx": 594,
       "version": "7",
       "when": 1700000529000,
       "tag": "0781_hr_safety_cases_candidate_search_fns",
       "breakpoints": true
     },
     {
-      "idx": 594,
+      "idx": 595,
       "version": "7",
       "when": 1700000530000,
       "tag": "0782_hr_policies_templates_interview_search_fns",
       "breakpoints": true
     },
     {
-      "idx": 595,
+      "idx": 596,
       "version": "7",
       "when": 1700000531000,
       "tag": "0783_hr_cursor_indexes",
       "breakpoints": true
     },
     {
-      "idx": 596,
+      "idx": 597,
       "version": "7",
       "when": 1700000532000,
       "tag": "0784_invitations_invited_by_nullable",
       "breakpoints": true
     },
     {
-      "idx": 597,
+      "idx": 598,
       "version": "7",
       "when": 1700000533000,
       "tag": "0785_invitations_drop_invited_by",
       "breakpoints": true
     },
     {
-      "idx": 598,
+      "idx": 599,
       "version": "7",
       "when": 1700000534000,
       "tag": "0786_finance_report_export_jobs",
       "breakpoints": true
     },
     {
-      "idx": 599,
+      "idx": 600,
       "version": "7",
       "when": 1700000535000,
       "tag": "0787_workflow_secrets_encrypt_rls",
       "breakpoints": true
     },
     {
-      "idx": 600,
+      "idx": 601,
       "version": "7",
       "when": 1700000536000,
       "tag": "0788_chat_saved_messages_validate",
       "breakpoints": true
     },
     {
-      "idx": 601,
+      "idx": 602,
       "version": "7",
       "when": 1700000537000,
       "tag": "0789_chat_saved_messages_drop_user_id",
       "breakpoints": true
     },
     {
-      "idx": 602,
+      "idx": 603,
       "version": "7",
       "when": 1700000538000,
       "tag": "0790_calendar_actor_normalize_confirm",
       "breakpoints": true
     },
     {
-      "idx": 603,
+      "idx": 604,
       "version": "7",
       "when": 1700000539000,
       "tag": "0792_payroll_run_export_truncated",
       "breakpoints": true
     },
     {
-      "idx": 604,
+      "idx": 605,
       "version": "7",
       "when": 1700000540000,
       "tag": "0793_journal_entries_immutability_trigger",
       "breakpoints": true
     },
     {
-      "idx": 605,
+      "idx": 606,
       "version": "7",
       "when": 1700000541000,
       "tag": "0794_kb_chat_history_retention",
       "breakpoints": true
     },
     {
-      "idx": 606,
+      "idx": 607,
       "version": "7",
       "when": 1700000542000,
       "tag": "0795_gdpr_export_jobs",
       "breakpoints": true
     },
     {
-      "idx": 607,
+      "idx": 608,
       "version": "7",
       "when": 1700000543000,
       "tag": "0796_kb_actor_membership_companion",
       "breakpoints": true
     },
     {
-      "idx": 608,
+      "idx": 609,
       "version": "7",
       "when": 1700000544000,
       "tag": "0797_huddle_actor_membership_confirm",
       "breakpoints": true
     },
     {
-      "idx": 609,
+      "idx": 610,
       "version": "7",
       "when": 1700000545000,
       "tag": "0798_huddle_drop_user_columns",
       "breakpoints": true
     },
     {
-      "idx": 610,
+      "idx": 611,
       "version": "7",
       "when": 1700000546000,
       "tag": "0799_chat_actor_backfill_validate",
       "breakpoints": true
     },
     {
-      "idx": 611,
+      "idx": 612,
       "version": "7",
       "when": 1700000547000,
       "tag": "0800_chat_actor_legacy_drop",
       "breakpoints": true
     },
     {
-      "idx": 612,
+      "idx": 613,
       "version": "7",
       "when": 1700000548000,
       "tag": "0801_calendar_attendee_cutover",
       "breakpoints": true
     },
     {
-      "idx": 613,
+      "idx": 614,
       "version": "7",
       "when": 1700000549000,
       "tag": "0802_calendar_legacy_fk_drop",
       "breakpoints": true
     },
     {
-      "idx": 614,
+      "idx": 615,
       "version": "7",
       "when": 1700000550000,
       "tag": "0803_directory_people_search",
       "breakpoints": true
     },
     {
-      "idx": 615,
+      "idx": 616,
       "version": "7",
       "when": 1700000551000,
       "tag": "0804_operator_access_org_index",
       "breakpoints": true
     },
     {
-      "idx": 616,
+      "idx": 617,
       "version": "7",
       "when": 1700000552000,
       "tag": "0805_payroll_batch_and_roles_indexes",
       "breakpoints": true
     },
     {
-      "idx": 617,
+      "idx": 618,
       "version": "7",
       "when": 1700000553000,
       "tag": "0806_keyset_sort_indexes",
       "breakpoints": true
     },
     {
-      "idx": 618,
+      "idx": 619,
       "version": "7",
       "when": 1700000554000,
       "tag": "0807_hr_core_actor_membership_additive",
       "breakpoints": true
     },
     {
-      "idx": 619,
+      "idx": 620,
       "version": "7",
       "when": 1700000555000,
       "tag": "0808_hr_core_actor_legacy_drop",
       "breakpoints": true
     },
     {
-      "idx": 620,
+      "idx": 621,
       "version": "7",
       "when": 1700000556000,
       "tag": "0809_timesheets_companion_validate",
       "breakpoints": true
     },
     {
-      "idx": 621,
+      "idx": 622,
       "version": "7",
       "when": 1700000557000,
       "tag": "0810_timesheets_approved_by_drop",
       "breakpoints": true
     },
     {
-      "idx": 622,
+      "idx": 623,
       "version": "7",
       "when": 1700000558000,
       "tag": "0811_payroll_actor_companion",
       "breakpoints": true
     },
     {
-      "idx": 623,
+      "idx": 624,
       "version": "7",
       "when": 1700000559000,
       "tag": "0812_payroll_actor_legacy_drop",
       "breakpoints": true
     },
     {
-      "idx": 624,
+      "idx": 625,
       "version": "7",
       "when": 1700000560000,
       "tag": "0813_kb_events_credits_actor_membership_companion",
       "breakpoints": true
     },
     {
-      "idx": 625,
+      "idx": 626,
       "version": "7",
       "when": 1700000561000,
       "tag": "0814_kb_events_credits_actor_legacy_drop",
       "breakpoints": true
     },
     {
-      "idx": 626,
+      "idx": 627,
       "version": "7",
       "when": 1700000562000,
       "tag": "0815_common_module_actor_companion",
       "breakpoints": true
     },
     {
-      "idx": 627,
+      "idx": 628,
       "version": "7",
       "when": 1700000563000,
       "tag": "0816_common_module_actor_drop",
       "breakpoints": true
     },
     {
-      "idx": 628,
+      "idx": 629,
       "version": "7",
       "when": 1700000564000,
       "tag": "0817_crm_actor_membership_companion",
       "breakpoints": true
     },
     {
-      "idx": 629,
+      "idx": 630,
       "version": "7",
       "when": 1700000565000,
       "tag": "0818_inv_actor_membership_companion",
       "breakpoints": true
     },
     {
-      "idx": 630,
+      "idx": 631,
       "version": "7",
       "when": 1700000566000,
       "tag": "0819_gdpr_export_jobs_tenant_isolation",
       "breakpoints": true
     },
     {
-      "idx": 631,
+      "idx": 632,
       "version": "7",
       "when": 1700000567000,
       "tag": "0820_timesheets_portal_actor_companion",
       "breakpoints": true
     },
     {
-      "idx": 632,
+      "idx": 633,
       "version": "7",
       "when": 1700000568000,
       "tag": "0821_esign_actor_legacy_drop",
       "breakpoints": true
     },
     {
-      "idx": 633,
+      "idx": 634,
       "version": "7",
       "when": 1700000569000,
       "tag": "0822_mail_directory_actor_legacy_drop",
       "breakpoints": true
     },
     {
-      "idx": 634,
+      "idx": 635,
       "version": "7",
       "when": 1700000570000,
       "tag": "0823_timesheets_attr_actor_drop",
       "breakpoints": true
     },
     {
-      "idx": 635,
+      "idx": 636,
       "version": "7",
       "when": 1700000571000,
       "tag": "0824_timesheets_auth_owner_drop",
       "breakpoints": true
     },
     {
-      "idx": 636,
+      "idx": 637,
       "version": "7",
       "when": 1700000572000,
       "tag": "0825_portal_auth_owner_drop",
       "breakpoints": true
     },
     {
-      "idx": 637,
+      "idx": 638,
       "version": "7",
       "when": 1700000573000,
       "tag": "0826_export_jobs_cancelled_status",
       "breakpoints": true
     },
     {
-      "idx": 638,
+      "idx": 639,
       "version": "7",
       "when": 1700000574000,
       "tag": "0828_tickets_org_created_live_index",
       "breakpoints": true
     },
     {
-      "idx": 639,
+      "idx": 640,
       "version": "7",
       "when": 1700000575000,
       "tag": "0829_drop_calendar_actor_migration_report",
       "breakpoints": true
     },
     {
-      "idx": 640,
+      "idx": 641,
       "version": "7",
       "when": 1700000576000,
       "tag": "0830_timesheet_approved_actor_set_null",
       "breakpoints": true
     },
     {
-      "idx": 641,
+      "idx": 642,
       "version": "7",
       "when": 1700000577000,
       "tag": "0831_calendar_chat_channel_creator_set_null",
       "breakpoints": true
     },
     {
-      "idx": 642,
+      "idx": 643,
       "version": "7",
       "when": 1700000578000,
       "tag": "0832_build_attribution_actor_set_null",
       "breakpoints": true
     },
     {
-      "idx": 643,
+      "idx": 644,
       "version": "7",
       "when": 1700000579000,
       "tag": "0833_claims_export_attribution_set_null",
       "breakpoints": true
     },
     {
-      "idx": 644,
+      "idx": 645,
       "version": "7",
       "when": 1700000580000,
       "tag": "0834_payroll_approvals_journal_set_null",
       "breakpoints": true
     },
     {
-      "idx": 645,
+      "idx": 646,
       "version": "7",
       "when": 1700000581000,
       "tag": "0835_payroll_runs_actor_set_null",
       "breakpoints": true
     },
     {
-      "idx": 646,
+      "idx": 647,
       "version": "7",
       "when": 1700000582000,
       "tag": "0836_worker_engagements_created_actor_set_null",
       "breakpoints": true
     },
     {
-      "idx": 647,
+      "idx": 648,
       "version": "7",
       "when": 1700000583000,
       "tag": "0837_expense_export_jobs_requester_set_null",
       "breakpoints": true
     },
     {
-      "idx": 648,
+      "idx": 649,
       "version": "7",
       "when": 1700000584000,
       "tag": "0838_chat_channels_creator_set_null",
       "breakpoints": true
     },
     {
-      "idx": 649,
+      "idx": 650,
       "version": "7",
       "when": 1700000585000,
       "tag": "0839_fix_set_null_on_not_null_actor_columns",
       "breakpoints": true
     },
     {
-      "idx": 650,
+      "idx": 651,
       "version": "7",
       "when": 1700000586000,
       "tag": "0575a_inventory_composite_tenant_fks",
       "breakpoints": true
     },
     {
-      "idx": 651,
+      "idx": 652,
       "version": "7",
       "when": 1700000587000,
       "tag": "0576_tenant_fks_public_a",
       "breakpoints": true
     },
     {
-      "idx": 652,
+      "idx": 653,
       "version": "7",
       "when": 1700000588000,
       "tag": "0577_tenant_fks_public_b",
       "breakpoints": true
     },
     {
-      "idx": 653,
+      "idx": 654,
       "version": "7",
       "when": 1700000589000,
       "tag": "0578_tenant_fks_public_c",
-      "breakpoints": true
-    },
-    {
-      "idx": 654,
-      "version": "7",
-      "when": 1700000589500,
-      "tag": "0660b_retire_sign_public_forms",
       "breakpoints": true
     },
     {
@@ -4836,67 +4836,1159 @@
       "idx": 690,
       "version": "7",
       "when": 1803000010003,
-      "tag": "0910_inv_quality_hold_stock_grain",
+      "tag": "0910_common_notification_actor_drop",
       "breakpoints": true
     },
     {
       "idx": 691,
       "version": "7",
       "when": 1803000010004,
-      "tag": "0911_inv_projects_rls",
+      "tag": "0911_support_ticket_drafts_actor_drop",
       "breakpoints": true
     },
     {
       "idx": 692,
       "version": "7",
       "when": 1803000010005,
-      "tag": "0912_feedbucket_modules_catalog",
+      "tag": "0912_kb_research_briefs_actor_drop",
       "breakpoints": true
     },
     {
       "idx": 693,
       "version": "7",
       "when": 1803000010006,
-      "tag": "0913_party_map_drop_legacy_fks",
+      "tag": "0913_kb_space_members_actor_drop",
       "breakpoints": true
     },
     {
       "idx": 694,
       "version": "7",
       "when": 1803000010007,
-      "tag": "0914_acc_system_purpose_inventory",
+      "tag": "0914_kb_remaining_actor_drop",
       "breakpoints": true
     },
     {
       "idx": 695,
       "version": "7",
-      "when": 1803000019150,
-      "tag": "0915_inventory_client_keys_follow_the_party_map",
+      "when": 1803000010008,
+      "tag": "0915_support_routing_actor_drop",
       "breakpoints": true
     },
     {
       "idx": 696,
       "version": "7",
-      "when": 1803000019160,
-      "tag": "0916_crm_legacy_keys_follow_the_party_map",
+      "when": 1803000010009,
+      "tag": "0916_support_remaining_actor_drop",
       "breakpoints": true
     },
     {
       "idx": 697,
+      "version": "7",
+      "when": 1803000010010,
+      "tag": "0917_build_actor_drop",
+      "breakpoints": true
+    },
+    {
+      "idx": 698,
+      "version": "7",
+      "when": 1803000010011,
+      "tag": "0918_common_actor_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 699,
+      "version": "7",
+      "when": 1803000010012,
+      "tag": "0919_s03_billing_affiliate_actor_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 700,
+      "version": "7",
+      "when": 1803000010013,
+      "tag": "0920_s03_ai_accounting_actor_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 701,
+      "version": "7",
+      "when": 1803000010014,
+      "tag": "0921_hr_people_performance_recruiting_actor_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 702,
+      "version": "7",
+      "when": 1803000010015,
+      "tag": "0922_hr_employee_career_plan_actor_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 703,
+      "version": "7",
+      "when": 1803000010016,
+      "tag": "0923_hr_cases_benefits_actor_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 704,
+      "version": "7",
+      "when": 1803000010017,
+      "tag": "0924_s01_hr_remaining_actor_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 705,
+      "version": "7",
+      "when": 1803000010018,
+      "tag": "0925_hr_attendance_regularization_decision_actors",
+      "breakpoints": true
+    },
+    {
+      "idx": 706,
+      "version": "7",
+      "when": 1803000010019,
+      "tag": "0926_s03_actor_fk_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 707,
+      "version": "7",
+      "when": 1803000010020,
+      "tag": "0927_s01_invitation_membership_fk_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 708,
+      "version": "7",
+      "when": 1803000010021,
+      "tag": "0928_organization_purge_audit_hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 709,
+      "version": "7",
+      "when": 1803000010022,
+      "tag": "0929_gdpr_correction_request",
+      "breakpoints": true
+    },
+    {
+      "idx": 710,
+      "version": "7",
+      "when": 1803000010023,
+      "tag": "0930_audit_logs_append_only_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 711,
+      "version": "7",
+      "when": 1803000010024,
+      "tag": "0931_s02_build_read_cost_covering_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 712,
+      "version": "7",
+      "when": 1803000010025,
+      "tag": "0932_s02_announcements_read_cost_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 713,
+      "version": "7",
+      "when": 1803000010029,
+      "tag": "0938_ar02_build_self_ref_composite_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 714,
+      "version": "7",
+      "when": 1803000010030,
+      "tag": "0939_ar02_billing_composite_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 715,
+      "version": "7",
+      "when": 1803000010031,
+      "tag": "0940_ar02_misc_composite_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 716,
+      "version": "7",
+      "when": 1803000010032,
+      "tag": "0941_ar02_drop_redundant_single_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 717,
+      "version": "7",
+      "when": 1803000010034,
+      "tag": "0943_ar02_build_composite_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 718,
+      "version": "7",
+      "when": 1803000010035,
+      "tag": "0944_ar02_build_composite_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 719,
+      "version": "7",
+      "when": 1803000010036,
+      "tag": "0945_ar02_build_composite_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 720,
+      "version": "7",
+      "when": 1803000010037,
+      "tag": "0946_ar02_build_composite_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 721,
+      "version": "7",
+      "when": 1803000010038,
+      "tag": "0947_ar02_build_composite_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 722,
+      "version": "7",
+      "when": 1803000010039,
+      "tag": "0948_ar02_drop_build_single_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 723,
+      "version": "7",
+      "when": 1803000010040,
+      "tag": "0949_ar02_hr_payroll_unique_prereqs",
+      "breakpoints": true
+    },
+    {
+      "idx": 724,
+      "version": "7",
+      "when": 1803000010041,
+      "tag": "0950_ar02_hr_recruitment_composite_fks_1",
+      "breakpoints": true
+    },
+    {
+      "idx": 725,
+      "version": "7",
+      "when": 1803000010042,
+      "tag": "0951_ar02_hr_recruitment_composite_fks_2",
+      "breakpoints": true
+    },
+    {
+      "idx": 726,
+      "version": "7",
+      "when": 1803000010043,
+      "tag": "0952_ar02_hr_core_composite_fks_1",
+      "breakpoints": true
+    },
+    {
+      "idx": 727,
+      "version": "7",
+      "when": 1803000010044,
+      "tag": "0953_ar02_hr_core_composite_fks_2",
+      "breakpoints": true
+    },
+    {
+      "idx": 728,
+      "version": "7",
+      "when": 1803000010045,
+      "tag": "0954_ar02_hr_payroll_timesheet_composite_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 729,
+      "version": "7",
+      "when": 1803000010046,
+      "tag": "0955_ar02_drop_hr_payroll_single_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 730,
+      "version": "7",
+      "when": 1803000010047,
+      "tag": "0957_ar02_drop_workflow_single_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 731,
+      "version": "7",
+      "when": 1803000010048,
+      "tag": "0956_dashboard_read_path_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 732,
+      "version": "7",
+      "when": 1803000010049,
+      "tag": "0962_ar02_tenant_fk_unique_prereqs",
+      "breakpoints": true
+    },
+    {
+      "idx": 733,
+      "version": "7",
+      "when": 1803000010050,
+      "tag": "0963_ar02_canonical_tenant_fks_1",
+      "breakpoints": true
+    },
+    {
+      "idx": 734,
+      "version": "7",
+      "when": 1803000010051,
+      "tag": "0964_ar02_canonical_tenant_fks_2",
+      "breakpoints": true
+    },
+    {
+      "idx": 735,
+      "version": "7",
+      "when": 1803000010052,
+      "tag": "0965_ar02_canonical_tenant_fks_3",
+      "breakpoints": true
+    },
+    {
+      "idx": 736,
+      "version": "7",
+      "when": 1803000010053,
+      "tag": "0966_ar02_canonical_tenant_fks_4",
+      "breakpoints": true
+    },
+    {
+      "idx": 737,
+      "version": "7",
+      "when": 1803000010054,
+      "tag": "0967_ar02_canonical_tenant_fks_5",
+      "breakpoints": true
+    },
+    {
+      "idx": 738,
+      "version": "7",
+      "when": 1803000010055,
+      "tag": "0968_ar02_canonical_tenant_fks_6",
+      "breakpoints": true
+    },
+    {
+      "idx": 739,
+      "version": "7",
+      "when": 1803000010056,
+      "tag": "0969_ar02_canonical_tenant_fks_7",
+      "breakpoints": true
+    },
+    {
+      "idx": 740,
+      "version": "7",
+      "when": 1803000010057,
+      "tag": "0970_ar02_drop_superseded_tenant_fks_1",
+      "breakpoints": true
+    },
+    {
+      "idx": 741,
+      "version": "7",
+      "when": 1803000010058,
+      "tag": "0971_ar02_drop_superseded_tenant_fks_2",
+      "breakpoints": true
+    },
+    {
+      "idx": 742,
+      "version": "7",
+      "when": 1803000010059,
+      "tag": "0972_ar02_drop_superseded_tenant_fks_3",
+      "breakpoints": true
+    },
+    {
+      "idx": 743,
+      "version": "7",
+      "when": 1803000010060,
+      "tag": "0973_ar02_drop_superseded_tenant_fks_4",
+      "breakpoints": true
+    },
+    {
+      "idx": 744,
+      "version": "7",
+      "when": 1803000010061,
+      "tag": "0974_ar02_ai_actor_set_null_column_list",
+      "breakpoints": true
+    },
+    {
+      "idx": 745,
+      "version": "7",
+      "when": 1803000010062,
+      "tag": "0975_ar02_unenforced_tenant_relationships",
+      "breakpoints": true
+    },
+    {
+      "idx": 746,
+      "version": "7",
+      "when": 1803000010063,
+      "tag": "0976_ar02_declared_tenant_uniques",
+      "breakpoints": true
+    },
+    {
+      "idx": 747,
+      "version": "7",
+      "when": 1803000010064,
+      "tag": "0977_ar02_drop_duplicate_composite_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 748,
+      "version": "7",
+      "when": 1803000010065,
+      "tag": "0978_ar02_organization_id_tenant_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 749,
+      "version": "7",
+      "when": 1803000010070,
+      "tag": "0982_ar02_drop_live_duplicate_composites",
+      "breakpoints": true
+    },
+    {
+      "idx": 750,
+      "version": "7",
+      "when": 1803000010071,
+      "tag": "0933_ar07_payroll_run_posting_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 751,
+      "version": "7",
+      "when": 1803000010072,
+      "tag": "0961_storage_file_quarantine",
+      "breakpoints": true
+    },
+    {
+      "idx": 752,
+      "version": "7",
+      "when": 1803000010073,
+      "tag": "0934_ar05_calendar_provider_sync_queue",
+      "breakpoints": true
+    },
+    {
+      "idx": 753,
+      "version": "7",
+      "when": 1803000010074,
+      "tag": "0942_storage_multipart_intents",
+      "breakpoints": true
+    },
+    {
+      "idx": 754,
+      "version": "7",
+      "when": 1803000010075,
+      "tag": "0980_chat_message_client_idempotency",
+      "breakpoints": true
+    },
+    {
+      "idx": 755,
+      "version": "7",
+      "when": 1803000010076,
+      "tag": "0981_chat_channel_privacy_invariant",
+      "breakpoints": true
+    },
+    {
+      "idx": 756,
+      "version": "7",
+      "when": 1803000010079,
+      "tag": "0985_s02_declared_actor_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 757,
+      "version": "7",
+      "when": 1803000010080,
+      "tag": "0986_ar02_resolve_conflicting_actor_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 758,
+      "version": "7",
+      "when": 1803000010081,
+      "tag": "0983_s12_gdpr_partial_export_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 759,
+      "version": "7",
+      "when": 1803000010082,
+      "tag": "0984_s12_git_webhook_seen_deliveries",
+      "breakpoints": true
+    },
+    {
+      "idx": 760,
+      "version": "7",
+      "when": 1803000010083,
+      "tag": "0987_s02_attendance_actor_column",
+      "breakpoints": true
+    },
+    {
+      "idx": 761,
+      "version": "7",
+      "when": 1803000010084,
+      "tag": "0988_s02_rls_for_new_tenant_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 762,
+      "version": "7",
+      "when": 1803000010085,
+      "tag": "0989_wf_execution_dlq_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 763,
+      "version": "7",
+      "when": 1803000010086,
+      "tag": "0990_support_template_grant_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 764,
+      "version": "7",
+      "when": 1803000010087,
+      "tag": "0991_calendar_event_local_version",
+      "breakpoints": true
+    },
+    {
+      "idx": 765,
+      "version": "7",
+      "when": 1803000010088,
+      "tag": "0992_set_null_referential_actions_repair",
+      "breakpoints": true
+    },
+    {
+      "idx": 766,
+      "version": "7",
+      "when": 1803000010089,
+      "tag": "0993_coupons_tenant_scoped_code_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 767,
+      "version": "7",
+      "when": 1803000010090,
+      "tag": "0994_s08_rls_for_unpoliced_inventory_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 768,
+      "version": "7",
+      "when": 1803000010091,
+      "tag": "0995_s08_credit_note_tenant_foreign_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 769,
+      "version": "7",
+      "when": 1803000010092,
+      "tag": "0996_s08_leading_tenant_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 770,
+      "version": "7",
+      "when": 1803000010093,
+      "tag": "0997_s08_read_path_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 771,
+      "version": "7",
+      "when": 1803000010094,
+      "tag": "0998_s08_drop_orphan_enum_types",
+      "breakpoints": true
+    },
+    {
+      "idx": 772,
+      "version": "7",
+      "when": 1803000010095,
+      "tag": "0999_s08_drop_redundant_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 773,
+      "version": "7",
+      "when": 1803000010096,
+      "tag": "1000_s08_plan_measured_indexes_and_kb_ann",
+      "breakpoints": true
+    },
+    {
+      "idx": 774,
+      "version": "7",
+      "when": 1803000010097,
+      "tag": "1001_s08_payroll_financial_immutability",
+      "breakpoints": true
+    },
+    {
+      "idx": 775,
+      "version": "7",
+      "when": 1803000010098,
+      "tag": "1002_s08_payroll_read_path_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 776,
+      "version": "7",
+      "when": 1803000010099,
+      "tag": "1003_s08_residual_duplicate_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 777,
+      "version": "7",
+      "when": 1803000010100,
+      "tag": "1004_s08_payroll_lock_guard_org_purge",
+      "breakpoints": true
+    },
+    {
+      "idx": 778,
+      "version": "7",
+      "when": 1803000010101,
+      "tag": "1005_s08_feedbucket_modules_catalog_row",
+      "breakpoints": true
+    },
+    {
+      "idx": 779,
+      "version": "7",
+      "when": 1803000010102,
+      "tag": "1006_s09_drop_redundant_single_column_tenant_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 780,
+      "version": "7",
+      "when": 1803000010103,
+      "tag": "1007_s09_restore_measured_tenant_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 781,
+      "version": "7",
+      "when": 1803000010104,
+      "tag": "1008_s09_hash_support_inbound_secrets",
+      "breakpoints": true
+    },
+    {
+      "idx": 782,
+      "version": "7",
+      "when": 1803000010105,
+      "tag": "1009_s09_inv_stock_transactions_single_column_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 783,
+      "version": "7",
+      "when": 1803000010107,
+      "tag": "1021_t29_kb_page_links_record_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 784,
+      "version": "7",
+      "when": 1803000010108,
+      "tag": "1022_t29_mail_metadata_search_and_keyset",
+      "breakpoints": true
+    },
+    {
+      "idx": 785,
+      "version": "7",
+      "when": 1803000010109,
+      "tag": "1030_t24_payroll_tds_ytd_immutability",
+      "breakpoints": true
+    },
+    {
+      "idx": 786,
+      "version": "7",
+      "when": 1803000010110,
+      "tag": "1023_t07b_billing_legacy_integer_id_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 787,
+      "version": "7",
+      "when": 1803000010111,
+      "tag": "1024_t07b_tenant_anchor_foreign_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 788,
+      "version": "7",
+      "when": 1803000010112,
+      "tag": "1025_t07b_composite_self_reference_foreign_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 789,
+      "version": "7",
+      "when": 1803000010113,
+      "tag": "1026_t07b_payroll_tds_ytd_ledger_run_foreign_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 790,
+      "version": "7",
+      "when": 1803000010114,
+      "tag": "1040_t29_kb_membership_and_template_uniques",
+      "breakpoints": true
+    },
+    {
+      "idx": 791,
+      "version": "7",
+      "when": 1803000010115,
+      "tag": "1027_t07b_dashboard_my_tasks_assignee_updated_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 792,
+      "version": "7",
+      "when": 1803000010116,
+      "tag": "1041_t22c_attendance_membership_history_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 793,
+      "version": "7",
+      "when": 1803000010117,
+      "tag": "1042_t29_kb_page_attachments",
+      "breakpoints": true
+    },
+    {
+      "idx": 794,
+      "version": "7",
+      "when": 1803000010118,
+      "tag": "1043_t08_nullable_tenant_composite_fk_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 795,
+      "version": "7",
+      "when": 1803000010119,
+      "tag": "1044_t41_kb_page_attachments_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 796,
+      "version": "7",
+      "when": 1803000010120,
+      "tag": "1045_t44b_storage_pending_purge_bucket",
+      "breakpoints": true
+    },
+    {
+      "idx": 797,
+      "version": "7",
+      "when": 1803000010121,
+      "tag": "1046_t15f_support_ticket_watchers_actor_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 798,
+      "version": "7",
+      "when": 1803000010122,
+      "tag": "1047_t33_backfill_public_object_urls",
+      "breakpoints": true
+    },
+    {
+      "idx": 799,
+      "version": "7",
+      "when": 1803000010123,
+      "tag": "1048_hr_people_org_person_link_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 800,
+      "version": "7",
+      "when": 1803000010124,
+      "tag": "1049_t08_payroll_bank_batch_item_natural_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 801,
+      "version": "7",
+      "when": 1803000010125,
+      "tag": "1050_t08_payroll_tds_ytd_run_in_natural_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 802,
+      "version": "7",
+      "when": 1803000010126,
+      "tag": "1051_t03_membership_removal_restrict_to_set_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 803,
+      "version": "7",
+      "when": 1803000010127,
+      "tag": "1052_t07_roster_entries_natural_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 804,
+      "version": "7",
+      "when": 1803000010128,
+      "tag": "1053_t03_inv_user_warehouse_grant_cascade",
+      "breakpoints": true
+    },
+    {
+      "idx": 805,
+      "version": "7",
+      "when": 1803000010129,
+      "tag": "1054_chat_presence_membership_unique_total",
+      "breakpoints": true
+    },
+    {
+      "idx": 806,
+      "version": "7",
+      "when": 1803000010130,
+      "tag": "1055_t02_affiliates_org_scoped_user_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 807,
+      "version": "7",
+      "when": 1803000010131,
+      "tag": "1056_drop_duplicate_single_column_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 808,
+      "version": "7",
+      "when": 1803000010132,
+      "tag": "1057_calendar_connection_org_resolver",
+      "breakpoints": true
+    },
+    {
+      "idx": 809,
+      "version": "7",
+      "when": 1803000010133,
+      "tag": "1058_chat_read_path_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 810,
+      "version": "7",
+      "when": 1803000010134,
+      "tag": "1059_build_board_rank_sort_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 811,
+      "version": "7",
+      "when": 1803000010135,
+      "tag": "1060_chat_reply_reminder_pending_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 812,
+      "version": "7",
+      "when": 1803000010136,
+      "tag": "1061_push_endpoint_cross_tenant_claim",
+      "breakpoints": true
+    },
+    {
+      "idx": 813,
+      "version": "7",
+      "when": 1803000010137,
+      "tag": "1062_mail_metadata_unread_count_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 814,
+      "version": "7",
+      "when": 1803000010138,
+      "tag": "1063_invoice_item_immutability_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 815,
+      "version": "7",
+      "when": 1803000010139,
+      "tag": "1064_revenue_events_currency",
+      "breakpoints": true
+    },
+    {
+      "idx": 816,
+      "version": "7",
+      "when": 1803000010140,
+      "tag": "1065_t02_survey_live_session_metadata_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 817,
+      "version": "7",
+      "when": 1803000010141,
+      "tag": "1066_chat_reactions_org_id_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 818,
+      "version": "7",
+      "when": 1803000010142,
+      "tag": "1067_t07_hr_identity_and_search_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 819,
+      "version": "7",
+      "when": 1803000010143,
+      "tag": "0958_ar02_accounting_gl_composite_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 820,
+      "version": "7",
+      "when": 1803000010144,
+      "tag": "0959_ar02_accounting_apar_composite_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 821,
+      "version": "7",
+      "when": 1803000010145,
+      "tag": "0960_ar02_accounting_bank_tax_acc_composite_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 822,
+      "version": "7",
+      "when": 1803000010146,
+      "tag": "1068_c142_hr_leave_ledger_dedup_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 823,
+      "version": "7",
+      "when": 1803000010147,
+      "tag": "1069_operator_access_log_append_only",
+      "breakpoints": true
+    },
+    {
+      "idx": 824,
+      "version": "7",
+      "when": 1803000010148,
+      "tag": "1070_audit_logs_no_truncate",
+      "breakpoints": true
+    },
+    {
+      "idx": 825,
+      "version": "7",
+      "when": 1803000010149,
+      "tag": "1071_hierarchy_and_person_fk_restrict",
+      "breakpoints": true
+    },
+    {
+      "idx": 826,
+      "version": "7",
+      "when": 1803000010150,
+      "tag": "1072_attendance_shift_membership_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 827,
+      "version": "7",
+      "when": 1803000010151,
+      "tag": "1073_build_report_revision",
+      "breakpoints": true
+    },
+    {
+      "idx": 828,
+      "version": "7",
+      "when": 1803000010152,
+      "tag": "1074_chat_read_cursor_position",
+      "breakpoints": true
+    },
+    {
+      "idx": 829,
+      "version": "7",
+      "when": 1803000010153,
+      "tag": "1075_org_scoped_integration_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 830,
+      "version": "7",
+      "when": 1803000010154,
+      "tag": "1076_drop_kb_space_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 831,
+      "version": "7",
+      "when": 1803000010155,
+      "tag": "1077_chat_huddle_meeting_url",
+      "breakpoints": true
+    },
+    {
+      "idx": 832,
+      "version": "7",
+      "when": 1803000010156,
+      "tag": "1078_kb_version_append_only",
+      "breakpoints": true
+    },
+    {
+      "idx": 833,
+      "version": "7",
+      "when": 1803000010157,
+      "tag": "1079_build_velocity_cursor_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 834,
+      "version": "7",
+      "when": 1803000010158,
+      "tag": "1080_chat_invite_link_expiry",
+      "breakpoints": true
+    },
+    {
+      "idx": 835,
+      "version": "7",
+      "when": 1803000010159,
+      "tag": "1081_next_active_org_resolver",
+      "breakpoints": true
+    },
+    {
+      "idx": 836,
+      "version": "7",
+      "when": 1803000010160,
+      "tag": "1082_organization_placement_control_plane_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 837,
+      "version": "7",
+      "when": 1803000010161,
+      "tag": "1083_account_organization_index_identity_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 838,
+      "version": "7",
+      "when": 1803000010162,
+      "tag": "1084_api_keys_public_token_read",
+      "breakpoints": true
+    },
+    {
+      "idx": 839,
+      "version": "7",
+      "when": 1803000010163,
+      "tag": "1085_organization_lifecycle_control_plane_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 840,
+      "version": "7",
+      "when": 1803000010164,
+      "tag": "1086_saga_steps_drop_premature_org_fk",
+      "breakpoints": true
+    },
+    {
+      "idx": 841,
+      "version": "7",
+      "when": 1803000010165,
+      "tag": "1087_cell_control_plane_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 842,
+      "version": "7",
+      "when": 1803000010166,
+      "tag": "1088_organization_members_onboarding_completed_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 843,
+      "version": "7",
+      "when": 1803000010167,
+      "tag": "1089_csat_surveys_public_token_read",
+      "breakpoints": true
+    },
+    {
+      "idx": 844,
+      "version": "7",
+      "when": 1803000019080,
+      "tag": "0278_drop_legacy_identity_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 845,
+      "version": "7",
+      "when": 1803000019090,
+      "tag": "0660b_retire_sign_public_forms",
+      "breakpoints": true
+    },
+    {
+      "idx": 846,
+      "version": "7",
+      "when": 1803000019100,
+      "tag": "1090_inv_quality_hold_stock_grain",
+      "breakpoints": true
+    },
+    {
+      "idx": 847,
+      "version": "7",
+      "when": 1803000019110,
+      "tag": "1091_inv_projects_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 848,
+      "version": "7",
+      "when": 1803000019120,
+      "tag": "1092_feedbucket_modules_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 849,
+      "version": "7",
+      "when": 1803000019130,
+      "tag": "1093_party_map_drop_legacy_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 850,
+      "version": "7",
+      "when": 1803000019140,
+      "tag": "1094_acc_system_purpose_inventory",
+      "breakpoints": true
+    },
+    {
+      "idx": 851,
+      "version": "7",
+      "when": 1803000019150,
+      "tag": "1095_inventory_client_keys_follow_the_party_map",
+      "breakpoints": true
+    },
+    {
+      "idx": 852,
+      "version": "7",
+      "when": 1803000019160,
+      "tag": "1096_crm_legacy_keys_follow_the_party_map",
+      "breakpoints": true
+    },
+    {
+      "idx": 853,
       "version": "7",
       "when": 1787679153441,
       "tag": "0466_drop_legacy_accounting",
       "breakpoints": true
     },
     {
-      "idx": 698,
+      "idx": 854,
       "version": "7",
       "when": 1787682753441,
       "tag": "0467_restore_expense_tables",
       "breakpoints": true
     },
     {
-      "idx": 699,
+      "idx": 855,
       "version": "7",
       "when": 1787693553441,
       "tag": "0468_journal_source_expense_claim",

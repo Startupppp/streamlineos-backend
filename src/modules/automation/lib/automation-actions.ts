@@ -170,7 +170,7 @@ export async function executeAction(
       case "support_assign_ticket": {
         const ticketId = requireTicketId(payload);
         const [assignee] = await deps.db
-          .select({ status: organizationMembers.status })
+          .select({ id: organizationMembers.id, status: organizationMembers.status })
           .from(organizationMembers)
           .where(
             and(
@@ -187,7 +187,7 @@ export async function executeAction(
           };
         await deps.db
           .update(supportTickets)
-          .set({ assigneeId: action.config.assigneeId, updatedAt: new Date() })
+          .set({ assigneeMembershipId: assignee.id, updatedAt: new Date() })
           .where(and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)));
         return { type: action.type, ok: true };
       }
@@ -209,13 +209,14 @@ export async function executeAction(
         if (!tag) throw new Error(`Tag ${String(action.config.tagId)} not found in this organisation`);
         await deps.db
           .insert(supportTicketTags)
-          .values({ ticketId, tagId: action.config.tagId })
+          .values({ orgId, ticketId, tagId: action.config.tagId })
           .onConflictDoNothing();
         return { type: action.type, ok: true };
       }
       case "support_internal_note": {
         const ticketId = requireTicketId(payload);
         await deps.db.insert(supportTicketMessages).values({
+          orgId,
           ticketId,
           authorId: null,
           body: action.config.body,

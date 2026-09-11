@@ -8,7 +8,15 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  surveyBuilderSnapshotSchema,
+  surveySectionRowSchema,
+  surveyQuestionSchema,
+  surveyLogicRuleRowSchema,
+  surveyLogicRuleListSchema,
+  successSchema as builderSuccessSchema,
+} from "./dto/survey-builder-response.schemas";
 import { SurveyBuilderService } from "./survey-builder.service";
 import { SurveyLogicService } from "./survey-logic.service";
 import {
@@ -45,6 +53,7 @@ export class SurveyBuilderController {
   @Get("builder")
   @RequirePermission("surveys:view")
   @Validate({ params: surveyIdParams })
+  @ResponseSchema(surveyBuilderSnapshotSchema)
   getBuilder(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
     return this.builder.getBuilder(u.orgId, surveyId);
   }
@@ -53,6 +62,7 @@ export class SurveyBuilderController {
   @HttpCode(201)
   @RequirePermission("surveys:update")
   @Validate({ params: surveyIdParams, body: createSectionSchema })
+  @ResponseSchema(surveySectionRowSchema)
   createSection(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body() body: CreateSectionInput,
@@ -64,6 +74,7 @@ export class SurveyBuilderController {
   @Patch("sections/:sectionId")
   @RequirePermission("surveys:update")
   @Validate({ params: surveyAndSectionIdParams, body: patchSectionSchema })
+  @ResponseSchema(surveySectionRowSchema)
   patchSection(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Param("sectionId", ParseIntPipe) sectionId: number,
@@ -76,6 +87,7 @@ export class SurveyBuilderController {
   @Delete("sections/:sectionId")
   @RequirePermission("surveys:update")
   @Validate({ params: surveyAndSectionIdParams })
+  @ResponseSchema(builderSuccessSchema)
   deleteSection(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Param("sectionId", ParseIntPipe) sectionId: number,
@@ -88,6 +100,7 @@ export class SurveyBuilderController {
   @HttpCode(201)
   @RequirePermission("surveys:update")
   @Validate({ params: surveyIdParams, body: createQuestionSchema })
+  @ResponseSchema(surveyQuestionSchema)
   createQuestion(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body() body: CreateQuestionInput,
@@ -99,6 +112,7 @@ export class SurveyBuilderController {
   @Patch("questions/:questionId")
   @RequirePermission("surveys:update")
   @Validate({ params: surveyAndQuestionIdParams, body: patchQuestionSchema })
+  @ResponseSchema(surveyQuestionSchema)
   patchQuestion(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Param("questionId", ParseIntPipe) questionId: number,
@@ -111,6 +125,7 @@ export class SurveyBuilderController {
   @Delete("questions/:questionId")
   @RequirePermission("surveys:update")
   @Validate({ params: surveyAndQuestionIdParams })
+  @ResponseSchema(builderSuccessSchema)
   deleteQuestion(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Param("questionId", ParseIntPipe) questionId: number,
@@ -123,6 +138,7 @@ export class SurveyBuilderController {
   @BodylessAction()
   @RequirePermission("surveys:update")
   @Validate({ params: surveyAndQuestionIdParams })
+  @ResponseSchema(surveyQuestionSchema)
   duplicateQuestion(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Param("questionId", ParseIntPipe) questionId: number,
@@ -134,6 +150,7 @@ export class SurveyBuilderController {
   @Patch("reorder")
   @RequirePermission("surveys:update")
   @Validate({ params: surveyIdParams, body: reorderSchema })
+  @ResponseSchema(builderSuccessSchema)
   reorder(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body() body: ReorderInput,
@@ -145,6 +162,7 @@ export class SurveyBuilderController {
   @Get("logic")
   @RequirePermission("surveys:view")
   @Validate({ params: surveyIdParams })
+  @ResponseSchema(surveyLogicRuleListSchema)
   listLogic(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
     return this.logic.list(u.orgId, surveyId);
   }
@@ -153,6 +171,7 @@ export class SurveyBuilderController {
   @HttpCode(201)
   @RequirePermission("surveys:update")
   @Validate({ params: surveyIdParams, body: createLogicRuleSchema })
+  @ResponseSchema(surveyLogicRuleRowSchema)
   createLogic(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body() body: CreateLogicRuleInput,
@@ -164,6 +183,7 @@ export class SurveyBuilderController {
   @Patch("logic/:ruleId")
   @RequirePermission("surveys:update")
   @Validate({ params: surveyAndRuleIdParams, body: patchLogicRuleSchema })
+  @ResponseSchema(surveyLogicRuleRowSchema)
   patchLogic(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Param("ruleId", ParseIntPipe) ruleId: number,
@@ -176,6 +196,7 @@ export class SurveyBuilderController {
   @Delete("logic/:ruleId")
   @RequirePermission("surveys:update")
   @Validate({ params: surveyAndRuleIdParams })
+  @ResponseSchema(builderSuccessSchema)
   deleteLogic(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Param("ruleId", ParseIntPipe) ruleId: number,

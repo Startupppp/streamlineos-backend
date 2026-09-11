@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, boolean, jsonb, timestamp, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { boolean, foreignKey, index, integer, jsonb, pgTable, serial, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../common/auth";
 import { signEnvelopes } from "./envelopes";
@@ -10,7 +10,7 @@ export const signCertificates = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    envelopeId: integer("envelope_id").references(() => signEnvelopes.id, { onDelete: "cascade" }).notNull(),
+    envelopeId: integer("envelope_id").notNull(),
     certificateNumber: text("certificate_number").notNull(),
     certificateFileKey: text("certificate_file_key").notNull(),
     finalPdfFileKey: text("final_pdf_file_key").notNull(),
@@ -20,6 +20,7 @@ export const signCertificates = pgTable(
     certificateJson: jsonb("certificate_json").$type<Record<string, unknown>>().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.envelopeId], foreignColumns: [signEnvelopes.orgId, signEnvelopes.id], name: "fk_sign_certificates_envelope_id_org" }).onDelete("cascade"),
     uniqueIndex("uniq_sign_certificates_number").on(table.certificateNumber),
     index("idx_sign_certificates_org_envelope").on(table.orgId, table.envelopeId),
     unique("uniq_sign_certificates_org_id").on(table.orgId, table.id),

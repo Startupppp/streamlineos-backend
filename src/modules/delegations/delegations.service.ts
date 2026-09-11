@@ -62,7 +62,7 @@ export class DelegationsService {
   async list(
     orgId: string,
     userId: string,
-    query: ListDelegationsQuery = { page: 1, limit: 20 },
+    query: ListDelegationsQuery = { limit: 20 },
   ) {
     return listDelegationsPage(this.listingDeps, orgId, userId, "received", query);
   }
@@ -70,7 +70,7 @@ export class DelegationsService {
   async listGiven(
     orgId: string,
     delegatorId: string,
-    query: ListDelegationsQuery = { page: 1, limit: 20 },
+    query: ListDelegationsQuery = { limit: 20 },
   ) {
     return listDelegationsPage(this.listingDeps, orgId, delegatorId, "given", query);
   }

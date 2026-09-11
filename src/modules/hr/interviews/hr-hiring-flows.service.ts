@@ -1,10 +1,11 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, max } from "drizzle-orm";
+import { and, count, desc, eq, max } from "drizzle-orm";
 import { hiringFlowRounds, hiringFlows } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
+import { buildListResponse } from "../../../common/pagination/pagination";
 import type {
   CreateHiringFlowInput,
   CreateRoundInput,
@@ -19,18 +20,26 @@ export class HrHiringFlowsService {
     private readonly cache: CacheService,
   ) {}
 
-  listFlows(orgId: string, limit: number, offset: number) {
+  listFlows(orgId: string, limit: number) {
     return this.cache.cachedVersioned(
       `hr:hiring-flows:${orgId}`,
-      `list:${limit}:${offset}`,
-      () =>
-        this.db.query.hiringFlows.findMany({
-          where: eq(hiringFlows.orgId, orgId),
-          orderBy: [desc(hiringFlows.isDefault), desc(hiringFlows.createdAt)],
-          limit,
-          offset,
-          with: { rounds: { orderBy: (r, { asc }) => [asc(r.orderIndex)] } },
-        }),
+      `list:${limit}`,
+      async () => {
+        const where = eq(hiringFlows.orgId, orgId);
+        const [rows, [totalRow]] = await Promise.all([
+          this.db.query.hiringFlows.findMany({
+            where,
+            orderBy: [desc(hiringFlows.isDefault), desc(hiringFlows.createdAt)],
+            limit,
+            with: { rounds: { orderBy: (r, { asc }) => [asc(r.orderIndex)] } },
+          }),
+          this.db.select({ total: count() }).from(hiringFlows).where(where),
+        ]);
+        return buildListResponse(rows, Number(totalRow?.total ?? 0), {
+          page: 1,
+          pageSize: limit,
+        });
+      },
       CACHE_TTL.SHORT,
     );
   }
@@ -120,6 +129,7 @@ export class HrHiringFlowsService {
     if (!flow) throw new NotFoundException("Hiring flow not found");
 
     return this.db.query.hiringFlowRounds.findMany({
+      limit: 100,
       where: eq(hiringFlowRounds.flowId, flowId),
       orderBy: (r, { asc }) => [asc(r.orderIndex)],
     });

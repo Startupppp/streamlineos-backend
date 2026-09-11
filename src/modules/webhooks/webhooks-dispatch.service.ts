@@ -9,10 +9,12 @@ import {
   runInNewTenantTransaction,
   runInTenantTransaction,
 } from "../../common/tenant/run-in-tenant-transaction";
-import { runOutsideTenantContext } from "../../common/tenant/tenant-context";
-import { logSideEffectFailure } from "../../common/logger/side-effect";
+import { registerAfterCommit, runOutsideTenantContext } from "../../common/tenant/tenant-context";
+import { logger } from "../../common/logger/logger.service";
 import { callProvider } from "../../common/outbound/call-provider";
 import { ProviderCircuitBreaker } from "../../common/outbound/provider-circuit-breaker";
+import { postSafeWebhook } from "../../common/outbound/safe-webhook-transport";
+import { WEBHOOK_RESPONSE_BODY_LIMIT } from "./dto/webhook.schemas";
 import {
   WEBHOOK_TIMEOUT_MS,
   WebhookTerminalStatusError,
@@ -24,6 +26,18 @@ import {
 
 export { WebhookTerminalStatusError, classifyWebhookError } from "./lib/webhook-delivery";
 
+/**
+ * One chunk is one wave of concurrent outbound calls AND one multi-row
+ * webhook_logs insert. 8 caps the sockets an org's fan-out may hold open — each
+ * one lives for up to the attempt budget x WEBHOOK_TIMEOUT_MS — and caps the
+ * insert payload at 8 rows, each carrying a full event payload and a response
+ * body already truncated to WEBHOOK_RESPONSE_BODY_LIMIT. Flushing per chunk
+ * rather than once at the end keeps the crash window at one chunk.
+ */
+export const WEBHOOK_DISPATCH_CHUNK = 8;
+
+type DeliveryLogRow = typeof webhookLogs.$inferInsert;
+
 @Injectable()
 export class WebhooksDispatchService {
   private readonly breaker = new ProviderCircuitBreaker();
@@ -31,36 +45,35 @@ export class WebhooksDispatchService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   /**
-   * Fire and forget, but not fail and forget.
+   * Fire and forget, but not fail and forget — and not before the commit.
    *
    * The work continues after the caller's request has returned, so a failure
    * here has nowhere to be thrown to. It still has somewhere to be *seen*: the
    * previous `.catch(() => undefined)` meant a completely dead outbound webhook
-   * system reported nothing to anybody, which is how it stayed dead. A seeded
-   * run found every dispatch writing zero rows and every caller being told
-   * nothing at all.
+   * system reported nothing to anybody, which is how it stayed dead.
+   *
+   * `registerAfterCommit` so a webhook never announces work whose transaction
+   * then rolled back. It returns false when there is no ambient context — a
+   * sweep or a consumer — and there the inline run is correct, because there is
+   * no request transaction to wait for and dropping the work would lose the
+   * webhook.
+   *
+   * `runOutsideTenantContext` because the tenant context is async-local and
+   * the continuation would otherwise inherit a transaction that has committed
+   * and closed. `deliverNow` then finds no ambient and opens its own, which is
+   * what a detached side effect needed all along. `retryLog` does not come
+   * through here: it calls `deliver` from inside a live request transaction,
+   * and reusing that one is correct.
    */
   dispatch(orgId: string, eventName: string, payload: Record<string, unknown>): void {
-    /**
-     * `runOutsideTenantContext` because this work outlives the transaction that
-     * started it, and the tenant context does not.
-     *
-     * The context is async-local, so the continuation inherits whatever
-     * transaction was open at the call — which, by the time it runs, has
-     * committed and closed. `record` below asks for `runInTenantTransaction`,
-     * that helper reuses the ambient it finds, and the insert is then issued
-     * against a dead handle: it does not fail, it never settles. A promise that
-     * neither resolves nor rejects logs nothing, so a dispatch called from an
-     * outbox consumer or a cron sweep silently wrote no delivery row at all.
-     *
-     * Detaching first means `record` finds no ambient and opens its own, which
-     * is what a detached side effect needed all along. `retryLog` does not come
-     * through here: it calls `deliver` from inside a live request transaction,
-     * and reusing that one is correct.
-     */
-    void runOutsideTenantContext(() => this.deliverNow(orgId, eventName, payload)).catch(
-      logSideEffectFailure("webhook dispatch", { orgId, eventName }),
-    );
+    const deliver = (): Promise<void> =>
+      runOutsideTenantContext(() => this.deliverNow(orgId, eventName, payload)).catch(
+        (error: unknown) => {
+          logger.error("[webhooks] dispatch run failed", { orgId, eventName, error });
+        },
+      );
+
+    if (!registerAfterCommit(deliver)) void deliver();
   }
 
   /**
@@ -79,19 +92,21 @@ export class WebhooksDispatchService {
   async deliverNow(orgId: string, eventName: string, payload: Record<string, unknown>): Promise<void> {
     /**
      * A tenant transaction of its own, because there is no longer one to
-     * borrow.
-     *
-     * `dispatch` returns immediately and this continues afterwards, so by now
-     * the request's transaction has committed and closed. `webhook_endpoints`
-     * is behind `tenant_isolation` and the read predicate raises with no tenant
-     * context — so this query did not come back empty, it threw, into a
-     * `.catch` that discarded it. Short and read-only on purpose: the HTTP
-     * calls below must not be made with a database transaction held open.
+     * borrow. `webhook_endpoints` is behind `tenant_isolation` and the read
+     * predicate raises with no tenant context. Short and read-only on purpose:
+     * the HTTP calls below must not be made with a database transaction held
+     * open. Only the four columns delivery needs, never the whole row.
      */
     const endpoints = await runInNewTenantTransaction(this.db, orgId, (tx) =>
-      tx.query.webhookEndpoints.findMany({
-        where: and(eq(webhookEndpoints.orgId, orgId), eq(webhookEndpoints.isActive, true)),
-      }),
+      tx
+        .select({
+          id: webhookEndpoints.id,
+          url: webhookEndpoints.url,
+          secret: webhookEndpoints.secret,
+          events: webhookEndpoints.events,
+        })
+        .from(webhookEndpoints)
+        .where(and(eq(webhookEndpoints.orgId, orgId), eq(webhookEndpoints.isActive, true))),
     );
 
     const active = endpoints.filter((endpoint) => {
@@ -101,72 +116,74 @@ export class WebhooksDispatchService {
     if (active.length === 0) return;
 
     /**
-     * `allSettled` so one endpoint's failure does not cancel the others — but
-     * the results are read, not discarded. Dropping them here reintroduced
-     * exactly the fail-and-forget this class was written to end, one level
-     * down: a delivery whose own log row could not be written vanished without
-     * a trace.
+     * Bounded waves, one log insert per wave. `allSettled` so one endpoint's
+     * failure does not cancel the others — but the results are read, not
+     * discarded: a delivery that failed before it produced a log row is logged
+     * here instead of vanishing.
      */
-    const settled = await Promise.allSettled(
-      active.map((endpoint) => this.deliver(endpoint, orgId, eventName, payload)),
-    );
-    for (const result of settled) {
-      if (result.status === "rejected")
-        logSideEffectFailure("webhook delivery", { orgId, eventName })(result.reason);
+    for (let i = 0; i < active.length; i += WEBHOOK_DISPATCH_CHUNK) {
+      const chunk = active.slice(i, i + WEBHOOK_DISPATCH_CHUNK);
+      const settled = await Promise.allSettled(
+        chunk.map((endpoint) => this.deliver(endpoint, orgId, eventName, payload)),
+      );
+      const rows = settled
+        .filter((r): r is PromiseFulfilledResult<DeliveryLogRow> => r.status === "fulfilled")
+        .map((r) => r.value);
+      for (const rejected of settled)
+        if (rejected.status === "rejected")
+          logger.error("[webhooks] delivery failed before it could be logged", {
+            orgId,
+            eventName,
+            error: rejected.reason,
+          });
+      if (rows.length > 0) await this.record(orgId, rows);
     }
   }
 
+  /**
+   * One endpoint, one signed POST through the pinned-DNS transport, and the log
+   * row it earned. The transport resolves the host once and connects to that
+   * address, refusing a private or blocked one with `UnsafeWebhookTargetError`
+   * — which `classifyWebhookError` treats as terminal — so the SSRF check and
+   * the connection can no longer see two different answers.
+   */
   private async deliver(
     endpoint: DeliveryTarget,
     orgId: string,
     eventName: string,
     payload: Record<string, unknown>,
-  ): Promise<void> {
+  ): Promise<DeliveryLogRow> {
     const body = JSON.stringify({ event: eventName, data: payload, timestamp: new Date().toISOString() });
     const signature = createHmac("sha256", readSigningSecret(endpoint.secret))
       .update(body)
       .digest("hex");
 
-    const urlCheck = await checkWebhookUrl(endpoint.url);
-    if (!urlCheck.allowed) {
-      await this.record(orgId, {
-        endpointId: endpoint.id,
-        orgId,
-        event: eventName,
-        payload,
-        statusCode: null,
-        responseBody: `Blocked: ${urlCheck.reason}`,
-        success: false,
-      });
-      return;
-    }
-
     const result = await callProvider(
       webhookDescriptor(endpoint.id),
       async () => {
-        const response = await fetch(endpoint.url, {
-          method: "POST",
-          headers: {
+        const { statusCode, responseBody } = await postSafeWebhook(
+          endpoint.url,
+          body,
+          {
             "Content-Type": "application/json",
             "X-StreamlineOS-Signature": `sha256=${signature}`,
             "X-Webhook-Event": eventName,
           },
-          body,
-          redirect: "error",
-          signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
-        });
-        const text = await response.text().catch(() => "");
-        if (response.status >= 400 && response.status < 500)
-          throw new WebhookTerminalStatusError(response.status, text);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return { status: response.status, body: text };
+          WEBHOOK_TIMEOUT_MS,
+          WEBHOOK_RESPONSE_BODY_LIMIT,
+        );
+        if (statusCode >= 400 && statusCode < 500)
+          throw new WebhookTerminalStatusError(statusCode, responseBody);
+        if (statusCode < 200 || statusCode >= 300)
+          throw new Error(`HTTP ${statusCode}`);
+        return { status: statusCode, body: responseBody };
       },
       this.breaker,
     );
 
     const { statusCode, responseBody, success } = logFromResult(result);
 
-    await this.record(orgId, {
+    return {
       endpointId: endpoint.id,
       orgId,
       event: eventName,
@@ -175,29 +192,27 @@ export class WebhooksDispatchService {
       responseBody,
       attempt: result.attempts,
       success,
-    });
+    };
   }
 
   /**
-   * One log row, in its own short transaction.
+   * One wave's log rows, in their own short transaction.
    *
    * Deliberately not inside the transaction that read the endpoints: between
    * the two sits an HTTP call with a ten-second timeout, and holding a database
    * connection across it would tie a pool slot to somebody else's server for
-   * as long as they cared to be slow. One row per transaction also means a
-   * delivery whose log fails cannot take the other endpoints' logs with it.
+   * as long as they cared to be slow.
    *
    * `runInTenantTransaction` rather than `runInNewTenantTransaction`: `retryLog`
-   * reaches `deliver` from inside a request that already has a tenant open, and
+   * reaches here from inside a request that already has a tenant open, and
    * demanding a new one there would refuse the nested transaction outright.
    */
-  private async record(
-    orgId: string,
-    row: typeof webhookLogs.$inferInsert,
-  ): Promise<void> {
-    await runInTenantTransaction(this.db, (tx) => tx.insert(webhookLogs).values(row).then(() => undefined), {
-      orgId,
-    });
+  private async record(orgId: string, rows: readonly DeliveryLogRow[]): Promise<void> {
+    await runInTenantTransaction(
+      this.db,
+      (tx) => tx.insert(webhookLogs).values([...rows]).then(() => undefined),
+      { orgId },
+    );
   }
 
   async retryLog(orgId: string, endpointId: number, logId: number): Promise<{ success: boolean }> {
@@ -224,7 +239,8 @@ export class WebhooksDispatchService {
         `Endpoint URL is no longer safe to call: ${retryUrlCheck.reason}`,
       );
 
-    await this.deliver(endpoint, orgId, log.event, log.payload ?? {});
+    const row = await this.deliver(endpoint, orgId, log.event, log.payload ?? {});
+    await this.record(orgId, [row]);
     return { success: true };
   }
 }

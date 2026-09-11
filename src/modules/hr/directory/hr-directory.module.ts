@@ -28,6 +28,7 @@ import { AccessRequestsService } from "./access-requests.service";
 import { BillingModule } from "../../billing/core/billing.module";
 import { DirectoryModule } from "../../directory/directory.module";
 import { NotificationsModule } from "../../notifications/notifications.module";
+import { MembershipAdmissionModule } from "../../organization/core/membership-admission.module";
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { NotificationsModule } from "../../notifications/notifications.module";
     BillingModule,
     DirectoryModule,
     NotificationsModule,
+    MembershipAdmissionModule,
   ],
   controllers: [
     EmployeesController,

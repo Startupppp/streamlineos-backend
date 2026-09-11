@@ -1,4 +1,9 @@
-import { ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
+import {
+  ConflictException,
+  ForbiddenException,
+  InternalServerErrorException,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { type Db } from "../../../../db/drizzle.module";
 import { timerSessions } from "../../../../db/schema";
@@ -49,7 +54,8 @@ export async function pauseTimer(
     .where(and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)));
 
   const row = await deps.reloadTimer(u.orgId, timerId);
-  return buildTimerShape(row!);
+  if (!row) throw new InternalServerErrorException("Timer not found after update");
+  return buildTimerShape(row);
 }
 
 export async function resumeTimer(
@@ -71,7 +77,8 @@ export async function resumeTimer(
     .where(and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)));
 
   const row = await deps.reloadTimer(u.orgId, timerId);
-  return buildTimerShape(row!);
+  if (!row) throw new InternalServerErrorException("Timer not found after update");
+  return buildTimerShape(row);
 }
 
 export async function stopTimer(
@@ -100,7 +107,8 @@ export async function stopTimer(
     .where(and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)));
 
   const row = await deps.reloadTimer(u.orgId, timerId);
-  return buildTimerShape(row!);
+  if (!row) throw new InternalServerErrorException("Timer not found after update");
+  return buildTimerShape(row);
 }
 
 export async function discardTimer(

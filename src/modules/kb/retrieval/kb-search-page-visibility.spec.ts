@@ -4,6 +4,8 @@ import { pageVisibleTo } from "./kb-page-visibility";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 
+const makeScopes = (scope = "all") => ({ scopeFor: jest.fn().mockResolvedValue(scope) });
+
 const ACCESSIBLE_PROJECT_IDS = [7];
 
 const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserContext => ({
@@ -47,15 +49,13 @@ const makeAccess = (spaceIds: number[] = [1]) => ({
 });
 
 const makeEmbeddings = () => ({
-  isConfigured: jest.fn().mockReturnValue(false),
-  embedQuery: jest.fn(),
-  toVectorLiteral: jest.fn(),
+  isEmbeddingConfigured: jest.fn().mockReturnValue(false),
+  embedQueryWithCredit: jest.fn(),
 });
 
 const makeConfiguredEmbeddings = () => ({
-  isConfigured: jest.fn().mockReturnValue(true),
-  embedQuery: jest.fn().mockResolvedValue([0.1, 0.2]),
-  toVectorLiteral: jest.fn().mockReturnValue("[0.1,0.2]"),
+  isEmbeddingConfigured: jest.fn().mockReturnValue(true),
+  embedQueryWithCredit: jest.fn().mockResolvedValue({ ok: true, vector: [0.1, 0.2], vectorLiteral: "[0.1,0.2]" }),
 });
 
 const makeEvents = () => ({ record: jest.fn().mockResolvedValue(undefined) });
@@ -89,6 +89,7 @@ describe("KbSearchService — page retrieval crosses the visibility seam", () =>
       makeEmbeddings() as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
+      makeScopes() as never,
     );
 
     const user = makeUser();
@@ -107,6 +108,7 @@ describe("KbSearchService — page retrieval crosses the visibility seam", () =>
       makeEmbeddings() as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
+      makeScopes() as never,
     );
 
     const user = makeUser();
@@ -124,6 +126,7 @@ describe("KbSearchService — page retrieval crosses the visibility seam", () =>
       makeEmbeddings() as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
+      makeScopes() as never,
     );
 
     const user = makeUser();
@@ -145,6 +148,7 @@ describe("KbSearchService — page retrieval crosses the visibility seam", () =>
       makeConfiguredEmbeddings() as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
+      makeScopes() as never,
     );
 
     const user = makeUser();

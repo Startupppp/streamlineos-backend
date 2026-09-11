@@ -25,7 +25,7 @@ export interface FlatModuleMember {
   groups: { id: number; name: string }[];
 }
 
-export interface Pagination {
+interface Pagination {
   page: number;
   pageSize: number;
   total: number;

@@ -6,6 +6,7 @@ import {
   hrPayrollInputSnapshots,
 } from "../../../../db/schema/payroll/input-capture";
 import { daysInMonth } from "./money";
+import { asRecord } from "../../../../common/openapi/zod-operation-contracts";
 
 export interface PulledInputs {
   userId: string;
@@ -40,18 +41,58 @@ function num(value: unknown, fallback = 0): number {
 }
 
 /**
- * Prefer immutable locked payroll-input period snapshots for the month.
- * Falls back to live attendance/leave pull when no locked period exists.
+ * Largest number of payees whose inputs are pulled in one statement.
+ * Bounds both the `IN (...)` list and the row payload each chunk can return:
+ * a chunk reads at most CHUNK * 100 snapshot rows, CHUNK * daysInMonth
+ * attendance rows and CHUNK * daysInMonth * 2 leave rows.
  */
-export async function pullAttendanceInputs(
+export const PAYROLL_INPUT_PULL_CHUNK = 200;
+
+/**
+ * Batched multi-payee input pull. Prefers immutable locked payroll-input period
+ * snapshots for the month and falls back to a live attendance/leave read for the
+ * payees no snapshot covers.
+ *
+ * Round-trips are `1 + ceil(users / PAYROLL_INPUT_PULL_CHUNK) * 3` — bounded by
+ * the chunk count, never one query per payee.
+ */
+export async function pullAttendanceInputsByUser(
   db: Db,
   orgId: string,
-  userId: string,
+  userIds: string[],
   month: string,
-): Promise<PulledInputs | null> {
-  const locked = await pullFromLockedSnapshots(db, orgId, userId, month);
-  if (locked) return locked;
-  return pullLiveAttendanceInputs(db, orgId, userId, month);
+  chunkSize: number = PAYROLL_INPUT_PULL_CHUNK,
+): Promise<Map<string, PulledInputs>> {
+  if (!Number.isInteger(chunkSize) || chunkSize < 1) {
+    throw new RangeError("Payroll input pull chunk size must be a positive integer");
+  }
+
+  const pulled = new Map<string, PulledInputs>();
+  const unique = [...new Set(userIds)];
+  if (unique.length === 0) return pulled;
+
+  const periodId = await getLockedInputPeriodId(db, orgId, month);
+
+  for (let start = 0; start < unique.length; start += chunkSize) {
+    const chunk = unique.slice(start, start + chunkSize);
+    const lockedByUser =
+      periodId == null
+        ? new Map<string, SectionMap>()
+        : await loadLockedSectionsByUser(db, orgId, periodId, chunk);
+
+    const needsLive: string[] = [];
+    for (const userId of chunk) {
+      const locked = buildPulledInputsFromSections(userId, month, lockedByUser.get(userId));
+      if (locked) pulled.set(userId, locked);
+      else needsLive.push(userId);
+    }
+
+    if (needsLive.length === 0) continue;
+    const live = await loadLiveAttendanceByUser(db, orgId, needsLive, month);
+    for (const [userId, row] of live) if (row) pulled.set(userId, row);
+  }
+
+  return pulled;
 }
 
 export async function getLockedInputPeriodId(
@@ -95,12 +136,14 @@ export async function loadLockedSectionsByUser(
         eq(hrPayrollInputSnapshots.periodId, periodId),
         inArray(hrPayrollInputSnapshots.userId, userIds),
       ),
-    );
+    )
+    .limit(Math.max(1, userIds.length * 100));
 
   for (const snap of snaps) {
-    if (!snap.payload || typeof snap.payload !== "object") continue;
+    const payload = asRecord(snap.payload);
+    if (!payload) continue;
     const sections = byUser.get(snap.userId) ?? new Map<string, SnapshotPayload>();
-    sections.set(snap.section, snap.payload as SnapshotPayload);
+    sections.set(snap.section, payload);
     byUser.set(snap.userId, sections);
   }
   return byUser;
@@ -193,8 +236,8 @@ export function buildCalcPullsFromSections(
   const consumedReimbursementIds: number[] = [];
 
   for (const raw of items) {
-    if (!raw || typeof raw !== "object") continue;
-    const item = raw as Record<string, unknown>;
+    const item = asRecord(raw);
+    if (!item) continue;
     const amount = item.amount;
     const category = typeof item.category === "string" ? item.category : "OTHER";
     const amountStr =
@@ -210,7 +253,7 @@ export function buildCalcPullsFromSections(
   }
 
   const loansRaw = Array.isArray(deduction.activeLoans) ? deduction.activeLoans : [];
-  const activeLoans = loansRaw
+  const activeLoans: LockedCalcPulls["activeLoans"] = loansRaw
     .filter((l): l is Record<string, unknown> => !!l && typeof l === "object")
     .map((l) => ({
       id: num(l.id),
@@ -218,7 +261,7 @@ export function buildCalcPullsFromSections(
       amount: String(l.amount ?? "0"),
       paidEmis: num(l.paidEmis),
       totalEmis: l.totalEmis == null ? null : num(l.totalEmis),
-      adjustment: null as { type: string; amount: string | null } | null,
+      adjustment: null,
     }))
     .filter((l) => l.id > 0);
 
@@ -326,7 +369,8 @@ export async function loadLiveAttendanceByUser(
           gte(attendance.date, monthStart),
           lte(attendance.date, monthEnd),
         ),
-      ),
+      )
+      .limit(Math.max(1, userIds.length * totalDays)),
     db
       .select({ userId: leaveRequests.userId, lopDays: leaveRequests.lopDays })
       .from(leaveRequests)
@@ -338,7 +382,8 @@ export async function loadLiveAttendanceByUser(
           gte(leaveRequests.startDate, monthStart),
           lte(leaveRequests.endDate, monthEnd),
         ),
-      ),
+      )
+      .limit(Math.max(1, userIds.length * totalDays * 2)),
   ]);
 
   const attendanceByUser = new Map<string, LiveAttendanceRow[]>();
@@ -367,14 +412,4 @@ export async function loadLiveAttendanceByUser(
     );
   }
   return result;
-}
-
-async function pullLiveAttendanceInputs(
-  db: Db,
-  orgId: string,
-  userId: string,
-  month: string,
-): Promise<PulledInputs | null> {
-  const byUser = await loadLiveAttendanceByUser(db, orgId, [userId], month);
-  return byUser.get(userId) ?? null;
 }

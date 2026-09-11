@@ -8,6 +8,7 @@ import { PayrollEntitiesController } from "./entities/entities.controller";
 import { PayrollEntitiesModule } from "./entities/payroll-entities.module";
 import { PayrollFilingsController } from "./filings/filings.controller";
 import { PayrollFilingsService } from "./filings/filings.service";
+import { PayrollFilingsExportJobService } from "./filings/filings-export-job.service";
 import { PayrollJobsService } from "./jobs/payroll-jobs.service";
 import { PayrollJobsController } from "./jobs/jobs.controller";
 import { PayrollJobsWorkerService } from "./jobs/payroll-jobs-worker.service";
@@ -28,6 +29,7 @@ import { EmploymentFactsModule } from "../directory/employment-facts.module";
   providers: [
     PayrollCalendarReminderScheduler,
     PayrollFilingsService,
+    PayrollFilingsExportJobService,
     PayrollJobsService,
     PayrollJobsWorkerService,
   ],

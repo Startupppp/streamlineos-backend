@@ -1,0 +1,857 @@
+{
+  "note": "Rule 4 of check-type-assertions.mjs: a per-file ZERO-GROWTH ceiling on plain `as X` and non-null `!` assertions in application code. Seeded at the head count. It may only ever go DOWN: --update-ledger refuses to raise a number, and the gate fails both when a file gains an assertion and when an entry outlives its site. `as const` is excluded by decision (it narrows, it does not force). Specs are outside this gate entirely — see the rule 4 header.",
+  "files": {
+    "src/common/async/bounded-map.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/common/auth/jwt-keyring.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/common/auth/record-route-classification.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/common/auth/system-jobs.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/common/cache/cache-fill.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/common/cache/cache-keys.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/common/cache/in-memory-redis.test-double.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/common/db/transient-error.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/common/http/all-exceptions.filter.ts": {
+      "as": 3,
+      "nonNull": 0
+    },
+    "src/common/http/correlation-id.middleware.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/common/interceptors/response-transform.interceptor.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/common/observability/error-classification.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/common/observability/error-reporter.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/common/observability/nest-logger.adapter.ts": {
+      "as": 3,
+      "nonNull": 0
+    },
+    "src/common/observability/redact.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/common/openapi/build-openapi-document.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/common/openapi/zod-operation-contracts.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/common/org/sync-org-unit-placement.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/common/outbox/outbox-publisher.service.ts": {
+      "as": 6,
+      "nonNull": 0
+    },
+    "src/common/rbac/org-roles.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/common/rbac/owner-only-operations.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/common/region/placement.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/common/relocation/relocation-state.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/common/security/ssrf-guard.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/common/tenant/for-each-org.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/common/tenant/tenant-db.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/common/workflow/step-context.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/common/workflow/workflow-outbox-relay.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/common/workflow/workflow-runner.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/common/workflow/workflow-store.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/db/query-telemetry.ts": {
+      "as": 6,
+      "nonNull": 0
+    },
+    "src/health/health.controller.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/health/workflow-backlog.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/access/access-permission-members.resolver.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/ai/core/gateway/ai-gateway.service.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/ai/core/persona-registry.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/audit-log/audit-log.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/automation/ai-workflow-nodes/ai-job-handlers/workflow-ai-node.handler.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/automation/automation-action-executor.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/automation/automation.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/automation/shared-condition-evaluator.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/autonomy/autonomy-actions.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/autonomy/autonomy-hold.service.ts": {
+      "as": 2,
+      "nonNull": 1
+    },
+    "src/modules/autonomy/autonomy-hold.workflow.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/autonomy/autonomy-review.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/autonomy/autonomy-scoring.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/autonomy/autonomy.service.ts": {
+      "as": 3,
+      "nonNull": 0
+    },
+    "src/modules/autonomy/decision-record.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/build/core/projects-changelog.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/build/core/projects-feedback.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/build/core/projects-provision.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/build/core/projects-query.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/build/core/projects-roadmap.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/build/core/projects-tickets-create.service.ts": {
+      "as": 0,
+      "nonNull": 3
+    },
+    "src/modules/build/core/projects-tickets-update.service.ts": {
+      "as": 1,
+      "nonNull": 1
+    },
+    "src/modules/build/core/projects-webhooks-dispatch.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/calendar/external-event-normalizers.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/chat/chat-channel-list.service.ts": {
+      "as": 3,
+      "nonNull": 0
+    },
+    "src/modules/chat/chat-fanout-outbox.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/chat/chat-messages.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/clients/clients-email.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/clients/clients.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/contacts/contact-roles.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/contacts/contacts-query.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/contacts/contacts.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/crm/import/import-pump.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/crm/metadata/crm-data-quality.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/crm/metadata/crm-metadata.service.ts": {
+      "as": 3,
+      "nonNull": 3
+    },
+    "src/modules/crm/metadata/crm-validation-rules.service.ts": {
+      "as": 1,
+      "nonNull": 1
+    },
+    "src/modules/crm/metadata/crm-validation.service.ts": {
+      "as": 7,
+      "nonNull": 0
+    },
+    "src/modules/crm/pricebooks/crm-pricebooks.service.ts": {
+      "as": 5,
+      "nonNull": 0
+    },
+    "src/modules/cron/cron-announcements-retention.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/cron/cron-gdpr-export-retention.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/cron/cron-helpdesk-retention.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/cron/cron-hr-retention.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/cron/cron-mail-retention.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/customer-executive/customer-executive.service.ts": {
+      "as": 3,
+      "nonNull": 1
+    },
+    "src/modules/dashboard/dashboard-announcements.service.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/dashboard/dashboard-leave.service.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/dashboard/dashboard-scope.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/dashboard/dashboard.errors.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/data-quality/data-quality-queue.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/data-quality/dataset-health.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/deals/deal-activity-kind.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/deals/deals-crud.service.ts": {
+      "as": 3,
+      "nonNull": 0
+    },
+    "src/modules/deals/deals.service.ts": {
+      "as": 2,
+      "nonNull": 1
+    },
+    "src/modules/delegations/delegations.service.ts": {
+      "as": 0,
+      "nonNull": 2
+    },
+    "src/modules/directory/directory-identity.service.ts": {
+      "as": 0,
+      "nonNull": 2
+    },
+    "src/modules/directory/directory.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/directory/worker-engagements.service.ts": {
+      "as": 0,
+      "nonNull": 3
+    },
+    "src/modules/email/dispatch/twilio.gateway.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/email/email.provider.ts": {
+      "as": 5,
+      "nonNull": 0
+    },
+    "src/modules/email/unsubscribe-token.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/entity-reference/entity-reference.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/expenses/expenses.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/gdpr/gdpr-export-fetchers-generic.ts": {
+      "as": 3,
+      "nonNull": 0
+    },
+    "src/modules/gdpr/gdpr-export-types.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/goals/goals.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/hr/benefits/hr-benefits-claims.service.ts": {
+      "as": 0,
+      "nonNull": 2
+    },
+    "src/modules/hr/benefits/hr-benefits-enrollment.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/hr/core/hr-employee-record-lists.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/hr/directory/dto/hr-directory.schemas.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/hr/directory/org-chart.service.ts": {
+      "as": 0,
+      "nonNull": 2
+    },
+    "src/modules/hr/directory/profile-pdf.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/hr/enterprise-comp/devices.service.ts": {
+      "as": 0,
+      "nonNull": 2
+    },
+    "src/modules/hr/enterprise-comp/equity.service.ts": {
+      "as": 1,
+      "nonNull": 1
+    },
+    "src/modules/hr/enterprise-ops/identity/identity.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/hr/global/compliance-requirements.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/hr/global/contracts.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/hr/global/lib/country-pack-registry.ts": {
+      "as": 0,
+      "nonNull": 2
+    },
+    "src/modules/hr/governance/positions/positions-taxonomy.service.ts": {
+      "as": 0,
+      "nonNull": 2
+    },
+    "src/modules/hr/hub/hr-hub.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/hr/import/hr-export-file.service.ts": {
+      "as": 0,
+      "nonNull": 2
+    },
+    "src/modules/hr/interviews/hr-scorecards.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/hr/lifecycle/exit-write.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/hr/lifecycle/experience-letter.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/hr/lifecycle/onboarding-views-support.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/hr/onboarding/core/dto/onboarding.schemas.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/hr/onboarding/core/onboarding-probation.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/hr/onboarding/core/onboarding-task.service.ts": {
+      "as": 0,
+      "nonNull": 2
+    },
+    "src/modules/hr/onboarding/flow/hr-checklist-reconciliation.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/hr/onboarding/flow/module-checklist.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/hr/payroll-inputs/payroll-input-snapshots.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/hr/payroll-inputs/payroll-inputs.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/hr/performance/engagement-communities-campaigns.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/hr/policies/hr-policies.service.ts": {
+      "as": 1,
+      "nonNull": 1
+    },
+    "src/modules/hr/policies/hr-policy-evaluation.service.ts": {
+      "as": 1,
+      "nonNull": 1
+    },
+    "src/modules/hr/recruitment/recruitment-candidate-ops.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/hr/recruitment/recruitment-candidates.service.ts": {
+      "as": 0,
+      "nonNull": 2
+    },
+    "src/modules/hr/recruitment/recruitment-sourcing.service.ts": {
+      "as": 0,
+      "nonNull": 2
+    },
+    "src/modules/hr/time/attendance-clock.service.ts": {
+      "as": 0,
+      "nonNull": 2
+    },
+    "src/modules/hr/time/comp-off-grant.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/hr/time/leave-policies.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/hr/time/overtime.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/hr/time/wfh.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/hr/time/work-logs.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/hr/workflows/hr-workflow-definitions.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/ingress/adapters/crm-mailbox.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/ingress/adapters/mailbox-push.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/ingress/adapters/web-form-to-inbound-event.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/integrations/core/composio.gateway.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/integrations/git/git-event-parser.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/inventory/counts/inv-cycle-counts.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/inventory/counts/inv-physical-audits.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/inventory/import-export/export.service.ts": {
+      "as": 1,
+      "nonNull": 2
+    },
+    "src/modules/inventory/import-export/import.service.ts": {
+      "as": 0,
+      "nonNull": 3
+    },
+    "src/modules/inventory/purchase-orders/grn-receive.service.ts": {
+      "as": 0,
+      "nonNull": 2
+    },
+    "src/modules/inventory/purchase-orders/grn.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/inventory/shipments/carriers.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/inventory/shipments/loads.service.ts": {
+      "as": 2,
+      "nonNull": 4
+    },
+    "src/modules/inventory/shipments/packages.service.ts": {
+      "as": 0,
+      "nonNull": 3
+    },
+    "src/modules/inventory/shipments/shipments.service.ts": {
+      "as": 0,
+      "nonNull": 3
+    },
+    "src/modules/inventory/stock-engine/cost-visibility.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/inventory/stock-engine/costing-context.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/inventory/stock-engine/inventory-audit.service.ts": {
+      "as": 3,
+      "nonNull": 0
+    },
+    "src/modules/inventory/stock-engine/reservation.service.ts": {
+      "as": 0,
+      "nonNull": 2
+    },
+    "src/modules/inventory/stock-engine/stock-engine-batch.service.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/inventory/stock-engine/stock-engine.service.ts": {
+      "as": 1,
+      "nonNull": 1
+    },
+    "src/modules/inventory/stock/inv-stock-adjustments.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/inventory/stock/inv-stock-transfers.service.ts": {
+      "as": 0,
+      "nonNull": 2
+    },
+    "src/modules/inventory/traceability/traceability-chain.service.ts": {
+      "as": 0,
+      "nonNull": 5
+    },
+    "src/modules/invoices/invoices-write.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/invoices/invoices.service.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/invoices/lib/invoice-helpers.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/invoices/lib/invoice-transitions.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/issues/issue-record-types.ts": {
+      "as": 3,
+      "nonNull": 0
+    },
+    "src/modules/leads/lead-status.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/leads/lead-triggers.ts": {
+      "as": 1,
+      "nonNull": 1
+    },
+    "src/modules/leads/leads-read.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/mail/mail-metadata.service.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/modules/mail/providers/mail-metadata-cursor.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/mail/providers/mail-normalizers.ts": {
+      "as": 7,
+      "nonNull": 0
+    },
+    "src/modules/module-access/module-access-group-crud.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/module-access/module-access.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/notifications/notification-preferences.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/notifications/notification-retention.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/offer-fulfillment/deal-closed-consumer.service.ts": {
+      "as": 4,
+      "nonNull": 1
+    },
+    "src/modules/organization/core/lifecycle/organization-lifecycle-transitions.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/organization/core/org-membership-status.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/organization/hierarchy/org-hierarchy-list-filters.ts": {
+      "as": 6,
+      "nonNull": 0
+    },
+    "src/modules/organization/setup/announcements.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/payroll/runs/runs.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/payroll/setup/lib/template-preview.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/platform/platform-operator-access.service.ts": {
+      "as": 0,
+      "nonNull": 3
+    },
+    "src/modules/rbac/rbac.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/rbac/role-permission.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/rbac/seed-system-roles.ts": {
+      "as": 3,
+      "nonNull": 0
+    },
+    "src/modules/sales/sales-analytics.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/sales/sales-dashboard.service.ts": {
+      "as": 1,
+      "nonNull": 5
+    },
+    "src/modules/sales/sales.service.ts": {
+      "as": 7,
+      "nonNull": 0
+    },
+    "src/modules/settings/settings.helpers.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/settings/settings.service.ts": {
+      "as": 3,
+      "nonNull": 0
+    },
+    "src/modules/storage/storage-key-catalog.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/storage/storage-multipart.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/storage/storage.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/support/kb-gap/support-kb-gap-detection.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/support/kb-gap/support-kb-gap.service.ts": {
+      "as": 1,
+      "nonNull": 1
+    },
+    "src/modules/tasks/task-sequences.service.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/modules/users/organization-users.reader.ts": {
+      "as": 0,
+      "nonNull": 3
+    },
+    "src/modules/users/user-profile.service.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/workflows/engine/workflow-runner.service.ts": {
+      "as": 5,
+      "nonNull": 0
+    },
+    "src/modules/workflows/workflows-crud.service.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/workflows/workflows-execution.service.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/modules/workflows/workflows-schedules.service.ts": {
+      "as": 0,
+      "nonNull": 2
+    },
+    "src/modules/workflows/workflows-secrets.service.ts": {
+      "as": 0,
+      "nonNull": 2
+    },
+    "src/scripts/backfill-chat-saved-messages-membership.ts": {
+      "as": 0,
+      "nonNull": 2
+    },
+    "src/scripts/convert-kb-articles.ts": {
+      "as": 1,
+      "nonNull": 2
+    },
+    "src/scripts/hrms-partition-planner/partition-error.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/scripts/report-kb-calendar-runtime-evidence.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/scripts/seed-demo.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
+    "src/scripts/setup-r2-buckets.ts": {
+      "as": 1,
+      "nonNull": 0
+    },
+    "src/scripts/validate-env.ts": {
+      "as": 2,
+      "nonNull": 0
+    },
+    "src/test/sql-predicate.ts": {
+      "as": 9,
+      "nonNull": 0
+    }
+  }
+}

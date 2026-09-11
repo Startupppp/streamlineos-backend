@@ -131,7 +131,7 @@ describe("SurveyLiveParticipantService.getParticipantCount", () => {
       })),
     };
     const service = new SurveyLiveParticipantService(db as never);
-    await expect(service.getParticipantCount(10)).resolves.toBe(0);
+    await expect(service.getParticipantCount("org-1", 10)).resolves.toBe(0);
   });
 
   it("returns the row's count when present", async () => {
@@ -141,6 +141,6 @@ describe("SurveyLiveParticipantService.getParticipantCount", () => {
       })),
     };
     const service = new SurveyLiveParticipantService(db as never);
-    await expect(service.getParticipantCount(10)).resolves.toBe(4);
+    await expect(service.getParticipantCount("org-1", 10)).resolves.toBe(4);
   });
 });

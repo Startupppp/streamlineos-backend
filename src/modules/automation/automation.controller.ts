@@ -7,6 +7,8 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AutomationService } from "./automation.service";
 import { testAutomationSchema, type TestAutomationInput } from "./dto/automation.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { testAutomationResponseSchema } from "./dto/automation-response.schemas";
 import { z } from "zod";
 
 const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
@@ -19,6 +21,7 @@ export class AutomationController {
   @Post(":ruleId/test")
   @HttpCode(200)
   @RequirePermission("settings:automations:manage")
+  @ResponseSchema(testAutomationResponseSchema)
   @Validate({ params: ruleIdParams, body: testAutomationSchema })
   testAutomation(
     @Param("ruleId", ParseIntPipe) ruleId: number,

@@ -14,45 +14,36 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { JournalService, type JournalLine } from "./journal.service";
 import { findRunForMonth } from "./lib/report-builders";
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
+import {
+  journalBatchLineSelection,
+  journalBatchSummarySelection,
+  toJournalBatchSummary,
+  type JournalBatchDetail,
+  type JournalBatchStatus,
+  type JournalBatchSummary,
+  type JournalReconStatus,
+} from "./journal-batch-read-model";
+import { decimalFromNumber, roundDecimal } from "../../accounting/core/money.util";
+import { reversalTotalsFor } from "./lib/journal-reversal-totals";
+import {
+  PAYROLL_JOURNAL_BATCH_LINE_CAP,
+  requirePayrollReadWithinCap,
+} from "../lib/query-bounds";
+import { buildCursorPage, type CursorPage } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
+import {
+  decodePayrollTimestampCursor,
+  payrollCursorPosition,
+} from "../payroll-cursor";
 
-export type JournalBatchStatus = "DRAFT" | "POSTED" | "EXPORTED" | "REVERSED" | "FAILED";
-export type JournalReconStatus = "UNRECONCILED" | "RECONCILED" | "DISPUTED";
+export type {
+  JournalBatchDetail,
+  JournalBatchStatus,
+  JournalBatchSummary,
+  JournalReconStatus,
+} from "./journal-batch-read-model";
 
-export interface JournalBatchSummary {
-  id: number;
-  periodKey: string;
-  version: number;
-  status: JournalBatchStatus;
-  reconciliationStatus: JournalReconStatus;
-  reversalOfBatchId: number | null;
-  provisional: boolean;
-  totalDebits: string;
-  totalCredits: string;
-  lineCount: number;
-  unmappedCodes: string[];
-  runId: number | null;
-  note: string | null;
-  reversalReason: string | null;
-  reconciliationNote: string | null;
-  postedAt: Date | null;
-  exportedAt: Date | null;
-  reversedAt: Date | null;
-  reconciledAt: Date | null;
-  createdAt: Date;
-}
-
-export interface JournalBatchDetail extends JournalBatchSummary {
-  lines: {
-    lineNo: number;
-    account: string;
-    description: string;
-    debit: string;
-    credit: string;
-    costCenter: string | null;
-  }[];
-}
-
-const money = (n: number): string => (Math.round(n * 100) / 100).toFixed(2);
+const money = (n: number): string => roundDecimal(decimalFromNumber(n), 2);
 
 /**
  * A batch is identified by the exact journal content it was built from, so
@@ -84,10 +75,16 @@ export class JournalOutboxService {
 
   async list(
     orgId: string,
-    filters: { periodKey?: string; status?: JournalBatchStatus; page?: number; limit?: number },
-  ): Promise<{ data: JournalBatchSummary[]; total: number; page: number; limit: number }> {
-    const page = Math.max(1, filters.page ?? 1);
+    filters: { periodKey?: string; status?: JournalBatchStatus; cursor?: string; limit?: number },
+  ): Promise<CursorPage<JournalBatchSummary>> {
     const limit = Math.min(100, Math.max(1, filters.limit ?? 25));
+    const cursorScope = [
+      "journal-batches",
+      orgId,
+      filters.periodKey ?? null,
+      filters.status ?? null,
+    ] as const;
+    const position = decodePayrollTimestampCursor(filters.cursor, cursorScope);
 
     const conditions = [eq(payrollJournalBatches.orgId, orgId)];
     if (filters.periodKey) {
@@ -96,46 +93,52 @@ export class JournalOutboxService {
     if (filters.status) {
       conditions.push(eq(payrollJournalBatches.status, filters.status));
     }
-    const where = and(...conditions);
+    if (position) {
+      conditions.push(
+        keysetBeforeId(
+          payrollJournalBatches.createdAt,
+          payrollJournalBatches.id,
+          { sortValue: position.createdAt, id: String(position.id) },
+        ),
+      );
+    }
+    const rows = await this.db
+      .select(journalBatchSummarySelection)
+      .from(payrollJournalBatches)
+      .where(and(...conditions))
+      .orderBy(
+        desc(payrollJournalBatches.createdAt),
+        desc(payrollJournalBatches.id),
+      )
+      .limit(limit + 1);
 
-    const [rows, countRows] = await Promise.all([
-      this.db
-        .select()
-        .from(payrollJournalBatches)
-        .where(where)
-        .orderBy(desc(payrollJournalBatches.createdAt))
-        .limit(limit)
-        .offset((page - 1) * limit),
-      this.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(payrollJournalBatches)
-        .where(where),
-    ]);
+    const page = buildCursorPage(rows, limit, (row) =>
+      payrollCursorPosition(cursorScope, [row.createdAt.toISOString()], row.id),
+    );
 
     return {
-      data: rows.map((r) => this.toSummary(r)),
-      total: countRows[0]?.count ?? 0,
-      page,
-      limit,
+      data: page.data.map(toJournalBatchSummary),
+      pagination: page.pagination,
     };
   }
 
   async get(orgId: string, batchId: number): Promise<JournalBatchDetail> {
     const batch = await this.requireBatch(orgId, batchId);
-    const lines = await this.db
-      .select({
-        lineNo: payrollJournalBatchLines.lineNo,
-        account: payrollJournalBatchLines.account,
-        description: payrollJournalBatchLines.description,
-        debit: payrollJournalBatchLines.debit,
-        credit: payrollJournalBatchLines.credit,
-        costCenter: payrollJournalBatchLines.costCenter,
-      })
-      .from(payrollJournalBatchLines)
-      .where(eq(payrollJournalBatchLines.batchId, batchId))
-      .orderBy(payrollJournalBatchLines.lineNo);
+    // A batch the journal builder can legally produce holds at most
+    // PAYROLL_JOURNAL_BATCH_LINE_CAP lines; anything beyond that is a batch
+    // this reader must not silently show a truncated version of.
+    const lines = requirePayrollReadWithinCap(
+      await this.db
+        .select(journalBatchLineSelection)
+        .from(payrollJournalBatchLines)
+        .where(eq(payrollJournalBatchLines.batchId, batchId))
+        .orderBy(payrollJournalBatchLines.lineNo)
+        .limit(PAYROLL_JOURNAL_BATCH_LINE_CAP + 1),
+      "read journal batch lines",
+      PAYROLL_JOURNAL_BATCH_LINE_CAP,
+    );
 
-    return { ...this.toSummary(batch), lines };
+    return { ...toJournalBatchSummary(batch), lines };
   }
 
   /**
@@ -335,11 +338,21 @@ export class JournalOutboxService {
       throw new BadRequestException("A reversal batch cannot itself be reversed.");
     }
 
-    const originalLines = await this.db
-      .select()
-      .from(payrollJournalBatchLines)
-      .where(eq(payrollJournalBatchLines.batchId, batchId))
-      .orderBy(payrollJournalBatchLines.lineNo);
+    const originalLines = requirePayrollReadWithinCap(
+      await this.db
+        .select()
+        .from(payrollJournalBatchLines)
+        .where(eq(payrollJournalBatchLines.batchId, batchId))
+        .orderBy(payrollJournalBatchLines.lineNo)
+        .limit(PAYROLL_JOURNAL_BATCH_LINE_CAP + 1),
+      "read journal batch lines to reverse",
+      PAYROLL_JOURNAL_BATCH_LINE_CAP,
+    );
+
+    // Derived from the contra lines this reversal will really carry, and
+    // refused unless it reproduces the original — the check markPosted would
+    // have made, had a reversal not been inserted POSTED in the first place.
+    const reversalTotals = reversalTotalsFor(batch.id, batch, originalLines);
 
     const reversalActorMembershipId = await this.resolveMembershipId(orgId, userId);
 
@@ -368,8 +381,10 @@ export class JournalOutboxService {
           reversalOfBatchId: batch.id,
           reversalReason: reason,
           sourceHash: `reversal:${batch.sourceHash}:v${nextVersion}`,
-          totalDebits: batch.totalCredits,
-          totalCredits: batch.totalDebits,
+          // Rupees, from the contra lines actually written below — not copied
+          // from the original header.
+          totalDebits: reversalTotals.totalDebits,
+          totalCredits: reversalTotals.totalCredits,
           lineCount: originalLines.length,
           unmappedCodes: batch.unmappedCodes,
           note: `Reversal of batch #${batch.id} (v${batch.version})`,
@@ -473,28 +488,4 @@ export class JournalOutboxService {
     return batch;
   }
 
-  private toSummary(row: typeof payrollJournalBatches.$inferSelect): JournalBatchSummary {
-    return {
-      id: row.id,
-      periodKey: row.periodKey,
-      version: row.version,
-      status: row.status,
-      reconciliationStatus: row.reconciliationStatus,
-      reversalOfBatchId: row.reversalOfBatchId,
-      provisional: row.provisional,
-      totalDebits: row.totalDebits,
-      totalCredits: row.totalCredits,
-      lineCount: row.lineCount,
-      unmappedCodes: row.unmappedCodes ?? [],
-      runId: row.runId,
-      note: row.note,
-      reversalReason: row.reversalReason,
-      reconciliationNote: row.reconciliationNote,
-      postedAt: row.postedAt,
-      exportedAt: row.exportedAt,
-      reversedAt: row.reversedAt,
-      reconciledAt: row.reconciledAt,
-      createdAt: row.createdAt,
-    };
-  }
 }

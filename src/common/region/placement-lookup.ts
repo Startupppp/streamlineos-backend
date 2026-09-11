@@ -75,6 +75,28 @@ export function unplaceOrganization(db: Db, orgId: string): Promise<void> {
   });
 }
 
+export interface PlacedOrganizationCoordinates {
+  region: string;
+  cellId: string;
+}
+
+export function placedOrganizationCoordinates(
+  db: Db,
+  orgId: string,
+): Promise<PlacedOrganizationCoordinates | null> {
+  return runOutsideTenantContext(async () => {
+    const [placement] = await db
+      .select({
+        region: organizationPlacement.region,
+        cellId: organizationPlacement.cellId,
+      })
+      .from(organizationPlacement)
+      .where(eq(organizationPlacement.organizationId, orgId))
+      .limit(1);
+    return placement ?? null;
+  });
+}
+
 function cellOf(topology: RegionTopology, region: string): string | null {
   return topology.regions[region]?.cell.cellId ?? null;
 }

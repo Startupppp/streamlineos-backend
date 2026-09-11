@@ -25,15 +25,19 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { actingMembershipId } from "../../common/auth/principal";
 import { Validate } from "../../common/validation/validate.decorator";
+import { AccessService } from "../access/access.service";
 import { SignDocumentsService } from "./sign-documents.service";
+import { resolveEnvelopeViewScope } from "./sign-envelope-scope";
 import { uploadDocumentMetaSchema, type UploadDocumentMetaInput } from "./dto/e-sign.schemas";
-import { MultipartAction } from "../../common/openapi/zod-operation-contracts";
+import { MultipartAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  uploadDocumentResponseSchema,
+  listDocumentsResponseSchema,
+  previewDocumentResponseSchema,
+} from "./dto/e-sign-response.schemas";
+import { successSchema } from "../../common/openapi/response-envelopes";
+import { resolveClientIp } from "../../common/http/client-ip";
 
-function clientIp(req: Request): string | undefined {
-  const forwarded = req.headers["x-forwarded-for"];
-  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  return (raw?.split(",")[0]?.trim() || req.ip)?.slice(0, 100);
-}
 
 const envelopeIdParams = z.object({ envelopeId: z.coerce.number().int().positive() }).strict();
 const documentIdParams = z.object({ documentId: z.coerce.number().int().positive() }).strict();
@@ -42,12 +46,16 @@ const documentIdParams = z.object({ documentId: z.coerce.number().int().positive
 @Controller("sign")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class SignDocumentsController {
-  constructor(private readonly documents: SignDocumentsService) {}
+  constructor(
+    private readonly documents: SignDocumentsService,
+    private readonly access: AccessService,
+  ) {}
 
   @Post("documents/upload")
   @MultipartAction({ file: "file" })
   @HttpCode(201)
   @RequirePermission("sign:documents:upload")
+  @ResponseSchema(uploadDocumentResponseSchema)
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 200 * 1024 * 1024 } }))
   @Validate({ query: uploadDocumentMetaSchema })
   async upload(
@@ -62,26 +70,31 @@ export class SignDocumentsController {
       envelopeId,
       { buffer: file.buffer, originalName: file.originalname, mimeType: file.mimetype, size: file.size },
       query.orderIndex,
-      { orgId: u.orgId, userId: u.userId, membershipId: actingMembershipId(u.principal), ipAddress: clientIp(req), userAgent: req.headers["user-agent"] },
+      { orgId: u.orgId, userId: u.userId, membershipId: actingMembershipId(u.principal), ipAddress: resolveClientIp(req), userAgent: req.headers["user-agent"] },
     );
   }
 
   @Get("envelopes/:envelopeId/documents")
   @RequirePermission("sign:documents:view")
+  @ResponseSchema(listDocumentsResponseSchema)
   @Validate({ params: envelopeIdParams })
-  list(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.documents.list(u.orgId, envelopeId);
+  async list(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
+    const scope = await resolveEnvelopeViewScope(this.access, u);
+    return this.documents.list(scope, actingMembershipId(u.principal), envelopeId);
   }
 
   @Get("documents/:documentId/preview")
   @RequirePermission("sign:documents:view")
+  @ResponseSchema(previewDocumentResponseSchema)
   @Validate({ params: documentIdParams })
-  preview(@Param("documentId", ParseIntPipe) documentId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.documents.getPreviewUrl(u.orgId, documentId);
+  async preview(@Param("documentId", ParseIntPipe) documentId: number, @CurrentUser() u: CurrentUserContext) {
+    const scope = await resolveEnvelopeViewScope(this.access, u);
+    return this.documents.getPreviewUrl(scope, actingMembershipId(u.principal), documentId);
   }
 
   @Delete("documents/:documentId")
   @RequirePermission("sign:documents:upload")
+  @ResponseSchema(successSchema)
   @Validate({ params: documentIdParams })
   async remove(@Param("documentId", ParseIntPipe) documentId: number, @CurrentUser() u: CurrentUserContext) {
     await this.documents.delete(u.orgId, documentId);

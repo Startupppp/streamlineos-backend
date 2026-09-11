@@ -1,17 +1,23 @@
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import {
-  moduleAvailability,
-} from "../../common/rbac/module-availability";
-import { moduleOf } from "./access.service";
+import type { AuthContext } from "../../common/auth/auth-context";
+import { namespaceOf } from "../../common/rbac/module-vocabulary";
 import { ALL_PERMISSION_NAMES } from "../rbac/permissions";
 import type { AuthResult, DataScope } from "./access.types";
 import type { ModuleAvailabilityResolver } from "../../common/rbac/module-availability";
 
-export interface AccessResolver {
-  scopeFor(user: CurrentUserContext, key: string): Promise<DataScope>;
+export interface AccessScopeResolver {
+  scopeFor(
+    user: CurrentUserContext,
+    key: string,
+    ctx?: AuthContext,
+  ): Promise<DataScope>;
+}
+
+export interface AccessResolver extends AccessScopeResolver {
   getModuleState(orgId: string, moduleKey: string): Promise<boolean | undefined>;
   buildModuleAvailabilityResolver: (
     getModuleMap: (orgId: string) => Promise<Record<string, boolean>>,
+    getDeniedModules?: (orgId: string, userId: string) => Promise<Set<string>>,
   ) => ModuleAvailabilityResolver;
 }
 
@@ -19,8 +25,8 @@ export interface AccessResolver {
 const CATALOGUED_KEYS = new Set(ALL_PERMISSION_NAMES);
 
 export async function authorize(
-  access: AccessResolver,
-  ctx: CurrentUserContext | null,
+  access: AccessScopeResolver,
+  ctx: AuthContext | null,
   permissionKey: string,
 ): Promise<AuthResult> {
   if (!ctx) return { allow: false, scope: "none", reason: "UNAUTHENTICATED" };
@@ -50,19 +56,11 @@ export async function authorize(
     return { allow: false, scope: "none", reason: "FORBIDDEN" };
   }
 
-  const moduleKey = moduleOf(permissionKey);
-  const getModuleMap = async (orgId: string): Promise<Record<string, boolean>> => {
-    const state = await access.getModuleState(orgId, moduleKey);
-    if (state === undefined) return {};
-    return { [moduleKey]: state };
-  };
-
-  const resolver = access.buildModuleAvailabilityResolver(getModuleMap);
-
-  const avail = await moduleAvailability(resolver, ctx.orgId, ctx.userId, moduleKey);
+  // namespaceOf, never administeringModuleOf: Home administers `chat:*` and is always enabled, so that swap would keep `chat:*` live for an org with Chat disabled.
+  const avail = await ctx.moduleAvailable(namespaceOf(permissionKey));
   if (!avail.available) return { allow: false, scope: "none", reason: "NO_MODULE" };
 
-  const scope = await access.scopeFor(ctx, permissionKey);
+  const scope = await access.scopeFor(ctx.actor, permissionKey, ctx);
   if (scope === "none") return { allow: false, scope: "none", reason: "FORBIDDEN" };
 
   return { allow: true, scope };

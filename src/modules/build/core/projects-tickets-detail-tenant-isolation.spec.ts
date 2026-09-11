@@ -1,4 +1,5 @@
 import type { Db } from "../../../db/drizzle.module";
+import { ProjectsTicketNotFoundException } from "../../../common/http/api-exceptions";
 import { ProjectsTicketsDetailService } from "./projects-tickets-detail.service";
 
 function makeQueryDb(row: unknown | null) {
@@ -23,7 +24,7 @@ describe("ProjectsTicketsDetailService — cross-tenant isolation", () => {
     const db = makeQueryDb(null);
     const svc = new ProjectsTicketsDetailService(db, access as never, audit as never);
     const u = { orgId: ATTACKER_ORG, userId: "u1", isOrgOwner: false } as never;
-    await expect(svc.getTicketByKey(u, 1, 42)).rejects.toThrow();
+    await expect(svc.getTicketByKey(u, 1, 42)).rejects.toThrow(ProjectsTicketNotFoundException);
   });
 
   it("returns ticket for the owning org (same-tenant control)", async () => {

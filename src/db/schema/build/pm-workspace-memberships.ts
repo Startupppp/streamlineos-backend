@@ -32,7 +32,6 @@ export const pmWorkspaceMemberships = build.table(
       t.pmWorkspaceId,
       t.organizationMembershipId,
     ),
-    index("idx_pm_ws_members_org_ws").on(t.orgId, t.pmWorkspaceId),
     index("idx_pm_ws_members_membership").on(t.organizationMembershipId),
     foreignKey({
       columns: [t.orgId, t.pmWorkspaceId],

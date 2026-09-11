@@ -6,6 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CreateSubmissionInput, UpdateSubmissionInput } from "./dto/forms.schemas";
 import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
+import { reserveTicketCapacity } from "../core/build-ticket-capacity";
 
 type FormRow = typeof projectForms.$inferSelect;
 type SubmissionRow = typeof formSubmissions.$inferSelect;
@@ -66,38 +67,48 @@ export class SubmissionsService {
     const skippedActionTypes: string[] = [];
     const createdTicketIds: number[] = [];
 
+    const ticketActions = form.actions.filter(
+      (action) => action.type === "create_task" || action.type === "create_bug",
+    );
+    for (const action of form.actions)
+      if (action.type !== "create_task" && action.type !== "create_bug")
+        skippedActionTypes.push(action.type);
+
+    const description = Object.entries(input.values)
+      .map(([k, v]) => `${k}: ${String(v)}`)
+      .join("\n");
+
     const [submission] = await this.db.transaction(async (tx) => {
-      for (const action of form.actions) {
-        if (action.type !== "create_task" && action.type !== "create_bug") {
-          skippedActionTypes.push(action.type);
-          continue;
-        }
-        const nextNumber = await allocateTicketNumbers(tx, orgId, projectId);
-        const config = action.config ?? {};
-        const titleFieldKey = typeof config["titleField"] === "string" ? config["titleField"] : undefined;
-        const rawTitle = titleFieldKey !== undefined ? input.values[titleFieldKey] : undefined;
-        const ticketTitle = typeof rawTitle === "string" ? rawTitle : form.name;
-        const description = Object.entries(input.values)
-          .map(([k, v]) => `${k}: ${String(v)}`)
-          .join("\n");
-        const ticketType: "TASK" | "BUG" = action.type === "create_bug" ? "BUG" : "TASK";
-        const [ticket] = await tx
+      if (ticketActions.length > 0) {
+        await reserveTicketCapacity(tx, orgId, projectId, [{ status: "TODO", count: ticketActions.length }]);
+        const startNumber = await allocateTicketNumbers(tx, orgId, projectId, ticketActions.length);
+        const inserted = await tx
           .insert(tickets)
-          .values({
-            orgId,
-            projectId,
-            ticketNumber: nextNumber,
-            title: ticketTitle,
-            description,
-            type: ticketType,
-            status: "TODO",
-            priority: "MEDIUM",
-            reporterId: userId,
-          })
+          .values(
+            ticketActions.map((action, index) => {
+              const config = action.config ?? {};
+              const titleFieldKey =
+                typeof config["titleField"] === "string" ? config["titleField"] : undefined;
+              const rawTitle = titleFieldKey !== undefined ? input.values[titleFieldKey] : undefined;
+              return {
+                orgId,
+                projectId,
+                ticketNumber: startNumber + index,
+                title: typeof rawTitle === "string" ? rawTitle : form.name,
+                description,
+                type: action.type === "create_bug" ? ("BUG" as const) : ("TASK" as const),
+                status: "TODO" as const,
+                priority: "MEDIUM" as const,
+                reporterId: userId,
+              };
+            }),
+          )
           .returning({ id: tickets.id });
-        if (ticket) {
+
+        for (const [index, ticket] of inserted.entries()) {
           createdTicketIds.push(ticket.id);
-          executedActionTypes.push(action.type);
+          const action = ticketActions[index];
+          if (action) executedActionTypes.push(action.type);
         }
       }
 

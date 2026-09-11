@@ -1,12 +1,15 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { signDocuments, signEnvelopes } from "../../db/schema";
+import { signDocuments } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { StorageService } from "../storage/storage.service";
 import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 import { unwrapAiResult } from "../ai/core/services/gateway-result.util";
 import { extractAttachmentText } from "../kb/retrieval/kb-attachment-extract.util";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { mustGetVisibleEnvelope } from "./sign-envelope-scope";
+import type { ScopedRead } from "../access/scoped-read";
 
 const SIGN_SUMMARIZE_FEATURE = "sign.summarize-document";
 const MAX_DOCS = 2;
@@ -20,23 +23,42 @@ export class SignAiService {
     private readonly gateway: AiGatewayService,
   ) {}
 
+  /**
+   * The summary is the agreement's own text, so it is bound to the caller's
+   * `sign:envelope:view` scope for the same reason the final PDF and the source
+   * preview are: an envelope you may not see has no readable contents. Without
+   * the scope an `own`-scoped holder could read every contract in the org by
+   * walking `envelopeId`, and out of tenant answers the same 404 an absent
+   * envelope does.
+   */
   async summarizeDocument(
     orgId: string,
     envelopeId: number,
     userId: string,
+    read: ScopedRead,
+    membershipId: number | null,
   ): Promise<{ summary: string }> {
-    const envelope = await this.db.query.signEnvelopes.findFirst({
-      where: and(eq(signEnvelopes.id, envelopeId), eq(signEnvelopes.orgId, orgId)),
-    });
-
-    if (!envelope) {
-      throw new NotFoundException("Envelope not found");
-    }
-
-    const docs = await this.db.query.signDocuments.findMany({
-      where: and(eq(signDocuments.orgId, orgId), eq(signDocuments.envelopeId, envelopeId)),
-      orderBy: (d, { asc }) => [asc(d.orderIndex)],
-    });
+    // Both reads happen inside ONE short tenant transaction that commits before
+    // the object-store fetch, the text extraction and the provider call below.
+    // Holding the request transaction across those pinned a pooled connection
+    // idle-in-transaction for the whole of an external round trip (PRD-C078).
+    // Passing `orgId` explicitly is what makes this open its own transaction
+    // under the handler's `@NoTenantTransaction()`; if a caller ever does have an
+    // ambient tenant context it is reused unchanged.
+    // `this.db` is the tenant-aware proxy, so inside this callback it resolves to
+    // the transaction opened here (`createTenantAwareDb`) and both statements
+    // carry the same GUC.
+    const docs = await runInTenantTransaction(
+      this.db,
+      async () => {
+        await mustGetVisibleEnvelope(this.db, read, membershipId, envelopeId, "Envelope not found");
+        return this.db.query.signDocuments.findMany({
+          where: and(eq(signDocuments.orgId, orgId), eq(signDocuments.envelopeId, envelopeId)),
+          orderBy: (d, { asc }) => [asc(d.orderIndex)],
+        });
+      },
+      { orgId },
+    );
 
     if (docs.length === 0) {
       return { summary: "No documents attached to this envelope." };

@@ -4,8 +4,13 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq, isNull, lte, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lte, sql } from "drizzle-orm";
 import type { SQLWrapper } from "drizzle-orm";
+import {
+  buildCursorPage,
+  decodeCursor,
+} from "../../../common/pagination/cursor";
+import { keysetBeforeValue } from "../../../common/pagination/keyset";
 import {
   hrEffectiveDatedChanges,
   hrEmploymentHistory,
@@ -17,9 +22,13 @@ import { organizationMembers } from "../../../db/schema/common/auth";
 import { organizationPeople } from "../../../db/schema/directory/organization-people";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { applyScope } from "../../access/apply-scope";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import { primaryEmploymentOfPerson } from "../../directory/employment-query";
+import {
+  decodeTimelineCursor,
+  encodeTimelineCursor,
+  type TimelinePosition,
+} from "./hr-core-list-cursors";
 
 type TimelineEntry = {
   id: string;
@@ -32,65 +41,11 @@ type TimelineEntry = {
 
 type TimelineSource = "history" | "change" | "audit";
 
-type TimelinePosition = {
-  createdAt: string;
-  sourceRecordId: number;
-};
-
-type TimelineCursor = {
-  version: 1;
-  asOf: string;
-  positions: Partial<Record<TimelineSource, TimelinePosition>>;
-};
-
 type TimelineCandidate = TimelineEntry & {
   source: TimelineSource;
   sourceId: number;
   sourceRank: number;
 };
-
-function decodeTimelineCursor(value: string | undefined): TimelineCursor {
-  if (!value) {
-    return { version: 1, asOf: new Date().toISOString(), positions: {} };
-  }
-
-  try {
-    const parsed = JSON.parse(
-      Buffer.from(value, "base64url").toString("utf8"),
-    ) as Partial<TimelineCursor>;
-    const asOf = new Date(parsed.asOf ?? "");
-    if (
-      parsed.version !== 1 ||
-      Number.isNaN(asOf.getTime()) ||
-      asOf.getTime() > Date.now() + 60_000 ||
-      !parsed.positions ||
-      typeof parsed.positions !== "object"
-    ) {
-      throw new Error("invalid cursor");
-    }
-
-    for (const source of ["history", "change", "audit"] as const) {
-      const position = parsed.positions[source];
-      if (!position) continue;
-      const createdAt = new Date(position.createdAt);
-      if (
-        Number.isNaN(createdAt.getTime()) ||
-        !Number.isSafeInteger(position.sourceRecordId) ||
-        position.sourceRecordId < 1
-      ) {
-        throw new Error("invalid cursor position");
-      }
-    }
-
-    return parsed as TimelineCursor;
-  } catch {
-    throw new BadRequestException("The timeline cursor is invalid or expired.");
-  }
-}
-
-function encodeTimelineCursor(cursor: TimelineCursor): string {
-  return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
-}
 
 function afterPosition(
   createdAt: SQLWrapper,
@@ -98,14 +53,17 @@ function afterPosition(
   position: TimelinePosition | undefined,
 ) {
   if (!position) return undefined;
-  const date = new Date(position.createdAt);
+  const date = new Date(position.createdAt).toISOString();
   return sql<boolean>`(
-    ${createdAt} < ${date}
-    OR (${createdAt} = ${date} AND ${sourceRecordId} < ${position.sourceRecordId})
+    ${createdAt} < ${date}::timestamptz
+    OR (${createdAt} = ${date}::timestamptz AND ${sourceRecordId} < ${position.sourceRecordId})
   )`;
 }
 
-function compareTimelineEntries(leftEntry: TimelineCandidate, rightEntry: TimelineCandidate) {
+function compareTimelineEntries(
+  leftEntry: TimelineCandidate,
+  rightEntry: TimelineCandidate,
+) {
   const time = rightEntry.createdAt.getTime() - leftEntry.createdAt.getTime();
   if (time !== 0) return time;
   const source = leftEntry.sourceRank - rightEntry.sourceRank;
@@ -113,50 +71,111 @@ function compareTimelineEntries(leftEntry: TimelineCandidate, rightEntry: Timeli
   return rightEntry.sourceId - leftEntry.sourceId;
 }
 
+type HistoryCursorScope = {
+  orgId: string;
+  actorUserId: string;
+  employmentId: number;
+  scope: string;
+  type: "manager" | "department";
+};
+
+function invalidHistoryCursor(): never {
+  throw new BadRequestException({
+    code: "INVALID_EMPLOYMENT_HISTORY_CURSOR",
+    message: "The employment history cursor is invalid or expired.",
+  });
+}
+
+function isBusinessDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return (
+    !Number.isNaN(parsed.getTime()) &&
+    parsed.toISOString().slice(0, 10) === value
+  );
+}
+
+function decodeHistoryCursor(
+  value: string | undefined,
+  expected: HistoryCursorScope,
+) {
+  if (!value) return null;
+  const position = decodeCursor(value);
+  if (!position || !isBusinessDate(position.sortValue))
+    return invalidHistoryCursor();
+
+  try {
+    const scope: unknown = JSON.parse(position.id);
+    if (
+      !Array.isArray(scope) ||
+      scope.length !== 6 ||
+      typeof scope[0] !== "number" ||
+      !Number.isSafeInteger(scope[0]) ||
+      scope[0] < 1 ||
+      scope[1] !== expected.orgId ||
+      scope[2] !== expected.actorUserId ||
+      scope[3] !== expected.employmentId ||
+      scope[4] !== expected.scope ||
+      scope[5] !== expected.type
+    )
+      return invalidHistoryCursor();
+    return { sortValue: position.sortValue, id: String(scope[0]) };
+  } catch {
+    return invalidHistoryCursor();
+  }
+}
+
 @Injectable()
 export class HrTimelineService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   private async assertEmploymentVisible(
-    orgId: string,
-    actorUserId: string,
+    read: ScopedRead,
     employmentId: number,
-    scope: DataScope,
   ): Promise<void> {
-    const [visible] = await this.db
-      .select({ id: hrEmployments.id })
-      .from(hrEmployments)
-      .innerJoin(
-        hrPeople,
-        and(
-          eq(hrPeople.id, hrEmployments.personId),
-          eq(hrPeople.orgId, orgId),
-          isNull(hrPeople.deletedAt),
-        ),
-      )
-      .where(
-        and(
-          eq(hrEmployments.id, employmentId),
-          eq(hrEmployments.orgId, orgId),
-          isNull(hrEmployments.deletedAt),
-          applyScope(scope, orgId, actorUserId, { ownerColumn: hrPeople.userId }),
-        ),
-      )
-      .limit(1);
+    const orgId = read.orgId;
+    const [visible] = await read.read(
+      {
+        tenant: hrEmployments.orgId,
+        scope: { columns: { ownerColumn: hrPeople.userId } },
+        and: [eq(hrEmployments.id, employmentId), isNull(hrEmployments.deletedAt)],
+      },
+      ({ sql: where }) =>
+        this.db
+          .select({ id: hrEmployments.id })
+          .from(hrEmployments)
+          .innerJoin(
+            hrPeople,
+            and(
+              eq(hrPeople.id, hrEmployments.personId),
+              eq(hrPeople.orgId, orgId),
+              isNull(hrPeople.deletedAt),
+            ),
+          )
+          .where(where)
+          .limit(1),
+      () => [],
+    );
 
     if (!visible) throw new NotFoundException("Employment not found");
   }
 
   async getTimeline(
-    orgId: string,
-    actorUserId: string,
+    read: ScopedRead,
     employmentId: number,
-    scope: DataScope,
     opts: { cursor?: string; limit: number },
   ) {
-    await this.assertEmploymentVisible(orgId, actorUserId, employmentId, scope);
+    const orgId = read.orgId;
+    const actorUserId = read.actorId;
+    const scope = read.discriminator;
     const cappedLimit = Math.min(opts.limit, 100);
-    const cursor = decodeTimelineCursor(opts.cursor);
+    const cursor = decodeTimelineCursor(opts.cursor, {
+      orgId,
+      actorUserId,
+      employmentId,
+      scope,
+    });
+    await this.assertEmploymentVisible(read, employmentId);
     const asOf = new Date(cursor.asOf);
     const fetchLimit = cappedLimit + 1;
 
@@ -324,56 +343,55 @@ export class HrTimelineService {
     };
   }
 
-  async getEmploymentByUserId(
-    orgId: string,
-    actorUserId: string,
-    userId: string,
-    scope: DataScope,
-  ) {
-    const [row] = await this.db
-      .select({
-        id: hrEmployments.id,
-        personId: hrEmployments.personId,
-        employeeNumber: hrEmployments.employeeNumber,
-        lifecycleStatus: hrEmployments.lifecycleStatus,
-        workerType: hrEmployments.workerType,
-        departmentId: hrEmployments.departmentId,
-        designation: hrEmployments.designation,
-        joiningDate: hrEmployments.joiningDate,
-        probationEndDate: hrEmployments.probationEndDate,
-        confirmationDate: hrEmployments.confirmationDate,
-        isPrimary: hrEmployments.isPrimary,
-        personFirstName: organizationPeople.firstName,
-        personLastName: organizationPeople.lastName,
-        personWorkEmail: organizationPeople.workEmail,
-      })
-      .from(hrPeople)
-      .innerJoin(
-        organizationPeople,
-        and(
-          eq(organizationPeople.organizationId, hrPeople.orgId),
-          eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
-        ),
-      )
-      .innerJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
-      .innerJoin(
-        organizationMembers,
-        and(
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.userId, hrPeople.userId),
-        ),
-      )
-      .where(
-        and(
-          eq(hrPeople.orgId, orgId),
-          eq(hrPeople.userId, userId),
-          isNull(hrPeople.deletedAt),
-          applyScope(scope, orgId, actorUserId, {
-            ownerColumn: organizationMembers.userId,
-          }),
-        ),
-      )
-      .limit(1);
+  async getEmploymentByUserId(read: ScopedRead, userId: string) {
+    const orgId = read.orgId;
+    const [row] = await read.read(
+      {
+        tenant: hrPeople.orgId,
+        scope: { columns: { ownerColumn: organizationMembers.userId } },
+        and: [eq(hrPeople.userId, userId), isNull(hrPeople.deletedAt)],
+      },
+      ({ sql: where }) =>
+        this.db
+          .select({
+            id: hrEmployments.id,
+            personId: hrEmployments.personId,
+            employeeNumber: hrEmployments.employeeNumber,
+            lifecycleStatus: hrEmployments.lifecycleStatus,
+            workerType: hrEmployments.workerType,
+            departmentId: hrEmployments.departmentId,
+            designation: hrEmployments.designation,
+            joiningDate: hrEmployments.joiningDate,
+            probationEndDate: hrEmployments.probationEndDate,
+            confirmationDate: hrEmployments.confirmationDate,
+            isPrimary: hrEmployments.isPrimary,
+            personFirstName: organizationPeople.firstName,
+            personLastName: organizationPeople.lastName,
+            personWorkEmail: organizationPeople.workEmail,
+          })
+          .from(hrPeople)
+          .innerJoin(
+            organizationPeople,
+            and(
+              eq(organizationPeople.organizationId, hrPeople.orgId),
+              eq(
+                organizationPeople.organizationPersonId,
+                hrPeople.organizationPersonId,
+              ),
+            ),
+          )
+          .innerJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+          .innerJoin(
+            organizationMembers,
+            and(
+              eq(organizationMembers.orgId, orgId),
+              eq(organizationMembers.userId, hrPeople.userId),
+            ),
+          )
+          .where(where)
+          .limit(1),
+      () => [],
+    );
 
     if (!row) throw new NotFoundException("Employee not found");
 
@@ -381,39 +399,53 @@ export class HrTimelineService {
   }
 
   async getHistory(
-    orgId: string,
-    actorUserId: string,
+    read: ScopedRead,
     employmentId: number,
-    scope: DataScope,
     type: "manager" | "department",
-    opts: { page: number; limit: number },
+    opts: { cursor?: string; limit: number },
   ) {
-    await this.assertEmploymentVisible(orgId, actorUserId, employmentId, scope);
-    const { page, limit } = opts;
-    const offset = (page - 1) * limit;
+    const orgId = read.orgId;
+    const actorUserId = read.actorId;
+    const scope = read.discriminator;
+    const cursorScope = { orgId, actorUserId, employmentId, scope, type };
+    const cursor = decodeHistoryCursor(opts.cursor, cursorScope);
+    await this.assertEmploymentVisible(read, employmentId);
+    const limit = Math.min(opts.limit, 100);
     const changeType = type === "manager" ? "manager" : "department";
-    const where = and(
+    const conditions = [
       eq(hrEffectiveDatedChanges.orgId, orgId),
       eq(hrEffectiveDatedChanges.employmentId, employmentId),
       eq(hrEffectiveDatedChanges.changeType, changeType),
-    );
+    ];
+    if (cursor)
+      conditions.push(
+        keysetBeforeValue(
+          hrEffectiveDatedChanges.effectiveFrom,
+          hrEffectiveDatedChanges.id,
+          cursor,
+        ),
+      );
 
-    const [data, totalResult] = await Promise.all([
-      this.db
-        .select()
-        .from(hrEffectiveDatedChanges)
-        .where(where)
-        .orderBy(desc(hrEffectiveDatedChanges.effectiveFrom))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(hrEffectiveDatedChanges).where(where),
-    ]);
+    const rows = await this.db
+      .select()
+      .from(hrEffectiveDatedChanges)
+      .where(and(...conditions))
+      .orderBy(
+        desc(hrEffectiveDatedChanges.effectiveFrom),
+        desc(hrEffectiveDatedChanges.id),
+      )
+      .limit(limit + 1);
 
-    const total = totalResult[0]?.total ?? 0;
-
-    return {
-      data,
-      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
-    };
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: String(row.effectiveFrom),
+      id: JSON.stringify([
+        row.id,
+        cursorScope.orgId,
+        cursorScope.actorUserId,
+        cursorScope.employmentId,
+        cursorScope.scope,
+        cursorScope.type,
+      ]),
+    }));
   }
 }

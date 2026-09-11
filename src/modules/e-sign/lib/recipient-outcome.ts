@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Logger } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { organizationMembers, signEnvelopes, signFields, signRecipients } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
 import { SignAuditService } from "../sign-audit.service";
@@ -8,7 +8,7 @@ import { SignEnvelopesService } from "../sign-envelopes.service";
 import { SignFinalizationService } from "../sign-finalization.service";
 import { SignNotificationsService } from "../sign-notifications.service";
 import { SignIntegrationsService } from "../sign-integrations.service";
-import type { DeclineInput } from "../dto/e-sign.schemas";
+import type { DeclineInput } from "../dto/e-sign-public.schemas";
 import { withRecipientSession, type PublicRequestContext } from "./recipient-session";
 
 /**
@@ -46,16 +46,17 @@ export async function complete(deps: RecipientOutcomeDeps, token: string, ctx: P
     deps.assertActive(recipient, envelope);
     if (!recipient.consentAcceptedAt) throw new ForbiddenException("Please accept the electronic signature consent first");
 
-    const fields = await deps.db.query.signFields.findMany({ where: eq(signFields.recipientId, recipient.id) });
-
-    for (const field of fields) {
-      if (field.fieldType === "date_signed" && !field.completedAt) {
-        await deps.db
-          .update(signFields)
-          .set({ valueJson: { value: new Date().toISOString().slice(0, 10) }, completedAt: new Date() })
-          .where(eq(signFields.id, field.id));
-      }
-    }
+    await deps.db
+      .update(signFields)
+      .set({ valueJson: { value: new Date().toISOString().slice(0, 10) }, completedAt: new Date() })
+      .where(
+        and(
+          eq(signFields.orgId, envelope.orgId),
+          eq(signFields.recipientId, recipient.id),
+          eq(signFields.fieldType, "date_signed"),
+          isNull(signFields.completedAt),
+        ),
+      );
 
     const refreshedFields = await deps.db.query.signFields.findMany({ where: eq(signFields.recipientId, recipient.id) });
     const incomplete = refreshedFields.filter((f) => f.required && !f.completedAt);

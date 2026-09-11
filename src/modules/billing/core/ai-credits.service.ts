@@ -8,12 +8,15 @@ import {
   orgAiCredits,
 } from "../../../db/schema";
 import { creditsToMilli, milliToCredits } from "../../ai/core/billing/ai-model-pricing.constants";
-import { TRIAL_GRANT_MILLI, planGrantMilli } from "./ai-credit-units";
+import { planGrantMilli } from "./ai-credit-units";
 import { AiCreditsReservationService } from "./ai-credits-reservation.service";
 import { AiCreditsPacksService } from "./ai-credits-packs.service";
 import type { AiCreditReserveInput, AiCreditSettleInput } from "../../ai/core/gateway/credit-ledger.interface";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
-import { getPostgresErrorCode } from "../../../common/db/postgres-error";
+import type { TenantTx } from "../../../db/drizzle.types";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
+
+type WalletExecutor = Db | TenantTx;
 
 @Injectable()
 export class AiCreditsService {
@@ -24,45 +27,11 @@ export class AiCreditsService {
   ) {}
 
   async getWallet(orgId: string) {
-    let [wallet] = await this.db
+    const [existing] = await this.db
       .select()
       .from(orgAiCredits)
       .where(eq(orgAiCredits.orgId, orgId));
-    if (!wallet) {
-      try {
-        [wallet] = await this.db.transaction(async (tx) => {
-          const [created] = await tx
-            .insert(orgAiCredits)
-            .values({ orgId, balance: TRIAL_GRANT_MILLI, lifetimeGranted: TRIAL_GRANT_MILLI })
-            .returning();
-          await tx.insert(aiCreditTransactions).values({
-            orgId,
-            userId: null,
-            type: "PLAN_GRANT",
-            amount: TRIAL_GRANT_MILLI,
-            balanceAfter: TRIAL_GRANT_MILLI,
-            feature: "trial-grant",
-            referenceId: "trial-grant",
-          });
-          return [created];
-        });
-      } catch (err: unknown) {
-        // `org_ai_credits.org_id` is unique, so two requests that both find no
-        // wallet race to create one and the loser must read the winner's row
-        // rather than fail. Through `getPostgresErrorCode` because Drizzle
-        // leaves the SQLSTATE on `.cause`.
-        if (getPostgresErrorCode(err) === "23505") {
-          const [existing] = await this.db
-            .select()
-            .from(orgAiCredits)
-            .where(eq(orgAiCredits.orgId, orgId));
-          wallet = existing;
-        } else {
-          throw err;
-        }
-      }
-    }
-    if (!wallet) throw new NotFoundException("AI credits wallet unavailable");
+    const wallet = existing ?? (await this.reservation.ensureWalletForOrg(orgId));
     const recentTransactions = await this.db
       .select({
         id: aiCreditTransactions.id,
@@ -110,6 +79,43 @@ export class AiCreditsService {
     return this.packs.listPacks();
   }
 
+  /**
+   * Credits the wallet in one statement, creating it if this is the tenant's
+   * first grant.
+   *
+   * `SELECT … FOR UPDATE` locks nothing when the row does not exist, so on an
+   * organisation's very first purchase two payments both saw no wallet, both
+   * inserted, and the loser died `23505`. The catch below swallowed it and
+   * returned the current balance: the customer paid and got no credits, and no
+   * ledger row recorded the purchase. An upsert has no such window, and the
+   * balance moves in SQL rather than as a read-modify-write, so a concurrent
+   * grant cannot be erased either.
+   *
+   * The returned balance is the one the database committed — the ledger's
+   * `balanceAfter` is taken from it rather than recomputed, so the two cannot
+   * disagree.
+   */
+  private async creditWallet(
+    tx: WalletExecutor,
+    orgId: string,
+    amountMilli: number,
+  ): Promise<number> {
+    const [wallet] = await tx
+      .insert(orgAiCredits)
+      .values({ orgId, balance: amountMilli, lifetimeGranted: amountMilli })
+      .onConflictDoUpdate({
+        target: orgAiCredits.orgId,
+        set: {
+          balance: sql`${orgAiCredits.balance} + ${amountMilli}`,
+          lifetimeGranted: sql`${orgAiCredits.lifetimeGranted} + ${amountMilli}`,
+          updatedAt: new Date(),
+        },
+      })
+      .returning({ balance: orgAiCredits.balance });
+    if (!wallet) throw new Error("AI credit wallet upsert returned no rows");
+    return wallet.balance;
+  }
+
   async grantPlanCredits(orgId: string, plan: string, userId?: string, referenceId?: string) {
     const amountMilli = planGrantMilli(plan);
     if (!amountMilli) return;
@@ -131,27 +137,7 @@ export class AiCreditsService {
           if (existing) return;
         }
 
-        let [wallet] = await tx
-          .select()
-          .from(orgAiCredits)
-          .where(eq(orgAiCredits.orgId, orgId))
-          .for("update");
-        if (!wallet) {
-          [wallet] = await tx
-            .insert(orgAiCredits)
-            .values({ orgId })
-            .returning();
-        }
-
-        const newBalance = wallet.balance + amountMilli;
-        await tx
-          .update(orgAiCredits)
-          .set({
-            balance: newBalance,
-            lifetimeGranted: sql`${orgAiCredits.lifetimeGranted} + ${amountMilli}`,
-            updatedAt: new Date(),
-          })
-          .where(eq(orgAiCredits.orgId, orgId));
+        const newBalance = await this.creditWallet(tx, orgId, amountMilli);
 
         await tx.insert(aiCreditTransactions).values({
           orgId,
@@ -173,8 +159,9 @@ export class AiCreditsService {
        * (billing.service does exactly that) reaches the index with the plan
        * name as its key and a repeat grant lands here, not on the pre-check.
        * A grant already recorded is not an error — return, do not re-credit.
+       * `isUniqueViolation` reads the SQLSTATE off `.cause`, where Drizzle leaves it.
        */
-      if (getPostgresErrorCode(err) === "23505") {
+      if (isUniqueViolation(err)) {
         return;
       }
       throw err;
@@ -217,36 +204,14 @@ export class AiCreditsService {
             .limit(1);
           if (existingPurchase) {
             const [current] = await tx
-              .select()
+              .select({ balance: orgAiCredits.balance })
               .from(orgAiCredits)
               .where(eq(orgAiCredits.orgId, orgId));
-            return current;
+            return current?.balance ?? 0;
           }
         }
 
-        const [locked] = await tx
-          .select()
-          .from(orgAiCredits)
-          .where(eq(orgAiCredits.orgId, orgId))
-          .for("update");
-
-        let currentBalance = 0;
-        if (locked) {
-          currentBalance = locked.balance;
-        } else {
-          await tx.insert(orgAiCredits).values({ orgId });
-        }
-
-        const newBalance = currentBalance + creditsAddedMilli;
-        const [updated] = await tx
-          .update(orgAiCredits)
-          .set({
-            balance: newBalance,
-            lifetimeGranted: sql`${orgAiCredits.lifetimeGranted} + ${creditsAddedMilli}`,
-            updatedAt: new Date(),
-          })
-          .where(eq(orgAiCredits.orgId, orgId))
-          .returning();
+        const newBalance = await this.creditWallet(tx, orgId, creditsAddedMilli);
 
         await tx.insert(aiCreditTransactions).values({
           orgId,
@@ -259,10 +224,10 @@ export class AiCreditsService {
           metadata: automatic ? { automatic: true } : null,
         });
 
-        return updated;
+        return newBalance;
       });
 
-      return { balance: milliToCredits(wallet?.balance ?? 0), creditsAdded, pack };
+      return { balance: milliToCredits(wallet ?? 0), creditsAdded, pack };
     } catch (err: unknown) {
       /**
        * `uq_ai_credit_txns_purchase_ref` — (org_id, reference_id) WHERE
@@ -277,7 +242,7 @@ export class AiCreditsService {
        * than a second purchase. That is a product decision in the fallback key,
        * not in this handler — before this change the same call produced a 500.
        */
-      if (getPostgresErrorCode(err) === "23505") {
+      if (isUniqueViolation(err)) {
         const [currentWallet] = await this.db
           .select()
           .from(orgAiCredits)
@@ -288,8 +253,8 @@ export class AiCreditsService {
     }
   }
 
-  async listTransactions(orgId: string, page: number, limit: number) {
-    return this.packs.listTransactions(orgId, page, limit);
+  async listTransactions(orgId: string, query: { cursor?: string; limit: number }) {
+    return this.packs.listTransactions(orgId, query);
   }
 
   async updateAutoTopUp(
@@ -298,16 +263,11 @@ export class AiCreditsService {
     packId?: number,
     thresholdCredits?: number,
   ) {
-    let [wallet] = await this.db
+    const [existing] = await this.db
       .select()
       .from(orgAiCredits)
       .where(eq(orgAiCredits.orgId, orgId));
-    if (!wallet) {
-      [wallet] = await this.db
-        .insert(orgAiCredits)
-        .values({ orgId })
-        .returning();
-    }
+    const wallet = existing ?? (await this.reservation.ensureWalletForOrg(orgId));
     const thresholdMilli = thresholdCredits !== undefined
       ? creditsToMilli(thresholdCredits)
       : wallet.autoTopUpThreshold ?? undefined;
@@ -386,28 +346,7 @@ export class AiCreditsService {
            * swallowed it.
            */
           tx.transaction(async (write) => {
-            const [wallet] = await write
-              .select()
-              .from(orgAiCredits)
-              .where(eq(orgAiCredits.orgId, orgId))
-              .for("update");
-
-            let currentBalance = 0;
-            if (wallet) {
-              currentBalance = wallet.balance;
-            } else {
-              await write.insert(orgAiCredits).values({ orgId });
-            }
-
-            const newBalance = currentBalance + creditsAddedMilli;
-            await write
-              .update(orgAiCredits)
-              .set({
-                balance: newBalance,
-                lifetimeGranted: sql`${orgAiCredits.lifetimeGranted} + ${creditsAddedMilli}`,
-                updatedAt: new Date(),
-              })
-              .where(eq(orgAiCredits.orgId, orgId));
+            const newBalance = await this.creditWallet(write, orgId, creditsAddedMilli);
 
             await write.insert(aiCreditTransactions).values({
               orgId,
@@ -425,7 +364,7 @@ export class AiCreditsService {
     } catch (err: unknown) {
       // Same PURCHASE reference index. A webhook redelivering the same payment
       // id must be a no-op, not a 500 the provider will retry forever.
-      if (getPostgresErrorCode(err) === "23505") {
+      if (isUniqueViolation(err)) {
         return;
       }
       throw err;

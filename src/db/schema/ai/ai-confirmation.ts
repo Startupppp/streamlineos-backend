@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, unique, uniqueIndex, varchar, foreignKey } from "drizzle-orm/pg-core";
-import { organizations, users, organizationMembers } from "../common/auth";
+import { organizations, organizationMembers } from "../common/auth";
 
 export const aiProposalStatusEnum = pgEnum("ai_proposal_status", [
   "PROPOSED",
@@ -15,7 +15,7 @@ export const aiActionProposals = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
     userMembershipId: integer("user_membership_id"),
     action: varchar("action", { length: 100 }).notNull(),
     payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
@@ -29,7 +29,7 @@ export const aiActionProposals = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (t) => [
-    index("idx_ai_proposals_org_user_created").on(t.orgId, t.userId, t.createdAt),
+    index("idx_ai_proposals_org_user_created").on(t.orgId, t.userMembershipId, t.createdAt),
     index("idx_ai_proposals_status_expires").on(t.status, t.expiresAt),
     uniqueIndex("uq_ai_proposals_org_idem_key")
       .on(t.orgId, t.idempotencyKey)

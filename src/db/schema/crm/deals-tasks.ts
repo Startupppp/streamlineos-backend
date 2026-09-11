@@ -1,15 +1,4 @@
-import {
-  pgTable,
-  text,
-  serial,
-  timestamp,
-  boolean,
-  jsonb,
-  integer,
-  index,
-  unique,
-  type AnyPgColumn,
-} from "drizzle-orm/pg-core";
+import { boolean, foreignKey, index, integer, jsonb, pgTable, serial, text, timestamp, type AnyPgColumn, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { taskEntityTypeEnum, taskStatusEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
@@ -54,7 +43,7 @@ export const tasks = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    index("idx_tasks_org").on(table.orgId),
+  foreignKey({ columns: [table.orgId, table.parentTaskId], foreignColumns: [table.orgId, table.id], name: "fk_tasks_parent_task_id_org" }).onDelete("set null"),
     index("idx_tasks_assignee").on(table.assigneeId),
     index("idx_tasks_status").on(table.status),
     index("idx_tasks_due_date").on(table.dueDate),

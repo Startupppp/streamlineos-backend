@@ -8,6 +8,7 @@ import { CrmCustomer360EngagementService } from "./crm-customer360-engagement.se
 import { SlaResolverService } from "./sla-resolver.service";
 import { TerritoryMatchService } from "./territory-match.service";
 import { CrmPeopleService } from "./crm-people.service";
+import { ScopedRead } from "../../access/scoped-read";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (
@@ -216,7 +217,7 @@ describe("CrmPeopleService — cross-tenant isolation", () => {
     const findMany = jest.fn().mockResolvedValue([]);
     const db = { query: { crmPeople: { findMany } } } as unknown as Db;
     const svc = new CrmPeopleService(db);
-    const result = await svc.getAllPeopleSlugs(ATTACKER, "all");
+    const result = await svc.getAllPeopleSlugs(ScopedRead.of(ATTACKER, "user-x", "all"));
     expect(Object.keys(result)).toHaveLength(0);
     expect(findMany).toHaveBeenCalled();
     expect(sqlValues(findMany.mock.calls[0]?.[0]?.where)).toContain(ATTACKER);
@@ -227,7 +228,7 @@ describe("CrmPeopleService — cross-tenant isolation", () => {
     const findMany = jest.fn().mockResolvedValue([row]);
     const db = { query: { crmPeople: { findMany } } } as unknown as Db;
     const svc = new CrmPeopleService(db);
-    const result = await svc.getAllPeopleSlugs(OWNER, "all");
+    const result = await svc.getAllPeopleSlugs(ScopedRead.of(OWNER, "user-x", "all"));
     expect(Object.keys(result).length).toBeGreaterThan(0);
   });
 });

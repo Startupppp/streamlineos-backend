@@ -14,10 +14,10 @@ describe("ProjectsTicketsUpdateService — cross-tenant isolation", () => {
 
   const dispatch = { sendTicketAssignedNotification: jest.fn() } as never;
   const activity = { logTicketActivity: jest.fn(), logTicketFieldChanges: jest.fn().mockResolvedValue(undefined) } as never;
-  const query = { validateTicketStatus: jest.fn().mockResolvedValue(undefined) } as never;
+  const query = { authorizeMutation: jest.fn().mockResolvedValue([]), validateTicketStatus: jest.fn().mockResolvedValue(undefined) } as never;
   const read = { checkProjectAccess: jest.fn().mockResolvedValue({ hasAccess: false, role: null }) } as never;
   const transfer = { notifyNewAssignees: jest.fn().mockResolvedValue(undefined) } as never;
-  const webhooksDispatch = { dispatchTicketEvent: jest.fn(), dispatch: jest.fn().mockResolvedValue(undefined) } as never;
+  const webhooksDispatch = { dispatchTicketEvent: jest.fn(), dispatch: jest.fn().mockResolvedValue(undefined), enqueue: jest.fn().mockResolvedValue(undefined) } as never;
   const automationRunner = { run: jest.fn(), runForTicketEvent: jest.fn().mockResolvedValue(undefined) } as never;
   const cache = { invalidateNamespace: jest.fn(), del: jest.fn().mockResolvedValue(undefined) } as never;
 
@@ -38,7 +38,7 @@ describe("ProjectsTicketsUpdateService — cross-tenant isolation", () => {
     }));
     const db = { query: { tickets: { findFirst: jest.fn().mockResolvedValue(ticket) } }, transaction: txFn } as unknown as Db;
     const svc = new ProjectsTicketsUpdateService(db, dispatch, activity, query, read, transfer, webhooksDispatch, automationRunner, cache);
-    const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true } as never;
+    const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true, principal: { kind: "human-session", membershipId: 1, isOrgOwner: true } } as never;
     await expect(svc.updateTicket(u, 1, {})).resolves.not.toThrow();
   });
 });

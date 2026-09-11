@@ -1,6 +1,7 @@
 import { OrgChartService } from "../org-chart.service";
 import type { Db } from "../../../../db/drizzle.module";
 import type { EmploymentFactsService } from "../../../directory/employment-facts.service";
+import { ScopedRead } from "../../../access/scoped-read";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (
@@ -60,9 +61,7 @@ describe("OrgChartService — cross-tenant isolation", () => {
     const svc = new OrgChartService(db, makeEmploymentDep());
 
     const result = await svc.getOrgChart(
-      ATTACKER_ORG,
-      "user-attacker",
-      "all",
+      ScopedRead.of(ATTACKER_ORG, "user-attacker", "all"),
       { limit: 20 },
     );
 
@@ -77,7 +76,7 @@ describe("OrgChartService — cross-tenant isolation", () => {
     const { db, where } = makeSelectDb([]);
     const svc = new OrgChartService(db, makeEmploymentDep());
 
-    await svc.getOrgChart(ATTACKER_ORG, "user-x", "all", { limit: 10 });
+    await svc.getOrgChart(ScopedRead.of(ATTACKER_ORG, "user-x", "all"), { limit: 10 });
 
     expect(where).toHaveBeenCalled();
     const vals = sqlValues(where.mock.calls[0]?.[0]);
@@ -88,7 +87,7 @@ describe("OrgChartService — cross-tenant isolation", () => {
     const { db, where } = makeSelectDb([]);
     const svc = new OrgChartService(db, makeEmploymentDep());
 
-    await svc.getOrgChart(ATTACKER_ORG, "user-x", "all", { limit: 10, search: "Alice" });
+    await svc.getOrgChart(ScopedRead.of(ATTACKER_ORG, "user-x", "all"), { limit: 10, search: "Alice" });
 
     expect(where).toHaveBeenCalled();
     const vals = sqlValues(where.mock.calls[0]?.[0]);

@@ -2,17 +2,17 @@ import { z } from "zod";
 
 export const planBodySchema = z.object({
   prompt: z.string().min(1).max(2000),
-});
+}).strict();
 export type PlanBodyInput = z.infer<typeof planBodySchema>;
 
 export const extractBodySchema = z.object({
   text: z.string().min(1).max(8000),
-});
+}).strict();
 export type ExtractBodyInput = z.infer<typeof extractBodySchema>;
 
 export const askBodySchema = z.object({
   question: z.string().min(1).max(1000),
-});
+}).strict();
 export type AskBodyInput = z.infer<typeof askBodySchema>;
 
 export const PmSummaryOutputSchema = z.object({
@@ -77,7 +77,7 @@ export const PmAskOutputSchema = z.object({
 export const weeklyUpdateBodySchema = z.object({
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD").optional(),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD").optional(),
-});
+}).strict();
 export type WeeklyUpdateBodyInput = z.infer<typeof weeklyUpdateBodySchema>;
 
 const WeeklyUpdateCitationSchema = z.object({

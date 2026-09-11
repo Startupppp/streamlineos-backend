@@ -18,6 +18,28 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  dashboardAnnouncementsResponseSchema,
+  dashboardPersonalResponseSchema,
+  dashboardStatsResponseSchema,
+} from "./dto/dashboard-response-schema";
+import {
+  announcementCreateSchema,
+  announcementDeleteSchema,
+  birthdayEntrySchema,
+  executiveDashboardSchema,
+  pendingApprovalsSchema,
+  recentActivitySchema,
+  teamAttendanceSchema,
+  teamAvailabilitySchema,
+  todayActivitiesSchema,
+} from "./dto/dashboard-misc-response.schemas";
+import { leavesTodaySchema, myLeaveBalanceSchema } from "../hr/time/dto/time-leave-response.schemas";
+import { upcomingHolidaysSchema } from "../hr/time/dto/time-attendance-response.schemas";
+import { myIssuesSchema } from "../build/core/dto/build-tickets-response.schemas";
+import { activeSprintSchema } from "../build/execution/dto/execution-response.schemas";
+import { recentProjectsSchema } from "../build/core/dto/build-core-response.schemas";
 import { DashboardStatsService } from "./dashboard-stats.service";
 import { DashboardAvailabilityService } from "./dashboard-availability.service";
 import { DashboardBirthdaysService } from "./dashboard-birthdays.service";
@@ -53,6 +75,7 @@ export class DashboardController {
   }
 
   @Get("active-sprint")
+  @ResponseSchema(activeSprintSchema)
   @Universal()
   @UseGuards(ModuleGuard)
   @RequireModule("build")
@@ -61,12 +84,14 @@ export class DashboardController {
   }
 
   @Get("announcements")
+  @ResponseSchema(dashboardAnnouncementsResponseSchema)
   @Universal()
   announcementsList(@CurrentUser() u: CurrentUserContext) {
     return this.announcements.getActiveAnnouncements(u.orgId);
   }
 
   @Post("announcements")
+  @ResponseSchema(announcementCreateSchema)
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
@@ -86,6 +111,7 @@ export class DashboardController {
   }
 
   @Delete("announcements")
+  @ResponseSchema(announcementDeleteSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   @Validate({ query: deleteAnnouncementSchema })
@@ -103,6 +129,7 @@ export class DashboardController {
   }
 
   @Get("birthdays")
+  @ResponseSchema(birthdayEntrySchema)
   @Universal()
   @UseGuards(ModuleGuard)
   @RequireModule("hr")
@@ -111,13 +138,15 @@ export class DashboardController {
   }
 
   @Get("executive")
+  @ResponseSchema(executiveDashboardSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:analytics:read")
   executive(@CurrentUser() u: CurrentUserContext) {
-    return this.crm.getExecutiveDashboard(u.orgId);
+    return this.crm.getExecutiveDashboard(u);
   }
 
   @Get("leaves-today")
+  @ResponseSchema(leavesTodaySchema)
   @UseGuards(ModuleGuard, PermissionGuard)
   @RequireModule("hr")
   @RequirePermission("hr:leaves:view")
@@ -126,6 +155,7 @@ export class DashboardController {
   }
 
   @Get("my-issues")
+  @ResponseSchema(myIssuesSchema)
   @Universal()
   @UseGuards(ModuleGuard)
   @RequireModule("build")
@@ -134,14 +164,16 @@ export class DashboardController {
   }
 
   @Get("my-leave-balance")
+  @ResponseSchema(myLeaveBalanceSchema)
   @Universal()
   @UseGuards(ModuleGuard)
   @RequireModule("hr")
   myLeaveBalance(@CurrentUser() u: CurrentUserContext) {
-    return this.leave.getMyLeaveBalance(u.orgId, u.userId);
+    return this.leave.getMyLeaveBalance(u);
   }
 
   @Get("pending-approvals")
+  @ResponseSchema(pendingApprovalsSchema)
   @UseGuards(ModuleGuard, PermissionGuard)
   @RequireModule("hr")
   @RequirePermission("hr:leaves:approve")
@@ -152,12 +184,14 @@ export class DashboardController {
   }
 
   @Get("personal")
+  @ResponseSchema(dashboardPersonalResponseSchema)
   @Universal()
   personal(@CurrentUser() u: CurrentUserContext) {
     return this.personalService.getPersonalDashboard(u);
   }
 
   @Get("recent-activity")
+  @ResponseSchema(recentActivitySchema)
   @UseGuards(ModuleGuard, PermissionGuard)
   @RequireModule("build")
   @RequirePermission("build:tickets:view")
@@ -166,6 +200,7 @@ export class DashboardController {
   }
 
   @Get("recent-projects")
+  @ResponseSchema(recentProjectsSchema)
   @UseGuards(ModuleGuard, PermissionGuard)
   @RequireModule("build")
   @RequirePermission("build:tickets:view")
@@ -174,12 +209,14 @@ export class DashboardController {
   }
 
   @Get("stats")
+  @ResponseSchema(dashboardStatsResponseSchema)
   @Universal()
   stats(@CurrentUser() u: CurrentUserContext) {
     return this.statsService.getDashboardStats(u.orgId, u);
   }
 
   @Get("team-attendance")
+  @ResponseSchema(teamAttendanceSchema)
   @UseGuards(ModuleGuard, PermissionGuard)
   @RequireModule("hr")
   @RequirePermission("hr:attendance:view")
@@ -188,6 +225,7 @@ export class DashboardController {
   }
 
   @Get("team-availability")
+  @ResponseSchema(teamAvailabilitySchema)
   @UseGuards(ModuleGuard, PermissionGuard)
   @RequireModule("hr")
   @RequirePermission("hr:attendance:view")
@@ -196,6 +234,7 @@ export class DashboardController {
   }
 
   @Get("today-activities")
+  @ResponseSchema(todayActivitiesSchema)
   @UseGuards(ModuleGuard, PermissionGuard)
   @RequireModule("crm")
   @RequirePermission("crm:leads:view")
@@ -204,6 +243,7 @@ export class DashboardController {
   }
 
   @Get("upcoming-holidays")
+  @ResponseSchema(upcomingHolidaysSchema)
   @Universal()
   @UseGuards(ModuleGuard)
   @RequireModule("hr")

@@ -7,12 +7,18 @@ import { KbAccessService } from "../core/kb-access.service";
 import { KbEventsService } from "../core/kb-events.service";
 import { chunkVisibleTo } from "./kb-chunk-visibility";
 import { pageVisibleTo } from "./kb-page-visibility";
-import { EmbeddingsService } from "../../ai/core/providers/embeddings.service";
+import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { SearchInput } from "./dto/kb-ai.schemas";
+import type { ScopedRead } from "../../access/scoped-read";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { KbCandidateService } from "./kb-candidate.service";
+import { AccessService } from "../../access/access.service";
+import { resolveKbArticlesViewScope } from "../core/kb-scope";
+import { articleOwnerScope, articleOwnerScopeFilter } from "./kb-article-owner-scope";
+
+const KB_SEARCH_FEATURE = "kb.search";
 
 export type RetrievedSource =
   | { kind: "article"; id: number; title: string; slug: string; spaceId: number | null; contentText: string; updatedAt: Date }
@@ -25,14 +31,59 @@ export class KbSearchService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: KbAccessService,
-    private readonly embeddings: EmbeddingsService,
+    private readonly aiGateway: AiGatewayService,
     private readonly events: KbEventsService,
     private readonly candidates: KbCandidateService,
+    private readonly scopes: AccessService,
   ) {}
+
+  /**
+   * Retrieval resolves the asker's own `kb:articles:view` DataScope rather than
+   * accepting one, so no RAG caller — `POST /kb/ask`, the research brief graph or
+   * any future one — can reach the vector index without the predicate the direct
+   * read endpoint applies.
+   */
+  async articleOwnerFilterFor(user: CurrentUserContext): Promise<SQL> {
+    const read = await resolveKbArticlesViewScope(this.scopes, user);
+    return articleOwnerScopeFilter(read, user);
+  }
+
+  /**
+   * The second of the two article ACL dimensions, as a façade in the same shape as
+   * `articleOwnerFilterFor` above and for the same reason.
+   *
+   * Article visibility is owner scope AND per-article `kb_article_restrictions`.
+   * Retrieval applies both on the way in (`search`, `retrieveTopArticles`,
+   * `KbCandidateService.article{Keyword,Vector}Candidates`), but the post-answer
+   * citation re-verification in `KbAskService.resolveVisibleArticles` only ever
+   * re-applied the owner half — so a restriction added between retrieval and the
+   * model's reply was invisible to the check whose entire job is to catch exactly
+   * that window. Both halves resolve through one call now, so the two paths cannot
+   * drift apart again by one caller forgetting a condition.
+   *
+   * Returns `null` for a `kb:spaces:manage` holder, matching `search`'s
+   * `if (!isAdmin)`: an admin is not subject to per-article restrictions, and
+   * pushing the predicate anyway would strip their own citations.
+   */
+  async articleRestrictionFilterFor(user: CurrentUserContext): Promise<SQL | null> {
+    if (await this.access.isAdmin(user)) return null;
+    const principal = await this.access.getPrincipalIds(user);
+    return this.candidates.articleRestrictionFilter(user.orgId, principal);
+  }
+
+  private async embedSearchQuery(text: string, orgId: string) {
+    return this.aiGateway.embedQueryWithCredit({
+      text,
+      orgId,
+      feature: KB_SEARCH_FEATURE,
+      charge: true,
+    });
+  }
 
   async search(
     user: CurrentUserContext,
     input: SearchInput,
+    scope: ScopedRead,
   ): Promise<{
     items: {
       id: number;
@@ -50,6 +101,9 @@ export class KbSearchService {
     pageSize: number;
     totalPages: number;
   }> {
+    if (scope.denied)
+      return { items: [], total: 0, page: input.page, pageSize: input.pageSize, totalPages: 0 };
+
     const ids = await this.access.getAccessibleSpaceIds(user);
     if (ids.length === 0) {
       return { items: [], total: 0, page: input.page, pageSize: input.pageSize, totalPages: 0 };
@@ -60,17 +114,44 @@ export class KbSearchService {
 
     const tsquery = sql`websearch_to_tsquery('english', ${input.q})`;
     const keywordCond = await this.candidates.resolveArticleKeywordCondition(input.q, tsquery, 500);
-    const conditions: SQL[] = [
-      eq(kbArticles.orgId, user.orgId),
+    const domain: SQL[] = [
       inArray(kbArticles.spaceId, ids),
       ne(kbArticles.status, "archived"),
       keywordCond,
     ];
-    if (!isAdmin) conditions.push(this.candidates.articleRestrictionFilter(user.orgId, principal));
-    if (input.spaceId) conditions.push(eq(kbArticles.spaceId, input.spaceId));
-    const where = and(...conditions);
+    if (!isAdmin) domain.push(this.candidates.articleRestrictionFilter(user.orgId, principal));
+    if (input.spaceId) domain.push(eq(kbArticles.spaceId, input.spaceId));
+    // The same narrowing `GET /kb/articles` applies, in the predicate rather than
+    // downstream: these rows carry article text and are what retrieval hands on.
+    const membershipId = user.principal === undefined ? null : actingMembershipId(user.principal);
+    const where = scope.compose(
+      { tenant: kbArticles.orgId, scope: articleOwnerScope(membershipId), and: domain },
+      ({ sql: composed }) => composed,
+      () => sql`false`,
+    );
 
     const offset = (input.page - 1) * input.pageSize;
+
+    /**
+     * Two statements, not one `count(*) OVER ()`, and the reason is measured rather than
+     * argued. Backend CLAUDE.md §7 prefers the window function so page and count are one
+     * pass, and also says to measure both in buffers before choosing. On a 60,000-match
+     * tenant in the scratch database, page 1:
+     *
+     *   window fn : Limit → Sort → WindowAgg (actual rows=60,000, Storage: Disk 9,415 kB)
+     *               2,374 shared hits + 3,084 temp blocks, 35.7 ms, NO parallelism
+     *   two passes: page 2,419 shared + count 2,371 shared, 0 temp, 9.8 + 9.7 ms, both
+     *               Parallel Seq Scan
+     *
+     * `count(*) OVER ()` buffers its entire input into a tuplestore before it can emit the
+     * first row, so a broad term on a large tenant spills ~9 MB to temp files on EVERY
+     * request including page 1 — and the window function also disqualifies the parallel plan.
+     * A plain aggregate streams. The trade is 2× shared buffer hits (RAM, already warm) for
+     * zero temp I/O, which is the resource that saturates under concurrency.
+     *
+     * `total` stays exact, so the response contract is unchanged — this is a plan change, not
+     * a semantics change.
+     */
     const rows = await this.db
       .select({
         id: kbArticles.id,
@@ -82,7 +163,6 @@ export class KbSearchService {
         status: kbArticles.status,
         updatedAt: kbArticles.updatedAt,
         contentText: kbArticles.contentText,
-        totalCount: sql<string>`count(*) OVER ()`,
       })
       .from(kbArticles)
       .where(where)
@@ -90,23 +170,20 @@ export class KbSearchService {
       .limit(input.pageSize)
       .offset(offset);
 
-    const first = rows[0];
-    let total: number;
-    if (first) {
-      total = Number(first.totalCount);
-    } else if (offset === 0) {
-      total = 0;
-    } else {
-      const [countRow] = await this.db.select({ count: sql<number>`count(*)::int` }).from(kbArticles).where(where);
-      total = countRow?.count ?? 0;
-    }
+    // Sequential, not `Promise.all`: both statements run on the request's single tenant
+    // connection, so concurrency here would only queue them behind each other anyway.
+    const [countRow] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(kbArticles)
+      .where(where);
+    const total = countRow?.count ?? 0;
 
-    const items = rows.map(({ totalCount: _, contentText, ...card }) => ({
+    const items = rows.map(({ contentText, ...card }) => ({
       ...card,
       snippet: this.candidates.buildSnippet(contentText, input.q),
     }));
 
-    await this.events.record(user.orgId, total > 0 ? "search" : "search_no_results", {
+    await this.events.recordDetached(user.orgId, total > 0 ? "search" : "search_no_results", {
       actorMembershipId: actingMembershipId(user.principal) ?? null,
       query: input.q,
       metadata: { resultsCount: total },
@@ -133,14 +210,21 @@ export class KbSearchService {
 
     const isAdmin = await this.access.isAdmin(user);
     const principal = await this.access.getPrincipalIds(user);
+    const ownerFilter = await this.articleOwnerFilterFor(user);
 
     const pool = Math.max(limit * 3, limit);
     const hasSpaces = ids.length > 0;
 
     let vectorLiteral: string | null = null;
-    if (this.embeddings.isConfigured() && (await this.candidates.hasEmbeddedChunks(user.orgId))) {
+    if (this.aiGateway.isEmbeddingConfigured() && (await this.candidates.hasEmbeddedChunks(user.orgId))) {
       try {
-        vectorLiteral = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(q));
+        const embedResult = await this.embedSearchQuery(q, user.orgId);
+        vectorLiteral = embedResult.ok ? embedResult.vectorLiteral : null;
+        if (!embedResult.ok)
+          this.logger.warn("KB semantic search embedding unavailable — keyword only", {
+            orgId: user.orgId,
+            kind: embedResult.kind,
+          });
       } catch (err: unknown) {
         vectorLiteral = null;
         logSideEffectFailure("kb semantic search embedding", { orgId: user.orgId })(err);
@@ -152,10 +236,10 @@ export class KbSearchService {
 
     const [articleKeyword, articleVector, pageKeyword, pageVector] = await Promise.all([
       hasSpaces
-        ? this.candidates.articleKeywordCandidates(user.orgId, ids, q, pool, principal, spaceId)
+        ? this.candidates.articleKeywordCandidates(user.orgId, ids, q, pool, principal, ownerFilter, spaceId)
         : Promise.resolve<number[]>([]),
       hasSpaces && vectorLiteral
-        ? this.candidates.articleVectorCandidates(user.orgId, ids, vectorLiteral, pool, principal, spaceId)
+        ? this.candidates.articleVectorCandidates(user.orgId, ids, vectorLiteral, pool, principal, ownerFilter, spaceId)
         : Promise.resolve<number[]>([]),
       this.candidates.pageKeywordCandidates(user.orgId, q, pool, pageVisibility),
       vectorLiteral
@@ -189,6 +273,7 @@ export class KbSearchService {
         eq(kbArticles.status, "published"),
       ];
       if (spaceId) articleConditions.push(eq(kbArticles.spaceId, spaceId));
+      if (ownerFilter) articleConditions.push(ownerFilter);
       if (!isAdmin) articleConditions.push(this.candidates.articleRestrictionFilter(user.orgId, principal));
       const articleRows = await this.db
         .select({
@@ -238,21 +323,48 @@ export class KbSearchService {
     });
   }
 
+  /**
+   * The article half of the attachment predicate. It used to be `inArray(articleId, ids)`
+   * alone, so the method's safety was a precondition on its one caller rather than a
+   * property of the method — the page half already carried `pageVisibleTo`.
+   */
+  private async attachmentArticleScope(
+    user: CurrentUserContext,
+    articleIds: number[],
+  ): Promise<SQL[]> {
+    const [ownerFilter, restrictionFilter] = await Promise.all([
+      this.articleOwnerFilterFor(user),
+      this.articleRestrictionFilterFor(user),
+    ]);
+    // The owner filter is a scoped read, so it already carries `kb_articles.org_id`.
+    const conditions: SQL[] = [
+      inArray(kbArticleChunks.articleId, articleIds),
+      eq(kbArticles.status, "published"),
+    ];
+    if (ownerFilter) conditions.push(ownerFilter);
+    if (restrictionFilter) conditions.push(restrictionFilter);
+    return conditions;
+  }
+
   async retrieveAttachmentSnippets(
     user: CurrentUserContext,
     query: string,
     articleIds: number[],
     pageIds: number[] = [],
   ): Promise<string> {
-    if (!this.embeddings.isConfigured() || (articleIds.length === 0 && pageIds.length === 0)) {
+    if (!this.aiGateway.isEmbeddingConfigured() || (articleIds.length === 0 && pageIds.length === 0)) {
       return "";
     }
     try {
-      const vector = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(query));
+      const embedResult = await this.embedSearchQuery(query, user.orgId);
+      if (!embedResult.ok) return "";
+      const vector = embedResult.vectorLiteral;
       const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
       const scope: SQL[] = [];
-      if (articleIds.length > 0)
-        scope.push(inArray(kbArticleChunks.articleId, articleIds));
+      if (articleIds.length > 0) {
+        const articleScope = and(...(await this.attachmentArticleScope(user, articleIds)));
+        if (articleScope) scope.push(articleScope);
+      }
       if (pageIds.length > 0) {
         const projectIds = await this.access.getAccessibleProjectIds(user);
         const pageScope = and(
@@ -264,7 +376,17 @@ export class KbSearchService {
       const rows = await this.db
         .select({ content: kbArticleChunks.content })
         .from(kbArticleChunks)
-        .leftJoin(kbPages, eq(kbPages.id, kbArticleChunks.pageId))
+        .leftJoin(
+          kbPages,
+          and(eq(kbPages.id, kbArticleChunks.pageId), eq(kbPages.orgId, kbArticleChunks.orgId)),
+        )
+        .leftJoin(
+          kbArticles,
+          and(
+            eq(kbArticles.id, kbArticleChunks.articleId),
+            eq(kbArticles.orgId, kbArticleChunks.orgId),
+          ),
+        )
         .where(
           and(
             eq(kbArticleChunks.orgId, user.orgId),
@@ -291,14 +413,16 @@ export class KbSearchService {
     query: string,
     limit: number,
   ): Promise<Array<{ sourceId: number; title: string; spaceId: number | null; snippet: string; updatedAt: Date }>> {
-    if (!this.embeddings.isConfigured() || !query.trim()) return [];
+    if (!this.aiGateway.isEmbeddingConfigured() || !query.trim()) return [];
     if (!(await this.candidates.hasEmbeddedChunks(user.orgId))) return [];
     try {
       const accessibleSpaceIds = await this.access.getAccessibleSpaceIds(user);
-      const vector = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(query));
+      const embedResult = await this.embedSearchQuery(query, user.orgId);
+      if (!embedResult.ok) return [];
+      const vector = embedResult.vectorLiteral;
 
       const cap = limit * 4;
-      const chunkIds = await this.candidates.vectorChunkIds(vector, cap);
+      const chunkIds = await this.candidates.vectorChunkIds(user.orgId, vector, cap);
       if (chunkIds.length === 0) return [];
 
       const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
@@ -320,6 +444,7 @@ export class KbSearchService {
         .where(
           and(
             inArray(kbArticleChunks.id, chunkIds),
+            eq(kbArticleChunks.orgId, user.orgId),
             eq(kbArticleChunks.source, "source"),
             isNull(kbSources.deletedAt),
             eq(kbSources.status, "ready"),

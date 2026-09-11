@@ -1,11 +1,20 @@
-import { Inject, Injectable } from "@nestjs/common";
-import { and, count, desc, eq, gte, lte } from "drizzle-orm";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { hrEventStream } from "../../../../db/schema/hr/enterprise-ops";
 import type { ListEventsInput, ExportEventsInput } from "../dto/event-stream.schemas";
+import { buildCursorPage, decodeCursor } from "../../../../common/pagination/cursor";
+import { keysetBeforeUuid } from "../../../../common/pagination/keyset";
 
 const SENSITIVE_KEYS = new Set(["salary", "gross", "net", "medical_note", "confidential"]);
+
+function decodePaginationCursor(cursor: string | undefined) {
+  if (cursor === undefined) return null;
+  const position = decodeCursor(cursor);
+  if (!position) throw new BadRequestException("Invalid pagination cursor");
+  return position;
+}
 
 function sanitizePayload(payload: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -61,8 +70,7 @@ export class EventStreamService {
   }
 
   async listEvents(orgId: string, input: ListEventsInput) {
-    const { page, limit, eventType, entityType, entityId, fromDate, toDate } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, eventType, entityType, entityId, fromDate, toDate } = input;
 
     const conditions = [eq(hrEventStream.orgId, orgId)];
     if (eventType) conditions.push(eq(hrEventStream.eventType, eventType));
@@ -70,22 +78,23 @@ export class EventStreamService {
     if (entityId) conditions.push(eq(hrEventStream.entityId, entityId));
     if (fromDate) conditions.push(gte(hrEventStream.occurredAt, new Date(fromDate)));
     if (toDate) conditions.push(lte(hrEventStream.occurredAt, new Date(toDate)));
+    const position = decodePaginationCursor(cursor);
+    if (position)
+      conditions.push(keysetBeforeUuid(hrEventStream.occurredAt, hrEventStream.id, position));
 
     const where = and(...conditions);
 
-    const [rows, totalResult] = await Promise.all([
-      this.db
-        .select()
-        .from(hrEventStream)
-        .where(where)
-        .orderBy(desc(hrEventStream.occurredAt))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(hrEventStream).where(where),
-    ]);
-
-    const total = totalResult[0]?.total ?? 0;
-    return { data: rows, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+    const rows = await this.db
+      .select()
+      .from(hrEventStream)
+      .where(where)
+      .orderBy(desc(hrEventStream.occurredAt), desc(hrEventStream.id))
+      .limit(limit + 1);
+    const page = buildCursorPage(rows, limit, (event) => ({
+      sortValue: event.occurredAt.toISOString(),
+      id: event.id,
+    }));
+    return { data: page.data, pagination: page.pagination };
   }
 
   getDataDictionary() {
@@ -109,33 +118,32 @@ export class EventStreamService {
   }
 
   async exportEvents(orgId: string, input: ExportEventsInput) {
-    const { page, limit, eventType, entityType, fromDate, toDate } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, eventType, entityType, fromDate, toDate } = input;
 
     const conditions = [eq(hrEventStream.orgId, orgId)];
     if (eventType) conditions.push(eq(hrEventStream.eventType, eventType));
     if (entityType) conditions.push(eq(hrEventStream.entityType, entityType));
     if (fromDate) conditions.push(gte(hrEventStream.occurredAt, new Date(fromDate)));
     if (toDate) conditions.push(lte(hrEventStream.occurredAt, new Date(toDate)));
+    const position = decodePaginationCursor(cursor);
+    if (position)
+      conditions.push(keysetBeforeUuid(hrEventStream.occurredAt, hrEventStream.id, position));
 
-    const where = and(...conditions);
+    const rows = await this.db
+      .select()
+      .from(hrEventStream)
+      .where(and(...conditions))
+      .orderBy(desc(hrEventStream.occurredAt), desc(hrEventStream.id))
+      .limit(limit + 1);
+    const page = buildCursorPage(rows, limit, (event) => ({
+      sortValue: event.occurredAt.toISOString(),
+      id: event.id,
+    }));
 
-    const [rows, totalResult] = await Promise.all([
-      this.db
-        .select()
-        .from(hrEventStream)
-        .where(where)
-        .orderBy(desc(hrEventStream.occurredAt))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(hrEventStream).where(where),
-    ]);
-
-    const total = totalResult[0]?.total ?? 0;
     return {
       exportedAt: new Date().toISOString(),
-      data: rows,
-      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      data: page.data,
+      pagination: page.pagination,
     };
   }
 }

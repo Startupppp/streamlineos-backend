@@ -1,5 +1,5 @@
-import { and, eq, notInArray } from "drizzle-orm";
-import { supportTickets } from "../../../../db/schema";
+import { and, eq, inArray, notInArray } from "drizzle-orm";
+import { organizationMembers, supportTickets } from "../../../../db/schema";
 import { type Db } from "../../../../db/drizzle.module";
 import { logger } from "../../../../common/logger/logger.service";
 import { AccessService } from "../../../access/access.service";
@@ -116,18 +116,28 @@ export async function runEscalations(
       category: true,
       priority: true,
       createdAt: true,
-      assigneeId: true,
+      assigneeMembershipId: true,
       firstRespondedAt: true,
       firstResponseDueAt: true,
       slaDeadline: true,
       slaPausedAt: true,
       slaEscalationLevel: true,
     },
+    with: {
+      assigneeMembership: { columns: { id: true }, with: { user: { columns: { id: true } } } },
+    },
   });
 
-  let escalated = 0;
+  // The assignee is a membership; mail and the reassignment comparison speak user ids.
+  const ticketsForEscalation = tickets.map((ticket) => ({
+    ...ticket,
+    assigneeId: ticket.assigneeMembership?.user?.id ?? null,
+  }));
 
-  for (const ticket of tickets) {
+  const due: { ticket: (typeof ticketsForEscalation)[number]; risk: SlaRiskLevel; isRepeatBreach: boolean }[] = [];
+  const idsByNewLevel = new Map<number, number[]>();
+
+  for (const ticket of ticketsForEscalation) {
     const risk = computeRisk(ticket);
     const newLevel = riskToEscalationLevel(risk);
     const isBreach = risk === "first_response_breached" || risk === "resolution_breached";
@@ -136,12 +146,25 @@ export async function runEscalations(
     if (newLevel <= ticket.slaEscalationLevel && !isRepeatBreach) continue;
 
     if (newLevel > ticket.slaEscalationLevel) {
-      await deps.db
-        .update(supportTickets)
-        .set({ slaEscalationLevel: newLevel })
-        .where(and(eq(supportTickets.id, ticket.id), eq(supportTickets.orgId, orgId)));
+      const ids = idsByNewLevel.get(newLevel);
+      if (ids) ids.push(ticket.id);
+      else idsByNewLevel.set(newLevel, [ticket.id]);
     }
 
+    due.push({ ticket, risk, isRepeatBreach });
+  }
+
+  // One UPDATE per rung rather than one per ticket.
+  for (const [newLevel, ids] of idsByNewLevel) {
+    await deps.db
+      .update(supportTickets)
+      .set({ slaEscalationLevel: newLevel })
+      .where(and(inArray(supportTickets.id, ids), eq(supportTickets.orgId, orgId)));
+  }
+
+  let escalated = 0;
+
+  for (const { ticket, risk, isRepeatBreach } of due) {
     if (ticket.assigneeId && (risk === "first_response_due_soon" || risk === "first_response_breached" || risk === "resolution_due_soon" || risk === "resolution_breached")) {
       try {
         await deps.notifications.sendEscalationEmail(orgId, ticket.assigneeId, ticket.title, ticket.id, risk);
@@ -207,7 +230,17 @@ async function tryAutoReassign(
 
     await deps.db
       .update(supportTickets)
-      .set({ assigneeId: routing.assigneeId, updatedAt: new Date() })
+      .set({
+        assigneeMembershipId: (await deps.db.query.organizationMembers.findFirst({
+          where: and(
+            eq(organizationMembers.orgId, orgId),
+            eq(organizationMembers.userId, routing.assigneeId),
+            eq(organizationMembers.status, "ACTIVE"),
+          ),
+          columns: { id: true },
+        }))?.id ?? null,
+        updatedAt: new Date(),
+      })
       .where(and(eq(supportTickets.id, ticket.id), eq(supportTickets.orgId, orgId)));
     return routing.assigneeId;
   } catch (error) {

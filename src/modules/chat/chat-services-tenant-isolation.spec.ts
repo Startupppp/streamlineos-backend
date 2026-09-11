@@ -167,6 +167,9 @@ describe("ChatSummarizeService — tenant isolation", () => {
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ id: 1 }),
         },
+        chatChannels: {
+          findFirst: jest.fn().mockResolvedValue({ id: 5, isPrivate: false }),
+        },
         chatChannelMembers: {
           findFirst: jest.fn().mockResolvedValue(null),
         },
@@ -193,6 +196,9 @@ describe("ChatSummarizeService — tenant isolation", () => {
       query: {
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ id: 1 }),
+        },
+        chatChannels: {
+          findFirst: jest.fn().mockResolvedValue({ id: 5, isPrivate: false }),
         },
         chatChannelMembers: {
           findFirst: jest.fn().mockResolvedValue({ id: 1, channelId: 5, userId: "u1" }),
@@ -249,13 +255,22 @@ describe("ChatChannelMembersService — tenant isolation", () => {
   });
 
   it("CONTROL: listMembers returns members when the caller is a valid channel member", async () => {
-    const member = { id: 1, channelId: 7, userId: "u1", role: "MEMBER", user: { id: "u1", name: "Alice", image: null, email: "a@t.com" } };
-    const { service } = makeService({ id: 7 }, member, [member]);
+    // The driver answers `with: { membership: { with: { user } } }` NESTED. This fixture used to be
+    // written flat, which is the shape the client declares and the shape nothing ever sent — so the
+    // assertion below passed while `member.userId` was undefined on every real response.
+    const row = {
+      id: 1,
+      channelId: 7,
+      role: "MEMBER",
+      membership: { userId: "u1", user: { id: "u1", name: "Alice", image: null, email: "a@t.com" } },
+    };
+    const { service } = makeService({ id: 7 }, { role: "MEMBER" }, [row]);
 
-    const result = await service.listMembers(7, "u1", OWNER_ORG);
+    const { members } = await service.listMembers(7, "u1", OWNER_ORG);
 
-    expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({ userId: "u1" });
+    expect(members).toHaveLength(1);
+    expect(members[0]).toMatchObject({ userId: "u1", user: { id: "u1", name: "Alice" } });
+    expect(members[0]).not.toHaveProperty("membership");
   });
 });
 

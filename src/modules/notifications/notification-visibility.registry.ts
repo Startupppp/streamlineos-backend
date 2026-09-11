@@ -1,4 +1,13 @@
 import { Injectable, Logger } from "@nestjs/common";
+import type { NotificationTicketContext } from "./notifications.types";
+import type { Principal } from "../../common/auth/principal";
+
+export type TicketContextResolver = (
+  orgId: string,
+  userId: string,
+  ticketIds: readonly number[],
+  principal: Principal,
+) => Promise<ReadonlyMap<number, NotificationTicketContext>>;
 
 /**
  * Answers "can this user still see this record, right now". Returning false
@@ -33,6 +42,38 @@ export type VisibilityResolver = (
 export class NotificationVisibilityRegistry {
   private readonly logger = new Logger(NotificationVisibilityRegistry.name);
   private readonly resolvers = new Map<string, VisibilityResolver>();
+  private ticketContextResolver: TicketContextResolver | undefined;
+
+  registerTicketContext(resolver: TicketContextResolver): void {
+    this.ticketContextResolver = resolver;
+  }
+
+  async ticketContexts(
+    orgId: string,
+    userId: string,
+    ticketIds: readonly number[],
+    principal: Principal,
+  ): Promise<ReadonlyMap<number, NotificationTicketContext>> {
+    const ids = [...new Set(ticketIds)];
+    if (ids.length === 0) return new Map();
+    if (ids.length > 100 || ids.some((id) => !Number.isSafeInteger(id) || id <= 0))
+      throw new Error("Notification ticket context requires at most 100 positive integer ids");
+    if (!this.ticketContextResolver) {
+      this.logger.error("No Build context resolver registered; suppressing live ticket context");
+      return new Map();
+    }
+    try {
+      const contexts = await this.ticketContextResolver(orgId, userId, ids, principal);
+      return new Map(ids.flatMap((id) => {
+        const context = contexts.get(id);
+        return context?.ticketId === id ? [[id, context] as const] : [];
+      }));
+    } catch (error: unknown) {
+      this.logger.error(`Ticket context resolution failed for org ${orgId}; suppressing live context`,
+        error instanceof Error ? error.stack : String(error));
+      return new Map();
+    }
+  }
 
   register(resourceKind: string, resolver: VisibilityResolver): void {
     if (this.resolvers.has(resourceKind))

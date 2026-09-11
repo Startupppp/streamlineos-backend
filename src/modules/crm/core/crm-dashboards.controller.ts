@@ -8,6 +8,12 @@ import { CrmSalesDashboardService } from "./crm-sales-dashboard.service";
 import { CrmSupportDashboardService } from "./crm-support-dashboard.service";
 import { CrmCeDashboardService } from "./crm-ce-dashboard.service";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  salesDashboardSchema,
+  supportDashboardSchema,
+  ceDashboardSchema,
+} from "./dto/crm-dashboards-response.schemas";
 
 @RequireModule("crm")
 @Controller("crm")
@@ -21,18 +27,21 @@ export class CrmDashboardsController {
 
   @Get("sales-dashboard")
   @RequirePermission("dashboard:sales:view")
+  @ResponseSchema(salesDashboardSchema)
   sales(@CurrentUser() u: CurrentUserContext) {
     return this.salesDashboard.getSalesDashboard(u.orgId);
   }
 
   @Get("support-dashboard")
   @RequirePermission("dashboard:support:view")
+  @ResponseSchema(supportDashboardSchema)
   support(@CurrentUser() u: CurrentUserContext) {
     return this.supportDashboard.getSupportDashboard(u.orgId);
   }
 
   @Get("customer-executive")
   @RequirePermission("dashboard:customer-executive:view")
+  @ResponseSchema(ceDashboardSchema)
   customerExecutive(@CurrentUser() u: CurrentUserContext) {
     return this.ceDashboard.getCustomerExecutiveDashboard(u.orgId);
   }

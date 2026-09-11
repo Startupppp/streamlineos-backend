@@ -1,5 +1,6 @@
 import { RRule } from "rrule";
-import { toZonedTime, fromZonedTime } from "date-fns-tz";
+import { toWallClockUtc, fromWallClockUtc } from "../../common/date/zoned-wall-clock";
+
 
 export interface CalendarEventLike {
   id: number;
@@ -18,6 +19,17 @@ export interface CalendarOccurrence {
   title: string;
   startDate: Date;
   endDate: Date;
+  /**
+   * The instant the RRULE generated, before any exception moved it — equal to
+   * `startDate` unless this occurrence carries a `modifiedStart`.
+   *
+   * This is the occurrence's identity, and `calendar_event_exceptions.occurrence_start`
+   * is keyed on it. `startDate` is where the occurrence currently sits and therefore
+   * changes every time it is moved; anything that has to NAME the occurrence — the
+   * projection id, the exception key — has to use this instead, or the name changes
+   * with the thing it names. For a non-recurring event the two are the same value.
+   */
+  nominalStart: Date;
   allDay: boolean;
   timezone: string;
   orgId: string;
@@ -32,6 +44,14 @@ export interface CalendarEventException {
 }
 
 const MAX_OCCURRENCES_PER_WINDOW = 500;
+
+/**
+ * `rrule` reads a `dtstart`'s UTC getters as the wall clock, so an expansion in
+ * a named zone must hand it a Date whose UTC fields ARE that zone's wall clock.
+ * That conversion is shared — `common/date/zoned-wall-clock` — because the cron
+ * scheduler needs exactly the same thing and had exactly the same defect.
+ */
+export { toWallClockUtc, fromWallClockUtc };
 
 export function eventOverlapsWindow(
   startDate: Date,
@@ -62,16 +82,22 @@ function expandRecurring(
   const rule = RRule.fromString(rruleStr);
   const duration = event.endDate.getTime() - event.startDate.getTime();
 
-  const localDtstart = toZonedTime(event.startDate, event.timezone);
-  const localWindowStart = toZonedTime(windowStart, event.timezone);
-  const localWindowEnd = toZonedTime(windowEnd, event.timezone);
+  const localDtstart = toWallClockUtc(event.startDate, event.timezone);
+  const localWindowStart = toWallClockUtc(windowStart, event.timezone);
+  const localWindowEnd = toWallClockUtc(windowEnd, event.timezone);
+
+  const localUntil = rule.origOptions.until
+    ? toWallClockUtc(rule.origOptions.until, event.timezone)
+    : rule.origOptions.until;
 
   const expandedRule = new RRule({
     ...rule.origOptions,
     dtstart: localDtstart,
+    until: localUntil,
   });
 
   const localDates = expandedRule.between(localWindowStart, localWindowEnd, true);
+  const seriesEnd = event.recurrenceEnd ? event.recurrenceEnd.getTime() : null;
 
   const exceptionMap = new Map<number, CalendarEventException>();
   for (const ex of exceptions) {
@@ -82,17 +108,21 @@ function expandRecurring(
   for (const localDate of localDates) {
     if (results.length >= MAX_OCCURRENCES_PER_WINDOW) break;
 
-    const utcStart = fromZonedTime(localDate, event.timezone);
+    const utcStart = fromWallClockUtc(localDate, event.timezone);
+    if (seriesEnd !== null && utcStart.getTime() > seriesEnd) break;
     const ex = exceptionMap.get(utcStart.getTime());
 
     if (ex?.isCancelled) continue;
 
-    const utcEnd = new Date(utcStart.getTime() + duration);
+    const effectiveStart = ex?.modifiedStart ?? utcStart;
+    const nominalEnd = new Date(utcStart.getTime() + duration);
+    const effectiveEnd = ex?.modifiedEnd ?? (ex?.modifiedStart ? new Date(ex.modifiedStart.getTime() + duration) : nominalEnd);
     results.push({
       eventId: event.id,
       title: ex?.modifiedTitle ?? event.title,
-      startDate: ex?.modifiedStart ?? utcStart,
-      endDate: ex?.modifiedEnd ?? utcEnd,
+      startDate: effectiveStart,
+      nominalStart: utcStart,
+      endDate: effectiveEnd,
       allDay: event.allDay,
       timezone: event.timezone,
       orgId: event.orgId,
@@ -119,6 +149,7 @@ export function expandToOccurrences(
       eventId: event.id,
       title: event.title,
       startDate: event.startDate,
+      nominalStart: event.startDate,
       endDate: event.endDate,
       allDay: event.allDay,
       timezone: event.timezone,

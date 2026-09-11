@@ -8,6 +8,7 @@ import { withTenant, type TenantTx } from "../../../common/tenant/with-tenant";
 import { runWithTenantContext } from "../../../common/tenant/tenant-context";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { mapArticleToPage } from "./kb-article-migration.util";
+import { KB_ARTICLE_COLUMNS } from "../help-centre/kb-article-columns";
 import type {
   ArticleMigrationPreview,
   MigrationResult,
@@ -152,7 +153,7 @@ export class KbArticleMigrationService {
     );
 
     const articles = await db
-      .select()
+      .select(KB_ARTICLE_COLUMNS)
       .from(kbArticles)
       .where(and(eq(kbArticles.orgId, orgId), eq(kbArticles.status, "published")));
 

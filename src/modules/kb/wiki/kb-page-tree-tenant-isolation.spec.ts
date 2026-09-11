@@ -19,19 +19,28 @@ describe("KbPageTreeService — cross-tenant isolation", () => {
   }
 
   const audit = {} as never;
+  const makeStorage = () => ({ deleteFileIfPresent: jest.fn().mockResolvedValue(true) }) as never;
+  const makeConfig = () => ({ R2_KB_BUCKET_NAME: "kb-files" }) as never;
 
   function makeDb() {
     const wheres: unknown[] = [];
+    const makeJoinChain = (): Record<string, unknown> => {
+      const chain: Record<string, unknown> = {
+        where: jest.fn().mockImplementation((w: unknown) => {
+          wheres.push(w);
+          return Promise.resolve([]);
+        }),
+        orderBy: jest.fn().mockReturnValue(Object.assign(Promise.resolve([]), { limit: jest.fn().mockResolvedValue([]) })),
+      };
+      chain.innerJoin = jest.fn().mockReturnValue(chain);
+      chain.leftJoin = jest.fn().mockReturnValue(chain);
+      return chain;
+    };
     return {
       db: {
         select: jest.fn().mockImplementation(() => ({
           from: jest.fn().mockImplementation(() => ({
-            innerJoin: jest.fn().mockReturnValue({
-              where: jest.fn().mockImplementation((w: unknown) => {
-                wheres.push(w);
-                return Promise.resolve([]);
-              }),
-            }),
+            ...makeJoinChain(),
             where: jest.fn().mockImplementation((w: unknown) => {
               wheres.push(w);
               return Object.assign(Promise.resolve([]), {
@@ -47,7 +56,7 @@ describe("KbPageTreeService — cross-tenant isolation", () => {
 
   it("scopes page tree query to the requesting org (cross-tenant isolation)", async () => {
     const { db, wheres } = makeDb();
-    const svc = new KbPageTreeService(db, audit);
+    const svc = new KbPageTreeService(db, audit, makeStorage(), makeConfig());
 
     await svc.getTree(makeUser(ATTACKER));
 
@@ -59,7 +68,7 @@ describe("KbPageTreeService — cross-tenant isolation", () => {
 
   it("returns page tree for the owning org (same-tenant control)", async () => {
     const { db } = makeDb();
-    const svc = new KbPageTreeService(db, audit);
+    const svc = new KbPageTreeService(db, audit, makeStorage(), makeConfig());
 
     const result = await svc.getTree(makeUser(OWNER));
 

@@ -40,7 +40,7 @@ const DECORATOR_LINE_RE = /^\s*@\w/;
 const CLASS_PUBLIC_RE = /@Public\(\)\s*\n(?:\s*@[^\n]*\n)*\s*(?:export\s+)?(?:abstract\s+)?class\s/;
 
 const CRITICAL_ROUTE_RE =
-  /(?:^|\/)(?:checkout|purchase|payout|allocat|transfer|\/post$|\/ship$|\/receive$|\/dispatch$|\/adjust$|\/reverse$|count-post|invite|resend|publish|remind|approve|reject|submit|accept|decline|run-now|affiliate|referral|send-signin|test-send)(?:\/|$)/i;
+  /(?:^|\/)(?:checkout|purchase|payout|allocat|transfer|\/post$|\/ship$|\/receive$|\/dispatch$|\/adjust$|\/reverse$|count-post|invite|resend|publish|remind|approve|reject|submit|accept|decline|run-now|affiliate|referral|send-signin|test-send|send|reply)(?:\/|$)/i;
 
 const CRITICAL_METHOD_RE =
   /\b(?:checkout|purchaseAddon|purchaseCredits|createOrder|installApp|startTrial|registerAffiliate|requestAffiliatePayoutRequest|createReferral|submitEnterpriseQuote|approveEnterpriseQuote|rejectEnterpriseQuote|sendEnterpriseQuote|acceptEnterpriseQuote|initiateOrgTransfer|initiateModuleTransfer|acceptTransfer|declineTransfer|cancelTransfer|inviteUser|bulkInvite|resendInvite|sendSigninLink|invite|remind|testSend|allocate|runNow|submitForApproval|approveJournal|rejectJournal|publish|ship|postAdjustment|postTransfer|createAdjustment)\b/;
@@ -83,6 +83,22 @@ const HANDLER_EXCLUSIONS = new Map([
 function isFileExcluded(relPath) {
   const normalized = relPath.replace(/\\/g, "/");
   return FILE_EXCLUSIONS.some(({ fragment }) => normalized.includes(fragment));
+}
+
+/**
+ * The criticality test reads the FULL path, not the string on the method
+ * decorator. `@Post("batches/:batchId/mark-paid")` under
+ * `@Controller("payroll/payout")` is a payout command, but on the decorator
+ * alone it is an anonymous "mark-paid" and fell outside the gate entirely —
+ * which is how four handlers that mint and settle real bank payments sat
+ * unfenced while this gate reported clean over 11 handlers in scope.
+ */
+function controllerPrefixAt(lines, index) {
+  for (let k = index; k >= 0; k--) {
+    const m = lines[k].match(/^\s*@Controller\s*\(\s*["'`]([^"'`]*)["'`]/);
+    if (m) return m[1];
+  }
+  return "";
 }
 
 function parseHandlers(src, relPath) {
@@ -136,10 +152,12 @@ function parseHandlers(src, relPath) {
     }
 
     if (mutationDecoratorRoute !== null && methodName) {
-      const routeCritical = CRITICAL_ROUTE_RE.test("/" + mutationDecoratorRoute);
+      const prefix = controllerPrefixAt(lines, blockStart);
+      const fullRoute = [prefix, mutationDecoratorRoute].filter(Boolean).join("/");
+      const routeCritical = CRITICAL_ROUTE_RE.test("/" + fullRoute);
       const methodCritical = CRITICAL_METHOD_RE.test(methodName);
 
-      if ((routeCritical || methodCritical) && !hasIdempotent && !hasPublic) {
+      if ((routeCritical || methodCritical) && !hasPublic) {
         const handlerKey = `${relPath.replace(/\\/g, "/")}::${methodName}`;
         handlers.push({
           file: relPath,
@@ -147,6 +165,7 @@ function parseHandlers(src, relPath) {
           method: methodName,
           route: mutationDecoratorRoute,
           key: handlerKey,
+          fenced: hasIdempotent,
         });
       }
     }
@@ -215,19 +234,45 @@ if (args.includes("--self-test")) {
     `  }`,
   ].join("\n");
 
+  const PREFIX_CRITICAL = [
+    `@Controller("payroll/payout")`,
+    `export class PayoutBatchesController {`,
+    `  @Post("batches/:batchId/mark-paid")`,
+    `  @HttpCode(200)`,
+    `  @RequirePermission("payroll:bank:manage")`,
+    `  markBatchPaid(`,
+    `    @Param("batchId") batchId: number,`,
+    `  ) {`,
+    `    return this.batchStatus.markBatchPaid(batchId);`,
+    `  }`,
+    `}`,
+  ].join("\n");
+
   const fencedResult = parseHandlers(FENCED, "surveys/surveys.controller.ts");
+  const prefixCriticalResult = parseHandlers(PREFIX_CRITICAL, "payroll/payout/payout-batches.controller.ts");
   const unfencedResult = parseHandlers(UNFENCED, "notifications/broadcasts.controller.ts");
   const publicResult = parseHandlers(PUBLIC_ROUTE, "organization/core/organization.controller.ts");
   const bespokeResult = parseHandlers(BESPOKE, "inventory/inv-stock-adjustments.controller.ts");
   const alreadyFencedResult = parseHandlers(ALREADY_FENCED, "finance/ap/vendor-payments-allocations.controller.ts");
 
   const checks = {
-    fencedHandlerNotReported: fencedResult.length === 0,
-    unfencedPublishIsDetected: unfencedResult.length === 1 && unfencedResult[0].method === "publish",
+    fencedHandlerIsSeenAndFenced:
+      fencedResult.length === 1 && fencedResult[0].fenced === true,
+    unfencedPublishIsDetected:
+      unfencedResult.length === 1 &&
+      unfencedResult[0].method === "publish" &&
+      unfencedResult[0].fenced === false,
     unfencedHandlerHasCorrectRoute: unfencedResult[0]?.route === ":broadcastId/publish",
     publicRouteIsSkipped: publicResult.length === 0,
-    alreadyFencedIsClean: alreadyFencedResult.length === 0,
-    bespokeHandlerIsDetected: bespokeResult.length > 0,
+    alreadyFencedIsClean:
+      alreadyFencedResult.length === 1 && alreadyFencedResult[0].fenced === true,
+    bespokeHandlerIsDetected: bespokeResult.some((h) => !h.fenced),
+    // The decorator route alone says "mark-paid"; only the controller prefix
+    // says "payout". Without the prefix this handler is invisible to the gate.
+    controllerPrefixMakesRouteCritical:
+      prefixCriticalResult.length === 1 &&
+      prefixCriticalResult[0].method === "markBatchPaid" &&
+      prefixCriticalResult[0].fenced === false,
   };
 
   const pass = Object.values(checks).every(Boolean);
@@ -254,6 +299,7 @@ const controllerFiles = walkControllers(MODULES_DIR);
 
 const violations = [];
 const excused = [];
+const fenced = [];
 
 for (const file of controllerFiles) {
   const rel = relative(BACKEND_ROOT, file).replace(/\\/g, "/");
@@ -263,6 +309,7 @@ for (const file of controllerFiles) {
   const handlers = parseHandlers(src, rel);
 
   for (const h of handlers) {
+    if (h.fenced) { fenced.push(h); continue; }
     const excusedReason = HANDLER_EXCLUSIONS.get(h.key);
     if (excusedReason) excused.push({ ...h, reason: excusedReason });
     else violations.push(h);
@@ -276,8 +323,15 @@ if (controllerFiles.length < 50) {
   process.exit(2);
 }
 
+// Report the whole corpus, not just what is left over. Counting only the
+// unfenced and the excused meant the number FELL as handlers were fixed, so a
+// small "in scope" figure was indistinguishable from a blind gate — which is
+// exactly what it was while the payout commands sat outside the route match.
 console.log(`Controllers scanned   ${controllerFiles.length}`);
-console.log(`Handlers in scope     ${violations.length + excused.length}`);
+console.log(`Critical handlers     ${fenced.length + violations.length + excused.length}`);
+console.log(`  already fenced      ${fenced.length}`);
+console.log(`  excluded by design  ${excused.length}`);
+console.log(`  unfenced            ${violations.length}`);
 console.log("");
 
 if (excused.length > 0) {

@@ -21,15 +21,13 @@ export class BuildApprovalsInboxService {
 
   async getInboxPage(
     orgId: string,
-    userId: string,
+    _userId: string,
     membershipId: number | null,
     limit: number,
     cursor: number | null,
   ): Promise<ApprovalInboxRow[]> {
-    const actorPredicate =
-      membershipId !== null
-        ? eq(projectApprovals.approverMembershipId, membershipId)
-        : eq(projectApprovals.approverId, userId);
+    if (membershipId === null) return [];
+    const actorPredicate = eq(projectApprovals.approverMembershipId, membershipId);
     const rows = await this.db
       .select({
         id: projectApprovals.id,

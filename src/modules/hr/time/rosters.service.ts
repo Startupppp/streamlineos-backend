@@ -3,6 +3,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { rosters, rosterEntries } from "../../../db/schema";
 import { eq, and, desc } from "drizzle-orm";
+import { requireOrganizationMembershipId } from "./organization-membership";
 
 @Injectable()
 export class RostersService {
@@ -26,7 +27,7 @@ export class RostersService {
     return this.db
       .select()
       .from(rosterEntries)
-      .where(eq(rosterEntries.rosterId, rosterId))
+      .where(and(eq(rosterEntries.orgId, orgId), eq(rosterEntries.rosterId, rosterId)))
       .limit(5000);
   }
 
@@ -36,8 +37,9 @@ export class RostersService {
       columns: { id: true },
     });
     if (!roster) throw new NotFoundException("Roster not found");
-    const [entry] = await this.db.insert(rosterEntries).values(data)
-      .onConflictDoUpdate({ target: [rosterEntries.rosterId, rosterEntries.userId, rosterEntries.date], set: { shiftId: data.shiftId, isDayOff: data.isDayOff, notes: data.notes } })
+    const userMembershipId = await requireOrganizationMembershipId(this.db, orgId, data.userId);
+    const [entry] = await this.db.insert(rosterEntries).values({ ...data, orgId, userMembershipId })
+      .onConflictDoUpdate({ target: [rosterEntries.orgId, rosterEntries.rosterId, rosterEntries.userMembershipId, rosterEntries.date], set: { shiftId: data.shiftId, isDayOff: data.isDayOff, notes: data.notes, userMembershipId } })
       .returning();
     return entry;
   }

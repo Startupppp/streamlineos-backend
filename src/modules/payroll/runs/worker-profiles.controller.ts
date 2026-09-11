@@ -26,6 +26,13 @@ import {
   type PatchProfileInput,
 } from "./dto/runs.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../../common/openapi/response-envelopes";
+import {
+  profileDetailResponseSchema,
+  profileCreateResponseSchema,
+  profileHistoryResponseSchema,
+} from "./dto/profiles-response.schemas";
 import { z } from "zod";
 
 const workerIdParams = z.object({ workerId: z.string().min(1) }).strict();
@@ -40,6 +47,7 @@ export class WorkerProfilesController {
   @Get(":workerId")
   @RequirePermission("payroll:salaries:view")
   @Validate({ params: workerIdParams })
+  @ResponseSchema(profileDetailResponseSchema)
   async getOne(@Param("workerId") workerId: string, @CurrentUser() u: CurrentUserContext) {
     const result = await this.profilesService.getProfileByWorker(u.orgId, workerId);
     if (!result.active && result.history.length === 0) {
@@ -52,6 +60,7 @@ export class WorkerProfilesController {
   @HttpCode(201)
   @RequirePermission("payroll:salaries:update")
   @Validate({ params: workerIdParams, body: createProfileSchema })
+  @ResponseSchema(profileCreateResponseSchema)
   async createProfile(
     @Param("workerId") workerId: string,
     @Body() body: CreateProfileInput,
@@ -63,6 +72,7 @@ export class WorkerProfilesController {
   @Patch(":workerId/profiles/:profileId")
   @RequirePermission("payroll:salaries:update")
   @Validate({ params: workerIdprofileIdParams, body: patchProfileSchema })
+  @ResponseSchema(successSchema)
   async patchProfile(
     @Param("workerId") workerId: string,
     @Param("profileId", ParseIntPipe) profileId: number,
@@ -84,6 +94,7 @@ export class WorkerProfilesController {
   @Get(":workerId/history")
   @RequirePermission("payroll:salaries:view")
   @Validate({ params: workerIdParams })
+  @ResponseSchema(profileHistoryResponseSchema)
   async getHistory(@Param("workerId") workerId: string, @CurrentUser() u: CurrentUserContext) {
     return this.profilesService.listHistoryByWorker(u.orgId, workerId);
   }

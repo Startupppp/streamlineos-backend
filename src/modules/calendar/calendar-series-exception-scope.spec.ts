@@ -1,5 +1,5 @@
 import { PgDialect } from "drizzle-orm/pg-core";
-import type { SQL } from "drizzle-orm";
+import { getTableName, type SQL } from "drizzle-orm";
 import {
   expandToOccurrences,
   type CalendarEventLike,
@@ -9,6 +9,53 @@ import { CalendarRecurrenceService } from "./calendar-recurrence.service";
 import type { Db } from "../../db/drizzle.module";
 
 const dialect = new PgDialect();
+
+/**
+ * `upsertOccurrenceException`/`cancelOccurrence` now resolve the occurrence key before
+ * writing — a second edit of a MOVED occurrence arrives naming the instant it currently
+ * sits at, not the nominal one the exception is keyed on, and used to insert a second,
+ * permanently invisible row. These fixtures hold no exception rows, so the lookup finds
+ * nothing and the supplied instant is used unchanged, which is what every test here
+ * assumes. See calendar-moved-occurrence-identity.spec.ts for the resolution itself.
+ */
+/**
+ * An update chain that records which TABLE each update targeted.
+ *
+ * An occurrence write now also bumps the parent series' `local_version`/`updated_at` — a
+ * local change the provider-drift comparison in `CalendarProviderWebhookService` has to be
+ * able to see — so "an update happened" no longer answers "a reminder was dead-lettered".
+ * The reminder assertions ask about `notification_outbox` specifically.
+ */
+function makeUpdateChain() {
+  const targets: string[] = [];
+  const updateWhere = jest
+    .fn()
+    .mockImplementation(() =>
+      Object.assign(Promise.resolve(undefined), { returning: jest.fn().mockResolvedValue([]) }),
+    );
+  const updateSet = jest.fn().mockReturnValue({ where: updateWhere });
+  const updateFn = jest.fn().mockImplementation((table: unknown) => {
+    targets.push(getTableName(table as Parameters<typeof getTableName>[0]));
+    return { set: updateSet };
+  });
+  const outboxUpdates = () => targets.filter((table) => table === "notification_outbox");
+  const outboxWheres = () =>
+    updateWhere.mock.calls
+      .map((call, index) => ({ cond: call[0], table: targets[index] }))
+      .filter((entry) => entry.table === "notification_outbox")
+      .map((entry) => entry.cond);
+  return { updateFn, updateSet, updateWhere, targets, outboxUpdates, outboxWheres };
+}
+
+function noExceptionRows() {
+  return {
+    select: jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+      }),
+    }),
+  };
+}
 function renderCond(cond: unknown) {
   return dialect.sqlToQuery(cond as SQL);
 }
@@ -138,16 +185,14 @@ describe("CalendarRecurrenceService.cancelOccurrence — exception row only, ser
     const values = jest.fn().mockReturnValue({ onConflictDoUpdate });
     const insertFn = jest.fn().mockReturnValue({ values });
 
-    const updateWhere = jest.fn().mockResolvedValue(undefined);
-    const updateSet = jest.fn().mockReturnValue({ where: updateWhere });
-    const updateFn = jest.fn().mockReturnValue({ set: updateSet });
+    const { updateFn, updateSet, outboxUpdates, outboxWheres } = makeUpdateChain();
 
     const deleteFn = jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) });
 
     const db = {
       ...makeOwnerDb({ id: MEMBER_ID }, { createdByMembershipId: MEMBER_ID, rrule: "FREQ=WEEKLY;BYDAY=MO" }),
       transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) =>
-        cb({ insert: insertFn, update: updateFn, delete: deleteFn }),
+        cb({ ...noExceptionRows(), insert: insertFn, update: updateFn, delete: deleteFn }),
       ),
     };
 
@@ -165,14 +210,12 @@ describe("CalendarRecurrenceService.cancelOccurrence — exception row only, ser
     const capturedValues = jest.fn().mockReturnValue({ onConflictDoUpdate });
     const insertFn = jest.fn().mockReturnValue({ values: capturedValues });
 
-    const updateWhere = jest.fn().mockResolvedValue(undefined);
-    const updateSet = jest.fn().mockReturnValue({ where: updateWhere });
-    const updateFn = jest.fn().mockReturnValue({ set: updateSet });
+    const { updateFn, updateSet, outboxUpdates, outboxWheres } = makeUpdateChain();
 
     const db = {
       ...makeOwnerDb({ id: MEMBER_ID }, { createdByMembershipId: MEMBER_ID, rrule: "FREQ=WEEKLY;BYDAY=MO" }),
       transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) =>
-        cb({ insert: insertFn, update: updateFn }),
+        cb({ ...noExceptionRows(), insert: insertFn, update: updateFn }),
       ),
     };
 
@@ -198,14 +241,12 @@ describe("CalendarRecurrenceService.upsertOccurrenceException — series rrule i
     const capturedValues = jest.fn().mockReturnValue({ onConflictDoUpdate });
     const insertFn = jest.fn().mockReturnValue({ values: capturedValues });
 
-    const updateWhere = jest.fn().mockResolvedValue(undefined);
-    const updateSet = jest.fn().mockReturnValue({ where: updateWhere });
-    const updateFn = jest.fn().mockReturnValue({ set: updateSet });
+    const { updateFn, updateSet, outboxUpdates, outboxWheres } = makeUpdateChain();
 
     const db = {
       ...makeOwnerDb({ id: MEMBER_ID }, { createdByMembershipId: MEMBER_ID, rrule: "FREQ=WEEKLY;BYDAY=MO" }),
       transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) =>
-        cb({ insert: insertFn, update: updateFn }),
+        cb({ ...noExceptionRows(), insert: insertFn, update: updateFn }),
       ),
     };
 
@@ -226,7 +267,7 @@ describe("CalendarRecurrenceService.upsertOccurrenceException — series rrule i
     expect("rrule" in insertPayload).toBe(false);
     expect("title" in insertPayload).toBe(false);
 
-    expect(updateFn).toHaveBeenCalledTimes(1);
+    expect(outboxUpdates()).toHaveLength(1);
     expect(updateSet).toHaveBeenCalledWith({ state: "DEAD" });
   });
 
@@ -236,12 +277,12 @@ describe("CalendarRecurrenceService.upsertOccurrenceException — series rrule i
     const capturedValues = jest.fn().mockReturnValue({ onConflictDoUpdate });
     const insertFn = jest.fn().mockReturnValue({ values: capturedValues });
 
-    const updateFn = jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }) });
+    const { updateFn, outboxUpdates } = makeUpdateChain();
 
     const db = {
       ...makeOwnerDb({ id: MEMBER_ID }, { createdByMembershipId: MEMBER_ID, rrule: "FREQ=WEEKLY;BYDAY=MO" }),
       transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) =>
-        cb({ insert: insertFn, update: updateFn }),
+        cb({ ...noExceptionRows(), insert: insertFn, update: updateFn }),
       ),
     };
 
@@ -251,7 +292,7 @@ describe("CalendarRecurrenceService.upsertOccurrenceException — series rrule i
     });
 
     expect(insertFn).toHaveBeenCalledTimes(1);
-    expect(updateFn).not.toHaveBeenCalled();
+    expect(outboxUpdates()).toEqual([]);
   });
 
   it("BITE PROOF: when the caller is not the event owner, the transaction is skipped entirely (gate is real)", async () => {
@@ -293,12 +334,10 @@ describe("CalendarRecurrenceService — getRecurringEventForOwner blocks non-rec
     const onConflictDoUpdate = jest.fn().mockReturnValue({ returning });
     const values = jest.fn().mockReturnValue({ onConflictDoUpdate });
     const insertFn = jest.fn().mockReturnValue({ values });
-    const updateWhere = jest.fn().mockResolvedValue(undefined);
-    const updateSet = jest.fn().mockReturnValue({ where: updateWhere });
-    const updateFn = jest.fn().mockReturnValue({ set: updateSet });
+    const { updateFn, updateSet, outboxUpdates, outboxWheres } = makeUpdateChain();
 
     const txSpy = jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) =>
-      cb({ insert: insertFn, update: updateFn }),
+      cb({ ...noExceptionRows(), insert: insertFn, update: updateFn }),
     );
 
     const db = {
@@ -341,24 +380,22 @@ describe("CalendarRecurrenceService.cancelOccurrence — reminder kill targets t
     const values = jest.fn().mockReturnValue({ onConflictDoUpdate });
     const insertFn = jest.fn().mockReturnValue({ values });
 
-    const updateWhere = jest.fn().mockResolvedValue(undefined);
-    const updateSet = jest.fn().mockReturnValue({ where: updateWhere });
-    const updateFn = jest.fn().mockReturnValue({ set: updateSet });
+    const { updateFn, updateSet, outboxUpdates, outboxWheres } = makeUpdateChain();
 
     const db = {
       ...makeOwnerDb({ id: MEMBER_ID }, { createdByMembershipId: MEMBER_ID, rrule: "FREQ=WEEKLY;BYDAY=MO" }),
       transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) =>
-        cb({ insert: insertFn, update: updateFn }),
+        cb({ ...noExceptionRows(), insert: insertFn, update: updateFn }),
       ),
     };
 
     const svc = new CalendarRecurrenceService(db as unknown as Db);
     await svc.cancelOccurrence(ORG, USER, EVENT_ID, OCCURRENCE_ISO);
 
-    expect(updateFn).toHaveBeenCalledTimes(1);
+    expect(outboxUpdates()).toHaveLength(1);
     expect(updateSet).toHaveBeenCalledWith({ state: "DEAD" });
 
-    const whereCond = updateWhere.mock.calls[0]?.[0];
+    const whereCond = outboxWheres()[0];
     const { params } = renderCond(whereCond);
     expect(params).toContain(expectedLikePrefix);
     expect(params).toContain("PENDING");
@@ -373,37 +410,41 @@ describe("CalendarRecurrenceService.cancelOccurrence — reminder kill targets t
     const values = jest.fn().mockReturnValue({ onConflictDoUpdate });
     const insertFn = jest.fn().mockReturnValue({ values });
 
-    const updateWhere = jest.fn().mockResolvedValue(undefined);
-    const updateSet = jest.fn().mockReturnValue({ where: updateWhere });
-    const updateFn = jest.fn().mockReturnValue({ set: updateSet });
+    const { updateFn, updateSet, outboxUpdates, outboxWheres } = makeUpdateChain();
 
     const db = {
       ...makeOwnerDb({ id: MEMBER_ID }, { createdByMembershipId: MEMBER_ID, rrule: "FREQ=WEEKLY;BYDAY=MO" }),
       transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) =>
-        cb({ insert: insertFn, update: updateFn }),
+        cb({ ...noExceptionRows(), insert: insertFn, update: updateFn }),
       ),
     };
 
     const svc = new CalendarRecurrenceService(db as unknown as Db);
     await svc.cancelOccurrence(ORG, USER, EVENT_ID, OCCURRENCE_ISO);
 
-    const whereCond = updateWhere.mock.calls[0]?.[0];
+    const whereCond = outboxWheres()[0];
     const { params } = renderCond(whereCond);
     expect(params).not.toContain(differentKey);
   });
 
   it("BITE PROOF: with a non-invoking transaction mock, the outbox update is never executed", async () => {
-    const updateFn = jest.fn();
+    const { updateFn, updateSet, outboxUpdates, outboxWheres } = makeUpdateChain();
+    const insertFn = jest.fn();
 
     const db = {
       ...makeOwnerDb({ id: MEMBER_ID }, { createdByMembershipId: MEMBER_ID, rrule: "FREQ=WEEKLY;BYDAY=MO" }),
-      transaction: jest.fn().mockResolvedValue(undefined),
+      insert: insertFn,
+      update: updateFn,
+      transaction: jest.fn().mockResolvedValue([]),
     };
 
     const svc = new CalendarRecurrenceService(db as unknown as Db);
-    await expect(svc.cancelOccurrence(ORG, USER, EVENT_ID, OCCURRENCE_ISO)).rejects.toThrow();
+    const result = await svc.cancelOccurrence(ORG, USER, EVENT_ID, OCCURRENCE_ISO);
 
-    expect(updateFn).not.toHaveBeenCalled();
+    expect(result).toBeUndefined();
+    expect(db.transaction).toHaveBeenCalledTimes(1);
+    expect(insertFn).not.toHaveBeenCalled();
+    expect(outboxUpdates()).toEqual([]);
   });
 });
 

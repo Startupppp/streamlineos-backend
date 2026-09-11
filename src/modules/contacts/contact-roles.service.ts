@@ -5,7 +5,6 @@ import { businessParties, contactPartyMap } from "../../db/schema/party";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
-import { getPostgresErrorCode } from "../../common/db/postgres-error";
 import { CONTACT_ROLE_DEFAULTS, type ContactRoleCreateInput } from "./dto/contact-roles.schemas";
 import {
   CONTACT_PARTY_COLUMNS,
@@ -13,19 +12,7 @@ import {
   contactIdIs,
   contactPartyScope,
 } from "./contact-party-reader";
-
-/**
- * A unique violation, read where the SQLSTATE actually is.
- *
- * This asked `"code" in err` of the value Drizzle threw. Drizzle throws a
- * `DrizzleQueryError` and puts the driver error on `.cause`, so the test was
- * always false and adding a contact role twice — same contact, same entity,
- * same key, which `uniq_crm_contact_roles_combo` refuses — answered 500 where
- * the code plainly means 409.
- */
-function isDbConflict(err: unknown): boolean {
-  return getPostgresErrorCode(err) === "23505";
-}
+import { isUniqueViolation } from "../../common/db/postgres-error";
 
 @Injectable()
 export class ContactRolesService {
@@ -81,7 +68,7 @@ export class ContactRolesService {
 
       return role;
     } catch (err) {
-      if (isDbConflict(err)) {
+      if (isUniqueViolation(err)) {
         // `uniq_crm_contact_roles_combo` — (org_id, contact_id, entity_type,
         // entity_id, role_key), every column caller-supplied.
         throw new ConflictException(

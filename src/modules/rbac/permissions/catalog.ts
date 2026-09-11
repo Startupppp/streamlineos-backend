@@ -1,4 +1,4 @@
-import { namespacesForModule } from "../../../common/rbac/module-vocabulary";
+import { namespaceOf, namespacesForModule } from "../../../common/rbac/module-vocabulary";
 import type { Permission } from "./types";
 import { MODULE_ACCESS_PERMISSIONS } from "./module-access";
 import { SIGN_PERMISSIONS } from "./sign";
@@ -40,11 +40,12 @@ import {
   PROJECT_WORKFLOW_PERMISSIONS,
 } from "./build";
 import { FEEDBUCKET_PERMISSIONS } from "./feedbucket";
-import { AI_SUMMARIES_PERMISSIONS, EXECUTIVE_BRIEF_PERMISSIONS } from "./ai";
+import { AI_SUMMARIES_PERMISSIONS, AI_USAGE_PERMISSIONS, EXECUTIVE_BRIEF_PERMISSIONS } from "./ai";
 import { DIRECTORY_PERMISSIONS } from "./directory";
 import { PARTY_PERMISSIONS } from "./party";
 import { MAIL_PERMISSIONS } from "./mail";
 import { COMPLIANCE_PERMISSIONS } from "./compliance";
+import { STORAGE_PERMISSIONS } from "./storage";
 
 export const PERMISSIONS: Permission[] = [
   ...MODULE_ACCESS_PERMISSIONS,
@@ -86,11 +87,13 @@ export const PERMISSIONS: Permission[] = [
   ...PROJECT_WORKFLOW_PERMISSIONS,
   ...FEEDBUCKET_PERMISSIONS,
   ...AI_SUMMARIES_PERMISSIONS,
+  ...AI_USAGE_PERMISSIONS,
   ...EXECUTIVE_BRIEF_PERMISSIONS,
   ...DIRECTORY_PERMISSIONS,
   ...PARTY_PERMISSIONS,
   ...MAIL_PERMISSIONS,
   ...COMPLIANCE_PERMISSIONS,
+  ...STORAGE_PERMISSIONS,
 ];
 
 export const ALL_PERMISSION_NAMES: string[] = PERMISSIONS.map((p) => p.name);
@@ -98,6 +101,6 @@ export const ALL_PERMISSION_NAMES: string[] = PERMISSIONS.map((p) => p.name);
 export const moduleScopedPermissions = (moduleKey: string): string[] => {
   const namespaces = namespacesForModule(moduleKey);
   return ALL_PERMISSION_NAMES.filter((name) =>
-    namespaces.includes(name.split(":")[0] ?? ""),
+    namespaces.includes(namespaceOf(name)),
   );
 };

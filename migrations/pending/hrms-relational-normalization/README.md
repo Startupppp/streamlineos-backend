@@ -26,7 +26,7 @@ Confirmed paths:
   exposes both legacy values; its compatibility projection is at
   `backend/src/modules/hr/core/hr-sensitive.service.ts:219-234`.
 - `onboarding_tasks.depends_on_task_ids` is declared at
-  `backend/src/db/schema/hr/offboarding.ts:107`. No application writer was
+  `backend/src/db/schema/hr/onboarding.ts:59`. No application writer was
   found. `OnboardingTaskService` returns `getTableColumns(onboardingTasks)` at
   `backend/src/modules/hr/onboarding/core/onboarding-task.service.ts:139` and
   reconciles dependencies at lines 153-168.
@@ -39,7 +39,7 @@ Confirmed paths:
   `:110-124`, `:223-247`, `:274-294`, `:426-436`, and
   `termination-communications.service.ts:182-193`.
 - `terminations.supporting_doc_urls` is declared at
-  `backend/src/db/schema/hr/offboarding.ts:267`. No application writer was
+  `backend/src/db/schema/hr/offboarding.ts:152`. No application writer was
   found. The detail contract reads it through the Drizzle relation and resolves
   a reconciled child projection in `termination.service.ts:274-294`.
 

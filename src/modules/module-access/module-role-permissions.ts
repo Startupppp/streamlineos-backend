@@ -18,11 +18,11 @@ import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import {
   assertPermissionsGrantable,
-  buildPermissionModuleMap,
+  buildPermissionAdministeringModuleMap,
   isImmutableSystemRole,
   toGrantableSet,
 } from "../../common/rbac/grantability";
-import { administeringModuleOf } from "../../common/rbac/module-vocabulary";
+import { administeringModuleOf, impliedViewKey } from "../../common/rbac/module-vocabulary";
 import { isStructuralOrgAdmin } from "../../common/rbac/is-structural-org-admin";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
@@ -56,35 +56,6 @@ export async function invalidateRoleAssigneePages(
     if (!last) return;
     afterMembershipId = last.membershipId;
   }
-}
-
-const VIEW_ACTIONS = ["view", "read"] as const;
-
-/**
- * The sibling read key for a write grant, at any arity. The catalog is not
- * uniformly `module:resource:action` — 53 keys are two-segment (`surveys:create`)
- * and some are four (`build:workspaces:members:manage`) — and it uses both `view`
- * and `read` as the read verb. Deriving from the last segment rather than a fixed
- * position covers every shape.
- *
- * This is the only definition. `module-access.service.ts` re-exports it; it used
- * to carry an identical copy of its own, which is the one the spec imported, so
- * the spec was green over code that no write path ever called.
- */
-export function impliedViewKey(
-  catalog: ReadonlySet<string>,
-  permissionKey: string,
-): string | null {
-  const parts = permissionKey.split(":");
-  if (parts.length < 2) return null;
-  const action = parts[parts.length - 1];
-  if (!action || VIEW_ACTIONS.some((verb) => verb === action)) return null;
-  const prefix = parts.slice(0, -1);
-  for (const verb of VIEW_ACTIONS) {
-    const candidate = [...prefix, verb].join(":");
-    if (catalog.has(candidate)) return candidate;
-  }
-  return null;
 }
 
 function normalizeModulePermissionItems(
@@ -157,7 +128,7 @@ export async function setModuleRolePermissions(
         },
         Array.from(deduped.keys()),
         { rank: role.rank, moduleKey: role.moduleKey },
-        buildPermissionModuleMap(Array.from(deduped.keys())),
+        buildPermissionAdministeringModuleMap(Array.from(deduped.keys())),
       );
       const widened = Array.from(deduped)
         .filter(([key, scope]) => {

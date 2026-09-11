@@ -4,10 +4,9 @@ import {
   getInterviewNoShowRescheduleEmail,
   getCandidateDocumentRolloutEmail,
 } from "../index";
-import { BASE_URL } from "./_shared";
-import type { TemplateEntry } from "./_shared";
+import { BASE_URL, EMAIL_TEMPLATE_VERSION, defineTemplateFamily } from "./_shared";
 
-export const recruitmentTemplates: Record<string, TemplateEntry> = {
+export const recruitmentTemplates = defineTemplateFamily({
   "recruitment.rejection": {
     category: "Recruitment",
     name: "Candidate Rejection",
@@ -51,4 +50,4 @@ export const recruitmentTemplates: Record<string, TemplateEntry> = {
         ],
       }).html,
   },
-};
+}, EMAIL_TEMPLATE_VERSION);

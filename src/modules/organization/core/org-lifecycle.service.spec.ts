@@ -5,6 +5,8 @@ jest.mock("../../../common/relocation/relocation-traffic-tracker", () => ({
 
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -27,6 +29,15 @@ function queryResult(rows: unknown[]) {
   return chain;
 }
 
+function isNextActiveOrgQuery(query: unknown): boolean {
+  if (query === null || typeof query !== "object") return false;
+  try {
+    return new PgDialect().sqlToQuery(query as SQL).sql.includes("next_active_org_ids");
+  } catch {
+    return false;
+  }
+}
+
 function updateResult() {
   return {
     set: jest.fn().mockReturnValue({
@@ -37,6 +48,7 @@ function updateResult() {
 
 describe("OrgLifecycleService", () => {
   const cacheInvalidate = jest.fn().mockResolvedValue(undefined);
+  const cacheInvalidateMany = jest.fn().mockResolvedValue(undefined);
   const cacheInvalidateNamespace = jest.fn().mockResolvedValue(undefined);
   const revokeOrgScopedAccess = jest.fn().mockResolvedValue(undefined);
   const revokeAllPending = jest.fn().mockResolvedValue(undefined);
@@ -46,6 +58,7 @@ describe("OrgLifecycleService", () => {
   const sagaComplete = jest.fn().mockResolvedValue(undefined);
   const sagaCompensate = jest.fn().mockResolvedValue(undefined);
   let selectResults: unknown[][];
+  let nextActiveOrgRows: unknown[];
   let db: {
     execute: jest.Mock;
     select: jest.Mock;
@@ -58,8 +71,14 @@ describe("OrgLifecycleService", () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     selectResults = [];
+    nextActiveOrgRows = [];
     db = {
-      execute: jest.fn().mockResolvedValue([]),
+      // resolveReplacementOrgIds is one call to app.next_active_org_ids for the whole
+      // cohort, not one select per member, so it arrives here rather than through
+      // `select`. Everything else reaching execute is tenant-GUC plumbing.
+      execute: jest.fn().mockImplementation((query: unknown) =>
+        Promise.resolve(isNextActiveOrgQuery(query) ? nextActiveOrgRows : []),
+      ),
       select: jest.fn(() => queryResult(selectResults.shift() ?? [])),
       update: jest.fn(() => updateResult()),
       delete: jest.fn().mockReturnValue({
@@ -87,6 +106,8 @@ describe("OrgLifecycleService", () => {
           useValue: {
             invalidate: cacheInvalidate,
             invalidateNamespace: cacheInvalidateNamespace,
+            invalidateMany: cacheInvalidateMany,
+            invalidateNamespaceMany: jest.fn().mockResolvedValue(undefined),
           },
         },
         {
@@ -113,8 +134,8 @@ describe("OrgLifecycleService", () => {
       [{ statusV2: "ACTIVE" }],
       [],
       [{ userId: "user-1" }],
-      [{ orgId: "org-2" }],
     );
+    nextActiveOrgRows = [{ user_id: "user-1", next_org_id: "org-2" }];
 
     await expect(service.archiveOrg("org-1", "user-1")).resolves.toEqual({
       success: true,
@@ -124,7 +145,11 @@ describe("OrgLifecycleService", () => {
     expect(db.transaction).toHaveBeenCalledTimes(4);
     expect(revokeAllPending).toHaveBeenCalledWith("org-1", db);
     expect(revokeOrgScopedAccess).toHaveBeenCalledWith("org-1", "user-1", "removed");
-    expect(cacheInvalidate).toHaveBeenCalledWith(CACHE_KEYS.userSession("user-1"));
+    // The session bust is batched: one invalidateMany carrying every member's key,
+    // rather than one invalidate per member.
+    expect(cacheInvalidateMany).toHaveBeenCalledWith(
+      expect.arrayContaining([CACHE_KEYS.userSession("user-1")]),
+    );
   });
 
   it("hides another tenant's archived organization during restore", async () => {

@@ -31,7 +31,7 @@ import {
  * including the mapping evals, keeps its exact answers.
  */
 
-export { IDENTITY_FIELDS, isFieldOf, type ImportEntity, type ImportField } from "./import-entities";
+export { isFieldOf, type ImportEntity, type ImportField } from "./import-entities";
 
 export type ColumnMapping =
   | { readonly kind: "mapped"; readonly field: ImportField; readonly confidence: number }
@@ -79,7 +79,7 @@ const IGNORABLE_HEAD = new Set([
 ]);
 
 export function isIdentityField(field: string): boolean {
-  return (IDENTITY_FIELDS as readonly string[]).includes(field);
+  return IDENTITY_FIELDS.some((identityField) => identityField === field);
 }
 
 /**
@@ -240,7 +240,7 @@ export function mapColumn(header: string, entity: ImportEntity = "party"): Colum
     }
 
     if (winners.length === 1)
-      return { kind: "mapped", field: winners[0]!.field, confidence: 0.7 };
+      return { kind: "mapped", field: winners[0].field, confidence: 0.7 };
 
     // Two synonyms of the same length ending the same header: a real tie.
     return { kind: "ambiguous", candidates: winners.map((candidate) => candidate.field) };

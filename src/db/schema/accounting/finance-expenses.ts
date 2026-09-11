@@ -1,4 +1,4 @@
-import { boolean, date, decimal, index, integer, pgEnum, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
+import { boolean, date, decimal, foreignKey, index, integer, pgEnum, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { glAccounts, glJournals } from "./gl-kernel";
@@ -49,7 +49,7 @@ export const finExpensePolicies = pgTable("fin_expense_policies", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
-  categoryId: integer("category_id").references(() => expenseCategories.id, { onDelete: "set null" }),
+  categoryId: integer("category_id"),
   maxAmount: decimal("max_amount", { precision: 12, scale: 2 }),
   requiresReceiptAbove: decimal("requires_receipt_above", { precision: 12, scale: 2 }),
   requiresApprovalAbove: decimal("requires_approval_above", { precision: 12, scale: 2 }),
@@ -57,8 +57,8 @@ export const finExpensePolicies = pgTable("fin_expense_policies", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.categoryId], foreignColumns: [expenseCategories.orgId, expenseCategories.id], name: "fk_fin_expense_policies_category_id_org" }).onDelete("set null"),
   unique("uniq_fin_expense_policies_org_id").on(table.orgId, table.id),
-  index("idx_fin_expense_policies_org").on(table.orgId),
 ]);
 
 export const finReimbursementBatchesRelations = relations(finReimbursementBatches, ({ one }) => ({

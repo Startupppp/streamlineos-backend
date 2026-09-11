@@ -20,6 +20,14 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { AccessService } from "../../access/access.service";
 import { resolveEmployeesScope } from "./employees-scope";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  directoryListSchema,
+  celebrationsResponseSchema,
+  orgChartPageSchema,
+  headcountGroupSchema,
+  teamDetailSchema,
+} from "./dto/directory-response.schemas";
 import { z } from "zod";
 
 const teamIdParams = z.object({ teamId: z.string().min(1) }).strict();
@@ -35,31 +43,35 @@ export class OrgStructureController {
   ) {}
 
   @Get("directory")
+  @ResponseSchema(directoryListSchema)
   @RequirePermission("hr:employees:view")
   async directory(@CurrentUser() currentUser: CurrentUserContext) {
-    const scope = await resolveEmployeesScope(this.access, currentUser);
-    return this.orgStructure.getDirectory(currentUser.orgId, currentUser.userId, scope);
+    const read = await resolveEmployeesScope(this.access, currentUser);
+    return this.orgStructure.getDirectory(read);
   }
 
   @Get("celebrations")
+  @ResponseSchema(celebrationsResponseSchema)
   @RequirePermission("hr:employees:view")
   async celebrationsList(@CurrentUser() currentUser: CurrentUserContext) {
-    const scope = await resolveEmployeesScope(this.access, currentUser);
-    return this.celebrations.getCelebrations(currentUser.orgId, currentUser.userId, scope);
+    const read = await resolveEmployeesScope(this.access, currentUser);
+    return this.celebrations.getCelebrations(read);
   }
 
   @Get("org-chart")
+  @ResponseSchema(orgChartPageSchema)
   @RequirePermission("hr:employees:view")
   @Validate({ query: orgChartQuerySchema })
   async orgChart(
     @Query() query: OrgChartQueryInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ): Promise<OrgChartPage> {
-    const scope = await resolveEmployeesScope(this.access, currentUser);
-    return this.orgStructure.getOrgChart(currentUser.orgId, currentUser.userId, scope, query);
+    const read = await resolveEmployeesScope(this.access, currentUser);
+    return this.orgStructure.getOrgChart(read, query);
   }
 
   @Get("headcount")
+  @ResponseSchema(headcountGroupSchema)
   @RequirePermission("hr:headcount:read")
   @Validate({ query: headcountSchema })
   headcount(
@@ -70,13 +82,14 @@ export class OrgStructureController {
   }
 
   @Get("teams/:teamId")
+  @ResponseSchema(teamDetailSchema)
   @RequirePermission("hr:employees:view")
   @Validate({ params: teamIdParams })
   async team(
     @Param("teamId") teamId: string,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const scope = await resolveEmployeesScope(this.access, currentUser);
-    return this.orgStructure.getTeam(currentUser.orgId, currentUser.userId, teamId, scope);
+    const read = await resolveEmployeesScope(this.access, currentUser);
+    return this.orgStructure.getTeam(read, teamId);
   }
 }

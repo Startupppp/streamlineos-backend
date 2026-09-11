@@ -87,6 +87,8 @@ pnpm -C backend load:drive --work-class=analytics-refresh --duration=10s
 pnpm -C backend cell:isolation:replica --region=cell-2
 ```
 
-Step 3 requires the `cell:isolation:replica` script which does not exist yet — add it alongside the code changes.
+Step 2 above does not work as written: `load:drive` (`src/scripts/run-load-driver.mjs`) has no `--work-class` flag and drives no analytics-refresh workload — `DRIVEN` (`src/scripts/load-driver/workloads.mjs`) is a fixed set of named probes (cross-org exposure, permission revocation, durable event loss, authenticated availability, node-failure loss), none of them replica-routed. `--duration` also takes milliseconds, not `10s` (default `30000`). Nothing in the codebase drives replica-routed traffic and asserts `PoolHandle.id` in logs; write that before relying on this step.
+
+**CORRECTED:** Step 3's `cell:isolation:replica` script exists — the prior claim that it "does not exist yet" was wrong. `package.json` wires it to `node --env-file-if-exists=.env src/scripts/verify-replica-routing.mjs --isolation` (self-test: `cell:isolation:replica:self-test`). It fails closed with a named missing prerequisite (`DB_REPLICA_URL`, then `APP_DATABASE_URL`) rather than a vacuous pass. The `--region=cell-2` shown above is a no-op on this script: unlike `verify-cell-isolation.mjs` (infra step 4), `verify-replica-routing.mjs` parses only `--self-test` and `--isolation` — it reads `DB_REPLICA_URL`/`APP_DATABASE_URL` straight from the environment already scoped to the target cell.
 
 **Confirm resolution:** No `42501` errors in the structured log for `analytics-refresh` or `search-freshness` routes after deployment. `alert-tenant-ctx-errors.mjs` exits 0 over a fresh log window.

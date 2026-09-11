@@ -1,9 +1,9 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
 
 export const listGroupsQuerySchema = z
   .object({
-    page: pageNumberField,
+    cursor: z.string().optional(),
     limit: pageSizeField(20),
   })
   .strict();

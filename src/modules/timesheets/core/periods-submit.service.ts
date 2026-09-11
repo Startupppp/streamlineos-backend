@@ -12,13 +12,13 @@ import { type Db } from "../../../db/drizzle.module";
 import {
   timesheetPeriods,
   timesheets,
-  organizationMembers,
   projects,
 } from "../../../db/schema";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { PeriodsReadService } from "./periods-read.service";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { EntriesService } from "./entries.service";
+import { parseStoredRequiredFields } from "./dto/settings.schemas";
 import {
   LIFECYCLE_RETURNING,
   lifecyclePayload,
@@ -50,7 +50,7 @@ export class PeriodsSubmitService {
     }
 
     const settings = await this.reader.getSettings(u.orgId);
-    const requiredFields = (settings?.requiredFields as string[] | null) ?? [];
+    const requiredFields = parseStoredRequiredFields(settings?.requiredFields);
 
     const periodEntries = await this.db.query.timesheets.findMany({
       where: and(
@@ -154,19 +154,11 @@ export class PeriodsSubmitService {
     if (!topId) return null;
 
     const [proj] = await this.db
-      .select({ managerId: projects.managerId })
+      .select({ managerMembershipId: projects.managerMembershipId })
       .from(projects)
       .where(and(eq(projects.id, topId), eq(projects.orgId, orgId), isNull(projects.deletedAt)))
       .limit(1);
 
-    if (!proj?.managerId) return null;
-
-    const [mgMember] = await this.db
-      .select({ id: organizationMembers.id })
-      .from(organizationMembers)
-      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, proj.managerId)))
-      .limit(1);
-
-    return mgMember?.id ?? null;
+    return proj?.managerMembershipId ?? null;
   }
 }

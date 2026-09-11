@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { eq, desc, count, gte, and, SQL } from "drizzle-orm";
+import { eq, desc, count, gt, gte, and, isNull, or, SQL } from "drizzle-orm";
 import { DRIZZLE } from "../db/drizzle.constants";
 import { type Db } from "../db/drizzle.module";
 import { users, loginHistory, userSessions } from "../db/schema";
@@ -124,8 +124,16 @@ export class MeService {
           gte(loginHistory.createdAt, sevenDaysAgo),
         ),
       ),
+      // Same "still active" predicate as `SessionsService.list` and
+      // `enforceMaxSessions`. Without the expiry half this counted every
+      // session the user had ever opened — nothing prunes `user_sessions` —
+      // so the number beside the device list disagreed with the list itself.
       this.db.select({ count: count() }).from(userSessions).where(
-        and(eq(userSessions.userId, userId), eq(userSessions.isRevoked, false)),
+        and(
+          eq(userSessions.userId, userId),
+          eq(userSessions.isRevoked, false),
+          or(isNull(userSessions.expiresAt), gt(userSessions.expiresAt, now)),
+        ),
       ),
     ]);
 

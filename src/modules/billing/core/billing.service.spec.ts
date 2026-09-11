@@ -27,13 +27,13 @@ import {
 import { drizzlePostgresError, drizzleUniqueViolation } from "../../../test/postgres-error-fixture";
 
 const VALID_INPUT = {
-  razorpay_order_id: "order_test_1",
-  razorpay_payment_id: "pay_test_abc123",
-  razorpay_signature: FAKE_VALID_PAYMENT_SIG,
+  orderId: "order_test_1",
+  paymentId: "pay_test_abc123",
+  signature: FAKE_VALID_PAYMENT_SIG,
   plan: "STARTER" as const,
 };
 
-const WRONG_SIG_INPUT = { ...VALID_INPUT, razorpay_signature: "forged-signature" };
+const WRONG_SIG_INPUT = { ...VALID_INPUT, signature: "forged-signature" };
 
 function makeProvider(withAdapter = true, providerKey = "razorpay"): OrganizationPaymentProvider | undefined {
   if (!withAdapter) return undefined;
@@ -349,7 +349,7 @@ describe("c17-05 — an activation enqueues its revenue event in the activating 
 
     const payload = db._store.outbox[0]?.payload as { type: string; metadata: Record<string, unknown> };
     expect(payload.type).toBe("new_subscription");
-    expect(payload.metadata).toMatchObject({ paymentId: VALID_INPUT.razorpay_payment_id });
+    expect(payload.metadata).toMatchObject({ paymentId: VALID_INPUT.paymentId });
   });
 
   it("a plan move enqueues the expansion and names the plan it came from", async () => {
@@ -577,7 +577,7 @@ describe("BillingService.getSubscription — reads through the adapter", () => {
     const svc = await buildService(db, makeResolver());
     const result = await svc.getSubscription("org1");
     expect(result.isConfigured).toBe(true);
-    expect(result.razorpayKeyId).toBe(FAKE_PUBLIC_KEY_ID);
+    expect(result.publicKeyId).toBe(FAKE_PUBLIC_KEY_ID);
   });
 
   it("no adapter — returns isConfigured false and null key id", async () => {
@@ -585,7 +585,7 @@ describe("BillingService.getSubscription — reads through the adapter", () => {
     const svc = await buildService(db, makeResolver(false));
     const result = await svc.getSubscription("org1");
     expect(result.isConfigured).toBe(false);
-    expect(result.razorpayKeyId).toBeNull();
+    expect(result.publicKeyId).toBeNull();
   });
 });
 

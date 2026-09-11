@@ -57,14 +57,14 @@ export class RateResolverService {
       this.getDefaultCurrency(orgId),
     ]);
 
-    const cardResults = queries.map((query) => {
+    const cardResults = queries.map((query): ResolvedRate | null => {
       const best = pickBestRate(rates, query);
       return best
         ? {
             billRate: parseFloat(best.billRate),
             costRate: best.costRate ? parseFloat(best.costRate) : null,
             currency: best.currency,
-            source: "RATE_CARD" as ResolvedRate["source"],
+            source: "RATE_CARD",
           }
         : null;
     });
@@ -89,7 +89,6 @@ export class RateResolverService {
       const memberRows = await this.db
         .select({
           membershipId: organizationMembers.id,
-          userId: organizationMembers.userId,
         })
         .from(organizationMembers)
         .where(
@@ -100,16 +99,13 @@ export class RateResolverService {
         )
         .limit(membershipIds.length);
 
-      const membershipToUserId = new Map(memberRows.map((m) => [m.membershipId, m.userId]));
-
-      const userIds = memberRows.map((m) => m.userId);
       const projectIds = [...new Set(fallbackPairs.map((p) => p.projectId))];
 
-      if (userIds.length > 0) {
+      if (memberRows.length > 0) {
         const pmRows = await this.db
           .select({
             projectId: projectMembers.projectId,
-            userId: projectMembers.userId,
+            membershipId: projectMembers.membershipId,
             hourlyRate: projectMembers.hourlyRate,
           })
           .from(projectMembers)
@@ -118,20 +114,18 @@ export class RateResolverService {
             and(
               eq(projects.orgId, orgId),
               inArray(projectMembers.projectId, projectIds),
-              inArray(projectMembers.userId, userIds),
+              inArray(projectMembers.membershipId, membershipIds),
             ),
           );
 
         const pmRateByProjectUser = new Map(
           pmRows
             .filter((r) => parseFloat(r.hourlyRate) > 0)
-            .map((r) => [`${r.projectId}|${r.userId}`, parseFloat(r.hourlyRate)]),
+            .map((r) => [`${r.projectId}|${r.membershipId}`, parseFloat(r.hourlyRate)]),
         );
 
         for (const pair of fallbackPairs) {
-          const userId = membershipToUserId.get(pair.membershipId);
-          if (!userId) continue;
-          const rate = pmRateByProjectUser.get(`${pair.projectId}|${userId}`);
+          const rate = pmRateByProjectUser.get(`${pair.projectId}|${pair.membershipId}`);
           if (rate !== undefined) {
             memberRateByKey.set(`${pair.projectId}|${pair.membershipId}`, rate);
           }
@@ -193,7 +187,7 @@ export class RateResolverService {
   ): Promise<ResolvedRate> {
     if (query.projectId && query.userMembershipId) {
       const [member] = await this.db
-        .select({ userId: organizationMembers.userId })
+        .select({ membershipId: organizationMembers.id })
         .from(organizationMembers)
         .where(
           and(
@@ -212,7 +206,7 @@ export class RateResolverService {
             and(
               eq(projects.orgId, orgId),
               eq(projectMembers.projectId, query.projectId),
-              eq(projectMembers.userId, member.userId),
+              eq(projectMembers.membershipId, member.membershipId),
             ),
           )
           .limit(1);

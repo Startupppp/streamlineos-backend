@@ -1,32 +1,33 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { PAYROLL_TOGGLE_KEYS, PAYROLL_TEMPLATE_KEYS } from "../../payroll.types";
 import { queryBoolean } from "../../../../common/validation/query-boolean";
+import { payrollTemplateCategoryEnum, salaryComponentTypeEnum } from "../../../../db/schema";
 
 export const toggleOverridesSchema = z
   .record(z.string(), z.boolean())
   .optional();
 
 export const listTemplatesSchema = z.object({
-  category: z.string().trim().optional(),
+  category: z.enum(payrollTemplateCategoryEnum.enumValues).optional(),
   complexity: z.enum(["SIMPLE", "MODERATE", "ADVANCED"]).optional(),
   country: z.string().trim().max(10).optional(),
   search: z.string().trim().max(200).optional(),
-  page: pageNumberField,
-  pageSize: pageSizeField(20, 100),
-});
+  cursor: z.string().trim().min(1).max(2048).optional(),
+  limit: pageSizeField(20, 100),
+}).strict();
 export type ListTemplatesInput = z.infer<typeof listTemplatesSchema>;
 
 export const templatePreviewSchema = z.object({
   annualCtc: z.coerce.number().positive().max(1_000_000_000),
   toggleOverrides: toggleOverridesSchema,
-});
+}).strict();
 export type TemplatePreviewInput = z.infer<typeof templatePreviewSchema>;
 
 export const duplicateTemplateSchema = z.object({
   name: z.string().trim().min(1).max(200),
   description: z.string().trim().max(1000).optional(),
-});
+}).strict();
 export type DuplicateTemplateInput = z.infer<typeof duplicateTemplateSchema>;
 
 export const createPolicySchema = z.object({
@@ -38,7 +39,7 @@ export const createPolicySchema = z.object({
   payDay: z.coerce.number().int().min(1).max(31).default(28),
   employeeCount: z.number().int().positive().optional(),
   startMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "startMonth must be YYYY-MM"),
-});
+}).strict();
 export type CreatePolicyInput = z.infer<typeof createPolicySchema>;
 
 export const updatePolicySchema = z.object({
@@ -50,7 +51,7 @@ export const updatePolicySchema = z.object({
   payDay: z.coerce.number().int().min(1).max(31).optional(),
   startMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional(),
   fxRates: z.record(z.string().trim().length(3), z.coerce.number().nonnegative()).optional(),
-});
+}).strict();
 export type UpdatePolicyInput = z.infer<typeof updatePolicySchema>;
 
 export const policyPreviewSchema = z.object({
@@ -58,10 +59,9 @@ export const policyPreviewSchema = z.object({
   templateId: z.coerce.number().int().positive().optional(),
   toggleOverrides: toggleOverridesSchema,
   country: z.string().trim().max(10).optional(),
-  currency: z.string().trim().length(3).optional(),
   payDay: z.coerce.number().int().min(1).max(31).optional(),
   startMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional(),
-});
+}).strict();
 export type PolicyPreviewInput = z.infer<typeof policyPreviewSchema>;
 
 const calendarSchema = z.object({
@@ -93,7 +93,7 @@ export const activatePolicySchema = z.object({
   calendar: calendarSchema.optional(),
   statutory: statutorySchema.optional(),
   reason: z.string().trim().max(500).optional(),
-});
+}).strict();
 export type ActivatePolicyInput = z.infer<typeof activatePolicySchema>;
 
 export const createPolicyVersionSchema = z.object({
@@ -101,16 +101,16 @@ export const createPolicyVersionSchema = z.object({
   config: z.record(z.string(), z.unknown()).optional(),
   effectiveFrom: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, "effectiveFrom must be YYYY-MM-DD"),
   reason: z.string().trim().min(1).max(500),
-});
+}).strict();
 export type CreatePolicyVersionInput = z.infer<typeof createPolicyVersionSchema>;
 
 export const listComponentsSchema = z.object({
-  type: z.string().trim().optional(),
+  type: z.enum(salaryComponentTypeEnum.enumValues).optional(),
   active: queryBoolean.optional(),
   search: z.string().trim().max(200).optional(),
-  page: pageNumberField,
-  pageSize: pageSizeField(50, 100),
-});
+  cursor: z.string().trim().min(1).max(2048).optional(),
+  limit: pageSizeField(50, 100),
+}).strict();
 export type ListComponentsInput = z.infer<typeof listComponentsSchema>;
 
 export const createComponentSchema = z.object({
@@ -122,7 +122,7 @@ export const createComponentSchema = z.object({
     .max(30)
     .regex(/^[A-Z0-9_]+$/, "Code must be uppercase letters, digits, or underscores"),
   name: z.string().trim().min(1).max(100),
-  type: z.enum(["EARNING", "DEDUCTION", "EMPLOYER_CONTRIBUTION", "REIMBURSEMENT", "TAX", "ADJUSTMENT"]),
+  type: z.enum(salaryComponentTypeEnum.enumValues),
   calcMethod: z.enum(["FIXED", "PERCENT_OF_BASIC", "PERCENT_OF_GROSS", "FORMULA", "ATTENDANCE_BASED", "TIMESHEET_BASED", "MANUAL"]),
   amount: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
   percent: z.string().regex(/^\d+(\.\d{1,4})?$/).optional(),
@@ -133,13 +133,13 @@ export const createComponentSchema = z.object({
   isStatutory: z.boolean().default(false),
   statutoryKey: z.string().trim().max(50).optional(),
   sortOrder: z.coerce.number().int().min(0).default(0),
-});
+}).strict();
 export type CreateComponentInput = z.infer<typeof createComponentSchema>;
 
-export const updateComponentSchema = createComponentSchema.omit({ code: true }).partial();
+export const updateComponentSchema = createComponentSchema.omit({ code: true }).partial().strict();
 export type UpdateComponentInput = z.infer<typeof updateComponentSchema>;
 
 export const toggleImpactSchema = z.object({
   toggle: z.enum(PAYROLL_TOGGLE_KEYS),
-});
+}).strict();
 export type ToggleImpactInput = z.infer<typeof toggleImpactSchema>;

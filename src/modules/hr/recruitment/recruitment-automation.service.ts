@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, max, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, max, sql } from "drizzle-orm";
 
 const PIPELINE_AUTOMATION_CAP = 100;
 const EMAIL_SEQUENCE_CAP = 100;
@@ -100,7 +100,7 @@ export class RecruitmentAutomationService {
     const [updated] = await this.db
       .update(candidateMessages)
       .set({ readAt: new Date() })
-      .where(eq(candidateMessages.id, messageId))
+      .where(and(eq(candidateMessages.id, messageId), eq(candidateMessages.orgId, orgId)))
       .returning();
     return updated;
   }
@@ -221,6 +221,7 @@ export class RecruitmentAutomationService {
       if (input.steps.length > 0) {
         await tx.insert(emailSequenceSteps).values(
           input.steps.map((step) => ({
+            orgId,
             sequenceId: sequence.id,
             stepOrder: step.stepOrder,
             delayDays: step.delayDays,
@@ -267,10 +268,13 @@ export class RecruitmentAutomationService {
       if (!updated) throw new NotFoundException("Sequence not found");
 
       if (input.steps !== undefined) {
-        await tx.delete(emailSequenceSteps).where(eq(emailSequenceSteps.sequenceId, sequenceId));
+        await tx
+          .delete(emailSequenceSteps)
+          .where(and(eq(emailSequenceSteps.orgId, orgId), eq(emailSequenceSteps.sequenceId, sequenceId)));
         if (input.steps.length > 0) {
           await tx.insert(emailSequenceSteps).values(
             input.steps.map((step) => ({
+              orgId,
               sequenceId,
               stepOrder: step.stepOrder,
               delayDays: step.delayDays,
@@ -312,7 +316,21 @@ export class RecruitmentAutomationService {
 
     const nextSendAt = firstStep ? new Date(Date.now() + firstStep.delayDays * 86_400_000) : null;
 
-    const rows = input.candidateIds.map((candidateId) => ({
+    // `candidate_id` is a foreign key, so an unknown id used to raise an FK
+    // violation while another organisation's real id succeeded — one request per
+    // id enumerated the global candidate table. The whole request fails unless
+    // every candidate is this organisation's, and a miss is 404 rather than 403.
+    const requestedIds = [...new Set(input.candidateIds)];
+    const owned = await this.db
+      .select({ id: candidates.id })
+      .from(candidates)
+      .where(and(eq(candidates.orgId, orgId), inArray(candidates.id, requestedIds)))
+      .limit(requestedIds.length);
+    if (owned.length !== requestedIds.length)
+      throw new NotFoundException("One or more candidate IDs not found in this organization");
+
+    const rows = requestedIds.map((candidateId) => ({
+      orgId,
       sequenceId,
       candidateId,
       currentStep: 0,
@@ -320,7 +338,11 @@ export class RecruitmentAutomationService {
       nextSendAt,
     }));
 
-    await this.db.insert(emailSequenceEnrollments).values(rows).onConflictDoNothing();
-    return { enrolled: rows.length };
+    const inserted = await this.db
+      .insert(emailSequenceEnrollments)
+      .values(rows)
+      .onConflictDoNothing()
+      .returning({ id: emailSequenceEnrollments.id });
+    return { enrolled: inserted.length };
   }
 }

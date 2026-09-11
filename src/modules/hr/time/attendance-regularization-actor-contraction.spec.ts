@@ -3,8 +3,8 @@
  *
  * Verifies:
  * - create() writes userMembershipId from the acting principal
- * - list() applies dual-read predicate when the actor's membershipId is
- *   available and the query targets their own userId
+ * - list() applies the canonical membership predicate when the query targets
+ *   the acting member and fails closed for account-only principals
  */
 
 import { AttendanceRegularizationService } from "./attendance-regularization.service";
@@ -38,8 +38,8 @@ describe("AttendanceRegularizationService – actor contraction", () => {
 
   beforeEach(() => jest.clearAllMocks());
 
-  describe("list() dual-read predicate", () => {
-    it("passes dual-read predicate when membershipId is set and targetUserId matches actor", async () => {
+  describe("list() canonical actor predicate", () => {
+    it("uses membership identity when targetUserId matches actor", async () => {
       mockAccess.resolveUserPermissions.mockResolvedValue(new Map([["hr:attendance:manage", "own"]]));
 
       const findMany = jest.fn().mockResolvedValue([]);
@@ -63,7 +63,7 @@ describe("AttendanceRegularizationService – actor contraction", () => {
       expect(findMany).toHaveBeenCalled();
     });
 
-    it("uses userId-only predicate when membershipId is null", async () => {
+    it("fails closed when membershipId is null", async () => {
       mockAccess.resolveUserPermissions.mockResolvedValue(new Map([["hr:attendance:manage", "own"]]));
 
       const findMany = jest.fn().mockResolvedValue([]);
@@ -81,10 +81,10 @@ describe("AttendanceRegularizationService – actor contraction", () => {
         mockAudit as never,
       );
 
-      const result = await service.list(makeUser(null), {});
-
-      expect(result.data).toHaveLength(0);
-      expect(findMany).toHaveBeenCalled();
+      await expect(service.list(makeUser(null), {})).rejects.toThrow(
+        "Organization membership required.",
+      );
+      expect(findMany).not.toHaveBeenCalled();
     });
   });
 });

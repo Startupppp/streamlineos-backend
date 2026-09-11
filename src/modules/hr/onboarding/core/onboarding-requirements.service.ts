@@ -47,7 +47,8 @@ export class OnboardingRequirementsService {
     const existing = await this.db
       .select({ slug: documentTypes.slug })
       .from(documentTypes)
-      .where(eq(documentTypes.orgId, orgId));
+      .where(eq(documentTypes.orgId, orgId))
+      .limit(1_000);
     const existingSlugs = new Set(existing.map((r) => r.slug));
 
     const inserts: {

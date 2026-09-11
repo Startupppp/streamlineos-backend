@@ -1,360 +1,211 @@
 import { LlmService } from "../providers/llm.service";
-import { redactSensitiveData } from "../redaction.util";
-import {
-  computeTokenCharge,
-  milliToCredits,
-} from "../billing/ai-model-pricing.constants";
-import { getReserveEstimateMilli as getCatalogEstimateMilli } from "../billing/ai-cost-catalog";
+import { AiCallMetrics } from "../telemetry/ai-call-metrics";
 import { AiGatewayCreditHelper } from "./ai-gateway-credit.helper";
+import {
+  boundedMaxTokens,
+  preflightCall,
+  settleFailedCall,
+  settleSuccessfulCall,
+  withUsageMeta,
+} from "./ai-gateway-runner-call";
 import type {
   AiInvokeResult,
   AiInvokeWithUsageResult,
-  AiUsageMeta,
   InvokeStructuredOpts,
   InvokeStructuredWithImageOpts,
   InvokeTextOpts,
 } from "./ai-gateway.types";
 
+/**
+ * Drives one provider call per public method. Everything the three runners share —
+ * redaction, the context ceiling, cancellation, the credit reservation and the
+ * measured-token settlement — lives in `ai-gateway-runner-call`; what stays here is
+ * only the provider method each shape invokes and how its payload becomes `data`.
+ */
 export class AiGatewayRunnerHelper {
   constructor(
     private readonly llm: LlmService,
     private readonly credit: AiGatewayCreditHelper,
   ) {}
 
+  /**
+   * Defaulted rather than required so the call sites that pass only a correlation
+   * id still compile — but never absent, so a path can lose its metrics only by
+   * deleting the default, not by forgetting an argument.
+   */
+  private metricsFor(
+    opts: { feature: string; tier?: string; actor: { orgId: string } },
+    metrics: AiCallMetrics | undefined,
+  ): AiCallMetrics {
+    return (
+      metrics ??
+      AiCallMetrics.begin({
+        feature: opts.feature,
+        ...(opts.tier !== undefined ? { tier: opts.tier } : {}),
+        orgId: opts.actor.orgId,
+      })
+    );
+  }
+
   async runStructured<T>(
     opts: InvokeStructuredOpts<T>,
     correlationId: string,
+    metrics?: AiCallMetrics,
   ): Promise<AiInvokeResult<T>> {
-    const { actor, feature, tier, maxTokens, charge, redact = true } = opts;
-    const prompt = redact
-      ? {
-          system: redactSensitiveData(opts.prompt.system),
-          user: redactSensitiveData(opts.prompt.user),
-        }
-      : opts.prompt;
+    const call = this.metricsFor(opts, metrics);
+    const gate = await preflightCall(this.credit, opts, correlationId, call);
+    if (gate.kind === "reject") return gate.failure;
 
-    const reserveMilli = charge ? getCatalogEstimateMilli(feature) : 0;
-    let reservationId = 0;
-
-    if (charge) {
-      const reserveResult = await this.credit.reserveCredits(
-        reserveMilli,
-        actor,
-        feature,
-        correlationId,
-      );
-      if (!reserveResult.reserved)
-        return {
-          ok: false,
-          kind: reserveResult.kind,
-          message: reserveResult.message,
-          correlationId: reserveResult.correlationId,
-        };
-      reservationId = reserveResult.reservationId;
-    }
-
-    const start = Date.now();
+    const startedAt = Date.now();
 
     try {
-      const result = await this.llm.invokeStructuredWithUsage({
-        model: tier ?? "fast",
-        schema: opts.schema,
-        schemaName: feature.replace(/[^a-z0-9]/gi, "_"),
-        system: prompt.system,
-        user: prompt.user,
-        ...(maxTokens !== undefined ? { maxTokens } : {}),
-      });
-
-      const latencyMs = Date.now() - start;
-      const usage = result.usage;
-
-      const { costUsd, milliCredits } = charge
-        ? computeTokenCharge(
-            result.model,
-            usage.promptTokens ?? 0,
-            usage.completionTokens ?? 0,
-          )
-        : { costUsd: 0, milliCredits: 0 };
-
-      await this.credit.settleAndTrack(
-        reservationId,
-        charge ? { milli: reserveMilli } : undefined,
-        result.model,
-        usage,
-        actor,
-        feature,
-        opts.prompt,
-        correlationId,
-        latencyMs,
-        "ok",
-        milliCredits,
-        costUsd,
+      const result = await call.provider(() =>
+        this.llm.invokeStructuredWithUsage({
+          model: opts.tier ?? "fast",
+          schema: opts.schema,
+          schemaName: opts.feature.replace(/[^a-z0-9]/gi, "_"),
+          system: gate.prompt.system,
+          user: gate.prompt.user,
+          maxTokens: boundedMaxTokens(opts.maxTokens),
+          onRetry: () => call.retried(),
+          ...(gate.signal !== undefined ? { signal: gate.signal } : {}),
+        }),
       );
 
-      return {
-        ok: true,
-        data: result.data,
+      return await settleSuccessfulCall(this.credit, {
+        call,
+        opts,
+        correlationId,
+        reserveMilli: gate.reserveMilli,
+        reservationId: gate.reservationId,
+        startedAt,
         model: result.model,
-        latencyMs,
-        correlationId,
-        usage: {
-          promptTokens: usage.promptTokens,
-          completionTokens: usage.completionTokens,
-          totalTokens: usage.totalTokens,
-        },
-      };
+        usage: result.usage,
+        data: result.data,
+      });
     } catch (error) {
-      const latencyMs = Date.now() - start;
-      return this.credit.handleProviderError(
-        error,
-        reservationId,
-        actor,
-        feature,
-        opts.prompt,
+      return settleFailedCall(this.credit, {
+        call,
+        opts,
         correlationId,
-        latencyMs,
-      );
+        reservationId: gate.reservationId,
+        startedAt,
+        signal: gate.signal,
+        error,
+      });
     }
   }
 
   async runStructuredWithUsage<T>(
     opts: InvokeStructuredOpts<T>,
     correlationId: string,
+    metrics?: AiCallMetrics,
   ): Promise<AiInvokeWithUsageResult<T>> {
-    const result = await this.runStructured(opts, correlationId);
-    if (!result.ok) return result;
-
-    const { costUsd, milliCredits } = computeTokenCharge(
-      result.model,
-      result.usage.promptTokens ?? 0,
-      result.usage.completionTokens ?? 0,
-    );
-
-    const aiUsage: AiUsageMeta = {
-      model: result.model,
-      promptTokens: result.usage.promptTokens ?? 0,
-      completionTokens: result.usage.completionTokens ?? 0,
-      totalTokens: result.usage.totalTokens ?? 0,
-      credits: milliToCredits(milliCredits),
-      costUsd,
-    };
-
-    return { ok: true, data: result.data, aiUsage, correlationId };
+    return withUsageMeta(await this.runStructured(opts, correlationId, metrics));
   }
 
   async runStructuredWithImage<T>(
     opts: InvokeStructuredWithImageOpts<T>,
     correlationId: string,
+    metrics?: AiCallMetrics,
   ): Promise<AiInvokeResult<T>> {
-    const { actor, feature, tier, maxTokens, charge, redact = true } = opts;
-    const prompt = redact
-      ? {
-          system: redactSensitiveData(opts.prompt.system),
-          user: redactSensitiveData(opts.prompt.user),
-        }
-      : opts.prompt;
+    const call = this.metricsFor(opts, metrics);
+    const gate = await preflightCall(this.credit, opts, correlationId, call);
+    if (gate.kind === "reject") return gate.failure;
 
-    const reserveMilli = charge ? getCatalogEstimateMilli(feature) : 0;
-    let reservationId = 0;
-
-    if (charge) {
-      const reserveResult = await this.credit.reserveCredits(
-        reserveMilli,
-        actor,
-        feature,
-        correlationId,
-      );
-      if (!reserveResult.reserved)
-        return {
-          ok: false,
-          kind: reserveResult.kind,
-          message: reserveResult.message,
-          correlationId: reserveResult.correlationId,
-        };
-      reservationId = reserveResult.reservationId;
-    }
-
-    const start = Date.now();
+    const startedAt = Date.now();
 
     try {
-      const result = await this.llm.invokeStructuredWithImageWithUsage({
-        model: tier ?? "fast",
-        schema: opts.schema,
-        schemaName: feature.replace(/[^a-z0-9]/gi, "_"),
-        system: prompt.system,
-        user: prompt.user,
-        images: opts.images,
-        ...(maxTokens !== undefined ? { maxTokens } : {}),
-      });
-
-      const latencyMs = Date.now() - start;
-      const usage = result.usage;
-
-      const { costUsd, milliCredits } = charge
-        ? computeTokenCharge(
-            result.model,
-            usage.promptTokens ?? 0,
-            usage.completionTokens ?? 0,
-          )
-        : { costUsd: 0, milliCredits: 0 };
-
-      await this.credit.settleAndTrack(
-        reservationId,
-        charge ? { milli: reserveMilli } : undefined,
-        result.model,
-        usage,
-        actor,
-        feature,
-        opts.prompt,
-        correlationId,
-        latencyMs,
-        "ok",
-        milliCredits,
-        costUsd,
+      const result = await call.provider(() =>
+        this.llm.invokeStructuredWithImageWithUsage({
+          model: opts.tier ?? "fast",
+          schema: opts.schema,
+          schemaName: opts.feature.replace(/[^a-z0-9]/gi, "_"),
+          system: gate.prompt.system,
+          user: gate.prompt.user,
+          images: opts.images,
+          maxTokens: boundedMaxTokens(opts.maxTokens),
+          onRetry: () => call.retried(),
+          ...(gate.signal !== undefined ? { signal: gate.signal } : {}),
+        }),
       );
 
-      return {
-        ok: true,
-        data: result.data,
+      return await settleSuccessfulCall(this.credit, {
+        call,
+        opts,
+        correlationId,
+        reserveMilli: gate.reserveMilli,
+        reservationId: gate.reservationId,
+        startedAt,
         model: result.model,
-        latencyMs,
-        correlationId,
-        usage: {
-          promptTokens: usage.promptTokens,
-          completionTokens: usage.completionTokens,
-          totalTokens: usage.totalTokens,
-        },
-      };
+        usage: result.usage,
+        data: result.data,
+      });
     } catch (error) {
-      const latencyMs = Date.now() - start;
-      return this.credit.handleProviderError(
-        error,
-        reservationId,
-        actor,
-        feature,
-        opts.prompt,
+      return settleFailedCall(this.credit, {
+        call,
+        opts,
         correlationId,
-        latencyMs,
-      );
+        reservationId: gate.reservationId,
+        startedAt,
+        signal: gate.signal,
+        error,
+      });
     }
   }
 
   async runText(
     opts: InvokeTextOpts,
     correlationId: string,
+    metrics?: AiCallMetrics,
   ): Promise<AiInvokeResult<string>> {
-    const { actor, feature, tier, maxTokens, charge, redact = true } = opts;
-    const prompt = redact
-      ? {
-          system: redactSensitiveData(opts.prompt.system),
-          user: redactSensitiveData(opts.prompt.user),
-        }
-      : opts.prompt;
+    const call = this.metricsFor(opts, metrics);
+    const gate = await preflightCall(this.credit, opts, correlationId, call);
+    if (gate.kind === "reject") return gate.failure;
 
-    const reserveMilli = charge ? getCatalogEstimateMilli(feature) : 0;
-    let reservationId = 0;
-
-    if (charge) {
-      const reserveResult = await this.credit.reserveCredits(
-        reserveMilli,
-        actor,
-        feature,
-        correlationId,
-      );
-      if (!reserveResult.reserved)
-        return {
-          ok: false,
-          kind: reserveResult.kind,
-          message: reserveResult.message,
-          correlationId: reserveResult.correlationId,
-        };
-      reservationId = reserveResult.reservationId;
-    }
-
-    const start = Date.now();
+    const startedAt = Date.now();
 
     try {
-      const result = await this.llm.invokeTextWithUsage({
-        model: tier ?? "fast",
-        system: prompt.system,
-        user: prompt.user,
-        ...(maxTokens !== undefined ? { maxTokens } : {}),
-      });
-
-      const latencyMs = Date.now() - start;
-      const usage = result.usage;
-
-      const { costUsd, milliCredits } = charge
-        ? computeTokenCharge(
-            result.model,
-            usage.promptTokens ?? 0,
-            usage.completionTokens ?? 0,
-          )
-        : { costUsd: 0, milliCredits: 0 };
-
-      await this.credit.settleAndTrack(
-        reservationId,
-        charge ? { milli: reserveMilli } : undefined,
-        result.model,
-        usage,
-        actor,
-        feature,
-        opts.prompt,
-        correlationId,
-        latencyMs,
-        "ok",
-        milliCredits,
-        costUsd,
+      const result = await call.provider(() =>
+        this.llm.invokeTextWithUsage({
+          model: opts.tier ?? "fast",
+          system: gate.prompt.system,
+          user: gate.prompt.user,
+          maxTokens: boundedMaxTokens(opts.maxTokens),
+          onRetry: () => call.retried(),
+          ...(gate.signal !== undefined ? { signal: gate.signal } : {}),
+        }),
       );
 
-      return {
-        ok: true,
-        data: result.text,
+      return await settleSuccessfulCall(this.credit, {
+        call,
+        opts,
+        correlationId,
+        reserveMilli: gate.reserveMilli,
+        reservationId: gate.reservationId,
+        startedAt,
         model: result.model,
-        latencyMs,
-        correlationId,
-        usage: {
-          promptTokens: usage.promptTokens,
-          completionTokens: usage.completionTokens,
-          totalTokens: usage.totalTokens,
-        },
-      };
+        usage: result.usage,
+        data: result.text,
+      });
     } catch (error) {
-      const latencyMs = Date.now() - start;
-      return this.credit.handleProviderError(
-        error,
-        reservationId,
-        actor,
-        feature,
-        opts.prompt,
+      return settleFailedCall(this.credit, {
+        call,
+        opts,
         correlationId,
-        latencyMs,
-      );
+        reservationId: gate.reservationId,
+        startedAt,
+        signal: gate.signal,
+        error,
+      });
     }
   }
 
   async runTextWithUsage(
     opts: InvokeTextOpts,
     correlationId: string,
+    metrics?: AiCallMetrics,
   ): Promise<AiInvokeWithUsageResult<string>> {
-    const result = await this.runText(opts, correlationId);
-    if (!result.ok) return result;
-
-    const { costUsd, milliCredits } = computeTokenCharge(
-      result.model,
-      result.usage.promptTokens ?? 0,
-      result.usage.completionTokens ?? 0,
-    );
-
-    const aiUsage: AiUsageMeta = {
-      model: result.model,
-      promptTokens: result.usage.promptTokens ?? 0,
-      completionTokens: result.usage.completionTokens ?? 0,
-      totalTokens: result.usage.totalTokens ?? 0,
-      credits: milliToCredits(milliCredits),
-      costUsd,
-    };
-
-    return { ok: true, data: result.data, aiUsage, correlationId };
+    return withUsageMeta(await this.runText(opts, correlationId, metrics));
   }
 }

@@ -18,6 +18,7 @@ describe("HRMS lifecycle concurrency review bundle", () => {
   const verification = readBundleFile("0002_hrms_lifecycle_concurrency.verify.sql");
   const attendanceSchema = readSchemaFile("src/db/schema/hr/attendance.ts");
   const lifecycleSchema = readSchemaFile("src/db/schema/hr/offboarding.ts");
+  const onboardingSchema = readSchemaFile("src/db/schema/hr/onboarding.ts");
   const leaveSchema = readSchemaFile("src/db/schema/hr/leaves.ts");
 
   it("backfills positive lifecycle versions before enforcing not-null", () => {
@@ -65,6 +66,10 @@ describe("HRMS lifecycle concurrency review bundle", () => {
       "chk_onboarding_tasks_status",
       "uniq_onboarding_documents_org_user_type_version",
       "chk_onboarding_documents_version_positive",
+    ]) {
+      expect(onboardingSchema).toContain(contractName);
+    }
+    for (const contractName of [
       "chk_resignations_row_version",
       "chk_terminations_row_version",
     ]) {

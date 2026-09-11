@@ -24,6 +24,7 @@ export class HrOffersService {
   listTemplates(orgId: string) {
     return this.db.query.offerLetterTemplates.findMany({
       where: eq(offerLetterTemplates.orgId, orgId),
+      limit: 100,
       with: { creator: { columns: { id: true, name: true } } },
       orderBy: [desc(offerLetterTemplates.createdAt)],
     });

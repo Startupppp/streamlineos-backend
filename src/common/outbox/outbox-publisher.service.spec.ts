@@ -1,5 +1,6 @@
 import { Logger } from "@nestjs/common";
 import { OutboxPublisherService } from "./outbox-publisher.service";
+import { OutboxReportService } from "./outbox-report.service";
 import { OutboxConsumerRegistry, type OutboxEventRow } from "./outbox-consumer.registry";
 import type { TenantTx } from "../tenant";
 
@@ -81,7 +82,7 @@ function makeService(
 ): OutboxPublisherService {
   jest.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
   jest.spyOn(Logger.prototype, "error").mockImplementation(() => undefined);
-  return new OutboxPublisherService(db as never, config as never, registry);
+  return new OutboxPublisherService(db as never, config as never, registry, new OutboxReportService(db as never));
 }
 
 function forEachOrgWithRow(row: OutboxEventRow) {
@@ -126,7 +127,15 @@ describe("OutboxPublisherService.flush — claimBatch uses forEachOrg", () => {
 
     await service.flush();
 
-    expect(mockForEachOrg).toHaveBeenCalledWith(db, "outbox-events-flush", expect.any(Function));
+    expect(mockForEachOrg).toHaveBeenCalledWith(
+      db,
+      "outbox-events-flush",
+      expect.any(Function),
+      "write",
+      // The fairness options are part of the claim's contract, not decoration:
+      // without both, one tenant's backlog owns every tick's budget forever.
+      { startAfterOrgId: null, stopWhen: expect.any(Function) },
+    );
   });
 
   it("accumulates claimed rows from multiple orgs", async () => {

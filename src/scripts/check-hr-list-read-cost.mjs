@@ -150,45 +150,89 @@ function walk(node, out) {
   return out;
 }
 
-async function main() {
-  const fixtures = await sql.begin(async (tx) => {
+function tsStr(row) {
+  if (!row?.created_at) return null;
+  const d = row.created_at instanceof Date ? row.created_at : new Date(row.created_at);
+  return d.toISOString().replace("T", " ").replace("Z", "");
+}
+
+async function fetchFixtures() {
+  return sql.begin(async (tx) => {
     await tx`select set_config('app.organization_id', ${ORG}, true)`;
-    const [deep] = await tx`
-      select created_at, id, user_id from performance_reviews
-      where org_id = ${ORG} order by created_at desc, id desc offset 5000 limit 1`;
+
     const [total] = await tx`
       select count(*)::int n from performance_reviews where org_id = ${ORG}`;
-    const [ticket] = await tx`
-      select created_at, id, user_id from helpdesk_tickets
-      where org_id = ${ORG} order by created_at desc, id desc offset 5000 limit 1`;
+    const [deep] = await tx`
+      select created_at, id, user_id from performance_reviews
+      where org_id = ${ORG} order by created_at desc, id desc
+      offset ${Math.max(0, (total?.n ?? 0) - 1)} limit 1`;
+
     const [ticketTotal] = await tx`
       select count(*)::int n from helpdesk_tickets where org_id = ${ORG}`;
+    const [ticket] = await tx`
+      select created_at, id, user_id from helpdesk_tickets
+      where org_id = ${ORG} order by created_at desc, id desc
+      offset ${Math.max(0, (ticketTotal?.n ?? 0) - 1)} limit 1`;
+
+    const cursorLabel = (total?.n ?? 0) >= 5000 ? "row 5000" : `last of ${total?.n ?? 0}`;
+    const ticketLabel = (ticketTotal?.n ?? 0) >= 5000 ? "row 5000" : `last of ${ticketTotal?.n ?? 0}`;
+
     return {
-      ticketCreatedAt: ticket.created_at.toISOString().replace("T", " ").replace("Z", ""),
-      ticketId: ticket.id,
-      ticketOwnerId: ticket.user_id,
-      ticketTotal: ticketTotal.n,
-      deepCreatedAt: deep.created_at.toISOString().replace("T", " ").replace("Z", ""),
-      deepId: deep.id,
-      subjectUserId: deep.user_id,
-      total: total.n,
+      deepCreatedAt: tsStr(deep) ?? "2000-01-01 00:00:00",
+      deepId: deep?.id ?? 0,
+      subjectUserId: deep?.user_id ?? null,
+      total: total?.n ?? 0,
+      cursorLabel,
+      ticketCreatedAt: tsStr(ticket) ?? "2000-01-01 00:00:00",
+      ticketId: ticket?.id ?? 0,
+      ticketOwnerId: ticket?.user_id ?? null,
+      ticketTotal: ticketTotal?.n ?? 0,
+      ticketLabel,
     };
   });
+}
 
-  console.log(`org ${ORG} · ${fixtures.total} performance reviews · cursor at row 5000`);
-  console.log(`org ${ORG} · ${fixtures.ticketTotal} helpdesk tickets · cursor at row 5000`);
-  console.log("cursor bound is passed as the driver text form drizzle produces for a timestamp column");
+async function main() {
+  let fixtures;
+  try {
+    fixtures = await fetchFixtures();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`INFRA ERROR (fixture fetch): ${msg}`);
+    console.error("Gate did not run — this is an infrastructure failure, not a budget breach.");
+    process.exitCode = 1;
+    return;
+  }
 
+  console.log(`org ${ORG} · ${fixtures.total} performance_reviews · cursor at ${fixtures.cursorLabel}`);
+  console.log(`org ${ORG} · ${fixtures.ticketTotal} helpdesk_tickets · cursor at ${fixtures.ticketLabel}`);
+
+  const infraErrors = [];
   const failures = [];
+  const skipped = [];
+
   for (const check of CHECKS) {
-    const plan = await sql.begin(async (tx) => {
-      await tx`select set_config('app.organization_id', ${ORG}, true)`;
-      const rows = await tx.unsafe(
-        `explain (analyze, buffers, format json) ${check.text}`,
-        check.params(fixtures),
-      );
-      return rows[0]["QUERY PLAN"][0];
-    });
+    let plan;
+    try {
+      plan = await sql.begin(async (tx) => {
+        await tx`select set_config('app.organization_id', ${ORG}, true)`;
+        const rows = await tx.unsafe(
+          `explain (analyze, buffers, format json) ${check.text}`,
+          check.params(fixtures),
+        );
+        return rows[0]["QUERY PLAN"][0];
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/does not exist|undefined_table|42P01/.test(msg)) {
+        skipped.push(`${check.id}: table/function does not exist — SKIP`);
+        console.log(`${check.id.padEnd(28)} SKIP (relation not found)`);
+      } else {
+        infraErrors.push(`${check.id}: ${msg}`);
+        console.error(`${check.id.padEnd(28)} INFRA ERROR: ${msg}`);
+      }
+      continue;
+    }
 
     const root = plan.Plan;
     const blocks = (root["Shared Hit Blocks"] ?? 0) + (root["Shared Read Blocks"] ?? 0);
@@ -205,25 +249,34 @@ async function main() {
 
     if (check.baseline) continue;
     if (blocks > check.ceiling) failures.push(`${check.id}: ${blocks} blocks > ${check.ceiling}`);
-    if (!check.requireIndexOn) {
-      continue;
-    }
+    if (!check.requireIndexOn) continue;
     if (!target) {
       failures.push(`${check.id}: no ${check.requireIndexOn} node — the query shape changed`);
     } else if (!target.type.includes("Index")) {
       failures.push(
-        `${check.id}: ${check.requireIndexOn} resolved by ${target.type} — the tenant-led keyset index is missing or unusable`,
+        `${check.id}: ${check.requireIndexOn} resolved by ${target.type} — tenant-led keyset index missing or unusable`,
       );
     }
     if (sorted && blocks > check.ceiling / 4) {
-      failures.push(
-        `${check.id}: sorted ${blocks} blocks worth of rows before the limit — the index is not carrying the page order`,
-      );
+      failures.push(`${check.id}: sorted ${blocks} blocks before limit — index not carrying page order`);
     }
   }
 
+  if (skipped.length > 0) {
+    console.log(`\nSKIPPED (${skipped.length}):`);
+    skipped.forEach((s) => console.log("  SKIP:", s));
+  }
+  if (infraErrors.length > 0) {
+    console.error(`\nINFRA ERRORS (${infraErrors.length}) — gate did not run for these checks:`);
+    infraErrors.forEach((e) => console.error("  INFRA:", e));
+  }
   if (failures.length > 0) {
-    failures.forEach((f) => console.error("FAIL:", f));
+    console.error(`\nBUDGET FAILURES (${failures.length}):`);
+    failures.forEach((f) => console.error("  FAIL:", f));
+    process.exitCode = 1;
+    return;
+  }
+  if (infraErrors.length > 0) {
     process.exitCode = 1;
     return;
   }

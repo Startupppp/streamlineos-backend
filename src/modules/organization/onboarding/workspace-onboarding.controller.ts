@@ -5,17 +5,24 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { WorkspaceOnboardingService } from "./workspace-onboarding.service";
-import { generateSchema, type GenerateInput } from "./dto/workspace-onboarding.schemas";
+import {
+  generateSchema,
+  generateWorkspaceResponseSchema,
+  type GenerateInput,
+} from "./dto/workspace-onboarding.schemas";
 
 @Controller("workspace-onboarding")
 @UseGuards(JwtAuthGuard)
 export class WorkspaceOnboardingController {
   constructor(private readonly service: WorkspaceOnboardingService) {}
 
+  @ResponseSchema(generateWorkspaceResponseSchema)
   @Post("generate")
   @HttpCode(200)
+  @Idempotent("organization.workspaceOnboarding.generate")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:organization:manage")
   @Validate({ body: generateSchema })
@@ -24,14 +31,5 @@ export class WorkspaceOnboardingController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.generateWorkspace(u.orgId, body.industry, body.enabledModules);
-  }
-
-  @Post("complete")
-  @BodylessAction()
-  @HttpCode(200)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("settings:organization:manage")
-  completeOnboarding(@CurrentUser() u: CurrentUserContext) {
-    return this.service.completeOnboarding(u.orgId);
   }
 }

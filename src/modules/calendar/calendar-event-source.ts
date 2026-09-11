@@ -1,14 +1,13 @@
-import type { DataScope } from "../access/access.types";
-
 export interface CalendarSourceContext {
   orgId: string;
   userId: string;
   start: Date;
   end: Date;
-  scope: DataScope;
 }
 
-export interface CalendarEventProjection<TMeta extends Record<string, unknown> = Record<string, unknown>> {
+export interface CalendarEventProjection<
+  TMeta extends Record<string, unknown> = Record<string, unknown>,
+> {
   id: string;
   title: string;
   start: Date;

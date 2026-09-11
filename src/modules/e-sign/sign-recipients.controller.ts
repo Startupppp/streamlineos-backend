@@ -8,20 +8,25 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { actingMembershipId } from "../../common/auth/principal";
 import { Validate } from "../../common/validation/validate.decorator";
+import { AccessService } from "../access/access.service";
 import { SignRecipientsService } from "./sign-recipients.service";
+import { resolveEnvelopeViewScope } from "./sign-envelope-scope";
 import {
   createRecipientSchema,
   updateRecipientSchema,
   type CreateRecipientInput,
   type UpdateRecipientInput,
 } from "./dto/e-sign.schemas";
+import { resolveClientIp } from "../../common/http/client-ip";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  recipientMutationResponseSchema,
+  listRecipientsResponseSchema,
+} from "./dto/e-sign-response.schemas";
+import { successSchema } from "../../common/openapi/response-envelopes";
 
-function clientIp(req: Request): string | undefined {
-  const forwarded = req.headers["x-forwarded-for"];
-  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  return (raw?.split(",")[0]?.trim() || req.ip)?.slice(0, 100);
-}
 
 const envelopeIdParams = z.object({ envelopeId: z.coerce.number().int().positive() }).strict();
 const recipientIdParams = z.object({ recipientId: z.coerce.number().int().positive() }).strict();
@@ -30,11 +35,15 @@ const recipientIdParams = z.object({ recipientId: z.coerce.number().int().positi
 @Controller("sign")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class SignRecipientsController {
-  constructor(private readonly recipients: SignRecipientsService) {}
+  constructor(
+    private readonly recipients: SignRecipientsService,
+    private readonly access: AccessService,
+  ) {}
 
   @Post("envelopes/:envelopeId/recipients")
   @HttpCode(201)
   @RequirePermission("sign:envelope:create")
+  @ResponseSchema(recipientMutationResponseSchema)
   @Validate({ params: envelopeIdParams, body: createRecipientSchema })
   add(
     @Param("envelopeId", ParseIntPipe) envelopeId: number,
@@ -42,18 +51,21 @@ export class SignRecipientsController {
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
-    return this.recipients.add(u.orgId, envelopeId, body, { orgId: u.orgId, userId: u.userId, ipAddress: clientIp(req) });
+    return this.recipients.add(u.orgId, envelopeId, body, { orgId: u.orgId, userId: u.userId, ipAddress: resolveClientIp(req) });
   }
 
   @Get("envelopes/:envelopeId/recipients")
   @RequirePermission("sign:envelope:view")
+  @ResponseSchema(listRecipientsResponseSchema)
   @Validate({ params: envelopeIdParams })
-  list(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.recipients.listForEnvelope(u.orgId, envelopeId);
+  async list(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
+    const scope = await resolveEnvelopeViewScope(this.access, u);
+    return this.recipients.listForEnvelope(scope, actingMembershipId(u.principal), envelopeId);
   }
 
   @Patch("recipients/:recipientId")
   @RequirePermission("sign:envelope:create")
+  @ResponseSchema(recipientMutationResponseSchema)
   @Validate({ params: recipientIdParams, body: updateRecipientSchema })
   update(
     @Param("recipientId", ParseIntPipe) recipientId: number,
@@ -61,14 +73,15 @@ export class SignRecipientsController {
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
-    return this.recipients.update(u.orgId, recipientId, body, { orgId: u.orgId, userId: u.userId, ipAddress: clientIp(req) });
+    return this.recipients.update(u.orgId, recipientId, body, { orgId: u.orgId, userId: u.userId, ipAddress: resolveClientIp(req) });
   }
 
   @Delete("recipients/:recipientId")
   @RequirePermission("sign:envelope:create")
+  @ResponseSchema(successSchema)
   @Validate({ params: recipientIdParams })
   async remove(@Param("recipientId", ParseIntPipe) recipientId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
-    await this.recipients.remove(u.orgId, recipientId, { orgId: u.orgId, userId: u.userId, ipAddress: clientIp(req) });
+    await this.recipients.remove(u.orgId, recipientId, { orgId: u.orgId, userId: u.userId, ipAddress: resolveClientIp(req) });
     return { success: true };
   }
 }

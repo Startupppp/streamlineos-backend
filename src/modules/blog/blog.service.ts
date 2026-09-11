@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, desc, eq, gt, lt, ne, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, like, lt, ne, or, sql } from "drizzle-orm";
 import { blogCategories, blogPosts } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -9,6 +9,7 @@ import { calcReadingTime, slugify } from "./blog-utils";
 import {
   createCategory,
   deleteCategory,
+  listAdminCategories,
   listCategories,
   updateCategory,
   type BlogCategoryDeps,
@@ -19,6 +20,7 @@ import type {
   FeedInput,
   PostCreateInput,
   PostUpdateInput,
+  AdminPostListQuery,
 } from "./dto/blog.schemas";
 
 const POST_WITH = { category: true, author: true } as const;
@@ -32,16 +34,32 @@ export class BlogService {
     private readonly cache: CacheService,
   ) {}
 
-  listAdminPosts() {
+  listAdminPosts(query: AdminPostListQuery) {
+    const limit = Math.min(query.limit, BLOG_ADMIN_LIST_CAP);
+    const conditions = [];
+    if (query.status) conditions.push(eq(blogPosts.status, query.status));
+    if (query.search) conditions.push(like(sql`lower(${blogPosts.title})`, `%${query.search.toLowerCase()}%`));
+    const where = conditions.length ? and(...conditions) : undefined;
+
+    // Every filter is in the key: a filtered result under an unfiltered key serves one caller's rows to the next.
+    const key = `list:p${query.page}:l${limit}:s${query.status ?? "all"}:q${query.search ?? ""}`;
     return this.cache.cachedVersioned(
       ADMIN_POSTS_CACHE_NAMESPACE,
-      "list",
-      () =>
-        this.db.query.blogPosts.findMany({
-          with: POST_WITH,
-          orderBy: [desc(blogPosts.updatedAt)],
-          limit: BLOG_ADMIN_LIST_CAP,
-        }),
+      key,
+      async () => {
+        const [items, totalRows] = await Promise.all([
+          this.db.query.blogPosts.findMany({
+            where,
+            with: POST_WITH,
+            orderBy: [desc(blogPosts.updatedAt)],
+            limit,
+            offset: (query.page - 1) * limit,
+          }),
+          this.db.select({ value: count() }).from(blogPosts).where(where),
+        ]);
+        const total = totalRows[0]?.value ?? 0;
+        return { items, total, page: query.page, totalPages: Math.max(1, Math.ceil(total / limit)) };
+      },
       CACHE_TTL.MEDIUM,
     );
   }
@@ -144,6 +162,17 @@ export class BlogService {
 
   getCategories() {
     return listCategories(this.categoryDeps);
+  }
+
+  /**
+   * The admin projection, deliberately not `getCategories()`. The public list
+   * counts PUBLISHED posts only, so a category holding nothing but drafts reads
+   * as empty to the person deciding whether to delete it; here every post that
+   * references the category counts, and `createdAt` is carried through.
+   * @see lib/blog-categories.ts
+   */
+  getAdminCategories() {
+    return listAdminCategories(this.categoryDeps);
   }
 
   createCategory(input: CategoryCreateInput) {
@@ -250,24 +279,19 @@ export class BlogService {
     return { posts, nextCursor, hasMore };
   }
 
-  private async ensureUniqueSlug(
-    base: string,
-    excludeId?: string,
-  ): Promise<string> {
+  private async ensureUniqueSlug(base: string, excludeId?: string): Promise<string> {
     const root = slugify(base) || "post";
-    let candidate = root;
+    const slugCondition = or(eq(blogPosts.slug, root), like(blogPosts.slug, `${root}-%`));
+    const rows = await this.db.query.blogPosts.findMany({
+      where: excludeId ? and(ne(blogPosts.id, excludeId), slugCondition) : slugCondition,
+      columns: { slug: true },
+      limit: 200,
+    });
+    const taken = new Set(rows.map((r) => r.slug));
+    if (!taken.has(root)) return root;
     let n = 2;
-
-    for (;;) {
-      const clash = await this.db.query.blogPosts.findFirst({
-        where: excludeId
-          ? and(eq(blogPosts.slug, candidate), ne(blogPosts.id, excludeId))
-          : eq(blogPosts.slug, candidate),
-        columns: { id: true },
-      });
-      if (!clash) return candidate;
-      candidate = `${root}-${n++}`;
-    }
+    while (taken.has(`${root}-${n}`)) n++;
+    return `${root}-${n}`;
   }
 }
 

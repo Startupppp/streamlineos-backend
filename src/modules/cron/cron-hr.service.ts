@@ -1,7 +1,13 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, gte, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import { addDays, format } from "date-fns";
-import { certifications, documents, onboardingTasks, users } from "../../db/schema";
+import {
+  certifications,
+  documents,
+  onboardingTasks,
+  organizationMembers,
+  users,
+} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AutomationService } from "../automation/automation.service";
@@ -62,6 +68,7 @@ export class CronHrService {
         .where(inArray(users.id, userIds));
       const nameMap = new Map(employeeRows.map((u) => [u.id, u.name ?? ""]));
 
+      const remindedCertIds: number[] = [];
       for (const cert of expiring) {
         const expiryDateStr = cert.expiryDate ?? "";
         const daysUntilExpiry = expiryDateStr
@@ -78,13 +85,20 @@ export class CronHrService {
           daysUntilExpiry,
         });
 
+        remindedCertIds.push(cert.id);
+        fired++;
+      }
+
+      if (remindedCertIds.length > 0)
         await tx
           .update(certifications)
           .set({ reminderSent: true })
-          .where(eq(certifications.id, cert.id));
-
-        fired++;
-      }
+          .where(
+            and(
+              eq(certifications.orgId, orgId),
+              inArray(certifications.id, remindedCertIds),
+            ),
+          );
     });
 
     logger.info("Certification expiry check complete", { fired });
@@ -120,6 +134,7 @@ export class CronHrService {
 
       const statsByUserId = new Map(fullyCompleted.map((s) => [s.userId, s]));
 
+      const onboardedUserIds: string[] = [];
       for (const employee of employeeRows) {
         const stats = statsByUserId.get(employee.id);
         if (!stats) continue;
@@ -141,12 +156,24 @@ export class CronHrService {
         });
 
         await tx
-          .update(users)
+          .update(organizationMembers)
           .set({ onboardingCompletedAt: now })
-          .where(eq(users.id, employee.id));
+          .where(
+            and(
+              eq(organizationMembers.userId, employee.id),
+              eq(organizationMembers.orgId, stats.orgId),
+            ),
+          );
 
+        onboardedUserIds.push(employee.id);
         fired++;
       }
+
+      if (onboardedUserIds.length > 0)
+        await tx
+          .update(users)
+          .set({ onboardingCompletedAt: now })
+          .where(inArray(users.id, onboardedUserIds));
     });
 
     logger.info("Onboarding completion sweep done", { fired });
@@ -186,6 +213,7 @@ export class CronHrService {
         )
         .limit(500);
 
+      const remindedDocIds: number[] = [];
       for (const doc of expiring) {
         if (!doc.userEmail || !doc.userId || !doc.expiryDate) continue;
 
@@ -230,15 +258,18 @@ export class CronHrService {
             link: `${appUrl()}/hr/documents`,
             emailHtml: html,
           });
-          await tx
-            .update(documents)
-            .set({ expiryReminderSent: true })
-            .where(eq(documents.id, doc.id));
+          remindedDocIds.push(doc.id);
           fired++;
         } catch (error) {
           logger.error("Document expiry reminder failed", { documentId: doc.id, error });
         }
       }
+
+      if (remindedDocIds.length > 0)
+        await tx
+          .update(documents)
+          .set({ expiryReminderSent: true })
+          .where(and(eq(documents.orgId, orgId), inArray(documents.id, remindedDocIds)));
     });
 
     logger.info("Document expiry check complete", { fired });

@@ -1,3 +1,4 @@
+import { memberRowReader } from "../../../../test/helpers/membership-state-stub";
 import { EMPLOYEE_SELF_SERVICE_GRANTS } from "../access-policy";
 import { isOrgOnlyPermission } from "../../../common/rbac/grantability";
 import { AccessPermissionResolver } from "../access-permission.resolver";
@@ -26,20 +27,21 @@ const HOME_SURFACES: ReadonlyArray<[string, string]> = [
 function resolverForMemberWithNoRoles(): AccessPermissionResolver {
   const db = {
     query: {
-      organizationMembers: {
-        findFirst: () =>
-          Promise.resolve({
-            isOwner: false,
-            status: "ACTIVE",
-            id: 1,
-            role: "MEMBER",
-          }),
-      },
     },
     select: () => ({
       from: () => ({
-        innerJoin: () => ({ where: () => Promise.resolve([]) }),
-        where: () => Promise.resolve([]),
+        // The delegated-permission read is a keyset drain now, so the joined
+        // branch carries `.orderBy` too.
+        innerJoin: () => ({
+          where: () => ({
+            orderBy: () => ({ limit: () => Promise.resolve([]) }),
+            limit: () => Promise.resolve([]),
+          }),
+        }),
+        where: () => ({
+          orderBy: () => ({ limit: () => Promise.resolve([]) }),
+          limit: () => Promise.resolve([]),
+        }),
       }),
     }),
   } as unknown as Db;
@@ -50,6 +52,7 @@ function resolverForMemberWithNoRoles(): AccessPermissionResolver {
     new Set<string>(),
     new Map(),
     1000,
+    memberRowReader({ isOwner: false, status: "ACTIVE", id: 1, role: "MEMBER", }),
   );
 }
 
@@ -68,15 +71,6 @@ describe("Home surfaces are allowed to everyone", () => {
   it("gives a suspended member nothing, universal or otherwise", async () => {
     const db = {
       query: {
-        organizationMembers: {
-          findFirst: () =>
-            Promise.resolve({
-              isOwner: false,
-              status: "SUSPENDED",
-              id: 1,
-              role: "MEMBER",
-            }),
-        },
       },
       select: () => ({ from: () => ({ where: () => Promise.resolve([]) }) }),
     } as unknown as Db;
@@ -87,6 +81,7 @@ describe("Home surfaces are allowed to everyone", () => {
       new Set<string>(),
       new Map(),
       1000,
+      memberRowReader({ isOwner: false, status: "SUSPENDED", id: 1, role: "MEMBER", }),
     );
     const resolved = (await resolver.computeUserPermissions("org-1", "u-1", 1)).perms;
     expect(resolved).toEqual({});
@@ -125,22 +120,25 @@ describe("owning the Home module does not confer org-wide chat settings", () => 
   function resolverForHomeModuleOwner(): AccessPermissionResolver {
     const db = {
       query: {
-        organizationMembers: {
-          findFirst: () =>
-            Promise.resolve({
-              isOwner: false,
-              status: "ACTIVE",
-              id: 1,
-              role: "MEMBER",
-            }),
-        },
       },
       select: () => ({
         from: (table: unknown) => {
           const rows = table === moduleOwnerships ? [{ moduleKey: "home" }] : [];
           return {
-            innerJoin: () => ({ where: () => Promise.resolve([]) }),
-            where: () => Promise.resolve(rows),
+            // The delegated-permission read is a keyset drain now, so the
+            // joined branch carries `.orderBy` too. A mock chain that stops
+            // short of the production shape throws here rather than answering
+            // a query the code never issues.
+            innerJoin: () => ({
+              where: () => ({
+                orderBy: () => ({ limit: () => Promise.resolve([]) }),
+                limit: () => Promise.resolve([]),
+              }),
+            }),
+            where: () => ({
+              orderBy: () => ({ limit: () => Promise.resolve(rows) }),
+              limit: () => Promise.resolve(rows),
+            }),
           };
         },
       }),
@@ -152,6 +150,7 @@ describe("owning the Home module does not confer org-wide chat settings", () => 
       new Set<string>(),
       new Map(),
       1000,
+      memberRowReader({ isOwner: false, status: "ACTIVE", id: 1, role: "MEMBER", }),
     );
   }
 

@@ -84,10 +84,8 @@ export const hrPayrollInputSnapshots = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     periodId: integer("period_id")
       .notNull()
-      .references(() => hrPayrollInputPeriods.id, { onDelete: "cascade" }),
-    userId: text("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+      ,
+    userId: text("user_id").notNull(),
     userMembershipId: integer("user_membership_id"),
     section: hrPayrollInputSectionEnum("section").notNull(),
     payload: jsonb("payload").notNull(),
@@ -95,6 +93,7 @@ export const hrPayrollInputSnapshots = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.periodId], foreignColumns: [hrPayrollInputPeriods.orgId, hrPayrollInputPeriods.id], name: "fk_hr_payroll_input_snapshots_org_period" }).onDelete("cascade"),
     unique("uniq_hr_payroll_input_snapshots_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_hr_payroll_input_snapshots_period_user_section").on(
       table.periodId,
@@ -122,12 +121,8 @@ export const hrPayrollAdjustments = pgTable(
     orgId: text("org_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    periodId: integer("period_id").references(() => hrPayrollInputPeriods.id, {
-      onDelete: "set null",
-    }),
-    userId: text("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    periodId: integer("period_id"),
+    userId: text("user_id").notNull(),
     userMembershipId: integer("user_membership_id"),
     adjustmentType: hrPayrollAdjustmentTypeEnum("adjustment_type").notNull(),
     section: hrPayrollInputSectionEnum("section").notNull(),
@@ -151,6 +146,7 @@ export const hrPayrollAdjustments = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.periodId], foreignColumns: [hrPayrollInputPeriods.orgId, hrPayrollInputPeriods.id], name: "fk_hr_payroll_adjustments_org_period" }).onDelete("set null"),
     unique("uniq_hr_payroll_adjustments_org_id").on(table.orgId, table.id),
     index("idx_hr_payroll_adjustments_org_status").on(table.orgId, table.status),
     index("idx_hr_payroll_adjustments_org_period").on(table.orgId, table.periodId),

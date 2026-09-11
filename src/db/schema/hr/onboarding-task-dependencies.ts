@@ -12,7 +12,7 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 import { organizations } from "../common/auth";
-import { onboardingTasks } from "./offboarding";
+import { onboardingTasks } from "./onboarding";
 
 export const onboardingTaskDependencies = pgTable(
   "onboarding_task_dependencies",
@@ -43,11 +43,6 @@ export const onboardingTaskDependencies = pgTable(
       table.prerequisiteTaskId,
     ),
     unique("uniq_onboarding_task_dependencies_order").on(
-      table.organizationId,
-      table.onboardingTaskId,
-      table.sortOrder,
-    ),
-    index("idx_onboarding_task_dependencies_task").on(
       table.organizationId,
       table.onboardingTaskId,
       table.sortOrder,

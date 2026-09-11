@@ -15,6 +15,7 @@ import type {
   UpdateOrgLocationInput,
   UpdateOrgTeamInput,
 } from "../../organization/hierarchy/dto/org-hierarchy.schemas";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 type CatalogInput = {
   name: string;
@@ -50,11 +51,6 @@ export class HrOrgCatalogService {
     return this.hierarchy.updateLocation(orgId, userId, locationId, input);
   }
 
-  async deleteLocation(orgId: string, userId: string, locationId: string) {
-    await this.hierarchy.deleteLocation(orgId, userId, locationId);
-    return { success: true };
-  }
-
   listJobRoles(orgId: string) {
     return this.db.query.hrJobRoles.findMany({
       where: and(eq(hrJobRoles.orgId, orgId), eq(hrJobRoles.isActive, true)),
@@ -71,7 +67,7 @@ export class HrOrgCatalogService {
         .returning();
       return row;
     } catch (err: unknown) {
-      if (typeof err === "object" && err !== null && "code" in err && (err as { code: string }).code === "23505") {
+      if (isUniqueViolation(err)) {
         throw new ConflictException("A job role with this name already exists");
       }
       throw err;
@@ -85,6 +81,7 @@ export class HrOrgCatalogService {
         ...(input.name !== undefined && { name: input.name }),
         ...(input.code !== undefined && { code: input.code }),
         ...(input.description !== undefined && { description: input.description }),
+        updatedAt: new Date(),
       })
       .where(and(eq(hrJobRoles.id, jobRoleId), eq(hrJobRoles.orgId, orgId)))
       .returning();
@@ -108,7 +105,7 @@ export class HrOrgCatalogService {
         .returning();
       return row;
     } catch (err: unknown) {
-      if (typeof err === "object" && err !== null && "code" in err && (err as { code: string }).code === "23505") {
+      if (isUniqueViolation(err)) {
         throw new ConflictException("A job level with this name already exists");
       }
       throw err;
@@ -122,6 +119,7 @@ export class HrOrgCatalogService {
         ...(input.name !== undefined && { name: input.name }),
         ...(input.code !== undefined && { code: input.code }),
         ...(input.description !== undefined && { description: input.description }),
+        updatedAt: new Date(),
       })
       .where(and(eq(hrJobLevels.id, jobLevelId), eq(hrJobLevels.orgId, orgId)))
       .returning();
@@ -168,11 +166,6 @@ export class HrOrgCatalogService {
     input: UpdateOrgTeamInput,
   ) {
     return this.hierarchy.updateTeam(orgId, userId, teamId, input);
-  }
-
-  async deleteTeam(orgId: string, userId: string, teamId: string) {
-    await this.hierarchy.deleteTeam(orgId, userId, teamId);
-    return { success: true };
   }
 
   async getHeadcount(orgId: string, groupBy: string) {

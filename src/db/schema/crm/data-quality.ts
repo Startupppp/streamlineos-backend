@@ -1,17 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
-import {
-  pgTable,
-  text,
-  timestamp,
-  date,
-  jsonb,
-  doublePrecision,
-  integer,
-  index,
-  uniqueIndex,
-  unique,
-} from "drizzle-orm/pg-core";
+import { date, doublePrecision, foreignKey, index, integer, jsonb, pgTable, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { organizations } from "../common/auth";
 import type { ReversibilityClass } from "./autonomous-decisions";
 
@@ -283,6 +272,7 @@ export const dataQualityFindings = pgTable(
     lastError: text("last_error"),
   },
   (t) => [
+  foreignKey({ columns: [t.organizationId, t.resolutionId], foreignColumns: [dataQualityResolutions.organizationId, dataQualityResolutions.resolutionId], name: "fk_data_quality_findings_resolution" }).onDelete("cascade"),
     /**
      * One open finding per problem. Partial on `open` so a recurrence after a
      * resolution files a new finding rather than resurrecting a closed one —
@@ -404,7 +394,6 @@ export const dataQualityHealthSnapshots = pgTable(
      */
     uniqueIndex("uniq_data_quality_health_snapshots_day").on(t.organizationId, t.capturedOn),
     /** The series read: one tenant, newest first, bounded by a window. */
-    index("idx_data_quality_health_snapshots_series").on(t.organizationId, t.capturedOn),
     /** The composite tenant key, for anything that later points at a snapshot. */
     unique("uniq_data_quality_health_snapshots_org_id").on(t.organizationId, t.snapshotId),
   ],

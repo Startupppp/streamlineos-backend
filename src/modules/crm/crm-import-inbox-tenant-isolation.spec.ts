@@ -2,6 +2,7 @@ import type { Db } from "../../db/drizzle.module";
 import { CrmExportService } from "./import/crm-export.service";
 import { CrmInboxAiActionsService } from "./inbox/crm-inbox-ai-actions.service";
 import { CrmInboxQueriesService } from "./inbox/crm-inbox-queries.service";
+import { ScopedRead } from "../access/scoped-read";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -87,7 +88,7 @@ describe("CrmInboxQueriesService — cross-tenant isolation", () => {
   it("getInbox: queries scoped to attacker org (deny)", async () => {
     const { db, where } = makeDb([]);
     const svc = buildSvc(db);
-    await svc.getInbox(ATTACKER, "user-1", "all");
+    await svc.getInbox(ScopedRead.of(ATTACKER, "user-1", "all"));
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
     expect(sqlValues(where.mock.calls[0]?.[0])).not.toContain(OWNER);
@@ -96,7 +97,7 @@ describe("CrmInboxQueriesService — cross-tenant isolation", () => {
   it("getInbox: queries scoped to owner org (control)", async () => {
     const { db, where } = makeDb([]);
     const svc = buildSvc(db);
-    await svc.getInbox(OWNER, "user-1", "all");
+    await svc.getInbox(ScopedRead.of(OWNER, "user-1", "all"));
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
   });

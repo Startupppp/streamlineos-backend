@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, count, eq, isNull, type SQL } from "drizzle-orm";
 import {
   signDocuments,
   signEnvelopes,
@@ -17,6 +17,9 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { SignAuditService } from "./sign-audit.service";
 import { SignRecipientsService } from "./sign-recipients.service";
+import { envelopeSenderScope, systemEnvelopeScope } from "./sign-envelope-scope";
+import type { ScopedRead } from "../access/scoped-read";
+import { buildListResponse } from "../../common/pagination/pagination";
 import { SignIntegrationsService } from "./sign-integrations.service";
 import { SignNotificationsService } from "./sign-notifications.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
@@ -44,6 +47,10 @@ import type {
 import type { RequestActorContext } from "../../common/audit/actor-context";
 
 export type { EnvelopeValidationResult };
+
+function isSignEnvelopeStatus(value: string): value is SignEnvelopeStatus {
+  return signEnvelopeStatusEnum.enumValues.some((status) => status === value);
+}
 
 @Injectable()
 export class SignEnvelopesService {
@@ -169,43 +176,46 @@ export class SignEnvelopesService {
   }
 
   async list(
-    orgId: string,
+    read: ScopedRead,
+    membershipId: number | null,
     query: ListEnvelopesInput,
-    scope: { membershipId: number | null; viewAll: boolean },
   ) {
-    if (!scope.viewAll && scope.membershipId == null) return [];
-    const conditions = [eq(signEnvelopes.orgId, orgId)];
-    if (!scope.viewAll && scope.membershipId != null)
-      conditions.push(eq(signEnvelopes.senderMembershipId, scope.membershipId));
+    const pageParams = { page: query.page, pageSize: query.limit };
+    const domain: SQL[] = [];
     if (query.status) {
-      if (
-        !(signEnvelopeStatusEnum.enumValues as readonly string[]).includes(
-          query.status,
-        )
-      ) {
+      if (!isSignEnvelopeStatus(query.status)) {
         throw new BadRequestException(
           `Invalid envelope status: ${query.status}`,
         );
       }
-      conditions.push(
-        eq(signEnvelopes.status, query.status as SignEnvelopeStatus),
-      );
+      domain.push(eq(signEnvelopes.status, query.status));
     }
     if (query.sourceModule)
-      conditions.push(eq(signEnvelopes.sourceModule, query.sourceModule));
+      domain.push(eq(signEnvelopes.sourceModule, query.sourceModule));
     if (query.sourceEntityType)
-      conditions.push(
+      domain.push(
         eq(signEnvelopes.sourceEntityType, query.sourceEntityType),
       );
     if (query.sourceEntityId)
-      conditions.push(eq(signEnvelopes.sourceEntityId, query.sourceEntityId));
+      domain.push(eq(signEnvelopes.sourceEntityId, query.sourceEntityId));
 
-    return this.db.query.signEnvelopes.findMany({
-      where: and(...conditions),
-      orderBy: (e, { desc }) => [desc(e.createdAt)],
-      limit: query.limit,
-      offset: (query.page - 1) * query.limit,
-    });
+    return read.read(
+      { tenant: signEnvelopes.orgId, scope: envelopeSenderScope(membershipId), and: domain },
+      async ({ sql: where }) => {
+        const [rows, [totalRow]] = await Promise.all([
+          this.db.query.signEnvelopes.findMany({
+            where,
+            orderBy: (e, { desc }) => [desc(e.createdAt)],
+            limit: query.limit,
+            offset: (query.page - 1) * query.limit,
+          }),
+          this.db.select({ total: count() }).from(signEnvelopes).where(where),
+        ]);
+
+        return buildListResponse(rows, Number(totalRow?.total ?? 0), pageParams);
+      },
+      () => buildListResponse([], 0, pageParams),
+    );
   }
 
   async mustGet(orgId: string, envelopeId: number) {
@@ -219,9 +229,14 @@ export class SignEnvelopesService {
     return envelope;
   }
 
-  async getFull(orgId: string, envelopeId: number, scope: { membershipId: number | null; viewAll: boolean }) {
+  async getFull(read: ScopedRead, membershipId: number | null, envelopeId: number) {
+    const orgId = read.orgId;
     const envelope = await this.mustGet(orgId, envelopeId);
-    if (!scope.viewAll && (scope.membershipId == null || envelope.senderMembershipId !== scope.membershipId)) {
+    // Kept as an application-level check, not a `mustGetVisibleEnvelope` predicate:
+    // this endpoint has always answered a same-tenant, out-of-scope envelope with
+    // 403 (never the 404 that a row-filter miss would produce), so the raw value is
+    // read here rather than folding this into the shared 404-only helper.
+    if (!read.unrestricted && (membershipId == null || envelope.senderMembershipId !== membershipId)) {
       throw new ForbiddenException("Not authorized to view this envelope");
     }
     const [documents, recipientRows, fields] = await Promise.all([
@@ -232,7 +247,7 @@ export class SignEnvelopesService {
         ),
         orderBy: (d, { asc }) => [asc(d.orderIndex)],
       }),
-      this.recipients.listForEnvelope(orgId, envelopeId),
+      this.recipients.listForEnvelope(systemEnvelopeScope(orgId), null, envelopeId),
       this.db.query.signFields.findMany({
         where: and(
           eq(signFields.orgId, orgId),
@@ -265,7 +280,7 @@ export class SignEnvelopesService {
     }
 
     const updated = await this.db.transaction(async (tx) => {
-      await (tx as Db)
+      await tx
         .update(signRecipients)
         .set({ tokenRevokedAt: new Date() })
         .where(
@@ -276,7 +291,7 @@ export class SignEnvelopesService {
           ),
         );
 
-      const [row] = await (tx as Db)
+      const [row] = await tx
         .update(signEnvelopes)
         .set({
           status: "voided",
@@ -291,7 +306,8 @@ export class SignEnvelopesService {
     });
 
     const recipientRows = await this.recipients.listForEnvelope(
-      orgId,
+      systemEnvelopeScope(orgId),
+      null,
       envelopeId,
     );
     for (const r of recipientRows) {

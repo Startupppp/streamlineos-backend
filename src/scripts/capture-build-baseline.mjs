@@ -3,18 +3,47 @@ import { sslForConnectionString } from "./lib/repo-roots.mjs";
 import { mkdirSync, writeFileSync } from "node:fs";
 import postgres from "postgres";
 import * as dotenv from "dotenv";
+import {
+  formatRoleProvenance,
+  resolveAppDatabaseUrl,
+  resolveSsl,
+  roleRefusal,
+} from "./benchmark-role-guard.mjs";
 
 dotenv.config({ path: resolve(process.cwd(), ".env") });
 
-const url = process.env.APP_DATABASE_URL || process.env.DATABASE_URL;
-if (!url) {
-  console.error("APP_DATABASE_URL is required (the non-BYPASSRLS app role).");
+const resolved = resolveAppDatabaseUrl(process.env);
+if (!resolved.ok) {
+  console.error(resolved.why);
   process.exit(1);
 }
+const url = resolved.url;
 
 const ORG = process.env.SEED_ORG_ID || "aa5627a2-a7de-4dca-97d2-135f3a5f801b";
 const OUT_DIR = resolve(process.cwd(), "../docs/refactor/baseline");
-const sql = postgres(url, { max: 1, prepare: false, ssl: sslForConnectionString(url), onnotice: () => {} });
+const sql = postgres(url, { max: 1, prepare: false, ssl: resolveSsl(process.env), onnotice: () => {} });
+
+async function assertMeasuringUnderRls() {
+  const [role] = await sql`
+    SELECT current_user AS name, r.rolbypassrls, r.rolsuper
+    FROM pg_roles r WHERE r.rolname = current_user`;
+  let deniedWithoutGuc = false;
+  try {
+    await sql`SELECT count(*) FROM build.tickets`;
+  } catch (e) {
+    if (e?.code === "42501") deniedWithoutGuc = true;
+    else throw e;
+  }
+  const refusal = roleRefusal(role, deniedWithoutGuc);
+  if (refusal) {
+    console.error(refusal);
+    await sql.end();
+    process.exit(1);
+  }
+  const provenance = formatRoleProvenance(role);
+  console.log(`role ${provenance} · no-GUC read denied 42501`);
+  return provenance;
+}
 
 const QUERIES = [
   {
@@ -120,6 +149,7 @@ function summarise(plan) {
 
 async function main() {
   mkdirSync(OUT_DIR, { recursive: true });
+  const role = await assertMeasuringUnderRls();
   const fixtures = await pickFixtures();
   console.log("fixtures:", fixtures);
 
@@ -162,12 +192,15 @@ async function main() {
       ('tickets','ticket_comments','ticket_activity_log','ticket_assignees','ticket_label_mappings','timesheets','work_item_relations','projects')
     order by relname, scans`;
 
-  writeFileSync(resolve(OUT_DIR, "baseline.json"), JSON.stringify({ org: ORG, fixtures, results, sizes, idx }, null, 2));
+  writeFileSync(
+    resolve(OUT_DIR, "baseline.json"),
+    JSON.stringify({ org: ORG, role, fixtures, results, sizes, idx }, null, 2),
+  );
 
   const md = [
     "# Build module — Phase 0 performance baseline",
     "",
-    `Captured as \`streamline_app\` (RLS enforced, \`app.organization_id\` set) against the seeded dataset.`,
+    `Captured as \`${role}\` — read live from pg_roles, with a no-GUC read denied 42501 before anything was measured.`,
     `Org \`${ORG}\` · project \`${fixtures.projectId}\` · ticket \`${fixtures.ticketId}\`.`,
     "",
     "## Query timings",

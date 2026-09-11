@@ -5,8 +5,6 @@ import {
   Delete,
   Get,
   HttpCode,
-  HttpException,
-  HttpStatus,
   Param,
   ParseIntPipe,
   Patch,
@@ -20,25 +18,34 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ChatMessagesService } from "./chat-messages.service";
+import { ChatMessageModerationService } from "./chat-message-moderation.service";
 import { ChatMessageTimelineService } from "./chat-message-timeline.service";
 import { ChatReactionsService } from "./chat-reactions.service";
 import {
   editMessageSchema,
   listMessagesQuerySchema,
-  pollQuerySchema,
   reactionSchema,
   sendMessageSchema,
   type EditMessageInput,
   type ListMessagesQuery,
-  type PollQuery,
   type ReactionInput,
   type SendMessageInput,
 } from "./dto/chat.schemas";
-import { RequireModule } from "../../common/rbac/require-module.decorator";
-import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
+import { chatPollQuerySchema, type ChatPollQuery } from "./dto/chat-poll.schemas";
+import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
+import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagger";
 import { actorOf } from "../entity-reference/entity-actor";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  chatMessageOkSchema,
+  chatMessagePageSchema,
+  chatMessagePollPageSchema,
+  chatRawMessageSchema,
+  chatReactionsResponseSchema,
+  chatThreadPageSchema,
+} from "./dto/chat-messages-response.schemas";
 import { z } from "zod";
 
 const channelIdParams = z.object({ channelId: z.coerce.number().int().positive() }).strict();
@@ -47,20 +54,20 @@ const channelMessageAndEmojiParams = z.object({ channelId: z.coerce.number().int
 
 @ApiTags("Chat Messages")
 @ApiBearerAuth()
-@RequireModule("chat")
 @Controller("chat/channels/:channelId/messages")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ChatMessagesController {
   constructor(
     private readonly messages: ChatMessagesService,
+    private readonly moderation: ChatMessageModerationService,
     private readonly timeline: ChatMessageTimelineService,
     private readonly reactions: ChatReactionsService,
-    private readonly rateLimit: RateLimitService,
   ) {}
 
   @ApiOperation({ summary: "List messages in a channel (cursor-paginated)" })
   @ApiResponse({ status: 200, description: "OK" })
   @Get()
+  @ResponseSchema(chatMessagePageSchema)
   @RequirePermission("chat:messages:read")
   @Validate({ params: channelIdParams, query: listMessagesQuerySchema })
   list(
@@ -75,67 +82,70 @@ export class ChatMessagesController {
   @ApiResponse({ status: 201, description: "Message created" })
   @ApiResponse({ status: 429, description: "Rate limited" })
   @Post()
+  @ResponseSchema(chatRawMessageSchema)
   @HttpCode(201)
   @RequirePermission("chat:messages:write")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("chat:send-message")
   @Validate({ params: channelIdParams, body: sendMessageSchema })
-  async send(
+  send(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Body() body: SendMessageInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const rl = await this.rateLimit.check("chat:send-message", u.userId);
-    if (!rl.allowed)
-      throw new HttpException(
-        `Rate limited. Retry after ${rl.retryAfterSecs}s`,
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
     return this.messages.send(channelId, u.userId, u.orgId, body);
   }
 
-  @ApiOperation({ summary: "Poll for new messages since a timestamp (fallback for realtime)" })
+  @ApiOperation({ summary: "Poll for new messages since a timestamp or cursor (fallback for realtime)" })
   @ApiResponse({ status: 200, description: "OK" })
   @Get("poll")
+  @ResponseSchema(chatMessagePollPageSchema)
   @RequirePermission("chat:messages:read")
-  @Validate({ params: channelIdParams, query: pollQuerySchema })
+  @Validate({ params: channelIdParams, query: chatPollQuerySchema })
   poll(
     @Param("channelId", ParseIntPipe) channelId: number,
-    @Query() query: PollQuery,
+    @Query() query: ChatPollQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!query.since) throw new BadRequestException("Missing required query param: since");
-    const since = new Date(query.since);
-    if (Number.isNaN(since.getTime())) throw new BadRequestException("Invalid 'since' timestamp");
-    return this.timeline.poll(channelId, actorOf(u), since);
+    const since = query.since !== undefined ? new Date(query.since) : undefined;
+    if (since !== undefined && Number.isNaN(since.getTime()))
+      throw new BadRequestException("Invalid 'since' timestamp");
+    return this.timeline.poll(channelId, actorOf(u), since, query.cursor, query.limit);
   }
 
   @ApiOperation({ summary: "Edit message content" })
   @ApiResponse({ status: 200, description: "OK" })
   @Patch(":messageId")
+  @ResponseSchema(chatMessageOkSchema)
   @RequirePermission("chat:messages:write")
   @Validate({ params: channelAndMessageIdParams, body: editMessageSchema })
   edit(
+    @Param("channelId", ParseIntPipe) channelId: number,
     @Param("messageId", ParseIntPipe) messageId: number,
     @Body() body: EditMessageInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.messages.edit(messageId, u.userId, u.orgId, body.content);
+    return this.moderation.edit(messageId, channelId, u.userId, u.orgId, body.content);
   }
 
   @ApiOperation({ summary: "Soft-delete a message" })
   @ApiResponse({ status: 200, description: "OK" })
   @Delete(":messageId")
+  @ResponseSchema(chatMessageOkSchema)
   @RequirePermission("chat:messages:write")
   @Validate({ params: channelAndMessageIdParams })
   remove(
+    @Param("channelId", ParseIntPipe) channelId: number,
     @Param("messageId", ParseIntPipe) messageId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.messages.remove(messageId, u.userId, u.isOrgOwner, u.orgId);
+    return this.moderation.remove(messageId, channelId, u.userId, u.isOrgOwner, u.orgId);
   }
 
   @ApiOperation({ summary: "Add an emoji reaction to a message (idempotent)" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":messageId/reactions")
+  @ResponseSchema(chatReactionsResponseSchema)
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
   @Validate({ params: channelAndMessageIdParams, body: reactionSchema })
@@ -151,6 +161,7 @@ export class ChatMessagesController {
   @ApiOperation({ summary: "Remove an emoji reaction from a message (idempotent)" })
   @ApiResponse({ status: 200, description: "OK" })
   @Delete(":messageId/reactions/:emoji")
+  @ResponseSchema(chatReactionsResponseSchema)
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
   @Validate({ params: channelMessageAndEmojiParams })
@@ -166,6 +177,7 @@ export class ChatMessagesController {
   @ApiOperation({ summary: "List thread replies for a message" })
   @ApiResponse({ status: 200, description: "OK" })
   @Get(":messageId/thread")
+  @ResponseSchema(chatThreadPageSchema)
   @RequirePermission("chat:messages:read")
   @Validate({ params: channelAndMessageIdParams, query: listMessagesQuerySchema })
   listThread(
@@ -179,6 +191,7 @@ export class ChatMessagesController {
   @ApiOperation({ summary: "Send a reply in a message thread" })
   @ApiResponse({ status: 201, description: "Created" })
   @Post(":messageId/thread")
+  @ResponseSchema(chatRawMessageSchema)
   @HttpCode(201)
   @RequirePermission("chat:messages:write")
   @Validate({ params: channelAndMessageIdParams, body: sendMessageSchema })

@@ -8,6 +8,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from "@nestjs/common";
@@ -22,6 +23,7 @@ import { ProjectsProvisionService } from "./projects-provision.service";
 import { ProjectsMembersService } from "./projects-members.service";
 import {
   addMemberSchema,
+  bulkReorderStatesSchema,
   createLabelSchema,
   createProjectSchema,
   createStateSchema,
@@ -32,6 +34,7 @@ import {
   updateLabelSchema,
   updateProjectMemberRoleSchema,
   type AddMemberInput,
+  type BulkReorderStatesInput,
   type CreateLabelInput,
   type CreateProjectInput,
   type CreateStateInput,
@@ -45,6 +48,19 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../../common/openapi/response-envelopes";
+import {
+  ticketLabelSchema,
+  projectMemberSchema,
+  projectRosterSchema,
+  projectMemberRowSchema,
+  memberRoleSchema,
+  projectCustomStateSchema,
+  bulkReorderStatesResultSchema,
+  projectListPageSchema,
+} from "./dto/build-core-response.schemas";
+import { projectRowSchema } from "./dto/build-project-detail-response.schemas";
 
 const labelIdParams = z.object({ labelId: z.coerce.number().int().positive() }).strict();
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
@@ -64,6 +80,7 @@ export class ProjectsController {
 
   @Get()
   @RequirePermission("build:view")
+  @ResponseSchema(projectListPageSchema)
   @Validate({ query: listProjectsSchema })
   listProjects(
     @Query() query: ListProjectsInput,
@@ -75,6 +92,7 @@ export class ProjectsController {
   @Post()
   @RequirePermission("build:create")
   @HttpCode(201)
+  @ResponseSchema(projectRowSchema)
   @Idempotent("build.project.create")
   @Validate({ body: createProjectSchema })
   createProject(
@@ -87,6 +105,7 @@ export class ProjectsController {
   @Post("from-deal")
   @RequirePermission("build:create")
   @HttpCode(201)
+  @ResponseSchema(projectRowSchema)
   @Idempotent("build.project.create_from_deal")
   @Validate({ body: fromDealSchema })
   createFromDeal(
@@ -98,6 +117,7 @@ export class ProjectsController {
 
   @Get("labels")
   @RequirePermission("build:view")
+  @ResponseSchema(z.array(ticketLabelSchema))
   listLabels(@CurrentUser() u: CurrentUserContext) {
     return this.members.listLabels(u.orgId);
   }
@@ -105,6 +125,7 @@ export class ProjectsController {
   @Post("labels")
   @RequirePermission("build:manage")
   @HttpCode(201)
+  @ResponseSchema(ticketLabelSchema)
   @Validate({ body: createLabelSchema })
   createLabel(
     @Body() body: CreateLabelInput,
@@ -115,6 +136,7 @@ export class ProjectsController {
 
   @Patch("labels/:labelId")
   @RequirePermission("build:manage")
+  @ResponseSchema(ticketLabelSchema)
   @Validate({ params: labelIdParams, body: updateLabelSchema })
   updateLabel(
     @Param("labelId", ParseIntPipe) labelId: number,
@@ -127,6 +149,7 @@ export class ProjectsController {
   @Delete("labels/:labelId")
   @RequirePermission("build:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: labelIdParams })
   deleteLabel(
     @Param("labelId", ParseIntPipe) labelId: number,
@@ -137,6 +160,7 @@ export class ProjectsController {
 
   @Get(":projectId/members")
   @RequirePermission("build:view")
+  @ResponseSchema(z.array(projectMemberSchema))
   @Validate({ params: projectIdParams })
   listMembers(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -147,6 +171,7 @@ export class ProjectsController {
 
   @Get(":projectId/roster")
   @RequirePermission("build:view")
+  @ResponseSchema(projectRosterSchema)
   @Validate({ params: projectIdParams })
   getRoster(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -158,6 +183,7 @@ export class ProjectsController {
   @Post(":projectId/members")
   @RequirePermission("build:manage")
   @HttpCode(201)
+  @ResponseSchema(projectMemberRowSchema)
   @Validate({ params: projectIdParams, body: addMemberSchema })
   addMember(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -170,6 +196,7 @@ export class ProjectsController {
   @Delete(":projectId/members")
   @RequirePermission("build:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: projectIdParams, body: removeMemberSchema })
   removeMember(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -181,6 +208,7 @@ export class ProjectsController {
 
   @Patch(":projectId/members/:memberUserId")
   @RequirePermission("build:manage")
+  @ResponseSchema(memberRoleSchema)
   @Validate({ params: projectIdmemberUserIdParams, body: updateProjectMemberRoleSchema })
   updateMemberRole(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -191,8 +219,21 @@ export class ProjectsController {
     return this.members.updateMemberRole(projectId, memberUserId, body, u);
   }
 
+  @Put(":projectId/custom-states")
+  @RequirePermission("build:manage")
+  @ResponseSchema(bulkReorderStatesResultSchema)
+  @Validate({ params: projectIdParams, body: bulkReorderStatesSchema })
+  bulkReorderCustomStates(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Body() body: BulkReorderStatesInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.members.bulkReorderCustomStates(u, projectId, body);
+  }
+
   @Get(":projectId/custom-states")
   @RequirePermission("build:view")
+  @ResponseSchema(z.array(projectCustomStateSchema))
   @Validate({ params: projectIdParams })
   listCustomStates(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -204,6 +245,7 @@ export class ProjectsController {
   @Post(":projectId/custom-states")
   @RequirePermission("build:manage")
   @HttpCode(201)
+  @ResponseSchema(projectCustomStateSchema)
   @Validate({ params: projectIdParams, body: createStateSchema })
   createCustomState(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -215,6 +257,7 @@ export class ProjectsController {
 
   @Patch(":projectId/custom-states/:stateId")
   @RequirePermission("build:manage")
+  @ResponseSchema(projectCustomStateSchema)
   @Validate({ params: projectIdstateIdParams, body: updateCustomStateSchema })
   updateCustomState(
     @Param("projectId", ParseIntPipe) _: number,
@@ -228,6 +271,7 @@ export class ProjectsController {
   @Delete(":projectId/custom-states/:stateId")
   @RequirePermission("build:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: projectIdstateIdParams })
   deleteCustomState(
     @Param("projectId", ParseIntPipe) _: number,
@@ -237,21 +281,36 @@ export class ProjectsController {
     return this.members.deleteCustomState(u, stateId);
   }
 
+  /**
+   * Labels are an ORG-level entity — `ticket_labels` carries no `project_id` — but this route
+   * advertises `:projectId`, so a caller reasonably reads the answer as that project's labels.
+   * It used not to bind the parameter at all: any project id, another organisation's or none at
+   * all, answered 200 with the caller's own labels. The project is now resolved under the caller's
+   * organisation so the address in the url means what it says, and a foreign id answers 404.
+   */
   @Get(":projectId/labels")
   @RequirePermission("build:view")
+  @ResponseSchema(z.array(ticketLabelSchema))
   @Validate({ params: projectIdParams_ })
-  listProjectLabels(@CurrentUser() u: CurrentUserContext) {
+  async listProjectLabels(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    await this.members.assertProjectAccess(u, projectId);
     return this.members.listLabels(u.orgId);
   }
 
   @Post(":projectId/labels")
   @RequirePermission("build:manage")
   @HttpCode(201)
+  @ResponseSchema(ticketLabelSchema)
   @Validate({ params: projectIdParams_, body: createLabelSchema })
-  createProjectLabel(
+  async createProjectLabel(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Body() body: CreateLabelInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    await this.members.assertCanManageProject(u, projectId);
     return this.members.createLabel(u.orgId, body);
   }
 }

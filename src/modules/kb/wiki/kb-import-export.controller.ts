@@ -21,6 +21,13 @@ import {
   type ImportPagesInput,
 } from "./dto/kb-import-export.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  kbImportResultSchema,
+  kbImportJobListSchema,
+  kbExportResultSchema,
+  kbExportJobListSchema,
+} from "./dto/kb-space-response.schemas";
 import { z } from "zod";
 
 const pageIdParams = z.object({ pageId: z.coerce.number().int().positive() }).strict();
@@ -34,6 +41,7 @@ export class KbImportExportController {
   @Idempotent("kb:pages.import")
   @RequirePermission("kb:pages:import")
   @Validate({ body: importPagesSchema })
+  @ResponseSchema(kbImportResultSchema)
   async importPages(
     @Body() body: ImportPagesInput,
     @CurrentUser() u: CurrentUserContext,
@@ -43,6 +51,7 @@ export class KbImportExportController {
 
   @Get("import-jobs")
   @RequirePermission("kb:pages:import")
+  @ResponseSchema(kbImportJobListSchema)
   async listImportJobs(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
     return this.importExport.listImportJobs(u.orgId);
   }
@@ -50,6 +59,7 @@ export class KbImportExportController {
   @Post("pages/:pageId/export")
   @RequirePermission("kb:pages:export")
   @Validate({ params: pageIdParams, body: exportPageSchema })
+  @ResponseSchema(kbExportResultSchema)
   async exportPage(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Body() body: ExportPageInput,
@@ -60,6 +70,7 @@ export class KbImportExportController {
 
   @Get("export-jobs")
   @RequirePermission("kb:pages:export")
+  @ResponseSchema(kbExportJobListSchema)
   async listExportJobs(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
     return this.importExport.listExportJobs(u.orgId);
   }

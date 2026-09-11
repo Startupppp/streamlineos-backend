@@ -2,6 +2,7 @@
  * Phase 11 — AI payroll guardrails (non-negotiable product rules).
  * Explain/draft only. Never authorize money movement or statutory submission.
  */
+import { asRecord } from "../../../common/openapi/zod-operation-contracts";
 
 export const PAYROLL_AI_CAPABILITY = {
   mode: "explain_draft_only" as const,
@@ -52,8 +53,8 @@ export function buildPayslipEvidenceCitations(
   const earnings = evidence.earningsBreakdown;
   if (Array.isArray(earnings)) {
     earnings.forEach((row, i) => {
-      if (row && typeof row === "object") {
-        const r = row as { name?: string; amount?: string };
+      const r = asRecord(row);
+      if (r) {
         citations.push({
           path: `earningsBreakdown[${i}].amount`,
           label: r.name ? `Earning: ${r.name}` : `Earning line ${i + 1}`,
@@ -67,8 +68,8 @@ export function buildPayslipEvidenceCitations(
   const deductions = evidence.deductionsBreakdown;
   if (Array.isArray(deductions)) {
     deductions.forEach((row, i) => {
-      if (row && typeof row === "object") {
-        const r = row as { name?: string; amount?: string };
+      const r = asRecord(row);
+      if (r) {
         citations.push({
           path: `deductionsBreakdown[${i}].amount`,
           label: r.name ? `Deduction: ${r.name}` : `Deduction line ${i + 1}`,

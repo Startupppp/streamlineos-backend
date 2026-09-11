@@ -1,4 +1,5 @@
 import { SetMetadata } from "@nestjs/common";
+import { REQUIRE_PERMISSION } from "../../common/rbac/require-permission-key";
 
-export const REQUIRE_PERMISSION = "require_permission";
+export { REQUIRE_PERMISSION };
 export const RequirePermission = (key: string) => SetMetadata(REQUIRE_PERMISSION, key);

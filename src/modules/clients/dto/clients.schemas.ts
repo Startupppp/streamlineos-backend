@@ -6,29 +6,29 @@ export const listAccountsSchema = z.object({
   search: z.string().optional(),
   page: optionalPageNumberField(),
   limit: optionalPageSizeField(),
-});
+}).strict();
 
 export const healthQuerySchema = z.object({
   status: z.enum(["healthy", "at_risk", "critical"]).optional(),
   limit: optionalPageSizeField(50),
-});
+}).strict();
 
 export const createActivitySchema = z.object({
   activityType: z.string(),
   title: z.string().min(1),
   description: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
-});
+}).strict();
 
 export const updateRenewalSchema = z.object({
   renewalStage: z.enum(["upcoming", "in_discussion", "renewed", "churned"]).optional(),
   renewalDate: z.string().nullable().optional(),
   renewalNotes: z.string().nullable().optional(),
-});
+}).strict();
 
 export const opportunitiesListSchema = z.object({
   clientId: z.coerce.number().optional(),
-});
+}).strict();
 
 export const createOpportunitySchema = z.object({
   clientId: z.number().int().positive(),
@@ -38,7 +38,7 @@ export const createOpportunitySchema = z.object({
   value: z.string().optional(),
   notes: z.string().max(2000).optional(),
   expectedCloseDate: z.string().optional(),
-});
+}).strict();
 
 export const updateOpportunitySchema = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -47,11 +47,11 @@ export const updateOpportunitySchema = z.object({
   value: z.string().optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
   expectedCloseDate: z.string().optional().nullable(),
-});
+}).strict();
 
 export const onboardingItemsListSchema = z.object({
   clientId: z.coerce.number().optional(),
-});
+}).strict();
 
 export const createOnboardingItemSchema = z.object({
   clientId: z.coerce.number().int().positive(),
@@ -61,7 +61,7 @@ export const createOnboardingItemSchema = z.object({
   dueDate: z.string().optional(),
   sortOrder: z.coerce.number().int().optional().default(0),
   templateId: z.coerce.number().int().optional(),
-});
+}).strict();
 
 export const patchOnboardingItemSchema = z.object({
   completedAt: z.string().nullable().optional(),
@@ -69,13 +69,13 @@ export const patchOnboardingItemSchema = z.object({
   description: z.string().nullable().optional(),
   assignedTo: z.string().nullable().optional(),
   dueDate: z.string().nullable().optional(),
-});
+}).strict();
 
 export const createTemplateSchema = z.object({
   name: z.string().min(1).max(200),
   description: z.string().optional(),
   isDefault: z.boolean().optional().default(false),
-});
+}).strict();
 
 export const updateClientStatusSchema = z.object({
   status: z.enum(["ACCOUNT_OPENING", "QUERIES", "PLAN_SELECTED", "INVESTED"]),
@@ -83,7 +83,7 @@ export const updateClientStatusSchema = z.object({
   planName: z.string().optional(),
   investmentDate: z.string().optional(),
   transactionRef: z.string().optional(),
-});
+}).strict();
 
 export type ListAccountsInput = z.infer<typeof listAccountsSchema>;
 export type HealthQueryInput = z.infer<typeof healthQuerySchema>;

@@ -53,7 +53,7 @@ function buildRegistry(topology: RegionTopology, primaryDb: Db): RegionRegistry 
     secondaryClients.push({ key: definition.key, end: (options) => client.end(options) });
     bindings.set(definition.key, {
       definition,
-      db: drizzle(client, { schema }) as unknown as Db,
+      db: drizzle(client, { schema }),
     });
   }
 
@@ -97,7 +97,6 @@ function buildRegistry(topology: RegionTopology, primaryDb: Db): RegionRegistry 
       },
     },
   ],
-  exports: [REGION_REGISTRY, REGION_TOPOLOGY],
 })
 export class RegionModule implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger("Region");

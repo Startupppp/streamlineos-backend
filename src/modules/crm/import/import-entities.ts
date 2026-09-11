@@ -27,7 +27,7 @@ export * from "./import-fields";
 
 // ── What the rest of the module asks the registry ──────────────────────────
 
-export function vocabularyOf(entity: ImportEntity): EntityVocabulary {
+function vocabularyOf(entity: ImportEntity): EntityVocabulary {
   return VOCABULARY[entity];
 }
 
@@ -60,7 +60,7 @@ export function anchorOf(entity: ImportEntity): AnchorRule | undefined {
 }
 
 export function isFieldOf(entity: ImportEntity, value: string): value is ImportField {
-  return (VOCABULARY[entity].fields as readonly string[]).includes(value);
+  return VOCABULARY[entity].fields.some((field) => field === value);
 }
 
 /**

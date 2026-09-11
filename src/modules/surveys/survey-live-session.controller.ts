@@ -8,7 +8,11 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  surveyLiveSessionRowSchema,
+  liveSessionResultsSchema,
+} from "./dto/survey-live-response.schemas";
 import { SurveyLiveSessionService } from "./survey-live-session.service";
 import { SurveyLiveParticipantService } from "./survey-live-participant.service";
 import { createLiveSessionSchema, type CreateLiveSessionInput } from "./dto/survey-live-session.schemas";
@@ -29,6 +33,7 @@ export class SurveyLiveSessionController {
   @HttpCode(201)
   @RequirePermission("surveys:live:host")
   @Validate({ params: surveyIdParams, body: createLiveSessionSchema })
+  @ResponseSchema(surveyLiveSessionRowSchema)
   create(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body() body: CreateLiveSessionInput,
@@ -40,6 +45,7 @@ export class SurveyLiveSessionController {
   @Get("live-sessions/:sessionId")
   @RequirePermission("surveys:live:host")
   @Validate({ params: sessionIdParams })
+  @ResponseSchema(surveyLiveSessionRowSchema)
   get(@Param("sessionId", ParseIntPipe) sessionId: number, @CurrentUser() u: CurrentUserContext) {
     return this.liveSessions.get(u.orgId, sessionId);
   }
@@ -48,6 +54,7 @@ export class SurveyLiveSessionController {
   @BodylessAction()
   @RequirePermission("surveys:live:host")
   @Validate({ params: sessionIdParams })
+  @ResponseSchema(surveyLiveSessionRowSchema)
   start(@Param("sessionId", ParseIntPipe) sessionId: number, @CurrentUser() u: CurrentUserContext) {
     return this.liveSessions.start(u.orgId, sessionId);
   }
@@ -56,6 +63,7 @@ export class SurveyLiveSessionController {
   @BodylessAction()
   @RequirePermission("surveys:live:host")
   @Validate({ params: sessionIdParams })
+  @ResponseSchema(surveyLiveSessionRowSchema)
   next(@Param("sessionId", ParseIntPipe) sessionId: number, @CurrentUser() u: CurrentUserContext) {
     return this.liveSessions.next(u.orgId, sessionId);
   }
@@ -64,6 +72,7 @@ export class SurveyLiveSessionController {
   @BodylessAction()
   @RequirePermission("surveys:live:host")
   @Validate({ params: sessionIdParams })
+  @ResponseSchema(surveyLiveSessionRowSchema)
   reveal(@Param("sessionId", ParseIntPipe) sessionId: number, @CurrentUser() u: CurrentUserContext) {
     return this.liveSessions.reveal(u.orgId, sessionId);
   }
@@ -72,6 +81,7 @@ export class SurveyLiveSessionController {
   @BodylessAction()
   @RequirePermission("surveys:live:host")
   @Validate({ params: sessionIdParams })
+  @ResponseSchema(surveyLiveSessionRowSchema)
   end(@Param("sessionId", ParseIntPipe) sessionId: number, @CurrentUser() u: CurrentUserContext) {
     return this.liveSessions.end(u.orgId, sessionId);
   }
@@ -79,13 +89,14 @@ export class SurveyLiveSessionController {
   @Get("live-sessions/:sessionId/results")
   @RequirePermission("surveys:live:host")
   @Validate({ params: sessionIdParams })
+  @ResponseSchema(liveSessionResultsSchema)
   async results(@Param("sessionId", ParseIntPipe) sessionId: number, @CurrentUser() u: CurrentUserContext) {
     const session = await this.liveSessions.get(u.orgId, sessionId);
-    const participantCount = await this.liveParticipants.getParticipantCount(sessionId);
+    const participantCount = await this.liveParticipants.getParticipantCount(u.orgId, sessionId);
     if (!session.currentQuestionId) {
       return { participantCount, revealed: false, question: null };
     }
-    const results = await this.liveParticipants.getQuestionResults(sessionId, session.currentQuestionId);
-    return { participantCount, revealed: Boolean((session.settings as { revealed?: boolean })?.revealed), question: results };
+    const results = await this.liveParticipants.getQuestionResults(u.orgId, sessionId, session.currentQuestionId);
+    return { participantCount, revealed: session.settings?.["revealed"] === true, question: results };
   }
 }

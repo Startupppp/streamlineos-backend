@@ -1,5 +1,5 @@
 import { Logger } from "@nestjs/common";
-import { and, count, eq, isNull, ne, or, sql } from "drizzle-orm";
+import { and, eq, isNull, ne, or, sql } from "drizzle-orm";
 import {
   agentTokens,
   chatHuddleParticipants,
@@ -8,7 +8,6 @@ import {
   chatSavedMessages,
   invitationEvents,
   invitations,
-  kbSpaceGrants,
   organizationMembers,
   organizations,
   ownershipTransfers,
@@ -21,8 +20,7 @@ import {
 } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../../common/cache/cache-keys";
-import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
+import { revokeMembershipAccessCaches } from "../../../common/org/membership-bust";
 import { SessionsService } from "../../sessions/sessions.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { withIdentity } from "../../../common/tenant/with-identity";
@@ -183,27 +181,6 @@ export class OrgMembershipAccessRevocation {
                 ),
               ),
             );
-          const kbMembershipPrincipalFilter =
-            membershipId !== undefined
-              ? and(
-                  eq(kbSpaceGrants.principalType, "org_membership"),
-                  eq(kbSpaceGrants.principalId, String(membershipId)),
-                )
-              : undefined;
-          await tx
-            .delete(kbSpaceGrants)
-            .where(
-              and(
-                eq(kbSpaceGrants.orgId, orgId),
-                or(
-                  and(
-                    eq(kbSpaceGrants.principalType, "user"),
-                    eq(kbSpaceGrants.principalId, memberUserId),
-                  ),
-                  kbMembershipPrincipalFilter,
-                ),
-              ),
-            );
           if (userEmail) {
             const revokedInvites = await tx
               .update(invitations)
@@ -287,8 +264,9 @@ export class OrgMembershipAccessRevocation {
             composioConnectedAccountId:
               userIntegrationConnections.composioConnectedAccountId,
           });
-        for (const connection of updatedConns) {
-          await OutboxWriter.emit(tx, {
+        await OutboxWriter.emitMany(
+          tx,
+          updatedConns.map((connection) => ({
             eventId: randomUUID(),
             organizationId: orgId,
             aggregateType: "user_integration_connection",
@@ -303,8 +281,8 @@ export class OrgMembershipAccessRevocation {
               cause,
             },
             occurredAt: now,
-          });
-        }
+          })),
+        );
       },
       { orgId },
     );
@@ -319,8 +297,8 @@ export class OrgMembershipAccessRevocation {
 
     const hasOtherActiveMemberships = await runOutsideTenantContext(() =>
       withIdentity(this.db, memberUserId, async (tx) => {
-        const [result] = await tx
-          .select({ n: count() })
+        const other = await tx
+          .select({ one: sql`1` })
           .from(organizationMembers)
           .innerJoin(
             organizations,
@@ -334,8 +312,9 @@ export class OrgMembershipAccessRevocation {
               isNull(organizations.deletedAt),
               ne(organizationMembers.orgId, orgId),
             ),
-          );
-        return (result?.n ?? 0) > 0;
+          )
+          .limit(1);
+        return other.length > 0;
       }),
     );
     if (!hasOtherActiveMemberships) {
@@ -364,12 +343,6 @@ export class OrgMembershipAccessRevocation {
     orgId: string,
     memberUserId: string,
   ): Promise<void> {
-    const invalidate = () =>
-      Promise.all([
-        this.cache.invalidate(CACHE_KEYS.userSession(memberUserId)),
-        bustMembershipStatusCache(this.cache, memberUserId, orgId),
-      ]).then(() => undefined);
-    await invalidate();
-    registerAfterCommit(invalidate);
+    return revokeMembershipAccessCaches(this.cache, orgId, memberUserId);
   }
 }

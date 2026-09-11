@@ -1,5 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, desc, eq, gte, inArray, lt, ne } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, ne } from "drizzle-orm";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBefore } from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { aiCreditPacks, aiCreditTransactions } from "../../../db/schema";
@@ -45,43 +47,46 @@ export class AiCreditsPacksService {
     }
   }
 
-  async listTransactions(orgId: string, page: number, limit: number) {
-    const offset = (page - 1) * limit;
-    const [items, [countRow]] = await Promise.all([
-      this.db
-        .select({
-          id: aiCreditTransactions.id,
-          orgId: aiCreditTransactions.orgId,
-          userId: aiCreditTransactions.userId,
-          type: aiCreditTransactions.type,
-          amount: aiCreditTransactions.amount,
-          balanceAfter: aiCreditTransactions.balanceAfter,
-          feature: aiCreditTransactions.feature,
-          model: aiCreditTransactions.model,
-          referenceId: aiCreditTransactions.referenceId,
-          createdAt: aiCreditTransactions.createdAt,
-          promptTokens: aiCreditTransactions.promptTokens,
-          completionTokens: aiCreditTransactions.completionTokens,
-          totalTokens: aiCreditTransactions.totalTokens,
-          costUsd: aiCreditTransactions.costUsd,
-        })
-        .from(aiCreditTransactions)
-        .where(eq(aiCreditTransactions.orgId, orgId))
-        .orderBy(desc(aiCreditTransactions.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(aiCreditTransactions)
-        .where(eq(aiCreditTransactions.orgId, orgId)),
-    ]);
-    const total = Number(countRow?.total ?? 0);
+  async listTransactions(orgId: string, query: { cursor?: string; limit: number }) {
+    const position = decodeCursor(query.cursor);
+    const limit = Math.min(query.limit, 100);
+    const conditions = [eq(aiCreditTransactions.orgId, orgId)];
+    if (position) {
+      conditions.push(keysetBefore(aiCreditTransactions.createdAt, aiCreditTransactions.id, position));
+    }
+
+    const items = await this.db
+      .select({
+        id: aiCreditTransactions.id,
+        orgId: aiCreditTransactions.orgId,
+        userId: aiCreditTransactions.userId,
+        type: aiCreditTransactions.type,
+        amount: aiCreditTransactions.amount,
+        balanceAfter: aiCreditTransactions.balanceAfter,
+        feature: aiCreditTransactions.feature,
+        model: aiCreditTransactions.model,
+        referenceId: aiCreditTransactions.referenceId,
+        createdAt: aiCreditTransactions.createdAt,
+        promptTokens: aiCreditTransactions.promptTokens,
+        completionTokens: aiCreditTransactions.completionTokens,
+        totalTokens: aiCreditTransactions.totalTokens,
+        costUsd: aiCreditTransactions.costUsd,
+      })
+      .from(aiCreditTransactions)
+      .where(and(...conditions))
+      .orderBy(desc(aiCreditTransactions.createdAt), desc(aiCreditTransactions.id))
+      .limit(limit + 1);
+
     const mappedItems = items.map((t) => ({
       ...t,
       amount: milliToCredits(t.amount),
       balanceAfter: milliToCredits(t.balanceAfter),
     }));
-    return { items: mappedItems, total, page, totalPages: Math.ceil(total / limit) };
+
+    return buildCursorPage(mappedItems, limit, (transaction) => ({
+      sortValue: transaction.createdAt.toISOString(),
+      id: String(transaction.id),
+    }));
   }
 
   async hasSameDayPurchaseForPack(orgId: string, packId: number): Promise<boolean> {

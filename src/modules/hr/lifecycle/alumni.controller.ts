@@ -13,6 +13,8 @@ import {
 } from "./dto/hr-lifecycle.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { alumniProfileListSchema, alumniProfileSchema } from "./dto/lifecycle-response.schemas";
 
 @RequireModule("hr")
 @Controller("hr/alumni")
@@ -21,6 +23,7 @@ export class AlumniController {
   constructor(private readonly alumni: AlumniService) {}
 
   @Get()
+  @ResponseSchema(alumniProfileListSchema)
   @RequirePermission("hr:alumni:read")
   @Validate({ query: alumniListSchema })
   list(
@@ -31,6 +34,7 @@ export class AlumniController {
   }
 
   @Post()
+  @ResponseSchema(alumniProfileSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:alumni:write")
   @HttpCode(201)

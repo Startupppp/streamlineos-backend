@@ -1,11 +1,15 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
-import { projectMembers, projects, sprints, tickets } from "../../db/schema";
+import { organizationMembers, projectMembers, projects, sprints, tickets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AccessService } from "../access/access.service";
 import { resolveBuildDashboardScope } from "./dashboard-scope";
+import { DASHBOARD_PROJECT_ID_CAP } from "./dashboard-read-limits";
+
+const PROJECT_MEMBERSHIP_QUERY_SHAPE_REASON =
+  "all vs own/team picks an entirely different project-membership query shape, not a row predicate";
 
 @Injectable()
 export class DashboardProjectService {
@@ -23,37 +27,45 @@ export class DashboardProjectService {
       const allProjects = await this.db.query.projects.findMany({
         where: and(eq(projects.orgId, orgId), isNull(projects.deletedAt)),
         columns: { id: true },
+        orderBy: [desc(projects.id)],
+        limit: DASHBOARD_PROJECT_ID_CAP,
       });
       return allProjects.map((p) => p.id);
     }
     const memberOf = await this.db
       .select({ projectId: projectMembers.projectId })
       .from(projectMembers)
-      .where(and(eq(projectMembers.orgId, orgId), eq(projectMembers.userId, userId)));
+      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, projectMembers.orgId), eq(organizationMembers.id, projectMembers.membershipId)))
+      .where(and(eq(projectMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+      .orderBy(desc(projectMembers.projectId))
+      .limit(DASHBOARD_PROJECT_ID_CAP);
     return memberOf.map((m) => m.projectId);
   }
 
   async getRecentProjects(orgId: string, u: CurrentUserContext) {
-    const scope = await resolveBuildDashboardScope(this.access, u);
-    if (scope === "none") return [];
+    const read = await resolveBuildDashboardScope(this.access, u);
+    if (read.denied) return [];
+    const isAll = read.rawScope(PROJECT_MEMBERSHIP_QUERY_SHAPE_REASON) === "all";
 
-    if (scope === "all") {
+    if (isAll) {
       return this.db.query.projects.findMany({
         where: and(eq(projects.orgId, orgId), isNull(projects.deletedAt)),
         orderBy: [desc(projects.id)],
         limit: 5,
         with: {
-          manager: {
-            columns: { id: true, name: true, firstName: true, lastName: true, image: true },
-          },
+          manager: { with: { user: { columns: { id: true, name: true, firstName: true, lastName: true, image: true } } } },
         },
       });
     }
 
-    const memberOf = await this.db
-      .select({ projectId: projectMembers.projectId })
-      .from(projectMembers)
-      .where(and(eq(projectMembers.orgId, orgId), eq(projectMembers.userId, u.userId)));
+    const [managerMember, memberOf] = await Promise.all([
+      this.db.query.organizationMembers.findFirst({ where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, u.userId)), columns: { id: true } }),
+      this.db
+        .select({ projectId: projectMembers.projectId })
+        .from(projectMembers)
+        .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, projectMembers.orgId), eq(organizationMembers.id, projectMembers.membershipId)))
+        .where(and(eq(projectMembers.orgId, orgId), eq(organizationMembers.userId, u.userId))),
+    ]);
 
     const projectIds = memberOf.map((m) => m.projectId);
 
@@ -62,28 +74,32 @@ export class DashboardProjectService {
         eq(projects.orgId, orgId),
         isNull(projects.deletedAt),
         or(
-          eq(projects.managerId, u.userId),
+          eq(projects.managerMembershipId, managerMember?.id ?? -1),
           projectIds.length > 0 ? inArray(projects.id, projectIds) : undefined,
         ),
       ),
       orderBy: [desc(projects.id)],
       limit: 5,
       with: {
-        manager: {
-          columns: { id: true, name: true, firstName: true, lastName: true, image: true },
-        },
+        manager: { with: { user: { columns: { id: true, name: true, firstName: true, lastName: true, image: true } } } },
       },
     });
   }
 
-  async getMyIssues(orgId: string, userId: string) {
+  async getMyIssues(orgId: string, userId: string, statuses?: string[], resolvedMembershipId?: number | null) {
+    const membershipId =
+      resolvedMembershipId === undefined
+        ? (await this.db.query.organizationMembers.findFirst({ where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)), columns: { id: true } }))?.id ?? null
+        : resolvedMembershipId;
+    if (membershipId === null) return [];
+    const statusFilter = statuses && statuses.length > 0 ? inArray(tickets.status, statuses) : undefined;
     const issues = await this.db.query.tickets.findMany({
-      where: and(eq(tickets.orgId, orgId), eq(tickets.assigneeId, userId), isNull(tickets.deletedAt)),
+      where: and(eq(tickets.orgId, orgId), eq(tickets.assigneeMembershipId, membershipId), isNull(tickets.deletedAt), statusFilter),
       orderBy: [desc(tickets.updatedAt)],
       limit: 10,
       with: {
         project: { columns: { id: true, name: true, key: true } },
-        assignee: { columns: { id: true, firstName: true, lastName: true, image: true } },
+        assignee: { with: { user: { columns: { id: true, firstName: true, lastName: true, image: true } } } },
       },
     });
 
@@ -98,21 +114,22 @@ export class DashboardProjectService {
       projectName: t.project?.name ?? "",
       projectId: t.project?.id,
       projectKey: t.project?.key ?? "",
-      assignee: t.assignee
+      assignee: t.assignee?.user
         ? {
             id: t.assignee.id,
-            firstName: t.assignee.firstName,
-            lastName: t.assignee.lastName,
-            image: t.assignee.image,
+            firstName: t.assignee.user.firstName,
+            lastName: t.assignee.user.lastName,
+            image: t.assignee.user.image,
           }
         : null,
     }));
   }
 
   async getActiveSprintSummary(orgId: string, u: CurrentUserContext) {
-    const scope = await resolveBuildDashboardScope(this.access, u);
-    if (scope === "none") return null;
-    const projectIds = await this.resolveProjectIds(orgId, u.userId, scope === "all");
+    const read = await resolveBuildDashboardScope(this.access, u);
+    if (read.denied) return null;
+    const isAll = read.rawScope(PROJECT_MEMBERSHIP_QUERY_SHAPE_REASON) === "all";
+    const projectIds = await this.resolveProjectIds(orgId, u.userId, isAll);
     if (projectIds.length === 0) return null;
 
     const activeSprint = await this.db.query.sprints.findFirst({
@@ -185,9 +202,13 @@ export class DashboardProjectService {
   }
 
   async getRecentActivity(orgId: string, u: CurrentUserContext) {
-    const scope = await resolveBuildDashboardScope(this.access, u);
-    if (scope === "none") return [];
-    const projectIds = await this.resolveProjectIds(orgId, u.userId, scope === "all");
+    const read = await resolveBuildDashboardScope(this.access, u);
+    if (read.denied) return [];
+    const isAll = read.rawScope(PROJECT_MEMBERSHIP_QUERY_SHAPE_REASON) === "all";
+    const [projectIds, managerMember] = await Promise.all([
+      this.resolveProjectIds(orgId, u.userId, isAll),
+      this.db.query.organizationMembers.findFirst({ where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, u.userId)), columns: { id: true } }),
+    ]);
     if (projectIds.length === 0) return [];
 
     const ticketFilters: SQL[] = [
@@ -196,9 +217,9 @@ export class DashboardProjectService {
       isNull(tickets.deletedAt),
     ];
 
-    if (scope !== "all") {
+    if (!isAll) {
       const ownerFilter = or(
-        eq(tickets.assigneeId, u.userId),
+        eq(tickets.assigneeMembershipId, managerMember?.id ?? -1),
         eq(tickets.reporterId, u.userId),
       );
       if (ownerFilter) ticketFilters.push(ownerFilter);
@@ -210,7 +231,7 @@ export class DashboardProjectService {
       limit: 10,
       with: {
         project: { columns: { id: true, name: true, key: true } },
-        assignee: { columns: { id: true, firstName: true, lastName: true, image: true } },
+        assignee: { with: { user: { columns: { id: true, firstName: true, lastName: true, image: true } } } },
       },
     });
 
@@ -225,12 +246,12 @@ export class DashboardProjectService {
       projectName: t.project?.name || "",
       projectId: t.project?.id,
       projectKey: t.project?.key || "",
-      assignee: t.assignee
+      assignee: t.assignee?.user
         ? {
             id: t.assignee.id,
-            firstName: t.assignee.firstName,
-            lastName: t.assignee.lastName,
-            image: t.assignee.image,
+            firstName: t.assignee.user.firstName,
+            lastName: t.assignee.user.lastName,
+            image: t.assignee.user.image,
           }
         : null,
     }));

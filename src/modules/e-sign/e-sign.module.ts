@@ -113,7 +113,6 @@ import { SignEnvelopeCompletedConsumerService } from "./sign-envelope-completed-
     SignAuditService,
     SignSettingsService,
     SignEnvelopesService,
-    SignFinalizationService,
     SignTemplatesService,
     /** For the platform cron controller, which drives the sweeps across orgs. */
     SignEnvelopeSweepsService,

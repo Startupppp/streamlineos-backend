@@ -70,7 +70,8 @@ describe("ApprovalsBulkService — cross-tenant isolation", () => {
     } as unknown as Db;
     const audit = { record: jest.fn().mockResolvedValue(undefined) } as never;
     const approvals = { assertCanActOnPeriod: jest.fn().mockResolvedValue(undefined) } as never;
-    const svc = new ApprovalsBulkService(db, audit, approvals);
+    const rateResolver = { resolveMany: jest.fn().mockResolvedValue([]) } as never;
+    const svc = new ApprovalsBulkService(db, audit, approvals, rateResolver);
     await expect(svc.rejectPeriod(makeUser(ATTACKER), 1, { reason: "bad" })).rejects.toThrow(NotFoundException);
     expect(where).toHaveBeenCalled();
     const vals = sqlValues(where.mock.calls[0]?.[0]);
@@ -133,7 +134,8 @@ describe("ApprovalsBulkService — cross-tenant isolation", () => {
       assertCanActOnPeriod: jest.fn().mockResolvedValue(undefined),
       notifyPeriodRejected: jest.fn().mockResolvedValue(undefined),
     };
-    const svc = new ApprovalsBulkService(db, audit, approvals as never);
+    const rateResolver = { resolveMany: jest.fn().mockResolvedValue([]) } as never;
+    const svc = new ApprovalsBulkService(db, audit, approvals as never, rateResolver);
     const result = await svc.rejectPeriod(makeUser(OWNER), 1, { reason: "rejected" });
     expect(result).toBeDefined();
     const vals = sqlValues(reads[0]!.where.mock.calls[0]?.[0]);

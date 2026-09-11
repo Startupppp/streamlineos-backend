@@ -3,10 +3,11 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagg
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
-import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { checkWebhookUrl } from "../../common/security/ssrf-guard";
 import { Validate } from "../../common/validation/validate.decorator";
 import { linkPreviewQuerySchema, type LinkPreviewQueryInput } from "./dto/chat-link-preview.schemas";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { chatLinkPreviewSchema } from "./dto/chat-misc-response.schemas";
 
 const MAX_PREVIEW_BYTES = 512 * 1024;
 
@@ -20,13 +21,13 @@ interface LinkMeta {
 
 @ApiTags("Chat Link Preview")
 @ApiBearerAuth()
-@RequireModule("chat")
 @Controller("chat/link-preview")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ChatLinkPreviewController {
   @ApiOperation({ summary: "Fetch Open Graph metadata for a URL to render a link preview card" })
   @ApiResponse({ status: 200, description: "Link metadata" })
   @Get()
+  @ResponseSchema(chatLinkPreviewSchema)
   @RequirePermission("chat:messages:read")
   @Validate({ query: linkPreviewQuerySchema })
   async preview(@Query() query: LinkPreviewQueryInput): Promise<LinkMeta> {

@@ -25,7 +25,6 @@ export const invValuationLayers = pgTable("inv_valuation_layers", {
 }, (table) => [
   unique("uniq_inv_valuation_layers_org_id").on(table.orgId, table.id),
   index("idx_inv_val_layers_org_variant").on(table.orgId, table.productVariantId, table.createdAt),
-  index("idx_inv_val_layers_remaining").on(table.orgId, table.productVariantId),
   index("idx_inv_val_layers_txn").on(table.stockTransactionId),
   index("idx_inv_val_layers_fifo").on(table.orgId, table.productVariantId, table.locationId, table.createdAt).where(sql`remaining_quantity > 0`),
 ]);
@@ -42,7 +41,6 @@ export const invValuationConsumptions = pgTable("inv_valuation_consumptions", {
 }, (table) => [
   uniqueIndex("uniq_inv_val_consumptions_txn_layer").on(table.orgId, table.stockTransactionId, table.valuationLayerId),
   unique("uniq_inv_valuation_consumptions_org_id").on(table.orgId, table.id),
-  index("idx_inv_val_consumptions_org_txn").on(table.orgId, table.stockTransactionId),
   index("idx_inv_val_consumptions_org_layer").on(table.orgId, table.valuationLayerId),
   foreignKey({
     columns: [table.orgId, table.stockTransactionId],
@@ -92,7 +90,6 @@ export const invStandardCosts = pgTable("inv_standard_costs", {
 }, (table) => [
   uniqueIndex("uniq_inv_standard_costs_variant_from").on(table.orgId, table.productVariantId, table.effectiveFrom),
   unique("uniq_inv_standard_costs_org_id").on(table.orgId, table.id),
-  index("idx_inv_standard_costs_lookup").on(table.orgId, table.productVariantId, table.effectiveFrom),
 ]);
 
 export const invValuationLayersRelations = relations(invValuationLayers, ({ one, many }) => ({

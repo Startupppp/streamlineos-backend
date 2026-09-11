@@ -10,6 +10,14 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { ApiOkResponse } from "@nestjs/swagger";
+import {
+  surveyOverviewSchema,
+  surveyQuestionAnalyticsSchema,
+  surveyResponseListSchema,
+  surveyResponseDetailSchema,
+} from "./dto/survey-analytics-response.schemas";
 import { SurveyAnalyticsService } from "./survey-analytics.service";
 import { SurveyResponseService } from "./survey-response.service";
 import { SurveyExportService } from "./survey-export.service";
@@ -40,13 +48,16 @@ export class SurveyAnalyticsController {
   @Get("analytics/overview")
   @RequirePermission("surveys:analytics:view")
   @Validate({ params: surveyIdParams })
-  overview(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
+  @ResponseSchema(surveyOverviewSchema)
+  async overview(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    await this.forms.get(u.orgId, u.userId, surveyId, readRequestScope(req));
     return this.analytics.overview(u.orgId, surveyId);
   }
 
   @Get("analytics/questions")
   @RequirePermission("surveys:analytics:view")
   @Validate({ params: surveyIdParams })
+  @ResponseSchema(surveyQuestionAnalyticsSchema)
   async questions(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
     const survey = await this.forms.get(u.orgId, u.userId, surveyId, readRequestScope(req));
     const versionId = survey.activeVersionId ?? (await this.versions.getDraftVersion(u.orgId, surveyId)).id;
@@ -56,17 +67,21 @@ export class SurveyAnalyticsController {
   @Get("responses")
   @RequirePermission("surveys:responses:view")
   @Validate({ params: surveyIdParams, query: listResponsesSchema })
-  listResponses(
+  @ResponseSchema(surveyResponseListSchema)
+  async listResponses(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Query() query: ListResponsesInput,
     @CurrentUser() u: CurrentUserContext,
+    @Req() req: Request,
   ) {
+    await this.forms.get(u.orgId, u.userId, surveyId, readRequestScope(req));
     return this.responses.listResponses(u.orgId, surveyId, query);
   }
 
   @Get("responses/:sessionId")
   @RequirePermission("surveys:responses:view")
   @Validate({ params: surveyAndSessionIdParams })
+  @ResponseSchema(surveyResponseDetailSchema)
   getResponse(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Param("sessionId", ParseIntPipe) sessionId: number,
@@ -78,12 +93,15 @@ export class SurveyAnalyticsController {
   @Post("export")
   @RequirePermission("surveys:responses:export")
   @Validate({ params: surveyIdParams, body: exportResponsesSchema })
+  @ApiOkResponse({ content: { "text/csv": { schema: { type: "string" } } }, description: "CSV export of survey responses" })
   async exportResponses(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body() body: ExportResponsesInput,
     @CurrentUser() u: CurrentUserContext,
+    @Req() req: Request,
     @Res() res: Response,
   ) {
+    await this.forms.get(u.orgId, u.userId, surveyId, readRequestScope(req));
     const result = await this.exports.exportResponsesCsv(u.orgId, surveyId, body);
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", "attachment; filename=responses.csv");

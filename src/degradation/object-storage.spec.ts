@@ -14,38 +14,42 @@ function makeStorageService(endpoint: string): StorageService {
     NEXT_PUBLIC_R2_PUBLIC_URL: "https://cdn.example.com",
   };
   const compression = {
+    planOutput: jest.fn().mockImplementation((_buf: Buffer, mime: string, name: string) => ({
+      fileName: name,
+      mimeType: mime,
+    })),
     compress: jest.fn().mockImplementation(async (buf: Buffer, _mime: string, name: string) => ({
       buffer: buf,
       fileName: name,
       mimeType: _mime,
     })),
   } as unknown as MediaCompressionService;
-  return new StorageService(compression, config);
+  return new StorageService(compression, config, { isKeyBlocked: async () => false });
 }
 
 describe("Object storage degraded — pre-generated key survives upload failure", () => {
-  it("compressAndPreGenerateKey generates the key and URL before any network call", async () => {
+  it("planUpload generates the key before any network call and before any transform", async () => {
     const service = makeStorageService("http://unreachable:1");
 
     const buffer = Buffer.from("test-data");
-    const result = await service.compressAndPreGenerateKey(
+    const result = await service.planUpload(
+      "org-test",
       buffer,
       "uploads",
       "file.jpg",
       "image/jpeg",
     );
 
-    expect(result.key).toMatch(/^uploads\/.+\.jpg$/);
-    expect(result.url).toBeTruthy();
-    expect(result.compressedBuffer).toBeInstanceOf(Buffer);
-    expect(result.size).toBeGreaterThan(0);
+    expect(result.key).toMatch(/^org-test\/uploads\/.+\.jpg$/);
+    expect(result.plannedMimeType).toBe("image/jpeg");
   });
 
-  it("the pre-generated key and URL are stable — metadata can be stored before the upload attempt", async () => {
+  it("the pre-generated key is stable and never a public URL — metadata can be stored before the upload attempt", async () => {
     const service = makeStorageService("http://unreachable:1");
     const buffer = Buffer.from("test-data");
 
-    const { key, url } = await service.compressAndPreGenerateKey(
+    const { key } = await service.planUpload(
+      "org-test",
       buffer,
       "uploads",
       "report.pdf",
@@ -53,8 +57,8 @@ describe("Object storage degraded — pre-generated key survives upload failure"
     );
 
     expect(key).toBeTruthy();
-    expect(url).toBeTruthy();
-    expect(key.startsWith("uploads/")).toBe(true);
+    expect(key.startsWith("org-test/uploads/")).toBe(true);
+    expect(key).not.toMatch(/^https?:\/\//);
   });
 });
 
@@ -114,12 +118,12 @@ describe("Object storage degraded — isConfigured and key validation do not tou
   });
 
   it.skip(
-    "unblocked by: a real S3/R2 storage endpoint configured in the test environment — once available, verify that an upload re-driven from the stored pre-generated key reaches the endpoint and the stored metadata row reflects completion without data loss",
+    "integration: retrying an upload from its stored pre-generated key completes the object and metadata without data loss — R2 settings exist but are unverified; the probe and authorized disposable storage/database acceptance are not available",
     () => {},
   );
 
   it.skip(
-    "unblocked by: a real storage endpoint and a virus-scanner seam (e.g. ClamAV sidecar) — verify the scan PENDING→CLEAN state machine under real conditions so that CLEAN is never set before the scanner confirms the result",
+    "integration: scan state changes from PENDING to CLEAN only after a real scanner confirms the result — R2 settings are unverified, no real scanner is configured, and the disposable storage/database probe is unimplemented",
     () => {},
   );
 });

@@ -83,14 +83,17 @@ export class WorkspaceCopilotTools {
           const deny = await this.toolAccess.denyReason(orgId, userId, "build:tickets:view");
           if (deny) return { denied: true, reason: deny };
 
-          const scope = await this.toolAccess.scope(orgId, userId, "build:tickets:view");
+          const read = await this.toolAccess.scope(orgId, userId, "build:tickets:view");
+          const scope = read.rawScope(
+            "an own-scoped member asking about another member's ticket stats is refused with a message, not narrowed to an empty result",
+          );
           if (scope === "own" && targetUserId !== userId) {
             return { denied: true, reason: "Permission denied: you can only view your own ticket stats." };
           }
 
           const conditions = [
             eq(tickets.orgId, orgId),
-            eq(tickets.assigneeId, targetUserId),
+            sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${targetUserId} AND status = 'ACTIVE')`,
           ];
           if (projectId !== undefined) conditions.push(eq(tickets.projectId, projectId));
 
@@ -110,7 +113,13 @@ export class WorkspaceCopilotTools {
             FROM build.tickets t
             LEFT JOIN build.projects p ON p.id = t.project_id
             WHERE t.org_id = ${orgId}
-              AND t.assignee_id = ${targetUserId}
+              AND t.assignee_membership_id IN (
+                SELECT om.id
+                FROM organization_members om
+                WHERE om.org_id = ${orgId}
+                  AND om.user_id = ${targetUserId}
+                  AND om.status = 'ACTIVE'
+              )
               ${projectId !== undefined ? sql`AND t.project_id = ${projectId}` : sql``}
             GROUP BY t.project_id, p.name
             ORDER BY COUNT(*) DESC

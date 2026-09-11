@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, isNull } from "drizzle-orm";
@@ -73,17 +74,19 @@ export class LegalHoldsService {
       })
       .returning();
 
+    if (!hold) throw new InternalServerErrorException("Failed to create legal hold");
+
     await this.audit.log({
       orgId,
       actorId: userId,
       entityType: "hr_legal_hold",
-      entityId: String(hold!.id),
+      entityId: String(hold.id),
       action: "legal_hold.placed",
       after: { subjectUserId: input.subjectUserId, reason: input.reason },
       ipAddress,
     });
 
-    return hold!;
+    return hold;
   }
 
   async update(orgId: string, holdId: number, userId: string, input: UpdateLegalHoldInput, ipAddress?: string) {
@@ -99,6 +102,8 @@ export class LegalHoldsService {
       .where(and(eq(hrLegalHolds.orgId, orgId), eq(hrLegalHolds.id, holdId)))
       .returning();
 
+    if (!updated) throw new InternalServerErrorException("Failed to update legal hold");
+
     await this.audit.log({
       orgId,
       actorId: userId,
@@ -110,7 +115,7 @@ export class LegalHoldsService {
       ipAddress,
     });
 
-    return updated!;
+    return updated;
   }
 
   async release(orgId: string, holdId: number, userId: string, ipAddress?: string) {
@@ -126,6 +131,8 @@ export class LegalHoldsService {
       .where(and(eq(hrLegalHolds.orgId, orgId), eq(hrLegalHolds.id, holdId)))
       .returning();
 
+    if (!updated) throw new InternalServerErrorException("Failed to release legal hold");
+
     await this.audit.log({
       orgId,
       actorId: userId,
@@ -137,7 +144,7 @@ export class LegalHoldsService {
       ipAddress,
     });
 
-    return updated!;
+    return updated;
   }
 
   async softDelete(orgId: string, holdId: number, userId: string, ipAddress?: string) {
@@ -169,7 +176,8 @@ export class LegalHoldsService {
       .select()
       .from(hrLegalHoldItems)
       .where(and(eq(hrLegalHoldItems.orgId, orgId), eq(hrLegalHoldItems.holdId, holdId)))
-      .orderBy(desc(hrLegalHoldItems.createdAt));
+      .orderBy(desc(hrLegalHoldItems.createdAt))
+      .limit(100);
   }
 
   async attachItem(orgId: string, holdId: number, userId: string, input: AttachHoldItemInput, ipAddress?: string) {
@@ -186,6 +194,8 @@ export class LegalHoldsService {
       })
       .returning();
 
+    if (!item) throw new InternalServerErrorException("Failed to attach legal hold item");
+
     await this.audit.log({
       orgId,
       actorId: userId,
@@ -196,7 +206,7 @@ export class LegalHoldsService {
       ipAddress,
     });
 
-    return item!;
+    return item;
   }
 
   async detachItem(orgId: string, holdId: number, itemId: number, userId: string, ipAddress?: string) {

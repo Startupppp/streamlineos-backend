@@ -8,6 +8,61 @@
 SET lock_timeout = '5s';
 
 --> statement-breakpoint
+-- A membership is authoritative only when exactly one active membership in the
+-- row's organization resolves the legacy user.  This catches stale, duplicate,
+-- and cross-tenant pointers before FK validation can make a partial backfill
+-- appear successful.
+DO $$
+DECLARE spec record;
+DECLARE invalid_count bigint;
+BEGIN
+  FOR spec IN
+    SELECT * FROM (VALUES
+      ('leave_requests', 'user_id', 'user_membership_id'),
+      ('leave_requests', 'covering_employee_id', 'covering_employee_membership_id'),
+      ('wfh_requests', 'user_id', 'user_membership_id'),
+      ('hr_attendance_regularizations', 'user_id', 'user_membership_id'),
+      ('documents', 'user_id', 'user_membership_id'),
+      ('hr_cases', 'assigned_to', 'assigned_to_membership_id'),
+      ('hr_cases', 'reported_by', 'reported_by_membership_id'),
+      ('resignations', 'user_id', 'user_membership_id')
+    ) AS contract(table_name, legacy_column, membership_column)
+  LOOP
+    EXECUTE format(
+      'SELECT count(*) FROM %I source WHERE
+         (source.%I IS NOT NULL AND (
+           (SELECT count(*) FROM organization_members member
+             WHERE member.org_id = source.org_id
+               AND member.user_id = source.%I
+               AND member.status = ''ACTIVE'') <> 1
+           OR source.%I IS NULL
+           OR NOT EXISTS (
+             SELECT 1 FROM organization_members member
+             WHERE member.org_id = source.org_id
+               AND member.id = source.%I
+               AND member.user_id = source.%I
+               AND member.status = ''ACTIVE''
+           )
+         ))
+         OR (source.%I IS NOT NULL AND NOT EXISTS (
+           SELECT 1 FROM organization_members member
+           WHERE member.org_id = source.org_id
+             AND member.id = source.%I
+             AND member.status = ''ACTIVE''
+         ))',
+      spec.table_name,
+      spec.legacy_column, spec.legacy_column, spec.membership_column,
+      spec.membership_column, spec.legacy_column,
+      spec.membership_column, spec.membership_column
+    ) INTO invalid_count;
+    IF invalid_count > 0 THEN
+      RAISE EXCEPTION '0851 blocked: %.% has % unmappable, duplicate, inactive, or cross-tenant actor row(s)',
+        spec.table_name, spec.legacy_column, invalid_count;
+    END IF;
+  END LOOP;
+END $$;
+
+--> statement-breakpoint
 ALTER TABLE "leave_requests" VALIDATE CONSTRAINT "fk_leave_requests_user_actor";
 
 --> statement-breakpoint

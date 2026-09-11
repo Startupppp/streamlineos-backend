@@ -9,6 +9,7 @@ import {
   rolePermissionGrants,
 } from "../../../db/schema";
 import { ROLE_DEFAULT_PERMISSIONS } from "../../rbac/permissions";
+import { PAYROLL_READ_CAP } from "../lib/query-bounds";
 
 @Injectable()
 export class PayrollApproverResolverService {
@@ -18,7 +19,7 @@ export class PayrollApproverResolverService {
 
   async resolveApprovers(orgId: string, requiredPermission: string): Promise<string[]> {
     const slugsWithPerm = Object.entries(ROLE_DEFAULT_PERMISSIONS)
-      .filter(([, perms]) => (perms as string[]).includes(requiredPermission))
+      .filter(([, perms]) => perms.some((p) => p === requiredPermission))
       .map(([slug]) => slug);
 
     const [grantRows, defaultRoleRows, ownerRows] = await Promise.all([
@@ -44,7 +45,8 @@ export class PayrollApproverResolverService {
             eq(rolePermissionGrants.orgId, orgId),
             eq(rolePermissionGrants.permissionKey, requiredPermission),
           ),
-        ),
+        )
+        .limit(PAYROLL_READ_CAP + 1),
       slugsWithPerm.length > 0
         ? this.db
             .select({ userId: organizationMembers.userId })
@@ -58,11 +60,13 @@ export class PayrollApproverResolverService {
               ),
             )
             .where(and(eq(roleAssignments.orgId, orgId), inArray(roles.slug, slugsWithPerm)))
+            .limit(PAYROLL_READ_CAP + 1)
         : Promise.resolve<{ userId: string }[]>([]),
       this.db
         .select({ userId: organizationMembers.userId })
         .from(organizationMembers)
-        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.isOwner, true))),
+        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.isOwner, true)))
+        .limit(PAYROLL_READ_CAP + 1),
     ]);
 
     const ids = new Set<string>();

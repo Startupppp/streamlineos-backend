@@ -26,7 +26,14 @@ export interface AiInvokeSuccess<T> {
 
 export interface AiInvokeFailure {
   ok: false;
-  kind: "not_configured" | "provider_unavailable" | "quota_exceeded" | "invalid_output";
+  kind:
+    | "not_configured"
+    | "provider_unavailable"
+    | "quota_exceeded"
+    | "invalid_output"
+    | "context_too_large"
+    | "concurrency_exceeded"
+    | "cancelled";
   message: string;
   correlationId: string;
 }
@@ -64,15 +71,24 @@ export interface AiInvokePrompt {
   promptVersion?: number;
 }
 
+export interface AiResponseCacheOpts {
+  aclVersion: string;
+  sourceRevision?: string;
+  policy?: string;
+}
+
 export interface AiInvokeBaseOpts {
   actor: AiInvokeActor;
   feature: string;
   prompt: AiInvokePrompt;
   tier?: "fast" | "standard";
   maxTokens?: number;
+  maxContextChars?: number;
   charge?: boolean;
   redact?: boolean;
   dedupe?: boolean;
+  signal?: AbortSignal;
+  cache?: AiResponseCacheOpts;
 }
 
 export interface InvokeStructuredOpts<T> extends AiInvokeBaseOpts {
@@ -85,3 +101,34 @@ export interface InvokeStructuredWithImageOpts<T>
 }
 
 export type InvokeTextOpts = AiInvokeBaseOpts;
+
+export interface EmbedQueryOpts {
+  text: string;
+  orgId: string;
+  feature: string;
+  charge: boolean;
+  signal?: AbortSignal;
+}
+
+export interface EmbedQuerySuccess {
+  ok: true;
+  vector: number[];
+  vectorLiteral: string;
+}
+
+export type EmbedQueryResult = EmbedQuerySuccess | AiInvokeFailure;
+
+export interface EmbedBatchOpts {
+  texts: string[];
+  orgId: string;
+  feature: string;
+  charge: boolean;
+  signal?: AbortSignal;
+}
+
+export interface EmbedBatchSuccess {
+  ok: true;
+  vectors: number[][];
+}
+
+export type EmbedBatchResult = EmbedBatchSuccess | AiInvokeFailure;

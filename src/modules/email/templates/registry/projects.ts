@@ -4,10 +4,9 @@ import {
   getTicketReviewRequestEmailTemplate,
   getTicketChangesRequestedEmailTemplate,
 } from "../index";
-import { BASE_URL } from "./_shared";
-import type { TemplateEntry } from "./_shared";
+import { BASE_URL, EMAIL_TEMPLATE_VERSION, defineTemplateFamily } from "./_shared";
 
-export const projectsTemplates: Record<string, TemplateEntry> = {
+export const projectsTemplates = defineTemplateFamily({
   "project.assigned": {
     category: "Projects",
     name: "Project Assignment",
@@ -65,4 +64,4 @@ export const projectsTemplates: Record<string, TemplateEntry> = {
         "Please handle empty state on the export dialog.",
       ),
   },
-};
+}, EMAIL_TEMPLATE_VERSION);

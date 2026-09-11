@@ -3,7 +3,12 @@ import { join } from "node:path";
 import { InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import { runWithObservabilityContext } from "../../../common/observability";
 import { vaultAccessLogs } from "../../../db/schema";
+import { storagePendingPurge } from "../../../db/schema/common/storage-pending-purge";
 import { RecruitmentCandidateVaultService } from "./recruitment-candidate-vault.service";
+
+const cleanQuarantine = {
+  getStatusForKey: async () => "clean" as const,
+} as unknown as import("../../storage/file-quarantine.service").FileQuarantineService;
 
 interface InsertedRow {
   table: unknown;
@@ -19,7 +24,8 @@ function buildDb(document: Record<string, unknown> | undefined) {
     insert: (table: unknown) => ({
       values: (values: Record<string, unknown>) => {
         inserted.push({ table, values });
-        return Promise.resolve([values]);
+        const settled = Promise.resolve([values]);
+        return Object.assign(settled, { onConflictDoUpdate: () => settled });
       },
     }),
     delete: (table: unknown) => ({
@@ -49,20 +55,26 @@ function buildDb(document: Record<string, unknown> | undefined) {
   };
 }
 
-const DOCUMENT = { id: 42, filename: "offer-letter.pdf", documentType: "OFFER" };
+const DOCUMENT = {
+  id: 42,
+  filename: "offer-letter.pdf",
+  documentType: "OFFER",
+  s3Key: "org_1/candidate-vault/42-offer-letter.pdf",
+};
 
 describe("vault document deletion writes an audit row", () => {
   it("records the deletion and the document's name in the same transaction as the delete", async () => {
     const harness = buildDb(DOCUMENT);
-    const service = new RecruitmentCandidateVaultService(harness.db as never);
+    const service = new RecruitmentCandidateVaultService(harness.db as never, cleanQuarantine);
 
     await service.deleteVaultDocument("org_1", 7, 42, "user_actor");
 
     expect(harness.ranTransaction()).toBe(true);
-    expect(harness.inserted).toHaveLength(1);
     expect(harness.deletes).toHaveLength(1);
-    expect(harness.inserted[0]?.table).toBe(vaultAccessLogs);
-    expect(harness.inserted[0]?.values).toEqual({
+
+    const auditRow = harness.inserted.find((r) => r.table === vaultAccessLogs);
+    expect(auditRow).toBeDefined();
+    expect(auditRow?.values).toEqual({
       orgId: "org_1",
       candidateId: 7,
       vaultDocumentId: 42,
@@ -71,23 +83,42 @@ describe("vault document deletion writes an audit row", () => {
       accessedBy: "user_actor",
       action: "DELETE",
     });
+
+    /**
+     * PRD-C103, "deletion must clean database rows and objects without
+     * orphaning". The row is what points at the object, so the purge record has
+     * to be written INSIDE the same transaction that removes it — otherwise a
+     * crash between the two loses the only pointer and the object survives
+     * forever, unreachable and still billed for.
+     */
+    const purgeRow = harness.inserted.find((r) => r.table === storagePendingPurge);
+    expect(purgeRow).toBeDefined();
+    expect(purgeRow?.values).toEqual({
+      orgId: "org_1",
+      storageKey: "org_1/candidate-vault/42-offer-letter.pdf",
+      purpose: "recruitment:vault-document:delete",
+      bucket: "default",
+      status: "pending",
+    });
   });
 
   it("attributes the deletion to the ambient actor when the caller passes none", async () => {
     const harness = buildDb(DOCUMENT);
-    const service = new RecruitmentCandidateVaultService(harness.db as never);
+    const service = new RecruitmentCandidateVaultService(harness.db as never, cleanQuarantine);
 
     await runWithObservabilityContext(
       { correlationId: "corr-1", actorId: "user_ambient" },
       async () => service.deleteVaultDocument("org_1", 7, 42),
     );
 
-    expect(harness.inserted[0]?.values.accessedBy).toBe("user_ambient");
+    expect(
+      harness.inserted.find((r) => r.table === vaultAccessLogs)?.values.accessedBy,
+    ).toBe("user_ambient");
   });
 
   it("refuses to delete at all when no actor can be identified", async () => {
     const harness = buildDb(DOCUMENT);
-    const service = new RecruitmentCandidateVaultService(harness.db as never);
+    const service = new RecruitmentCandidateVaultService(harness.db as never, cleanQuarantine);
 
     await expect(service.deleteVaultDocument("org_1", 7, 42)).rejects.toBeInstanceOf(
       InternalServerErrorException,
@@ -98,7 +129,7 @@ describe("vault document deletion writes an audit row", () => {
 
   it("writes nothing when the document does not belong to the candidate", async () => {
     const harness = buildDb(undefined);
-    const service = new RecruitmentCandidateVaultService(harness.db as never);
+    const service = new RecruitmentCandidateVaultService(harness.db as never, cleanQuarantine);
 
     await expect(
       service.deleteVaultDocument("org_1", 7, 42, "user_actor"),
@@ -149,9 +180,29 @@ describe("the schema keeps the audit row alive", () => {
     .split("\n")
     .find((line) => line.includes("vaultDocumentId:"));
 
+  /**
+   * The tenant relationship may be declared inline on the column or as a
+   * composite `foreignKey({ columns: [orgId, vaultDocumentId] })`; the scan has
+   * to see both, or a migration to the composite form reads as a lost rule.
+   */
+  const documentForeignKey = block
+    .split("\n")
+    .find(
+      (line) =>
+        line.includes("foreignKey(") && line.includes("table.vaultDocumentId"),
+    );
+
   it("nulls the document reference on delete instead of cascading the audit row away", () => {
-    expect(documentReference).toContain('onDelete: "set null"');
-    expect(documentReference).not.toContain("cascade");
+    const declaration = documentForeignKey ?? documentReference;
+    expect(declaration).toBeDefined();
+    expect(declaration).toMatch(/onDelete(:\s*|\(\s*)"set null"/);
+    expect(declaration).not.toContain("cascade");
+  });
+
+  it("keeps the document reference tenant-scoped when it is declared as a composite", () => {
+    expect(documentForeignKey).toBeDefined();
+    expect(documentForeignKey).toContain("table.orgId");
+    expect(documentForeignKey).toContain("candidateDocumentsVault.orgId");
   });
 
   it("leaves the document reference nullable, so a nulled one is representable", () => {

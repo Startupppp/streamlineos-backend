@@ -6,10 +6,9 @@ import {
   getWaitlistAdminNotificationEmail,
   getWaitlistConfirmationEmail,
 } from "../index";
-import { BASE_URL, BRAND } from "./_shared";
-import type { TemplateEntry } from "./_shared";
+import { BASE_URL, BRAND, EMAIL_TEMPLATE_VERSION, defineTemplateFamily } from "./_shared";
 
-export const platformTemplates: Record<string, TemplateEntry> = {
+export const platformTemplates = defineTemplateFamily({
   "platform.contact_admin": {
     category: "Platform",
     name: "Contact Form — Admin Notification",
@@ -87,4 +86,4 @@ export const platformTemplates: Record<string, TemplateEntry> = {
         plan: "Business",
       }).html,
   },
-};
+}, EMAIL_TEMPLATE_VERSION);

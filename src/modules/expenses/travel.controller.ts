@@ -15,7 +15,8 @@ import {
 } from "./dto/travel.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { travelRequestSchema } from "./dto/travel-response.schemas";
 
 const travelRequestIdParams = z.object({ travelRequestId: z.coerce.number().int().positive() }).strict();
 
@@ -27,6 +28,7 @@ export class TravelController {
 
   @Get()
   @RequirePermission("hr:travel:view")
+  @ResponseSchema(z.array(travelRequestSchema))
   listMine(@CurrentUser() u: CurrentUserContext) {
     return this.service.listMine(u.orgId, u.userId);
   }
@@ -35,6 +37,7 @@ export class TravelController {
   @HttpCode(201)
   @RequirePermission("hr:travel:create")
   @Validate({ body: createTravelRequestSchema })
+  @ResponseSchema(travelRequestSchema)
   create(
     @CurrentUser() u: CurrentUserContext,
     @Body() body: CreateTravelRequestInput,
@@ -44,6 +47,7 @@ export class TravelController {
 
   @Get("approvals")
   @RequirePermission("hr:travel:manage")
+  @ResponseSchema(z.array(travelRequestSchema))
   listPending(@CurrentUser() u: CurrentUserContext) {
     return this.service.listPending(u.orgId);
   }
@@ -52,6 +56,7 @@ export class TravelController {
   @RequirePermission("hr:travel:manage")
   @Validate({ params: travelRequestIdParams })
   @BodylessAction()
+  @ResponseSchema(travelRequestSchema)
   managerApprove(
     @CurrentUser() u: CurrentUserContext,
     @Param("travelRequestId", ParseIntPipe) travelRequestId: number,
@@ -63,6 +68,7 @@ export class TravelController {
   @RequirePermission("hr:travel:manage")
   @Validate({ params: travelRequestIdParams })
   @BodylessAction()
+  @ResponseSchema(travelRequestSchema)
   financeApprove(
     @CurrentUser() u: CurrentUserContext,
     @Param("travelRequestId", ParseIntPipe) travelRequestId: number,
@@ -74,6 +80,7 @@ export class TravelController {
   @Idempotent("expenses.travel.reject")
   @RequirePermission("hr:travel:manage")
   @Validate({ params: travelRequestIdParams, body: rejectTravelRequestSchema })
+  @ResponseSchema(travelRequestSchema)
   reject(
     @CurrentUser() u: CurrentUserContext,
     @Param("travelRequestId", ParseIntPipe) travelRequestId: number,

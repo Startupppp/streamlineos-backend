@@ -15,6 +15,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbFromTicketService } from "./kb-from-ticket.service";
 import { fromTicketSchema, type FromTicketInput } from "./dto/kb-from-ticket.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { kbArticleWithTagsSchema } from "./dto/kb-helpcenter-response.schemas";
 import { z } from "zod";
 
 const ticketIdParams = z.object({ ticketId: z.coerce.number().int().positive() }).strict();
@@ -28,6 +30,7 @@ export class KbFromTicketController {
   @HttpCode(200)
   @RequirePermission("kb:articles:create")
   @Validate({ params: ticketIdParams, body: fromTicketSchema })
+  @ResponseSchema(kbArticleWithTagsSchema)
   async draftFromTicket(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Body() body: FromTicketInput,

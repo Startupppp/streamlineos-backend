@@ -3,6 +3,10 @@ process.env.APP_URL ??= "http://localhost:1000";
 import { checkInSchema, checkOutSchema } from "./dto/attendance.schemas";
 import { AttendanceClockService } from "./attendance-clock.service";
 
+jest.mock("./organization-membership", () => ({
+  requireOrganizationMembershipId: jest.fn().mockResolvedValue(1),
+}));
+
 function queryResult<T>(result: T) {
   const query = {
     from: jest.fn(),

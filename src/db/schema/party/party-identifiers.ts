@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { pgTable, text, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { organizations } from "../common/auth";
 
 /**

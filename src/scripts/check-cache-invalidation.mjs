@@ -24,10 +24,21 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  findFalsePrefixDeletes,
+  findNamespaceCounterMismatches,
+  parseCacheKeyFactories,
+  resolveAllSites,
+  resolveFileSites,
+  segmentPrefix,
+} from "./check-cache-key-shapes.mjs";
+
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const BACKEND_SRC = resolve(__dirname, "..");
 
 const MIN_SERVICE_FILES = 30;
+const MIN_WRITE_SITES = 100;
+const MIN_INVALIDATE_SITES = 200;
 const SELF_TEST = process.argv.includes("--self-test");
 
 // ─── table → cache key families ──────────────────────────────────────────────
@@ -46,7 +57,7 @@ const TABLE_TO_CACHE_FAMILIES = [
     table: "org_modules",
     families: [
       { key: "entitlements:module:", invalidationKeywords: ["entitlements:module:", "entitlements:modules"] },
-      { key: "user:session:", invalidationKeywords: ["userSession", "user:session:"], note: "Only invalidates enabledBy user; all org members stale until TTL — see F03" },
+      { key: "user:session:", invalidationKeywords: ["userSession", "user:session:"], note: "Every ACTIVE member's session carries enabledModules — see F03/F03b" },
     ],
   },
   {
@@ -91,7 +102,9 @@ const TABLE_TO_CACHE_FAMILIES = [
     ],
   },
   {
-    table: "org_hierarchy",
+    // The Drizzle object is `orgUnits` (`org_units`); there has never been an
+    // `org_hierarchy` table, which is why this row matched nothing.
+    table: "org_units",
     families: [
       { key: "org:hierarchy:", invalidationKeywords: ["org:hierarchy", "invalidateAfterMutation"] },
       { key: "hr:headcount:", invalidationKeywords: ["hr:headcount", "invalidateAfterMutation"] },
@@ -205,7 +218,6 @@ const KEY_TO_NAMESPACE_PREFIX = {
   contactsListNamespace: "crm:contacts:list:",
   crmOrganizationDetailNamespace: "crm:organizations:detail:",
   crmOrganizationsListNamespace: "crm:organizations:list:",
-  projectsList: "projects:list:",
   projectLabels: "projects:labels:",
   orgMembers: "org:members:",
   orgMembersListNamespace: "org:members:list:",
@@ -238,7 +250,6 @@ const KEY_TO_NAMESPACE_PREFIX = {
   externalCalendarEvents: "integrations:extevents:",
   targetsList: "targets:list:",
   targetLeaderboard: "targets:leaderboard:",
-  branchesList: "branches:list:",
   invProductsNamespace: "inv:products:list:",
   invProductDetail: "inv:products:detail:",
   invStockSummary: "inv:stock:summary:",
@@ -327,7 +338,9 @@ const MATRIX_SIBLING_FILES = [
   "cache-invalidation-rbac-auth.ts",
   "cache-invalidation-finance.ts",
   "cache-invalidation-inventory.ts",
+  "cache-invalidation-inventory-fulfillment.ts",
   "cache-invalidation-crm.ts",
+  "cache-invalidation-hr.ts",
 ];
 
 function parseMatrixNamespacePrefixes(matrixPath) {
@@ -377,16 +390,64 @@ function readFile(path) {
   }
 }
 
-function fileWritesToTable(content, table) {
-  const patterns = [
-    new RegExp(`\\.insert\\s*\\(\\s*${table}\\b`),
-    new RegExp(`\\.update\\s*\\(\\s*${table}\\b`),
-    new RegExp(`\\.delete\\s*\\)\\s*\\.from\\s*\\(\\s*${table}\\b`),
-    new RegExp(`tx\\.insert\\s*\\(\\s*${table}\\b`),
-    new RegExp(`tx\\.update\\s*\\(\\s*${table}\\b`),
-  ];
-  return patterns.some((p) => p.test(content));
+/**
+ * Drizzle schema objects are camelCase; TABLE_TO_CACHE_FAMILIES names the
+ * snake_case Postgres tables. Matching only the snake_case form made all 10
+ * entries match 0 of 1069 files, so not one family check ever executed — the
+ * `org_hierarchy -> hr:headcount` row that was meant to guard the headcount
+ * defect had never run. Both spellings are accepted now, and
+ * `tableMatchCoverage` fails the gate if any entry matches nothing.
+ */
+export function snakeToCamel(name) {
+  return name.replace(/_([a-z0-9])/g, (_, c) => c.toUpperCase());
 }
+
+export function tableIdentifiers(table) {
+  const camel = snakeToCamel(table);
+  return camel === table ? [table] : [table, camel];
+}
+
+function fileWritesToTable(content, table) {
+  for (const ident of tableIdentifiers(table)) {
+    const patterns = [
+      new RegExp(`\\.insert\\s*\\(\\s*${ident}\\b`),
+      new RegExp(`\\.update\\s*\\(\\s*${ident}\\b`),
+      new RegExp(`\\.delete\\s*\\(\\s*${ident}\\b`),
+      new RegExp(`\\.delete\\s*\\)\\s*\\.from\\s*\\(\\s*${ident}\\b`),
+      new RegExp(`tx\\.insert\\s*\\(\\s*${ident}\\b`),
+      new RegExp(`tx\\.update\\s*\\(\\s*${ident}\\b`),
+      new RegExp(`tx\\.delete\\s*\\(\\s*${ident}\\b`),
+    ];
+    if (patterns.some((pat) => pat.test(content))) return true;
+  }
+  return false;
+}
+
+/** How many scanned files write to each declared table. A zero is a rotted map. */
+export function tableMatchCoverage(tables, contents) {
+  const coverage = new Map();
+  for (const table of tables)
+    coverage.set(table, contents.filter((c) => fileWritesToTable(c, table)).length);
+  return coverage;
+}
+
+/**
+ * Namespace-counter mismatches that are known, reported and owned elsewhere.
+ * Each entry must still be a live finding — a stale entry fails the gate, so
+ * this cannot rot into a silent permanent exemption.
+ */
+const NAMESPACE_MISMATCH_ALLOWLIST = [
+  {
+    shape: "chat:unread:*",
+    reason:
+      "report 20b F2 (P2): two invalidateNamespace bumps with zero cachedVersioned readers anywhere. Chat module, not this ticket.",
+  },
+  {
+    shape: "fin:forecast:*",
+    reason:
+      "report 20b F3 (P2): finForecastNamespace is bumped but never read through cachedVersioned. Finance module, not this ticket.",
+  },
+];
 
 function fileHasPattern(content, keywords) {
   return keywords.some((kw) => {
@@ -484,6 +545,246 @@ function runSelfTests() {
     pass: miResult2.kind === "pass",
     detail: miResult2,
   });
+
+  // ── Bite proofs against the eight defects report 20b enumerates ───────────
+  // Each is reconstructed here in its PRE-FIX wiring. The old gate passed green
+  // over all eight; every one of these assertions fails without the shape rules.
+  const factories = parseCacheKeyFactories(
+    readFile(join(BACKEND_SRC, "common", "cache", "cache-keys.ts")),
+  );
+  const shapesOf = (source) => resolveFileSites(source, "fixture.ts", factories);
+  const check = (label, pass, detail) => results.push({ name: label, pass, detail });
+
+  // Defect 1 — hr:headcount read and bumped two different counters.
+  const headcountPreFix = shapesOf(`
+    class OrgStructureService {
+      getHeadcount(orgId, query) {
+        return this.cache.cachedVersioned(\`hr:headcount:\${orgId}\`, \`group:\${query.groupBy}\`, fn, TTL);
+      }
+    }
+    class OrgHierarchyCacheService {
+      async invalidateAfterMutation(orgId) {
+        await this.cache.invalidateNamespaceForOrg(orgId, "hr:headcount");
+      }
+    }
+  `);
+  const headcountMismatch = findNamespaceCounterMismatches(
+    headcountPreFix.writes,
+    headcountPreFix.invalidates,
+  );
+  check(
+    "defect 1: hr:headcount bump to <ORG>:hr:headcount while the read uses hr:headcount:* is a mismatch",
+    headcountMismatch.length === 1 && headcountMismatch[0].shape === "<ORG>:hr:headcount",
+    JSON.stringify(headcountMismatch.map((f) => f.shape)),
+  );
+  check(
+    "the <ORG>: prefix is NOT normalised away — that erasure is what hid defect 1",
+    headcountPreFix.writes[0]?.shape.startsWith("hr:headcount") === true &&
+      headcountPreFix.invalidates[0]?.shape.startsWith("<ORG>:") === true,
+    `${headcountPreFix.writes[0]?.shape} vs ${headcountPreFix.invalidates[0]?.shape}`,
+  );
+  const headcountFixed = shapesOf(`
+    getHeadcount(orgId, query) {
+      return this.cache.cachedVersionedForOrg(orgId, "hr:headcount", \`group:\${query.groupBy}\`, fn, TTL);
+    }
+    async invalidateAfterMutation(orgId) {
+      await this.cache.invalidateNamespaceForOrg(orgId, "hr:headcount");
+    }
+  `);
+  check(
+    "the shipped fix for defect 1 produces no finding",
+    findNamespaceCounterMismatches(headcountFixed.writes, headcountFixed.invalidates).length === 0,
+  );
+
+  // Defects 2-3 — hr:celebrations: delete of a stem nothing writes.
+  const celebrationsPreFix = shapesOf(`
+    list(orgId, actorId, scope, day) {
+      return this.cache.cached(\`hr:celebrations:\${orgId}:\${actorId}:\${scope}:\${day}\`, fn, TTL);
+    }
+    async onboard(orgId) {
+      await this.cache.invalidate(\`hr:celebrations:\${orgId}\`);
+    }
+    async terminate(orgId) {
+      await this.cache.invalidate(\`hr:celebrations:\${orgId}\`);
+    }
+  `);
+  const celebrationsFindings = findFalsePrefixDeletes(
+    celebrationsPreFix.writes,
+    celebrationsPreFix.invalidates,
+  );
+  check(
+    "defects 2-3: hr:celebrations stem delete cannot reach the 5-segment key it is meant to clear",
+    celebrationsFindings.length === 2 && celebrationsFindings[0].shape === "hr:celebrations:*",
+    JSON.stringify(celebrationsFindings.map((f) => f.shape)),
+  );
+
+  // Defects 4-5 — hr:analytics: stem delete reaches the overview key but silently
+  // misses its two siblings.
+  const analyticsPreFix = shapesOf(`
+    overview(orgId) { return this.cache.cached(\`hr:analytics:\${orgId}\`, fn, TTL); }
+    attendance(orgId, y, m) { return this.cache.cached(\`hr:analytics:attendance:\${orgId}:\${y}:\${m}\`, fn, TTL); }
+    attrition(orgId, y) { return this.cache.cached(\`hr:analytics:attrition:\${orgId}:\${y}\`, fn, TTL); }
+    async onboard(orgId) { await this.cache.invalidate(\`hr:analytics:\${orgId}\`); }
+    async terminate(orgId) { await this.cache.invalidate(\`hr:analytics:\${orgId}\`); }
+  `);
+  const analyticsFindings = findFalsePrefixDeletes(
+    analyticsPreFix.writes,
+    analyticsPreFix.invalidates,
+  );
+  check(
+    "defects 4-5: a delete that matches one key exactly and misses two siblings is still reported",
+    analyticsFindings.length === 2 && analyticsFindings[0].written.length === 2,
+    JSON.stringify(analyticsFindings.map((f) => f.written)),
+  );
+
+  // Defects 6-8 — ownership:transfers bumped on the wrong counter from three sites.
+  const ownershipPreFix = shapesOf(`
+    list(orgId, hash) {
+      return this.cache.cachedVersionedForOrg(orgId, "ownership:transfers", hash, fn, TTL);
+    }
+    async a(orgId) { await this.cache.invalidateNamespace(\`ownership:transfers:\${orgId}\`); }
+    async b(orgId) { await this.cache.invalidateNamespace(\`ownership:transfers:\${orgId}\`); }
+    async c(orgId) { await this.cache.invalidateNamespace(\`ownership:transfers:\${orgId}\`); }
+  `);
+  const ownershipFindings = findNamespaceCounterMismatches(
+    ownershipPreFix.writes,
+    ownershipPreFix.invalidates,
+  );
+  check(
+    "defects 6-8: three invalidateNamespace bumps on a counter the *ForOrg read never uses",
+    ownershipFindings.length === 3 && ownershipFindings.every((f) => f.shape === "ownership:transfers:*"),
+    JSON.stringify(ownershipFindings.map((f) => f.shape)),
+  );
+
+  // Negatives — the rules must not cry wolf.
+  const correct = shapesOf(`
+    list(orgId, hash) { return this.cache.cachedVersionedForOrg(orgId, "invoices:list", hash, fn, TTL); }
+    async write(orgId) { await this.cache.invalidateNamespaceForOrg(orgId, "invoices:list"); }
+    one(orgId, id) { return this.cache.cached(\`crm:contact:\${orgId}:\${id}\`, fn, TTL); }
+    async del(orgId, id) { await this.cache.invalidate(\`crm:contact:\${orgId}:\${id}\`); }
+  `);
+  check(
+    "a correctly paired namespace produces no finding",
+    findNamespaceCounterMismatches(correct.writes, correct.invalidates).length === 0,
+  );
+  check(
+    "an exact-key delete of exactly what was written produces no finding",
+    findFalsePrefixDeletes(correct.writes, correct.invalidates).length === 0,
+  );
+  check(
+    "a one-literal-segment shape is filtered as noise rather than reported",
+    findFalsePrefixDeletes(
+      shapesOf("this.cache.cached(`org:${id}:x`, fn);").writes,
+      shapesOf("this.cache.invalidate(`org:${id}`);").invalidates,
+    ).length === 0,
+  );
+
+  // segmentPrefix semantics.
+  check("segmentPrefix: strict prefix", segmentPrefix("a:b", "a:b:c") === true);
+  check("segmentPrefix: equal length is not a prefix", segmentPrefix("a:b", "a:b") === false);
+  check("segmentPrefix: divergent segment", segmentPrefix("a:b", "a:c:d") === false);
+  check("segmentPrefix: wildcard on either side matches", segmentPrefix("a:*", "a:b:c") === true);
+
+  // The rotted table map — the reason none of the 10 family checks ever ran.
+  check(
+    "snake_case table names are converted to the camelCase Drizzle identifier",
+    snakeToCamel("organization_members") === "organizationMembers" &&
+      snakeToCamel("org_units") === "orgUnits",
+  );
+  check(
+    "a camelCase Drizzle write is detected (it was invisible before)",
+    tableMatchCoverage(["organization_members"], ["await tx.insert(organizationMembers).values(x);"]).get(
+      "organization_members",
+    ) === 1,
+  );
+  check(
+    "a table entry matching nothing is reported as zero, not silently skipped",
+    tableMatchCoverage(["no_such_table"], ["await tx.insert(organizationMembers).values(x);"]).get(
+      "no_such_table",
+    ) === 0,
+  );
+  check(
+    "every declared table entry matches at least one identifier form",
+    TABLE_TO_CACHE_FAMILIES.every((e) => tableIdentifiers(e.table).length >= 1),
+  );
+
+  // ── F03 / F03b: the module-toggle session bust ────────────────────────────
+  // Four fixtures pin both halves of the rule. Without them the correction to
+  // moduleEnableBustsEveryMember would be indistinguishable from deleting it.
+  const activeScan = `.where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.status, "ACTIVE")))`;
+
+  const actorOnly = `
+    async setModuleEnabled(orgId, moduleKey, enabled, enabledBy) {
+      await this.cache.invalidate(CACHE_KEYS.userSession(enabledBy));
+    }
+  `;
+  check(
+    "F03 negative-control: busting only the actor is still a finding",
+    moduleEnableBustsEveryMember(actorOnly) === false,
+  );
+
+  const noSessionBustAtAll = `
+    async setModuleEnabled(orgId, moduleKey, enabled) {
+      await this.cache.invalidateForOrg(orgId, "entitlements:modules");
+    }
+  `;
+  check(
+    "F03 negative-control: no session bust at all is a finding",
+    moduleEnableBustsEveryMember(noSessionBustAtAll) === false,
+  );
+
+  const scanWithoutBust = `
+    async setModuleEnabled(orgId) {
+      const members = await tx.select({ userId: organizationMembers.userId })
+        .from(organizationMembers)${activeScan};
+      await this.cache.invalidateForOrg(orgId, "entitlements:modules");
+    }
+  `;
+  check(
+    "F03 negative-control: scanning ACTIVE members but never busting them is a finding",
+    moduleEnableBustsEveryMember(scanWithoutBust) === false,
+  );
+
+  const perMemberLoop = `
+    async setModuleEnabled(orgId) {
+      const members = await tx.select({ userId: organizationMembers.userId })
+        .from(organizationMembers)${activeScan}.limit(10000);
+      await Promise.all(members.map((m) => this.cache.invalidate(CACHE_KEYS.userSession(m.userId))));
+    }
+  `;
+  check(
+    "F03 positive: a per-member loop does reach every member",
+    moduleEnableBustsEveryMember(perMemberLoop) === true,
+  );
+  check(
+    "F03b negative-control: that same per-member loop is reported as unbounded fan-out",
+    moduleEnableFansOutPerMember(perMemberLoop) === true,
+  );
+
+  const batchedPaged = `
+    async bustActiveMemberSessions(orgId) {
+      const members = await tx.select({ membershipId: organizationMembers.id, userId: organizationMembers.userId })
+        .from(organizationMembers)
+        .where(and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.status, "ACTIVE"),
+          gt(organizationMembers.id, afterMembershipId),
+        ))
+        .orderBy(asc(organizationMembers.id))
+        .limit(page);
+      await this.cache.invalidateMany(
+        members.map((member) => CACHE_KEYS.userSession(member.userId)),
+      );
+    }
+  `;
+  check(
+    "F03 positive: a batched, keyset-paged bust reaches every member",
+    moduleEnableBustsEveryMember(batchedPaged) === true,
+  );
+  check(
+    "F03b positive: the batched bust is NOT reported as unbounded fan-out",
+    moduleEnableFansOutPerMember(batchedPaged) === false,
+  );
 
   const allPass = results.every((r) => r.pass);
   return { results, allPass };
@@ -598,35 +899,170 @@ function runFullScan() {
 
   findings.push(...checkModuleEnableSessionBust());
 
-  return { findings, vacuityFailed: false, fileCount: serviceFiles.length };
+  // ── Table-map vacuity: the lookup table must actually match something ──────
+  // 10 entries matched 0 of 1069 files for the whole life of this gate.
+  const allSrcContents = walkDir(BACKEND_SRC).map((f) => readFile(f));
+  const coverage = tableMatchCoverage(
+    TABLE_TO_CACHE_FAMILIES.map((e) => e.table),
+    allSrcContents,
+  );
+  const deadTableEntries = [...coverage].filter(([, n]) => n === 0).map(([t]) => t);
+  if (deadTableEntries.length > 0) {
+    findings.push({
+      id: "table-map-rotted",
+      severity: "CRITICAL",
+      file: "src/scripts/check-cache-invalidation.mjs",
+      line: "TABLE_TO_CACHE_FAMILIES",
+      description: `${deadTableEntries.length} of ${coverage.size} table entries match no file in src/ (${deadTableEntries.join(", ")}). Those family checks do not run, so a green result says nothing about them.`,
+      kind: "vacuous-lookup-table",
+    });
+  }
+
+  // ── Key-shape analysis (the defect class the keyword tests cannot see) ─────
+  const shapes = resolveAllSites(BACKEND_SRC, join(BACKEND_SRC, "common", "cache", "cache-keys.ts"));
+  const shapeCounts = {
+    writeSites: shapes.writes.length,
+    writeShapes: new Set(shapes.writes.map((w) => w.shape)).size,
+    invalidateSites: shapes.invalidates.length,
+    cacheKeyFactories: shapes.cacheKeyFactories.size,
+  };
+
+  if (shapeCounts.writeSites < MIN_WRITE_SITES || shapeCounts.invalidateSites < MIN_INVALIDATE_SITES) {
+    findings.push({
+      id: "shape-scan-vacuous",
+      severity: "CRITICAL",
+      file: "src/common/cache",
+      line: "N/A",
+      description: `Key-shape scan resolved ${shapeCounts.writeSites} write sites (floor ${MIN_WRITE_SITES}) and ${shapeCounts.invalidateSites} invalidate sites (floor ${MIN_INVALIDATE_SITES}). The resolver is broken; a clean result proves nothing.`,
+      kind: "vacuous-shape-scan",
+    });
+  }
+
+  for (const f of findFalsePrefixDeletes(shapes.writes, shapes.invalidates)) {
+    findings.push({
+      id: `false-prefix:${f.shape}`,
+      severity: "CRITICAL",
+      file: f.file,
+      line: f.line,
+      description: `${f.method}("${f.shape}") deletes a key nothing writes. There is no prefix delete — invalidate() is redis.del(exactKey). What is actually written: ${f.written.slice(0, 3).join(", ")}`,
+      kind: "false-prefix-delete",
+    });
+  }
+
+  const seenAllowlist = new Set();
+  for (const f of findNamespaceCounterMismatches(shapes.writes, shapes.invalidates)) {
+    const allow = NAMESPACE_MISMATCH_ALLOWLIST.find((a) => a.shape === f.shape);
+    if (allow) {
+      seenAllowlist.add(allow.shape);
+      continue;
+    }
+    findings.push({
+      id: `namespace-mismatch:${f.shape}`,
+      severity: "MEDIUM",
+      file: f.file,
+      line: f.line,
+      description: `${f.method} bumps generation counter "${f.shape}" but no cachedVersioned* read uses that namespace. The bump reaches nothing. Note that <ORG>: is significant: the *ForOrg family writes a different Redis key from the global family.`,
+      kind: "namespace-counter-mismatch",
+    });
+  }
+
+  for (const entry of NAMESPACE_MISMATCH_ALLOWLIST) {
+    if (seenAllowlist.has(entry.shape)) continue;
+    findings.push({
+      id: `stale-allowlist:${entry.shape}`,
+      severity: "MEDIUM",
+      file: "src/scripts/check-cache-invalidation.mjs",
+      line: "NAMESPACE_MISMATCH_ALLOWLIST",
+      description: `Allowlisted namespace "${entry.shape}" is no longer a finding — remove the entry. (${entry.reason})`,
+      kind: "stale-allowlist",
+    });
+  }
+
+  return { findings, vacuityFailed: false, fileCount: serviceFiles.length, shapeCounts, coverage };
 }
 
+/**
+ * A module toggle must reach every ACTIVE member's session, and must not cost one
+ * Redis command per member to do it.
+ *
+ * ⚠ CORRECTED 2026-09-03. This check used to demand one literal shape:
+ *
+ *     members.map((m) => this.cache.invalidate(CACHE_KEYS.userSession(m.userId)))
+ *
+ * and reported F03 against anything else. That regex does not describe the
+ * defect — it describes one implementation of the fix, and specifically the
+ * implementation the cache layer had already measured and replaced.
+ * `CacheService.invalidateMany` exists because that `.map` issues one command per
+ * member against a single Upstash connection; its docblock names this very call
+ * site, then reading members at `.limit(10000)`, as the worst measured instance.
+ * So the gate failed the corrected code and would have passed the regression —
+ * and it would do so worst on the tenant that matters, since the seeded database
+ * puts 89.93% of rows in one organisation.
+ *
+ * The requirement has two halves and they are now checked separately, without
+ * prescribing the shape of the fix:
+ *
+ *   F03  — the ACTIVE-member scan and a session bust covering it must both be
+ *          present, and the bust must not be actor-only.
+ *   F03b — the per-member `.map(... cache.invalidate(userSession(...)))` fan-out
+ *          is itself a finding: it is unbounded in the tenant's member count.
+ *          Batch it through `invalidateMany`, which chunks into variadic DELs.
+ *
+ * F03b is why the correction does not weaken the gate: before it, the ONLY shape
+ * this file accepted is now the one shape it rejects.
+ */
+const ACTIVE_MEMBER_SCAN = /organizationMembers\.status\s*,\s*"ACTIVE"/;
+const ACTOR_ONLY_SESSION_BUST = /invalidate\(\s*CACHE_KEYS\.userSession\(\s*enabledBy\s*\)\s*\)/;
+const PER_MEMBER_SESSION_FANOUT =
+  /\.map\(\s*\(\s*\w+\s*\)\s*=>\s*this\.cache\.invalidate\(\s*CACHE_KEYS\.userSession\(/;
+const BATCHED_SESSION_BUST = /invalidateMany\(\s*[\s\S]{0,240}?CACHE_KEYS\.userSession\(/;
+
 export function moduleEnableBustsEveryMember(source) {
-  const bustsOneActor = /invalidate\(\s*CACHE_KEYS\.userSession\(\s*enabledBy\s*\)\s*\)/.test(source);
-  const bustsEveryMember =
-    /organizationMembers\.status\s*,\s*"ACTIVE"/.test(source) &&
-    /\.map\(\s*\(\s*\w+\s*\)\s*=>\s*this\.cache\.invalidate\(\s*CACHE_KEYS\.userSession\(/.test(source);
-  return bustsEveryMember && !bustsOneActor;
+  if (ACTOR_ONLY_SESSION_BUST.test(source)) return false;
+  if (!ACTIVE_MEMBER_SCAN.test(source)) return false;
+  return BATCHED_SESSION_BUST.test(source) || PER_MEMBER_SESSION_FANOUT.test(source);
+}
+
+/** True when the bust is one Redis command per member — correct, but unbounded. */
+export function moduleEnableFansOutPerMember(source) {
+  return PER_MEMBER_SESSION_FANOUT.test(source);
 }
 
 function checkModuleEnableSessionBust() {
   const file = "src/modules/access/entitlements.service.ts";
-  const abs = join(BACKEND_SRC, "modules/access/entitlements.service.ts".replace("modules/", "modules/"));
-  
+  const abs = join(BACKEND_SRC, "modules/access/entitlements.service.ts");
+
   let src; try { src = readFileSync(abs, "utf8"); } catch { return []; }
-  if (moduleEnableBustsEveryMember(src)) return [];
-  return [
-    {
+
+  const findings = [];
+  if (!moduleEnableBustsEveryMember(src)) {
+    findings.push({
       id: "F03-module-enable-partial-session-bust",
       severity: "MEDIUM",
       file,
       line: "setModuleEnabled",
       description:
         "setModuleEnabled does not invalidate userSession for every ACTIVE org member. Members keep a " +
-        "stale enabledModules in their session until TTL. Bust each active member, not just the actor.",
+        "stale enabledModules in their session until TTL. Bust every active member, not just the actor — " +
+        "scan organizationMembers on status ACTIVE and pass their userSession keys to cache.invalidateMany.",
       kind: "partial-session-invalidation",
-    },
-  ];
+    });
+  }
+  if (moduleEnableFansOutPerMember(src)) {
+    findings.push({
+      id: "F03b-module-enable-unbounded-session-fanout",
+      severity: "MEDIUM",
+      file,
+      line: "setModuleEnabled",
+      description:
+        "setModuleEnabled busts member sessions one Redis command at a time " +
+        "(members.map((m) => cache.invalidate(CACHE_KEYS.userSession(...)))). That reads as batched and is " +
+        "not: a 10,000-member org issues 10,000 commands from one toggle. Use cache.invalidateMany, which " +
+        "collapses each page into variadic DELs.",
+      kind: "unbounded-invalidation-fanout",
+    });
+  }
+  return findings;
 }
 
 // ─── output ───────────────────────────────────────────────────────────────────
@@ -642,7 +1078,7 @@ if (SELF_TEST) {
   process.exit(allPass ? 0 : 3);
 }
 
-const { findings, vacuityFailed, fileCount } = runFullScan();
+const { findings, vacuityFailed, fileCount, shapeCounts, coverage } = runFullScan();
 
 if (vacuityFailed) {
   process.exit(2);
@@ -652,7 +1088,13 @@ const critical = findings.filter((f) => f.severity === "CRITICAL");
 const medium = findings.filter((f) => f.severity === "MEDIUM");
 const low = findings.filter((f) => f.severity === "LOW");
 
-process.stdout.write(`\n=== cache-invalidation gate — ${fileCount} service files scanned ===\n\n`);
+process.stdout.write(`\n=== cache-invalidation gate — ${fileCount} service files scanned ===\n`);
+process.stdout.write(
+  `Key shapes: ${shapeCounts.writeSites} write sites / ${shapeCounts.writeShapes} distinct shapes · ${shapeCounts.invalidateSites} invalidate sites · ${shapeCounts.cacheKeyFactories} CACHE_KEYS factories\n`,
+);
+process.stdout.write(
+  `Table map: ${[...coverage].filter(([, n]) => n > 0).length} of ${coverage.size} entries match at least one file\n\n`,
+);
 
 if (critical.length > 0) {
   process.stdout.write(`CRITICAL (${critical.length}):\n`);

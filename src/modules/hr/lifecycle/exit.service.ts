@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, gte, isNotNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
 import {
   hrEmployments,
   hrPeople,
@@ -16,6 +16,8 @@ import { formatDdMmmYyyy, formatDdMmmYyyyTime, subMonths } from "../../../common
 import { generateResignationLetter } from "./letters";
 import type { ListResignationsQueryInput } from "./dto/hr-lifecycle.schemas";
 import { transitionResignation } from "./lifecycle-transition";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 
 type StepStatus = "completed" | "active" | "pending" | "rejected";
 
@@ -65,38 +67,32 @@ export class ExitService {
 
   async list(orgId: string, userId: string, isAdmin: boolean, params: ListResignationsQueryInput, membershipId?: number | null) {
     const limit = Math.min(params.limit, 100);
-    const offset = (params.page - 1) * limit;
     const conditions = [eq(resignations.orgId, orgId)];
     if (!isAdmin) {
-      const ownerPredicate =
-        membershipId != null
-          ? or(eq(resignations.userMembershipId, membershipId), eq(resignations.userId, userId))!
-          : eq(resignations.userId, userId);
+      if (membershipId == null) throw new ForbiddenException("Organization membership required.");
+      const ownerPredicate = eq(resignations.userMembershipId, membershipId);
       conditions.push(ownerPredicate);
     }
     if (params.status) conditions.push(eq(resignations.status, params.status));
-    const where = and(...conditions);
 
-    const [data, countRows] = await Promise.all([
-      this.db.query.resignations.findMany({
-        where,
-        with: {
-          user: { columns: { id: true, name: true, email: true, image: true } },
-          checklists: true,
-          hrReviewer: { columns: { id: true, name: true } },
-          finalReviewer: { columns: { id: true, name: true } },
-        },
-        orderBy: [desc(resignations.createdAt)],
-        limit,
-        offset,
-      }),
-      this.db
-        .select({ total: sql<number>`count(*)::int` })
-        .from(resignations)
-        .where(where),
-    ]);
+    const position = decodeCursor(params.cursor);
+    if (position) conditions.push(keysetBeforeId(resignations.createdAt, resignations.id, position));
 
-    const total = countRows[0]?.total ?? 0;
+    const rows = await this.db.query.resignations.findMany({
+      where: and(...conditions),
+      with: {
+        user: { columns: { id: true, name: true, email: true, image: true } },
+        hrReviewer: { columns: { id: true, name: true } },
+      },
+      orderBy: [desc(resignations.createdAt), desc(resignations.id)],
+      limit: limit + 1,
+    });
+
+    const page = buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
+    const data = page.data;
     const userIds = data.flatMap((r) => (r.user ? [r.user.id] : []));
     const factsMap = userIds.length > 0 ? await this.employment.getFactsBatch(orgId, userIds) : new Map();
 
@@ -110,11 +106,42 @@ export class ExitService {
             : r.user,
         });
       }),
-      pagination: { page: params.page, limit, total, totalPages: Math.ceil(total / limit) },
+      pagination: page.pagination,
     };
   }
 
-  async getDetail(orgId: string, userId: string, isAdmin: boolean, resignationId: number) {
+  /** Same scope predicate as `list`, one aggregate, no rows or relations loaded. */
+  async countVisible(orgId: string, isAdmin: boolean, membershipId?: number | null) {
+    const conditions = [eq(resignations.orgId, orgId)];
+    if (!isAdmin) {
+      if (membershipId == null) throw new ForbiddenException("Organization membership required.");
+      conditions.push(eq(resignations.userMembershipId, membershipId));
+    }
+    const rows = await this.db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(resignations)
+      .where(and(...conditions));
+    return { count: rows[0]?.total ?? 0 };
+  }
+
+  /**
+   * What the HR hub needs in one call: the newest few resignations for the
+   * activity feed, and how many exist for the "Active resignations" badge.
+   *
+   * The hub used to read `pagination.total` off that same five-row page. A
+   * keyset page has no total, and `data.length` would silently cap the badge
+   * at the page size, so the count is now its own aggregate over the same
+   * scope predicate.
+   */
+  async hubDigest(orgId: string, userId: string, isAdmin: boolean, membershipId?: number | null) {
+    const [page, counted] = await Promise.all([
+      this.list(orgId, userId, isAdmin, { limit: 5 }, membershipId),
+      this.countVisible(orgId, isAdmin, membershipId),
+    ]);
+    return { data: page.data, count: counted.count };
+  }
+
+  async getDetail(orgId: string, userId: string, isAdmin: boolean, resignationId: number, membershipId?: number | null) {
     const data = await this.db.query.resignations.findFirst({
       where: and(eq(resignations.id, resignationId), eq(resignations.orgId, orgId)),
       with: {
@@ -126,7 +153,7 @@ export class ExitService {
     });
     if (!data) throw new NotFoundException("Resignation not found.");
 
-    if (!isAdmin && data.userId !== userId) {
+    if (!isAdmin && (membershipId == null || data.userMembershipId !== membershipId)) {
       throw new ForbiddenException("Forbidden");
     }
 
@@ -146,15 +173,16 @@ export class ExitService {
     userId: string,
     isAdmin: boolean,
     resignationId: number,
+    membershipId?: number | null,
   ): Promise<{ id: number; fileUrl: string }> {
     const record = await this.db.query.resignations.findFirst({
       where: and(eq(resignations.id, resignationId), eq(resignations.orgId, orgId)),
-      columns: { id: true, userId: true, resignationLetterUrl: true },
+      columns: { id: true, userMembershipId: true, resignationLetterUrl: true },
     });
     if (!record?.resignationLetterUrl) {
       throw new NotFoundException("Resignation letter not found.");
     }
-    if (!isAdmin && record.userId !== userId) {
+    if (!isAdmin && (membershipId == null || record.userMembershipId !== membershipId)) {
       throw new ForbiddenException("Forbidden");
     }
     return { id: record.id, fileUrl: record.resignationLetterUrl };
@@ -211,14 +239,14 @@ export class ExitService {
     return "pending";
   }
 
-  async getLetter(orgId: string, userId: string, isAdmin: boolean, resignationId: number) {
+  async getLetter(orgId: string, userId: string, isAdmin: boolean, resignationId: number, membershipId?: number | null) {
     const resignation = await this.db.query.resignations.findFirst({
       where: and(eq(resignations.id, resignationId), eq(resignations.orgId, orgId)),
       with: { user: { columns: { id: true, name: true } } },
     });
     if (!resignation) throw new NotFoundException("Resignation not found.");
 
-    if (!isAdmin && resignation.userId !== userId) {
+    if (!isAdmin && (membershipId == null || resignation.userMembershipId !== membershipId)) {
       throw new ForbiddenException("Forbidden");
     }
 
@@ -243,7 +271,7 @@ export class ExitService {
     return { html: letterHtml };
   }
 
-  async getProgress(orgId: string, userId: string, isAdmin: boolean, resignationId: number) {
+  async getProgress(orgId: string, userId: string, isAdmin: boolean, resignationId: number, membershipId?: number | null) {
     const record = await this.db.query.resignations.findFirst({
       where: and(eq(resignations.id, resignationId), eq(resignations.orgId, orgId)),
       with: {
@@ -253,7 +281,7 @@ export class ExitService {
     });
     if (!record) throw new NotFoundException("Not found.");
 
-    if (!isAdmin && record.userId !== userId) {
+    if (!isAdmin && (membershipId == null || record.userMembershipId !== membershipId)) {
       throw new ForbiddenException("Access denied.");
     }
 
@@ -317,13 +345,13 @@ export class ExitService {
     };
   }
 
-  async withdraw(orgId: string, userId: string, isAdmin: boolean, resignationId: number) {
+  async withdraw(orgId: string, userId: string, isAdmin: boolean, resignationId: number, membershipId?: number | null) {
     const record = await this.db.query.resignations.findFirst({
       where: and(eq(resignations.id, resignationId), eq(resignations.orgId, orgId)),
     });
     if (!record) throw new NotFoundException("Resignation not found.");
 
-    if (!isAdmin && record.userId !== userId) {
+    if (!isAdmin && (membershipId == null || record.userMembershipId !== membershipId)) {
       throw new ForbiddenException("You can only withdraw your own resignation.");
     }
 

@@ -14,39 +14,62 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   ];
 }
 
+
+/**
+ * `select({ total }).from(t).where(p)` — the COUNT half of the list envelope.
+ *
+ * It is a second read of the same table, so it is held to the same tenant predicate as the
+ * page read: a count that escaped the org scope would disclose another tenant's row count.
+ */
+function countSelect(total: number) {
+  const countWhere = jest.fn();
+  const chain: Record<string, unknown> = {
+    then: (resolve: (v: unknown) => unknown) => Promise.resolve([{ total }]).then(resolve),
+  };
+  chain["from"] = jest.fn().mockReturnValue(chain);
+  chain["where"] = countWhere.mockReturnValue(chain);
+  return { select: jest.fn().mockReturnValue(chain), countWhere };
+}
+
 describe("SurveyAssessmentService — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";
   const ATTACKER_ORG = "org-attacker";
 
   afterEach(() => jest.resetAllMocks());
 
-  it("returns empty attempts for a different org (deny: isolation)", async () => {
+  it("refuses attempts for a survey owned by a different org (deny: isolation)", async () => {
     const findMany = jest.fn().mockResolvedValue([]);
     const db = {
-      query: { surveyAssessmentAttempts: { findMany } },
+      query: {
+        surveyForms: { findFirst: jest.fn().mockResolvedValue(undefined) },
+        surveyAssessmentAttempts: { findMany },
+      },
     } as unknown as Db;
     const svc = new SurveyAssessmentService(db);
 
-    const result = await svc.listAttempts(ATTACKER_ORG, 1, { page: 1, pageSize: 20 });
-
-    expect(result).toHaveLength(0);
-    expect(findMany).toHaveBeenCalledTimes(1);
-    const args = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
-    expect(sqlValues(args?.where)).toContain(ATTACKER_ORG);
+    await expect(svc.listAttempts(ATTACKER_ORG, 1, { page: 1, pageSize: 20 })).rejects.toThrow(NotFoundException);
+    expect(findMany).not.toHaveBeenCalled();
   });
 
   it("returns attempts for the owning org (control — same-tenant)", async () => {
     const attempt = { id: 1, orgId: OWNER_ORG, surveyId: 5, status: "in_progress" };
     const findMany = jest.fn().mockResolvedValue([attempt]);
+    const { select, countWhere } = countSelect(1);
     const db = {
-      query: { surveyAssessmentAttempts: { findMany } },
+      query: {
+        surveyForms: { findFirst: jest.fn().mockResolvedValue({ id: 5 }) },
+        surveyAssessmentAttempts: { findMany },
+      },
+      select,
     } as unknown as Db;
     const svc = new SurveyAssessmentService(db);
 
     const result = await svc.listAttempts(OWNER_ORG, 5, { page: 1, pageSize: 20 });
 
-    expect(result).toHaveLength(1);
-    expect(result[0]?.id).toBe(1);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.id).toBe(1);
+    expect(result.total).toBe(1);
+    expect(sqlValues(countWhere.mock.calls[0]?.[0])).toContain(OWNER_ORG);
   });
 
   it("throws NotFoundException for a cross-tenant survey id (isolation)", async () => {

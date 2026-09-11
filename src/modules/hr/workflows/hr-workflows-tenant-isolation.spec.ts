@@ -1,3 +1,4 @@
+import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { HrWorkflowDefinitionsService } from "./hr-workflow-definitions.service";
 import { HrWorkflowInstancesService } from "./hr-workflow-instances.service";
@@ -90,13 +91,21 @@ describe("HrWorkflowInstancesService — cross-tenant isolation", () => {
   const OWNER = "org-owner";
   const ROW = { id: 1, orgId: OWNER, status: "pending" };
 
-  it("scopes workflow instances to attacker org (cross-tenant isolation)", async () => {
+  /**
+   * STRENGTHENED, not relaxed. `listForDefinition` now resolves the definition under the caller's
+   * organisation before it reads anything, so an attacker whose organisation holds no such
+   * definition is REFUSED rather than served an empty page — the live sweep measured control 200 /
+   * cross-tenant 200 / absent 200 on `GET /hr/workflows/:workflowId/instances`. The predicate
+   * assertion is kept and the refusal is asserted beside it: the org still has to reach the query,
+   * and the answer still has to be 404 rather than an empty 200.
+   */
+  it("scopes workflow instances to attacker org, and refuses rather than serving an empty page", async () => {
     const { db, where, findMany } = makeDb([]);
     const mockEngine = { getInstanceTimeline: jest.fn() };
     const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()) };
     const mockEmployment = { getFactsBatch: jest.fn().mockResolvedValue([]) };
     const svc = new HrWorkflowInstancesService(db, mockEngine as never, mockAccess as never, mockEmployment as never);
-    await svc.listForDefinition(ATTACKER, 1, { limit: 10 });
+    await expect(svc.listForDefinition(ATTACKER, 1, { limit: 10 })).rejects.toThrow(NotFoundException);
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
 

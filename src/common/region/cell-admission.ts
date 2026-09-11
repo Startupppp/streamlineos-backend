@@ -16,6 +16,7 @@ import {
   getRegionRegistry,
   hasRegionRegistry,
 } from "./region-registry";
+import { LEGACY_CELL_ID } from "./placement";
 
 export const MEASUREMENT_STALE_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
 export const MEASUREMENT_STALE_AFTER_DAYS = MEASUREMENT_STALE_AFTER_MS / 86_400_000;
@@ -40,6 +41,24 @@ export type RegionChoice =
       readonly region: string;
       readonly reason: string;
     };
+
+export interface RegionPlacementCoordinates {
+  region: string;
+  cellId: string;
+}
+
+export function regionPlacementCoordinates(
+  choice: RegionChoice,
+): RegionPlacementCoordinates {
+  if (choice.kind === "selected")
+    return { region: choice.region, cellId: choice.cellId };
+  if (hasRegionRegistry())
+    return {
+      region: choice.region,
+      cellId: getRegionRegistry().cellFor(choice.region),
+    };
+  return { region: choice.region, cellId: LEGACY_CELL_ID };
+}
 
 export class CellAdmissionRefusedError extends Error {
   constructor(

@@ -4,7 +4,7 @@ export const runArticleMigrationSchema = z.union([
   z.object({
     dryRun: z.literal(false),
     confirmation: z.literal("CONVERT_PUBLISHED_ARTICLES"),
-  }),
+  }).strict(),
   z.object({ dryRun: z.literal(true).optional().default(true) }),
 ]);
 export type RunArticleMigrationInput = z.infer<typeof runArticleMigrationSchema>;

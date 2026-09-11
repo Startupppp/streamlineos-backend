@@ -228,6 +228,12 @@ export const SHARED_PERMISSIONS: Permission[] = [
     description: "Create, edit, and run automation rules",
   },
   {
+    name: "settings:custom-fields:view",
+    resource: "settings:custom-fields",
+    action: "view",
+    description: "View custom field definitions",
+  },
+  {
     name: "settings:custom-fields:manage",
     resource: "settings:custom-fields",
     action: "manage",
@@ -296,6 +302,27 @@ export const SHARED_PERMISSIONS: Permission[] = [
     resource: "integrations:connections",
     action: "manage",
     description: "Connect and manage external app accounts",
+  },
+  /*
+   * Repository connections are org-wide and carry a webhook secret, so they get
+   * their own pair rather than reusing `integrations:connections:*` — that pair
+   * is in `EMPLOYEE_SELF_SERVICE`, held by every MEMBER, because it governs a
+   * person connecting their *own* external accounts. Gating a repository
+   * connection on it would hand every member the org's git integration, which
+   * is the same defect `/settings/api-keys` carried against
+   * `settings:api-tokens:*`.
+   */
+  {
+    name: "integrations:git:view",
+    resource: "integrations:git",
+    action: "view",
+    description: "View repository connections and their webhook targets",
+  },
+  {
+    name: "integrations:git:manage",
+    resource: "integrations:git",
+    action: "manage",
+    description: "Connect, edit and remove repository connections",
   },
   {
     name: "dashboard:sales:view",

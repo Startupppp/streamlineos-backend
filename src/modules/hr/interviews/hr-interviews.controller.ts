@@ -10,6 +10,7 @@ import {
   Res,
   UseGuards,
 } from "@nestjs/common";
+import { ApiOkResponse } from "@nestjs/swagger";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -27,6 +28,14 @@ import {
 } from "./dto/hr-interviews.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  interviewListResponseSchema,
+  interviewStatsSchema,
+  interviewSlaSchema,
+  slaReportResponseSchema,
+  scorecardSummaryResponseSchema,
+} from "./dto/interviews-response.schemas";
 
 const interviewIdParams = z.object({ interviewId: z.coerce.number().int().positive() }).strict();
 
@@ -37,6 +46,7 @@ export class HrInterviewsController {
   constructor(private readonly interviews: HrInterviewsService) {}
 
   @Get()
+  @ResponseSchema(interviewListResponseSchema)
   @RequirePermission("hr:interviews:view")
   @Validate({ query: interviewListSchema })
   list(
@@ -47,18 +57,21 @@ export class HrInterviewsController {
   }
 
   @Get("stats")
+  @ResponseSchema(interviewStatsSchema)
   @RequirePermission("hr:interviews:view")
   stats(@CurrentUser() u: CurrentUserContext) {
     return this.interviews.stats(u.orgId);
   }
 
   @Get("slas")
+  @ResponseSchema(z.array(interviewSlaSchema))
   @RequirePermission("hr:interviews:view")
   listSlas(@CurrentUser() u: CurrentUserContext) {
     return this.interviews.listSlas(u.orgId);
   }
 
   @Put("slas")
+  @ResponseSchema(interviewSlaSchema)
   @RequirePermission("hr:interviews:manage")
   @Validate({ body: upsertSlaSchema })
   upsertSla(@Body() body: UpsertSlaInput, @CurrentUser() u: CurrentUserContext) {
@@ -66,12 +79,14 @@ export class HrInterviewsController {
   }
 
   @Get("sla-report")
+  @ResponseSchema(slaReportResponseSchema)
   @RequirePermission("hr:interviews:view")
   slaReport(@CurrentUser() u: CurrentUserContext) {
     return this.interviews.slaReport(u.orgId);
   }
 
   @Get(":interviewId/scorecard/summary")
+  @ResponseSchema(scorecardSummaryResponseSchema)
   @RequirePermission("hr:interviews:view")
   @Validate({ params: interviewIdParams })
   async scorecardSummary(@Param("interviewId", ParseIntPipe) interviewId: number, @CurrentUser() u: CurrentUserContext) {
@@ -81,6 +96,7 @@ export class HrInterviewsController {
   }
 
   @Get(":interviewId/ics")
+  @ApiOkResponse({ description: "ICS calendar file", content: { "text/calendar": { schema: { type: "string" } } } })
   @RequirePermission("hr:interviews:view")
   @Validate({ params: interviewIdParams })
   async ics(

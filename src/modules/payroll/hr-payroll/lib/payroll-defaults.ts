@@ -1,3 +1,5 @@
+import { asRecord } from "../../../../common/openapi/zod-operation-contracts";
+
 export interface PayrollOrgDefaults {
   professionalTaxMonthly: number;
   standardWorkingDaysPerMonth: number;
@@ -19,14 +21,13 @@ export const SEEDED_PAYROLL_DEFAULTS: PayrollOrgDefaults = {
 };
 
 function extractFromConfig(config: unknown): Partial<PayrollOrgDefaults> {
-  if (config === null || typeof config !== "object") return {};
-  const c = config as Record<string, unknown>;
+  const c = asRecord(config);
+  if (!c) return {};
 
   const result: Partial<PayrollOrgDefaults> = {};
 
-  const statutory = c["statutory"];
-  if (statutory !== null && typeof statutory === "object") {
-    const s = statutory as Record<string, unknown>;
+  const s = asRecord(c["statutory"]);
+  if (s) {
     const pt = parseFloat(String(s["professionalTaxMonthly"] ?? ""));
     if (isFinite(pt) && pt >= 0) result.professionalTaxMonthly = pt;
 
@@ -40,15 +41,13 @@ function extractFromConfig(config: unknown): Partial<PayrollOrgDefaults> {
     if (isFinite(allowPct) && allowPct >= 0) result.defaultAllowancePercent = allowPct;
   }
 
-  const orgConfig = c["orgConfig"];
-  if (orgConfig !== null && typeof orgConfig === "object") {
-    const o = orgConfig as Record<string, unknown>;
-
+  const o = asRecord(c["orgConfig"]);
+  if (o) {
     const stdDays = Number(o["standardWorkingDaysPerMonth"]);
     if (isFinite(stdDays) && stdDays > 0) result.standardWorkingDaysPerMonth = stdDays;
 
     if (Array.isArray(o["workWeekDays"])) {
-      const days = (o["workWeekDays"] as unknown[])
+      const days = o["workWeekDays"]
         .map(Number)
         .filter((d) => isFinite(d) && d >= 0 && d <= 6);
       if (days.length > 0) result.workWeekDays = days;

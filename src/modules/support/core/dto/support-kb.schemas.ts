@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isWellFormedStorageKey } from "../../../storage/storage-key";
 
 export const createKbCategorySchema = z.object({
   name: z.string().min(1).max(200),
@@ -6,7 +7,7 @@ export const createKbCategorySchema = z.object({
   icon: z.string().max(100).optional(),
   sortOrder: z.number().int().min(0).optional(),
   isPublished: z.boolean().optional(),
-});
+}).strict();
 
 export const updateKbCategorySchema = z.object({
   name: z.string().min(1).max(200).optional(),
@@ -14,14 +15,14 @@ export const updateKbCategorySchema = z.object({
   icon: z.string().max(100).nullable().optional(),
   sortOrder: z.number().int().min(0).optional(),
   isPublished: z.boolean().optional(),
-});
+}).strict();
 
 export const listKbArticlesSchema = z.object({
   status: z.enum(["draft", "published", "archived"]).optional(),
   visibility: z.enum(["public", "internal"]).optional(),
   categoryId: z.coerce.number().int().positive().optional(),
   search: z.string().trim().min(1).max(200).optional(),
-});
+}).strict();
 
 export const createKbArticleSchema = z.object({
   title: z.string().min(1).max(300),
@@ -31,7 +32,7 @@ export const createKbArticleSchema = z.object({
   status: z.enum(["draft", "published", "archived"]).default("draft"),
   visibility: z.enum(["public", "internal"]).default("internal"),
   tags: z.array(z.string().min(1).max(50)).max(20).optional(),
-});
+}).strict();
 
 export const updateKbArticleSchema = z.object({
   title: z.string().min(1).max(300).optional(),
@@ -41,11 +42,22 @@ export const updateKbArticleSchema = z.object({
   status: z.enum(["draft", "published", "archived"]).optional(),
   visibility: z.enum(["public", "internal"]).optional(),
   tags: z.array(z.string().min(1).max(50)).max(20).nullable().optional(),
-});
+  expectedContentRevision: z.coerce.number().int().positive().optional(),
+})
+  .strict()
+  .superRefine((input, ctx) => {
+    if (input.content !== undefined && input.expectedContentRevision === undefined)
+      ctx.addIssue({
+        code: "custom",
+        path: ["expectedContentRevision"],
+        message:
+          "expectedContentRevision is required when content is written — content_revision is what an unguarded write clobbers",
+      });
+  });
 
 export const createKbCommentSchema = z.object({
   body: z.string().trim().min(1, "Comment cannot be empty").max(5000),
-});
+}).strict();
 
 const KB_ATTACHMENT_MAX_FILE_SIZE = 10 * 1024 * 1024;
 
@@ -63,18 +75,22 @@ const KB_ATTACHMENT_ALLOWED_MIME_TYPES = [
 
 export const createKbAttachmentSchema = z.object({
   fileName: z.string().trim().min(1, "File name is required").max(255),
-  fileKey: z.string().trim().min(1, "File key is required").max(1024),
+  fileKey: z
+    .string()
+    .trim()
+    .min(1, "File key is required")
+    .max(1024)
+    .refine(isWellFormedStorageKey, "Invalid file key"),
   fileUrl: z.string().trim().max(2048).optional(),
   fileSize: z.number().int().positive().max(KB_ATTACHMENT_MAX_FILE_SIZE, "File too large (max 10MB)"),
   mimeType: z.enum(KB_ATTACHMENT_ALLOWED_MIME_TYPES, {
     message: "Unsupported file type. Allowed: PDF, images, Word, Excel.",
   }),
-});
+}).strict();
 
 export const kbAskSchema = z.object({
   question: z.string().trim().min(3, "Question is too short").max(1000),
-  articleId: z.number().int().positive().optional(),
-});
+}).strict();
 
 export type CreateKbCategoryInput = z.infer<typeof createKbCategorySchema>;
 export type UpdateKbCategoryInput = z.infer<typeof updateKbCategorySchema>;

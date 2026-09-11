@@ -7,26 +7,31 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
 import {
   ActOnInstanceSchema,
+  PaginationSchema,
   RejectInstanceSchema,
+  WorkflowActedQuerySchema,
   WorkflowInstanceQuerySchema,
   type ActOnInstanceDto,
   type RejectInstanceDto,
+  type WorkflowActedQueryDto,
   type WorkflowInstanceQueryDto,
 } from "./dto/workflow.schemas";
 import { HrWorkflowInstancesService } from "./hr-workflow-instances.service";
 import { HrWorkflowEngineService } from "./hr-workflow-engine.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  workflowInstanceListAllSchema,
+  workflowInboxSchema,
+  workflowInstancePagedSchema,
+  workflowInstanceRowSchema,
+  workflowInstanceDetailSchema,
+} from "./dto/workflow-response.schemas";
 
 const instanceIdParams = z.object({ instanceId: z.coerce.number().int().positive() }).strict();
-
-const PaginationSchema = z.object({
-  page: pageNumberField,
-  limit: pageSizeField(50, 100),
-});
 
 @RequireModule("hr")
 @UseGuards(JwtAuthGuard)
@@ -38,6 +43,7 @@ export class HrWorkflowInstancesController {
   ) {}
 
   @Get()
+  @ResponseSchema(workflowInstanceListAllSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:view")
   @Validate({ query: WorkflowInstanceQuerySchema })
@@ -49,28 +55,31 @@ export class HrWorkflowInstancesController {
   }
 
   @Get("inbox")
+  @ResponseSchema(workflowInboxSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:approve")
   @Validate({ query: PaginationSchema })
   inbox(
     @CurrentUser() u: CurrentUserContext,
-    @Query() query: { page: number; limit: number },
+    @Query() query: z.infer<typeof PaginationSchema>,
   ) {
-    return this.instancesService.getInbox(u.orgId, u.userId, query.page, query.limit);
+    return this.instancesService.getInbox(u, query.page, query.limit);
   }
 
   @Get("acted")
+  @ResponseSchema(workflowInstancePagedSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:approve")
-  @Validate({ query: PaginationSchema })
+  @Validate({ query: WorkflowActedQuerySchema })
   acted(
     @CurrentUser() u: CurrentUserContext,
-    @Query() query: { page: number; limit: number },
+    @Query() query: WorkflowActedQueryDto,
   ) {
-    return this.instancesService.getMyActed(u, query.page, query.limit);
+    return this.instancesService.getMyActed(u, query);
   }
 
   @Get(":instanceId")
+  @ResponseSchema(workflowInstanceDetailSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:view")
   @Validate({ params: instanceIdParams })
@@ -82,6 +91,7 @@ export class HrWorkflowInstancesController {
   }
 
   @Post(":instanceId/approve")
+  @ResponseSchema(workflowInstanceRowSchema)
   @Idempotent("hr.workflow-instance.approve")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:approve")
@@ -104,6 +114,7 @@ export class HrWorkflowInstancesController {
   }
 
   @Post(":instanceId/reject")
+  @ResponseSchema(workflowInstanceRowSchema)
   @Idempotent("hr.workflow-instance.reject")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:approve")
@@ -126,6 +137,7 @@ export class HrWorkflowInstancesController {
   }
 
   @Post(":instanceId/cancel")
+  @ResponseSchema(workflowInstanceRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:manage")
   @HttpCode(200)
@@ -146,6 +158,7 @@ export class HrWorkflowInstancesController {
   }
 
   @Post(":instanceId/reopen")
+  @ResponseSchema(workflowInstanceRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:manage")
   @HttpCode(200)
@@ -166,6 +179,7 @@ export class HrWorkflowInstancesController {
   }
 
   @Post(":instanceId/comment")
+  @ResponseSchema(workflowInstanceRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:approve")
   @HttpCode(200)

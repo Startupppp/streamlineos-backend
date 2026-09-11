@@ -173,8 +173,16 @@ function buildService(opts: {
     rateLimiter,
     tickets,
     makePlanLimits(),
+    makeStorage(),
   );
   return { service, db, gateway, audit, rateLimiter, tickets };
+}
+
+function makeStorage() {
+  return {
+    isValidFileKey: jest.fn().mockReturnValue(true),
+    readObjectPrefix: jest.fn().mockResolvedValue(null),
+  } as never;
 }
 
 describe("FeedbucketAiService", () => {
@@ -332,6 +340,7 @@ describe("FeedbucketAiService", () => {
         makeRateLimit(),
         makeTickets(),
         makePlanLimits(),
+        makeStorage(),
       );
 
       await service.analyzePublic({
@@ -366,6 +375,7 @@ describe("FeedbucketAiService", () => {
         makeRateLimit(),
         makeTickets(),
         makePlanLimits(),
+        makeStorage(),
       );
 
       await expect(

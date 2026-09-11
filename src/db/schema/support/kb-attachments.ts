@@ -17,7 +17,7 @@ export const kbArticleAttachments = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    articleId: integer("article_id").references(() => kbArticles.id, { onDelete: "cascade" }).notNull(),
+    articleId: integer("article_id").notNull(),
     fileName: text("file_name").notNull(),
     fileKey: text("file_key").notNull(),
     fileUrl: text("file_url"),

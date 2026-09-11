@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
 import { assertSafeWebhookUrl } from "../../../common/security/ssrf-guard";
 
 export const WEBHOOK_RESPONSE_BODY_LIMIT = 2000;
@@ -23,23 +23,31 @@ const webhookUrl = z
 
 export const listSchema = z
   .object({
-    page: pageNumberField,
+    cursor: z.string().optional(),
     limit: pageSizeField(20),
   })
   .strict();
 
 export const logsSchema = z
   .object({
-    page: pageNumberField,
+    cursor: z.string().optional(),
     limit: pageSizeField(20),
   })
   .strict();
+
+const eventName = z
+  .string()
+  .min(1)
+  .max(100)
+  .regex(/^[\w.*:-]+$/, "Event name must contain only word characters, dots, hyphens, colons or *");
+
+const eventsField = z.array(eventName).max(50).default([]);
 
 export const createSchema = z
   .object({
     url: webhookUrl,
     description: z.string().optional(),
-    events: z.array(z.string()).default([]),
+    events: eventsField,
   })
   .strict();
 
@@ -47,7 +55,7 @@ export const updateSchema = z
   .object({
     url: webhookUrl.optional(),
     description: z.string().optional(),
-    events: z.array(z.string()).optional(),
+    events: z.array(eventName).max(50).optional(),
     isActive: z.boolean().optional(),
   })
   .strict();

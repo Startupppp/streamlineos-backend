@@ -9,6 +9,8 @@ import { validateMagicBytes } from "../storage/file-signatures";
 import { SignPdfService } from "./sign-pdf.service";
 import { SignSettingsService } from "./sign-settings.service";
 import { SignAuditService } from "./sign-audit.service";
+import { mustGetVisibleEnvelope, systemEnvelopeScope } from "./sign-envelope-scope";
+import type { ScopedRead } from "../access/scoped-read";
 import { isEnvelopeEditable } from "./sign-state";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
@@ -116,9 +118,15 @@ export class SignDocumentsService {
     return document;
   }
 
-  async list(orgId: string, envelopeId: number) {
+  /**
+   * The envelope is resolved before the documents are, so an envelope in another
+   * organization answers 404 rather than an empty 200 — an empty list would still
+   * separate "this envelope has no documents" from "this envelope is not yours".
+   */
+  async list(read: ScopedRead, membershipId: number | null, envelopeId: number) {
+    await mustGetVisibleEnvelope(this.db, read, membershipId, envelopeId, "Envelope not found");
     return this.db.query.signDocuments.findMany({
-      where: and(eq(signDocuments.orgId, orgId), eq(signDocuments.envelopeId, envelopeId)),
+      where: and(eq(signDocuments.orgId, read.orgId), eq(signDocuments.envelopeId, envelopeId)),
       orderBy: (doc, { asc }) => [asc(doc.orderIndex), asc(doc.id)],
       limit: 100,
     });
@@ -132,9 +140,19 @@ export class SignDocumentsService {
     return doc;
   }
 
-  async getPreviewUrl(orgId: string, documentId: number) {
-    const doc = await this.get(orgId, documentId);
-    const url = await this.storage.getFileUrl(orgId, doc.currentFileKey, SIGNED_URL_EXPIRY_SECONDS);
+  /**
+   * `sign:documents:view` is not scopable, so its own grant can only ever resolve
+   * "all" — the preview URL is the envelope's source PDF, so it is bound to the
+   * caller's `sign:envelope:view` scope for the same reason the final PDF is.
+   * The refusal reuses the missing-document message, so an unowned document and
+   * an absent one are indistinguishable.
+   */
+  async getPreviewUrl(read: ScopedRead, membershipId: number | null, documentId: number) {
+    const doc = await this.get(read.orgId, documentId);
+    await mustGetVisibleEnvelope(this.db, read, membershipId, doc.envelopeId, "Document not found");
+    const url = await this.storage.getFileUrl(read.orgId, doc.currentFileKey, SIGNED_URL_EXPIRY_SECONDS, undefined, {
+      preauthorized: true,
+    });
     return { document: doc, url, expiresInSeconds: SIGNED_URL_EXPIRY_SECONDS };
   }
 
@@ -204,7 +222,7 @@ export class SignDocumentsService {
 
   /** Fetches the current (pre-signing) PDF bytes for an envelope's documents, in order. */
   async fetchBuffers(orgId: string, envelopeId: number): Promise<{ documentId: number; buffer: Buffer }[]> {
-    const docs = await this.list(orgId, envelopeId);
+    const docs = await this.list(systemEnvelopeScope(orgId), null, envelopeId);
     const out: { documentId: number; buffer: Buffer }[] = [];
     for (const doc of docs) {
       const stream = await this.storage.getFileStream(orgId, doc.currentFileKey);

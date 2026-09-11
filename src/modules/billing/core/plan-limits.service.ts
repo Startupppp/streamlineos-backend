@@ -15,6 +15,7 @@ import {
   type PlanTier,
 } from "./plan-entitlements.constants";
 import { canUseFeature, minPlanFor, type Feature } from "../../ai/core/billing/feature-gates";
+import { keysOf, buildRecord } from "./lib/typed-record";
 import { PaymentRequiredException } from "../../../common/http/api-exceptions";
 import { NotificationsService } from "../../notifications/notifications.service";
 import {
@@ -35,18 +36,12 @@ export interface EntitlementsDto {
   limits: Record<LimitKey, { limit: number | null; used: number }>;
 }
 
-interface TierCache {
-  value: { tier: PlanTier; plan: EffectivePlan };
-  expiresAt: number;
-}
-
-const TIER_CACHE_TTL_MS = 30_000;
+const TIER_CACHE_TTL_SECONDS = 30;
 
 const ENTITLEMENTS_CACHE_TTL = 60;
 
 @Injectable()
 export class PlanLimitsService {
-  private readonly tierCache = new Map<string, TierCache>();
   private readonly logger = new Logger(PlanLimitsService.name);
 
   constructor(
@@ -63,27 +58,28 @@ export class PlanLimitsService {
     return { db: this.db, cache: this.cache, notifications: this.notifications };
   }
 
+  /**
+   * The tier gates every paid feature and every quota, so a suspension, a downgrade or an expiry
+   * has to stop being true everywhere at once. This used to be a per-process `Map` with a 30s TTL,
+   * which `bust()` could only clear in the one process that happened to serve the mutation — every
+   * sibling instance kept selling the cancelled plan until its own entry aged out. It lives in the
+   * shared cache for the same reason the entitlements payload below it does.
+   */
   async resolveTier(orgId: string): Promise<{ tier: PlanTier; plan: EffectivePlan }> {
-    const cached = this.tierCache.get(orgId);
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached.value;
-    }
-    const value = await this.queryTier(orgId);
-    this.tierCache.set(orgId, { value, expiresAt: Date.now() + TIER_CACHE_TTL_MS });
-    if (this.tierCache.size > 2000) {
-      const now = Date.now();
-      for (const [key, entry] of this.tierCache) {
-        if (entry.expiresAt <= now) {
-          this.tierCache.delete(key);
-        }
-      }
-    }
-    return value;
+    return this.cache.cached(
+      PlanLimitsService.tierCacheKey(orgId),
+      () => this.queryTier(orgId),
+      TIER_CACHE_TTL_SECONDS,
+    );
   }
 
   async bust(orgId: string): Promise<void> {
-    this.tierCache.delete(orgId);
+    await this.cache.invalidate(PlanLimitsService.tierCacheKey(orgId));
     await this.cache.invalidate(`billing:entitlements:${orgId}`);
+  }
+
+  private static tierCacheKey(orgId: string): string {
+    return `billing:tier:${orgId}`;
   }
 
   private async queryTier(orgId: string): Promise<{ tier: PlanTier; plan: EffectivePlan }> {
@@ -147,13 +143,12 @@ export class PlanLimitsService {
     const baseMembersLimit = catalog.members[plan];
     const seatLimit = negotiatedSeats !== null ? negotiatedSeats : baseMembersLimit;
 
-    const limitKeys = Object.keys(catalog) as LimitKey[];
-    const limits = {} as Record<LimitKey, { limit: number | null; used: number }>;
-    for (const key of limitKeys) {
+    const limitKeys = keysOf(catalog);
+    const limits = buildRecord(limitKeys, (key) => {
       let limit = catalog[key][plan];
       if (key === "members" && negotiatedSeats !== null) limit = negotiatedSeats;
-      limits[key] = { limit, used: usageRow[key] };
-    }
+      return { limit, used: usageRow[key] };
+    });
 
     return {
       tier,

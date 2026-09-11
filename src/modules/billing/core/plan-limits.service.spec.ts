@@ -99,6 +99,24 @@ describe("PlanLimitsService", () => {
       expect(result).toEqual({ tier: "PAID", plan: "STARTER" });
     });
 
+    it("keeps the paid tier while PAST_DUE, because dunning downgrades by cancelling at D+14", async () => {
+      mockDb = makeDb({
+        execute: jest.fn().mockResolvedValue([{ plan: "STARTER", status: "PAST_DUE", trial_ends_at: null }]),
+      });
+      service = await build(mockDb);
+      const result = await service.resolveTier("org1");
+      expect(result).toEqual({ tier: "PAID", plan: "STARTER" });
+    });
+
+    it("drops to FREE once dunning cancels the subscription, which is what ends the grace period", async () => {
+      mockDb = makeDb({
+        execute: jest.fn().mockResolvedValue([{ plan: "STARTER", status: "CANCELLED", trial_ends_at: null }]),
+      });
+      service = await build(mockDb);
+      const result = await service.resolveTier("org1");
+      expect(result).toEqual({ tier: "FREE", plan: "FREE" });
+    });
+
     it("returns ENTERPRISE for active ENTERPRISE subscription", async () => {
       mockDb = makeDb({
         execute: jest.fn().mockResolvedValue([{ plan: "ENTERPRISE", status: "ACTIVE", trial_ends_at: null }]),
@@ -152,6 +170,23 @@ describe("PlanLimitsService", () => {
       });
       service = await build(mockDb);
       await expect(service.assertWithinLimit("org1", "projects", 1)).resolves.toBeUndefined();
+    });
+
+    it("counts through the caller's executor for a non-member key, so a quota lock still covers the read", async () => {
+      mockDb = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce([{ plan: "FREE", status: "ACTIVE", trial_ends_at: null }]),
+      });
+      const txExecute = jest.fn().mockResolvedValue([{ count: 1 }]);
+      service = await build(mockDb);
+
+      await expect(
+        service.assertWithinLimit("org1", "projects", 1, { execute: txExecute } as never),
+      ).resolves.toBeUndefined();
+
+      expect(txExecute).toHaveBeenCalledTimes(1);
+      expect(mockDb.execute).toHaveBeenCalledTimes(1);
     });
 
     it("error message includes plan name and human label", async () => {
@@ -247,6 +282,51 @@ describe("PlanLimitsService", () => {
       });
       service = await build(mockDb);
       await expect(service.assertWithinLimit("org1", "members", 0)).rejects.toBeInstanceOf(PaymentRequiredException);
+    });
+  });
+
+  describe("assertWithinLimit — concurrent seat race produces a correct total", () => {
+    it("blocks the second writer when the seat count has advanced to the limit", async () => {
+      const FREE_TIER = [{ plan: "FREE", status: "ACTIVE", trial_ends_at: null }];
+      const dbFirst = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce(FREE_TIER)
+          .mockResolvedValueOnce([{ count: 4 }]),
+      });
+      const dbSecond = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce(FREE_TIER)
+          .mockResolvedValueOnce([{ count: 5 }]),
+      });
+      const svcFirst = await build(dbFirst);
+      const svcSecond = await build(dbSecond);
+
+      const resultFirst = svcFirst.assertWithinLimit("org1", "members", 1);
+      const resultSecond = svcSecond.assertWithinLimit("org1", "members", 1);
+
+      const [r1, r2] = await Promise.allSettled([resultFirst, resultSecond]);
+
+      expect(r1.status).toBe("fulfilled");
+      expect(r2.status).toBe("rejected");
+      if (r2.status === "rejected")
+        expect(r2.reason).toBeInstanceOf(PaymentRequiredException);
+    });
+
+    it("never grants the same seat twice: a caller reading the committed count at limit is blocked", async () => {
+      const FREE_TIER = [{ plan: "FREE", status: "ACTIVE", trial_ends_at: null }];
+      const dbAtLimit = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce(FREE_TIER)
+          .mockResolvedValueOnce([{ count: 5 }]),
+      });
+      const svc = await build(dbAtLimit);
+
+      await expect(svc.assertWithinLimit("org1", "members", 1)).rejects.toBeInstanceOf(
+        PaymentRequiredException,
+      );
     });
   });
 

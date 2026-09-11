@@ -7,6 +7,14 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { HrDashboardService } from "./hr-dashboard.service";
 import { HrDashboardReportsService } from "./hr-dashboard-reports.service";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  hrDashboardMetricsSchema,
+  hrDashboardDiversitySchema,
+  hrDashboardOnboardingStatusSchema,
+  headcountTrendsSchema,
+  timeToFillSchema,
+} from "./dto/lifecycle-response.schemas";
 
 @RequireModule("hr")
 @Controller("hr/dashboard")
@@ -18,30 +26,35 @@ export class HrDashboardController {
   ) {}
 
   @Get("metrics")
+  @ResponseSchema(hrDashboardMetricsSchema)
   @RequirePermission("hr:analytics:read")
   metrics(@CurrentUser() u: CurrentUserContext) {
     return this.dashboard.metrics(u.orgId);
   }
 
   @Get("diversity")
+  @ResponseSchema(hrDashboardDiversitySchema)
   @RequirePermission("hr:analytics:read")
   diversity(@CurrentUser() u: CurrentUserContext) {
     return this.dashboard.diversity(u.orgId);
   }
 
   @Get("onboarding-status")
+  @ResponseSchema(hrDashboardOnboardingStatusSchema)
   @RequirePermission("hr:analytics:read")
   onboardingStatus(@CurrentUser() u: CurrentUserContext) {
     return this.dashboard.onboardingStatus(u.orgId);
   }
 
   @Get("headcount-trends")
+  @ResponseSchema(headcountTrendsSchema)
   @RequirePermission("hr:analytics:read")
   headcountTrends(@CurrentUser() u: CurrentUserContext) {
     return this.reports.headcountTrends(u.orgId);
   }
 
   @Get("time-to-fill")
+  @ResponseSchema(timeToFillSchema)
   @RequirePermission("hr:analytics:read")
   timeToFill(@CurrentUser() u: CurrentUserContext) {
     return this.reports.timeToFill(u.orgId);

@@ -1,13 +1,4 @@
-import {
-  pgTable,
-  text,
-  integer,
-  boolean,
-  timestamp,
-  jsonb,
-  index,
-  unique,
-} from "drizzle-orm/pg-core";
+import { boolean, foreignKey, index, integer, jsonb, pgTable, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { stateGroupEnum } from "../common/enums";
@@ -33,7 +24,6 @@ export const hrPositionStatuses = pgTable(
   (table) => [
     unique("uniq_hr_position_statuses_org_id").on(table.orgId, table.id),
     unique("uniq_hr_position_statuses_org_name").on(table.orgId, table.name),
-    index("idx_hr_position_statuses_org").on(table.orgId),
   ],
 );
 
@@ -44,13 +34,10 @@ export const hrPositionTransitions = pgTable(
     orgId: text("org_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    fromStatusId: integer("from_status_id").references(
-      () => hrPositionStatuses.id,
-      { onDelete: "cascade" },
-    ),
+    fromStatusId: integer("from_status_id"),
     toStatusId: integer("to_status_id")
       .notNull()
-      .references(() => hrPositionStatuses.id, { onDelete: "cascade" }),
+      ,
     name: text("name"),
     requiresApproval: boolean("requires_approval").notNull().default(false),
     requiredFields: jsonb("required_fields")
@@ -72,6 +59,8 @@ export const hrPositionTransitions = pgTable(
     deletedAt: timestamp("deleted_at"),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.fromStatusId], foreignColumns: [hrPositionStatuses.orgId, hrPositionStatuses.id], name: "fk_hr_position_transitions_org_from_status" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.toStatusId], foreignColumns: [hrPositionStatuses.orgId, hrPositionStatuses.id], name: "fk_hr_position_transitions_org_to_status" }).onDelete("cascade"),
     unique("uniq_hr_position_transitions_org_id").on(table.orgId, table.id),
     index("idx_hr_position_transitions_org")
       .on(table.orgId)

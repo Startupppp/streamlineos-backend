@@ -3,6 +3,7 @@ import {
   CallHandler,
   ConflictException,
   ExecutionContext,
+  InternalServerErrorException,
   UnprocessableEntityException,
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
@@ -10,67 +11,52 @@ import { createHash } from "node:crypto";
 import { firstValueFrom, of, throwError } from "rxjs";
 import { IdempotencyInterceptor } from "./idempotency.interceptor";
 import { IDEMPOTENCY_OPTIONAL } from "./idempotency.constants";
-import {
-  InMemoryCommandFenceStore,
-  type ClaimParams,
-  type ClaimResult,
-  type CommandFenceStore,
-} from "./command-fence-store";
+import type { ClaimParams, ClaimResult, CommandFenceStore } from "./command-fence-store";
+import { InMemoryCommandFenceStore } from "./command-fence-store-memory";
 
 const COMMAND = "portal.createGrant";
 const BODY = { partyContactId: "c1" };
-
-/**
- * Deliberately the *pre-params* hash format: `{ commandName, body }`, with no
- * `params` member at all.
- *
- * When the fence learned to hash route params, an empty params object was
- * omitted from the canonical form rather than serialised as `{}` — so a route
- * with no params keeps hashing exactly this string. That is what stops the
- * change from invalidating every live fence on the 83 param-free fenced routes
- * at deploy. It is asserted rather than described, in "hashes a param-free
- * route exactly as it did before params counted" below.
- */
-const MATCHING_HASH = createHash("sha256")
+/** The pre-widening hash, which the interceptor still emits as `legacyRequestHash`. */
+const LEGACY_HASH = createHash("sha256")
   .update(JSON.stringify({ commandName: COMMAND, body: BODY }))
   .digest("hex");
 
 /**
  * A store double. `claimResult` is either a fixed answer or a function of the
  * claim, so a case can answer the way the real store would for the hash the
- * interceptor actually computed: `claims` records exactly what the interceptor
- * handed the store, which is where a test that cares about the stored
- * `requestHash` must read it from — a hand-written hash is one the code under
- * test may never produce.
+ * interceptor actually computed: `claimParams` records exactly what the
+ * interceptor handed the store, which is where a test that cares about the
+ * stored `requestHash` must read it from — a hand-written hash is one the code
+ * under test may never produce.
  */
 function makeStore(claimResult: ClaimResult | ((params: ClaimParams) => ClaimResult)): {
   store: CommandFenceStore;
-  claims: ClaimParams[];
   completeCalls: unknown[];
   failCalls: number[];
+  claimParams: ClaimParams[];
 } {
-  const claims: ClaimParams[] = [];
   const completeCalls: unknown[] = [];
   const failCalls: number[] = [];
+  const claimParams: ClaimParams[] = [];
   const store: CommandFenceStore = {
     claim: jest.fn((params: ClaimParams) => {
-      claims.push(params);
+      claimParams.push(params);
       return Promise.resolve(
         typeof claimResult === "function" ? claimResult(params) : claimResult,
       );
     }),
     complete: jest
       .fn()
-      .mockImplementation((_orgId: string, _id: number, _status: number, _data: unknown) => {
+      .mockImplementation((_id: number, _status: number, _data: unknown, _orgId: string) => {
         completeCalls.push(_data);
         return Promise.resolve();
       }),
-    fail: jest.fn().mockImplementation((_orgId: string, _id: number) => {
+    fail: jest.fn().mockImplementation((_id: number, _orgId: string) => {
       failCalls.push(_id);
       return Promise.resolve();
     }),
   };
-  return { store, claims, completeCalls, failCalls };
+  return { store, completeCalls, failCalls, claimParams };
 }
 
 /**
@@ -165,7 +151,7 @@ describe("IdempotencyInterceptor", () => {
    * ignored. A caller who sends one still gets the full contract.
    */
   it("still fences an optional command when a key is supplied", async () => {
-    const { store, claims } = makeStore({ kind: "proceed", fenceId: 9 });
+    const { store, claimParams } = makeStore({ kind: "proceed", fenceId: 9 });
     const interceptor = new IdempotencyInterceptor(makeReflector(COMMAND, true), store);
     const handler = makeHandler("ok");
 
@@ -173,19 +159,47 @@ describe("IdempotencyInterceptor", () => {
 
     expect(await firstValueFrom(result$)).toBe("ok");
     expect(handler.handle).toHaveBeenCalled();
-    expect(claims).toHaveLength(1);
-    expect(store.complete).toHaveBeenCalledWith("org1", 9, 201, "ok");
+    expect(claimParams).toHaveLength(1);
+    /* The org travels with the completion: the fence row is tenant-scoped under RLS. */
+    expect(store.complete).toHaveBeenCalledWith(9, 201, "ok", "org1");
   });
 
-  it("skips the fence when there is no tenant context", async () => {
+  it("fails closed when a fenced command carries no organisation context", async () => {
     const { store } = makeStore({ kind: "proceed", fenceId: 1 });
     const interceptor = new IdempotencyInterceptor(makeReflector(COMMAND), store);
     const req = makeReq({ user: { userId: "u1", sessionId: "s" } });
     const handler = makeHandler("ok");
-    const result$ = await interceptor.intercept(makeCtx(req, {}), handler);
-    expect(await firstValueFrom(result$)).toBe("ok");
-    expect(handler.handle).toHaveBeenCalled();
+    await expect(
+      interceptor.intercept(makeCtx(req, {}), handler),
+    ).rejects.toBeInstanceOf(InternalServerErrorException);
+    expect(handler.handle).not.toHaveBeenCalled();
     expect(store.claim).not.toHaveBeenCalled();
+  });
+
+  it("hashes the path params, method and query, not only the body", async () => {
+    const { store, claimParams } = makeStore({ kind: "proceed", fenceId: 1 });
+    const interceptor = new IdempotencyInterceptor(makeReflector(COMMAND), store);
+    const a = makeReq({ method: "POST", params: { creditNoteId: "a" }, query: {} });
+    const b = makeReq({ method: "POST", params: { creditNoteId: "b" }, query: {} });
+    await firstValueFrom(await interceptor.intercept(makeCtx(a, {}), makeHandler("ok")));
+    await firstValueFrom(await interceptor.intercept(makeCtx(b, {}), makeHandler("ok")));
+
+    expect(claimParams).toHaveLength(2);
+    expect(claimParams[0]?.requestHash).not.toBe(claimParams[1]?.requestHash);
+    // The body is identical, so the pre-widening hash cannot tell them apart at all.
+    expect(claimParams[0]?.legacyRequestHash).toBe(LEGACY_HASH);
+    expect(claimParams[1]?.legacyRequestHash).toBe(LEGACY_HASH);
+  });
+
+  it("orders query and param keys, so ?a=1&b=2 and ?b=2&a=1 are one command", async () => {
+    const { store, claimParams } = makeStore({ kind: "proceed", fenceId: 1 });
+    const interceptor = new IdempotencyInterceptor(makeReflector(COMMAND), store);
+    const a = makeReq({ method: "POST", params: {}, query: { a: "1", b: "2" } });
+    const b = makeReq({ method: "POST", params: {}, query: { b: "2", a: "1" } });
+    await firstValueFrom(await interceptor.intercept(makeCtx(a, {}), makeHandler("ok")));
+    await firstValueFrom(await interceptor.intercept(makeCtx(b, {}), makeHandler("ok")));
+    expect(claimParams[0]?.requestHash).toBe(claimParams[1]?.requestHash);
+    expect(store.claim).toHaveBeenCalledTimes(2);
   });
 
   it("executes a fresh command and marks the fence completed", async () => {
@@ -195,10 +209,9 @@ describe("IdempotencyInterceptor", () => {
     const res = { statusCode: 201, status: jest.fn() };
     const result$ = await interceptor.intercept(makeCtx(makeReq(), res), handler);
     expect(await firstValueFrom(result$)).toEqual({ created: true });
-    await Promise.resolve();
     expect(handler.handle).toHaveBeenCalled();
     /* The org travels with the completion: the fence row is tenant-scoped under RLS. */
-    expect(store.complete).toHaveBeenCalledWith("org1", 7, 201, { created: true });
+    expect(store.complete).toHaveBeenCalledWith(7, 201, { created: true }, "org1");
     expect(completeCalls).toHaveLength(1);
   });
 
@@ -240,7 +253,7 @@ describe("IdempotencyInterceptor", () => {
     const result$ = await interceptor.intercept(makeCtx(makeReq(), {}), errorHandler);
     await firstValueFrom(result$).catch(() => undefined);
     await Promise.resolve();
-    expect(store.fail).toHaveBeenCalledWith("org1", 11);
+    expect(store.fail).toHaveBeenCalledWith(11, "org1");
     expect(failCalls).toHaveLength(1);
   });
 
@@ -293,7 +306,7 @@ describe("IdempotencyInterceptor", () => {
      *
      * That distinction is the whole test. An earlier draft hardcoded the
      * params-inclusive hash as the stored value and asserted 422 — and it
-     * passed with the params removed from `hashRequest` again, because a
+     * passed with the params removed from the request hash again, because a
      * pre-fix interceptor computes a hash that does not match a hand-written
      * params-inclusive one either. It reported the fix working by way of a
      * mismatch it had manufactured itself. Claiming the fence for timer 11
@@ -338,45 +351,42 @@ describe("IdempotencyInterceptor", () => {
      * invalidating live fences for a purely cosmetic change.
      */
     it("hashes params by name, not by the order they arrive in", async () => {
-      const stored = createHash("sha256")
-        .update(
-          JSON.stringify({
-            commandName: COMMAND,
-            params: { candidateId: "1", offerId: "5" },
-            body: BODY,
-          }),
-        )
-        .digest("hex");
-      /* Answer as the real store does: replay on the stored hash, 422 on any other. */
-      const { store } = makeStore((params) =>
-        params.requestHash === stored
-          ? { kind: "replay", responseBody: { ok: true }, responseStatus: 200 }
-          : { kind: "mismatch" },
-      );
+      /* Compared hash-to-hash, both computed by the interceptor, never against a hand-written one. */
+      const { store, claimParams } = makeStore({ kind: "proceed", fenceId: 1 });
       const interceptor = new IdempotencyInterceptor(makeReflector(COMMAND), store);
 
-      const result$ = await interceptor.intercept(
-        makeCtx(
-          makeReq({ params: { offerId: "5", candidateId: "1" } }),
-          { statusCode: 200, status: jest.fn() },
+      await firstValueFrom(
+        await interceptor.intercept(
+          makeCtx(makeReq({ params: { offerId: "5", candidateId: "1" } }), {}),
+          makeHandler("ok"),
         ),
-        makeHandler("SHOULD_NOT_RUN"),
+      );
+      await firstValueFrom(
+        await interceptor.intercept(
+          makeCtx(makeReq({ params: { candidateId: "1", offerId: "5" } }), {}),
+          makeHandler("ok"),
+        ),
       );
 
-      expect(await firstValueFrom(result$)).toEqual({ ok: true });
+      expect(claimParams).toHaveLength(2);
+      expect(claimParams[0]?.requestHash).toBe(claimParams[1]?.requestHash);
     });
 
     /**
-     * The deploy-compatibility property, asserted directly rather than left to
-     * `MATCHING_HASH` proving it as a side effect.
+     * The deploy-compatibility property, asserted directly.
      *
-     * A param-free route must hash byte-identically to the pre-params format,
-     * or this change silently 422s every in-flight retry on 83 fenced routes
-     * the moment it ships. `{}` is omitted from the canonical form, so it does.
+     * Widening the hash rewrites its input, so a fence already on disk carries
+     * the pre-widening `{ commandName, body }` hash; without a bridge every
+     * in-flight retry across the deploy would 422. The bridge is
+     * `legacyRequestHash`, which the store accepts only for a row written before
+     * this process started (`requestHashMatches`). The double answers exactly as
+     * the real store does for such a row: replay when the legacy hash matches.
+     * `LEGACY_HASH` is hand-written on purpose — it is the on-disk format of
+     * those old rows, which is the whole point.
      */
-    it("hashes a param-free route exactly as it did before params counted", async () => {
+    it("replays a fence written before the hash widened, through legacyRequestHash", async () => {
       const { store } = makeStore((params) =>
-        params.requestHash === MATCHING_HASH
+        params.legacyRequestHash === LEGACY_HASH
           ? { kind: "replay", responseBody: { created: true }, responseStatus: 201 }
           : { kind: "mismatch" },
       );

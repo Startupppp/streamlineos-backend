@@ -49,6 +49,18 @@ class PortalStyleController {
 }
 Reflect.defineMetadata(PATH_METADATA, "inherits", PortalStyleController.prototype.inherits);
 
+// The AgentController shape: @Public() on the class because the route authenticates
+// with an agent token rather than a user JWT, @RequirePermission on the handler.
+@Public()
+class AgentStyleController {
+  @RequirePermission("build:tickets:view")
+  gated(): void {}
+
+  inheritsPublic(): void {}
+}
+Reflect.defineMetadata(PATH_METADATA, "gated", AgentStyleController.prototype.gated);
+Reflect.defineMetadata(PATH_METADATA, "inheritsPublic", AgentStyleController.prototype.inheritsPublic);
+
 function appWith(instances: object[]): INestApplication {
   const discovery = {
     getControllers: () => instances.map((instance) => ({ instance })),
@@ -101,6 +113,18 @@ describe("classifyHandler", () => {
     ).toEqual({ mode: "in-service", by: "PortalJwtAuthGuard" });
   });
 
+  it("lets a handler's own declaration outrank the class's", () => {
+    expect(
+      classifyHandler(AgentStyleController.prototype.gated, AgentStyleController),
+    ).toEqual({ mode: "permissioned", permission: "build:tickets:view" });
+  });
+
+  it("still inherits the class declaration where the handler declares nothing", () => {
+    expect(
+      classifyHandler(AgentStyleController.prototype.inheritsPublic, AgentStyleController),
+    ).toEqual({ mode: "public" });
+  });
+
   it("agrees with the guard that an empty in-service name is not a declaration", () => {
     @AuthorizedInService("")
     class Unnamed {
@@ -140,12 +164,13 @@ describe("recordRouteClassification", () => {
     expect(document.paths["/p0"].get.description ?? "").toContain("UNDECLARED");
   });
 
-  it("ignores a method that carries no route metadata", () => {
+  it("stamps nothing for a method that carries no route metadata, and counts the orphan operation", () => {
     const document = documentFor(["MixedController_notARoute"]);
     expect(recordRouteClassification(appWith([new MixedController()]), document)).toEqual({
       stamped: 0,
-      undeclared: 0,
+      undeclared: 1,
     });
+    expect(document.paths["/p0"].get["x-exposure"]).toBeUndefined();
   });
 
   it("appends to an existing description instead of replacing it", () => {

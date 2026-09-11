@@ -42,6 +42,14 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { cursorPageSchema } from "../../../common/openapi/response-envelopes";
+import {
+  roadmapItemSchema,
+  roadmapPageSchema,
+  feedbackPostSchema,
+  changelogEntrySchema,
+} from "./dto/build-roadmap-response.schemas";
 
 const itemIdParams = z.object({ itemId: z.coerce.number().int().positive() }).strict();
 const postIdParams = z.object({ postId: z.coerce.number().int().positive() }).strict();
@@ -55,6 +63,7 @@ export class ProjectsRoadmapController {
 
   @Get("roadmap")
   @RequirePermission("build:roadmap:view")
+  @ResponseSchema(roadmapPageSchema)
   @Validate({ query: roadmapListQuerySchema })
   listRoadmap(
     @Query() query: RoadmapListQuery,
@@ -66,6 +75,7 @@ export class ProjectsRoadmapController {
   @Post("roadmap")
   @RequirePermission("build:roadmap:manage")
   @HttpCode(201)
+  @ResponseSchema(roadmapItemSchema)
   @Validate({ body: createRoadmapSchema })
   createRoadmap(
     @Body() body: CreateRoadmapInput,
@@ -76,6 +86,7 @@ export class ProjectsRoadmapController {
 
   @Patch("roadmap/:itemId")
   @RequirePermission("build:roadmap:manage")
+  @ResponseSchema(roadmapItemSchema)
   @Validate({ params: itemIdParams, body: updateRoadmapSchema })
   updateRoadmap(
     @Param("itemId", ParseIntPipe) itemId: number,
@@ -88,6 +99,7 @@ export class ProjectsRoadmapController {
   @Delete("roadmap/:itemId")
   @RequirePermission("build:roadmap:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: itemIdParams })
   deleteRoadmap(
     @Param("itemId", ParseIntPipe) itemId: number,
@@ -98,6 +110,7 @@ export class ProjectsRoadmapController {
 
   @Get("feedback")
   @RequirePermission("build:roadmap:view")
+  @ResponseSchema(cursorPageSchema(feedbackPostSchema))
   @Validate({ query: feedbackListQuerySchema })
   listFeedback(
     @Query() query: FeedbackListQuery,
@@ -109,6 +122,7 @@ export class ProjectsRoadmapController {
   @Post("feedback")
   @RequirePermission("build:roadmap:manage")
   @HttpCode(201)
+  @ResponseSchema(feedbackPostSchema)
   @Validate({ body: createFeedbackSchema })
   createFeedback(
     @Body() body: CreateFeedbackInput,
@@ -119,6 +133,7 @@ export class ProjectsRoadmapController {
 
   @Patch("feedback/:postId")
   @RequirePermission("build:roadmap:manage")
+  @ResponseSchema(feedbackPostSchema)
   @Validate({ params: postIdParams, body: updateFeedbackSchema })
   updateFeedback(
     @Param("postId", ParseIntPipe) postId: number,
@@ -130,6 +145,7 @@ export class ProjectsRoadmapController {
 
   @Post("feedback/:postId/merge")
   @RequirePermission("build:roadmap:manage")
+  @ResponseSchema(feedbackPostSchema)
   @Validate({ params: postIdParams, body: mergeFeedbackSchema })
   mergeFeedback(
     @Param("postId", ParseIntPipe) postId: number,
@@ -142,6 +158,7 @@ export class ProjectsRoadmapController {
   @Delete("feedback/:postId")
   @RequirePermission("build:roadmap:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: postIdParams })
   deleteFeedback(
     @Param("postId", ParseIntPipe) postId: number,
@@ -152,6 +169,7 @@ export class ProjectsRoadmapController {
 
   @Get("changelog")
   @RequirePermission("build:roadmap:view")
+  @ResponseSchema(cursorPageSchema(changelogEntrySchema))
   @Validate({ query: changelogListQuerySchema })
   listChangelog(
     @Query() query: ChangelogListQuery,
@@ -163,6 +181,7 @@ export class ProjectsRoadmapController {
   @Post("changelog")
   @RequirePermission("build:roadmap:manage")
   @HttpCode(201)
+  @ResponseSchema(changelogEntrySchema)
   @Validate({ body: createChangelogSchema })
   createChangelog(
     @Body() body: CreateChangelogInput,
@@ -173,6 +192,7 @@ export class ProjectsRoadmapController {
 
   @Patch("changelog/:entryId")
   @RequirePermission("build:roadmap:manage")
+  @ResponseSchema(changelogEntrySchema)
   @Validate({ params: entryIdParams, body: updateChangelogSchema })
   updateChangelog(
     @Param("entryId", ParseIntPipe) entryId: number,
@@ -185,6 +205,7 @@ export class ProjectsRoadmapController {
   @Delete("changelog/:entryId")
   @RequirePermission("build:roadmap:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: entryIdParams })
   deleteChangelog(
     @Param("entryId", ParseIntPipe) entryId: number,

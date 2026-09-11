@@ -5,6 +5,12 @@ import { compOffBalances, hrLeaveLedger, leaveTypes, overtimeRequests } from "..
 import { eq, and, desc, sql } from "drizzle-orm";
 import { HrPolicyEvaluationService } from "../policies/hr-policy-evaluation.service";
 import { HrWorkflowEngineService } from "../workflows/hr-workflow-engine.service";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
+import { requireOrganizationMembershipId } from "./organization-membership";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
+import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 
 const DEFAULT_STANDARD_DAY_HOURS = 8;
 
@@ -18,34 +24,29 @@ export class OvertimeService {
 
   async listRequests(
     orgId: string,
-    params: { page?: number; pageSize?: number } = {},
+    params: { cursor?: string; pageSize?: number } = {},
   ) {
-    const page = Math.max(1, params.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, params.pageSize ?? 20));
-    const offset = (page - 1) * pageSize;
-
-    const [items, totalRow] = await Promise.all([
-      this.db
-        .select()
-        .from(overtimeRequests)
-        .where(eq(overtimeRequests.orgId, orgId))
-        .orderBy(desc(overtimeRequests.createdAt))
-        .limit(pageSize)
-        .offset(offset),
-      this.db
-        .select({ total: sql<number>`count(*)::int` })
-        .from(overtimeRequests)
-        .where(eq(overtimeRequests.orgId, orgId))
-        .then((rows) => rows[0] ?? { total: 0 }),
-    ]);
-
-    const total = Number(totalRow.total);
+    const position = decodeCursor(params.cursor);
+    const where = position
+      ? and(
+          eq(overtimeRequests.orgId, orgId),
+          keysetBeforeId(overtimeRequests.createdAt, overtimeRequests.id, position),
+        )
+      : eq(overtimeRequests.orgId, orgId);
+    const rows = await this.db
+      .select()
+      .from(overtimeRequests)
+      .where(where)
+      .orderBy(desc(overtimeRequests.createdAt), desc(overtimeRequests.id))
+      .limit(pageSize + 1);
+    const page = buildCursorPage(rows, pageSize, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
     return {
-      items,
-      total,
-      page,
-      pageSize,
-      totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0,
+      items: page.data,
+      pagination: page.pagination,
     };
   }
 
@@ -54,10 +55,11 @@ export class OvertimeService {
     userId: string,
     data: { date: string; hours: string; reason?: string; convertToCompOff?: boolean },
   ) {
+    const userMembershipId = await requireOrganizationMembershipId(this.db, orgId, userId);
     const duplicate = await this.db.query.overtimeRequests.findFirst({
       where: and(
         eq(overtimeRequests.orgId, orgId),
-        eq(overtimeRequests.userId, userId),
+        eq(overtimeRequests.userMembershipId, userMembershipId),
         eq(overtimeRequests.date, data.date),
         sql`${overtimeRequests.status} != 'REJECTED'`,
       ),
@@ -69,27 +71,28 @@ export class OvertimeService {
 
     const [req] = await this.db
       .insert(overtimeRequests)
-      .values({ orgId, userId, ...data })
+      .values({ orgId, userId, userMembershipId, ...data })
       .returning();
 
-    void this.startOvertimeWorkflow(orgId, userId, req?.id);
+    this.scheduleOvertimeWorkflow(orgId, userId, req?.id);
 
     return req;
   }
 
   async approveRequest(orgId: string, id: number, approverId: string) {
+    const approverMembershipId = await requireOrganizationMembershipId(this.db, orgId, approverId);
     const existing = await this.db.query.overtimeRequests.findFirst({
       where: and(eq(overtimeRequests.id, id), eq(overtimeRequests.orgId, orgId)),
-      columns: { userId: true },
+      columns: { userMembershipId: true },
     });
     if (!existing) throw new NotFoundException("Request not found");
-    if (existing.userId === approverId) {
+    if (existing.userMembershipId === approverMembershipId) {
       throw new ForbiddenException("You cannot approve your own overtime request.");
     }
 
     const [req] = await this.db
       .update(overtimeRequests)
-      .set({ status: "APPROVED", approverId, updatedAt: new Date() })
+      .set({ status: "APPROVED", approverId, approverMembershipId, updatedAt: new Date() })
       .where(and(eq(overtimeRequests.id, id), eq(overtimeRequests.orgId, orgId)))
       .returning();
 
@@ -102,7 +105,7 @@ export class OvertimeService {
       await this.db.transaction(async (tx) => {
         await tx
           .insert(compOffBalances)
-          .values({ orgId, userId: req.userId, earnedDays })
+          .values({ orgId, userId: req.userId, userMembershipId: req.userMembershipId, earnedDays })
           .onConflictDoNothing();
 
         const compOffType = await tx.query.leaveTypes.findFirst({
@@ -132,9 +135,10 @@ export class OvertimeService {
   }
 
   async rejectRequest(orgId: string, id: number, approverId: string) {
+    const approverMembershipId = await requireOrganizationMembershipId(this.db, orgId, approverId);
     const [req] = await this.db
       .update(overtimeRequests)
-      .set({ status: "REJECTED", approverId, updatedAt: new Date() })
+      .set({ status: "REJECTED", approverId, approverMembershipId, updatedAt: new Date() })
       .where(and(eq(overtimeRequests.id, id), eq(overtimeRequests.orgId, orgId)))
       .returning();
 
@@ -143,10 +147,12 @@ export class OvertimeService {
   }
 
   async getCompOffBalance(orgId: string, userId: string) {
+    const userMembershipId = await requireOrganizationMembershipId(this.db, orgId, userId);
     return this.db
       .select()
       .from(compOffBalances)
-      .where(and(eq(compOffBalances.orgId, orgId), eq(compOffBalances.userId, userId)));
+      .where(and(eq(compOffBalances.orgId, orgId), eq(compOffBalances.userMembershipId, userMembershipId)))
+      .limit(100);
   }
 
   private async resolveStandardDayHours(orgId: string, userId: string): Promise<number> {
@@ -167,23 +173,21 @@ export class OvertimeService {
     }
   }
 
-  private async startOvertimeWorkflow(
-    orgId: string,
-    userId: string,
-    overtimeRequestId?: number,
-  ): Promise<void> {
+  private scheduleOvertimeWorkflow(orgId: string, userId: string, overtimeRequestId?: number): void {
     if (!this.workflowEngine || !overtimeRequestId) return;
-    try {
-      await this.workflowEngine.startWorkflow({
-        orgId,
-        objectType: "overtime_request",
-        objectId: String(overtimeRequestId),
-        requestedByUserId: userId,
-        subjectEmployeeId: userId,
-        context: { overtimeRequestId },
-      });
-    } catch {
-      return;
-    }
+    const start = () =>
+      runInNewTenantTransaction(this.db, orgId, () =>
+        this.workflowEngine.startWorkflow({
+          orgId,
+          objectType: "overtime_request",
+          objectId: String(overtimeRequestId),
+          requestedByUserId: userId,
+          subjectEmployeeId: userId,
+          context: { overtimeRequestId },
+        }),
+      ).catch(
+        logSideEffectFailure("overtime approval workflow start", { orgId, overtimeRequestId }),
+      );
+    if (!registerAfterCommit(start)) void start();
   }
 }

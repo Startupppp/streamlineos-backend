@@ -40,7 +40,7 @@ export class CrmCustomer360Service {
 
     if (!orgRow) return {};
 
-    const fetchMap: Array<[string, () => Promise<Customer360Section<unknown>>]> = [];
+    const fetchMap: Array<[keyof Customer360Response, () => Promise<Customer360Section<unknown>>]> = [];
 
     if (permSet.has("crm:contacts:view")) {
       fetchMap.push(["contacts", () => this.sections.fetchContacts(orgId, companyId)]);
@@ -70,7 +70,7 @@ export class CrmCustomer360Service {
     const results = await Promise.all(fetchMap.map(([, fn]) => fn()));
     const response: Customer360Response = {};
     fetchMap.forEach(([key], idx) => {
-      (response as Record<string, unknown>)[key] = results[idx];
+      response[key] = results[idx];
     });
     return response;
   }
@@ -87,7 +87,7 @@ export class CrmCustomer360Service {
 
     if (!clientRow) return {};
 
-    const fetchMap: Array<[string, () => Promise<Customer360Section<unknown>>]> = [];
+    const fetchMap: Array<[keyof Customer360Response, () => Promise<Customer360Section<unknown>>]> = [];
 
     if (permSet.has("crm:contacts:view")) {
       fetchMap.push(["contacts", () => this.sections.fetchContactsForClient(orgId, clientId)]);
@@ -114,7 +114,7 @@ export class CrmCustomer360Service {
     const results = await Promise.all(fetchMap.map(([, fn]) => fn()));
     const response: Customer360Response = {};
     fetchMap.forEach(([key], idx) => {
-      (response as Record<string, unknown>)[key] = results[idx];
+      response[key] = results[idx];
     });
     return response;
   }

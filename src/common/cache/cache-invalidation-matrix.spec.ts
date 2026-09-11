@@ -1,9 +1,9 @@
 /**
- * c19-04 read-after-write verification — all 139 cache namespace matrix entries.
+ * c19-04 read-after-write verification — all 142 cache namespace matrix entries.
  *
- * Of the 139 entries in CACHE_INVALIDATION_MATRIX:
- *   104 are kind:"write" — exercised by the table-driven tests below.
- *   35 are kind:"ttl-only" — excluded from read-after-write; their non-empty
+ * Of the 142 entries in CACHE_INVALIDATION_MATRIX:
+ *   105 are kind:"write" — exercised by the table-driven tests below.
+ *   37 are kind:"ttl-only" — excluded from read-after-write; their non-empty
  *      reason fields are verified in "matrix structure".
  *
  * All tests run against the real CacheService with a stateful in-memory Redis
@@ -78,8 +78,8 @@ function alternateTenantNs(template: string): string {
 // Matrix structure tests
 
 describe("CACHE_INVALIDATION_MATRIX — structure", () => {
-  it("has exactly 139 entries", () => {
-    expect(CACHE_INVALIDATION_MATRIX).toHaveLength(139);
+  it("has exactly 142 entries", () => {
+    expect(CACHE_INVALIDATION_MATRIX).toHaveLength(142);
   });
 
   it("has no duplicate namespace keys", () => {
@@ -100,7 +100,7 @@ describe("CACHE_INVALIDATION_MATRIX — structure", () => {
   });
 
   it(
-    "coverage guard — 104 write and 35 ttl-only" +
+    "coverage guard — 105 write and 37 ttl-only" +
       " (update both counts when the matrix grows)",
     () => {
       const writeCount = CACHE_INVALIDATION_MATRIX.filter(
@@ -109,8 +109,8 @@ describe("CACHE_INVALIDATION_MATRIX — structure", () => {
       const ttlCount = CACHE_INVALIDATION_MATRIX.filter(
         (e) => e.invalidation.kind === "ttl-only",
       ).length;
-      expect(writeCount).toBe(104);
-      expect(ttlCount).toBe(35);
+      expect(writeCount).toBe(105);
+      expect(ttlCount).toBe(37);
       expect(writeCount + ttlCount).toBe(CACHE_INVALIDATION_MATRIX.length);
     },
   );
@@ -184,7 +184,7 @@ describe("namespace read-after-write — negative control", () => {
 // Read-after-write — table-driven, one case per kind:"write" entry.
 //
 
-describe("namespace read-after-write — event-invalidated (104 namespaces)", () => {
+describe("namespace read-after-write — event-invalidated (105 namespaces)", () => {
   it.each(writeEntries)("$namespace", async (entry) => {
     const cache = makeFreshCache();
     const ns = primaryNs(entry.namespace);

@@ -141,7 +141,7 @@ export async function initiateModuleOwnershipTransfer(
 
   await Promise.all([
     deps.cache.invalidate(CACHE_KEYS.moduleAccessOwnership(orgId, moduleKey)),
-    deps.cache.invalidateNamespace(`ownership:transfers:${orgId}`),
+    deps.cache.invalidateNamespaceForOrg(orgId, "ownership:transfers"),
   ]);
 
   deps.audit.log({
@@ -222,7 +222,7 @@ export async function cancelModuleOwnershipTransfer(
     deps.cache.invalidate(
       CACHE_KEYS.moduleAccessOwnership(actor.orgId, moduleKey),
     ),
-    deps.cache.invalidateNamespace(`ownership:transfers:${actor.orgId}`),
+    deps.cache.invalidateNamespaceForOrg(actor.orgId, "ownership:transfers"),
   ]);
 
   deps.audit.log({

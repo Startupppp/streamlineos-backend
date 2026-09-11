@@ -34,6 +34,16 @@ import {
   type ToggleImpactInput,
 } from "./dto/setup.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  policyCurrentResponseSchema,
+  policyToggleImpactResponseSchema,
+  payrollPolicyRowSchema,
+  policyPreviewResponseSchema,
+  policyActivateResponseSchema,
+  policyVersionsListResponseSchema,
+  payrollPolicyVersionRowSchema,
+} from "./dto/policies-response.schemas";
 import { z } from "zod";
 
 const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
@@ -49,6 +59,7 @@ export class PayrollPoliciesController {
 
   @Get("current")
   @RequirePermission("payroll:policies:view")
+  @ResponseSchema(policyCurrentResponseSchema)
   async getCurrent(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
     return this.query.getCurrent(u.orgId);
   }
@@ -56,6 +67,7 @@ export class PayrollPoliciesController {
   @Get("toggle-impact")
   @RequirePermission("payroll:policies:view")
   @Validate({ query: toggleImpactSchema })
+  @ResponseSchema(policyToggleImpactResponseSchema)
   async toggleImpact(
     @Query() query: ToggleImpactInput,
     @CurrentUser() u: CurrentUserContext,
@@ -67,6 +79,7 @@ export class PayrollPoliciesController {
   @HttpCode(201)
   @RequirePermission("payroll:policies:manage")
   @Validate({ body: createPolicySchema })
+  @ResponseSchema(payrollPolicyRowSchema)
   async create(
     @Body() body: CreatePolicyInput,
     @CurrentUser() u: CurrentUserContext,
@@ -77,6 +90,7 @@ export class PayrollPoliciesController {
   @Post("preview")
   @RequirePermission("payroll:policies:view")
   @Validate({ body: policyPreviewSchema })
+  @ResponseSchema(policyPreviewResponseSchema)
   async preview(
     @Body() body: PolicyPreviewInput,
     @CurrentUser() u: CurrentUserContext,
@@ -87,6 +101,7 @@ export class PayrollPoliciesController {
   @Patch(":policyId")
   @RequirePermission("payroll:policies:manage")
   @Validate({ params: policyIdParams, body: updatePolicySchema })
+  @ResponseSchema(payrollPolicyRowSchema)
   async update(
     @Param("policyId", ParseIntPipe) policyId: number,
     @Body() body: UpdatePolicyInput,
@@ -99,6 +114,7 @@ export class PayrollPoliciesController {
   @HttpCode(200)
   @RequirePermission("payroll:policies:manage")
   @Validate({ params: policyIdParams, body: activatePolicySchema })
+  @ResponseSchema(policyActivateResponseSchema)
   async activate(
     @Param("policyId", ParseIntPipe) policyId: number,
     @Body() body: ActivatePolicyInput,
@@ -110,6 +126,7 @@ export class PayrollPoliciesController {
   @Get(":policyId/versions")
   @RequirePermission("payroll:policies:view")
   @Validate({ params: policyIdParams })
+  @ResponseSchema(policyVersionsListResponseSchema)
   async listVersions(
     @Param("policyId", ParseIntPipe) policyId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -121,6 +138,7 @@ export class PayrollPoliciesController {
   @HttpCode(201)
   @RequirePermission("payroll:policies:manage")
   @Validate({ params: policyIdParams, body: createPolicyVersionSchema })
+  @ResponseSchema(payrollPolicyVersionRowSchema)
   async createVersion(
     @Param("policyId", ParseIntPipe) policyId: number,
     @Body() body: CreatePolicyVersionInput,

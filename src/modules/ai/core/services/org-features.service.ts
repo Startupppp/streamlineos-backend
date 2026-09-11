@@ -22,15 +22,25 @@ const DEFAULT_FLAGS: OrgFeatureFlags = {
   supportAi: true,
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function readBooleanFlag(features: Record<string, unknown>, key: keyof OrgFeatureFlags, fallback: boolean): boolean {
+  const value = features[key];
+  return typeof value === "boolean" ? value : fallback;
+}
+
 function parseOrgFeatureFlags(settings: Record<string, unknown> | null | undefined): OrgFeatureFlags {
-  const features = (settings?.features ?? {}) as Partial<OrgFeatureFlags>;
+  const rawFeatures = settings?.features;
+  const features = isRecord(rawFeatures) ? rawFeatures : {};
   return {
-    aiChat: features.aiChat ?? DEFAULT_FLAGS.aiChat,
-    aiLeadScoring: features.aiLeadScoring ?? DEFAULT_FLAGS.aiLeadScoring,
-    aiEmailDraft: features.aiEmailDraft ?? DEFAULT_FLAGS.aiEmailDraft,
-    aiSmartNotifications: features.aiSmartNotifications ?? DEFAULT_FLAGS.aiSmartNotifications,
-    aiWeeklyRecap: features.aiWeeklyRecap ?? DEFAULT_FLAGS.aiWeeklyRecap,
-    supportAi: features.supportAi ?? DEFAULT_FLAGS.supportAi,
+    aiChat: readBooleanFlag(features, "aiChat", DEFAULT_FLAGS.aiChat),
+    aiLeadScoring: readBooleanFlag(features, "aiLeadScoring", DEFAULT_FLAGS.aiLeadScoring),
+    aiEmailDraft: readBooleanFlag(features, "aiEmailDraft", DEFAULT_FLAGS.aiEmailDraft),
+    aiSmartNotifications: readBooleanFlag(features, "aiSmartNotifications", DEFAULT_FLAGS.aiSmartNotifications),
+    aiWeeklyRecap: readBooleanFlag(features, "aiWeeklyRecap", DEFAULT_FLAGS.aiWeeklyRecap),
+    supportAi: readBooleanFlag(features, "supportAi", DEFAULT_FLAGS.supportAi),
   };
 }
 

@@ -1,7 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, gte, inArray, isNotNull, isNull, lte, or } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, isNotNull, isNull, lte, or } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import type { TenantTx } from "../../db/drizzle.types";
 import {
   calendarEventExceptions,
   calendarEvents,
@@ -12,9 +13,21 @@ import {
 import { forEachOrg } from "../../common/tenant";
 import type { ForEachOrgResult } from "../../common/tenant/for-each-org";
 import { expandToOccurrences } from "./calendar-occurrence.service";
+import { drainByKeyset } from "./calendar-keyset-drain";
 
 const REMINDER_WINDOW_MS = 20 * 60 * 1000;
 const EVENT_BATCH_LIMIT = 200;
+const EXCEPTION_PAGE_SIZE = 2000;
+const ATTENDEE_PAGE_SIZE = 1000;
+const OUTBOX_INSERT_CHUNK = 500;
+
+interface ReminderCandidate {
+  id: number;
+  title: string;
+  startDate: Date;
+  nominalStart: Date;
+  isRecurring: boolean;
+}
 
 export interface CalendarReminderSweepResult {
   organizations: ForEachOrgResult;
@@ -32,51 +45,61 @@ export class CalendarReminderSweepService {
     let intentsWritten = 0;
 
     const organizations = await forEachOrg(this.db, "calendar-reminder-sweep", async (tx, orgId) => {
-      const nonRecurring = await tx
-        .select({ id: calendarEvents.id, title: calendarEvents.title, startDate: calendarEvents.startDate })
-        .from(calendarEvents)
-        .where(
-          and(
-            eq(calendarEvents.orgId, orgId),
-            eq(calendarEvents.reminder15MinSent, false),
-            eq(calendarEvents.allDay, false),
-            isNull(calendarEvents.rrule),
-            gte(calendarEvents.startDate, now),
-            lte(calendarEvents.startDate, dueBy),
-          ),
-        )
-        .limit(EVENT_BATCH_LIMIT);
+      const nonRecurring = await drainByKeyset(EVENT_BATCH_LIMIT, (afterId) =>
+        tx
+          .select({ id: calendarEvents.id, title: calendarEvents.title, startDate: calendarEvents.startDate })
+          .from(calendarEvents)
+          .where(
+            and(
+              eq(calendarEvents.orgId, orgId),
+              eq(calendarEvents.reminder15MinSent, false),
+              eq(calendarEvents.allDay, false),
+              isNull(calendarEvents.rrule),
+              gte(calendarEvents.startDate, now),
+              lte(calendarEvents.startDate, dueBy),
+              gt(calendarEvents.id, afterId),
+            ),
+          )
+          .orderBy(asc(calendarEvents.id))
+          .limit(EVENT_BATCH_LIMIT),
+      );
 
-      const recurring = await tx
-        .select({
-          id: calendarEvents.id,
-          title: calendarEvents.title,
-          startDate: calendarEvents.startDate,
-          endDate: calendarEvents.endDate,
-          allDay: calendarEvents.allDay,
-          timezone: calendarEvents.timezone,
-          orgId: calendarEvents.orgId,
-          rrule: calendarEvents.rrule,
-          recurrenceEnd: calendarEvents.recurrenceEnd,
-        })
-        .from(calendarEvents)
-        .where(
-          and(
-            eq(calendarEvents.orgId, orgId),
-            eq(calendarEvents.allDay, false),
-            isNotNull(calendarEvents.rrule),
-            lte(calendarEvents.startDate, dueBy),
-            or(isNull(calendarEvents.recurrenceEnd), gte(calendarEvents.recurrenceEnd, now)),
-          ),
-        )
-        .limit(EVENT_BATCH_LIMIT);
+      const recurring = await drainByKeyset(EVENT_BATCH_LIMIT, (afterId) =>
+        tx
+          .select({
+            id: calendarEvents.id,
+            title: calendarEvents.title,
+            startDate: calendarEvents.startDate,
+            endDate: calendarEvents.endDate,
+            allDay: calendarEvents.allDay,
+            timezone: calendarEvents.timezone,
+            orgId: calendarEvents.orgId,
+            rrule: calendarEvents.rrule,
+            recurrenceEnd: calendarEvents.recurrenceEnd,
+          })
+          .from(calendarEvents)
+          .where(
+            and(
+              eq(calendarEvents.orgId, orgId),
+              eq(calendarEvents.allDay, false),
+              isNotNull(calendarEvents.rrule),
+              lte(calendarEvents.startDate, dueBy),
+              or(isNull(calendarEvents.recurrenceEnd), gte(calendarEvents.recurrenceEnd, now)),
+              gt(calendarEvents.id, afterId),
+            ),
+          )
+          .orderBy(asc(calendarEvents.id))
+          .limit(EVENT_BATCH_LIMIT),
+      );
 
       const recurringIds = recurring.map((e) => e.id);
       const exceptions =
         recurringIds.length === 0
           ? []
-          : await tx
+          : await drainByKeyset(EXCEPTION_PAGE_SIZE, (afterId) =>
+              tx
               .select({
+                id: calendarEventExceptions.id,
                 eventId: calendarEventExceptions.eventId,
                 occurrenceStart: calendarEventExceptions.occurrenceStart,
                 isCancelled: calendarEventExceptions.isCancelled,
@@ -88,6 +111,7 @@ export class CalendarReminderSweepService {
                 and(
                   eq(calendarEventExceptions.orgId, orgId),
                   inArray(calendarEventExceptions.eventId, recurringIds),
+                  gt(calendarEventExceptions.id, afterId),
                   or(
                     and(
                       gte(calendarEventExceptions.occurrenceStart, now),
@@ -101,7 +125,9 @@ export class CalendarReminderSweepService {
                   ),
                 ),
               )
-              .limit(EVENT_BATCH_LIMIT * 10);
+              .orderBy(asc(calendarEventExceptions.id))
+              .limit(EXCEPTION_PAGE_SIZE),
+            );
 
       const cancelledKeys = new Set(
         exceptions.filter((e) => e.isCancelled).map((e) => `${e.eventId}:${e.occurrenceStart.getTime()}`),
@@ -164,18 +190,46 @@ export class CalendarReminderSweepService {
         });
       }
 
-      type Candidate = { id: number; title: string; startDate: Date; nominalStart: Date; isRecurring: boolean };
-      const allCandidates: Candidate[] = [
-        ...nonRecurring.map((e) => ({ ...e, nominalStart: e.startDate, isRecurring: false as const })),
-        ...recurringOccurrences.map((e) => ({ ...e, isRecurring: true as const })),
+      const allCandidates: ReminderCandidate[] = [
+        ...nonRecurring.map((e) => ({ ...e, nominalStart: e.startDate, isRecurring: false })),
+        ...recurringOccurrences.map((e) => ({ ...e, isRecurring: true })),
       ];
 
       candidates += allCandidates.length;
       if (allCandidates.length === 0) return;
 
-      const eventIds = [...new Set(allCandidates.map((e) => e.id))];
-      const attendees = await tx
+      intentsWritten += await this.emitReminderIntents(tx, orgId, allCandidates);
+
+      const settledIds = allCandidates.filter((c) => !c.isRecurring).map((c) => c.id);
+      if (settledIds.length > 0)
+        await tx
+          .update(calendarEvents)
+          .set({ reminder15MinSent: true, updatedAt: new Date() })
+          .where(and(eq(calendarEvents.orgId, orgId), inArray(calendarEvents.id, settledIds)));
+    });
+
+    return { organizations, candidates, intentsWritten };
+  }
+
+  private async emitReminderIntents(
+    tx: TenantTx,
+    orgId: string,
+    allCandidates: ReminderCandidate[],
+  ): Promise<number> {
+    const candidatesByEvent = new Map<number, ReminderCandidate[]>();
+    for (const candidate of allCandidates) {
+      const forEvent = candidatesByEvent.get(candidate.id) ?? [];
+      forEvent.push(candidate);
+      candidatesByEvent.set(candidate.id, forEvent);
+    }
+    const eventIds = [...candidatesByEvent.keys()];
+
+    let written = 0;
+    let afterId = 0;
+    for (;;) {
+      const page = await tx
         .select({
+          id: eventAttendees.id,
           eventId: eventAttendees.eventId,
           userId: organizationMembers.userId,
           membershipId: eventAttendees.membershipId,
@@ -193,50 +247,50 @@ export class CalendarReminderSweepService {
             eq(eventAttendees.orgId, orgId),
             eq(organizationMembers.status, "ACTIVE"),
             inArray(eventAttendees.eventId, eventIds),
+            gt(eventAttendees.id, afterId),
           ),
         )
-        .limit(EVENT_BATCH_LIMIT * 50);
+        .orderBy(asc(eventAttendees.id))
+        .limit(ATTENDEE_PAGE_SIZE);
 
-      const recipientsByEvent = new Map<number, { userId: string; membershipId: number }[]>();
-      for (const attendee of attendees) {
-        const recipients = recipientsByEvent.get(attendee.eventId) ?? [];
-        recipients.push({ userId: attendee.userId, membershipId: attendee.membershipId });
-        recipientsByEvent.set(attendee.eventId, recipients);
-      }
+      if (page.length === 0) break;
 
-      for (const candidate of allCandidates) {
-        const recipients = recipientsByEvent.get(candidate.id) ?? [];
-        const nominalIso = candidate.nominalStart.toISOString();
-        const effectiveIso = candidate.startDate.toISOString();
-        for (const { userId, membershipId } of recipients) {
-          const inserted = await tx
-            .insert(notificationOutbox)
-            .values({
-              orgId,
-              eventKey: "calendar.reminder",
-              dedupeKey: `calendar:reminder:${candidate.id}:${nominalIso}:${membershipId}`,
-              actorUserId: null,
-              targetUserIds: [userId],
-              entityType: "calendar_event",
-              entityId: String(candidate.id),
-              title: `Upcoming event: ${candidate.title}`,
-              message: `"${candidate.title}" starts at ${effectiveIso}`,
-              link: "/calendar",
-              variables: { eventTitle: candidate.title, startIso: effectiveIso },
-            })
-            .onConflictDoNothing({ target: [notificationOutbox.orgId, notificationOutbox.dedupeKey] })
-            .returning({ id: notificationOutbox.id });
-          if (inserted.length > 0) intentsWritten += 1;
+      const rows: (typeof notificationOutbox.$inferInsert)[] = [];
+      for (const attendee of page)
+        for (const candidate of candidatesByEvent.get(attendee.eventId) ?? []) {
+          const effectiveIso = candidate.startDate.toISOString();
+          rows.push({
+            orgId,
+            eventKey: "calendar.reminder",
+            dedupeKey: `calendar:reminder:${candidate.id}:${candidate.nominalStart.toISOString()}:${attendee.membershipId}`,
+            actorUserId: null,
+            targetUserIds: [attendee.userId],
+            entityType: "calendar_event",
+            entityId: String(candidate.id),
+            title: `Upcoming event: ${candidate.title}`,
+            message: `"${candidate.title}" starts at ${effectiveIso}`,
+            link: "/calendar",
+            variables: { eventTitle: candidate.title, startIso: effectiveIso },
+          });
         }
 
-        if (!candidate.isRecurring)
-          await tx
-            .update(calendarEvents)
-            .set({ reminder15MinSent: true, updatedAt: new Date() })
-            .where(and(eq(calendarEvents.orgId, orgId), eq(calendarEvents.id, candidate.id)));
+      for (let i = 0; i < rows.length; i += OUTBOX_INSERT_CHUNK) {
+        const chunk = rows.slice(i, i + OUTBOX_INSERT_CHUNK);
+        if (chunk.length === 0) continue;
+        const inserted = await tx
+          .insert(notificationOutbox)
+          .values(chunk)
+          .onConflictDoNothing({ target: [notificationOutbox.orgId, notificationOutbox.dedupeKey] })
+          .returning({ id: notificationOutbox.id });
+        written += inserted.length;
       }
-    });
 
-    return { organizations, candidates, intentsWritten };
+      const last = page[page.length - 1];
+      if (!last) break;
+      afterId = last.id;
+      if (page.length < ATTENDEE_PAGE_SIZE) break;
+    }
+
+    return written;
   }
 }

@@ -52,12 +52,8 @@ export const workerEngagements = pgTable(
     teamId: text("team_id"),
     managerEngagementId: text("manager_engagement_id"),
     designation: text("designation"),
-    jobRoleId: integer("job_role_id").references(() => hrJobRoles.id, {
-      onDelete: "set null",
-    }),
-    jobLevelId: integer("job_level_id").references(() => hrJobLevels.id, {
-      onDelete: "set null",
-    }),
+    jobRoleId: integer("job_role_id"),
+    jobLevelId: integer("job_level_id"),
     employmentTypeId: integer("employment_type_id"),
     probationEndsOn: date("probation_ends_on"),
     noticePeriodDays: integer("notice_period_days"),
@@ -77,10 +73,6 @@ export const workerEngagements = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    unique("uniq_worker_engagements_org_engagement").on(
-      table.organizationId,
-      table.workerEngagementId,
-    ),
     unique("uniq_worker_engagements_org_worker_engagement").on(
       table.organizationId,
       table.workerId,
@@ -94,7 +86,6 @@ export const workerEngagements = pgTable(
       .where(
         sql`${table.isPrimary} = true AND ${table.status} = 'ACTIVE' AND ${table.archivedAt} IS NULL`,
       ),
-    index("idx_worker_engagements_org").on(table.organizationId),
     index("idx_worker_engagements_worker").on(table.workerId),
     index("idx_worker_engagements_org_status").on(
       table.organizationId,
@@ -185,12 +176,12 @@ export const workerEngagements = pgTable(
       columns: [table.organizationId, table.jobRoleId],
       foreignColumns: [hrJobRoles.orgId, hrJobRoles.id],
       name: "fk_worker_engagements_org_job_role",
-    }).onDelete("restrict"),
+    }).onDelete("set null"),
     foreignKey({
       columns: [table.organizationId, table.jobLevelId],
       foreignColumns: [hrJobLevels.orgId, hrJobLevels.id],
       name: "fk_worker_engagements_org_job_level",
-    }).onDelete("restrict"),
+    }).onDelete("set null"),
     foreignKey({
       columns: [table.organizationId, table.createdByMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],

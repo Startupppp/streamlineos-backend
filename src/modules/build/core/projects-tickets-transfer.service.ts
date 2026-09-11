@@ -1,10 +1,10 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull, or, sql } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import {
   projectMembers,
+  organizationMembers,
   projects,
   projectStatuses,
-  ticketAssignees,
   tickets,
   users,
 } from "../../../db/schema";
@@ -16,11 +16,12 @@ import { NotificationsService } from "../../notifications/notifications.service"
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { AccessService } from "../../access/access.service";
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
-import { resolveTicketsScope } from "./tickets-scope";
+import { resolveTicketsScope, ticketScope } from "./tickets-scope";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { ImportTicketsInput, UpdateTicketInput } from "./dto/projects.schemas";
 import { resolveAssigneeId } from "./tickets-helpers";
 import { allocateTicketNumbers } from "./lib/allocate-ticket-number";
+import { reserveTicketCapacity } from "./build-ticket-capacity";
 
 const EXPORT_ROW_CAP = 5_000;
 
@@ -35,48 +36,41 @@ export class ProjectsTicketsTransferService {
   ) {}
 
   async exportTickets(u: CurrentUserContext, projectId: number) {
-    const [{ hasAccess }, scope] = await Promise.all([
+    const [{ hasAccess }, read] = await Promise.all([
       this.read.checkProjectAccess(u.orgId, u.userId, projectId),
       resolveTicketsScope(this.access, u),
     ]);
     if (!hasAccess) throw new NotFoundException("Not found");
-    if (scope === "none") return { rows: [], truncated: false };
+    if (read.denied) return { rows: [], truncated: false };
 
-    const scopeClause =
-      scope !== "all"
-        ? or(
-            eq(tickets.assigneeId, u.userId),
-            eq(tickets.reporterId, u.userId),
-            sql`EXISTS (SELECT 1 FROM ${ticketAssignees} ta WHERE ta.org_id = ${u.orgId} AND ta.user_id = ${u.userId} AND ta.ticket_id = ${tickets.id})`,
-          )
-        : undefined;
-
-    const fetched = await this.db
-      .select({
-        number: tickets.ticketNumber,
-        title: tickets.title,
-        type: tickets.type,
-        status: tickets.status,
-        priority: tickets.priority,
-        points: tickets.points,
-        dueDate: tickets.dueDate,
-        assigneeName: users.name,
-        assigneeFirstName: users.firstName,
-        assigneeLastName: users.lastName,
-        assigneeEmail: users.email,
-      })
-      .from(tickets)
-      .leftJoin(users, eq(tickets.assigneeId, users.id))
-      .where(
-        and(
-          eq(tickets.orgId, u.orgId),
-          eq(tickets.projectId, projectId),
-          isNull(tickets.deletedAt),
-          ...(scopeClause ? [scopeClause] : []),
-        ),
-      )
-      .orderBy(tickets.ticketNumber)
-      .limit(EXPORT_ROW_CAP + 1);
+    const fetched = await read.read(
+      {
+        tenant: tickets.orgId,
+        scope: ticketScope(read.orgId, read.actorId),
+        and: [eq(tickets.projectId, projectId), isNull(tickets.deletedAt)],
+      },
+      ({ sql: where }) => this.db
+        .select({
+          number: tickets.ticketNumber,
+          title: tickets.title,
+          type: tickets.type,
+          status: tickets.status,
+          priority: tickets.priority,
+          points: tickets.points,
+          dueDate: tickets.dueDate,
+          assigneeName: users.name,
+          assigneeFirstName: users.firstName,
+          assigneeLastName: users.lastName,
+          assigneeEmail: users.email,
+        })
+        .from(tickets)
+        .leftJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
+        .leftJoin(users, eq(organizationMembers.userId, users.id))
+        .where(where)
+        .orderBy(tickets.ticketNumber)
+        .limit(EXPORT_ROW_CAP + 1),
+      () => [],
+    );
 
     const truncated = fetched.length > EXPORT_ROW_CAP;
     const slice = truncated ? fetched.slice(0, EXPORT_ROW_CAP) : fetched;
@@ -110,14 +104,18 @@ export class ProjectsTicketsTransferService {
         .from(projectStatuses)
         .where(and(eq(projectStatuses.orgId, u.orgId), eq(projectStatuses.projectId, projectId))),
       this.db
-        .select({ userId: projectMembers.userId, email: users.email })
+        .select({ userId: organizationMembers.userId, email: users.email, membershipId: organizationMembers.id, status: organizationMembers.status })
         .from(projectMembers)
-        .innerJoin(users, eq(projectMembers.userId, users.id))
+        .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, projectMembers.orgId), eq(organizationMembers.id, projectMembers.membershipId)))
+        .innerJoin(users, eq(organizationMembers.userId, users.id))
         .where(eq(projectMembers.projectId, projectId)),
     ]);
 
     const validStatusSet = new Set(validStatuses.map((s) => s.name));
     const emailToUserId = new Map(memberEmails.map((m) => [m.email, m.userId]));
+    const userIdToMembershipId = new Map(
+      memberEmails.filter((m) => m.status === "ACTIVE").map((m) => [m.userId, m.membershipId]),
+    );
     const defaultStatus = validStatuses[0]?.name ?? "TODO";
 
     const skipped: Array<{ row: number; reason: string }> = [];
@@ -151,7 +149,7 @@ export class ProjectsTicketsTransferService {
         status: row.status ?? defaultStatus,
         priority: row.priority ?? "MEDIUM",
         points: row.points ?? undefined,
-        assigneeId,
+        assigneeMembershipId: assigneeId ? (userIdToMembershipId.get(assigneeId) ?? null) : null,
         dueDate: row.dueDate ?? undefined,
         reporterId: u.userId,
         rowIndex: i + 1,
@@ -166,7 +164,7 @@ export class ProjectsTicketsTransferService {
     let createdCount = 0;
 
     await this.db.transaction(async (tx) => {
-
+      await reserveTicketCapacity(tx, u.orgId, projectId, toCreate.map(row => ({ status: row.status ?? "TODO", count: 1 })));
       let nextNum = await allocateTicketNumbers(tx, u.orgId, projectId, toCreate.length);
 
       const rowsWithNumbers = toCreate.map((item) => {

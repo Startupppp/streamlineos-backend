@@ -4,7 +4,7 @@ export const resumeParseBodySchema = z.object({
   resumeText: z.string().min(1, "resumeText is required"),
 });
 
-export const resumeParseRequestSchema = z.object({ resumeText: z.string().optional() }).default({});
+export const resumeParseRequestSchema = z.object({ resumeText: z.string().optional() }).strict().default({});
 
 export const ParsedResumeSchema = z.object({
   name: z.string().nullable(),

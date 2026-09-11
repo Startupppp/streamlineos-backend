@@ -7,6 +7,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CreateSprintInput, UpdateSprintInput } from "./dto/iterations.schemas";
 import { ProjectsWebhooksDispatchService } from "../../build/core/projects-webhooks-dispatch.service";
+import { assertProjectInOrg } from "../core/project-access";
 
 @Injectable()
 export class SprintsService {
@@ -16,6 +17,7 @@ export class SprintsService {
   ) {}
 
   async listSprints(orgId: string, projectId: number) {
+    await assertProjectInOrg(this.db, orgId, projectId);
     const sprintList = await this.db
       .select({
         id: sprints.id,
@@ -64,6 +66,7 @@ export class SprintsService {
   }
 
   async createSprint(orgId: string, projectId: number, input: CreateSprintInput) {
+    await assertProjectInOrg(this.db, orgId, projectId);
     const [sprint] = await this.db
       .insert(sprints)
       .values({
@@ -88,9 +91,7 @@ export class SprintsService {
           where: isNull(tickets.deletedAt),
           limit: 200,
           with: {
-            assignee: {
-              columns: { id: true, name: true, firstName: true, lastName: true, image: true, email: true },
-            },
+            assignee: { with: { user: { columns: { id: true, name: true, firstName: true, lastName: true, image: true, email: true } } } },
           },
         },
       },
@@ -104,9 +105,10 @@ export class SprintsService {
       where: and(eq(sprints.id, sprintId), eq(sprints.orgId, orgId), isNull(sprints.deletedAt)),
       columns: { id: true, name: true, status: true, projectId: true },
     });
+    if (!before) throw new NotFoundException("Sprint not found");
 
     await this.db.transaction(async (tx) => {
-      await tx
+      const changed = await tx
         .update(sprints)
         .set({
           ...(input.name && { name: input.name }),
@@ -115,7 +117,9 @@ export class SprintsService {
           ...(input.goal !== undefined && { goal: input.goal }),
           ...(input.status && { status: input.status }),
         })
-        .where(and(eq(sprints.id, sprintId), eq(sprints.orgId, orgId)));
+        .where(and(eq(sprints.id, sprintId), eq(sprints.orgId, orgId), isNull(sprints.deletedAt)))
+        .returning({ id: sprints.id });
+      if (changed.length === 0) throw new NotFoundException("Sprint not found");
 
       if (before && input.status === "COMPLETED" && before.status !== "COMPLETED") {
         await OutboxWriter.emit(tx, {
@@ -135,26 +139,25 @@ export class SprintsService {
           occurredAt: new Date(),
         });
       }
-    });
 
-    if (before && input.status && input.status !== before.status && this.webhooksDispatch) {
-      const eventName =
-        input.status === "ACTIVE"
+      if (before && input.status && input.status !== before.status && this.webhooksDispatch) {
+        const eventName = input.status === "ACTIVE"
           ? "sprint.started"
           : input.status === "COMPLETED"
             ? "sprint.completed"
             : null;
-      if (eventName) {
-        this.webhooksDispatch.dispatch(orgId, before.projectId, eventName, {
-          id: sprintId,
-          projectId: before.projectId,
-          name: input.name ?? before.name,
-          status: input.status,
-          actor: actorId ?? "system",
-          timestamp: new Date().toISOString(),
-        });
+        if (eventName) {
+          await this.webhooksDispatch.enqueue(tx, orgId, before.projectId, eventName, {
+            id: sprintId,
+            projectId: before.projectId,
+            name: input.name ?? before.name,
+            status: input.status,
+            actor: actorId ?? "system",
+            timestamp: new Date().toISOString(),
+          });
+        }
       }
-    }
+    });
 
     return { success: true };
   }

@@ -11,6 +11,11 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { SupportTicketsService } from "./support-tickets.service";
+import {
+  generateInboundSecret,
+  hashInboundSecret,
+  inboundSecretMatches,
+} from "./support-inbound-secret";
 import type {
   CreateSupportChannelInput,
   InboundEmailInput,
@@ -46,9 +51,14 @@ export class SupportChannelsService {
   listChannels(orgId: string) {
     return this.db.query.supportChannels.findMany({
       where: eq(supportChannels.orgId, orgId),
+      columns: { inboundSecret: false },
     });
   }
 
+  /**
+   * The webhook secret is returned here and nowhere else: only its digest is
+   * stored, so this response is the one chance to configure the relay with it.
+   */
   async createChannel(orgId: string, input: CreateSupportChannelInput) {
     const inboundSecret = input.type === "chat" ? null : generateInboundSecret();
     const [channel] = await this.db
@@ -59,20 +69,26 @@ export class SupportChannelsService {
         name: input.name,
         config: input.config,
         isActive: input.isActive,
-        inboundSecret,
+        inboundSecret: inboundSecret === null ? null : hashInboundSecret(inboundSecret),
       })
       .returning();
-    return channel;
+    return { ...channel, inboundSecret };
   }
 
   async updateChannel(orgId: string, id: number, input: UpdateSupportChannelInput) {
+    const { rotateInboundSecret, ...fields } = input;
+    const rotated = rotateInboundSecret === true ? generateInboundSecret() : null;
     const [updated] = await this.db
       .update(supportChannels)
-      .set({ ...input, updatedAt: new Date() })
+      .set({
+        ...fields,
+        ...(rotated === null ? {} : { inboundSecret: hashInboundSecret(rotated) }),
+        updatedAt: new Date(),
+      })
       .where(and(eq(supportChannels.id, id), eq(supportChannels.orgId, orgId)))
       .returning();
     if (!updated) throw new NotFoundException("Channel not found");
-    return updated;
+    return { ...updated, inboundSecret: rotated };
   }
 
   async deleteChannel(orgId: string, id: number) {
@@ -103,7 +119,8 @@ export class SupportChannelsService {
         const channel = await this.db.query.supportChannels.findFirst({
           where: and(eq(supportChannels.orgId, orgId), eq(supportChannels.type, channelType), eq(supportChannels.isActive, true)),
         });
-        if (!channel?.inboundSecret || !providedSecret || channel.inboundSecret !== providedSecret) {
+        const matches = inboundSecretMatches(channel?.inboundSecret, providedSecret);
+        if (!channel || !matches) {
           throw new UnauthorizedException("Invalid inbound webhook secret");
         }
         return channel;
@@ -371,10 +388,4 @@ export class SupportChannelsService {
       { orgId },
     );
   }
-}
-
-function generateInboundSecret(): string {
-  const bytes = new Uint8Array(24);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }

@@ -55,7 +55,8 @@ export class HrInterviewResultsService {
     return { success: true };
   }
 
-  async getScorecard(orgId: string, userId: string, interviewId: number) {
+  async getScorecard(orgId: string, userId: string, membershipId: number | null, interviewId: number) {
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
     const interview = await this.db.query.interviews.findFirst({
       where: and(eq(interviews.id, interviewId), eq(interviews.orgId, orgId)),
       columns: { id: true },
@@ -64,15 +65,17 @@ export class HrInterviewResultsService {
 
     const scorecard = await this.db.query.interviewScorecards.findFirst({
       where: and(
+        eq(interviewScorecards.orgId, orgId),
         eq(interviewScorecards.interviewId, interviewId),
-        eq(interviewScorecards.interviewerId, userId),
+        eq(interviewScorecards.interviewerMembershipId, membershipId),
       ),
     });
 
     return scorecard ?? null;
   }
 
-  async submitScorecard(orgId: string, userId: string, interviewId: number, input: SubmitScorecardInput) {
+  async submitScorecard(orgId: string, userId: string, membershipId: number | null, interviewId: number, input: SubmitScorecardInput) {
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
     const interview = await this.db.query.interviews.findFirst({
       where: and(eq(interviews.id, interviewId), eq(interviews.orgId, orgId)),
       columns: { id: true, candidateId: true },
@@ -81,8 +84,9 @@ export class HrInterviewResultsService {
 
     const existing = await this.db.query.interviewScorecards.findFirst({
       where: and(
+        eq(interviewScorecards.orgId, orgId),
         eq(interviewScorecards.interviewId, interviewId),
-        eq(interviewScorecards.interviewerId, userId),
+        eq(interviewScorecards.interviewerMembershipId, membershipId),
       ),
     });
     if (existing?.submittedAt) {
@@ -102,15 +106,17 @@ export class HrInterviewResultsService {
           submittedAt: new Date(),
           updatedAt: new Date(),
         })
-        .where(eq(interviewScorecards.id, existing.id))
+        .where(and(eq(interviewScorecards.orgId, orgId), eq(interviewScorecards.id, existing.id)))
         .returning();
       scorecard = updated;
     } else {
       const [created] = await this.db
         .insert(interviewScorecards)
         .values({
+          orgId,
           interviewId,
           interviewerId: userId,
+          interviewerMembershipId: membershipId,
           templateId: input.templateId ?? null,
           ratings: input.ratings,
           recommendation: input.recommendation,

@@ -12,20 +12,18 @@ import { crmConnectorRecords, crmConnectorSyncs } from "../../../db/schema";
 import { ComposioGateway } from "../../integrations/core/composio.gateway";
 import { CrmImportService } from "./crm-import.service";
 import { MAX_ROWS } from "./crm-import-preview.service";
-import { streamFor } from "./connectors/connector-catalog";
 import { watermarkAfterWalk } from "./connectors/connector-watermark";
 import {
   newestModifiedAt,
   toIntermediate,
-  type ConnectorProvider,
   type ConnectorRequest,
-  type ConnectorStream,
   type SourceRecord,
 } from "./connectors/connector-source";
 import {
   settled,
   getSync,
   getConnection,
+  descriptorForSync,
   FAILURE_LIMIT,
   type WalkExtent,
   type PageOutcome,
@@ -56,10 +54,7 @@ export class CrmConnectorWalkService {
     if (connection.status !== "active")
       return settled("That account needs to be reconnected before it can be read.");
 
-    const descriptor = streamFor(
-      sync.provider as ConnectorProvider,
-      sync.stream as ConnectorStream,
-    );
+    const descriptor = descriptorForSync(sync);
 
     return {
       settled: false,
@@ -80,10 +75,7 @@ export class CrmConnectorWalkService {
     const connection = await getConnection(this.db, organizationId, sync.connectionId);
     if (!connection) throw new ConflictException("The account was disconnected mid-read.");
 
-    const descriptor = streamFor(
-      sync.provider as ConnectorProvider,
-      sync.stream as ConnectorStream,
-    );
+    const descriptor = descriptorForSync(sync);
 
     const raw: unknown = await this.composio.executeProxy(
       connection.composioAccountId,
@@ -129,10 +121,7 @@ export class CrmConnectorWalkService {
       return { crmImportId: null, records: 0, drained, watermarkAdvanced: false };
     }
 
-    const descriptor = streamFor(
-      sync.provider as ConnectorProvider,
-      sync.stream as ConnectorStream,
-    );
+    const descriptor = descriptorForSync(sync);
 
     const { headers, rows } = toIntermediate(descriptor.fields, staged);
 

@@ -1,4 +1,4 @@
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException } from "@nestjs/common";
 import { HrBenefitsEnrollmentService } from "./hr-benefits-enrollment.service";
 
 describe("HrBenefitsEnrollmentService.enroll — enrollment window is actually enforced", () => {
@@ -24,7 +24,7 @@ describe("HrBenefitsEnrollmentService.enroll — enrollment window is actually e
     const service = new HrBenefitsEnrollmentService(buildDb() as never, undefined as never, plans as never);
 
     await expect(
-      service.enroll("org-1", "user-1", { planId: 1, dependentsCovered: 0 }),
+      service.enroll("org-1", "user-1", 7, { planId: 1, dependentsCovered: 0 }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(plans.checkEnrollmentWindowOpen).toHaveBeenCalledWith("org-1", 1);
   });
@@ -33,7 +33,18 @@ describe("HrBenefitsEnrollmentService.enroll — enrollment window is actually e
     const plans = { checkEnrollmentWindowOpen: jest.fn().mockResolvedValue(true) };
     const service = new HrBenefitsEnrollmentService(buildDb() as never, undefined as never, plans as never);
 
-    const result = await service.enroll("org-1", "user-1", { planId: 1, dependentsCovered: 0 });
+    const result = await service.enroll("org-1", "user-1", 7, { planId: 1, dependentsCovered: 0 });
     expect(result).toBeDefined();
+  });
+
+  it("rejects an account-only principal before it can use a legacy user id", async () => {
+    const plans = { checkEnrollmentWindowOpen: jest.fn() };
+    const db = buildDb();
+    const service = new HrBenefitsEnrollmentService(db as never, undefined as never, plans as never);
+
+    await expect(
+      service.enroll("org-1", "user-1", null, { planId: 1, dependentsCovered: 0 }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(db.select).not.toHaveBeenCalled();
   });
 });

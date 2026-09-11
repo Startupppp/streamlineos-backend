@@ -17,22 +17,14 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { SupportKbService } from "./support-kb.service";
-import { KbAskService } from "../../kb/retrieval/kb-ask.service";
-import { KbArticleReindexService } from "../../kb/retrieval/kb-article-reindex.service";
 import {
   createKbArticleSchema,
-  createKbAttachmentSchema,
   createKbCategorySchema,
-  createKbCommentSchema,
-  kbAskSchema,
   listKbArticlesSchema,
   updateKbArticleSchema,
   updateKbCategorySchema,
   type CreateKbArticleInput,
-  type CreateKbAttachmentInput,
   type CreateKbCategoryInput,
-  type CreateKbCommentInput,
-  type KbAskInput,
   type ListKbArticlesInput,
   type UpdateKbArticleInput,
   type UpdateKbCategoryInput,
@@ -40,30 +32,26 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
-import { z } from "zod";
-
-const articleIdParams = z.object({ articleId: z.coerce.number().int().positive() }).strict();
-const articleAndAttachmentIdParams = z
-  .object({
-    articleId: z.coerce.number().int().positive(),
-    attachmentId: z.coerce.number().int().positive(),
-  })
-  .strict();
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  kbCategoryListSchema,
+  kbCategoryRowSchema,
+  kbArticleListSchema,
+  kbArticleListItemSchema,
+  kbArticleDetailSchema,
+  successSchema as kbSuccessSchema,
+} from "./dto/support-kb-response.schemas";
 
 @RequireModule("support")
 @Controller("support/kb")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class SupportKbController {
-  constructor(
-    private readonly kb: SupportKbService,
-    private readonly ask: KbAskService,
-    private readonly reindex: KbArticleReindexService,
-  ) {}
+  constructor(private readonly kb: SupportKbService) {}
 
   @Get("categories")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:view")
+  @ResponseSchema(kbCategoryListSchema)
   listCategories(@CurrentUser() u: CurrentUserContext) {
     return this.kb.listCategories(u.orgId);
   }
@@ -73,6 +61,7 @@ export class SupportKbController {
   @RequirePermission("support:kb:manage")
   @HttpCode(201)
   @Validate({ body: createKbCategorySchema })
+  @ResponseSchema(kbCategoryRowSchema)
   createCategory(
     @Body() body: CreateKbCategoryInput,
     @CurrentUser() u: CurrentUserContext,
@@ -84,6 +73,7 @@ export class SupportKbController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:manage")
   @Validate({ body: updateKbCategorySchema })
+  @ResponseSchema(kbCategoryRowSchema)
   updateCategory(
     @Param("categoryId", ParseIntPipe) categoryId: number,
     @Body() body: UpdateKbCategoryInput,
@@ -95,6 +85,7 @@ export class SupportKbController {
   @Delete("categories/:categoryId")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:manage")
+  @ResponseSchema(kbSuccessSchema)
   deleteCategory(
     @Param("categoryId", ParseIntPipe) categoryId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -106,6 +97,7 @@ export class SupportKbController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:view")
   @Validate({ query: listKbArticlesSchema })
+  @ResponseSchema(kbArticleListSchema)
   listArticles(
     @Query() query: ListKbArticlesInput,
     @CurrentUser() u: CurrentUserContext,
@@ -118,6 +110,7 @@ export class SupportKbController {
   @RequirePermission("support:kb:manage")
   @HttpCode(201)
   @Validate({ body: createKbArticleSchema })
+  @ResponseSchema(kbArticleListItemSchema)
   createArticle(
     @Body() body: CreateKbArticleInput,
     @CurrentUser() u: CurrentUserContext,
@@ -128,6 +121,7 @@ export class SupportKbController {
   @Get("articles/:articleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:view")
+  @ResponseSchema(kbArticleDetailSchema)
   getArticle(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -139,17 +133,19 @@ export class SupportKbController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:manage")
   @Validate({ body: updateKbArticleSchema })
+  @ResponseSchema(kbArticleListItemSchema)
   updateArticle(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Body() body: UpdateKbArticleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.kb.updateArticle(u.orgId, articleId, body);
+    return this.kb.updateArticle(u.orgId, articleId, body, u.userId);
   }
 
   @Delete("articles/:articleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:manage")
+  @ResponseSchema(kbSuccessSchema)
   deleteArticle(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -157,127 +153,4 @@ export class SupportKbController {
     return this.kb.deleteArticle(u.orgId, articleId);
   }
 
-  @Get("articles/:articleId/feedback")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("support:kb:view")
-  listFeedback(
-    @Param("articleId", ParseIntPipe) articleId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.kb.listFeedback(u.orgId, articleId);
-  }
-
-  @Get("articles/:articleId/comments")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("support:kb:view")
-  listComments(
-    @Param("articleId", ParseIntPipe) articleId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.kb.listComments(u.orgId, articleId);
-  }
-
-  @Post("articles/:articleId/comments")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("support:kb:manage")
-  @HttpCode(201)
-  @Validate({ body: createKbCommentSchema })
-  createComment(
-    @Param("articleId", ParseIntPipe) articleId: number,
-    @Body() body: CreateKbCommentInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.kb.createComment(u.orgId, articleId, u.userId, body);
-  }
-
-  @Delete("articles/:articleId/comments/:commentId")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("support:kb:manage")
-  deleteComment(
-    @Param("articleId", ParseIntPipe) articleId: number,
-    @Param("commentId", ParseIntPipe) commentId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.kb.deleteComment(u.orgId, articleId, commentId);
-  }
-
-  @Get("articles/:articleId/attachments")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("support:kb:view")
-  listAttachments(
-    @Param("articleId", ParseIntPipe) articleId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.kb.listAttachments(u.orgId, articleId);
-  }
-
-  @Post("articles/:articleId/attachments")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("support:kb:manage")
-  @HttpCode(201)
-  @Validate({ params: articleIdParams, body: createKbAttachmentSchema })
-  createAttachment(
-    @Param("articleId", ParseIntPipe) articleId: number,
-    @Body() body: CreateKbAttachmentInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.kb.createAttachment(u.orgId, articleId, u.userId, body);
-  }
-
-  @Delete("articles/:articleId/attachments/:attachmentId")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("support:kb:manage")
-  @Validate({ params: articleAndAttachmentIdParams })
-  deleteAttachment(
-    @Param("articleId", ParseIntPipe) articleId: number,
-    @Param("attachmentId", ParseIntPipe) attachmentId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.kb.deleteAttachment(u.orgId, articleId, attachmentId);
-  }
-
-  @Post("ask")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("support:kb:view")
-  @HttpCode(200)
-  @Validate({ body: kbAskSchema })
-  askQuestion(
-    @Body() body: KbAskInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.ask.ask(u, { question: body.question });
-  }
-
-  @Get("articles/:articleId/index-status")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("support:kb:view")
-  @Validate({ params: articleIdParams })
-  getArticleIndexStatus(
-    @Param("articleId", ParseIntPipe) articleId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.reindex.getArticleIndexStatus(u.orgId, articleId);
-  }
-
-  @Post("articles/:articleId/reindex")
-  @BodylessAction()
-  @UseGuards(PermissionGuard)
-  @RequirePermission("support:kb:manage")
-  @HttpCode(200)
-  @Validate({ params: articleIdParams })
-  reindexArticle(
-    @Param("articleId", ParseIntPipe) articleId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.reindex.reindexArticle(u.orgId, articleId);
-  }
-
-  @Post("reindex-all")
-  @BodylessAction()
-  @UseGuards(PermissionGuard)
-  @RequirePermission("support:kb:manage")
-  @HttpCode(200)
-  reindexAll(@CurrentUser() u: CurrentUserContext) {
-    return this.reindex.reindexAll(u.orgId);
-  }
 }

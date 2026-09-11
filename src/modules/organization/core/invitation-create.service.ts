@@ -1,12 +1,11 @@
 import {
-  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
   Logger,
 } from "@nestjs/common";
 import { randomUUID, randomBytes } from "node:crypto";
-import { and, eq, gt, isNull, lte, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, lte } from "drizzle-orm";
 import { addDays } from "date-fns";
 import { hashToken } from "../../../common/security/token.util";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
@@ -20,19 +19,19 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { EmailService } from "../../email/email.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
-import {
-  invitationEvents,
-  invitations,
-  organizationAllowedEmailDomains,
-  organizationMembers,
-  users,
-} from "../../../db/schema";
+import { lockMembersQuota } from "../../billing/core/seat-definition";
+import { invitationEvents, invitations } from "../../../db/schema";
 import {
   findActorMembershipId,
   recordDeliveryFailure,
   requireActiveOrg,
   type InviteActor,
 } from "./invitations.helpers";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
+import {
+  MembershipAdmissionService,
+  admissionFailure,
+} from "./membership-admission.service";
 
 interface InvitationMutationResult {
   success: true;
@@ -40,6 +39,8 @@ interface InvitationMutationResult {
   organizationName: string;
   resent: boolean;
 }
+
+type InvitationDelivery = "background" | "enqueue";
 
 @Injectable()
 export class InvitationCreateService {
@@ -51,6 +52,7 @@ export class InvitationCreateService {
     private readonly planLimits: PlanLimitsService,
     private readonly seatLedger: SeatLedgerService,
     private readonly access: AccessService,
+    private readonly admission: MembershipAdmissionService,
   ) {}
 
   private readonly logger = new Logger(InvitationCreateService.name);
@@ -70,6 +72,7 @@ export class InvitationCreateService {
     actor: InviteActor,
     emails: string[],
     role: string,
+    delivery: InvitationDelivery = "background",
   ): Promise<{
     results: Array<{
       email: string;
@@ -95,6 +98,7 @@ export class InvitationCreateService {
           actor.userId,
           canonicalEmail,
           role,
+          delivery,
         );
         results.push({
           email: canonicalEmail,
@@ -118,49 +122,12 @@ export class InvitationCreateService {
     actorUserId: string,
     email: string,
     role: string,
+    delivery: InvitationDelivery = "background",
   ): Promise<InvitationMutationResult> {
     const org = await requireActiveOrg(this.db, orgId);
 
-    const existingUser = await this.db.query.users.findFirst({
-      where: eq(users.email, email),
-      columns: { id: true },
-    });
-
-    if (existingUser) {
-      const existingMember = await this.db.query.organizationMembers.findFirst({
-        where: and(
-          eq(organizationMembers.userId, existingUser.id),
-          eq(organizationMembers.orgId, orgId),
-        ),
-        columns: { status: true },
-      });
-      if (existingMember) {
-        if (
-          existingMember.status === "SUSPENDED" ||
-          existingMember.status === "LEFT"
-        ) {
-          throw new ConflictException(
-            "This person was archived/suspended in this organization. Restore them from Users instead of inviting again.",
-          );
-        }
-        throw new ConflictException("User is already a member");
-      }
-    }
-
-    const allowedDomainRows = await this.db
-      .select({ domain: organizationAllowedEmailDomains.domain })
-      .from(organizationAllowedEmailDomains)
-      .where(eq(organizationAllowedEmailDomains.orgId, orgId));
-
-    if (allowedDomainRows.length > 0) {
-      const emailDomain = email.split("@")[1]?.toLowerCase();
-      const allowed = allowedDomainRows.map((r) => r.domain);
-      if (!emailDomain || !allowed.includes(emailDomain)) {
-        throw new BadRequestException(
-          `Email domain not allowed. Permitted: ${allowed.join(", ")}`,
-        );
-      }
-    }
+    const screen = await this.admission.screen(this.db, { orgId, email });
+    if (screen.kind !== "clear") throw admissionFailure(screen);
 
     const now = new Date();
     const actorMembership = await findActorMembershipId(this.db, orgId, actorUserId);
@@ -216,11 +183,14 @@ export class InvitationCreateService {
 
     if (pendingResult) {
       const { pendingInvitation, rawToken } = pendingResult;
-      void this.email
-        .sendInvitationEmail(email, rawToken, org.name)
-        .catch((err: unknown) =>
-          recordDeliveryFailure(this.db, this.logger, orgId, pendingInvitation.id, err),
-        );
+      await this.deliverInvitation(
+        delivery,
+        orgId,
+        pendingInvitation.id,
+        email,
+        rawToken,
+        org.name,
+      );
 
       this.audit.log({
         action: "user.invitation.resent",
@@ -248,9 +218,7 @@ export class InvitationCreateService {
       await runInTenantTransaction(
         this.db,
         async (tx) => {
-          await tx.execute(
-            sql`SELECT pg_advisory_xact_lock(hashtextextended(${`quota:${orgId}:members`}, 0))`,
-          );
+          await tx.execute(lockMembersQuota(orgId));
           await this.planLimits.assertWithinLimit(orgId, "members", 1, tx);
           await tx
             .update(invitations)
@@ -305,11 +273,14 @@ export class InvitationCreateService {
       throw err;
     }
 
-    void this.email
-      .sendInvitationEmail(email, rawToken, org.name)
-      .catch((err: unknown) =>
-        recordDeliveryFailure(this.db, this.logger, orgId, invitationId, err),
-      );
+    await this.deliverInvitation(
+      delivery,
+      orgId,
+      invitationId,
+      email,
+      rawToken,
+      org.name,
+    );
 
     this.audit.log({
       action: "user.invited",
@@ -327,5 +298,25 @@ export class InvitationCreateService {
       organizationName: org.name,
       resent: false,
     };
+  }
+
+  private async deliverInvitation(
+    delivery: InvitationDelivery,
+    orgId: string,
+    invitationId: string,
+    email: string,
+    rawToken: string,
+    organizationName: string,
+  ): Promise<void> {
+    if (delivery === "enqueue") {
+      await this.email.queueInvitationEmail(email, rawToken, organizationName);
+      return;
+    }
+
+    void this.email
+      .sendInvitationEmail(email, rawToken, organizationName)
+      .catch((err: unknown) =>
+        recordDeliveryFailure(this.db, this.logger, orgId, invitationId, err),
+      );
   }
 }

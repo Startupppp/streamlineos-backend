@@ -211,7 +211,7 @@ export const createProductSchema = z.object({
 }).strict();
 export type CreateProductInput = z.infer<typeof createProductSchema>;
 
-export const updateProductSchema = createProductSchema.partial();
+export const updateProductSchema = createProductSchema.partial().strict();
 export type UpdateProductInput = z.infer<typeof updateProductSchema>;
 
 export const createVariantSchema = z.object({
@@ -229,7 +229,7 @@ export const createVariantSchema = z.object({
 }).strict();
 export type CreateVariantInput = z.infer<typeof createVariantSchema>;
 
-export const updateVariantSchema = createVariantSchema.partial();
+export const updateVariantSchema = createVariantSchema.partial().strict();
 export type UpdateVariantInput = z.infer<typeof updateVariantSchema>;
 
 const VALID_NAME_RE = /[a-zA-Z0-9]/;

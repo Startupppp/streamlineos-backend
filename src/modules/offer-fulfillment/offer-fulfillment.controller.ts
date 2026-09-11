@@ -21,6 +21,12 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { z } from "zod";
 import { Validate } from "../../common/validation/validate.decorator";
 import { OfferFulfillmentService } from "./offer-fulfillment.service";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  componentListSchema,
+  componentDetailSchema,
+  successSchema,
+} from "./dto/offer-fulfillment-response.schemas";
 import {
   createOfferFulfillmentSchema,
   listOfferFulfillmentQuerySchema,
@@ -40,6 +46,7 @@ export class OfferFulfillmentController {
 
   @Get()
   @RequirePermission("crm:offer-fulfillment:view")
+  @ResponseSchema(componentListSchema)
   @Validate({ query: listOfferFulfillmentQuerySchema })
   listComponents(
     @Query() query: ListOfferFulfillmentQuery,
@@ -50,6 +57,7 @@ export class OfferFulfillmentController {
 
   @Get(":offerFulfillmentComponentId")
   @RequirePermission("crm:offer-fulfillment:view")
+  @ResponseSchema(componentDetailSchema)
   @Validate({ params: offerFulfillmentComponentIdParams })
   getComponent(
     @Param("offerFulfillmentComponentId", ParseIntPipe) offerFulfillmentComponentId: number,
@@ -61,6 +69,7 @@ export class OfferFulfillmentController {
   @Post()
   @HttpCode(201)
   @RequirePermission("crm:offer-fulfillment:create")
+  @ResponseSchema(componentDetailSchema)
   @Validate({ body: createOfferFulfillmentSchema })
   createComponent(
     @Body() body: CreateOfferFulfillmentInput,
@@ -71,6 +80,7 @@ export class OfferFulfillmentController {
 
   @Patch(":offerFulfillmentComponentId")
   @RequirePermission("crm:offer-fulfillment:update")
+  @ResponseSchema(componentDetailSchema)
   @Validate({ params: offerFulfillmentComponentIdParams, body: updateOfferFulfillmentSchema })
   updateComponent(
     @Param("offerFulfillmentComponentId", ParseIntPipe) offerFulfillmentComponentId: number,
@@ -83,6 +93,7 @@ export class OfferFulfillmentController {
   @Delete(":offerFulfillmentComponentId")
   @HttpCode(200)
   @RequirePermission("crm:offer-fulfillment:delete")
+  @ResponseSchema(successSchema)
   @Validate({ params: offerFulfillmentComponentIdParams })
   deleteComponent(
     @Param("offerFulfillmentComponentId", ParseIntPipe) offerFulfillmentComponentId: number,

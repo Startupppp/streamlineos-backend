@@ -2,6 +2,8 @@ import { Body, Controller, HttpCode, Post } from "@nestjs/common";
 import { Public } from "../../../common/auth/public.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { PortalAuthService } from "./portal-auth.service";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { mintedTokenSchema } from "./dto/portal-auth-response.schemas";
 import {
   acceptInvitationSchema,
   type AcceptInvitationInput,
@@ -14,6 +16,7 @@ export class PortalAuthController {
 
   @Post("accept-invitation")
   @HttpCode(200)
+  @ResponseSchema(mintedTokenSchema)
   @Validate({ body: acceptInvitationSchema })
   acceptInvitation(@Body() body: AcceptInvitationInput) {
     return this.svc.acceptInvitation(body.token);

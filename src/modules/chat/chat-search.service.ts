@@ -1,14 +1,15 @@
 import { Inject, Injectable } from "@nestjs/common";
-import type { SQL } from "drizzle-orm";
 import { and, desc, eq, gte, ilike, inArray, lt, lte, or, sql } from "drizzle-orm";
 import { chatChannelMembers, chatChannels, chatMessages, organizationMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import type { EntityActor } from "../entity-reference/entity-reference.types";
-
-const CHAT_SEARCH_ID_CAP = 1000;
-const TRIGRAM_MIN_TERM_LENGTH = 3;
+import {
+  SENDER_MEMBERSHIP_WITH_USER,
+  flattenMessageSender,
+} from "./chat-message-sender-shape";
+import { chatMessageContentMatch } from "./chat-message-content-match";
 
 @Injectable()
 export class ChatSearchService {
@@ -16,18 +17,6 @@ export class ChatSearchService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly entities: EntityReferenceService,
   ) {}
-
-  private async resolveContentMatch(term: string): Promise<SQL<unknown>> {
-    const like = sql`${chatMessages.content} ILIKE ${"%" + term + "%"}`;
-    if (term.length < TRIGRAM_MIN_TERM_LENGTH) return like;
-    const idRows = await this.db.execute(
-      sql`SELECT app.search_chat_message_ids(${term}, ${CHAT_SEARCH_ID_CAP + 1}) AS id`,
-    );
-    if (idRows.length > CHAT_SEARCH_ID_CAP) return like;
-    const ids = idRows.map((row) => Number(row["id"]));
-    if (ids.length === 0) return sql`false`;
-    return inArray(chatMessages.id, ids);
-  }
 
   async searchMessages(actor: EntityActor, query: string, limit = 20, cursor?: number, from?: string, to?: string, sender?: string) {
     const { orgId, membershipId } = actor;
@@ -41,7 +30,7 @@ export class ChatSearchService {
                   WHERE m.channel_id = ${chatMessages.channelId}
                     AND m.org_id = ${orgId}
                     AND m.membership_id = ${membershipId})`,
-      await this.resolveContentMatch(term),
+      await chatMessageContentMatch(this.db, term),
       eq(chatMessages.isDeleted, false),
     ];
     // Cursor and sort key must be the same column or pagination skips and repeats
@@ -62,10 +51,7 @@ export class ChatSearchService {
       orderBy: [desc(chatMessages.id)],
       limit: limit + 1,
       with: {
-        senderMembership: {
-          columns: {},
-          with: { user: { columns: { id: true, name: true, image: true } } },
-        },
+        senderMembership: SENDER_MEMBERSHIP_WITH_USER,
         channel: { columns: { id: true, name: true, type: true } },
       },
     });
@@ -73,10 +59,7 @@ export class ChatSearchService {
     const hasMore = rows.length > limit;
     if (hasMore) rows.pop();
     const resolved = await this.entities.withResolvedReferences(actor, rows);
-    const results = resolved.map((row) => ({
-      ...row,
-      sender: row.senderMembership?.user ?? null,
-    }));
+    const results = resolved.map(flattenMessageSender);
     return { results, nextCursor: hasMore ? rows[rows.length - 1]?.id : undefined };
   }
 
@@ -99,10 +82,25 @@ export class ChatSearchService {
 
     const memberChannelIds = new Set(memberChannels.map(m => m.channelId));
 
+    // Discoverability, not just tenancy. Without the `is_private` arm this read matched
+    // every channel in the org: DIRECT channels are named `${creator} & ${target}`
+    // (chat-channels.service.ts:122-125), so searching a colleague's name enumerated the
+    // people they DM, and every PRIVATE channel's name and description came back to
+    // non-members. `is_private` is exactly `type <> 'PUBLIC'` — migration 0981 installed
+    // CHECK chk_chat_channels_privacy_matches_type, so the database guarantees the two
+    // agree and this predicate cannot drift from the type column.
+    //
+    // An empty `memberChannelIds` compiles to `or(is_private = false, false)` in
+    // drizzle-orm 0.45.2 (verified against the emitted SQL), i.e. public channels only —
+    // not a silently dropped predicate.
     const channels = await this.db.query.chatChannels.findMany({
       where: and(
         eq(chatChannels.orgId, orgId),
         ilike(chatChannels.name, q),
+        or(
+          eq(chatChannels.isPrivate, false),
+          inArray(chatChannels.id, [...memberChannelIds]),
+        ),
       ),
       columns: { id: true, name: true, type: true, description: true, avatarUrl: true },
       limit: 10,

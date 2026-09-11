@@ -5,12 +5,14 @@ import type { Db } from "../../../db/drizzle.module";
 import { projectWebhooks, webhookDeliveries } from "../../../db/schema/build/tasks";
 import type { CreateWebhookInput } from "./dto/webhook.schemas";
 import { generateWebhookSecret } from "./projects-webhooks-dispatch.service";
+import { assertProjectInOrg } from "./project-access";
 
 @Injectable()
 export class ProjectsWebhooksService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listWebhooks(orgId: string, projectId: number) {
+    await assertProjectInOrg(this.db, orgId, projectId);
     const rows = await this.db
       .select({
         id: projectWebhooks.id,
@@ -28,6 +30,10 @@ export class ProjectsWebhooksService {
   }
 
   async createWebhook(orgId: string, projectId: number, createdBy: string, data: CreateWebhookInput) {
+    // `listWebhooks` above already resolves the project; this did not, so a `:projectId` belonging
+    // to another organisation reached the INSERT and the composite tenant FK (org_id, project_id)
+    // refused it with an uncaught 23503 — a 500 where the contract requires 404.
+    await assertProjectInOrg(this.db, orgId, projectId);
     const secret = data.secret ?? generateWebhookSecret();
     const [webhook] = await this.db
       .insert(projectWebhooks)

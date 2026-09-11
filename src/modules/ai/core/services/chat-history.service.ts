@@ -1,8 +1,8 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, lt } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
-import { aiChatConversations, aiChatMessages, type AiChatRole } from "../../../../db/schema";
+import { aiChatMessages, type AiChatRole } from "../../../../db/schema";
 import {
   createConversation,
   deleteConversation,
@@ -10,22 +10,14 @@ import {
   renameConversation,
 } from "./lib/ai-conversations";
 import type { AiConversation, AiConversationListPage } from "./lib/ai-conversations";
+import {
+  appendMessageToConversation,
+  listConversationMessages,
+  MAX_PAGE,
+  type ChatHistoryPage,
+} from "./chat-conversation-messages";
 
 export type { AiConversation, AiConversationListPage };
-
-const MAX_PAGE = 100;
-
-export interface ChatHistoryMessage {
-  id: number;
-  role: AiChatRole;
-  content: string;
-  createdAt: string;
-}
-
-export interface ChatHistoryPage {
-  messages: ChatHistoryMessage[];
-  nextCursor: number | null;
-}
 
 @Injectable()
 export class ChatHistoryService {
@@ -132,54 +124,14 @@ export class ChatHistoryService {
     conversationId: number,
     opts: { cursor?: number; limit: number },
   ): Promise<ChatHistoryPage> {
-    const limit = Math.min(Math.max(opts.limit, 1), MAX_PAGE);
-
-    const [conv] = await this.db
-      .select({ id: aiChatConversations.id })
-      .from(aiChatConversations)
-      .where(
-        and(
-          eq(aiChatConversations.id, conversationId),
-          eq(aiChatConversations.orgId, orgId),
-          eq(aiChatConversations.userMembershipId, membershipId),
-        ),
-      )
-      .limit(1);
-
-    if (!conv) throw new NotFoundException("Conversation not found");
-
-    const rows = await this.db
-      .select({
-        id: aiChatMessages.id,
-        role: aiChatMessages.role,
-        content: aiChatMessages.content,
-        createdAt: aiChatMessages.createdAt,
-      })
-      .from(aiChatMessages)
-      .where(
-        and(
-          eq(aiChatMessages.conversationId, conversationId),
-          eq(aiChatMessages.orgId, orgId),
-          opts.cursor ? lt(aiChatMessages.id, opts.cursor) : undefined,
-        ),
-      )
-      .orderBy(desc(aiChatMessages.id))
-      .limit(limit + 1);
-
-    const hasMore = rows.length > limit;
-    const page = hasMore ? rows.slice(0, limit) : rows;
-    const last = page[page.length - 1];
-    const nextCursor = hasMore && last ? last.id : null;
-
-    return {
-      messages: page.map((r) => ({
-        id: r.id,
-        role: r.role,
-        content: r.content,
-        createdAt: r.createdAt.toISOString(),
-      })),
-      nextCursor,
-    };
+    return listConversationMessages(
+      this.db,
+      orgId,
+      userId,
+      membershipId,
+      conversationId,
+      opts,
+    );
   }
 
   async appendToConversation(
@@ -190,28 +142,14 @@ export class ChatHistoryService {
     role: AiChatRole,
     content: string,
   ): Promise<void> {
-    const trimmed = content.trim();
-    if (!trimmed) return;
-
-    await this.db.insert(aiChatMessages).values({ orgId, userId, userMembershipId: membershipId, role, content: trimmed, conversationId });
-
-    const now = new Date();
-    const [conv] = await this.db
-      .select({ title: aiChatConversations.title })
-      .from(aiChatConversations)
-      .where(eq(aiChatConversations.id, conversationId))
-      .limit(1);
-
-    if (conv && conv.title === null && role === "user") {
-      await this.db
-        .update(aiChatConversations)
-        .set({ title: trimmed.substring(0, 60).trim(), updatedAt: now })
-        .where(eq(aiChatConversations.id, conversationId));
-    } else {
-      await this.db
-        .update(aiChatConversations)
-        .set({ updatedAt: now })
-        .where(eq(aiChatConversations.id, conversationId));
-    }
+    await appendMessageToConversation(
+      this.db,
+      orgId,
+      userId,
+      membershipId,
+      conversationId,
+      role,
+      content,
+    );
   }
 }

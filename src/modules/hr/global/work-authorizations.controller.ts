@@ -23,15 +23,16 @@ import {
   createWorkAuthSchema,
   updateWorkAuthSchema,
   listWorkAuthSchema,
+  daysQuerySchema,
   type CreateWorkAuthInput,
   type UpdateWorkAuthInput,
   type ListWorkAuthInput,
 } from "./dto/hr-global.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts"
+import { listWorkAuthsResponseSchema, listExpiringWorkAuthsResponseSchema, getWorkAuthResponseSchema, createWorkAuthResponseSchema, updateWorkAuthResponseSchema, removeWorkAuthResponseSchema } from "./dto/global-response.schemas"
 
 const authIdParams = z.object({ authId: z.coerce.number().int().positive() }).strict();
-
-const daysQuerySchema = z.object({ days: z.coerce.number().int().min(1).max(3650).default(30) });
 
 @RequireModule("hr")
 @Controller("hr/global/work-authorizations")
@@ -39,6 +40,7 @@ const daysQuerySchema = z.object({ days: z.coerce.number().int().min(1).max(3650
 export class WorkAuthorizationsController {
   constructor(private readonly service: WorkAuthorizationsService) {}
 
+  @ResponseSchema(listWorkAuthsResponseSchema)
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
@@ -50,6 +52,7 @@ export class WorkAuthorizationsController {
     return this.service.list(u.orgId, query);
   }
 
+  @ResponseSchema(listExpiringWorkAuthsResponseSchema)
   @Get("expiring")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compliance:manage")
@@ -61,6 +64,7 @@ export class WorkAuthorizationsController {
     return this.service.list(u.orgId, { limit: 100, days });
   }
 
+  @ResponseSchema(getWorkAuthResponseSchema)
   @Get(":authId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
@@ -72,6 +76,7 @@ export class WorkAuthorizationsController {
     return this.service.getOne(u.orgId, authId);
   }
 
+  @ResponseSchema(createWorkAuthResponseSchema)
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compliance:manage")
@@ -84,6 +89,7 @@ export class WorkAuthorizationsController {
     return this.service.create(u.orgId, u.userId, body);
   }
 
+  @ResponseSchema(updateWorkAuthResponseSchema)
   @Patch(":authId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compliance:manage")
@@ -96,6 +102,7 @@ export class WorkAuthorizationsController {
     return this.service.update(u.orgId, authId, u.userId, body);
   }
 
+  @ResponseSchema(removeWorkAuthResponseSchema)
   @Delete(":authId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compliance:manage")

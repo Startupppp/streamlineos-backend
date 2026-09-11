@@ -1,5 +1,6 @@
 import {
   Body,
+  Header,
   Controller,
   Delete,
   Get,
@@ -11,6 +12,7 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
+import { NO_COMPRESSION_HEADER } from "../../common/http/compression.config";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -18,41 +20,39 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { SettingsService } from "./settings.service";
 import { SettingsAutomationsService } from "./settings-automations.service";
-import { SettingsCustomFieldsService } from "./settings-custom-fields.service";
 import {
   createApiKeySchema,
   createAutomationSchema,
-  createCustomFieldSchema,
-  createGitConnectionSchema,
-  customFieldsListSchema,
   featureFlagSchema,
   updateAutomationSchema,
-  updateCustomFieldSchema,
-  updateGitConnectionSchema,
-  updateUserRoleSchema,
   listAutomationsQuerySchema,
   type CreateApiKeyInput,
   type CreateAutomationInput,
-  type CreateCustomFieldInput,
-  type CreateGitConnectionInput,
-  type CustomFieldsListInput,
   type FeatureFlagInput,
   type ListAutomationsQueryInput,
   type UpdateAutomationInput,
-  type UpdateCustomFieldInput,
-  type UpdateGitConnectionInput,
-  type UpdateUserRoleInput,
   settingsProvenanceQuerySchema,
   type SettingsProvenanceQuery,
 } from "./dto/settings.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  settingsProvenanceResponseSchema,
+  apiKeyListResponseSchema,
+  apiKeyCreateResponseSchema,
+  apiKeyRevokeResponseSchema,
+  automationListResponseSchema,
+  automationResponseSchema,
+  automationDeleteResponseSchema,
+  automationRunsListResponseSchema,
+  featureFlagsResponseSchema,
+  updateFeatureFlagResponseSchema,
+} from "./dto/settings-response.schemas";
 import { z } from "zod";
 
 const keyIdParams = z.object({ keyId: z.string().min(1) }).strict();
 const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
-const fieldIdParams = z.object({ fieldId: z.coerce.number().int().positive() }).strict();
-const connectionIdParams = z.object({ connectionId: z.coerce.number().int().positive() }).strict();
-const userIdParams = z.object({ userId: z.string().min(1) }).strict();
 
 @Controller("settings")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -60,10 +60,10 @@ export class SettingsController {
   constructor(
     private readonly settings: SettingsService,
     private readonly automations: SettingsAutomationsService,
-    private readonly customFields: SettingsCustomFieldsService,
   ) {}
 
   @RequirePermission("settings:view")
+  @ResponseSchema(settingsProvenanceResponseSchema)
   @Get("provenance")
   @Validate({ query: settingsProvenanceQuerySchema })
   getProvenance(
@@ -73,28 +73,22 @@ export class SettingsController {
     return this.settings.getSectionProvenance(u.orgId, query.sections);
   }
 
-  @RequirePermission("settings:view")
-  @Get("permissions")
-  getPermissions() {
-    return this.settings.getPermissions();
-  }
-
   @RequirePermission("settings:manage")
-  @Get("ai-usage")
-  getAiUsage(@CurrentUser() u: CurrentUserContext) {
-    return this.settings.getAiUsage(u);
-  }
-
-  @RequirePermission("settings:api-tokens:read")
+  @ResponseSchema(apiKeyListResponseSchema)
   @Get("api-keys")
   listApiKeys(@CurrentUser() u: CurrentUserContext) {
     return this.settings.listApiKeys(u);
   }
 
-  @RequirePermission("settings:api-tokens:write")
+  @RequirePermission("settings:manage")
+  @ResponseSchema(apiKeyCreateResponseSchema)
   @Post("api-keys")
   @HttpCode(201)
+  @Idempotent("settings.apiKey.create")
   @Validate({ body: createApiKeySchema })
+  // PRD-C089 (BREACH) — this body carries a credential and `app.enableCors({ credentials:
+  // true })` is live, so a compressed length is a cross-origin size oracle.
+  @Header(NO_COMPRESSION_HEADER, "1")
   createApiKey(
     @Body() body: CreateApiKeyInput,
     @CurrentUser() u: CurrentUserContext,
@@ -102,7 +96,8 @@ export class SettingsController {
     return this.settings.createApiKey(u, body);
   }
 
-  @RequirePermission("settings:api-tokens:write")
+  @RequirePermission("settings:manage")
+  @ResponseSchema(apiKeyRevokeResponseSchema)
   @Delete("api-keys/:keyId")
   @Validate({ params: keyIdParams })
   revokeApiKey(
@@ -113,6 +108,7 @@ export class SettingsController {
   }
 
   @Get("automations")
+  @ResponseSchema(automationListResponseSchema)
   @RequirePermission("settings:automations:view")
   @Validate({ query: listAutomationsQuerySchema })
   listAutomations(
@@ -123,7 +119,9 @@ export class SettingsController {
   }
 
   @Post("automations")
+  @ResponseSchema(automationResponseSchema)
   @HttpCode(201)
+  @Idempotent("settings.automation.create")
   @RequirePermission("settings:automations:manage")
   @Validate({ body: createAutomationSchema })
   createAutomation(
@@ -134,6 +132,7 @@ export class SettingsController {
   }
 
   @Get("automations/:ruleId")
+  @ResponseSchema(automationResponseSchema)
   @RequirePermission("settings:automations:view")
   @Validate({ params: ruleIdParams })
   getAutomation(
@@ -144,6 +143,7 @@ export class SettingsController {
   }
 
   @Patch("automations/:ruleId")
+  @ResponseSchema(automationResponseSchema)
   @RequirePermission("settings:automations:manage")
   @Validate({ params: ruleIdParams, body: updateAutomationSchema })
   updateAutomation(
@@ -155,6 +155,7 @@ export class SettingsController {
   }
 
   @Delete("automations/:ruleId")
+  @ResponseSchema(automationDeleteResponseSchema)
   @RequirePermission("settings:automations:manage")
   @Validate({ params: ruleIdParams })
   deleteAutomation(
@@ -165,6 +166,7 @@ export class SettingsController {
   }
 
   @Get("automations/:ruleId/runs")
+  @ResponseSchema(automationRunsListResponseSchema)
   @RequirePermission("settings:automations:view")
   @Validate({ params: ruleIdParams })
   listAutomationRuns(
@@ -174,55 +176,15 @@ export class SettingsController {
     return this.automations.listAutomationRuns(u.orgId, ruleId);
   }
 
-  @Get("custom-fields")
-  @RequirePermission("settings:custom-fields:manage")
-  @Validate({ query: customFieldsListSchema })
-  listCustomFields(
-    @Query() query: CustomFieldsListInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.customFields.listCustomFields(u.orgId, query.entityType);
-  }
-
-  @Post("custom-fields")
-  @HttpCode(201)
-  @RequirePermission("settings:custom-fields:manage")
-  @Validate({ body: createCustomFieldSchema })
-  createCustomField(
-    @Body() body: CreateCustomFieldInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.customFields.createCustomField(u.orgId, u.userId, body);
-  }
-
-  @Patch("custom-fields/:fieldId")
-  @RequirePermission("settings:custom-fields:manage")
-  @Validate({ params: fieldIdParams, body: updateCustomFieldSchema })
-  updateCustomField(
-    @Param("fieldId", ParseIntPipe) fieldId: number,
-    @Body() body: UpdateCustomFieldInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.customFields.updateCustomField(u.orgId, fieldId, body);
-  }
-
-  @Delete("custom-fields/:fieldId")
-  @RequirePermission("settings:custom-fields:manage")
-  @Validate({ params: fieldIdParams })
-  deleteCustomField(
-    @Param("fieldId", ParseIntPipe) fieldId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.customFields.deleteCustomField(u.orgId, fieldId);
-  }
-
   @RequirePermission("settings:view")
+  @ResponseSchema(featureFlagsResponseSchema)
   @Get("feature-flags")
   getFeatureFlags(@CurrentUser() u: CurrentUserContext) {
     return this.settings.getFeatureFlags(u.orgId);
   }
 
   @RequirePermission("settings:manage")
+  @ResponseSchema(updateFeatureFlagResponseSchema)
   @Patch("feature-flags")
   @Validate({ body: featureFlagSchema })
   updateFeatureFlag(
@@ -230,54 +192,5 @@ export class SettingsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.settings.updateFeatureFlag(u, body);
-  }
-
-  @Get("integrations/git")
-  @RequirePermission("settings:manage")
-  listGitConnections(@CurrentUser() u: CurrentUserContext) {
-    return this.settings.listGitConnections(u.orgId);
-  }
-
-  @Post("integrations/git")
-  @HttpCode(201)
-  @RequirePermission("settings:manage")
-  @Validate({ body: createGitConnectionSchema })
-  createGitConnection(
-    @Body() body: CreateGitConnectionInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.settings.createGitConnection(u.orgId, u.userId, body);
-  }
-
-  @Patch("integrations/git/:connectionId")
-  @RequirePermission("settings:manage")
-  @Validate({ params: connectionIdParams, body: updateGitConnectionSchema })
-  updateGitConnection(
-    @Param("connectionId", ParseIntPipe) connectionId: number,
-    @Body() body: UpdateGitConnectionInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.settings.updateGitConnection(u.orgId, connectionId, body);
-  }
-
-  @Delete("integrations/git/:connectionId")
-  @RequirePermission("settings:manage")
-  @Validate({ params: connectionIdParams })
-  deleteGitConnection(
-    @Param("connectionId", ParseIntPipe) connectionId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.settings.deleteGitConnection(u.orgId, connectionId);
-  }
-
-  @RequirePermission("settings:rbac:manage")
-  @Post("users/:userId/role")
-  @Validate({ params: userIdParams, body: updateUserRoleSchema })
-  updateUserRole(
-    @Param("userId") userId: string,
-    @Body() body: UpdateUserRoleInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.settings.updateUserRole(u, userId, body.role);
   }
 }

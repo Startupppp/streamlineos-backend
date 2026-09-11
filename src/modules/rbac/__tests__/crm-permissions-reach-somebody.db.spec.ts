@@ -3,7 +3,8 @@ import {
   IMPORT_ENTITY_PERMISSIONS,
   IMPORT_PERMISSION,
 } from "../../crm/import/import-permissions";
-import { dbSpecClient, dbSpecSuite, dbSpecUrl } from "../../../test/db-spec-gate";
+import { dbSpecClient, dbSpecSuite } from "../../../test/db-spec-gate";
+import { requireApprovedDatabaseUrl } from "../../../test/db-spec-guard";
 import { ensureSeededCrmOrg } from "../../../test/db-spec-crm-fixture";
 
 /**
@@ -42,6 +43,10 @@ import { ensureSeededCrmOrg } from "../../../test/db-spec-crm-fixture";
  * catalogued key as held by nobody. So `ensureSeededCrmOrg` runs the real
  * catalogue sync and the real `seedSystemRolesForOrg` first, and what is
  * measured afterwards is the seeder's own output rather than the fixture's.
+ *
+ * Because it writes, the URL it is given must also pass
+ * `requireApprovedDatabaseUrl` (test/db-spec-guard.ts), like every other spec
+ * `pnpm test:db-specs` (jest-db.json) runs.
  */
 
 const describeDb = dbSpecSuite();
@@ -50,7 +55,11 @@ describeDb("every CRM permission reaches somebody", () => {
   let sql: ReturnType<typeof postgres>;
 
   beforeAll(async () => {
-    sql = dbSpecClient(dbSpecUrl("DATABASE_URL"), { max: 1 });
+    const url = requireApprovedDatabaseUrl({
+      spec: "crm-permissions-reach-somebody.db.spec.ts",
+      vars: ["DATABASE_URL"],
+    });
+    sql = dbSpecClient(url, { max: 1 });
     await ensureSeededCrmOrg(sql);
   }, 120_000);
 

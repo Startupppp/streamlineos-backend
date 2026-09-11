@@ -41,7 +41,8 @@ export async function loadTerminationRelationalCollections(
           inArray(terminationReasons.terminationId, uniqueTerminationIds),
         ),
       )
-      .orderBy(asc(terminationReasons.terminationId), asc(terminationReasons.sortOrder));
+      .orderBy(asc(terminationReasons.terminationId), asc(terminationReasons.sortOrder))
+      .limit(10_000);
     for (const reasonRow of reasonRows) {
       const terminationReasonList = reasonsByTerminationId.get(reasonRow.terminationId) ?? [];
       terminationReasonList.push(reasonRow.reason);
@@ -69,7 +70,8 @@ export async function loadTerminationRelationalCollections(
       .orderBy(
         asc(terminationSupportingDocuments.terminationId),
         asc(terminationSupportingDocuments.sortOrder),
-      );
+      )
+      .limit(10_000);
     for (const supportingDocumentRow of supportingDocumentRows) {
       const supportingDocumentList =
         supportingDocumentsByTerminationId.get(supportingDocumentRow.terminationId) ?? [];

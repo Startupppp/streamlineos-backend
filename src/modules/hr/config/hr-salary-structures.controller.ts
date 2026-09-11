@@ -22,6 +22,9 @@ import {
   type SalaryStructureListQuery,
 } from "./dto/salary-structures.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { z } from "zod";
+import { salaryProfileRowSchema } from "./dto/config-response.schemas";
 
 @RequireModule("hr")
 @Controller("hr/salary-structures")
@@ -33,6 +36,7 @@ export class HrSalaryStructuresController {
   ) {}
 
   @Get()
+  @ResponseSchema(z.array(salaryProfileRowSchema))
   @RequirePermission("hr:salary:view")
   @Validate({ query: salaryStructureListQuerySchema })
   async list(
@@ -47,6 +51,7 @@ export class HrSalaryStructuresController {
   }
 
   @Post()
+  @ResponseSchema(salaryProfileRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:salary:manage")
   @HttpCode(201)

@@ -33,7 +33,9 @@ function createFakeDb(options: FakeDbOptions) {
       return {
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
-            orderBy: jest.fn().mockResolvedValue([]),
+            orderBy: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue([]),
+            }),
           }),
         }),
       };
@@ -98,7 +100,9 @@ describe("PayrollCalendarReminderScheduler markFinished error handling", () => {
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
-            orderBy: jest.fn().mockRejectedValue(runError),
+            orderBy: jest.fn().mockReturnValue({
+              limit: jest.fn().mockRejectedValue(runError),
+            }),
           }),
         }),
       }),

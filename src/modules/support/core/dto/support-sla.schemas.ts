@@ -23,7 +23,7 @@ export const createBusinessHoursSchema = z.object({
   holidays: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD format")).max(100).default([]),
   is24x7: z.boolean().default(false),
   isDefault: z.boolean().default(false),
-});
+}).strict();
 
 export const updateBusinessHoursSchema = z.object({
   name: z.string().trim().min(1).max(100).optional(),
@@ -32,7 +32,7 @@ export const updateBusinessHoursSchema = z.object({
   holidays: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).max(100).optional(),
   is24x7: z.boolean().optional(),
   isDefault: z.boolean().optional(),
-});
+}).strict();
 
 export const createSlaPolicySchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(100),
@@ -41,10 +41,13 @@ export const createSlaPolicySchema = z.object({
   businessHoursId: z.number().int().positive().optional(),
   firstResponseTargetMins: z.number().int().positive(),
   resolutionTargetMins: z.number().int().positive(),
-  pauseStatuses: z.array(ticketStatusSchema).default(["WAITING"]),
+  // Capped: five distinct statuses exist, so anything above that is repetition
+  // an attacker can send unboundedly. `check:bulk-id-limits` only inspects
+  // properties named `ids`/`*Ids`, so this one was never in its scope.
+  pauseStatuses: z.array(ticketStatusSchema).max(5).default(["WAITING"]),
   isEnabled: z.boolean().default(true),
   sortOrder: z.number().int().min(0).default(0),
-});
+}).strict();
 
 export const updateSlaPolicySchema = z.object({
   name: z.string().trim().min(1).max(100).optional(),
@@ -53,10 +56,10 @@ export const updateSlaPolicySchema = z.object({
   businessHoursId: z.number().int().positive().nullable().optional(),
   firstResponseTargetMins: z.number().int().positive().optional(),
   resolutionTargetMins: z.number().int().positive().optional(),
-  pauseStatuses: z.array(ticketStatusSchema).optional(),
+  pauseStatuses: z.array(ticketStatusSchema).max(5).optional(),
   isEnabled: z.boolean().optional(),
   sortOrder: z.number().int().min(0).optional(),
-});
+}).strict();
 
 export type CreateBusinessHoursInput = z.infer<typeof createBusinessHoursSchema>;
 export type UpdateBusinessHoursInput = z.infer<typeof updateBusinessHoursSchema>;

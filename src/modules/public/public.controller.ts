@@ -68,18 +68,50 @@ import {
 } from "./dto/public.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { resolveClientIp } from "../../common/http/client-ip";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  contactSubmitSchema as contactSubmitResponseSchema,
+  waitlistJoinSchema as waitlistJoinResponseSchema,
+  applicationStatusSchema,
+  jobListSchema,
+  jobDetailSchema,
+  jobApplicationSchema,
+  offerDetailSchema,
+  offerRespondSchema as offerRespondResponseSchema,
+  bookingLinkSchema,
+  externalReferrerRegisterSchema as externalReferrerRegisterResponseSchema,
+  referrerPortalSchema,
+  externalReferralSubmitSchema as externalReferralSubmitResponseSchema,
+  vendorPortalSchema,
+  intakeSubmitSchema,
+  publicFormSchema,
+  publicFormSubmitSchema as publicFormSubmitResponseSchema,
+  leadFormSchema,
+  leadFormSubmitSchema,
+  publicSurveySchema,
+  surveySumbitSchema,
+  roadmapSchema,
+  roadmapVoteSchema as roadmapVoteResponseSchema,
+  roadmapFeedbackSchema as roadmapFeedbackResponseSchema,
+  orgNameSchema,
+  kbListSchema,
+  kbArticleSchema,
+  kbFeedbackSchema as kbFeedbackResponseSchema,
+} from "./dto/public-response.schemas";
 
 const tokenParams = z.object({ token: z.string().min(1) }).strict();
 const orgSlugjobIdParams = z.object({ orgSlug: z.string().min(1), jobId: z.coerce.number().int().positive() }).strict();
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
 const slugParams = z.object({ slug: z.string().min(1) }).strict();
+/**
+ * PRD-C048 — `GET /public/careers/:orgSlug/jobs` and `GET /public/org/:orgId` were the two
+ * public routes still binding a path segment with no pipe and no `@Validate({ params })`.
+ * Unauthenticated surfaces are exactly where an unvalidated segment matters most.
+ */
+const orgSlugParams = z.object({ orgSlug: z.string().min(1).max(128) }).strict();
+const orgIdParams = z.object({ orgId: z.string().min(1).max(128) }).strict();
 
-function clientIp(req: Request): string | undefined {
-  const forwarded = req.headers["x-forwarded-for"];
-  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  const candidate = raw?.split(",")[0]?.trim() || req.ip;
-  return candidate ? candidate.slice(0, 100) : undefined;
-}
 
 function header(req: Request, name: string): string | undefined {
   const raw = req.headers[name];
@@ -110,25 +142,27 @@ export class PublicController {
   @HttpCode(201)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:contact")
+  @ResponseSchema(contactSubmitResponseSchema)
   @Validate({ body: contactSubmitSchema })
   submitContact(
     @Body() body: ContactSubmitInput,
     @Req() req: Request,
   ) {
-    return this.contact.submit(body, clientIp(req));
+    return this.contact.submit(body, resolveClientIp(req));
   }
 
   @Post("waitlist")
   @HttpCode(201)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:waitlist")
+  @ResponseSchema(waitlistJoinResponseSchema)
   @Validate({ body: waitlistJoinSchema })
   joinWaitlist(
     @Body() body: WaitlistJoinInput,
     @Req() req: Request,
   ) {
     return this.waitlist.join(body, {
-      clientIp: clientIp(req),
+      clientIp: resolveClientIp(req),
       userAgent: header(req, "user-agent"),
       referrer: header(req, "referer"),
     });
@@ -137,6 +171,7 @@ export class PublicController {
   @Get("application-status/:token")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:application-status")
+  @ResponseSchema(applicationStatusSchema)
   @Validate({ params: tokenParams })
   applicationStatus(@Param("token") token: string) {
     return this.careers.getApplicationStatus(token);
@@ -149,6 +184,8 @@ export class PublicController {
     "Cache-Control",
     "public, max-age=60, s-maxage=300, stale-while-revalidate=600",
   )
+  @ResponseSchema(jobListSchema)
+  @Validate({ params: orgSlugParams })
   listOrgJobs(@Param("orgSlug") orgSlug: string) {
     return this.careers.listOrgJobs(orgSlug);
   }
@@ -156,6 +193,7 @@ export class PublicController {
   @Get("careers/:orgSlug/jobs/:jobId")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:careers-job")
+  @ResponseSchema(jobDetailSchema)
   @Validate({ params: orgSlugjobIdParams })
   getOrgJob(
     @Param("orgSlug") orgSlug: string,
@@ -168,6 +206,7 @@ export class PublicController {
   @HttpCode(201)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:job-apply")
+  @ResponseSchema(jobApplicationSchema)
   @Validate({ params: orgSlugjobIdParams, body: applySchema })
   applyToOrgJob(
     @Param("orgSlug") orgSlug: string,
@@ -180,6 +219,7 @@ export class PublicController {
   @Get("offer/:token")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:offer")
+  @ResponseSchema(offerDetailSchema)
   @Validate({ params: tokenParams })
   getOffer(@Param("token") token: string) {
     return this.offers.getOffer(token);
@@ -188,6 +228,7 @@ export class PublicController {
   @Patch("offer/:token/respond")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:offer-respond")
+  @ResponseSchema(offerRespondResponseSchema)
   @Validate({ params: tokenParams, body: offerRespondSchema })
   respondToOffer(
     @Param("token") token: string,
@@ -199,6 +240,7 @@ export class PublicController {
   @Get("interview-booking/:token")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:interview-booking")
+  @ResponseSchema(bookingLinkSchema)
   @Validate({ params: tokenParams })
   getBookingLink(@Param("token") token: string) {
     return this.offers.getBookingLink(token);
@@ -208,6 +250,7 @@ export class PublicController {
   @HttpCode(201)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:referrer-register")
+  @ResponseSchema(externalReferrerRegisterResponseSchema)
   @Validate({ body: externalReferrerRegisterSchema })
   registerExternalReferrer(@Body() body: ExternalReferrerRegisterInput) {
     return this.referrers.registerExternalReferrer(body);
@@ -216,6 +259,7 @@ export class PublicController {
   @Get("referrals/:token")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:referrer-portal")
+  @ResponseSchema(referrerPortalSchema)
   @Validate({ params: tokenParams })
   getExternalReferrerPortal(@Param("token") token: string) {
     return this.referrers.getExternalReferrerPortal(token);
@@ -225,18 +269,20 @@ export class PublicController {
   @HttpCode(201)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:referral-submit")
+  @ResponseSchema(externalReferralSubmitResponseSchema)
   @Validate({ params: tokenParams, body: externalReferralSubmitSchema })
   submitExternalReferral(
     @Param("token") token: string,
     @Body() body: ExternalReferralSubmitInput,
     @Req() req: Request,
   ) {
-    return this.referrers.submitExternalReferral(token, body, clientIp(req));
+    return this.referrers.submitExternalReferral(token, body, resolveClientIp(req));
   }
 
   @Get("vendor-portal/:token")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:vendor-portal")
+  @ResponseSchema(vendorPortalSchema)
   @Validate({ params: tokenParams })
   getVendorPortal(@Param("token") token: string) {
     return this.referrers.getVendorPortal(token);
@@ -246,6 +292,7 @@ export class PublicController {
   @HttpCode(201)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:intake")
+  @ResponseSchema(intakeSubmitSchema)
   @Validate({ params: projectIdParams, body: intakeSchema })
   submitIntake(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -257,6 +304,7 @@ export class PublicController {
   @Get("forms/:token")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:form-view")
+  @ResponseSchema(publicFormSchema)
   @Validate({ params: tokenParams })
   getPublicForm(@Param("token") token: string) {
     return this.publicForms.getFormByToken(token);
@@ -266,6 +314,7 @@ export class PublicController {
   @HttpCode(201)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:form-submit")
+  @ResponseSchema(publicFormSubmitResponseSchema)
   @Validate({ params: tokenParams, body: publicFormSubmitSchema })
   submitPublicForm(
     @Param("token") token: string,
@@ -277,6 +326,7 @@ export class PublicController {
   @Get("lead-form/:token")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:lead-form-view")
+  @ResponseSchema(leadFormSchema)
   @Validate({ params: tokenParams })
   getLeadForm(@Param("token") token: string) {
     return this.crm.getLeadForm(token);
@@ -286,6 +336,7 @@ export class PublicController {
   @HttpCode(200)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:lead-form-submit")
+  @ResponseSchema(leadFormSubmitSchema)
   @Validate({ params: tokenParams, body: leadFormBodySchema })
   submitLeadForm(
     @Param("token") token: string,
@@ -297,6 +348,7 @@ export class PublicController {
   @Get("nps/:token")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:nps-view")
+  @ResponseSchema(publicSurveySchema)
   @Validate({ params: tokenParams })
   getSurvey(@Param("token") token: string) {
     return this.crm.getSurvey(token);
@@ -306,6 +358,7 @@ export class PublicController {
   @HttpCode(200)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:nps-submit")
+  @ResponseSchema(surveySumbitSchema)
   @Validate({ params: tokenParams, body: npsSubmitSchema })
   submitSurvey(
     @Param("token") token: string,
@@ -317,6 +370,7 @@ export class PublicController {
   @Get("roadmap")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:roadmap")
+  @ResponseSchema(roadmapSchema)
   @Validate({ query: roadmapQuerySchema })
   getRoadmap(@Query() query: RoadmapQueryInput) {
     return runInTenantTransaction(this.db, () => this.roadmap.getRoadmap(query.org), {
@@ -328,6 +382,7 @@ export class PublicController {
   @HttpCode(200)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:roadmap-vote")
+  @ResponseSchema(roadmapVoteResponseSchema)
   @Validate({ query: roadmapQuerySchema, body: roadmapVoteSchema })
   voteRoadmap(
     @Query() query: RoadmapQueryInput,
@@ -336,7 +391,7 @@ export class PublicController {
   ) {
     return runInTenantTransaction(
       this.db,
-      () => this.roadmap.vote(query.org, body, clientIp(req)),
+      () => this.roadmap.vote(query.org, body, resolveClientIp(req)),
       { orgId: query.org },
     );
   }
@@ -345,6 +400,7 @@ export class PublicController {
   @HttpCode(201)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:roadmap-feedback")
+  @ResponseSchema(roadmapFeedbackResponseSchema)
   @Validate({ query: roadmapQuerySchema, body: roadmapFeedbackSchema })
   submitRoadmapFeedback(
     @Query() query: RoadmapQueryInput,
@@ -362,6 +418,8 @@ export class PublicController {
     "Cache-Control",
     "public, max-age=60, s-maxage=300, stale-while-revalidate=600",
   )
+  @ResponseSchema(orgNameSchema)
+  @Validate({ params: orgIdParams })
   getOrgName(@Param("orgId") orgId: string) {
     return this.org.getOrgName(orgId);
   }
@@ -369,6 +427,7 @@ export class PublicController {
   @Get("kb")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:kb")
+  @ResponseSchema(kbListSchema)
   @Validate({ query: kbListQuerySchema })
   listKb(@Query() query: KbListInput) {
     return runInTenantTransaction(this.db, () => this.kb.list(query), { orgId: query.org });
@@ -377,6 +436,7 @@ export class PublicController {
   @Get("kb/:slug")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:kb-article")
+  @ResponseSchema(kbArticleSchema)
   @Validate({ params: slugParams, query: orgQuerySchema })
   getArticle(
     @Param("slug") slug: string,
@@ -391,6 +451,7 @@ export class PublicController {
   @HttpCode(201)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:kb-feedback")
+  @ResponseSchema(kbFeedbackResponseSchema)
   @Validate({ params: slugParams, query: orgQuerySchema, body: kbFeedbackSchema })
   submitArticleFeedback(
     @Param("slug") slug: string,
@@ -398,7 +459,7 @@ export class PublicController {
     @Body() body: KbFeedbackInput,
     @Req() req: Request,
   ) {
-    const visitorId = body.visitorId ?? clientIp(req);
+    const visitorId = body.visitorId ?? resolveClientIp(req);
     return runInTenantTransaction(
       this.db,
       () => this.kb.submitFeedback(slug, query.org, { ...body, visitorId }),

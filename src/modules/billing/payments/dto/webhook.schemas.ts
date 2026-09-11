@@ -11,8 +11,15 @@ export const webhookEnvelopeSchema = z.object({
 export const paymentWebhookPaymentSchema = z.object({
   id: z.string().min(1),
   orderId: z.string().optional(),
-  amount: z.number(),
-  fee: z.number().optional(),
+  /**
+   * MINOR UNITS of `currency` — paise for INR, cents for USD, whole yen for JPY, thousandths
+   * for KWD. A minor unit is indivisible, so `.int()` is part of the contract and not a
+   * tightening for its own sake: without it an adapter emitting MAJOR units was accepted and
+   * silently rounded into an integer column, a 100x error with no diagnostic.
+   */
+  amount: z.number().int(),
+  /** MINOR UNITS of `currency`, same as `amount`. */
+  fee: z.number().int().optional(),
   currency: z.string(),
   status: z.string(),
   method: z.string().optional(),
@@ -33,14 +40,39 @@ export const normalizedPaymentWebhookEventSchema = z.object({
 export type PaymentWebhookPayment = z.infer<typeof paymentWebhookPaymentSchema>;
 export type NormalizedPaymentWebhookEvent = z.infer<typeof normalizedPaymentWebhookEventSchema>;
 
+export const rawWebhookIdSchema = z.object({ id: z.string().optional() }).passthrough();
+
+export const rawPaymentEntitySchema = z.object({
+  id: z.unknown().optional(),
+  order_id: z.unknown().optional(),
+  amount: z.unknown().optional(),
+  fee: z.unknown().optional(),
+  currency: z.unknown().optional(),
+  status: z.unknown().optional(),
+  method: z.unknown().optional(),
+  email: z.unknown().optional(),
+  description: z.unknown().optional(),
+  notes: z.unknown().optional(),
+  invoice_id: z.unknown().optional(),
+  created_at: z.unknown().optional(),
+}).passthrough();
+
+export const tenantCredentialFieldsSchema = z.object({
+  keyId: z.string().optional().catch(undefined),
+  secret: z.string().optional().catch(undefined),
+  webhookSecret: z.string().optional().catch(undefined),
+}).passthrough();
+
+export const rawEntitySchema = z.record(z.string(), z.unknown());
+
 export const generateWebhookSchema = z.object({
   environment: z.enum(["test", "live"]),
-});
+}).strict();
 export type GenerateWebhookInput = z.infer<typeof generateWebhookSchema>;
 
 export const verifyWebhookSchema = z.object({
   environment: z.enum(["test", "live"]),
   rawBody: z.string().min(1).optional(),
   signature: z.string().min(1).optional(),
-});
+}).strict();
 export type VerifyWebhookInput = z.infer<typeof verifyWebhookSchema>;

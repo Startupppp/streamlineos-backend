@@ -17,6 +17,11 @@ import { ClientVisibilityService } from "./client-visibility.service";
 import { toggleVisibilitySchema, type ToggleVisibilityInput } from "./dto/client-portal.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  visibilitySummarySchema,
+  toggleVisibilitySchema as toggleVisibilityResultSchema,
+} from "./dto/client-portal-response.schemas";
 
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
 const projectAndTicketIdParams = z.object({ projectId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive() }).strict();
@@ -32,16 +37,18 @@ export class ClientVisibilityController {
 
   @Get()
   @RequirePermission("build:clientvisibility:manage")
+  @ResponseSchema(visibilitySummarySchema)
   @Validate({ params: projectIdParams })
   getVisibilitySummary(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getVisibilitySummary(u.orgId, projectId);
+    return this.svc.getVisibilitySummary(u, projectId);
   }
 
   @Patch("tickets/:ticketId")
   @RequirePermission("build:clientvisibility:manage")
+  @ResponseSchema(toggleVisibilityResultSchema)
   @Validate({ params: projectAndTicketIdParams, body: toggleVisibilitySchema })
   toggleTicketVisibility(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -54,6 +61,7 @@ export class ClientVisibilityController {
 
   @Patch("milestones/:milestoneId")
   @RequirePermission("build:clientvisibility:manage")
+  @ResponseSchema(toggleVisibilityResultSchema)
   @Validate({ params: projectAndMilestoneIdParams, body: toggleVisibilitySchema })
   toggleMilestoneVisibility(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -66,6 +74,7 @@ export class ClientVisibilityController {
 
   @Patch("comments/:commentId")
   @RequirePermission("build:clientvisibility:manage")
+  @ResponseSchema(toggleVisibilityResultSchema)
   @Validate({ params: projectAndCommentIdParams, body: toggleVisibilitySchema })
   toggleCommentVisibility(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -78,6 +87,7 @@ export class ClientVisibilityController {
 
   @Patch("attachments/:attachmentId")
   @RequirePermission("build:clientvisibility:manage")
+  @ResponseSchema(toggleVisibilityResultSchema)
   @Validate({ params: projectAndAttachmentIdParams, body: toggleVisibilitySchema })
   toggleAttachmentVisibility(
     @Param("projectId", ParseIntPipe) projectId: number,

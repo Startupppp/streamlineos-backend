@@ -39,6 +39,7 @@ const stubGroup = {
   id: GROUP_ID,
   name: "HR Reviewers",
   isSystem: false,
+  version: 1,
   memberCount: 2,
   permissions: [],
 };
@@ -152,7 +153,10 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
     mockModuleAccessService.listCatalog.mockResolvedValue(stubCatalog);
     mockModuleAccessService.listRoles.mockResolvedValue([stubRole]);
     mockModuleAccessService.setRolePermissions.mockResolvedValue({ success: true });
-    mockModuleAccessGroupsService.listGroups.mockResolvedValue([stubGroup]);
+    mockModuleAccessGroupsService.listGroups.mockResolvedValue({
+      data: [stubGroup],
+      pagination: { limit: 20, hasMore: false, nextCursor: null },
+    });
     mockModuleAccessGroupsService.createGroup.mockResolvedValue(stubGroup);
     mockModuleAccessGroupsService.renameGroup.mockResolvedValue(stubGroup);
     mockModuleAccessGroupsService.deleteGroup.mockResolvedValue({ success: true });
@@ -387,6 +391,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       const res = await request(app.getHttpServer())
         .post("/module-access/billing/groups")
         .set("Authorization", `Bearer ${token}`)
+        .set("Idempotency-Key", "unmanaged-module-billing")
         .send({ name: "Billing Admins" });
       expect(res.status).toBe(404);
     });
@@ -450,9 +455,19 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       const res = await request(app.getHttpServer())
         .post("/module-access/hr/groups")
         .set("Authorization", `Bearer ${token}`)
+        .set("Idempotency-Key", "create-hr-group-201")
         .send({ name: "Senior HR" });
       expect(res.status).toBe(201);
       expect(res.body).toMatchObject({ id: GROUP_ID, name: "HR Reviewers" });
+    });
+
+    it("POST /module-access/hr/groups → 400 without an Idempotency-Key", async () => {
+      const token = await signToken({ sub: "owner_ma_1" });
+      const res = await request(app.getHttpServer())
+        .post("/module-access/hr/groups")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ name: "Senior HR" });
+      expect(res.status).toBe(400);
     });
 
     it("DELETE /module-access/hr/groups/:id → 200 on successful deletion", async () => {

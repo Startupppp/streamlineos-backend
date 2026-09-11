@@ -96,6 +96,7 @@ export class OnboardingAdminService {
                     recipient.totalTasks,
                   ),
                   organizationId,
+                  recipientUserId: recipient.userId,
                 },
               ]
             : [],

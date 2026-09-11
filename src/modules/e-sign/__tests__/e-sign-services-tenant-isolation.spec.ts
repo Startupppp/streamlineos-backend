@@ -7,6 +7,19 @@ import { SignEnvelopeValidationService } from "../sign-envelope-validation.servi
 import { SignBulkSendService } from "../sign-bulk-send.service";
 import { SignEnvelopeDispatchService } from "../sign-envelope-dispatch.service";
 import { SignEnvelopeSweepsService } from "../sign-envelope-sweeps.service";
+import { systemEnvelopeScope } from "../sign-envelope-scope";
+import { runWithTenantContext } from "../../../common/tenant/tenant-context";
+import { stubService } from "../../../test/service-stub.spec-fixtures";
+import type { PlanLimitsService } from "../../billing/core/plan-limits.service";
+import type { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
+import type { StorageService } from "../../storage/storage.service";
+import type { SignAuditService } from "../sign-audit.service";
+import type { SignTokensService } from "../sign-tokens.service";
+import type { SignRecipientsService } from "../sign-recipients.service";
+import type { SignNotificationsService } from "../sign-notifications.service";
+import type { SignEnvelopesService } from "../sign-envelopes.service";
+import type { SignIntegrationsService } from "../sign-integrations.service";
+import type { SignAuthMethodPolicy } from "../sign-auth-method.policy";
 
 const OWNER_ORG = "org-owner";
 const ATTACKER_ORG = "org-attacker";
@@ -74,7 +87,7 @@ function makeDb(rows: unknown[] = []): { db: Db; where: jest.Mock; findMany: jes
 describe("SignSettingsService — cross-tenant isolation", () => {
   it("getOrCreate: query scoped to attacker orgId (deny — different org isolation)", async () => {
     const { db, findFirst } = makeDb([]);
-    const mockAudit = { record: jest.fn() } as any;
+    const mockAudit = stubService<SignAuditService>({ record: jest.fn() });
     const svc = new SignSettingsService(db, mockAudit);
     await svc.getOrCreate(ATTACKER_ORG);
     expect(findFirst).toHaveBeenCalled();
@@ -85,7 +98,7 @@ describe("SignSettingsService — cross-tenant isolation", () => {
 
   it("getOrCreate: returns/creates settings for own org (control)", async () => {
     const { db } = makeDb([]);
-    const mockAudit = { record: jest.fn() } as any;
+    const mockAudit = stubService<SignAuditService>({ record: jest.fn() });
     const svc = new SignSettingsService(db, mockAudit);
     const result = await svc.getOrCreate(OWNER_ORG);
     expect(result).toBeDefined();
@@ -95,10 +108,17 @@ describe("SignSettingsService — cross-tenant isolation", () => {
 describe("SignTemplatesService — cross-tenant isolation", () => {
   it("list: query scoped to attacker orgId (deny — different org isolation)", async () => {
     const { db, findMany } = makeDb([]);
-    const mockAudit = { record: jest.fn() } as any;
-    const mockTokens = { createPublicToken: jest.fn() } as any;
-    const mockPlanLimits = { assertWithinLimit: jest.fn() } as any;
-    const svc = new SignTemplatesService(db, mockAudit, mockTokens, mockPlanLimits, {} as any, {} as any);
+    const mockAudit = stubService<SignAuditService>({ record: jest.fn() });
+    const mockTokens = stubService<SignTokensService>({ hash: jest.fn().mockReturnValue("hashed") });
+    const mockPlanLimits = stubService<PlanLimitsService>({ assertWithinLimit: jest.fn() });
+    const svc = new SignTemplatesService(
+      db,
+      mockAudit,
+      mockTokens,
+      mockPlanLimits,
+      stubService<SignSettingsService>({}),
+      stubService<SignAuthMethodPolicy>({}),
+    );
     const result = await svc.list(ATTACKER_ORG);
     expect(result).toHaveLength(0);
     expect(findMany).toHaveBeenCalledTimes(1);
@@ -111,10 +131,17 @@ describe("SignTemplatesService — cross-tenant isolation", () => {
     const row = { id: 1, orgId: OWNER_ORG, name: "Template A", templateJson: "{}", status: "draft", createdAt: new Date(), updatedAt: new Date() };
     const { db, findMany } = makeDb([row]);
     findMany.mockResolvedValue([row]);
-    const mockAudit = { record: jest.fn() } as any;
-    const mockTokens = { createPublicToken: jest.fn() } as any;
-    const mockPlanLimits = { assertWithinLimit: jest.fn() } as any;
-    const svc = new SignTemplatesService(db, mockAudit, mockTokens, mockPlanLimits, {} as any, {} as any);
+    const mockAudit = stubService<SignAuditService>({ record: jest.fn() });
+    const mockTokens = stubService<SignTokensService>({ hash: jest.fn().mockReturnValue("hashed") });
+    const mockPlanLimits = stubService<PlanLimitsService>({ assertWithinLimit: jest.fn() });
+    const svc = new SignTemplatesService(
+      db,
+      mockAudit,
+      mockTokens,
+      mockPlanLimits,
+      stubService<SignSettingsService>({}),
+      stubService<SignAuthMethodPolicy>({}),
+    );
     const result = await svc.list(OWNER_ORG);
     expect(result).toHaveLength(1);
   });
@@ -123,7 +150,7 @@ describe("SignTemplatesService — cross-tenant isolation", () => {
 describe("SignReportsService — cross-tenant isolation", () => {
   it("getSummary: WHERE includes attacker orgId (deny — different org isolation)", async () => {
     const { db, where } = makeDb([{ value: 0, status: "draft", avgHours: null, totalJobs: 0, totalRows: 0, successRows: 0, failedRows: 0, watermarked: false }]);
-    const mockSettings = { getOrCreate: jest.fn().mockResolvedValue({ orgId: ATTACKER_ORG, expirationWarningDays: 3 }) } as any;
+    const mockSettings = stubService<SignSettingsService>({ getOrCreate: jest.fn().mockResolvedValue({ orgId: ATTACKER_ORG, expirationWarningDays: 3 }) });
     const svc = new SignReportsService(db, mockSettings);
     try { await svc.getSummary(ATTACKER_ORG); } catch { /* may throw on undefined rows */ }
     expect(where).toHaveBeenCalled();
@@ -133,7 +160,7 @@ describe("SignReportsService — cross-tenant isolation", () => {
 
   it("getSummary: resolves with own org scoped queries (control)", async () => {
     const { db, where } = makeDb([{ value: 0, status: "draft", avgHours: null, totalJobs: 0, totalRows: 0, successRows: 0, failedRows: 0, watermarked: false }]);
-    const mockSettings = { getOrCreate: jest.fn().mockResolvedValue({ orgId: OWNER_ORG, expirationWarningDays: 3 }) } as any;
+    const mockSettings = stubService<SignSettingsService>({ getOrCreate: jest.fn().mockResolvedValue({ orgId: OWNER_ORG, expirationWarningDays: 3 }) });
     const svc = new SignReportsService(db, mockSettings);
     try { await svc.getSummary(OWNER_ORG); } catch { /* may throw on undefined rows */ }
     expect(where).toHaveBeenCalled();
@@ -146,10 +173,19 @@ describe("SignReportsService — cross-tenant isolation", () => {
 describe("SignAiService — cross-tenant isolation", () => {
   it("summarizeDocument: envelope query scoped to attacker orgId (deny — different org isolation)", async () => {
     const { db, findFirst } = makeDb([]);
-    const mockStorage = { getFileStream: jest.fn() } as any;
-    const mockGateway = { chat: jest.fn().mockResolvedValue({ content: "summary" }) } as any;
+    const mockStorage = stubService<StorageService>({ getFileStream: jest.fn() });
+    const mockGateway = stubService<AiGatewayService>({ invokeText: jest.fn().mockResolvedValue({ content: "summary" }) });
     const svc = new SignAiService(db, mockStorage, mockGateway);
-    await expect(svc.summarizeDocument(ATTACKER_ORG, 999, "user-x")).rejects.toBeDefined();
+    // `summarizeDocument` now reads inside `runInTenantTransaction` so the
+    // connection is released before the storage fetch and the provider call.
+    // Supplying the ambient context is what that helper reuses; without one it
+    // would open a real transaction, which a mock db cannot serve.
+    await expect(
+      runWithTenantContext(
+        { orgId: ATTACKER_ORG, audience: "INTERNAL", tx: db as never },
+        () => svc.summarizeDocument(ATTACKER_ORG, 999, "user-x", systemEnvelopeScope(ATTACKER_ORG), null),
+      ),
+    ).rejects.toBeDefined();
     expect(findFirst).toHaveBeenCalled();
     const callArg = findFirst.mock.calls[0]?.[0];
     const vals = sqlValues(callArg?.where);
@@ -158,10 +194,15 @@ describe("SignAiService — cross-tenant isolation", () => {
 
   it("summarizeDocument: uses own org in query (control — same tenant)", async () => {
     const { db, findFirst } = makeDb([]);
-    const mockStorage = { getFileStream: jest.fn() } as any;
-    const mockGateway = { chat: jest.fn().mockResolvedValue({ content: "summary" }) } as any;
+    const mockStorage = stubService<StorageService>({ getFileStream: jest.fn() });
+    const mockGateway = stubService<AiGatewayService>({ invokeText: jest.fn().mockResolvedValue({ content: "summary" }) });
     const svc = new SignAiService(db, mockStorage, mockGateway);
-    await expect(svc.summarizeDocument(OWNER_ORG, 999, "user-y")).rejects.toBeDefined();
+    await expect(
+      runWithTenantContext(
+        { orgId: OWNER_ORG, audience: "INTERNAL", tx: db as never },
+        () => svc.summarizeDocument(OWNER_ORG, 999, "user-y", systemEnvelopeScope(OWNER_ORG), null),
+      ),
+    ).rejects.toBeDefined();
     const callArg = findFirst.mock.calls[0]?.[0];
     const vals = sqlValues(callArg?.where);
     expect(vals).toContain(OWNER_ORG);
@@ -171,7 +212,7 @@ describe("SignAiService — cross-tenant isolation", () => {
 describe("SignEnvelopeValidationService — cross-tenant isolation", () => {
   it("validate: envelope query scoped to attacker orgId (deny — different org isolation)", async () => {
     const { db, findFirst } = makeDb([]);
-    const mockRecipients = { listForEnvelope: jest.fn().mockResolvedValue([]) } as any;
+    const mockRecipients = stubService<SignRecipientsService>({ listForEnvelope: jest.fn().mockResolvedValue([]) });
     const svc = new SignEnvelopeValidationService(db, mockRecipients);
     await expect(svc.validate(ATTACKER_ORG, 999)).rejects.toBeDefined();
     expect(findFirst).toHaveBeenCalled();
@@ -182,7 +223,7 @@ describe("SignEnvelopeValidationService — cross-tenant isolation", () => {
 
   it("validate: rejects for own org when envelope not found (control — org is scoped correctly)", async () => {
     const { db, findFirst } = makeDb([]);
-    const mockRecipients = { listForEnvelope: jest.fn().mockResolvedValue([]) } as any;
+    const mockRecipients = stubService<SignRecipientsService>({ listForEnvelope: jest.fn().mockResolvedValue([]) });
     const svc = new SignEnvelopeValidationService(db, mockRecipients);
     await expect(svc.validate(OWNER_ORG, 999)).rejects.toBeDefined();
     expect(findFirst).toHaveBeenCalled();
@@ -194,8 +235,22 @@ describe("SignEnvelopeValidationService — cross-tenant isolation", () => {
 
 describe("SignBulkSendService — cross-tenant isolation", () => {
   function makeBulkSvc(db: Db) {
-    const sharedMock = { record: jest.fn(), getOrCreate: jest.fn().mockResolvedValue({}), listForEnvelope: jest.fn().mockResolvedValue([]), createRecipient: jest.fn(), send: jest.fn(), createFromEnvelope: jest.fn(), create: jest.fn(), createPublicToken: jest.fn() } as any;
-    return new SignBulkSendService(db, sharedMock, sharedMock, sharedMock, sharedMock, sharedMock, sharedMock);
+    /**
+     * `listJobs` is a single scoped `findMany`, so every collaborator below is
+     * deliberately empty: reaching one would be a behaviour change and would
+     * throw here rather than silently answering. The one object that used to be
+     * passed for all six positions declared `createPublicToken`, `create` and
+     * `createFromEnvelope`, none of which exist on the services it stood for.
+     */
+    return new SignBulkSendService(
+      db,
+      stubService<SignAuditService>({ record: jest.fn() }),
+      stubService<SignSettingsService>({ getOrCreate: jest.fn().mockResolvedValue({}) }),
+      stubService<SignNotificationsService>({}),
+      stubService<SignTemplatesService>({ createFromEnvelope: jest.fn() }),
+      stubService<SignEnvelopesService>({ create: jest.fn() }),
+      stubService<SignIntegrationsService>({}),
+    );
   }
 
   it("listJobs: attacker orgId scoped in findMany query (cross-tenant isolation)", async () => {
@@ -225,9 +280,17 @@ describe("SignBulkSendService — cross-tenant isolation", () => {
 
 describe("SignEnvelopeDispatchService — cross-tenant isolation", () => {
   function makeDispatchSvc(db: Db) {
-    const sharedMock = { record: jest.fn(), getOrCreate: jest.fn().mockResolvedValue({}), listForEnvelope: jest.fn().mockResolvedValue([]), createRecipient: jest.fn(), createPublicToken: jest.fn(), send: jest.fn() } as any;
-    const mockValidation = { validate: jest.fn().mockResolvedValue({ isValid: true, errors: [] }) } as any;
-    return new SignEnvelopeDispatchService(db, sharedMock, sharedMock, sharedMock, sharedMock, sharedMock, sharedMock, mockValidation);
+    const mockValidation = stubService<SignEnvelopeValidationService>({ validate: jest.fn().mockResolvedValue({ isValid: true, errors: [] }) });
+    return new SignEnvelopeDispatchService(
+      db,
+      stubService<SignAuditService>({ record: jest.fn() }),
+      stubService<SignTokensService>({ generateSigningToken: jest.fn().mockReturnValue("tok") }),
+      stubService<SignSettingsService>({ getOrCreate: jest.fn().mockResolvedValue({}) }),
+      stubService<SignNotificationsService>({}),
+      stubService<SignRecipientsService>({ listForEnvelope: jest.fn().mockResolvedValue([]) }),
+      stubService<SignIntegrationsService>({}),
+      mockValidation,
+    );
   }
 
   it("send: envelope lookup scoped to attacker orgId (deny — cross-tenant isolation)", async () => {
@@ -254,9 +317,15 @@ describe("SignEnvelopeDispatchService — cross-tenant isolation", () => {
 
 describe("SignEnvelopeSweepsService — cross-tenant isolation", () => {
   function makeSweepsSvc(db: Db) {
-    const sharedMock = { record: jest.fn(), createPublicToken: jest.fn(), send: jest.fn(), sendReminder: jest.fn() } as any;
-    const mockRecipients = { listForEnvelope: jest.fn().mockResolvedValue([]) } as any;
-    return new SignEnvelopeSweepsService(db, sharedMock, sharedMock, sharedMock, mockRecipients, sharedMock);
+    const mockRecipients = stubService<SignRecipientsService>({ listForEnvelope: jest.fn().mockResolvedValue([]) });
+    return new SignEnvelopeSweepsService(
+      db,
+      stubService<SignAuditService>({ record: jest.fn() }),
+      stubService<SignTokensService>({ generateSigningToken: jest.fn().mockReturnValue("tok") }),
+      stubService<SignNotificationsService>({ sendReminder: jest.fn() }),
+      mockRecipients,
+      stubService<SignIntegrationsService>({}),
+    );
   }
 
   it("sendManualReminder: envelope lookup scoped to attacker orgId (deny — cross-tenant isolation)", async () => {

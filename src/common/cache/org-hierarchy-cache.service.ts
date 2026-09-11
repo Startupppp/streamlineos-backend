@@ -1,17 +1,23 @@
 import { Injectable } from "@nestjs/common";
-import type { DataScope } from "../../modules/access/access.types";
 import { registerAfterCommit } from "../tenant";
 import { CACHE_TTL } from "./cache-keys";
 import { CacheService } from "./cache.service";
 
 export interface OrgHierarchyCacheContext {
-  actorUserId: string;
-  scope: DataScope;
+  // `ScopedRead.discriminator` — already actor-qualified for the scopes that need it.
+  discriminator: string;
 }
 
 export type OrgHierarchyCacheResource =
   | "overview"
   | `tree:${"ADJACENCY" | "SHADOW_CLOSURE" | "CLOSURE"}:r${number}`;
+
+export interface OrgUnitListQuery {
+  status?: string;
+  search?: string;
+  cursor?: string;
+  limit: number;
+}
 
 @Injectable()
 export class OrgHierarchyCacheService {
@@ -26,7 +32,43 @@ export class OrgHierarchyCacheService {
     return this.cache.cachedVersionedForOrg(
       orgId,
       "org:hierarchy",
-      `${resource}:${this.viewerKey(context)}`,
+      `${resource}:scope:${context.discriminator}`,
+      fetcher,
+      CACHE_TTL.LONG,
+    );
+  }
+
+  readUnitList<T>(
+    orgId: string,
+    kind: string,
+    query: OrgUnitListQuery,
+    fetcher: () => Promise<T>,
+  ): Promise<T> {
+    const filters = JSON.stringify([
+      query.status ?? null,
+      query.search ?? null,
+      query.cursor ?? null,
+      query.limit,
+    ]);
+    return this.cache.cachedVersionedForOrg(
+      orgId,
+      "org:hierarchy",
+      `units:list:${kind}:${filters}`,
+      fetcher,
+      CACHE_TTL.LONG,
+    );
+  }
+
+  readUnitGet<T>(
+    orgId: string,
+    kind: string,
+    id: string,
+    fetcher: () => Promise<T>,
+  ): Promise<T> {
+    return this.cache.cachedVersionedForOrg(
+      orgId,
+      "org:hierarchy",
+      `units:get:${kind}:${id}`,
       fetcher,
       CACHE_TTL.LONG,
     );
@@ -37,15 +79,11 @@ export class OrgHierarchyCacheService {
       Promise.all([
         this.cache.invalidateNamespaceForOrg(orgId, "org:hierarchy"),
         this.cache.invalidateNamespaceForOrg(orgId, "hr:headcount"),
+        this.cache.invalidateNamespaceForOrg(orgId, "hr:directory"),
       ]).then(() => undefined);
 
     if (!registerAfterCommit(invalidate)) {
       await invalidate();
     }
-  }
-
-  private viewerKey(context: OrgHierarchyCacheContext): string {
-    if (context.scope === "all") return "scope:all";
-    return `scope:${context.scope}:actor:${context.actorUserId}`;
   }
 }

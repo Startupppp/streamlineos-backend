@@ -4,10 +4,10 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, ne } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { kbArticleTags, kbTags } from "../../../db/schema";
+import { kbArticleTags, kbArticles, kbTags } from "../../../db/schema";
 import { kbSlugify } from "./kb.util";
 import type {
   CreateTagInput,
@@ -58,7 +58,12 @@ export class KbTagsService {
     return { success: true };
   }
 
-  getArticleTags(orgId: string, articleId: number): Promise<ArticleTagRow[]> {
+  async getArticleTags(orgId: string, articleId: number): Promise<ArticleTagRow[]> {
+    const article = await this.db.query.kbArticles.findFirst({
+      columns: { id: true },
+      where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)),
+    });
+    if (!article) throw new NotFoundException("Article not found");
     return this.db
       .select({
         id: kbTags.id,
@@ -81,24 +86,23 @@ export class KbTagsService {
     articleId: number,
     input: SetArticleTagsInput,
   ): Promise<ArticleTagRow[]> {
+    const requestedTagIds = [...new Set(input.tagIds)];
     return this.db.transaction(async (tx) => {
-      await tx
-        .delete(kbArticleTags)
+      const [article] = await tx
+        .select({ id: kbArticles.id })
+        .from(kbArticles)
         .where(
           and(
-            eq(kbArticleTags.orgId, orgId),
-            eq(kbArticleTags.articleId, articleId),
+            eq(kbArticles.id, articleId),
+            eq(kbArticles.orgId, orgId),
+            ne(kbArticles.status, "archived"),
           ),
-        );
-
-      if (input.tagIds.length > 0) {
-        await tx
-          .insert(kbArticleTags)
-          .values(input.tagIds.map((tagId) => ({ orgId, articleId, tagId })));
-      }
+        )
+        .limit(1);
+      if (!article) throw new NotFoundException("Article not found");
 
       const resolvedTags: ArticleTagRow[] =
-        input.tagIds.length > 0
+        requestedTagIds.length > 0
           ? await tx
               .select({
                 id: kbTags.id,
@@ -109,11 +113,28 @@ export class KbTagsService {
               })
               .from(kbTags)
               .where(
-                and(eq(kbTags.orgId, orgId), inArray(kbTags.id, input.tagIds)),
+                and(eq(kbTags.orgId, orgId), inArray(kbTags.id, requestedTagIds)),
               )
               .orderBy(asc(kbTags.name))
-              .limit(input.tagIds.length)
+              .limit(requestedTagIds.length)
           : [];
+      if (resolvedTags.length !== requestedTagIds.length)
+        throw new NotFoundException("One or more tag IDs not found in this organization");
+
+      await tx
+        .delete(kbArticleTags)
+        .where(
+          and(
+            eq(kbArticleTags.orgId, orgId),
+            eq(kbArticleTags.articleId, articleId),
+          ),
+        );
+
+      if (requestedTagIds.length > 0) {
+        await tx
+          .insert(kbArticleTags)
+          .values(requestedTagIds.map((tagId) => ({ orgId, articleId, tagId })));
+      }
 
       return resolvedTags;
     });

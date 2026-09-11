@@ -1,6 +1,9 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq, inArray, lt } from "drizzle-orm";
+import { and, eq, inArray, lt, sql } from "drizzle-orm";
 import { kbChatConversations, kbSettings } from "../../db/schema";
+import { hrLegalHolds } from "../../db/schema/hr/governance";
+import { organizationLegalHolds } from "../../db/schema/common/organization-purge";
+import { organizationMembers } from "../../db/schema/common/auth";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { forEachOrg } from "../../common/tenant";
@@ -55,6 +58,28 @@ export class CronKbChatRetentionService {
           and(
             eq(kbChatConversations.orgId, orgId),
             lt(kbChatConversations.updatedAt, cutoff),
+            sql`NOT EXISTS (
+              SELECT 1
+              FROM ${organizationLegalHolds}
+              WHERE ${organizationLegalHolds.orgId} = ${kbChatConversations.orgId}
+                AND ${organizationLegalHolds.releasedAt} IS NULL
+            )`,
+            sql`NOT EXISTS (
+              SELECT 1
+              FROM ${hrLegalHolds}
+              WHERE ${hrLegalHolds.orgId} = ${kbChatConversations.orgId}
+                AND ${hrLegalHolds.status} = 'active'
+                AND ${hrLegalHolds.deletedAt} IS NULL
+                AND (
+                  ${hrLegalHolds.subjectMembershipId} = ${kbChatConversations.userMembershipId}
+                  OR ${hrLegalHolds.subjectUserId} IN (
+                    SELECT ${organizationMembers.userId}
+                    FROM ${organizationMembers}
+                    WHERE ${organizationMembers.orgId} = ${kbChatConversations.orgId}
+                      AND ${organizationMembers.id} = ${kbChatConversations.userMembershipId}
+                  )
+                )
+            )`,
           ),
         )
         .limit(BATCH_SIZE);

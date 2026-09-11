@@ -1,3 +1,4 @@
+import { ScopedRead } from "../access/scoped-read";
 import { ContactsService } from "./contacts.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { createMirroredContacts } from "../party/party-legacy-contacts";
@@ -118,28 +119,40 @@ describe("ContactsService bulk import", () => {
       .fn()
       .mockResolvedValueOnce(Array.from({ length: 500 }, (_, index) => makeRow(index + 1)))
       .mockResolvedValueOnce([makeRow(501)]);
-    const query = {
-      from: jest.fn(),
-      // The export reads `business_parties` through `contact_party_map`.
-      innerJoin: jest.fn(),
-      where: jest.fn(),
-      orderBy: jest.fn(),
-      limit,
+    function makeQuery(resolveLimit: jest.Mock) {
+      const query = {
+        from: jest.fn(),
+        innerJoin: jest.fn(),
+        where: jest.fn(),
+        orderBy: jest.fn(),
+        limit: resolveLimit,
+      };
+      query.from.mockReturnValue(query);
+      query.innerJoin.mockReturnValue(query);
+      query.where.mockReturnValue(query);
+      query.orderBy.mockReturnValue(query);
+      return query;
+    }
+    const query = makeQuery(limit);
+    /*
+     * Each page now runs in its own tenant transaction, because the export handler is
+     * `@NoTenantTransaction()` — the generator outlives the request, so holding one
+     * transaction across the whole download would pin a pooled connection to the
+     * client's socket. `db.transaction` is the per-page borrow.
+     */
+    const tx = { select: jest.fn().mockReturnValue(query), execute: jest.fn().mockResolvedValue([]) };
+    const db = {
+      select: jest.fn().mockReturnValue(makeQuery(jest.fn().mockResolvedValue([]))),
+      execute: jest.fn().mockResolvedValue([]),
+      transaction: jest.fn().mockImplementation((run: (t: unknown) => unknown) => run(tx)),
     };
-    query.from.mockReturnValue(query);
-    query.innerJoin.mockReturnValue(query);
-    query.where.mockReturnValue(query);
-    query.orderBy.mockReturnValue(query);
-    const service = new ContactsService(
-      { select: jest.fn().mockReturnValue(query) } as never,
-      {} as never,
-      {} as never,
-    );
+    const service = new ContactsService(db as never, {} as never, {} as never);
 
     const chunks: string[] = [];
-    for await (const chunk of service.exportCsvChunks("org-1")) chunks.push(chunk);
+    for await (const chunk of service.exportCsvChunks(ScopedRead.of("org-1", "user-1", "all"))) chunks.push(chunk);
     const csv = chunks.join("");
 
+    expect(db.transaction).toHaveBeenCalledTimes(2);
     expect(limit).toHaveBeenCalledTimes(2);
     expect(limit).toHaveBeenCalledWith(500);
     expect(csv.match(/^id,name,email,phone,title,company,department,createdAt$/gm)).toHaveLength(1);
@@ -156,7 +169,7 @@ describe("ContactsService bulk import", () => {
       {} as never,
     );
 
-    await service.list("org-1", { limit: 25 });
+    await service.list(ScopedRead.of("org-1", "user-1", "all"), { limit: 25 });
 
     expect(cachedVersioned).toHaveBeenCalledWith(
       CACHE_KEYS.contactsListNamespace("org-1"),

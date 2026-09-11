@@ -1,3 +1,4 @@
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
 jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
   runInTenantTransaction: (_db: unknown, fn: (tx: unknown, ctx: unknown) => unknown, opts: unknown) => fn(_db, opts),
   runInNewTenantTransaction: jest.fn().mockResolvedValue(undefined),
@@ -98,7 +99,7 @@ describe("OnboardingDetailsService — cross-tenant isolation", () => {
     const { db, where, findFirst, findMany } = makeDb([]);
     const mockCache = { invalidate: jest.fn() };
     const svc = new OnboardingDetailsService(db, mockCache as never);
-    await expect(svc.getPersonalDetails(ATTACKER, "user-1")).rejects.toThrow();
+    await expect(svc.getPersonalDetails(ATTACKER, "user-1")).rejects.toThrow(NotFoundException);
     expect(allArgs(where, findFirst, findMany)).toContain(ATTACKER);
   });
 
@@ -237,7 +238,7 @@ describe("OnboardingSubmissionService — cross-tenant isolation", () => {
     const mockCache = { invalidate: jest.fn() };
     const mockAudit = { logCritical: jest.fn().mockResolvedValue(undefined) };
     const svc = new OnboardingSubmissionService(db, mockCache as never, mockAudit as never);
-    await expect(svc.submit(ATTACKER, "user-1")).rejects.toThrow();
+    await expect(svc.submit(ATTACKER, "user-1")).rejects.toThrow(NotFoundException);
     expect(allArgs(where, findFirst, findMany)).toContain(ATTACKER);
   });
 
@@ -268,7 +269,7 @@ describe("OnboardingTaskService — cross-tenant isolation", () => {
     const mockProbation = { setupProbationForUser: jest.fn().mockResolvedValue({ probationEndDate: null, lifecycleStatus: null }) };
     const svc = new OnboardingTaskService(db, mockAccess as never, mockDispatch as never, mockAutomation as never, mockHrAutomation as never, mockProbation as never);
     const actor = { orgId: ATTACKER, userId: "actor-1", isOrgOwner: false };
-    await expect(svc.getUserTasks(actor as never, "user-1")).rejects.toThrow();
+    await expect(svc.getUserTasks(actor as never, "user-1")).rejects.toThrow(ForbiddenException);
     expect(mockAccess.resolveUserPermissions).toHaveBeenCalledWith(ATTACKER, "actor-1");
   });
 
@@ -283,7 +284,7 @@ describe("OnboardingTaskService — cross-tenant isolation", () => {
     const mockProbation = { setupProbationForUser: jest.fn().mockResolvedValue({ probationEndDate: null, lifecycleStatus: null }) };
     const svc = new OnboardingTaskService(db, mockAccess as never, mockDispatch as never, mockAutomation as never, mockHrAutomation as never, mockProbation as never);
     const actor = { orgId: OWNER, userId: "actor-2", isOrgOwner: false };
-    await expect(svc.getUserTasks(actor as never, "user-2")).rejects.toThrow();
+    await expect(svc.getUserTasks(actor as never, "user-2")).rejects.toThrow(ForbiddenException);
     expect(mockAccess.resolveUserPermissions).toHaveBeenCalledWith(OWNER, "actor-2");
   });
 });

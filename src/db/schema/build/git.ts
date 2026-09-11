@@ -1,13 +1,4 @@
-import {
-  pgEnum,
-  text,
-  integer,
-  boolean,
-  timestamp,
-  index,
-  unique,
-  uniqueIndex,
-} from "drizzle-orm/pg-core";
+import { bigint, boolean, foreignKey, index, integer, pgEnum, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { build } from "./namespaces";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
@@ -20,7 +11,7 @@ export const gitRefTypeEnum = pgEnum("git_ref_type", ["commit", "pull_request", 
 export const gitConnections = build.table("git_connections", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
+  projectId: integer("project_id"),
   provider: gitProviderEnum("provider").notNull(),
   repoUrl: text("repo_url").notNull(),
   repoName: text("repo_name"),
@@ -30,7 +21,7 @@ export const gitConnections = build.table("git_connections", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  index("idx_git_connections_org").on(table.orgId),
+  foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_git_connections_org_project" }).onDelete("set null"),
   index("idx_git_connections_project").on(table.projectId),
   unique("uniq_git_connections_org_id").on(table.orgId, table.id),
 ]);
@@ -38,8 +29,8 @@ export const gitConnections = build.table("git_connections", {
 export const gitTicketLinks = build.table("git_ticket_links", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  ticketId: integer("ticket_id").references(() => tickets.id, { onDelete: "cascade" }).notNull(),
-  connectionId: integer("connection_id").references(() => gitConnections.id, { onDelete: "set null" }),
+  ticketId: integer("ticket_id").notNull(),
+  connectionId: integer("connection_id"),
   provider: gitProviderEnum("provider").notNull(),
   refType: gitRefTypeEnum("ref_type").notNull(),
   externalId: text("external_id").notNull(),
@@ -49,9 +40,21 @@ export const gitTicketLinks = build.table("git_ticket_links", {
   status: text("status"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
-  index("idx_git_ticket_links_ticket").on(table.ticketId),
+  foreignKey({ columns: [table.orgId, table.connectionId], foreignColumns: [gitConnections.orgId, gitConnections.id], name: "fk_git_ticket_links_org_connection" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.ticketId], foreignColumns: [tickets.orgId, tickets.id], name: "fk_git_ticket_links_org_ticket" }).onDelete("cascade"),
   uniqueIndex("uniq_git_ticket_links_ref").on(table.ticketId, table.refType, table.externalId),
   unique("uniq_git_ticket_links_org_id").on(table.orgId, table.id),
+]);
+
+export const gitWebhookSeenDeliveries = build.table("git_webhook_seen_deliveries", {
+  id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  provider: text("provider").notNull(),
+  deliveryId: text("delivery_id").notNull(),
+  seenAt: timestamp("seen_at").defaultNow().notNull(),
+}, (table) => [
+  unique("uniq_git_webhook_seen_deliveries_delivery").on(table.orgId, table.provider, table.deliveryId),
+  index("idx_git_webhook_seen_deliveries_org_seen_at").on(table.orgId, table.seenAt),
 ]);
 
 export const gitConnectionsRelations = relations(gitConnections, ({ one, many }) => ({

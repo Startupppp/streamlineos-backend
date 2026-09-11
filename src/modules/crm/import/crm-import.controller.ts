@@ -36,7 +36,15 @@ import {
 } from "./dto/crm-import.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { ApiOkResponse } from "@nestjs/swagger";
+import {
+  importPreviewSchema,
+  importRecordSchema,
+  importProgressSchema,
+  connectorProgressSchema,
+  crmArchiveDownloadSchema,
+} from "./dto/crm-import-response.schemas";
 
 const crmImportIdParams = z.object({ crmImportId: z.string().min(1) }).strict();
 const crmConnectorSyncIdParams = z.object({ crmConnectorSyncId: z.string().min(1) }).strict();
@@ -72,12 +80,13 @@ export class CrmImportController {
   /** What this file would do. Writes nothing to the CRM. */
   @Post("imports/preview")
   @RequirePermission("crm:imports:manage")
+  @ResponseSchema(importPreviewSchema)
   @Validate({ body: previewImportSchema })
   async preview(
     @Body() body: PreviewImportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const entity = body.entity as ImportEntity;
+    const entity = body.entity;
     await this.assertMayWrite(u, entity);
 
     return this.imports.preview({
@@ -94,6 +103,7 @@ export class CrmImportController {
 
   @Get("imports/:crmImportId")
   @RequirePermission("crm:imports:manage")
+  @ResponseSchema(importRecordSchema)
   @Validate({ params: crmImportIdParams })
   getImport(
     @Param("crmImportId") crmImportId: string,
@@ -122,6 +132,7 @@ export class CrmImportController {
   @BodylessAction()
   @Idempotent("crm.import.commit")
   @RequirePermission("crm:imports:manage")
+  @ResponseSchema(importProgressSchema)
   @Validate({ params: crmImportIdParams })
   async commit(
     @Param("crmImportId") crmImportId: string,
@@ -145,6 +156,7 @@ export class CrmImportController {
   @BodylessAction()
   @Idempotent("crm.import.revert")
   @RequirePermission("crm:imports:manage")
+  @ResponseSchema(importProgressSchema)
   @Validate({ params: crmImportIdParams })
   async revert(
     @Param("crmImportId") crmImportId: string,
@@ -167,6 +179,7 @@ export class CrmImportController {
    */
   @Get("imports/:crmImportId/progress")
   @RequirePermission("crm:imports:manage")
+  @ResponseSchema(importProgressSchema)
   @Validate({ params: crmImportIdParams })
   progress(
     @Param("crmImportId") crmImportId: string,
@@ -196,22 +209,20 @@ export class CrmImportController {
   @Post("connectors/sync")
   @Idempotent("crm.connector.sync")
   @RequirePermission("crm:imports:manage")
+  @ResponseSchema(connectorProgressSchema)
   @Validate({ body: connectorSyncSchema })
   async sync(
     @Body() body: ConnectorSyncInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.assertMayWrite(
-      u,
-      targetOf(body.provider as ConnectorProvider, body.stream as ConnectorStream),
-    );
+    await this.assertMayWrite(u, targetOf(body.provider, body.stream));
 
     const { crmConnectorSyncId, workflowRunId } = await this.connectors.startSync({
       organizationId: u.orgId,
       userId: u.userId,
       connectionId: body.connectionId,
-      provider: body.provider as ConnectorProvider,
-      stream: body.stream as ConnectorStream,
+      provider: body.provider,
+      stream: body.stream,
     });
 
     await this.pump.advance(u.orgId, workflowRunId);
@@ -227,6 +238,7 @@ export class CrmImportController {
    */
   @Get("connectors/:crmConnectorSyncId")
   @RequirePermission("crm:imports:manage")
+  @ResponseSchema(connectorProgressSchema)
   @Validate({ params: crmConnectorSyncIdParams })
   connectorProgress(
     @Param("crmConnectorSyncId") crmConnectorSyncId: string,
@@ -249,13 +261,14 @@ export class CrmImportController {
    */
   @Get("export")
   @RequirePermission("party:parties:view")
+  @ApiOkResponse({ description: "CSV or JSON file download", content: { "text/csv": { schema: { type: "string" } } } })
   @Validate({ query: exportQuerySchema })
   async exportEntity(
     @Query() query: ExportQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ): Promise<void> {
-    const entity = query.entity as ExportEntity;
+    const entity = query.entity;
     const stamp = new Date().toISOString().slice(0, 10);
     const json = query.format === "json";
 
@@ -277,6 +290,7 @@ export class CrmImportController {
   /** Every entity at once, as one document. */
   @Get("export/archive")
   @RequirePermission("party:parties:view")
+  @ApiOkResponse({ description: "CRM archive JSON download", content: { "application/json": { schema: crmArchiveDownloadSchema } } })
   async archive(@CurrentUser() u: CurrentUserContext, @Res() res: Response): Promise<void> {
     const stamp = new Date().toISOString().slice(0, 10);
 

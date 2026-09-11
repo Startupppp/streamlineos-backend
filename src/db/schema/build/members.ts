@@ -27,30 +27,28 @@ import { tickets } from "./tasks";
 export const projectMembers = build.table("project_members", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  membershipId: integer("membership_id"),
+  projectId: integer("project_id").notNull(),
+  membershipId: integer("membership_id").notNull(),
   role: text("role").default("CONTRIBUTOR").notNull(),
   hourlyRate: decimal("hourly_rate", { precision: 10, scale: 2 }).default("0").notNull(),
   hourlyRateMinor: bigint("hourly_rate_minor", { mode: "number" }).default(0).notNull(),
   rateCurrency: text("rate_currency"),
   joinedAt: timestamp("joined_at").defaultNow().notNull(),
 }, (table) => [
-  uniqueIndex("uniq_project_members_project_user").on(table.projectId, table.userId),
-  index("idx_project_members_user").on(table.userId),
-  index("idx_project_members_org_user").on(table.orgId, table.userId),
+  foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_project_members_org_project" }).onDelete("cascade"),
+  uniqueIndex("uniq_project_members_project_user").on(table.projectId, table.membershipId),
   index("idx_project_members_org_member_membership").on(table.orgId, table.membershipId),
   unique("uniq_project_members_org_id").on(table.orgId, table.id),
   foreignKey({
     columns: [table.orgId, table.membershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_project_members_member_actor",
-  }).onDelete("restrict"),
+  }).onDelete("cascade"),
 ]);
 
 export const projectViews = build.table("project_views", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  projectId: integer("project_id"),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   createdBy: text("created_by").references(() => users.id).notNull(),
   name: text("name").notNull(),
@@ -65,15 +63,15 @@ export const projectViews = build.table("project_views", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_project_views_org_project" }).onDelete("cascade"),
   index("idx_project_views_project").on(table.projectId),
-  index("idx_project_views_org").on(table.orgId),
   index("idx_project_views_org_scope").on(table.orgId, table.scope),
   unique("uniq_project_views_org_id").on(table.orgId, table.id),
 ]);
 
 export const intakeItems = build.table("intake_items", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
+  projectId: integer("project_id").notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   title: text("title").notNull(),
   description: jsonb("description"),
@@ -83,11 +81,13 @@ export const intakeItems = build.table("intake_items", {
   submitterName: text("submitter_name"),
   priority: text("priority"),
   requestType: text("request_type"),
-  linkedWorkItemId: integer("linked_work_item_id").references(() => tickets.id, { onDelete: "set null" }),
+  linkedWorkItemId: integer("linked_work_item_id"),
   declineReason: text("decline_reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_intake_items_org_project" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.linkedWorkItemId], foreignColumns: [tickets.orgId, tickets.id], name: "fk_intake_items_org_ticket" }).onDelete("set null"),
   index("idx_intake_items_project").on(table.projectId),
   index("idx_intake_items_org_status").on(table.orgId, table.status),
   unique("uniq_intake_items_org_id").on(table.orgId, table.id),
@@ -95,7 +95,7 @@ export const intakeItems = build.table("intake_items", {
 
 export const pages = build.table("pages", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
+  projectId: integer("project_id").notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   title: text("title").notNull(),
   content: jsonb("content"),
@@ -108,16 +108,16 @@ export const pages = build.table("pages", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  foreignKey({ columns: [table.parentPageId], foreignColumns: [table.id] }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_pages_org_project" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.parentPageId], foreignColumns: [table.orgId, table.id], name: "fk_pages_org_parent" }).onDelete("cascade"),
   index("idx_pages_project").on(table.projectId),
-  index("idx_pages_org").on(table.orgId),
   index("idx_pages_parent").on(table.parentPageId),
   unique("uniq_pages_org_id").on(table.orgId, table.id),
 ]);
 
 export const projectMilestones = build.table("project_milestones", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
+  projectId: integer("project_id").notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
   description: text("description"),
@@ -129,6 +129,7 @@ export const projectMilestones = build.table("project_milestones", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_project_milestones_org_project" }).onDelete("cascade"),
   index("idx_project_milestones_project").on(table.projectId).where(sql`deleted_at IS NULL`),
   index("idx_project_milestones_org").on(table.orgId).where(sql`deleted_at IS NULL`),
   unique("uniq_project_milestones_org_id").on(table.orgId, table.id),

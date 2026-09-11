@@ -6,71 +6,61 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, like } from "drizzle-orm";
-import {
-  apiKeys,
-  auditLogs,
-  gitConnections,
-  organizations,
-  organizationMembers,
-  users,
-} from "../../db/schema";
+import { apiKeys, auditLogs, organizations, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { isStructuralOrgAdminContext } from "../../common/rbac/is-structural-org-admin";
-import { queryAiUsage } from "./ai-usage.query";
-import { PERMISSIONS } from "../rbac/permissions";
-import { AccessService } from "../access/access.service";
-import { assertMayGrantRole } from "../../common/rbac/assert-may-grant-role";
-import { syncStructuralRoleAssignment } from "../../common/rbac/sync-structural-role";
-import { PlanLimitsService } from "../billing/core/plan-limits.service";
+import { OrgMembershipService } from "../organization/core/org-membership.service";
 import { CacheService } from "../../common/cache/cache.service";
-import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
 import {
   VALID_API_KEY_SCOPES,
   generateApiKey,
-  generateWebhookSecret,
-  gitWebhookUrl,
-  maskSecret,
   parseOrgFeatureFlags,
 } from "./settings.helpers";
-import type {
-  CreateApiKeyInput,
-  CreateGitConnectionInput,
-  FeatureFlagInput,
-  UpdateGitConnectionInput,
-} from "./dto/settings.schemas";
+import { SETTINGS_PROVENANCE_SECTIONS } from "./dto/settings.schemas";
+import type { CreateApiKeyInput, FeatureFlagInput } from "./dto/settings.schemas";
+import { logger } from "../../common/logger/logger.service";
+
+/** The key list is a page, not a dump. Mirrors `SESSION_LIST_CAP`. */
+export const API_KEY_LIST_CAP = 100;
+
+type SectionProvenance = {
+  /** Null when no user acted — see `audit_logs.user_id` and migration 0663. */
+  actorId: string | null;
+  actorName: string | null;
+  action: string;
+  at: string;
+};
 
 @Injectable()
 export class SettingsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly planLimits: PlanLimitsService,
-    private readonly access: AccessService,
+    private readonly orgMembership: OrgMembershipService,
     private readonly cache: CacheService,
   ) {}
 
-  getPermissions() {
-    return PERMISSIONS;
-  }
-
+  /**
+   * One query per section, and the section list arrives from the client. The
+   * query schema restricts each entry to `SETTINGS_PROVENANCE_SECTIONS` but does
+   * not deduplicate, so `?sections=org&sections=org&…` fanned out one audit-log
+   * read per repeat with no ceiling. Intersecting the request with the fixed
+   * vocabulary caps the fan-out at its real size — six — and the response is
+   * unchanged, because it is keyed by section name and duplicates already
+   * collapsed in `Object.fromEntries`.
+   */
   async getSectionProvenance(
     orgId: string,
     sections: readonly string[],
-  ): Promise<
-    Record<
-      string,
-      {
-        /** Null when no user acted — see `audit_logs.user_id` and migration 0663. */
-        actorId: string | null;
-        actorName: string | null;
-        action: string;
-        at: string;
-      } | null
-    >
-  > {
+  ): Promise<Record<string, SectionProvenance | null>> {
+    const requested = new Set(sections);
+    const wanted = SETTINGS_PROVENANCE_SECTIONS.filter((section) =>
+      requested.has(section),
+    );
+
     const rows = await Promise.all(
-      sections.map((section) =>
+      wanted.map((section) =>
         this.db
           .select({
             action: auditLogs.action,
@@ -91,8 +81,8 @@ export class SettingsService {
       ),
     );
 
-    return Object.fromEntries(
-      sections.map((section, index) => {
+    const resolved = new Map<string, SectionProvenance | null>(
+      wanted.map((section, index) => {
         const row = rows[index]?.[0];
         return [
           section,
@@ -104,28 +94,39 @@ export class SettingsService {
                 at: row.createdAt.toISOString(),
               }
             : null,
-        ];
+        ] as const;
       }),
+    );
+
+    return Object.fromEntries(
+      [...requested].map((section) => [section, resolved.get(section) ?? null]),
     );
   }
 
-  getAiUsage(u: CurrentUserContext) {
-    if (!isStructuralOrgAdminContext(u)) {
-      throw new ForbiddenException("Forbidden");
-    }
-    return queryAiUsage(this.db, u.orgId);
-  }
-
+  /**
+   * The one read in this module that was not a per-org config lookup. Nothing
+   * prunes `api_keys` and nothing caps how many an org may mint, so this grew a
+   * row per key forever with no `limit`; the tie-break on `id` makes the capped
+   * page a stable prefix rather than an arbitrary subset that changes between
+   * two reads of the same state. Truncation is logged, never silent.
+   */
   async listApiKeys(u: CurrentUserContext) {
     if (!isStructuralOrgAdminContext(u)) {
       throw new ForbiddenException("Only admins can manage API keys.");
     }
-    return this.db.query.apiKeys.findMany({
+    const rows = await this.db.query.apiKeys.findMany({
       where: and(eq(apiKeys.orgId, u.orgId), eq(apiKeys.isRevoked, false)),
       columns: { keyHash: false },
       with: { creator: { columns: { name: true, email: true } } },
-      orderBy: (t, { desc: d }) => [d(t.createdAt)],
+      orderBy: (t, { asc: a, desc: d }) => [d(t.createdAt), a(t.id)],
+      limit: API_KEY_LIST_CAP + 1,
     });
+    if (rows.length > API_KEY_LIST_CAP)
+      logger.warn("api key list truncated at the page cap", {
+        orgId: u.orgId,
+        cap: API_KEY_LIST_CAP,
+      });
+    return rows.slice(0, API_KEY_LIST_CAP);
   }
 
   async createApiKey(u: CurrentUserContext, input: CreateApiKeyInput) {
@@ -165,11 +166,15 @@ export class SettingsService {
     }
 
     const existing = await this.db.query.apiKeys.findFirst({
+      columns: { id: true },
       where: and(eq(apiKeys.id, keyId), eq(apiKeys.orgId, u.orgId)),
     });
     if (!existing) throw new NotFoundException("API key not found.");
 
-    await this.db.update(apiKeys).set({ isRevoked: true }).where(eq(apiKeys.id, keyId));
+    await this.db
+      .update(apiKeys)
+      .set({ isRevoked: true })
+      .where(and(eq(apiKeys.id, keyId), eq(apiKeys.orgId, u.orgId)));
     return { success: true };
   }
 
@@ -203,139 +208,34 @@ export class SettingsService {
       })
       .where(eq(organizations.id, u.orgId));
 
+    await Promise.all([
+      this.cache.invalidateForOrg(u.orgId, "org:settings"),
+      this.cache.invalidateNamespaceForOrg(u.orgId, "org:profile"),
+    ]);
+
     return { success: true, flag: input.flag, enabled: input.enabled };
   }
 
-  async listGitConnections(orgId: string) {
-    const rows = await this.db
-      .select()
-      .from(gitConnections)
-      .where(eq(gitConnections.orgId, orgId))
-      .orderBy(desc(gitConnections.id));
-
-    return rows.map((row) => ({
-      id: row.id,
-      provider: row.provider,
-      projectId: row.projectId,
-      repoUrl: row.repoUrl,
-      repoName: row.repoName,
-      isActive: row.isActive,
-      maskedSecret: maskSecret(row.webhookSecret),
-      webhookUrl: gitWebhookUrl(row.id),
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    }));
-  }
-
-  async createGitConnection(orgId: string, userId: string, input: CreateGitConnectionInput) {
-    const secret = generateWebhookSecret();
-
-    const [created] = await this.db
-      .insert(gitConnections)
-      .values({
-        orgId,
-        provider: input.provider,
-        repoUrl: input.repoUrl,
-        repoName: input.repoName ?? null,
-        projectId: input.projectId ?? null,
-        webhookSecret: secret,
-        createdBy: userId,
-      })
-      .returning();
-
-    return {
-      id: created.id,
-      provider: created.provider,
-      projectId: created.projectId,
-      repoUrl: created.repoUrl,
-      repoName: created.repoName,
-      isActive: created.isActive,
-      webhookUrl: gitWebhookUrl(created.id),
-      webhookSecret: secret,
-      createdAt: created.createdAt,
-      updatedAt: created.updatedAt,
-    };
-  }
-
-  async updateGitConnection(orgId: string, connectionId: number, input: UpdateGitConnectionInput) {
-    if (
-      input.isActive === undefined &&
-      input.repoUrl === undefined &&
-      input.repoName === undefined &&
-      input.projectId === undefined
-    ) {
-      throw new BadRequestException("No fields to update");
-    }
-
-    const [updated] = await this.db
-      .update(gitConnections)
-      .set({
-        ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
-        ...(input.repoUrl !== undefined ? { repoUrl: input.repoUrl } : {}),
-        ...(input.repoName !== undefined ? { repoName: input.repoName } : {}),
-        ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
-        updatedAt: new Date(),
-      })
-      .where(and(eq(gitConnections.id, connectionId), eq(gitConnections.orgId, orgId)))
-      .returning();
-
-    if (!updated) throw new NotFoundException("Connection not found");
-
-    return {
-      id: updated.id,
-      provider: updated.provider,
-      projectId: updated.projectId,
-      repoUrl: updated.repoUrl,
-      repoName: updated.repoName,
-      isActive: updated.isActive,
-      createdAt: updated.createdAt,
-      updatedAt: updated.updatedAt,
-    };
-  }
-
-  async deleteGitConnection(orgId: string, connectionId: number) {
-    const [deleted] = await this.db
-      .delete(gitConnections)
-      .where(and(eq(gitConnections.id, connectionId), eq(gitConnections.orgId, orgId)))
-      .returning({ id: gitConnections.id });
-
-    if (!deleted) throw new NotFoundException("Connection not found");
-    return { success: true };
-  }
-
+  /**
+   * The published `/settings` path, served by the organization membership
+   * service that owns the operation.
+   *
+   * This handler used to be a second implementation of the same write, reached
+   * through a *different* permission key, and it was the weaker of the two: no
+   * `FOR UPDATE` on the member row, no last-structural-admin check, no
+   * module-ownership check, no audit entry and no role-changed notification. A
+   * caller who held `settings:rbac:manage` could therefore demote the last
+   * org admin and orphan a module's ownership — through a route the
+   * organization module already refuses. Two mechanisms for one job; the
+   * rewrite absorbs this one rather than standing beside it.
+   */
   async updateUserRole(u: CurrentUserContext, targetUserId: string, role: string) {
-    const member = await this.db.query.organizationMembers.findFirst({
-      where: and(
-        eq(organizationMembers.userId, targetUserId),
-        eq(organizationMembers.orgId, u.orgId),
-      ),
-      columns: { id: true, isOwner: true },
-    });
-    if (!member) throw new NotFoundException("User not found in this organization");
-
-    if (member.isOwner) {
-      throw new BadRequestException(
-        "The organization owner's role cannot be changed here. Use the ownership transfer flow instead.",
-      );
-    }
-
-    await assertMayGrantRole(this.access, u.orgId, u, role);
-
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(organizationMembers)
-        .set({ role })
-        .where(
-          and(
-            eq(organizationMembers.userId, targetUserId),
-            eq(organizationMembers.orgId, u.orgId),
-          ),
-        );
-      await syncStructuralRoleAssignment(tx, u.orgId, member.id, role);
-    });
-
-    await bustMembershipStatusCache(this.cache, targetUserId, u.orgId);
-
+    await this.orgMembership.updateMemberRole(
+      u.orgId,
+      { userId: u.userId, isOrgOwner: u.isOrgOwner },
+      targetUserId,
+      role,
+    );
     return { success: true, userId: targetUserId, role };
   }
 }

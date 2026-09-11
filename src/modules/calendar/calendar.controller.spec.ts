@@ -9,6 +9,17 @@ function gateOf(method: keyof CalendarController): string | undefined {
   return Reflect.getMetadata(REQUIRE_PERMISSION, CalendarController.prototype[method]);
 }
 
+function unusedSyncStatus(): unknown {
+  return new Proxy(
+    {},
+    {
+      get() {
+        throw new Error("CalendarSyncStatusService must not be reached by these handlers");
+      },
+    },
+  );
+}
+
 describe("CalendarController — organisation-wide reads are gated", () => {
   const gateExpectations: ReadonlyArray<[keyof CalendarController, string]> = [
     ["listAttendees", "calendar:read"],
@@ -57,6 +68,7 @@ describe("CalendarController source preferences", () => {
       {} as never,
       { getToggleList } as never,
       {} as never,
+      unusedSyncStatus() as never,
     );
 
     await expect(controller.getSources(user)).resolves.toEqual([
@@ -74,6 +86,7 @@ describe("CalendarController source preferences", () => {
       {} as never,
       {} as never,
       { setPreference } as never,
+      unusedSyncStatus() as never,
     );
 
     await expect(

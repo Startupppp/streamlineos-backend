@@ -1,31 +1,54 @@
-import { pgTable, text, serial, timestamp, decimal, date, index, unique } from "drizzle-orm/pg-core";
+import {
+  integer,
+  pgTable,
+  text,
+  serial,
+  timestamp,
+  decimal,
+  date,
+  index,
+  unique,
+} from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { assetStatusEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
 
-export const assets = pgTable("assets", {
-  id: serial("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  name: text("name").notNull(),
-  type: text("type").notNull(),
-  brand: text("brand"),
-  model: text("model"),
-  serialNumber: text("serial_number"),
-  assignedTo: text("assigned_to").references(() => users.id, { onDelete: "set null" }),
-  status: assetStatusEnum("status").default("AVAILABLE").notNull(),
-  purchaseDate: date("purchase_date"),
-  purchaseCost: decimal("purchase_cost", { precision: 15, scale: 2 }),
-  location: text("location"),
-  notes: text("notes"),
-  expectedReturnDate: date("expected_return_date"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-}, (table) => [
-  unique("uniq_assets_org_id").on(table.orgId, table.id),
-  index("idx_assets_org_status").on(table.orgId, table.status),
-  index("idx_assets_assigned").on(table.assignedTo),
-]);
+export const assets = pgTable(
+  "assets",
+  {
+    id: serial("id").primaryKey(),
+    orgId: text("org_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+    name: text("name").notNull(),
+    type: text("type").notNull(),
+    brand: text("brand"),
+    model: text("model"),
+    serialNumber: text("serial_number"),
+    assignedTo: text("assigned_to"),
+    assignedToMembershipId: integer("assigned_to_membership_id"),
+    status: assetStatusEnum("status").default("AVAILABLE").notNull(),
+    purchaseDate: date("purchase_date"),
+    purchaseCost: decimal("purchase_cost", { precision: 15, scale: 2 }),
+    location: text("location"),
+    notes: text("notes"),
+    expectedReturnDate: date("expected_return_date"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    unique("uniq_assets_org_id").on(table.orgId, table.id),
+    index("idx_assets_org_status").on(table.orgId, table.status),
+    index("idx_assets_assigned").on(table.assignedTo),
+  ],
+);
 
 export const assetsRelations = relations(assets, ({ one }) => ({
-  assignedUser: one(users, { fields: [assets.assignedTo], references: [users.id] }),
+  assignedUser: one(users, {
+    fields: [assets.assignedTo],
+    references: [users.id],
+  }),
 }));

@@ -3,7 +3,6 @@ import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { RequireModule } from "../../common/rbac/require-module.decorator";
 import {
   createTaskFromMessageSchema,
   type CreateTaskFromMessageInput,
@@ -19,8 +18,10 @@ import { EntityReferenceService } from "../entity-reference/entity-reference.ser
 import { actorOf } from "../entity-reference/entity-actor";
 import type { EntityActionResult } from "../entity-reference/entity-reference.types";
 import { Validate } from "../../common/validation/validate.decorator";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { chatCreateTaskSchema } from "./dto/chat-misc-response.schemas";
 
-@RequireModule("chat")
 @Controller("chat/actions")
 @UseGuards(JwtAuthGuard)
 export class ChatActionsController {
@@ -33,6 +34,8 @@ export class ChatActionsController {
   ) {}
 
   @Post("create-task-from-message")
+  @ResponseSchema(chatCreateTaskSchema)
+  @Idempotent("chat.action.create-task-from-message")
   @AuthorizedInService("ChatChannelMembersService.assertChannelMembership, then EntityReferenceService resolves the actor's own access to the target")
   @Validate({ body: createTaskFromMessageSchema })
   async createTaskFromMessage(

@@ -67,7 +67,7 @@ export class OnboardingSessionService {
       .set({
         status: session.status === "not_started" ? "in_progress" : session.status,
         ...(patch.currentStep !== undefined ? { currentStep: patch.currentStep } : {}),
-        ...(patch.data !== undefined ? { data: { ...(session.data as object), ...patch.data } } : {}),
+        ...(patch.data !== undefined ? { data: { ...session.data, ...patch.data } } : {}),
         ...(patch.completedSteps !== undefined ? { completedSteps: patch.completedSteps } : {}),
         ...(patch.skippedSteps !== undefined ? { skippedSteps: patch.skippedSteps } : {}),
         ...(patch.source !== undefined ? { source: patch.source } : {}),
@@ -99,7 +99,7 @@ export class OnboardingSessionService {
         status: "skipped",
         completedAt: new Date(),
         lastSeenAt: new Date(),
-        data: { ...(session.data as object), skipReason: reason },
+        data: { ...session.data, skipReason: reason },
       })
       .where(eq(onboardingFlowSessions.id, session.id))
       .returning();

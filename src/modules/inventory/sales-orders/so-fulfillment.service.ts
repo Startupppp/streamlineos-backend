@@ -82,7 +82,7 @@ export class SoFulfillmentService {
 
     await this.db.transaction(async (tx) => {
       for (const line of so.lines) {
-        const existingReservation = await (tx as Db).query.invStockReservations.findFirst({
+        const existingReservation = await tx.query.invStockReservations.findFirst({
           where: and(
             eq(invStockReservations.orgId, orgId),
             eq(invStockReservations.sourceType, "inv_sales_order"),
@@ -147,7 +147,7 @@ export class SoFulfillmentService {
       }
 
       const newStatus = allReserved ? "RESERVED" : "PARTIALLY_RESERVED";
-      await (tx as Db).update(invSalesOrders)
+      await tx.update(invSalesOrders)
         .set({ status: newStatus, updatedAt: new Date() })
         .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
     });

@@ -7,23 +7,83 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { kbSources } from "../../../db/schema";
+import { kbSources, outboxEvents } from "../../../db/schema";
 import { StorageService } from "../../storage/storage.service";
 import { validateMagicBytes } from "../../storage/file-signatures";
 import { KbAttachmentIndexingService } from "../retrieval/kb-attachment-indexing.service";
-import { isExtractableMime, extractAttachmentText } from "../retrieval/kb-attachment-extract.util";
-import type { CreateKbSourceNoteInput } from "./dto/kb-sources.schemas";
+import {
+  isExtractableMime,
+  extractAttachmentText,
+} from "../retrieval/kb-attachment-extract.util";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
+import { OutboxWriter } from "../../../common/outbox/outbox-writer";
+import type { TenantTx } from "../../../db/drizzle.types";
+import { assertPageAccessible } from "../retrieval/kb-page-access.util";
+import { KbAccessService } from "../core/kb-access.service";
+import type {
+  CreateKbSourceNoteInput,
+  KbIngestionState,
+  KbArticleIngestionStatus,
+  KbPageIngestionStatus,
+  KbSourcesListQuery,
+} from "./dto/kb-sources.schemas";
+import {
+  buildCursorPage,
+  decodeCursor,
+  type CursorPage,
+} from "../../../common/pagination/cursor";
 import { APP_CONFIG } from "../../../config/config.module";
 import type { AppConfig } from "../../../config/env.validation";
 
 const DOCX_MIME =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
-const MAX_SOURCES = 100;
+export interface KbSourceListItem {
+  id: number;
+  kind: string;
+  title: string;
+  mimeType: string | null;
+  fileSize: number | null;
+  fileUrl: string | null;
+  status: string;
+  chunkCount: number;
+  errorMessage: string | null;
+  spaceId: number | null;
+  createdAt: Date;
+}
+
+const SOURCE_LIST_COLUMNS = {
+  id: kbSources.id,
+  kind: kbSources.kind,
+  title: kbSources.title,
+  mimeType: kbSources.mimeType,
+  fileSize: kbSources.fileSize,
+  fileUrl: kbSources.fileUrl,
+  status: kbSources.status,
+  chunkCount: kbSources.chunkCount,
+  errorMessage: kbSources.errorMessage,
+  spaceId: kbSources.spaceId,
+  createdAt: kbSources.createdAt,
+};
+
+type OutboxDeliveryState = (typeof outboxEvents.$inferSelect)["deliveryState"];
+
+const INGESTION_STATE_BY_DELIVERY: Record<OutboxDeliveryState, KbIngestionState> = {
+  PENDING: "pending",
+  IN_FLIGHT: "in_flight",
+  DELIVERED: "indexed",
+  DEAD: "failed",
+  SUPPRESSED: "suppressed",
+};
+
+function ingestionStateOf(delivery: OutboxDeliveryState): KbIngestionState {
+  return INGESTION_STATE_BY_DELIVERY[delivery];
+}
 
 @Injectable()
 export class KbSourcesService {
@@ -34,50 +94,143 @@ export class KbSourcesService {
     private readonly storage: StorageService,
     private readonly attachmentIndexing: KbAttachmentIndexingService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    private readonly access: KbAccessService,
   ) {}
 
-  async list(orgId: string) {
-    return this.db
-      .select({
-        id: kbSources.id,
-        kind: kbSources.kind,
-        title: kbSources.title,
-        mimeType: kbSources.mimeType,
-        fileSize: kbSources.fileSize,
-        fileUrl: kbSources.fileUrl,
-        status: kbSources.status,
-        chunkCount: kbSources.chunkCount,
-        errorMessage: kbSources.errorMessage,
-        spaceId: kbSources.spaceId,
-        createdAt: kbSources.createdAt,
-      })
+  async list(
+    orgId: string,
+    query: KbSourcesListQuery,
+  ): Promise<CursorPage<KbSourceListItem>> {
+    const position = decodeCursor(query.cursor);
+    const after = position
+      ? or(
+          lt(kbSources.createdAt, new Date(position.sortValue)),
+          and(
+            eq(kbSources.createdAt, new Date(position.sortValue)),
+            lt(kbSources.id, Number(position.id)),
+          ),
+        )
+      : undefined;
+
+    const rows = await this.db
+      .select(SOURCE_LIST_COLUMNS)
       .from(kbSources)
-      .where(and(eq(kbSources.orgId, orgId), isNull(kbSources.deletedAt)))
-      .orderBy(desc(kbSources.createdAt))
-      .limit(MAX_SOURCES);
+      .where(
+        and(eq(kbSources.orgId, orgId), isNull(kbSources.deletedAt), after),
+      )
+      .orderBy(desc(kbSources.createdAt), desc(kbSources.id))
+      .limit(query.limit + 1);
+
+    return buildCursorPage(rows, query.limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
+  }
+
+  async get(orgId: string, sourceId: number): Promise<KbSourceListItem> {
+    const [row] = await this.db
+      .select(SOURCE_LIST_COLUMNS)
+      .from(kbSources)
+      .where(
+        and(
+          eq(kbSources.id, sourceId),
+          eq(kbSources.orgId, orgId),
+          isNull(kbSources.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!row) throw new NotFoundException("Source not found");
+    return row;
+  }
+
+  async pageIngestionStatus(
+    user: CurrentUserContext,
+    pageId: number,
+  ): Promise<KbPageIngestionStatus> {
+    await assertPageAccessible(this.db, user, pageId);
+    return { pageId, ...(await this.ingestionStatusFor(user.orgId, "kb_page", pageId)) };
+  }
+
+  async articleIngestionStatus(
+    user: CurrentUserContext,
+    articleId: number,
+  ): Promise<KbArticleIngestionStatus> {
+    await this.access.assertArticleViewable(user, articleId);
+    return { articleId, ...(await this.ingestionStatusFor(user.orgId, "kb_article", articleId)) };
+  }
+
+  private async ingestionStatusFor(
+    orgId: string,
+    aggregateType: string,
+    aggregateId: number,
+  ): Promise<Omit<KbPageIngestionStatus, "pageId">> {
+    const [event] = await this.db
+      .select({
+        deliveryState: outboxEvents.deliveryState,
+        retryCount: outboxEvents.retryCount,
+        occurredAt: outboxEvents.occurredAt,
+        publishedAt: outboxEvents.publishedAt,
+        deadLetteredAt: outboxEvents.deadLetteredAt,
+      })
+      .from(outboxEvents)
+      .where(
+        and(
+          eq(outboxEvents.organizationId, orgId),
+          eq(outboxEvents.aggregateType, aggregateType),
+          eq(outboxEvents.aggregateId, String(aggregateId)),
+          eq(outboxEvents.eventType, "kb.content.index"),
+        ),
+      )
+      .orderBy(desc(outboxEvents.aggregateVersion))
+      .limit(1);
+
+    if (!event)
+      return {
+        state: "unknown",
+        retryCount: 0,
+        occurredAt: null,
+        publishedAt: null,
+        deadLetteredAt: null,
+      };
+
+    return {
+      state: ingestionStateOf(event.deliveryState),
+      retryCount: event.retryCount,
+      occurredAt: event.occurredAt,
+      publishedAt: event.publishedAt,
+      deadLetteredAt: event.deadLetteredAt,
+    };
   }
 
   async createNote(
     user: CurrentUserContext,
     input: CreateKbSourceNoteInput,
   ): Promise<typeof kbSources.$inferSelect> {
-    const rows = await this.db
-      .insert(kbSources)
-      .values({
-        orgId: user.orgId,
-        spaceId: input.spaceId ?? null,
-        kind: "note",
-        title: input.title,
-        noteText: input.text,
-        status: "processing",
-        createdById: user.userId,
-      })
-      .returning();
-    const row = rows[0];
-    if (!row) {
-      throw new InternalServerErrorException("Insert failed");
-    }
-    void this.processText(user.orgId, row.id, input.text);
+    // `this.db.transaction` rather than `runInTenantTransaction`: every caller is a request, so
+    // the ambient tenant transaction is already open and this becomes a savepoint inside it —
+    // which is what makes the row and its event atomic. It is also the idiom the rest of the
+    // KB write path uses.
+    const row = await this.db.transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(kbSources)
+        .values({
+          orgId: user.orgId,
+          spaceId: input.spaceId ?? null,
+          kind: "note",
+          title: input.title,
+          noteText: input.text,
+          status: "processing",
+          createdById: user.userId,
+        })
+        .returning();
+      if (!inserted) throw new InternalServerErrorException("Insert failed");
+      await this.emitIndexEvent(tx, user.orgId, inserted.id);
+      return inserted;
+    });
+    const textDeferred = registerAfterCommit(async () => {
+      await this.processText(user.orgId, row.id, input.text);
+    });
+    if (!textDeferred) await this.processText(user.orgId, row.id, input.text);
     return row;
   }
 
@@ -107,45 +260,50 @@ export class KbSourcesService {
       throw new BadRequestException("File exceeds the 25 MB limit");
     }
 
-    if (!mimetype.startsWith("text/") && !validateMagicBytes(buffer, mimetype)) {
+    if (
+      !mimetype.startsWith("text/") &&
+      !validateMagicBytes(buffer, mimetype)
+    ) {
       throw new BadRequestException(
         "File content does not match declared type",
       );
     }
 
     const kbBucket = this.config.R2_KB_BUCKET_NAME;
-    const kbPublicUrl = this.config.R2_KB_PUBLIC_URL;
-    const useKbBucket = Boolean(kbBucket && kbPublicUrl);
     const result = await this.storage.uploadFile(
       user.orgId,
       buffer,
       `kb-sources/${user.orgId}`,
       originalname,
       mimetype,
-      useKbBucket ? kbBucket : undefined,
-      useKbBucket ? kbPublicUrl : undefined,
+      kbBucket,
     );
 
-    const rows = await this.db
-      .insert(kbSources)
-      .values({
-        orgId: user.orgId,
-        spaceId: spaceId ?? null,
-        kind: "file",
-        title: originalname,
-        fileKey: result.key,
-        fileUrl: result.url,
-        mimeType: mimetype,
-        fileSize: file.size,
-        status: "processing",
-        createdById: user.userId,
-      })
-      .returning();
-    const row = rows[0];
-    if (!row) {
-      throw new InternalServerErrorException("Insert failed");
-    }
-    void this.processFile(user.orgId, row.id, buffer, mimetype);
+    const row = await this.db.transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(kbSources)
+        .values({
+          orgId: user.orgId,
+          spaceId: spaceId ?? null,
+          kind: "file",
+          title: originalname,
+          fileKey: result.key,
+          fileUrl: result.key,
+          mimeType: mimetype,
+          fileSize: file.size,
+          status: "processing",
+          createdById: user.userId,
+        })
+        .returning();
+      if (!inserted) throw new InternalServerErrorException("Insert failed");
+      await this.emitIndexEvent(tx, user.orgId, inserted.id);
+      return inserted;
+    });
+    const fileDeferred = registerAfterCommit(async () => {
+      await this.processFile(user.orgId, row.id, buffer, mimetype);
+    });
+    if (!fileDeferred)
+      await this.processFile(user.orgId, row.id, buffer, mimetype);
     return row;
   }
 
@@ -168,7 +326,11 @@ export class KbSourcesService {
     const row = rows[0];
     if (row.kind === "file" && row.fileKey) {
       try {
-        await this.storage.deleteFile(orgId, row.fileKey);
+        await this.storage.deleteFile(
+          orgId,
+          row.fileKey,
+          this.config.R2_KB_BUCKET_NAME,
+        );
       } catch (err: unknown) {
         this.logger.warn(
           `KB source ${id} soft-deleted but binary "${row.fileKey}" could not be deleted from storage: ${String(err)}`,
@@ -178,13 +340,53 @@ export class KbSourcesService {
     return { success: true };
   }
 
+  /** The durable half of ingestion, committed with the row so a crash cannot lose it. */
+  private async emitIndexEvent(
+    tx: TenantTx,
+    orgId: string,
+    sourceId: number,
+  ): Promise<void> {
+    await OutboxWriter.emit(tx, {
+      eventId: randomUUID(),
+      organizationId: orgId,
+      aggregateType: "kb_source",
+      aggregateId: String(sourceId),
+      aggregateVersion: Date.now(),
+      eventType: "kb.content.index",
+      payload: { contentType: "source", contentId: sourceId },
+      occurredAt: new Date(),
+    });
+  }
+
+  /** Recording a failure must not itself fail silently (backend CLAUDE.md §4). */
+  private async markFailed(
+    orgId: string,
+    sourceId: number,
+    message: string,
+  ): Promise<void> {
+    try {
+      await this.db
+        .update(kbSources)
+        .set({ status: "failed", errorMessage: message })
+        .where(and(eq(kbSources.id, sourceId), eq(kbSources.orgId, orgId)));
+    } catch (err) {
+      this.logger.error(
+        `KB source ${sourceId} failed to index AND could not be marked failed: ${String(err)}`,
+      );
+    }
+  }
+
   private async processText(
     orgId: string,
     sourceId: number,
     text: string,
   ): Promise<void> {
     try {
-      const count = await this.attachmentIndexing.indexSource(orgId, sourceId, text);
+      const count = await this.attachmentIndexing.indexSource(
+        orgId,
+        sourceId,
+        text,
+      );
       await this.db
         .update(kbSources)
         .set({
@@ -192,20 +394,10 @@ export class KbSourcesService {
           chunkCount: count,
           errorMessage: count > 0 ? null : "No indexable text",
         })
-        .where(
-          and(eq(kbSources.id, sourceId), eq(kbSources.orgId, orgId)),
-        );
+        .where(and(eq(kbSources.id, sourceId), eq(kbSources.orgId, orgId)));
     } catch (err) {
-      this.logger.error(
-        `Failed to index source ${sourceId}: ${String(err)}`,
-      );
-      await this.db
-        .update(kbSources)
-        .set({ status: "failed", errorMessage: "Indexing failed" })
-        .where(
-          and(eq(kbSources.id, sourceId), eq(kbSources.orgId, orgId)),
-        )
-        .catch(() => undefined);
+      this.logger.error(`Failed to index source ${sourceId}: ${String(err)}`);
+      await this.markFailed(orgId, sourceId, "Indexing failed");
     }
   }
 
@@ -216,13 +408,7 @@ export class KbSourcesService {
     mimeType: string,
   ): Promise<void> {
     if (!isExtractableMime(mimeType)) {
-      await this.db
-        .update(kbSources)
-        .set({ status: "failed", errorMessage: "Unsupported file type" })
-        .where(
-          and(eq(kbSources.id, sourceId), eq(kbSources.orgId, orgId)),
-        )
-        .catch(() => undefined);
+      await this.markFailed(orgId, sourceId, "Unsupported file type");
       return;
     }
     try {
@@ -232,13 +418,7 @@ export class KbSourcesService {
       this.logger.error(
         `Failed to extract text from source ${sourceId}: ${String(err)}`,
       );
-      await this.db
-        .update(kbSources)
-        .set({ status: "failed", errorMessage: "Could not read file" })
-        .where(
-          and(eq(kbSources.id, sourceId), eq(kbSources.orgId, orgId)),
-        )
-        .catch(() => undefined);
+      await this.markFailed(orgId, sourceId, "Could not read file");
     }
   }
 }

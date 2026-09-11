@@ -1,10 +1,10 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, desc, eq, ilike, isNull, like } from "drizzle-orm";
-import { feedbucketAttachments, feedbucketSubmissions } from "../../db/schema";
+import { feedbucketAttachments, feedbucketSubmissions, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import type { DataScope } from "../access/access.types";
-import { applyFeedbucketScope } from "./feedbucket-scope";
+import type { ScopedRead } from "../access/scoped-read";
+import { feedbucketScope } from "./feedbucket-scope";
 import type { ListSubmissionsQuery, UpdateSubmissionInput } from "./feedbucket.schemas";
 import type { ProjectsTicketsService } from "../build/core/projects-tickets.service";
 
@@ -12,47 +12,51 @@ import type { ProjectsTicketsService } from "../build/core/projects-tickets.serv
 export class FeedbucketSubmissionsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async list(orgId: string, userId: string, query: ListSubmissionsQuery, scope: DataScope, membershipId: number | null) {
+  async list(read: ScopedRead, query: ListSubmissionsQuery, membershipId: number | null) {
+    const orgId = read.orgId;
     const { page, limit, widgetId, type, status, assigneeId, search } = query;
     const offset = (page - 1) * limit;
 
-    const conditions = [
-      eq(feedbucketSubmissions.orgId, orgId),
+    const domain = [
+      widgetId !== undefined ? eq(feedbucketSubmissions.widgetId, widgetId) : undefined,
+      type !== undefined ? eq(feedbucketSubmissions.type, type) : undefined,
+      status !== undefined ? eq(feedbucketSubmissions.status, status) : undefined,
       isNull(feedbucketSubmissions.deletedAt),
     ];
-
-    const scopeFilter = applyFeedbucketScope(scope, orgId, userId, membershipId);
-    conditions.push(scopeFilter);
-
-    if (widgetId !== undefined) conditions.push(eq(feedbucketSubmissions.widgetId, widgetId));
-    if (type !== undefined) conditions.push(eq(feedbucketSubmissions.type, type));
-    if (status !== undefined) conditions.push(eq(feedbucketSubmissions.status, status));
-    if (assigneeId !== undefined) conditions.push(eq(feedbucketSubmissions.assigneeId, assigneeId));
+    if (assigneeId !== undefined) {
+      const membership = await this.db.query.organizationMembers.findFirst({ where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, assigneeId)), columns: { id: true } });
+      domain.push(eq(feedbucketSubmissions.assigneeMembershipId, membership?.id ?? -1));
+    }
     if (search?.trim()) {
-      conditions.push(ilike(feedbucketSubmissions.message, `%${search}%`));
+      domain.push(ilike(feedbucketSubmissions.message, `%${search}%`));
     }
 
-    const where = and(...conditions);
+    return read.read(
+      {
+        tenant: feedbucketSubmissions.orgId,
+        scope: feedbucketScope(read.actorId, membershipId),
+        and: domain,
+      },
+      async ({ sql: where }) => {
+        const [rows, countResult] = await Promise.all([
+          this.db.query.feedbucketSubmissions.findMany({
+            where,
+            columns: { consoleLogs: false, networkLogs: false },
+            with: {
+              widget: true,
+            },
+            orderBy: [desc(feedbucketSubmissions.createdAt)],
+            limit,
+            offset,
+          }),
+          this.db.select({ total: count() }).from(feedbucketSubmissions).where(where),
+        ]);
 
-    const [rows, countResult] = await Promise.all([
-      this.db.query.feedbucketSubmissions.findMany({
-        where,
-        columns: { consoleLogs: false, networkLogs: false },
-        with: {
-          widget: true,
-          assignee: {
-            columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true },
-          },
-        },
-        orderBy: [desc(feedbucketSubmissions.createdAt)],
-        limit,
-        offset,
-      }),
-      this.db.select({ total: count() }).from(feedbucketSubmissions).where(where),
-    ]);
-
-    const total = Number(countResult[0]?.total ?? 0);
-    return { data: rows, total, page, limit, totalPages: Math.ceil(total / limit) };
+        const total = Number(countResult[0]?.total ?? 0);
+        return { data: rows, total, page, limit, totalPages: Math.ceil(total / limit) };
+      },
+      () => ({ data: [], total: 0, page, limit, totalPages: 0 }),
+    );
   }
 
   async findOne(orgId: string, submissionId: number) {
@@ -65,9 +69,6 @@ export class FeedbucketSubmissionsService {
         ),
         with: {
           widget: true,
-          assignee: {
-            columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true },
-          },
           linkedTicket: true,
         },
       }),
@@ -93,7 +94,10 @@ export class FeedbucketSubmissionsService {
     const patch: Partial<typeof feedbucketSubmissions.$inferInsert> = { updatedAt: new Date() };
     if (dto.status !== undefined) patch.status = dto.status;
     if (dto.priority !== undefined) patch.priority = dto.priority;
-    if (dto.assigneeId !== undefined) patch.assigneeId = dto.assigneeId;
+    if (dto.assigneeId !== undefined) {
+      const membership = dto.assigneeId === null ? null : await this.db.query.organizationMembers.findFirst({ where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, dto.assigneeId)), columns: { id: true } });
+      patch.assigneeMembershipId = membership?.id ?? null;
+    }
 
     const [updated] = await this.db
       .update(feedbucketSubmissions)
@@ -111,32 +115,36 @@ export class FeedbucketSubmissionsService {
       .where(and(eq(feedbucketSubmissions.id, submissionId), eq(feedbucketSubmissions.orgId, orgId)));
   }
 
-  async stats(orgId: string, userId: string, scope: DataScope, membershipId: number | null) {
-    const conditions = [
-      eq(feedbucketSubmissions.orgId, orgId),
-      isNull(feedbucketSubmissions.deletedAt),
-      applyFeedbucketScope(scope, orgId, userId, membershipId),
-    ];
+  async stats(read: ScopedRead, membershipId: number | null) {
+    return read.read(
+      {
+        tenant: feedbucketSubmissions.orgId,
+        scope: feedbucketScope(read.actorId, membershipId),
+        and: [isNull(feedbucketSubmissions.deletedAt)],
+      },
+      async ({ sql: where }) => {
+        const rows = await this.db
+          .select({
+            status: feedbucketSubmissions.status,
+            type: feedbucketSubmissions.type,
+            cnt: count(),
+          })
+          .from(feedbucketSubmissions)
+          .where(where)
+          .groupBy(feedbucketSubmissions.status, feedbucketSubmissions.type);
 
-    const rows = await this.db
-      .select({
-        status: feedbucketSubmissions.status,
-        type: feedbucketSubmissions.type,
-        cnt: count(),
-      })
-      .from(feedbucketSubmissions)
-      .where(and(...conditions))
-      .groupBy(feedbucketSubmissions.status, feedbucketSubmissions.type);
+        const byStatus: Record<string, number> = {};
+        const byType: Record<string, number> = {};
 
-    const byStatus: Record<string, number> = {};
-    const byType: Record<string, number> = {};
+        for (const row of rows) {
+          byStatus[row.status] = (byStatus[row.status] ?? 0) + Number(row.cnt);
+          byType[row.type] = (byType[row.type] ?? 0) + Number(row.cnt);
+        }
 
-    for (const row of rows) {
-      byStatus[row.status] = (byStatus[row.status] ?? 0) + Number(row.cnt);
-      byType[row.type] = (byType[row.type] ?? 0) + Number(row.cnt);
-    }
-
-    return { byStatus, byType };
+        return { byStatus, byType };
+      },
+      () => ({ byStatus: {}, byType: {} }),
+    );
   }
 
   async convertToTicket(

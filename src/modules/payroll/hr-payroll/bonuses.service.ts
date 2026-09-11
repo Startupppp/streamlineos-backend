@@ -4,6 +4,12 @@ import { bonuses, users, organizationMembers } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CreateBonusInput, PatchBonusInput } from "./dto/payroll.schemas";
+import { buildCursorPage } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
+import {
+  decodePayrollTimestampCursor,
+  payrollCursorPosition,
+} from "../payroll-cursor";
 
 export type UpdateBonusResult =
   | { ok: false; reason: "not_found" | "already_paid" | "rejected_to_paid" }
@@ -13,13 +19,29 @@ export type UpdateBonusResult =
 export class BonusesService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listBonuses(orgId: string, userId: string, membershipId: number | null, isAdmin: boolean, page = 1, limit = 100) {
-    const where = isAdmin
+  async listBonuses(
+    orgId: string,
+    membershipId: number | null,
+    isAdmin: boolean,
+    cursor?: string,
+    limit = 100,
+  ) {
+    if (!isAdmin && membershipId === null) throw new ForbiddenException("Organization membership required");
+    const cap = Math.min(limit, 100);
+    const cursorScope = ["bonuses", orgId, isAdmin, membershipId] as const;
+    const position = decodePayrollTimestampCursor(cursor, cursorScope);
+    const conditions = [isAdmin
       ? eq(bonuses.orgId, orgId)
-      : membershipId != null
-        ? and(eq(bonuses.orgId, orgId), eq(bonuses.userMembershipId, membershipId))
-        : and(eq(bonuses.orgId, orgId), eq(bonuses.userId, userId));
-    return this.db
+      : and(eq(bonuses.orgId, orgId), eq(bonuses.userMembershipId, membershipId ?? 0))];
+    if (position) {
+      conditions.push(
+        keysetBeforeId(bonuses.createdAt, bonuses.id, {
+          sortValue: position.createdAt,
+          id: String(position.id),
+        }),
+      );
+    }
+    const rows = await this.db
       .select({
         id: bonuses.id,
         orgId: bonuses.orgId,
@@ -38,10 +60,13 @@ export class BonusesService {
       })
       .from(bonuses)
       .leftJoin(users, eq(bonuses.userId, users.id))
-      .where(where)
-      .orderBy(desc(bonuses.createdAt))
-      .limit(limit)
-      .offset((page - 1) * limit);
+      .where(and(...conditions))
+      .orderBy(desc(bonuses.createdAt), desc(bonuses.id))
+      .limit(cap + 1);
+
+    return buildCursorPage(rows, cap, (row) =>
+      payrollCursorPosition(cursorScope, [row.createdAt.toISOString()], row.id),
+    );
   }
 
   async createBonus(orgId: string, body: CreateBonusInput) {
@@ -72,7 +97,8 @@ export class BonusesService {
     const [existing] = await this.db
       .select()
       .from(bonuses)
-      .where(and(eq(bonuses.id, bonusId), eq(bonuses.orgId, orgId)));
+      .where(and(eq(bonuses.id, bonusId), eq(bonuses.orgId, orgId)))
+      .limit(1);
 
     if (!existing) return { ok: false, reason: "not_found" };
     if (existing.status === "PAID") return { ok: false, reason: "already_paid" };

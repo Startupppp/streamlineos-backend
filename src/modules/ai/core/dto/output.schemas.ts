@@ -251,3 +251,11 @@ export const DataQualityCopilotSchema = z.object({
   totalIssues: z.number(),
 });
 export type DataQualityCopilotResult = z.infer<typeof DataQualityCopilotSchema>;
+
+export const DealInsightsSchema = z.object({
+  summary: z.string(),
+  risks: z.array(z.string()),
+  recommendedPlays: z.array(z.string()),
+  stakeholdersGap: z.string(),
+});
+export type DealInsights = z.infer<typeof DealInsightsSchema>;

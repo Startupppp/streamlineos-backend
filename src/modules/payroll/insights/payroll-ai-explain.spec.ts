@@ -4,6 +4,10 @@ import { PayrollAiExplainService } from "./payroll-ai-explain.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: jest.fn(async (_db: unknown, work: () => Promise<unknown>) => work()),
+}));
+
 const PUBLISHED_PUB = {
   pubId: 1,
   pubOrgId: "org-A",
@@ -42,13 +46,30 @@ function makeDb(pubRow: typeof PUBLISHED_PUB | null = PUBLISHED_PUB) {
   return {
     select: jest.fn().mockReturnValueOnce(selectChain).mockReturnValueOnce({
       from: jest.fn().mockReturnThis(),
-      where: jest.fn().mockResolvedValue(LINE_ITEMS),
+      where: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue(LINE_ITEMS),
     }),
   };
 }
 
 function makeGateway(ok: boolean = true) {
   return {
+    streamTextWithUsage: jest.fn().mockImplementation(async () => ({
+      model: "gpt-4o-mini",
+      correlationId: "payroll-test",
+      stream: {
+        textStream: new ReadableStream<string>({
+          start(controller) {
+            controller.enqueue("Your net pay is ");
+            controller.enqueue("55,000.");
+            controller.close();
+          },
+        }),
+        text: Promise.resolve("Your net pay is 55,000."),
+        finishReason: Promise.resolve("stop"),
+        totalUsage: Promise.resolve({ inputTokens: 20, outputTokens: 10, totalTokens: 30 }),
+      },
+    })),
     invokeTextWithUsage: jest.fn().mockResolvedValue(
       ok
         ? {
@@ -80,6 +101,58 @@ async function buildService(db: ReturnType<typeof makeDb>, gateway: ReturnType<t
 }
 
 describe("PayrollAiExplainService", () => {
+  it("streams the narration and retains grounded evidence and usage in a terminal result", async () => {
+    const gateway = makeGateway();
+    const svc = await buildService(makeDb(), gateway);
+    const signal = new AbortController().signal;
+    const result = await svc.streamExplainPayslip("org-A", "user-A", 1, signal);
+    const reader = result.stream.textStream.getReader();
+    const first = await reader.read();
+    expect(first.value).toContain('"type":"text"');
+    let body = first.value ?? "";
+    while (true) {
+      const part = await reader.read();
+      if (part.done) break;
+      body += part.value;
+    }
+    expect(body).toContain('"type":"result"');
+    expect(body).toContain('"netPay":"55000.00"');
+    expect(body).toContain('"citations":');
+    expect(body).toContain('"aiUsage":');
+    expect(gateway.streamTextWithUsage).toHaveBeenCalledWith(expect.objectContaining({
+      actor: { orgId: "org-A", userId: "user-A" }, signal, charge: true,
+    }));
+  });
+
+  it("rejects a non-owner before a streaming provider call", async () => {
+    const gateway = makeGateway();
+    const svc = await buildService(makeDb(), gateway);
+    await expect(svc.streamExplainPayslip("org-A", "user-EVIL", 1, new AbortController().signal))
+      .rejects.toThrow(ForbiddenException);
+    expect(gateway.streamTextWithUsage).not.toHaveBeenCalled();
+  });
+
+  it("rejects a cross-tenant missing publication before a streaming provider call", async () => {
+    const gateway = makeGateway();
+    const svc = await buildService(makeDb(null), gateway);
+    await expect(svc.streamExplainPayslip("org-B", "user-B", 1, new AbortController().signal))
+      .rejects.toThrow(NotFoundException);
+    expect(gateway.streamTextWithUsage).not.toHaveBeenCalled();
+  });
+
+  it("does not load or charge for a request cancelled before dispatch", async () => {
+    const db = makeDb();
+    const gateway = makeGateway();
+    const svc = await buildService(db, gateway);
+    const abort = new AbortController();
+    abort.abort();
+    const promise = svc.streamExplainPayslip("org-A", "user-A", 1, abort.signal);
+    await expect(promise).rejects.toThrow(DOMException);
+    await expect(promise).rejects.toMatchObject({ name: "AbortError" });
+    expect(db.select).not.toHaveBeenCalled();
+    expect(gateway.streamTextWithUsage).not.toHaveBeenCalled();
+  });
+
   it("returns an explanation when the caller owns the payslip", async () => {
     const db = makeDb();
     const gateway = makeGateway();

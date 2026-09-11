@@ -9,71 +9,35 @@ import {
 } from "@nestjs/common";
 import { and, asc, eq, isNotNull, lt, lte } from "drizzle-orm";
 import { createHash } from "node:crypto";
-import {
-  hrExportJobs,
-  organizationMembers,
-  type HrExportDataScope,
-  type HrExportJobStatus,
-} from "../../../db/schema";
+import { hrExportJobs, type HrExportDataScope } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { AuthContextFactory } from "../../../common/auth/auth-context.factory";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { AuditService } from "../../../common/audit/audit.service";
-import { withTenant } from "../../../common/tenant";
 import type { FileStreamResult } from "../../storage/storage.service";
 import { StorageService } from "../../storage/storage.service";
-import { AccessService, SCOPE_RANK } from "../../access/access.service";
-import type { DataScope } from "../../access/access.types";
+import { AccessService } from "../../access/access.service";
+import { MembershipStateService } from "../../../common/auth/membership-state.service";
+import type { ScopedRead } from "../../access/scoped-read";
+import { exportExecutionRead } from "./hr-export-scope";
 import { authorize } from "../../access/authorize";
 import type { CreateEmployeeExportJobInput } from "./dto/export-job.dto";
-import { hrExportUnavailable, isMissingHrExportTable } from "./hr-export-errors";
+import {
+  hrExportUnavailable,
+  isMissingHrExportTable,
+} from "./hr-export-errors";
 import type { GeneratedEmployeeExport } from "./hr-export-file.service";
+import {
+  HrExportProcessingError,
+  isExportScopeStillAllowed,
+  isHrExportWorkerEnabled,
+  narrowestExportScope,
+  type HrExportJobRow,
+  type HrExportJobView,
+} from "./hr-export-jobs.types";
 
-export type HrExportJobRow = typeof hrExportJobs.$inferSelect;
-
-export interface HrExportJobView {
-  id: string;
-  entity: "employees";
-  status: HrExportJobStatus;
-  processedRows: number;
-  rowCount: number | null;
-  fileName: string | null;
-  errorCode: string | null;
-  errorMessage: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  completedAt: Date | null;
-  expiresAt: Date | null;
-}
-
-export class HrExportProcessingError extends Error {
-  constructor(
-    readonly code: string,
-    message: string,
-  ) {
-    super(message);
-    this.name = "HrExportProcessingError";
-  }
-}
-
-export function narrowestExportScope(
-  requested: HrExportDataScope,
-  current: DataScope,
-): DataScope {
-  return SCOPE_RANK[requested] <= SCOPE_RANK[current] ? requested : current;
-}
-
-export function isExportScopeStillAllowed(
-  exportedScope: HrExportDataScope,
-  currentScope: DataScope,
-): boolean {
-  return SCOPE_RANK[exportedScope] <= SCOPE_RANK[currentScope];
-}
-
-export function isHrExportWorkerEnabled(): boolean {
-  return process.env.HR_EXPORT_WORKER_ENABLED === "true";
-}
 
 @Injectable()
 export class HrExportJobsService {
@@ -82,16 +46,20 @@ export class HrExportJobsService {
     private readonly storage: StorageService,
     private readonly audit: AuditService,
     private readonly access: AccessService,
+    private readonly membershipState: MembershipStateService,
+    private readonly authContexts: AuthContextFactory,
   ) {}
 
   async create(
     user: CurrentUserContext,
     input: CreateEmployeeExportJobInput,
-    requestedScope: DataScope,
+    requestedScope: HrExportDataScope,
     idempotencyKey: string,
   ): Promise<HrExportJobView> {
     if (requestedScope === "none") {
-      throw new ForbiddenException("Employee view permission is required to export employees");
+      throw new ForbiddenException(
+        "Employee view permission is required to export employees",
+      );
     }
     if (!isHrExportWorkerEnabled() || !this.storage.isConfigured()) {
       throw hrExportUnavailable();
@@ -119,8 +87,11 @@ export class HrExportJobsService {
         })
         .returning();
 
-      const job = inserted[0] ?? (await this.findByIdempotency(user.orgId, idempotencyKey));
-      if (!job) throw new BadRequestException("Failed to create employee export job");
+      const job =
+        inserted[0] ??
+        (await this.findByIdempotency(user.orgId, idempotencyKey));
+      if (!job)
+        throw new BadRequestException("Failed to create employee export job");
       if (job.requestedBy !== user.userId || job.requestHash !== requestHash) {
         throw new UnprocessableEntityException(
           "This Idempotency-Key was already used with a different export request",
@@ -151,7 +122,11 @@ export class HrExportJobsService {
     requesterUserId: string,
     exportJobId: string,
   ): Promise<HrExportJobView> {
-    const row = await this.findForRequester(orgId, requesterUserId, exportJobId);
+    const row = await this.findForRequester(
+      orgId,
+      requesterUserId,
+      exportJobId,
+    );
     await this.assertRequesterStillAuthorized(row);
     return this.toView(row);
   }
@@ -161,13 +136,24 @@ export class HrExportJobsService {
     requesterUserId: string,
     exportJobId: string,
   ): Promise<{ job: HrExportJobView; file: FileStreamResult }> {
-    const row = await this.findForRequester(orgId, requesterUserId, exportJobId);
+    const row = await this.findForRequester(
+      orgId,
+      requesterUserId,
+      exportJobId,
+    );
     await this.assertRequesterStillAuthorized(row);
-    if (row.status === "expired" || (row.expiresAt && row.expiresAt <= new Date())) {
-      throw new GoneException("This employee export has expired. Create a new export.");
+    if (
+      row.status === "expired" ||
+      (row.expiresAt && row.expiresAt <= new Date())
+    ) {
+      throw new GoneException(
+        "This employee export has expired. Create a new export.",
+      );
     }
     if (row.status !== "completed" || !row.fileKey) {
-      throw new BadRequestException("Employee export is not ready for download");
+      throw new BadRequestException(
+        "Employee export is not ready for download",
+      );
     }
     return {
       job: this.toView(row),
@@ -190,30 +176,13 @@ export class HrExportJobsService {
     });
   }
 
-  async resolveExecutionScope(job: HrExportJobRow): Promise<DataScope> {
-    const member = await withTenant(
-      this.db,
-      { orgId: job.orgId, audience: "INTERNAL" },
-      async (tx) => {
-        const rows = await tx
-          .select({
-            membershipId: organizationMembers.id,
-            role: organizationMembers.role,
-            isOwner: organizationMembers.isOwner,
-            status: organizationMembers.status,
-          })
-          .from(organizationMembers)
-          .where(
-            and(
-              eq(organizationMembers.orgId, job.orgId),
-              eq(organizationMembers.userId, job.requestedBy),
-            ),
-          )
-          .limit(1);
-        return rows[0];
-      },
+  async resolveExecutionScope(job: HrExportJobRow): Promise<ScopedRead> {
+    // No guard ran for this job, so liveness comes from the same resolver JwtAuthGuard uses.
+    const member = await this.membershipState.resolve(
+      job.requestedBy,
+      job.orgId,
     );
-    if (!member || member.status !== "ACTIVE") {
+    if (!member.active || member.membershipId === null) {
       throw new HrExportProcessingError(
         "EXPORT_ACCESS_REVOKED",
         "Your access changed before the export ran. Create a new export after access is restored.",
@@ -229,9 +198,10 @@ export class HrExportJobsService {
       tokenScopes: null,
       principal: humanSessionPrincipal(member.membershipId, member.isOwner),
     };
+    const authCtx = this.authContexts.create(context);
     const [exportAccess, employeeAccess] = await Promise.all([
-      authorize(this.access, context, "hr:export:manage"),
-      authorize(this.access, context, "hr:employees:view"),
+      authorize(this.access, authCtx, "hr:export:manage"),
+      authorize(this.access, authCtx, "hr:employees:view"),
     ]);
     if (!exportAccess.allow || !employeeAccess.allow) {
       throw new HrExportProcessingError(
@@ -240,21 +210,26 @@ export class HrExportJobsService {
       );
     }
 
-    const scope = narrowestExportScope(job.requestedScope, employeeAccess.scope);
+    const scope = narrowestExportScope(
+      job.requestedScope,
+      employeeAccess.scope,
+    );
     if (scope === "none") {
       throw new HrExportProcessingError(
         "EXPORT_SCOPE_EMPTY",
         "No employee records are available in your current access scope.",
       );
     }
-    return scope;
+    return exportExecutionRead(job.orgId, job.requestedBy, scope);
   }
 
   async claimForOrg(orgId: string): Promise<HrExportJobRow | null> {
     const pending = await this.db
       .select()
       .from(hrExportJobs)
-      .where(and(eq(hrExportJobs.orgId, orgId), eq(hrExportJobs.status, "pending")))
+      .where(
+        and(eq(hrExportJobs.orgId, orgId), eq(hrExportJobs.status, "pending")),
+      )
       .orderBy(asc(hrExportJobs.createdAt))
       .limit(1);
     const candidate = pending[0];
@@ -270,29 +245,43 @@ export class HrExportJobsService {
         errorMessage: null,
         updatedAt: new Date(),
       })
-      .where(and(eq(hrExportJobs.id, candidate.id), eq(hrExportJobs.status, "pending")))
+      .where(
+        and(
+          eq(hrExportJobs.id, candidate.id),
+          eq(hrExportJobs.status, "pending"),
+        ),
+      )
       .returning();
     return claimed[0] ?? null;
   }
 
-  async updateProgress(exportJobId: string, processedRows: number): Promise<void> {
+  async updateProgress(
+    exportJobId: string,
+    processedRows: number,
+  ): Promise<void> {
     await this.db
       .update(hrExportJobs)
       .set({ processedRows, lockedAt: new Date(), updatedAt: new Date() })
       .where(
-        and(eq(hrExportJobs.id, exportJobId), eq(hrExportJobs.status, "running")),
+        and(
+          eq(hrExportJobs.id, exportJobId),
+          eq(hrExportJobs.status, "running"),
+        ),
       );
   }
 
   async restrictExecutionScope(
     exportJobId: string,
-    executionScope: DataScope,
+    executionScope: HrExportDataScope,
   ): Promise<void> {
     await this.db
       .update(hrExportJobs)
       .set({ requestedScope: executionScope, updatedAt: new Date() })
       .where(
-        and(eq(hrExportJobs.id, exportJobId), eq(hrExportJobs.status, "running")),
+        and(
+          eq(hrExportJobs.id, exportJobId),
+          eq(hrExportJobs.status, "running"),
+        ),
       );
   }
 
@@ -317,14 +306,22 @@ export class HrExportJobsService {
         updatedAt: completedAt,
       })
       .where(
-        and(eq(hrExportJobs.id, exportJobId), eq(hrExportJobs.status, "running")),
+        and(
+          eq(hrExportJobs.id, exportJobId),
+          eq(hrExportJobs.status, "running"),
+        ),
       )
       .returning({ id: hrExportJobs.id });
     return updated.length === 1;
   }
 
-  async fail(job: HrExportJobRow, code: string, message: string): Promise<void> {
-    const retry = job.attempt < job.maxAttempts && code !== "EXPORT_ACCESS_REVOKED";
+  async fail(
+    job: HrExportJobRow,
+    code: string,
+    message: string,
+  ): Promise<void> {
+    const retry =
+      job.attempt < job.maxAttempts && code !== "EXPORT_ACCESS_REVOKED";
     await this.db
       .update(hrExportJobs)
       .set({
@@ -334,7 +331,9 @@ export class HrExportJobsService {
         lockedAt: null,
         updatedAt: new Date(),
       })
-      .where(and(eq(hrExportJobs.id, job.id), eq(hrExportJobs.status, "running")));
+      .where(
+        and(eq(hrExportJobs.id, job.id), eq(hrExportJobs.status, "running")),
+      );
   }
 
   async reclaimStaleForOrg(orgId: string, staleBefore: Date): Promise<void> {
@@ -377,7 +376,10 @@ export class HrExportJobsService {
         updatedAt: new Date(),
       })
       .where(
-        and(eq(hrExportJobs.id, exportJobId), eq(hrExportJobs.status, "completed")),
+        and(
+          eq(hrExportJobs.id, exportJobId),
+          eq(hrExportJobs.status, "completed"),
+        ),
       );
   }
 
@@ -415,7 +417,8 @@ export class HrExportJobsService {
           ),
         )
         .limit(1);
-      if (!rows[0]) throw new NotFoundException("Employee export job not found");
+      if (!rows[0])
+        throw new NotFoundException("Employee export job not found");
       return rows[0];
     } catch (error: unknown) {
       if (isMissingHrExportTable(error)) throw hrExportUnavailable();
@@ -423,12 +426,19 @@ export class HrExportJobsService {
     }
   }
 
-  private async assertRequesterStillAuthorized(row: HrExportJobRow): Promise<void> {
+  private async assertRequesterStillAuthorized(
+    row: HrExportJobRow,
+  ): Promise<void> {
     try {
       const currentScope = await this.resolveExecutionScope(row);
       if (
         row.status === "completed" &&
-        !isExportScopeStillAllowed(row.requestedScope, currentScope)
+        !isExportScopeStillAllowed(
+          row.requestedScope,
+          currentScope.rawScope(
+            "compares the resolved export scope rank against the persisted requested scope",
+          ),
+        )
       ) {
         throw new ForbiddenException(
           "Your employee access scope changed. Create a new export for your current scope.",

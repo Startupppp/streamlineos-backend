@@ -28,7 +28,14 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  terminationListSchema,
+  terminationRowSchema,
+  terminationLetterSchema,
+  terminationDetailSchema,
+  successSchema,
+} from "./dto/lifecycle-response.schemas";
 
 const terminationIdParams = z.object({ terminationId: z.coerce.number().int().positive() }).strict();
 
@@ -39,6 +46,7 @@ export class TerminationController {
   constructor(private readonly termination: TerminationService) {}
 
   @Get()
+  @ResponseSchema(terminationListSchema)
   @RequirePermission("hr:exit:manage")
   @Validate({ query: listTerminationsQuerySchema })
   list(
@@ -49,6 +57,7 @@ export class TerminationController {
   }
 
   @Post()
+  @ResponseSchema(terminationRowSchema)
   @HttpCode(201)
   @RequirePermission("hr:exit:manage")
   @Validate({ body: terminationCreateSchema })
@@ -65,6 +74,7 @@ export class TerminationController {
   }
 
   @Post(":terminationId/send-email")
+  @ResponseSchema(successSchema)
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("hr:exit:manage")
@@ -77,6 +87,7 @@ export class TerminationController {
   }
 
   @Patch(":terminationId/complete")
+  @ResponseSchema(successSchema)
   @BodylessAction()
   @RequirePermission("hr:exit:manage")
   @Validate({ params: terminationIdParams })
@@ -88,6 +99,7 @@ export class TerminationController {
   }
 
   @Get(":terminationId/letter")
+  @ResponseSchema(terminationLetterSchema)
   @RequirePermission("hr:exit:manage")
   @Validate({ params: terminationIdParams })
   getLetter(
@@ -98,6 +110,7 @@ export class TerminationController {
   }
 
   @Patch(":terminationId/submit")
+  @ResponseSchema(successSchema)
   @BodylessAction()
   @Idempotent("hr.termination.submit")
   @RequirePermission("hr:exit:manage")
@@ -110,6 +123,7 @@ export class TerminationController {
   }
 
   @Patch(":terminationId/final-review")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:exit:approve")
   @Validate({ params: terminationIdParams, body: terminationReviewSchema })
   finalReview(
@@ -121,6 +135,7 @@ export class TerminationController {
   }
 
   @Get(":terminationId")
+  @ResponseSchema(terminationDetailSchema)
   @RequirePermission("hr:exit:manage")
   @Validate({ params: terminationIdParams })
   getOne(

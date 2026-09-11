@@ -54,6 +54,7 @@ export class PaymentWebhookHealthService {
 
     const existing = await this.db.query.paymentWebhookEndpoints.findFirst({
       where: and(
+        eq(paymentWebhookEndpoints.orgId, orgId),
         eq(paymentWebhookEndpoints.providerId, provider.id),
         eq(paymentWebhookEndpoints.environment, environment),
       ),
@@ -71,7 +72,12 @@ export class PaymentWebhookHealthService {
       ? await this.db
           .update(paymentWebhookEndpoints)
           .set(values)
-          .where(eq(paymentWebhookEndpoints.id, existing.id))
+          .where(
+            and(
+              eq(paymentWebhookEndpoints.orgId, orgId),
+              eq(paymentWebhookEndpoints.id, existing.id),
+            ),
+          )
           .returning()
       : await this.db
           .insert(paymentWebhookEndpoints)
@@ -108,6 +114,7 @@ export class PaymentWebhookHealthService {
     const provider = await this.findProvider(orgId, providerKey);
     const endpoint = await this.db.query.paymentWebhookEndpoints.findFirst({
       where: and(
+        eq(paymentWebhookEndpoints.orgId, orgId),
         eq(paymentWebhookEndpoints.providerId, provider.id),
         eq(paymentWebhookEndpoints.environment, environment),
       ),
@@ -151,7 +158,7 @@ export class PaymentWebhookHealthService {
               failureReason: "Sample signature did not match",
             },
       )
-      .where(eq(paymentWebhookEndpoints.id, endpoint.id))
+      .where(and(eq(paymentWebhookEndpoints.orgId, orgId), eq(paymentWebhookEndpoints.id, endpoint.id)))
       .returning();
 
     await this.audit.log({
@@ -212,7 +219,13 @@ export class PaymentWebhookHealthService {
         processedAt: new Date(),
         errorMessage: null,
       })
-      .where(eq(paymentWebhookEvents.id, eventId))
+      .where(
+        and(
+          eq(paymentWebhookEvents.id, eventId),
+          eq(paymentWebhookEvents.orgId, orgId),
+          eq(paymentWebhookEvents.providerId, provider.id),
+        ),
+      )
       .returning();
 
     await this.audit.log({

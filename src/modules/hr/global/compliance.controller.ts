@@ -34,7 +34,8 @@ import {
 } from "./dto/hr-global.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
+import { listComplianceRequirementsResponseSchema, getComplianceRequirementResponseSchema, createComplianceRequirementResponseSchema, updateComplianceRequirementResponseSchema, deleteComplianceRequirementResponseSchema, listComplianceEventsResponseSchema, markEventDoneResponseSchema, generateEventsResponseSchema, seedCountryPackResponseSchema } from "./dto/global-response.schemas"
 
 const requirementIdParams = z.object({ requirementId: z.coerce.number().int().positive() }).strict();
 const eventIdParams = z.object({ eventId: z.coerce.number().int().positive() }).strict();
@@ -45,6 +46,7 @@ const eventIdParams = z.object({ eventId: z.coerce.number().int().positive() }).
 export class ComplianceController {
   constructor(private readonly service: ComplianceRequirementsService) {}
 
+  @ResponseSchema(listComplianceRequirementsResponseSchema)
   @Get("requirements")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compliance:manage")
@@ -56,6 +58,7 @@ export class ComplianceController {
     return this.service.listRequirements(u.orgId, query);
   }
 
+  @ResponseSchema(getComplianceRequirementResponseSchema)
   @Get("requirements/:requirementId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compliance:manage")
@@ -67,6 +70,7 @@ export class ComplianceController {
     return this.service.getRequirement(u.orgId, requirementId);
   }
 
+  @ResponseSchema(createComplianceRequirementResponseSchema)
   @Post("requirements")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compliance:manage")
@@ -79,6 +83,7 @@ export class ComplianceController {
     return this.service.createRequirement(u.orgId, u.userId, body);
   }
 
+  @ResponseSchema(updateComplianceRequirementResponseSchema)
   @Patch("requirements/:requirementId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compliance:manage")
@@ -91,6 +96,7 @@ export class ComplianceController {
     return this.service.updateRequirement(u.orgId, requirementId, u.userId, body);
   }
 
+  @ResponseSchema(deleteComplianceRequirementResponseSchema)
   @Delete("requirements/:requirementId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compliance:manage")
@@ -102,6 +108,7 @@ export class ComplianceController {
     return this.service.deleteRequirement(u.orgId, requirementId, u.userId);
   }
 
+  @ResponseSchema(listComplianceEventsResponseSchema)
   @Get("events")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compliance:manage")
@@ -113,6 +120,7 @@ export class ComplianceController {
     return this.service.listEvents(u.orgId, query);
   }
 
+  @ResponseSchema(markEventDoneResponseSchema)
   @Post("events/:eventId/done")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compliance:manage")
@@ -126,6 +134,7 @@ export class ComplianceController {
     return this.service.markEventDone(u.orgId, eventId, u.userId, body);
   }
 
+  @ResponseSchema(generateEventsResponseSchema)
   @Post("generate-events")
   @BodylessAction()
   @UseGuards(PermissionGuard)
@@ -139,6 +148,7 @@ export class ComplianceController {
     return this.service.generateEvents(u.orgId, reqId);
   }
 
+  @ResponseSchema(seedCountryPackResponseSchema)
   @Post("seed-country-pack")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compliance:manage")

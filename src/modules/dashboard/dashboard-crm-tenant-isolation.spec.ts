@@ -1,5 +1,13 @@
 import type { Db } from "../../db/drizzle.module";
+import type { AccessService } from "../access/access.service";
 import { DashboardCrmService } from "./dashboard-crm.service";
+
+function denyCrmAccess(): AccessService {
+  return {
+    moduleAvailability: jest.fn().mockResolvedValue({ available: false }),
+    holds: jest.fn().mockResolvedValue(false),
+  } as unknown as AccessService;
+}
 
 function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
   if (v === null || v === undefined || typeof v === "string" || typeof v === "number" || typeof v === "boolean") return [v];
@@ -46,7 +54,7 @@ describe("DashboardCrmService — cross-tenant isolation", () => {
   it("scopes CRM activity queries to the requesting org (tenant isolation)", async () => {
     const { db, wheres } = makeDb();
     const cache = { cachedVersioned: jest.fn().mockImplementation((_n: unknown, _k: unknown, fn: () => unknown) => fn()), cached: jest.fn().mockImplementation((_k: unknown, fn: () => unknown) => fn()) } as never;
-    const svc = new DashboardCrmService(db, cache);
+    const svc = new DashboardCrmService(db, cache, denyCrmAccess());
 
     await svc.getTodayActivities(ATTACKER);
 
@@ -57,7 +65,7 @@ describe("DashboardCrmService — cross-tenant isolation", () => {
   it("returns CRM activities for the owning org (same-tenant control)", async () => {
     const { db } = makeDb();
     const cache = { cachedVersioned: jest.fn().mockImplementation((_n: unknown, _k: unknown, fn: () => unknown) => fn()), cached: jest.fn().mockImplementation((_k: unknown, fn: () => unknown) => fn()) } as never;
-    const svc = new DashboardCrmService(db, cache);
+    const svc = new DashboardCrmService(db, cache, denyCrmAccess());
 
     const result = await svc.getTodayActivities(OWNER);
 

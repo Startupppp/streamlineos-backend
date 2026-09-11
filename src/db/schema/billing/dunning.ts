@@ -1,15 +1,5 @@
 import { relations, sql } from "drizzle-orm";
-import {
-  bigint,
-  check,
-  index,
-  pgTable,
-  text,
-  integer,
-  timestamp,
-  unique,
-  uniqueIndex,
-} from "drizzle-orm/pg-core";
+import { bigint, check, foreignKey, index, integer, pgTable, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { organizations } from "../common/auth";
 import { subscriptions } from "../common/subscriptions";
 
@@ -18,7 +8,7 @@ export const dunningAttempts = pgTable(
   {
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-    subscriptionId: integer("subscription_id").notNull().references(() => subscriptions.id, { onDelete: "cascade" }),
+    subscriptionId: integer("subscription_id").notNull(),
     periodStart: timestamp("period_start").notNull(),
     milestone: text("milestone").notNull(),
     status: text("status").notNull().default("PENDING"),
@@ -31,6 +21,7 @@ export const dunningAttempts = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [
+  foreignKey({ columns: [t.orgId, t.subscriptionId], foreignColumns: [subscriptions.orgId, subscriptions.id], name: "fk_dunning_attempts_subscription_id_org" }).onDelete("cascade"),
     unique("uniq_dunning_attempts_org_id").on(t.orgId, t.id),
     uniqueIndex("uniq_dunning_attempt_cycle_milestone").on(
       t.orgId,
@@ -38,7 +29,6 @@ export const dunningAttempts = pgTable(
       t.periodStart,
       t.milestone,
     ),
-    index("idx_dunning_attempts_org_sub_period").on(t.orgId, t.subscriptionId, t.periodStart),
     index("idx_dunning_attempts_pending_milestone").on(t.milestone, t.orgId).where(
       sql`status = 'PENDING'`,
     ),

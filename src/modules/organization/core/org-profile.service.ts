@@ -7,11 +7,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, isNull } from "drizzle-orm";
-import {
-  organizationMembers,
-  organizations,
-  users,
-} from "../../../db/schema";
+import { organizationMembers, organizations, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -26,11 +22,7 @@ import {
 } from "../../../common/region/region-registry";
 import { logger } from "../../../common/logger/logger.service";
 import { AccountOrganizationIndexService } from "./account-organization-index.service";
-import { OrganizationSagaService } from "./lifecycle/organization-saga.service";
-import {
-  createOrganization,
-  type OrgCreationDeps,
-} from "./lib/organization-creation";
+import { OrganizationCreationService } from "./organization-creation.service";
 
 @Injectable()
 export class OrgProfileService {
@@ -39,21 +31,8 @@ export class OrgProfileService {
     private readonly audit: AuditService,
     private readonly cache: CacheService,
     private readonly indexService: AccountOrganizationIndexService,
-    private readonly saga: OrganizationSagaService,
+    private readonly creation: OrganizationCreationService,
   ) {}
-
-  private get creationDeps(): OrgCreationDeps {
-    return {
-      db: this.db,
-      cache: this.cache,
-      saga: this.saga,
-      indexService: this.indexService,
-    };
-  }
-
-  createOrganization(userId: string, input: CreateOrganizationInput) {
-    return createOrganization(this.creationDeps, userId, input);
-  }
 
   async listUserOrganizations(userId: string) {
     const fromIndex = await this.indexService.listForUser(userId);
@@ -88,7 +67,8 @@ export class OrgProfileService {
             isNull(organizations.deletedAt),
           ),
         )
-        .orderBy(desc(organizationMembers.joinedAt)),
+        .orderBy(desc(organizationMembers.joinedAt))
+        .limit(100),
     );
 
     return memberships.map((m) => ({
@@ -179,6 +159,9 @@ export class OrgProfileService {
       };
     });
 
+    // The session resolves its org from `last_activated_at`, so the stamp must land BEFORE the
+    // cache is dropped — an `update()` racing an unawaited write re-cached the outgoing org.
+    await this.indexService.activate(userId, targetOrgId);
     await this.cache.invalidate(CACHE_KEYS.userSession(userId));
     if (outgoingOrgId && outgoingOrgId !== targetOrgId) {
       await this.cache.invalidate(CACHE_KEYS.accessVersion(outgoingOrgId));
@@ -187,7 +170,6 @@ export class OrgProfileService {
     this.audit.log({ action: "org.switched", userId, orgId: targetOrgId });
     void this.indexService
       .refreshForUser(userId)
-      .then(() => this.indexService.touchLastActivated(userId, targetOrgId))
       .catch((error: unknown) => {
         logger.error("[account-org-index] opportunistic refresh failed", {
           userId,
@@ -197,6 +179,24 @@ export class OrgProfileService {
       });
 
     return switchResult;
+  }
+
+  async createOrganization(userId: string, input: CreateOrganizationInput) {
+    let billingEmail: string | null = input.billingEmail ?? null;
+    if (!billingEmail) {
+      const [actor] = await this.db
+        .select({ email: users.email })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      billingEmail = actor?.email ?? null;
+    }
+    return this.creation.createFromProfile({
+      userId,
+      name: input.name,
+      slug: input.slug,
+      billingEmail,
+    });
   }
 
   async getProfile(userId: string, orgId: string) {
@@ -227,7 +227,8 @@ export class OrgProfileService {
           eq(organizationMembers.status, "ACTIVE"),
         ),
       )
-      .where(eq(users.id, userId));
+      .where(eq(users.id, userId))
+      .limit(1);
 
     if (!user) return null;
 
@@ -239,7 +240,8 @@ export class OrgProfileService {
         logo: organizations.logo,
       })
       .from(organizations)
-      .where(eq(organizations.id, orgId));
+      .where(eq(organizations.id, orgId))
+      .limit(1);
 
     const [membership] = await this.db
       .select({
@@ -253,7 +255,8 @@ export class OrgProfileService {
           eq(organizationMembers.orgId, orgId),
           eq(organizationMembers.status, "ACTIVE"),
         ),
-      );
+      )
+      .limit(1);
 
     return {
       user,

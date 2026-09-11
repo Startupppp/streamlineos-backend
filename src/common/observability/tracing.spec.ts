@@ -58,6 +58,81 @@ describe("parseTraceparent", () => {
     const header = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
     expect(formatTraceparent(parseTraceparent(header)!)).toBe(header);
   });
+
+  /*
+   * The negative test for the one `as unknown as` this file's source carries
+   * (tracing.ts:93, ledgered `external`). Its invariant is an ARITY claim: the
+   * traceparent regex has four capture groups, so a successful match is exactly
+   * five elements, and the cast names that. The ledger proves the cast is
+   * declared and cannot multiply; it does not prove the claim. These do.
+   *
+   * The claim fails silently, which is why it needs pinning rather than reading.
+   * Drop a capture group and `match` is still an array, the destructure still
+   * succeeds, and the missing element arrives as `undefined` wearing the type
+   * `string`. Nothing throws — the trace just goes wrong. So each group is
+   * pinned by an OBSERVABLE consequence of its own presence, not by counting
+   * elements the cast has already lied about.
+   */
+  describe("the arity the cast asserts", () => {
+    const VALID = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+
+    it("group 4 is really read — an odd flag byte samples and an even one does not", () => {
+      // Lose this group and `flags` is undefined: Number.parseInt(undefined, 16)
+      // is NaN, NaN & 1 is 0, and EVERY trace silently reads as unsampled.
+      expect(parseTraceparent("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-03")?.sampled).toBe(true);
+      expect(parseTraceparent("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-ff")?.sampled).toBe(true);
+      expect(parseTraceparent("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-02")?.sampled).toBe(false);
+      expect(parseTraceparent("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-fe")?.sampled).toBe(false);
+    });
+
+    it("groups 2 and 3 are really read — the ids come back as themselves, not as undefined", () => {
+      // Lose either and the field is `undefined` typed `string`: the all-zero
+      // guard below stops rejecting (String(undefined) is "undefined", which
+      // does not match /^0+$/), so the header is ACCEPTED carrying nothing.
+      const parsed = parseTraceparent(VALID);
+      expect(parsed).not.toBeNull();
+      expect(typeof parsed?.traceId).toBe("string");
+      expect(typeof parsed?.spanId).toBe("string");
+      expect(parsed?.traceId).toHaveLength(32);
+      expect(parsed?.spanId).toHaveLength(16);
+    });
+
+    it("never returns a context with an undefined member, whatever it is fed", () => {
+      const corpus = [
+        VALID,
+        VALID.toUpperCase(),
+        `  ${VALID}  `,
+        "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00",
+        "00-00000000000000000000000000000000-00f067aa0ba902b7-01",
+        "00-4bf92f3577b34da6a3ce929d0e0e4736-0000000000000000-01",
+        "01-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+        "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7",
+        "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01-extra",
+        "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-0g",
+        "00-4bf92f3577b34da6a3ce929d0e073-00f067aa0ba902b7-01",
+        "",
+        "-".repeat(64),
+      ];
+
+      for (const header of corpus) {
+        const parsed = parseTraceparent(header);
+        if (parsed === null) continue;
+        expect(Object.values(parsed)).not.toContain(undefined);
+        expect(parsed.traceId).toMatch(/^[0-9a-f]{32}$/);
+        expect(parsed.spanId).toMatch(/^[0-9a-f]{16}$/);
+        expect(typeof parsed.sampled).toBe("boolean");
+      }
+    });
+
+    it("null-checks before the cast, so a non-matching header returns null and never throws", () => {
+      // The cast sits AFTER `if (!match) return null`. Remove that guard and
+      // every one of these destructures null and throws a TypeError into the
+      // request instead of declining to join a trace.
+      for (const header of ["nonsense", "00--", "00-x-y-z", "\u0000"])
+        expect(() => parseTraceparent(header)).not.toThrow();
+      expect(parseTraceparent("nonsense")).toBeNull();
+    });
+  });
 });
 
 describe("withSpan", () => {

@@ -27,6 +27,11 @@ import {
 } from "./dto/workflow.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  workflowTransitionSchema,
+  projectStatusSchema,
+} from "./dto/workflow-response.schemas";
 
 const transitionIdParams = z.object({ transitionId: z.coerce.number().int().positive() }).strict();
 const fromStatusIdParams = z.object({ fromStatusId: z.coerce.number().int().positive() }).strict();
@@ -40,27 +45,30 @@ export class WorkflowController {
 
   @Get("transitions")
   @RequirePermission("build:workflow:view")
+  @ResponseSchema(z.array(workflowTransitionSchema))
   listTransitions(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listTransitions(u.orgId, projectId);
+    return this.svc.listTransitions(u, projectId);
   }
 
   @Post("transitions")
   @HttpCode(201)
   @RequirePermission("build:workflow:manage")
+  @ResponseSchema(workflowTransitionSchema)
   @Validate({ body: createTransitionSchema })
   createTransition(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body() body: CreateTransitionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createTransition(u.orgId, u.userId, projectId, body);
+    return this.svc.createTransition(u, projectId, body);
   }
 
   @Patch("transitions/:transitionId")
   @RequirePermission("build:workflow:manage")
+  @ResponseSchema(workflowTransitionSchema)
   @Validate({ params: transitionIdParams, body: updateTransitionSchema })
   updateTransition(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -68,34 +76,37 @@ export class WorkflowController {
     @Body() body: UpdateTransitionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.updateTransition(u.orgId, u.userId, projectId, transitionId, body);
+    return this.svc.updateTransition(u, projectId, transitionId, body);
   }
 
   @Delete("transitions/:transitionId")
   @RequirePermission("build:workflow:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: transitionIdParams })
   deleteTransition(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("transitionId", ParseIntPipe) transitionId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.deleteTransition(u.orgId, u.userId, projectId, transitionId);
+    return this.svc.deleteTransition(u, projectId, transitionId);
   }
 
   @Get("allowed/:fromStatusId")
   @RequirePermission("build:workflow:view")
+  @ResponseSchema(z.array(workflowTransitionSchema))
   @Validate({ params: fromStatusIdParams })
   getAllowedTransitions(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("fromStatusId", ParseIntPipe) fromStatusId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getAllowedTransitions(u.orgId, projectId, fromStatusId);
+    return this.svc.getAllowedTransitions(u, projectId, fromStatusId);
   }
 
   @Patch("statuses/:statusId/wip")
   @RequirePermission("build:workflow:manage")
+  @ResponseSchema(projectStatusSchema)
   @Validate({ params: statusIdParams, body: wipLimitSchema })
   updateWipLimit(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -103,6 +114,6 @@ export class WorkflowController {
     @Body() body: WipLimitInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.updateWipLimit(u.orgId, u.userId, projectId, statusId, body);
+    return this.svc.updateWipLimit(u, projectId, statusId, body);
   }
 }

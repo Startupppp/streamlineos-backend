@@ -17,7 +17,7 @@ import {
 } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { resolveEntriesScope, applyMembershipScope } from "./timesheets-core-scope";
+import { resolveEntriesScope, membershipScope } from "./timesheets-core-scope";
 import type { PeriodsQuery } from "./dto/periods.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
@@ -115,63 +115,73 @@ export class PeriodsReadService {
   }
 
   async listPeriods(u: CurrentUserContext, query: PeriodsQuery) {
-    const scope = await resolveEntriesScope(this.access, u);
+    const read = await resolveEntriesScope(this.access, u);
     const limit = Math.min(query.limit, 100);
     const membershipId = actingMembershipId(u.principal);
 
-    const conditions = [
-      eq(timesheetPeriods.orgId, u.orgId),
-      applyMembershipScope(scope, membershipId, timesheetPeriods.userMembershipId),
-    ];
-
-    if (query.userId && scope === "all") {
+    let requestedMembershipId: number | undefined;
+    if (query.userId && read.discriminator === "all") {
       const [qMember] = await this.db
         .select({ id: organizationMembers.id })
         .from(organizationMembers)
         .where(and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, query.userId)))
         .limit(1);
-      if (qMember) conditions.push(eq(timesheetPeriods.userMembershipId, qMember.id));
+      if (qMember) requestedMembershipId = qMember.id;
     }
-    if (query.status) conditions.push(eq(timesheetPeriods.status, query.status));
 
     const ownerMember = alias(organizationMembers, "owner_member");
-    const rows = await this.db
-      .select({
-        id: timesheetPeriods.id,
-        orgId: timesheetPeriods.orgId,
-        userMembershipId: timesheetPeriods.userMembershipId,
-        periodStart: timesheetPeriods.periodStart,
-        periodEnd: timesheetPeriods.periodEnd,
-        status: timesheetPeriods.status,
-        totalHours: timesheetPeriods.totalHours,
-        billableHours: timesheetPeriods.billableHours,
-        nonBillableHours: timesheetPeriods.nonBillableHours,
-        submittedAt: timesheetPeriods.submittedAt,
-        approvedAt: timesheetPeriods.approvedAt,
-        rejectedAt: timesheetPeriods.rejectedAt,
-        lockedAt: timesheetPeriods.lockedAt,
-        currentApproverMembershipId: timesheetPeriods.currentApproverMembershipId,
-        rejectionReason: timesheetPeriods.rejectionReason,
-        createdAt: timesheetPeriods.createdAt,
-        updatedAt: timesheetPeriods.updatedAt,
-        userEmail: users.email,
-        userName: users.name,
-      })
-      .from(timesheetPeriods)
-      .leftJoin(ownerMember, and(eq(timesheetPeriods.orgId, ownerMember.orgId), eq(timesheetPeriods.userMembershipId, ownerMember.id)))
-      .leftJoin(users, eq(ownerMember.userId, users.id))
-      .where(and(...conditions))
-      .orderBy(desc(timesheetPeriods.periodStart))
-      .limit(limit);
+    return read.read(
+      {
+        tenant: timesheetPeriods.orgId,
+        scope: membershipScope(membershipId, timesheetPeriods.userMembershipId),
+        and: [
+          requestedMembershipId !== undefined ? eq(timesheetPeriods.userMembershipId, requestedMembershipId) : undefined,
+          query.status ? eq(timesheetPeriods.status, query.status) : undefined,
+        ],
+      },
+      async ({ sql: where }) => {
+        const rows = await this.db
+          .select({
+            id: timesheetPeriods.id,
+            orgId: timesheetPeriods.orgId,
+            userMembershipId: timesheetPeriods.userMembershipId,
+            periodStart: timesheetPeriods.periodStart,
+            periodEnd: timesheetPeriods.periodEnd,
+            status: timesheetPeriods.status,
+            totalHours: timesheetPeriods.totalHours,
+            billableHours: timesheetPeriods.billableHours,
+            nonBillableHours: timesheetPeriods.nonBillableHours,
+            submittedAt: timesheetPeriods.submittedAt,
+            approvedAt: timesheetPeriods.approvedAt,
+            rejectedAt: timesheetPeriods.rejectedAt,
+            lockedAt: timesheetPeriods.lockedAt,
+            currentApproverMembershipId: timesheetPeriods.currentApproverMembershipId,
+            rejectionReason: timesheetPeriods.rejectionReason,
+            createdAt: timesheetPeriods.createdAt,
+            updatedAt: timesheetPeriods.updatedAt,
+            userEmail: users.email,
+            userName: users.name,
+          })
+          .from(timesheetPeriods)
+          .leftJoin(ownerMember, and(eq(timesheetPeriods.orgId, ownerMember.orgId), eq(timesheetPeriods.userMembershipId, ownerMember.id)))
+          .leftJoin(users, eq(ownerMember.userId, users.id))
+          .where(where)
+          .orderBy(desc(timesheetPeriods.periodStart))
+          .limit(limit);
 
-    return rows.map((r) => this.mapPeriod(r));
+        return rows.map((r) => this.mapPeriod(r));
+      },
+      () => [],
+    );
   }
 
   async getPeriod(u: CurrentUserContext, periodId: number) {
     const row = await this.getPeriodWithUser(u.orgId, periodId);
     if (!row) throw new NotFoundException("Period not found");
 
-    const scope = await resolveEntriesScope(this.access, u);
+    const read = await resolveEntriesScope(this.access, u);
+    // In-process authorization of one already-fetched row, not a WHERE predicate.
+    const scope = read.rawScope("in-process authorization of an already-fetched single row, not a row predicate");
     const canSeeOthers =
       u.isOrgOwner ||
       scope === "all" ||

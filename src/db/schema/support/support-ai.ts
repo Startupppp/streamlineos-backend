@@ -1,17 +1,4 @@
-import {
-  pgTable,
-  serial,
-  text,
-  integer,
-  numeric,
-  jsonb,
-  timestamp,
-  index,
-  uniqueIndex,
-  vector,
-  pgEnum,
-  unique,
-} from "drizzle-orm/pg-core";
+import { foreignKey, index, integer, jsonb, numeric, pgEnum, pgTable, serial, text, timestamp, unique, uniqueIndex, vector } from "drizzle-orm/pg-core";
 import { organizations, users } from "../common/auth";
 import { supportTickets } from "./tickets";
 
@@ -42,7 +29,7 @@ export const supportAiSuggestions = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    ticketId: integer("ticket_id").references(() => supportTickets.id, { onDelete: "cascade" }).notNull(),
+    ticketId: integer("ticket_id").notNull(),
     type: supportSuggestionTypeEnum("type").notNull(),
     payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
     confidence: numeric("confidence", { precision: 4, scale: 3 }),
@@ -53,6 +40,7 @@ export const supportAiSuggestions = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.ticketId], foreignColumns: [supportTickets.orgId, supportTickets.id], name: "fk_support_ai_suggestions_ticket_id_org" }).onDelete("cascade"),
     index("idx_support_ai_suggestions_ticket").on(table.ticketId),
     index("idx_support_ai_suggestions_org_type").on(table.orgId, table.type),
     index("idx_support_ai_suggestions_status").on(table.status),
@@ -82,15 +70,15 @@ export const supportTicketEmbeddings = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    ticketId: integer("ticket_id").references(() => supportTickets.id, { onDelete: "cascade" }).notNull(),
+    ticketId: integer("ticket_id").notNull(),
     embedding: vector("embedding", { dimensions: SUPPORT_AI_EMBEDDING_DIMENSIONS }).notNull(),
     embeddingModel: text("embedding_model").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.ticketId], foreignColumns: [supportTickets.orgId, supportTickets.id], name: "fk_support_ticket_embeddings_ticket_id_org" }).onDelete("cascade"),
     uniqueIndex("idx_support_ticket_embeddings_ticket").on(table.ticketId),
-    index("idx_support_ticket_embeddings_org").on(table.orgId),
     unique("uniq_support_ticket_embeddings_org_id").on(table.orgId, table.id),
   ],
 );

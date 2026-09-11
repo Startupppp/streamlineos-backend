@@ -18,7 +18,7 @@ export const entriesQuerySchema = z.object({
   billable: z.enum(["true", "false"]).optional(),
   cursor: z.string().optional(),
   limit: pageSizeField(50, 100),
-});
+}).strict();
 export type EntriesQuery = z.infer<typeof entriesQuerySchema>;
 
 export const createEntrySchema = z.object({
@@ -31,7 +31,7 @@ export const createEntrySchema = z.object({
   billingType: timesheetBillingTypeSchema.optional(),
   workLink: z.string().url().max(500).optional(),
   source: timesheetEntrySourceSchema.optional(),
-});
+}).strict();
 export type CreateEntryInput = z.infer<typeof createEntrySchema>;
 
 export const updateEntrySchema = z.object({
@@ -41,12 +41,12 @@ export const updateEntrySchema = z.object({
   billingType: timesheetBillingTypeSchema.optional(),
   projectId: z.number().int().positive().optional().nullable(),
   workLink: z.string().url().max(500).optional().nullable(),
-});
+}).strict();
 export type UpdateEntryInput = z.infer<typeof updateEntrySchema>;
 
 export const voidEntrySchema = z.object({
   reason: z.string().min(1).max(500),
-});
+}).strict();
 export type VoidEntryInput = z.infer<typeof voidEntrySchema>;
 
 /**

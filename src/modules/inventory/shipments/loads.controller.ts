@@ -30,9 +30,14 @@ import {
 } from "./dto/shipments.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import {
+  listLoadsResponseSchema,
+  getLoadResponseSchema,
+  invLoadSchema,
+} from "./dto/shipments-response.schemas";
 
 const loadIdParams = z.object({ loadId: z.coerce.number().int().positive() }).strict();
 
@@ -43,6 +48,7 @@ export class LoadsController {
   constructor(private readonly svc: LoadsService) {}
 
   @Get()
+  @ResponseSchema(listLoadsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:loads:manage")
   @Validate({ query: listLoadsQuerySchema })
@@ -54,6 +60,7 @@ export class LoadsController {
   }
 
   @Get(":loadId")
+  @ResponseSchema(getLoadResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:loads:manage")
   @Validate({ params: loadIdParams })
@@ -65,6 +72,7 @@ export class LoadsController {
   }
 
   @Post()
+  @ResponseSchema(invLoadSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:loads:manage")
   @Idempotent("inventory.load.create")
@@ -77,6 +85,7 @@ export class LoadsController {
   }
 
   @Post(":loadId/dispatch")
+  @ResponseSchema(invLoadSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:loads:manage")
   @HttpCode(HttpStatus.OK)
@@ -91,6 +100,7 @@ export class LoadsController {
   }
 
   @Post(":loadId/close")
+  @ResponseSchema(invLoadSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:loads:manage")
   @Idempotent("inventory.load.close")
@@ -106,6 +116,7 @@ export class LoadsController {
 
   @Post(":loadId/cancel")
   @BodylessAction()
+  @ResponseSchema(invLoadSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:loads:manage")
   @Idempotent("inventory.load.cancel")

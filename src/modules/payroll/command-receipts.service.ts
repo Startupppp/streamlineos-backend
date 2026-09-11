@@ -1,10 +1,10 @@
-import { ConflictException, Inject, Injectable, UnprocessableEntityException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, InternalServerErrorException, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import { createHash, randomUUID } from "crypto";
 import { and, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import { payrollCommandReceipts } from "../../db/schema";
-import { getPostgresErrorCode } from "../../common/db/postgres-error";
+import { payrollCommandReceipts, payrollRuns } from "../../db/schema";
+import { isUniqueViolation } from "../../common/db/postgres-error";
 import { logger } from "../../common/logger/logger.service";
 
 export type PayrollCommandName =
@@ -44,6 +44,25 @@ export class PayrollCommandReceiptsService {
     runId?: number | null;
     requestHash?: string | null;
   }): Promise<CommandBeginResult> {
+    /**
+     * The run in the path is resolved under the caller's organisation BEFORE a receipt is opened.
+     *
+     * `payroll_command_receipts` carries `fk_payroll_command_receipts_run_id_org (org_id, run_id)
+     * -> payroll_runs(org_id, id)`, so a run belonging to another organisation cannot land — the
+     * database refuses it with a 23503 that nothing catches, and the route answers **500** where
+     * the service behind it would have answered 404. The live cross-tenant sweep measured exactly
+     * that on `POST /payroll/runs/:runId/approvals/:approvalId/reject`, and every command in this
+     * file funnels through here, so one assertion covers all fourteen. 15f's rule applies: a 500 is
+     * an error that replaced the real one.
+     */
+    if (params.runId !== null && params.runId !== undefined) {
+      const run = await this.db.query.payrollRuns.findFirst({
+        where: and(eq(payrollRuns.id, params.runId), eq(payrollRuns.orgId, params.orgId)),
+        columns: { id: true },
+      });
+      if (!run) throw new NotFoundException("Payroll run not found");
+    }
+
     const correlationId = randomUUID();
     const existing = await this.db.query.payrollCommandReceipts.findFirst({
       where: and(
@@ -141,9 +160,10 @@ export class PayrollCommandReceiptsService {
           expiresAt: receiptExpiresAt,
         })
         .returning({ id: payrollCommandReceipts.id });
-      return { kind: "fresh", receiptId: row!.id, correlationId };
+      if (!row) throw new InternalServerErrorException("Failed to create payroll command receipt");
+      return { kind: "fresh", receiptId: row.id, correlationId };
     } catch (err) {
-      if (getPostgresErrorCode(err) !== "23505") {
+      if (!isUniqueViolation(err)) {
         logger.error("command-receipts.begin: receipt insert failed unexpectedly", {
           command: params.command,
           cause: err instanceof Error ? err.message : String(err),
@@ -169,7 +189,7 @@ export class PayrollCommandReceiptsService {
       .update(payrollCommandReceipts)
       .set({
         status: "SUCCEEDED",
-        response: response as object,
+        response,
         finishedAt: new Date(),
         errorMessage: null,
       })

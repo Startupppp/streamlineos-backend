@@ -1,10 +1,12 @@
 import {
+  buildModuleAdminPermissionKeys,
+  buildModuleMemberPermissionKeys,
   MODULE_ADMIN_MODULES,
   scopeForGrant,
   seedSystemRolesForOrg,
   systemRoleSpecs,
 } from "../seed-system-roles";
-import { ACCESS_MANAGED_MODULES, PERMISSIONS } from "../permissions";
+import { ACCESS_MANAGED_MODULES, ALL_PERMISSION_NAMES, PERMISSIONS } from "../permissions";
 
 const ORG_ID = "org-seed-test";
 const ORG_WIDE_SYSTEM_ROLES = 2;
@@ -197,5 +199,55 @@ describe("what seeding costs", () => {
     await seedSystemRolesForOrg(db as never, ORG_ID);
 
     expect(rowsFor("access_versions")).toHaveLength(1);
+  });
+});
+
+/**
+ * The rung a Build administrator actually gets.
+ *
+ * Repository connections are Build's own settings page but their keys live in
+ * the `integrations` namespace, so `moduleScopedPermissions("build")` cannot
+ * find them. The page was gated on `settings:manage` — organisation
+ * administration — which meant the module's own administrator could not open
+ * it and anyone who could open it could also rewrite the organisation.
+ * `RoleGrantReconcilerService` reads these same builders at boot, so an
+ * organisation seeded before this entry converges on it without a migration.
+ */
+describe("module admin rungs reach the keys their own screens need", () => {
+  const CATALOG = new Set(ALL_PERMISSION_NAMES);
+
+  it("gives BUILD_MODULE_ADMIN both repository-connection keys", () => {
+    const keys = buildModuleAdminPermissionKeys("build", CATALOG);
+
+    expect(keys).toContain("integrations:git:view");
+    expect(keys).toContain("integrations:git:manage");
+  });
+
+  it("does not hand them organisation administration to get there", () => {
+    expect(buildModuleAdminPermissionKeys("build", CATALOG)).not.toContain(
+      "settings:manage",
+    );
+  });
+
+  it("keeps the pair narrow — no other integrations key rides along", () => {
+    const borrowed = buildModuleAdminPermissionKeys("build", CATALOG).filter(
+      (key) => key.startsWith("integrations:") && !key.startsWith("integrations:git:"),
+    );
+
+    expect(borrowed).toEqual([]);
+  });
+
+  it("leaves the write key off the member rung", () => {
+    const memberKeys = buildModuleMemberPermissionKeys("build", CATALOG);
+
+    expect(memberKeys).not.toContain("integrations:git:manage");
+  });
+
+  it("grants nothing the catalogue does not define", () => {
+    const undefinedKeys = buildModuleAdminPermissionKeys("build", CATALOG).filter(
+      (key) => !CATALOG.has(key),
+    );
+
+    expect(undefinedKeys).toEqual([]);
   });
 });

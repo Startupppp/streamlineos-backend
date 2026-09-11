@@ -1,7 +1,15 @@
 import { AiJobsService } from "./ai-jobs.service";
 import { AiJobsWorkerService } from "./ai-jobs-worker.service";
 import { AiJobHandlerRegistry } from "./ai-job-handler";
+import { PgDialect } from "drizzle-orm/pg-core";
 import type { AiJob } from "../../../db/schema";
+import type { SQL } from "drizzle-orm";
+
+const dialect = new PgDialect();
+
+function renderSql(cond: SQL): string {
+  return dialect.sqlToQuery(cond).sql;
+}
 
 type MockQueryResult = Partial<AiJob>;
 
@@ -65,9 +73,57 @@ function buildDb(overrides: Partial<MockDb> = {}): MockDb {
   };
 }
 
-function _buildService(db: MockDb): AiJobsService {
-  return new AiJobsService(db as unknown as Parameters<typeof AiJobsService.prototype.enqueue>[0] & never);
-}
+describe("AiJobsService — tenant predicate on write operations", () => {
+  function buildCapturingDb(findFirstResult: AiJob | null = null) {
+    const capturedConditions: SQL[] = [];
+    const updateChain = {
+      set: jest.fn().mockReturnValue({
+        where: jest.fn().mockImplementation((cond: SQL) => {
+          capturedConditions.push(cond);
+          return Promise.resolve();
+        }),
+      }),
+    };
+    const db = {
+      query: {
+        aiJobs: {
+          findFirst: jest.fn().mockResolvedValue(findFirstResult),
+        },
+      },
+      update: jest.fn().mockReturnValue(updateChain),
+    };
+    return { db, capturedConditions };
+  }
+
+  it("complete where clause contains org_id", async () => {
+    const { db, capturedConditions } = buildCapturingDb();
+    const svc = new AiJobsService(db as never);
+    await svc.complete("org-x", 1, {});
+    expect(capturedConditions).toHaveLength(1);
+    const rendered = renderSql(capturedConditions[0] as SQL);
+    expect(rendered).toContain("org_id");
+  });
+
+  it("fail DEAD update where clause contains org_id", async () => {
+    const job = makeJob({ id: 1, attempts: 2, maxAttempts: 3 });
+    const { db, capturedConditions } = buildCapturingDb(job);
+    const svc = new AiJobsService(db as never);
+    await svc.fail("org-x", 1, "boom");
+    expect(capturedConditions).toHaveLength(1);
+    const rendered = renderSql(capturedConditions[0] as SQL);
+    expect(rendered).toContain("org_id");
+  });
+
+  it("fail requeue update where clause contains org_id", async () => {
+    const job = makeJob({ id: 1, attempts: 0, maxAttempts: 3 });
+    const { db, capturedConditions } = buildCapturingDb(job);
+    const svc = new AiJobsService(db as never);
+    await svc.fail("org-x", 1, "timeout");
+    expect(capturedConditions).toHaveLength(1);
+    const rendered = renderSql(capturedConditions[0] as SQL);
+    expect(rendered).toContain("org_id");
+  });
+});
 
 describe("AiJobsService", () => {
   describe("enqueue", () => {
@@ -110,7 +166,7 @@ describe("AiJobsService", () => {
       db.update.mockReturnValue(updateChain);
 
       const svc = new AiJobsService(db as never);
-      await svc.fail(1, "timeout");
+      await svc.fail("org-1", 1, "timeout");
 
       expect(updateChain.set).toHaveBeenCalledWith(
         expect.objectContaining({ status: "QUEUED", attempts: 1 }),
@@ -125,7 +181,7 @@ describe("AiJobsService", () => {
       db.update.mockReturnValue(updateChain);
 
       const svc = new AiJobsService(db as never);
-      await svc.fail(1, "final error");
+      await svc.fail("org-1", 1, "final error");
 
       expect(updateChain.set).toHaveBeenCalledWith(
         expect.objectContaining({ status: "DEAD", attempts: 3, lastError: "final error" }),
@@ -137,7 +193,7 @@ describe("AiJobsService", () => {
       db.query.aiJobs.findFirst.mockResolvedValue(null);
 
       const svc = new AiJobsService(db as never);
-      await expect(svc.fail(999, "error")).resolves.toBeUndefined();
+      await expect(svc.fail("org-1", 999, "error")).resolves.toBeUndefined();
       expect(db.update).not.toHaveBeenCalled();
     });
   });
@@ -212,8 +268,8 @@ describe("AiJobsWorkerService", () => {
     return { registry, handlerList };
   }
 
-  it("completes job when handler succeeds", async () => {
-    const job = makeJob({ id: 1, type: "send.email" });
+  it("completes job when handler succeeds — passes orgId to complete()", async () => {
+    const job = makeJob({ id: 1, orgId: "org-abc", type: "send.email" });
     const db = buildDb();
     const jobsSvc = new AiJobsService(db as never);
     jest.spyOn(jobsSvc, "claimBatch").mockResolvedValue([job]);
@@ -225,11 +281,11 @@ describe("AiJobsWorkerService", () => {
 
     expect(result.completed).toBe(1);
     expect(result.failed).toBe(0);
-    expect(jobsSvc.complete).toHaveBeenCalledWith(1, { sent: true });
+    expect(jobsSvc.complete).toHaveBeenCalledWith("org-abc", 1, { sent: true });
   });
 
-  it("calls fail when handler throws", async () => {
-    const job = makeJob({ id: 1, type: "send.email" });
+  it("calls fail with orgId when handler throws", async () => {
+    const job = makeJob({ id: 1, orgId: "org-abc", type: "send.email" });
     const db = buildDb();
     const jobsSvc = new AiJobsService(db as never);
     jest.spyOn(jobsSvc, "claimBatch").mockResolvedValue([job]);
@@ -240,7 +296,7 @@ describe("AiJobsWorkerService", () => {
     const result = await worker.flush(1);
 
     expect(result.failed).toBe(1);
-    expect(jobsSvc.fail).toHaveBeenCalledWith(1, "smtp down");
+    expect(jobsSvc.fail).toHaveBeenCalledWith("org-abc", 1, "smtp down");
   });
 
   it("marks job DEAD immediately for unknown handler type", async () => {

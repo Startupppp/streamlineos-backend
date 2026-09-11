@@ -32,6 +32,8 @@ import {
   type UpdateHeadcountPlanInput,
 } from "./dto/hr-analytics-plus.schemas";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts"
+import { getCommandCenterResponseSchema, getAttritionResponseSchema, getLeaveTrendsResponseSchema, getPayrollCostResponseSchema, getEngagementResponseSchema, getPerformanceDistResponseSchema, getComplianceGapsResponseSchema, getMetricDefinitionsResponseSchema, getDrilldownResponseSchema, getWorkforcePlansResponseSchema, createHeadcountPlanResponseSchema, updateHeadcountPlanResponseSchema, getBudgetVsActualResponseSchema, getSkillsGapResponseSchema, getSuccessionRiskResponseSchema, getAttritionForecastResponseSchema } from "./dto/analytics-plus-response.schemas"
 
 const planIdParams = z.object({ planId: z.coerce.number().int().positive() }).strict();
 
@@ -45,6 +47,7 @@ export class HrAnalyticsPlusController {
     private readonly access: AccessService,
   ) {}
 
+  @ResponseSchema(getCommandCenterResponseSchema)
   @Get()
   @Validate({ query: departmentQuerySchema })
   getCommandCenter(
@@ -54,6 +57,7 @@ export class HrAnalyticsPlusController {
     return this.svc.getCommandCenter(u.orgId, query.departmentId);
   }
 
+  @ResponseSchema(getAttritionResponseSchema)
   @Get("attrition")
   @Validate({ query: departmentQuerySchema })
   getAttrition(
@@ -63,6 +67,7 @@ export class HrAnalyticsPlusController {
     return this.svc.getAttrition(u.orgId, query.departmentId);
   }
 
+  @ResponseSchema(getLeaveTrendsResponseSchema)
   @Get("leave-trends")
   @Validate({ query: departmentQuerySchema })
   getLeaveTrends(
@@ -72,6 +77,7 @@ export class HrAnalyticsPlusController {
     return this.svc.getLeaveTrends(u.orgId, query.departmentId);
   }
 
+  @ResponseSchema(getPayrollCostResponseSchema)
   @Get("payroll-cost")
   async getPayrollCost(@CurrentUser() u: CurrentUserContext) {
     if (!u.isOrgOwner) {
@@ -82,11 +88,13 @@ export class HrAnalyticsPlusController {
     return this.svc.getPayrollCost(u.orgId);
   }
 
+  @ResponseSchema(getEngagementResponseSchema)
   @Get("engagement")
   getEngagement(@CurrentUser() u: CurrentUserContext) {
     return this.svc.getEngagementTrends(u.orgId);
   }
 
+  @ResponseSchema(getPerformanceDistResponseSchema)
   @Get("performance-distribution")
   @Validate({ query: cycleQuerySchema })
   getPerformanceDist(
@@ -96,6 +104,7 @@ export class HrAnalyticsPlusController {
     return this.svc.getPerformanceDistribution(u.orgId, query.cycleId);
   }
 
+  @ResponseSchema(getComplianceGapsResponseSchema)
   @Get("compliance-gaps")
   @Validate({ query: departmentQuerySchema })
   getComplianceGaps(
@@ -105,11 +114,13 @@ export class HrAnalyticsPlusController {
     return this.svc.getComplianceGaps(u.orgId, query.departmentId);
   }
 
+  @ResponseSchema(getMetricDefinitionsResponseSchema)
   @Get("metric-definitions")
   getMetricDefinitions() {
     return HrAnalyticsPlusService.getMetricDefinitions();
   }
 
+  @ResponseSchema(getDrilldownResponseSchema)
   @Get("drilldown")
   @Validate({ query: drilldownQuerySchema })
   getDrilldown(
@@ -125,12 +136,14 @@ export class HrAnalyticsPlusController {
     );
   }
 
+  @ResponseSchema(getWorkforcePlansResponseSchema)
   @Get("workforce/plans")
   @RequirePermission("hr:headcount:read")
   getWorkforcePlans(@CurrentUser() u: CurrentUserContext) {
     return this.svc.getWorkforcePlans(u.orgId);
   }
 
+  @ResponseSchema(createHeadcountPlanResponseSchema)
   @Post("workforce/plans")
   @RequirePermission("hr:workforce:manage")
   @Validate({ body: headcountPlanSchema })
@@ -141,6 +154,7 @@ export class HrAnalyticsPlusController {
     return this.svc.createHeadcountPlan(u.orgId, body);
   }
 
+  @ResponseSchema(updateHeadcountPlanResponseSchema)
   @Patch("workforce/plans/:planId")
   @RequirePermission("hr:workforce:manage")
   @Validate({ body: updateHeadcountPlanSchema, params: planIdParams })
@@ -152,23 +166,27 @@ export class HrAnalyticsPlusController {
     return this.svc.updateHeadcountPlan(u.orgId, planId, body);
   }
 
+  @ResponseSchema(getBudgetVsActualResponseSchema)
   @Get("workforce/budget-vs-actual")
   @RequirePermission("hr:headcount:read")
   getBudgetVsActual(@CurrentUser() u: CurrentUserContext) {
     return this.svc.getBudgetVsActual(u.orgId);
   }
 
+  @ResponseSchema(getSkillsGapResponseSchema)
   @Get("workforce/skills-gap")
   getSkillsGap(@CurrentUser() u: CurrentUserContext) {
     return this.svc.getSkillsGap(u.orgId);
   }
 
+  @ResponseSchema(getSuccessionRiskResponseSchema)
   @Get("workforce/succession-risk")
   @RequirePermission("hr:succession:view")
   getSuccessionRisk(@CurrentUser() u: CurrentUserContext) {
     return this.svc.getSuccessionRisk(u.orgId);
   }
 
+  @ResponseSchema(getAttritionForecastResponseSchema)
   @Get("workforce/attrition-forecast")
   getAttritionForecast(@CurrentUser() u: CurrentUserContext) {
     return this.svc.getAttritionForecast(u.orgId);

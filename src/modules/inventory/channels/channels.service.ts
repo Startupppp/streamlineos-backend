@@ -136,7 +136,7 @@ export class ChannelsService {
 
     if (channel.status === "PAUSED") return { synced: 0, skipped: 0 };
 
-    const warehouseIds = (channel.warehouseIds ?? []) as number[];
+    const warehouseIds = channel.warehouseIds ?? [];
 
     const locations =
       warehouseIds.length > 0
@@ -340,7 +340,7 @@ export class ChannelsService {
 
     const variantIds = failedPubs.map((r) => r.productVariantId);
 
-    const warehouseIds = (channel.warehouseIds ?? []) as number[];
+    const warehouseIds = channel.warehouseIds ?? [];
 
     const locations =
       warehouseIds.length > 0

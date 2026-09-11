@@ -13,6 +13,7 @@ import {
   leavePolicies,
   leaveRequests,
   leaveTypes,
+  organizationMembers,
   users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -23,10 +24,14 @@ import { NotificationDispatchService } from "../../notifications/notification-di
 import { AutomationService } from "../../automation/automation.service";
 import { formatDateOnly } from "../../../common/date";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { HrWorkflowEngineService } from "../workflows/hr-workflow-engine.service";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../../common/cache/cache-keys";
+import {
+  CACHE_KEYS,
+  DASHBOARD_PENDING_APPROVALS_NAMESPACE,
+} from "../../../common/cache/cache-keys";
 import { AccessService } from "../../access/access.service";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import type { CreateLeaveInput } from "./dto/leaves.schemas";
@@ -38,6 +43,7 @@ import {
   OrganizationActorError,
   organizationActorHttpError,
 } from "../../../common/organization/organization-actor";
+import { requireOrganizationMembershipId } from "./organization-membership";
 
 interface LeaveRow {
   userId: string;
@@ -62,10 +68,18 @@ export class LeavesWriteService {
   ) {}
 
   private async invalidateLeaveAnalytics(orgId: string): Promise<void> {
-    await this.cache.invalidateNamespace(CACHE_KEYS.leaveAnalyticsNamespace(orgId));
+    await Promise.all([
+      this.cache.invalidateNamespace(CACHE_KEYS.leaveAnalyticsNamespace(orgId)),
+      this.cache.invalidateNamespaceForOrg(orgId, DASHBOARD_PENDING_APPROVALS_NAMESPACE),
+    ]);
   }
 
   async create(currentUser: CurrentUserContext, body: CreateLeaveInput) {
+    const userMembershipId = await requireOrganizationMembershipId(
+      this.db,
+      currentUser.orgId,
+      currentUser.userId,
+    );
     const approver = await this.approvers.resolve(currentUser.orgId, currentUser.userId);
     if (!approver) {
       throw new ConflictException(
@@ -92,8 +106,8 @@ export class LeavesWriteService {
             (1000 * 60 * 60 * 24),
         ) + 1;
 
-    const startStr = formatDateOnly(new Date(body.startDate));
-    const endStr = formatDateOnly(new Date(body.endDate));
+    const startStr = formatDateOnly(body.startDate);
+    const endStr = formatDateOnly(body.endDate);
 
     const teamConflicts = await this.detectTeamConflicts(currentUser.orgId, currentUser.userId, startStr, endStr);
 
@@ -128,7 +142,7 @@ export class LeavesWriteService {
         .from(leaveBalances)
         .where(
           and(
-            eq(leaveBalances.userId, currentUser.userId),
+            eq(leaveBalances.userMembershipId, userMembershipId),
             eq(leaveBalances.orgId, currentUser.orgId),
             eq(leaveBalances.leaveTypeId, body.leaveTypeId),
             eq(leaveBalances.year, new Date().getFullYear()),
@@ -153,7 +167,7 @@ export class LeavesWriteService {
       const [overlapping, blackout] = await Promise.all([
         tx.query.leaveRequests.findFirst({
           where: and(
-            eq(leaveRequests.userId, currentUser.userId),
+            eq(leaveRequests.userMembershipId, userMembershipId),
             eq(leaveRequests.orgId, currentUser.orgId),
             lte(leaveRequests.startDate, endStr),
             gte(leaveRequests.endDate, startStr),
@@ -184,7 +198,7 @@ export class LeavesWriteService {
 
       const serializedOverlap = await tx.query.leaveRequests.findFirst({
         where: and(
-          eq(leaveRequests.userId, currentUser.userId),
+          eq(leaveRequests.userMembershipId, userMembershipId),
           eq(leaveRequests.orgId, currentUser.orgId),
           lte(leaveRequests.startDate, endStr),
           gte(leaveRequests.endDate, startStr),
@@ -201,6 +215,7 @@ export class LeavesWriteService {
         .values({
           orgId: currentUser.orgId,
           userId: currentUser.userId,
+          userMembershipId,
           leaveTypeId: body.leaveTypeId,
           startDate: startStr,
           endDate: endStr,
@@ -208,6 +223,8 @@ export class LeavesWriteService {
           priority: body.priority,
           approverId: approver.id,
           approverMembershipId,
+          createdByMembershipId: userMembershipId,
+          updatedByMembershipId: userMembershipId,
           attachmentUrl: body.attachmentUrl ?? null,
           isHalfDay: body.isHalfDay,
           halfDayPeriod: body.halfDayPeriod ?? null,
@@ -260,18 +277,28 @@ export class LeavesWriteService {
           leaveTypeName,
           requestedDays,
         );
-      }).catch(() => undefined);
+      }).catch(
+        logSideEffectFailure("leave requested side effects", {
+          orgId: currentUser.orgId,
+          leaveRequestId,
+        }),
+      );
     if (!registerAfterCommit(dispatch)) void dispatch();
   }
 
   async cancel(currentUser: CurrentUserContext, leaveId: number) {
+    const userMembershipId = await requireOrganizationMembershipId(
+      this.db,
+      currentUser.orgId,
+      currentUser.userId,
+    );
     const existing = await this.db.transaction(async (tx) => {
       const current = await tx.query.leaveRequests.findFirst({
         where: and(eq(leaveRequests.id, leaveId), eq(leaveRequests.orgId, currentUser.orgId)),
       });
 
       if (!current) return null;
-      if (current.userId !== currentUser.userId) {
+      if (current.userMembershipId !== userMembershipId) {
         throw new ForbiddenException("You can only cancel your own leave requests.");
       }
 
@@ -284,13 +311,14 @@ export class LeavesWriteService {
         .set({
           status: "CANCELLED",
           rowVersion: current.rowVersion + 1,
+          updatedByMembershipId: userMembershipId,
           updatedAt: new Date(),
         })
         .where(
           and(
             eq(leaveRequests.id, leaveId),
             eq(leaveRequests.orgId, currentUser.orgId),
-            eq(leaveRequests.userId, currentUser.userId),
+            eq(leaveRequests.userMembershipId, userMembershipId),
             eq(leaveRequests.status, "PENDING"),
             eq(leaveRequests.rowVersion, current.rowVersion),
           ),
@@ -336,17 +364,20 @@ export class LeavesWriteService {
       : [];
     if (peerIds.length === 0) return [];
 
-    const conflicts = await this.db.query.leaveRequests.findMany({
-      where: and(
+    const conflicts = await this.db
+      .select({ userId: leaveRequests.userId })
+      .from(leaveRequests)
+      .innerJoin(organizationMembers, eq(organizationMembers.id, leaveRequests.userMembershipId))
+      .where(and(
         eq(leaveRequests.orgId, orgId),
         eq(leaveRequests.status, "APPROVED"),
-        inArray(leaveRequests.userId, peerIds),
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.status, "ACTIVE"),
+        inArray(organizationMembers.userId, peerIds),
         lte(leaveRequests.startDate, endDate),
         gte(leaveRequests.endDate, startDate),
-      ),
-      columns: { userId: true },
-      limit: 10,
-    });
+      ))
+      .limit(10);
 
     return [...new Set(conflicts.map((c) => c.userId))];
   }
@@ -365,8 +396,11 @@ export class LeavesWriteService {
         subjectEmployeeId: currentUser.userId,
         context: { leaveRequestId, approverId },
       });
-    } catch {
-      return;
+    } catch (err: unknown) {
+      logSideEffectFailure("leave approval workflow start", {
+        orgId: currentUser.orgId,
+        leaveRequestId,
+      })(err);
     }
   }
 
@@ -405,10 +439,13 @@ export class LeavesWriteService {
         entityType: "leave_request",
         entityId: String(leaveRequestId),
         message: `${actorName ?? "Employee"} submitted a ${leaveTypeName} leave request.`,
-        variables: { employeeName: actorName ?? "Employee", leaveType: leaveTypeName, startDate: formatDateOnly(new Date(body.startDate)), endDate: formatDateOnly(new Date(body.endDate)), reason: body.reason ?? "No reason provided" },
+        variables: { employeeName: actorName ?? "Employee", leaveType: leaveTypeName, startDate: formatDateOnly(body.startDate), endDate: formatDateOnly(body.endDate), reason: body.reason ?? "No reason provided" },
       });
-    } catch {
-      return;
+    } catch (err: unknown) {
+      logSideEffectFailure("leave requested notification", {
+        orgId: currentUser.orgId,
+        leaveRequestId,
+      })(err);
     }
   }
 
@@ -441,8 +478,11 @@ export class LeavesWriteService {
         message: `${employeeName} cancelled a ${leaveTypeName} leave request.`,
         variables: { employeeName, leaveType: leaveTypeName, startDate: existing.startDate, endDate: existing.endDate },
       });
-    } catch {
-      return;
+    } catch (err: unknown) {
+      logSideEffectFailure("leave cancellation notification", {
+        orgId: currentUser.orgId,
+        leaveId,
+      })(err);
     }
   }
 

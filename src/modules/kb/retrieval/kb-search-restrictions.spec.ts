@@ -3,6 +3,8 @@ import { KbSearchService } from "./kb-search.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 
+const makeScopes = (scope = "all") => ({ scopeFor: jest.fn().mockResolvedValue(scope) });
+
 const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserContext => ({
   userId: "user-1",
   orgId: "org-1",
@@ -43,9 +45,8 @@ const makeAccess = (spaceIds: number[] = [1], isAdminResult = false) => ({
 const makeEvents = () => ({ record: jest.fn().mockResolvedValue(undefined) });
 
 const makeEmbeddings = () => ({
-  isConfigured: jest.fn().mockReturnValue(false),
-  embedQuery: jest.fn(),
-  toVectorLiteral: jest.fn(),
+  isEmbeddingConfigured: jest.fn().mockReturnValue(false),
+  embedQueryWithCredit: jest.fn(),
 });
 
 describe("KbSearchService — restriction enforcement", () => {
@@ -59,6 +60,7 @@ describe("KbSearchService — restriction enforcement", () => {
       makeEmbeddings() as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
+      makeScopes() as never,
     );
 
     const user = makeUser();
@@ -78,6 +80,7 @@ describe("KbSearchService — restriction enforcement", () => {
       makeEmbeddings() as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
+      makeScopes() as never,
     );
 
     await svc.retrieveTopArticles(makeUser(), "test query", 5);
@@ -97,6 +100,7 @@ describe("KbSearchService — restriction enforcement", () => {
       makeEmbeddings() as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
+      makeScopes() as never,
     );
 
     const result = await svc.retrieveTopArticles(makeUser(), "  ", 5);
@@ -114,6 +118,7 @@ describe("KbSearchService — restriction enforcement", () => {
       makeEmbeddings() as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
+      makeScopes() as never,
     );
 
     const result = await svc.retrieveTopArticles(makeUser(), "test", 5);

@@ -1,5 +1,6 @@
 import { eq, isNull, sql, type SQL } from "drizzle-orm";
 import { businessParties, contactPartyMap } from "../../db/schema/party";
+import type { ScopeShape } from "../access/scoped-read";
 
 /**
  * Where this module's reads get their contacts.
@@ -136,3 +137,15 @@ export function canonicalContactOnly(orgId: string): SQL {
       and lower_contact_map.contact_id < ${contactPartyMap.contactId}
   )`;
 }
+
+/**
+ * The caller's DataScope for a contact read.
+ *
+ * `own` is the party's owner, the same column `LEAD_PARTY_SCOPE` and
+ * `CLIENT_PARTY_SCOPE` bind, so a rep narrowed to their own book sees the
+ * same set through the list, the search and the export. Applied on all three,
+ * because a scope one read honours and its export ignores is not a scope.
+ */
+export const CONTACT_PARTY_SCOPE: ScopeShape = {
+  columns: { ownerColumn: businessParties.ownerUserId },
+};

@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, inArray, isNull, max } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, max, or } from "drizzle-orm";
 import { kbPages, kbImportJobs, kbExportJobs } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -124,55 +124,61 @@ export class KbImportExportService {
     }
 
     const sortOffsets = new Map<number | null, number>();
-    for (const parentId of parentIds) {
-      const [row] = await this.db
-        .select({ maxSort: max(kbPages.sortOrder) })
+    if (parentIds.length > 0) {
+      const wantsRootGroup = parentIds.some((id) => id === null);
+      const parentScope =
+        nonNullParentIds.length === 0
+          ? isNull(kbPages.parentPageId)
+          : wantsRootGroup
+            ? or(inArray(kbPages.parentPageId, nonNullParentIds), isNull(kbPages.parentPageId))
+            : inArray(kbPages.parentPageId, nonNullParentIds);
+      const grouped = await this.db
+        .select({ parentPageId: kbPages.parentPageId, maxSort: max(kbPages.sortOrder) })
         .from(kbPages)
-        .where(
-          and(
-            eq(kbPages.orgId, orgId),
-            isNull(kbPages.deletedAt),
-            parentId != null
-              ? eq(kbPages.parentPageId, parentId)
-              : isNull(kbPages.parentPageId),
-          ),
-        );
-      sortOffsets.set(parentId ?? null, (row?.maxSort ?? 0) + 100);
+        .where(and(eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt), parentScope))
+        .groupBy(kbPages.parentPageId);
+      const maxByParent = new Map<number | null, number>(
+        grouped.map(function toEntry(row) {
+          return [row.parentPageId ?? null, row.maxSort ?? 0];
+        }),
+      );
+      for (const parentId of parentIds)
+        sortOffsets.set(parentId, (maxByParent.get(parentId) ?? 0) + 100);
     }
 
     let succeeded = 0;
     let failed = 0;
 
-    await this.db.transaction(async function insertPages(tx) {
-      const counters = new Map<number | null, number>(
-        parentIds.map(function initCounter(pid) {
-          return [pid ?? null, 0];
-        }),
-      );
-
-      for (const item of items) {
-        const pid = item.parentPageId ?? null;
-        const counter = counters.get(pid) ?? 0;
-        const base = sortOffsets.get(pid) ?? 100;
-        const sortOrder = base + counter * 100;
-        counters.set(pid, counter + 1);
-
-        try {
-          await tx.insert(kbPages).values({
-            orgId,
-            parentPageId: item.parentPageId ?? null,
-            title: item.title,
-            contentText: item.contentText ?? null,
-            sortOrder,
-            createdById: user.userId,
-            lastEditedById: user.userId,
-          });
-          succeeded++;
-        } catch {
-          failed++;
-        }
-      }
+    const counters = new Map<number | null, number>(
+      parentIds.map(function initCounter(pid) {
+        return [pid ?? null, 0];
+      }),
+    );
+    const pageValues = items.map(function buildRow(item) {
+      const pid = item.parentPageId ?? null;
+      const counter = counters.get(pid) ?? 0;
+      const base = sortOffsets.get(pid) ?? 100;
+      const sortOrder = base + counter * 100;
+      counters.set(pid, counter + 1);
+      return {
+        orgId,
+        parentPageId: item.parentPageId ?? null,
+        title: item.title,
+        contentText: item.contentText ?? null,
+        sortOrder,
+        createdById: user.userId,
+        lastEditedById: user.userId,
+      };
     });
+
+    if (pageValues.length > 0) {
+      try {
+        await this.db.insert(kbPages).values(pageValues).onConflictDoNothing();
+        succeeded = pageValues.length;
+      } catch {
+        failed = pageValues.length;
+      }
+    }
 
     const [job] = await this.db
       .insert(kbImportJobs)

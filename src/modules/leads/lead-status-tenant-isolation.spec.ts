@@ -1,62 +1,77 @@
+jest.mock("./lead-party-reader", () => ({
+  ...jest.requireActual("./lead-party-reader"),
+  loadLeadView: jest.fn(),
+}));
+
+import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../db/drizzle.module";
 import { LeadStatusService } from "./lead-status.service";
+import { loadLeadView } from "./lead-party-reader";
+import type { LeadView } from "./lead-party-reader";
 
-function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
-  if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
-  if (Array.isArray(value)) return value.flatMap((i) => sqlValues(i, seen));
-  if (typeof value !== "object" || seen.has(value)) return [];
-  seen.add(value);
-  const r = value as { queryChunks?: unknown[]; value?: unknown };
-  return [...(r.queryChunks ? sqlValues(r.queryChunks, seen) : []), ...(Object.prototype.hasOwnProperty.call(r, "value") ? sqlValues(r.value, seen) : [])];
-}
+const mockLoadLeadView = loadLeadView as jest.MockedFunction<typeof loadLeadView>;
 
-function makeThenableBuilder(rows: unknown[]) {
-  const where = jest.fn();
-  const builder: Record<string, unknown> = {
-    then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) => Promise.resolve(rows).then(resolve, reject),
-  };
-  const chain = () => builder;
-  builder.from = jest.fn().mockImplementation(chain);
-  builder.where = where;
-  builder.leftJoin = jest.fn().mockImplementation(chain);
-  builder.innerJoin = jest.fn().mockImplementation(chain);
-  builder.orderBy = jest.fn().mockImplementation(chain);
-  builder.limit = jest.fn().mockImplementation(chain);
-  where.mockImplementation(chain);
-  const db = { select: jest.fn().mockReturnValue(builder) } as unknown as Db;
-  return { db, where };
+const ATTACKER = "org-attacker";
+const OWNER = "org-owner";
+
+const FAKE_LEAD: LeadView = {
+  id: 21,
+  partyId: "party-1",
+  orgId: OWNER,
+  name: "Test Lead",
+  status: "NEW",
+  priority: "WARM",
+  source: "other",
+  score: 0,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+  deletedAt: null,
+};
+
+function makeService() {
+  const db = {
+    select: jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          limit: jest.fn().mockResolvedValue([]),
+          then: (res: (v: unknown[]) => unknown) => Promise.resolve([]).then(res),
+        }),
+        leftJoin: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ then: (res: (v: unknown[]) => unknown) => Promise.resolve([]).then(res) }) }),
+        innerJoin: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ then: (res: (v: unknown[]) => unknown) => Promise.resolve([]).then(res) }) }),
+      }),
+    }),
+    transaction: jest.fn().mockResolvedValue(undefined),
+  } as unknown as Db;
+  const cache = { invalidate: jest.fn(), invalidateNamespace: jest.fn(), cachedVersioned: jest.fn() };
+  const audit = { log: jest.fn() };
+  const crmMetadata = { getAggregate: jest.fn().mockResolvedValue({ options: [], stages: [] }) };
+  const blueprints = { assertTransitionAllowed: jest.fn().mockResolvedValue({ allowed: true }) };
+  const planLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
+  const conversion = { convert: jest.fn() };
+  return new LeadStatusService(db, cache as never, audit as never, crmMetadata as never, blueprints as never, planLimits as never, conversion as never);
 }
 
 describe("LeadStatusService — cross-tenant isolation", () => {
-  const ATTACKER = "org-attacker";
-  const OWNER = "org-owner";
-
-  function makeService(rows: unknown[]) {
-    const { db: baseDb, where } = makeThenableBuilder(rows);
-    const db = { ...baseDb, transaction: jest.fn().mockResolvedValue(undefined) } as unknown as Db;
-    const cache = { invalidate: jest.fn(), cachedVersioned: jest.fn() };
-    const audit = { log: jest.fn() };
-    const crmMetadata = { getAggregate: jest.fn().mockResolvedValue({ options: [], stages: [] }) };
-    const blueprints = { assertTransitionAllowed: jest.fn().mockResolvedValue({ allowed: true }) };
-    const planLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
-    const conversion = { convert: jest.fn() };
-    const svc = new LeadStatusService(db, cache as never, audit as never, crmMetadata as never, blueprints as never, planLimits as never, conversion as never);
-    return { svc, where };
-  }
-
-  it("returns stale_or_missing for a different org lead (cross-tenant isolation)", async () => {
-    const { svc, where } = makeService([]);
-    const result = await svc.transitionLeadStatus(ATTACKER, "u1", 99, { status: "contacted" });
-    expect(result).toEqual({ ok: false, reason: "stale_or_missing" });
-    const allVals = where.mock.calls.flat().flatMap((c: unknown) => sqlValues(c));
-    expect(allVals).toContain(ATTACKER);
+  beforeEach(() => {
+    jest.resetAllMocks();
   });
 
-  it("queries with the correct org for the owning org (control)", async () => {
-    const { svc, where } = makeService([]);
-    const result = await svc.transitionLeadStatus(OWNER, "u1", 99, { status: "contacted" });
+  it("throws 404 for a lead belonging to a different org (cross-tenant)", async () => {
+    mockLoadLeadView.mockResolvedValue(undefined);
+    const svc = makeService();
+    await expect(svc.changeStatus(ATTACKER, "u1", 21, { status: "contacted" })).rejects.toThrow(NotFoundException);
+  });
+
+  it("throws 404 for a lead id that does not exist (unknown id)", async () => {
+    mockLoadLeadView.mockResolvedValue(undefined);
+    const svc = makeService();
+    await expect(svc.changeStatus(OWNER, "u1", 9999, { status: "contacted" })).rejects.toThrow(NotFoundException);
+  });
+
+  it("returns stale_or_missing when the transaction race-conditions after a found load (own org)", async () => {
+    mockLoadLeadView.mockResolvedValue(FAKE_LEAD);
+    const svc = makeService();
+    const result = await svc.changeStatus(OWNER, "u1", 21, { status: "contacted" });
     expect(result).toEqual({ ok: false, reason: "stale_or_missing" });
-    const allVals = where.mock.calls.flat().flatMap((c: unknown) => sqlValues(c));
-    expect(allVals).toContain(OWNER);
   });
 });

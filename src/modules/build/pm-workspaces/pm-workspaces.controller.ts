@@ -32,12 +32,20 @@ import {
 } from "./dto/pm-workspaces.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  pmWorkspaceRowSchema,
+  pmWorkspacePageSchema,
+  pmWorkspaceMemberRowSchema,
+  pmWorkspaceMemberPageSchema,
+} from "./dto/pm-workspaces-response.schemas";
+import { successSchema } from "../../../common/openapi/response-envelopes";
 
 const pmWorkspaceIdParams = z.object({ pmWorkspaceId: z.string().min(1) }).strict();
 const pmWorkspaceIdpmWorkspaceMembershipIdParams = z.object({ pmWorkspaceId: z.string().min(1), pmWorkspaceMembershipId: z.string().min(1) }).strict();
 
 @RequireModule("build")
-@Controller("product-management/workspaces")
+@Controller("build/workspaces")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class PmWorkspacesController {
   constructor(
@@ -47,6 +55,7 @@ export class PmWorkspacesController {
 
   @Get()
   @RequirePermission("build:workspaces:view")
+  @ResponseSchema(pmWorkspacePageSchema)
   @Validate({ query: listWorkspacesQuerySchema })
   listWorkspaces(
     @Query() query: ListWorkspacesQuery,
@@ -57,6 +66,7 @@ export class PmWorkspacesController {
 
   @Get(":pmWorkspaceId")
   @RequirePermission("build:workspaces:view")
+  @ResponseSchema(pmWorkspaceRowSchema)
   @Validate({ params: pmWorkspaceIdParams })
   getWorkspace(
     @Param("pmWorkspaceId") pmWorkspaceId: string,
@@ -68,6 +78,7 @@ export class PmWorkspacesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:workspaces:create")
+  @ResponseSchema(pmWorkspaceRowSchema)
   @Validate({ body: createWorkspaceSchema })
   createWorkspace(
     @Body() body: CreateWorkspaceInput,
@@ -78,6 +89,7 @@ export class PmWorkspacesController {
 
   @Patch(":pmWorkspaceId")
   @RequirePermission("build:workspaces:update")
+  @ResponseSchema(pmWorkspaceRowSchema)
   @Validate({ params: pmWorkspaceIdParams, body: updateWorkspaceSchema })
   updateWorkspace(
     @Param("pmWorkspaceId") pmWorkspaceId: string,
@@ -89,6 +101,7 @@ export class PmWorkspacesController {
 
   @Delete(":pmWorkspaceId")
   @HttpCode(204)
+  @NoContentResponse()
   @RequirePermission("build:workspaces:delete")
   @Validate({ params: pmWorkspaceIdParams })
   deleteWorkspace(
@@ -100,6 +113,7 @@ export class PmWorkspacesController {
 
   @Get(":pmWorkspaceId/members")
   @RequirePermission("build:workspaces:members:view")
+  @ResponseSchema(pmWorkspaceMemberPageSchema)
   @Validate({ params: pmWorkspaceIdParams, query: listMembersQuerySchema })
   listMembers(
     @Param("pmWorkspaceId") pmWorkspaceId: string,
@@ -112,6 +126,7 @@ export class PmWorkspacesController {
   @Post(":pmWorkspaceId/members")
   @HttpCode(201)
   @RequirePermission("build:workspaces:members:manage")
+  @ResponseSchema(pmWorkspaceMemberRowSchema)
   @Validate({ params: pmWorkspaceIdParams, body: addWorkspaceMemberSchema })
   addMember(
     @Param("pmWorkspaceId") pmWorkspaceId: string,
@@ -124,6 +139,7 @@ export class PmWorkspacesController {
   @Delete(":pmWorkspaceId/members/:pmWorkspaceMembershipId")
   @HttpCode(200)
   @RequirePermission("build:workspaces:members:manage")
+  @ResponseSchema(successSchema)
   @Validate({ params: pmWorkspaceIdpmWorkspaceMembershipIdParams })
   removeMember(
     @Param("pmWorkspaceId") pmWorkspaceId: string,

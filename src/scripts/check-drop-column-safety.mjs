@@ -182,6 +182,27 @@ console.log(
   `check-drop-column-safety: ${files.length} migration file(s), ${drops.length} dropped column(s), ${schemaFiles.length} schema file(s)`,
 );
 
+// The cross-product below is empty when EITHER side is empty, so an unreachable
+// migrations dir, an unreachable schema dir, or a DROP parser that matched nothing
+// all print the same "OK" as a genuinely safe tree. Each side gets its own floor.
+const MIN_MIGRATION_FILES = 100;
+const MIN_SCHEMA_FILES = 50;
+const MIN_DROPS = 1;
+const inconclusive = [];
+if (files.length < MIN_MIGRATION_FILES)
+  inconclusive.push(`only ${files.length} migration file(s) read (floor ${MIN_MIGRATION_FILES})`);
+if (schemaFiles.length < MIN_SCHEMA_FILES)
+  inconclusive.push(`only ${schemaFiles.length} schema file(s) read (floor ${MIN_SCHEMA_FILES})`);
+if (drops.length < MIN_DROPS)
+  inconclusive.push(
+    `the DROP COLUMN parser matched ${drops.length} drop(s) across ${files.length} migrations — history contains drops, so zero means the parser stopped matching`,
+  );
+if (inconclusive.length > 0) {
+  console.error(`\nINCONCLUSIVE — this run compared nothing:`);
+  for (const r of inconclusive) console.error(`  ${r}`);
+  process.exit(2);
+}
+
 if (violations.length === 0) {
   console.log("  OK — no dropped column is still declared in the Drizzle schema");
   process.exit(0);

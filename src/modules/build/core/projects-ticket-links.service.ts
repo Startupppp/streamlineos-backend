@@ -112,7 +112,9 @@ export class ProjectsTicketLinksService {
     const existing = await this.db
       .select({ id: ticketRelatedLinks.id })
       .from(ticketRelatedLinks)
-      .where(eq(ticketRelatedLinks.ticketId, ticketId));
+      .where(
+        and(eq(ticketRelatedLinks.orgId, u.orgId), eq(ticketRelatedLinks.ticketId, ticketId)),
+      );
     if (existing.length >= 20)
       throw new BadRequestException("A ticket can have at most 20 related links");
     const [membership] = await this.db
@@ -150,6 +152,7 @@ export class ProjectsTicketLinksService {
       .from(ticketRelatedLinks)
       .where(
         and(
+          eq(ticketRelatedLinks.orgId, u.orgId),
           eq(ticketRelatedLinks.id, linkId),
           eq(ticketRelatedLinks.ticketId, ticketId),
         ),
@@ -165,6 +168,7 @@ export class ProjectsTicketLinksService {
       .set(update)
       .where(
         and(
+          eq(ticketRelatedLinks.orgId, u.orgId),
           eq(ticketRelatedLinks.id, linkId),
           eq(ticketRelatedLinks.ticketId, ticketId),
         ),
@@ -188,6 +192,7 @@ export class ProjectsTicketLinksService {
       .from(ticketRelatedLinks)
       .where(
         and(
+          eq(ticketRelatedLinks.orgId, u.orgId),
           eq(ticketRelatedLinks.id, linkId),
           eq(ticketRelatedLinks.ticketId, ticketId),
         ),
@@ -197,6 +202,7 @@ export class ProjectsTicketLinksService {
       throw new ForbiddenException("Cannot delete another user's link");
     await this.db.delete(ticketRelatedLinks).where(
       and(
+        eq(ticketRelatedLinks.orgId, u.orgId),
         eq(ticketRelatedLinks.id, linkId),
         eq(ticketRelatedLinks.ticketId, ticketId),
       ),

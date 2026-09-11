@@ -92,7 +92,7 @@ async function buildSvc(mockDb: unknown, auditLog = jest.fn()) {
           resolveUserPermissions: jest.fn().mockResolvedValue(new Map()),
         },
       },
-      { provide: CacheService, useValue: { invalidate: jest.fn().mockResolvedValue(undefined), invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
+      { provide: CacheService, useValue: { invalidate: jest.fn().mockResolvedValue(undefined), invalidateNamespace: jest.fn().mockResolvedValue(undefined), invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined) } },
       { provide: AuditService, useValue: { log: auditLog } },
     ],
   }).compile();

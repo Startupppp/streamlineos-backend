@@ -183,7 +183,7 @@ export class ProjectsActivityService {
     }
     if (changes.cycleId !== undefined && normalize(changes.cycleId) !== normalize(before.cycleId)) {
       const cycleIds = [before.cycleId, changes.cycleId].filter((id): id is number => id != null);
-      const cycleNameById = await this.resolveCycleNames(cycleIds);
+      const cycleNameById = await this.resolveCycleNames(orgId, cycleIds);
       entries.push({
         action: "cycle_changed",
         from: before.cycleId != null ? (cycleNameById.get(before.cycleId) ?? String(before.cycleId)) : null,
@@ -236,7 +236,21 @@ export class ProjectsActivityService {
     return map;
   }
 
-  private async resolveCycleNames(ids: number[]): Promise<Map<number, string>> {
+  /**
+   * Cycle names for an activity feed, scoped to the organisation.
+   *
+   * Defence in depth, not a leak that was reachable: the ids come from the
+   * ticket's own `cycle_id`, which carries a composite foreign key into
+   * `(cycles.org_id, cycles.id)`, and `cycles.id` is a globally unique identity
+   * column — so a match already had to belong to this organisation. Stating the
+   * tenant means a future caller that passes ids from somewhere less
+   * constrained cannot turn this into a cross-tenant name lookup, and it keeps
+   * the scan on the organisation-leading index.
+   */
+  private async resolveCycleNames(
+    orgId: string,
+    ids: number[],
+  ): Promise<Map<number, string>> {
     const map = new Map<number, string>();
     const unique = Array.from(new Set(ids));
     if (unique.length === 0) return map;
@@ -244,7 +258,7 @@ export class ProjectsActivityService {
     const rows = await this.db
       .select({ id: cycles.id, name: cycles.name })
       .from(cycles)
-      .where(inArray(cycles.id, unique));
+      .where(and(eq(cycles.orgId, orgId), inArray(cycles.id, unique)));
 
     for (const row of rows) {
       map.set(row.id, row.name);

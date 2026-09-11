@@ -202,7 +202,8 @@ describe("SLO catalogue", () => {
       FAILURE_RUNBOOK:
         "architecture-refactor/final-refactor/evidence/40-observability/FAILURE-RUNBOOKS.md",
     };
-    const base = "architecture-refactor/c28-cell-based-platform-at-20m/RUNBOOKS.md";
+    const base =
+      "architecture-refactor/final-refactor/evidence/40-observability/FAILURE-RUNBOOKS.md";
     const broken: string[] = [];
     for (const [id, entry] of registry) {
       const file = entry.file === null ? base : files[entry.file];
@@ -282,42 +283,49 @@ describe("SLO catalogue", () => {
 describe("Route attribution", () => {
   const scriptPath = join(SRC_ROOT, "scripts", "route-attribution.mjs");
 
-  it("declares PLATFORM_NAMESPACES explicitly with the required platform entries", () => {
-    const source = readScript("route-attribution.mjs");
-    expect(source).toContain("PLATFORM_NAMESPACES");
-    expect(source).toContain('"health"');
-    expect(source).toContain('"auth"');
-    expect(source).toContain('"cron"');
-    expect(source).toContain('"platform"');
-  });
-
-  it("encodes the moduleOwningNamespace-equivalent mapping for home-administered namespaces", () => {
-    const source = readScript("route-attribution.mjs");
-    expect(source).toContain("chat:");
-    expect(source).toContain("mail:");
-    expect(source).toContain("calendar:");
-    expect(source).toContain("notifications:");
-    expect(source).toContain('"home"');
-  });
-
-  it("handles the route-segment exceptions where module id differs from route first segment", () => {
-    const source = readScript("route-attribution.mjs");
-    expect(source).toContain("knowledge:");
-    expect(source).toContain('"kb"');
-    expect(source).toContain("dashboard:");
-  });
-
-  it("self-test passes: hr → people-team, chat → communications, health → platform, unknown → unattributable, owners differ", () => {
+  // Asserted through behaviour, not source text: the mapping is now derived from the committed module manifest, so a text scan would pin a table that no longer exists.
+  const selfTest = (): Record<string, boolean> => {
     const output = execSync(`"${process.execPath}" "${scriptPath}" --self-test`, {
       encoding: "utf8",
     });
     const lastLine = output.trim().split("\n").at(-1) ?? "{}";
-    const result = JSON.parse(lastLine) as { pass: boolean; checks: Record<string, boolean> };
+    const result = JSON.parse(lastLine) as {
+      pass: boolean;
+      checks: Record<string, boolean>;
+    };
     expect(result.pass).toBe(true);
-    expect(result.checks.hrAttributesToPeopleTeam).toBe(true);
-    expect(result.checks.chatAttributesToCommunicationsViaHome).toBe(true);
-    expect(result.checks.healthAttributesToPlatform).toBe(true);
-    expect(result.checks.unknownNamespaceIsUnattributable).toBe(true);
-    expect(result.checks.ownersDifferBetweenHrAndChat).toBe(true);
+    expect(Object.keys(result.checks).length).toBeGreaterThan(10);
+    return result.checks;
+  };
+
+  it("attributes every declared platform namespace to platform-reliability", () => {
+    const checks = selfTest();
+    expect(checks.healthAttributesToPlatform).toBe(true);
+    expect(checks.authAttributesToPlatform).toBe(true);
+    expect(checks.cronAttributesToPlatform).toBe(true);
+    expect(checks.platformAttributesToPlatform).toBe(true);
+  });
+
+  it("resolves the home-administered namespaces to Home, not to themselves", () => {
+    const checks = selfTest();
+    expect(checks.chatAttributesToCommunicationsViaHome).toBe(true);
+    expect(checks.mailAttributesToCommunicationsViaHome).toBe(true);
+    expect(checks.calendarAttributesToCommunicationsViaHome).toBe(true);
+    expect(checks.notificationsAttributesToHomeNotItsOwnModule).toBe(true);
+    expect(checks.partyAttributesToCrmSloExcluded).toBe(true);
+  });
+
+  it("handles the route-segment exceptions where module id differs from route first segment", () => {
+    const checks = selfTest();
+    expect(checks.knowledgeAttributesToKbModule).toBe(true);
+    expect(checks.dashboardRouteSegmentAttributesToHome).toBe(true);
+  });
+
+  it("self-test passes: hr → people-team, unknown → unattributable, owners differ", () => {
+    const checks = selfTest();
+    expect(checks.hrAttributesToPeopleTeam).toBe(true);
+    expect(checks.unknownNamespaceIsUnattributable).toBe(true);
+    expect(checks.ownersDifferBetweenHrAndChat).toBe(true);
+    expect(checks.ownersDifferBetweenHrAndHealth).toBe(true);
   });
 });

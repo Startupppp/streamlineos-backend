@@ -1,18 +1,11 @@
-/**
- * Regression specs for the GET /support/:supportTicketId BOLA gap.
- *
- * Before the fix, getTicket() only checked orgId, so any holder of
- * support:tickets:view with "own" scope (only sees their assigned tickets
- * in the list) could fetch any org ticket by numeric ID.
- *
- * After the fix, getTicket() accepts an optional actor+scope arg and
- * throws ForbiddenException when scope is not "all" and the ticket
- * assignee does not match the actor.
- */
+// GET /support/:supportTicketId once checked only orgId, so an "own"-scoped holder could fetch any org ticket by id. The scope is now in the predicate, and this double answers it the way the database would.
 
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import type { DataScope } from "../../access/access.types";
+import { ScopedRead } from "../../access/scoped-read";
 import { SupportTicketsService } from "./support-tickets.service";
 
 const ORG = "org-authz-test";
@@ -26,24 +19,26 @@ const makeTicket = (assigneeId: string | null = ASSIGNEE_USER) => ({
   title: "Test ticket",
   status: "OPEN",
   priority: "MEDIUM",
-  assigneeId,
-  creatorId: ASSIGNEE_USER,
-  createdAt: new Date(),
-  updatedAt: new Date(),
   client: null,
-  assignee: assigneeId ? { id: assigneeId, name: "User", image: null } : null,
-  creator: { id: ASSIGNEE_USER, name: "Creator" },
+  assigneeMembership: assigneeId ? { user: { id: assigneeId } } : null,
+  creatorMembership: { user: { id: ASSIGNEE_USER } },
   messages: [],
 });
 
+const dialect = new PgDialect();
+
+// The scoped read narrows by assignee membership; the existence fallback does not. This double answers each the way Postgres would.
 function makeDb(ticket: ReturnType<typeof makeTicket> | null): Db {
+  const findFirst = jest.fn().mockImplementation((args: { where: SQL }) => {
+    if (ticket === null) return Promise.resolve(null);
+    const rendered = dialect.sqlToQuery(args.where);
+    const narrowed = rendered.sql.includes("organization_members");
+    if (!narrowed) return Promise.resolve(ticket);
+    const assignee = ticket.assigneeMembership?.user?.id ?? null;
+    return Promise.resolve(rendered.params.includes(assignee) ? ticket : null);
+  });
   return {
-    query: {
-      supportTickets: {
-        findFirst: jest.fn().mockResolvedValue(ticket),
-        findMany: jest.fn().mockResolvedValue([]),
-      },
-    },
+    query: { supportTickets: { findFirst, findMany: jest.fn().mockResolvedValue([]) } },
   } as unknown as Db;
 }
 
@@ -70,7 +65,7 @@ function makeService(ticket: ReturnType<typeof makeTicket> | null): SupportTicke
 }
 
 function actor(userId: string, scope: DataScope) {
-  return { userId, scope };
+  return ScopedRead.of(ORG, userId, scope);
 }
 
 describe("SupportTicketsService.getTicket — scope gate", () => {

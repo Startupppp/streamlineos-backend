@@ -24,7 +24,7 @@ describe("OrgHierarchyCommandService — cross-tenant isolation", () => {
       select: jest.fn().mockReturnValue({ from }),
       execute,
     } as unknown as Db;
-    const deps = { assertCanArchive: jest.fn().mockResolvedValue(undefined), assertCanRetire: jest.fn().mockResolvedValue(undefined) };
+    const deps = { assertCanArchive: jest.fn().mockResolvedValue(undefined) };
     const svc = new OrgHierarchyCommandService(db, deps as never);
     return { svc, where };
   }
@@ -33,7 +33,7 @@ describe("OrgHierarchyCommandService — cross-tenant isolation", () => {
     const { svc } = makeService([]);
     const mutation = jest.fn().mockResolvedValue({ success: true });
     await expect(
-      svc.run(ATTACKER, UNIT_ID, "BRANCH", "archive", mutation),
+      svc.run(ATTACKER, UNIT_ID, "BRANCH", mutation),
     ).rejects.toThrow(NotFoundException);
     expect(mutation).not.toHaveBeenCalled();
   });
@@ -42,7 +42,7 @@ describe("OrgHierarchyCommandService — cross-tenant isolation", () => {
     const { svc } = makeService([{ id: UNIT_ID }]);
     const mutation = jest.fn().mockResolvedValue({ success: true });
     await expect(
-      svc.run(OWNER, UNIT_ID, "BRANCH", "archive", mutation),
+      svc.run(OWNER, UNIT_ID, "BRANCH", mutation),
     ).resolves.toEqual({ success: true });
     expect(mutation).toHaveBeenCalled();
   });

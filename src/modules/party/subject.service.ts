@@ -31,6 +31,7 @@ import type {
   UpdateSubjectInput,
 } from "./dto/subject.schemas";
 import { SubjectTypeService } from "./subject-type.service";
+import { assertPartyInOrg } from "./party-tenant";
 import { isUniqueViolation } from "../../common/db/postgres-error";
 
 @Injectable()
@@ -262,6 +263,7 @@ export class SubjectService {
   }
 
   async listForParty(organizationId: string, partyId: string) {
+    await assertPartyInOrg(this.db, organizationId, partyId);
     return this.db
       .select({
         subjectId: subjects.subjectId,

@@ -1,10 +1,12 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, lt, or } from "drizzle-orm";
 import { workflows, workflowSecrets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import type { CreateSecretDto } from "./dto/workflow.schemas";
+import type { CreateSecretDto, SecretListQueryDto } from "./dto/workflow.schemas";
 import { encryptSecret } from "../../common/security/secret-encryption.util";
+import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
+import { PAGE_SIZE_CAP } from "../../common/pagination/list-query.schema";
 
 const SECRET_COLUMNS = {
   id: workflowSecrets.id,
@@ -19,18 +21,37 @@ const SECRET_COLUMNS = {
 export class WorkflowsSecretsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async listSecrets(orgId: string, workflowId: string) {
+  async listSecrets(orgId: string, workflowId: string, query: SecretListQueryDto) {
     const workflow = await this.db.query.workflows.findFirst({
       where: and(eq(workflows.id, workflowId), eq(workflows.orgId, orgId)),
       columns: { id: true },
     });
     if (!workflow) throw new NotFoundException("Workflow not found");
 
-    return this.db
+    const { cursor, limit: rawLimit } = query;
+    const limit = Math.min(rawLimit, PAGE_SIZE_CAP);
+    const position = decodeCursor(cursor);
+    const conditions = [eq(workflowSecrets.orgId, orgId)];
+    if (position) {
+      const cursorDate = new Date(position.sortValue);
+      const cursorId = position.id;
+      conditions.push(
+        or(
+          lt(workflowSecrets.createdAt, cursorDate),
+          and(eq(workflowSecrets.createdAt, cursorDate), lt(workflowSecrets.id, cursorId)),
+        )!,
+      );
+    }
+    const rows = await this.db
       .select(SECRET_COLUMNS)
       .from(workflowSecrets)
-      .where(eq(workflowSecrets.orgId, orgId))
-      .limit(200);
+      .where(and(...conditions))
+      .orderBy(desc(workflowSecrets.createdAt), desc(workflowSecrets.id))
+      .limit(limit + 1);
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt ?? ""),
+      id: row.id,
+    }));
   }
 
   async createSecret(orgId: string, workflowId: string, dto: CreateSecretDto) {
@@ -60,33 +81,40 @@ export class WorkflowsSecretsService {
     });
     if (!workflow) throw new NotFoundException("Workflow not found");
 
-    const existing = await this.db.query.workflowSecrets.findFirst({
-      where: and(
-        eq(workflowSecrets.id, secretId),
-        eq(workflowSecrets.orgId, orgId),
-      ),
-      columns: { id: true },
-    });
-    if (!existing) throw new NotFoundException("Secret not found");
-
-    await this.db
+    const [deleted] = await this.db
       .delete(workflowSecrets)
-      .where(eq(workflowSecrets.id, secretId));
+      .where(
+        and(eq(workflowSecrets.id, secretId), eq(workflowSecrets.orgId, orgId)),
+      )
+      .returning({ id: workflowSecrets.id });
+    if (!deleted) throw new NotFoundException("Secret not found");
   }
 
-  listGlobalSecrets(orgId: string) {
-    return this.db
-      .select({
-        id: workflowSecrets.id,
-        name: workflowSecrets.name,
-        description: workflowSecrets.description,
-        createdAt: workflowSecrets.createdAt,
-        updatedAt: workflowSecrets.updatedAt,
-      })
+  async listGlobalSecrets(orgId: string, query: SecretListQueryDto) {
+    const { cursor, limit: rawLimit } = query;
+    const limit = Math.min(rawLimit, PAGE_SIZE_CAP);
+    const position = decodeCursor(cursor);
+    const conditions = [eq(workflowSecrets.orgId, orgId)];
+    if (position) {
+      const cursorDate = new Date(position.sortValue);
+      const cursorId = position.id;
+      conditions.push(
+        or(
+          lt(workflowSecrets.createdAt, cursorDate),
+          and(eq(workflowSecrets.createdAt, cursorDate), lt(workflowSecrets.id, cursorId)),
+        )!,
+      );
+    }
+    const rows = await this.db
+      .select(SECRET_COLUMNS)
       .from(workflowSecrets)
-      .where(eq(workflowSecrets.orgId, orgId))
-      .orderBy(desc(workflowSecrets.createdAt))
-      .limit(200);
+      .where(and(...conditions))
+      .orderBy(desc(workflowSecrets.createdAt), desc(workflowSecrets.id))
+      .limit(limit + 1);
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt ?? ""),
+      id: row.id,
+    }));
   }
 
   async createGlobalSecret(orgId: string, dto: CreateSecretDto) {
@@ -98,27 +126,17 @@ export class WorkflowsSecretsService {
         encryptedValue: encryptSecret(dto.value),
         description: dto.description,
       })
-      .returning({
-        id: workflowSecrets.id,
-        name: workflowSecrets.name,
-        description: workflowSecrets.description,
-        createdAt: workflowSecrets.createdAt,
-        updatedAt: workflowSecrets.updatedAt,
-      });
+      .returning(SECRET_COLUMNS);
     return secret;
   }
 
   async deleteGlobalSecret(orgId: string, secretId: string) {
-    const existing = await this.db.query.workflowSecrets.findFirst({
-      where: and(
-        eq(workflowSecrets.id, secretId),
-        eq(workflowSecrets.orgId, orgId),
-      ),
-      columns: { id: true },
-    });
-    if (!existing) throw new NotFoundException("Secret not found");
-    await this.db
+    const [deleted] = await this.db
       .delete(workflowSecrets)
-      .where(eq(workflowSecrets.id, secretId));
+      .where(
+        and(eq(workflowSecrets.id, secretId), eq(workflowSecrets.orgId, orgId)),
+      )
+      .returning({ id: workflowSecrets.id });
+    if (!deleted) throw new NotFoundException("Secret not found");
   }
 }

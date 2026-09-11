@@ -94,7 +94,27 @@ export async function emitPeriodLifecycleEvent(
   tx: DbOrTx,
   input: EmitPeriodLifecycleInput,
 ): Promise<void> {
-  await OutboxWriter.emit(tx, {
+  await OutboxWriter.emit(tx, toOutboxInput(input));
+}
+
+/**
+ * Writes a batch transition's lifecycle events into the caller's transaction
+ * as one multi-row INSERT (chunked by `OutboxWriter.emitMany`).
+ *
+ * Only the round trip is shared. Each event is still its own row, for its own
+ * period, on the `aggregate_version` its own UPDATE claimed — a bulk approval
+ * is N separate things that happened to N separate people, and the payroll
+ * handoff waits on each period's own `timesheets.period.locked`.
+ */
+export async function emitPeriodLifecycleEvents(
+  tx: DbOrTx,
+  inputs: readonly EmitPeriodLifecycleInput[],
+): Promise<void> {
+  await OutboxWriter.emitMany(tx, inputs.map(toOutboxInput));
+}
+
+function toOutboxInput(input: EmitPeriodLifecycleInput) {
+  return {
     eventId: randomUUID(),
     organizationId: input.orgId,
     aggregateType: TIMESHEET_PERIOD_AGGREGATE,
@@ -103,5 +123,5 @@ export async function emitPeriodLifecycleEvent(
     eventType: input.eventType,
     payload: periodLifecycleEventSchema.parse(input.payload),
     occurredAt: input.occurredAt,
-  });
+  };
 }

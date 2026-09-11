@@ -1,5 +1,12 @@
 import type { Db } from "../../db/drizzle.module";
 import { NotificationPreferencesService } from "./notification-preferences.service";
+import type { NotificationConsentService } from "./notification-consent.service";
+
+function consentsStub(): NotificationConsentService {
+  return {
+    withdrawChannels: jest.fn().mockResolvedValue(0),
+  } as unknown as NotificationConsentService;
+}
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -35,7 +42,7 @@ describe("NotificationPreferencesService — cross-tenant isolation", () => {
   it("scopes preference lookup to the requesting org (tenant isolation)", async () => {
     const { db, allWhereArgs } = makeDb();
     const registry = {} as never;
-    const svc = new NotificationPreferencesService(db, registry);
+    const svc = new NotificationPreferencesService(db, registry, consentsStub());
 
     await svc.get(ATTACKER_ORG, "user-1");
 
@@ -47,7 +54,7 @@ describe("NotificationPreferencesService — cross-tenant isolation", () => {
   it("returns preferences for the owning org (same-tenant control)", async () => {
     const { db } = makeDb();
     const registry = {} as never;
-    const svc = new NotificationPreferencesService(db, registry);
+    const svc = new NotificationPreferencesService(db, registry, consentsStub());
 
     const result = await svc.get(OWNER_ORG, "user-1");
 

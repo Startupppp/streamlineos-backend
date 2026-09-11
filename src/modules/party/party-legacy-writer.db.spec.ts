@@ -27,18 +27,20 @@
  * Everything happens inside a transaction that is rolled back, fixtures
  * included, so the tests leave the database exactly as they found it.
  */
-import { and, eq, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import type postgres from "postgres";
 import * as schema from "../../db/schema";
 import type { Db } from "../../db/drizzle.types";
-import { businessParties, leadPartyMap, partyRoles } from "../../db/schema/party";
+import { businessParties, leadPartyMap, partyIdentifiers, partyRoles } from "../../db/schema/party";
 import { diffLegacyMirror, LEAD_MIRROR } from "./party-legacy-mirror";
 import { updatePartyWithMirror } from "./party-legacy-writer";
 import {
   createMirroredLead,
   softDeleteMirroredLeads,
   updateMirroredLead,
+  updateMirroredLeads,
 } from "./party-legacy-leads";
 import { createMirroredClient } from "./party-legacy-clients";
 import { createMirroredContact } from "./party-legacy-contacts";
@@ -46,6 +48,10 @@ import { dbSpecClient, dbSpecSuite, dbSpecUrl } from "../../test/db-spec-gate";
 import { ensureCrmFixtureOrg } from "../../test/db-spec-crm-fixture";
 
 const describeDb = dbSpecSuite();
+
+// The backfill-shaped fixtures here can outlast Jest's unstated 5s default on a
+// production-shaped seed; the transactions already allow longer.
+jest.setTimeout(60_000);
 
 /** Thrown to roll the transaction back once the assertions have run. */
 class Rollback extends Error {}
@@ -208,6 +214,101 @@ describeDb("party-legacy-writer — real database", () => {
         .from(businessParties)
         .where(eq(businessParties.partyId, map!.partyId));
       expect(again?.deletedAt?.getTime()).toBe(stamp);
+    });
+  });
+
+  it("soft-deletes two leads in one batch, and both mirrors agree", async () => {
+    await withTenant(async (tx, orgId) => {
+      const first = await createMirroredLead(tx, orgId, { orgId, name: "Batch One" });
+      const second = await createMirroredLead(tx, orgId, { orgId, name: "Batch Two" });
+      expect(first.id).not.toBe(second.id);
+
+      const deleted = await softDeleteMirroredLeads(tx, orgId, [first.id, second.id]);
+
+      expect(deleted).toHaveLength(2);
+      expect(deleted.map((row) => row.id).sort()).toEqual([first.id, second.id].sort());
+      for (const row of deleted) expect(row.deletedAt).toBeInstanceOf(Date);
+
+      const maps = await tx
+        .select()
+        .from(leadPartyMap)
+        .where(
+          and(
+            eq(leadPartyMap.organizationId, orgId),
+            inArray(leadPartyMap.leadId, [first.id, second.id]),
+          ),
+        );
+      expect(maps).toHaveLength(2);
+
+      const partyIds = maps.map((row) => row.partyId);
+      expect(new Set(partyIds).size).toBe(2);
+
+      const parties = await tx
+        .select()
+        .from(businessParties)
+        .where(
+          and(
+            eq(businessParties.organizationId, orgId),
+            inArray(businessParties.partyId, partyIds),
+          ),
+        );
+      expect(parties).toHaveLength(2);
+      for (const party of parties) expect(party.deletedAt).toBeInstanceOf(Date);
+
+      // The lead shape is derived from the party, so the rows handed back are the
+      // mirror; there is no `leads` row left to read a second copy from.
+      expect(deleted.map((row) => row.name).sort()).toEqual(["Batch One", "Batch Two"]);
+    });
+  });
+
+  it("claims a shared address once when two parties are updated in one statement", async () => {
+    await withTenant(async (tx, orgId) => {
+      const first = await createMirroredLead(tx, orgId, { orgId, name: "Sharer One" });
+      const second = await createMirroredLead(tx, orgId, { orgId, name: "Sharer Two" });
+
+      const shared = `shared-${randomUUID().slice(0, 8)}@example.test`;
+      const updated = await updateMirroredLeads(tx, orgId, [first.id, second.id], {
+        email: shared.toUpperCase(),
+      });
+      expect(updated).toHaveLength(2);
+      for (const row of updated) expect(row.email).toBe(shared.toUpperCase());
+
+      const maps = await tx
+        .select()
+        .from(leadPartyMap)
+        .where(
+          and(
+            eq(leadPartyMap.organizationId, orgId),
+            inArray(leadPartyMap.leadId, [first.id, second.id]),
+          ),
+        );
+      const partyIds = maps.map((row) => row.partyId);
+      expect(new Set(partyIds).size).toBe(2);
+
+      const claims = await tx
+        .select()
+        .from(partyIdentifiers)
+        .where(
+          and(
+            eq(partyIdentifiers.organizationId, orgId),
+            eq(partyIdentifiers.normalisedValue, shared),
+          ),
+        );
+
+      expect(claims).toHaveLength(1);
+      expect(claims[0]?.kind).toBe("email");
+      expect(partyIds).toContain(claims[0]?.partyId);
+
+      const held = await tx
+        .select({ n: sql<number>`count(*)::int` })
+        .from(partyIdentifiers)
+        .where(
+          and(
+            eq(partyIdentifiers.organizationId, orgId),
+            inArray(partyIdentifiers.partyId, partyIds),
+          ),
+        );
+      expect(held[0]?.n).toBe(1);
     });
   });
 

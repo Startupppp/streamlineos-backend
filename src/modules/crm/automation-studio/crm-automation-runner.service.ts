@@ -14,6 +14,14 @@ import {
   type AutomationActionDeps,
 } from "./lib/automation-actions";
 
+const STUDIO_OPERATORS: readonly StudioCondition["operator"][] = [
+  "eq", "neq", "gt", "lt", "contains", "in", "changed_to",
+];
+
+function isStudioOperator(value: unknown): value is StudioCondition["operator"] {
+  return typeof value === "string" && STUDIO_OPERATORS.some((operator) => operator === value);
+}
+
 @Injectable()
 export class CrmAutomationRunnerService {
   constructor(
@@ -38,13 +46,13 @@ export class CrmAutomationRunnerService {
         .returning({ id: crmAutomationRuns.id });
       runId = run?.id;
 
-      const graph = (rule.graph ?? []) as AutomationGraphNode[];
+      const graph = rule.graph ?? [];
 
       if (graph.length > 0) {
         runSteps = await this.walkGraph(orgId, graph, payload);
       } else {
-        const legacyConditions = (rule.conditions ?? []) as CrmAutomationCondition[];
-        const legacyActions = (rule.actions ?? []) as string[];
+        const legacyConditions = rule.conditions;
+        const legacyActions = rule.actions;
 
         const matched = evaluateConditions(
           legacyConditions.map((c) => ({ field: c.field, operator: "eq" as const, value: c.value })),
@@ -136,10 +144,10 @@ export class CrmAutomationRunnerService {
         let nextId: string | undefined;
 
         for (const branch of branches) {
-          const cond = branch.condition as { field?: unknown; operator?: unknown; value?: unknown };
+          const cond = branch.condition;
           const studioCond: StudioCondition = {
             field: typeof cond.field === "string" ? cond.field : "",
-            operator: (typeof cond.operator === "string" ? cond.operator : "eq") as StudioCondition["operator"],
+            operator: isStudioOperator(cond.operator) ? cond.operator : "eq",
             value: typeof cond.value === "string" ? cond.value : String(cond.value ?? ""),
           };
           if (evaluateConditions([studioCond], payload.data)) {

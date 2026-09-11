@@ -19,11 +19,31 @@ import { SignPdfService, type StampField, type CertificateData } from "./sign-pd
 import { SignAuditService } from "./sign-audit.service";
 import { SignNotificationsService } from "./sign-notifications.service";
 import { SignIntegrationsService } from "./sign-integrations.service";
+import { mustGetVisibleEnvelope, systemEnvelopeScope } from "./sign-envelope-scope";
+import type { ScopedRead } from "../access/scoped-read";
 
 const SIGNING_RECIPIENT_TYPES = ["signer", "approver", "in_person_host", "internal_reviewer"];
 const SIGNED_URL_EXPIRY_SECONDS = 900;
 
 type SignCertificateRow = typeof signCertificates.$inferSelect;
+
+function readSignatureAssetId(valueJson: Record<string, unknown> | null): number | undefined {
+  const value = valueJson?.["signatureAssetId"];
+  return typeof value === "number" ? value : undefined;
+}
+
+function readChecked(valueJson: Record<string, unknown> | null): boolean {
+  return valueJson?.["checked"] === true;
+}
+
+function readTextValue(valueJson: Record<string, unknown> | null): string | undefined {
+  const value = valueJson?.["value"];
+  return typeof value === "string" ? value : undefined;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
 
 @Injectable()
 export class SignFinalizationService {
@@ -115,7 +135,7 @@ export class SignFinalizationService {
     if (!mergedPdf) throw new NotFoundException("Envelope has no documents to finalize");
 
     const assetIds = fields
-      .map((f) => (f.valueJson as { signatureAssetId?: number } | null)?.signatureAssetId)
+      .map((f) => readSignatureAssetId(f.valueJson))
       .filter((id): id is number => typeof id === "number");
     const assets =
       assetIds.length > 0
@@ -136,7 +156,7 @@ export class SignFinalizationService {
       };
 
       if (field.fieldType === "signature" || field.fieldType === "initials" || field.fieldType === "stamp") {
-        const assetId = (field.valueJson as { signatureAssetId?: number } | null)?.signatureAssetId;
+        const assetId = readSignatureAssetId(field.valueJson);
         const asset = assetId ? assetById.get(assetId) : undefined;
         if (!asset) continue;
         if (asset.method === "typed" && asset.typedText) {
@@ -151,12 +171,12 @@ export class SignFinalizationService {
       }
 
       if (field.fieldType === "checkbox") {
-        const checked = Boolean((field.valueJson as { checked?: boolean } | null)?.checked);
+        const checked = readChecked(field.valueJson);
         stampFields.push({ ...base, checked });
         continue;
       }
 
-      const value = (field.valueJson as { value?: string } | null)?.value ?? field.defaultValue ?? undefined;
+      const value = readTextValue(field.valueJson) ?? field.defaultValue ?? undefined;
       if (value) stampFields.push({ ...base, textValue: value });
     }
 
@@ -200,7 +220,7 @@ export class SignFinalizationService {
       documentHash: finalPdfHash,
     });
 
-    const events = await this.audit.listForEnvelope(orgId, envelopeId);
+    const events = await this.audit.listForEnvelope(systemEnvelopeScope(orgId), null, envelopeId);
     const certificateNumber = `SGN-${envelopeId}-${randomBytes(4).toString("hex").toUpperCase()}`;
     const completedAt = new Date().toISOString();
 
@@ -282,11 +302,14 @@ export class SignFinalizationService {
     return cert;
   }
 
-  async getFinalPdfUrl(orgId: string, envelopeId: number, actor: { userId?: string; ipAddress?: string }) {
-    const envelope = await this.db.query.signEnvelopes.findFirst({ where: and(eq(signEnvelopes.id, envelopeId), eq(signEnvelopes.orgId, orgId)) });
-    if (!envelope?.finalPdfFileKey) throw new NotFoundException("Final PDF is not available yet");
+  async getFinalPdfUrl(read: ScopedRead, membershipId: number | null, envelopeId: number, actor: { userId?: string; ipAddress?: string }) {
+    const orgId = read.orgId;
+    const envelope = await mustGetVisibleEnvelope(this.db, read, membershipId, envelopeId, "Final PDF is not available yet");
+    if (!envelope.finalPdfFileKey) throw new NotFoundException("Final PDF is not available yet");
 
-    const url = await this.storage.getFileUrl(orgId, envelope.finalPdfFileKey, SIGNED_URL_EXPIRY_SECONDS);
+    const url = await this.storage.getFileUrl(orgId, envelope.finalPdfFileKey, SIGNED_URL_EXPIRY_SECONDS, undefined, {
+      preauthorized: true,
+    });
     await this.audit.record({
       orgId,
       envelopeId,
@@ -299,16 +322,20 @@ export class SignFinalizationService {
     return { url, expiresInSeconds: SIGNED_URL_EXPIRY_SECONDS, hash: envelope.finalPdfHash };
   }
 
-  async getCertificateUrl(orgId: string, envelopeId: number) {
+  async getCertificateUrl(read: ScopedRead, membershipId: number | null, envelopeId: number) {
+    const orgId = read.orgId;
+    await mustGetVisibleEnvelope(this.db, read, membershipId, envelopeId, "This envelope has not been completed yet");
     const cert = await this.getCertificate(orgId, envelopeId);
-    const url = await this.storage.getFileUrl(orgId, cert.certificateFileKey, SIGNED_URL_EXPIRY_SECONDS);
+    const url = await this.storage.getFileUrl(orgId, cert.certificateFileKey, SIGNED_URL_EXPIRY_SECONDS, undefined, {
+      preauthorized: true,
+    });
     return { url, expiresInSeconds: SIGNED_URL_EXPIRY_SECONDS, certificate: cert };
   }
 
   /** Explicit admin/legal recovery path — creates a new certificate row, never mutates the old one. */
   async regenerateCertificate(orgId: string, envelopeId: number, actor: { userId: string; ipAddress?: string }) {
     const previous = await this.getCertificate(orgId, envelopeId);
-    const events = await this.audit.listForEnvelope(orgId, envelopeId);
+    const events = await this.audit.listForEnvelope(systemEnvelopeScope(orgId), null, envelopeId);
     const certificateNumber = `SGN-${envelopeId}-${randomBytes(4).toString("hex").toUpperCase()}-R`;
 
     const prevJson = previous.certificateJson;
@@ -322,7 +349,7 @@ export class SignFinalizationService {
       watermarked: Boolean(prevJson["watermarked"]),
       completedAt: String(prevJson["completedAt"] ?? new Date().toISOString()),
       documents: Array.isArray(prevJson["documents"]) ? prevJson["documents"].map((d: unknown) => {
-        const doc = typeof d === "object" && d !== null ? (d as Record<string, unknown>) : {};
+        const doc = isPlainRecord(d) ? d : {};
         return {
           fileName: String(doc["fileName"] ?? ""),
           sha256Hash: String(doc["sha256Hash"] ?? ""),
@@ -330,7 +357,7 @@ export class SignFinalizationService {
         };
       }) : [],
       recipients: Array.isArray(prevJson["recipients"]) ? prevJson["recipients"].map((r: unknown) => {
-        const rec = typeof r === "object" && r !== null ? (r as Record<string, unknown>) : {};
+        const rec = isPlainRecord(r) ? r : {};
         return {
           name: String(rec["name"] ?? ""),
           email: rec["email"] != null ? String(rec["email"]) : null,

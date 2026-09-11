@@ -25,6 +25,8 @@ import {
 } from "./dto/qa.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { testSuiteRowSchema } from "./dto/qa-response.schemas";
 
 const suiteIdParams = z.object({ suiteId: z.coerce.number().int().positive() }).strict();
 
@@ -36,27 +38,30 @@ export class TestSuitesController {
 
   @Get()
   @RequirePermission("build:qa:view")
+  @ResponseSchema(z.array(testSuiteRowSchema))
   listSuites(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listSuites(u.orgId, projectId);
+    return this.svc.listSuites(u, projectId);
   }
 
   @Post()
   @HttpCode(201)
   @RequirePermission("build:qa:manage")
+  @ResponseSchema(testSuiteRowSchema)
   @Validate({ body: createTestSuiteSchema })
   createSuite(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body() body: CreateTestSuiteInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createSuite(u.orgId, u.userId, projectId, body);
+    return this.svc.createSuite(u, projectId, body);
   }
 
   @Patch(":suiteId")
   @RequirePermission("build:qa:manage")
+  @ResponseSchema(testSuiteRowSchema)
   @Validate({ params: suiteIdParams, body: updateTestSuiteSchema })
   updateSuite(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -70,6 +75,7 @@ export class TestSuitesController {
   @Delete(":suiteId")
   @RequirePermission("build:qa:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: suiteIdParams })
   deleteSuite(
     @Param("projectId", ParseIntPipe) projectId: number,

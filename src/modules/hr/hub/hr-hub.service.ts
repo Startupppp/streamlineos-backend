@@ -31,10 +31,7 @@ const INTERVIEW_QUERY: InterviewListInput = {
   candidateId: undefined,
   upcoming: undefined,
   relevant: "true",
-  page: 1,
-  pageSize: 50,
   limit: 50,
-  offset: 0,
 };
 
 @Injectable()
@@ -108,20 +105,17 @@ export class HrHubService {
         this.probation.listDueForReview(user.orgId, { limit: 20 }),
       ),
       this.capture(capabilities.canExit, () =>
-        this.exit.list(user.orgId, user.userId, isExitAdmin, {
-          page: 1,
-          limit: 5,
-        }),
+        this.exit.hubDigest(user.orgId, user.userId, isExitAdmin),
       ),
       this.capture(capabilities.canDocuments, async () => {
         const scope = await resolveDocumentsScope(this.access, user, permissions);
-        return this.documents.stats(user.orgId, user.userId, scope);
+        return this.documents.stats(scope);
       }),
       this.capture(capabilities.canAttendanceView, () =>
         this.holidays.listByYear(user.orgId, year),
       ),
       this.capture(capabilities.canAttendanceView, () =>
-        this.attendance.teamStatus(user, { page: 1, limit: 1 }),
+        this.attendance.teamStatus(user, { limit: 1 }),
       ),
       this.capture(capabilities.canCases, () =>
         this.opsInbox.getOpsInbox(user.orgId, user.userId),
@@ -135,7 +129,6 @@ export class HrHubService {
       this.capture(capabilities.canOffers, () =>
         this.offers.listAllOffers(user.orgId, {
           status: "PENDING_APPROVAL",
-          page: 1,
           pageSize: 1,
         }),
       ),

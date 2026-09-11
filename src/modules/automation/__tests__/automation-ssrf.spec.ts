@@ -1,4 +1,4 @@
-import { AutomationService } from "../automation.service";
+import { AutomationActionExecutor } from "../automation-action-executor.service";
 import { AutomationWebhookService } from "../automation-webhook.service";
 import type { AutomationAction } from "../../../db/schema";
 import type { Db } from "../../../db/drizzle.module";
@@ -34,16 +34,14 @@ function makeDb(endpoints: typeof ACTIVE_ENDPOINT[]) {
 
 const mockNotifications = { create: jest.fn() } as never;
 const mockEmail = { send: jest.fn() } as never;
-const mockPlanLimits = { assertWithinLimit: jest.fn() } as never;
 const mockAiNodeExecutor = { executeNode: jest.fn() } as never;
 
 function makeSvc(db: ReturnType<typeof makeDb>["db"]) {
-  return new AutomationService(
+  return new AutomationActionExecutor(
     db,
     mockNotifications,
     mockEmail,
     new AutomationWebhookService(db),
-    mockPlanLimits,
     mockAiNodeExecutor,
   );
 }
@@ -60,7 +58,7 @@ beforeEach(() => {
   globalThis.fetch = jest.fn();
 });
 
-describe("AutomationService — deliverWebhook SSRF guard", () => {
+describe("AutomationActionExecutor — deliverWebhook SSRF guard", () => {
   it("blocks an internal endpoint URL and does not call fetch", async () => {
     mockCheckWebhookUrl.mockResolvedValue({ allowed: false, reason: "blocked-address" });
     const { db } = makeDb([ACTIVE_ENDPOINT]);
@@ -131,5 +129,18 @@ describe("AutomationService — deliverWebhook SSRF guard", () => {
     expect(mockCheckWebhookUrl).not.toHaveBeenCalled();
     expect(globalThis.fetch).not.toHaveBeenCalled();
     expect(result).toMatchObject({ type: "webhook", ok: true });
+  });
+
+  it("blocks the cloud metadata endpoint (169.254.169.254) via the shared SSRF guard", async () => {
+    mockCheckWebhookUrl.mockResolvedValue({ allowed: false, reason: "blocked-address" });
+    const metadataEndpoint = { ...ACTIVE_ENDPOINT, url: "http://169.254.169.254/metadata" };
+    const { db } = makeDb([metadataEndpoint]);
+    const svc = makeSvc(db);
+
+    const result = await svc.executeAction("org-1", WEBHOOK_ACTION, PAYLOAD);
+
+    expect(result).toMatchObject({ type: "webhook", ok: false });
+    expect(mockCheckWebhookUrl).toHaveBeenCalledWith("http://169.254.169.254/metadata");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });

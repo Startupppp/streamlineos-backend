@@ -40,6 +40,14 @@ export const consentEventsQuerySchema = z
   .object({ limit: z.coerce.number().int().min(1).max(100).default(20) })
   .strict();
 
+export const unsubscribePayloadSchema = z
+  .object({
+    orgId: z.string().min(1),
+    contactId: z.number().int().positive(),
+    channel: channelEnum,
+  })
+  .strict();
+
 export type ContactParam = z.infer<typeof contactParamSchema>;
 export type RecordConsentInput = z.infer<typeof recordConsentSchema>;
 export type MissingConsentQuery = z.infer<typeof missingConsentQuerySchema>;

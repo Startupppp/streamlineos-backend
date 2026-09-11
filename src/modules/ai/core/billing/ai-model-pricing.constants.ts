@@ -17,6 +17,7 @@ function normalizeModelId(model: string): string {
 
 const MODEL_TOKEN_PRICING_RAW: Record<string, ModelTokenPricing> = {
   DEFAULT: { inputUsdPer1M: 0.5, outputUsdPer1M: 1.5 },
+  "text-embedding-3-small": { inputUsdPer1M: 0.02, outputUsdPer1M: 0.0 },
   "gpt-4o-mini": { inputUsdPer1M: 0.15, outputUsdPer1M: 0.6 },
   "gpt-4o": { inputUsdPer1M: 2.5, outputUsdPer1M: 10.0 },
   "gpt-3.5-turbo": { inputUsdPer1M: 0.5, outputUsdPer1M: 1.5 },
@@ -28,7 +29,7 @@ const MODEL_TOKEN_PRICING_RAW: Record<string, ModelTokenPricing> = {
 
 function lookupPricing(model: string): ModelTokenPricing {
   const normalized = normalizeModelId(model);
-  return MODEL_TOKEN_PRICING_RAW[normalized] ?? MODEL_TOKEN_PRICING_RAW["DEFAULT"]!;
+  return MODEL_TOKEN_PRICING_RAW[normalized] ?? MODEL_TOKEN_PRICING_RAW["DEFAULT"];
 }
 
 export function computeTokenCharge(

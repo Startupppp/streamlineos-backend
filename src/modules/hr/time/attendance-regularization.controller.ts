@@ -8,29 +8,23 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { AttendanceRegularizationService } from "./attendance-regularization.service";
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
 import {
   createAttendanceRegularizationSchema,
+  listRegularizationsSchema,
+  rejectRegularizationSchema,
   type CreateAttendanceRegularizationInput,
 } from "./dto/attendance.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../../common/openapi/response-envelopes";
+import {
+  regularizationRowSchema,
+  regularizationListResponseSchema,
+  regularizationApplyResponseSchema,
+} from "./dto/time-attendance-response.schemas";
 
 const regularizationIdParams = z.object({ regularizationId: z.coerce.number().int().positive() }).strict();
-
-const listRegularizationsSchema = z.object({
-  userId: z.string().optional(),
-  status: z.enum(["PENDING", "APPROVED", "REJECTED"]).optional(),
-  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  page: pageNumberField,
-  limit: pageSizeField(20, 100),
-});
-
-const rejectRegularizationSchema = z.object({
-  rejectionReason: z.string().min(1).max(500),
-});
 
 @RequireModule("hr")
 @Controller("hr/attendance/regularizations")
@@ -40,6 +34,7 @@ export class AttendanceRegularizationController {
 
   @Post()
   @HttpCode(201)
+  @ResponseSchema(regularizationRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:regularize")
   @Validate({ body: createAttendanceRegularizationSchema })
@@ -51,6 +46,7 @@ export class AttendanceRegularizationController {
   }
 
   @Get()
+  @ResponseSchema(regularizationListResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:view")
   @Validate({ query: listRegularizationsSchema })
@@ -64,6 +60,7 @@ export class AttendanceRegularizationController {
   @Post(":regularizationId/apply")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(regularizationApplyResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
   @Validate({ params: regularizationIdParams })
@@ -77,6 +74,7 @@ export class AttendanceRegularizationController {
   @Post(":regularizationId/reject")
   @Idempotent("hr.attendance-regularization.reject")
   @HttpCode(200)
+  @ResponseSchema(successSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
   @Validate({ params: regularizationIdParams, body: rejectRegularizationSchema })

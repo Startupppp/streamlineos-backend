@@ -24,9 +24,15 @@ import {
 } from "./dto/inv-stock.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../../common/openapi/response-envelopes";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
+import {
+  listTransfersResponseSchema,
+  getTransferResponseSchema,
+  createTransferResponseSchema,
+} from "./dto/stock-response.schemas";
 
 const transferIdParams = z.object({ transferId: z.coerce.number().int().positive() }).strict();
 
@@ -40,6 +46,7 @@ export class InvStockTransfersController {
   ) {}
 
   @Get()
+  @ResponseSchema(listTransfersResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   @Validate({ query: listTransfersSchema })
@@ -47,11 +54,12 @@ export class InvStockTransfersController {
     @Query() filters: ListTransfersInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveInvStockScope(this.access, u);
-    return this.transfers.listTransfers(u.orgId, filters, scope, u.userId);
+    const read = await resolveInvStockScope(this.access, u);
+    return this.transfers.listTransfers(read, filters);
   }
 
   @Get(":transferId")
+  @ResponseSchema(getTransferResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   @Validate({ params: transferIdParams })
@@ -63,6 +71,7 @@ export class InvStockTransfersController {
   }
 
   @Post()
+  @ResponseSchema(createTransferResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   @Validate({ body: createTransferSchema })
@@ -76,6 +85,7 @@ export class InvStockTransfersController {
 
   @Post(":transferId/reserve")
   @BodylessAction()
+  @ResponseSchema(getTransferResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   @Validate({ params: transferIdParams })
@@ -89,41 +99,47 @@ export class InvStockTransfersController {
 
   @Post(":transferId/dispatch")
   @BodylessAction()
+  @ResponseSchema(successSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   @Validate({ params: transferIdParams })
-  dispatchTransfer(
+  async dispatchTransfer(
     @IdempotencyKey() idempotencyKey: string,
     @Param("transferId", ParseIntPipe) transferId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.transfers.dispatchTransfer(u.orgId, u.userId, transferId, idempotencyKey);
+    await this.transfers.dispatchTransfer(u.orgId, u.userId, transferId, idempotencyKey);
+    return { success: true as const };
   }
 
   @Post(":transferId/complete")
+  @ResponseSchema(successSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   @Validate({ params: transferIdParams, body: completeTransferSchema })
-  completeTransfer(
+  async completeTransfer(
     @IdempotencyKey() idempotencyKey: string,
     @Param("transferId", ParseIntPipe) transferId: number,
     @Body() body: CompleteTransferInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.transfers.completeTransfer(u.orgId, u.userId, transferId, body, idempotencyKey);
+    await this.transfers.completeTransfer(u.orgId, u.userId, transferId, body, idempotencyKey);
+    return { success: true as const };
   }
 
   @Post(":transferId/cancel")
   @BodylessAction()
+  @ResponseSchema(successSchema)
   @Idempotent("inventory.stock-transfer.cancel")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   @Validate({ params: transferIdParams })
-  cancelTransfer(
+  async cancelTransfer(
     @IdempotencyKey() idempotencyKey: string,
     @Param("transferId", ParseIntPipe) transferId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.transfers.cancelTransfer(u.orgId, u.userId, transferId, idempotencyKey);
+    await this.transfers.cancelTransfer(u.orgId, u.userId, transferId, idempotencyKey);
+    return { success: true as const };
   }
 }

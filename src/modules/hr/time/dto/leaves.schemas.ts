@@ -3,7 +3,7 @@ import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const leaveAnalyticsQuerySchema = z.object({
   year: z.coerce.number().int().optional(),
-});
+}).strict();
 
 export const leaveCalendarQuerySchema = z.object({
   month: z
@@ -16,7 +16,7 @@ export const leaveCalendarQuerySchema = z.object({
     .regex(/^\d{4}$/)
     .transform(Number)
     .optional(),
-});
+}).strict();
 
 export const listLeaveRequestsSchema = z
   .object({
@@ -33,12 +33,12 @@ export const approveLeaveSchema = z.object({
   comment: z.string().optional(),
   forceApprove: z.boolean().optional(),
   justification: z.string().optional(),
-});
+}).strict();
 
 export const rejectLeaveSchema = z.object({
   reason: z.string().min(1, "Rejection reason is required."),
   comment: z.string().optional(),
-});
+}).strict();
 
 export const createLeaveSchema = z
   .object({
@@ -73,7 +73,7 @@ export const compOffSchema = z.object({
   userId: z.string().min(1),
   days: z.number().positive().max(30),
   reason: z.string().optional(),
-});
+}).strict();
 
 export type LeaveAnalyticsQuery = z.infer<typeof leaveAnalyticsQuerySchema>;
 export type LeaveCalendarQuery = z.infer<typeof leaveCalendarQuerySchema>;
@@ -90,7 +90,7 @@ export const createLeaveTypeSchema = z.object({
   name: z.string().min(1).max(100),
   daysPerYear: z.number().int().min(0).max(365),
   carryForward: z.boolean().optional(),
-});
+}).strict();
 export type CreateLeaveTypeInput = z.infer<typeof createLeaveTypeSchema>;
 
 export const updateLeaveTypeSchema = z
@@ -98,6 +98,28 @@ export const updateLeaveTypeSchema = z
     name: z.string().min(1).max(100).optional(),
     daysPerYear: z.number().int().min(0).max(365).optional(),
     carryForward: z.boolean().optional(),
-  })
+  }).strict()
   .refine((v) => Object.keys(v).length > 0, "Nothing to update");
 export type UpdateLeaveTypeInput = z.infer<typeof updateLeaveTypeSchema>;
+
+export const createLeavePolicySchema = z.object({
+  leaveTypeId: z.number().int().positive(),
+  name: z.string().min(1).max(200),
+  accrualType: z.string().optional(),
+  accrualRate: z.string().min(1),
+  maxBalance: z.string().optional(),
+  carryForwardDays: z.string().optional(),
+  carryForwardExpiryMonths: z.number().int().positive().optional(),
+  encashable: z.boolean().optional(),
+  probationRestricted: z.boolean().optional(),
+  genderRestriction: z.string().optional(),
+  appliesTo: z.string().optional(),
+  effectiveFrom: z.string().min(1),
+  effectiveTo: z.string().optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const updateLeavePolicySchema = createLeavePolicySchema.partial();
+
+export type CreateLeavePolicyBody = z.infer<typeof createLeavePolicySchema>;
+export type UpdateLeavePolicyBody = z.infer<typeof updateLeavePolicySchema>;

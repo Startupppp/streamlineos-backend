@@ -41,6 +41,17 @@ export function nextRetryDelayMs(retryCount: number): number {
   return Math.min(delay, OUTBOX_RETRY_MAX_MS);
 }
 
+// A claim batch is 50 events; without jitter one provider outage retries all 50 in lockstep forever.
+export function nextRetryDelayWithJitterMs(
+  retryCount: number,
+  random: () => number = Math.random,
+): number {
+  const ceiling = nextRetryDelayMs(retryCount);
+  const span = ceiling - OUTBOX_RETRY_BASE_MS;
+  if (span <= 0) return ceiling;
+  return OUTBOX_RETRY_BASE_MS + Math.floor(random() * (span + 1));
+}
+
 export function shouldDeadLetter(retryCount: number): boolean {
   return retryCount >= OUTBOX_MAX_RETRIES;
 }

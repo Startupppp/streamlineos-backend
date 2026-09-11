@@ -172,12 +172,12 @@ export const createExpenseSchema = z.object({
   paymentMethod: optionalExpenseLabelSchema,
   projectId: z.number().int().optional(),
   expenseDate: z.string(),
-});
+}).strict();
 
 export const updateExpenseStatusSchema = z.object({
   status: z.enum(["APPROVED", "REJECTED", "PAID"]),
   rejectionReason: z.string().optional(),
-});
+}).strict();
 
 export const updateExpenseDetailsSchema = z.object({
   category: expenseLabelSchema.optional(),
@@ -192,7 +192,7 @@ export const updateExpenseDetailsSchema = z.object({
 
 export const rejectExpenseSchema = z.object({
   rejectionReason: z.string().max(1000).optional(),
-});
+}).strict();
 
 export const updateExpensePatchSchema = z.union([
   updateExpenseStatusSchema,

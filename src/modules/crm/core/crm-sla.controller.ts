@@ -26,6 +26,12 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
+import {
+  slaPolicySchema,
+  slaBreachedListSchema,
+  slaReportSchema,
+} from "./dto/crm-sla-response.schemas";
 
 const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
 
@@ -37,6 +43,7 @@ export class CrmSlaController {
 
   @Get("policies")
   @RequirePermission("crm:sla:manage")
+  @ResponseSchema(z.array(slaPolicySchema))
   listPolicies(@CurrentUser() u: CurrentUserContext) {
     return this.sla.listPolicies(u.orgId);
   }
@@ -44,6 +51,7 @@ export class CrmSlaController {
   @Post("policies")
   @RequirePermission("crm:sla:manage")
   @HttpCode(201)
+  @ResponseSchema(slaPolicySchema)
   @Validate({ body: slaPolicyCreateSchema })
   createPolicy(
     @Body() body: SlaPolicyCreateInput,
@@ -54,6 +62,7 @@ export class CrmSlaController {
 
   @Patch("policies/:policyId")
   @RequirePermission("crm:sla:manage")
+  @ResponseSchema(slaPolicySchema)
   @Validate({ params: policyIdParams, body: slaPolicyUpdateSchema })
   async updatePolicy(
     @Param("policyId", ParseIntPipe) policyId: number,
@@ -68,6 +77,7 @@ export class CrmSlaController {
   @Delete("policies/:policyId")
   @HttpCode(204)
   @RequirePermission("crm:sla:manage")
+  @NoContentResponse()
   @Validate({ params: policyIdParams })
   async deletePolicy(
     @Param("policyId", ParseIntPipe) policyId: number,
@@ -78,12 +88,14 @@ export class CrmSlaController {
 
   @Get("breached")
   @RequirePermission("crm:sla:manage")
+  @ResponseSchema(slaBreachedListSchema)
   breached(@CurrentUser() u: CurrentUserContext) {
     return this.sla.breached(u.orgId);
   }
 
   @Get("report")
   @RequirePermission("crm:sla:manage")
+  @ResponseSchema(slaReportSchema)
   report(@CurrentUser() u: CurrentUserContext) {
     return this.sla.report(u.orgId);
   }

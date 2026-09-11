@@ -41,6 +41,16 @@ import {
 } from "./dto/goal.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
+import { NoContentResponse, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  goalDetailSchema,
+  goalLinkCreatedSchema,
+  goalLinksListSchema,
+  goalRowSchema,
+  goalsListResponseSchema,
+  goalStatsSchema,
+  goalSuccessSchema,
+} from "./dto/goals-response.schemas";
 import { z } from "zod";
 
 const goalIdParams = z.object({ goalId: z.coerce.number().int().positive() }).strict();
@@ -55,6 +65,7 @@ export class GoalsController {
   ) {}
 
   @Get()
+  @ResponseSchema(goalsListResponseSchema)
   @RequirePermission("build:goals:view")
   @Validate({ query: listSchema })
   list(
@@ -65,6 +76,7 @@ export class GoalsController {
   }
 
   @Post()
+  @ResponseSchema(goalRowSchema)
   @RequirePermission("build:goals:manage")
   @HttpCode(201)
   @Validate({ body: createSchema })
@@ -76,12 +88,14 @@ export class GoalsController {
   }
 
   @Get("stats")
+  @ResponseSchema(goalStatsSchema)
   @RequirePermission("build:goals:view")
   getStats(@CurrentUser() u: CurrentUserContext) {
     return this.goals.getStats(u.orgId);
   }
 
   @Get(":goalId")
+  @ResponseSchema(goalDetailSchema)
   @RequirePermission("build:goals:view")
   @Validate({ params: goalIdParams })
   async get(
@@ -94,6 +108,7 @@ export class GoalsController {
   }
 
   @Patch(":goalId")
+  @ResponseSchema(goalDetailSchema)
   @RequirePermission("build:goals:manage")
   @Validate({ params: goalIdParams, body: updateSchema })
   async update(
@@ -107,6 +122,7 @@ export class GoalsController {
   }
 
   @Delete(":goalId")
+  @NoContentResponse()
   @RequirePermission("build:goals:manage")
   @HttpCode(204)
   @Validate({ params: goalIdParams })
@@ -119,6 +135,7 @@ export class GoalsController {
   }
 
   @Post(":goalId/check-in")
+  @ResponseSchema(goalDetailSchema)
   @RequirePermission("build:goals:manage")
   @Validate({ params: goalIdParams, body: checkInSchema })
   async checkIn(
@@ -132,6 +149,7 @@ export class GoalsController {
   }
 
   @Get(":goalId/links")
+  @ResponseSchema(goalLinksListSchema)
   @RequirePermission("build:goals:view")
   @Validate({ params: goalIdParams })
   getLinks(
@@ -142,6 +160,7 @@ export class GoalsController {
   }
 
   @Post(":goalId/links")
+  @ResponseSchema(goalLinkCreatedSchema)
   @RequirePermission("build:goals:manage")
   @HttpCode(201)
   @Validate({ params: goalIdParams, body: createLinkSchema })
@@ -158,6 +177,7 @@ export class GoalsController {
   }
 
   @Delete(":goalId/links")
+  @ResponseSchema(goalSuccessSchema)
   @RequirePermission("build:goals:manage")
   @Validate({ params: goalIdParams, query: deleteLinkSchema })
   async removeLink(

@@ -22,6 +22,8 @@ describe("Secret sink: execution record — executionContextSchema strips inject
       resumeAt: null,
       variables: { x: 1 },
       steps: 3,
+      infraAttempt: 0,
+      dlqReason: null,
     });
     expect(out).not.toHaveProperty("secrets");
   });
@@ -30,9 +32,10 @@ describe("Secret sink: execution record — executionContextSchema strips inject
 describe("Secret sink: error message — NotFoundException messages are static and never embed submitted values", () => {
   it("deleteGlobalSecret message is static 'Secret not found', does not embed secretId", async () => {
     const SENTINEL = "super-secret-value-sentinel";
-    const findFirst = jest.fn().mockResolvedValue(null);
     const db = {
-      query: { workflowSecrets: { findFirst } },
+      delete: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }),
+      }),
     } as unknown as Db;
     const svc = new WorkflowsSecretsService(db);
 
@@ -57,7 +60,7 @@ describe("Secret sink: error message — NotFoundException messages are static a
 
     let caught: unknown;
     try {
-      await svc.listSecrets("org-1", "wf-sentinel-id-that-should-not-appear");
+      await svc.listSecrets("org-1", "wf-sentinel-id-that-should-not-appear", { limit: 50 });
     } catch (e) {
       caught = e;
     }
@@ -70,12 +73,11 @@ describe("Secret sink: error message — NotFoundException messages are static a
   it("deleteSecret message is static 'Secret not found', does not embed secretId", async () => {
     const SENTINEL_SECRET_ID = "secret-id-sentinel";
     const workflowFindFirst = jest.fn().mockResolvedValue({ id: "wf-uuid" });
-    const secretFindFirst = jest.fn().mockResolvedValue(null);
     const db = {
-      query: {
-        workflows: { findFirst: workflowFindFirst },
-        workflowSecrets: { findFirst: secretFindFirst },
-      },
+      query: { workflows: { findFirst: workflowFindFirst } },
+      delete: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }),
+      }),
     } as unknown as Db;
     const svc = new WorkflowsSecretsService(db);
 
@@ -101,8 +103,8 @@ describe("Secret sink: cache — WorkflowsSecretsService has no Redis/cache inje
     const db = { select: jest.fn().mockReturnValue({ from }) } as unknown as Db;
     const svc = new WorkflowsSecretsService(db);
 
-    const result = await svc.listGlobalSecrets("org-1");
-    expect(result).toEqual([]);
+    const result = await svc.listGlobalSecrets("org-1", { limit: 50 });
+    expect(result.data).toEqual([]);
     expect(from).toHaveBeenCalledTimes(1);
   });
 

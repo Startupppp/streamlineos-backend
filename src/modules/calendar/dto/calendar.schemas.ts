@@ -47,7 +47,7 @@ export const listEventsSchema = z
   .object({
     start: parseableDate,
     end: parseableDate,
-  })
+  }).strict()
   .refine(
     (v) => new Date(v.end) > new Date(v.start),
     { message: "end must be after start", path: ["end"] },
@@ -79,7 +79,7 @@ export const createEventSchema = z
     visibility: eventVisibilitySchema.optional(),
     entityType: z.string().optional(),
     entityId: z.string().optional(),
-    attendeeIds: z.array(z.string()).optional(),
+    attendeeIds: z.array(z.string()).max(200).optional(),
     agenda: z.string().optional(),
     linkedDealId: z.number().int().optional(),
     linkedLeadId: z.number().int().optional(),
@@ -87,7 +87,7 @@ export const createEventSchema = z
     addConference: z.boolean().optional(),
     rrule: z.string().refine(isValidRrule, "Must be a valid RFC 5545 RRULE string").optional(),
     recurrenceEnd: z.string().datetime().optional(),
-  })
+  }).strict()
   .refine(
     (v) => {
       const start = new Date(v.startDate);
@@ -114,18 +114,18 @@ export const updateEventSchema = z.object({
   visibility: eventVisibilitySchema.optional(),
   entityType: z.string().nullable().optional(),
   entityId: z.string().nullable().optional(),
-  attendeeIds: z.array(z.string()).optional(),
+  attendeeIds: z.array(z.string()).max(200).optional(),
   agenda: z.string().nullable().optional(),
   postMeetingNotes: z.string().nullable().optional(),
   linkedDealId: z.number().int().nullable().optional(),
   linkedLeadId: z.number().int().nullable().optional(),
   rrule: z.string().refine(isValidRrule, "Must be a valid RFC 5545 RRULE string").nullable().optional(),
   recurrenceEnd: z.string().datetime().nullable().optional(),
-});
+}).strict();
 
 export const rsvpSchema = z.object({
   status: z.enum(["accepted", "declined", "tentative"]),
-});
+}).strict();
 
 export const EXPORT_MAX_SPAN_DAYS = 366;
 
@@ -133,7 +133,7 @@ export const exportSchema = z
   .object({
     from: parseableDate,
     to: parseableDate,
-  })
+  }).strict()
   .refine(
     (v) => new Date(v.to) > new Date(v.from),
     { message: "to must be after from", path: ["to"] },
@@ -146,10 +146,25 @@ export const exportSchema = z
     { message: `Export range may not exceed ${EXPORT_MAX_SPAN_DAYS} days`, path: ["to"] },
   );
 
-export const externalEventsQuerySchema = z.object({
-  start: parseableDate,
-  end: parseableDate,
-});
+export const externalEventsQuerySchema = z
+  .object({
+    start: parseableDate,
+    end: parseableDate,
+  }).strict()
+  .refine(
+    (v) => new Date(v.end) > new Date(v.start),
+    { message: "end must be after start", path: ["end"] },
+  )
+  .refine(
+    (v) => {
+      const diffMs = new Date(v.end).getTime() - new Date(v.start).getTime();
+      return diffMs / (1000 * 60 * 60 * 24) <= CALENDAR_MAX_SPAN_DAYS;
+    },
+    {
+      message: `Date range may not exceed ${CALENDAR_MAX_SPAN_DAYS} days`,
+      path: ["end"],
+    },
+  );
 
 export type ListEventsInput = z.infer<typeof listEventsSchema>;
 export type CreateEventInput = z.infer<typeof createEventSchema>;

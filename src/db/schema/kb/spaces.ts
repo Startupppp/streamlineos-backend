@@ -13,7 +13,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
-import { organizations, users, organizationMembers } from "../common/auth";
+import { organizations, organizationMembers } from "../common/auth";
 import { kbAudienceEnum, kbSpaceRoleEnum } from "../common/enums";
 
 export const kbSpaces = pgTable(
@@ -28,7 +28,6 @@ export const kbSpaces = pgTable(
     icon: text("icon"),
     branding: jsonb("branding").$type<Record<string, unknown>>(),
     isPublicHelpCenter: boolean("is_public_help_center").default(false).notNull(),
-    createdById: text("created_by_id").references(() => users.id, { onDelete: "set null" }),
     createdByMembershipId: integer("created_by_membership_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
@@ -40,7 +39,6 @@ export const kbSpaces = pgTable(
     archivedAt: timestamp("archived_at", { withTimezone: true }),
   },
   (table) => [
-    index("idx_kb_spaces_org").on(table.orgId),
     index("idx_kb_spaces_org_live").on(table.orgId).where(sql`${table.deletedAt} IS NULL`),
     index("idx_kb_spaces_org_created_by_mbr").on(table.orgId, table.createdByMembershipId),
     uniqueIndex("uniq_kb_spaces_org_slug").on(table.orgId, table.slug),
@@ -54,8 +52,7 @@ export const kbSpaceMembers = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    spaceId: integer("space_id").references(() => kbSpaces.id, { onDelete: "cascade" }).notNull(),
-    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
+    spaceId: integer("space_id").notNull(),
     membershipId: integer("membership_id"),
     role: text("role"),
     team: text("team"),
@@ -64,26 +61,29 @@ export const kbSpaceMembers = pgTable(
   },
   (table) => [
     index("idx_kb_space_members_space").on(table.spaceId),
-    index("idx_kb_space_members_user").on(table.userId),
     index("idx_kb_space_members_org_membership").on(table.orgId, table.membershipId),
     index("idx_kb_space_members_org_role").on(table.orgId, table.role),
     index("idx_kb_space_members_org_space").on(table.orgId, table.spaceId),
     unique("uniq_kb_space_members_org_id").on(table.orgId, table.id),
+    uniqueIndex("uniq_kb_space_members_org_space_membership")
+      .on(table.orgId, table.spaceId, table.membershipId)
+      .where(sql`${table.membershipId} IS NOT NULL`),
+    uniqueIndex("uniq_kb_space_members_org_space_role")
+      .on(table.orgId, table.spaceId, table.role)
+      .where(sql`${table.role} IS NOT NULL`),
     foreignKey({ columns: [table.orgId, table.spaceId], foreignColumns: [kbSpaces.orgId, kbSpaces.id], name: "fk_kb_space_members_org_space" }),
-    foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_space_members_org_membership" }).onDelete("set null"),
+    foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_space_members_org_membership" }).onDelete("cascade"),
   ],
 );
 
 export const kbSpacesRelations = relations(kbSpaces, ({ one, many }) => ({
   organization: one(organizations, { fields: [kbSpaces.orgId], references: [organizations.id] }),
-  createdBy: one(users, { fields: [kbSpaces.createdById], references: [users.id] }),
   createdByMember: one(organizationMembers, { fields: [kbSpaces.orgId, kbSpaces.createdByMembershipId], references: [organizationMembers.orgId, organizationMembers.id] }),
   members: many(kbSpaceMembers),
 }));
 
 export const kbSpaceMembersRelations = relations(kbSpaceMembers, ({ one }) => ({
   space: one(kbSpaces, { fields: [kbSpaceMembers.spaceId], references: [kbSpaces.id] }),
-  user: one(users, { fields: [kbSpaceMembers.userId], references: [users.id] }),
   membership: one(organizationMembers, { fields: [kbSpaceMembers.membershipId], references: [organizationMembers.id] }),
 }));
 

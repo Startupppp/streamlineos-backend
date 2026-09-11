@@ -44,6 +44,6 @@ import { DataQualityHealthService } from "./dataset-health.service";
     DataQualityProducersService,
     DataQualityHealthService,
   ],
-  exports: [DataQualityQueueService, DataQualityProducersService, DataQualityHealthService],
+  exports: [DataQualityProducersService, DataQualityHealthService],
 })
 export class DataQualityModule {}

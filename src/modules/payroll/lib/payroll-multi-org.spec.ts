@@ -42,10 +42,14 @@ function makeChain(rows: unknown[]) {
   const chain = {
     from: jest.fn(),
     leftJoin: jest.fn(),
-    where: jest.fn().mockResolvedValue(rows),
+    where: jest.fn(),
+    orderBy: jest.fn(),
+    limit: jest.fn().mockResolvedValue(rows),
   };
   chain.from.mockReturnValue(chain);
   chain.leftJoin.mockReturnValue(chain);
+  chain.where.mockReturnValue(chain);
+  chain.orderBy.mockReturnValue(chain);
   return chain;
 }
 

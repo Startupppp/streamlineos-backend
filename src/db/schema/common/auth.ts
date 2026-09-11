@@ -60,7 +60,7 @@ export const orgCustomDomains = pgTable("org_custom_domains", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uniq_org_custom_domains_domain").on(table.domain),
-  index("idx_org_custom_domains_org").on(table.orgId),
+  unique("uniq_org_custom_domains_org_id").on(table.orgId, table.id),
 ]);
 
 export const orgHolidays = pgTable("org_holidays", {
@@ -82,7 +82,6 @@ export const organizationAllowedEmailDomains = pgTable("organization_allowed_ema
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uniq_org_allowed_domains_org_domain").on(table.orgId, table.domain),
-  index("idx_org_allowed_domains_org").on(table.orgId),
 ]);
 
 export const organizationMembers = pgTable("organization_members", {
@@ -97,6 +96,7 @@ export const organizationMembers = pgTable("organization_members", {
   suspendedAt: timestamp("suspended_at"),
   leftAt: timestamp("left_at"),
   joinedAt: timestamp("joined_at").defaultNow().notNull(),
+  onboardingCompletedAt: timestamp("onboarding_completed_at"),
 }, (table) => [
   uniqueIndex("uniq_org_members_user_org").on(table.userId, table.orgId),
   unique("uniq_org_members_org_user").on(table.orgId, table.userId),
@@ -148,7 +148,6 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  index("idx_users_email").on(table.email),
   index("idx_users_last_active_org").on(table.lastActiveOrgId),
 ]);
 
@@ -186,17 +185,23 @@ export const invitations = pgTable("invitations", {
   expiresAt: timestamp("expires_at").notNull(),
   acceptedAt: timestamp("accepted_at"),
   status: invitationStatusEnum("status").default("PENDING").notNull(),
-  inviterMembershipId: integer("inviter_membership_id").references(() => organizationMembers.id, { onDelete: "set null" }),
-  acceptedMembershipId: integer("accepted_membership_id").references(() => organizationMembers.id, { onDelete: "set null" }),
+  inviterMembershipId: integer("inviter_membership_id"),
+  acceptedMembershipId: integer("accepted_membership_id"),
   declinedAt: timestamp("declined_at", { withTimezone: true }),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
-  revokedByMembershipId: integer("revoked_by_membership_id").references(() => organizationMembers.id, { onDelete: "set null" }),
+  revokedByMembershipId: integer("revoked_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_invitations_org_email").on(table.orgId, table.email),
+  index("idx_invitations_org_inviter_membership").on(table.orgId, table.inviterMembershipId),
+  index("idx_invitations_org_accepted_membership").on(table.orgId, table.acceptedMembershipId),
+  index("idx_invitations_org_revoked_by_membership").on(table.orgId, table.revokedByMembershipId),
   index("idx_invitations_expires").on(table.expiresAt),
   index("idx_invitations_status").on(table.orgId, table.status),
   uniqueIndex("uniq_invitations_org_email_pending").on(table.orgId, table.email).where(sql`accepted_at IS NULL`),
+  foreignKey({ columns: [table.orgId, table.inviterMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_invitations_org_inviter_membership" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.acceptedMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_invitations_org_accepted_membership" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.revokedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_invitations_org_revoked_by_membership" }).onDelete("set null"),
 ]);
 
 export const userSessions = pgTable("user_sessions", {
@@ -282,7 +287,6 @@ export const roles = pgTable("roles", {
 }, (table) => [
   uniqueIndex("uniq_role_slug_org").on(table.slug, table.orgId),
   unique("uniq_roles_org_id").on(table.orgId, table.id),
-  index("idx_roles_org_module").on(table.orgId, table.moduleKey),
   uniqueIndex("uniq_roles_org_module_name_ci").on(
     table.orgId,
     sql`COALESCE(${table.moduleKey}, '')`,
@@ -395,7 +399,6 @@ export const devices = pgTable("devices", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uniq_devices_user_fingerprint").on(table.userId, table.fingerprint),
-  index("idx_devices_user").on(table.userId),
 ]);
 
 export const loginHistory = pgTable("login_history", {
@@ -461,7 +464,7 @@ export const userDelegations = pgTable("user_delegations", {
   revokedAt: timestamp("revoked_at"),
   revokedBy: text("revoked_by").references(() => users.id),
 }, (table) => [
-  unique("uniq_user_delegations_org_delegation").on(table.orgId, table.id),
+  unique("uniq_user_delegations_org_id").on(table.orgId, table.id),
   index("idx_user_delegations_delegatee_status").on(
     table.orgId,
     table.delegateeMembershipId,

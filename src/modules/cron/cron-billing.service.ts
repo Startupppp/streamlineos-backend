@@ -1,8 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, gte, lt, lte, or } from "drizzle-orm";
+import { and, eq, gte, isNotNull, lt, or } from "drizzle-orm";
 import {
   aiCreditTransactions,
-  dunningAttempts,
   organizationMembers,
   organizations,
   subscriptions,
@@ -13,29 +12,28 @@ import { type Db } from "../../db/drizzle.module";
 import { appUrl } from "../email/app-url";
 import { logger } from "../../common/logger/logger.service";
 import { AiCreditsService } from "../billing/core/ai-credits.service";
+import { BillingService } from "../billing/core/billing.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { RevenueAnalyticsService } from "../billing/core/revenue-analytics.service";
-import { PLAN_PRICES_PAISE } from "../billing/core/plan-entitlements.constants";
-import { type Plan } from "../billing/core/dto/billing.schemas";
+import { type RevenueEventInput } from "../billing/core/revenue-events";
+import { PLATFORM_PRICE_CURRENCY } from "../billing/core/plan-entitlements.constants";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { forEachOrg } from "../../common/tenant";
+import { triagePastDue, type PastDueSubscription } from "./cron-billing-past-due";
+import { suspendPastDue } from "./cron-billing-suspension";
+import { remindPastDue } from "./cron-billing-dunning";
+import { istTopUpWindow } from "./cron-billing-top-up-window";
+import { dueReminderDays } from "./cron-billing-trial-reminders";
 
-const REMINDER_DAYS = [7, 3, 1] as const;
-const DUNNING_SCHEDULE_DAYS = [7, 3, 1] as const;
-const SUSPENSION_DAY = 14;
-const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-
-interface DunningMeta {
-  pastDueAt?: string;
-  lastFailedPaymentId?: string;
-  suspendedForNonPayment?: boolean;
-  suspendedAt?: string;
-}
+const REDRIVE_MIN_AGE_MS = 5 * 60 * 1000;
+const REDRIVE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const REDRIVE_BATCH = 100;
 
 @Injectable()
 export class CronBillingService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
+    private readonly billing: BillingService,
     private readonly aiCredits: AiCreditsService,
     private readonly planLimits: PlanLimitsService,
     private readonly revenue: RevenueAnalyticsService,
@@ -62,15 +60,15 @@ export class CronBillingService {
       expired += expiredRows.length;
 
       // A trial that lapses is a lost customer but no lost MRR — it never contributed any.
-      for (const row of expiredRows) {
-        await this.revenue.emit(tx, {
-          type: "churn",
-          orgId,
-          plan: row.plan,
-          mrr: 0,
-          metadata: { subscriptionId: row.id, source: "trial-expiry" },
-        });
-      }
+      const lapsedChurn = expiredRows.map((row): RevenueEventInput => ({
+        type: "churn",
+        orgId,
+        plan: row.plan,
+        mrr: 0,
+        currency: PLATFORM_PRICE_CURRENCY,
+        metadata: { subscriptionId: row.id, source: "trial-expiry" },
+      }));
+      if (lapsedChurn.length > 0) await this.revenue.emitMany(tx, lapsedChurn);
 
       const ownerRows = await tx
         .select({ userId: users.id, email: users.email, orgName: organizations.name })
@@ -88,28 +86,18 @@ export class CronBillingService {
       const owner = ownerRows[0];
       if (!owner?.email || !owner.userId) return;
 
-      for (const days of REMINDER_DAYS) {
-        const windowStart = new Date(now);
-        windowStart.setDate(windowStart.getDate() + days);
-        windowStart.setHours(0, 0, 0, 0);
-        const windowEnd = new Date(windowStart);
-        windowEnd.setHours(23, 59, 59, 999);
+      const trialEnds = await tx
+        .select({ trialEndsAt: subscriptions.trialEndsAt })
+        .from(subscriptions)
+        .where(
+          and(
+            eq(subscriptions.orgId, orgId),
+            eq(subscriptions.status, "TRIAL"),
+            isNotNull(subscriptions.trialEndsAt),
+          ),
+        );
 
-        const soonExpiring = await tx
-          .select({ id: subscriptions.id })
-          .from(subscriptions)
-          .where(
-            and(
-              eq(subscriptions.orgId, orgId),
-              eq(subscriptions.status, "TRIAL"),
-              gte(subscriptions.trialEndsAt, windowStart),
-              lte(subscriptions.trialEndsAt, windowEnd),
-            ),
-          )
-          .limit(1);
-
-        if (soonExpiring.length === 0) continue;
-
+      for (const days of dueReminderDays(trialEnds, now)) {
         await this.dispatch
           .emit({
             orgId,
@@ -161,12 +149,41 @@ export class CronBillingService {
     return { granted, skipped };
   }
 
+  /**
+   * `sweepExpiredReservations` iterates every organisation itself, under
+   * `forEachOrg("sweep:expired-ai-reservations")`. Wrapping it in a second `forEachOrg`
+   * ran the whole cross-tenant sweep once per organisation — 64 tenant blocks and 64
+   * enumeration queries for the eight-tenant fixture, of which 56 found nothing because
+   * the first pass had already drained them. Each inner `withTenant` also reset
+   * `app.organization_id` inside the outer transaction, so the outer tenant's GUC was
+   * left pointing at whichever organisation the inner loop had reached last.
+   */
   async sweepAiReservations(): Promise<{ released: number }> {
-    let released = 0;
-    await forEachOrg(this.db, "billing-ai-sweep-reservations", async (_tx, _orgId) => {
-      released += await this.aiCredits.sweepExpiredReservations();
+    return { released: await this.aiCredits.sweepExpiredReservations() };
+  }
+
+  /**
+   * A provider gives up retrying long before a multi-hour outage ends, leaving a paid-for grant
+   * recorded but never applied. Events older than `MAX_AGE` are left for an operator instead of
+   * being retried forever, so this sweep cannot loop on a permanently failing event.
+   */
+  async redriveStuckProviderEvents(): Promise<{ attempted: number; recovered: number; failed: number }> {
+    let attempted = 0;
+    let recovered = 0;
+    let failed = 0;
+
+    await forEachOrg(this.db, "billing-provider-event-redrive", async (_tx, orgId) => {
+      const result = await this.billing.redriveStuckProviderEvents(orgId, {
+        minAgeMs: REDRIVE_MIN_AGE_MS,
+        maxAgeMs: REDRIVE_MAX_AGE_MS,
+        limit: REDRIVE_BATCH,
+      });
+      attempted += result.attempted;
+      recovered += result.recovered;
+      failed += result.failed;
     });
-    return { released };
+
+    return { attempted, recovered, failed };
   }
 
   async processAutoTopUps(): Promise<{ topped: number; skipped: number; failed: number }> {
@@ -215,7 +232,7 @@ export class CronBillingService {
     let skipped = 0;
 
     await forEachOrg(this.db, "billing-dunning", async (tx, orgId) => {
-      const pastDueSubs = await this.db
+      const pastDueSubs: PastDueSubscription[] = await tx
         .select({
           id: subscriptions.id,
           orgId: subscriptions.orgId,
@@ -226,168 +243,33 @@ export class CronBillingService {
         .from(subscriptions)
         .where(and(eq(subscriptions.orgId, orgId), eq(subscriptions.status, "PAST_DUE")));
 
-      for (const sub of pastDueSubs) {
-        const meta = (sub.metadata ?? {}) as DunningMeta;
+      if (pastDueSubs.length === 0) return;
 
-        if (meta.suspendedForNonPayment) {
-          skipped++;
-          continue;
-        }
+      const triage = triagePastDue(pastDueSubs, now);
+      skipped += triage.alreadySuspended;
 
-        const pastDueAt = meta.pastDueAt ? new Date(meta.pastDueAt) : sub.updatedAt;
-        const daysSincePastDue = Math.floor(
-          (now.getTime() - pastDueAt.getTime()) / 86_400_000,
-        );
+      const deps = {
+        db: this.db,
+        dispatch: this.dispatch,
+        planLimits: this.planLimits,
+        revenue: this.revenue,
+      };
 
-        if (daysSincePastDue >= SUSPENSION_DAY) {
-          await this.db
-            .update(subscriptions)
-            .set({
-              status: "CANCELLED",
-              updatedAt: now,
-              metadata: {
-                ...sub.metadata,
-                suspendedForNonPayment: true,
-                suspendedAt: now.toISOString(),
-              },
-            })
-            .where(
-              and(eq(subscriptions.id, sub.id), eq(subscriptions.status, "PAST_DUE")),
-            );
+      const suspensions = await suspendPastDue(deps, tx, orgId, triage.toSuspend, now);
+      suspended += suspensions.suspended;
+      skipped += suspensions.skipped;
 
-          // The one churn event per paying customer lost, emitted with the cancellation.
-          await this.revenue.emit(tx, {
-            type: "churn",
-            orgId: sub.orgId,
-            plan: sub.plan,
-            mrr: PLAN_PRICES_PAISE[sub.plan as Plan] ?? 0,
-            metadata: { subscriptionId: sub.id, source: "dunning-suspension" },
-          });
-
-          await this.planLimits.bust(sub.orgId);
-
-          const owner = await this.findOrgOwner(sub.orgId);
-          if (owner) {
-            await this.dispatch
-              .emit({
-                orgId: sub.orgId,
-                eventKey: "billing.subscription.cancelled",
-                targetUserIds: [owner.userId],
-                title: "Subscription suspended due to non-payment",
-                message:
-                  "Your subscription has been suspended because an outstanding payment could not be collected. Your data is safe. Please update your payment method to restore full access.",
-                link: `${appUrl()}/billing`,
-                priority: "CRITICAL",
-              })
-              .catch((err: unknown) =>
-                logger.warn("[billing-cron] suspension notification failed", { orgId: sub.orgId, err }),
-              );
-          }
-
-          suspended++;
-          continue;
-        }
-
-        let sentThisRun = false;
-        for (const day of DUNNING_SCHEDULE_DAYS) {
-          if (daysSincePastDue < day) continue;
-
-          const milestone = `D+${day}`;
-          const inserted = await this.db
-            .insert(dunningAttempts)
-            .values({
-              orgId: sub.orgId,
-              subscriptionId: sub.id,
-              periodStart: pastDueAt,
-              milestone,
-            })
-            .onConflictDoNothing()
-            .returning({ id: dunningAttempts.id });
-
-          if (inserted.length === 0) continue;
-
-          const owner = await this.findOrgOwner(sub.orgId);
-          if (owner) {
-            const daysRemaining = SUSPENSION_DAY - daysSincePastDue;
-            await this.dispatch
-              .emit({
-                orgId: sub.orgId,
-                eventKey: "billing.payment.failed",
-                targetUserIds: [owner.userId],
-                title: `Payment overdue — action required (day ${day})`,
-                message: `Your subscription payment remains outstanding. Please update your payment method within ${daysRemaining} day(s) to avoid suspension.`,
-                link: `${appUrl()}/billing`,
-                priority: "HIGH",
-              })
-              .catch((err: unknown) =>
-                logger.warn("[billing-cron] dunning notification failed", { orgId: sub.orgId, day, err }),
-              );
-          }
-
-          await this.db
-            .update(dunningAttempts)
-            .set({ status: "SENT", attemptedAt: now, updatedAt: now })
-            .where(
-              and(
-                eq(dunningAttempts.orgId, sub.orgId),
-                eq(dunningAttempts.subscriptionId, sub.id),
-                eq(dunningAttempts.periodStart, pastDueAt),
-                eq(dunningAttempts.milestone, milestone),
-              ),
-            );
-
-          notified++;
-          sentThisRun = true;
-          break;
-        }
-
-        if (!sentThisRun) {
-          skipped++;
-        }
-      }
+      const reminders = await remindPastDue(deps, tx, orgId, triage.toRemind, now);
+      notified += reminders.notified;
+      skipped += reminders.skipped;
     });
 
     return { notified, suspended, skipped };
   }
 
-  private async findOrgOwner(orgId: string): Promise<{ userId: string; email: string } | null> {
-    const [owner] = await this.db
-      .select({ userId: organizationMembers.userId, email: users.email })
-      .from(organizationMembers)
-      .innerJoin(users, eq(organizationMembers.userId, users.id))
-      .where(
-        and(
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.isOwner, true),
-          eq(users.isActive, true),
-        ),
-      )
-      .limit(1);
-    return owner ?? null;
-  }
-
   private async hasSameDayTopUpIst(orgId: string, packId: number): Promise<boolean> {
-    const now = new Date();
-    const istMirror = new Date(now.getTime() + IST_OFFSET_MS);
+    const window = istTopUpWindow(new Date(), packId);
 
-    // IST day expressed as UTC timestamps (IST +05:30 means every IST day starts
-    // 5h30m before UTC midnight, so it always spans exactly 2 UTC calendar dates).
-    const istDayStartUtc = new Date(
-      Date.UTC(istMirror.getUTCFullYear(), istMirror.getUTCMonth(), istMirror.getUTCDate()) -
-        IST_OFFSET_MS,
-    );
-    const istDayEndUtc = new Date(istDayStartUtc.getTime() + 86_400_000);
-
-    // Build the UTC-date strings for both UTC calendar dates within this IST day.
-    // utcDateA = the UTC date at the start of the IST window (always istMirror.date - 1 in UTC)
-    // utcDateB = the UTC date for the remaining portion (adding 6h always crosses to the next UTC date)
-    const fmtDate = (d: Date): string =>
-      `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
-    const utcDateB = new Date(istDayStartUtc.getTime() + 6 * 60 * 60 * 1000);
-
-    // Manual purchase referenceId = String(packId); automatic = `auto-<packId>-<UTC date>`.
-    // We check both UTC dates that fall in the IST window to catch purchases that occurred
-    // near UTC midnight on either side (the bug: same IST day, two UTC dates → two top-ups).
     const [row] = await this.db
       .select({ id: aiCreditTransactions.id })
       .from(aiCreditTransactions)
@@ -395,13 +277,9 @@ export class CronBillingService {
         and(
           eq(aiCreditTransactions.orgId, orgId),
           eq(aiCreditTransactions.type, "PURCHASE"),
-          gte(aiCreditTransactions.createdAt, istDayStartUtc),
-          lt(aiCreditTransactions.createdAt, istDayEndUtc),
-          or(
-            eq(aiCreditTransactions.referenceId, String(packId)),
-            eq(aiCreditTransactions.referenceId, `auto-${packId}-${fmtDate(istDayStartUtc)}`),
-            eq(aiCreditTransactions.referenceId, `auto-${packId}-${fmtDate(utcDateB)}`),
-          ),
+          gte(aiCreditTransactions.createdAt, window.startUtc),
+          lt(aiCreditTransactions.createdAt, window.endUtc),
+          or(...window.referenceIds.map((ref) => eq(aiCreditTransactions.referenceId, ref))),
         ),
       )
       .limit(1);

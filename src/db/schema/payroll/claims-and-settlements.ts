@@ -22,7 +22,7 @@ import {
   fnfStatusEnum,
 } from "../common/enums";
 import { organizations, users, organizationMembers } from "../common/auth";
-import { glJournals, glAccounts } from "../accounting/gl-kernel";
+import { journalEntries, ledgerAccounts } from "../accounting/accounting";
 import { projects } from "../build";
 import { resignations } from "../hr/offboarding";
 import { assets } from "../hr/assets";
@@ -39,12 +39,11 @@ export const expenseCategories = pgTable(
     budgetLimit: decimal("budget_limit", { precision: 15, scale: 2 }),
     budgetPeriod: text("budget_period").default("MONTHLY").notNull(),
     isActive: boolean("is_active").default(true).notNull(),
-    ledgerAccountId: integer("ledger_account_id").references(
-      () => glAccounts.id,
-    ),
+    ledgerAccountId: integer("ledger_account_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.ledgerAccountId], foreignColumns: [ledgerAccounts.orgId, ledgerAccounts.id], name: "fk_expense_categories_ledger_account_id_org" }),
     unique("uniq_expense_categories_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_expense_categories_org_name").on(table.orgId, table.name),
   ],
@@ -57,12 +56,8 @@ export const expenses = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    categoryId: integer("category_id").references(() => expenseCategories.id, {
-      onDelete: "set null",
-    }),
+    userId: text("user_id").notNull(),
+    categoryId: integer("category_id"),
     category: text("category").notNull(),
     amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
     currency: text("currency").default("INR").notNull(),
@@ -74,9 +69,7 @@ export const expenses = pgTable(
     receiptHash: text("receipt_hash"),
     taxAmount: decimal("tax_amount", { precision: 12, scale: 2 }),
     paymentMethod: text("payment_method"),
-    projectId: integer("project_id").references(() => projects.id, {
-      onDelete: "set null",
-    }),
+    projectId: integer("project_id"),
     status: expenseStatusEnum("status").default("PENDING").notNull(),
     userMembershipId: integer("user_membership_id"),
     approverId: text("approver_id").references(() => users.id, {
@@ -88,9 +81,7 @@ export const expenses = pgTable(
     paidAt: timestamp("paid_at"),
     transactionRef: text("transaction_ref"),
     reimbursementBatchId: integer("reimbursement_batch_id"),
-    postedJournalEntryId: integer("posted_journal_entry_id").references(
-      () => glJournals.id,
-    ),
+    postedJournalEntryId: integer("posted_journal_entry_id"),
     policyFlag: text("policy_flag"),
     expenseDate: date("expense_date").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -100,6 +91,9 @@ export const expenses = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.categoryId], foreignColumns: [expenseCategories.orgId, expenseCategories.id], name: "fk_expenses_category_id_org" }),
+  foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_expenses_project_id_org" }),
+  foreignKey({ columns: [table.orgId, table.postedJournalEntryId], foreignColumns: [journalEntries.orgId, journalEntries.id], name: "fk_expenses_posted_journal_entry_id_org" }),
     unique("uniq_expenses_org_id").on(table.orgId, table.id),
     index("idx_expenses_user_id").on(table.userId),
     index("idx_expenses_org_status_date").on(
@@ -131,9 +125,7 @@ export const reimbursements = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
+    userId: text("user_id").notNull(),
     category: text("category").notNull(),
     amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
     description: text("description"),
@@ -156,7 +148,6 @@ export const reimbursements = pgTable(
   },
   (table) => [
     unique("uniq_reimbursements_org_id").on(table.orgId, table.id),
-    index("idx_reimbursements_org").on(table.orgId),
     index("idx_reimbursements_user").on(table.userId),
     index("idx_reimbursements_org_user_actor").on(table.orgId, table.userMembershipId),
     index("idx_reimbursements_org_approved_actor").on(table.orgId, table.approvedByMembershipId),
@@ -180,9 +171,7 @@ export const salaryLoans = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
+    userId: text("user_id").notNull(),
     amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
     reason: text("reason"),
     emiAmount: decimal("emi_amount", { precision: 15, scale: 2 }),
@@ -204,7 +193,6 @@ export const salaryLoans = pgTable(
   },
   (table) => [
     unique("uniq_salary_loans_org_id").on(table.orgId, table.id),
-    index("idx_loans_org").on(table.orgId),
     index("idx_loans_user").on(table.userId),
     index("idx_loans_org_status").on(table.orgId, table.status),
     index("idx_salary_loans_org_user_actor").on(table.orgId, table.userMembershipId),
@@ -223,9 +211,7 @@ export const bonuses = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
+    userId: text("user_id").notNull(),
     type: bonusTypeEnum("type").notNull(),
     amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
     amountCents: bigint("amount_cents", { mode: "number" }),
@@ -260,12 +246,8 @@ export const fnfSettlements = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    resignationId: integer("resignation_id").references(() => resignations.id, {
-      onDelete: "set null",
-    }),
+    userId: text("user_id").notNull(),
+    resignationId: integer("resignation_id"),
     basicDues: decimal("basic_dues", { precision: 15, scale: 2 })
       .default("0")
       .notNull(),
@@ -313,6 +295,7 @@ export const fnfSettlements = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.resignationId], foreignColumns: [resignations.orgId, resignations.id], name: "fk_fnf_settlements_resignation_id_org" }).onDelete("set null"),
     unique("uniq_fnf_settlements_org_id").on(table.orgId, table.id),
     index("idx_fnf_user").on(table.userId),
     index("idx_fnf_settlements_org_status").on(table.orgId, table.status),
@@ -332,10 +315,8 @@ export const assetReturns = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id")
-      .references(() => users.id)
-      .notNull(),
-    assetId: integer("asset_id").references(() => assets.id),
+    userId: text("user_id").notNull(),
+    assetId: integer("asset_id"),
     assetName: text("asset_name").notNull(),
     status: text("status").default("PENDING").notNull(),
     userMembershipId: integer("user_membership_id"),
@@ -345,6 +326,7 @@ export const assetReturns = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.assetId], foreignColumns: [assets.orgId, assets.id], name: "fk_asset_returns_asset_id_org" }),
     unique("uniq_asset_returns_org_id").on(table.orgId, table.id),
     index("idx_asset_returns_user").on(table.userId),
     index("idx_asset_returns_org_status").on(table.orgId, table.status),
@@ -383,9 +365,9 @@ export const expensesRelations = relations(expenses, ({ one }) => ({
     fields: [expenses.projectId],
     references: [projects.id],
   }),
-  postedJournalEntry: one(glJournals, {
+  postedJournalEntry: one(journalEntries, {
     fields: [expenses.postedJournalEntryId],
-    references: [glJournals.id],
+    references: [journalEntries.id],
   }),
 }));
 

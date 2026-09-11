@@ -22,8 +22,8 @@ import { generatePayslipPdf } from "../hr-payroll/lib/payslip-pdf";
 import { buildPayslipPdfData } from "./lib/payslip-renderer";
 import { loadRunEmployeePayeeById } from "../lib/payroll-run-payee";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
-import type { CalculationSnapshot } from "../payroll.types";
-import type { PayslipTemplateConfig } from "./dto/payout.schemas";
+import { toCalculationSnapshot } from "../dto/payroll.schemas";
+import { normalizePayslipTemplateConfig } from "./dto/payout.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { computeSnapshotHash } from "./payslip-bulk-publisher.service";
@@ -41,7 +41,10 @@ export class PayslipDownloadService {
     caller: CurrentUserContext,
   ): Promise<StreamableFile> {
     const publication = await this.db.query.payslipPublications.findFirst({
-      where: eq(payslipPublications.id, publicationId),
+      where: and(
+        eq(payslipPublications.id, publicationId),
+        eq(payslipPublications.orgId, caller.orgId),
+      ),
       columns: {
         id: true,
         orgId: true,
@@ -55,18 +58,22 @@ export class PayslipDownloadService {
         status: true,
       },
     });
-    if (!publication) throw new NotFoundException("Payslip publication not found");
+    if (!publication)
+      throw new NotFoundException("Payslip publication not found");
 
     const callerMembershipId = actingMembershipId(caller.principal);
-    const isOwnPayslip = callerMembershipId != null && publication.userMembershipId != null
-      ? publication.userMembershipId === callerMembershipId
-      : publication.userId != null && publication.userId === caller.userId;
+    const isOwnPayslip =
+      callerMembershipId != null &&
+      publication.userMembershipId === callerMembershipId;
 
     if (!isOwnPayslip) {
       if (publication.orgId !== caller.orgId) {
         throw new NotFoundException("Payslip publication not found");
       }
-      const perms = await this.access.resolveUserPermissions(caller.orgId, caller.userId);
+      const perms = await this.access.resolveUserPermissions(
+        caller.orgId,
+        caller.userId,
+      );
       const memberRow = await this.db.query.organizationMembers.findFirst({
         where: and(
           eq(organizationMembers.userId, caller.userId),
@@ -76,37 +83,61 @@ export class PayslipDownloadService {
       });
       const isOwner = memberRow?.isOwner === true;
       if (!isOwner && !perms.has("payroll:payslips:view")) {
-        throw new ForbiddenException("Missing permission: payroll:payslips:view");
+        throw new ForbiddenException(
+          "Missing permission: payroll:payslips:view",
+        );
       }
     }
 
     const runEmployee = await this.db.query.payrollRunEmployees.findFirst({
-      where: and(eq(payrollRunEmployees.id, publication.runEmployeeId), eq(payrollRunEmployees.orgId, publication.orgId)),
+      where: and(
+        eq(payrollRunEmployees.id, publication.runEmployeeId),
+        eq(payrollRunEmployees.orgId, publication.orgId),
+      ),
       columns: {
-        calculationSnapshot: true,
-        workerType: true,
-        currency: true,
         userId: true,
+        currency: true,
         workerId: true,
+        workerType: true,
+        calculationSnapshot: true,
       },
     });
-    if (!runEmployee?.calculationSnapshot) {
-      throw new ConflictException("Calculation snapshot not available for this payslip");
+    if (!runEmployee) {
+      throw new ConflictException(
+        "Calculation snapshot not available for this payslip",
+      );
+    }
+    const snapshot = toCalculationSnapshot(runEmployee.calculationSnapshot);
+    if (!snapshot) {
+      throw new ConflictException(
+        "Calculation snapshot not available for this payslip",
+      );
     }
 
-    const payee = await loadRunEmployeePayeeById(this.db, publication.orgId, publication.runEmployeeId, this.efService);
+    const payee = await loadRunEmployeePayeeById(
+      this.db,
+      publication.orgId,
+      publication.runEmployeeId,
+      this.efService,
+    );
     if (!payee) {
-      throw new ConflictException("Payee details not available for this payslip");
+      throw new ConflictException(
+        "Payee details not available for this payslip",
+      );
     }
 
-    const snapshot = runEmployee.calculationSnapshot as CalculationSnapshot;
     const currentHash = computeSnapshotHash(snapshot);
     if (publication.snapshotHash && currentHash !== publication.snapshotHash) {
-      throw new ConflictException("Published payslip snapshot has changed — contact HR to re-publish");
+      throw new ConflictException(
+        "Published payslip snapshot has changed — contact HR to re-publish",
+      );
     }
 
     const run = await this.db.query.payrollRuns.findFirst({
-      where: and(eq(payrollRuns.id, publication.runId), eq(payrollRuns.orgId, publication.orgId)),
+      where: and(
+        eq(payrollRuns.id, publication.runId),
+        eq(payrollRuns.orgId, publication.orgId),
+      ),
       columns: { month: true, orgId: true },
     });
     if (!run) throw new NotFoundException("Payroll run not found");
@@ -125,17 +156,18 @@ export class PayslipDownloadService {
     ]);
 
     const bank = payee.bankDetails;
-    const maskedAccount = bank?.accountNumber ? "XXXX" + bank.accountNumber.slice(-4) : undefined;
+    const maskedAccount = bank?.accountNumber
+      ? "XXXX" + bank.accountNumber.slice(-4)
+      : undefined;
     const orgName = orgRow?.name ?? "Organization";
     const orgAddress = orgRow?.address
-      ? [orgRow.address.city, orgRow.address.state, orgRow.address.country].filter(Boolean).join(", ")
+      ? [orgRow.address.city, orgRow.address.state, orgRow.address.country]
+          .filter(Boolean)
+          .join(", ")
       : undefined;
 
     const layout = templateRow?.layout ?? "CLASSIC";
-    const rawConfig = templateRow?.config;
-    const config: PayslipTemplateConfig = rawConfig && typeof rawConfig === "object"
-      ? { accent: "#0f2b7f", showEmployerContributions: false, showYtd: false, ...(rawConfig as Partial<PayslipTemplateConfig>) }
-      : { accent: "#0f2b7f", showEmployerContributions: false, showYtd: false };
+    const config = normalizePayslipTemplateConfig(templateRow?.config);
 
     const pdfData = buildPayslipPdfData({
       snapshot,

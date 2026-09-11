@@ -1,17 +1,43 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { createHash } from "node:crypto";
-import { and, eq, inArray, isNull, ne, or } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import * as webpush from "web-push";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { chatChannelMembers, organizationMembers, pushSubscriptions } from "../../db/schema";
+import { chatChannelMembers, organizationMembers } from "../../db/schema";
 import type { PushPayload } from "./dto/realtime.schemas";
 import { APP_CONFIG } from "../../config/config.module";
 import type { AppConfig } from "../../config/env.validation";
 import { ExternalEffectLedger } from "../../common/outbox/external-effect-ledger";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { boundedMap } from "../../common/async/bounded-map";
+import { logger } from "../../common/logger/logger.service";
+import {
+  PUSH_SUBSCRIPTION_BATCH,
+  deleteExpiredSubscriptions,
+  loadSubscriptionsForPage,
+  loadSubscriptionsForUser,
+  type PushSubscriptionRow,
+} from "./push-subscription-store";
 
 const EXPIRED_STATUS = new Set([404, 410]);
+
+/**
+ * Per-channel-message preferences that mean "no general push". Mirrors
+ * `SUPPRESSED_GENERAL_PREFERENCES` in `chat-notifications.service.ts`, which is
+ * the same product decision applied to the Ably path.
+ */
+const PUSH_SUPPRESSING_PREFERENCES = new Set(["NOTHING", "MENTIONS"]);
+
+/**
+ * How many device pushes one message may have open at once. Matches
+ * `PUBLISH_CONCURRENCY` on the Ably fan-out, and is chosen against the pool
+ * rather than the audience: each `sendToUser` takes a connection for its
+ * subscription read and another for the effect-ledger write, so the ceiling has
+ * to sit comfortably under `DB_POOL_MAX` (10-20) for the rest of the request
+ * path to keep making progress while a large channel drains.
+ */
+export const PUSH_FANOUT_CONCURRENCY = 16;
 
 @Injectable()
 export class WebPushService {
@@ -33,13 +59,19 @@ export class WebPushService {
     return Boolean(this.publicKey && this.privateKey);
   }
 
-  private subscriptionPredicate(userId: string, membershipId: number | null | undefined) {
-    if (membershipId != null)
-      return or(
-        eq(pushSubscriptions.membershipId, membershipId),
-        and(isNull(pushSubscriptions.membershipId), eq(pushSubscriptions.userId, userId)),
-      );
-    return eq(pushSubscriptions.userId, userId);
+  /**
+   * A deployment without VAPID keys used to make this path THROW whenever it was
+   * called with an effect (`throw new Error("Web Push is not configured")`), and
+   * `ChatMessageFanoutService.dispatchDeferred` runs it inside
+   * `ExternalEffectLedger.execute`. The ledger records FAILED and rethrows, so
+   * the chat-message outbox event retried and finally dead-lettered — on every
+   * message, forever, for a condition no retry can change. Absent configuration
+   * is a skip, not a failure: the effect completes having sent nothing, exactly
+   * as `NotificationWebPushProvider` already treats it (NO_PROVIDER, not
+   * retryable).
+   */
+  private skipUnconfigured(where: string, context: Record<string, unknown>): void {
+    logger.warn(`web-push: ${where} skipped — VAPID keys are not configured`, context);
   }
 
   /**
@@ -62,9 +94,10 @@ export class WebPushService {
     payload: PushPayload,
     effect?: { producerEventId: string; effectKey: string },
     membershipId?: number | null,
+    preloadedSubscriptions?: readonly PushSubscriptionRow[],
   ): Promise<void> {
     if (!this.configured) {
-      if (effect) throw new Error("Web Push is not configured");
+      this.skipUnconfigured("sendToUser", { orgId, userId });
       return;
     }
 
@@ -72,21 +105,16 @@ export class WebPushService {
      * Short and read-only on purpose: the sends below must not be made with a
      * database transaction held open. `runInTenantTransaction` reuses a live
      * ambient where there is one — the request and dispatch paths that await
-     * this — and opens its own only when there is not.
+     * this — and opens its own only when there is not. A page the channel
+     * fan-out already read is used as-is and costs no read here.
      */
-    const subs = await runInTenantTransaction(
-      this.db,
-      (tx) =>
-        tx
-          .select({
-            endpoint: pushSubscriptions.endpoint,
-            p256dh: pushSubscriptions.p256dh,
-            auth: pushSubscriptions.auth,
-          })
-          .from(pushSubscriptions)
-          .where(this.subscriptionPredicate(userId, membershipId)),
-      { orgId },
-    );
+    const subs =
+      preloadedSubscriptions ??
+      (await runInTenantTransaction(
+        this.db,
+        () => loadSubscriptionsForUser(this.db, orgId, userId, membershipId),
+        { orgId },
+      ));
 
     if (subs.length === 0) return;
 
@@ -129,10 +157,7 @@ export class WebPushService {
     if (expiredEndpoints.length > 0)
       await runInTenantTransaction(
         this.db,
-        (tx) =>
-          tx
-            .delete(pushSubscriptions)
-            .where(inArray(pushSubscriptions.endpoint, expiredEndpoints)),
+        () => deleteExpiredSubscriptions(this.db, orgId, expiredEndpoints),
         { orgId },
       );
 
@@ -148,12 +173,16 @@ export class WebPushService {
     idempotencyKey?: string,
   ): Promise<void> {
     if (!this.configured) {
-      if (idempotencyKey) throw new Error("Web Push is not configured");
+      this.skipUnconfigured("sendToChannelMembers", { orgId, channelId });
       return;
     }
 
     const members = await this.db
-      .select({ userId: organizationMembers.userId })
+      .select({
+        userId: organizationMembers.userId,
+        mutedUntil: chatChannelMembers.mutedUntil,
+        notificationPreference: chatChannelMembers.notificationPreference,
+      })
       .from(chatChannelMembers)
       .innerJoin(organizationMembers, eq(organizationMembers.id, chatChannelMembers.membershipId))
       .where(
@@ -164,19 +193,61 @@ export class WebPushService {
         ),
       );
 
-    if (members.length === 0) return;
-
-    const results = await Promise.allSettled(
-      members.map((m) => this.sendToUser(
-        orgId,
-        m.userId,
-        idempotencyKey ? { ...payload, idempotencyKey: `${idempotencyKey}:${m.userId}` } : payload,
-        idempotencyKey ? { producerEventId: idempotencyKey, effectKey: `${idempotencyKey}:${m.userId}` } : undefined,
-      )),
+    /**
+     * `muted_until` and `notification_preference` are columns of the table this
+     * query already joins, and neither was read: a member who muted the channel
+     * until tomorrow, or set it to mentions-only, still got a device push for
+     * every message. The sibling Ably path filters on both
+     * (`chat-notifications.service.ts:74-81`).
+     *
+     * `DEFAULT` is deliberately left through. It means "use
+     * `chat_org_settings.defaultNotificationPreference`", which lives behind
+     * `ChatOrgSettingsService`; `ChatModule` imports `RealtimeModule`, so
+     * realtime cannot read it back without a module cycle. Resolving it means
+     * chat resolving the recipient set and passing it in. Until then a `DEFAULT`
+     * member behaves exactly as before — the explicit opt-outs are what change.
+     */
+    const now = new Date();
+    const recipients = members.filter(
+      ({ mutedUntil, notificationPreference }) =>
+        !(mutedUntil && mutedUntil > now) &&
+        !PUSH_SUPPRESSING_PREFERENCES.has(notificationPreference),
     );
-    const failures = results
-      .filter((result): result is PromiseRejectedResult => result.status === "rejected")
-      .map((result) => result.reason);
+
+    if (recipients.length === 0) return;
+
+    /**
+     * Bounded, not truncated. The previous form was
+     * `Promise.allSettled(members.map(...))`, so one message in a 5,000-member
+     * channel opened 5,000 `sendToUser` calls at once — each its own
+     * subscription SELECT, ledger write and HTTPS push — against a pool whose
+     * `max` is 10-20. Capping the recipient SELECT instead would have silently
+     * dropped members, turning a resource problem into a correctness one; the
+     * window is what needs bounding, not the audience.
+     *
+     * Bounding the window left the read count alone: one `push_subscriptions`
+     * SELECT still ran per recipient, which is the per-item database call
+     * PRD-C145 names. The subscriptions for a whole page are read in ONE query
+     * and handed to `sendToUser`, so the reads grow with pages rather than with
+     * members — 5,000 recipients go from 5,000 SELECTs to 25.
+     */
+    const failures: unknown[] = [];
+    for (let offset = 0; offset < recipients.length; offset += PUSH_SUBSCRIPTION_BATCH) {
+      const page = recipients.slice(offset, offset + PUSH_SUBSCRIPTION_BATCH);
+      const byUser = await loadSubscriptionsForPage(this.db, orgId, page.map((m) => m.userId));
+      const results = await boundedMap(page, PUSH_FANOUT_CONCURRENCY, (m) =>
+        this.sendToUser(
+          orgId,
+          m.userId,
+          idempotencyKey ? { ...payload, idempotencyKey: `${idempotencyKey}:${m.userId}` } : payload,
+          idempotencyKey ? { producerEventId: idempotencyKey, effectKey: `${idempotencyKey}:${m.userId}` } : undefined,
+          null,
+          byUser.get(m.userId) ?? [],
+        ),
+      );
+      for (const result of results)
+        if (result.status === "rejected") failures.push(result.reason);
+    }
     if (failures.length > 0)
       throw new AggregateError(failures, `push fan-out failed for ${failures.length} member(s)`);
   }

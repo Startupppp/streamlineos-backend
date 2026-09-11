@@ -150,16 +150,18 @@ export class BudgetsService {
       })
       .returning();
 
+    if (!row) throw new Error("Insert into timesheet_budgets returned no row");
+
     await this.audit.recordWithDb({
       orgId,
       actorMembershipId: actorMembId,
       entityType: "budget",
-      entityId: row!.id.toString(),
+      entityId: row.id.toString(),
       action: "budget.created",
       after: { projectId: input.projectId, budgetType: input.budgetType, budgetHours: input.budgetHours, budgetAmount: input.budgetAmount },
     });
 
-    return this.getOne(orgId, row!.id);
+    return this.getOne(orgId, row.id);
   }
 
   async update(orgId: string, userId: string, budgetId: number, input: UpdateBudgetInput) {

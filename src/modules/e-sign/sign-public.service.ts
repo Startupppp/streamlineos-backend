@@ -11,13 +11,14 @@ import { SignFinalizationService } from "./sign-finalization.service";
 import { SignNotificationsService } from "./sign-notifications.service";
 import { SignIntegrationsService } from "./sign-integrations.service";
 import { SMS_SENDER, type SmsSenderPort } from "./sms/sms-sender.port";
+import type { SignSessionState } from "./sign-state";
 import type {
   PublicAuthInput,
   PublicConsentInput,
   PublicFieldValueInput,
   AdoptSignatureInput,
   DeclineInput,
-} from "./dto/e-sign.schemas";
+} from "./dto/e-sign-public.schemas";
 import { withRecipientSession, type PublicRequestContext } from "./lib/recipient-session";
 import {
   acceptConsent,
@@ -40,17 +41,7 @@ export type { PublicRequestContext };
 
 const SIGNED_URL_EXPIRY_SECONDS = 900;
 
-type SessionState =
-  | "active"
-  | "not_your_turn"
-  | "expired"
-  | "revoked"
-  | "recipient_completed"
-  | "recipient_declined"
-  | "envelope_voided"
-  | "envelope_expired"
-  | "envelope_declined"
-  | "envelope_completed";
+type SessionRecipient = Pick<typeof signRecipients.$inferSelect, "status" | "tokenRevokedAt" | "tokenExpiresAt">;
 
 @Injectable()
 export class SignPublicService {
@@ -68,7 +59,7 @@ export class SignPublicService {
     @Inject(SMS_SENDER) private readonly sms: SmsSenderPort,
   ) {}
 
-  private deriveState(recipient: typeof signRecipients.$inferSelect, envelope: typeof signEnvelopes.$inferSelect): SessionState {
+  private deriveState(recipient: SessionRecipient, envelope: typeof signEnvelopes.$inferSelect): SignSessionState {
     if (envelope.status === "voided") return "envelope_voided";
     if (envelope.status === "expired") return "envelope_expired";
     if (envelope.status === "declined") return "envelope_declined";
@@ -157,18 +148,21 @@ export class SignPublicService {
       if (this.deriveState(recipient, envelope) !== "active" && recipient.status !== "completed") {
         throw new ForbiddenException("This document is not currently available.");
       }
+      if (!recipient.authenticatedAt)
+        throw new ForbiddenException("Please complete authentication first");
       const doc = await this.db.query.signDocuments.findFirst({ where: and(eq(signDocuments.id, documentId), eq(signDocuments.envelopeId, envelope.id)) });
       if (!doc) throw new NotFoundException("Document not found");
-      const url = await this.storage.getFileUrl(envelope.orgId, doc.currentFileKey, SIGNED_URL_EXPIRY_SECONDS);
+      const url = await this.storage.getFileUrl(envelope.orgId, doc.currentFileKey, SIGNED_URL_EXPIRY_SECONDS, undefined, {
+        preauthorized: true,
+      });
       return { url, expiresInSeconds: SIGNED_URL_EXPIRY_SECONDS };
     });
   }
 
-  private assertActive(recipient: typeof signRecipients.$inferSelect, envelope: typeof signEnvelopes.$inferSelect) {
+  private assertActive(recipient: SessionRecipient, envelope: typeof signEnvelopes.$inferSelect) {
     const state = this.deriveState(recipient, envelope);
-    if (state !== "active") {
+    if (state !== "active")
       throw new ForbiddenException(`This signing session is no longer active (${state}).`);
-    }
   }
 
   requestOtp(token: string) {

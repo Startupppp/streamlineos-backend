@@ -51,7 +51,7 @@ describe("OrgHierarchyController cursor lists", () => {
     controller.getHierarchy(currentUser, request);
     controller.getTree(currentUser, request);
 
-    const cacheContext = { actorUserId: "user-1", scope: "team" };
+    const cacheContext = { discriminator: "team:user-1" };
     expect(service.getHierarchy).toHaveBeenCalledWith("org-1", cacheContext);
     expect(service.getTree).toHaveBeenCalledWith("org-1", cacheContext);
   });

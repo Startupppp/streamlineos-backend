@@ -1,29 +1,30 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { HR_POLICY_TYPES } from "../../policies/dto/hr-policy.schemas";
 
 const paginationSchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
 });
 
 export const simulatePolicySchema = z.object({
   employeeId: z.string().uuid(),
-  policyType: z.string().min(1),
+  policyType: z.enum(HR_POLICY_TYPES),
   hypotheticalContext: z.record(z.string(), z.unknown()),
-});
+}).strict();
 
 export const simulateLeaveBalanceSchema = z.object({
   employeeId: z.string().uuid(),
   leaveTypeId: z.number().int().positive(),
   hypotheticalAccrualRate: z.number().optional(),
   projectionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "projectionDate must be YYYY-MM-DD"),
-});
+}).strict();
 
 export const simulateApprovalRoutingSchema = z.object({
   objectType: z.string().min(1),
   hypotheticalContext: z.record(z.string(), z.unknown()),
   employeeId: z.string().uuid(),
-});
+}).strict();
 
 export const simulatePayrollImpactSchema = z.object({
   employeeId: z.string().uuid(),
@@ -33,18 +34,18 @@ export const simulatePayrollImpactSchema = z.object({
     type: z.enum(["earning", "deduction"]),
   })),
   effectiveDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "effectiveDate must be YYYY-MM-DD"),
-});
+}).strict();
 
 export const compareSchema = z.object({
   employeeId: z.string().uuid(),
   oldPolicyId: z.coerce.number().int().positive(),
   newPolicyId: z.coerce.number().int().positive(),
-  policyType: z.string().min(1),
-});
+  policyType: z.enum(HR_POLICY_TYPES),
+}).strict();
 
 export const listSimulationsSchema = paginationSchema.extend({
   type: z.enum(["policy", "leave", "attendance", "approval", "payroll"]).optional(),
-});
+}).strict();
 
 export type SimulatePolicyInput = z.infer<typeof simulatePolicySchema>;
 export type SimulateLeaveBalanceInput = z.infer<typeof simulateLeaveBalanceSchema>;

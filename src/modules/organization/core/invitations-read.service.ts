@@ -1,5 +1,7 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, gt, ilike, isNull, lt, sql } from "drizzle-orm";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, desc, eq, gt, ilike, isNull, lt, sql } from "drizzle-orm";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBefore } from "../../../common/pagination/keyset";
 import { hashToken } from "../../../common/security/token.util";
 import { withPublicToken } from "../../../common/tenant/with-public-token";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
@@ -9,11 +11,55 @@ import { invitationEvents, invitations, users } from "../../../db/schema";
 import { expiredByTimePredicate, requireActiveOrg } from "./invitations.helpers";
 
 export interface ListInvitationsParams {
+  /** Retained while the users route is migrated to pass `cursor`. */
   page?: number;
+  cursor?: string;
   limit?: number;
   includeAccepted?: boolean;
   status?: "pending" | "accepted" | "expired" | "revoked";
   q?: string;
+}
+
+type InvitationCursorScope = {
+  orgId: string;
+  includeAccepted: boolean;
+  status: ListInvitationsParams["status"] | null;
+  q: string | null;
+};
+
+function invalidInvitationCursor(): never {
+  throw new BadRequestException("Invalid pagination cursor");
+}
+
+function decodeInvitationCursor(
+  value: string | undefined,
+  expected: InvitationCursorScope,
+) {
+  if (!value) return null;
+
+  const position = decodeCursor(value);
+  if (!position || Number.isNaN(new Date(position.sortValue).getTime())) {
+    return invalidInvitationCursor();
+  }
+
+  try {
+    const scope: unknown = JSON.parse(position.id);
+    if (
+      !Array.isArray(scope) ||
+      scope.length !== 5 ||
+      scope[0] !== expected.orgId ||
+      scope[1] !== expected.includeAccepted ||
+      scope[2] !== expected.status ||
+      scope[3] !== expected.q ||
+      typeof scope[4] !== "string" ||
+      scope[4].length === 0
+    ) {
+      return invalidInvitationCursor();
+    }
+    return { sortValue: position.sortValue, id: scope[4] };
+  } catch {
+    return invalidInvitationCursor();
+  }
 }
 
 @Injectable()
@@ -21,10 +67,16 @@ export class InvitationsReadService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listPaginated(orgId: string, params?: ListInvitationsParams) {
-    const page = params?.page ?? 1;
     const limit = Math.min(params?.limit ?? 20, 100);
-    const offset = (page - 1) * limit;
     const now = new Date();
+    const q = params?.q?.trim() || null;
+    const cursorScope: InvitationCursorScope = {
+      orgId,
+      includeAccepted: params?.includeAccepted === true,
+      status: params?.status ?? null,
+      q,
+    };
+    const cursor = decodeInvitationCursor(params?.cursor, cursorScope);
 
     const conditions = [eq(invitations.orgId, orgId)];
     if (params?.status === "pending") {
@@ -43,25 +95,26 @@ export class InvitationsReadService {
       conditions.push(isNull(invitations.acceptedAt));
     }
 
-    const q = params?.q?.trim();
     if (q) {
       const escaped = q.replace(/[%_\\]/g, (m) => `\\${m}`);
       conditions.push(ilike(invitations.email, `${escaped}%`));
     }
+    if (cursor) {
+      conditions.push(keysetBefore(invitations.createdAt, invitations.id, cursor));
+    }
 
-    const [data, countResult] = await Promise.all([
-      this.db
-        .select({
-          id: invitations.id,
-          email: invitations.email,
-          role: invitations.role,
-          expiresAt: invitations.expiresAt,
-          acceptedAt: invitations.acceptedAt,
-          createdAt: invitations.createdAt,
-          status: invitations.status,
-          revokedAt: invitations.revokedAt,
-          declinedAt: invitations.declinedAt,
-          deliveryFailed: sql<boolean>`EXISTS (
+    const data = await this.db
+      .select({
+        id: invitations.id,
+        email: invitations.email,
+        role: invitations.role,
+        expiresAt: invitations.expiresAt,
+        acceptedAt: invitations.acceptedAt,
+        createdAt: invitations.createdAt,
+        status: invitations.status,
+        revokedAt: invitations.revokedAt,
+        declinedAt: invitations.declinedAt,
+        deliveryFailed: sql<boolean>`EXISTS (
             SELECT 1 FROM ${invitationEvents} f
             WHERE f.invitation_id = "invitations"."id"
               AND f.org_id = ${orgId}
@@ -76,27 +129,22 @@ export class InvitationsReadService {
                 "invitations"."created_at"
               )
           )`,
-        })
-        .from(invitations)
-        .where(and(...conditions))
-        .orderBy(desc(invitations.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(invitations)
-        .where(and(...conditions)),
-    ]);
+      })
+      .from(invitations)
+      .where(and(...conditions))
+      .orderBy(desc(invitations.createdAt), desc(invitations.id))
+      .limit(limit + 1);
 
-    return {
-      data,
-      pagination: {
-        page,
-        limit,
-        total: countResult[0]?.total ?? 0,
-        totalPages: Math.ceil((countResult[0]?.total ?? 0) / limit),
-      },
-    };
+    return buildCursorPage(data, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: JSON.stringify([
+        cursorScope.orgId,
+        cursorScope.includeAccepted,
+        cursorScope.status,
+        cursorScope.q,
+        row.id,
+      ]),
+    }));
   }
 
   async validate(token: string): Promise<{

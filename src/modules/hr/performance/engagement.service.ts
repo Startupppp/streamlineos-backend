@@ -7,6 +7,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, gte, or } from "drizzle-orm";
+import { hasPatchValues } from "../../../common/db/patch-values";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import {
@@ -18,6 +19,7 @@ import {
   recognitions,
   skillAssessments,
   surveyResponses,
+  organizationMembers,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -97,7 +99,8 @@ export class EngagementService {
           eq(feedbackRequests.orgId, orgId),
           eq(feedbackRequests.reviewerUserId, userId),
         ),
-      );
+      )
+      .limit(1);
 
     if (!existing) throw new NotFoundException("Feedback request not found.");
     if (existing.isCompleted)
@@ -214,19 +217,28 @@ export class EngagementService {
     input: CreateRecognitionInput,
   ) {
     const membershipId = actingMembershipId(u.principal);
-    if (input.toUserId === u.userId) {
+    if (membershipId == null) {
+      throw new ForbiddenException("Organization membership required");
+    }
+    const recipient = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, u.orgId),
+        eq(organizationMembers.userId, input.toUserId),
+        eq(organizationMembers.status, "ACTIVE"),
+      ),
+      columns: { id: true },
+    });
+    if (!recipient) throw new BadRequestException("Recipient must be an active organization member.");
+    if (recipient.id === membershipId) {
       throw new BadRequestException("You cannot send kudos to yourself.");
     }
 
     const windowStart = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const senderPredicate = membershipId != null
-      ? or(eq(recognitions.fromMembershipId, membershipId), eq(recognitions.fromUserId, u.userId))!
-      : eq(recognitions.fromUserId, u.userId);
     const existing = await this.db.query.recognitions.findFirst({
       where: and(
         eq(recognitions.orgId, u.orgId),
-        senderPredicate,
-        eq(recognitions.toUserId, input.toUserId),
+        eq(recognitions.fromMembershipId, membershipId),
+        eq(recognitions.toMembershipId, recipient.id),
         gte(recognitions.createdAt, windowStart),
       ),
       columns: { id: true },
@@ -244,6 +256,7 @@ export class EngagementService {
         fromUserId: u.userId,
         fromMembershipId: membershipId,
         toUserId: input.toUserId,
+        toMembershipId: recipient.id,
         message: input.message,
         category: input.category,
       })
@@ -361,13 +374,15 @@ export class EngagementService {
     surveyId: number,
     input: UpdateSurveyInput,
   ) {
-    await this.db
-      .update(pulseSurveys)
-      .set({
-        ...(input.status !== undefined && { status: input.status }),
-        ...(input.title !== undefined && { title: input.title }),
-      })
-      .where(and(eq(pulseSurveys.id, surveyId), eq(pulseSurveys.orgId, orgId)));
+    const values = {
+      ...(input.status !== undefined && { status: input.status }),
+      ...(input.title !== undefined && { title: input.title }),
+    };
+    const scope = and(eq(pulseSurveys.id, surveyId), eq(pulseSurveys.orgId, orgId));
+    const [survey] = hasPatchValues(values)
+      ? await this.db.update(pulseSurveys).set(values).where(scope).returning({ id: pulseSurveys.id })
+      : await this.db.select({ id: pulseSurveys.id }).from(pulseSurveys).where(scope).limit(1);
+    if (!survey) throw new NotFoundException("Survey not found");
 
     return { success: true };
   }

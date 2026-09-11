@@ -22,6 +22,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { QuotesService, isSendNotDraft } from "./quotes.service";
+import { QuotesQueryService } from "./quotes-query.service";
 import {
   createSchema,
   exportSchema,
@@ -39,7 +40,20 @@ import {
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { z } from "zod";
 import { Validate } from "../../common/validation/validate.decorator";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { ApiOkResponse } from "@nestjs/swagger";
+import {
+  quoteListResponseSchema,
+  quoteCreateResponseSchema,
+  quoteDetailResponseSchema,
+  quoteUpdateResponseSchema,
+  quoteRemoveResponseSchema,
+  quoteSendResponseSchema,
+  quoteApproveResponseSchema,
+  quoteRejectResponseSchema,
+  quoteConvertToInvoiceResponseSchema,
+  quoteMarkSignedResponseSchema,
+} from "./dto/quote-response.schemas";
 
 const quoteIdParams = z.object({ quoteId: z.coerce.number().int().positive() }).strict();
 
@@ -47,19 +61,24 @@ const quoteIdParams = z.object({ quoteId: z.coerce.number().int().positive() }).
 @Controller("quotes")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class QuotesController {
-  constructor(private readonly quotes: QuotesService) {}
+  constructor(
+    private readonly quotes: QuotesService,
+    private readonly quotesQuery: QuotesQueryService,
+  ) {}
 
   @Get()
+  @ResponseSchema(quoteListResponseSchema)
   @RequirePermission("crm:quotes:read")
   @Validate({ query: listSchema })
   list(
     @Query() filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.quotes.list(u.orgId, filters);
+    return this.quotesQuery.list(u.orgId, filters);
   }
 
   @Post()
+  @ResponseSchema(quoteCreateResponseSchema)
   @HttpCode(201)
   @RequirePermission("crm:quotes:create")
   @Idempotent("crm.quote.create")
@@ -72,6 +91,7 @@ export class QuotesController {
   }
 
   @Get("export")
+  @ApiOkResponse({ description: "CSV file download", content: { "text/csv": { schema: { type: "string", format: "binary" } } } })
   @RequirePermission("crm:quotes:read")
   @Validate({ query: exportSchema })
   async exportCsv(
@@ -89,18 +109,20 @@ export class QuotesController {
   }
 
   @Get(":quoteId")
+  @ResponseSchema(quoteDetailResponseSchema)
   @RequirePermission("crm:quotes:read")
   @Validate({ params: quoteIdParams })
   async get(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const quote = await this.quotes.getQuote(u.orgId, quoteId);
+    const quote = await this.quotesQuery.getQuote(u.orgId, quoteId);
     if (!quote) throw new NotFoundException("Quote not found");
     return quote;
   }
 
   @Patch(":quoteId")
+  @ResponseSchema(quoteUpdateResponseSchema)
   @RequirePermission("crm:quotes:update")
   @Validate({ params: quoteIdParams, body: updateSchema })
   async update(
@@ -114,6 +136,7 @@ export class QuotesController {
   }
 
   @Delete(":quoteId")
+  @ResponseSchema(quoteRemoveResponseSchema)
   @RequirePermission("crm:quotes:delete")
   @Validate({ params: quoteIdParams })
   async remove(
@@ -126,6 +149,7 @@ export class QuotesController {
   }
 
   @Post(":quoteId/send")
+  @ResponseSchema(quoteSendResponseSchema)
   @BodylessAction()
   @RequirePermission("crm:quotes:update")
   @Idempotent("crm.quote.send")
@@ -141,6 +165,7 @@ export class QuotesController {
   }
 
   @Post(":quoteId/approve")
+  @ResponseSchema(quoteApproveResponseSchema)
   @BodylessAction()
   @Idempotent("quotes.quote.approve")
   @RequirePermission("crm:quotes:approve")
@@ -153,6 +178,7 @@ export class QuotesController {
   }
 
   @Post(":quoteId/reject")
+  @ResponseSchema(quoteRejectResponseSchema)
   @Idempotent("quotes.quote.reject")
   @RequirePermission("crm:quotes:approve")
   @Validate({ params: quoteIdParams, body: approveRejectSchema })
@@ -165,6 +191,7 @@ export class QuotesController {
   }
 
   @Post(":quoteId/convert-to-invoice")
+  @ResponseSchema(quoteConvertToInvoiceResponseSchema)
   @BodylessAction()
   @RequirePermission("crm:quotes:create")
   @Idempotent("crm.quote.convertToInvoice")
@@ -177,6 +204,7 @@ export class QuotesController {
   }
 
   @Post(":quoteId/mark-signed")
+  @ResponseSchema(quoteMarkSignedResponseSchema)
   @RequirePermission("crm:quotes:update")
   @Validate({ params: quoteIdParams, body: markSignedSchema })
   async markSigned(

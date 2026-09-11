@@ -35,6 +35,15 @@ import {
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  leadsImportBatchSchema,
+  leadsBulkUpdateSchema,
+  leadsBulkDeleteSchema,
+  leadsMergeSchema,
+  leadsImportSchema,
+  leadsDistributeSchema,
+} from "./dto/leads-response.schemas";
 
 const batchIdParams = z.object({ batchId: z.coerce.number().int().positive() }).strict();
 
@@ -49,6 +58,7 @@ export class LeadsOpsController {
 
   @Get("import/:batchId")
   @RequirePermission("crm:leads:view")
+  @ResponseSchema(leadsImportBatchSchema)
   @Validate({ params: batchIdParams })
   async getImportBatch(
     @Param("batchId", ParseIntPipe) batchId: number,
@@ -61,6 +71,7 @@ export class LeadsOpsController {
 
   @Patch("bulk")
   @RequirePermission("crm:leads:update")
+  @ResponseSchema(leadsBulkUpdateSchema)
   @Validate({ body: bulkUpdateSchema })
   bulkUpdate(
     @Body() body: BulkUpdateInput,
@@ -71,6 +82,7 @@ export class LeadsOpsController {
 
   @Delete("bulk")
   @RequirePermission("crm:leads:delete")
+  @ResponseSchema(leadsBulkDeleteSchema)
   @Validate({ body: bulkDeleteSchema })
   bulkDelete(
     @Body() body: BulkDeleteInput,
@@ -82,6 +94,7 @@ export class LeadsOpsController {
   @Post("merge")
   @HttpCode(200)
   @RequirePermission("crm:leads:assign")
+  @ResponseSchema(leadsMergeSchema)
   @Validate({ body: topMergeSchema })
   async mergeLeads(
     @Body() body: TopMergeInput,
@@ -104,6 +117,7 @@ export class LeadsOpsController {
   @RequirePermission("crm:leads:create")
   @HttpCode(201)
   @Idempotent("crm.leads.import")
+  @ResponseSchema(leadsImportSchema)
   @Validate({ body: importSchema })
   importLeads(
     @Body() body: ImportInput,
@@ -115,6 +129,7 @@ export class LeadsOpsController {
   @Post("distribute")
   @HttpCode(200)
   @RequirePermission("crm:leads:assign")
+  @ResponseSchema(leadsDistributeSchema)
   @Validate({ body: distributeSchema })
   async distribute(
     @Body() body: DistributeInput,

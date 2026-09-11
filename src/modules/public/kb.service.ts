@@ -1,8 +1,31 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
-import { kbArticleFeedback, kbArticles, kbCategories, kbSpaces } from "../../db/schema";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  isNull,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
+import {
+  kbArticleFeedback,
+  kbArticles,
+  kbCategories,
+  kbSpaces,
+} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
+import { keysetBeforeId } from "../../common/pagination/keyset";
 import type { KbFeedbackInput, KbListInput } from "./dto/public.schemas";
 
 @Injectable()
@@ -10,7 +33,10 @@ export class KbService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async list(input: KbListInput) {
-    const { org, categoryId, search, page, pageSize } = input;
+    const { org, categoryId, search, pageSize, cursor } = input;
+    const position = cursor === undefined ? undefined : decodeCursor(cursor);
+    if (cursor !== undefined && !position)
+      throw new BadRequestException("Invalid pagination cursor");
 
     const categories = await this.db
       .select({
@@ -22,7 +48,9 @@ export class KbService {
         sortOrder: kbCategories.sortOrder,
       })
       .from(kbCategories)
-      .where(and(eq(kbCategories.orgId, org), eq(kbCategories.isPublished, true)))
+      .where(
+        and(eq(kbCategories.orgId, org), eq(kbCategories.isPublished, true)),
+      )
       .orderBy(asc(kbCategories.sortOrder), asc(kbCategories.name));
 
     const conditions: SQL[] = [
@@ -35,7 +63,10 @@ export class KbService {
     if (categoryId) conditions.push(eq(kbArticles.categoryId, categoryId));
     if (search) {
       const term = `%${search}%`;
-      const match = or(ilike(kbArticles.title, term), ilike(kbArticles.excerpt, term));
+      const match = or(
+        ilike(kbArticles.title, term),
+        ilike(kbArticles.excerpt, term),
+      );
       if (match) conditions.push(match);
     }
 
@@ -59,12 +90,22 @@ export class KbService {
       })
       .from(kbArticles)
       .innerJoin(kbSpaces, eq(kbArticles.spaceId, kbSpaces.id))
-      .where(and(...conditions))
-      .orderBy(desc(kbArticles.publishedAt))
-      .limit(pageSize)
-      .offset((page - 1) * pageSize);
+      .where(
+        and(
+          ...conditions,
+          position
+            ? keysetBeforeId(kbArticles.publishedAt, kbArticles.id, position)
+            : undefined,
+        ),
+      )
+      .orderBy(desc(kbArticles.publishedAt), desc(kbArticles.id))
+      .limit(pageSize + 1);
 
-    return { categories, articles };
+    const page = buildCursorPage(articles, pageSize, (article) => ({
+      sortValue: article.publishedAt?.toISOString() ?? "",
+      id: String(article.id),
+    }));
+    return { categories, articles: page.data, pagination: page.pagination };
   }
 
   async getArticle(slug: string, org: string) {
@@ -147,7 +188,11 @@ export class KbService {
           visitorId: visitorId ?? null,
         })
         .onConflictDoNothing({
-          target: [kbArticleFeedback.orgId, kbArticleFeedback.articleId, kbArticleFeedback.visitorId],
+          target: [
+            kbArticleFeedback.orgId,
+            kbArticleFeedback.articleId,
+            kbArticleFeedback.visitorId,
+          ],
         })
         .returning({ id: kbArticleFeedback.id });
 

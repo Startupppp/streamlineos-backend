@@ -3,18 +3,14 @@ import type { Db } from "../../db/drizzle.module";
 import {
   groupRoleAssignments,
   moduleOwnerships,
-  organizationMembers,
   principalGroupMembers,
   roleAssignments,
-  rolePermissionGrants,
   roles,
-  userDelegationPermissions,
-  userPermissionGrants,
-  userDelegations,
 } from "../../db/schema";
 import { logger } from "../../common/logger/logger.service";
 import { isDelegablePermission } from "../../common/rbac/grantability";
 import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
+import type { MembershipState } from "../../common/auth/membership-state.service";
 import {
   ROLE_DEFAULT_PERMISSIONS,
   UNIVERSAL_MEMBER_PERMISSION_GRANTS,
@@ -27,7 +23,7 @@ import {
   CATALOG_KEY_SET,
   deriveAccessViewImplication,
   EMPLOYEE_SELF_SERVICE_GRANTS,
-  evaluateMembershipGate,
+  platformCapabilityScopes,
 } from "./access-policy";
 import {
   type Clock,
@@ -35,11 +31,14 @@ import {
   NO_TRANSITIONS,
   SYSTEM_CLOCK,
 } from "./snapshot-validity";
+import {
+  drainDelegatedPermissionGrants,
+  drainRolePermissionGrants,
+  drainUserPermissionGrants,
+  type ReadAccessTable,
+} from "./access-grant-drains";
 
-export type SafeAccessTableRead = <Result>(
-  read: () => PromiseLike<Result>,
-  fallback: Result,
-) => Promise<Result>;
+export type { ReadAccessTable };
 
 export interface ResolvedPermissions {
   perms: Record<string, DataScope>;
@@ -47,10 +46,22 @@ export interface ResolvedPermissions {
 }
 
 export interface MembershipAccessState {
-  exists: boolean;
   active: boolean;
   isOwnerOrAdmin: boolean;
   expiresAt: number;
+}
+
+/** The one liveness authority, or a request context that already holds its answer. */
+export type MembershipReader = (
+  orgId: string,
+  userId: string,
+) => Promise<MembershipState>;
+
+function ownsOrAdministers(member: MembershipState): boolean {
+  return (
+    member.active &&
+    (member.isOwner || member.role === ORG_MEMBER_ROLES.ORG_ADMIN)
+  );
 }
 
 /**
@@ -81,10 +92,11 @@ function earliestAfter(
 export class AccessPermissionResolver {
   constructor(
     private readonly getDatabase: () => Db,
-    private readonly safeAccessTableRead: SafeAccessTableRead,
+    private readonly readAccessTable: ReadAccessTable,
     private readonly warnedUnknownKeys: Set<string>,
     private readonly membershipAccessCache: Map<string, MembershipAccessState>,
     private readonly deniedModulesTtlMs: number,
+    private readonly resolveMembership: MembershipReader,
     private readonly clock: Clock = SYSTEM_CLOCK,
   ) {}
 
@@ -96,35 +108,28 @@ export class AccessPermissionResolver {
     orgId: string,
     userId: string,
     version: number,
+    membership?: MembershipReader,
   ): Promise<ResolvedPermissions> {
-    const member = await this.db.query.organizationMembers.findFirst({
-      where: and(
-        eq(organizationMembers.userId, userId),
-        eq(organizationMembers.orgId, orgId),
-      ),
-      columns: { isOwner: true, status: true, id: true, role: true },
-    });
-    const gate = evaluateMembershipGate(member);
+    const member = await (membership ?? this.resolveMembership)(orgId, userId);
     this.membershipAccessCache.set(membershipCacheKey(orgId, userId, version), {
-      exists: Boolean(member),
-      active: gate.active,
-      isOwnerOrAdmin:
-        gate.active &&
-        (gate.isOwner || member?.role === ORG_MEMBER_ROLES.ORG_ADMIN),
+      active: member.active,
+      isOwnerOrAdmin: ownsOrAdministers(member),
       expiresAt: Date.now() + this.deniedModulesTtlMs,
     });
-    if (!gate.active) return { perms: {}, transitions: NO_TRANSITIONS };
-    if (gate.isOwner)
-      return { perms: allCatalogScopes(), transitions: NO_TRANSITIONS };
-    if (member?.role === ORG_MEMBER_ROLES.ORG_ADMIN)
-      return { perms: allCatalogScopes(), transitions: NO_TRANSITIONS };
+    if (!member.active) return { perms: {}, transitions: NO_TRANSITIONS };
+    const platformScopes = platformCapabilityScopes(userId);
+    if (ownsOrAdministers(member))
+      return {
+        perms: { ...allCatalogScopes(), ...platformScopes },
+        transitions: NO_TRANSITIONS,
+      };
 
-    const membershipId = member?.id ?? 0;
+    const membershipId = member.membershipId ?? 0;
     const now = this.clock.now();
 
     const [assignmentRows, groupMemberRows, ownershipRows, personalGrantRows] =
       await Promise.all([
-      this.safeAccessTableRead(
+      this.readAccessTable(
         () =>
           this.db
             .select({
@@ -141,10 +146,10 @@ export class AccessPermissionResolver {
                   gt(roleAssignments.expiresAt, now),
                 ),
               ),
-            ),
-        [] as { roleId: number; expiresAt: Date | null }[],
+            )
+            .limit(500),
       ),
-      this.safeAccessTableRead(
+      this.readAccessTable(
         () =>
           this.db
             .select({
@@ -159,10 +164,10 @@ export class AccessPermissionResolver {
                   membershipId,
                 ),
               ),
-            ),
-        [] as { principalGroupId: string }[],
+            )
+            .limit(500),
       ),
-      this.safeAccessTableRead(
+      this.readAccessTable(
         () =>
           this.db
             .select({ moduleKey: moduleOwnerships.moduleKey })
@@ -172,27 +177,14 @@ export class AccessPermissionResolver {
                 eq(moduleOwnerships.orgId, orgId),
                 eq(moduleOwnerships.ownerMembershipId, membershipId),
               ),
-            ),
-        [] as { moduleKey: string }[],
+            )
+            .limit(100),
       ),
-      this.safeAccessTableRead(
-        () =>
-          this.db
-            .select({
-              permissionKey: userPermissionGrants.permissionKey,
-              scope: userPermissionGrants.scope,
-            })
-            .from(userPermissionGrants)
-            .where(
-              and(
-                eq(userPermissionGrants.orgId, orgId),
-                eq(
-                  userPermissionGrants.organizationMembershipId,
-                  membershipId,
-                ),
-              ),
-            ),
-        [] as { permissionKey: string; scope: DataScope }[],
+      drainUserPermissionGrants(
+        this.db,
+        this.readAccessTable,
+        orgId,
+        membershipId,
       ),
     ]);
 
@@ -201,7 +193,7 @@ export class AccessPermissionResolver {
     const groupIds = groupMemberRows.map((row) => row.principalGroupId);
 
     if (groupIds.length > 0) {
-      const groupRoleRows = await this.safeAccessTableRead(
+      const groupRoleRows = await this.readAccessTable(
         () =>
           this.db
             .select({ roleId: groupRoleAssignments.roleId })
@@ -211,8 +203,8 @@ export class AccessPermissionResolver {
                 eq(groupRoleAssignments.orgId, orgId),
                 inArray(groupRoleAssignments.principalGroupId, groupIds),
               ),
-            ),
-        [] as { roleId: number }[],
+            )
+            .limit(500),
       );
       for (const row of groupRoleRows) roleIds.add(row.roleId);
     }
@@ -268,30 +260,25 @@ export class AccessPermissionResolver {
 
     const roleIdList = Array.from(roleIds);
     if (roleIdList.length > 0) {
+      // The bound is the id list itself, not a constant. `roleIds` unions the
+      // 500 direct assignments read above with the 500 group-derived ones, so a
+      // fixed `.limit(500)` truncated a 1000-id lookup with no `ORDER BY`: the
+      // roles that fell off resolved to no slug record and lost every
+      // ROLE_DEFAULT_PERMISSIONS key, silently and non-deterministically.
       const roleRecords = await this.db
         .select({ id: roles.id, slug: roles.slug })
         .from(roles)
-        .where(and(eq(roles.orgId, orgId), inArray(roles.id, roleIdList)));
+        .where(and(eq(roles.orgId, orgId), inArray(roles.id, roleIdList)))
+        .limit(roleIdList.length);
       const roleById = new Map(
         roleRecords.map((record) => [record.id, record]),
       );
 
-      const grantRows = await this.safeAccessTableRead(
-        () =>
-          this.db
-            .select({
-              roleId: rolePermissionGrants.roleId,
-              permissionKey: rolePermissionGrants.permissionKey,
-              scope: rolePermissionGrants.scope,
-            })
-            .from(rolePermissionGrants)
-            .where(
-              and(
-                eq(rolePermissionGrants.orgId, orgId),
-                inArray(rolePermissionGrants.roleId, roleIdList),
-              ),
-            ),
-        [],
+      const grantRows = await drainRolePermissionGrants(
+        this.db,
+        this.readAccessTable,
+        orgId,
+        roleIdList,
       );
       const grantsByRole = new Map<
         number,
@@ -318,31 +305,12 @@ export class AccessPermissionResolver {
       }
     }
 
-    const delegatedPermissionRows = await this.safeAccessTableRead(
-      () =>
-        this.db
-          .select({
-            permissionKey: userDelegationPermissions.permissionKey,
-            startsAt: userDelegations.startsAt,
-            endsAt: userDelegations.endsAt,
-          })
-          .from(userDelegationPermissions)
-          .innerJoin(
-            userDelegations,
-            and(
-              eq(userDelegations.orgId, userDelegationPermissions.orgId),
-              eq(userDelegations.id, userDelegationPermissions.delegationId),
-            ),
-          )
-          .where(
-            and(
-              eq(userDelegations.orgId, orgId),
-              eq(userDelegations.delegateeMembershipId, membershipId),
-              eq(userDelegations.status, "ACTIVE"),
-              gt(userDelegations.endsAt, now),
-            ),
-          ),
-      [] as { permissionKey: string; startsAt: Date; endsAt: Date }[],
+    const delegatedPermissionRows = await drainDelegatedPermissionGrants(
+      this.db,
+      this.readAccessTable,
+      orgId,
+      membershipId,
+      now,
     );
     for (const row of delegatedPermissionRows) {
       if (row.startsAt.getTime() > now.getTime()) continue;
@@ -360,6 +328,8 @@ export class AccessPermissionResolver {
         merge(key, "all");
       }
     }
+
+    for (const [key, scope] of Object.entries(platformScopes)) merge(key, scope);
 
     deriveAccessViewImplication(result);
     return {
@@ -385,28 +355,19 @@ export class AccessPermissionResolver {
     orgId: string,
     userId: string,
     version: number,
-  ): Promise<{ exists: boolean; active: boolean; isOwnerOrAdmin: boolean }> {
+    membership?: MembershipReader,
+  ): Promise<{ active: boolean; isOwnerOrAdmin: boolean }> {
     const cacheKey = membershipCacheKey(orgId, userId, version);
     const cached = this.membershipAccessCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) return cached;
-    const member = await this.db.query.organizationMembers.findFirst({
-      where: and(
-        eq(organizationMembers.userId, userId),
-        eq(organizationMembers.orgId, orgId),
-      ),
-      columns: { isOwner: true, role: true, status: true },
-    });
-    const exists = Boolean(member);
-    const active = member?.status === "ACTIVE";
-    const isOwnerOrAdmin =
-      active &&
-      (member?.isOwner === true || member?.role === ORG_MEMBER_ROLES.ORG_ADMIN);
+    const member = await (membership ?? this.resolveMembership)(orgId, userId);
+    const active = member.active;
+    const isOwnerOrAdmin = ownsOrAdministers(member);
     this.membershipAccessCache.set(cacheKey, {
-      exists,
       active,
       isOwnerOrAdmin,
       expiresAt: Date.now() + this.deniedModulesTtlMs,
     });
-    return { exists, active, isOwnerOrAdmin };
+    return { active, isOwnerOrAdmin };
   }
 }

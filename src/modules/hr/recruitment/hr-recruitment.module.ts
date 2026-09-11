@@ -27,6 +27,7 @@ import { RecruitmentOffersService } from "./recruitment-offers.service";
 import { RecruitmentJobsService } from "./recruitment-jobs.service";
 import { RecruitmentRecruitersService } from "./recruitment-recruiters.service";
 import { RecruitmentSourcingService } from "./recruitment-sourcing.service";
+import { RecruitmentVendorSourcingService } from "./recruitment-vendor-sourcing.service";
 import { RecruitmentAutomationService } from "./recruitment-automation.service";
 import { RecruitmentCandidateAiService } from "./recruitment-candidate-ai.service";
 import { RecruitmentRequisitionsService } from "./recruitment-requisitions.service";
@@ -62,6 +63,7 @@ import { RecruitmentHandoffService } from "./recruitment-handoff.service";
     RecruitmentJobsService,
     RecruitmentRecruitersService,
     RecruitmentSourcingService,
+    RecruitmentVendorSourcingService,
     RecruitmentAutomationService,
     RecruitmentCandidateAiService,
     RecruitmentRequisitionsService,

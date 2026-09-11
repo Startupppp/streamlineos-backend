@@ -38,8 +38,16 @@ import {
 
 export const projectsRelations = relations(projects, ({ one, many }) => ({
   tickets: many(tickets),
-  manager: one(users, { fields: [projects.managerId], references: [users.id], relationName: "projectManager" }),
-  client: one(users, { fields: [projects.clientId], references: [users.id], relationName: "projectClient" }),
+  manager: one(organizationMembers, {
+    fields: [projects.managerMembershipId],
+    references: [organizationMembers.id],
+    relationName: "projectManager",
+  }),
+  client: one(organizationMembers, {
+    fields: [projects.clientMembershipId],
+    references: [organizationMembers.id],
+    relationName: "projectClient",
+  }),
   members: many(projectMembers),
   statuses: many(projectStatuses, { relationName: "projectStatuses" }),
   milestones: many(projectMilestones),
@@ -78,7 +86,11 @@ export const projectTemplateTicketsRelations = relations(projectTemplateTickets,
 export const ticketsRelations = relations(tickets, ({ one, many }) => ({
   project: one(projects, { fields: [tickets.projectId], references: [projects.id] }),
   sprint: one(sprints, { fields: [tickets.sprintId], references: [sprints.id] }),
-  assignee: one(users, { fields: [tickets.assigneeId], references: [users.id], relationName: "assignee" }),
+  assignee: one(organizationMembers, {
+    fields: [tickets.assigneeMembershipId],
+    references: [organizationMembers.id],
+    relationName: "assignee",
+  }),
   reporter: one(users, { fields: [tickets.reporterId], references: [users.id], relationName: "reporter" }),
   module: one(modules, { fields: [tickets.moduleId], references: [modules.id] }),
   cycle: one(cycles, { fields: [tickets.cycleId], references: [cycles.id] }),
@@ -92,7 +104,10 @@ export const ticketsRelations = relations(tickets, ({ one, many }) => ({
 
 export const ticketAssigneesRelations = relations(ticketAssignees, ({ one }) => ({
   ticket: one(tickets, { fields: [ticketAssignees.ticketId], references: [tickets.id] }),
-  user: one(users, { fields: [ticketAssignees.userId], references: [users.id] }),
+  user: one(organizationMembers, {
+    fields: [ticketAssignees.membershipId],
+    references: [organizationMembers.id],
+  }),
   assigner: one(users, { fields: [ticketAssignees.assignedBy], references: [users.id], relationName: "assigner" }),
 }));
 
@@ -118,7 +133,10 @@ export const ticketLabelsRelations = relations(ticketLabels, ({ many }) => ({
 
 export const ticketWatchersRelations = relations(ticketWatchers, ({ one }) => ({
   ticket: one(tickets, { fields: [ticketWatchers.ticketId], references: [tickets.id] }),
-  user: one(users, { fields: [ticketWatchers.userId], references: [users.id] }),
+  user: one(organizationMembers, {
+    fields: [ticketWatchers.membershipId],
+    references: [organizationMembers.id],
+  }),
 }));
 
 export const workItemRelationsRelations = relations(workItemRelations, ({ one }) => ({
@@ -132,7 +150,10 @@ export const projectStatusesRelations = relations(projectStatuses, ({ one }) => 
 
 export const projectMembersRelations = relations(projectMembers, ({ one }) => ({
   project: one(projects, { fields: [projectMembers.projectId], references: [projects.id] }),
-  user: one(users, { fields: [projectMembers.userId], references: [users.id] }),
+  user: one(organizationMembers, {
+    fields: [projectMembers.membershipId],
+    references: [organizationMembers.id],
+  }),
 }));
 
 export const projectViewsRelations = relations(projectViews, ({ one }) => ({

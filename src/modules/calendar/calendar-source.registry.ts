@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import type { CalendarEventProjection, CalendarEventSource, CalendarSourceContext } from "./calendar-event-source";
 import { AccessService } from "../access/access.service";
 import { CalendarSourcePreferencesService } from "./calendar-source-preferences.service";
+import { moduleDefinition, moduleIdFromStored } from "../../common/rbac/module-registry";
 
 export interface ToggleEntry {
   key: string;
@@ -14,6 +15,7 @@ export interface CalendarSourceOutput {
   events: CalendarEventProjection[];
   toggleList: ReadonlyArray<ToggleEntry>;
   failures: ReadonlyArray<{ key: string; error: unknown }>;
+  truncatedKeys: ReadonlyArray<string>;
 }
 
 export const CALENDAR_PER_SOURCE_CAP = 400;
@@ -35,8 +37,22 @@ export class CalendarSourceRegistry {
     this.sources.add(source);
   }
 
+  /**
+   * A source's `module` names something an organisation enables, so it must be
+   * a module the registry holds. `isCoreModuleKey` — which every availability
+   * path ends at — answers "core" for a key it does not hold, because it is
+   * also asked about permission namespaces that are not modules. An undeclared
+   * module key therefore reads as free-and-always-on, and the toggle appears on
+   * every organisation's calendar including one that has enabled nothing.
+   * Deciding it here, before availability is consulted, is what makes a missing
+   * entry fail closed instead of fail open.
+   */
+  private isDeclaredModule(source: CalendarEventSource): boolean {
+    return moduleDefinition(moduleIdFromStored(source.module)) !== undefined;
+  }
+
   private async resolveAvailable(ctx: CalendarSourceContext): Promise<CalendarEventSource[]> {
-    const sources = [...this.sources];
+    const sources = [...this.sources].filter((s) => this.isDeclaredModule(s));
     return (
       await Promise.all(
         sources.map(async (s) => {
@@ -54,8 +70,10 @@ export class CalendarSourceRegistry {
   }
 
   async getToggleList(ctx: CalendarSourceContext): Promise<ReadonlyArray<ToggleEntry>> {
-    const available = await this.resolveAvailable(ctx);
-    const disabledKeys = await this.preferences.getDisabledKeys(ctx.orgId, ctx.userId);
+    const [available, disabledKeys] = await Promise.all([
+      this.resolveAvailable(ctx),
+      this.preferences.getDisabledKeys(ctx.orgId, ctx.userId),
+    ]);
     return available.map((s) => ({
       key: s.key,
       label: s.label,
@@ -71,15 +89,18 @@ export class CalendarSourceRegistry {
         key: s.key,
         label: s.label,
         module: s.module,
-        moduleEnabled: await this.access.isModuleEnabled(orgId, s.module),
+        moduleEnabled: this.isDeclaredModule(s)
+          ? await this.access.isModuleEnabled(orgId, s.module)
+          : false,
       })),
     );
   }
 
   async loadAll(ctx: CalendarSourceContext): Promise<CalendarSourceOutput> {
-    const available = await this.resolveAvailable(ctx);
-
-    const disabledKeys = await this.preferences.getDisabledKeys(ctx.orgId, ctx.userId);
+    const [available, disabledKeys] = await Promise.all([
+      this.resolveAvailable(ctx),
+      this.preferences.getDisabledKeys(ctx.orgId, ctx.userId),
+    ]);
 
     const toggleList: ToggleEntry[] = available.map((s) => ({
       key: s.key,
@@ -94,21 +115,21 @@ export class CalendarSourceRegistry {
 
     const events: CalendarEventProjection[] = [];
     const failures: Array<{ key: string; error: unknown }> = [];
+    const truncatedKeys: string[] = [];
 
     for (const [i, result] of settled.entries()) {
       const key = keys[i];
       if (!key) continue;
       if (result.status === "fulfilled") {
         const sourceEvents = result.value;
-        events.push(
-          ...(sourceEvents.length > CALENDAR_PER_SOURCE_CAP
-            ? sourceEvents.slice(0, CALENDAR_PER_SOURCE_CAP)
-            : sourceEvents),
-        );
+        if (sourceEvents.length > CALENDAR_PER_SOURCE_CAP) {
+          truncatedKeys.push(key);
+          events.push(...sourceEvents.slice(0, CALENDAR_PER_SOURCE_CAP));
+        } else events.push(...sourceEvents);
       } else
         failures.push({ key, error: result.reason });
     }
 
-    return { events, toggleList, failures };
+    return { events, toggleList, failures, truncatedKeys };
   }
 }

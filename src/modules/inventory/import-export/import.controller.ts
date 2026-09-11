@@ -27,7 +27,12 @@ import {
   type ImportErrorsQueryInput,
 } from "./dto/import-export.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction, MultipartAction } from "../../../common/openapi/zod-operation-contracts";;
+import { BodylessAction, MultipartAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  importPreviewResponseSchema,
+  createImportJobResponseSchema,
+  listImportJobsResponseSchema,
+} from "./dto/import-export-response.schemas";
 import { z } from "zod";
 
 const jobIdParams = z.object({ jobId: z.coerce.number().int().positive() }).strict();
@@ -116,6 +121,7 @@ export class ImportController {
   }
 
   @Post("preview")
+  @ResponseSchema(importPreviewResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:import")
   @MultipartAction({ file: "file", fields: { importType: "string" }, requiredFields: ["importType"] })
@@ -131,6 +137,7 @@ export class ImportController {
   }
 
   @Post("jobs")
+  @ResponseSchema(createImportJobResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:import")
   @Idempotent("inventory.import.job.create")
@@ -143,6 +150,7 @@ export class ImportController {
   }
 
   @Get("jobs")
+  @ResponseSchema(listImportJobsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:import")
   @Validate({ query: listJobsQuerySchema })
@@ -154,6 +162,7 @@ export class ImportController {
   }
 
   @Get("jobs/:jobId")
+  @ResponseSchema(createImportJobResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:import")
   @Validate({ params: jobIdParams })

@@ -22,7 +22,7 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { getPostgresErrorCode } from "../../common/db/postgres-error";
+import { isUniqueViolation } from "../../common/db/postgres-error";
 import {
   assertCompatibleLink,
   effectiveEmail,
@@ -31,15 +31,10 @@ import {
   invitationAccess,
   LINKABLE_MEMBERSHIP_STATUSES,
   normalizeEmail,
-  PG_UNIQUE_VIOLATION,
   type IdentitySelector,
   type MemberIdentity,
 } from "./directory-identity-helpers";
-
-export type {
-  DirectoryPersonAccountAccess,
-  DirectoryPersonWithAccess,
-} from "./directory-identity-helpers";
+import type { DirectoryPerson } from "./directory-person-projection";
 
 type PersonRow = typeof organizationPeople.$inferSelect;
 
@@ -130,7 +125,7 @@ export class DirectoryIdentityService {
         }
       );
     } catch (error) {
-      if (getPostgresErrorCode(error) !== PG_UNIQUE_VIOLATION) throw error;
+      if (!isUniqueViolation(error)) throw error;
       throw new ConflictException({
         code: "DIRECTORY_MEMBER_ALREADY_LINKED",
         message:
@@ -142,7 +137,7 @@ export class DirectoryIdentityService {
 
   async resolvePersonAccess(
     organizationId: string,
-    person: PersonRow,
+    person: DirectoryPerson,
   ) {
     const [withAccess] = await this.resolvePeopleAccess(organizationId, [person]);
     if (!withAccess) throw new Error("Failed to resolve person access");
@@ -151,7 +146,7 @@ export class DirectoryIdentityService {
 
   async resolvePeopleAccess(
     organizationId: string,
-    people: PersonRow[],
+    people: DirectoryPerson[],
   ) {
     if (people.length === 0) return [];
 

@@ -5,7 +5,7 @@ export const kbAttachmentsQuerySchema = z.object({
   org: z.string().min(1),
   page: pageNumberField,
   limit: pageSizeField(20, 100),
-});
+}).strict();
 export type KbAttachmentsQueryInput = z.infer<typeof kbAttachmentsQuerySchema>;
 
 export const onboardingDocTypeSchema = z.enum([
@@ -38,3 +38,6 @@ export const imageQuerySchema = z
   })
   .strict();
 export type ImageQueryInput = z.infer<typeof imageQuerySchema>;
+
+export const uploadBodySchema = z.object({ type: onboardingDocTypeSchema });
+export type UploadBodyInput = z.infer<typeof uploadBodySchema>;

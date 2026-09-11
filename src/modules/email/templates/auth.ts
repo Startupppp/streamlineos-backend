@@ -8,63 +8,59 @@ import {
   renderKeyValueRows,
   renderOtpCode,
 } from "./components";
-import { EMAIL_TEMPLATE_VERSION, resolveLocaleText } from "./email-locale";
+import {
+  EMAIL_TEMPLATE_VERSION,
+  resolveLocaleText,
+  resolveLocaleValue,
+  type LocalizedValues,
+} from "./email-locale";
 
-export const AUTH_TEMPLATE_VERSION = EMAIL_TEMPLATE_VERSION;
+const AUTH_TEMPLATE_VERSION = EMAIL_TEMPLATE_VERSION;
+export const AUTH_TEMPLATE_LOCALES = ["en", "fr", "es", "de"] as const;
 
-const VERIFY_TITLE_MAP: Record<string, string> = {
+const VERIFY_TITLE_MAP: LocalizedValues<string> = {
   en: "Verify your email address",
   fr: "Vérifiez votre adresse e-mail",
   es: "Verifica tu dirección de correo electrónico",
   de: "Bestätige deine E-Mail-Adresse",
 };
 
-const VERIFY_BODY_MAP: Record<string, (brand: string) => string> = {
+const VERIFY_BODY_MAP: LocalizedValues<(brand: string) => string> = {
   en: (b) => `Confirm your email address to activate your ${b} account.`,
   fr: (b) => `Confirmez votre adresse e-mail pour activer votre compte ${b}.`,
   es: (b) => `Confirma tu dirección de correo electrónico para activar tu cuenta de ${b}.`,
   de: (b) => `Bestätige deine E-Mail-Adresse, um dein ${b}-Konto zu aktivieren.`,
 };
 
-const VERIFY_BUTTON_MAP: Record<string, string> = {
+const VERIFY_BUTTON_MAP: LocalizedValues<string> = {
   en: "Verify email",
   fr: "Vérifier l'e-mail",
   es: "Verificar correo electrónico",
   de: "E-Mail bestätigen",
 };
 
-const VERIFY_CALLOUT_MAP: Record<string, (brand: string) => string> = {
+const VERIFY_CALLOUT_MAP: LocalizedValues<(brand: string) => string> = {
   en: (b) => `This link expires in 24 hours. If you did not sign up for ${b}, you can safely ignore this email.`,
   fr: (b) => `Ce lien expire dans 24 heures. Si vous ne vous êtes pas inscrit à ${b}, vous pouvez ignorer cet e-mail.`,
   es: (b) => `Este enlace caduca en 24 horas. Si no te registraste en ${b}, puedes ignorar este correo electrónico.`,
   de: (b) => `Dieser Link läuft in 24 Stunden ab. Wenn du dich nicht bei ${b} angemeldet hast, kannst du diese E-Mail ignorieren.`,
 };
 
-const VERIFY_PREHEADER_MAP: Record<string, (brand: string) => string> = {
+const VERIFY_PREHEADER_MAP: LocalizedValues<(brand: string) => string> = {
   en: (b) => `Confirm your email address to activate your ${b} account.`,
   fr: (b) => `Confirmez votre adresse e-mail pour activer votre compte ${b}.`,
   es: (b) => `Confirma tu dirección de correo para activar tu cuenta de ${b}.`,
   de: (b) => `Bestätige deine E-Mail-Adresse, um dein ${b}-Konto zu aktivieren.`,
 };
 
-function resolveBodyFn(
-  map: Record<string, (arg: string) => string>,
-  locale: string,
-): (arg: string) => string {
-  if (Object.prototype.hasOwnProperty.call(map, locale)) return map[locale]!;
-  const base = locale.split("-")[0] ?? "";
-  if (base && base !== locale && Object.prototype.hasOwnProperty.call(map, base)) return map[base]!;
-  return map["en"]!;
-}
-
 export function getVerificationEmailTemplate(verificationUrl: string, locale = "en"): string {
   const brand = getBrandName();
   const sBrand = escapeHtml(brand);
   const title = resolveLocaleText(locale, VERIFY_TITLE_MAP);
-  const bodyFn = resolveBodyFn(VERIFY_BODY_MAP, locale);
+  const bodyFn = resolveLocaleValue(locale, VERIFY_BODY_MAP);
   const buttonLabel = resolveLocaleText(locale, VERIFY_BUTTON_MAP);
-  const calloutFn = resolveBodyFn(VERIFY_CALLOUT_MAP, locale);
-  const preheaderFn = resolveBodyFn(VERIFY_PREHEADER_MAP, locale);
+  const calloutFn = resolveLocaleValue(locale, VERIFY_CALLOUT_MAP);
+  const preheaderFn = resolveLocaleValue(locale, VERIFY_PREHEADER_MAP);
 
   const content = `
     <h1 class="email-title">${escapeHtml(title)}</h1>
@@ -81,6 +77,10 @@ export function getVerificationEmailTemplate(verificationUrl: string, locale = "
     preheader: preheaderFn(brand),
     content,
   });
+}
+
+export function getVerificationEmailSubject(locale = "en"): string {
+  return resolveLocaleText(locale, VERIFY_TITLE_MAP);
 }
 
 export function getMagicLinkEmailTemplate(magicLinkUrl: string): string {

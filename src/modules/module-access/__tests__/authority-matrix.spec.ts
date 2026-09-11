@@ -225,7 +225,7 @@ describe("assertOwnerOnly — org admin cannot bypass owner-only operations", ()
 
   for (const op of ownedOperations) {
     it(`denies org admin for "${op}"`, () => {
-      expect(() => assertOwnerOnly(orgAdminCtx, op)).toThrow();
+      expect(() => assertOwnerOnly(orgAdminCtx, op)).toThrow(ForbiddenException);
     });
   }
 });

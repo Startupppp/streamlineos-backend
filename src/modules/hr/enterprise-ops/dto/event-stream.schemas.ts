@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const paginationSchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
 });
 
@@ -12,14 +12,14 @@ export const listEventsSchema = paginationSchema.extend({
   entityId: z.string().optional(),
   fromDate: z.string().optional(),
   toDate: z.string().optional(),
-});
+}).strict();
 
 export const exportEventsSchema = paginationSchema.extend({
   eventType: z.string().optional(),
   entityType: z.string().optional(),
   fromDate: z.string().optional(),
   toDate: z.string().optional(),
-});
+}).strict();
 
 export type ListEventsInput = z.infer<typeof listEventsSchema>;
 export type ExportEventsInput = z.infer<typeof exportEventsSchema>;

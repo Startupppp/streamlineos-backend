@@ -11,6 +11,7 @@ import {
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { OnboardingTaskService } from "./onboarding-task.service";
+import { ScopedRead } from "../../../access/scoped-read";
 
 const USER: CurrentUserContext = {
   userId: "actor-1",
@@ -76,8 +77,8 @@ describe("OnboardingTaskService task ownership", () => {
           access: {
             canView: boolean;
             canComplete: boolean;
-            onboardingScope: "none";
-            employeeManageScope: "none";
+            onboardingScope: ScopedRead;
+            employeeManageScope: ScopedRead;
             canManageAssets: boolean;
           },
         ): SQL;
@@ -85,8 +86,8 @@ describe("OnboardingTaskService task ownership", () => {
     ).completionScope(USER, {
       canView: true,
       canComplete: true,
-      onboardingScope: "none",
-      employeeManageScope: "none",
+      onboardingScope: ScopedRead.of(USER.orgId, USER.userId, "none"),
+      employeeManageScope: ScopedRead.of(USER.orgId, USER.userId, "none"),
       canManageAssets: false,
     });
     const compiled = new PgDialect().sqlToQuery(condition);
@@ -106,8 +107,8 @@ describe("OnboardingTaskService task ownership", () => {
           access: {
             canView: boolean;
             canComplete: boolean;
-            onboardingScope: "none";
-            employeeManageScope: "team";
+            onboardingScope: ScopedRead;
+            employeeManageScope: ScopedRead;
             canManageAssets: boolean;
           },
         ) => SQL;
@@ -116,8 +117,8 @@ describe("OnboardingTaskService task ownership", () => {
     const condition = completionScope(USER, {
       canView: true,
       canComplete: true,
-      onboardingScope: "none",
-      employeeManageScope: "team",
+      onboardingScope: ScopedRead.of(USER.orgId, USER.userId, "none"),
+      employeeManageScope: ScopedRead.of(USER.orgId, USER.userId, "team"),
       canManageAssets: true,
     });
     const compiled = new PgDialect().sqlToQuery(condition);

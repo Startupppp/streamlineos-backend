@@ -356,6 +356,12 @@ async function runPhase3Erasure(db, email) {
   }
 
   let residualFound = false;
+  // The rollback throw used to live in a `finally`, where it replaced whatever
+  // the try block had thrown. So a failing residual-rows assertion was rewritten
+  // into `__rollback__` on its way out and the catch below read it as a clean
+  // rollback: this drill reported a pass no matter what the assertion found.
+  // Capture the real error first, then throw the sentinel to roll back.
+  let simulationError = null;
   await db.begin(async (tx) => {
     try {
       await tx`DELETE FROM organization_members WHERE user_id = ${user.id}`;
@@ -364,15 +370,21 @@ async function runPhase3Erasure(db, email) {
       const n = Number(residual?.n ?? 0);
       assert(n === 0, `residual_rows_after_erasure: ${n} organization_members row(s) remain after deletion`);
       pass(`Erasure simulation: 0 residual organization_members row(s) — assertion holds`);
-    } finally {
-      throw new Error("__rollback__");
+    } catch (e) {
+      simulationError = e;
     }
+    throw new Error("__rollback__");
   }).catch((e) => {
     if (e.message !== "__rollback__") {
       residualFound = true;
       fail(`Erasure simulation failed: ${e.message}`);
     }
   });
+
+  if (simulationError) {
+    residualFound = true;
+    fail(`Erasure simulation failed: ${simulationError.message}`);
+  }
 
   if (!residualFound) {
     pass("Erasure dry-run complete (rolled back; 0 residual row(s) in simulation)");

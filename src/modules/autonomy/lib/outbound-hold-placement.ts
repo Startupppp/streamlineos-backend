@@ -1,4 +1,5 @@
 import { ConflictException } from "@nestjs/common";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 import { and, eq } from "drizzle-orm";
 import { getOrgAdminUserIds } from "../../../common/tenant/org-admin-recipients";
 import { startRun } from "../../../common/workflow/workflow-store";
@@ -263,15 +264,4 @@ async function loadDealAssignee(db: Db, organizationId: string, dealId: string):
     .limit(1);
 
   return row?.assignedToId ?? null;
-}
-
-const PG_UNIQUE_VIOLATION = "23505";
-
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: string }).code === PG_UNIQUE_VIOLATION
-  );
 }

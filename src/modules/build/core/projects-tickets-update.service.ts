@@ -14,6 +14,7 @@ import { resolveOrganizationActorsByUserIds } from "../../../common/organization
 import type { OrganizationActor } from "../../../common/organization/organization-actor";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import { logger } from "../../../common/logger/logger.service";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -30,6 +31,11 @@ import { ProjectsTicketConflictException } from "../../../common/http/api-except
 import type { UpdateTicketInput } from "./dto/projects.schemas";
 import { normalizeTicketType, resolveAssigneeId } from "./tickets-helpers";
 import { computeNextRunAt } from "./projects-recurrence.util";
+import { lockProjectTicketMutation } from "./build-ticket-mutation-policy";
+import { assertTransitionAllowed } from "./projects-tickets-workflow-utils";
+import { reserveTicketCapacity } from "./build-ticket-capacity";
+import { resolveValidTicketStatuses } from "./ticket-status.util";
+import { ProjectsInvalidTicketStatusException } from "../../../common/http/api-exceptions";
 
 @Injectable()
 export class ProjectsTicketsUpdateService {
@@ -46,6 +52,7 @@ export class ProjectsTicketsUpdateService {
   ) {}
 
   private async assertSelfRefChain(
+    tx: DbOrTx,
     orgId: string,
     ticketId: number,
     refId: number,
@@ -58,41 +65,55 @@ export class ProjectsTicketsUpdateService {
           ? "A ticket cannot be its own parent"
           : "A ticket cannot be its own epic",
       );
-    let current: number | null = refId;
-    let hops = 0;
-    while (current !== null && hops < 100) {
-      if (current === ticketId)
-        throw new BadRequestException(
-          field === "parentTicketId"
-            ? "Cannot set parent: this would create a cycle"
-            : "Cannot set epic: this would create a cycle",
-        );
-      const row:
-        | {
-            parentTicketId: number | null;
-            epicId: number | null;
-            projectId: number | null;
-          }
-        | undefined = await this.db.query.tickets.findFirst({
-        where: and(eq(tickets.id, current), eq(tickets.orgId, orgId)),
-        columns: { parentTicketId: true, epicId: true, projectId: true },
-      });
-      if (!row)
-        throw new BadRequestException(
-          field === "parentTicketId"
-            ? "Parent ticket not found"
-            : "Epic ticket not found",
-        );
-      if (hops === 0 && row.projectId !== projectId)
-        throw new BadRequestException(
-          field === "parentTicketId"
-            ? "Parent must be in the same project"
-            : "Epic must be in the same project",
-        );
-      current = field === "parentTicketId" ? row.parentTicketId : row.epicId;
-      hops += 1;
-    }
-    if (current !== null)
+
+    const nextCol =
+      field === "parentTicketId" ? sql.raw('"parent_ticket_id"') : sql.raw('"epic_id"');
+    const nextColT =
+      field === "parentTicketId" ? sql.raw('t."parent_ticket_id"') : sql.raw('t."epic_id"');
+
+    const chainRows = await tx.execute<{
+      id: number;
+      next_id: number | null;
+      project_id: number | null;
+      depth: number;
+    }>(sql`
+      WITH RECURSIVE chain(id, next_id, project_id, depth) AS (
+        SELECT id, ${nextCol}, project_id, 0
+        FROM build.tickets
+        WHERE id = ${refId} AND org_id = ${orgId} AND deleted_at IS NULL
+        UNION ALL
+        SELECT t.id, ${nextColT}, t.project_id, c.depth + 1
+        FROM build.tickets t
+        JOIN chain c ON t.id = c.next_id
+        WHERE t.org_id = ${orgId} AND t.deleted_at IS NULL AND c.depth < 100
+      )
+      SELECT id, next_id, project_id, depth FROM chain
+    `);
+
+    if (chainRows.length === 0)
+      throw new BadRequestException(
+        field === "parentTicketId" ? "Parent ticket not found" : "Epic ticket not found",
+      );
+
+    const firstRow = chainRows[0];
+    if (firstRow && Number(firstRow.project_id) !== projectId)
+      throw new BadRequestException(
+        field === "parentTicketId"
+          ? "Parent must be in the same project"
+          : "Epic must be in the same project",
+      );
+
+    const hasCycle = chainRows.some(
+      (r) => Number(r.id) === ticketId || (r.next_id !== null && Number(r.next_id) === ticketId),
+    );
+    if (hasCycle)
+      throw new BadRequestException(
+        field === "parentTicketId"
+          ? "Cannot set parent: this would create a cycle"
+          : "Cannot set epic: this would create a cycle",
+      );
+
+    if (chainRows.length === 100 && chainRows[chainRows.length - 1]?.next_id !== null)
       throw new BadRequestException(
         field === "parentTicketId"
           ? "Parent chain exceeds maximum depth"
@@ -131,7 +152,6 @@ export class ProjectsTicketsUpdateService {
     }
 
     if (resolvedAssignee !== undefined) {
-      updateData.assigneeId = resolvedAssignee;
       updateData.assigneeMembershipId = resolvedAssignee !== null
         ? (assigneeActors.get(resolvedAssignee)?.membershipId ?? null)
         : null;
@@ -167,7 +187,7 @@ export class ProjectsTicketsUpdateService {
         title: true,
         status: true,
         priority: true,
-        assigneeId: true,
+        assigneeMembershipId: true,
         sprintId: true,
         dueDate: true,
         projectId: true,
@@ -181,6 +201,12 @@ export class ProjectsTicketsUpdateService {
     });
     if (!before || !before.projectId)
       throw new NotFoundException("Ticket not found");
+    const ticketProjectId = before.projectId;
+    const beforeAssigneeId: string | null = null;
+    const beforeAssigneeMembershipId = before.assigneeMembershipId;
+
+    if (input.version !== undefined && input.version !== before.version)
+      throw new ProjectsTicketConflictException();
 
     if (input.expectedUpdatedAt !== undefined) {
       const expected = new Date(input.expectedUpdatedAt);
@@ -195,71 +221,33 @@ export class ProjectsTicketsUpdateService {
         : await this.read.checkProjectAccess(
             orgId,
             actingUserId,
-            before.projectId,
+            ticketProjectId,
           );
     if (!accessResult.hasAccess)
       throw new ForbiddenException("Not authorized to update this ticket");
 
-    if (input.parentTicketId != null)
-      await this.assertSelfRefChain(
-        orgId,
-        ticketId,
-        input.parentTicketId,
-        "parentTicketId",
-        before.projectId,
-      );
-
-    if (input.epicId != null)
-      await this.assertSelfRefChain(
-        orgId,
-        ticketId,
-        input.epicId,
-        "epicId",
-        before.projectId,
-      );
-
-    if (input.status !== undefined) {
-      const statusChanged = input.status !== before.status;
-      if (statusChanged) {
-        await Promise.all([
-          this.query.validateTicketStatus(
-            before.projectId,
-            orgId,
-            input.status,
-          ),
-          this.query.enforceWipLimitForStatus(
-            orgId,
-            before.projectId,
-            input.status,
-            ticketId,
-          ),
-        ]);
-        await this.query.assertTransitionAllowed(
-          orgId,
-          before.projectId,
-          before.status,
-          input.status,
-          {
-            userId: actingUserId,
-            userProjectRole: accessResult.role,
-            isOrgOwner: u.isOrgOwner,
-            ticketId,
-          },
-        );
-      } else {
-        await this.query.validateTicketStatus(
-          before.projectId,
-          orgId,
-          input.status,
-        );
-      }
-    }
-
+    const newAssignee = resolveAssigneeId(input.assigneeId);
     await this.db.transaction(async (tx) => {
+      if (systemJobCovers(u.principal, "build:tickets:update"))
+        await lockProjectTicketMutation(tx, orgId, ticketProjectId);
+      else
+        await this.query.authorizeMutation(tx, u, ticketProjectId, [ticketId]);
+      if (input.parentTicketId != null)
+        await this.assertSelfRefChain(tx, orgId, ticketId, input.parentTicketId, "parentTicketId", ticketProjectId);
+      if (input.epicId != null)
+        await this.assertSelfRefChain(tx, orgId, ticketId, input.epicId, "epicId", ticketProjectId);
+      if (input.status !== undefined) {
+        const valid = await resolveValidTicketStatuses(tx, ticketProjectId, orgId);
+        if (!valid.has(input.status)) throw new ProjectsInvalidTicketStatusException(input.status);
+        if (input.status !== before.status) {
+          await reserveTicketCapacity(tx, orgId, ticketProjectId, [{ status: input.status, count: 1 }], [ticketId]);
+          await assertTransitionAllowed(tx, orgId, ticketProjectId, before.status, input.status, {
+            userId: actingUserId, userProjectRole: accessResult.role, isOrgOwner: u.isOrgOwner, ticketId,
+          });
+        }
+      }
       const versionCondition =
-        input.version !== undefined
-          ? and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt), eq(tickets.version, input.version))
-          : and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt));
+        and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt), eq(tickets.version, before.version));
       const affected = await tx
         .update(tickets)
         .set({ ...updateData, version: sql`${tickets.version} + 1` })
@@ -278,7 +266,7 @@ export class ProjectsTicketsUpdateService {
           eventType: "build.ticket.status_changed",
           payload: {
             ticketId,
-            projectId: before.projectId,
+            projectId: ticketProjectId,
             orgId,
             previousStatus: before.status,
             newStatus: input.status,
@@ -287,12 +275,33 @@ export class ProjectsTicketsUpdateService {
           occurredAt: now,
         });
       }
+
+      await this.syncAssignees(tx, orgId, ticketId, actingUserId, input, assigneeActors);
+
+      await this.webhooksDispatch.enqueue(tx, orgId, ticketProjectId, "ticket.updated", {
+        id: ticketId,
+        projectId: ticketProjectId,
+        title: input.title ?? before.title,
+        status: input.status ?? before.status,
+        priority: input.priority ?? before.priority,
+        actor: actingUserId,
+        timestamp: now.toISOString(),
+      });
+      if (newAssignee !== undefined && (newAssignee ? assigneeActors.get(newAssignee)?.membershipId ?? null : null) !== beforeAssigneeMembershipId) {
+        await this.webhooksDispatch.enqueue(tx, orgId, ticketProjectId, "ticket.assigned", {
+          id: ticketId,
+          projectId: ticketProjectId,
+          title: input.title ?? before.title,
+          status: input.status ?? before.status,
+          assigneeId: newAssignee,
+          actor: actingUserId,
+          timestamp: now.toISOString(),
+        });
+      }
     });
 
-    await Promise.all([
-      this.syncAssignees(orgId, ticketId, actingUserId, input, assigneeActors),
-      this.activity
-        .logTicketFieldChanges(orgId, ticketId, actingUserId, before, {
+    await this.activity
+      .logTicketFieldChanges(orgId, ticketId, actingUserId, { ...before, assigneeId: beforeAssigneeId }, {
           title: input.title,
           status: input.status,
           priority: input.priority,
@@ -302,22 +311,23 @@ export class ProjectsTicketsUpdateService {
           points: input.points,
           type: input.type,
           cycleId: input.cycleId,
-        })
-        .catch((error) =>
-          logger.error("Failed to log ticket activity", { error }),
-        ),
-    ]);
+      })
+      .catch((error) => logger.error("Failed to log ticket activity", { error }));
 
-    void this.transfer
+    // Awaited, not fired: `notifyNewAssignees` reaches `NotificationDispatchService.emit`,
+    // which inserts the outbox row on the AMBIENT transaction. Left floating it raced this
+    // request's COMMIT, and a chunk that resumed afterwards wrote to a committed handle —
+    // the assignee was simply never told. The ambient transaction is still open here.
+    await this.transfer
       .notifyNewAssignees(orgId, ticketId, actingUserId, input)
       .catch((error) =>
         logger.error("Failed to notify ticket assignees", { error }),
       );
 
     if (input.status === "IN_REVIEW" || input.status === "CHANGES_REQUESTED") {
-      const reviewTarget = input.status === "IN_REVIEW" ? before.reporterId : before.assigneeId;
+      const reviewTarget = input.status === "IN_REVIEW" ? before.reporterId : newAssignee;
       if (reviewTarget) {
-        void this.dispatch.emit({
+        await this.dispatch.emit({
           eventKey: input.status === "IN_REVIEW"
             ? "build.ticket.review_requested"
             : "build.ticket.changes_requested",
@@ -330,38 +340,10 @@ export class ProjectsTicketsUpdateService {
           message: `Ticket "${before.title}" changed to ${input.status}.`,
           link: `/projects/${before.projectId}/tickets/${ticketId}`,
           variables: { ticketId, status: input.status, title: before.title },
-        }).catch(logSideEffectFailure("review notification", { ticketId }));
+        });
       }
     }
 
-    const ticketProjectId = before.projectId;
-    this.webhooksDispatch.dispatch(orgId, ticketProjectId, "ticket.updated", {
-      id: ticketId,
-      projectId: ticketProjectId,
-      title: input.title ?? before.title,
-      status: input.status ?? before.status,
-      priority: input.priority ?? before.priority,
-      actor: actingUserId,
-      timestamp: now.toISOString(),
-    });
-
-    const newAssignee = resolveAssigneeId(input.assigneeId);
-    if (newAssignee !== undefined && newAssignee !== before.assigneeId) {
-      this.webhooksDispatch.dispatch(
-        orgId,
-        ticketProjectId,
-        "ticket.assigned",
-        {
-          id: ticketId,
-          projectId: ticketProjectId,
-          title: input.title ?? before.title,
-          status: input.status ?? before.status,
-          assigneeId: newAssignee,
-          actor: actingUserId,
-          timestamp: now.toISOString(),
-        },
-      );
-    }
 
     const afterPayload = {
       ticketId,
@@ -370,7 +352,7 @@ export class ProjectsTicketsUpdateService {
       title: input.title ?? before.title,
       status: input.status ?? before.status,
       priority: input.priority ?? before.priority,
-      assigneeId: newAssignee !== undefined ? newAssignee : before.assigneeId,
+      assigneeId: newAssignee !== undefined ? newAssignee : beforeAssigneeId,
       type: input.type ? normalizeTicketType(input.type) : before.type,
     };
 
@@ -380,7 +362,7 @@ export class ProjectsTicketsUpdateService {
       this.automationRunner.runForTicketEvent(orgId, ticketProjectId, "ticket.status_changed", afterPayload);
     }
 
-    if (newAssignee !== undefined && newAssignee !== before.assigneeId) {
+    if (newAssignee !== undefined && (newAssignee ? assigneeActors.get(newAssignee)?.membershipId ?? null : null) !== beforeAssigneeMembershipId) {
       this.automationRunner.runForTicketEvent(orgId, ticketProjectId, "ticket.assigned", afterPayload);
     }
 
@@ -392,6 +374,7 @@ export class ProjectsTicketsUpdateService {
   }
 
   private async syncAssignees(
+    db: DbOrTx,
     orgId: string,
     ticketId: number,
     actingUserId: string,
@@ -399,37 +382,33 @@ export class ProjectsTicketsUpdateService {
     actorMap: Map<string, OrganizationActor>,
   ): Promise<void> {
     if (input.assigneeIds !== undefined) {
-      await this.db
+      await db
         .delete(ticketAssignees)
         .where(eq(ticketAssignees.ticketId, ticketId));
       const allIds = new Set(input.assigneeIds);
       const primary = resolveAssigneeId(input.assigneeId);
       if (primary) allIds.add(primary);
       if (allIds.size > 0) {
-        await this.db.insert(ticketAssignees).values(
-          Array.from(allIds).map((userId) => ({
-            orgId,
-            ticketId,
-            userId,
-            membershipId: actorMap.get(userId)?.membershipId ?? null,
-            assignedBy: actingUserId,
-          })),
+        await db.insert(ticketAssignees).values(
+          Array.from(allIds).flatMap((userId) => {
+            const membershipId = actorMap.get(userId)?.membershipId;
+            return membershipId == null ? [] : [{ orgId, ticketId, membershipId, assignedBy: actingUserId }];
+          }),
         );
       }
       return;
     }
 
     if (input.assigneeId !== undefined) {
-      await this.db
+      await db
         .delete(ticketAssignees)
         .where(eq(ticketAssignees.ticketId, ticketId));
       const newAssigneeId = resolveAssigneeId(input.assigneeId);
-      if (newAssigneeId) {
-        await this.db.insert(ticketAssignees).values({
+      if (newAssigneeId && actorMap.get(newAssigneeId)?.membershipId != null) {
+        await db.insert(ticketAssignees).values({
           orgId,
           ticketId,
-          userId: newAssigneeId,
-          membershipId: actorMap.get(newAssigneeId)?.membershipId ?? null,
+          membershipId: actorMap.get(newAssigneeId)!.membershipId,
           assignedBy: actingUserId,
         });
       }

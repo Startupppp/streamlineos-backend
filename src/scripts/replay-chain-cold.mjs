@@ -28,6 +28,10 @@ import fs from "node:fs";
 import process from "node:process";
 import postgres from "postgres";
 
+// See db-bootstrap.mjs: migration 0431 pins search_path on the role `neondb_owner`, so the
+// unqualified `current_org_id()` calls in 0619 and its siblings resolve only under that name.
+const MIGRATION_SEARCH_PATH = '"$user", public, build_events, app';
+
 const url = process.env.COLD_DATABASE_URL;
 if (!url) {
   process.stderr.write(
@@ -75,6 +79,7 @@ try {
       await sql.begin(async (tx) => {
         await tx.unsafe("SET statement_timeout = 0");
         await tx.unsafe("SET lock_timeout = '10s'");
+        await tx.unsafe(`SET search_path = ${MIGRATION_SEARCH_PATH}`);
         for (const stmt of parts) await tx.unsafe(stmt);
         await tx`INSERT INTO drizzle.__replay (tag) VALUES (${entry.tag}) ON CONFLICT DO NOTHING`;
       });

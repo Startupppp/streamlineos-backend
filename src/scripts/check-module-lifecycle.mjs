@@ -257,15 +257,23 @@ async function main() {
 
   const appUrl = process.env.APP_DATABASE_URL;
   if (!appUrl) {
+    // Gates 1-4 ARE this check. Exiting 0 here made a run that measured nothing
+    // indistinguishable from a run that verified the module, so a CI job reading
+    // the exit code could not tell them apart. Match the convention the other
+    // database-backed gates use: INCONCLUSIVE is exit 2, never OK.
+    const allowPartial = process.env.STREAMLINE_ALLOW_PARTIAL_GATES === "1";
     process.stdout.write(
-      "SKIP — APP_DATABASE_URL is not set.\n" +
-        "Gates 1–4 require a non-owner connection to query pg_catalog as the app role.\n" +
+      `${allowPartial ? "PARTIAL" : "PREREQUISITE UNMET — cannot determine"} — APP_DATABASE_URL is not set.\n` +
+        "Gates 1–4 require a live database and a non-owner connection to query pg_catalog\n" +
+        "as the app role.\n" +
         "The owner role has BYPASSRLS; connecting as it would hide tenant-isolation gaps.\n" +
+        "Only the schema-side table/index discovery above ran; nothing about RLS,\n" +
+        "grants, cold migration, restore or removal was verified.\n" +
         "Required variable: APP_DATABASE_URL\n" +
         "Example: APP_DATABASE_URL=postgres://streamline_app:<password>@<host>/neondb\n" +
         `Tables scanned: ${tables.length}  Module: ${MODULE_ID}\n`,
     );
-    process.exit(0);
+    process.exit(allowPartial ? 0 : 2);
   }
 
   const sql = postgres(appUrl, { prepare: false, max: 1, onnotice: () => {} });

@@ -467,6 +467,19 @@ describe("QuotesService — discount gating (create + update)", () => {
     expect(created.values().approvalStatus).toBeUndefined();
   });
 
+  it("create: a zero discount never needs approval, even against a zero ceiling", async () => {
+    mockDb.query.crmQuoteSettings.findFirst.mockResolvedValue({
+      orgId: ORG,
+      maxDiscountPercent: 0,
+      defaultExpiryDays: 30,
+    });
+    const created = captureCreate();
+
+    await svc.create(ORG, USER, { subject: "No discount", lineItems: LINE_ITEMS } as never);
+
+    expect(created.values().approvalStatus).toBeUndefined();
+  });
+
   it("update: raises approval when a discount is raised past the ceiling", async () => {
     mockDb.query.quotes.findFirst.mockResolvedValue({ id: QUOTE_ID });
     mockDb.query.crmQuoteSettings.findFirst.mockResolvedValue({
@@ -491,6 +504,20 @@ describe("QuotesService — discount gating (create + update)", () => {
     const updated = captureUpdate();
 
     await svc.update(ORG, USER, QUOTE_ID, { discountPercent: 5 } as never);
+
+    expect(updated.set()).not.toHaveProperty("approvalStatus");
+  });
+
+  it("update: leaves approval alone when the org has configured no ceiling", async () => {
+    mockDb.query.quotes.findFirst.mockResolvedValue({ id: QUOTE_ID });
+    mockDb.query.crmQuoteSettings.findFirst.mockResolvedValue({
+      orgId: ORG,
+      maxDiscountPercent: null,
+      defaultExpiryDays: 30,
+    });
+    const updated = captureUpdate();
+
+    await svc.update(ORG, USER, QUOTE_ID, { discountPercent: 90 } as never);
 
     expect(updated.set()).not.toHaveProperty("approvalStatus");
   });

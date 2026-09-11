@@ -1,7 +1,10 @@
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
 import { ModuleChecklistService } from "./module-checklist.service";
 import type { OnboardingAnalyticsService } from "./onboarding-analytics.service";
 import type { HrChecklistReconciliationService } from "./hr-checklist-reconciliation.service";
 
+const dialect = new PgDialect();
 const ORG_ID = "org-1";
 
 function baseItem(overrides: Record<string, unknown> = {}) {
@@ -115,17 +118,26 @@ describe("ModuleChecklistService — lazy checklist self-heal on read", () => {
 describe("ModuleChecklistService — syncItemMetadataFromSeed (fixes stale actionHref on orgs provisioned before a seed edit)", () => {
   let service: ModuleChecklistService;
   let findFirst: jest.Mock;
-  let updateSetCalls: Record<string, unknown>[];
+  // The reconciliation used to issue one `db.update(...).set(...)` per stale item and these
+  // tests asserted on the `set` payload. It is one `UPDATE ... FROM (VALUES ...)` now, so the
+  // mechanism assertion is replaced by the bound parameters of the statement actually issued —
+  // a stronger check, because it also proves there is exactly ONE statement and that org_id is
+  // bound. `update` is kept on the double deliberately: a regression to the per-item shape
+  // leaves `executed` empty and fails every assertion below.
+  let executed: SQL[];
   let mockDb: {
     query: {
       moduleSetupChecklists: { findFirst: jest.Mock };
       moduleSetupChecklistItems: { findMany: jest.Mock };
     };
     update: jest.Mock;
+    execute: jest.Mock;
   };
 
+  const paramsOf = () => executed.flatMap((statement) => dialect.sqlToQuery(statement).params);
+
   beforeEach(() => {
-    updateSetCalls = [];
+    executed = [];
     findFirst = jest.fn();
     mockDb = {
       query: {
@@ -135,11 +147,12 @@ describe("ModuleChecklistService — syncItemMetadataFromSeed (fixes stale actio
         moduleSetupChecklistItems: { findMany: jest.fn().mockResolvedValue([]) },
       },
       update: jest.fn(() => ({
-        set: jest.fn((values: Record<string, unknown>) => {
-          updateSetCalls.push(values);
-          return { where: jest.fn().mockResolvedValue(undefined) };
-        }),
+        set: jest.fn(() => ({ where: jest.fn().mockResolvedValue(undefined) })),
       })),
+      execute: jest.fn((statement: SQL) => {
+        executed.push(statement);
+        return Promise.resolve([]);
+      }),
     };
     service = new ModuleChecklistService(
       mockDb as never,
@@ -164,8 +177,8 @@ describe("ModuleChecklistService — syncItemMetadataFromSeed (fixes stale actio
 
     const result = await service.getChecklist(ORG_ID, "crm");
 
-    expect(updateSetCalls).toHaveLength(1);
-    expect(updateSetCalls[0]).toMatchObject({ actionHref: "/crm/deals" });
+    expect(executed).toHaveLength(1);
+    expect(paramsOf()).toEqual(expect.arrayContaining(["/crm/deals", ORG_ID]));
     expect(result.items[0].actionHref).toBe("/crm/deals");
   });
 
@@ -175,7 +188,8 @@ describe("ModuleChecklistService — syncItemMetadataFromSeed (fixes stale actio
 
     await service.getChecklist(ORG_ID, "crm");
 
-    expect(updateSetCalls).toHaveLength(0);
+    expect(executed).toHaveLength(0);
+    expect(mockDb.update).not.toHaveBeenCalled();
   });
 
   it("ignores item rows whose itemKey no longer has a matching seed entry (nothing to sync against)", async () => {
@@ -184,7 +198,8 @@ describe("ModuleChecklistService — syncItemMetadataFromSeed (fixes stale actio
 
     await service.getChecklist(ORG_ID, "crm");
 
-    expect(updateSetCalls).toHaveLength(0);
+    expect(executed).toHaveLength(0);
+    expect(mockDb.update).not.toHaveBeenCalled();
   });
 
   it("always reloads after reconciling HR, even when the reconciliation service itself reports no status change (otherwise a metadata-only sync would be silently discarded)", async () => {
@@ -195,7 +210,7 @@ describe("ModuleChecklistService — syncItemMetadataFromSeed (fixes stale actio
 
     const result = await service.getChecklist(ORG_ID, "hr");
 
-    expect(updateSetCalls.some((c) => c.actionHref === "/settings/organization")).toBe(true);
+    expect(paramsOf()).toContain("/settings/organization");
     expect(result.items[0].actionHref).toBe("/settings/organization");
   });
 });

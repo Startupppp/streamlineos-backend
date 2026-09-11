@@ -11,10 +11,22 @@ import {
   reimbursements,
   payrollRunAllocations,
 } from "../../../db/schema";
-import { PAYROLL_LOCKED_STATUSES, DEFAULT_PAYROLL_TOGGLES } from "../payroll.types";
-import type { PayrollToggles, PayrollPolicyConfig, CalculationSnapshot } from "../payroll.types";
+import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
+import {
+  normalizePayrollToggles,
+  toPayrollPolicyConfig,
+  toCalculationSnapshot,
+  toInputsSnapshot,
+} from "../dto/payroll.schemas";
+import type {
+  PayrollToggles,
+  PayrollPolicyConfig,
+  CalculationSnapshot,
+} from "../payroll.types";
+import { DEFAULT_PAYROLL_POLICY_CONFIG } from "../setup/payroll-policy-defaults.constants";
 import { payrollSubjectKey } from "../lib/payroll-subject";
 import { requirePayrollUserIds } from "../lib/payroll-user-id";
+import { PAYROLL_READ_CAP, requirePayrollReadWithinCap } from "../lib/query-bounds";
 import { getLockedInputPeriodId } from "./lib/input-puller";
 import type { ProfileData } from "./run-types";
 
@@ -22,7 +34,10 @@ import type { ProfileData } from "./run-types";
 export class RunDataLoaderService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async loadPolicy(orgId: string, policyVersionId: number | null): Promise<{
+  async loadPolicy(
+    orgId: string,
+    policyVersionId: number | null,
+  ): Promise<{
     toggles: PayrollToggles;
     config: PayrollPolicyConfig;
     policyVersionId: number;
@@ -31,17 +46,18 @@ export class RunDataLoaderService {
       const version = await this.db
         .select()
         .from(payrollPolicyVersions)
-        .where(and(eq(payrollPolicyVersions.id, policyVersionId), eq(payrollPolicyVersions.orgId, orgId)))
+        .where(
+          and(
+            eq(payrollPolicyVersions.id, policyVersionId),
+            eq(payrollPolicyVersions.orgId, orgId),
+          ),
+        )
         .limit(1);
 
       if (version[0]) {
-        const rawToggles = version[0].toggles;
-        const rawConfig = version[0].config;
         return {
-          toggles: rawToggles && typeof rawToggles === "object"
-            ? { ...DEFAULT_PAYROLL_TOGGLES, ...(rawToggles as Partial<PayrollToggles>) }
-            : { ...DEFAULT_PAYROLL_TOGGLES },
-          config: rawConfig && typeof rawConfig === "object" ? (rawConfig as PayrollPolicyConfig) : ({} as PayrollPolicyConfig),
+          toggles: normalizePayrollToggles(version[0].toggles),
+          config: toPayrollPolicyConfig(version[0].config) ?? DEFAULT_PAYROLL_POLICY_CONFIG,
           policyVersionId: version[0].id,
         };
       }
@@ -62,41 +78,53 @@ export class RunDataLoaderService {
 
     if (!activeVersion[0]) return null;
 
-    const rawActiveToggles = activeVersion[0].payroll_policy_versions.toggles;
-    const rawActiveConfig = activeVersion[0].payroll_policy_versions.config;
     return {
-      toggles: rawActiveToggles && typeof rawActiveToggles === "object"
-        ? { ...DEFAULT_PAYROLL_TOGGLES, ...(rawActiveToggles as Partial<PayrollToggles>) }
-        : { ...DEFAULT_PAYROLL_TOGGLES },
-      config: rawActiveConfig && typeof rawActiveConfig === "object" ? (rawActiveConfig as PayrollPolicyConfig) : ({} as PayrollPolicyConfig),
+      toggles: normalizePayrollToggles(activeVersion[0].payroll_policy_versions.toggles),
+      config: toPayrollPolicyConfig(activeVersion[0].payroll_policy_versions.config) ?? DEFAULT_PAYROLL_POLICY_CONFIG,
       policyVersionId: activeVersion[0].payroll_policy_versions.id,
     };
   }
 
-  async loadEligibleProfiles(orgId: string, month: string, toggles: PayrollToggles): Promise<ProfileData[]> {
+  async loadEligibleProfiles(
+    orgId: string,
+    month: string,
+    toggles: PayrollToggles,
+  ): Promise<ProfileData[]> {
     const [year, mon] = month.split("-").map(Number);
-    const lastDay = new Date(year!, mon!, 0).getDate();
+    const lastDay = new Date(year, mon, 0).getDate();
     const monthEndDate = `${month}-${String(lastDay).padStart(2, "0")}`;
 
-    const rows = await this.db
-      .select({
-        id: employeeSalaryProfiles.id,
-        userId: employeeSalaryProfiles.userId,
-        workerId: employeeSalaryProfiles.workerId,
-        workerType: employeeSalaryProfiles.workerType,
-        currency: employeeSalaryProfiles.currency,
-        payoutCurrency: employeeSalaryProfiles.payoutCurrency,
-        annualCtc: employeeSalaryProfiles.annualCtc,
-        taxRegime: employeeSalaryProfiles.taxRegime,
-      })
-      .from(employeeSalaryProfiles)
-      .where(
-        and(
-          eq(employeeSalaryProfiles.orgId, orgId),
-          inArray(employeeSalaryProfiles.status, ["ACTIVE", "UPCOMING"]),
-          lte(employeeSalaryProfiles.effectiveFrom, monthEndDate),
-        ),
-      );
+    // This set IS the payroll. A truncated read produced no exception, no
+    // warning and no payroll_run_employees row for the payees it dropped, and
+    // run-result-persister then wrote the short count into
+    // payrollRuns.employeeCount, so the run looked internally consistent and
+    // nobody found out until payday. The probe row turns an org above the bound
+    // into a visible 409 instead; the ORDER BY makes the set the run covers
+    // reproducible across a recalculation.
+    const rows = requirePayrollReadWithinCap(
+      await this.db
+        .select({
+          id: employeeSalaryProfiles.id,
+          userId: employeeSalaryProfiles.userId,
+          workerId: employeeSalaryProfiles.workerId,
+          workerType: employeeSalaryProfiles.workerType,
+          currency: employeeSalaryProfiles.currency,
+          payoutCurrency: employeeSalaryProfiles.payoutCurrency,
+          annualCtc: employeeSalaryProfiles.annualCtc,
+          taxRegime: employeeSalaryProfiles.taxRegime,
+        })
+        .from(employeeSalaryProfiles)
+        .where(
+          and(
+            eq(employeeSalaryProfiles.orgId, orgId),
+            inArray(employeeSalaryProfiles.status, ["ACTIVE", "UPCOMING"]),
+            lte(employeeSalaryProfiles.effectiveFrom, monthEndDate),
+          ),
+        )
+        .orderBy(employeeSalaryProfiles.id)
+        .limit(PAYROLL_READ_CAP + 1),
+      "load eligible salary profiles",
+    );
 
     const filtered = rows.filter((r) => r.id > 0);
     if (!toggles.contractorPayments)
@@ -104,18 +132,32 @@ export class RunDataLoaderService {
     return filtered;
   }
 
-  async loadHeldUserIds(orgId: string, runId: number, userIds: string[]): Promise<Set<string>> {
+  async loadHeldUserIds(
+    orgId: string,
+    runId: number,
+    userIds: string[],
+  ): Promise<Set<string>> {
     if (userIds.length === 0) return new Set();
-    const rows = await this.db
-      .select({ userId: payrollRunEmployees.userId })
-      .from(payrollRunEmployees)
-      .where(
-        and(
-          eq(payrollRunEmployees.orgId, orgId),
-          eq(payrollRunEmployees.runId, runId),
-          or(eq(payrollRunEmployees.status, "HELD"), isNotNull(payrollRunEmployees.holdReason)),
-        ),
-      );
+    // Same bound, same reason: a truncated hold list silently pays somebody the
+    // operator deliberately held back.
+    const rows = requirePayrollReadWithinCap(
+      await this.db
+        .select({ userId: payrollRunEmployees.userId })
+        .from(payrollRunEmployees)
+        .where(
+          and(
+            eq(payrollRunEmployees.orgId, orgId),
+            eq(payrollRunEmployees.runId, runId),
+            or(
+              eq(payrollRunEmployees.status, "HELD"),
+              isNotNull(payrollRunEmployees.holdReason),
+            ),
+          ),
+        )
+        .orderBy(payrollRunEmployees.id)
+        .limit(PAYROLL_READ_CAP + 1),
+      "load held payroll payees",
+    );
     return new Set(requirePayrollUserIds(rows.map((r) => r.userId)));
   }
 
@@ -153,46 +195,64 @@ export class RunDataLoaderService {
           eq(payrollRunEmployees.runId, prevRun.id),
           inArray(payrollRunEmployees.userId, userIds),
         ),
-      );
+      )
+      .limit(1000);
 
     for (const prevEmp of prevEmps) {
-      const rawSnap = prevEmp.calculationSnapshot;
-      if (
-        prevEmp.userId &&
-        rawSnap &&
-        typeof rawSnap === "object" &&
-        !result.has(prevEmp.userId)
-      )
-        result.set(prevEmp.userId, rawSnap as CalculationSnapshot);
+      if (!prevEmp.userId || result.has(prevEmp.userId)) continue;
+      const snap = toCalculationSnapshot(prevEmp.calculationSnapshot);
+      if (snap) result.set(prevEmp.userId, snap);
     }
     return result;
   }
 
-  async clearPreviouslyConsumedReimbursements(orgId: string, runId: number): Promise<void> {
+  async clearPreviouslyConsumedReimbursements(
+    orgId: string,
+    runId: number,
+  ): Promise<void> {
     const existingEmps = await this.db
       .select({ inputsSnapshot: payrollRunEmployees.inputsSnapshot })
       .from(payrollRunEmployees)
-      .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)));
+      .where(
+        and(
+          eq(payrollRunEmployees.runId, runId),
+          eq(payrollRunEmployees.orgId, orgId),
+        ),
+      )
+      .limit(1000);
 
     const prevIds = existingEmps.flatMap(
-      (e) => (e.inputsSnapshot as { consumedReimbursementIds?: number[] } | null)?.consumedReimbursementIds ?? [],
+      (e) => toInputsSnapshot(e.inputsSnapshot)?.consumedReimbursementIds ?? [],
     );
 
     if (prevIds.length > 0) {
       await this.db
         .update(reimbursements)
         .set({ paidAt: null })
-        .where(and(inArray(reimbursements.id, prevIds), eq(reimbursements.orgId, orgId)));
+        .where(
+          and(
+            inArray(reimbursements.id, prevIds),
+            eq(reimbursements.orgId, orgId),
+          ),
+        );
     }
   }
 
   async clearRunAllocations(orgId: string, runId: number): Promise<void> {
     await this.db
       .delete(payrollRunAllocations)
-      .where(and(eq(payrollRunAllocations.orgId, orgId), eq(payrollRunAllocations.runId, runId)));
+      .where(
+        and(
+          eq(payrollRunAllocations.orgId, orgId),
+          eq(payrollRunAllocations.runId, runId),
+        ),
+      );
   }
 
-  async getLockedInputPeriodId(orgId: string, month: string): Promise<number | null> {
+  async getLockedInputPeriodId(
+    orgId: string,
+    month: string,
+  ): Promise<number | null> {
     return getLockedInputPeriodId(this.db, orgId, month);
   }
 }

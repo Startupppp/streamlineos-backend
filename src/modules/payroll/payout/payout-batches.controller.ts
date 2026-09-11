@@ -8,8 +8,11 @@ import {
   ParseIntPipe,
   Post,
   Query,
+  Res,
   UseGuards,
 } from "@nestjs/common";
+import type { Response } from "express";
+import { pipeline } from "node:stream/promises";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
@@ -39,7 +42,17 @@ import {
   type BankReturnImportInput,
 } from "./dto/payout.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { ApiOkResponse } from "@nestjs/swagger";
+import {
+  batchListSchema,
+  batchDetailSchema,
+  createBatchResponseSchema,
+  successSchema,
+  bankDetailsResponseSchema,
+  importBankReturnResponseSchema,
+  payoutValidationResponseSchema,
+} from "./dto/payout-response.schemas";
 import { z } from "zod";
 
 const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
@@ -59,6 +72,7 @@ export class PayoutRunController {
   @Get("validation")
   @RequirePermission("payroll:bank:manage")
   @Validate({ params: runIdParams })
+  @ResponseSchema(payoutValidationResponseSchema)
   validate(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -66,10 +80,25 @@ export class PayoutRunController {
     return this.validation.validatePayout(u.orgId, runId);
   }
 
+  /**
+   * The one route that mints payment instructions.
+   *
+   * It read `idempotency-key` as an optional header and did nothing to require
+   * it, so replay safety was whatever the caller volunteered — and
+   * `check:idempotent-commands` never covered it, because that gate matches the
+   * route string on the decorator (`"batches"`), not the controller prefix that
+   * makes it a payout. `@Idempotent` moves the guarantee to the server: the
+   * global interceptor rejects a missing key with 400 and fences a concurrent
+   * duplicate with 409, in front of the unique-index backstop migration 1049
+   * added. The header parameter stays on the signature because the service
+   * still derives its per-currency sub-key from it.
+   */
   @Post("batches")
   @HttpCode(201)
   @RequirePermission("payroll:bank:manage")
+  @Idempotent("payroll.payout.batch.create")
   @Validate({ params: runIdParams, body: createBatchSchema })
+  @ResponseSchema(createBatchResponseSchema)
   createBatch(
     @Param("runId", ParseIntPipe) runId: number,
     @Body() body: CreateBatchInput,
@@ -92,6 +121,7 @@ export class PayoutBatchesController {
   @Get("batches")
   @RequirePermission("payroll:bank:manage")
   @Validate({ query: batchesQuerySchema })
+  @ResponseSchema(batchListSchema)
   listBatches(
     @Query() query: BatchesQueryInput,
     @CurrentUser() u: CurrentUserContext,
@@ -102,6 +132,7 @@ export class PayoutBatchesController {
   @Get("batches/:batchId")
   @RequirePermission("payroll:bank:manage")
   @Validate({ params: batchIdParams, query: batchDetailQuerySchema })
+  @ResponseSchema(batchDetailSchema)
   getBatch(
     @Param("batchId", ParseIntPipe) batchId: number,
     @Query() query: BatchDetailQueryInput,
@@ -110,21 +141,40 @@ export class PayoutBatchesController {
     return this.batches.getBatch(u.orgId, batchId, query.itemCursor, query.itemLimit);
   }
 
+  /**
+   * Streams the bank file rather than answering with a presigned URL. The CSV
+   * carries unmasked account numbers, so the bytes must never be reachable by
+   * anything but this request's own credential — see
+   * `PayoutBatchesService.downloadFile`.
+   */
   @Get("batches/:batchId/file")
   @RequirePermission("payroll:bank:manage")
   @Validate({ params: batchIdParams })
-  getBatchFile(
+  @ApiOkResponse({ content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } } })
+  async getBatchFile(
     @Param("batchId", ParseIntPipe) batchId: number,
     @CurrentUser() u: CurrentUserContext,
+    @Res() res: Response,
   ) {
-    return this.batches.getFile(u.orgId, batchId);
+    const { file, fileName } = await this.batches.downloadFile(u.orgId, batchId);
+    res.setHeader("Content-Type", file.contentType);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${fileName.replace(/[^a-zA-Z0-9_.-]/g, "-")}"`,
+    );
+    res.setHeader("Cache-Control", "private, no-store");
+    if (file.contentLength !== undefined)
+      res.setHeader("Content-Length", String(file.contentLength));
+    await pipeline(file.body, res);
   }
 
   @Post("batches/:batchId/mark-sent")
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("payroll:bank:manage")
+  @Idempotent("payroll.payout.batch.mark-sent")
   @Validate({ params: batchIdParams })
+  @ResponseSchema(successSchema)
   markSent(
     @Param("batchId", ParseIntPipe) batchId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -135,7 +185,9 @@ export class PayoutBatchesController {
   @Post("batches/:batchId/mark-paid")
   @HttpCode(200)
   @RequirePermission("payroll:bank:manage")
+  @Idempotent("payroll.payout.batch.mark-paid")
   @Validate({ params: batchIdParams, body: markBatchPaidSchema })
+  @ResponseSchema(successSchema)
   markBatchPaid(
     @Param("batchId", ParseIntPipe) batchId: number,
     @Body() body: MarkBatchPaidInput,
@@ -149,6 +201,7 @@ export class PayoutBatchesController {
   @RequirePermission("payroll:bank:manage")
   @Idempotent("payroll.bank-return.import")
   @Validate({ params: batchIdParams, body: bankReturnImportSchema })
+  @ResponseSchema(importBankReturnResponseSchema)
   importReturn(
     @Param("batchId", ParseIntPipe) batchId: number,
     @Body() body: BankReturnImportInput,
@@ -160,7 +213,9 @@ export class PayoutBatchesController {
   @Post("batches/:batchId/items/:itemId/mark-paid")
   @HttpCode(200)
   @RequirePermission("payroll:bank:manage")
+  @Idempotent("payroll.payout.item.mark-paid")
   @Validate({ params: batchItemIdParams, body: markItemPaidSchema })
+  @ResponseSchema(successSchema)
   markItemPaid(
     @Param("batchId", ParseIntPipe) batchId: number,
     @Param("itemId", ParseIntPipe) itemId: number,
@@ -173,7 +228,9 @@ export class PayoutBatchesController {
   @Post("batches/:batchId/items/:itemId/mark-failed")
   @HttpCode(200)
   @RequirePermission("payroll:bank:manage")
+  @Idempotent("payroll.payout.item.mark-failed")
   @Validate({ params: batchItemIdParams, body: markItemFailedSchema })
+  @ResponseSchema(successSchema)
   markItemFailed(
     @Param("batchId", ParseIntPipe) batchId: number,
     @Param("itemId", ParseIntPipe) itemId: number,
@@ -193,6 +250,7 @@ export class PayoutEmployeeBankController {
   @Get("bank")
   @RequirePermission("payroll:bank:view")
   @Validate({ params: employeeUserIdParams })
+  @ResponseSchema(bankDetailsResponseSchema)
   getBankDetails(
     @Param("employeeUserId") employeeUserId: string,
     @CurrentUser() u: CurrentUserContext,

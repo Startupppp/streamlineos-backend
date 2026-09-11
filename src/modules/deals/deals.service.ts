@@ -32,7 +32,7 @@ import {
   type StageActor,
   type StageTransitionRow,
 } from "./deal-stage-ledger";
-import type { DataScope } from "../access/access.types";
+import type { ScopedRead } from "../access/scoped-read";
 import type {
   BulkImportDealsInput,
   CreateDealInput,
@@ -68,8 +68,8 @@ export class DealsService {
     private readonly lifecycle: LifecycleService,
   ) {}
 
-  listDeals(orgId: string, userId: string, query: ListDealsInput, scope: DataScope) {
-    return this.crud.listDeals(orgId, userId, query, scope);
+  listDeals(read: ScopedRead, query: ListDealsInput) {
+    return this.crud.listDeals(read, query);
   }
 
   createDeal(orgId: string, userId: string, input: CreateDealInput) {
@@ -116,8 +116,8 @@ export class DealsService {
     return this.importExport.bulkImport(orgId, userId, input);
   }
 
-  exportCsv(orgId: string) {
-    return this.importExport.exportCsv(orgId);
+  exportCsv(read: ScopedRead) {
+    return this.importExport.exportCsv(read);
   }
 
   /** Bound once so every extracted effect sees the same injected instances. */

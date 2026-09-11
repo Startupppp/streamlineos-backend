@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { eq, and, isNull, inArray, max } from "drizzle-orm";
-import { notifications, notificationReadWatermarks } from "../../db/schema";
+import { eq, and, isNull, inArray, max, sql } from "drizzle-orm";
+import { notifications, notificationReadWatermarks, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -15,7 +15,16 @@ export class NotificationsLifecycleService {
     private readonly notifEvents: NotificationEventService,
   ) {}
 
+  private async resolveMembershipId(orgId: string, userId: string): Promise<number> {
+    const [member] = await this.db.select({ id: organizationMembers.id }).from(organizationMembers).where(
+      and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)),
+    ).limit(1);
+    if (!member) throw new NotFoundException("Organization membership required");
+    return member.id;
+  }
+
   async approve(orgId: string, userId: string, notificationId: number) {
+    const membershipId = await this.resolveMembershipId(orgId, userId);
     const rows = await this.db
       .update(notifications)
       .set({
@@ -29,7 +38,7 @@ export class NotificationsLifecycleService {
       .where(
         and(
           eq(notifications.id, notificationId),
-          eq(notifications.userId, userId),
+          eq(notifications.membershipId, membershipId),
           eq(notifications.orgId, orgId),
           isNull(notifications.deletedAt),
         ),
@@ -41,6 +50,7 @@ export class NotificationsLifecycleService {
   }
 
   async reject(orgId: string, userId: string, notificationId: number) {
+    const membershipId = await this.resolveMembershipId(orgId, userId);
     const rows = await this.db
       .update(notifications)
       .set({
@@ -54,7 +64,7 @@ export class NotificationsLifecycleService {
       .where(
         and(
           eq(notifications.id, notificationId),
-          eq(notifications.userId, userId),
+          eq(notifications.membershipId, membershipId),
           eq(notifications.orgId, orgId),
           isNull(notifications.deletedAt),
         ),
@@ -66,13 +76,14 @@ export class NotificationsLifecycleService {
   }
 
   async markRead(orgId: string, userId: string, notificationId: number) {
+    const membershipId = await this.resolveMembershipId(orgId, userId);
     const rows = await this.db
       .update(notifications)
       .set({ isRead: true })
       .where(
         and(
           eq(notifications.id, notificationId),
-          eq(notifications.userId, userId),
+          eq(notifications.membershipId, membershipId),
           eq(notifications.orgId, orgId),
           isNull(notifications.deletedAt),
         ),
@@ -85,13 +96,14 @@ export class NotificationsLifecycleService {
   }
 
   async markAllRead(orgId: string, userId: string) {
+    const membershipId = await this.resolveMembershipId(orgId, userId);
     const [latest] = await this.db
       .select({ maxId: max(notifications.id) })
       .from(notifications)
       .where(
         and(
           eq(notifications.orgId, orgId),
-          eq(notifications.userId, userId),
+          eq(notifications.membershipId, membershipId),
           isNull(notifications.deletedAt),
         ),
       );
@@ -99,10 +111,20 @@ export class NotificationsLifecycleService {
     if (maxId != null && maxId > 0) {
       await this.db
         .insert(notificationReadWatermarks)
-        .values({ orgId, userId, lastReadNotificationId: maxId })
+        .values({ orgId, userId, membershipId, lastReadNotificationId: maxId })
         .onConflictDoUpdate({
-          target: [notificationReadWatermarks.orgId, notificationReadWatermarks.userId],
-          set: { lastReadNotificationId: maxId, updatedAt: new Date() },
+          target: [notificationReadWatermarks.orgId, notificationReadWatermarks.membershipId],
+          /*
+           * GREATEST, not assignment. Two "mark all read" calls in flight commit
+           * in either order, and a plain write lets the older maxId rewind the
+           * cursor — notifications the user has already dismissed come back.
+           * `chat-channel-members-implementation.ts` already does this; the
+           * notifications watermark did not.
+           */
+          set: {
+            lastReadNotificationId: sql`GREATEST(${notificationReadWatermarks.lastReadNotificationId}, excluded.last_read_notification_id)`,
+            updatedAt: new Date(),
+          },
         });
     }
     await this.invalidateCache(userId, orgId);
@@ -111,13 +133,14 @@ export class NotificationsLifecycleService {
   }
 
   async archive(orgId: string, userId: string, notificationId: number) {
+    const membershipId = await this.resolveMembershipId(orgId, userId);
     const rows = await this.db
       .update(notifications)
       .set({ archivedAt: new Date() })
       .where(
         and(
           eq(notifications.id, notificationId),
-          eq(notifications.userId, userId),
+          eq(notifications.membershipId, membershipId),
           eq(notifications.orgId, orgId),
           isNull(notifications.deletedAt),
         ),
@@ -130,13 +153,14 @@ export class NotificationsLifecycleService {
   }
 
   async unarchive(orgId: string, userId: string, notificationId: number) {
+    const membershipId = await this.resolveMembershipId(orgId, userId);
     const rows = await this.db
       .update(notifications)
       .set({ archivedAt: null })
       .where(
         and(
           eq(notifications.id, notificationId),
-          eq(notifications.userId, userId),
+          eq(notifications.membershipId, membershipId),
           eq(notifications.orgId, orgId),
           isNull(notifications.deletedAt),
         ),
@@ -148,13 +172,14 @@ export class NotificationsLifecycleService {
   }
 
   async softDelete(orgId: string, userId: string, notificationId: number) {
+    const membershipId = await this.resolveMembershipId(orgId, userId);
     const rows = await this.db
       .update(notifications)
       .set({ deletedAt: new Date() })
       .where(
         and(
           eq(notifications.id, notificationId),
-          eq(notifications.userId, userId),
+          eq(notifications.membershipId, membershipId),
           eq(notifications.orgId, orgId),
         ),
       )
@@ -166,13 +191,14 @@ export class NotificationsLifecycleService {
   }
 
   async pin(orgId: string, userId: string, notificationId: number) {
+    const membershipId = await this.resolveMembershipId(orgId, userId);
     const rows = await this.db
       .update(notifications)
       .set({ pinned: true })
       .where(
         and(
           eq(notifications.id, notificationId),
-          eq(notifications.userId, userId),
+          eq(notifications.membershipId, membershipId),
           eq(notifications.orgId, orgId),
           isNull(notifications.deletedAt),
         ),
@@ -184,13 +210,14 @@ export class NotificationsLifecycleService {
   }
 
   async unpin(orgId: string, userId: string, notificationId: number) {
+    const membershipId = await this.resolveMembershipId(orgId, userId);
     const rows = await this.db
       .update(notifications)
       .set({ pinned: false })
       .where(
         and(
           eq(notifications.id, notificationId),
-          eq(notifications.userId, userId),
+          eq(notifications.membershipId, membershipId),
           eq(notifications.orgId, orgId),
           isNull(notifications.deletedAt),
         ),
@@ -207,13 +234,14 @@ export class NotificationsLifecycleService {
     notificationId: number,
     input: SnoozeInput,
   ) {
+    const membershipId = await this.resolveMembershipId(orgId, userId);
     const rows = await this.db
       .update(notifications)
       .set({ snoozedUntil: new Date(input.snoozedUntil) })
       .where(
         and(
           eq(notifications.id, notificationId),
-          eq(notifications.userId, userId),
+          eq(notifications.membershipId, membershipId),
           eq(notifications.orgId, orgId),
           isNull(notifications.deletedAt),
         ),
@@ -224,14 +252,45 @@ export class NotificationsLifecycleService {
     return { success: true };
   }
 
+  /**
+   * A mixed-tenant id list must fail the whole request. Narrowing the update to
+   * the rows the caller owns and returning `{ success: true }` tells the caller
+   * every id was acted on and turns the response into an existence oracle. The
+   * single-id paths above already do this with `.returning()`; the property was
+   * lost at the bulk boundary.
+   */
+  private async assertOwnsAll(
+    orgId: string,
+    membershipId: number,
+    ids: readonly number[],
+  ): Promise<number[]> {
+    const requestedIds = [...new Set(ids)];
+    const owned = await this.db
+      .select({ id: notifications.id })
+      .from(notifications)
+      .where(
+        and(
+          inArray(notifications.id, requestedIds),
+          eq(notifications.membershipId, membershipId),
+          eq(notifications.orgId, orgId),
+        ),
+      )
+      .limit(requestedIds.length);
+    if (owned.length !== requestedIds.length)
+      throw new NotFoundException("One or more notification IDs not found for this recipient");
+    return requestedIds;
+  }
+
   async bulkMarkRead(orgId: string, userId: string, input: BulkActionInput) {
+    const membershipId = await this.resolveMembershipId(orgId, userId);
+    const requestedIds = await this.assertOwnsAll(orgId, membershipId, input.ids);
     await this.db
       .update(notifications)
       .set({ isRead: true })
       .where(
         and(
-          inArray(notifications.id, input.ids),
-          eq(notifications.userId, userId),
+          inArray(notifications.id, requestedIds),
+          eq(notifications.membershipId, membershipId),
           eq(notifications.orgId, orgId),
           isNull(notifications.deletedAt),
         ),
@@ -242,13 +301,15 @@ export class NotificationsLifecycleService {
   }
 
   async bulkArchive(orgId: string, userId: string, input: BulkActionInput) {
+    const membershipId = await this.resolveMembershipId(orgId, userId);
+    const requestedIds = await this.assertOwnsAll(orgId, membershipId, input.ids);
     await this.db
       .update(notifications)
       .set({ archivedAt: new Date() })
       .where(
         and(
-          inArray(notifications.id, input.ids),
-          eq(notifications.userId, userId),
+          inArray(notifications.id, requestedIds),
+          eq(notifications.membershipId, membershipId),
           eq(notifications.orgId, orgId),
           isNull(notifications.deletedAt),
         ),
@@ -259,13 +320,15 @@ export class NotificationsLifecycleService {
   }
 
   async bulkDelete(orgId: string, userId: string, input: BulkActionInput) {
+    const membershipId = await this.resolveMembershipId(orgId, userId);
+    const requestedIds = await this.assertOwnsAll(orgId, membershipId, input.ids);
     await this.db
       .update(notifications)
       .set({ deletedAt: new Date() })
       .where(
         and(
-          inArray(notifications.id, input.ids),
-          eq(notifications.userId, userId),
+          inArray(notifications.id, requestedIds),
+          eq(notifications.membershipId, membershipId),
           eq(notifications.orgId, orgId),
         ),
       );
@@ -275,13 +338,14 @@ export class NotificationsLifecycleService {
   }
 
   async clearAll(orgId: string, userId: string) {
+    const membershipId = await this.resolveMembershipId(orgId, userId);
     await this.db
       .update(notifications)
       .set({ deletedAt: new Date() })
       .where(
         and(
           eq(notifications.orgId, orgId),
-          eq(notifications.userId, userId),
+          eq(notifications.membershipId, membershipId),
           isNull(notifications.deletedAt),
         ),
       );

@@ -12,6 +12,7 @@ import {
   hrCaseNotes,
   hrCaseDocuments,
 } from "../../../db/schema/hr/cases";
+import { organizationMembers } from "../../../db/schema";
 import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { HrAuditService } from "../core/hr-audit.service";
@@ -42,6 +43,18 @@ export class HrCasesService {
     private readonly audit: HrAuditService,
   ) {}
 
+  private async membershipForUser(orgId: string, userId: string): Promise<number> {
+    const member = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, userId),
+      ),
+      columns: { id: true },
+    });
+    if (!member) throw new ForbiddenException("Organization membership required.");
+    return member.id;
+  }
+
   async list(
     orgId: string,
     userId: string,
@@ -55,10 +68,8 @@ export class HrCasesService {
     const conditions = [eq(hrCases.orgId, orgId), isNull(hrCases.deletedAt)];
 
     if (!hasConfidential) {
-      const assigneeMatch =
-        membershipId != null
-          ? or(eq(hrCases.assignedToMembershipId, membershipId), eq(hrCases.assignedTo, userId))
-          : eq(hrCases.assignedTo, userId);
+      if (membershipId == null) throw new ForbiddenException("Organization membership required.");
+      const assigneeMatch = eq(hrCases.assignedToMembershipId, membershipId);
       const visibilityFilter = or(eq(hrCases.confidential, false), assigneeMatch);
       if (visibilityFilter) conditions.push(visibilityFilter);
     }
@@ -101,7 +112,7 @@ export class HrCasesService {
     const fallback = or(
       ilike(hrCases.summary, `%${search}%`),
       ilike(hrCases.caseNumber, `%${search}%`),
-    )!;
+    ) ?? sql`false`;
     const rows = await this.db.execute(
       sql`SELECT app.search_hr_case_ids(${search}, ${CASE_SEARCH_CAP + 1}) AS id`,
     );
@@ -126,10 +137,10 @@ export class HrCasesService {
 
     if (!row) throw new NotFoundException("Case not found");
 
-    const isAssigned =
-      membershipId != null
-        ? row.assignedToMembershipId === membershipId || row.assignedTo === userId
-        : row.assignedTo === userId;
+    if (!hasConfidential && membershipId == null) {
+      throw new ForbiddenException("Organization membership required.");
+    }
+    const isAssigned = membershipId != null && row.assignedToMembershipId === membershipId;
     if (row.confidential && !hasConfidential && !isAssigned) {
       throw new ForbiddenException("Access denied to confidential case");
     }
@@ -137,8 +148,18 @@ export class HrCasesService {
     return row;
   }
 
-  async create(orgId: string, userId: string, input: CreateCaseInput, ipAddress?: string) {
+  async create(
+    orgId: string,
+    userId: string,
+    input: CreateCaseInput,
+    membershipId?: number | null,
+    ipAddress?: string,
+  ) {
     const caseNumber = generateCaseNumber();
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
+    const assignedToMembershipId = input.assignedTo
+      ? await this.membershipForUser(orgId, input.assignedTo)
+      : null;
 
     const [newCase] = await this.db
       .insert(hrCases)
@@ -148,6 +169,7 @@ export class HrCasesService {
         category: input.category,
         subjectEmployeeId: input.subjectEmployeeId ?? null,
         reportedBy: userId,
+        reportedByMembershipId: membershipId,
         anonymous: false,
         confidential: input.confidential ?? true,
         severity: input.severity,
@@ -155,20 +177,22 @@ export class HrCasesService {
         summary: input.summary,
         details: input.details,
         assignedTo: input.assignedTo ?? null,
+        assignedToMembershipId,
       })
       .returning();
+    if (!newCase) throw new Error("Case insert did not return a row");
 
     await this.audit.log({
       orgId,
       actorId: userId,
       entityType: "hr_case",
-      entityId: String(newCase!.id),
+      entityId: String(newCase.id),
       action: "case.created",
       after: { caseNumber, category: input.category, severity: input.severity },
       ipAddress,
     });
 
-    return newCase!;
+    return newCase;
   }
 
   async createAnonymous(orgId: string, input: AnonymousReportInput) {
@@ -191,17 +215,18 @@ export class HrCasesService {
         assignedTo: null,
       })
       .returning({ id: hrCases.id, caseNumber: hrCases.caseNumber });
+    if (!newCase) throw new Error("Anonymous case insert did not return a row");
 
     await this.audit.log({
       orgId,
       actorId: null,
       entityType: "hr_case",
-      entityId: String(newCase!.id),
+      entityId: String(newCase.id),
       action: "case.anonymous_report",
       after: { caseNumber, category: input.category },
     });
 
-    return { caseNumber: newCase!.caseNumber };
+    return { caseNumber: newCase.caseNumber };
   }
 
   async update(
@@ -210,9 +235,15 @@ export class HrCasesService {
     userId: string,
     hasConfidential: boolean,
     input: UpdateCaseInput,
+    membershipId?: number | null,
     ipAddress?: string,
   ) {
-    const existing = await this.getById(orgId, id, userId, hasConfidential);
+    const existing = await this.getById(orgId, id, userId, hasConfidential, membershipId);
+    const assignedToMembershipId = input.assignedTo === undefined
+      ? undefined
+      : input.assignedTo === null
+        ? null
+        : await this.membershipForUser(orgId, input.assignedTo);
 
     const resolvedAt =
       input.status === "resolved" && existing.status !== "resolved"
@@ -225,6 +256,7 @@ export class HrCasesService {
         ...(input.status !== undefined && { status: input.status }),
         ...(input.severity !== undefined && { severity: input.severity }),
         ...(input.assignedTo !== undefined && { assignedTo: input.assignedTo }),
+        ...(assignedToMembershipId !== undefined && { assignedToMembershipId }),
         ...(input.outcome !== undefined && { outcome: input.outcome }),
         ...(input.summary !== undefined && { summary: input.summary }),
         ...(input.details !== undefined && { details: input.details }),
@@ -234,6 +266,7 @@ export class HrCasesService {
       })
       .where(and(eq(hrCases.orgId, orgId), eq(hrCases.id, id)))
       .returning();
+    if (!updated) throw new Error("Case update did not return a row");
 
     await this.audit.log({
       orgId,
@@ -246,11 +279,11 @@ export class HrCasesService {
       ipAddress,
     });
 
-    return updated!;
+    return updated;
   }
 
-  async softDelete(orgId: string, id: number, userId: string, hasConfidential: boolean) {
-    await this.getById(orgId, id, userId, hasConfidential);
+  async softDelete(orgId: string, id: number, userId: string, hasConfidential: boolean, membershipId?: number | null) {
+    await this.getById(orgId, id, userId, hasConfidential, membershipId);
 
     await this.db
       .update(hrCases)
@@ -271,13 +304,15 @@ export class HrCasesService {
     caseId: number,
     userId: string,
     hasConfidential: boolean,
+    membershipId?: number | null,
   ) {
-    await this.getById(orgId, caseId, userId, hasConfidential);
+    await this.getById(orgId, caseId, userId, hasConfidential, membershipId);
 
     const conditions: SQL[] = [eq(hrCaseNotes.caseId, caseId), eq(hrCaseNotes.orgId, orgId)];
 
     if (!hasConfidential) {
-      const visibilityFilter = or(eq(hrCaseNotes.isConfidential, false), eq(hrCaseNotes.authorId, userId));
+      if (membershipId == null) throw new ForbiddenException("Organization membership required.");
+      const visibilityFilter = or(eq(hrCaseNotes.isConfidential, false), eq(hrCaseNotes.authorMembershipId, membershipId));
       if (visibilityFilter) conditions.push(visibilityFilter);
     }
 
@@ -295,9 +330,11 @@ export class HrCasesService {
     userId: string,
     hasConfidential: boolean,
     input: CreateNoteInput,
+    membershipId?: number | null,
     ipAddress?: string,
   ) {
-    await this.getById(orgId, caseId, userId, hasConfidential);
+    await this.getById(orgId, caseId, userId, hasConfidential, membershipId);
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
 
     if (input.isConfidential && !hasConfidential) {
       throw new ForbiddenException("Cannot create confidential notes without hr:cases:confidential");
@@ -309,10 +346,12 @@ export class HrCasesService {
         caseId,
         orgId,
         authorId: userId,
+        authorMembershipId: membershipId,
         note: input.note,
         isConfidential: input.isConfidential ?? false,
       })
       .returning();
+    if (!note) throw new Error("Case note insert did not return a row");
 
     await this.audit.log({
       orgId,
@@ -324,11 +363,11 @@ export class HrCasesService {
       ipAddress,
     });
 
-    return note!;
+    return note;
   }
 
-  async listDocuments(orgId: string, caseId: number, userId: string, hasConfidential: boolean) {
-    await this.getById(orgId, caseId, userId, hasConfidential);
+  async listDocuments(orgId: string, caseId: number, userId: string, hasConfidential: boolean, membershipId?: number | null) {
+    await this.getById(orgId, caseId, userId, hasConfidential, membershipId);
 
     const conditions: SQL[] = [eq(hrCaseDocuments.caseId, caseId), eq(hrCaseDocuments.orgId, orgId)];
 
@@ -350,9 +389,10 @@ export class HrCasesService {
     userId: string,
     hasConfidential: boolean,
     input: AddDocumentInput,
+    membershipId?: number | null,
     ipAddress?: string,
   ) {
-    await this.getById(orgId, caseId, userId, hasConfidential);
+    await this.getById(orgId, caseId, userId, hasConfidential, membershipId);
 
     const [doc] = await this.db
       .insert(hrCaseDocuments)
@@ -365,6 +405,7 @@ export class HrCasesService {
         uploadedBy: userId,
       })
       .returning();
+    if (!doc) throw new Error("Case document insert did not return a row");
 
     await this.audit.log({
       orgId,
@@ -376,7 +417,7 @@ export class HrCasesService {
       ipAddress,
     });
 
-    return doc!;
+    return doc;
   }
 
   async startInvestigation(
@@ -384,9 +425,10 @@ export class HrCasesService {
     caseId: number,
     userId: string,
     hasConfidential: boolean,
+    membershipId?: number | null,
     ipAddress?: string,
   ) {
-    const existing = await this.getById(orgId, caseId, userId, hasConfidential);
+    const existing = await this.getById(orgId, caseId, userId, hasConfidential, membershipId);
 
     if (existing.status !== "open") {
       throw new ForbiddenException("Investigation can only be started on open cases");
@@ -397,6 +439,7 @@ export class HrCasesService {
       .set({ status: "under_investigation", updatedAt: new Date() })
       .where(and(eq(hrCases.orgId, orgId), eq(hrCases.id, caseId)))
       .returning();
+    if (!updated) throw new Error("Case investigation update did not return a row");
 
     await this.audit.log({
       orgId,
@@ -409,7 +452,7 @@ export class HrCasesService {
       ipAddress,
     });
 
-    return updated!;
+    return updated;
   }
 
   async countByStatus(orgId: string) {

@@ -111,7 +111,7 @@ export const WAREHOUSE_MATERIALS_FIELD_KEYS = [
   "serviceRadiusKm", "latitude", "longitude",
 ] as const;
 
-export const updateWarehouseSchema = createWarehouseSchema.partial();
+export const updateWarehouseSchema = createWarehouseSchema.partial().strict();
 export type UpdateWarehouseInput = z.infer<typeof updateWarehouseSchema>;
 
 export const createLocationSchema = z.object({
@@ -127,7 +127,7 @@ export const createLocationSchema = z.object({
 }).strict();
 export type CreateLocationInput = z.infer<typeof createLocationSchema>;
 
-export const updateLocationSchema = createLocationSchema.partial();
+export const updateLocationSchema = createLocationSchema.partial().strict();
 export type UpdateLocationInput = z.infer<typeof updateLocationSchema>;
 
 export const listWarehouseStockSchema = z.object({

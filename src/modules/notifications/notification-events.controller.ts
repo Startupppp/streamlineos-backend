@@ -11,6 +11,12 @@ import { updateEventPolicySchema, emitEventSchema, type UpdateEventPolicyInput, 
 import { isNotificationEventKey } from "./notification-events.catalog";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  notificationEmitSchema,
+  notificationEventUpdateSchema,
+  notificationEventsListSchema,
+} from "./dto/notification-admin-response.schemas";
 
 const eventKeyParams = z.object({ eventKey: z.string().min(1) }).strict();
 
@@ -23,12 +29,14 @@ export class NotificationEventsController {
   ) {}
 
   @Get()
+  @ResponseSchema(notificationEventsListSchema)
   @RequirePermission("notifications:events:view")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.registry.listForOrg(u.orgId);
   }
 
   @Patch(":eventKey")
+  @ResponseSchema(notificationEventUpdateSchema)
   @RequirePermission("notifications:events:manage")
   @Validate({ params: eventKeyParams, body: updateEventPolicySchema })
   update(
@@ -40,6 +48,7 @@ export class NotificationEventsController {
   }
 
   @Post("emit")
+  @ResponseSchema(notificationEmitSchema)
   @HttpCode(200)
   @RequirePermission("notifications:events:manage")
   @Validate({ body: emitEventSchema })

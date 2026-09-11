@@ -1,3 +1,4 @@
+import { testAuthContext } from "../../../test/helpers/module-guard-context";
 import { Reflector } from "@nestjs/core";
 import { ModuleGuard } from "../../common/rbac/module.guard";
 import { REQUIRE_MODULE } from "../../common/rbac/require-module.decorator";
@@ -7,11 +8,17 @@ import { authorize } from "./authorize";
 import { AccessSnapshotResolver } from "./access-snapshot.resolver";
 import { CATALOG_MODULES } from "./access-policy";
 import { moduleAvailability, moduleAvailabilityResolver } from "../../common/rbac/module-availability";
+import type { ModuleAvailabilityResult } from "../../common/rbac/module-availability";
 import { resolvePersonalDashboardModules } from "../dashboard/dashboard-scope";
+import {
+  DASHBOARD_HOME_SECTIONS,
+  isModuleSection,
+} from "../dashboard/dashboard-section-registry";
 import { CalendarSourceRegistry } from "../calendar/calendar-source.registry";
 import type { CalendarEventSource } from "../calendar/calendar-event-source";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
+import type { AuthContext } from "../../common/auth/auth-context";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -86,12 +93,12 @@ function makeCanonicalWiring() {
   };
 }
 
-function executionContext(metadata: string, userContext = user) {
+function executionContext(metadata: string, userContext = user, authCtx?: AuthContext) {
   const reflector = new Reflector();
   const handler = function handler(): void {};
   Reflect.defineMetadata(REQUIRE_MODULE, metadata, handler);
   Reflect.defineMetadata(REQUIRE_PERMISSION, "settings:rbac:manage", handler);
-  const request = { user: userContext };
+  const request = { user: userContext, authContext: authCtx };
   return {
     reflector,
     handler,
@@ -113,21 +120,20 @@ describe("c4 production access wiring", () => {
     for (const file of productionCallers) {
       const source = readFileSync(file, "utf8");
       expect(source).not.toContain("buildModuleAvailabilityResolver(");
-      expect(source).toMatch(/\.moduleAvailability(?:For)?\(/);
+      expect(source).toMatch(/\.(moduleAvailability(?:For)?|moduleAvailable)\(/);
     }
   });
 
   it("routes ModuleGuard and PermissionGuard/authorize through the canonical resolver", async () => {
     const wiring = makeCanonicalWiring();
-    const moduleContext = executionContext("build");
-    const moduleGuard = new ModuleGuard(
-      moduleContext.reflector,
-      wiring.access as never,
-    );
+    const authCtx = testAuthContext(user, wiring.access);
+
+    const moduleContext = executionContext("build", user, authCtx);
+    const moduleGuard = new ModuleGuard(moduleContext.reflector);
 
     await expect(moduleGuard.canActivate(moduleContext.context)).resolves.toBe(true);
 
-    const permissionContext = executionContext("build");
+    const permissionContext = executionContext("build", user, authCtx);
     const permissionGuard = new PermissionGuard(
       permissionContext.reflector,
       wiring.access as never,
@@ -136,20 +142,54 @@ describe("c4 production access wiring", () => {
 
     expect(wiring.buildModuleAvailabilityResolver).toHaveBeenCalledTimes(2);
     expect(wiring.getModuleMap).toHaveBeenCalledWith("org-1");
-    expect(wiring.getModuleState).toHaveBeenCalledWith("org-1", "settings");
-    expect(wiring.access.scopeFor).toHaveBeenCalledWith(user, "settings:rbac:manage");
+    expect(wiring.access.scopeFor).toHaveBeenCalledWith(
+      user,
+      "settings:rbac:manage",
+      expect.objectContaining({ actor: user }),
+    );
   });
 
   it("keeps authorize on the same AccessService/Entitlements seam", async () => {
     const wiring = makeCanonicalWiring();
+    const ctx = testAuthContext(user, wiring.access);
 
     await expect(
-      authorize(wiring.access, user, "settings:rbac:manage"),
+      authorize(wiring.access, ctx, "settings:rbac:manage"),
     ).resolves.toEqual({ allow: true, scope: "all" });
 
-    expect(wiring.getModuleState).toHaveBeenCalledWith("org-1", "settings");
+    expect(wiring.access.moduleAvailability).toHaveBeenCalledWith(user, "settings");
     expect(wiring.buildModuleAvailabilityResolver).toHaveBeenCalledTimes(1);
-    expect(wiring.getModuleMap).not.toHaveBeenCalled();
+    expect(wiring.access.scopeFor).toHaveBeenCalledWith(
+      user,
+      "settings:rbac:manage",
+      expect.objectContaining({ actor: user }),
+    );
+  });
+
+  it("invokes the moduleAvailability lookup exactly once when a shared context spans ModuleGuard and authorize for the same module", async () => {
+    const moduleAvailabilityFn = jest.fn(
+      (_u: CurrentUserContext, _k: string): Promise<ModuleAvailabilityResult> =>
+        Promise.resolve({ available: true }),
+    );
+    const sharedCtx = testAuthContext(user, { moduleAvailability: moduleAvailabilityFn });
+
+    const reflector = new Reflector();
+    const handler = function handler(): void {};
+    Reflect.defineMetadata(REQUIRE_MODULE, "settings", handler);
+    const request = { user, authContext: sharedCtx };
+    const guardContext = {
+      getHandler: () => handler,
+      getClass: () => class Controller {},
+      switchToHttp: () => ({ getRequest: () => request }),
+    } as never;
+
+    const moduleGuard = new ModuleGuard(reflector);
+    await moduleGuard.canActivate(guardContext);
+
+    const wiring = makeCanonicalWiring();
+    await authorize(wiring.access, sharedCtx, "settings:rbac:manage");
+
+    expect(moduleAvailabilityFn).toHaveBeenCalledTimes(1);
   });
 
   it("uses the canonical resolver for every access-snapshot module flag", async () => {
@@ -195,11 +235,18 @@ describe("c4 production access wiring", () => {
       userId: "user-1",
       start: new Date("2026-08-01"),
       end: new Date("2026-08-31"),
-      scope: "all",
     });
 
     expect(sourceLoad).toHaveBeenCalledTimes(1);
-    expect(wiring.buildModuleAvailabilityResolver).toHaveBeenCalledTimes(4);
+    // Home asks once per distinct module, not once per section, plus the
+    // calendar source. Pinning the section count would make deduplicating the
+    // lookup read as a regression.
+    const distinctHomeModules = new Set(
+      DASHBOARD_HOME_SECTIONS.filter(isModuleSection).map((s) => s.module),
+    ).size;
+    expect(wiring.buildModuleAvailabilityResolver).toHaveBeenCalledTimes(
+      distinctHomeModules + 1,
+    );
     expect(wiring.getModuleMap).toHaveBeenCalledWith("org-1");
   });
 });

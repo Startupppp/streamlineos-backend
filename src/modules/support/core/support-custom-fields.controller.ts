@@ -25,6 +25,13 @@ import { SupportCustomFieldsService } from "./support-custom-fields.service";
 const fieldIdParams = z.object({ fieldId: z.coerce.number().int().positive() }).strict();
 const ticketIdParams = z.object({ ticketId: z.coerce.number().int().positive() }).strict();
 import { SupportSettingsAuditService } from "./support-settings-audit.service";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  supportCustomFieldListSchema,
+  supportCustomFieldSchema,
+  ticketFieldValueListSchema,
+  successSchema as cfSuccessSchema,
+} from "./dto/support-settings-response.schemas";
 import {
   createCustomFieldSchema,
   updateCustomFieldSchema,
@@ -43,6 +50,7 @@ export class SupportCustomFieldsController {
 
   @Get("custom-fields")
   @RequirePermission("support:tickets:view")
+  @ResponseSchema(supportCustomFieldListSchema)
   listFields(@Query("activeOnly") activeOnly: string | undefined, @CurrentUser() u: CurrentUserContext) {
     return this.customFields.listFields(u.orgId, activeOnly === "true");
   }
@@ -51,6 +59,7 @@ export class SupportCustomFieldsController {
   @RequirePermission("support:settings:manage")
   @HttpCode(201)
   @Validate({ body: createCustomFieldSchema })
+  @ResponseSchema(supportCustomFieldSchema)
   async createField(
     @Body() body: CreateCustomFieldInput,
     @CurrentUser() u: CurrentUserContext,
@@ -63,6 +72,7 @@ export class SupportCustomFieldsController {
   @Patch("custom-fields/:fieldId")
   @RequirePermission("support:settings:manage")
   @Validate({ params: fieldIdParams, body: updateCustomFieldSchema })
+  @ResponseSchema(supportCustomFieldSchema)
   async updateField(
     @Param("fieldId", ParseIntPipe) fieldId: number,
     @Body() body: UpdateCustomFieldInput,
@@ -76,6 +86,7 @@ export class SupportCustomFieldsController {
   @Delete("custom-fields/:fieldId")
   @RequirePermission("support:settings:manage")
   @Validate({ params: fieldIdParams })
+  @ResponseSchema(cfSuccessSchema)
   async deleteField(@Param("fieldId", ParseIntPipe) fieldId: number, @CurrentUser() u: CurrentUserContext) {
     const result = await this.customFields.deleteField(u.orgId, fieldId);
     await this.audit.record(u.orgId, u.userId, "custom_field", fieldId, "deleted");
@@ -85,6 +96,7 @@ export class SupportCustomFieldsController {
   @Get(":ticketId/custom-fields")
   @RequirePermission("support:tickets:view")
   @Validate({ params: ticketIdParams })
+  @ResponseSchema(ticketFieldValueListSchema)
   getTicketFieldValues(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     return this.customFields.getFieldValues(u.orgId, ticketId);
   }

@@ -1,6 +1,19 @@
 import { createHmac } from "node:crypto";
+import { BadGatewayException } from "@nestjs/common";
+
+jest.mock("../../../../common/logger/logger.service", () => ({
+  logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+}));
+
+jest.mock("../../../../common/security/ssrf-guard", () => ({
+  checkWebhookUrl: jest.fn(),
+}));
+
+import { checkWebhookUrl } from "../../../../common/security/ssrf-guard";
 import { RazorpayAdapter } from "./razorpay.adapter";
 import { PaymentProviderAdapterRegistry } from "../payment-provider-adapter.interface";
+
+const mockCheckWebhookUrl = checkWebhookUrl as jest.MockedFunction<typeof checkWebhookUrl>;
 
 describe("RazorpayAdapter", () => {
   const adapter = new RazorpayAdapter(new PaymentProviderAdapterRegistry());
@@ -153,5 +166,81 @@ describe("RazorpayAdapter", () => {
         error: "invalid_payload",
       });
     });
+  });
+});
+
+describe("RazorpayAdapter — createOrder single-attempt failure behavior", () => {
+  const registry = new PaymentProviderAdapterRegistry();
+  let fetchMock: jest.Mock;
+
+  function successResponse() {
+    return { ok: true, status: 200, json: async () => ({ id: "order_reset", amount: 100, currency: "INR" }) };
+  }
+
+  function orderParams() {
+    return { amount: "100", currency: "INR", receipt: `receipt-${Date.now()}` };
+  }
+
+  beforeEach(() => {
+    fetchMock = jest.fn();
+    global.fetch = fetchMock;
+    mockCheckWebhookUrl.mockResolvedValue({ allowed: true });
+  });
+
+  afterEach(async () => {
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue(successResponse());
+    const resetAdapter = new RazorpayAdapter(registry);
+    await resetAdapter.configure({ keyId: "rzp_test_reset", secret: "reset_secret" }).createOrder(orderParams());
+  });
+
+  it("surfaces a connection error as 502 without repeating the order", async () => {
+    fetchMock.mockRejectedValue(new TypeError("fetch failed"));
+    const adapter = new RazorpayAdapter(registry);
+    const runtime = adapter.configure({ keyId: "rzp_test_x", secret: "secret" });
+
+    await expect(runtime.createOrder(orderParams())).rejects.toThrow(BadGatewayException);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces a provider timeout as 502 without repeating the order", async () => {
+    fetchMock.mockRejectedValue(new DOMException("The operation timed out", "TimeoutError"));
+    const adapter = new RazorpayAdapter(registry);
+    const runtime = adapter.configure({ keyId: "rzp_test_x", secret: "secret" });
+
+    await expect(runtime.createOrder(orderParams())).rejects.toThrow(BadGatewayException);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces a 5xx without consuming a subsequent successful response", async () => {
+    const serverError = { ok: false, status: 500, json: async () => ({ error: { description: "Internal error" } }) };
+    fetchMock
+      .mockResolvedValueOnce(serverError)
+      .mockResolvedValueOnce(serverError)
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ id: "order_recovered", amount: 100, currency: "INR" }) });
+    const adapter = new RazorpayAdapter(registry);
+    const runtime = adapter.configure({ keyId: "rzp_test_x", secret: "secret" });
+
+    await expect(runtime.createOrder(orderParams())).rejects.toThrow(BadGatewayException);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("classifies a 4xx provider rejection as terminal — never retries a client-side rejection", async () => {
+    const clientError = { ok: false, status: 400, json: async () => ({ error: { description: "Invalid request" } }) };
+    fetchMock.mockResolvedValue(clientError);
+    const adapter = new RazorpayAdapter(registry);
+    const runtime = adapter.configure({ keyId: "rzp_test_x", secret: "secret" });
+
+    await expect(runtime.createOrder(orderParams())).rejects.toThrow(BadGatewayException);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces a malformed success payload without creating another order", async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+    const adapter = new RazorpayAdapter(registry);
+    const runtime = adapter.configure({ keyId: "rzp_test_x", secret: "secret" });
+
+    await expect(runtime.createOrder(orderParams())).rejects.toThrow(BadGatewayException);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

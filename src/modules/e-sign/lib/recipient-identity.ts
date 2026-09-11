@@ -1,16 +1,13 @@
-import { BadRequestException, ForbiddenException, Logger, ServiceUnavailableException } from "@nestjs/common";
-import { eq } from "drizzle-orm";
+import { BadRequestException, ForbiddenException, Logger, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import { and, eq } from "drizzle-orm";
 import { signEnvelopes, signRecipients } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
 import { SignAuditService } from "../sign-audit.service";
 import { SignTokensService } from "../sign-tokens.service";
 import { SignNotificationsService } from "../sign-notifications.service";
 import type { SmsSenderPort } from "../sms/sms-sender.port";
-import {
-  SELF_SERVE_AUTH_METHODS,
-  type PublicAuthInput,
-  type PublicConsentInput,
-} from "../dto/e-sign.schemas";
+import { SELF_SERVE_AUTH_METHODS } from "../dto/e-sign.schemas";
+import type { PublicAuthInput, PublicConsentInput } from "../dto/e-sign-public.schemas";
 import { withRecipientSession, type PublicRequestContext } from "./recipient-session";
 
 /**
@@ -45,7 +42,7 @@ export interface RecipientIdentityDeps {
    * uses it without being able to redefine it.
    */
   readonly assertActive: (
-    recipient: typeof signRecipients.$inferSelect,
+    recipient: Pick<typeof signRecipients.$inferSelect, "status" | "tokenRevokedAt" | "tokenExpiresAt">,
     envelope: typeof signEnvelopes.$inferSelect,
   ) => void;
 }
@@ -99,50 +96,114 @@ export async function authenticate(
   input: PublicAuthInput,
   ctx: PublicRequestContext,
 ) {
-  return withRecipientSession(deps.db, deps.tokens, deps.logger, token, async ({ recipient, envelope }) => {
-    deps.assertActive(recipient, envelope);
-
-    if (recipient.authLockedUntil && recipient.authLockedUntil.getTime() > Date.now()) {
-      throw new ForbiddenException("Too many failed attempts. Please try again later.");
-    }
-
-    let passed: boolean;
-    if (recipient.authMethod === "email_link") {
-      passed = true;
-    } else if (recipient.authMethod === "access_code") {
-      passed = Boolean(input.accessCode) && recipient.accessCodeHash === deps.tokens.hash(input.accessCode ?? "");
-    } else if (recipient.authMethod === "otp_email" || recipient.authMethod === "otp_sms") {
-      /**
-       * One branch for both channels, deliberately. The code, the hash, the
-       * expiry, the attempt counter and the lockout are properties of the
-       * one-time code — not of how it travelled. A separate SMS branch is
-       * how the two drift until one of them forgets to check the expiry.
-       */
-      passed =
-        Boolean(input.otpCode) &&
-        recipient.otpCodeHash === deps.tokens.hash(input.otpCode ?? "") &&
-        Boolean(recipient.otpExpiresAt) &&
-        recipient.otpExpiresAt!.getTime() > Date.now();
-    } else {
+  /*
+   * A wrong code answers 403 AFTER the session transaction commits, not from
+   * inside it. Throwing in there rolled back the very rows that make lockout
+   * work — the `failed_auth_attempts` increment and the `authentication_failed`
+   * audit row — so the counter never advanced and the fifth wrong code was as
+   * harmless as the first. The session callback reports the outcome; the throw
+   * happens out here, once both writes are durable.
+   */
+  const authenticated = await withRecipientSession(
+    deps.db,
+    deps.tokens,
+    deps.logger,
+    token,
+    async ({ recipient: sessionRecipient, envelope }) => {
       /*
-       * Still the backstop, and still the only place that decides. The list it
-       * decides from is now `SELF_SERVE_AUTH_METHODS`, shared with the pre-send
-       * validator so an envelope can no longer pass validation and fail here.
+       * Re-read under a row lock, and through the token. Two submissions racing
+       * on one link would otherwise both read the counter before either wrote
+       * it, and a lockout set by the first would not be seen by a correct code
+       * arriving in the second.
        */
-      throw new BadRequestException(
-        `Authentication method "${recipient.authMethod}" is not yet supported for self-serve signing. Supported: ${SELF_SERVE_AUTH_METHODS.join(", ")}.`,
-      );
-    }
+      const [recipient] = await deps.db
+        .select({
+          id: signRecipients.id,
+          name: signRecipients.name,
+          email: signRecipients.email,
+          status: signRecipients.status,
+          authMethod: signRecipients.authMethod,
+          accessCodeHash: signRecipients.accessCodeHash,
+          otpCodeHash: signRecipients.otpCodeHash,
+          otpExpiresAt: signRecipients.otpExpiresAt,
+          failedAuthAttempts: signRecipients.failedAuthAttempts,
+          authLockedUntil: signRecipients.authLockedUntil,
+          tokenRevokedAt: signRecipients.tokenRevokedAt,
+          tokenExpiresAt: signRecipients.tokenExpiresAt,
+        })
+        .from(signRecipients)
+        .where(
+          and(
+            eq(signRecipients.orgId, envelope.orgId),
+            eq(signRecipients.id, sessionRecipient.id),
+            eq(signRecipients.signingTokenHash, deps.tokens.hash(token)),
+          ),
+        )
+        .for("update");
+      if (!recipient) throw new NotFoundException("This signing link is invalid.");
 
-    if (!passed) {
-      const attempts = recipient.failedAuthAttempts + 1;
+      deps.assertActive(recipient, envelope);
+
+      if (recipient.authLockedUntil && recipient.authLockedUntil.getTime() > Date.now()) {
+        throw new ForbiddenException("Too many failed attempts. Please try again later.");
+      }
+
+      let passed: boolean;
+      if (recipient.authMethod === "email_link") {
+        passed = true;
+      } else if (recipient.authMethod === "access_code") {
+        passed = Boolean(input.accessCode) && recipient.accessCodeHash === deps.tokens.hash(input.accessCode ?? "");
+      } else if (recipient.authMethod === "otp_email" || recipient.authMethod === "otp_sms") {
+        /**
+         * One branch for both channels, deliberately. The code, the hash, the
+         * expiry, the attempt counter and the lockout are properties of the
+         * one-time code — not of how it travelled. A separate SMS branch is
+         * how the two drift until one of them forgets to check the expiry.
+         */
+        passed =
+          Boolean(input.otpCode) &&
+          recipient.otpCodeHash === deps.tokens.hash(input.otpCode ?? "") &&
+          recipient.otpExpiresAt != null &&
+          recipient.otpExpiresAt.getTime() > Date.now();
+      } else {
+        /*
+         * Still the backstop, and still the only place that decides. The list it
+         * decides from is now `SELF_SERVE_AUTH_METHODS`, shared with the pre-send
+         * validator so an envelope can no longer pass validation and fail here.
+         */
+        throw new BadRequestException(
+          `Authentication method "${recipient.authMethod}" is not yet supported for self-serve signing. Supported: ${SELF_SERVE_AUTH_METHODS.join(", ")}.`,
+        );
+      }
+
+      if (!passed) {
+        const attempts = recipient.failedAuthAttempts + 1;
+        await deps.db
+          .update(signRecipients)
+          .set({
+            failedAuthAttempts: attempts,
+            authLockedUntil: attempts >= MAX_AUTH_ATTEMPTS ? new Date(Date.now() + 15 * 60 * 1000) : recipient.authLockedUntil,
+          })
+          .where(and(eq(signRecipients.orgId, envelope.orgId), eq(signRecipients.id, recipient.id)));
+
+        await deps.audit.record({
+          orgId: envelope.orgId,
+          envelopeId: envelope.id,
+          recipientId: recipient.id,
+          actorType: "external_signer",
+          actorName: recipient.name,
+          actorEmail: recipient.email,
+          eventType: "authentication_failed",
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+        });
+        return false;
+      }
+
       await deps.db
         .update(signRecipients)
-        .set({
-          failedAuthAttempts: attempts,
-          authLockedUntil: attempts >= MAX_AUTH_ATTEMPTS ? new Date(Date.now() + 15 * 60 * 1000) : recipient.authLockedUntil,
-        })
-        .where(eq(signRecipients.id, recipient.id));
+        .set({ status: "authenticated", authenticatedAt: new Date(), failedAuthAttempts: 0, authLockedUntil: null })
+        .where(and(eq(signRecipients.orgId, envelope.orgId), eq(signRecipients.id, recipient.id)));
 
       await deps.audit.record({
         orgId: envelope.orgId,
@@ -151,32 +212,17 @@ export async function authenticate(
         actorType: "external_signer",
         actorName: recipient.name,
         actorEmail: recipient.email,
-        eventType: "authentication_failed",
+        eventType: "authentication_passed",
         ipAddress: ctx.ipAddress,
         userAgent: ctx.userAgent,
       });
-      throw new ForbiddenException("Authentication failed");
-    }
 
-    await deps.db
-      .update(signRecipients)
-      .set({ status: "authenticated", authenticatedAt: new Date(), failedAuthAttempts: 0, authLockedUntil: null })
-      .where(eq(signRecipients.id, recipient.id));
+      return true;
+    },
+  );
 
-    await deps.audit.record({
-      orgId: envelope.orgId,
-      envelopeId: envelope.id,
-      recipientId: recipient.id,
-      actorType: "external_signer",
-      actorName: recipient.name,
-      actorEmail: recipient.email,
-      eventType: "authentication_passed",
-      ipAddress: ctx.ipAddress,
-      userAgent: ctx.userAgent,
-    });
-
-    return { authenticated: true };
-  });
+  if (!authenticated) throw new ForbiddenException("Authentication failed");
+  return { authenticated: true };
 }
 
 export async function acceptConsent(

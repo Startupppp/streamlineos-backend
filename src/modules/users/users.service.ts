@@ -1,15 +1,8 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Inject,
-  Injectable,
-} from "@nestjs/common";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import type { InviteActor } from "../organization/core/invitations.helpers";
 import { AccessService } from "../access/access.service";
-import { and, count, eq, sql } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
+import { and, count, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
-import { syncStructuralRoleAssignment } from "../../common/rbac/sync-structural-role";
 import { type Db } from "../../db/drizzle.module";
 import {
   organizationMembers,
@@ -18,6 +11,10 @@ import {
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { InvitationCreateService } from "../organization/core/invitation-create.service";
+import {
+  MembershipAdmissionService,
+  admissionFailure,
+} from "../organization/core/membership-admission.service";
 import {
   OrgMembershipService,
   type MemberLifecycleStatus,
@@ -30,13 +27,14 @@ import type {
 import { assertMayGrantRole } from "../../common/rbac/assert-may-grant-role";
 import { syncOrgUnitPlacement } from "../../common/org/sync-org-unit-placement";
 import { assertTargetNotOwner } from "../../common/rbac/assert-target-not-owner";
-import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
+import {
+  bustMembershipAfterIdentityErasure,
+} from "../../common/org/membership-bust";
+import { withMembershipMutations } from "../../common/org/membership-mutations";
 import { withIdentity } from "../../common/tenant/with-identity";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { syncCanonicalEmploymentFields } from "../../common/hr/sync-canonical-employment-fields";
 import { syncCanonicalReportingLine } from "../../common/hr/sync-canonical-reporting-line";
-import { PlanLimitsService } from "../billing/core/plan-limits.service";
-import { SeatLedgerService } from "../billing/core/seat-ledger.service";
 import { OrganizationUsersReader } from "./organization-users.reader";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
 
@@ -63,8 +61,7 @@ export class UsersService {
     private readonly audit: AuditService,
     private readonly cache: CacheService,
     private readonly access: AccessService,
-    private readonly planLimits: PlanLimitsService,
-    private readonly seatLedger: SeatLedgerService,
+    private readonly admission: MembershipAdmissionService,
     private readonly invitationsSvc: InvitationCreateService,
     private readonly orgMembership: OrgMembershipService,
     private readonly employment: EmploymentFactsService,
@@ -86,7 +83,6 @@ export class UsersService {
       firstName,
       lastName,
       role,
-      designation,
       phone,
       departmentId,
       branchId,
@@ -99,140 +95,61 @@ export class UsersService {
 
     await this.assertMayGrantRole(orgId, actor, role);
 
-    const existing = await this.db.query.users.findFirst({
-      where: eq(users.email, email),
-      columns: { id: true },
-    });
-    if (existing) {
-      const membership = await this.db.query.organizationMembers.findFirst({
-        where: and(
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.userId, existing.id),
-        ),
-        columns: { status: true },
-      });
-      if (membership) {
-        if (membership.status === "SUSPENDED" || membership.status === "LEFT") {
-          throw new ConflictException(
-            "This person was archived/suspended in this organization. Restore them from Users instead of inviting again.",
-          );
-        }
-        throw new ConflictException(
-          "User is already a member of this organization",
-        );
-      }
-      await runInTenantTransaction(
-        this.db,
-        async (tx) => {
-          await tx.execute(
-            sql`SELECT pg_advisory_xact_lock(hashtextextended(${`quota:${orgId}:members`}, 0))`,
-          );
-          await this.planLimits.assertWithinLimit(orgId, "members", 1, tx);
-          const inserted = await tx
-            .insert(organizationMembers)
-            .values({ userId: existing.id, orgId, role })
-            .onConflictDoNothing()
-            .returning({ id: organizationMembers.id });
-          const membershipId = inserted[0]?.id;
-          if (membershipId !== undefined)
-            await syncStructuralRoleAssignment(tx, orgId, membershipId, role);
-
-          await syncOrgUnitPlacement(tx, orgId, existing.id, {
-            DEPARTMENT: departmentId ?? null,
-            BRANCH: branchId ?? null,
-          });
-
-          await this.seatLedger.recordSeatEvent(
-            {
-              orgId,
-              eventType: "INVITE_ACCEPTED",
-              subjectId: existing.id,
-              actorId: actorUserId,
-              reason: "existing user added to organisation",
-              idempotencyKey: `member-added:${orgId}:${existing.id}`,
-            },
-            tx,
-          );
-        },
-        { orgId },
-      );
-      await bustMembershipStatusCache(this.cache, existing.id, orgId);
-      await this.invalidateMembershipCaches(orgId);
-      return { userId: existing.id, created: false };
-    }
-
-    const userId = randomUUID();
     const trimmedFirst = firstName?.trim() || null;
     const trimmedLast = lastName?.trim() || null;
     const fromNames =
       [trimmedFirst, trimmedLast].filter(Boolean).join(" ") || null;
     const emailLocal = email.split("@")[0]?.trim() || null;
-    const fullName = fromNames ?? emailLocal;
 
-    await runInTenantTransaction(
-      this.db,
-      async (tx) => {
-        await tx.execute(
-          sql`SELECT pg_advisory_xact_lock(hashtextextended(${`quota:${orgId}:members`}, 0))`,
-        );
-        await this.planLimits.assertWithinLimit(orgId, "members", 1, tx);
-        await tx.insert(users).values({
-          id: userId,
-          email,
-          name: fullName,
-          firstName: trimmedFirst,
-          lastName: trimmedLast,
-          emailVerified: new Date(),
-          phone: phone ?? null,
-          userStatus: "active",
-          activatedAt: new Date(),
-          isActive: true,
-        });
-        const inserted = await tx
-          .insert(organizationMembers)
-          .values({ userId, orgId, role })
-          .onConflictDoNothing()
-          .returning({ id: organizationMembers.id });
-        const membershipId = inserted[0]?.id;
-        if (membershipId !== undefined) {
-          await syncStructuralRoleAssignment(tx, orgId, membershipId, role);
-        }
-        await syncOrgUnitPlacement(tx, orgId, userId, {
-          DEPARTMENT: departmentId ?? null,
-          BRANCH: branchId ?? null,
-        });
-
-        await this.seatLedger.recordSeatEvent(
-          {
+    const outcome = await withMembershipMutations(this.cache, (membership) =>
+      runInTenantTransaction(
+        this.db,
+        async (tx) => {
+          const admitted = await this.admission.admitOne(tx, {
             orgId,
-            eventType: "INVITE_ACCEPTED",
-            subjectId: userId,
-            actorId: actorUserId,
-            reason: "user created directly",
-            idempotencyKey: `member-added:${orgId}:${userId}`,
-          },
-          tx,
-        );
-      },
-      { orgId },
+            email,
+            role,
+            actor,
+            membership,
+            seatReason: "user created directly",
+            createUserIfMissing: {
+              name: fromNames ?? emailLocal,
+              firstName: trimmedFirst,
+              lastName: trimmedLast,
+              phone: phone ?? null,
+              userStatus: "active",
+              activatedAt: new Date(),
+              isActive: true,
+            },
+          });
+          if (admitted.kind !== "admitted") throw admissionFailure(admitted);
+          await syncOrgUnitPlacement(tx, orgId, admitted.userId, {
+            DEPARTMENT: departmentId ?? null,
+            BRANCH: branchId ?? null,
+          });
+          return admitted;
+        },
+        { orgId },
+      )
     );
 
-    await bustMembershipStatusCache(this.cache, userId, orgId);
     await this.invalidateMembershipCaches(orgId);
+
+    if (!outcome.createdUser) return { userId: outcome.userId, created: false };
 
     this.audit.log({
       action: "user.created",
       userId: actorUserId,
       orgId,
-      targetId: userId,
+      targetId: outcome.userId,
       targetType: "user",
       actorUserId,
       resourceType: "user",
-      resourceId: userId,
+      resourceId: outcome.userId,
       metadata: { email, role },
     });
 
-    return { userId, created: true };
+    return { userId: outcome.userId, created: true };
   }
 
   async listUsers(orgId: string, params: ListUsersInput) {
@@ -344,27 +261,16 @@ export class UsersService {
 
     if (data.role !== undefined) {
       const nextRole = data.role;
-      await runInTenantTransaction(
-        this.db,
-        async (tx) => {
-          await assertTargetNotOwner(tx, orgId, userId);
-          const [member] = await tx
-            .update(organizationMembers)
-            .set({ role: nextRole })
-            .where(
-              and(
-                eq(organizationMembers.orgId, orgId),
-                eq(organizationMembers.userId, userId),
-              ),
-            )
-            .returning({ id: organizationMembers.id });
-          if (member) {
-            await syncStructuralRoleAssignment(tx, orgId, member.id, nextRole);
-          }
-        },
-        { orgId },
+      await withMembershipMutations(this.cache, (membership) =>
+        runInTenantTransaction(
+          this.db,
+          async (tx) => {
+            await assertTargetNotOwner(tx, orgId, userId);
+            await membership.changeRole(tx, { orgId, userId, role: nextRole });
+          },
+          { orgId },
+        )
       );
-      await bustMembershipStatusCache(this.cache, userId, orgId);
     }
 
     this.audit.log({
@@ -431,7 +337,7 @@ export class UsersService {
       .set({ isActive: false, userStatus: "deleted", deletedAt: new Date() })
       .where(eq(users.id, userId));
 
-    await bustMembershipStatusCache(this.cache, userId);
+    await bustMembershipAfterIdentityErasure(this.cache, userId);
     await this.invalidateMembershipCaches(orgId);
 
     this.audit.log({

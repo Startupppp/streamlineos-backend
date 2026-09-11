@@ -1,5 +1,7 @@
-import { Inject, Injectable } from "@nestjs/common";
-import { and, count, desc, eq } from "drizzle-orm";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { and, desc, eq } from "drizzle-orm";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { users } from "../../../db/schema/common/auth";
@@ -34,7 +36,8 @@ export class PayrollInputSnapshotsService {
             eq(hrPayrollInputSnapshots.orgId, orgId),
             eq(hrPayrollInputSnapshots.periodId, periodId),
           ),
-        );
+        )
+        .limit(1000);
 
       const sections: Record<string, number> = {};
       const uniqueUsers = new Set<string>();
@@ -69,45 +72,47 @@ export class PayrollInputSnapshotsService {
     section: typeof hrPayrollInputSnapshots.$inferSelect["section"],
     input: SectionQueryInput,
   ) {
-    const offset = (input.page - 1) * input.limit;
+    const position = decodeCursor(input.cursor);
+    if (input.cursor !== undefined && !position) {
+      throw new BadRequestException("Invalid pagination cursor");
+    }
     const conditions = [
       eq(hrPayrollInputSnapshots.orgId, orgId),
       eq(hrPayrollInputSnapshots.periodId, periodId),
       eq(hrPayrollInputSnapshots.section, section),
     ];
+    if (position) {
+      conditions.push(
+        keysetBeforeId(
+          hrPayrollInputSnapshots.createdAt,
+          hrPayrollInputSnapshots.id,
+          position,
+        ),
+      );
+    }
 
-    const [data, totalResult] = await Promise.all([
-      this.db
-        .select({
-          id: hrPayrollInputSnapshots.id,
-          userId: hrPayrollInputSnapshots.userId,
-          section: hrPayrollInputSnapshots.section,
-          payload: hrPayrollInputSnapshots.payload,
-          sourceRefs: hrPayrollInputSnapshots.sourceRefs,
-          createdAt: hrPayrollInputSnapshots.createdAt,
-          userName: users.name,
-          userFirstName: users.firstName,
-          userLastName: users.lastName,
-          userEmail: users.email,
-        })
-        .from(hrPayrollInputSnapshots)
-        .innerJoin(users, eq(users.id, hrPayrollInputSnapshots.userId))
-        .where(and(...conditions))
-        .orderBy(desc(hrPayrollInputSnapshots.createdAt), desc(hrPayrollInputSnapshots.id))
-        .limit(input.limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(hrPayrollInputSnapshots).where(and(...conditions)),
-    ]);
+    const rows = await this.db
+      .select({
+        id: hrPayrollInputSnapshots.id,
+        userId: hrPayrollInputSnapshots.userId,
+        section: hrPayrollInputSnapshots.section,
+        payload: hrPayrollInputSnapshots.payload,
+        sourceRefs: hrPayrollInputSnapshots.sourceRefs,
+        createdAt: hrPayrollInputSnapshots.createdAt,
+        userName: users.name,
+        userFirstName: users.firstName,
+        userLastName: users.lastName,
+        userEmail: users.email,
+      })
+      .from(hrPayrollInputSnapshots)
+      .innerJoin(users, eq(users.id, hrPayrollInputSnapshots.userId))
+      .where(and(...conditions))
+      .orderBy(desc(hrPayrollInputSnapshots.createdAt), desc(hrPayrollInputSnapshots.id))
+      .limit(input.limit + 1);
 
-    const total = totalResult[0]?.total ?? 0;
-    return {
-      data,
-      pagination: {
-        page: input.page,
-        limit: input.limit,
-        total,
-        totalPages: Math.ceil(total / input.limit),
-      },
-    };
+    return buildCursorPage(rows, input.limit, (snapshot) => ({
+      sortValue: snapshot.createdAt.toISOString(),
+      id: String(snapshot.id),
+    }));
   }
 }

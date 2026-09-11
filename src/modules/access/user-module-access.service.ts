@@ -11,110 +11,45 @@ import { type Db } from "../../db/drizzle.module";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
-import { logger } from "../../common/logger/logger.service";
 import {
   ADMINISTRABLE_MODULES,
 } from "../../common/rbac/module-vocabulary";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { EntitlementsService } from "./entitlements.service";
 import { MANAGEABLE_MODULE_SET } from "./access-policy";
-
-const DENIED_MODULES_TTL_MS = 15_000;
-
-function isMissingRelationError(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) return false;
-  if ("code" in error && error.code === "42P01") return true;
-  if (
-    "message" in error &&
-    typeof error.message === "string" &&
-    error.message.includes("does not exist")
-  )
-    return true;
-  if ("cause" in error) return isMissingRelationError(error.cause);
-  return false;
-}
+import { AccessVersionCache } from "./access-version-cache";
+import { DeniedModulesResolver } from "./denied-modules.resolver";
+import type { ReadAccessTable } from "./access-permission.resolver";
 
 @Injectable()
 export class UserModuleAccessService {
-  private missingTablesLogged = false;
-  private readonly deniedModulesCache = new Map<
-    string,
-    { modules: Set<string>; expiresAt: number }
-  >();
+  private readonly deniedModulesResolver: DeniedModulesResolver;
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly entitlements: EntitlementsService,
     private readonly cache: CacheService,
-  ) {}
-
-  clearCacheForOrg(orgId: string): void {
-    const prefix = `${orgId}:`;
-    for (const key of this.deniedModulesCache.keys()) {
-      if (key.startsWith(prefix)) this.deniedModulesCache.delete(key);
-    }
+    private readonly accessVersionCache: AccessVersionCache,
+  ) {
+    const readAccessTable: ReadAccessTable = <Result>(
+      read: () => PromiseLike<Result>,
+    ): Promise<Result> => Promise.resolve(read());
+    this.deniedModulesResolver = new DeniedModulesResolver(
+      () => this.db,
+      readAccessTable,
+      (orgId) => this.accessVersionCache.getVersion(orgId),
+      (moduleKey) => this.entitlements.isCoreModule(moduleKey),
+    );
   }
 
-  private async safeRead<T>(read: () => PromiseLike<T>, fallback: T): Promise<T> {
-    try {
-      return await read();
-    } catch (error: unknown) {
-      if (!isMissingRelationError(error)) throw error;
-      if (!this.missingTablesLogged) {
-        this.missingTablesLogged = true;
-        logger.warn("user-module-access: tables missing, returning empty set", {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-      return fallback;
-    }
-  }
-
+  /**
+   * No error fallback: an unreadable denial list must not resolve to "nothing
+   * is denied". That empty set fails OPEN — it restores every module the org
+   * took away from this user — and `DeniedModulesResolver.resolve` throws
+   * rather than swallowing, same invariant as `AccessService.readAccessTable`.
+   */
   async getUserDeniedModules(orgId: string, userId: string): Promise<Set<string>> {
-    const cacheKey = `${orgId}:${userId}`;
-    const cached = this.deniedModulesCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) return cached.modules;
-
-    const rows = await runInTenantTransaction(
-      this.db,
-      () =>
-        this.safeRead(
-          () =>
-            this.db
-              .select({ moduleKey: userModuleAccess.moduleKey })
-              .from(userModuleAccess)
-              .innerJoin(
-                organizationMembers,
-                and(
-                  eq(organizationMembers.orgId, userModuleAccess.orgId),
-                  eq(
-                    organizationMembers.id,
-                    userModuleAccess.organizationMembershipId,
-                  ),
-                ),
-              )
-              .where(
-                and(
-                  eq(userModuleAccess.orgId, orgId),
-                  eq(organizationMembers.userId, userId),
-                  eq(userModuleAccess.enabled, false),
-                ),
-              ),
-          [] as { moduleKey: string }[],
-        ),
-      { orgId },
-    );
-
-    const modules = new Set(
-      rows
-        .map((row) => row.moduleKey)
-        .filter((moduleKey) => !this.entitlements.isCoreModule(moduleKey)),
-    );
-    this.deniedModulesCache.set(cacheKey, {
-      modules,
-      expiresAt: Date.now() + DENIED_MODULES_TTL_MS,
-    });
-    return modules;
+    return this.deniedModulesResolver.resolve(orgId, userId);
   }
 
   async getUserModuleAccess(
@@ -179,7 +114,6 @@ export class UserModuleAccessService {
         throw new BadRequestException(
           `Module "${moduleKey}" is always available to organization members`,
         );
-      this.clearCacheForMember(orgId, userId);
       return this.getUserModuleAccess(orgId, userId);
     }
 
@@ -225,10 +159,5 @@ export class UserModuleAccessService {
 
     await this.cache.invalidate(CACHE_KEYS.userSession(userId));
     return this.getUserModuleAccess(orgId, userId);
-  }
-
-  private clearCacheForMember(orgId: string, userId: string): void {
-    const key = `${orgId}:${userId}`;
-    this.deniedModulesCache.delete(key);
   }
 }

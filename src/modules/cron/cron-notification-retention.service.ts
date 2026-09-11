@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq, isNotNull, lt, ne, sql } from "drizzle-orm";
+import { and, eq, isNotNull, lt, sql } from "drizzle-orm";
 import { emailOutbox, notificationDeliveries } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -30,6 +30,11 @@ export interface RetentionSweepResult {
   truncated: boolean;
 }
 
+interface BatchedRetentionResult {
+  count: number;
+  truncated: boolean;
+}
+
 @Injectable()
 export class CronNotificationRetentionService {
   private readonly logger = new Logger(CronNotificationRetentionService.name);
@@ -51,34 +56,38 @@ export class CronNotificationRetentionService {
 
     // email_outbox carries no tenant on any row (its RLS policy escapes on
     // organization_id IS NULL), so it sweeps globally without a tenant context.
-    result.emailBodiesPurged = await this.batched((limit) =>
+    const emailBodies = await this.batched((limit) =>
       this.db
         .update(emailOutbox)
         .set({ html: "", text: null })
         .where(
           sql`${emailOutbox.id} in (
             select id from ${emailOutbox}
-            where ${emailOutbox.createdAt} < ${bodyCutoff} and ${emailOutbox.html} <> ''
+            where ${emailOutbox.createdAt} < ${bodyCutoff.toISOString()}::timestamptz and ${emailOutbox.html} <> ''
             limit ${limit}
           )`,
         )
         .returning({ id: emailOutbox.id })
         .then((rows) => rows.length),
     );
+    result.emailBodiesPurged = emailBodies.count;
+    result.truncated ||= emailBodies.truncated;
 
-    result.emailRecordsDeleted = await this.batched((limit) =>
+    const emailRecords = await this.batched((limit) =>
       this.db
         .delete(emailOutbox)
         .where(
           sql`${emailOutbox.id} in (
             select id from ${emailOutbox}
-            where ${emailOutbox.createdAt} < ${recordCutoff}
+            where ${emailOutbox.createdAt} < ${recordCutoff.toISOString()}::timestamptz
             limit ${limit}
           )`,
         )
         .returning({ id: emailOutbox.id })
         .then((rows) => rows.length),
     );
+    result.emailRecordsDeleted = emailRecords.count;
+    result.truncated ||= emailRecords.truncated;
 
     // notification_deliveries enforces org_id = app.current_org_id(), so a global
     // sweep is denied 42501. Iterate tenants (CLAUDE.md §20).
@@ -120,16 +129,16 @@ export class CronNotificationRetentionService {
    * a lock across the whole table (§19). Stops at MAX_BATCHES and reports it —
    * a silent cap would read as "everything is purged" when it is not.
    */
-  private async batched(run: (limit: number) => Promise<number>): Promise<number> {
+  private async batched(run: (limit: number) => Promise<number>): Promise<BatchedRetentionResult> {
     let total = 0;
     for (let i = 0; i < MAX_BATCHES; i++) {
       const affected = await run(BATCH_SIZE);
       total += affected;
-      if (affected < BATCH_SIZE) return total;
+      if (affected < BATCH_SIZE) return { count: total, truncated: false };
     }
     this.logger.warn(
       `RETENTION: hit the ${MAX_BATCHES}-batch cap with rows still eligible — rerun the sweep`,
     );
-    return total;
+    return { count: total, truncated: true };
   }
 }

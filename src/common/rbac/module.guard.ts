@@ -4,16 +4,12 @@ import type { Request } from "express";
 import { REQUIRE_MODULE } from "./require-module.decorator";
 import { ModuleDisabledException } from "../http/api-exceptions";
 import { IS_PUBLIC } from "../auth/public.decorator";
-import type { CurrentUserContext } from "../auth/backend-claims";
-import { AccessService } from "../../modules/access/access.service";
+import type { AuthContext } from "../auth/auth-context";
 import { moduleIdFromStored } from "./module-registry";
 
 @Injectable()
 export class ModuleGuard implements CanActivate {
-  constructor(
-    private readonly reflector: Reflector,
-    private readonly accessSvc: AccessService,
-  ) {}
+  constructor(private readonly reflector: Reflector) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const required = this.reflector.getAllAndOverride<
@@ -21,12 +17,6 @@ export class ModuleGuard implements CanActivate {
     >(REQUIRE_MODULE, [context.getHandler(), context.getClass()]);
     if (!required) return true;
 
-    /**
-     * A `@Public()` route has no `req.user` to read an org from, so reaching the
-     * entitlement lookup threw and every such route 500'd — inbound support
-     * webhooks, public CSAT and whiteboard sharing all sit on classes carrying
-     * `@RequireModule`. `JwtAuthGuard` and `MfaGuard` already skip on this key.
-     */
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC, [
       context.getHandler(),
       context.getClass(),
@@ -35,15 +25,15 @@ export class ModuleGuard implements CanActivate {
 
     const req = context
       .switchToHttp()
-      .getRequest<Request & { user?: CurrentUserContext }>();
-    const user = req.user;
-    if (!user) return true;
+      .getRequest<Request & { authContext?: AuthContext }>();
+    const authContext = req.authContext;
+    if (!authContext) return true;
 
     const moduleKeys = (Array.isArray(required) ? required : [required]).map(
       moduleIdFromStored,
     );
     for (const moduleKey of moduleKeys) {
-      const avail = await this.accessSvc.moduleAvailability(user, moduleKey);
+      const avail = await authContext.moduleAvailable(moduleKey);
       if (!avail.available) throw new ModuleDisabledException(moduleKey);
     }
     return true;

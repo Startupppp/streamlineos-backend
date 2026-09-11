@@ -113,9 +113,10 @@ export class TerritoryMatchService {
     }
 
     if (criteria.productKeys && criteria.productKeys.length > 0) {
+      const productKeys = criteria.productKeys;
       const inputKeys = input.productKeys ?? [];
       if (inputKeys.length === 0) return false;
-      const hasMatch = inputKeys.some((k) => this.includesCI(criteria.productKeys!, k));
+      const hasMatch = inputKeys.some((k) => this.includesCI(productKeys, k));
       if (!hasMatch) return false;
     }
 

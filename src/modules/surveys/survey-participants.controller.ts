@@ -9,6 +9,13 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  surveyParticipantListSchema,
+  surveyImportResultSchema,
+  surveyInviteResultSchema,
+  surveyRemindResultSchema,
+} from "./dto/survey-participants-response.schemas";
 import { SurveyParticipantService } from "./survey-participant.service";
 import {
   importParticipantsSchema,
@@ -32,6 +39,7 @@ export class SurveyParticipantsController {
   @Get()
   @RequirePermission("surveys:participants:view")
   @Validate({ params: surveyIdParams, query: listParticipantsSchema })
+  @ResponseSchema(surveyParticipantListSchema)
   list(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Query() query: ListParticipantsInput,
@@ -44,6 +52,7 @@ export class SurveyParticipantsController {
   @HttpCode(201)
   @RequirePermission("surveys:participants:manage")
   @Validate({ params: surveyIdParams, body: importParticipantsSchema })
+  @ResponseSchema(surveyImportResultSchema)
   import(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body() body: ImportParticipantsInput,
@@ -57,6 +66,7 @@ export class SurveyParticipantsController {
   @HttpCode(200)
   @RequirePermission("surveys:participants:manage")
   @Validate({ params: surveyIdParams, body: inviteParticipantsSchema })
+  @ResponseSchema(surveyInviteResultSchema)
   invite(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body() body: InviteParticipantsInput,
@@ -70,6 +80,7 @@ export class SurveyParticipantsController {
   @HttpCode(200)
   @RequirePermission("surveys:participants:manage")
   @Validate({ params: surveyIdParams, body: remindParticipantsSchema })
+  @ResponseSchema(surveyRemindResultSchema)
   remind(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body() body: RemindParticipantsInput,

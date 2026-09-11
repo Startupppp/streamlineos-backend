@@ -1,34 +1,17 @@
 import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { ORG_MEMBER_ROLES } from "../../../common/rbac/org-roles";
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
-import {
-  organizations,
-  organizationMembers,
-  subscriptions,
-} from "../../../db/schema";
-import { addDays } from "date-fns";
+import { and, desc, eq, isNull } from "drizzle-orm";
+import { organizations, organizationMembers } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { SetupInput } from "./dto/org.schemas";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
-import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
-import { randomUUID } from "node:crypto";
+import { withMembershipMutations } from "../../../common/org/membership-mutations";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
-import {
-  runInNewTenantTransaction,
-  runInTenantTransaction,
-} from "../../../common/tenant/run-in-tenant-transaction";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { withIdentity } from "../../../common/tenant/with-identity";
 import { logger } from "../../../common/logger/logger.service";
-import { provisionEmployeeSelfService } from "../../../common/org/provision-employee-self-service";
-import {
-  getTrialDays,
-  TRIAL_PLAN,
-} from "../../billing/core/plan-entitlements.constants";
-import { placeOrganization } from "../../../common/region/placement-lookup";
-import { chooseRegionForNewOrg } from "../../../common/region/cell-admission";
+import { OrganizationCreationService } from "../core/organization-creation.service";
 
 export type SetupMembership = {
   id: number;
@@ -52,19 +35,8 @@ export class OrgSetupResolverService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
+    private readonly creation: OrganizationCreationService,
   ) {}
-
-  slugify(name: string): string {
-    return (
-      name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-|-$/g, "")
-        .substring(0, 50) +
-      "-" +
-      Date.now().toString(36)
-    );
-  }
 
   async listSetupMemberships(userId: string): Promise<SetupMembership[]> {
     return withIdentity(this.db, userId, (tx) =>
@@ -85,7 +57,8 @@ export class OrgSetupResolverService {
           eq(organizations.id, organizationMembers.orgId),
         )
         .where(eq(organizationMembers.userId, userId))
-        .orderBy(desc(organizationMembers.joinedAt)),
+        .orderBy(desc(organizationMembers.joinedAt))
+        .limit(100),
     );
   }
 
@@ -103,23 +76,27 @@ export class OrgSetupResolverService {
   ): Promise<SetupTarget | null> {
     if (!u.orgId) return null;
 
-    const [membership, organization] = await Promise.all([
-      this.db.query.organizationMembers.findFirst({
-        where: and(
-          eq(organizationMembers.userId, u.userId),
-          eq(organizationMembers.orgId, u.orgId),
-        ),
-        columns: { status: true, isOwner: true },
-      }),
-      this.db.query.organizations.findFirst({
-        where: and(
-          eq(organizations.id, u.orgId),
-          eq(organizations.status, "ACTIVE"),
-          isNull(organizations.deletedAt),
-        ),
-        columns: { id: true, name: true },
-      }),
-    ]);
+    // The setup routes carry `@NoTenantTransaction()`, so only `withIdentity` sets a GUC the
+    // `organization_members` policy admits on; without it this read silently matched nothing.
+    const [membership, organization] = await withIdentity(this.db, u.userId, (tx) =>
+      Promise.all([
+        tx.query.organizationMembers.findFirst({
+          where: and(
+            eq(organizationMembers.userId, u.userId),
+            eq(organizationMembers.orgId, u.orgId),
+          ),
+          columns: { status: true, isOwner: true },
+        }),
+        tx.query.organizations.findFirst({
+          where: and(
+            eq(organizations.id, u.orgId),
+            eq(organizations.status, "ACTIVE"),
+            isNull(organizations.deletedAt),
+          ),
+          columns: { id: true, name: true },
+        }),
+      ]),
+    );
 
     if (!organization || !membership) return null;
     if (membership.status === "ACTIVE") {
@@ -193,16 +170,15 @@ export class OrgSetupResolverService {
     }
     for (const [orphanOrgId, ids] of orphansByOrg) {
       try {
-        await runInTenantTransaction(
-          this.db,
-          async (tx) => {
-            await tx
-              .delete(organizationMembers)
-              .where(inArray(organizationMembers.id, ids));
-          },
-          { orgId: orphanOrgId },
+        await withMembershipMutations(this.cache, (membership) =>
+          runInTenantTransaction(
+            this.db,
+            async (tx) => {
+              await membership.deleteMembershipsById(tx, { orgId: orphanOrgId, userId: u.userId, membershipIds: ids });
+            },
+            { orgId: orphanOrgId },
+          ),
         );
-        await bustMembershipStatusCache(this.cache, u.userId, orphanOrgId);
       } catch (error) {
         logger.warn("Orphan membership cleanup failed", {
           userId: u.userId,
@@ -212,53 +188,19 @@ export class OrgSetupResolverService {
       }
     }
 
-    const orgId = randomUUID();
     const orgName = input.companyName?.trim() || "My Organization";
-    const region = (await chooseRegionForNewOrg(this.db, { organizationId: orgId })).region;
-    await placeOrganization(this.db, { orgId, region });
-
-    await runInNewTenantTransaction(this.db, orgId, async (tx) => {
-      const seqRows = await tx.execute(
-        sql`SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id`,
-      );
-      const ownerMembershipId = Number(seqRows[0]?.id);
-      if (!Number.isInteger(ownerMembershipId)) {
-        throw new Error("Failed to allocate owner membership id");
-      }
-      await tx.insert(organizations).values({
-        id: orgId,
-        region,
-        name: orgName,
-        slug: this.slugify(orgName),
-        ownerMembershipId,
-      });
-      await tx.insert(organizationMembers).values({
-        id: ownerMembershipId,
-        orgId,
-        userId: u.userId,
-        role: ORG_MEMBER_ROLES.OWNER,
-        isOwner: true,
-      });
-      const trialDays = getTrialDays();
-      await tx.insert(subscriptions).values({
-        orgId,
-        plan: TRIAL_PLAN,
-        status: "TRIAL",
-        trialEndsAt: addDays(new Date(), trialDays),
-        currentPeriodStart: new Date(),
-        currentPeriodEnd: addDays(new Date(), trialDays),
-      });
-      await provisionEmployeeSelfService(tx, orgId);
-      await bumpPermissionsVersion(tx, orgId);
+    const organization = await this.creation.createFromSetup({
+      userId: u.userId,
+      name: orgName,
     });
 
     this.audit.log({
       action: "org.created",
       userId: u.userId,
-      orgId,
-      targetId: orgId,
+      orgId: organization.id,
+      targetId: organization.id,
       targetType: "organization",
     });
-    return { orgId, isOwner: true };
+    return { orgId: organization.id, isOwner: true };
   }
 }

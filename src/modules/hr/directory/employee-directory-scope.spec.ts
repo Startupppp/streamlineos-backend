@@ -1,11 +1,15 @@
 process.env.APP_URL ??= "http://localhost:1000";
 
 import { NotFoundException } from "@nestjs/common";
+import type { Redis } from "@upstash/redis";
+import { CacheService } from "../../../common/cache/cache.service";
+import { InMemoryRedis } from "../../../common/cache/in-memory-redis.test-double";
 import * as applyScopeModule from "../../access/apply-scope";
 import { CelebrationsService } from "./celebrations.service";
 import { EmployeeSkillsService } from "./employee-skills.service";
 import { EmployeesService } from "./employees.service";
 import { OrgStructureService } from "./org-structure.service";
+import { ScopedRead } from "../../access/scoped-read";
 
 function limitedSelect(rows: unknown[]) {
   const chain = {
@@ -31,6 +35,14 @@ function executingCache() {
     cached: jest.fn(
       async (_key: string, loader: () => Promise<unknown>) => loader(),
     ),
+    cachedVersionedForOrg: jest.fn(
+      async (
+        _orgId: string,
+        _namespace: string,
+        _subKey: string,
+        loader: () => Promise<unknown>,
+      ) => loader(),
+    ),
   };
 }
 
@@ -44,7 +56,7 @@ describe("employee directory scope", () => {
     const service = new EmployeesService(db as never, undefined as never, undefined as never);
 
     await expect(
-      service.assertEmployeeVisible("org-1", "actor-1", "target-1", "team"),
+      service.assertEmployeeVisible(ScopedRead.of("org-1", "actor-1", "team"), "target-1"),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(scopeSpy).toHaveBeenCalledWith(
       "team",
@@ -61,10 +73,17 @@ describe("employee directory scope", () => {
     const scopeSpy = jest.spyOn(applyScopeModule, "applyScope");
     const service = new CelebrationsService(db as never, cache as never);
 
-    await service.getAnniversaryFeed("org-1", "actor-1", "own");
+    await service.getAnniversaryFeed(ScopedRead.of("org-1", "actor-1", "own"));
 
-    expect(cache.cached).toHaveBeenCalledWith(
-      expect.stringContaining("org-1:actor-1:own"),
+    // The feed lives in the `hr:celebrations` namespace so the onboarding and
+    // termination bumps can reach it; the sub-key still carries the scope
+    // discriminator (actor-qualified for own/team), which is what keeps one
+    // caller's scoped feed out of another's.
+    expect(cache.cached).not.toHaveBeenCalled();
+    expect(cache.cachedVersionedForOrg).toHaveBeenCalledWith(
+      "org-1",
+      "hr:celebrations",
+      expect.stringContaining("own:actor-1"),
       expect.any(Function),
       expect.any(Number),
     );
@@ -84,10 +103,8 @@ describe("employee directory scope", () => {
 
     await expect(
       service.getAvailability(
-        "org-1",
-        "actor-1",
+        ScopedRead.of("org-1", "actor-1", "own"),
         "foreign-1,foreign-2",
-        "own",
       ),
     ).resolves.toEqual([]);
     expect(scopeSpy).toHaveBeenCalledWith(
@@ -107,10 +124,8 @@ describe("employee directory scope", () => {
 
     await expect(
       service.findExpert(
-        "org-1",
-        "actor-1",
+        ScopedRead.of("org-1", "actor-1", "team"),
         { skill: "TypeScript", limit: 20 },
-        "team",
       ),
     ).resolves.toEqual([]);
     expect(scopeSpy).toHaveBeenCalledWith(
@@ -129,7 +144,7 @@ describe("employee directory scope", () => {
     const service = new EmployeeSkillsService(db as never);
 
     await expect(
-      service.getSkillsMatrix("org-1", "actor-1", "team", { limit: 20 }),
+      service.getSkillsMatrix(ScopedRead.of("org-1", "actor-1", "team"), { limit: 20 }),
     ).resolves.toEqual({
       employees: [],
       skills: [],
@@ -146,26 +161,37 @@ describe("employee directory scope", () => {
     expect(db.select).toHaveBeenCalledTimes(1);
   });
 
-  it("scopes directory rows and isolates their cache by actor and scope", async () => {
+  it("denies before touching the database when scope is none, and threads orgId/actorUserId into the scope predicate otherwise", async () => {
+    const visible: Array<Record<string, unknown>> = [
+      { id: "actor-1", name: "Actor One", email: "one@example.com", role: "MEMBER" },
+    ];
     const members = limitedSelect([]);
-    const cache = executingCache();
+    members.limit.mockImplementation(() => Promise.resolve(visible));
+    const cache = new CacheService(new InMemoryRedis() as unknown as Redis);
     const db = {
       select: jest.fn().mockReturnValue(members),
       query: { orgUnits: { findMany: jest.fn().mockResolvedValue([]) } },
     };
     const scopeSpy = jest.spyOn(applyScopeModule, "applyScope");
     const employment = { getFactsBatch: jest.fn().mockResolvedValue(new Map()) };
-    const service = new OrgStructureService(db as never, cache as never, employment as never, undefined as never);
+    const service = new OrgStructureService(db as never, cache, employment as never, undefined as never);
 
-    await service.getDirectory("org-1", "actor-1", "none");
+    // scope="none" denies unconditionally — it never reaches the database, so a
+    // mocked db that would happily return rows regardless of the predicate is
+    // never even consulted. This is the stronger property: no viewer without
+    // standing gets anyone's directory, not even by accident of a mock.
+    await expect(service.getDirectory(ScopedRead.of("org-1", "actor-1", "none"))).resolves.toEqual([]);
+    await expect(service.getDirectory(ScopedRead.of("org-1", "actor-2", "none"))).resolves.toEqual([]);
+    await expect(service.getDirectory(ScopedRead.of("org-2", "actor-1", "none"))).resolves.toEqual([]);
+    expect(db.select).not.toHaveBeenCalled();
+    expect(scopeSpy).not.toHaveBeenCalled();
 
-    expect(cache.cached).toHaveBeenCalledWith(
-      "hr:directory:org-1:actor-1:none",
-      expect.any(Function),
-      expect.any(Number),
-    );
+    // A scope that isn't "none" does reach the predicate, carrying the caller's
+    // own orgId/actorUserId, not anyone else's.
+    const result = await service.getDirectory(ScopedRead.of("org-1", "actor-1", "team"));
+    expect(result).toHaveLength(1);
     expect(scopeSpy).toHaveBeenCalledWith(
-      "none",
+      "team",
       "org-1",
       "actor-1",
       expect.objectContaining({ ownerColumn: expect.anything() }),

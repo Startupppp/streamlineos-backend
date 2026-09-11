@@ -1,53 +1,68 @@
-import type { Db } from "../../../db/drizzle.module";
-import { ProjectsWorkQueryService } from "./projects-work-query.service";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
+import * as schema from "../../../db/schema";
+import { orgTicketSearchQuery } from "./projects-search.service";
 
-function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
-  if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
-  if (Array.isArray(value)) return value.flatMap((item) => sqlValues(item, seen));
-  if (typeof value !== "object" || seen.has(value)) return [];
-  seen.add(value);
-  const record = value as { queryChunks?: unknown[]; value?: unknown };
-  return [
-    ...(record.queryChunks ? sqlValues(record.queryChunks, seen) : []),
-    ...(Object.prototype.hasOwnProperty.call(record, "value") ? sqlValues(record.value, seen) : []),
-  ];
+/**
+ * Ticket search is one bounded, tenant-joined statement.
+ *
+ * Two defects this pins, both of which a mocked `db` could not see because a mock
+ * asserts on the calls the service happens to make rather than on the SQL it emits:
+ *
+ *  1. Unbounded read. The caller's `project_members` rows were read into an array
+ *     with no LIMIT and passed back as `inArray` bind parameters, so one person on
+ *     many projects sent an unbounded parameter list per keystroke.
+ *  2. Join with no tenant predicate. `projects` was joined on `tickets.project_id =
+ *     projects.id` alone. Both are org-local integer keys, so the joined side stated
+ *     no org predicate at all and only RLS stood between a search result and another
+ *     tenant's project key and name.
+ */
+function compile(orgId: string, userId: string, q: string, limit: number) {
+  const db = drizzle(postgres("postgres://unused:unused@127.0.0.1:1/unused", { max: 1 }), {
+    schema,
+  });
+  return orgTicketSearchQuery(db, orgId, userId, q, limit).toSQL();
 }
 
-describe("ProjectsWorkQueryService — cross-tenant isolation", () => {
-  const OWNER_ORG = "org-owner";
+describe("ProjectsSearchService — cross-tenant isolation and boundedness", () => {
   const ATTACKER_ORG = "org-attacker";
+  const compiled = compile(ATTACKER_ORG, "u1", "query", 10);
+  const lowered = compiled.sql.toLowerCase();
 
-  function makeDb(memberRows: unknown[], ticketRows: unknown[]) {
-    const ticketWhere = jest.fn().mockResolvedValue(ticketRows);
-    const ticketOrderBy = jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(ticketRows) });
-    const ticketInnerJoin = jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ orderBy: ticketOrderBy }) });
-    const memberWhere = jest.fn().mockResolvedValue(memberRows);
-    const select = jest.fn()
-      .mockReturnValueOnce({ from: jest.fn().mockReturnValue({ where: memberWhere }) })
-      .mockReturnValue({ from: jest.fn().mockReturnValue({ innerJoin: ticketInnerJoin }) });
-    return { db: { select } as unknown as Db, memberWhere };
-  }
-
-  it("scopes search to attacker's orgId — returns empty when org has no projects (cross-tenant isolation)", async () => {
-    const { db, memberWhere } = makeDb([], []);
-    const svc = new ProjectsWorkQueryService(db);
-    const result = await svc.searchOrgTickets(ATTACKER_ORG, "u1", "query", 10);
-    expect(result).toHaveLength(0);
-    expect(sqlValues(memberWhere.mock.calls[0]?.[0])).toContain(ATTACKER_ORG);
+  it("binds the caller's org and user id as parameters, never as literals", () => {
+    expect(compiled.params).toContain(ATTACKER_ORG);
+    expect(compiled.params).toContain("u1");
+    expect(compiled.sql).not.toContain(ATTACKER_ORG);
+    expect(compiled.sql).not.toContain("u1");
   });
 
-  it("returns tickets for the owning org when member of project (same-tenant control)", async () => {
-    const ROW = { id: 1, title: "T", status: "open", priority: "high", ticketNumber: 1, projectId: 10, projectKey: "P", projectName: "Proj" };
-    const memberWhere = jest.fn().mockResolvedValue([{ projectId: 10 }]);
-    const limit = jest.fn().mockResolvedValue([ROW]);
-    const orderBy = jest.fn().mockReturnValue({ limit });
-    const innerJoin = jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ orderBy }) });
-    const select = jest.fn()
-      .mockReturnValueOnce({ from: jest.fn().mockReturnValue({ where: memberWhere }) })
-      .mockReturnValue({ from: jest.fn().mockReturnValue({ innerJoin }) });
-    const db = { select } as unknown as Db;
-    const svc = new ProjectsWorkQueryService(db);
-    const result = await svc.searchOrgTickets(OWNER_ORG, "u1", "T", 10);
-    expect(result).toHaveLength(1);
+  it("resolves project membership with a correlated EXISTS, not a materialised id list", () => {
+    expect(lowered).toContain("exists");
+    expect(lowered).toContain('"project_members"');
+    expect(lowered).toContain('"organization_members"');
+    expect(lowered).not.toContain(" in (");
+    expect(lowered).not.toContain("= any(");
+  });
+
+  it("correlates the membership subquery to the outer ticket row so it cannot be hoisted into an unbounded scan", () => {
+    expect(compiled.sql).toMatch(
+      /"project_members"\."project_id"\s*=\s*(?:"build"\.)?"tickets"\."project_id"/i,
+    );
+  });
+
+  it("states an org predicate on the projects join instead of joining on id alone", () => {
+    expect(compiled.sql).toMatch(
+      /inner join (?:"build"\.)?"projects" on .*"projects"\."org_id"\s*=\s*(?:"build"\.)?"tickets"\."org_id"/is,
+    );
+  });
+
+  it("caps the ticket read with an explicit limit", () => {
+    expect(lowered).toContain("limit");
+    expect(compiled.params).toContain(10);
+  });
+
+  it("excludes soft-deleted tickets and scopes the outer read to the caller's org", () => {
+    expect(lowered).toContain('"tickets"."deleted_at" is null');
+    expect(compiled.sql).toMatch(/"tickets"\."org_id"\s*=\s*\$\d+/);
   });
 });

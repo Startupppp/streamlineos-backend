@@ -1,3 +1,4 @@
+import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { HrInterviewsService } from "./hr-interviews.service";
 import { HrHiringFlowsService } from "./hr-hiring-flows.service";
@@ -61,14 +62,14 @@ describe("HrInterviewsService — cross-tenant isolation", () => {
   it("scopes interview list to attacker org (cross-tenant isolation)", async () => {
     const { db, where, findMany } = makeDb([]);
     const svc = new HrInterviewsService(db, mockConfig as never);
-    await svc.list(ATTACKER, { page: 1, pageSize: 10, limit: 10, offset: 0, candidateId: undefined, upcoming: undefined, relevant: undefined });
+    await svc.list(ATTACKER, { limit: 10, candidateId: undefined, upcoming: undefined, relevant: undefined });
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
 
   it("returns interviews for owning org (control — same-tenant access works)", async () => {
     const { db, where, findMany } = makeDb([ROW]);
     const svc = new HrInterviewsService(db, mockConfig as never);
-    await svc.list(OWNER, { page: 1, pageSize: 10, limit: 10, offset: 0, candidateId: undefined, upcoming: undefined, relevant: undefined });
+    await svc.list(OWNER, { limit: 10, candidateId: undefined, upcoming: undefined, relevant: undefined });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
   });
 });
@@ -82,7 +83,7 @@ describe("HrHiringFlowsService — cross-tenant isolation", () => {
     const { db, where, findMany, findFirst } = makeDb([]);
     const mockCache = { cachedVersioned: jest.fn().mockImplementation((_ns: string, _key: string, fn: () => unknown) => fn()), invalidateNamespace: jest.fn() };
     const svc = new HrHiringFlowsService(db, mockCache as never);
-    await expect(svc.getFlow(ATTACKER, 999)).rejects.toThrow();
+    await expect(svc.getFlow(ATTACKER, 999)).rejects.toThrow(NotFoundException);
     expect(sqlValues(isolationArg(where, findMany, findFirst))).toContain(ATTACKER);
   });
 

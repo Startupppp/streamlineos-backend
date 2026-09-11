@@ -2,6 +2,7 @@ process.env.APP_URL ??= "http://localhost:1000";
 
 import { LeadsBoardService } from "../leads-board.service";
 import * as applyScopeMod from "../../access/apply-scope";
+import { ScopedRead } from "../../access/scoped-read";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
 
 /**
@@ -77,7 +78,7 @@ describe("LeadsBoardService.getBoard — DataScope routing (no branch filter)", 
     const cache = buildCache(["NEW"]);
     const svc = new LeadsBoardService(db as never, cache as never);
 
-    await svc.getBoard(ORG, { scope: "own", userId: USER });
+    await svc.getBoard(ORG, { read: ScopedRead.of(ORG, USER, "own") });
 
     expect(applyScopeSpy).toHaveBeenCalledWith(
       "own",
@@ -92,7 +93,7 @@ describe("LeadsBoardService.getBoard — DataScope routing (no branch filter)", 
     const cache = buildCache(["NEW"]);
     const svc = new LeadsBoardService(db as never, cache as never);
 
-    await svc.getBoard(ORG, { scope: "all", userId: USER });
+    await svc.getBoard(ORG, { read: ScopedRead.of(ORG, USER, "all") });
 
     expect(applyScopeSpy).toHaveBeenCalledWith(
       "all",
@@ -102,24 +103,26 @@ describe("LeadsBoardService.getBoard — DataScope routing (no branch filter)", 
     );
   });
 
-  it("does not call applyScope when no scope is provided", async () => {
+  it("cannot be asked for an unscoped board — the read is a required field", async () => {
     const db = buildDb();
     const cache = buildCache(["NEW"]);
     const svc = new LeadsBoardService(db as never, cache as never);
 
-    await svc.getBoard(ORG, {});
+    await svc.getBoard(ORG, { read: ScopedRead.of(ORG, USER, "own") });
 
-    expect(applyScopeSpy).not.toHaveBeenCalled();
+    expect(applyScopeSpy).toHaveBeenCalled();
+    expect(db.select).toHaveBeenCalled();
   });
 
-  it("does not call applyScope when scope=none (pushLeadPartyViewScope short-circuits to sql false)", async () => {
+  it("queries nothing at all when scope=none", async () => {
     const db = buildDb();
     const cache = buildCache(["NEW"]);
     const svc = new LeadsBoardService(db as never, cache as never);
 
-    await svc.getBoard(ORG, { scope: "none", userId: USER });
+    await svc.getBoard(ORG, { read: ScopedRead.of(ORG, USER, "none") });
 
     expect(applyScopeSpy).not.toHaveBeenCalled();
+    expect(db.select).not.toHaveBeenCalled();
   });
 
   it("returns a board keyed by status", async () => {
@@ -127,7 +130,7 @@ describe("LeadsBoardService.getBoard — DataScope routing (no branch filter)", 
     const cache = buildCache(["NEW", "OPEN"]);
     const svc = new LeadsBoardService(db as never, cache as never);
 
-    const result = await svc.getBoard(ORG, { scope: "all", userId: USER });
+    const result = await svc.getBoard(ORG, { read: ScopedRead.of(ORG, USER, "all") });
 
     expect(result).toMatchObject({
       NEW: expect.objectContaining({ leads: [], total: 0 }),
@@ -146,7 +149,7 @@ describe("LeadsBoardService.getBoard — DataScope routing (no branch filter)", 
     const cache = buildCache(["NEW"]);
     const svc = new LeadsBoardService(db as never, cache as never);
 
-    const result = await svc.getBoard(ORG, { scope: "all", userId: USER });
+    const result = await svc.getBoard(ORG, { read: ScopedRead.of(ORG, USER, "all") });
 
     expect(result.NEW?.total).toBe(7);
     expect(result.NEW?.leads).toHaveLength(2);
@@ -186,7 +189,7 @@ describe("LeadsBoardService.getStats — DataScope routing (no branch filter)", 
     const cache = buildCache();
     const svc = new LeadsBoardService(db as never, cache as never);
 
-    await svc.getStats(ORG, { scope: "own", userId: USER });
+    await svc.getStats(ORG, { read: ScopedRead.of(ORG, USER, "own") });
 
     expect(applyScopeSpy).toHaveBeenCalledWith(
       "own",
@@ -201,7 +204,7 @@ describe("LeadsBoardService.getStats — DataScope routing (no branch filter)", 
     const cache = buildCache();
     const svc = new LeadsBoardService(db as never, cache as never);
 
-    await svc.getStats(ORG, { scope: "all", userId: USER });
+    await svc.getStats(ORG, { read: ScopedRead.of(ORG, USER, "all") });
 
     expect(applyScopeSpy).toHaveBeenCalledWith(
       "all",
@@ -211,13 +214,15 @@ describe("LeadsBoardService.getStats — DataScope routing (no branch filter)", 
     );
   });
 
-  it("does not call applyScope when no scope provided to getStats", async () => {
+  it("queries nothing at all when getStats is called with scope=none", async () => {
     const db = buildStatsDb();
     const cache = buildCache();
     const svc = new LeadsBoardService(db as never, cache as never);
 
-    await svc.getStats(ORG, {});
+    const result = await svc.getStats(ORG, { read: ScopedRead.of(ORG, USER, "none") });
 
     expect(applyScopeSpy).not.toHaveBeenCalled();
+    expect(db.select).not.toHaveBeenCalled();
+    expect(result.total).toBe(0);
   });
 });

@@ -1,7 +1,7 @@
 import { pgTable, text, serial, timestamp, boolean, jsonb, integer, date, index, foreignKey, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { documentTypeEnum, ackStatusEnum } from "../common/enums";
-import { organizations, users } from "../common/auth";
+import { organizationMembers, organizations, users } from "../common/auth";
 import { orgUnits } from "../common/organization";
 
 export const richDocuments = pgTable("rich_documents", {
@@ -12,21 +12,20 @@ export const richDocuments = pgTable("rich_documents", {
   templateType: text("template_type"),
   isPublished: boolean("is_published").default(false).notNull(),
   version: integer("version").default(1).notNull(),
-  createdBy: text("created_by").references(() => users.id).notNull(),
-  updatedBy: text("updated_by").references(() => users.id),
+  createdBy: text("created_by").notNull(),
+  updatedBy: text("updated_by"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_rich_documents_org_id").on(table.orgId, table.id),
-  index("idx_rich_documents_org").on(table.orgId),
   index("idx_rich_documents_org_updated").on(table.orgId, table.updatedAt),
 ]);
 
 export const documents = pgTable("documents", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
-  departmentId: text("department_id").references(() => orgUnits.id, { onDelete: "set null" }),
+  userId: text("user_id"),
+  departmentId: text("department_id"),
   name: text("name").notNull(),
   description: text("description"),
   type: documentTypeEnum("type").notNull(),
@@ -43,17 +42,23 @@ export const documents = pgTable("documents", {
   expiryReminderSent: boolean("expiry_reminder_sent").default(false).notNull(),
   tags: text("tags").array().default([]).notNull(),
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
-  uploadedBy: text("uploaded_by").references(() => users.id, { onDelete: "set null" }),
+  uploadedBy: text("uploaded_by"),
   userMembershipId: integer("user_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.departmentId], foreignColumns: [orgUnits.orgId, orgUnits.id], name: "fk_documents_department_id_org" }).onDelete("set null"),
   unique("uniq_documents_org_id").on(table.orgId, table.id),
-  foreignKey({ columns: [table.parentDocumentId], foreignColumns: [table.id] }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.parentDocumentId], foreignColumns: [table.orgId, table.id], name: "fk_documents_org_parent" }).onDelete("cascade"),
   index("idx_documents_org_type").on(table.orgId, table.type),
   index("idx_documents_user").on(table.userId),
   index("idx_documents_expiry").on(table.expiryDate),
   index("idx_documents_org_user_membership").on(table.orgId, table.userMembershipId),
+  foreignKey({
+    columns: [table.orgId, table.userMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_documents_user_actor",
+  }).onDelete("set null"),
 ]);
 
 export const handbookVersions = pgTable("handbook_versions", {
@@ -61,27 +66,29 @@ export const handbookVersions = pgTable("handbook_versions", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   version: text("version").notNull(),
   title: text("title").notNull().default(""),
-  documentId: integer("document_id").references(() => richDocuments.id),
+  documentId: integer("document_id"),
   documentUrl: text("document_url"),
   changelog: text("changelog"),
   publishedAt: timestamp("published_at"),
-  publishedBy: text("published_by").references(() => users.id),
+  publishedBy: text("published_by"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.documentId], foreignColumns: [richDocuments.orgId, richDocuments.id], name: "fk_handbook_versions_document_id_org" }),
   unique("uniq_handbook_versions_org_id").on(table.orgId, table.id),
-  index("idx_handbook_org").on(table.orgId),
 ]);
 
 export const policyAcknowledgments = pgTable("policy_acknowledgments", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  documentId: integer("document_id").references(() => documents.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id).notNull(),
+  documentId: integer("document_id").notNull(),
+  userId: text("user_id").notNull(),
+  userMembershipId: integer("user_membership_id"),
   status: ackStatusEnum("status").default("PENDING").notNull(),
   acknowledgedAt: timestamp("acknowledged_at"),
   ipAddress: text("ip_address"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.documentId], foreignColumns: [documents.orgId, documents.id], name: "fk_policy_acknowledgments_document_id_org" }).onDelete("cascade"),
   unique("uniq_policy_acknowledgments_org_id").on(table.orgId, table.id),
   index("idx_policy_ack_doc").on(table.documentId),
   index("idx_policy_ack_user").on(table.userId),
@@ -95,12 +102,11 @@ export const emailTemplates = pgTable("hr_email_templates", {
   body: text("body").notNull(),
   category: text("category").default("GENERAL").notNull(),
   variables: text("variables").array(),
-  createdBy: text("created_by").references(() => users.id),
+  createdBy: text("created_by"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_hr_email_templates_org_id").on(table.orgId, table.id),
-  index("idx_email_templates_org").on(table.orgId),
 ]);
 
 export const teamEvents = pgTable("team_events", {
@@ -113,20 +119,24 @@ export const teamEvents = pgTable("team_events", {
   time: text("time"),
   location: text("location"),
   maxParticipants: integer("max_participants"),
-  organizedBy: text("organized_by").references(() => users.id),
+  organizedBy: text("organized_by"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   unique("uniq_team_events_org_id").on(table.orgId, table.id),
-  index("idx_team_events_org").on(table.orgId),
 ]);
 
 export const teamEventParticipants = pgTable("team_event_participants", {
   id: serial("id").primaryKey(),
-  eventId: integer("event_id").references(() => teamEvents.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id).notNull(),
+  orgId: text("org_id"),
+  eventId: integer("event_id").notNull(),
+  userId: text("user_id").notNull(),
+  userMembershipId: integer("user_membership_id"),
   status: text("status").default("GOING").notNull(),
   joinedAt: timestamp("joined_at").defaultNow().notNull(),
-});
+}, (table) => [
+  foreignKey({ columns: [table.orgId, table.eventId], foreignColumns: [teamEvents.orgId, teamEvents.id], name: "fk_team_event_participants_event_id_org" }).onDelete("cascade"),
+  index("idx_team_event_participants_org_event_user").on(table.orgId, table.eventId, table.userId),
+]);
 
 export const richDocumentsRelations = relations(richDocuments, ({ one }) => ({
   organization: one(organizations, { fields: [richDocuments.orgId], references: [organizations.id] }),

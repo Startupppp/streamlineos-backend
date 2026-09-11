@@ -61,7 +61,7 @@ export class PaymentTestTransactionService {
       const [updated] = await this.db
         .update(paymentTestTransactions)
         .set({ status: "pending", providerOrderId: order.providerOrderId })
-        .where(eq(paymentTestTransactions.id, transaction.id))
+        .where(and(eq(paymentTestTransactions.orgId, orgId), eq(paymentTestTransactions.id, transaction.id)))
         .returning();
 
       await this.audit.log({
@@ -81,7 +81,7 @@ export class PaymentTestTransactionService {
       await this.db
         .update(paymentTestTransactions)
         .set({ status: "failed", resultSummary: err instanceof Error ? err.message : "Order creation failed" })
-        .where(eq(paymentTestTransactions.id, transaction.id));
+        .where(and(eq(paymentTestTransactions.orgId, orgId), eq(paymentTestTransactions.id, transaction.id)));
       throw err;
     }
   }
@@ -113,7 +113,7 @@ export class PaymentTestTransactionService {
         status: signatureValid ? "succeeded" : "failed",
         resultSummary: signatureValid ? "Signature verified" : "Signature verification failed",
       })
-      .where(eq(paymentTestTransactions.id, id))
+      .where(and(eq(paymentTestTransactions.orgId, orgId), eq(paymentTestTransactions.id, id)))
       .returning();
 
     await this.audit.log({

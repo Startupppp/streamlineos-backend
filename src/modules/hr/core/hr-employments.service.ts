@@ -21,8 +21,7 @@ import type {
   TransitionStatusInput,
 } from "./dto/hr-core.schemas";
 import { HrAuditService } from "./hr-audit.service";
-import { applyScope } from "../../access/apply-scope";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import { hrJobLevels, hrJobRoles } from "../../../db/schema/hr/core-org";
 import { assertActiveOrgUnit } from "../../../common/org/sync-org-unit-placement";
 
@@ -157,35 +156,34 @@ export class HrEmploymentsService {
     if (!jobLevel) throw new BadRequestException("Invalid job level selection.");
   }
 
-  async getOne(
-    orgId: string,
-    actorUserId: string,
-    employmentId: number,
-    scope: DataScope,
-  ) {
-    const [employment] = await this.db
-      .select(EMPLOYMENT_VIEW_COLUMNS)
-      .from(hrEmployments)
-      .innerJoin(
-        hrPeople,
-        and(
-          eq(hrPeople.orgId, hrEmployments.orgId),
-          eq(hrPeople.id, hrEmployments.personId),
-        ),
-      )
-      .where(
-        and(
+  async getOne(read: ScopedRead, employmentId: number) {
+    const orgId = read.orgId;
+    const [employment] = await read.read(
+      {
+        tenant: hrEmployments.orgId,
+        scope: { columns: { ownerColumn: hrPeople.userId } },
+        and: [
           eq(hrEmployments.id, employmentId),
-          eq(hrEmployments.orgId, orgId),
           isNull(hrEmployments.deletedAt),
           eq(hrPeople.orgId, orgId),
           isNull(hrPeople.deletedAt),
-          applyScope(scope, orgId, actorUserId, {
-            ownerColumn: hrPeople.userId,
-          }),
-        ),
-      )
-      .limit(1);
+        ],
+      },
+      ({ sql: where }) =>
+        this.db
+          .select(EMPLOYMENT_VIEW_COLUMNS)
+          .from(hrEmployments)
+          .innerJoin(
+            hrPeople,
+            and(
+              eq(hrPeople.orgId, hrEmployments.orgId),
+              eq(hrPeople.id, hrEmployments.personId),
+            ),
+          )
+          .where(where)
+          .limit(1),
+      () => [],
+    );
     if (!employment) throw new NotFoundException("Employment not found");
     return employment;
   }
@@ -217,11 +215,33 @@ export class HrEmploymentsService {
       .limit(1);
     if (existing) throw new ConflictException("Employee number already in use in this organization");
 
+    // `is_primary` defaults to true and nothing here used to override it, so a
+    // person who already had a primary employment ended up with two. The
+    // standard directory join (organization_members -> users -> live hr_people
+    // -> primary hr_employments) has no DISTINCT, so a second live primary
+    // returns that employee twice from GET /hr/employees, shortens the keyset
+    // page by one real employee, and adds one to every count()-based headcount.
+    // hr_employments is plural per person by design, so the second employment
+    // is created as non-primary rather than refused — first primary wins.
+    const [existingPrimary] = await this.db
+      .select({ id: hrEmployments.id })
+      .from(hrEmployments)
+      .where(
+        and(
+          eq(hrEmployments.orgId, orgId),
+          eq(hrEmployments.personId, input.personId),
+          eq(hrEmployments.isPrimary, true),
+          isNull(hrEmployments.deletedAt),
+        ),
+      )
+      .limit(1);
+
     const [created] = await this.db
       .insert(hrEmployments)
       .values({
         orgId,
         personId: input.personId,
+        isPrimary: !existingPrimary,
         employeeNumber: input.employeeNumber,
         lifecycleStatus: input.lifecycleStatus,
         workerType: input.workerType,

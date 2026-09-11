@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { createHash } from "crypto";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -16,6 +16,7 @@ import {
   payrollRunEvents,
   organizations,
   organizationMembers,
+  userPreferences,
 } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import { StorageService } from "../../storage/storage.service";
@@ -31,8 +32,10 @@ import {
   loadRunEmployeePayees,
 } from "../lib/payroll-run-payee";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
-import type { CalculationSnapshot, PayrollToggles } from "../payroll.types";
-import type { PayslipTemplateConfig } from "./dto/payout.schemas";
+import { normalizePayrollToggles, toCalculationSnapshot } from "../dto/payroll.schemas";
+import type { CalculationSnapshot } from "../payroll.types";
+import { normalizePayslipTemplateConfig } from "./dto/payout.schemas";
+import { PAYROLL_READ_CAP } from "../lib/query-bounds";
 
 export function computeSnapshotHash(snapshot: CalculationSnapshot): string {
   return createHash("sha256")
@@ -78,9 +81,7 @@ export class PayslipBulkPublisherService {
       throw new BadRequestException(`Cannot publish payslips for run in status ${run.status} — run must be PAID`);
     }
 
-    const storedToggles = run.policyVersion?.toggles;
-    const toggles: Partial<PayrollToggles> =
-      storedToggles && typeof storedToggles === "object" ? (storedToggles as Partial<PayrollToggles>) : {};
+    const toggles = normalizePayrollToggles(run.policyVersion?.toggles);
     const emailPayslips = toggles.emailPayslips === true;
 
     const [defaultTemplate, org] = await Promise.all([
@@ -106,6 +107,20 @@ export class PayslipBulkPublisherService {
       payees = filterPayeesBySubjectKeys(payees, subjectKeys);
     }
 
+    const recipientUserIds = payees.flatMap((payee) =>
+      payee.subject.userId ? [payee.subject.userId] : [],
+    );
+    const localeRows = recipientUserIds.length
+      ? await this.db
+          .select({ userId: userPreferences.userId, language: userPreferences.language })
+          .from(userPreferences)
+          .where(inArray(userPreferences.userId, recipientUserIds))
+          .limit(recipientUserIds.length)
+      : [];
+    const localeByUserId = new Map(
+      localeRows.map((row) => [row.userId, row.language]),
+    );
+
     const runEmployees = await this.db
       .select({
         id: payrollRunEmployees.id,
@@ -114,7 +129,8 @@ export class PayslipBulkPublisherService {
         currency: payrollRunEmployees.currency,
       })
       .from(payrollRunEmployees)
-      .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)));
+      .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)))
+      .limit(PAYROLL_READ_CAP + 1);
 
     const snapshotByRunEmployee = new Map(
       runEmployees.map((row) => [row.id, row] as const),
@@ -124,14 +140,12 @@ export class PayslipBulkPublisherService {
     const total = payees.length;
 
     const layout = defaultTemplate?.layout ?? "CLASSIC";
-    const rawTemplateConfig = defaultTemplate?.config;
-    const config: PayslipTemplateConfig = rawTemplateConfig && typeof rawTemplateConfig === "object"
-      ? { accent: "#0f2b7f", showEmployerContributions: false, showYtd: false, ...(rawTemplateConfig as Partial<PayslipTemplateConfig>) }
-      : { accent: "#0f2b7f", showEmployerContributions: false, showYtd: false };
+    const config = normalizePayslipTemplateConfig(defaultTemplate?.config);
 
     const existingPubs = await this.db.query.payslipPublications.findMany({
       where: and(eq(payslipPublications.runId, runId), eq(payslipPublications.orgId, orgId)),
       columns: { runEmployeeId: true, attemptCount: true, status: true },
+      limit: PAYROLL_READ_CAP + 1,
     });
     const attemptCountByRunEmployee = new Map(
       existingPubs.map((p) => [p.runEmployeeId, p.attemptCount] as const),
@@ -142,8 +156,9 @@ export class PayslipBulkPublisherService {
 
     for (const payee of payees) {
       const emp = snapshotByRunEmployee.get(payee.runEmployeeId);
-      if (!emp?.calculationSnapshot) continue;
-      const snapshot = emp.calculationSnapshot as CalculationSnapshot;
+      if (!emp) continue;
+      const snapshot = toCalculationSnapshot(emp.calculationSnapshot);
+      if (!snapshot) continue;
       const snapshotHash = computeSnapshotHash(snapshot);
 
       const bank = payee.bankDetails;
@@ -182,7 +197,7 @@ export class PayslipBulkPublisherService {
             fileName,
             "application/pdf",
           );
-          pdfUrl = uploadResult.url;
+          pdfUrl = uploadResult.key;
         } else if (!renderedPdfBuffer) {
           failureReason = "PDF generation returned empty buffer";
         }
@@ -218,6 +233,7 @@ export class PayslipBulkPublisherService {
         })
         .onConflictDoUpdate({
           target: payslipPublications.runEmployeeId,
+          setWhere: ne(payslipPublications.status, "PUBLISHED"),
           set: {
             pdfUrl,
             publishedAt: pubStatus === "PUBLISHED" ? now : null,
@@ -244,6 +260,7 @@ export class PayslipBulkPublisherService {
               employeeName: payee.displayName,
               month: monthLabel,
               orgName,
+              locale: localeByUserId.get(payee.subject.userId) ?? "en",
             });
             await this.dispatch.emit({
               orgId,
@@ -288,6 +305,7 @@ export class PayslipBulkPublisherService {
     const allPublications = await this.db.query.payslipPublications.findMany({
       where: and(eq(payslipPublications.runId, runId), eq(payslipPublications.orgId, orgId)),
       columns: { status: true },
+      limit: PAYROLL_READ_CAP + 1,
     });
     const allPublished = allPublications.length >= totalRunEmployeeCount &&
       allPublications.every(p => p.status === "PUBLISHED");
@@ -303,7 +321,7 @@ export class PayslipBulkPublisherService {
         await tx
           .update(payrollRuns)
           .set({ status: "PAYSLIPS_PUBLISHED", publishedAt: now, publishedBy: actorId, publishedByMembershipId })
-          .where(eq(payrollRuns.id, runId));
+          .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
         await tx.insert(payrollRunEvents).values({
           orgId,
           runId,

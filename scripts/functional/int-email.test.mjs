@@ -7,14 +7,13 @@ import { mint, req, check, report } from "./harness.mjs";
 //   2. POST /organization/invitations/resend   JwtAuthGuard + AbilityGuard  CheckAbility("manage","settings")
 //   3. POST /settings/email-templates/test     JwtAuthGuard + AbilityGuard  CheckAbility("manage","settings:email-templates")
 //
-// SAFETY: external email provider resolves to Resend (RESEND_API_KEY set). We send
-// AT MOST ONE real email — the [TEST] template to CONTACT_NOTIFICATION_EMAIL via the
-// intended /settings/email-templates/test endpoint. Every other route is exercised
-// on a NO-OP / not-found / validation / RBAC path that triggers zero external sends.
-// Twilio (SMS/WhatsApp) is only probed via no-phone no-op paths — no real Twilio call.
+// SAFETY: this script triggers ZERO external sends. Route 3 used to send one real
+// [TEST] template to CONTACT_NOTIFICATION_EMAIL; it now refuses any destination but
+// the caller's own account address, so that call is replaced by the 403 that proves
+// the restriction. Every other route is exercised on a NO-OP / not-found /
+// validation / RBAC path. Twilio (SMS/WhatsApp) is only probed via no-phone no-op
+// paths — no real Twilio call.
 // ─────────────────────────────────────────────────────────────────────────────
-
-const CONTACT_EMAIL = process.env.CONTACT_NOTIFICATION_EMAIL;
 
 const owner = await mint("owner");                                   // isOrgOwner -> manage:all, role OWNER
 const member = await mint("member");                                 // no perms, role MEMBER
@@ -114,16 +113,20 @@ check("R3 owner unknown templateId -> 404 (no send)", await req("POST", "/settin
 // RBAC-positive (non-owner) with correct specific ability lands on 404 not 403, still no send.
 check("R3 templates-perm unknown templateId -> 404 (ability passes, no send)", await req("POST", "/settings/email-templates/test", { token: templatesPerm, body: { templateId: "does.not.exist", testEmail: "a@b.com" } }), 404);
 
-// ── THE ONE REAL EXTERNAL CALL: send a single [TEST] template to CONTACT_NOTIFICATION_EMAIL ──
-if (CONTACT_EMAIL) {
-  realCalls.push(`Resend email send (provider=resend) -> [TEST] auth.welcome to ${CONTACT_EMAIL} via POST /settings/email-templates/test`);
-  const real = await req("POST", "/settings/email-templates/test", { token: owner, body: { templateId: "auth.welcome", testEmail: CONTACT_EMAIL } });
-  check("R3 owner REAL send auth.welcome -> 200 (no 500 on happy path)", real, 200);
-  const ok = real.body?.sent === true && real.body?.to === CONTACT_EMAIL && real.body?.templateId === "auth.welcome";
-  check("R3 real-send response shape {sent:true, to, templateId}", { status: ok ? 200 : 599, body: real.body }, 200);
-} else {
-  console.log("  SKIP real send: CONTACT_NOTIFICATION_EMAIL not in env");
-}
+// The destination is now the caller's own account address, not whatever the body
+// names. A known template plus a foreign address is the case that used to send:
+// it must be refused, and it must be refused AFTER the template resolves, so a
+// 403 here (not a 404) is what proves the destination check ran.
+check(
+  "R3 owner known template + foreign address -> 403 (no send)",
+  await req("POST", "/settings/email-templates/test", { token: owner, body: { templateId: "auth.welcome", testEmail: "someone-else@example.com" } }),
+  403,
+);
+check(
+  "R3 templates-perm known template + foreign address -> 403 (ability passes, destination refused)",
+  await req("POST", "/settings/email-templates/test", { token: templatesPerm, body: { templateId: "auth.welcome", testEmail: "someone-else@example.com" } }),
+  403,
+);
 
 console.log("\nREAL EXTERNAL CALLS TRIGGERED:");
 for (const c of realCalls) console.log("  - " + c);

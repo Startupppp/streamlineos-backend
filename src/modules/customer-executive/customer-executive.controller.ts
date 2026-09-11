@@ -29,7 +29,20 @@ import {
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  healthListSchema,
+  healthConfigSchema,
+  healthConfigUpdateSchema,
+  recomputeHealthSchema,
+  surveyListSchema,
+  surveyCreateSchema,
+  npsStatsSchema,
+  surveyDetailSchema,
+  surveyUpdateSchema,
+  surveyDeleteSchema,
+  slaReportSchema,
+} from "./dto/customer-executive-response.schemas";
 
 const surveyIdParams = z.object({ surveyId: z.coerce.number().int().positive() }).strict();
 
@@ -44,18 +57,21 @@ export class CustomerExecutiveController {
 
   @Get("health")
   @RequirePermission("crm:clients:read")
+  @ResponseSchema(healthListSchema)
   getHealth(@CurrentUser() u: CurrentUserContext) {
     return this.health.getLatestHealthScores(u.orgId);
   }
 
   @Get("health/config")
   @RequirePermission("crm:clients:read")
+  @ResponseSchema(healthConfigSchema)
   getHealthConfig(@CurrentUser() u: CurrentUserContext) {
     return this.health.getOrgHealthConfig(u.orgId);
   }
 
   @Put("health/config")
   @RequirePermission("crm:clients:update")
+  @ResponseSchema(healthConfigUpdateSchema)
   @Validate({ body: updateHealthConfigSchema })
   updateHealthConfig(
     @Body() body: UpdateHealthConfigInput,
@@ -67,6 +83,7 @@ export class CustomerExecutiveController {
   @Post("health/recompute")
   @BodylessAction()
   @RequirePermission("crm:clients:update")
+  @ResponseSchema(recomputeHealthSchema)
   async recomputeHealth(@CurrentUser() u: CurrentUserContext) {
     const results = await this.health.computeHealthForOrg(u.orgId);
     const total = results.length;
@@ -79,12 +96,14 @@ export class CustomerExecutiveController {
 
   @Get("nps")
   @RequirePermission("crm:clients:read")
+  @ResponseSchema(surveyListSchema)
   listSurveys(@CurrentUser() u: CurrentUserContext) {
     return this.customerExecutive.listSurveys(u.orgId);
   }
 
   @Post("nps")
   @RequirePermission("crm:clients:manage")
+  @ResponseSchema(surveyCreateSchema)
   @Validate({ body: createSurveySchema })
   createSurvey(
     @Body() body: CreateSurveyInput,
@@ -95,12 +114,14 @@ export class CustomerExecutiveController {
 
   @Get("nps/stats")
   @RequirePermission("crm:clients:read")
+  @ResponseSchema(npsStatsSchema)
   getNpsStats(@CurrentUser() u: CurrentUserContext) {
     return this.customerExecutive.getSurveyStats(u.orgId);
   }
 
   @Get("nps/:surveyId")
   @RequirePermission("crm:clients:read")
+  @ResponseSchema(surveyDetailSchema)
   @Validate({ params: surveyIdParams })
   async getSurvey(
     @Param("surveyId", ParseIntPipe) surveyId: number,
@@ -113,6 +134,7 @@ export class CustomerExecutiveController {
 
   @Patch("nps/:surveyId")
   @RequirePermission("crm:clients:manage")
+  @ResponseSchema(surveyUpdateSchema)
   @Validate({ params: surveyIdParams, body: updateSurveySchema })
   async updateSurvey(
     @Param("surveyId", ParseIntPipe) surveyId: number,
@@ -126,6 +148,7 @@ export class CustomerExecutiveController {
 
   @Delete("nps/:surveyId")
   @RequirePermission("crm:clients:manage")
+  @ResponseSchema(surveyDeleteSchema)
   @Validate({ params: surveyIdParams })
   async deleteSurvey(
     @Param("surveyId", ParseIntPipe) surveyId: number,
@@ -138,6 +161,7 @@ export class CustomerExecutiveController {
 
   @Get("sla")
   @RequirePermission("crm:clients:read")
+  @ResponseSchema(slaReportSchema)
   getSla(@CurrentUser() u: CurrentUserContext) {
     return this.customerExecutive.getSlaReport(u.orgId);
   }

@@ -46,15 +46,6 @@ function makeUsageSvc(): jest.Mocked<AiUsageService> {
   return { track: jest.fn().mockResolvedValue(undefined) } as unknown as jest.Mocked<AiUsageService>;
 }
 
-function _makeFakeStream(onFinishCb?: (opts: { text: string }) => Promise<void>) {
-  return {
-    _onFinish: onFinishCb,
-    triggerFinish: async (text: string) => {
-      if (onFinishCb) await onFinishCb({ text });
-    },
-  };
-}
-
 const STUB_CONTEXT = {
   projectCount: 0, ticketCount: 0, todayAttendance: null, pendingLeaves: 0,
   recentPayrolls: [], myLeadsCount: 0, hotLeadsCount: 0, myOpenDealsCount: 0, topLeads: [],
@@ -66,6 +57,44 @@ function buildService(ledger: jest.Mocked<AiCreditLedger>, usageSvc?: jest.Mocke
     appendToConversation: jest.fn().mockResolvedValue(undefined),
   };
 
+  const toolAccess = { denyReason: jest.fn().mockResolvedValue(null) };
+  const moduleRef = { get: jest.fn().mockReturnValue({ ask: jest.fn() }) };
+  const noop = { buildTools: jest.fn().mockReturnValue({}) };
+  const limiterStub = { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
+
+  const svc = new ChatAssistantService(
+    {} as never,
+    { ask: jest.fn(), summarize: jest.fn() } as never,
+    history as never,
+    noop as never,
+    noop as never,
+    noop as never,
+    noop as never,
+    noop as never,
+    noop as never,
+    noop as never,
+    noop as never,
+    toolAccess as never,
+    moduleRef as never,
+    usageSvc ?? makeUsageSvc(),
+    ledger,
+    null,
+    limiterStub as never,
+  );
+
+  jest.spyOn(svc as never, "fetchContext").mockResolvedValue(STUB_CONTEXT as never);
+
+  return { svc, history, ledger };
+}
+
+function buildServiceWithLimiter(
+  ledger: jest.Mocked<AiCreditLedger>,
+  limiter: { acquire: jest.Mock; release: jest.Mock },
+) {
+  const history = {
+    append: jest.fn().mockResolvedValue(undefined),
+    appendToConversation: jest.fn().mockResolvedValue(undefined),
+  };
   const toolAccess = { denyReason: jest.fn().mockResolvedValue(null) };
   const moduleRef = { get: jest.fn().mockReturnValue({ ask: jest.fn() }) };
   const noop = { buildTools: jest.fn().mockReturnValue({}) };
@@ -84,13 +113,15 @@ function buildService(ledger: jest.Mocked<AiCreditLedger>, usageSvc?: jest.Mocke
     noop as never,
     toolAccess as never,
     moduleRef as never,
-    usageSvc ?? makeUsageSvc(),
+    makeUsageSvc(),
     ledger,
+    null,
+    limiter as never,
   );
 
   jest.spyOn(svc as never, "fetchContext").mockResolvedValue(STUB_CONTEXT as never);
 
-  return { svc, history, ledger };
+  return { svc, history };
 }
 
 describe("ChatAssistantService — credit charging", () => {
@@ -122,9 +153,9 @@ describe("ChatAssistantService — credit charging", () => {
 
   it("settles ledger inside onFinish callback", async () => {
     const ledger = makeLedger();
-    let capturedOnFinish: ((opts: { text: string }) => Promise<void>) | undefined;
+    let capturedOnFinish: ((opts: { text: string; usage?: { inputTokens?: number; outputTokens?: number } }) => Promise<void>) | undefined;
 
-    (streamText as jest.Mock).mockImplementation((opts: { onFinish?: (o: { text: string }) => Promise<void> }) => {
+    (streamText as jest.Mock).mockImplementation((opts: { onFinish?: typeof capturedOnFinish }) => {
       capturedOnFinish = opts.onFinish;
       return {};
     });
@@ -176,6 +207,177 @@ describe("ChatAssistantService — credit charging", () => {
   });
 });
 
+describe("ChatAssistantService — abort signal propagation (criterion 9)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("passes abortSignal to streamText when a signal is provided", async () => {
+    const ledger = makeLedger();
+    let capturedAbortSignal: AbortSignal | undefined;
+
+    (streamText as jest.Mock).mockImplementation((opts: { abortSignal?: AbortSignal }) => {
+      capturedAbortSignal = opts.abortSignal;
+      return {};
+    });
+
+    const controller = new AbortController();
+    const { svc } = buildService(ledger);
+    await svc.processChat([{ role: "user", content: "hello" }], ACTOR, undefined, undefined, controller.signal);
+
+    expect(capturedAbortSignal).toBeDefined();
+    expect(capturedAbortSignal).toBe(controller.signal);
+  });
+
+  it("omits abortSignal from streamText when no signal is provided", async () => {
+    const ledger = makeLedger();
+    let streamTextOpts: Record<string, unknown> = {};
+
+    (streamText as jest.Mock).mockImplementation((opts: Record<string, unknown>) => {
+      streamTextOpts = opts;
+      return {};
+    });
+
+    const { svc } = buildService(ledger);
+    await svc.processChat([{ role: "user", content: "hello" }], ACTOR);
+
+    expect(streamTextOpts["abortSignal"]).toBeUndefined();
+  });
+
+  it("settle called once with actual tokens when onFinish fires after abort (partial output path)", async () => {
+    const ledger = makeLedger();
+    let capturedOnFinish:
+      | ((opts: { text: string; usage?: { inputTokens?: number; outputTokens?: number } }) => Promise<void>)
+      | undefined;
+
+    (streamText as jest.Mock).mockImplementation((opts: {
+      onFinish?: typeof capturedOnFinish;
+      abortSignal?: AbortSignal;
+    }) => {
+      capturedOnFinish = opts.onFinish;
+      opts.abortSignal?.addEventListener("abort", () => {
+        void capturedOnFinish?.({ text: "partial", usage: { inputTokens: 30, outputTokens: 10 } });
+      }, { once: true });
+      return {};
+    });
+
+    const controller = new AbortController();
+    const { svc } = buildService(ledger);
+    await svc.processChat([{ role: "user", content: "hi" }], ACTOR, undefined, undefined, controller.signal);
+
+    controller.abort();
+    await new Promise((r) => setTimeout(r, 30));
+
+    expect(streamText).toHaveBeenCalledTimes(1);
+    expect(ledger.settle).toHaveBeenCalledTimes(1);
+    expect(ledger.release).not.toHaveBeenCalled();
+    expect(ledger.settle).toHaveBeenCalledWith(42, expect.objectContaining({ actualMilli: expect.any(Number) }));
+  });
+
+  it("releases reservation when SDK rejects finishReason without calling onFinish (abort before any output — v7 confirmed path)", async () => {
+    const ledger = makeLedger();
+
+    let rejectFinish!: (reason: unknown) => void;
+    const finishReason = new Promise<string>((_, reject) => { rejectFinish = reject; });
+
+    (streamText as jest.Mock).mockImplementation(({ abortSignal }: { abortSignal?: AbortSignal }) => {
+      abortSignal?.addEventListener("abort", () => {
+        rejectFinish(new DOMException("signal aborted", "AbortError"));
+      }, { once: true });
+      return { finishReason };
+    });
+
+    const controller = new AbortController();
+    const { svc } = buildService(ledger);
+    await svc.processChat([{ role: "user", content: "hi" }], ACTOR, undefined, undefined, controller.signal);
+
+    controller.abort();
+    await new Promise((r) => setTimeout(r, 30));
+
+    expect(ledger.settle).not.toHaveBeenCalled();
+    expect(ledger.release).toHaveBeenCalledWith(42, "stream_aborted_no_settle", "org_1");
+    expect(ledger.release).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ChatAssistantService — TTFT and app overhead tracking (criterion 8)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("passes ttftMs and appOverheadMs to usageSvc.track via onFinish", async () => {
+    const ledger = makeLedger();
+    const usageSvc = makeUsageSvc();
+    let capturedOnChunk: (() => void) | undefined;
+    let capturedOnFinish:
+      | ((opts: { text: string; usage?: { inputTokens?: number; outputTokens?: number } }) => Promise<void>)
+      | undefined;
+
+    (streamText as jest.Mock).mockImplementation((opts: {
+      onChunk?: () => void;
+      onFinish?: typeof capturedOnFinish;
+    }) => {
+      capturedOnChunk = opts.onChunk;
+      capturedOnFinish = opts.onFinish;
+      return {};
+    });
+
+    const { svc } = buildService(ledger, usageSvc);
+    await svc.processChat([{ role: "user", content: "hello" }], ACTOR);
+
+    capturedOnChunk?.();
+    await new Promise((r) => setTimeout(r, 5));
+    await capturedOnFinish?.({ text: "response", usage: { inputTokens: 10, outputTokens: 5 } });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(usageSvc.track).toHaveBeenCalledTimes(1);
+    const trackArgs = (usageSvc.track as jest.Mock).mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(typeof trackArgs["ttftMs"]).toBe("number");
+    expect((trackArgs["ttftMs"] as number)).toBeGreaterThanOrEqual(0);
+    expect(typeof trackArgs["appOverheadMs"]).toBe("number");
+    expect((trackArgs["appOverheadMs"] as number)).toBeGreaterThanOrEqual(0);
+  });
+
+  it("ttftMs remains undefined when onChunk never fires", async () => {
+    const ledger = makeLedger();
+    const usageSvc = makeUsageSvc();
+    let capturedOnFinish:
+      | ((opts: { text: string; usage?: { inputTokens?: number; outputTokens?: number } }) => Promise<void>)
+      | undefined;
+
+    (streamText as jest.Mock).mockImplementation((opts: { onFinish?: typeof capturedOnFinish }) => {
+      capturedOnFinish = opts.onFinish;
+      return {};
+    });
+
+    const { svc } = buildService(ledger, usageSvc);
+    await svc.processChat([{ role: "user", content: "hello" }], ACTOR);
+    await capturedOnFinish?.({ text: "", usage: { inputTokens: 0, outputTokens: 0 } });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(usageSvc.track).toHaveBeenCalledTimes(1);
+    const trackArgs = (usageSvc.track as jest.Mock).mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(trackArgs["ttftMs"]).toBeUndefined();
+  });
+});
+
+describe("ChatAssistantService — circuit breaker (criterion 9)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("opens after 5 consecutive provider failures and rejects with ServiceUnavailableException before calling streamText", async () => {
+    const ledger = makeLedger();
+    (streamText as jest.Mock).mockImplementation(() => {
+      throw new Error("provider down");
+    });
+
+    const { svc } = buildService(ledger);
+
+    for (let i = 0; i < 5; i++) {
+      await expect(svc.processChat([{ role: "user", content: "hi" }], ACTOR)).rejects.toThrow("provider down");
+    }
+
+    const callsBefore = (streamText as jest.Mock).mock.calls.length;
+    await expect(svc.processChat([{ role: "user", content: "hi" }], ACTOR)).rejects.toThrow("temporarily unavailable");
+    expect((streamText as jest.Mock).mock.calls.length).toBe(callsBefore);
+  });
+});
+
 describe("ChatAssistantService — streaming transaction isolation", () => {
   beforeEach(() => jest.clearAllMocks());
 
@@ -186,7 +388,7 @@ describe("ChatAssistantService — streaming transaction isolation", () => {
       | undefined;
 
     (streamText as jest.Mock).mockImplementation(
-      (opts: { onFinish?: (o: { text: string; usage?: { inputTokens?: number; outputTokens?: number } }) => Promise<void> }) => {
+      (opts: { onFinish?: typeof capturedOnFinish }) => {
         capturedOnFinish = opts.onFinish;
         callOrder.push("stream-setup");
         return {};
@@ -208,5 +410,298 @@ describe("ChatAssistantService — streaming transaction isolation", () => {
       ACTOR.orgId,
       expect.any(Function),
     );
+  });
+});
+
+describe("ChatAssistantService — settle/release determinism (item 1)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("finishReason resolving BEFORE onFinish does not release — only onFinish settles", async () => {
+    const ledger = makeLedger();
+    let capturedOnFinish:
+      | ((opts: { text: string; usage?: { inputTokens?: number; outputTokens?: number } }) => Promise<void>)
+      | undefined;
+    let finishResolve!: (v: string) => void;
+    const finishReason = new Promise<string>((resolve) => { finishResolve = resolve; });
+
+    (streamText as jest.Mock).mockImplementation((opts: { onFinish?: typeof capturedOnFinish }) => {
+      capturedOnFinish = opts.onFinish;
+      return { finishReason };
+    });
+
+    const { svc } = buildService(ledger);
+    await svc.processChat([{ role: "user", content: "hi" }], ACTOR);
+
+    finishResolve("stop");
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(ledger.settle).not.toHaveBeenCalled();
+    expect(ledger.release).not.toHaveBeenCalled();
+
+    await capturedOnFinish?.({ text: "reply", usage: { inputTokens: 10, outputTokens: 5 } });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(ledger.settle).toHaveBeenCalledTimes(1);
+    expect(ledger.release).not.toHaveBeenCalled();
+  });
+
+  it("finishReason resolving AFTER onFinish does not double-charge — settle exactly once", async () => {
+    const ledger = makeLedger();
+    let capturedOnFinish:
+      | ((opts: { text: string; usage?: { inputTokens?: number; outputTokens?: number } }) => Promise<void>)
+      | undefined;
+    let finishResolve!: (v: string) => void;
+    const finishReason = new Promise<string>((resolve) => { finishResolve = resolve; });
+
+    (streamText as jest.Mock).mockImplementation((opts: { onFinish?: typeof capturedOnFinish }) => {
+      capturedOnFinish = opts.onFinish;
+      return { finishReason };
+    });
+
+    const { svc } = buildService(ledger);
+    await svc.processChat([{ role: "user", content: "hi" }], ACTOR);
+
+    await capturedOnFinish?.({ text: "reply", usage: { inputTokens: 10, outputTokens: 5 } });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(ledger.settle).toHaveBeenCalledTimes(1);
+    expect(ledger.release).not.toHaveBeenCalled();
+
+    finishResolve("stop");
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(ledger.settle).toHaveBeenCalledTimes(1);
+    expect(ledger.release).not.toHaveBeenCalled();
+  });
+});
+
+describe("ChatAssistantService — output token cap and history bound (12.3 criterion 4)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("passes maxOutputTokens: 4096 to streamText", async () => {
+    let capturedMaxOutputTokens: number | undefined;
+    (streamText as jest.Mock).mockImplementation((opts: { maxOutputTokens?: number }) => {
+      capturedMaxOutputTokens = opts.maxOutputTokens;
+      return {};
+    });
+    const { svc } = buildService(makeLedger());
+    await svc.processChat([{ role: "user", content: "hello" }], ACTOR);
+    expect(capturedMaxOutputTokens).toBe(4096);
+  });
+
+  it("passes only the last 40 messages to the model when history is longer than 40", async () => {
+    const messages = Array.from({ length: 50 }, (_, i) => ({
+      role: "user" as const,
+      content: `q${i}`,
+    }));
+    let capturedMessages: { role: string; content: string }[] = [];
+    (streamText as jest.Mock).mockImplementation((opts: { messages?: typeof capturedMessages }) => {
+      capturedMessages = opts.messages ?? [];
+      return {};
+    });
+    const { svc } = buildService(makeLedger());
+    await svc.processChat(messages, ACTOR);
+    expect(capturedMessages).toHaveLength(40);
+    expect(capturedMessages[0]).toEqual({ role: "user", content: "q10" });
+    expect(capturedMessages[39]).toEqual({ role: "user", content: "q49" });
+  });
+
+  it("passes all messages unchanged when history is at or below the 40-message cap", async () => {
+    const messages = Array.from({ length: 10 }, (_, i) => ({
+      role: "user" as const,
+      content: `q${i}`,
+    }));
+    let capturedMessages: { role: string; content: string }[] = [];
+    (streamText as jest.Mock).mockImplementation((opts: { messages?: typeof capturedMessages }) => {
+      capturedMessages = opts.messages ?? [];
+      return {};
+    });
+    const { svc } = buildService(makeLedger());
+    await svc.processChat(messages, ACTOR);
+    expect(capturedMessages).toHaveLength(10);
+  });
+});
+
+describe("ChatAssistantService — per-org concurrency cap (12.3 criterion 4)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("throws ServiceUnavailableException without calling streamText or reserving credits when org concurrency is exceeded", async () => {
+    const ledger = makeLedger();
+    const limiter = { acquire: jest.fn().mockResolvedValue(false), release: jest.fn() };
+    (streamText as jest.Mock).mockImplementation(() => ({}));
+
+    const history = { append: jest.fn(), appendToConversation: jest.fn() };
+    const noop = { buildTools: jest.fn().mockReturnValue({}) };
+    const toolAccess = { denyReason: jest.fn().mockResolvedValue(null) };
+    const moduleRef = { get: jest.fn().mockReturnValue({ ask: jest.fn() }) };
+
+    const { ChatAssistantService } = await import("./chat-assistant.service");
+    const svc = new ChatAssistantService(
+      {} as never,
+      { ask: jest.fn() } as never,
+      history as never,
+      noop as never,
+      noop as never,
+      noop as never,
+      noop as never,
+      noop as never,
+      noop as never,
+      noop as never,
+      noop as never,
+      toolAccess as never,
+      moduleRef as never,
+      makeUsageSvc(),
+      ledger,
+      null,
+      limiter as never,
+    );
+    jest.spyOn(svc as never, "fetchContext").mockResolvedValue(STUB_CONTEXT as never);
+
+    await expect(
+      svc.processChat([{ role: "user", content: "hi" }], ACTOR),
+    ).rejects.toThrow("Too many concurrent AI requests for this organization");
+
+    expect(streamText).not.toHaveBeenCalled();
+    expect(ledger.reserve).not.toHaveBeenCalled();
+  });
+
+  it("releases the concurrency slot in onFinish so subsequent requests are not blocked", async () => {
+    const ledger = makeLedger();
+    const limiter = { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
+    let capturedOnFinish: ((opts: { text: string; usage?: { inputTokens?: number; outputTokens?: number } }) => Promise<void>) | undefined;
+    (streamText as jest.Mock).mockImplementation((opts: { onFinish?: typeof capturedOnFinish }) => {
+      capturedOnFinish = opts.onFinish;
+      return {};
+    });
+
+    const history = { append: jest.fn(), appendToConversation: jest.fn() };
+    const noop = { buildTools: jest.fn().mockReturnValue({}) };
+    const toolAccess = { denyReason: jest.fn().mockResolvedValue(null) };
+    const moduleRef = { get: jest.fn().mockReturnValue({ ask: jest.fn() }) };
+
+    const { ChatAssistantService } = await import("./chat-assistant.service");
+    const svc = new ChatAssistantService(
+      {} as never,
+      { ask: jest.fn() } as never,
+      history as never,
+      noop as never,
+      noop as never,
+      noop as never,
+      noop as never,
+      noop as never,
+      noop as never,
+      noop as never,
+      noop as never,
+      toolAccess as never,
+      moduleRef as never,
+      makeUsageSvc(),
+      ledger,
+      null,
+      limiter as never,
+    );
+    jest.spyOn(svc as never, "fetchContext").mockResolvedValue(STUB_CONTEXT as never);
+
+    await svc.processChat([{ role: "user", content: "hi" }], ACTOR);
+
+    expect(limiter.release).not.toHaveBeenCalled();
+
+    await capturedOnFinish?.({ text: "reply" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(limiter.release).toHaveBeenCalledWith("org_1");
+  });
+
+  it("releases the concurrency slot when streamText throws — slot does not leak on setup error", async () => {
+    const ledger = makeLedger();
+    const limiter = { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
+    (streamText as jest.Mock).mockImplementation(() => {
+      throw new Error("provider setup failed");
+    });
+
+    const history = { append: jest.fn(), appendToConversation: jest.fn() };
+    const noop = { buildTools: jest.fn().mockReturnValue({}) };
+    const toolAccess = { denyReason: jest.fn().mockResolvedValue(null) };
+    const moduleRef = { get: jest.fn().mockReturnValue({ ask: jest.fn() }) };
+
+    const { ChatAssistantService } = await import("./chat-assistant.service");
+    const svc = new ChatAssistantService(
+      {} as never,
+      { ask: jest.fn() } as never,
+      history as never,
+      noop as never,
+      noop as never,
+      noop as never,
+      noop as never,
+      noop as never,
+      noop as never,
+      noop as never,
+      noop as never,
+      toolAccess as never,
+      moduleRef as never,
+      makeUsageSvc(),
+      ledger,
+      null,
+      limiter as never,
+    );
+    jest.spyOn(svc as never, "fetchContext").mockResolvedValue(STUB_CONTEXT as never);
+
+    await expect(
+      svc.processChat([{ role: "user", content: "hi" }], ACTOR),
+    ).rejects.toThrow("provider setup failed");
+
+    expect(limiter.release).toHaveBeenCalledWith("org_1");
+  });
+
+  it("releases the concurrency slot when the credit reservation is rejected — an out-of-credit org does not leak a slot per request", async () => {
+    const ledger = makeLedger({
+      reserve: jest.fn().mockRejectedValue(
+        new InsufficientAiCreditsException({ message: "out of credits" }),
+      ),
+    });
+    const limiter = { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
+    (streamText as jest.Mock).mockImplementation(() => ({}));
+
+    const { svc } = buildServiceWithLimiter(ledger, limiter);
+
+    await expect(
+      svc.processChat([{ role: "user", content: "hi" }], ACTOR),
+    ).rejects.toBeInstanceOf(InsufficientAiCreditsException);
+
+    expect(limiter.acquire).toHaveBeenCalledWith("org_1");
+    expect(limiter.release).toHaveBeenCalledWith("org_1");
+    expect(streamText).not.toHaveBeenCalled();
+  });
+
+  it("releases the concurrency slot and the reservation when context loading throws after the slot is taken", async () => {
+    const ledger = makeLedger();
+    const limiter = { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
+    (streamText as jest.Mock).mockImplementation(() => ({}));
+
+    const { svc } = buildServiceWithLimiter(ledger, limiter);
+    jest.spyOn(svc as never, "fetchContext").mockRejectedValue(new Error("context load failed") as never);
+
+    await expect(
+      svc.processChat([{ role: "user", content: "hi" }], ACTOR),
+    ).rejects.toThrow("context load failed");
+
+    expect(limiter.release).toHaveBeenCalledWith("org_1");
+    expect(ledger.release).toHaveBeenCalledWith(42, "chat_setup_error", "org_1");
+    expect(streamText).not.toHaveBeenCalled();
+  });
+
+  it("releases the concurrency slot when persisting the user turn throws after the slot is taken", async () => {
+    const ledger = makeLedger();
+    const limiter = { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
+    (streamText as jest.Mock).mockImplementation(() => ({}));
+
+    const { svc, history } = buildServiceWithLimiter(ledger, limiter);
+    history.append.mockRejectedValue(new Error("history write failed"));
+
+    await expect(
+      svc.processChat([{ role: "user", content: "hi" }], ACTOR),
+    ).rejects.toThrow("history write failed");
+
+    expect(limiter.release).toHaveBeenCalledWith("org_1");
+    expect(streamText).not.toHaveBeenCalled();
   });
 });

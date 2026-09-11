@@ -267,7 +267,7 @@ export class BillingService {
     const needsConversion =
       mixed ||
       (currencyTotals.length === 1 &&
-        currencyTotals[0]!.currency !== defaultCurrency);
+        currencyTotals[0].currency !== defaultCurrency);
 
     let converted: ConvertedTotals | null = null;
     if (needsConversion) {
@@ -312,16 +312,16 @@ export class BillingService {
     return { db: this.db, audit: this.audit };
   }
 
-  async getRatePreview(u: CurrentUserContext, query: RatePreviewQuery) {
+  async getRatePreview(u: CurrentUserContext, query: RatePreviewQuery, subjectUserId: string | undefined) {
     let userMembershipId: number | undefined;
-    if (query.userId) {
+    if (subjectUserId) {
       const [member] = await this.db
         .select({ id: organizationMembers.id })
         .from(organizationMembers)
         .where(
           and(
             eq(organizationMembers.orgId, u.orgId),
-            eq(organizationMembers.userId, query.userId),
+            eq(organizationMembers.userId, subjectUserId),
           ),
         )
         .limit(1);

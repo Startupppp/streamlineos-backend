@@ -4,11 +4,13 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { tasks } from "../../../db/schema";
 import { logger } from "../../../common/logger/logger.service";
+import { assertNever } from "../../../common/types/assert-never";
 import { NotificationsService } from "../../notifications/notifications.service";
 import { AutomationEmailService } from "../../automation/automation-email.service";
 import { HR_WORKFLOW_STARTER, type HrWorkflowStarterPort } from "./hr-workflow-starter.port";
 import type { HrAutomationAction, HrActionResult } from "../../../db/schema/hr/automation-engine";
 import { checkWebhookUrl } from "../../../common/security/ssrf-guard";
+import { outboundTraceHeaders } from "../../../common/outbound/call-provider";
 
 const WEBHOOK_TIMEOUT_MS = 10_000;
 
@@ -107,10 +109,8 @@ export class HrAutomationActionsService {
       case "call_webhook":
         return await this.callWebhook(orgId, action.config.url, action.config.method ?? "POST", payload, ruleWebhookSecret);
 
-      default: {
-        const _exhaustive: never = action;
-        return { type: (_exhaustive as HrAutomationAction).type, ok: false, error: "Unknown action type" };
-      }
+      default:
+        return assertNever(action);
     }
   }
 
@@ -127,7 +127,7 @@ export class HrAutomationActionsService {
     }
 
     const body = JSON.stringify({ orgId, payload, timestamp: new Date().toISOString() });
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    const headers: Record<string, string> = { "Content-Type": "application/json", ...outboundTraceHeaders() };
     if (secret) {
       headers["X-StreamlineOS-Signature"] = `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
     }

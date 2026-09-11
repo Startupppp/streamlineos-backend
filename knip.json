@@ -11,16 +11,14 @@
     "evals/**/*.spec.ts",
     "scripts/**/*.mjs",
     "evals/**/*.ts",
-    "drizzle.config.ts",
-    "eslint.config.mjs",
     "src/db/schema/hrms-phase1-sql-managed.ts"
   ],
   "project": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.mjs", "evals/**/*.ts"],
+  "paths": {
+    "test/*": ["./test/*"],
+    "src/*": ["./src/*"]
+  },
   "ignore": [
-    "migrations/**",
-    "dist/**",
-    "src/@types/**",
-    "src/common/validation/validate.decorator.ts",
     "src/modules/rbac/permissions/**"
   ],
   "ignoreDependencies": ["multer", "@types/multer"],

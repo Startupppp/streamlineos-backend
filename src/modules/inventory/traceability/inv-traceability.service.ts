@@ -213,6 +213,7 @@ export class InvTraceabilityService {
   async updateLotStatus(orgId: string, userId: string, lotId: number, body: UpdateLotStatusInput) {
     await this.requireLot(orgId, userId, lotId);
     const lot = await this.db.query.invLots.findFirst({
+      columns: { id: true },
       where: and(eq(invLots.id, lotId), eq(invLots.orgId, orgId)),
     });
     if (!lot) throw new NotFoundException("Lot not found");

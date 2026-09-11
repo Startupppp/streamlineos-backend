@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, ilike, or } from "drizzle-orm";
+import { and, count, desc, eq, ilike, or, sql } from "drizzle-orm";
 import type { DataScope } from "../access/access.types";
 import { applyScope } from "../access/apply-scope";
 import { surveyForms, surveySections, surveyQuestions, surveyQuestionChoices } from "../../db/schema";
@@ -9,6 +9,7 @@ import { SurveyVersionService } from "./survey-version.service";
 import { SurveyTemplateService } from "./survey-template.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import type { CreateSurveyInput, ListSurveysInput, PatchSurveyInput } from "./dto/survey-forms.schemas";
+import { buildListResponse, paginateOffset } from "../../common/pagination/pagination";
 
 @Injectable()
 export class SurveyFormsService {
@@ -46,16 +47,23 @@ export class SurveyFormsService {
     if (filters.status) conditions.push(eq(surveyForms.status, filters.status));
     if (filters.mode) conditions.push(eq(surveyForms.mode, filters.mode));
     if (filters.search) {
-      conditions.push(or(ilike(surveyForms.title, `%${filters.search}%`), ilike(surveyForms.description, `%${filters.search}%`))!);
+      conditions.push(or(ilike(surveyForms.title, `%${filters.search}%`), ilike(surveyForms.description, `%${filters.search}%`)) ?? sql`false`);
     }
 
-    const rows = await this.db.query.surveyForms.findMany({
-      where: and(...conditions),
-      orderBy: [desc(surveyForms.createdAt)],
-      limit: filters.pageSize,
-      offset: (filters.page - 1) * filters.pageSize,
-    });
-    return rows;
+    const where = and(...conditions);
+    const { limit, offset } = paginateOffset(filters);
+
+    const [rows, [totalRow]] = await Promise.all([
+      this.db.query.surveyForms.findMany({
+        where,
+        orderBy: [desc(surveyForms.createdAt)],
+        limit,
+        offset,
+      }),
+      this.db.select({ total: count() }).from(surveyForms).where(where),
+    ]);
+
+    return buildListResponse(rows, Number(totalRow?.total ?? 0), filters);
   }
 
   /**
@@ -97,42 +105,52 @@ export class SurveyFormsService {
     const template = input.templateKey ? this.templates.get(input.templateKey) : undefined;
     const sections = template?.sections?.length ? template.sections : [{ title: "Section 1", questions: [] }];
 
-    for (const [sectionIndex, section] of sections.entries()) {
-      const [sectionRow] = await this.db
-        .insert(surveySections)
-        .values({ orgId, surveyId: survey.id, versionId: draftVersion.id, title: section.title, sortOrder: sectionIndex })
-        .returning();
+    const sectionRows = await this.db
+      .insert(surveySections)
+      .values(sections.map((section, sectionIndex) => ({ orgId, surveyId: survey.id, versionId: draftVersion.id, title: section.title, sortOrder: sectionIndex })))
+      .returning();
 
-      for (const [questionIndex, question] of section.questions.entries()) {
-        const [questionRow] = await this.db
-          .insert(surveyQuestions)
-          .values({
+    const questionsWithMeta = sections.flatMap((section, sectionIndex) => {
+      const sectionId = sectionRows[sectionIndex]?.id ?? 0;
+      return section.questions.map((question, questionIndex) => ({ question, sectionId, sectionIndex, questionIndex }));
+    });
+
+    if (questionsWithMeta.length > 0) {
+      const questionRows = await this.db
+        .insert(surveyQuestions)
+        .values(
+          questionsWithMeta.map(({ question, sectionId, sectionIndex, questionIndex }) => ({
             orgId,
             surveyId: survey.id,
             versionId: draftVersion.id,
-            sectionId: sectionRow.id,
+            sectionId,
             questionKey: `q_${survey.id}_${sectionIndex}_${questionIndex}`,
-            type: question.type as (typeof surveyQuestions.$inferInsert)["type"],
+            type: question.type,
             title: question.title,
             required: question.required ?? false,
             variableName: question.variableName ?? null,
             settings: question.settings ?? {},
             sortOrder: questionIndex,
-          })
-          .returning();
+          })),
+        )
+        .returning();
 
-        for (const [choiceIndex, choice] of (question.choices ?? []).entries()) {
-          await this.db.insert(surveyQuestionChoices).values({
-            orgId,
-            questionId: questionRow.id,
-            choiceKey: choice.choiceKey,
-            label: choice.label,
-            value: choice.value ?? null,
-            score: choice.score ?? 0,
-            sortOrder: choiceIndex,
-            isCorrect: choice.isCorrect ?? false,
-          });
-        }
+      const choiceInserts = questionRows.flatMap((questionRow, qi) => {
+        const choices = questionsWithMeta[qi]?.question.choices ?? [];
+        return choices.map((choice, choiceIndex) => ({
+          orgId,
+          questionId: questionRow.id,
+          choiceKey: choice.choiceKey,
+          label: choice.label,
+          value: choice.value ?? null,
+          score: choice.score ?? 0,
+          sortOrder: choiceIndex,
+          isCorrect: choice.isCorrect ?? false,
+        }));
+      });
+
+      if (choiceInserts.length > 0) {
+        await this.db.insert(surveyQuestionChoices).values(choiceInserts);
       }
     }
 

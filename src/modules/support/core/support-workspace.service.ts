@@ -76,10 +76,9 @@ export class SupportWorkspaceService {
     return { success: true };
   }
 
-  async listSavedViews(orgId: string, userId: string, membershipId: number | null) {
-    const ownerMatch = membershipId != null
-      ? eq(supportSavedViews.ownerMembershipId, membershipId)
-      : eq(supportSavedViews.ownerId, userId);
+  async listSavedViews(orgId: string, _userId: string, membershipId: number | null) {
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
+    const ownerMatch = eq(supportSavedViews.ownerMembershipId, membershipId);
     return this.db.query.supportSavedViews.findMany({
       where: and(
         eq(supportSavedViews.orgId, orgId),
@@ -87,20 +86,21 @@ export class SupportWorkspaceService {
           ownerMatch,
           eq(supportSavedViews.visibility, "team"),
           eq(supportSavedViews.visibility, "global"),
-          isNull(supportSavedViews.ownerId),
+          isNull(supportSavedViews.ownerMembershipId),
         ),
       ),
       orderBy: [asc(supportSavedViews.sortOrder), asc(supportSavedViews.id)],
+      limit: 100,
     });
   }
 
-  async createSavedView(orgId: string, userId: string, membershipId: number | null, input: CreateSavedViewInput) {
+  async createSavedView(orgId: string, _userId: string, membershipId: number | null, input: CreateSavedViewInput) {
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const [view] = await this.db
       .insert(supportSavedViews)
       .values({
         orgId,
-        ownerId: input.visibility === "personal" ? userId : null,
-        ownerMembershipId: input.visibility === "personal" && membershipId != null ? membershipId : undefined,
+        ownerMembershipId: input.visibility === "personal" ? membershipId : undefined,
         name: input.name,
         filter: input.filter,
         visibility: input.visibility,
@@ -110,14 +110,13 @@ export class SupportWorkspaceService {
     return view;
   }
 
-  async updateSavedView(orgId: string, userId: string, membershipId: number | null, viewId: number, input: UpdateSavedViewInput) {
+  async updateSavedView(orgId: string, _userId: string, membershipId: number | null, viewId: number, input: UpdateSavedViewInput) {
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const view = await this.db.query.supportSavedViews.findFirst({
       where: and(eq(supportSavedViews.id, viewId), eq(supportSavedViews.orgId, orgId)),
     });
     if (!view) throw new NotFoundException("View not found");
-    const isOwner = membershipId != null && view.ownerMembershipId != null
-      ? view.ownerMembershipId === membershipId
-      : view.ownerId === userId;
+    const isOwner = view.ownerMembershipId === membershipId;
     if (view.visibility === "personal" && !isOwner) {
       throw new ForbiddenException("You can only edit your own personal views");
     }
@@ -130,14 +129,13 @@ export class SupportWorkspaceService {
     return updated;
   }
 
-  async deleteSavedView(orgId: string, userId: string, membershipId: number | null, viewId: number) {
+  async deleteSavedView(orgId: string, _userId: string, membershipId: number | null, viewId: number) {
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const view = await this.db.query.supportSavedViews.findFirst({
       where: and(eq(supportSavedViews.id, viewId), eq(supportSavedViews.orgId, orgId)),
     });
     if (!view) throw new NotFoundException("View not found");
-    const isOwner = membershipId != null && view.ownerMembershipId != null
-      ? view.ownerMembershipId === membershipId
-      : view.ownerId === userId;
+    const isOwner = view.ownerMembershipId === membershipId;
     if (view.visibility === "personal" && !isOwner) {
       throw new ForbiddenException("You can only delete your own personal views");
     }
@@ -189,7 +187,7 @@ export class SupportWorkspaceService {
 
     await this.db
       .insert(supportTicketTags)
-      .values({ ticketId, tagId })
+      .values({ orgId, ticketId, tagId })
       .onConflictDoNothing();
     return { success: true };
   }
@@ -202,16 +200,18 @@ export class SupportWorkspaceService {
     return { success: true };
   }
 
-  async follow(orgId: string, ticketId: number, userId: string) {
+  async follow(orgId: string, ticketId: number, userId: string, membershipId: number | null) {
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
     await this.assertTicketInOrg(orgId, ticketId);
     await this.db
       .insert(supportTicketWatchers)
-      .values({ orgId, ticketId, userId })
+      .values({ orgId, ticketId, userMembershipId: membershipId })
       .onConflictDoNothing();
     return { success: true };
   }
 
-  async unfollow(orgId: string, ticketId: number, userId: string) {
+  async unfollow(orgId: string, ticketId: number, userId: string, membershipId: number | null) {
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
     await this.assertTicketInOrg(orgId, ticketId);
     await this.db
       .delete(supportTicketWatchers)
@@ -219,17 +219,38 @@ export class SupportWorkspaceService {
         and(
           eq(supportTicketWatchers.orgId, orgId),
           eq(supportTicketWatchers.ticketId, ticketId),
-          eq(supportTicketWatchers.userId, userId),
+          eq(supportTicketWatchers.userMembershipId, membershipId),
         ),
       );
     return { success: true };
   }
 
-  listWatchers(orgId: string, ticketId: number) {
-    return this.db.query.supportTicketWatchers.findMany({
+  /**
+   * A watcher reaches a person only through `organization_members`, and this read shipped that join
+   * verbatim as `membership.userId`. The client's `SupportTicketWatcher` declares `userId` and
+   * `user` at the top level and reads through `apiClient.get<SupportTicketWatcher[]>`, a cast, so
+   * `w.userId` was `undefined` on every row: `isFollowing` in `ticket-detail-header.tsx:65` was
+   * permanently false, the star never filled, and `handleToggleFollow` could only ever take the
+   * follow branch — `DELETE /support/:id/follow` was unreachable and nobody could stop watching a
+   * ticket they had followed. `user` was never selected at all, so no watcher could be named.
+   */
+  async listWatchers(orgId: string, ticketId: number) {
+    await this.assertTicketInOrg(orgId, ticketId);
+    const rows = await this.db.query.supportTicketWatchers.findMany({
       where: and(eq(supportTicketWatchers.orgId, orgId), eq(supportTicketWatchers.ticketId, ticketId)),
-      with: { user: { columns: { id: true, name: true, image: true } } },
+      columns: { id: true, orgId: true, ticketId: true, createdAt: true },
+      with: {
+        membership: {
+          columns: { userId: true },
+          with: { user: { columns: { id: true, name: true, image: true } } },
+        },
+      },
     });
+    return rows.map(({ membership, ...watcher }) => ({
+      ...watcher,
+      userId: membership?.userId ?? null,
+      user: membership?.user ?? null,
+    }));
   }
 
   private async assertTicketInOrg(orgId: string, ticketId: number) {

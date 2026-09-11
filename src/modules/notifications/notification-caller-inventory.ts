@@ -29,12 +29,22 @@ const EXEMPT = (
 export const DIRECT_EMAIL_CALLER_INVENTORY: DirectEmailCallerInventoryEntry[] =
   [
     EXEMPT(
-      "modules/auth/auth-passwordless.service.ts",
+      "modules/auth/auth-email-verification.service.ts",
       DeliveryClass.OPERATOR_ALERT,
       "credential and account-recovery mail has no tenant-member notification recipient",
     ),
     EXEMPT(
-      "modules/automation/automation.service.ts",
+      "modules/auth/auth-magic-link.service.ts",
+      DeliveryClass.OPERATOR_ALERT,
+      "credential and account-recovery mail has no tenant-member notification recipient",
+    ),
+    EXEMPT(
+      "modules/auth/auth-email-otp.service.ts",
+      DeliveryClass.OPERATOR_ALERT,
+      "credential and account-recovery mail has no tenant-member notification recipient",
+    ),
+    EXEMPT(
+      "modules/automation/automation-action-executor.service.ts",
       DeliveryClass.WORKFLOW_EXTERNAL,
       "automation-supplied recipient and workflow-owned provider semantics",
     ),
@@ -99,9 +109,19 @@ export const DIRECT_EMAIL_CALLER_INVENTORY: DirectEmailCallerInventoryEntry[] =
       "uses the automation email adapter for workflow-supplied recipients",
     ),
     EXEMPT(
+      "modules/hr/directory/employee-bulk-onboarding.service.ts",
+      DeliveryClass.WORKFLOW_EXTERNAL,
+      "bulk form of the credential-bearing welcome workflow; same recipients and semantics",
+    ),
+    EXEMPT(
       "modules/hr/directory/employee-onboarding.service.ts",
       DeliveryClass.WORKFLOW_EXTERNAL,
       "credential-bearing welcome and magic-link workflow",
+    ),
+    EXEMPT(
+      "modules/hr/time/attendance-email-report.service.ts",
+      DeliveryClass.OPERATOR_ALERT,
+      "authorized attendance report delivery to active organization members",
     ),
     EXEMPT(
       "modules/hr/interviews/hr-interview-booking.service.ts",

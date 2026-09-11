@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { pgTable, text, timestamp, jsonb, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { foreignKey, index, jsonb, pgTable, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { organizations } from "../common/auth";
 
@@ -113,6 +113,7 @@ export const subjects = pgTable(
       .$onUpdate(() => new Date()),
   },
   (t) => [
+  foreignKey({ columns: [t.organizationId, t.subjectTypeId], foreignColumns: [subjectTypes.organizationId, subjectTypes.subjectTypeId], name: "fk_subjects_type" }).onDelete("cascade"),
     uniqueIndex("uniq_subjects_org_type_reference")
       .on(t.organizationId, t.subjectTypeId, t.reference)
       .where(sql`reference is not null and deleted_at is null`),
@@ -152,6 +153,7 @@ export const subjectPartyLinks = pgTable(
     linkedBy: text("linked_by"),
   },
   (t) => [
+  foreignKey({ columns: [t.organizationId, t.subjectId], foreignColumns: [subjects.organizationId, subjects.subjectId], name: "fk_subject_party_links_subject" }).onDelete("cascade"),
     uniqueIndex("uniq_subject_party_link").on(
       t.organizationId,
       t.subjectId,

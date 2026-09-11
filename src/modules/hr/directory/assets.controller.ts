@@ -31,6 +31,12 @@ import {
 } from "./dto/hr-directory.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  assetReturnRowSchema,
+  deviceRowSchema,
+} from "./dto/directory-response.schemas";
+import { successSchema } from "../../../common/openapi/response-envelopes";
 import { z } from "zod";
 
 const returnIdParams = z.object({ returnId: z.coerce.number().int().positive() }).strict();
@@ -46,13 +52,15 @@ export class HrAssetsController {
   ) {}
 
   @Get("asset-returns")
+  @ResponseSchema(z.array(assetReturnRowSchema))
   @RequirePermission("hr:assets:view")
   async listAssetReturns(@CurrentUser() u: CurrentUserContext) {
-    const scope = await resolveAssetsScope(this.access, u);
-    return this.assets.listAssetReturns(u.orgId, u.userId, scope);
+    const read = await resolveAssetsScope(this.access, u);
+    return this.assets.listAssetReturns(read);
   }
 
   @Post("asset-returns")
+  @ResponseSchema(assetReturnRowSchema)
   @RequirePermission("hr:assets:manage")
   @HttpCode(201)
   @Validate({ body: createAssetReturnSchema })
@@ -64,6 +72,7 @@ export class HrAssetsController {
   }
 
   @Patch("asset-returns/:returnId")
+  @ResponseSchema(assetReturnRowSchema)
   @RequirePermission("hr:assets:manage")
   @Validate({ params: returnIdParams, body: patchAssetReturnSchema })
   updateAssetReturn(
@@ -75,12 +84,14 @@ export class HrAssetsController {
   }
 
   @Get("devices")
+  @ResponseSchema(z.array(deviceRowSchema))
   @RequirePermission("hr:assets:view")
   listDevices(@CurrentUser() u: CurrentUserContext) {
     return this.assets.listDevices(u.orgId);
   }
 
   @Post("devices")
+  @ResponseSchema(deviceRowSchema)
   @HttpCode(201)
   @RequirePermission("hr:assets:manage")
   @Validate({ body: createDeviceSchema })
@@ -92,6 +103,7 @@ export class HrAssetsController {
   }
 
   @Patch("devices/:deviceId")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:assets:manage")
   @Validate({ params: deviceIdParams, body: patchDeviceSchema })
   updateDevice(
@@ -103,6 +115,7 @@ export class HrAssetsController {
   }
 
   @Delete("devices/:deviceId")
+  @NoContentResponse()
   @HttpCode(204)
   @RequirePermission("hr:assets:manage")
   @Validate({ params: deviceIdParams })

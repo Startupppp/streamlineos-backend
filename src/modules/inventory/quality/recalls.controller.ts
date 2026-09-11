@@ -25,6 +25,12 @@ import type { SimulateRecallInput } from "./dto/recall-simulation.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  listRecallsResponseSchema,
+  getRecallResponseSchema,
+  createRecallResponseSchema,
+} from "./dto/quality-response.schemas";
 
 const recallIdParams = z.object({ recallId: z.coerce.number().int().positive() }).strict();
 
@@ -38,6 +44,7 @@ export class RecallsController {
   ) {}
 
   @Get()
+  @ResponseSchema(listRecallsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:read")
   @Validate({ query: listRecallsQuerySchema })
@@ -49,6 +56,7 @@ export class RecallsController {
   }
 
   @Get(":recallId")
+  @ResponseSchema(getRecallResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:read")
   @Validate({ params: recallIdParams })
@@ -84,6 +92,7 @@ export class RecallsController {
   }
 
   @Post()
+  @ResponseSchema(createRecallResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:recall")
   @Validate({ body: createRecallSchema })
@@ -96,6 +105,7 @@ export class RecallsController {
   }
 
   @Patch(":recallId")
+  @ResponseSchema(createRecallResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:recall")
   @Validate({ params: recallIdParams, body: updateRecallSchema })

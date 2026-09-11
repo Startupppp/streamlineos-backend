@@ -14,6 +14,12 @@ import { AuthorizedInService } from "../../../common/auth/authorized-in-service.
 import { PortalJwtAuthGuard } from "../../../common/portal-auth/portal-jwt-auth.guard";
 import type { PortalUserContext } from "../../../common/portal-auth/portal-claims";
 import { PortalClientService } from "./portal-client.service";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  clientProjectListSchema,
+  projectOverviewSchema,
+  changeRequestSchema,
+} from "./dto/portal-client-response.schemas";
 import {
   submitChangeRequestSchema,
   type SubmitChangeRequestInput,
@@ -34,6 +40,7 @@ export class PortalClientController {
   constructor(private readonly svc: PortalClientService) {}
 
   @Get("projects")
+  @ResponseSchema(clientProjectListSchema)
   listProjects(@Req() req: PortalReq) {
     const ctx = req.portalUser;
     return this.svc.listGrantedProjects(
@@ -43,6 +50,7 @@ export class PortalClientController {
   }
 
   @Get("projects/:projectId/overview")
+  @ResponseSchema(projectOverviewSchema)
   @Validate({ params: projectIdParams })
   getProjectOverview(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -58,6 +66,7 @@ export class PortalClientController {
 
   @Post("projects/:projectId/change-requests")
   @HttpCode(201)
+  @ResponseSchema(changeRequestSchema)
   @Validate({ params: projectIdParams, body: submitChangeRequestSchema })
   submitChangeRequest(
     @Param("projectId", ParseIntPipe) projectId: number,

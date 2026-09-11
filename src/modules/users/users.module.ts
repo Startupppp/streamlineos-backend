@@ -5,12 +5,19 @@ import { UserProfileService } from "./user-profile.service";
 import { UserActivityService } from "./user-activity.service";
 import { UserOpsService } from "./user-ops.service";
 import { OrganizationModule } from "../organization/core/organization.module";
+import { MembershipAdmissionModule } from "../organization/core/membership-admission.module";
 import { SessionsModule } from "../sessions/sessions.module";
 import { BillingModule } from "../billing/core/billing.module";
 import { DirectoryModule } from "../directory/directory.module";
 
 @Module({
-  imports: [OrganizationModule, SessionsModule, BillingModule, DirectoryModule],
+  imports: [
+    OrganizationModule,
+    MembershipAdmissionModule,
+    SessionsModule,
+    BillingModule,
+    DirectoryModule,
+  ],
   controllers: [UsersController],
   providers: [UsersService, UserProfileService, UserActivityService, UserOpsService],
   exports: [UsersService],

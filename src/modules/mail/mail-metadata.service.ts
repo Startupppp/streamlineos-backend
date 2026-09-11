@@ -1,14 +1,40 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, gt, ilike, or, sql } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gt,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { mailMessageMetadata } from "../../db/schema/mail";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { registerAfterCommit } from "../../common/tenant";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { logger } from "../../common/logger/logger.service";
-import type { MailFolder, MailMessageSummary } from "./dto/mail-schemas";
+import { keysetBeforeId } from "../../common/pagination/keyset";
+import type { MailMessageSummary } from "./dto/mail-response.schemas";
+import type { MailFolder } from "./dto/mail-schemas";
+import type { MailMetadataCursor } from "./providers/mail-metadata-cursor";
 
 const CACHE_FRESH_SECS = 300;
+
+const SEARCH_ID_CAP = 500;
+
+export interface CachedMailPage {
+  messages: CachedMailMessage[];
+  hasData: boolean;
+  isFresh: boolean;
+  nextCursor: MailMetadataCursor | null;
+}
 
 export type CachedMailMessage = {
   messageId: string;
@@ -109,32 +135,95 @@ export class MailMetadataService {
       });
   }
 
+  private async resolveSearchCondition(
+    membershipId: number,
+    folder: MailFolder,
+    query: string,
+  ): Promise<SQL> {
+    const term = `%${query}%`;
+    const fallback = or(
+      ilike(mailMessageMetadata.subject, term),
+      ilike(mailMessageMetadata.senderEmail, term),
+      ilike(mailMessageMetadata.senderName, term),
+    );
+    const literal = fallback ?? sql`true`;
+
+    try {
+      const rows = await this.db.execute(
+        sql`SELECT app.search_mail_message_ids(${query}, ${membershipId}, ${folder}, ${SEARCH_ID_CAP + 1}) AS id`,
+      );
+      if (rows.length > SEARCH_ID_CAP) return literal;
+      if (rows.length === 0) return sql`false`;
+      return inArray(
+        mailMessageMetadata.id,
+        rows.map((r) => Number(r["id"])),
+      );
+    } catch (err) {
+      logger.warn(
+        "[mail-metadata] indexed search unavailable, falling back to ILIKE",
+        { err },
+      );
+      return literal;
+    }
+  }
+
+  private keysetCondition(after: MailMetadataCursor): SQL {
+    if (after.d === null) {
+      const clause = or(
+        and(
+          isNull(mailMessageMetadata.date),
+          lt(mailMessageMetadata.id, after.i),
+        ),
+        isNotNull(mailMessageMetadata.date),
+      );
+      return clause ?? sql`true`;
+    }
+    return keysetBeforeId(mailMessageMetadata.date, mailMessageMetadata.id, {
+      sortValue: after.d,
+      id: String(after.i),
+    });
+  }
+
+  /**
+   * `accountId` accepts a set, not just one id.
+   *
+   * The keyset index is `(org_id, user_membership_id, folder, date DESC,
+   * id DESC)` — it does not lead with `account_id`, so ordering the union of a
+   * member's mailboxes is the same single index walk as ordering one of them.
+   * That is what makes the mirror usable for the default `?accountId=all` view
+   * rather than only for a mailbox the reader has singled out.
+   *
+   * `null` still means "every row this membership has mirrored in this folder",
+   * which includes mailboxes since disconnected; a caller that must not show
+   * those passes its live account ids instead.
+   */
   async listCached(
     membershipId: number,
     orgId: string,
-    accountId: number | null,
+    accountId: number | readonly number[] | null,
     folder: MailFolder,
     limit: number,
     query?: string,
-  ): Promise<{ messages: CachedMailMessage[]; hasData: boolean; isFresh: boolean }> {
+    after?: MailMetadataCursor,
+  ): Promise<CachedMailPage> {
     const conditions = [
       eq(mailMessageMetadata.orgId, orgId),
       eq(mailMessageMetadata.userMembershipId, membershipId),
       eq(mailMessageMetadata.folder, folder),
     ];
-    if (accountId !== null) conditions.push(eq(mailMessageMetadata.accountId, accountId));
-    if (query) {
-      const term = `%${query}%`;
-      const searchClause = or(
-        ilike(mailMessageMetadata.subject, term),
-        ilike(mailMessageMetadata.senderEmail, term),
-        ilike(mailMessageMetadata.senderName, term),
+    if (typeof accountId === "number")
+      conditions.push(eq(mailMessageMetadata.accountId, accountId));
+    else if (accountId !== null)
+      conditions.push(inArray(mailMessageMetadata.accountId, [...accountId]));
+    if (query)
+      conditions.push(
+        await this.resolveSearchCondition(membershipId, folder, query),
       );
-      if (searchClause) conditions.push(searchClause);
-    }
+    if (after) conditions.push(this.keysetCondition(after));
 
     const rows = await this.db
       .select({
+        id: mailMessageMetadata.id,
         messageId: mailMessageMetadata.messageId,
         threadId: mailMessageMetadata.threadId,
         accountId: mailMessageMetadata.accountId,
@@ -151,20 +240,25 @@ export class MailMetadataService {
       })
       .from(mailMessageMetadata)
       .where(and(...conditions))
-      .orderBy(desc(mailMessageMetadata.date))
-      .limit(limit);
+      .orderBy(desc(mailMessageMetadata.date), desc(mailMessageMetadata.id))
+      .limit(limit + 1);
 
-    if (rows.length === 0) return { messages: [], hasData: false, isFresh: false };
+    if (rows.length === 0)
+      return { messages: [], hasData: false, isFresh: false, nextCursor: null };
+
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const last = page[page.length - 1];
 
     const cutoff = new Date(Date.now() - CACHE_FRESH_SECS * 1000);
-    const latestSync = rows.reduce<Date>(
+    const latestSync = page.reduce<Date>(
       (latest, r) => (r.syncedAt > latest ? r.syncedAt : latest),
-      rows[0]!.syncedAt,
+      page[0]!.syncedAt,
     );
     const isFresh = latestSync > cutoff;
 
     return {
-      messages: rows.map((r) => ({
+      messages: page.map((r) => ({
         messageId: r.messageId,
         threadId: r.threadId,
         accountId: r.accountId,
@@ -180,16 +274,68 @@ export class MailMetadataService {
       })),
       hasData: true,
       isFresh,
+      nextCursor:
+        hasMore && last
+          ? { d: last.date ? last.date.toISOString() : null, i: last.id }
+          : null,
     };
   }
 
-  async isFreshForAccount(accountId: number, folder: MailFolder): Promise<boolean> {
+  async countUnread(
+    orgId: string,
+    membershipId: number,
+    folder: MailFolder,
+    accountIds: readonly number[],
+  ): Promise<number> {
+    if (accountIds.length === 0) return 0;
+    const rows = await this.db
+      .select({ cnt: count() })
+      .from(mailMessageMetadata)
+      .where(
+        and(
+          eq(mailMessageMetadata.orgId, orgId),
+          eq(mailMessageMetadata.userMembershipId, membershipId),
+          eq(mailMessageMetadata.folder, folder),
+          eq(mailMessageMetadata.isRead, false),
+          inArray(mailMessageMetadata.accountId, [...accountIds]),
+        ),
+      );
+    return Number(rows[0]?.cnt ?? 0);
+  }
+
+  async freshAccountIds(
+    orgId: string,
+    accountIds: readonly number[],
+    folder: MailFolder,
+  ): Promise<number[]> {
+    if (accountIds.length === 0) return [];
+    const cutoff = new Date(Date.now() - CACHE_FRESH_SECS * 1000);
+    const rows = await this.db
+      .selectDistinct({ accountId: mailMessageMetadata.accountId })
+      .from(mailMessageMetadata)
+      .where(
+        and(
+          eq(mailMessageMetadata.orgId, orgId),
+          inArray(mailMessageMetadata.accountId, [...accountIds]),
+          eq(mailMessageMetadata.folder, folder),
+          gt(mailMessageMetadata.syncedAt, cutoff),
+        ),
+      );
+    return rows.map((r) => r.accountId);
+  }
+
+  async isFreshForAccount(
+    orgId: string,
+    accountId: number,
+    folder: MailFolder,
+  ): Promise<boolean> {
     const cutoff = new Date(Date.now() - CACHE_FRESH_SECS * 1000);
     const [row] = await this.db
       .select({ syncedAt: mailMessageMetadata.syncedAt })
       .from(mailMessageMetadata)
       .where(
         and(
+          eq(mailMessageMetadata.orgId, orgId),
           eq(mailMessageMetadata.accountId, accountId),
           eq(mailMessageMetadata.folder, folder),
           gt(mailMessageMetadata.syncedAt, cutoff),

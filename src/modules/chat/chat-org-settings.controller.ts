@@ -6,14 +6,14 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { actingMembershipId } from "../../common/auth/principal";
-import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { updateChatOrgSettingsSchema, type UpdateChatOrgSettingsInput } from "./dto/chat.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { chatOrgSettingsResponseSchema } from "./dto/chat-org-settings-response.schema";
 
 @ApiTags("Chat Org Settings")
 @ApiBearerAuth()
-@RequireModule("chat")
 @Controller("chat/settings")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ChatOrgSettingsController {
@@ -21,6 +21,7 @@ export class ChatOrgSettingsController {
 
   @ApiOperation({ summary: "Get the effective chat settings for the current org" })
   @ApiResponse({ status: 200, description: "OK" })
+  @ResponseSchema(chatOrgSettingsResponseSchema)
   @Get()
   @RequirePermission("chat:channels:read")
   get(@CurrentUser() u: CurrentUserContext) {
@@ -29,6 +30,7 @@ export class ChatOrgSettingsController {
 
   @ApiOperation({ summary: "Update org-level chat settings (chat admins only)" })
   @ApiResponse({ status: 200, description: "OK" })
+  @ResponseSchema(chatOrgSettingsResponseSchema)
   @Patch()
   @RequirePermission("chat:org-settings:manage")
   @Validate({ body: updateChatOrgSettingsSchema })

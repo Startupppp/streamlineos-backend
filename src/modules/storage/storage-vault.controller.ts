@@ -21,11 +21,33 @@ import { AccessService } from "../access/access.service";
 import { StorageService } from "./storage.service";
 import { Validate } from "../../common/validation/validate.decorator";
 import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { vaultDownloadResponseSchema } from "./dto/storage-response.schemas";
 import { z } from "zod";
 
 const candidateAndDocumentIdParams = z.object({ candidateId: z.coerce.number().int().positive(), documentId: z.coerce.number().int().positive() }).strict();
 
 const SIGNED_URL_EXPIRY_SECONDS = 900;
+
+/**
+ * `s3Key` and `fileUrl` are deliberately absent. Presigning the object and then
+ * spreading the whole row beside it hands the caller the permanent address as
+ * well as the short-lived one, which is the leak this endpoint exists to close;
+ * and once the backfill has rewritten `fileUrl` to a bare object key, returning
+ * it is still a tenant object key on a bucket that is not yet private.
+ */
+export interface VaultDownloadResponse {
+  readonly id: number;
+  readonly candidateId: number;
+  readonly filename: string;
+  readonly fileType: string;
+  readonly fileSize: number;
+  readonly documentType: string | null;
+  readonly avResult: "PENDING" | "CLEAN" | "INFECTED";
+  readonly expiresAt: string | null;
+  readonly createdAt: Date;
+  readonly signedUrl: string | null;
+}
 
 @Controller("hr/recruitment/candidates/:candidateId/vault")
 @UseGuards(JwtAuthGuard)
@@ -37,6 +59,7 @@ export class StorageVaultController {
   ) {}
 
   @Post(":documentId/url")
+  @ResponseSchema(vaultDownloadResponseSchema)
   @BodylessAction()
   @AuthorizedInService("resolveUserPermissions(hr:documents:manage) + org-scoped lookup")
   @HttpCode(200)
@@ -45,7 +68,7 @@ export class StorageVaultController {
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() u: CurrentUserContext,
-  ): Promise<typeof candidateDocumentsVault.$inferSelect & { signedUrl: string | null }> {
+  ): Promise<VaultDownloadResponse> {
     if (!u.isOrgOwner) {
       const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
       if (!perms.has("hr:documents:manage")) {
@@ -72,15 +95,31 @@ export class StorageVaultController {
       action: "VIEW",
     });
 
-    let signedUrl = doc.fileUrl;
-    if (doc.s3Key && this.storage.isConfigured()) {
+    const key =
+      doc.s3Key.trim().length > 0 ? doc.s3Key : this.storage.getFileKeyFromUrl(doc.fileUrl);
+
+    let signedUrl: string | null = null;
+    if (key.length > 0 && this.storage.isConfigured()) {
       try {
-        signedUrl = await this.storage.getFileUrl(u.orgId, doc.s3Key, SIGNED_URL_EXPIRY_SECONDS);
+        signedUrl = await this.storage.getFileUrl(u.orgId, key, SIGNED_URL_EXPIRY_SECONDS, undefined, {
+          preauthorized: true,
+        });
       } catch {
-        signedUrl = doc.fileUrl;
+        signedUrl = null;
       }
     }
 
-    return { ...doc, signedUrl };
+    return {
+      id: doc.id,
+      candidateId: doc.candidateId,
+      filename: doc.filename,
+      fileType: doc.fileType,
+      fileSize: doc.fileSize,
+      documentType: doc.documentType,
+      avResult: doc.avResult,
+      expiresAt: doc.expiresAt,
+      createdAt: doc.createdAt,
+      signedUrl,
+    };
   }
 }

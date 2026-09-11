@@ -21,9 +21,23 @@ describe("KbPageCommentsService — cross-tenant isolation", () => {
   }
 
   const dispatch = { dispatch: jest.fn() } as never;
+  const access = { holds: jest.fn().mockResolvedValue(false) } as never;
 
   function makeDb(pageRow: unknown) {
     const wheres: unknown[] = [];
+    const makeJoinChain = (): Record<string, unknown> => {
+      const chain: Record<string, unknown> = {
+        where: jest.fn().mockImplementation((w: unknown) => {
+          wheres.push(w);
+          return Object.assign(Promise.resolve([]), {
+            orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+          });
+        }),
+      };
+      chain.innerJoin = jest.fn().mockReturnValue(chain);
+      chain.leftJoin = jest.fn().mockReturnValue(chain);
+      return chain;
+    };
     return {
       db: {
         query: {
@@ -36,20 +50,7 @@ describe("KbPageCommentsService — cross-tenant isolation", () => {
         },
         select: jest.fn().mockImplementation(() => ({
           from: jest.fn().mockImplementation(() => ({
-            innerJoin: jest.fn().mockReturnValue({
-              where: jest.fn().mockImplementation((w: unknown) => {
-                wheres.push(w);
-                return Promise.resolve([]);
-              }),
-            }),
-            leftJoin: jest.fn().mockReturnValue({
-              where: jest.fn().mockImplementation((w: unknown) => {
-                wheres.push(w);
-                return Object.assign(Promise.resolve([]), {
-                  orderBy: jest.fn().mockResolvedValue([]),
-                });
-              }),
-            }),
+            ...makeJoinChain(),
           })),
         })),
       } as unknown as Db,
@@ -59,7 +60,7 @@ describe("KbPageCommentsService — cross-tenant isolation", () => {
 
   it("throws NotFoundException for a page in another org (cross-tenant deny)", async () => {
     const { db, wheres } = makeDb(null);
-    const svc = new KbPageCommentsService(db, dispatch);
+    const svc = new KbPageCommentsService(db, dispatch, access);
 
     await expect(svc.list(makeUser(ATTACKER), PAGE_ID)).rejects.toThrow(NotFoundException);
 
@@ -70,7 +71,7 @@ describe("KbPageCommentsService — cross-tenant isolation", () => {
 
   it("returns comments for a page in the owning org (same-tenant control)", async () => {
     const { db } = makeDb({ id: PAGE_ID, orgId: OWNER });
-    const svc = new KbPageCommentsService(db, dispatch);
+    const svc = new KbPageCommentsService(db, dispatch, access);
 
     const result = await svc.list(makeUser(OWNER), PAGE_ID);
 

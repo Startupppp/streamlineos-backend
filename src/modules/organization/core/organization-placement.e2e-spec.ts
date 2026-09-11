@@ -200,9 +200,25 @@ describe("Organization controller — auth and isolation (e2e)", () => {
   it("GET /organization returns only the calling user's organizations, not another account's", async () => {
     listUserOrganizationsFn.mockImplementation(async (userId: string) => {
       if (userId === "user_alice")
-        return [{ id: "org_alice", name: "Alice Org", slug: "alice-org", role: "OWNER" }];
+        return [
+          {
+            id: "org_alice",
+            name: "Alice Org",
+            slug: "alice-org",
+            role: "OWNER",
+            joinedAt: new Date("2026-01-01T00:00:00.000Z"),
+          },
+        ];
       if (userId === "user_bob")
-        return [{ id: "org_bob", name: "Bob Org", slug: "bob-org", role: "MEMBER" }];
+        return [
+          {
+            id: "org_bob",
+            name: "Bob Org",
+            slug: "bob-org",
+            role: "MEMBER",
+            joinedAt: new Date("2026-01-01T00:00:00.000Z"),
+          },
+        ];
       return [];
     });
 

@@ -15,7 +15,7 @@ import {
 } from "../../../clients/client-party-reader";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 
-import { churnRiskPrompt, dealPredictionPrompt } from "../prompts/crm.prompts";
+import { churnRiskPrompt, dealPredictionPrompt } from "../prompts/crm-scoring.prompts";
 import {
   ChurnRiskSchema,
   DealPredictionSchema,
