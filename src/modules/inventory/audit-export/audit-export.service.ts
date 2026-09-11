@@ -13,43 +13,30 @@ import { invAuditExportJobs } from "../../../db/schema";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
-import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import {
   AUDIT_EXPORT_SCHEMA_VERSION,
-  AuditExportStream,
-  encodeManifestLine,
-  encodeRowLine,
-  encodeSectionHeaderLine,
   type AuditExportSection,
 } from "./audit-export-document";
 import {
-  LEDGER_LOCATION_COLUMN,
-  countSection,
-  isEvidenceSettled,
   pinEvidence,
-  readSection,
 } from "./audit-export-rows";
 import {
   AUDIT_EXPORT_JOB_COLUMNS,
   jobIsCoveredBy,
   jobVisibilityPredicate,
-  manifestOf,
   toAuditExportJobDto,
-  toSections,
-  windowOf,
   type AuditExportJobRow,
 } from "./audit-export-job";
+import {
+  completeJob,
+  streamJob,
+  type AuditExportRunDeps,
+} from "./lib/audit-export-run";
 import type {
   CreateAuditExportJobInput,
   ListAuditExportJobsQueryInput,
 } from "./dto/audit-export.schemas";
-
-const CHUNK_SIZE = 1000;
-const SETTLE_ATTEMPTS = 10;
-const SETTLE_DELAY_MS = 300;
-
-const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 @Injectable()
 export class AuditExportService {
@@ -98,8 +85,8 @@ export class AuditExportService {
 
     await this.cache.invalidateNamespace(CACHE_KEYS.invAuditExportJobsNamespace(orgId));
 
-    const deferred = registerAfterCommit(() => this.complete(orgId, job.id));
-    if (!deferred) await this.complete(orgId, job.id);
+    const deferred = registerAfterCommit(() => completeJob(this.runDeps, orgId, job.id));
+    if (!deferred) await completeJob(this.runDeps, orgId, job.id);
 
     return toAuditExportJobDto(job);
   }
@@ -168,7 +155,7 @@ export class AuditExportService {
         ? Promise.resolve()
         : new Promise((resolve) => res.once("drain", () => resolve()));
 
-    const produced = await this.stream(job, write);
+    const produced = await streamJob(this.runDeps, job, write);
     res.end();
 
     if (produced.checksum !== job.checksum)
@@ -180,7 +167,7 @@ export class AuditExportService {
   /** Re-derives the document and compares. A mismatch means the evidence moved. */
   async verify(orgId: string, userId: string, jobId: number) {
     const job = await this.requireReadyJob(orgId, userId, jobId);
-    const produced = await this.stream(job);
+    const produced = await streamJob(this.runDeps, job);
     return {
       jobId: job.id,
       schemaVersion: job.schemaVersion,
@@ -194,86 +181,13 @@ export class AuditExportService {
     };
   }
 
-  private async complete(orgId: string, jobId: number): Promise<void> {
-    try {
-      const job = await this.loadJob(orgId, jobId);
-      if (job.status !== "PENDING") return;
-
-      if (!(await this.awaitSettlement(job.pinnedXmax))) {
-        await this.markFailed(orgId, jobId, "EVIDENCE_NOT_SETTLED");
-        return;
-      }
-
-      const window = windowOf(job, this.locationScopeOf(job));
-      const counts: Record<AuditExportSection, number> = { ledger: 0, audit_events: 0 };
-      for (const section of toSections(job.sections))
-        counts[section] = await countSection(this.db, section, window);
-
-      const produced = await this.stream({
-        ...job,
-        ledgerRowCount: counts.ledger,
-        auditRowCount: counts.audit_events,
-      });
-
-      await this.db
-        .update(invAuditExportJobs)
-        .set({
-          status: "COMPLETED",
-          ledgerRowCount: counts.ledger,
-          auditRowCount: counts.audit_events,
-          checksum: produced.checksum,
-          byteLength: produced.byteLength,
-          settledAt: new Date(),
-          failureReason: null,
-        })
-        .where(and(eq(invAuditExportJobs.id, jobId), eq(invAuditExportJobs.orgId, orgId)));
-
-      await this.cache.invalidateNamespace(CACHE_KEYS.invAuditExportJobsNamespace(orgId));
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
-      await runInNewTenantTransaction(this.db, orgId, () =>
-        this.markFailed(orgId, jobId, reason.slice(0, 500)),
-      ).catch(() => undefined);
-      throw error;
-    }
-  }
-
-  private async awaitSettlement(pinnedXmax: string): Promise<boolean> {
-    for (let attempt = 0; attempt < SETTLE_ATTEMPTS; attempt++) {
-      if (await isEvidenceSettled(this.db, pinnedXmax)) return true;
-      await delay(SETTLE_DELAY_MS);
-    }
-    return isEvidenceSettled(this.db, pinnedXmax);
-  }
-
-  private async markFailed(orgId: string, jobId: number, reason: string): Promise<void> {
-    await this.db
-      .update(invAuditExportJobs)
-      .set({ status: "FAILED", failureReason: reason })
-      .where(and(eq(invAuditExportJobs.id, jobId), eq(invAuditExportJobs.orgId, orgId)));
-    await this.cache.invalidateNamespace(CACHE_KEYS.invAuditExportJobsNamespace(orgId));
-  }
-
-  private async stream(
-    job: AuditExportJobRow,
-    sink?: (chunk: Buffer) => Promise<void>,
-  ): Promise<{ checksum: string; byteLength: number }> {
-    const manifest = manifestOf(job);
-    const window = windowOf(job, this.locationScopeOf(job));
-    const stream = new AuditExportStream(sink);
-
-    await stream.line(encodeManifestLine(manifest));
-    for (const section of manifest.sections) {
-      await stream.line(encodeSectionHeaderLine(section));
-      for await (const row of readSection(this.db, section, window, CHUNK_SIZE))
-        await stream.line(encodeRowLine(row));
-    }
-
-    return { checksum: stream.checksum(), byteLength: stream.byteLength };
-  }
-
-  private locationScopeOf(job: AuditExportJobRow) {
-    return this.warehouseScope.locationPredicate(job.scopeWarehouseIds, LEDGER_LOCATION_COLUMN);
+  private get runDeps(): AuditExportRunDeps {
+    return {
+      db: this.db,
+      cache: this.cache,
+      warehouseScope: this.warehouseScope,
+      loadJob: (orgId, jobId) => this.loadJob(orgId, jobId),
+    };
   }
 
   private async requireCoveredJob(
