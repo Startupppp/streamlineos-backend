@@ -16,12 +16,23 @@ import { z } from "zod";
 
 const DTO_ROOT = join(__dirname, "..");
 
+/**
+ * Response contracts are not a boundary. `*-response.schemas.ts` (main's
+ * `@ResponseSchema`) describes what the server sends: `ResponseContractInterceptor`
+ * safeParses a handler's return and never parses client input, so there is no
+ * client-sent field for them to strip. They must also stay non-strict, because a
+ * contract violation throws under NODE_ENV=test and a strict contract would fail
+ * every response that gained an additive field.
+ */
+const RESPONSE_CONTRACT = /-response\.schemas\.ts$/;
+
 function dtoModulePaths(): string[] {
   const found: string[] = [];
   const walk = (dir: string): void => {
     for (const entry of readdirSync(dir)) {
       const path = join(dir, entry);
       if (statSync(path).isDirectory()) walk(path);
+      else if (RESPONSE_CONTRACT.test(path)) continue;
       else if (/\/dto\/.*\.ts$/.test(path) || /\.schemas?\.ts$/.test(path)) found.push(path);
     }
   };

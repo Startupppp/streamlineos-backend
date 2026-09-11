@@ -43,10 +43,10 @@ export interface InsightCandidate {
   evidenceHash: string;
 }
 
-export const reorderProposalBodySchema = z.object({ variantId: z.number().int().positive(), warehouseId: z.number().int().positive().optional() });
-export const confirmProposalBodySchema = z.object({ proposalId: z.number().int().positive(), token: z.string().min(1) });
-export const digestQuerySchema = z.object({ narrate: z.enum(["true", "false"]).optional() });
-export const supplierDelayQuerySchema = z.object({ vendorId: z.coerce.number().int().positive().optional() });
+export const reorderProposalBodySchema = z.object({ variantId: z.number().int().positive(), warehouseId: z.number().int().positive().optional() }).strict();
+export const confirmProposalBodySchema = z.object({ proposalId: z.number().int().positive(), token: z.string().min(1) }).strict();
+export const digestQuerySchema = z.object({ narrate: z.enum(["true", "false"]).optional() }).strict();
+export const supplierDelayQuerySchema = z.object({ vendorId: z.coerce.number().int().positive().optional() }).strict();
 
 export type ReorderProposalBodyInput = z.infer<typeof reorderProposalBodySchema>;
 export type ConfirmProposalBodyInput = z.infer<typeof confirmProposalBodySchema>;
