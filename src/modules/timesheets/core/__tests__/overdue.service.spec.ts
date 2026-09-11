@@ -67,11 +67,21 @@ function stubDb(settingsRow: unknown, periodRows: unknown[]) {
 
 const access = {} as unknown as AccessService;
 
-/** `resolveApprovalScope` is a free function over AccessService; stub its answer. */
-jest.mock("../timesheets-core-scope", () => ({
-  ...jest.requireActual("../timesheets-core-scope"),
-  resolveApprovalScope: async () => "all",
-}));
+/**
+ * `resolveApprovalScope` is a free function over AccessService; stub its answer.
+ * It resolves main's `ScopedRead` rather than a bare DataScope, so the stub spends
+ * `all` through `ScopedRead.of` for the caller's own organisation.
+ */
+jest.mock("../timesheets-core-scope", () => {
+  const { ScopedRead } = jest.requireActual<typeof import("../../../access/scoped-read")>(
+    "../../../access/scoped-read",
+  );
+  return {
+    ...jest.requireActual("../timesheets-core-scope"),
+    resolveApprovalScope: async (_access: unknown, u: { orgId: string; userId: string }) =>
+      ScopedRead.of(u.orgId, u.userId, "all"),
+  };
+});
 
 const query = (overrides: Partial<OverdueQuery> = {}): OverdueQuery =>
   ({ page: 1, limit: 50, ...overrides }) as OverdueQuery;

@@ -111,6 +111,11 @@ interface FenceRow {
   responseStatus: number | null;
   leaseExpiresAt: Date;
   expiresAt: Date;
+  /**
+   * The column's `defaultNow()`. The store reads it to decide whether a fence
+   * written before the hash was widened may still replay on the narrow hash.
+   */
+  createdAt: Date;
 }
 
 function makeFenceStore() {
@@ -146,7 +151,7 @@ function makeFenceStore() {
           onConflictDoNothing: () => ({
             returning: () => {
               if (find()) return Promise.resolve([]);
-              const row = { commandFenceId: nextId++, ...v } as FenceRow;
+              const row = { commandFenceId: nextId++, createdAt: new Date(), ...v } as FenceRow;
               row.responseBody = row.responseBody ?? null;
               row.responseStatus = row.responseStatus ?? null;
               rows.push(row);

@@ -361,7 +361,8 @@ function submitScript(seq: number): Script {
     selects: [
       [timesheetPeriods, [[PERIOD_ROW]]],
       [timesheetSettings, [[]]],
-      [projects, [[{ managerId: "usr-manager" }]]],
+      /** Since the actor cutover a project names its manager by membership, and submit reads it directly. */
+      [projects, [[{ managerMembershipId: APPROVER_MEMBERSHIP }]]],
     ],
     transitions: [[transitionRow("SUBMITTED", seq)]],
     entries: [{ id: 1, description: "Work", projectId: 9, ticketId: null }],
