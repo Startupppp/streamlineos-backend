@@ -714,6 +714,11 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "aggregate analytics over billing transactions; required to compute full period revenue; bounded by date range filter 2026-09-01"
     },
+    "/billing/core/lib/org-entitlements.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11 by reading the call sites, when the entitlement functions moved out of /billing/core/versioned-catalog.service.ts unchanged \u2014 this gate keys on path, so a move forces a restatement. Both matches are per-parent: the overrides read is filtered to ONE organisation and the plan-entitlement read to ONE plan id, and a feature catalogue is a fixed set the product defines rather than something a tenant can grow. FALSE-POSITIVE rather than BOUNDED because BOUNDED is a FIXED verdict here \u2014 it asserts the scanner no longer matches, and a continued match is reported as a regression."
+    },
     "/billing/core/versioned-catalog.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
