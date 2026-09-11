@@ -5,7 +5,9 @@ import { AllowAgentToken } from "../../../common/auth/allow-agent-token.decorato
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { CrmMcpService, type McpToolCall } from "./crm-mcp.service";
+import { mcpToolCallSchema } from "./dto/crm-mcp.schemas";
 
 /**
  * CRM-P1-16.
@@ -52,6 +54,7 @@ export class CrmMcpController {
 
   @AuthorizedInService("CrmMcpService")
   @Post("call")
+  @Validate({ body: mcpToolCallSchema })
   async callTool(
     @CurrentUser() user: CurrentUserContext,
     @Body() body: McpToolCall,
