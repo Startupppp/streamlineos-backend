@@ -1,5 +1,8 @@
 import { Module } from "@nestjs/common";
 import { AccountingKernelModule } from "../kernel/accounting-kernel.module";
+import { OutboxModule } from "../../../common/outbox/outbox.module";
+import { WebhooksModule } from "../../webhooks/webhooks.module";
+import { JournalPostedConsumer } from "./journal-posted.consumer";
 import { PostingCommandService } from "./posting-command.service";
 import { StockMovementBridgeService } from "./stock-movement-bridge.service";
 import { ReconciliationController } from "./reconciliation/reconciliation.controller";
@@ -18,9 +21,11 @@ import { UnpostedMovementsService } from "./reconciliation/unposted-movements.se
  * design, and `PostingCommandService` simply has no callers.
  */
 @Module({
-  imports: [AccountingKernelModule],
+  imports: [AccountingKernelModule, OutboxModule, WebhooksModule],
   controllers: [ReconciliationController],
   providers: [
+    // Registers accounting.journal.posted with the outbox; see its docblock.
+    JournalPostedConsumer,
     PostingCommandService,
     StockMovementBridgeService,
     UnpostedMovementsService,
