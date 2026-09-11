@@ -6,6 +6,8 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
 import { ConflictException, NotFoundException } from "@nestjs/common";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { crmPricebookEntries } from "../../../db/schema";
+import { drizzlePostgresError, drizzleUniqueViolation } from "../../../test/postgres-error-fixture";
 import { CrmPricebooksService } from "./crm-pricebooks.service";
 
 const makeSelectChain = () => {
@@ -157,15 +159,27 @@ describe("CrmPricebooksService.upsertEntry", () => {
     expect(result).toEqual(entry);
   });
 
-  it("converts DB 23505 error to ConflictException", async () => {
+  it("resolves a repeated entry through its own ON CONFLICT arbiter instead of raising", async () => {
+    // uniq_crm_pb_entry is this statement's arbiter, so a duplicate becomes an
+    // update and no 23505 reaches the service — which is why it has no conflict
+    // handler. Dropping the arbiter should redden this.
     mockDb.query.crmPricebooks.findFirst.mockResolvedValue({ id: PB_ID });
     const insertChain = makeInsertChain();
-    insertChain.returning.mockRejectedValue({ code: "23505" });
+    insertChain.returning.mockResolvedValue([{ id: "entry-1" }]);
     mockDb.insert.mockReturnValue(insertChain);
 
-    await expect(
-      svc.upsertEntry(ORG, PB_ID, { productId: PRODUCT_ID, unitPriceCents: 2500, minQuantity: 1 }),
-    ).rejects.toThrow(ConflictException);
+    await svc.upsertEntry(ORG, PB_ID, { productId: PRODUCT_ID, unitPriceCents: 2500, minQuantity: 1 });
+
+    expect(insertChain.onConflictDoUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: [
+          crmPricebookEntries.orgId,
+          crmPricebookEntries.pricebookId,
+          crmPricebookEntries.productId,
+          crmPricebookEntries.minQuantity,
+        ],
+      }),
+    );
   });
 });
 
@@ -198,14 +212,77 @@ describe("CrmPricebooksService.createPricebook", () => {
     expect(mockDb.update).toHaveBeenCalled();
   });
 
-  it("converts DB 23505 error to ConflictException", async () => {
+  it("converts a unique violation on the name to ConflictException", async () => {
     const insertChain = makeInsertChain();
-    insertChain.returning.mockRejectedValue({ code: "23505" });
+    insertChain.returning.mockRejectedValue(drizzleUniqueViolation("uniq_crm_pricebooks_org_name"));
     mockDb.insert.mockReturnValue(insertChain);
 
     await expect(
       svc.createPricebook(ORG, { name: "Dup", currency: "USD", isDefault: false, isActive: true }),
     ).rejects.toThrow(ConflictException);
+  });
+
+  it("rethrows any other database error untouched", async () => {
+    const fkViolation = drizzlePostgresError("23503", "fk_crm_pricebooks_org");
+    const insertChain = makeInsertChain();
+    insertChain.returning.mockRejectedValue(fkViolation);
+    mockDb.insert.mockReturnValue(insertChain);
+
+    await expect(
+      svc.createPricebook(ORG, { name: "Dup", currency: "USD", isDefault: false, isActive: true }),
+    ).rejects.toBe(fkViolation);
+  });
+});
+
+describe("CrmPricebooksService.updatePricebook", () => {
+  let svc: CrmPricebooksService;
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [CrmPricebooksService, { provide: DRIZZLE, useValue: mockDb }],
+    }).compile();
+    svc = module.get(CrmPricebooksService);
+  });
+
+  it("converts a unique violation on the new name to ConflictException", async () => {
+    mockDb.query.crmPricebooks.findFirst.mockResolvedValue({ id: PB_ID });
+    const updateChain = makeUpdateChain();
+    updateChain.returning.mockRejectedValue(drizzleUniqueViolation("uniq_crm_pricebooks_org_name"));
+    mockDb.update.mockReturnValue(updateChain);
+
+    await expect(svc.updatePricebook(ORG, PB_ID, { name: "Dup" })).rejects.toThrow(ConflictException);
+  });
+});
+
+describe("CrmPricebooksService quote templates", () => {
+  let svc: CrmPricebooksService;
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [CrmPricebooksService, { provide: DRIZZLE, useValue: mockDb }],
+    }).compile();
+    svc = module.get(CrmPricebooksService);
+  });
+
+  it("createTemplate converts a unique violation on the name to ConflictException", async () => {
+    const insertChain = makeInsertChain();
+    insertChain.returning.mockRejectedValue(drizzleUniqueViolation("uniq_crm_quote_templates_org_name"));
+    mockDb.insert.mockReturnValue(insertChain);
+
+    await expect(svc.createTemplate(ORG, { name: "Dup", isDefault: false })).rejects.toThrow(
+      ConflictException,
+    );
+  });
+
+  it("updateTemplate converts a unique violation on the new name to ConflictException", async () => {
+    mockDb.query.crmQuoteTemplates.findFirst.mockResolvedValue({ id: "tmpl-1" });
+    const updateChain = makeUpdateChain();
+    updateChain.returning.mockRejectedValue(drizzleUniqueViolation("uniq_crm_quote_templates_org_name"));
+    mockDb.update.mockReturnValue(updateChain);
+
+    await expect(svc.updateTemplate(ORG, "tmpl-1", { name: "Dup" })).rejects.toThrow(
+      ConflictException,
+    );
   });
 });
 
