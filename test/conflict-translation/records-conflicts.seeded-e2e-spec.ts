@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import request from "supertest";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import {
   customFieldDefinitions,
   kbArticles,
@@ -301,13 +301,16 @@ describe(`${SEEDED_HARNESS} a duplicate business record is a 409, not a 500`, ()
    * pins that: the sequential duplicate is a 409, from the check.
    *
    * The second half is the finding the deletion exposed. Two concurrent
-   * creates BOTH succeed, because a read-then-write check is all there is and
-   * no index backs it. That is asserted as it stands rather than fixed here —
-   * closing it needs a partial unique on (org_id, slug) WHERE space_id IS NULL,
-   * which is a migration. If someone adds that index this case reddens, which
-   * is the right way to find out.
+   * creates can BOTH succeed, because a read-then-write check is all there is
+   * and no index backs it. Whether they do is a race: under load the second
+   * request often reads the first's row and is refused. Pinning [201, 201]
+   * made the case fail at random, so it accepts either outcome and checks
+   * that the rows match the 201s. The gap itself is still pinned: closing it
+   * needs a partial unique on (org_id, slug) WHERE space_id IS NULL, which is
+   * a migration, and the catalogue check at the end reddens when that index
+   * lands. That is the moment to tighten the race to exactly [201, 409].
    */
-  it("refuses a duplicate KB category name in sequence, and does not in parallel", async () => {
+  it("refuses a duplicate KB category name in sequence, and not reliably in parallel", async () => {
     const create = (name: string) =>
       api()
         .post("/support/kb/categories")
@@ -322,12 +325,21 @@ describe(`${SEEDED_HARNESS} a duplicate business record is a 409, not a 500`, ()
 
     const raced = `Racing ${randomUUID().slice(0, 8)}`;
     const [a, b] = await Promise.all([create(raced), create(raced)]);
-    expect([a.status, b.status].sort((x, y) => x - y)).toEqual([201, 201]);
+    const statuses = [a.status, b.status].sort((x, y) => x - y);
+    expect([[201, 201], [201, 409]]).toContainEqual(statuses);
 
     const rows = await seeded.seedDb
       .select({ slug: kbCategories.slug })
       .from(kbCategories)
       .where(eq(kbCategories.orgId, orgId));
-    expect(rows.filter((r) => r.slug.startsWith("racing-"))).toHaveLength(2);
+    expect(rows.filter((r) => r.slug.startsWith("racing-"))).toHaveLength(
+      statuses.filter((status) => status === 201).length,
+    );
+
+    const [index] = await seeded.seedDb.execute(sql`
+      SELECT count(*)::int AS n FROM pg_indexes
+       WHERE schemaname = 'public' AND tablename = 'kb_categories'
+         AND indexdef ILIKE '%UNIQUE%' AND indexdef ILIKE '%space_id IS NULL%'`);
+    expect((index as { n: number }).n).toBe(0);
   });
 });
