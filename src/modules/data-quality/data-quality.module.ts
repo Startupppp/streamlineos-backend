@@ -26,9 +26,15 @@ import { DataQualityHealthService } from "./dataset-health.service";
  * `DataQualityHealthService` is exported because the dataset's health belongs on
  * Phase 1's autonomy scoreboard rather than on a surface of its own — a tenant
  * has one place it goes to ask "is this working", and a second scoreboard would
- * split that habit in two. Exporting one small read-and-record service is what
- * lets `AutonomyModule` show the number without acquiring the queue's cursors,
- * its resolution machinery or its merge executor.
+ * split that habit in two.
+ *
+ * `DataQualityQueueService` is exported too, for `AutonomyRepairService`: the
+ * repair loop files what it could not repair as queue items, so it needs the
+ * queue itself and not just the number. Before that it was not exported, and
+ * `AutonomyModule` — which has imported this module all along — could not
+ * construct the repair service. Nest refused the whole application at startup,
+ * not merely that route: DI resolution is a boot-time failure.
+ * The resolution machinery and the merge executor stay unexported.
  *
  * `PartyModule` is imported for `PartyMergeService`: merging is the one proposed
  * action with an executor, and it has one because `party_merges` snapshots both
@@ -44,6 +50,6 @@ import { DataQualityHealthService } from "./dataset-health.service";
     DataQualityProducersService,
     DataQualityHealthService,
   ],
-  exports: [DataQualityProducersService, DataQualityHealthService],
+  exports: [DataQualityProducersService, DataQualityHealthService, DataQualityQueueService],
 })
 export class DataQualityModule {}
