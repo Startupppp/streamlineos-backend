@@ -331,7 +331,15 @@ export class ChannelTimeoutError extends Error {}
 export async function withChannelTimeout<T>(
   work: () => Promise<T>,
   timeoutMs: number,
-  timer: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
+  // `unref` so a deadline that has already been beaten does not hold the event
+  // loop open for the remaining fifteen seconds. It still fires while the
+  // process is alive — a server always has a listening handle — so the race is
+  // unchanged; what changes is that a CLI or a test run ends when its work does
+  // instead of waiting on timers whose result nobody is reading.
+  timer: (ms: number) => Promise<void> = (ms) =>
+    new Promise((resolve) => {
+      setTimeout(resolve, ms).unref();
+    }),
 ): Promise<T> {
   let timedOut = false;
   const attempt = work().catch((error: unknown) => {

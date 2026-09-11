@@ -14,6 +14,14 @@ import {
   ChannelSnapshotController,
   ChannelSnapshotCronController,
 } from "./channel-snapshot.controller";
+import { ChannelCommerceRegistry } from "./sync/channel-commerce.port";
+import { ChannelCommerceRegistrar } from "./sync/channel-commerce.registrar";
+import { ShopifyAdminAdapter } from "./sync/shopify-admin.adapter";
+import { ChannelSyncService } from "./sync/channel-sync.service";
+import {
+  ChannelSyncController,
+  ChannelSyncCronController,
+} from "./sync/channel-sync.controller";
 
 /**
  * E6 adds three routes to this module and one background sweep:
@@ -23,9 +31,19 @@ import {
  *   POST /inventory/channels/snapshot-differences/:id/{accept,dismiss}
  *   GET|POST /cron/inventory-channel-snapshot     the drain
  *
+ * INV-27 adds the other direction — work we initiate — and its dead-letter box:
+ *
+ *   POST /inventory/channels/:id/sync/stock       queue a push + a pull
+ *   POST /inventory/channels/:id/sync/orders      queue an order pull
+ *   POST /inventory/channels/:id/sync/shipments   queue a ship confirm
+ *   GET  /inventory/channels/:id/sync/failures    the dead-letter list
+ *   POST /inventory/channels/sync/failures/:id/retry
+ *   GET|POST /cron/inventory-channel-sync         the drain
+ *
  * `InvStockEngineModule` for `StockEngineService` — accepting a difference posts
- * an ordinary movement through it — and for `InventoryAuditService`. Without the
- * import the application does not boot.
+ * an ordinary movement through it — for `InventoryAuditService`, and for
+ * `NumberSequenceService`, which is what gives an imported channel order its SO
+ * number. Without the import the application does not boot.
  */
 @Module({
   imports: [InvStockEngineModule, InvChannelPoolsModule, InvQuickCommerceModule],
@@ -35,6 +53,8 @@ import {
     ChannelWebhookController,
     ChannelSnapshotController,
     ChannelSnapshotCronController,
+    ChannelSyncController,
+    ChannelSyncCronController,
   ],
   providers: [
     ChannelsService,
@@ -42,7 +62,11 @@ import {
     ChannelAdapterRegistry,
     ChannelAdapterRegistrar,
     ChannelSnapshotService,
+    ChannelCommerceRegistry,
+    ChannelCommerceRegistrar,
+    ShopifyAdminAdapter,
+    ChannelSyncService,
   ],
-  exports: [ChannelSnapshotService, InvQuickCommerceModule],
+  exports: [ChannelSnapshotService, ChannelSyncService, InvQuickCommerceModule],
 })
 export class InvChannelsModule {}

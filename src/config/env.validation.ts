@@ -197,7 +197,27 @@ const baseSchema = z
      */
     INV_CHANNEL_ADAPTER: z.preprocess(
       emptyToUndefined,
-      z.enum(["none", "fake"]).optional(),
+      z.enum(["none", "fake", "shopify"]).optional(),
+    ),
+    /**
+     * INV-27 — the Shopify Admin API access token, when `INV_CHANNEL_ADAPTER=shopify`.
+     *
+     * Deployment configuration for the same reason the webhook secret above is:
+     * a store's credential is a provider credential and §5 keeps those out of
+     * our database. It is also this integration's clearest limit — one token is
+     * one store, so a multi-tenant deployment needs the token to arrive from a
+     * Composio connected account instead, and `ComposioGateway` has no Shopify
+     * toolkit yet. Unset means the adapter is inert: it refuses every call with
+     * `NO_CREDENTIAL` rather than sending a request with a blank header and
+     * reading the 401 as something about the order.
+     */
+    INV_CHANNEL_SHOPIFY_ACCESS_TOKEN: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+    /** Pinned, never floating — Shopify removes an API version after a year. */
+    INV_CHANNEL_SHOPIFY_API_VERSION: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+    /** How long to wait for the store. Unset uses the adapter's 15s default. */
+    INV_CHANNEL_SHOPIFY_TIMEOUT_MS: z.preprocess(
+      emptyToUndefined,
+      z.coerce.number().int().positive().optional(),
     ),
     /**
      * E6 — the HMAC secret an inbound channel webhook is verified against.
@@ -336,13 +356,41 @@ const baseSchema = z
      * acknowledgement, so a mock filing can never be mistaken for a real one,
      * in a database or in a screenshot.
      *
-     * There is deliberately no `irp` member yet. Adding one is ACC-14 and needs
-     * real credentials; leaving the name unclaimed means nobody can set it and
-     * believe something is being filed.
+     * `irp` is ACC-14's live provider and files for real. It is refused at boot
+     * unless all five `COMPLIANCE_IRP_*` credentials are set — see the
+     * superRefine below — because the failure mode of a half-configured live
+     * transport is a deployment that believes its invoices are being filed while
+     * every one of them stays `pending`.
      */
     COMPLIANCE_TRANSPORT: z.preprocess(
       emptyToUndefined,
-      z.enum(["none", "mock"]).optional(),
+      z.enum(["none", "mock", "irp"]).optional(),
+    ),
+    /**
+     * The live Invoice Registration Portal connection — ACC-14.
+     *
+     * All optional, and all five needed together. Absent, `LiveIrpAdapter` is
+     * not configured, the registry will not resolve it, and the product keeps
+     * today's behaviour exactly: a reportable document is recorded `pending` and
+     * the submit route answers an honest 409. That default must never change by
+     * accident, which is why nothing here has one.
+     *
+     * `COMPLIANCE_IRP_URL` is the FULL endpoint the GSP documents for
+     * registering a document — no path is appended to it, because every GSP
+     * mounts it somewhere different and a guessed suffix is a 404 that reads
+     * like an outage. The adapter refuses a non-HTTPS URL (except loopback, for
+     * its own tests): these credentials would otherwise cross the network in
+     * clear text.
+     */
+    COMPLIANCE_IRP_URL: optionalUrl,
+    COMPLIANCE_IRP_CLIENT_ID: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+    COMPLIANCE_IRP_CLIENT_SECRET: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+    COMPLIANCE_IRP_USERNAME: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+    COMPLIANCE_IRP_PASSWORD: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+    /** How long to wait for the portal. Unset uses the adapter's 15s default. */
+    COMPLIANCE_IRP_TIMEOUT_MS: z.preprocess(
+      emptyToUndefined,
+      z.coerce.number().int().positive().optional(),
     ),
     HR_EXPORT_WORKER_ENABLED: z.preprocess(
       emptyToUndefined,
@@ -474,6 +522,58 @@ const schema = baseSchema
           message: "DIRECT_DATABASE_URL must target the same database as DATABASE_URL using the owner user",
         });
       }
+    }
+
+    /*
+      ACC-14. `COMPLIANCE_TRANSPORT=irp` is a claim that this deployment files
+      invoices with the GST authority, and it is only true with all five
+      credentials. A partial set fails here, in every environment, rather than at
+      the first filing: the alternative is a node that starts, advertises a live
+      transport on the compliance screen, and leaves every reportable document
+      `pending` — the silent half of the failure `compliance-honesty.spec.ts`
+      exists to prevent. Checked before the production-only block below on
+      purpose, because a developer who sets this wants to know now.
+    */
+    if (config.COMPLIANCE_TRANSPORT === "irp") {
+      const missing = (
+        [
+          "COMPLIANCE_IRP_URL",
+          "COMPLIANCE_IRP_CLIENT_ID",
+          "COMPLIANCE_IRP_CLIENT_SECRET",
+          "COMPLIANCE_IRP_USERNAME",
+          "COMPLIANCE_IRP_PASSWORD",
+        ] as const
+      ).filter((variableName) => !config[variableName]);
+
+      if (missing.length > 0) {
+        context.addIssue({
+          code: "custom",
+          path: ["COMPLIANCE_TRANSPORT"],
+          message:
+            `COMPLIANCE_TRANSPORT=irp files documents with a tax authority and needs every ` +
+            `credential. Missing: ${missing.join(", ")}. Use COMPLIANCE_TRANSPORT=none until the ` +
+            `whole set is in place — a partial one files nothing and says nothing.`,
+        });
+      }
+    }
+
+    /*
+      INV-27. `INV_CHANNEL_ADAPTER=shopify` is a claim that this deployment talks
+      to a real store, and it is only true with a token. Checked in every
+      environment rather than only in production, and for the mirror of the
+      reason `fake` is refused there: a deployment that says it is connected and
+      is not leaves every stock push, order import and ship confirm failing into
+      the dead-letter box with `NO_CREDENTIAL`, which looks like a marketplace
+      outage rather than a missing line in a deploy config.
+    */
+    if (config.INV_CHANNEL_ADAPTER === "shopify" && !config.INV_CHANNEL_SHOPIFY_ACCESS_TOKEN) {
+      context.addIssue({
+        code: "custom",
+        path: ["INV_CHANNEL_ADAPTER"],
+        message:
+          "INV_CHANNEL_ADAPTER=shopify needs INV_CHANNEL_SHOPIFY_ACCESS_TOKEN. Without it the adapter " +
+          "refuses every call and every channel job dead-letters. Use `none` until the token is in place.",
+      });
     }
 
     if (config.NODE_ENV !== "production") return;

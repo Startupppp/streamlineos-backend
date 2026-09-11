@@ -29,7 +29,13 @@ import {
   type ListSnapshotDiffsQueryInput,
   type ResolveSnapshotDiffInput,
 } from "./dto/channel-snapshot.schemas";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  acceptSnapshotDiffResponseSchema,
+  channelSnapshotSweepResponseSchema,
+  dismissSnapshotDiffResponseSchema,
+  listSnapshotDiffsResponseSchema,
+} from "./dto/channels-response.schemas";
 
 /**
  * E6 — the operator's surface over channel snapshot differences.
@@ -53,6 +59,7 @@ export class ChannelSnapshotController {
   constructor(private readonly snapshots: ChannelSnapshotService) {}
 
   @Get(":channelId/snapshot-differences")
+  @ResponseSchema(listSnapshotDiffsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:channels:manage")
   list(
@@ -64,6 +71,7 @@ export class ChannelSnapshotController {
   }
 
   @Post("snapshot-differences/:diffId/accept")
+  @ResponseSchema(acceptSnapshotDiffResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:adjust")
   @HttpCode(HttpStatus.OK)
@@ -77,6 +85,7 @@ export class ChannelSnapshotController {
   }
 
   @Post("snapshot-differences/:diffId/dismiss")
+  @ResponseSchema(dismissSnapshotDiffResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:channels:manage")
   @HttpCode(HttpStatus.OK)
@@ -109,12 +118,14 @@ export class ChannelSnapshotCronController {
   constructor(private readonly snapshots: ChannelSnapshotService) {}
 
   @Get("inventory-channel-snapshot")
+  @ResponseSchema(channelSnapshotSweepResponseSchema)
   runGet(@Headers("authorization") authorization?: string): Promise<SnapshotSweepResult> {
     return this.run(authorization);
   }
 
   @Post("inventory-channel-snapshot")
   @BodylessAction()
+  @ResponseSchema(channelSnapshotSweepResponseSchema)
   @HttpCode(HttpStatus.OK)
   runPost(@Headers("authorization") authorization?: string): Promise<SnapshotSweepResult> {
     return this.run(authorization);

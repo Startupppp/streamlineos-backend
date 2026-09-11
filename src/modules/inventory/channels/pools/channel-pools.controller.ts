@@ -28,6 +28,12 @@ import type {
   ChannelPoolAvailabilityQuery,
   VariantChannelPoolsQuery,
 } from "./dto/channel-pools.schemas";
+import { ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
+import {
+  allocateChannelPoolResponseSchema,
+  channelPoolAvailabilityResponseSchema,
+  listChannelPoolsResponseSchema,
+} from "./dto/channel-pools-response.schemas";
 
 /**
  * NEO-1 — the channel-pool surface.
@@ -45,6 +51,7 @@ export class ChannelPoolsController {
   constructor(private readonly svc: ChannelPoolService) {}
 
   @Get("availability")
+  @ResponseSchema(channelPoolAvailabilityResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   availability(
@@ -59,6 +66,7 @@ export class ChannelPoolsController {
   }
 
   @Get("by-variant")
+  @ResponseSchema(listChannelPoolsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   byVariant(
@@ -69,6 +77,7 @@ export class ChannelPoolsController {
   }
 
   @Get("channel/:channelId")
+  @ResponseSchema(listChannelPoolsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:channels:manage")
   listForChannel(
@@ -79,6 +88,7 @@ export class ChannelPoolsController {
   }
 
   @Post("allocate")
+  @ResponseSchema(allocateChannelPoolResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:channels:manage")
   allocate(

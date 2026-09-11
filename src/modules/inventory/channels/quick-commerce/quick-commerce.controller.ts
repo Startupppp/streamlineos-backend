@@ -38,6 +38,15 @@ import type {
   UploadPayoutInput,
 } from "./dto/quick-commerce.schemas";
 import { Idempotent } from "../../../../common/idempotency/idempotent.decorator";
+import { ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
+import {
+  asnDetailResponseSchema,
+  fillRateReportResponseSchema,
+  listAsnsResponseSchema,
+  listPlatformPosResponseSchema,
+  platformPoDetailResponseSchema,
+  uploadPayoutResponseSchema,
+} from "./dto/quick-commerce-response.schemas";
 
 /**
  * NEO-2 — platform purchase orders and advance shipping notices.
@@ -58,6 +67,7 @@ export class QuickCommerceController {
   ) {}
 
   @Get("purchase-orders")
+  @ResponseSchema(listPlatformPosResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:channels:manage")
   list(
@@ -68,6 +78,7 @@ export class QuickCommerceController {
   }
 
   @Get("purchase-orders/:platformPoId")
+  @ResponseSchema(platformPoDetailResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:channels:manage")
   detail(
@@ -78,6 +89,7 @@ export class QuickCommerceController {
   }
 
   @Post("purchase-orders/ingest")
+  @ResponseSchema(platformPoDetailResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:channels:manage")
   ingest(
@@ -89,6 +101,7 @@ export class QuickCommerceController {
   }
 
   @Post("purchase-orders/:platformPoId/accept")
+  @ResponseSchema(platformPoDetailResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:create")
   accept(
@@ -101,6 +114,7 @@ export class QuickCommerceController {
   }
 
   @Get("asns")
+  @ResponseSchema(listAsnsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:read")
   listAsns(
@@ -111,6 +125,7 @@ export class QuickCommerceController {
   }
 
   @Get("asns/:asnId")
+  @ResponseSchema(asnDetailResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:read")
   asnDetail(
@@ -121,6 +136,7 @@ export class QuickCommerceController {
   }
 
   @Post("asns")
+  @ResponseSchema(asnDetailResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:update")
   createAsn(
@@ -137,6 +153,7 @@ export class QuickCommerceController {
    * service like every other operational read.
    */
   @Get("fill-rate")
+  @ResponseSchema(fillRateReportResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:reports:read")
   fillRateReport(
@@ -152,6 +169,7 @@ export class QuickCommerceController {
    * the general ledger.
    */
   @Post("payouts")
+  @ResponseSchema(uploadPayoutResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:channels:manage")
   @Idempotent("inventory.quick-commerce.payout.upload")
