@@ -6,6 +6,7 @@ import {
   type AfterCommitHook,
 } from "../../../common/tenant/tenant-context";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { observeAfterCommitWork } from "../../../common/observability/after-commit-work";
 import type { Db } from "../../../db/drizzle.module";
 import type { TenantTx } from "../../../common/tenant/with-tenant";
 
@@ -178,7 +179,7 @@ async function underRequestContext<T>(
   };
 }
 
-/** The context `runInNewTenantTransaction` builds: a transaction and no hook array. */
+/** A transaction and no hook array — the context `forEachOrg` builds for each organisation. */
 function underHooklessContext<T>(fn: () => Promise<T>): Promise<T> {
   return runWithTenantContext({ orgId: ORG, audience: "INTERNAL", tx: {} as TenantTx }, fn);
 }
@@ -213,12 +214,11 @@ describe("send does not email from inside the enclosing transaction", () => {
 
   it("still sends, inline, when the ambient context carries no hook array", async () => {
     /*
-     * Bulk send's shape. The queued worker commits each row through
-     * `runInNewTenantTransaction`, which builds its context without an
-     * `afterCommit` array, so `registerAfterCommit` returns false there — and
-     * §4 says fall back to running inline rather than dropping the work. If this
-     * ever regresses to a silent no-op, every bulk-send invitation disappears
-     * while the job still reports success.
+     * A context built without an `afterCommit` array — `forEachOrg`'s per-org
+     * sweep context is one — makes `registerAfterCommit` return false, and §4
+     * says fall back to running inline rather than dropping the work. If this
+     * ever regresses to a silent no-op, every invitation sent from such a
+     * context disappears while the caller still reports success.
      */
     const h = makeHarness();
 
@@ -339,26 +339,53 @@ describe("applyRecipientOutcome does not email from inside the enclosing transac
 });
 
 describe("the transaction seams decide whether a hook can be held at all", () => {
-  it("runInNewTenantTransaction builds a context with no hook array", async () => {
+  it("runInNewTenantTransaction holds hooks and drains them after its own commit", async () => {
     /*
-     * Read straight off the real function rather than asserted from the source,
-     * because bulk send's inline fallback hangs on it. `registerAfterCommit`
-     * keys on the array's presence, not the context's — a context is very much
-     * present here.
+     * Read straight off the real function rather than asserted from the source.
+     *
+     * Every fresh tenant context now carries an `afterCommit` array: a hookless
+     * one made `registerAfterCommit` answer false, and callers that ignored the
+     * answer lost the work. So bulk send, which reaches `send` one row at a
+     * time inside `runInNewTenantTransaction`, defers its email past that row's
+     * commit rather than sending it inline. What has to hold is the order — the
+     * hook runs only once the transaction that registered it has closed, and
+     * in a transaction of its own.
      */
     const { getTenantContext } = await import("../../../common/tenant/tenant-context");
+    const log: string[] = [];
+    let txSeq = 0;
     const db = {
-      transaction: async <T>(fn: (t: unknown) => Promise<T>) => fn({ execute: async () => [] }),
+      transaction: async <T>(fn: (t: unknown) => Promise<T>): Promise<T> => {
+        const id = (txSeq += 1);
+        log.push(`tx${id}-open`);
+        try {
+          return await fn({ execute: async () => [] });
+        } finally {
+          log.push(`tx${id}-close`);
+        }
+      },
       execute: async () => [],
       query: {},
     };
+    const drains: Promise<unknown>[] = [];
+    const stopObserving = observeAfterCommitWork((completion) => drains.push(completion));
 
-    const seen = await runInNewTenantTransaction(db as unknown as Db, ORG, async () => {
-      const ctx = getTenantContext();
-      return { hasContext: Boolean(ctx), hasHookArray: Boolean(ctx?.afterCommit) };
-    });
+    try {
+      const seen = await runInNewTenantTransaction(db as unknown as Db, ORG, async () => {
+        const ctx = getTenantContext();
+        const deferred = registerAfterCommit(async () => {
+          log.push("hook");
+        });
+        log.push("body");
+        return { hasContext: Boolean(ctx), hasHookArray: Boolean(ctx?.afterCommit), deferred };
+      });
+      await Promise.all(drains);
 
-    expect(seen).toEqual({ hasContext: true, hasHookArray: false });
+      expect(seen).toEqual({ hasContext: true, hasHookArray: true, deferred: true });
+      expect(log).toEqual(["tx1-open", "body", "tx1-close", "tx2-open", "hook", "tx2-close"]);
+    } finally {
+      stopObserving();
+    }
   });
 
   it("a public signing session holds hooks and drains them after its transaction", async () => {
