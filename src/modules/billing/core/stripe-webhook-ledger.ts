@@ -97,8 +97,13 @@ export class StripeWebhookLedger implements StripeWebhookLedgerPort {
    * The first and cheapest idempotency gate.
    *
    * Stripe retries a delivery with the SAME `evt_` id for up to three days, so
-   * the unique index on `(provider, provider_event_id)` catches an ordinary
-   * redelivery before anything else runs. Everything downstream is guarded
+   * the unique index catches an ordinary redelivery before anything else runs.
+   *
+   * The target must name the tenant. Migration 0605 replaced the two-column
+   * index with `(org_id, provider, provider_event_id)` — a cross-tenant DoS,
+   * since one tenant could otherwise burn an event id another tenant needed.
+   * This arbiter still named the old pair, which Postgres cannot infer, so
+   * every money-moving delivery raised 42P10: neither deduped nor processed. Everything downstream is guarded
    * again anyway, because two DIFFERENT events can still describe one sale.
    *
    * The route is `@Public()` with no session, so no tenant transaction is open
@@ -118,7 +123,11 @@ export class StripeWebhookLedger implements StripeWebhookLedgerPort {
           rawPayload: event.rawPayload,
         })
         .onConflictDoNothing({
-          target: [providerWebhookEvents.provider, providerWebhookEvents.providerEventId],
+          target: [
+            providerWebhookEvents.orgId,
+            providerWebhookEvents.provider,
+            providerWebhookEvents.providerEventId,
+          ],
         })
         .returning({ id: providerWebhookEvents.id });
       if (inserted.length > 0) return "first";
