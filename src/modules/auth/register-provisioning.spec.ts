@@ -9,10 +9,23 @@
  */
 const events: string[] = [];
 
+/**
+ * Every tenant-transaction seam runs its body against the shared `tx` and
+ * records where that transaction began and committed, so a case can say which
+ * writes one transaction carried. A body that throws records no commit: that is
+ * a rollback, and whatever the body wrote goes with it.
+ */
+async function mockTransaction(body: (handle: unknown) => Promise<unknown>) {
+  events.push("tx:begin");
+  const result = await body(tx);
+  events.push("tx:commit");
+  return result;
+}
+
 jest.mock("../../common/tenant", () => ({
   withNewOrgInRegion: jest.fn(
     async (_db: unknown, _placement: unknown, body: (tx: unknown) => Promise<unknown>) =>
-      body(tx),
+      mockTransaction(body),
   ),
   runWithTenantContext: jest.fn(
     async (_context: unknown, body: () => Promise<unknown>) => body(),
@@ -24,17 +37,17 @@ jest.mock("../../common/tenant", () => ({
   // instead of the one it throws.
   withTenant: jest.fn(
     async (_db: unknown, _context: unknown, body: (tx: unknown) => Promise<unknown>) =>
-      body(tx),
+      mockTransaction(body),
   ),
 }));
 
 jest.mock("../../common/tenant/run-in-tenant-transaction", () => ({
   runInNewTenantTransaction: jest.fn(
     async (_db: unknown, _orgId: string, body: (tx: unknown) => Promise<unknown>) =>
-      body(tx),
+      mockTransaction(body),
   ),
   runInTenantTransaction: jest.fn(
-    async (_db: unknown, body: (tx: unknown) => Promise<unknown>) => body(tx),
+    async (_db: unknown, body: (tx: unknown) => Promise<unknown>) => mockTransaction(body),
   ),
 }));
 
@@ -157,7 +170,10 @@ function buildService(options: {
   tx.insert.mockImplementation(() => ({
     values: jest.fn(
       valuesResult((rows) => {
-        inserted.push({ table: "tenant", rows: Array.isArray(rows) ? rows : [rows] });
+        const list = Array.isArray(rows) ? rows : [rows];
+        inserted.push({ table: "tenant", rows: list });
+        if (list.some((row) => typeof row === "object" && row !== null && "emailVerified" in row))
+          events.push("owner");
       }),
     ),
   }));
@@ -205,28 +221,34 @@ beforeEach(() => {
   });
 });
 
+/**
+ * A new signup writes the owner, the roles, the modules and the demo dataset in
+ * one transaction (main's register). No sign-in path exists mid-provisioning
+ * because none of it is visible until all of it commits; the owner does not need
+ * creating closed and opening afterwards. The retry cases below cover owners the
+ * earlier two-step flow left closed.
+ */
 describe("a stranger signing up", () => {
-  it("is not let in until the workspace has roles, modules and something in it", async () => {
+  it("is let in by the same commit that gives the workspace roles, modules and something in it", async () => {
     const { service } = buildService();
 
     await service.register(SIGNUP);
 
-    expect(events).toEqual(["roles", "modules", "demo", "activate"]);
+    expect(events).toEqual(["tx:begin", "owner", "roles", "modules", "demo", "tx:commit"]);
   });
 
-  it("creates the owner closed, so no sign-in path exists mid-provisioning", async () => {
+  it("writes the owner through that transaction's handle, never on its own connection", async () => {
     const { service, inserted } = buildService();
 
     await service.register(SIGNUP);
 
-    const userRow = inserted
-      .flatMap((statement) => statement.rows)
-      .find(
-        (row): row is Record<string, unknown> =>
-          typeof row === "object" && row !== null && "emailVerified" in row,
-      );
+    const userWrites = inserted.filter((statement) =>
+      statement.rows.some(
+        (row) => typeof row === "object" && row !== null && "emailVerified" in row,
+      ),
+    );
 
-    expect(userRow?.["isActive"]).toBe(false);
+    expect(userWrites.map((statement) => statement.table)).toEqual(["tenant"]);
   });
 
   it("gets a workspace with a demo dataset in it", async () => {
@@ -251,14 +273,17 @@ describe("a stranger signing up", () => {
 });
 
 describe("when provisioning fails", () => {
-  it("leaves an owner who cannot sign in, rather than one who lands nowhere", async () => {
+  it("rolls the owner back with it, rather than leaving one who lands nowhere", async () => {
     (seedSystemRolesForOrg as jest.Mock).mockRejectedValue(new Error("neon went away"));
     const { service, updates } = buildService();
 
     await expect(service.register(SIGNUP)).rejects.toThrow("neon went away");
 
+    // The transaction that wrote the owner never commits. (A compensation check
+    // may open another afterwards; that one commits nothing either.)
+    expect(events.slice(0, 2)).toEqual(["tx:begin", "owner"]);
+    expect(events).not.toContain("tx:commit");
     expect(updates.some((patch) => patch["isActive"] === true)).toBe(false);
-    expect(events).not.toContain("activate");
   });
 });
 
@@ -271,7 +296,8 @@ describe("retrying a claim", () => {
 
     await service.register(SIGNUP);
 
-    expect(events).toEqual(["roles", "modules", "demo", "activate"]);
+    // The account opens only after the provisioning transaction has committed.
+    expect(events).toEqual(["tx:begin", "roles", "modules", "demo", "tx:commit", "activate"]);
     const organisationsWritten = inserted
       .flatMap((statement) => statement.rows)
       .filter(
