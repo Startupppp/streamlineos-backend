@@ -2218,6 +2218,11 @@
       "note": "Unbounded selects are tag lookups and version-number aggregates \u2014 all scoped to a single article; CRUD path, not a list",
       "justification": "tag lookups bounded by inArray(articleId); version aggregates are count() scalars; all scoped to single article 2026-09-01"
     },
+    "/kb/help-centre/lib/kb-article-write.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Split out of /kb/help-centre/kb-articles.service.ts 2026-09-11, restating that file's FALSE-POSITIVE for the two tag reads that moved. Both are one article's tag set and that set is hard-capped: createArticleSchema/updateArticleSchema declare tags as z.array(...).max(20) (core/dto/kb.schemas.ts L57/L72), and syncArticleTags is the only writer of kb_article_tags. L111 is bounded directly by inArray(kbTags.slug, slugged) over that <=20 input; L132 (readArticleTags) joins kb_article_tags for a single articleId, so it returns at most the same 20 rows. The version-number read is a max() aggregate."
+    },
     "/kb/help-centre/kb-categories.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Reads categories per space \u2014 a small config hierarchy (typically <50 per space)",

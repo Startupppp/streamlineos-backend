@@ -1,14 +1,20 @@
 import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
-import { and, asc, eq, inArray, ne, sql, type SQL } from "drizzle-orm";
-import { kbArticles, kbArticleFeedback, kbArticleTags, kbArticleVersions, kbTags } from "../../../db/schema";
+import { and, eq, sql } from "drizzle-orm";
+import { kbArticles, kbArticleFeedback } from "../../../db/schema";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { KbAccessService } from "../core/kb-access.service";
 import { KbEventsService } from "../core/kb-events.service";
-import { kbSlugify } from "../core/kb.util";
+import {
+  emitArticleIndexEvent,
+  readArticleTags,
+  restoreArticleVersion,
+  snapshotArticleVersion,
+  syncArticleTags,
+  uniqueArticleSlug,
+  type ArticleRow,
+} from "./lib/kb-article-write";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type {
   CreateArticleInput,
@@ -16,12 +22,6 @@ import type {
   VerifyArticleInput,
   VoteArticleInput,
 } from "../core/dto/kb.schemas";
-
-type KbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
-
-type SnapshotSource = { id: number; title: string; content: string; excerpt: string | null };
-
-type ArticleRow = typeof kbArticles.$inferSelect;
 
 type ArticleWithTags = ArticleRow & { tags: string[] };
 
@@ -43,14 +43,7 @@ export class KbArticlesService {
     if (!article) throw new NotFoundException("Article not found");
     await this.access.assertCanViewArticle(user, article);
 
-    const tagRows = await this.db
-      .select({ name: kbTags.name })
-      .from(kbArticleTags)
-      .innerJoin(kbTags, eq(kbArticleTags.tagId, kbTags.id))
-      .where(and(eq(kbArticleTags.articleId, articleId), eq(kbTags.orgId, user.orgId)))
-      .orderBy(asc(kbTags.name));
-
-    return { ...article, tags: tagRows.map((t) => t.name) };
+    return { ...article, tags: await readArticleTags(this.db, user.orgId, articleId) };
   }
 
   async recordView(user: CurrentUserContext, articleId: number): Promise<{ success: boolean }> {
@@ -70,7 +63,7 @@ export class KbArticlesService {
     const tagNames = input.tags ?? [];
     const maxAttempts = 3;
     for (let attempt = 1; ; attempt += 1) {
-      const slug = await this.uniqueArticleSlug(orgId, input.title);
+      const slug = await uniqueArticleSlug(this.db, orgId, input.title);
       try {
         return await this.db.transaction(async (tx) => {
           const [article] = await tx
@@ -95,8 +88,8 @@ export class KbArticlesService {
             })
             .returning();
 
-          await this.snapshot(tx, orgId, article, user.userId, undefined, actingMembershipId(user.principal));
-          const resolvedTags = await this.syncArticleTags(tx, orgId, article.id, tagNames);
+          await snapshotArticleVersion(tx, orgId, article, user.userId, undefined, actingMembershipId(user.principal));
+          const resolvedTags = await syncArticleTags(tx, orgId, article.id, tagNames);
           return { ...article, tags: resolvedTags };
         });
       } catch (err) {
@@ -130,7 +123,7 @@ export class KbArticlesService {
 
     if (input.title !== undefined) {
       values.title = input.title;
-      values.slug = await this.uniqueArticleSlug(orgId, input.title, articleId);
+      values.slug = await uniqueArticleSlug(this.db, orgId, input.title, articleId);
     }
     if (input.status !== undefined) {
       values.status = input.status;
@@ -159,40 +152,19 @@ export class KbArticlesService {
       }
 
       if (titleChanged || contentChanged) {
-        await this.snapshot(tx, orgId, result, user.userId, input.changeSummary, actingMembershipId(user.principal));
+        await snapshotArticleVersion(tx, orgId, result, user.userId, input.changeSummary, actingMembershipId(user.principal));
       }
 
       if (result.status === "published" && (contentChanged || aclChanged)) {
-        await OutboxWriter.emit(tx, {
-          eventId: randomUUID(),
-          organizationId: orgId,
-          aggregateType: "kb_article",
-          aggregateId: String(articleId),
-          aggregateVersion: Date.now(),
-          eventType: "kb.content.index",
-          payload: {
-            contentType: "article",
-            contentId: articleId,
-            contentRevision: result.contentRevision,
-            aclRevision: result.aclRevision,
-          },
-          occurredAt: new Date(),
-        });
+        await emitArticleIndexEvent(tx, orgId, articleId, result);
       }
 
       if (input.tags !== undefined) {
-        const resolvedTags = await this.syncArticleTags(tx, orgId, articleId, input.tags ?? []);
+        const resolvedTags = await syncArticleTags(tx, orgId, articleId, input.tags ?? []);
         return { ...result, tags: resolvedTags };
       }
 
-      const tagRows = await tx
-        .select({ name: kbTags.name })
-        .from(kbArticleTags)
-        .innerJoin(kbTags, eq(kbArticleTags.tagId, kbTags.id))
-        .where(and(eq(kbArticleTags.articleId, articleId), eq(kbTags.orgId, orgId)))
-        .orderBy(asc(kbTags.name));
-
-      return { ...result, tags: tagRows.map((t) => t.name) };
+      return { ...result, tags: await readArticleTags(tx, orgId, articleId) };
     });
 
     return updated;
@@ -208,16 +180,7 @@ export class KbArticlesService {
         .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
         .returning();
       if (!updated) throw new NotFoundException("Article not found");
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: orgId,
-        aggregateType: "kb_article",
-        aggregateId: String(articleId),
-        aggregateVersion: Date.now(),
-        eventType: "kb.content.index",
-        payload: { contentType: "article", contentId: articleId, contentRevision: updated.contentRevision, aclRevision: updated.aclRevision },
-        occurredAt: new Date(),
-      });
+      await emitArticleIndexEvent(tx, orgId, articleId, updated);
       return updated;
     });
   }
@@ -238,17 +201,8 @@ export class KbArticlesService {
         .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
         .returning();
 
-      await this.snapshot(tx, orgId, result, user.userId, undefined, actingMembershipId(user.principal));
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: orgId,
-        aggregateType: "kb_article",
-        aggregateId: String(articleId),
-        aggregateVersion: Date.now(),
-        eventType: "kb.content.index",
-        payload: { contentType: "article", contentId: articleId, contentRevision: result.contentRevision, aclRevision: result.aclRevision },
-        occurredAt: new Date(),
-      });
+      await snapshotArticleVersion(tx, orgId, result, user.userId, undefined, actingMembershipId(user.principal));
+      await emitArticleIndexEvent(tx, orgId, articleId, result);
       return result;
     });
 
@@ -265,16 +219,7 @@ export class KbArticlesService {
         .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
         .returning();
       if (!row) throw new NotFoundException("Article not found");
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: orgId,
-        aggregateType: "kb_article",
-        aggregateId: String(articleId),
-        aggregateVersion: Date.now(),
-        eventType: "kb.content.index",
-        payload: { contentType: "article", contentId: articleId, contentRevision: row.contentRevision, aclRevision: row.aclRevision },
-        occurredAt: new Date(),
-      });
+      await emitArticleIndexEvent(tx, orgId, articleId, row);
       return row;
     });
     return updated;
@@ -328,141 +273,6 @@ export class KbArticlesService {
 
   async restoreVersion(user: CurrentUserContext, articleId: number, versionNumber: number): Promise<ArticleRow> {
     await this.access.assertArticleEditable(user, articleId);
-    const orgId = user.orgId;
-    const updated = await this.db.transaction(async (tx) => {
-      const version = await tx.query.kbArticleVersions.findFirst({
-        where: and(
-          eq(kbArticleVersions.articleId, articleId),
-          eq(kbArticleVersions.versionNumber, versionNumber),
-          eq(kbArticleVersions.orgId, orgId),
-        ),
-      });
-      if (!version) throw new NotFoundException("Version not found");
-
-      const [result] = await tx
-        .update(kbArticles)
-        .set({
-          title: version.title,
-          content: version.content,
-          excerpt: version.excerpt,
-          contentText: this.extractPlainText(version.content),
-        })
-        .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
-        .returning();
-      if (!result) throw new NotFoundException("Article not found");
-
-      await this.snapshot(tx, orgId, result, user.userId, `Restored v${versionNumber}`, actingMembershipId(user.principal));
-      if (result.status === "published") {
-        await OutboxWriter.emit(tx, {
-          eventId: randomUUID(),
-          organizationId: orgId,
-          aggregateType: "kb_article",
-          aggregateId: String(articleId),
-          aggregateVersion: Date.now(),
-          eventType: "kb.content.index",
-          payload: { contentType: "article", contentId: articleId, contentRevision: result.contentRevision, aclRevision: result.aclRevision },
-          occurredAt: new Date(),
-        });
-      }
-      return result;
-    });
-
-    return updated;
-  }
-
-  private async syncArticleTags(tx: KbTransaction, orgId: string, articleId: number, tagNames: string[]): Promise<string[]> {
-    await tx.delete(kbArticleTags).where(and(eq(kbArticleTags.orgId, orgId), eq(kbArticleTags.articleId, articleId)));
-
-    if (tagNames.length === 0) return [];
-
-    const slugged = tagNames
-      .map((name) => ({ name, slug: kbSlugify(name) }))
-      .filter(({ slug }) => slug.length > 0);
-
-    if (slugged.length === 0) return [];
-
-    await tx
-      .insert(kbTags)
-      .values(slugged.map(({ name, slug }) => ({ orgId, name, slug })))
-      .onConflictDoNothing();
-
-    const tagRows = await tx
-      .select({ id: kbTags.id, name: kbTags.name })
-      .from(kbTags)
-      .where(and(eq(kbTags.orgId, orgId), inArray(kbTags.slug, slugged.map((s) => s.slug))))
-      .orderBy(asc(kbTags.name));
-
-    if (tagRows.length > 0) {
-      await tx
-        .insert(kbArticleTags)
-        .values(tagRows.map((t) => ({ orgId, articleId, tagId: t.id })))
-        .onConflictDoNothing();
-    }
-
-    return tagRows.map((t) => t.name);
-  }
-
-  private extractPlainText(content: string): string {
-    const parts: string[] = [];
-    const walk = (node: unknown): void => {
-      if (typeof node !== "object" || node === null) return;
-      if ("text" in node && typeof node.text === "string") parts.push(node.text);
-      if ("content" in node && Array.isArray(node.content)) {
-        for (const child of node.content) walk(child);
-      }
-    };
-    try {
-      walk(JSON.parse(content));
-    } catch {
-      return content;
-    }
-    return parts.join(" ");
-  }
-
-  private async uniqueArticleSlug(orgId: string, base: string, excludeId?: number): Promise<string> {
-    const root = kbSlugify(base) || "article";
-    let slug = root;
-    let suffix = 1;
-    while (true) {
-      const conditions: SQL[] = [eq(kbArticles.orgId, orgId), eq(kbArticles.slug, slug)];
-      if (excludeId !== undefined) conditions.push(ne(kbArticles.id, excludeId));
-      const existing = await this.db.query.kbArticles.findFirst({
-        where: and(...conditions),
-        columns: { id: true },
-      });
-      if (!existing) return slug;
-      suffix += 1;
-      slug = `${root}-${suffix}`;
-    }
-  }
-
-  private async nextVersionNumber(tx: KbTransaction, orgId: string, articleId: number): Promise<number> {
-    const [row] = await tx
-      .select({ max: sql<number>`coalesce(max(${kbArticleVersions.versionNumber}), 0)::int` })
-      .from(kbArticleVersions)
-      .where(and(eq(kbArticleVersions.articleId, articleId), eq(kbArticleVersions.orgId, orgId)));
-    return (row?.max ?? 0) + 1;
-  }
-
-  private async snapshot(
-    tx: KbTransaction,
-    orgId: string,
-    article: SnapshotSource,
-    userId: string,
-    changeSummary?: string,
-    membershipId: number | null = null,
-  ): Promise<void> {
-    const versionNumber = await this.nextVersionNumber(tx, orgId, article.id);
-    await tx.insert(kbArticleVersions).values({
-      orgId,
-      articleId: article.id,
-      versionNumber,
-      title: article.title,
-      content: article.content,
-      excerpt: article.excerpt,
-      changeSummary: changeSummary ?? null,
-      authorId: userId,
-      authorMembershipId: membershipId,
-    });
+    return restoreArticleVersion(this.db, user, articleId, versionNumber);
   }
 }
