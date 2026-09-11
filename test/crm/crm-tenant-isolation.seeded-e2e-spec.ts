@@ -92,6 +92,10 @@ const TENANT_TABLES = [
   "crm_monthly_metrics",
   "crm_options",
   "crm_org_party_map",
+  // The legacy table, still here because 0278 drops it only under
+  // `app.allow_legacy_identity_drop`. Nothing writes it, but it carries the
+  // tenant policy and must fail closed like the rest. Remove it with 0278.
+  "crm_organizations",
   // `crm_organizations` stood here. 0278 dropped it with the other three legacy
   // identity tables; `crm_org_party_map` above is what a bookmarked id of one
   // now resolves through.
