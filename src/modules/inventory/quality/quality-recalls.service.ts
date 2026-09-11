@@ -1,12 +1,7 @@
-import { randomUUID } from "node:crypto";
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import {
   invRecallEvents,
-  invRecallLines,
-  invLots,
-  invStockLevels,
-  invQualityHolds,
   invShipments,
   invShipmentLines,
 } from "../../../db/schema";
@@ -20,71 +15,11 @@ import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import type { ListRecallsQueryInput, CreateRecallInput, UpdateRecallInput } from "./dto/quality.schemas";
 import {
   WarehouseScopeService,
-  type ResolvedWarehouseScope,
 } from "../stock-engine/warehouse-scope.service";
-import { OutboxWriter } from "../../../common/outbox/outbox-writer";
-import { isPositive } from "../stock-engine/decimal";
-import { runIdempotent } from "../stock-engine/idempotency";
-import { RecallSimulationService, type RecallImpact } from "./recall-simulation.service";
-
-/**
- * What the quarantine leg did to one recall line, stored on the line.
- *
- * `OPEN` is not in this union on purpose. It is the column default and means
- * "no outcome was recorded" — every line of every recall raised before INV-33.
- * The UI renders it as pending rather than as success, because a recall that
- * cannot say what it held is exactly the one nobody should trust.
- */
-export type RecallLineOutcome = "QUARANTINED" | "NOTHING_TO_QUARANTINE" | "NOT_QUARANTINABLE";
-
-/** What the idempotent unit of `create` produces, and replays. */
-interface ExecutedRecall {
-  recall: { id: number; recallNumber: string };
-  /** The exact stock grains the engine quarantined, at their on-hand. */
-  quarantine: Array<{
-    productVariantId: number;
-    locationId: number;
-    lotId: number;
-    handlingUnitId: number | null;
-    ownership: "OWNED" | "VENDOR" | "CUSTOMER";
-    onHand: string;
-  }>;
-}
-
-/**
- * A replayed recall, rebuilt from the stored JSON.
- *
- * The stored response is JSON that has been through the database, so every
- * number arrived as whatever `jsonb` gave back and a blind cast would be a lie
- * the type system cannot catch — hence a revive rather than an assertion.
- * Quantities stay strings: they are 18,4 numerics, and `Number()` on one is the
- * float arithmetic the ledger rules forbid.
- */
-function reviveRecall(stored: unknown): ExecutedRecall {
-  const row = typeof stored === "object" && stored !== null ? (stored as Record<string, unknown>) : {};
-  const recall = typeof row.recall === "object" && row.recall !== null
-    ? (row.recall as Record<string, unknown>)
-    : {};
-  const quarantine = Array.isArray(row.quarantine) ? row.quarantine : [];
-  return {
-    recall: { id: Number(recall.id ?? 0), recallNumber: String(recall.recallNumber ?? "") },
-    quarantine: quarantine.flatMap((q) => {
-      const g = typeof q === "object" && q !== null ? (q as Record<string, unknown>) : {};
-      if (g.lotId == null || g.locationId == null) return [];
-      return [{
-        productVariantId: Number(g.productVariantId),
-        locationId: Number(g.locationId),
-        lotId: Number(g.lotId),
-        handlingUnitId: g.handlingUnitId == null ? null : Number(g.handlingUnitId),
-        ownership:
-          g.ownership === "VENDOR" || g.ownership === "CUSTOMER"
-            ? g.ownership
-            : "OWNED",
-        onHand: String(g.onHand ?? "0"),
-      }];
-    }),
-  };
-}
+import { RecallSimulationService } from "./recall-simulation.service";
+import { recallInScope } from "./lib/recall-scope";
+export type { RecallLineOutcome } from "./lib/recall-executed";
+import { createRecall, type RecallCreateDeps } from "./lib/recall-create";
 
 @Injectable()
 export class RecallsService {
@@ -97,40 +32,6 @@ export class RecallsService {
     private readonly audit: InventoryAuditService,
     private readonly simulation: RecallSimulationService,
   ) {}
-
-  /**
-   * INV-109. A recall carries no warehouse of its own; it is attributable
-   * through the lots and variants its lines name, and those through the stock
-   * they hold. A recall touching nothing an operator can see stays out of their
-   * list — and, since INV-SCOPE-QUALITY, out of their detail too.
-   *
-   * The NULL rule falls out of the EXISTS and is worth naming: a recall whose
-   * lines match no stock row in any of the caller's warehouses — including one
-   * matching no stock at all — is **excluded**. It is not the ASN rule, where an
-   * unattributed row stays visible to everyone; a recall is attributed
-   * indirectly, so "no attribution" here means "touches nothing you hold", not
-   * "not yet filled in". Lives in one place so the list and the detail cannot
-   * drift apart, which is how this defect got written in the first place.
-   *
-   * Hiding a safety event reads uncomfortably, so worth being explicit:
-   * visibility is not what stops recalled goods moving. The allocator refuses a
-   * recalled lot under every strategy regardless of who is looking, so scoping
-   * changes what an operator reads, never what the engine permits.
-   */
-  private recallInScope(orgId: string, scope: ResolvedWarehouseScope): SQL | undefined {
-    if (scope.unrestricted) return undefined;
-    return sql`EXISTS (
-      SELECT 1
-      FROM inv_recall_lines rl
-      JOIN inv_stock_levels sl
-        ON sl.org_id = rl.org_id
-       AND (sl.lot_id = rl.lot_id
-            OR (rl.lot_id IS NULL AND sl.product_variant_id = rl.product_variant_id))
-      WHERE rl.org_id = ${orgId}
-        AND rl.recall_id = ${invRecallEvents.id}
-        AND ${scope.location(sql`sl.location_id`)}
-    )`;
-  }
 
   async list(orgId: string, userId: string, query: ListRecallsQueryInput) {
     const { status, page, limit } = query;
@@ -146,7 +47,7 @@ export class RecallsService {
       async () => {
         const conditions = [eq(invRecallEvents.orgId, orgId)];
 
-        const inScope = this.recallInScope(orgId, scope);
+        const inScope = recallInScope(orgId, scope);
         if (inScope !== undefined) conditions.push(inScope);
 
         if (status) conditions.push(eq(invRecallEvents.status, status));
@@ -181,7 +82,7 @@ export class RecallsService {
    */
   async findOne(orgId: string, userId: string, id: number) {
     const scope = await this.warehouseScope.forUser(orgId, userId);
-    return this.loadRecallDetail(orgId, id, this.recallInScope(orgId, scope));
+    return this.loadRecallDetail(orgId, id, recallInScope(orgId, scope));
   }
 
   /**
@@ -228,272 +129,26 @@ export class RecallsService {
     return { ...recall, affectedShipments };
   }
 
-  /**
-   * D4 — execute a recall.
-   *
-   * Two shapes of request reach here. An explicit `lines` list is the caller
-   * naming lots and serials outright. A `selection` is the caller naming the
-   * *question* — "everything this vendor sent us in March" — and presenting
-   * the `evidenceVersion` a simulate returned for it; the simulation is re-run
-   * here and a moved picture is a 409, never a silent execution against
-   * numbers an operator read ten minutes ago.
-   */
+  /** @see lib/recall-create.ts */
   async create(orgId: string, userId: string, input: CreateRecallInput, idempotencyKey: string) {
-    // A3/A5/D4. Everything that writes a document — the recall, its lines, the
-    // lot flip, the hold records and the quarantine movements — sits inside one idempotent unit, so a
-    // retried request replays all of it or none of it. It used to cover only
-    // the recall row: a retry replayed the document and then inserted a second
-    // full set of quality holds against the same stock, which is a recall that
-    // looks idempotent from the outside and is not.
-    const executed = await this.db.transaction(async (tx) =>
-      runIdempotent(
-        tx,
-        orgId,
-        idempotencyKey,
-        { command: "inventory.quality.recall.create", input },
-        async (): Promise<ExecutedRecall> => {
-          const { lines: resolvedLines, impact } = await this.resolveLines(orgId, userId, input);
-          const recallNumber = await this.numSeq.next(orgId, "RECALL", tx);
-          const [recall] = await tx
-            .insert(invRecallEvents)
-            .values({
-              orgId,
-              recallNumber,
-              title: input.title,
-              description: input.description ?? null,
-              evidenceVersion: impact?.evidenceVersion ?? null,
-              evidenceSnapshot: impact === null ? null : { ...impact },
-              createdBy: userId,
-            })
-            .returning();
-          if (!recall) throw new Error("Insert recall failed");
-          const lines = await tx
-            .insert(invRecallLines)
-            .values(
-              resolvedLines.map(l => ({
-                orgId,
-                recallId: recall.id,
-                productVariantId: l.productVariantId ?? null,
-                lotId: l.lotId ?? null,
-                serialId: l.serialId ?? null,
-              })),
-            )
-            .returning();
-          const recalledLotIds = lines
-            .map(l => l.lotId)
-            .filter((id): id is number => id !== null && id !== undefined);
-
-          const quarantine: ExecutedRecall["quarantine"] = [];
-          if (recalledLotIds.length > 0) {
-            // The allocator refuses any lot whose status is not ACTIVE, under every
-            // strategy, so this flip is what actually stops the goods moving —
-            // the holds below are the document trail, not the enforcement.
-            await tx.update(invLots)
-              .set({ status: "RECALLED" })
-              .where(and(inArray(invLots.id, recalledLotIds), eq(invLots.orgId, orgId)));
-
-            // Projected, not `select()`: an unprojected read here returned every
-            // column of every matching stock row, and `parseFloat` on an 18,4
-            // numeric is the float arithmetic the ledger rules forbid — a lot
-            // holding 0.0001 units is on the shelf and must be recalled with the
-            // rest.
-            const levels = await tx
-              .select({
-                productVariantId: invStockLevels.productVariantId,
-                locationId: invStockLevels.locationId,
-                lotId: invStockLevels.lotId,
-                handlingUnitId: invStockLevels.handlingUnitId,
-                ownership: invStockLevels.ownership,
-                onHand: invStockLevels.onHand,
-              })
-              .from(invStockLevels)
-              .where(and(eq(invStockLevels.orgId, orgId), inArray(invStockLevels.lotId, recalledLotIds)));
-
-            for (const level of levels) {
-              if (level.lotId === null || level.lotId === undefined) continue;
-              if (!isPositive(level.onHand)) continue;
-              quarantine.push({
-                productVariantId: level.productVariantId,
-                locationId: level.locationId,
-                lotId: level.lotId,
-                handlingUnitId: level.handlingUnitId ?? null,
-                ownership: level.ownership,
-                onHand: level.onHand,
-              });
-            }
-
-            if (quarantine.length > 0) {
-              await tx.insert(invQualityHolds).values(
-                quarantine.map(grain => ({
-                  orgId,
-                  productVariantId: grain.productVariantId,
-                  locationId: grain.locationId,
-                  lotId: grain.lotId,
-                  handlingUnitId: grain.handlingUnitId,
-                  ownership: grain.ownership,
-                  quantity: grain.onHand,
-                  reason: `Recall ${recallNumber}`,
-                  createdBy: userId,
-                })),
-              );
-
-              const recallCommands = quarantine.map(grain => ({
-                idempotencyKey:
-                  `recall:${recall.id}:lot:${grain.lotId}:loc:${grain.locationId}:` +
-                  `hu:${grain.handlingUnitId ?? "none"}:own:${grain.ownership}`,
-                sourceType: "RECALL",
-                sourceId: String(recall.id),
-                // A recall quarantines the goods; it does not make them disappear.
-                // Zeroing ON_HAND as well drove available negative and destroyed the
-                // count of what is physically on the shelf — which is exactly the
-                // number a recall needs to report.
-                movements: [
-                  {
-                    transactionType: "QUARANTINE_IN",
-                    productVariantId: grain.productVariantId,
-                    locationId: grain.locationId,
-                    lotId: grain.lotId,
-                    handlingUnitId: grain.handlingUnitId,
-                    ownership: grain.ownership,
-                    quantityDelta: grain.onHand,
-                    qualityBucket: "QUALITY_HOLD" as const,
-                  },
-                ],
-              }));
-
-              await this.engine.executeManyInTx(tx, orgId, userId, recallCommands);
-            }
-          }
-
-          // INV-33. What the quarantine actually did to each line, recorded on
-          // the line rather than left to be inferred.
-          //
-          // `inv_recall_lines.status` has existed since the table did, defaulted
-          // to OPEN and was never written by anything and never read by anything.
-          // The information it should hold is computed a few lines above and was
-          // being dropped on the floor: `create` returns `findOne`, which knows
-          // the lines and the affected shipments and nothing at all about whether
-          // a single unit was held.
-          //
-          // That matters because a recall can commit having quarantined nothing,
-          // and the screen said OPEN either way:
-          //  - a line naming a lot with no stock on hand — the lot is RECALLED so
-          //    the allocator refuses it, but there is nothing on a shelf to hold;
-          //  - a line naming only a serial or only a variant — `recalledLotIds` is
-          //    empty, so the lot flip never runs either. Nothing is blocked at all
-          //    and the goods stay sellable. That is the silent failure.
-          const quarantinedLotIds = new Set(quarantine.map((grain) => grain.lotId));
-          const byOutcome = new Map<RecallLineOutcome, number[]>();
-          for (const line of lines) {
-            const outcome: RecallLineOutcome =
-              line.lotId === null || line.lotId === undefined
-                ? "NOT_QUARANTINABLE"
-                : quarantinedLotIds.has(line.lotId)
-                  ? "QUARANTINED"
-                  : "NOTHING_TO_QUARANTINE";
-            const bucket = byOutcome.get(outcome);
-            if (bucket) bucket.push(line.id);
-            else byOutcome.set(outcome, [line.id]);
-          }
-          for (const [outcome, lineIds] of byOutcome) {
-            await tx
-              .update(invRecallLines)
-              .set({ status: outcome })
-              .where(and(eq(invRecallLines.orgId, orgId), inArray(invRecallLines.id, lineIds)));
-          }
-          const unheldLineCount = lines.length - (byOutcome.get("QUARANTINED")?.length ?? 0);
-
-          await this.audit.insert(tx, {
-            orgId, actorUserId: userId, action: "recall.created",
-            resourceType: "recall", resourceId: String(recall.id),
-            after: {
-              recallNumber,
-              linesCount: lines.length,
-              evidenceVersion: impact?.evidenceVersion ?? null,
-            },
-          });
-
-          // G3. An audit row is a private record of who did what; nothing subscribes
-          // to a table. A recall is the one inventory event a warehouse most needs
-          // pushed at it — the lots are already RECALLED and the allocator is already
-          // refusing them, so this is what explains why. Inside the transaction, so
-          // it commits with the recall or not at all, and through the outbox, so the
-          // recall still commits when the notifier is down.
-          await OutboxWriter.emit(tx, {
-            eventId: randomUUID(),
-            organizationId: orgId,
-            aggregateType: "inv_recall_event",
-            aggregateId: String(recall.id),
-            aggregateVersion: 1,
-            eventType: "inventory.recall.opened",
-            payload: {
-              recallId: recall.id,
-              referenceNumber: recallNumber,
-              title: input.title,
-              lotCount: lines.length,
-              quarantinedGrains: quarantine.length,
-              // A subscriber can alarm on this without re-reading the lines. A
-              // recall whose every line is unheld held nothing anywhere.
-              unheldLineCount,
-              openedByUserId: userId,
-            },
-            occurredAt: new Date(),
-          });
-
-          return { recall: { id: recall.id, recallNumber }, quarantine };
-        },
-        (stored) => reviveRecall(stored),
-      ),
-    );
-
-    await this.cache.invalidateNamespace(CACHE_KEYS.invQualityRecallsNamespace(orgId));
-    return this.loadRecallUnscoped(orgId, executed.recall.id);
+    return createRecall(this.recallDeps, orgId, userId, input, idempotencyKey);
   }
 
   /**
-   * The lines a create request means, and the evidence it was justified by.
-   *
-   * An explicit `lines` list is taken at face value and carries no evidence. A
-   * `selection` is re-simulated here — not trusted from the client — and the
-   * hash compared: a selection that has since gained or lost a lot, moved
-   * stock, or shipped another carton produces a different version, and the
-   * execute is refused rather than acting on the operator's stale reading.
+   * Built explicitly rather than passing `this`: TypeScript will not
+   * structurally match a class carrying `private` members to an interface.
+   * `reloadUnscopedRecall` is what keeps the ungated read on the service —
+   * see the note in `lib/recall-create.ts`.
    */
-  private async resolveLines(
-    orgId: string,
-    userId: string,
-    input: CreateRecallInput,
-  ): Promise<{
-    lines: Array<{ productVariantId?: number; lotId?: number; serialId?: number }>;
-    impact: RecallImpact | null;
-  }> {
-    if (input.selection === undefined) {
-      // The schema's refinement guarantees one of the two is present.
-      return { lines: input.lines ?? [], impact: null };
-    }
-
-    const impact = await this.simulation.simulate(orgId, userId, input.selection);
-
-    if (impact.evidenceVersion !== input.evidenceVersion) {
-      throw new ConflictException({
-        code: "RECALL_EVIDENCE_STALE",
-        message:
-          "The stock picture changed since this recall was simulated. Re-run the simulation and review the impact before executing.",
-        expectedEvidenceVersion: impact.evidenceVersion,
-        submittedEvidenceVersion: input.evidenceVersion,
-      });
-    }
-
-    if (impact.lots.length === 0) {
-      throw new BadRequestException("This selection matches no lots, so there is nothing to recall");
-    }
-
+  private get recallDeps(): RecallCreateDeps {
     return {
-      lines: impact.lots.map((lot) => ({
-        productVariantId: lot.productVariantId,
-        lotId: lot.lotId,
-      })),
-      impact,
+      db: this.db,
+      cache: this.cache,
+      engine: this.engine,
+      numSeq: this.numSeq,
+      audit: this.audit,
+      simulation: this.simulation,
+      reloadUnscopedRecall: (orgId, id) => this.loadRecallUnscoped(orgId, id),
     };
   }
 
@@ -511,7 +166,7 @@ export class RecallsService {
       where: and(
         eq(invRecallEvents.id, id),
         eq(invRecallEvents.orgId, orgId),
-        this.recallInScope(orgId, scope),
+        recallInScope(orgId, scope),
       ),
     });
     if (!recall) throw new NotFoundException("Not found");

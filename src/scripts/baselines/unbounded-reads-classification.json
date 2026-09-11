@@ -1998,6 +1998,11 @@
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
     },
+    "/inventory/quality/lib/recall-create.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane",
+      "justification": "Carried over 2026-09-11 from /inventory/quality/quality-recalls.service.ts, which this code moved out of unchanged \u2014 this gate keys on path, so a move forces a restatement. Same verdict as the entry it came from, deliberately: changing the verdict CLASS as a side effect of a file split would be a policy change made silently. Read while moving it, for the record: the stock-level read is filtered `inArray` on the lot ids this recall covers, so the bound is the recall's own lot set, and it is already projected rather than `select()` \u2014 the comment above it says why."
+    },
     "/inventory/quality/quality-recalls.service.ts": {
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"

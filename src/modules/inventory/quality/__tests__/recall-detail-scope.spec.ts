@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { NotFoundException } from "@nestjs/common";
 import { PgDialect } from "drizzle-orm/pg-core";
@@ -255,8 +255,30 @@ describe("the ungated read that is allowed to stay", () => {
      */
     const service = readFileSync(join(__dirname, "..", "quality-recalls.service.ts"), "utf8");
     expect(service).toContain("private loadRecallUnscoped(orgId: string, id: number)");
-    expect(service).toContain("return this.loadRecallUnscoped(orgId, executed.recall.id);");
     expect(service).toMatch(/async findOne\(orgId: string, userId: string, id: number\)/);
+
+    /*
+     * `create` moved to `lib/recall-create.ts`, and the boundary did NOT move
+     * with it. The lib reaches the ungated read through a closure the service
+     * binds, so nothing under `quality/lib/` calls or imports it. Asserted
+     * rather than trusted: the obvious way to do that split — export
+     * `loadRecallUnscoped` from the lib — is exactly what naming it private was
+     * for. The check is on `loadRecallUnscoped(`, with the paren, so a lib may
+     * still NAME it in a comment explaining why it takes a callback instead.
+     */
+    const libDir = join(__dirname, "..", "lib");
+    for (const file of readdirSync(libDir)) {
+      const text = readFileSync(join(libDir, file), "utf8");
+      expect({ file, callsUngatedRead: text.includes("loadRecallUnscoped(") }).toEqual({
+        file,
+        callsUngatedRead: false,
+      });
+    }
+    const createLib = readFileSync(join(libDir, "recall-create.ts"), "utf8");
+    expect(createLib).toContain("return deps.reloadUnscopedRecall(orgId, executed.recall.id);");
+    expect(service).toContain(
+      "reloadUnscopedRecall: (orgId, id) => this.loadRecallUnscoped(orgId, id)",
+    );
 
     const controller = readFileSync(join(__dirname, "..", "recalls.controller.ts"), "utf8");
     expect(controller).toContain("this.svc.findOne(u.orgId, u.userId, id)");
