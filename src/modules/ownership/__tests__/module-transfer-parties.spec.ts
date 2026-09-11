@@ -293,6 +293,36 @@ describe("module transfer — three-party scenario (from ≠ initiator)", () => 
         ),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
+
+    // The org-scope twin of this check has been asserted since the beginning;
+    // the module-scope one never was. Neutering it on 2026-09-11 left all 59
+    // ownership tests green, so a SUSPENDED or LEFT membership could be
+    // nominated for module ownership and would hold it the moment it was
+    // reactivated.
+    it.each(["SUSPENDED", "LEFT"])(
+      "throws BadRequestException when the module-transfer target's membership is %s",
+      async (status) => {
+        const actorMembership = { id: ORG_OWNER_MEMBER_ID, userId: ORG_OWNER_USER, isOwner: true, status: "ACTIVE" };
+        const currentOwnership = { ownerMembershipId: MODULE_OWNER_MEMBER_ID };
+        const target = { id: TARGET_MEMBER_ID, userId: TARGET_USER, isOwner: false, status };
+
+        mockDb.select
+          .mockReturnValueOnce(makeSelectChain([actorMembership]))
+          .mockReturnValueOnce(makeSelectChain([currentOwnership]))
+          .mockReturnValueOnce(makeSelectChain([target]));
+
+        await expect(
+          transfers.initiateModuleTransfer(
+            ORG,
+            ORG_OWNER_USER,
+            MODULE_KEY,
+            { toMembershipId: TARGET_MEMBER_ID, expiresInHours: 48 },
+            orgOwnerActor,
+          ),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(mockDb.insert).not.toHaveBeenCalled();
+      },
+    );
   });
 
   describe("acceptTransfer — MODULE scope with org-owner initiator", () => {
