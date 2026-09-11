@@ -37,6 +37,11 @@
       "verdict": "ACTIONABLE",
       "note": "Offset pagination; needs keyset migration or proven depth bound"
     },
+    "/delegations/lib/delegation-listing.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Offset pagination; needs keyset migration or proven depth bound",
+      "justification": "Split out of /delegations/delegations.service.ts 2026-09-11 with the verdict unchanged. listDelegationsPage offsets (page-1)*limit on userDelegations ordered by (createdAt DESC, id DESC); limit is capped by pageSizeField(20) so each page is bounded, but the offset depth is not \u2014 still needs the keyset migration the origin entry called for"
+    },
     "/hr/benefits/hr-benefits-claims.service.ts": {
       "verdict": "ACTIONABLE",
       "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
@@ -1003,6 +1008,11 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "searchMessages uses id-keyset cursor (lt(chatMessages.id, cursor)) with limit+1 sentinel and hasMore check; already properly paginated; resolveContentMatch caps SECURITY_DEFINER call at CHAT_SEARCH_ID_CAP=1000 2026-09-01"
     },
+    "/clients/lib/client-account-backfill.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Split out of /clients/client-accounts.service.ts, and NOT a restatement of that file's FALSE-POSITIVE, whose justification (\"bounded by clientId, small set per client\") never described these two reads. Read A (users by id) is genuinely bounded: the id list comes from membersWithPermission(..., { limit: 500 }), so it is at most 500 rows. Read B is not: backfillCrmAssignments selects EVERY client_accounts row in the org with assigned_crm_id IS NULL, ordered by created_at, with no limit, and holds them all in memory to deal them round-robin. An org with a large unassigned backlog materialises the whole backlog on a request-path call (getClientAccounts fires tryBackfill with void). A LIMIT alone would be wrong \u2014 it would silently leave accounts unassigned forever \u2014 so the fix is batching with a keyset over (created_at, id) across repeated runs, which the 60s Redis lock already makes safe to do incrementally. Filed rather than dismissed 2026-09-11."
+    },
     "/clients/client-accounts.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
@@ -1287,6 +1297,11 @@
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "L90 reads delegation permissions bounded by inArray(delegationIds); L109 reads participants bounded by inArray(membershipIds); L156 single-row lookup by userId+orgId; all bounded by preceding query results 2026-09-01"
+    },
+    "/delegations/lib/delegation-listing.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Split out of /delegations/delegations.service.ts 2026-09-11 with the verdict unchanged. L105 reads delegation permissions bounded by inArray(delegationPermissions.delegationId, rows.map(id)) \u2014 at most limit rows, so \u2264 100 delegations; L124 reads participant names bounded by inArray(organizationMembers.id, participantMembershipIds), at most 2\u00d7 that set; L172 is a single-row actor membership lookup by (orgId, userId, status=ACTIVE); all bounded by preceding query results"
     },
     "/directory/directory-identity.service.ts": {
       "verdict": "FALSE-POSITIVE",
