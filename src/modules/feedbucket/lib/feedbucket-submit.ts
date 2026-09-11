@@ -9,7 +9,7 @@
  * auto-link half deliberately swallows its own failures (a lost ticket link must
  * never lose the feedback that was already committed).
  */
-import { BadRequestException, Logger } from "@nestjs/common";
+import { BadRequestException, HttpException, Logger } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import {
   feedbucketAttachments,
@@ -17,6 +17,13 @@ import {
 } from "../../../db/schema";
 import type { Db } from "../../../db/drizzle.module";
 import type { StorageService } from "../../storage/storage.service";
+import type { MediaTransformRunner } from "../../storage/media-transform.runner";
+import {
+  planMedia,
+  queueMediaTransforms,
+  type PendingMediaTransform,
+  type PlannedMedia,
+} from "../feedbucket-media-transforms";
 import type { NotificationsService } from "../../notifications/notifications.service";
 import type { ProjectsTicketsService } from "../../build/core/projects-tickets.service";
 import {
@@ -34,6 +41,8 @@ import type { PublicSubmitInput } from "../feedbucket.schemas";
 export interface FeedbucketSubmitDeps {
   readonly db: Db;
   readonly storage: StorageService;
+  /** Encodes planned media after commit, so the public request never waits on ffmpeg. */
+  readonly transforms: MediaTransformRunner;
   readonly notifications: NotificationsService;
   readonly ticketsService: ProjectsTicketsService;
   readonly logger: Logger;
@@ -52,8 +61,6 @@ export interface PublicSubmitFiles {
   screenshot?: Express.Multer.File;
   recording?: Express.Multer.File;
 }
-
-type Upload = { url: string; size: number; mimeType: string };
 
 function projectFolder(widget: FeedbucketWidget): string {
   return widget.projectId
@@ -79,37 +86,43 @@ export async function submitPublicFeedback(
   const folder = projectFolder(widget);
   const { screenshot, recording } = files;
 
-  let screenshotUpload: Upload | undefined;
+  if ((screenshot || recording) && !deps.transforms.hasCapacity())
+    throw new HttpException({ message: "Media processing is saturated — retry shortly" }, 503);
+
+  const pendingTransforms: PendingMediaTransform[] = [];
+
+  let screenshotUpload: PlannedMedia | undefined;
   if (screenshot) {
     assertScreenshotAcceptable(screenshot);
 
-    screenshotUpload = await deps.storage.uploadCompressed(
+    screenshotUpload = await planMedia(
+      deps.storage,
       widget.orgId,
-      screenshot.buffer,
       `feedbucket/${folder}/screenshots`,
-      screenshot.originalname,
-      screenshot.mimetype,
+      { buffer: screenshot.buffer, fileName: screenshot.originalname, mimeType: screenshot.mimetype },
+      pendingTransforms,
     );
   }
 
-  let recordingUpload: Upload | undefined;
+  let recordingUpload: PlannedMedia | undefined;
   if (recording) {
     if (recording.size > MAX_RECORDING_BYTES) {
       throw new BadRequestException("Recording must be under 100MB");
     }
     const rawMime = recording.mimetype.split(";")[0]?.trim() ?? "";
     const storeMime = rawMime.startsWith("video/") ? rawMime : "video/webm";
-    recordingUpload = await deps.storage.uploadCompressed(
+    recordingUpload = await planMedia(
+      deps.storage,
       widget.orgId,
-      recording.buffer,
       `feedbucket/${folder}/recordings`,
-      recording.originalname || "recording.webm",
-      storeMime,
+      { buffer: recording.buffer, fileName: recording.originalname || "recording.webm", mimeType: storeMime },
+      pendingTransforms,
     );
   }
 
-  const screenshotUrl = screenshotUpload?.url;
-  const recordingUrl = recordingUpload?.url;
+  // Keys, not URLs: stored objects are served by signed URL, never publicly.
+  const screenshotUrl = screenshotUpload?.key;
+  const recordingUrl = recordingUpload?.key;
 
   await runInTenantTransaction(
     deps.db,
@@ -124,7 +137,7 @@ export async function submitPublicFeedback(
         await tx.insert(feedbucketAttachments).values({
           submissionId,
           orgId: widget.orgId,
-          fileUrl: screenshotUpload.url,
+          fileUrl: screenshotUpload.key,
           fileSize: screenshotUpload.size,
           fileName: screenshot.originalname,
           mimeType: screenshotUpload.mimeType,
@@ -134,11 +147,13 @@ export async function submitPublicFeedback(
         await tx.insert(feedbucketAttachments).values({
           orgId: widget.orgId,
           submissionId,
-          fileUrl: recordingUpload.url,
+          fileUrl: recordingUpload.key,
           mimeType: recordingUpload.mimeType,
           fileName: recording.originalname,
           fileSize: recordingUpload.size,
         });
+
+      await queueMediaTransforms(deps.storage, deps.transforms, widget.orgId, pendingTransforms);
 
       if (widget.autoCreateTicket && widget.projectId) {
         const deferred = () =>
