@@ -1,12 +1,13 @@
 import "reflect-metadata";
 import { Module } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
-import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
+import { and, count, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { createHash, randomUUID } from "node:crypto";
 import { DrizzleModule } from "../db/drizzle.module";
 import { DRIZZLE } from "../db/drizzle.constants";
 import type { Db } from "../db/drizzle.module";
 import { runInNewTenantTransaction } from "../common/tenant/run-in-tenant-transaction";
+import type { RemovalAction } from "../modules/organization/core/membership-artifacts";
 import {
   agentTokens,
   invitations,
@@ -24,12 +25,7 @@ import {
   userPermissionGrants,
   users,
 } from "../db/schema";
-import {
-  buildResults,
-  printUncoveredArtifacts,
-  snapshot,
-} from "./membership-revocation/artifact-census";
-import { checkArtifactFkDrift } from "./membership-revocation/fk-drift";
+import { MEMBERSHIP_ARTIFACTS } from "../modules/organization/core/membership-artifacts";
 
 @Module({ imports: [DrizzleModule] })
 class RevocationContextModule {}
@@ -237,7 +233,7 @@ async function main(): Promise<void> {
     console.log(`\nThrowaway org: ${ORG_ID}  membershipId: ${memId}`);
     printUncoveredArtifacts();
 
-    const before = await snapshot(db, ORG_ID, memId, MEM_USER_ID, MEM_EMAIL, DELEGATION_ID);
+    const before = await snapshot(db, ORG_ID, memId, MEM_USER_ID, MEM_EMAIL);
     console.log("\n=== BEFORE (each should be 1) ===");
     for (const [k, v] of Object.entries(before)) console.log(`  ${k.padEnd(30)} ${v}`);
 
@@ -254,7 +250,7 @@ async function main(): Promise<void> {
     });
     const t0 = Date.now();
 
-    const after = await snapshot(db, ORG_ID, memId, MEM_USER_ID, MEM_EMAIL, DELEGATION_ID);
+    const after = await snapshot(db, ORG_ID, memId, MEM_USER_ID, MEM_EMAIL);
     const t1 = Date.now();
 
     const results = buildResults(before, after);
@@ -307,7 +303,7 @@ async function main(): Promise<void> {
     );
     if (!reRow) throw new Error("re-invite insert failed");
 
-    const reCounts = await snapshot(db, ORG_ID, reRow.id, MEM_USER_ID, MEM_EMAIL, DELEGATION_ID);
+    const reCounts = await snapshot(db, ORG_ID, reRow.id, MEM_USER_ID, MEM_EMAIL);
     let inheritancePass = true;
     console.log("\n=== RE-INVITE: NO INHERITANCE (each should be 0) ===");
     for (const [table, ct] of Object.entries(reCounts)) {
