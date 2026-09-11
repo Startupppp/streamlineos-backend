@@ -60,6 +60,8 @@ import type { Db } from "../../db/drizzle.module";
 import { makeMfaPolicyStub } from "../../../test/helpers/mfa-policy-stub";
 import { AccessVersionCache } from "../access/access-version-cache";
 import { membershipStubFromDb } from "../../../test/helpers/membership-state-stub";
+import { AuthContextFactory } from "../../common/auth/auth-context.factory";
+import { makeAuthContextFactory } from "../../../test/helpers/module-guard-context";
 
 const CRM_KEY = "crm:deals:read";
 const PAYROLL_KEY = "payroll:runs:view";
@@ -227,6 +229,8 @@ describe("agent token cross-module boundary (AgentTokenGuard + PermissionGuard)"
           provide: MembershipStateService,
           useValue: { resolve: jest.fn().mockResolvedValue(ACTIVE_MEMBERSHIP) },
         },
+        // Every probed module is on, as the entitlements double above says.
+        { provide: AuthContextFactory, useValue: makeAuthContextFactory() },
       ],
     }).compile();
 
