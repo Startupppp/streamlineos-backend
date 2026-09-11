@@ -41,6 +41,31 @@ export async function listCategories(deps: BlogCategoryDeps) {
   return rows.map((r) => ({ ...r, count: Number(r.count) }));
 }
 
+/**
+ * The admin projection, deliberately not `listCategories`. The public list
+ * counts PUBLISHED posts only, so a category holding nothing but drafts reads
+ * as empty to the person deciding whether to delete it; here every post that
+ * references the category counts, and `createdAt` is carried through.
+ */
+export async function listAdminCategories(deps: BlogCategoryDeps) {
+  const rows = await deps.db
+    .select({
+      id: blogCategories.id,
+      name: blogCategories.name,
+      slug: blogCategories.slug,
+      description: blogCategories.description,
+      color: blogCategories.color,
+      createdAt: blogCategories.createdAt,
+      postCount: count(blogPosts.id),
+    })
+    .from(blogCategories)
+    .leftJoin(blogPosts, eq(blogPosts.categoryId, blogCategories.id))
+    .groupBy(blogCategories.id)
+    .orderBy(asc(blogCategories.name));
+
+  return rows.map((r) => ({ ...r, postCount: Number(r.postCount) }));
+}
+
 export async function createCategory(
   deps: BlogCategoryDeps,
   input: CategoryCreateInput,
