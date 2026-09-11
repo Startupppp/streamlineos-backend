@@ -3,6 +3,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { crmDealCompetitors, deals } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { getPostgresErrorCode } from "../../common/db/postgres-error";
 import type { CreateCompetitorInput, UpdateCompetitorInput } from "./dto/deals.schemas";
 
 @Injectable()
@@ -28,8 +29,18 @@ export class DealsCompetitorsService {
         .returning();
       return row;
     } catch (err: unknown) {
-      const pgErr = err as { code?: string };
-      if (pgErr.code === "23505") {
+      /**
+       * Read through the wrapper, not off the top of the error.
+       *
+       * This branch used to compare `(err as { code?: string }).code`, which is
+       * never set: Drizzle wraps driver errors in `DrizzleQueryError` and leaves
+       * the SQLSTATE on `.cause`. So adding a competitor already on the deal --
+       * the one collision `uq_crm_deal_competitors_deal_key` exists to catch --
+       * fell through as an unhandled 500 rather than the 409 the message here
+       * was written for, and the frontend showed a generic failure for a
+       * situation the user could have resolved by reading it.
+       */
+      if (getPostgresErrorCode(err) === "23505") {
         throw new ConflictException(`Competitor "${input.competitorKey}" already tracked on this deal`);
       }
       throw err;
