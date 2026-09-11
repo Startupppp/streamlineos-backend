@@ -674,6 +674,11 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "reads aiCreditPacks with isActive=true filter; global catalog table (not org-scoped), small finite set (typically 5-10 packs); not a growth table 2026-09-01"
     },
+    "/billing/core/lib/credit-reservation-close.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11 by reading all four call sites, when settle/release/sweepExpiredReservations moved out of /billing/core/ai-credits-reservation.service.ts unchanged \u2014 this gate keys on path, so a move forces a restatement. Every one is a single-row lookup destructured as `const [x]`: two read ONE reservation by (id, org_id) and two read the org's wallet by org_id under `FOR UPDATE`, which is the row lock the balance arithmetic depends on. FALSE-POSITIVE rather than BOUNDED because BOUNDED is a FIXED verdict here \u2014 it asserts the scanner no longer matches, and a continued match is reported as a regression."
+    },
     "/billing/core/ai-credits-reservation.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
