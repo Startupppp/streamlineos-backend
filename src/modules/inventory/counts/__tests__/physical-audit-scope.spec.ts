@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { NotFoundException } from "@nestjs/common";
 import { PgDialect } from "drizzle-orm/pg-core";
@@ -161,8 +161,30 @@ describe("the audit a caller has just created", () => {
   it("is read back through a named unscoped method, not a flag on the public one", () => {
     const source = readFileSync(join(__dirname, "..", "inv-physical-audits.service.ts"), "utf8");
     expect(source).toContain("private async loadAuditUnscoped(");
-    expect(source).toContain("return this.loadAuditUnscoped(orgId, audit.id);");
     expect(source).toMatch(/async getAudit\([^)]*userId: string[^)]*\)/);
+
+    /*
+     * The six commands moved to `lib/physical-audit-commands.ts`, and the
+     * boundary did NOT move with them: they reach the ungated read through a
+     * closure the service binds, so nothing under `counts/lib/` calls it.
+     * Asserted rather than trusted — the obvious way to do that split, exporting
+     * `loadAuditUnscoped` from the lib, is exactly what naming it private was
+     * for. The check is on `loadAuditUnscoped(` with the paren, so a lib may
+     * still name it in a comment explaining why it takes a callback.
+     */
+    const libDir = join(__dirname, "..", "lib");
+    for (const file of readdirSync(libDir)) {
+      const text = readFileSync(join(libDir, file), "utf8");
+      expect({ file, callsUngatedRead: text.includes("loadAuditUnscoped(") }).toEqual({
+        file,
+        callsUngatedRead: false,
+      });
+    }
+    const commands = readFileSync(join(libDir, "physical-audit-commands.ts"), "utf8");
+    expect(commands).toContain("return deps.reloadUnscopedAudit(orgId, audit.id);");
+    expect(source).toContain(
+      "reloadUnscopedAudit: (orgId, auditId) => this.loadAuditUnscoped(orgId, auditId)",
+    );
   });
 
   it("refuses to open an audit of a warehouse the caller does not hold", async () => {

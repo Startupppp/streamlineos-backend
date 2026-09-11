@@ -1963,6 +1963,11 @@
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
     },
+    "/inventory/counts/lib/physical-audit-commands.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane",
+      "justification": "Carried over 2026-09-11 from /inventory/counts/inv-physical-audits.service.ts, which the six audit commands moved out of unchanged \u2014 this gate keys on path, so a move forces a restatement. Same verdict as the entry it came from, deliberately: changing the verdict CLASS as a side effect of a file split would be a policy change made silently. Read while moving it, for the record: it reads the lines of ONE physical audit by audit_id, projected to the four columns the variance movements need, so the bound is that audit's own line count."
+    },
     "/inventory/counts/inv-physical-audits.service.ts": {
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
