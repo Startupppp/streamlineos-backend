@@ -1409,6 +1409,11 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "single-expense selects inside write transactions; always single-record via WHERE id=x"
     },
+    "/expenses/lib/expense-policy-rules.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11 when evaluatePolicy and findApplicableApprovalPolicy moved out of /expenses/expense-lifecycle.service.ts unchanged \u2014 this gate keys on path, so a move forces a restatement. These two reads ARE the two the origin entry described (\"expense and approval policies small catalogs bounded at 0-10 per org\"), and the wording holds: L85 reads fin_expense_policies WHERE org_id = $org AND is_active, L118 reads fin_approval_policies WHERE org_id = $org AND record_type = 'EXPENSE' AND is_active. Both are per-org configuration catalogs an administrator maintains by hand, not growth tables; the caller filters and picks one in memory because applicability depends on category and amount banding rather than on a predicate. Both still select all columns and would be better projected, but that is a projection defect, not a bound defect."
+    },
     "/expenses/expenses.service.ts": {
       "verdict": "BOUNDED",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
