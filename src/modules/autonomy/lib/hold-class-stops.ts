@@ -2,8 +2,9 @@
  * `crm_outbound_class_stops`: the live stops a tenant can see, a person
  * releasing one, and the stop a cancellation leaves behind.
  *
- * This is the table the send-time guardrail in `outbound.service.ts` reads, so
- * everything here either shows or changes what that guardrail will find.
+ * This is the table the send-time guardrail reads (`lib/outbound-send-facts.ts`,
+ * through `OutboundService.sendTimeFacts`), so everything here either shows
+ * or changes what that guardrail will find.
  */
 import { ConflictException, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
@@ -71,9 +72,10 @@ export async function releaseOutboundClassStop(
 /**
  * Stopping a message stops its class for that party, not just that message.
  *
- * Ticket 07's US8, and until now only half-built: `outbound.service.ts` reads
- * `crm_outbound_class_stops` at send time as a guardrail, and nothing anywhere
- * inserted a row — so the table was always empty and the check always passed.
+ * Ticket 07's US8, and until now only half-built: the send-time facts
+ * (`lib/outbound-send-facts.ts`) read `crm_outbound_class_stops` at send time
+ * as a guardrail, and nothing anywhere inserted a row — so the table was always
+ * empty and the check always passed.
  * A person who stopped a nudge got the next nudge anyway, which is the reading
  * of "stop" nobody means.
  *

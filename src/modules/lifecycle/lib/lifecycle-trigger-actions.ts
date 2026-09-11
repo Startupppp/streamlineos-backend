@@ -171,8 +171,8 @@ export async function offerToLoop(
      * with a stage of its own rather than thrown: one contract that could not
      * be considered must not end a sweep over two hundred of them, and a
      * failure nobody wrote down is indistinguishable from a trigger that never
-     * fired — which is the same argument `recordRefusal` makes in
-     * `outbound.service.ts`.
+     * fired — which is the same argument `recordOutboundRefusal` makes in
+     * `autonomy/lib/outbound-hold-placement.ts`.
      */
     const reason = messageOf(error);
     deps.logger.warn(`lifecycle trigger ${triggerId}: the loop could not be reached — ${reason}`);

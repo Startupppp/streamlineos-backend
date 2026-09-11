@@ -151,8 +151,8 @@ const makeActions = (db: Db, updateDeal: jest.Mock) =>
  *
  * Off is the product default, so these stand-ins keep every test in this file
  * describing the same system it described before the leg existed: `settingsFor`
- * answers `autoQuoteEnabled: false` and `maybeDraftQuote` returns before it can
- * reach either the hold service or the database. A test that wants the leg turns
+ * answers `autoQuoteEnabled: false` and `maybeDraftAutonomyQuote` returns
+ * before it can reach either the hold service or the database. A test that wants the leg turns
  * it on explicitly, which is also the only way a tenant gets it.
  */
 const makeQuoteLeg = (autoQuoteEnabled = false) => {

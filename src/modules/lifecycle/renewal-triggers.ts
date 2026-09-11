@@ -374,8 +374,9 @@ function elapsedDays(from: Date, to: Date): number {
  * Caps matching the columns and the prompt, so neither truncates silently.
  *
  * `agreedNextStep` is capped at 200 characters before it reaches the model
- * (`AGREED_NEXT_STEP_CHARS` in `outbound.service.ts`); building a longer one
- * here would mean the sentence the model reads ends mid-word.
+ * (`AGREED_NEXT_STEP_CHARS` in `autonomy/lib/outbound-compose-context.ts`);
+ * building a longer one here would mean the sentence the model reads ends
+ * mid-word.
  */
 const NEXT_STEP_CHARS = 200;
 const DEAL_NAME_CHARS = 120;

@@ -215,8 +215,9 @@ export function judgeOutbound(snapshot: RelationshipSnapshot): OutboundVerdict {
    * The fact it needed is "they asked to meet AND nothing is booked", and only
    * the second half is answerable from what the CRM stores — no field anywhere
    * records that somebody asked. The only snapshot builder,
-   * `OutboundService.loadComposeContext`, therefore hardcoded false, and the
-   * compose API takes a party and a deal rather than a snapshot, so no caller
+   * `loadComposeContext` (`lib/outbound-compose-context.ts`), therefore
+   * hardcoded false, and the compose API takes a party and a deal rather than
+   * a snapshot, so no caller
    * could supply one either. The branch was unreachable in every path, while a
    * unit test constructing the snapshot directly kept proving it worked.
    *

@@ -269,9 +269,10 @@ describe("what the opportunity says", () => {
 
   it("keeps the next step inside the cap the prompt applies", () => {
     /**
-     * `outbound.service.ts` caps `agreedNextStep` at 200 characters before the
-     * model sees it. A longer sentence here would reach the model truncated
-     * mid-word, which is a worse instruction than a shorter one.
+     * `autonomy/lib/outbound-compose-context.ts` caps `agreedNextStep` at 200
+     * characters before the model sees it. A longer sentence here would reach
+     * the model truncated mid-word, which is a worse instruction than a
+     * shorter one.
      */
     for (const kind of ["renewal-due", "churn-risk"] as const)
       expect(renewalNextStep(kind, "2027-06-30").length).toBeLessThanOrEqual(200);
